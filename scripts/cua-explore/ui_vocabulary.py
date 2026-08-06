@@ -56,11 +56,11 @@ KNOWN_SECTION_LABELS = (
     "Radio",
     "Queue",
     "Playlists",
-    "New Releases",
+    "Releases",
     "Concerts",
     "My Stats",
-    "Import Errors",
-    "Missing Files",
+    "Import errors",
+    "Missing files",
     "Library Doctor",
 )
 

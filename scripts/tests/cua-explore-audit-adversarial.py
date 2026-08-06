@@ -2,6 +2,7 @@
 """Adversarial regressions for workload-evidence false positives."""
 
 import pathlib
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -12,7 +13,12 @@ EXPLORE_ROOT = REPO_ROOT / "scripts" / "cua-explore"
 sys.path.insert(0, str(EXPLORE_ROOT))
 
 from protocol import load_mission  # noqa: E402
-from fixtures import FixtureError, validate_scratch_base  # noqa: E402
+from fixtures import (  # noqa: E402
+    FixtureError,
+    _seed_source_rows,
+    build_plan,
+    validate_scratch_base,
+)
 from oracles import normalize_snapshot  # noqa: E402
 from ui_vocabulary import (  # noqa: E402
     CANONICAL_ROW_ROLE,
@@ -54,6 +60,72 @@ class UiVocabularyContractTests(unittest.TestCase):
         self.assertIn("Podcasts", KNOWN_SECTION_LABELS)
         self.assertIn("YouTube", KNOWN_SECTION_LABELS)
         self.assertNotIn("Podcasts / YouTube", KNOWN_SECTION_LABELS)
+
+
+class SourceRouteContractTests(unittest.TestCase):
+    def test_every_mission_route_label_exists_in_the_known_section_vocabulary(self) -> None:
+        labels = set()
+        for mission_path in sorted((EXPLORE_ROOT / "missions").glob("*.json")):
+            mission = load_mission(mission_path)
+            for workload in mission.workloads:
+                labels.update(workload.get("route_tokens", {}))
+                labels.update(workload.get("source_tokens", {}))
+                labels.update(workload.get("unsupported", []))
+                labels.update(workload.get("sections", []))
+
+        self.assertLessEqual(labels, set(KNOWN_SECTION_LABELS))
+
+    def test_mixed_sources_profile_seeds_a_youtube_subscription_and_episode(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        connection.executescript(
+            """
+            CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE podcast_subscriptions (
+                id INTEGER PRIMARY KEY, kind TEXT, feed_url TEXT, title TEXT,
+                author TEXT, added_at INTEGER
+            );
+            CREATE TABLE podcast_episodes (
+                id INTEGER PRIMARY KEY, subscription_id INTEGER, guid TEXT,
+                title TEXT, audio_url TEXT, published_at INTEGER,
+                duration_secs INTEGER, first_seen_at INTEGER
+            );
+            CREATE TABLE radio_stations (
+                id INTEGER PRIMARY KEY, uuid TEXT, name TEXT, stream_url TEXT,
+                genre TEXT, added_at INTEGER
+            );
+            """
+        )
+
+        _seed_source_rows(connection)
+
+        self.assertEqual(build_plan("mixed-sources-128").youtube_episode_count, 1)
+        self.assertEqual(
+            connection.execute(
+                """
+                SELECT s.kind, s.title, e.title
+                FROM podcast_subscriptions AS s
+                JOIN podcast_episodes AS e ON e.subscription_id = s.id
+                WHERE s.kind = 'youtube'
+                """
+            ).fetchone(),
+            ("youtube", "Fixture Channel", "Fixture YouTube Needle"),
+        )
+        self.assertEqual(
+            connection.execute(
+                "SELECT value FROM settings WHERE key = 'module.youtube.enabled'"
+            ).fetchone(),
+            ("1",),
+        )
+
+    def test_section_search_mission_covers_podcasts_and_youtube_separately(self) -> None:
+        mission = load_mission(
+            EXPLORE_ROOT / "missions" / "section-search-isolation.json"
+        )
+        routes = mission.workloads[0]["route_tokens"]
+
+        self.assertEqual(routes["Podcasts"], "PODCAST_ONLY_NEEDLE")
+        self.assertEqual(routes["YouTube"], "YOUTUBE_ONLY_NEEDLE")
+        self.assertNotIn("Podcasts / YouTube", routes)
 
 
 class WorkloadEvidenceAdversarialTests(unittest.TestCase):

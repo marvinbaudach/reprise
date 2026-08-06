@@ -12,12 +12,13 @@
     "SEARCH_NEEDLE": "Writable Batch 0042",
     "MUSIC_ONLY_NEEDLE": "Writable Batch 0042",
     "PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle",
+    "YOUTUBE_ONLY_NEEDLE": "Fixture YouTube Needle",
     "RADIO_ONLY_NEEDLE": "Fixture Radio Needle",
     "NO_MATCH": "NoSuchFixtureResult"
   },
   "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "scroll-direction", "main-loop-stall", "accessibility"],
   "workloads": [
-    {"kind": "section-search", "route_tokens": {"Music": "MUSIC_ONLY_NEEDLE", "Podcasts / YouTube": "PODCAST_ONLY_NEEDLE", "Radio": "RADIO_ONLY_NEEDLE"}, "unsupported": ["My Stats"]},
+    {"kind": "section-search", "route_tokens": {"Music": "MUSIC_ONLY_NEEDLE", "Podcasts": "PODCAST_ONLY_NEEDLE", "YouTube": "YOUTUBE_ONLY_NEEDLE", "Radio": "RADIO_ONLY_NEEDLE"}, "unsupported": ["My Stats"]},
     {"kind": "restart", "preserve": ["section"], "clear": ["transient-search"], "section": "Music", "search_token": "MUSIC_ONLY_NEEDLE"}
   ],
   "success": [

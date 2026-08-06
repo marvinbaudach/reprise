@@ -11,12 +11,13 @@
   "fixture_tokens": {
     "SEARCH_NEEDLE": "Writable Batch 0042",
     "PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle",
+    "YOUTUBE_ONLY_NEEDLE": "Fixture YouTube Needle",
     "RADIO_ONLY_NEEDLE": "Fixture Radio Needle",
     "NO_MATCH": "NoSuchFixtureResult"
   },
   "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "main-loop-stall", "accessibility", "offline-continuity"],
   "workloads": [
-    {"kind": "offline-transition", "phases": ["online", "offline", "online"], "interrupt": "source-refresh", "source_tokens": {"Podcasts / YouTube": "PODCAST_ONLY_NEEDLE", "Radio": "RADIO_ONLY_NEEDLE"}},
+    {"kind": "offline-transition", "phases": ["online", "offline", "online"], "interrupt": "source-refresh", "source_tokens": {"Podcasts": "PODCAST_ONLY_NEEDLE", "YouTube": "YOUTUBE_ONLY_NEEDLE", "Radio": "RADIO_ONLY_NEEDLE"}},
     {"kind": "restart", "connectivity": "offline", "status_label": "No connection"}
   ],
   "success": [

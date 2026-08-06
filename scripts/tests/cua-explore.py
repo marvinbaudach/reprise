@@ -489,7 +489,8 @@ class DeterministicExplorerTests(unittest.TestCase):
         self.assertEqual(
             mission.workloads[0]["source_tokens"],
             {
-                "Podcasts / YouTube": "PODCAST_ONLY_NEEDLE",
+                "Podcasts": "PODCAST_ONLY_NEEDLE",
+                "YouTube": "YOUTUBE_ONLY_NEEDLE",
                 "Radio": "RADIO_ONLY_NEEDLE",
             },
         )

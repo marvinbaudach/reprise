@@ -576,21 +576,33 @@ class WorkloadCompletionReviewTests(unittest.TestCase):
         mission = load_mission(EXPLORE_ROOT / "missions" / "offline-recovery.json")
         workload = mission.workloads[0]
         actions = [
-            {"kind": "activate", "target_label": "Podcasts / YouTube"},
+            {"kind": "activate", "target_label": "Podcasts"},
+            {"kind": "activate", "target_label": "YouTube"},
+            {"kind": "activate", "target_label": "Radio"},
             {"kind": "activate", "target_label": "Refresh"},
             {"kind": "set-connectivity", "connectivity": "offline"},
-            {"kind": "activate", "target_label": "Podcasts / YouTube"},
+            {"kind": "activate", "target_label": "Podcasts"},
+            {"kind": "activate", "target_label": "YouTube"},
             {"kind": "activate", "target_label": "Retry"},
             {"kind": "activate", "target_label": "Radio"},
             {"kind": "set-connectivity", "connectivity": "online"},
-            {"kind": "activate", "target_label": "Podcasts / YouTube"},
+            {"kind": "activate", "target_label": "Podcasts"},
+            {"kind": "activate", "target_label": "YouTube"},
             {"kind": "activate", "target_label": "Radio"},
         ]
         traces = [
             ActionTrace(
                 action=action,
-                before_labels=("Fixture Podcast Needle", "Fixture Radio Needle"),
-                after_labels=("Fixture Podcast Needle", "Fixture Radio Needle"),
+                before_labels=(
+                    "Fixture Podcast Needle",
+                    "Fixture YouTube Needle",
+                    "Fixture Radio Needle",
+                ),
+                after_labels=(
+                    "Fixture Podcast Needle",
+                    "Fixture YouTube Needle",
+                    "Fixture Radio Needle",
+                ),
             )
             for action in actions
         ]
@@ -608,7 +620,7 @@ class WorkloadCompletionReviewTests(unittest.TestCase):
         )
         interrupted_late = list(traces)
         interrupted_late.insert(
-            2,
+            4,
             ActionTrace(
                 action={"kind": "activate", "target_label": "Music"},
                 before_labels=("Fixture Podcast Needle", "Fixture Radio Needle"),
