@@ -136,6 +136,38 @@ fn set_query_updates_n_items_from_count() {
 }
 
 #[test]
+fn tag_save_query_swap_emits_only_the_requested_changed_range() {
+    let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
+    model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let changes_for_signal = changes.clone();
+    model.connect_items_changed(move |_, position, removed, added| {
+        changes_for_signal
+            .borrow_mut()
+            .push((position, removed, added));
+    });
+
+    model.set_query_browsed_ai_changed(
+        &ViewSource::Library,
+        "title",
+        "asc",
+        "",
+        &BrowseFilter::default(),
+        &[],
+        false,
+        super::super::track_list_model_change::ModelChange {
+            position: 1,
+            removed: 2,
+            added: 2,
+            before_total: 3,
+            after_total: 3,
+        },
+    );
+
+    assert_eq!(*changes.borrow(), vec![(1, 2, 2)]);
+}
+
+#[test]
 fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
     let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
 

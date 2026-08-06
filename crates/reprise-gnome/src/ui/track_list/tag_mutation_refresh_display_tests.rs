@@ -20,7 +20,7 @@ use libadwaita as adw;
 
 use super::super::track_list_reload::capture_reload_anchor;
 use super::super::TrackList;
-use super::refresh_after_tag_mutation_with_anchor;
+use super::{refresh_after_tag_mutation_with_anchor, refresh_after_tag_mutation_with_view_ids};
 
 const ROWS: i64 = 300;
 const ANCHOR_ROW: u32 = 200;
@@ -392,7 +392,15 @@ fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
         conn.execute("UPDATE tracks SET year = 2099 WHERE id = ?1", [edited_id])
             .unwrap();
     }
-    refresh_after_tag_mutation_with_anchor(&fixture.track_list.shared, &edited_ids, &[], anchor);
+    let new_ids = fixture.track_list.shared.current_view_ids();
+    refresh_after_tag_mutation_with_view_ids(
+        &fixture.track_list.shared,
+        &edited_ids,
+        &[],
+        anchor,
+        &old_ids,
+        new_ids,
+    );
     crate::ui::test_settle::settle_for(SETTLE);
 
     assert!(

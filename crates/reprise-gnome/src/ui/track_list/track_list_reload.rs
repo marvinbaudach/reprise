@@ -45,10 +45,13 @@ use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
     apply_empty_state, empty_state_for_availability,
 };
+use crate::ui::track_list::track_list_model_change::ModelChange;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
+
+pub(in crate::ui) use super::track_list_geometry::row_height;
 
 /// How many idle-callback rounds the scroll restore waits for the rebuilt
 /// list to gain usable geometry before giving up — mirrors `view_state_
@@ -59,7 +62,7 @@ const SCROLL_RESTORE_MAX_ATTEMPTS: u8 = 8;
 const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
 #[derive(Clone, Copy)]
-enum ReloadViewport {
+pub(super) enum ReloadViewport {
     PreserveAnchor,
     CenterPlayingTrack,
 }
@@ -88,20 +91,6 @@ fn selected_ids_before_swap(shared: &Shared) -> Vec<i64> {
         .chain(iter.by_ref())
         .filter_map(|position| shared.model.track_at(position).map(|track| track.id))
         .collect()
-}
-
-/// Approximates the uniform row height from the adjustment's total content
-/// height over the row count — the same technique `current_track_selection::
-/// centered_scroll_value` uses for the "jump to now playing" center (NAV-9b):
-/// `GtkColumnView` rows are uniform height by design, and there is no
-/// per-row height API to query instead.
-pub(in crate::ui) fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
-    if n_rows == 0 {
-        return None;
-    }
-    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(column_view)?;
-    let upper = adjustment.upper();
-    (upper > 0.0).then(|| upper / f64::from(n_rows))
 }
 
 /// The anchor a reveal that has been requested but has not started moving is
@@ -174,6 +163,7 @@ fn restore_reload_anchor(
     captured: &ReloadAnchor,
     viewport: ReloadViewport,
     hold: Option<AdjustmentHold>,
+    resolved_ids: Option<Vec<i64>>,
 ) {
     // Resolving positions costs a sorted full-table id query; skip it when
     // the capture side already established there is nothing to put back and
@@ -183,7 +173,7 @@ fn restore_reload_anchor(
     if reload_restore::is_noop(captured) && !reveal_playing_track {
         return;
     }
-    let current_ids = shared.current_view_ids();
+    let current_ids = resolved_ids.unwrap_or_else(|| shared.current_view_ids());
     select_captured_ids(shared, captured, &current_ids);
 
     if matches!(viewport, ReloadViewport::CenterPlayingTrack) {
@@ -404,7 +394,7 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: &ViewSou
     if let Some(callback) = shared.on_search_restored.borrow().as_ref() {
         callback("");
     }
-    run_query(shared);
+    run_query(shared, None);
 }
 
 /// Re-runs the query against the current source/sort/filter state via
@@ -417,7 +407,7 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
 
 fn reload_with_viewport(shared: &Rc<Shared>, viewport: ReloadViewport) {
     let captured = capture_reload_anchor(shared);
-    reload_with_anchor_and_viewport(shared, &captured, viewport);
+    reload_with_anchor_and_viewport(shared, &captured, viewport, None, None);
 }
 
 /// Re-runs the current query while restoring a snapshot captured before an
@@ -425,21 +415,23 @@ fn reload_with_viewport(shared: &Rc<Shared>, viewport: ReloadViewport) {
 /// capturing only when its worker finishes is too late: the closing dialog
 /// and focus restoration may already have disturbed GTK's live adjustment.
 pub(in crate::ui) fn reload_with_anchor(shared: &Rc<Shared>, captured: &ReloadAnchor) {
-    reload_with_anchor_and_viewport(shared, captured, ReloadViewport::PreserveAnchor);
+    reload_with_anchor_and_viewport(shared, captured, ReloadViewport::PreserveAnchor, None, None);
 }
 
-fn reload_with_anchor_and_viewport(
+pub(super) fn reload_with_anchor_and_viewport(
     shared: &Rc<Shared>,
     captured: &ReloadAnchor,
     viewport: ReloadViewport,
+    model_change: Option<ModelChange>,
+    current_ids: Option<Vec<i64>>,
 ) {
     let hold = matches!(viewport, ReloadViewport::PreserveAnchor)
         .then(|| gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view))
         .flatten()
         .filter(|_| captured.anchor.is_some())
         .map(|adjustment| AdjustmentHold::new(&adjustment));
-    run_query(shared);
-    restore_reload_anchor(shared, captured, viewport, hold.clone());
+    run_query(shared, model_change);
+    restore_reload_anchor(shared, captured, viewport, hold.clone(), current_ids);
     if let Some(hold) = hold {
         hold.release_after(SCROLL_ADJUSTMENT_HOLD);
     }
@@ -448,7 +440,7 @@ fn reload_with_anchor_and_viewport(
 /// The bare query/model-swap/empty-state work, with no selection/scroll
 /// handling of its own — see `reload`'s and `set_source_and_reload`'s doc
 /// comments for who wraps this and why.
-fn run_query(shared: &Rc<Shared>) {
+fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
@@ -490,15 +482,27 @@ fn run_query(shared: &Rc<Shared>) {
         );
     } else {
         shared.model.set_sections(Vec::new());
-        shared.model.set_query_browsed_ai(
-            &source,
-            &sort.field,
-            &sort.dir,
-            &filter,
-            &browse,
-            &[],
-            exclude_ai,
-        );
+        match model_change {
+            Some(change) => shared.model.set_query_browsed_ai_changed(
+                &source,
+                &sort.field,
+                &sort.dir,
+                &filter,
+                &browse,
+                &[],
+                exclude_ai,
+                change,
+            ),
+            None => shared.model.set_query_browsed_ai(
+                &source,
+                &sort.field,
+                &sort.dir,
+                &filter,
+                &browse,
+                &[],
+                exclude_ai,
+            ),
+        }
     }
 
     // Strictly AFTER the query swap: installing a header factory flips

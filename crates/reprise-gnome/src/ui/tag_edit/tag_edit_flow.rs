@@ -42,7 +42,9 @@ use crate::ui::tag_edit::tag_reload_anchor::{post_save_reload_anchor, OpenedRelo
 use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
-use crate::ui::track_list::tag_mutation_refresh::refresh_after_tag_mutation_with_anchor;
+use crate::ui::track_list::tag_mutation_refresh::{
+    refresh_after_tag_mutation_with_anchor, refresh_after_tag_mutation_with_view_ids,
+};
 use crate::ui::track_list::track_list_activation::current_queue_ids;
 use crate::ui::track_list::track_list_reload::{
     capture_reload_anchor, reload_with_anchor, row_height,
@@ -492,6 +494,9 @@ fn finish_apply(
             .filter(|write| !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id))
             .map(|write| write.path.clone())
             .collect();
+        let has_pre_save_view = opened_reload
+            .as_ref()
+            .is_some_and(|state| !state.view_ids.is_empty());
         let live_reload = opened_reload.unwrap_or_else(|| OpenedReloadState {
             anchor: capture_reload_anchor(shared),
             view_ids: shared.current_view_ids(),
@@ -515,12 +520,23 @@ fn finish_apply(
                 })
                 .map(|write| write.id)
                 .collect();
-            refresh_after_tag_mutation_with_anchor(
-                shared,
-                &tag_changed_ids,
-                &tag_changed_paths,
-                save_anchor,
-            );
+            if has_pre_save_view {
+                refresh_after_tag_mutation_with_view_ids(
+                    shared,
+                    &tag_changed_ids,
+                    &tag_changed_paths,
+                    save_anchor,
+                    &live_reload.view_ids,
+                    shared.current_view_ids(),
+                );
+            } else {
+                refresh_after_tag_mutation_with_anchor(
+                    shared,
+                    &tag_changed_ids,
+                    &tag_changed_paths,
+                    save_anchor,
+                );
+            }
         } else {
             let source = shared.source.borrow().clone();
             let browse = shared.browse_filter.borrow().clone();
