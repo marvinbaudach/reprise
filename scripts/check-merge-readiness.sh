@@ -17,8 +17,16 @@ esac
 base_ref=${MERGE_READINESS_BASE_REF:-origin/main}
 
 if (( fetch_main != 0 )); then
+  case "$base_ref" in
+    origin/*) base_branch=${base_ref#origin/} ;;
+    *)
+      echo "merge-readiness can refresh only an origin/<branch> base; use --no-fetch for local refs" >&2
+      exit 2
+      ;;
+  esac
   echo "== Refresh $base_ref =="
-  git fetch --quiet origin main
+  git fetch --quiet origin \
+    "refs/heads/${base_branch}:refs/remotes/origin/${base_branch}"
 fi
 
 if ! git rev-parse --verify --quiet "$base_ref^{commit}" >/dev/null; then
