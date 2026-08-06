@@ -22,6 +22,9 @@ use super::add_dialog_input::{
     submit_refusal, AddInput,
 };
 use super::add_dialog_results::{clear, result_section, rss_candidate, youtube_candidate};
+use super::add_dialog_subscription::{
+    baseline_for_import_choice, configured_auto_download_default, subscribe, subscribe_offline,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AddDialogPhase {
@@ -44,7 +47,7 @@ struct Preview {
     guids: Vec<String>,
 }
 
-type OnAdded = Rc<dyn Fn(bool)>;
+pub(super) type OnAdded = Rc<dyn Fn(bool)>;
 
 /// `SRC-8`: the single size this dialog keeps, whatever a search returns.
 /// `adw::Dialog` treats both as *natural* sizes, so a result label that does
@@ -742,72 +745,6 @@ fn candidate_row(
     labels.append(&subtitle);
     row.append(&labels);
     row
-}
-
-/// `NET-3` point 4: the URL path while offline — no preview fetch, the
-/// subscription is created straight away with the URL itself as a
-/// placeholder title, and the next successful refresh (already scheduled
-/// independently of this dialog) fills in the real title and episodes.
-/// This only translates [`podcasts::offline_add::offline_subscribe`]'s
-/// outcome into status text and the `on_added` callback; the decision and
-/// the one DB write both live in core, where they are testable without a
-/// GTK dialog.
-fn subscribe_offline(
-    kind: PodcastKind,
-    url: &str,
-    conn: &Rc<Db>,
-    status: &gtk4::Label,
-    on_added: &OnAdded,
-) {
-    let auto_download_default = podcasts::config::load(conn)
-        .ok()
-        .is_some_and(|config| config.auto_download_default);
-    let outcome = podcasts::offline_add::offline_subscribe(conn, kind, url, auto_download_default);
-    match outcome {
-        Ok(podcasts::offline_add::OfflineSubscribeOutcome::AlreadySubscribed) => {
-            status.set_text(&strings::text(strings::PODCAST_ALREADY_SUBSCRIBED));
-        }
-        Ok(podcasts::offline_add::OfflineSubscribeOutcome::Added { .. }) => {
-            status.set_text(&strings::text(strings::PODCAST_ADDED_OFFLINE));
-            // `import_latest = false`: there is nothing to import yet while
-            // offline, and forcing an immediate refresh attempt now would
-            // just fail loudly over the network this dialog just avoided.
-            on_added(false);
-        }
-        Err(error) => {
-            tracing::warn!(%error, "could not save offline podcast subscription");
-            status.set_text(&strings::text(strings::PODCAST_SUBSCRIBE_FAILED));
-        }
-    }
-}
-
-fn subscribe(
-    conn: &Db,
-    candidate: &Candidate,
-    auto_download: bool,
-    future_only_baseline: Option<&[String]>,
-) -> Result<i64, rusqlite::Error> {
-    podcasts::store::add_or_restore_with_baseline(
-        conn,
-        &podcasts::store::NewSubscription {
-            kind: candidate.kind,
-            feed_url: candidate.url.clone(),
-            title: candidate.title.clone(),
-            author: candidate.author.clone(),
-            image_url: candidate.image_url.clone(),
-            auto_download,
-        },
-        chrono::Utc::now().timestamp(),
-        future_only_baseline,
-    )
-}
-
-fn baseline_for_import_choice(import: bool, preview_guids: &[String]) -> Option<Vec<String>> {
-    (!import).then(|| preview_guids.to_vec())
-}
-
-fn configured_auto_download_default(config: Option<&podcasts::config::PodcastConfig>) -> bool {
-    config.is_some_and(|value| value.auto_download_default)
 }
 
 #[cfg(test)]
