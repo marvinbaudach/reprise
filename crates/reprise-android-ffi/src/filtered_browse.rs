@@ -191,6 +191,32 @@ mod tests {
         );
     }
 
+    /// The tile's number has to survive paging.
+    ///
+    /// The test above asks for the whole artist at once, so a `total` that
+    /// merely counted the returned page would agree with it by accident. A
+    /// short window is the only shape that tells the two apart — and the
+    /// artist window reaches its count through a different call than the
+    /// favourites do, so proving it there proves nothing here.
+    #[test]
+    fn a_short_artist_window_still_counts_every_track_the_tile_promised() {
+        let (_directory, library) = filtered_library();
+
+        let window = library
+            .list_artist_tracks(
+                "Ada".to_owned(),
+                WindowRange {
+                    offset: 1,
+                    limit: 2,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(window.total, 4);
+        assert_eq!(window.rows.len(), 2);
+        assert!(window.has_more);
+    }
+
     #[test]
     fn artist_values_without_matches_are_empty_windows_not_errors() {
         let (_directory, library) = filtered_library();
