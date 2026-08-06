@@ -1307,6 +1307,9 @@ result.
   podcast or YouTube episode ends that external session and reports one removed
   row. Its frozen show-context rows remain read-only and are never removed from
   the music queue.
+- **QUE-14** [active] [gtk] — The Up Next panel's remove control follows its
+  bound row's live position. When a model shift moves that row into a read-only
+  podcast or YouTube show context, the control disappears immediately.
 
 ## K. Filter & search visibility
 
