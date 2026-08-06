@@ -10,6 +10,7 @@ python3 scripts/tests/cua-explore-review.py
 python3 scripts/tests/cua-explore-audit-adversarial.py
 python3 scripts/tests/cua-explore-hover.py
 python3 scripts/tests/cua-explore-agent.py
+python3 scripts/tests/cua-explore-readiness.py
 python3 scripts/cua-explore/protocol.py validate-mission \
   scripts/cua-explore/missions/first-time-exploration.json >/dev/null
 

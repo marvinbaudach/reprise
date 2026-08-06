@@ -54,6 +54,13 @@ scripts/cua-explore/run.sh \
   "$evidence_root/first-time-seed-11" --seed 11
 ```
 
+After every launch and every restart the runner polls `get_window_state` until
+the snapshot is undegraded and holds more than the bare window element. The X11
+window exists before the app registers with the AT-SPI registry, and a run that
+starts in that gap stays blind for its whole duration. The wait is condition
+based, capped at 60 seconds, and reports the driver's `degraded_reason` when the
+cap is reached.
+
 Every output directory must be new. Repeat a suspicious observation with a
 second seed and fresh generated profile before treating it as confirmed:
 

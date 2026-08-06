@@ -47,6 +47,12 @@ APP_NAMESPACE_ARGV: tuple[str, ...] = (
     "--",
 )
 
+# The X11 window appears before the app registers itself with the AT-SPI
+# registry. Snapshots taken in that gap are degraded and carry a single
+# element, and the whole run then explores a tree it cannot see.
+ACCESSIBILITY_READY_TIMEOUT_SECONDS = 60.0
+ACCESSIBILITY_POLL_SECONDS = 0.25
+
 
 def app_launch_argv(app_binary: pathlib.Path) -> list[str]:
     """Use a private network namespace without breaking D-Bus EXTERNAL auth."""
@@ -150,6 +156,73 @@ def _walk_objects(value: Any) -> Iterator[Mapping[str, Any]]:
             yield from _walk_objects(child)
 
 
+def _snapshot_sources(response: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    structured = response.get("structuredContent")
+    if isinstance(structured, dict):
+        return structured, response
+    return (response,)
+
+
+def snapshot_element_count(response: Mapping[str, Any]) -> int:
+    for source in _snapshot_sources(response):
+        elements = source.get("elements")
+        if isinstance(elements, list):
+            return len(elements)
+    for source in _snapshot_sources(response):
+        count = source.get("element_count")
+        if isinstance(count, int):
+            return count
+    return 0
+
+
+def snapshot_degraded_reason(response: Mapping[str, Any]) -> str:
+    for source in _snapshot_sources(response):
+        reason = source.get("degraded_reason")
+        if isinstance(reason, str) and reason:
+            return reason
+    return "none reported"
+
+
+def accessibility_tree_ready(response: Mapping[str, Any]) -> bool:
+    """A snapshot is usable once it is undegraded and holds more than the window."""
+    degraded = any(
+        source.get("degraded") is True for source in _snapshot_sources(response)
+    )
+    return not degraded and snapshot_element_count(response) > 1
+
+
+def wait_for_accessibility_tree(
+    transport: Any,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    is_alive: Any | None = None,
+    timeout_seconds: float = ACCESSIBILITY_READY_TIMEOUT_SECONDS,
+    poll_seconds: float = ACCESSIBILITY_POLL_SECONDS,
+    monotonic: Any = time.monotonic,
+    sleep: Any = time.sleep,
+) -> Mapping[str, Any]:
+    """Poll get_window_state until the AT-SPI bridge exposes a usable tree."""
+    deadline = monotonic() + timeout_seconds
+    payload = {"pid": pid, "window_id": window_id, "session": session}
+    last: Mapping[str, Any] = {}
+    while True:
+        if is_alive is not None and not is_alive():
+            raise RunError("Reprise exited before the accessibility tree appeared")
+        last = transport.call("get_window_state", payload)
+        if accessibility_tree_ready(last):
+            return last
+        if monotonic() >= deadline:
+            raise RunError(
+                "the accessibility tree never became available within "
+                f"{timeout_seconds:g}s "
+                f"(degraded_reason={snapshot_degraded_reason(last)}, "
+                f"element_count={snapshot_element_count(last)})"
+            )
+        sleep(poll_seconds)
+
+
 def _window_id(response: Mapping[str, Any]) -> int | None:
     for item in _walk_objects(response):
         candidate = item.get("window_id")
@@ -171,6 +244,9 @@ class AppLifecycle:
         connectivity_file: pathlib.Path,
         quit_delay_seconds: int,
         transport: CliTransport,
+        session: str = "explore",
+        ready_timeout_seconds: float = ACCESSIBILITY_READY_TIMEOUT_SECONDS,
+        ready_poll_seconds: float = ACCESSIBILITY_POLL_SECONDS,
     ) -> None:
         self.app_binary = app_binary
         self.profile_root = profile_root
@@ -178,6 +254,9 @@ class AppLifecycle:
         self.connectivity_file = connectivity_file
         self.quit_delay_seconds = quit_delay_seconds
         self.transport = transport
+        self.session = session
+        self.ready_timeout_seconds = ready_timeout_seconds
+        self.ready_poll_seconds = ready_poll_seconds
         self.process: subprocess.Popen[str] | None = None
         self.log_handle = None
         self.launch_count = 0
@@ -213,6 +292,7 @@ class AppLifecycle:
             text=True,
         )
         window_id = self._wait_for_window(self.process.pid)
+        self._wait_for_accessibility_tree(self.process.pid, window_id)
         return self.process.pid, window_id, self.launch_count
 
     def restart(self) -> tuple[int, int, int]:
@@ -254,6 +334,17 @@ class AppLifecycle:
                 return window_id
             time.sleep(0.25)
         raise RunError("Reprise did not expose a CUA window within 30 seconds")
+
+    def _wait_for_accessibility_tree(self, pid: int, window_id: int) -> Mapping[str, Any]:
+        return wait_for_accessibility_tree(
+            self.transport,
+            pid=pid,
+            window_id=window_id,
+            session=self.session,
+            is_alive=lambda: self.process is not None and self.process.poll() is None,
+            timeout_seconds=self.ready_timeout_seconds,
+            poll_seconds=self.ready_poll_seconds,
+        )
 
 
 def _mission_for_agent(mission: Mission) -> dict[str, Any]:
@@ -398,6 +489,7 @@ def run(args: argparse.Namespace) -> int:
         connectivity_file=connectivity_file,
         quit_delay_seconds=min(7_200, mission.budgets.seconds + 60),
         transport=transport,
+        session=args.session,
     )
     report = RunReport(
         args.evidence_dir,
