@@ -57,6 +57,13 @@ fn show_items(uris: &[String]) -> Result<(), glib::Error> {
 
 fn open_parent_folder(path: &Path) {
     let folder = path.parent().unwrap_or(path);
+    open_folder(folder);
+}
+
+/// Opens `folder` in the default file manager without selecting anything
+/// inside it. `CTX-13`'s multi-selection route wants exactly this: one
+/// window on the shared folder, no per-file selection.
+pub(in crate::ui) fn open_folder(folder: &Path) {
     let uri = gio::File::for_path(folder).uri();
     if let Err(error) = gio::AppInfo::launch_default_for_uri(&uri, None::<&gio::AppLaunchContext>) {
         tracing::warn!(%error, %uri, "could not open parent folder");

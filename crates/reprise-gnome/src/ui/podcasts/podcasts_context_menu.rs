@@ -8,6 +8,7 @@ use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
+use super::podcasts_episode_files::{file_reveal, EpisodePaths, FileReveal};
 use super::podcasts_selection::{PodcastSelection, SelectMode};
 use crate::ui::strings;
 
@@ -18,6 +19,7 @@ pub(super) const ACTION_PLAY_NEXT: &str = "play-next";
 pub(super) const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
 pub(super) const ACTION_PLAY_NEXT_UNAVAILABLE: &str = "play-next-unavailable";
 pub(super) const ACTION_ADD_TO_QUEUE_UNAVAILABLE: &str = "add-to-queue-unavailable";
+pub(super) const ACTION_SHOW_IN_FILES: &str = "show-in-files";
 pub(super) const ACTION_TOGGLE_PLAYED: &str = "toggle-played";
 pub(super) const ACTION_TOGGLE_DOWNLOAD: &str = "toggle-download";
 pub(super) const ACTION_REMOVE_EPISODE: &str = "remove-episode";
@@ -36,6 +38,7 @@ const ACTIONS: &[&str] = &[
     ACTION_ADD_TO_QUEUE,
     ACTION_PLAY_NEXT_UNAVAILABLE,
     ACTION_ADD_TO_QUEUE_UNAVAILABLE,
+    ACTION_SHOW_IN_FILES,
     ACTION_TOGGLE_PLAYED,
     ACTION_TOGGLE_DOWNLOAD,
     ACTION_REMOVE_EPISODE,
@@ -133,7 +136,8 @@ pub(super) fn sync_control(
 }
 
 pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
-    build_for_selection(row, &[row.id], None)
+    let paths = EpisodePaths::from_rows(std::slice::from_ref(row));
+    build_for_selection(row, &[row.id], None, &paths)
 }
 
 pub(super) fn browser_url(row: &EpisodeRow) -> Option<&str> {
@@ -148,6 +152,7 @@ pub(super) fn build_for_selection(
     row: &EpisodeRow,
     selected_ids: &[i64],
     unavailable_episode: Option<i64>,
+    paths: &EpisodePaths,
 ) -> gio::Menu {
     // A menu acts on the row it was opened on. It widens to the whole
     // selection only when that row is part of it — the same rule
@@ -160,11 +165,12 @@ pub(super) fn build_for_selection(
     } else {
         vec![row.id]
     };
+    let reveal = file_reveal(&paths.lookup(&target_ids));
     let queue_available = !target_ids
         .iter()
         .any(|episode_id| Some(*episode_id) == unavailable_episode);
     if target_ids.len() <= 1 {
-        return build_single(row, &target_ids, queue_available);
+        return build_single(row, &target_ids, queue_available, &reveal);
     }
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
@@ -179,6 +185,7 @@ pub(super) fn build_for_selection(
         append_selected(&primary, &entry.label, entry.action, &target_ids);
     }
     menu.append_section(None, &primary);
+    append_file_reveal(&menu, &reveal, &target_ids);
     let destructive = gio::Menu::new();
     let remove = multi_selection_destructive_entry();
     append_selected(&destructive, &remove.label, remove.action, &target_ids);
@@ -193,6 +200,7 @@ pub(super) fn popup_for_row(
     parent: &impl IsA<gtk4::Widget>,
     row: &EpisodeRow,
     selection: &Rc<RefCell<PodcastSelection>>,
+    paths: &Rc<EpisodePaths>,
     unavailable_episode: Option<i64>,
     select_action: &str,
     at: Option<(f64, f64)>,
@@ -209,6 +217,7 @@ pub(super) fn popup_for_row(
         row,
         &selected_ids,
         unavailable_episode,
+        paths,
     )));
     popover.set_has_arrow(false);
     popover.set_parent(parent);
@@ -224,7 +233,12 @@ pub(super) fn popup_for_row(
     popover.popup();
 }
 
-fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> gio::Menu {
+fn build_single(
+    row: &EpisodeRow,
+    target_ids: &[i64],
+    queue_available: bool,
+    reveal: &FileReveal,
+) -> gio::Menu {
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
     append_targeted(
@@ -280,6 +294,7 @@ fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> 
         row.id,
     );
     menu.append_section(None, &primary);
+    append_file_reveal(&menu, reveal, target_ids);
 
     let destructive = gio::Menu::new();
     append_targeted(
@@ -296,6 +311,22 @@ fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> 
     );
     menu.append_section(None, &destructive);
     menu
+}
+
+fn append_file_reveal(menu: &gio::Menu, reveal: &FileReveal, target_ids: &[i64]) {
+    let label = match reveal {
+        FileReveal::Hidden => return,
+        FileReveal::Reveal(_) => strings::CONTEXT_MENU_SHOW_IN_FILES,
+        FileReveal::OpenFolder(_) => strings::PODCAST_OPEN_FOLDER,
+    };
+    let files = gio::Menu::new();
+    append_selected(
+        &files,
+        &strings::text(label),
+        ACTION_SHOW_IN_FILES,
+        target_ids,
+    );
+    menu.append_section(None, &files);
 }
 
 fn append_browser_action(menu: &gio::Menu, row: &EpisodeRow) {

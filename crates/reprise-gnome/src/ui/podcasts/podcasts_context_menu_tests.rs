@@ -50,6 +50,15 @@ fn menu_entries(menu: &gio::Menu) -> Vec<(String, String)> {
     entries
 }
 
+fn build_menu(
+    row: &EpisodeRow,
+    selected_ids: &[i64],
+    unavailable_episode: Option<i64>,
+) -> gio::Menu {
+    let paths = EpisodePaths::from_rows(&[]);
+    build_for_selection(row, selected_ids, unavailable_episode, &paths)
+}
+
 fn collect_targets(model: &gio::MenuModel, targets: &mut Vec<(String, Vec<i64>)>) {
     for item in 0..model.n_items() {
         let action = model
@@ -90,7 +99,7 @@ fn episode_targets(menu: &gio::Menu) -> Vec<(String, Vec<i64>)> {
 fn src_12b_a_menu_on_a_row_outside_the_selection_acts_on_that_row_alone() {
     let row = episode(3, false);
 
-    let menu = build_for_selection(&row, &[1, 2], None);
+    let menu = build_menu(&row, &[1, 2], None);
 
     let actions = menu_entries(&menu)
         .into_iter()
@@ -118,7 +127,7 @@ fn src_12b_a_menu_on_a_row_outside_the_selection_acts_on_that_row_alone() {
 fn src_12b_a_menu_on_a_selected_row_acts_on_the_whole_selection() {
     let row = episode(2, false);
 
-    let menu = build_for_selection(&row, &[1, 2, 3], None);
+    let menu = build_menu(&row, &[1, 2, 3], None);
 
     let targets = episode_targets(&menu);
     assert!(
@@ -134,7 +143,7 @@ fn src_12b_a_menu_on_a_selected_row_acts_on_the_whole_selection() {
 fn src_4b_single_selection_keeps_existing_actions_and_adds_queue_routes() {
     let row = episode(1, false);
 
-    let entries = menu_entries(&build_for_selection(&row, &[row.id], None));
+    let entries = menu_entries(&build_menu(&row, &[row.id], None));
 
     assert_eq!(
         entries,
@@ -212,7 +221,7 @@ fn src_4b_podcast_context_menu_exposes_queue_membership_actions() {
 #[test]
 fn acc_8_episode_menu_queue_actions_are_the_keyboard_partner_for_drag() {
     let row = episode(1, false);
-    let entries = menu_entries(&build_for_selection(&row, &[1, 2], None));
+    let entries = menu_entries(&build_menu(&row, &[1, 2], None));
     let actions = entries
         .iter()
         .map(|(_, action)| action.as_str())
@@ -225,7 +234,7 @@ fn acc_8_episode_menu_queue_actions_are_the_keyboard_partner_for_drag() {
 #[test]
 fn ctx_12_unresolvable_episode_routes_to_disabled_queue_actions() {
     let row = episode(1, false);
-    let entries = menu_entries(&build_for_selection(&row, &[1, 2], Some(2)));
+    let entries = menu_entries(&build_menu(&row, &[1, 2], Some(2)));
     let actions = entries
         .iter()
         .map(|(_, action)| action.as_str())
@@ -244,6 +253,44 @@ fn ctx_12_unresolvable_episode_routes_to_disabled_queue_actions() {
         .lookup_action(ACTION_ADD_TO_QUEUE_UNAVAILABLE)
         .expect("add-to-queue unavailable action")
         .is_enabled());
+}
+
+#[test]
+fn ctx_13_single_file_uses_show_in_files_with_a_selection_target() {
+    let temp = tempfile::tempdir().expect("temp directory");
+    let path = temp.path().join("episode.mp3");
+    std::fs::write(&path, b"episode").expect("episode file");
+    let mut row = episode(1, false);
+    row.downloaded_path = Some(path.to_string_lossy().into_owned());
+    let paths = EpisodePaths::from_rows(std::slice::from_ref(&row));
+
+    let menu = build_for_selection(&row, &[row.id], None, &paths);
+
+    assert!(menu_entries(&menu).contains(&(
+        strings::text(strings::CONTEXT_MENU_SHOW_IN_FILES),
+        "podcasts.show-in-files".into(),
+    )));
+    assert!(episode_targets(&menu).contains(&("podcasts.show-in-files".into(), vec![row.id],)));
+}
+
+#[test]
+fn ctx_13_multi_file_selection_uses_open_folder() {
+    let temp = tempfile::tempdir().expect("temp directory");
+    let mut rows = [episode(1, false), episode(2, false)];
+    for row in &mut rows {
+        let path = temp.path().join(format!("{}.mp3", row.id));
+        std::fs::write(&path, b"episode").expect("episode file");
+        row.downloaded_path = Some(path.to_string_lossy().into_owned());
+    }
+    let paths = EpisodePaths::from_rows(&rows);
+
+    let menu = build_for_selection(&rows[0], &[1, 2], None, &paths);
+
+    assert!(menu_entries(&menu).contains(&(
+        strings::text(strings::PODCAST_OPEN_FOLDER),
+        "podcasts.show-in-files".into(),
+    )));
+    assert!(episode_targets(&menu).contains(&("podcasts.show-in-files".into(), vec![1, 2],)));
 }
 
 #[test]

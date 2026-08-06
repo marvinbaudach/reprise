@@ -18,6 +18,7 @@ use reprise_core::podcasts::EpisodeRow;
 use super::podcasts_context_menu::PodcastSyncDevice;
 use super::podcasts_context_surface;
 use super::podcasts_download_presentation;
+use super::podcasts_episode_files::EpisodePaths;
 use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_groups::{SelectionRowWidgets, SELECTED_ROW_CLASS};
 use super::podcasts_playback::EpisodeMark;
@@ -423,9 +424,11 @@ impl YoutubeChannelDetail {
         }
         let mut widgets = BTreeMap::new();
         let mut selection_widgets = BTreeMap::new();
+        let paths = Rc::new(EpisodePaths::from_rows(&projected.group.episodes));
         for episode in &projected.group.episodes {
             self.content.append(&self.build_episode_row(
                 episode,
+                &paths,
                 &mut widgets,
                 &mut selection_widgets,
             ));
@@ -601,6 +604,7 @@ impl YoutubeChannelDetail {
     fn build_episode_row(
         self: &Rc<Self>,
         episode: &EpisodeRow,
+        paths: &Rc<EpisodePaths>,
         widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
         selection_widgets: &mut BTreeMap<i64, SelectionRowWidgets>,
     ) -> gtk4::Widget {
@@ -635,6 +639,7 @@ impl YoutubeChannelDetail {
             &row,
             episode,
             &selection,
+            paths,
             self.unavailable_episode.get(),
             SELECT_CHANNEL_ROW_ACTION,
         );
@@ -717,6 +722,7 @@ impl YoutubeChannelDetail {
         let menu = podcasts_context_surface::episode_menu_button(
             episode,
             &selection,
+            paths,
             self.unavailable_episode.get(),
             SELECT_CHANNEL_ROW_ACTION,
         );

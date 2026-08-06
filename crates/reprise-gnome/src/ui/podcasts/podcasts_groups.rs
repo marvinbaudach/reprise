@@ -13,6 +13,7 @@ use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu;
 use super::podcasts_context_surface;
+use super::podcasts_episode_files::EpisodePaths;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     duration, file_size, on_phone, relative_date, source_header, status_pill, RenderedSourceGroup,
@@ -77,6 +78,7 @@ struct GroupRenderContext<'a> {
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &'a Rc<RefCell<PodcastSelection>>,
+    paths: &'a Rc<EpisodePaths>,
 }
 
 struct EpisodeRenderContext<'a> {
@@ -85,6 +87,7 @@ struct EpisodeRenderContext<'a> {
     images_allowed: bool,
     network: RowNetworkState,
     selection: &'a Rc<RefCell<PodcastSelection>>,
+    paths: &'a Rc<EpisodePaths>,
     unavailable_episode: Option<i64>,
     /// `POD-25` / FIL-5: accented inside this row's title where it matched.
     query: &'a str,
@@ -114,6 +117,21 @@ pub(super) fn replace(
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
     };
+    let expanded_episode_sources_snapshot = expanded_episode_sources.borrow();
+    let rendered_rows = groups
+        .iter()
+        .flat_map(|rendered| {
+            let all_visible =
+                expanded_episode_sources_snapshot.contains(&rendered.group.subscription_id);
+            let visible_count = super::podcasts_episode_window::visible_count(
+                rendered.group.episodes.len(),
+                all_visible,
+            );
+            rendered.group.episodes.iter().take(visible_count).cloned()
+        })
+        .collect::<Vec<_>>();
+    drop(expanded_episode_sources_snapshot);
+    let paths = Rc::new(EpisodePaths::from_rows(&rendered_rows));
     let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
@@ -126,6 +144,7 @@ pub(super) fn replace(
         connectivity,
         unavailable_episode,
         selection,
+        paths: &paths,
     };
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut widgets));
@@ -218,6 +237,7 @@ fn build_group(
                     unavailable_now: context.unavailable_episode == Some(episode.id),
                 },
                 selection: context.selection,
+                paths: context.paths,
                 unavailable_episode: context.unavailable_episode,
                 query: context.query,
             },
@@ -375,6 +395,7 @@ fn episode_row(
         &root,
         row,
         context.selection,
+        context.paths,
         context.unavailable_episode,
         SELECT_ROW_ACTION,
     );
@@ -441,6 +462,7 @@ fn episode_row(
     let menu = podcasts_context_surface::episode_menu_button(
         row,
         context.selection,
+        context.paths,
         context.unavailable_episode,
         SELECT_ROW_ACTION,
     );

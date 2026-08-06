@@ -7,6 +7,7 @@ use gtk4::prelude::*;
 use reprise_core::podcasts::{EpisodeRow, SourceGroup};
 
 use super::podcasts_context_menu::{self, PodcastSyncDevice};
+use super::podcasts_episode_files::EpisodePaths;
 use super::podcasts_selection::PodcastSelection;
 use crate::ui::strings;
 
@@ -14,6 +15,7 @@ pub(super) fn wire_episode_row(
     widget: &impl IsA<gtk4::Widget>,
     row: &EpisodeRow,
     selection: &Rc<RefCell<PodcastSelection>>,
+    paths: &Rc<EpisodePaths>,
     unavailable_episode: Option<i64>,
     select_action: &'static str,
 ) {
@@ -21,6 +23,7 @@ pub(super) fn wire_episode_row(
     let gesture = crate::ui::source_context_surface::secondary_click();
     let pointer_row = row.clone();
     let pointer_selection = selection.clone();
+    let pointer_paths = paths.clone();
     gesture.connect_pressed(move |gesture, _, x, y| {
         let Some(parent) = gesture.widget() else {
             return;
@@ -30,6 +33,7 @@ pub(super) fn wire_episode_row(
             &parent,
             &pointer_row,
             &pointer_selection,
+            &pointer_paths,
             unavailable_episode,
             select_action,
             Some((x, y)),
@@ -41,6 +45,7 @@ pub(super) fn wire_episode_row(
     let keyed_parent = widget.as_ref().downgrade();
     let keyed_row = row.clone();
     let keyed_selection = selection.clone();
+    let keyed_paths = paths.clone();
     keys.connect_key_pressed(move |_, key, _, modifiers| {
         if !crate::ui::source_context_surface::is_context_menu_shortcut(key, modifiers) {
             return gtk4::glib::Propagation::Proceed;
@@ -52,6 +57,7 @@ pub(super) fn wire_episode_row(
             &parent,
             &keyed_row,
             &keyed_selection,
+            &keyed_paths,
             unavailable_episode,
             select_action,
             None,
@@ -64,6 +70,7 @@ pub(super) fn wire_episode_row(
 pub(super) fn episode_menu_button(
     row: &EpisodeRow,
     selection: &Rc<RefCell<PodcastSelection>>,
+    paths: &Rc<EpisodePaths>,
     unavailable_episode: Option<i64>,
     select_action: &'static str,
 ) -> gtk4::MenuButton {
@@ -72,6 +79,7 @@ pub(super) fn episode_menu_button(
         .build();
     let menu_row = row.clone();
     let menu_selection = selection.clone();
+    let menu_paths = paths.clone();
     menu.set_create_popup_func(move |menu| {
         let at = Some((
             f64::from(menu.width()) / 2.0,
@@ -81,6 +89,7 @@ pub(super) fn episode_menu_button(
             menu,
             &menu_row,
             &menu_selection,
+            &menu_paths,
             unavailable_episode,
             select_action,
             at,

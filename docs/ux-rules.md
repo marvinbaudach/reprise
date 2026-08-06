@@ -1691,6 +1691,13 @@ own statement).
   Activating either route revalidates every selected episode against the
   current subscription and tombstone state; a stale or mixed-validity
   selection is refused as a whole and is never guessed from a numeric ID.
+- **CTX-13** [active] [gtk] — Podcast and YouTube episodes. A single episode
+  with a present downloaded file offers "Show in Files" (opens its folder and
+  selects the file). A multi-selection where every episode has a file and all
+  files share one folder offers "Open Folder" instead and opens only that
+  folder. In every other case—nothing downloaded, a recorded path missing on
+  disk, or a selection spanning folders—the entry is absent. Radio never
+  offers it.
 
 ## O. Motion & Transitions
 
