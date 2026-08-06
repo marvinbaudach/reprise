@@ -15,7 +15,6 @@
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -24,7 +23,6 @@ use reprise_core::db::Db;
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::view_source::ViewSource;
-use reprise_core::waveform::RenderDataBackend;
 
 use super::cover_download_worker;
 use super::file_open::{FileOpenHandler, StartupOpenIntent};
@@ -35,9 +33,6 @@ use super::status_bar::StatusBar;
 use super::strings;
 use super::track_content;
 use super::track_list::{OnActivate, TrackList};
-
-const MIN_WIDTH: i32 = 600;
-const MIN_HEIGHT: i32 = 400;
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database handle; Core owns the connection and the UI
@@ -53,51 +48,12 @@ pub fn build(
     db_path: &Path,
     startup_intent: StartupOpenIntent,
 ) -> FileOpenHandler {
-    {
-        let conn = &conn;
-        let accent_source = reprise_core::library::settings::get_setting(
-            conn,
-            super::style::accent::ACCENT_SOURCE_SETTING_KEY,
-        )
-        .ok()
-        .flatten()
-        .as_deref()
-        .map_or(
-            super::style::accent::AccentSource::DEFAULT,
-            super::style::accent::AccentSource::from_id,
-        );
-        super::style::set_accent_source(accent_source);
-        let stored = reprise_core::library::settings::get_setting(
-            conn,
-            super::style::theme::THEME_SETTING_KEY,
-        )
-        .ok()
-        .flatten();
-        let theme = stored
-            .as_deref()
-            .and_then(super::style::theme::Theme::from_id)
-            .unwrap_or(super::style::theme::Theme::DEFAULT);
-        super::style::set_theme(theme);
-        let scheme = reprise_core::library::settings::get_color_scheme(conn);
-        super::style::set_color_scheme(scheme);
-    }
-    // Theme, accent source, and appearance are now final, so installation
-    // loads the palette provider once instead of repainting it for each value.
-    super::style::install();
-    let session_state = super::session_restore::load(conn);
-    let first_run_decision = super::first_run::initial_decision(conn);
-    let window = adw::ApplicationWindow::builder()
-        .application(app)
-        .title(strings::text(strings::APP_NAME))
-        .default_width(session_state.window_width)
-        .default_height(session_state.window_height)
-        .width_request(MIN_WIDTH)
-        .height_request(MIN_HEIGHT)
-        .build();
-    let waveform_backend: Arc<dyn RenderDataBackend> =
-        Arc::new(reprise_platform_linux::waveform::GstreamerWaveformBackend);
-    super::focus_evidence::install(&window);
-    super::session_restore::apply_initial_geometry(&window, &session_state);
+    let super::window_bootstrap::Bootstrap {
+        window,
+        session_state,
+        first_run_decision,
+    } = super::window_bootstrap::prepare(app, conn);
+    let waveform_backend = super::window_bootstrap::waveform_backend();
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
     // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and
     // `Sidebar`'s own default initial source, so this is set directly here
@@ -459,16 +415,6 @@ pub fn build(
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
-    {
-        let player = player.clone();
-        let panel = info_panel.clone();
-        track_list.set_on_find_similar(move |id| {
-            if let Some(player) = &player {
-                player.play_track_id(id);
-                panel.show_sound();
-            }
-        });
-    }
     let open_device: super::device_sync_launcher::OpenDevice = Rc::new({
         let content_stack = content_stack.clone();
         let window_title = window_title.clone();
@@ -493,6 +439,7 @@ pub fn build(
             &info_panel,
             &queue_model,
             &metadata_navigator,
+            &track_list,
         );
     }
     let player_bar_widget = player
