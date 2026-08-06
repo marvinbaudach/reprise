@@ -16,6 +16,7 @@ internal data class PlaybackUiState(
     val shuffled: Boolean = false,
     val repeat: AndroidRepeatMode = AndroidRepeatMode.OFF,
     val error: String? = null,
+    val sleepTimer: SleepTimerUiState = SleepTimerUiState(),
 )
 
 internal val PlaybackUiState.isPlaying: Boolean

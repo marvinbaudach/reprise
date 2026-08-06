@@ -104,9 +104,9 @@ internal class AndroidLibrarySessionPort(
     }
 }
 
-private fun LibraryWindowRange.toFfi() = FfiWindowRange(offset = offset, limit = limit)
+internal fun LibraryWindowRange.toFfi() = FfiWindowRange(offset = offset, limit = limit)
 
-private fun FfiTrackWindow.toLibraryTracks() = LibraryWindow(
+internal fun FfiTrackWindow.toLibraryTracks() = LibraryWindow(
     total = total,
     rows = rows.map(TrackRow::toLibraryTrack),
     hasMore = hasMore,
