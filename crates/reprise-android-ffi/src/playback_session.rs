@@ -1,5 +1,6 @@
 //! Android's Core-owned playback queue and transport surface.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
@@ -56,6 +57,7 @@ pub trait AndroidPlaybackListener: Send + Sync {
 struct SessionState {
     queue: Queue,
     track_ids: Vec<i64>,
+    track_index_by_id: HashMap<i64, usize>,
     uris: Vec<String>,
     snapshot: AndroidPlaybackSnapshot,
     stream: StreamGeneration,
@@ -70,6 +72,7 @@ impl SessionState {
         Self {
             queue: Queue::new(),
             track_ids: Vec::new(),
+            track_index_by_id: HashMap::new(),
             uris: Vec::new(),
             snapshot: AndroidPlaybackSnapshot {
                 state: AndroidPlaybackState::Stopped,
@@ -96,10 +99,11 @@ impl SessionState {
             Repeat::All => AndroidRepeatMode::All,
             Repeat::One => AndroidRepeatMode::One,
         };
+        let track_index_by_id = index_tracks(&restored.track_ids);
         let current_index = restored
             .queue
             .current()
-            .and_then(|track_id| restored.track_ids.iter().position(|id| *id == track_id))
+            .and_then(|track_id| track_index_by_id.get(&track_id).copied())
             .and_then(|index| u64::try_from(index).ok());
         let state = if current_index.is_some() {
             AndroidPlaybackState::Paused
@@ -121,6 +125,7 @@ impl SessionState {
             },
             queue: restored.queue,
             track_ids: restored.track_ids,
+            track_index_by_id,
             uris: restored.uris,
             stream: StreamGeneration::INITIAL,
             current_loaded: false,
@@ -132,22 +137,37 @@ impl SessionState {
     fn current_uri(&self) -> Option<String> {
         self.queue
             .current()
-            .and_then(|track_id| self.track_ids.iter().position(|id| *id == track_id))
+            .and_then(|track_id| self.track_index(track_id))
             .and_then(|index| self.uris.get(index).cloned())
     }
 
     fn next_uri(&self) -> Option<String> {
         self.queue
             .peek_auto()
-            .and_then(|track_id| self.track_ids.iter().position(|id| *id == track_id))
+            .and_then(|track_id| self.track_index(track_id))
             .and_then(|index| self.uris.get(index).cloned())
+    }
+
+    fn track_index(&self, track_id: i64) -> Option<usize> {
+        self.track_index_by_id
+            .get(&track_id)
+            .copied()
+            .filter(|index| self.track_ids.get(*index) == Some(&track_id))
+    }
+
+    fn set_tracks(&mut self, track_ids: Vec<i64>, uris: Vec<String>, start_index: usize) {
+        self.track_index_by_id = index_tracks(&track_ids);
+        self.track_ids = track_ids.clone();
+        self.uris = uris;
+        self.queue.set_tracks(track_ids, start_index);
+        self.adopt_current();
     }
 
     fn adopt_current(&mut self) {
         self.snapshot.current_index = self
             .queue
             .current()
-            .and_then(|track_id| self.track_ids.iter().position(|id| *id == track_id))
+            .and_then(|track_id| self.track_index(track_id))
             .and_then(|index| u64::try_from(index).ok());
         self.snapshot.position_ms = 0;
         self.snapshot.duration_ms = 0;
@@ -181,9 +201,7 @@ impl SessionState {
     fn presented_snapshot(&self) -> AndroidPlaybackSnapshot {
         let mut snapshot = self.snapshot.clone();
         let identity = self.current_track_id().and_then(|track_id| {
-            self.track_ids
-                .iter()
-                .position(|id| *id == track_id)
+            self.track_index(track_id)
                 .and_then(|index| self.uris.get(index))
                 .map(|uri| (track_id, uri))
         });
@@ -216,6 +234,14 @@ impl SessionState {
         self.play_recorded = true;
         Some(track_id)
     }
+}
+
+fn index_tracks(track_ids: &[i64]) -> HashMap<i64, usize> {
+    let mut indices = HashMap::with_capacity(track_ids.len());
+    for (index, track_id) in track_ids.iter().copied().enumerate() {
+        indices.entry(track_id).or_insert(index);
+    }
+    indices
 }
 
 struct SessionInner {
@@ -507,10 +533,7 @@ impl AndroidPlaybackSession {
         }
         let queue_to_save = {
             let mut state = self.inner.lock()?;
-            state.track_ids = track_ids.clone();
-            state.uris = uris;
-            state.queue.set_tracks(track_ids, start_index);
-            state.adopt_current();
+            state.set_tracks(track_ids, uris, start_index);
             state.queue.clone()
         };
         self.inner.persist_queue(&queue_to_save)?;
@@ -654,5 +677,31 @@ mod tests {
 
         assert_eq!(snapshot.current_track_id, None);
         assert_eq!(snapshot.current_track_uri, None);
+    }
+
+    #[test]
+    fn presenting_the_largest_queue_uses_constant_time_identity_lookup() {
+        const QUEUE_SIZE: usize = 10_000;
+        const SNAPSHOTS: usize = 500_000;
+        const MAX_ELAPSED: std::time::Duration = std::time::Duration::from_secs(2);
+
+        let mut state = SessionState::new();
+        let ids = (0..QUEUE_SIZE as i64).collect::<Vec<_>>();
+        let uris = ids
+            .iter()
+            .map(|id| format!("content://provider/{id}.flac"))
+            .collect();
+        state.set_tracks(ids, uris, QUEUE_SIZE - 1);
+
+        let started = std::time::Instant::now();
+        for _ in 0..SNAPSHOTS {
+            std::hint::black_box(state.presented_snapshot());
+        }
+
+        assert!(
+            started.elapsed() < MAX_ELAPSED,
+            "presenting {SNAPSHOTS} snapshots over {QUEUE_SIZE} tracks must stay O(1), took {:?}",
+            started.elapsed(),
+        );
     }
 }
