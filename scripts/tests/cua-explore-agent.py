@@ -7,6 +7,7 @@ import copy
 import json
 import os
 import pathlib
+import random
 import subprocess
 import sys
 import tempfile
@@ -19,10 +20,10 @@ TEST_ROOT = REPO_ROOT / "scripts" / "tests"
 sys.path.insert(0, str(EXPLORE_ROOT))
 sys.path.insert(0, str(TEST_ROOT))
 
-from agents.budget import mandatory_step_count  # noqa: E402
+from agents.budget import BudgetTooSmall, mandatory_step_count, plan_budget  # noqa: E402
 from agents.agent_core import AgentSession  # noqa: E402
 from agent_adapter import ExternalAgent, MAX_RESPONSE_BYTES  # noqa: E402
-from agents.plans import build_phases  # noqa: E402
+from agents.plans import PLANNERS, build_phases  # noqa: E402
 from cua_explore_fake_world import FakeWorld, drive  # noqa: E402
 from protocol import load_mission  # noqa: E402
 from runner import retain_agent_notes  # noqa: E402
@@ -72,6 +73,62 @@ class BudgetTests(unittest.TestCase):
                     )
                 self.assertEqual(actions[-1]["kind"], "finish")
                 self.assertLessEqual(len(actions), total)
+
+    AGENT_MISSIONS = (
+        "first-time-exploration",
+        "large-library-stress",
+        "offline-recovery",
+        "pointer-layout-reachability",
+        "section-search-isolation",
+    )
+
+    def test_mandatory_steps_match_the_plan_the_agent_actually_executes(self) -> None:
+        for name in self.AGENT_MISSIONS:
+            mission = self._mission(name)
+            for seed in (1, 7, 29):
+                with self.subTest(mission=name, seed=seed):
+                    phases = build_phases(mission, seed)
+
+                    plan = plan_budget(mission, seed)
+
+                    self.assertEqual(
+                        plan.mandatory_per_workload,
+                        tuple(len(phase.steps) for phase in phases),
+                    )
+
+    def test_each_workload_kind_reports_its_own_plan_length(self) -> None:
+        seen = set()
+        for name in self.AGENT_MISSIONS:
+            mission = self._mission(name)
+            for index, workload in enumerate(mission["workloads"]):
+                seen.add(workload["kind"])
+                with self.subTest(mission=name, kind=workload["kind"]):
+                    expected = len(
+                        PLANNERS[workload["kind"]](workload, index, random.Random(5)).steps
+                    )
+
+                    self.assertEqual(
+                        mandatory_step_count(workload, index, seed=5), expected
+                    )
+        self.assertEqual(seen, set(PLANNERS))
+
+    def test_a_budget_below_the_real_plan_is_refused_up_front(self) -> None:
+        for name in self.AGENT_MISSIONS:
+            mission = self._mission(name)
+            phases = build_phases(mission, 1)
+            minimum = sum(len(phase.steps) for phase in phases) + len(phases) + 1
+            for total in (minimum - 1, minimum // 2):
+                with self.subTest(mission=name, total=total):
+                    candidate = copy.deepcopy(mission)
+                    candidate["budgets"]["actions"] = total
+                    with self.assertRaises(BudgetTooSmall):
+                        plan_budget(candidate, 1)
+
+    def test_the_supplied_missions_still_fit_their_declared_budgets(self) -> None:
+        for name in self.AGENT_MISSIONS:
+            for seed in (1, 7, 29):
+                with self.subTest(mission=name, seed=seed):
+                    plan_budget(self._mission(name), seed)
 
     def _mission(self, name):
         mission = load_mission(EXPLORE_ROOT / "missions" / f"{name}.json")

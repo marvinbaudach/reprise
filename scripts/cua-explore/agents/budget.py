@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
 from typing import Any, Mapping
+
+from agents.plans import PLANNERS, build_phases
 
 
 class BudgetTooSmall(ValueError):
@@ -21,36 +24,29 @@ class BudgetPlan:
     probe_allowance: int = 0
 
 
-def mandatory_step_count(workload: Mapping[str, Any]) -> int:
+def mandatory_step_count(
+    workload: Mapping[str, Any], index: int = 0, *, seed: int = 0
+) -> int:
+    """Ask the planner how many steps this workload really costs.
+
+    Restating the step count here is how the pre-flight check drifted away from
+    the plan it is supposed to guard; plans.py stays the single source.
+    """
     kind = workload.get("kind")
-    if kind == "section-search":
-        return 4 * len(workload.get("route_tokens", {})) + len(
-            workload.get("unsupported", [])
-        )
-    if kind == "restart":
-        return 3 + int(workload.get("connectivity") is not None)
-    if kind == "offline-transition":
-        sources = len(workload.get("source_tokens", {}))
-        return 2 * sources + 1 + 1 + sources + 1 + 1 + sources
-    if kind == "batch-edit":
-        return 12
-    if kind == "sort-cycle":
-        return int(workload.get("repetitions", 0)) + len(workload.get("columns", []))
-    if kind == "combined-filter":
-        return 2 * len(workload.get("facets", [])) + 2
-    if kind == "scroll-sweep":
-        pages = int(workload.get("pages", 0))
-        return len(workload.get("directions", [])) * math.ceil(pages / 10)
-    if kind == "hover-sweep":
-        return len(workload.get("sections", [])) * (
-            1 + int(workload.get("min_targets_per_section", 0))
-        )
-    raise BudgetTooSmall(f"unknown workload kind: {kind}")
+    try:
+        planner = PLANNERS[str(kind)]
+    except KeyError as error:
+        raise BudgetTooSmall(f"unknown workload kind: {kind}") from error
+    return len(planner(workload, index, random.Random(seed)).steps)
 
 
-def plan_budget(mission: Mapping[str, Any]) -> BudgetPlan:
+def plan_budget(mission: Mapping[str, Any], seed: int = 0) -> BudgetPlan:
     total = int(mission.get("budgets", {}).get("actions", 0))
-    mandatory = tuple(mandatory_step_count(item) for item in mission.get("workloads", []))
+    try:
+        phases = build_phases(mission, seed)
+    except ValueError as error:
+        raise BudgetTooSmall(str(error)) from error
+    mandatory = tuple(len(phase.steps) for phase in phases)
     checkpoints = len(mandatory)
     recovery = max(4, math.ceil(total * 0.10))
     need = sum(mandatory) + checkpoints + 1 + recovery

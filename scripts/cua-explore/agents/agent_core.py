@@ -319,7 +319,7 @@ class AgentSession:
         self.mission = mission
         self.started_at = self.clock()
         try:
-            plan = plan_budget(mission)
+            plan = plan_budget(mission, self.seed)
             phases = build_phases(mission, self.seed)
         except (BudgetTooSmall, ValueError) as error:
             self.terminal_reason = f"agent-contract-mismatch: {error}"
