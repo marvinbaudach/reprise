@@ -148,28 +148,6 @@ class MobileSurfaceStateTest {
     }
 
     @Test
-    fun dockStarRestoresOnlyTheRatingItReplacedForTheSameTrackAndModeVisit() {
-        val state = MobileSurfaceViewModel()
-        state.enterDockMode()
-        state.observeDockTrack(830)
-
-        assertEquals(5, state.dockRatingTarget(830, currentRating = 2))
-        state.confirmRating(830, previousRating = 2, savedRating = 5)
-        assertEquals(2, state.dockRatingTarget(830, currentRating = 5))
-
-        state.observeDockTrack(831)
-        assertEquals(5, state.dockRatingTarget(831, currentRating = 5))
-        state.observeDockTrack(830)
-        assertEquals(5, state.dockRatingTarget(830, currentRating = 5))
-
-        state.confirmRating(830, previousRating = 3, savedRating = 5)
-        state.exitDockMode()
-        state.enterDockMode()
-        state.observeDockTrack(830)
-        assertEquals(5, state.dockRatingTarget(830, currentRating = 5))
-    }
-
-    @Test
     fun landscapeOffersDockWithoutEnteringItAndPortraitIsAnExit() {
         val state = MobileSurfaceViewModel()
 

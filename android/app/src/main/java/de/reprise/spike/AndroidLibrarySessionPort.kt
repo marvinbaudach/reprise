@@ -77,6 +77,15 @@ internal class AndroidLibrarySessionPort(
     override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> =
         library.listArtists(window.toFfi()).toLibraryArtists()
 
+    override fun listArtistTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> =
+        library.listArtistTracks(artist, window.toFfi()).toLibraryTracks()
+
+    override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
+        library.listFavourites(window.toFfi()).toLibraryTracks()
+
     override fun listAlbumTracks(
         album: String,
         albumArtist: String,
@@ -90,8 +99,8 @@ internal class AndroidLibrarySessionPort(
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? =
         library.trackArtwork(trackUri, size)
 
-    override fun setRating(trackId: Long, rating: Int) {
-        library.setTrackRating(trackId, rating)
+    override fun setFavourite(trackId: Long, favourite: Boolean) {
+        library.setTrackRating(trackId, if (favourite) 5 else 0)
     }
 }
 

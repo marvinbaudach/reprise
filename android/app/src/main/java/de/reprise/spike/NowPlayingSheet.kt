@@ -29,15 +29,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -461,75 +458,23 @@ private fun ModeButton(
     }
 }
 
-/**
- * `setRating` writes off the main thread and answers back on it, with the
- * failure to show or null when the rating was saved. The star waits for that
- * answer: it is never moved in advance and never moved back, because a star
- * that moved before the database agreed would be telling the user something
- * nobody has checked.
- *
- * The failure message is an acknowledgement rather than state — the star does
- * not move, so without it the tap looks like it worked — which is why it gets a
- * [TransientMessage] and the two errors on the browse screen do not. See that
- * type for the rule.
- *
- * The rating itself is not kept here. It is one value with three surfaces
- * showing it, and a `remember`ed copy per surface is how the dock's star and
- * these five came to disagree — see [MobileSurfaceViewModel.ratingOf]. The
- * failure is genuinely this row's own, and stays keyed on the track so an
- * answer arriving after the sheet has moved on lands in state nobody is showing
- * rather than under the next track's stars.
- */
 @Composable
 private fun RatingRow(
     track: LibraryTrack,
     surfaceState: MobileSurfaceViewModel,
     wideShort: Boolean = false,
 ) {
-    val setRating = LocalPlaybackControls.current::setRating
-    val rating = surfaceState.ratingOf(track)
-    var failure by remember(track.id) { mutableStateOf<TransientMessage?>(null) }
     val content: @Composable () -> Unit = {
         Text(
             text = "${track.playCount.coerceAtLeast(0)} plays",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row {
-            (1..5).forEach { star ->
-                IconButton(
-                    onClick = {
-                        setRating(track.id, star) { message ->
-                            if (message == null) {
-                                surfaceState.confirmRating(track.id, rating, star)
-                                failure = null
-                            } else {
-                                failure = TransientMessage(message).after(failure)
-                            }
-                        }
-                    },
-                    // `selected` would claim these five are one exclusive choice
-                    // inside a selectable group, which they are not: up to five
-                    // of them are filled at once and there is no group. The
-                    // rating is a *state*, so it is carried as one — and as the
-                    // whole control's state, so a screen reader user learns the
-                    // current rating from whichever star they land on rather
-                    // than by counting filled ones.
-                    modifier = Modifier
-                        .size(48.dp)
-                        .semantics { stateDescription = "Rated $rating of 5" },
-                ) {
-                    MaterialSymbol(
-                        name = "star",
-                        contentDescription = "Rate $star of 5 stars",
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        sizeSp = 28,
-                        filled = star <= rating,
-                    )
-                }
-            }
-        }
-        TransientMessageText(failure) { failure = null }
+        FavouriteHeartButton(
+            track = track,
+            surfaceState = surfaceState,
+            tag = "now-playing-heart",
+        )
     }
     if (wideShort) {
         Row(

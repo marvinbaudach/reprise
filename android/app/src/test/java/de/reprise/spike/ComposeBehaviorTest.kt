@@ -91,7 +91,7 @@ class ComposeBehaviorTest {
     }
 
     @Test
-    fun failedRatingShowsTheErrorWithoutMovingTheStars() {
+    fun failedFavouriteShowsTheErrorWithoutMovingTheHeart() {
         val failure = "Could not save rating: track is missing."
         val controls = RecordingPlaybackControls(ratingFailure = failure)
         compose.setContent {
@@ -106,28 +106,16 @@ class ComposeBehaviorTest {
             }
         }
 
-        // The stars carry the rating as their state, so reading it back off any
-        // of them is reading what the control shows.
-        star(2).assertRating(2)
-        star(4).assertRating(2)
-
-        star(4).performClick()
+        heart("Add to favourites").performClick()
 
         compose.onNodeWithText(failure).assertIsDisplayed()
-        star(2).assertRating(2)
-        star(4).assertRating(2)
-        assertEquals(listOf(830L to 4), controls.ratingRequests)
+        heart("Add to favourites").assertIsDisplayed()
+        assertEquals(listOf(830L to 5), controls.ratingRequests)
     }
 
-    /**
-     * The star waits for the database, not for the finger. Taking the write off
-     * the main thread was allowed to change *when* the answer arrives and
-     * nothing else: while it is still in flight the stars must read exactly what
-     * they read before the tap, and they must move the moment — and only the
-     * moment — the write says it succeeded.
-     */
+    /** The heart changes only after the database accepts the requested write. */
     @Test
-    fun theStarsWaitForTheWriteToAnswerAndOnlyThenMove() {
+    fun theHeartWaitsForTheWriteToAnswerAndOnlyThenMoves() {
         val controls = RecordingPlaybackControls(answerImmediately = false)
         compose.setContent {
             RepriseTheme(nocturneForTests, darkPalette = true) {
@@ -141,15 +129,15 @@ class ComposeBehaviorTest {
             }
         }
 
-        star(4).performClick()
+        heart("Add to favourites").performClick()
         compose.waitForIdle()
 
-        assertEquals(listOf(830L to 4), controls.ratingRequests)
-        star(4).assertRating(2)
+        assertEquals(listOf(830L to 5), controls.ratingRequests)
+        heart("Add to favourites").assertIsDisplayed()
 
         compose.runOnIdle { controls.answerPending(null) }
 
-        star(4).assertRating(4)
+        heart("Remove from favourites").assertIsDisplayed()
     }
 
     @Test
@@ -217,12 +205,11 @@ class ComposeBehaviorTest {
         }
 
         // The row is one clickable node too, so everything described below it
-        // is merged into what it announces. The rating and the play count earn
-        // their place there; the cover does not — "Album artwork" would sit
-        // where the song belongs. Pinned exactly, so a cover that starts
-        // describing itself again fails here.
+        // is merged into what it announces. The play count earns its place;
+        // the cover does not, and the separately clickable heart keeps its own
+        // node so rating a track cannot also start it.
         compose.onNodeWithText("First Song")
-            .assertContentDescriptionEquals("2 of 5 stars", "27 plays")
+            .assertContentDescriptionEquals("27 plays")
 
         compose.onNodeWithText("First Song").performClick()
         // Found by the action it offers rather than by a description of its
@@ -343,7 +330,7 @@ class ComposeBehaviorTest {
      *
      * Four moments, one decision. Nothing is shown while this track's answer is
      * outstanding: keeping the previous row would put a track on screen that is
-     * not the one playing, and the star in the sheet would rate it. An answer
+     * not the one playing, and the heart in the sheet would change it. An answer
      * for the track before this one is discarded rather than shown in its
      * place. And a session that has stopped shows nothing at all, whatever
      * arrives afterwards — the one rule the mini player may never break.
@@ -729,16 +716,8 @@ class ComposeBehaviorTest {
     private fun SemanticsNodeInteraction.progress(): Float =
         fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current
 
-    private fun star(star: Int): SemanticsNodeInteraction =
-        compose.onNodeWithContentDescription("Rate $star of 5 stars")
-
-    private fun SemanticsNodeInteraction.assertRating(rating: Int): SemanticsNodeInteraction =
-        assert(
-            SemanticsMatcher.expectValue(
-                SemanticsProperties.StateDescription,
-                "Rated $rating of 5",
-            ),
-        )
+    private fun heart(description: String): SemanticsNodeInteraction =
+        compose.onNodeWithContentDescription(description)
 }
 
 /** Matches the node offering a click labelled [label], however it is described. */
@@ -789,7 +768,8 @@ private class RecordingPlaybackControls(
         seekPositions += positionMs
     }
 
-    override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) {
+    override fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) {
+        val rating = if (favourite) 5 else 0
         ratingRequests += trackId to rating
         if (answerImmediately) {
             report(ratingFailure)

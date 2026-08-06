@@ -18,19 +18,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,7 +38,7 @@ import uniffi.reprise_android_ffi.AndroidArtworkSize
 private const val DOCK_COVER_DP = 290
 private const val DOCK_PLAY_DP = 96
 private const val DOCK_SKIP_DP = 76
-private const val DOCK_STAR_DP = 64
+private const val DOCK_HEART_DP = 64
 
 @Composable
 internal fun DockModeSurface(
@@ -53,7 +47,6 @@ internal fun DockModeSurface(
     surfaceState: MobileSurfaceViewModel,
 ) {
     val visual = rememberTrackArtworkVisual(track.uri, AndroidArtworkSize.NOW_PLAYING)
-    LaunchedEffect(track.id) { surfaceState.observeDockTrack(track.id) }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -166,7 +159,13 @@ private fun DockTransport(
         DockTransportButton("skip_next", "Next track", DOCK_SKIP_DP, "dock-next") {
             controls.next()
         }
-        DockStar(track, surfaceState)
+        FavouriteHeartButton(
+            track = track,
+            surfaceState = surfaceState,
+            sizeDp = DOCK_HEART_DP,
+            iconSizeSp = 48,
+            tag = "dock-heart",
+        )
     }
 }
 
@@ -205,50 +204,6 @@ private fun DockTransportButton(
             sizeSp = if (primary) 56 else 44,
         )
     }
-}
-
-/**
- * The dock's one star, reading the rating from the same place the sheet and the
- * library row read it — see [MobileSurfaceViewModel.ratingOf]. It keeps no copy
- * of its own; a copy here is what used to survive the ✕ and leave the sheet
- * showing the rating from before the dock was entered.
- */
-@Composable
-private fun DockStar(track: LibraryTrack, surfaceState: MobileSurfaceViewModel) {
-    val setRating = LocalPlaybackControls.current::setRating
-    val rating = surfaceState.ratingOf(track)
-    var failure by remember(track.id) { mutableStateOf<TransientMessage?>(null) }
-    IconButton(
-        onClick = {
-            val target = surfaceState.dockRatingTarget(track.id, rating)
-            if (target == rating) return@IconButton
-            setRating(track.id, target) { message ->
-                if (message == null) {
-                    surfaceState.confirmRating(track.id, rating, target)
-                    failure = null
-                } else {
-                    failure = TransientMessage(message).after(failure)
-                }
-            }
-        },
-        modifier = Modifier
-            .size(DOCK_STAR_DP.dp)
-            .testTag("dock-star")
-            .semantics { stateDescription = "Rating $rating of 5" },
-    ) {
-        MaterialSymbol(
-            name = "star",
-            contentDescription = if (rating == 5) {
-                "Restore previous rating"
-            } else {
-                "Rate five stars"
-            },
-            tint = MaterialTheme.colorScheme.tertiary,
-            sizeSp = 48,
-            filled = rating == 5,
-        )
-    }
-    TransientMessageText(failure) { failure = null }
 }
 
 @Composable

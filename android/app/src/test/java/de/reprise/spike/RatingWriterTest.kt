@@ -13,7 +13,7 @@ import org.junit.Test
 private const val WAIT_SECONDS = 5L
 
 /**
- * The four properties the star tap depends on: it leaves the caller's thread,
+ * The four properties the heart tap depends on: it leaves the caller's thread,
  * its answer comes back through the caller's own main-thread hop, taps are
  * written in the order they were made, and no tap is ever left unanswered.
  */
@@ -39,7 +39,9 @@ class RatingWriterTest {
         var answered: Result<Unit>? = null
 
         try {
-            writer.rate(trackId = 830, rating = 4) { outcome -> answered = outcome }
+            writer.setFavourite(trackId = 830, favourite = true) { outcome ->
+                answered = outcome
+            }
 
             assertTrue(hopped.await(WAIT_SECONDS, TimeUnit.SECONDS))
             assertNotEquals(Thread.currentThread(), writingThread)
@@ -68,7 +70,9 @@ class RatingWriterTest {
         )
 
         try {
-            writer.rate(trackId = 830, rating = 4) { outcome -> answers.put(outcome) }
+            writer.setFavourite(trackId = 830, favourite = true) { outcome ->
+                answers.put(outcome)
+            }
 
             val answered = answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)
             assertEquals(refusal, answered?.exceptionOrNull())
@@ -78,35 +82,37 @@ class RatingWriterTest {
     }
 
     /**
-     * Five taps on five stars are one intention with an order, not five racing
-     * writes: the rating left in the database has to be the last one tapped.
+     * Quick heart taps are one intention with an order, not racing writes: the
+     * favourite state left in the database has to be the last one tapped.
      * The same run proves teardown drains what was queued rather than dropping
      * it.
      */
     @Test
     fun tapsAreWrittenAndAnsweredInTheOrderTheyWereMade() {
-        val written = LinkedBlockingQueue<Int>()
-        val answered = LinkedBlockingQueue<Int>()
+        val written = LinkedBlockingQueue<Boolean>()
+        val answered = LinkedBlockingQueue<Boolean>()
         val writer = RatingWriter(
-            write = { _, rating -> written.put(rating) },
+            write = { _, favourite -> written.put(favourite) },
             onMainThread = { work -> work() },
         )
 
         try {
-            (1..5).forEach { star ->
-                writer.rate(trackId = 830, rating = star) { answered.put(star) }
+            listOf(true, false, true, false, true).forEach { favourite ->
+                writer.setFavourite(trackId = 830, favourite = favourite) {
+                    answered.put(favourite)
+                }
             }
 
             assertTrue("teardown must drain what was queued", writer.shutdown())
-            assertEquals(listOf(1, 2, 3, 4, 5), written.toList())
-            assertEquals(listOf(1, 2, 3, 4, 5), answered.toList())
+            assertEquals(listOf(true, false, true, false, true), written.toList())
+            assertEquals(listOf(true, false, true, false, true), answered.toList())
         } finally {
             writer.shutdown()
         }
     }
 
     /**
-     * The one tap that cannot be queued at all is still answered. A star that
+     * The one tap that cannot be queued at all is still answered. A heart that
      * neither moves nor says why is the failure mode this whole path exists to
      * avoid.
      */
@@ -120,7 +126,9 @@ class RatingWriterTest {
         assertTrue(writer.shutdown())
         var answered: Result<Unit>? = null
 
-        writer.rate(trackId = 830, rating = 4) { outcome -> answered = outcome }
+        writer.setFavourite(trackId = 830, favourite = true) { outcome ->
+            answered = outcome
+        }
 
         assertEquals(0, writes)
         assertEquals(false, answered?.isSuccess)

@@ -14,6 +14,7 @@ mod appearance;
 #[cfg(test)]
 mod artwork_tests;
 mod browse;
+mod filtered_browse;
 mod library_types;
 mod logging;
 mod play_journal;
@@ -41,7 +42,6 @@ pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
 };
 pub use playback_settings::*;
-
 uniffi::setup_scaffolding!();
 
 #[uniffi::export]

@@ -15,16 +15,6 @@ internal enum class SurfaceLayout {
     WIDE_SHORT,
 }
 
-/** JVM-replaceable edge for the activity's one read and write-through setting. */
-internal interface MainActivityLibraryRatingProvider {
-    fun mainActivityLibraryRating(): LibraryRatingSurfaceDependencies
-}
-
-internal data class LibraryRatingSurfaceDependencies(
-    val initialEnabled: Boolean,
-    val select: (Boolean) -> Boolean,
-)
-
 internal fun surfaceLayoutFor(windowSizeClass: WindowSizeClass): SurfaceLayout =
     if (
         windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded &&
@@ -39,7 +29,9 @@ internal enum class LibraryListKey {
     TITLES,
     ALBUMS,
     ARTISTS,
+    FAVOURITES,
     ALBUM_TRACKS,
+    ARTIST_TRACKS,
 }
 
 /**
@@ -61,6 +53,7 @@ internal data class LoadedLibraryWindows(
     val titles: LibraryWindow<LibraryTrack>,
     val albums: LibraryWindow<LibraryAlbum>,
     val artists: LibraryWindow<LibraryArtist>,
+    val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
     /**
      * The album the listener is standing in, if any, and the tracks of it they
      * have paged in. It is kept here rather than reopened, because reopening it
@@ -68,6 +61,7 @@ internal data class LoadedLibraryWindows(
      * that takes the lock a scan holds for its whole walk.
      */
     val openAlbum: AlbumTrackList?,
+    val openArtist: ArtistTrackList? = null,
 )
 
 /**
@@ -128,8 +122,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
     private var scrubTrackId: Long? = null
     private var scrubPosition by mutableStateOf<SeekPositionState?>(null)
     private var previousSurfaceLayout: SurfaceLayout? = null
-    private var dockTrackId: Long? = null
-    private var dockRestorableRating: Int? = null
 
     fun selectTab(tab: BrowseTab) {
         selectedTab = tab
@@ -182,18 +174,10 @@ internal class MobileSurfaceViewModel : ViewModel() {
         dockMode = true
         dockOfferVisible = false
         nowPlayingExpanded = true
-        clearDockRatingMemory()
     }
 
     fun exitDockMode() {
         dockMode = false
-        clearDockRatingMemory()
-    }
-
-    fun observeDockTrack(trackId: Long) {
-        if (dockTrackId == trackId) return
-        dockTrackId = trackId
-        dockRestorableRating = null
     }
 
     /**
@@ -201,8 +185,8 @@ internal class MobileSurfaceViewModel : ViewModel() {
      * track while this screen has been alive, and otherwise what the row was
      * loaded with.
      *
-     * Three surfaces show one track's rating — the library row, the sheet's five
-     * stars and the dock's single one — and each of them used to keep its own
+     * Three surfaces show one track's favourite state — the library row, the
+     * sheet and the dock — and each of them used to keep its own
      * `remember`ed copy that only its *own* successful write moved. Nothing
      * reloads a row after a rating write (the playing row is re-read when the
      * *track* changes, never when its rating does), so rating in the dock and
@@ -220,32 +204,11 @@ internal class MobileSurfaceViewModel : ViewModel() {
      * Takes up a rating, and only ever one the database has already agreed to.
      *
      * This is the sole writer of what [ratingOf] answers, which is what keeps
-     * the star from moving early: setting it optimistically and rolling back
-     * would be a star telling the listener something nobody had checked.
+     * the heart from moving early: setting it optimistically and rolling back
+     * would be a heart telling the listener something nobody had checked.
      */
-    fun confirmRating(trackId: Long, previousRating: Int, savedRating: Int) {
-        confirmedRatings[trackId] = savedRating.coerceIn(0, 5)
-        confirmDockRating(trackId, previousRating, savedRating)
-    }
-
-    fun dockRatingTarget(trackId: Long, currentRating: Int): Int {
-        if (!dockMode || dockTrackId != trackId || currentRating != 5) return 5
-        return dockRestorableRating ?: 5
-    }
-
-    /** Records rating memory only after the database accepted the write. */
-    private fun confirmDockRating(trackId: Long, previousRating: Int, savedRating: Int) {
-        if (!dockMode || dockTrackId != trackId) return
-        if (savedRating == 5 && previousRating != 5) {
-            dockRestorableRating = previousRating.coerceIn(0, 4)
-        } else if (previousRating == 5 && savedRating == dockRestorableRating) {
-            dockRestorableRating = null
-        }
-    }
-
-    private fun clearDockRatingMemory() {
-        dockTrackId = null
-        dockRestorableRating = null
+    fun confirmFavourite(trackId: Long, favourite: Boolean) {
+        confirmedRatings[trackId] = if (favourite) 5 else 0
     }
 
     fun scrollPosition(list: LibraryListKey): LibraryScrollPosition =

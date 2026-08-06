@@ -47,6 +47,27 @@ internal data class LibraryWindow<T>(
     }
 }
 
+internal data class LibraryWindowRemoval<T>(
+    val window: LibraryWindow<T>,
+    val lastRequestedOffset: Long?,
+)
+
+/** Removes a loaded favourite and invalidates paging state only when rows shrink. */
+internal fun LibraryWindow<LibraryTrack>.removeTrack(
+    trackId: Long,
+    lastRequestedOffset: Long?,
+): LibraryWindowRemoval<LibraryTrack> {
+    val remaining = rows.filterNot { it.id == trackId }
+    val removed = rows.size - remaining.size
+    return LibraryWindowRemoval(
+        window = copy(
+            total = (total - removed).coerceAtLeast(0),
+            rows = remaining,
+        ),
+        lastRequestedOffset = if (removed == 0) lastRequestedOffset else null,
+    )
+}
+
 internal fun firstLibraryWindow() = LibraryWindowRange(offset = 0, limit = LIBRARY_WINDOW_SIZE)
 
 internal fun LibraryWindow<*>.visibleCountLabel(singular: String, plural: String): String {
@@ -78,6 +99,7 @@ internal sealed interface LibraryScreenState {
         val titles: LibraryWindow<LibraryTrack>,
         val albums: LibraryWindow<LibraryAlbum>,
         val artists: LibraryWindow<LibraryArtist>,
+        val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
         val message: String? = null,
         val folderUri: String? = null,
     ) : LibraryScreenState
@@ -112,6 +134,14 @@ internal data class LibraryArtist(
 
 internal data class AlbumTrackList(
     val album: LibraryAlbum,
+    val tracks: LibraryWindow<LibraryTrack>,
+) {
+    fun playbackSelection(startIndex: Int): PlaybackSelection =
+        PlaybackSelection(tracks.rows, startIndex)
+}
+
+internal data class ArtistTrackList(
+    val artist: LibraryArtist,
     val tracks: LibraryWindow<LibraryTrack>,
 ) {
     fun playbackSelection(startIndex: Int): PlaybackSelection =
