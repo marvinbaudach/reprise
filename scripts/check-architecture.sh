@@ -428,7 +428,6 @@ if rg --quiet 'db::migrate\(&conn\)\.ok' \
 fi
 
 check_frontend_allowlist 'unsafe[[:space:]]*\{' 'unsafe frontend block' \
-  crates/reprise-gnome/src/ui/adjustment_hold.rs \
   crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs
 
 if rg --quiet 'reqwest::blocking' crates/reprise-gnome/src --glob '*.rs'; then
