@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
-from agents.assertions import assertion_codes
+from agents.assertions import assertion_codes, batch_selection_count
 from agents.budget import BudgetLedger, BudgetTooSmall, plan_budget
 from agents.plans import build_phases
 from agents.probes import initial_probe
@@ -381,7 +381,10 @@ class AgentSession:
                 self.last_step_name,
             )
             for code, summary, evidence in assertion_codes(
-                self.last_action, observation, self.last_step_name
+                self.last_action,
+                observation,
+                self.last_step_name,
+                selection_count=batch_selection_count(self.mission or {}),
             ):
                 self.add_note(Note(code, summary, evidence))
         self.last_observation = observation

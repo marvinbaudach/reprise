@@ -4,11 +4,23 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from workload_audit import label_shows_selection_count
+
+
+def batch_selection_count(mission: Mapping[str, Any]) -> int | None:
+    """How many rows this mission's batch workload selects, if it has one."""
+    for workload in mission.get("workloads", []):
+        if isinstance(workload, Mapping) and workload.get("kind") == "batch-edit":
+            return int(workload.get("selection_count", 0))
+    return None
+
 
 def assertion_codes(
     action: Mapping[str, Any],
     observation: Mapping[str, Any],
     step_name: str | None = None,
+    *,
+    selection_count: int | None = None,
 ) -> tuple[tuple[str, str, Mapping[str, Any]], ...]:
     kind = action.get("kind")
     labels = [
@@ -38,13 +50,19 @@ def assertion_codes(
                     {"rows": rows[:20], "count": len(rows)},
                 )
             )
-    if kind == "hotkey" and action.get("keys") == ["ctrl", "a"]:
-        if not any("512" in label and "select" in label.casefold() for label in labels):
+    if (
+        kind == "hotkey"
+        and action.get("keys") == ["ctrl", "a"]
+        and selection_count is not None
+    ):
+        if not any(
+            label_shows_selection_count(label, selection_count) for label in labels
+        ):
             results.append(
                 (
                     "agent-missing-selection-count",
                     "The selected row count is not visible outside the tag dialog.",
-                    {"selection_count": 512},
+                    {"selection_count": selection_count},
                 )
             )
     return tuple(results)

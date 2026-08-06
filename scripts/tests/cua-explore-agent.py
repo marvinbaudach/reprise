@@ -22,6 +22,7 @@ sys.path.insert(0, str(TEST_ROOT))
 
 from agents.budget import BudgetTooSmall, mandatory_step_count, plan_budget  # noqa: E402
 from agents.agent_core import AgentSession  # noqa: E402
+from agents.assertions import assertion_codes, batch_selection_count  # noqa: E402
 from agent_adapter import ExternalAgent, MAX_RESPONSE_BYTES  # noqa: E402
 from agents.plans import PLANNERS, build_phases  # noqa: E402
 from cua_explore_fake_world import FakeWorld, drive  # noqa: E402
@@ -153,6 +154,60 @@ class BudgetTests(unittest.TestCase):
             "actionable_labels": [],
             "elements": [],
         }
+
+
+class SelectionCountAssertionTests(unittest.TestCase):
+    SELECT_ALL = {"kind": "hotkey", "keys": ["ctrl", "a"]}
+
+    def _observation(self, *labels):
+        return {
+            "schema_version": 1,
+            "state_id": "state-9",
+            "elements": [
+                {"label": label, "role": "status"} for label in labels
+            ],
+        }
+
+    def _codes(self, observation, selection_count):
+        return {
+            code
+            for code, _summary, _evidence in assertion_codes(
+                self.SELECT_ALL, observation, selection_count=selection_count
+            )
+        }
+
+    def test_the_expected_count_comes_from_the_mission_not_from_the_source(self) -> None:
+        observation = self._observation("300 selected")
+
+        self.assertNotIn(
+            "agent-missing-selection-count", self._codes(observation, 300)
+        )
+        self.assertIn("agent-missing-selection-count", self._codes(observation, 512))
+
+    def test_the_stress_mission_still_expects_its_own_512(self) -> None:
+        mission = load_mission(EXPLORE_ROOT / "missions" / "large-library-stress.json")
+
+        self.assertEqual(
+            batch_selection_count({"workloads": list(mission.workloads)}), 512
+        )
+
+    def test_a_row_title_is_not_a_visible_selection_count(self) -> None:
+        observation = self._observation("Track 005128", "Track 105129")
+
+        self.assertIn("agent-missing-selection-count", self._codes(observation, 512))
+
+    def test_the_evidence_names_the_expected_count(self) -> None:
+        _code, _summary, evidence = assertion_codes(
+            self.SELECT_ALL, self._observation("Music"), selection_count=64
+        )[0]
+
+        self.assertEqual(evidence["selection_count"], 64)
+
+    def test_a_mission_without_a_batch_workload_asserts_nothing(self) -> None:
+        mission = load_mission(EXPLORE_ROOT / "missions" / "first-time-exploration.json")
+
+        self.assertIsNone(batch_selection_count({"workloads": list(mission.workloads)}))
+        self.assertEqual(self._codes(self._observation("Music"), None), set())
 
 
 class AgentAcceptanceTests(unittest.TestCase):
