@@ -262,18 +262,25 @@ fn present(view: &Rc<PodcastsView>) -> gtk4::Window {
     window
 }
 
-/// The row's three-dot menu button, which is its last child.
+/// The row's three-dot menu button inside the shared source-row skeleton.
 fn row_menu_button(view: &Rc<PodcastsView>, episode_id: i64) -> gtk4::MenuButton {
     let widgets = view.selection_widgets.borrow();
     let row = &widgets[&episode_id].row;
-    let mut child = row.last_child();
+    descendant_menu_button(row.upcast_ref()).expect("the episode row has no menu button")
+}
+
+fn descendant_menu_button(widget: &gtk4::Widget) -> Option<gtk4::MenuButton> {
+    let mut child = widget.first_child();
     while let Some(candidate) = child {
         if let Ok(menu) = candidate.clone().downcast::<gtk4::MenuButton>() {
-            return menu;
+            return Some(menu);
         }
-        child = candidate.prev_sibling();
+        if let Some(menu) = descendant_menu_button(&candidate) {
+            return Some(menu);
+        }
+        child = candidate.next_sibling();
     }
-    panic!("the episode row has no menu button");
+    None
 }
 
 /// `SRC-14`: opening a row's menu while other rows are selected must not offer
