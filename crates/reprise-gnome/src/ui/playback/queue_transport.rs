@@ -595,6 +595,12 @@ impl PlayerController {
 
         if removed > 0 {
             self.notify_queue_changed();
+        } else if !rows.is_empty() {
+            tracing::warn!(
+                requested = rows.len(),
+                ?rows,
+                "queue row removal removed no entries"
+            );
         }
         removed
     }
