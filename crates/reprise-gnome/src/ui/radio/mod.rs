@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 mod add_dialog;
+mod add_dialog_network;
 mod css;
 mod edit_dialog;
 mod radio_add_input;
