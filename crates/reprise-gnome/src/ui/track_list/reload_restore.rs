@@ -134,7 +134,11 @@ pub(in crate::ui) fn reanchor_on_track(
     old_ids: &[i64],
     row_height: f64,
 ) -> ReloadAnchor {
-    if row_height <= 0.0 {
+    // `is_finite` is not redundant next to `<= 0.0`: every comparison against
+    // NaN is false, so a NaN row height would pass a bare `<= 0.0` check and
+    // travel on into the offset arithmetic and the adjustment, where `clamp`
+    // cannot sanitise it either.
+    if !row_height.is_finite() || row_height <= 0.0 {
         return opened;
     }
     let Some((anchor_id, anchor_offset)) = opened.anchor else {

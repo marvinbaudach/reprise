@@ -32,10 +32,15 @@ pub(in crate::ui) fn post_save_reload_anchor(
 ) -> ReloadAnchor {
     opened.selected_ids = updated_ids.to_vec();
     let sort_columns = reprise_core::queries::sort_key_columns(sort_field);
-    let can_resort = writes.iter().any(|write| {
-        updated_ids.contains(&write.id) && write_patches_sort_key(write, sort_columns)
-    });
-    let Some(first_edited_id) = can_resort.then(|| updated_ids.first()).flatten().copied() else {
+    // The track to anchor on is the first one that can actually move, not
+    // merely the first one in the batch: a batch is heterogeneous (renumbering
+    // track numbers patches a different field per track), so `updated_ids[0]`
+    // may sit still while a later row is the one that jumps.
+    let Some(first_edited_id) = updated_ids.iter().copied().find(|updated_id| {
+        writes
+            .iter()
+            .any(|write| write.id == *updated_id && write_patches_sort_key(write, sort_columns))
+    }) else {
         return opened;
     };
     reload_restore::reanchor_on_track(opened, first_edited_id, old_view_ids, row_height)
@@ -93,5 +98,44 @@ mod tests {
             post_save_reload_anchor(opened, &[40], &writes, "artist", &[10, 20, 30, 40], 20.0);
 
         assert_eq!(restored.anchor, Some((20, 4.0)));
+    }
+
+    #[test]
+    fn tag_1_anchors_on_the_first_track_that_can_actually_move() {
+        // A heterogeneous batch: id 40 is edited but only its title changes,
+        // which "artist" does not sort on; id 50 gets the year. Anchoring on
+        // 40 would hold a row that stays put while 50 is the one that jumps.
+        let opened = reload_restore::capture(vec![40, 50], Some((20, 4.0)));
+        let writes = vec![
+            tag_write(
+                40,
+                TagPatch {
+                    title: Some("Renamed".into()),
+                    ..Default::default()
+                },
+            ),
+            tag_write(
+                50,
+                TagPatch {
+                    year: Some(Some(2099)),
+                    ..Default::default()
+                },
+            ),
+        ];
+
+        let restored = post_save_reload_anchor(
+            opened,
+            &[40, 50],
+            &writes,
+            "artist",
+            &[10, 20, 30, 40, 50],
+            20.0,
+        );
+
+        assert_eq!(
+            restored.anchor.map(|(track_id, _)| track_id),
+            Some(50),
+            "the anchor must follow the row whose sort key changed"
+        );
     }
 }
