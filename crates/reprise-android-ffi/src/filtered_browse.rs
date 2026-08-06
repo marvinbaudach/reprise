@@ -1,6 +1,9 @@
 //! Named filtered track windows for the Android library boundary.
 
-use reprise_core::queries::{self, BrowseFilter};
+use reprise_core::browser::SortDirection;
+use reprise_core::queries::{
+    self, BrowseFilter, LibraryTrackOrder, LibraryTrackRequest, LibraryTrackScope,
+};
 use reprise_core::view_source::ViewSource;
 
 use crate::{LibraryError, MusicLibrary, TrackRow, TrackWindow, WindowRange};
@@ -47,19 +50,28 @@ impl MusicLibrary {
         artist: String,
         window: WindowRange,
     ) -> Result<TrackWindow, LibraryError> {
-        filtered_track_window(
-            self,
-            &BrowseFilter {
-                artist: Some(artist),
-                ..BrowseFilter::default()
+        let state = self.lock()?;
+        queries::query_library_tracks(
+            &state.db,
+            &LibraryTrackRequest {
+                scope: LibraryTrackScope::Artist { artist },
+                search: String::new(),
+                order: LibraryTrackOrder::Sorted {
+                    field: "album".to_owned(),
+                    direction: SortDirection::Ascending,
+                },
+                window: window.into(),
             },
-            "album",
-            window,
         )
+        .map(TrackWindow::from)
+        .map_err(|error| LibraryError::Query {
+            detail: error.to_string(),
+        })
     }
 
-    /// Returns present tracks rated exactly five in artist, album, and
-    /// track-number order.
+    /// Returns present tracks rated exactly five in artist, year, album, and
+    /// track-number order. Albums remain grouped when their tracks share the
+    /// album's year.
     pub fn list_favourites(&self, window: WindowRange) -> Result<TrackWindow, LibraryError> {
         filtered_track_window(
             self,
@@ -83,12 +95,12 @@ mod tests {
         std::fs::create_dir(&music).unwrap();
         let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../android/app/src/main/assets/sine.flac");
-        for (name, title, artist, album, track_no) in [
-            ("zulu-2.flac", "Gamma", "Ada", "Zulu", 2),
-            ("alpha-2.flac", "Beta", "Ada", "Alpha", 2),
-            ("other.flac", "Other", "Bela", "Middle", 1),
-            ("alpha-1.flac", "Omega", "Ada", "Alpha", 1),
-            ("zulu-1.flac", "Alpha", "Ada", "Zulu", 1),
+        for (name, title, artist, album_artist, album, track_no) in [
+            ("zulu-2.flac", "Gamma", "Ada", "Ada", "Zulu", 2),
+            ("alpha-2.flac", "Beta", "Guest", "Ada", "Alpha", 2),
+            ("other.flac", "Other", "Bela", "Bela", "Middle", 1),
+            ("alpha-1.flac", "Omega", " aDa ", " ADA ", "Alpha", 1),
+            ("zulu-1.flac", "Alpha", "Ada", "Ada", "Zulu", 1),
         ] {
             let path = music.join(name);
             std::fs::copy(&fixture, &path).unwrap();
@@ -98,7 +110,7 @@ mod tests {
                     title: Some(title.to_owned()),
                     artist: Some(artist.to_owned()),
                     album: Some(album.to_owned()),
-                    album_artist: Some(artist.to_owned()),
+                    album_artist: Some(album_artist.to_owned()),
                     track_no: Some(Some(track_no)),
                     ..reprise_core::library::tag_edit::TagPatch::default()
                 },
@@ -132,21 +144,34 @@ mod tests {
     }
 
     #[test]
-    fn artist_window_is_filtered_ordered_and_counted_before_paging() {
+    fn artist_window_matches_the_effective_artist_tile_identity_and_order() {
         let (_directory, library) = filtered_library();
+        let artists = library
+            .list_artists(WindowRange {
+                offset: 0,
+                limit: 20,
+            })
+            .unwrap();
+        let ada = artists
+            .rows
+            .iter()
+            .find(|artist| artist.artist.trim().eq_ignore_ascii_case("Ada"))
+            .unwrap();
 
         let window = library
             .list_artist_tracks(
-                "Ada".to_owned(),
+                ada.artist.clone(),
                 WindowRange {
-                    offset: 1,
-                    limit: 2,
+                    offset: 0,
+                    limit: 20,
                 },
             )
             .unwrap();
 
-        assert_eq!(window.total, 4);
-        assert!(window.has_more);
+        assert_eq!(ada.track_count, 4);
+        assert_eq!(window.total, ada.track_count);
+        assert_eq!(window.rows.len() as i64, window.total);
+        assert!(!window.has_more);
         assert_eq!(
             window
                 .rows
@@ -157,7 +182,12 @@ mod tests {
                     track.title.as_str()
                 ))
                 .collect::<Vec<_>>(),
-            [("Ada", "Alpha", "Beta"), ("Ada", "Zulu", "Alpha"),]
+            [
+                (" aDa ", "Alpha", "Omega"),
+                ("Guest", "Alpha", "Beta"),
+                ("Ada", "Zulu", "Alpha"),
+                ("Ada", "Zulu", "Gamma"),
+            ]
         );
     }
 
@@ -206,7 +236,7 @@ mod tests {
                     track.title.as_str()
                 ))
                 .collect::<Vec<_>>(),
-            [("Ada", "Alpha", "Omega"), ("Ada", "Zulu", "Gamma")]
+            [(" aDa ", "Alpha", "Omega"), ("Ada", "Zulu", "Gamma")]
         );
         assert!(window.rows.iter().all(|track| track.title != "Beta"));
     }
