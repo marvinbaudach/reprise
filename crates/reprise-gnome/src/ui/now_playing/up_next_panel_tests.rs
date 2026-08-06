@@ -288,6 +288,189 @@ fn panel_remove_targets_the_exact_queue_entry() {
     assert_eq!(*removed.borrow(), Some(QueueRow::UpNext(0)));
 }
 
+/// A manual entry that survives an advance must still be removable. The
+/// advance emits the O(1) leading-removal delta (`items_changed(0, 1, 0)`),
+/// which shifts every surviving row down WITHOUT re-binding it — so a row
+/// coordinate cached at bind time addresses the wrong entry afterwards.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn panel_remove_targets_the_exact_entry_after_the_queue_advanced() {
+    use crate::ui::track_list::queue_sections::{compose_virtual, VirtualContext};
+
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+         (20, '/tmp/20.mp3', 'Track 20', 'Artist', 0),
+         (21, '/tmp/21.mp3', 'Track 21', 'Artist', 0),
+         (40, '/tmp/40.mp3', 'Track 40', 'Artist', 0);",
+        )
+        .unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    let panel = UpNextPanel::new(conn, &cover_loader);
+    let removed = Rc::new(RefCell::new(None));
+    let removed_on_click = removed.clone();
+    panel.set_on_remove(move |row| *removed_on_click.borrow_mut() = Some(row));
+
+    // Playing track 10, two manual entries queued behind it, one context row.
+    let before = compose_virtual(
+        Some(track(10)),
+        &tracks(&[20, 21]),
+        Some(VirtualContext::identified(1, (5, 9), 1)),
+        Some("Music"),
+    );
+    panel.set_queue_model(&before, &context_window(&[40]));
+    let window = gtk4::Window::builder().child(panel.widget()).build();
+    window.present();
+    while glib::MainContext::default().iteration(false) {}
+
+    // The song ends: manual entry 20 becomes Now Playing, 21 stays queued.
+    let after = compose_virtual(
+        Some(track(20)),
+        &tracks(&[21]),
+        Some(VirtualContext::identified(1, (5, 9), 1)),
+        Some("Music"),
+    );
+    panel.set_queue_model(&after, &context_window(&[40]));
+    while glib::MainContext::default().iteration(false) {}
+
+    let mut titles = Vec::new();
+    collect_label_texts(panel.widget().upcast_ref(), &mut titles);
+    let mut buttons = Vec::new();
+    collect_buttons_with_class(
+        panel.widget().upcast_ref(),
+        "reprise-up-next-remove",
+        &mut buttons,
+    );
+    buttons[0].emit_clicked();
+
+    assert_eq!(
+        *removed.borrow(),
+        Some(QueueRow::PlayNext(0)),
+        "the only manual entry left is Play Next slot 0; rendered rows: {titles:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn panel_jump_targets_the_exact_entry_after_the_queue_advanced() {
+    use crate::ui::track_list::queue_sections::{compose_virtual, VirtualContext};
+
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+         (20, '/tmp/20.mp3', 'Track 20', 'Artist', 0),
+         (21, '/tmp/21.mp3', 'Track 21', 'Artist', 0),
+         (40, '/tmp/40.mp3', 'Track 40', 'Artist', 0);",
+        )
+        .unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    let panel = UpNextPanel::new(conn, &cover_loader);
+    let jumped = Rc::new(RefCell::new(None));
+    let jumped_on_click = jumped.clone();
+    panel.set_on_jump(move |row| *jumped_on_click.borrow_mut() = Some(row));
+
+    let before = compose_virtual(
+        Some(track(10)),
+        &tracks(&[20, 21]),
+        Some(VirtualContext::identified(1, (5, 9), 1)),
+        Some("Music"),
+    );
+    panel.set_queue_model(&before, &context_window(&[40]));
+    let window = gtk4::Window::builder().child(panel.widget()).build();
+    window.present();
+    while glib::MainContext::default().iteration(false) {}
+
+    let after = compose_virtual(
+        Some(track(20)),
+        &tracks(&[21]),
+        Some(VirtualContext::identified(1, (5, 9), 1)),
+        Some("Music"),
+    );
+    panel.set_queue_model(&after, &context_window(&[40]));
+    while glib::MainContext::default().iteration(false) {}
+
+    let mut titles = Vec::new();
+    collect_label_texts(panel.widget().upcast_ref(), &mut titles);
+    let mut buttons = Vec::new();
+    collect_buttons_with_class(
+        panel.widget().upcast_ref(),
+        "reprise-up-next-row",
+        &mut buttons,
+    );
+    buttons[0].emit_clicked();
+
+    assert_eq!(
+        *jumped.borrow(),
+        Some(QueueRow::PlayNext(0)),
+        "the rendered Track 21 row is Play Next slot 0; rendered rows: {titles:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn panel_context_tail_row_reports_its_shifted_coordinate_after_advance() {
+    use crate::ui::track_list::queue_sections::{compose_virtual, VirtualContext};
+
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+         (20, '/tmp/20.mp3', 'Track 20', 'Artist', 0),
+         (40, '/tmp/40.mp3', 'Track 40', 'Artist', 0),
+         (41, '/tmp/41.mp3', 'Track 41', 'Artist', 0);",
+        )
+        .unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    let panel = UpNextPanel::new(conn, &cover_loader);
+    let jumped = Rc::new(RefCell::new(None));
+    let jumped_on_click = jumped.clone();
+    panel.set_on_jump(move |row| *jumped_on_click.borrow_mut() = Some(row));
+
+    let before = compose_virtual(
+        Some(track(10)),
+        &tracks(&[20]),
+        Some(VirtualContext::identified(2, (5, 9), 0)),
+        Some("Music"),
+    );
+    panel.set_queue_model(&before, &context_window(&[40, 41]));
+    let window = gtk4::Window::builder().child(panel.widget()).build();
+    window.present();
+    while glib::MainContext::default().iteration(false) {}
+
+    let after = compose_virtual(
+        Some(track(10)),
+        &tracks(&[20]),
+        Some(VirtualContext::identified(1, (5, 9), 1)),
+        Some("Music"),
+    );
+    panel.set_queue_model(&after, &context_window(&[41]));
+    while glib::MainContext::default().iteration(false) {}
+
+    let mut titles = Vec::new();
+    collect_label_texts(panel.widget().upcast_ref(), &mut titles);
+    let mut buttons = Vec::new();
+    collect_buttons_with_class(
+        panel.widget().upcast_ref(),
+        "reprise-up-next-row",
+        &mut buttons,
+    );
+    buttons[1].emit_clicked();
+
+    assert_eq!(
+        *jumped.borrow(),
+        Some(QueueRow::UpNext(0)),
+        "the rendered Track 41 row shifted from context slot 1 to 0; rendered rows: {titles:?}"
+    );
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mixed_queue_panel_renders_episode_title_and_show() {
