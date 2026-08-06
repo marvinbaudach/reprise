@@ -31,6 +31,7 @@ internal class SleepTimerController(
     private var state = SleepTimerUiState()
     private var deadlineMs: Long? = null
     private var endOfTrackId: Long? = null
+    private var endOfTrackAdvanceCount: ULong? = null
 
     fun state(): SleepTimerUiState = state
 
@@ -44,6 +45,7 @@ internal class SleepTimerController(
             SleepTimerSelection.EndOfTrack -> null
         }
         endOfTrackId = playback?.currentTrackId
+        endOfTrackAdvanceCount = playback?.automaticAdvanceCount
         state = SleepTimerUiState(
             active = true,
             selection = selection,
@@ -77,14 +79,22 @@ internal class SleepTimerController(
         val armedId = endOfTrackId
         if (armedId == null) {
             endOfTrackId = snapshot.currentTrackId
+            endOfTrackAdvanceCount = snapshot.automaticAdvanceCount
             return
         }
-        val changedTrack = snapshot.currentTrackId != armedId
-        val ended = snapshot.state == AndroidPlaybackState.STOPPED || snapshot.currentTrackId == null
+        if (snapshot.automaticAdvanceCount != endOfTrackAdvanceCount) {
+            finishAtAutomaticAdvance()
+            return
+        }
+        if (snapshot.currentTrackId != armedId) {
+            endOfTrackId = snapshot.currentTrackId
+            endOfTrackAdvanceCount = snapshot.automaticAdvanceCount
+            return
+        }
         val fadeWindowReached = snapshot.state == AndroidPlaybackState.PLAYING &&
             snapshot.durationMs > 0 &&
             snapshot.durationMs - snapshot.positionMs <= FADE_DURATION_MS
-        if (changedTrack || ended || fadeWindowReached) beginFade()
+        if (fadeWindowReached) beginFade()
     }
 
     private fun tickFixedTimer() {
@@ -119,6 +129,12 @@ internal class SleepTimerController(
         }
     }
 
+    private fun finishAtAutomaticAdvance() {
+        cancelScheduled(restoreVolume = false)
+        pause()
+        finish()
+    }
+
     private fun schedule(delayMs: Long, action: () -> Unit) {
         lateinit var runnable: Runnable
         runnable = Runnable {
@@ -135,11 +151,13 @@ internal class SleepTimerController(
         if (restoreVolume && state.fading) applyVolume(1f)
         deadlineMs = null
         endOfTrackId = null
+        endOfTrackAdvanceCount = null
     }
 
     private fun finish() {
         deadlineMs = null
         endOfTrackId = null
+        endOfTrackAdvanceCount = null
         state = SleepTimerUiState()
         publish(state)
     }

@@ -41,6 +41,8 @@ pub struct AndroidPlaybackSnapshot {
     pub current_track_uri: Option<String>,
     pub position_ms: i64,
     pub duration_ms: i64,
+    /// Rises only when the backend reports that the current track ended.
+    pub automatic_advance_count: u64,
     pub shuffled: bool,
     pub repeat: AndroidRepeatMode,
     pub error: Option<String>,
@@ -76,6 +78,7 @@ impl SessionState {
                 current_track_uri: None,
                 position_ms: 0,
                 duration_ms: 0,
+                automatic_advance_count: 0,
                 shuffled: false,
                 repeat: AndroidRepeatMode::Off,
                 error: None,
@@ -111,6 +114,7 @@ impl SessionState {
                 current_track_uri: None,
                 position_ms: 0,
                 duration_ms: 0,
+                automatic_advance_count: 0,
                 shuffled: restored.queue.is_shuffled(),
                 repeat,
                 error: None,
@@ -333,6 +337,8 @@ impl SessionInner {
                 }
                 PlayerEvent::TrackFinished => {
                     let play = state.play_to_record(true);
+                    state.snapshot.automatic_advance_count =
+                        state.snapshot.automatic_advance_count.saturating_add(1);
                     if state.queue.advance_auto().is_some() {
                         state.adopt_current();
                         (FollowUp::Start, play, Some(state.queue.clone()))
@@ -343,6 +349,8 @@ impl SessionInner {
                 }
                 PlayerEvent::AdvancedToNext => {
                     let play = state.play_to_record(true);
+                    state.snapshot.automatic_advance_count =
+                        state.snapshot.automatic_advance_count.saturating_add(1);
                     if state.queue.advance_auto().is_some() {
                         state.adopt_current();
                         state.current_loaded = true;

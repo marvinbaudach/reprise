@@ -82,6 +82,51 @@ class SleepTimerServiceTest {
         assertFalse(service.sleepTimerState().active)
     }
 
+    @Test
+    fun manualSkipRearmsEndOfTrackWithoutFadingOrPausingTheNewTrack() {
+        val service = buildService()
+        service.coreListener.onPlaybackChanged(
+            playingSnapshot(trackId = 1, positionMs = 40_000),
+        )
+        service.startSleepTimer(SleepTimerSelection.EndOfTrack)
+
+        service.coreListener.onPlaybackChanged(
+            playingSnapshot(trackId = 2, positionMs = 0),
+        )
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(4))
+
+        assertTrue("a manual skip must leave the new track playing", service.pausePositions.isEmpty())
+        assertTrue("the timer must re-arm on the new track", service.sleepTimerState().active)
+        assertTrue("a manual skip must not fade the new track", service.volumes.isEmpty())
+
+        service.coreListener.onPlaybackChanged(
+            playingSnapshot(trackId = 2, positionMs = 176_000),
+        )
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(4))
+        assertEquals(listOf(176_000L), service.pausePositions)
+    }
+
+    @Test
+    fun automaticAdvancePausesImmediatelyWithoutFadingTheSuccessor() {
+        val service = buildService()
+        service.coreListener.onPlaybackChanged(
+            playingSnapshot(trackId = 1, positionMs = 40_000),
+        )
+        service.startSleepTimer(SleepTimerSelection.EndOfTrack)
+
+        service.coreListener.onPlaybackChanged(
+            playingSnapshot(trackId = 2, positionMs = 0, automaticAdvanceCount = 1u),
+        )
+
+        assertEquals(
+            "the successor must be paused as soon as the automatic advance is observed",
+            listOf(0L),
+            service.pausePositions,
+        )
+        assertTrue("the successor must never be faded", service.volumes.isEmpty())
+        assertFalse(service.sleepTimerState().active)
+    }
+
     private fun buildService(): SleepTestPlaybackService {
         val controller = Robolectric.buildService(SleepTestPlaybackService::class.java).create()
         controllers += controller
@@ -105,15 +150,18 @@ private class SleepTestPlaybackService : ReprisePlaybackService() {
 }
 
 private fun playingSnapshot(
+    trackId: Long = 1,
     positionMs: Long,
     durationMs: Long = 180_000,
+    automaticAdvanceCount: ULong = 0u,
 ) = AndroidPlaybackSnapshot(
     state = AndroidPlaybackState.PLAYING,
     currentIndex = 0UL,
-    currentTrackId = 1,
-    currentTrackUri = "content://provider/document/song.flac",
+    currentTrackId = trackId,
+    currentTrackUri = "content://provider/document/$trackId.flac",
     positionMs = positionMs,
     durationMs = durationMs,
+    automaticAdvanceCount = automaticAdvanceCount,
     shuffled = false,
     repeat = AndroidRepeatMode.OFF,
     error = null,

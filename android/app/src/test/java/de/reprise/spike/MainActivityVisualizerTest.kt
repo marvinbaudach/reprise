@@ -211,6 +211,7 @@ internal fun m9bSnapshot(trackId: Long) = AndroidPlaybackSnapshot(
     currentTrackUri = "content://provider/document/$trackId.flac",
     positionMs = 12_000,
     durationMs = 120_000,
+    automaticAdvanceCount = 0u,
     shuffled = false,
     repeat = AndroidRepeatMode.OFF,
     error = null,

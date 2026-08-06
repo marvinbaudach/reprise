@@ -685,6 +685,7 @@ private fun playingSnapshot(positionMs: Long) = AndroidPlaybackSnapshot(
     currentTrackUri = "content://provider/document/1.flac",
     positionMs = positionMs,
     durationMs = 120_000,
+    automaticAdvanceCount = 0u,
     shuffled = false,
     repeat = AndroidRepeatMode.OFF,
     error = null,
