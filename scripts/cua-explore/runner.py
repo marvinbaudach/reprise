@@ -22,7 +22,8 @@ from actions import (
     action_to_dict,
 )
 from agent_adapter import ExternalAgent
-from driver import CliTransport, CuaExecutor, DriverError
+from driver import CliTransport, CuaExecutor, DriverError, hover_preflight
+from hover_geometry import WindowGeometry, resolve_window_origin
 from explorer import DeterministicExplorer
 from fixtures import FixtureError, audit_batch_edit
 from protocol import ActionGateway, ContractError, Mission, load_mission
@@ -51,8 +52,64 @@ def app_launch_argv(app_binary: pathlib.Path) -> list[str]:
     return [*APP_NAMESPACE_ARGV, str(app_binary)]
 
 
+def write_gtk_animation_settings(profile_root: pathlib.Path, mode: str) -> pathlib.Path | None:
+    """Set GTK animations only inside the disposable profile."""
+    if mode == "on":
+        return None
+    if mode != "off":
+        raise RunError("--gtk-animations must be on or off")
+    path = profile_root / "config" / "gtk-4.0" / "settings.ini"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[Settings]\ngtk-enable-animations=0\n", encoding="utf-8")
+    return path
+
+
+def parse_window_origin(value: str | None) -> tuple[int, int] | None:
+    if value is None:
+        return None
+    try:
+        x_text, y_text = value.split(",", maxsplit=1)
+        return int(x_text), int(y_text)
+    except (TypeError, ValueError) as error:
+        raise RunError("--window-origin must be X,Y") from error
+
+
+def prepare_hover(
+    transport: CliTransport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    evidence_dir: pathlib.Path,
+    window: Mapping[str, Any],
+    origin_override: tuple[int, int] | None = None,
+) -> WindowGeometry:
+    if origin_override is None:
+        geometry = resolve_window_origin(transport, pid=pid, window_id=window_id)
+    else:
+        width = window.get("width")
+        height = window.get("height")
+        if not isinstance(width, int) or not isinstance(height, int):
+            raise RunError("hover window dimensions are unavailable")
+        geometry = WindowGeometry(*origin_override, width, height)
+    evidence = hover_preflight(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=session,
+        origin=geometry,
+    )
+    path = evidence_dir / "hover-preflight.json"
+    path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return geometry
+
+
 class RunError(RuntimeError):
     """The isolated runner could not establish trustworthy evidence."""
+
+
+class HoverSmokeComplete(RuntimeError):
+    """Internal control flow after a successful preflight-only run."""
 
 
 def _private_environment_required() -> None:
@@ -308,6 +365,7 @@ def run(args: argparse.Namespace) -> int:
     if fixture_manifest.get("profile") != mission.profile:
         raise RunError("fixture profile does not match mission")
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
+    write_gtk_animation_settings(profile_root, args.gtk_animations)
     connectivity_file = profile_root / "connectivity.state"
     connectivity_file.write_text("online\n", encoding="utf-8")
     transport = CliTransport(
@@ -365,6 +423,21 @@ def run(args: argparse.Namespace) -> int:
             evidence_dir=args.evidence_dir / "states",
         )
         observation = executor.observe()
+        hover_geometry = None
+        if "hover" in mission.capabilities:
+            hover_geometry = prepare_hover(
+                transport,
+                pid=pid,
+                window_id=window_id,
+                session=args.session,
+                evidence_dir=args.evidence_dir,
+                window=observation["window"],
+                origin_override=parse_window_origin(args.window_origin),
+            )
+            executor.hover_geometry = hover_geometry
+        if args.hover_smoke:
+            finished = True
+            raise HoverSmokeComplete
         with agent_context as agent:
             for _ in range(mission.budgets.actions):
                 if lifecycle.process is None or lifecycle.process.poll() is not None:
@@ -440,6 +513,7 @@ def run(args: argparse.Namespace) -> int:
                         state_prefix=f"launch-{generation}-state",
                         fixture_tokens=mission.fixture_tokens,
                         evidence_dir=args.evidence_dir / "states",
+                        hover_geometry=hover_geometry,
                     )
                     observation = executor.observe()
                     report.add_step(
@@ -488,11 +562,15 @@ def run(args: argparse.Namespace) -> int:
                 traces.append(
                     trace
                 )
+    except HoverSmokeComplete:
+        pass
     finally:
         lifecycle.stop()
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()
+    if args.hover_smoke:
+        return 0
     ensure_run_complete(finished, summary)
     return 0
 
@@ -509,6 +587,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--agent-command-json")
     parser.add_argument("--agent-timeout", type=float, default=30.0)
+    parser.add_argument("--gtk-animations", choices=("on", "off"), default="on")
+    parser.add_argument("--hover-smoke", action="store_true")
+    parser.add_argument("--window-origin")
     return parser.parse_args(argv)
 
 

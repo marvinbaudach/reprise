@@ -8,6 +8,7 @@ cd "$repo_root"
 python3 scripts/tests/cua-explore.py
 python3 scripts/tests/cua-explore-review.py
 python3 scripts/tests/cua-explore-audit-adversarial.py
+python3 scripts/tests/cua-explore-hover.py
 python3 scripts/cua-explore/protocol.py validate-mission \
   scripts/cua-explore/missions/first-time-exploration.json >/dev/null
 
@@ -17,7 +18,7 @@ if [[ ! -x $runner ]]; then
   exit 1
 fi
 help=$($runner --help)
-for phrase in "opt-in" "not ordinary CI" "fresh output" "100,000" "512"; do
+for phrase in "opt-in" "not ordinary CI" "fresh output" "100,000" "512" "--hover-smoke" "--gtk-animations"; do
   if [[ $help != *"$phrase"* ]]; then
     echo "exploratory runner help must mention: $phrase" >&2
     exit 1

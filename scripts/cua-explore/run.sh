@@ -13,6 +13,7 @@ usage() {
 usage:
   scripts/cua-explore/run.sh --list-missions
   scripts/cua-explore/run.sh --validate-only MISSION.json
+  scripts/cua-explore/run.sh --hover-smoke MISSION.json FRESH_OUTPUT_DIR [options]
   scripts/cua-explore/run.sh MISSION.json FRESH_OUTPUT_DIR [options]
 
 Runs opt-in exploratory UX agents in a disposable X11/D-Bus/XDG profile. It
@@ -28,6 +29,8 @@ Options:
   --profile debug|release     app build profile (default debug)
   --agent-command-json JSON   external JSONL agent argv; no shell is used
   --agent-timeout SECONDS     response timeout for an external agent
+  --gtk-animations on|off     private GTK animation setting (default on)
+  --window-origin X,Y         override desktop window origin for hover smoke
 EOF
 }
 
@@ -39,6 +42,11 @@ required_command() {
 }
 
 mission_dir="$repo_root/scripts/cua-explore/missions"
+hover_smoke=false
+if [[ ${1:-} == --hover-smoke ]]; then
+  hover_smoke=true
+  shift
+fi
 case "${1:-}" in
   --help|-h)
     usage
@@ -96,17 +104,25 @@ seed=1
 build_profile=debug
 agent_command_json=""
 agent_timeout=30
+gtk_animations=on
+window_origin=""
 while (( $# )); do
   case "$1" in
     --seed) seed=$2; shift 2 ;;
     --profile) build_profile=$2; shift 2 ;;
     --agent-command-json) agent_command_json=$2; shift 2 ;;
     --agent-timeout) agent_timeout=$2; shift 2 ;;
+    --gtk-animations) gtk_animations=$2; shift 2 ;;
+    --window-origin) window_origin=$2; shift 2 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 if [[ $build_profile != debug && $build_profile != release ]]; then
   echo "--profile must be debug or release" >&2
+  exit 2
+fi
+if [[ $gtk_animations != on && $gtk_animations != off ]]; then
+  echo "--gtk-animations must be on or off" >&2
   exit 2
 fi
 if [[ -z $agent_command_json ]] && python3 - "$mission" <<'PY'
@@ -184,6 +200,7 @@ session_id="reprise-explore-$$"
   printf 'generated_data_only=true\n'
   printf 'ordinary_ci=false\n'
   printf 'app_network_namespace=true\n'
+  printf 'gtk_animations=%s\n' "$gtk_animations"
 } >"$output_dir/run-manifest.txt"
 
 cua_common_start_display "$output_dir" "$scratch_root" "1600x900x24"
@@ -197,7 +214,14 @@ private_args=(
   --seed "$seed"
   --commit "$commit"
   --agent-timeout "$agent_timeout"
+  --gtk-animations "$gtk_animations"
 )
+if [[ $hover_smoke == true ]]; then
+  private_args+=(--hover-smoke)
+fi
+if [[ -n $window_origin ]]; then
+  private_args+=(--window-origin "$window_origin")
+fi
 if [[ -n $agent_command_json ]]; then
   private_args+=(--agent-command-json "$agent_command_json")
 fi

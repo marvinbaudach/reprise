@@ -109,6 +109,17 @@ Each retained run contains:
 - `states/`: normalized CUA snapshots and screenshots around interactions;
 - `app-*.log`: one application log per launch or restart.
 
+## Hover acceptance
+
+The `hover` action moves the real desktop pointer after a driver preflight, captures a
+baseline and hovered PNG, compares only the target rectangle, and returns the pointer to a
+safe park point. Buttons and links without a visible change are errors; rows and cells are
+warnings, while unsupported images or geometry produce informational evidence. Run the
+single-dispatch safety check with `run.sh --hover-smoke MISSION OUTPUT`. Authoritative
+sweeps use `--gtk-animations off`; compare an optional `on` run with `hover_compare.py` to
+find affordances that disappear when GTK animations are disabled. Icon buttons without an
+accessible name remain outside the sweep and are reported by the accessibility oracle.
+
 Start review with `report.md`, then inspect the referenced before/action/after
 states. A report with no findings means only that no anomaly was observed within
 that persona, seed, action budget, and headless environment. It is not proof that

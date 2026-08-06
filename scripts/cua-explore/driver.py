@@ -17,6 +17,7 @@ from actions import (
     ActivateAction,
     ConnectivityAction,
     FinishAction,
+    HoverAction,
     HotkeyAction,
     PressAction,
     ResizeAction,
@@ -38,6 +39,7 @@ class Transport(Protocol):
     def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]: ...
     def resize_window(self, window_id: int, width: int, height: int) -> Mapping[str, Any]: ...
     def set_connectivity(self, state: str) -> Mapping[str, Any]: ...
+    def wmctrl_geometry(self, window_id: int) -> Any: ...
 
 
 class CliTransport:
@@ -99,6 +101,30 @@ class CliTransport:
         self.connectivity_file.write_text(state + "\n", encoding="utf-8")
         return {"effect": "confirmed", "verified": True}
 
+    def wmctrl_geometry(self, window_id: int) -> Any:
+        from hover_geometry import WindowGeometry
+
+        completed = subprocess.run(
+            ["wmctrl", "-lG"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if completed.returncode != 0:
+            raise DriverError(f"wmctrl geometry failed: {completed.stderr.strip()[:300]}")
+        expected = f"0x{window_id:08x}".casefold()
+        for line in completed.stdout.splitlines():
+            fields = line.split(maxsplit=7)
+            if len(fields) < 6 or fields[0].casefold() != expected:
+                continue
+            try:
+                x, y, width, height = (int(value) for value in fields[2:6])
+            except ValueError as error:
+                raise DriverError("wmctrl returned invalid window geometry") from error
+            return WindowGeometry(x, y, width, height)
+        raise DriverError("wmctrl did not find the target window")
+
 
 @dataclass(frozen=True)
 class StepResult:
@@ -125,6 +151,7 @@ class CuaExecutor:
         evidence_dir: pathlib.Path | None = None,
         settle_delays: Sequence[float] = (0.10, 0.25, 0.50),
         oracle_engine: OracleEngine | None = None,
+        hover_geometry: Any | None = None,
     ) -> None:
         self.transport = transport
         self.pid = pid
@@ -135,6 +162,8 @@ class CuaExecutor:
         self.evidence_dir = evidence_dir
         self.settle_delays = tuple(settle_delays)
         self.oracle_engine = oracle_engine or OracleEngine()
+        self.hover_geometry = hover_geometry
+        self._hover_cursor_disabled = False
         self._state_counter = 0
         self._step_counter = 0
         if evidence_dir is not None:
@@ -145,6 +174,8 @@ class CuaExecutor:
         return self._observation(state)
 
     def execute(self, action: AcceptedAction) -> StepResult:
+        if isinstance(action, HoverAction):
+            return self.execute_hover(action)
         if isinstance(action, ActivateAction):
             evidence = ActionEvidence.activate(
                 action.target_label,
@@ -184,6 +215,96 @@ class CuaExecutor:
         else:
             raise DriverError(f"runner-owned action cannot be executed: {action.kind}")
         return self._execute(action, evidence)
+
+    def disable_agent_cursor(self) -> None:
+        if self._hover_cursor_disabled:
+            return
+        self.transport.call(
+            "set_agent_cursor_enabled",
+            {"session": self.session, "enabled": False},
+        )
+        self._hover_cursor_disabled = True
+
+    def execute_hover(self, action: HoverAction) -> StepResult:
+        from hover_geometry import desktop_point, park_point
+        from hover_oracle import HOVER_SETTLE_MS, analyze_hover
+
+        if self.hover_geometry is None:
+            raise DriverError("hover window geometry has not been resolved")
+        self._step_counter += 1
+        stem = f"step-{self._step_counter:04}-hover"
+        park = park_point(self.hover_geometry)
+        self.disable_agent_cursor()
+        self._move_pointer(park)
+        time.sleep(0.05)
+        before_raw, before = self._snapshot(f"{stem}-before")
+        target = self._target(before_raw, action.target_label)
+        frame = target.get("frame")
+        if not isinstance(frame, dict):
+            raise DriverError("hover target has no frame")
+        pointer = desktop_point(frame, self.hover_geometry)
+        started = time.monotonic()
+        try:
+            response = self._move_pointer(pointer)
+            time.sleep(HOVER_SETTLE_MS / 1000)
+            _after_raw, after = self._snapshot(f"{stem}-after")
+        finally:
+            self._move_pointer(park)
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        evidence = ActionEvidence(
+            kind="hover",
+            target_label=action.target_label,
+            expect_effect="none",
+            elapsed_ms=elapsed_ms,
+            observation_ms=elapsed_ms,
+        )
+        findings = list(
+            self.oracle_engine.analyze(evidence, before, after, settled=(after,))
+        )
+        if self.evidence_dir is None:
+            hover_findings = analyze_hover(
+                pathlib.Path("missing-hover-before.png"),
+                pathlib.Path("missing-hover-after.png"),
+                target,
+                pointer=(
+                    float(frame.get("x", 0)) + float(frame.get("w", frame.get("width", 0))) / 2,
+                    float(frame.get("y", 0)) + float(frame.get("h", frame.get("height", 0))) / 2,
+                ),
+            )
+        else:
+            hover_findings = analyze_hover(
+                self.evidence_dir / f"{stem}-before.png",
+                self.evidence_dir / f"{stem}-after.png",
+                target,
+                pointer=(
+                    float(frame.get("x", 0)) + float(frame.get("w", frame.get("width", 0))) / 2,
+                    float(frame.get("y", 0)) + float(frame.get("h", frame.get("height", 0))) / 2,
+                ),
+            )
+        findings.extend(hover_findings)
+        result = StepResult(
+            before=before,
+            after=after,
+            settled=(after,),
+            action_response=response,
+            evidence=evidence,
+            findings=tuple(findings),
+        )
+        self._retain_step(result)
+        return result
+
+    def _move_pointer(self, point: tuple[float, float]) -> Mapping[str, Any]:
+        return self.transport.call(
+            "move_cursor",
+            {
+                "pid": self.pid,
+                "window_id": self.window_id,
+                "session": self.session,
+                "scope": "desktop",
+                "x": point[0],
+                "y": point[1],
+            },
+        )
 
     def execute_evidence(self, action: ActionEvidence) -> StepResult:
         return self._execute(None, action)
@@ -448,3 +569,35 @@ class CuaExecutor:
         }
         path = self.evidence_dir / f"step-{self._step_counter:04}-result.json"
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def hover_preflight(
+    transport: Transport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    origin: Any,
+) -> dict[str, Any]:
+    """Verify desktop-pointer dispatch before spending a mission action budget."""
+    try:
+        transport.call(
+            "move_cursor",
+            {
+                "pid": pid,
+                "window_id": window_id,
+                "session": session,
+                "scope": "desktop",
+                "x": origin.x + origin.width / 2,
+                "y": origin.y + origin.height / 2,
+            },
+        )
+        cursor = transport.call(
+            "get_cursor_position", {"pid": pid, "window_id": window_id, "session": session}
+        )
+        window = transport.call(
+            "get_window_state", {"pid": pid, "window_id": window_id, "session": session}
+        )
+    except (DriverError, OSError, subprocess.SubprocessError) as error:
+        raise DriverError("hover dispatch is unsafe on this driver build") from error
+    return {"cursor_position": cursor, "window_state": window}

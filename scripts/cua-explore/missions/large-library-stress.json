@@ -6,8 +6,8 @@
   "mode": "adversarial",
   "agent": "required",
   "profile": "stress-100k",
-  "budgets": {"actions": 120, "seconds": 3600, "restarts": 2},
-  "capabilities": ["activate", "type", "press", "hotkey", "scroll", "resize", "restart", "wait", "complete-workload", "finish"],
+  "budgets": {"actions": 130, "seconds": 3600, "restarts": 2},
+  "capabilities": ["activate", "hover", "type", "press", "hotkey", "scroll", "resize", "restart", "wait", "complete-workload", "finish"],
   "fixture_tokens": {
     "SEARCH_NEEDLE": "Needle 099700",
     "WRITABLE_BATCH": "Writable Batch",
@@ -15,7 +15,7 @@
     "BATCH_YEAR": "2042",
     "NO_MATCH": "NoSuchFixtureResult"
   },
-  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "scroll-direction", "main-loop-stall", "accessibility"],
+  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "scroll-direction", "main-loop-stall", "accessibility", "hover-affordance"],
   "workloads": [
     {"kind": "batch-edit", "selection_count": 512, "field_tokens": {"genre": "BATCH_GENRE", "year": "BATCH_YEAR"}, "verify": ["progress", "atomic-result", "selection", "scroll-anchor"]},
     {"kind": "sort-cycle", "columns": ["title", "artist", "album", "year", "rating"], "repetitions": 24},

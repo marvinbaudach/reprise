@@ -51,7 +51,7 @@ class MissionContractTests(unittest.TestCase):
 
         self.assertEqual(mission.profile, "stress-100k")
         self.assertEqual(mission.persona, "experienced library power user")
-        self.assertEqual(mission.budgets.actions, 120)
+        self.assertEqual(mission.budgets.actions, 130)
         self.assertIn("feedback", mission.oracles)
         self.assertIn("layout-shift", mission.oracles)
         self.assertIn("pointer-reachability", mission.oracles)

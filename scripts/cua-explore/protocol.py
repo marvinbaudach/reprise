@@ -19,6 +19,7 @@ from actions import (
     ConnectivityAction,
     FinishAction,
     HotkeyAction,
+    HoverAction,
     PressAction,
     ResizeAction,
     RestartAction,
@@ -42,6 +43,7 @@ ALLOWED_PROFILES = {
 ALLOWED_MODES = {"discovery", "adversarial", "first-time", "replay"}
 ALLOWED_ACTIONS = {
     "activate",
+    "hover",
     "type",
     "press",
     "hotkey",
@@ -63,6 +65,7 @@ ALLOWED_ORACLES = {
     "main-loop-stall",
     "accessibility",
     "offline-continuity",
+    "hover-affordance",
 }
 ALLOWED_KEYS = {
     "tab",
@@ -446,6 +449,19 @@ class ActionGateway:
             target_label=self._target(value, observation),
             dispatch=dispatch,
             expect_effect=expect_effect,
+        )
+
+    def _parse_hover(
+        self, value: Mapping[str, Any], observation: Mapping[str, Any]
+    ) -> AcceptedAction:
+        _reject_unknown(
+            value,
+            {"schema_version", "state_id", "kind", "target"},
+            "action",
+        )
+        return HoverAction(
+            state_id=value["state_id"],
+            target_label=self._target(value, observation),
         )
 
     def _parse_type(self, value: Mapping[str, Any], observation: Mapping[str, Any]) -> AcceptedAction:
