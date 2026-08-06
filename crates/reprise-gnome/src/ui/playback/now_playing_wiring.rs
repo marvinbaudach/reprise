@@ -212,10 +212,9 @@ impl PlayerController {
     /// the same decision living in two places is how the last two audible
     /// bugs got in.
     pub(in crate::ui) fn audio_reactive_enabled(&self) -> bool {
-        crate::ui::playback::preview::audio_reactive_enabled(
-            self.song_visuals_module.get(),
-            self.playback_mode(),
-        )
+        self.external
+            .borrow()
+            .audio_reactive_enabled(self.song_visuals_module.get())
     }
 
     /// Applies [`Self::audio_reactive_enabled`] to the source. Cheap and safe

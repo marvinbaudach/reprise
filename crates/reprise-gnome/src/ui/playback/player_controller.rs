@@ -302,9 +302,8 @@ pub struct PlayerController {
         RefCell<Option<OnNowPlayingPanelStateChanged>>,
     /// Bounded live-spectrum feed for the optional Now Playing visualizer.
     pub(in crate::ui) song_visual_spectrum_changed: RefCell<Option<OnSongVisualSpectrumChanged>>,
-    /// The `song_visuals` module's persisted state. One of the two inputs to
-    /// `audio_reactive_enabled` (the other is the playback mode); kept here so
-    /// that answer has a single owner instead of being recomputed per surface.
+    /// The persisted module switch; the external state combines it with the
+    /// current snapshot so surfaces cannot disagree about spectrum activity.
     pub(in crate::ui) song_visuals_module: Cell<bool>,
     /// Supplies the current view's ids when an exhausted queue needs refill.
     pub(in crate::ui) view_refill_ids: RefCell<Option<ViewRefillIds>>,

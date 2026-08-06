@@ -81,18 +81,39 @@ impl super::NowPlayingPanel {
                 &reprise_core::modules::SOURCE_IMAGES_MODULE,
             )
             .unwrap_or(false);
-            let source_image = crate::ui::podcasts::source_image::SourceImage::new(
+            self.widgets.bloom.set_cover(None, generation);
+            self.widgets.shimmer.set_cover(None, generation);
+            // The bloom and the shimmer want the very texture the cover shows,
+            // so they observe that one load instead of starting a second one
+            // for the same URL — see `SourceImage::new_observed`. A podcast
+            // observes nothing: it keeps the cleared bloom above.
+            let observer = external.carries_music().then(|| {
+                let bloom = self.widgets.bloom.clone();
+                let shimmer = self.widgets.shimmer.clone();
+                let cover_generation = self.cover_generation.clone();
+                move |texture: &gtk4::gdk::Texture| {
+                    if cover_generation.get() != generation {
+                        return;
+                    }
+                    bloom.set_cover(Some(texture), generation);
+                    shimmer.set_cover(Some(texture), generation);
+                }
+            });
+            let source_image = crate::ui::podcasts::source_image::SourceImage::new_observed(
                 external.art_url.as_deref(),
                 fallback_icon,
                 tokens::NOW_PLAYING_COVER_SIZE,
                 images_allowed,
+                move |texture| {
+                    if let Some(observer) = observer.as_ref() {
+                        observer(texture);
+                    }
+                },
             );
             source_image
                 .widget()
                 .add_css_class("reprise-now-playing-cover");
             self.widgets.external_cover.append(source_image.widget());
-            self.widgets.bloom.set_cover(None, generation);
-            self.widgets.shimmer.set_cover(None, generation);
             on_cover_resolved(None);
             return;
         }

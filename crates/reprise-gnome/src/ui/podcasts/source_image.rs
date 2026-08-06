@@ -108,6 +108,27 @@ impl SourceImage {
         Self::new_with_dimensions(image_url, fallback_icon, size, size, images_allowed)
     }
 
+    /// Same as [`Self::new`], but also hands the decoded texture to
+    /// `on_texture`.
+    ///
+    /// A second surface that wants the same artwork — the Now Playing bloom
+    /// and shimmer want exactly the cover this widget shows — must not start
+    /// its own load. Both loads would begin in the same main-loop turn, before
+    /// either could populate the texture cache, so both would miss it, both
+    /// would take a queue slot and a worker, and both would ask the same
+    /// third-party host for the same image. One load, two consumers.
+    pub(crate) fn new_observed(
+        image_url: Option<&str>,
+        fallback_icon: &str,
+        size: i32,
+        images_allowed: bool,
+        on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
+    ) -> SourceImage {
+        let image = Self::build(fallback_icon, size, size);
+        image.set_url(image_url, size, size, images_allowed, on_texture);
+        image
+    }
+
     pub(crate) fn new_with_dimensions(
         image_url: Option<&str>,
         fallback_icon: &str,
@@ -115,6 +136,14 @@ impl SourceImage {
         height: i32,
         images_allowed: bool,
     ) -> SourceImage {
+        let image = Self::build(fallback_icon, width, height);
+        image.set_url(image_url, width, height, images_allowed, |_| {});
+        image
+    }
+
+    /// The widget tree alone, without a load — both constructors share it so
+    /// the artwork is only ever requested once, by whichever `set_url` follows.
+    fn build(fallback_icon: &str, width: i32, height: i32) -> SourceImage {
         let fallback = gtk4::Image::from_icon_name(fallback_icon);
         fallback.set_pixel_size(width.min(height));
         fallback.set_halign(gtk4::Align::Center);
@@ -153,80 +182,108 @@ impl SourceImage {
         root.add_named(&fallback, Some("fallback"));
         root.add_named(&artwork, Some("artwork"));
         root.set_visible_child(&fallback);
-        let image = Self {
+        Self {
             root,
             fallback,
             artwork,
             generation: Rc::new(Cell::new(0)),
-        };
-        image.set_url(image_url, width, height, images_allowed);
-        image
+        }
     }
 
     pub(crate) fn widget(&self) -> &gtk4::Stack {
         &self.root
     }
 
-    fn set_url(&self, image_url: Option<&str>, width: i32, height: i32, images_allowed: bool) {
+    fn set_url(
+        &self,
+        image_url: Option<&str>,
+        width: i32,
+        height: i32,
+        images_allowed: bool,
+        on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
+    ) {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
         self.root.set_visible_child(&self.fallback);
         self.artwork.set_paintable(gtk4::gdk::Paintable::NONE);
-        let Some(url) = image_url.and_then(validated_url) else {
-            return;
-        };
-        if let Some(texture) = cached_texture(&url, width, height) {
-            self.artwork.set_paintable(Some(&texture));
-            self.root.set_visible_child(&self.artwork);
-            return;
-        }
-        // `NET-1a` / `SRC-11`: a memory-cache miss does not by itself justify a
-        // network attempt — but it does not justify hiding an image either.
-        // The gate is handed to `remote_image::resolve`, which reads the
-        // on-disk cache (possibly filled in an earlier session) BEFORE it
-        // consults the flag, so a closed gate refuses a fresh fetch without
-        // hiding an already-downloaded image. Returning here instead would be
-        // safe but would break `SRC-11`'s promise that a cache hit is always
-        // shown, and the cost would be invisible: a memory cache is empty at
-        // startup, so every restart with the gate closed would drop images
-        // that are sitting on disk and need no request at all.
-        let Some(receiver) = queue_artwork(url.clone(), images_allowed) else {
-            tracing::debug!(%url, "source artwork queue is full");
-            return;
-        };
         let weak_root = self.root.downgrade();
         let weak_artwork = self.artwork.downgrade();
-        let current = self.generation.clone();
-        gtk4::glib::spawn_future_local(async move {
-            let path = match receiver.recv().await {
-                Ok(Some(path)) => path,
-                Ok(None) => return,
-                Err(error) => {
-                    tracing::debug!(%error, %url, "could not load source artwork");
+        load_texture(
+            image_url,
+            width,
+            height,
+            images_allowed,
+            generation,
+            &self.generation,
+            move |texture| {
+                // The observer runs even if the widget itself is already gone:
+                // it feeds a different surface, whose own generation check
+                // decides whether the texture is still wanted.
+                on_texture(&texture);
+                let Some(root) = weak_root.upgrade() else {
                     return;
-                }
-            };
-            if current.get() != generation {
+                };
+                let Some(artwork) = weak_artwork.upgrade() else {
+                    return;
+                };
+                artwork.set_paintable(Some(&texture));
+                root.set_visible_child(&artwork);
+            },
+        );
+    }
+}
+
+/// Loads source artwork through the one gated cache/queue/decode path and
+/// hands the finished texture to a generation-safe caller.
+fn load_texture(
+    image_url: Option<&str>,
+    width: i32,
+    height: i32,
+    images_allowed: bool,
+    generation: u64,
+    current: &Rc<Cell<u64>>,
+    on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
+) {
+    if current.get() != generation {
+        return;
+    }
+    let Some(url) = image_url.and_then(validated_url) else {
+        return;
+    };
+    if let Some(texture) = cached_texture(&url, width, height) {
+        on_ready(texture);
+        return;
+    }
+    // `NET-1a` / `SRC-11`: resolve checks the disk cache before consulting
+    // the network gate, so an already-downloaded image remains visible while
+    // a closed gate still refuses every fresh request.
+    let Some(receiver) = queue_artwork(url.clone(), images_allowed) else {
+        tracing::debug!(%url, "source artwork queue is full");
+        return;
+    };
+    let current = current.clone();
+    gtk4::glib::spawn_future_local(async move {
+        let path = match receiver.recv().await {
+            Ok(Some(path)) => path,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::debug!(%error, %url, "could not load source artwork");
                 return;
             }
-            let Some(root) = weak_root.upgrade() else {
+        };
+        if current.get() != generation {
+            return;
+        }
+        let texture = match decode_texture(&path, width, height) {
+            Ok(texture) => texture,
+            Err(error) => {
+                tracing::debug!(%error, %url, path = %path.display(), "source artwork could not be decoded");
                 return;
-            };
-            let Some(artwork) = weak_artwork.upgrade() else {
-                return;
-            };
-            let texture = match decode_texture(&path, width, height) {
-                Ok(texture) => texture,
-                Err(error) => {
-                    tracing::debug!(%error, %url, path = %path.display(), "source artwork could not be decoded");
-                    return;
-                }
-            };
-            remember_texture(url, width, height, texture.clone());
-            artwork.set_paintable(Some(&texture));
-            root.set_visible_child(&artwork);
-        });
-    }
+            }
+        };
+        remember_texture(url, width, height, texture.clone());
+        on_ready(texture);
+    });
 }
 
 /// Loads the same gated and cached source artwork into an image owned by a
@@ -245,44 +302,21 @@ pub(crate) fn load_into_image(
         return;
     }
     crate::ui::cover_loader::CoverLoader::set_placeholder(image);
-    let Some(url) = image_url.and_then(validated_url) else {
-        return;
-    };
-    if let Some(texture) = cached_texture(&url, width, height) {
-        image.set_paintable(Some(&texture));
-        return;
-    }
-    let Some(receiver) = queue_artwork(url.clone(), images_allowed) else {
-        tracing::debug!(%url, "source artwork queue is full");
-        return;
-    };
     let weak_image = image.downgrade();
-    let current = current.clone();
-    gtk4::glib::spawn_future_local(async move {
-        let path = match receiver.recv().await {
-            Ok(Some(path)) => path,
-            Ok(None) => return,
-            Err(error) => {
-                tracing::debug!(%error, %url, "could not load player-bar source artwork");
+    load_texture(
+        image_url,
+        width,
+        height,
+        images_allowed,
+        generation,
+        current,
+        move |texture| {
+            let Some(image) = weak_image.upgrade() else {
                 return;
-            }
-        };
-        if current.get() != generation {
-            return;
-        }
-        let Some(image) = weak_image.upgrade() else {
-            return;
-        };
-        let texture = match decode_texture(&path, width, height) {
-            Ok(texture) => texture,
-            Err(error) => {
-                tracing::debug!(%error, %url, path = %path.display(), "player-bar source artwork could not be decoded");
-                return;
-            }
-        };
-        remember_texture(url, width, height, texture.clone());
-        image.set_paintable(Some(&texture));
-    });
+            };
+            image.set_paintable(Some(&texture));
+        },
+    );
 }
 
 struct ArtworkTask {

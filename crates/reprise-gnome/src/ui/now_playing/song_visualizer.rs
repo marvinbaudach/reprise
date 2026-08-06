@@ -104,6 +104,17 @@ impl SongVisualizer {
         queue_registered_areas(&self.areas);
     }
 
+    #[cfg(test)]
+    pub(super) fn reports_track_for_test(&self) -> bool {
+        self.engine.borrow_mut().tick();
+        self.engine
+            .borrow()
+            .scene(548.0, 300.0)
+            .shapes
+            .iter()
+            .any(|shape| matches!(shape.geom, reprise_core::visuals::Geom::Rect { .. }))
+    }
+
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if !motion::animations_enabled() || self.playback.get() != PlaybackState::Playing {
             return;

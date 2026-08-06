@@ -50,7 +50,7 @@ pub(super) struct PanelWidgets {
     pub(super) bloom: cover_bloom::CoverBloom,
     pub(super) shimmer: cover_shimmer::CoverShimmer,
     lyrics_page: adw::ViewStackPage,
-    visual_page: adw::ViewStackPage,
+    pub(super) visual_page: adw::ViewStackPage,
     pub(super) sound_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
     pub(super) cover_lift: CoverLift,
@@ -350,7 +350,7 @@ pub(in crate::ui) struct NowPlayingPanel {
     pub(super) conn: Rc<Db>,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
-    loaded_track: RefCell<Option<NowPlaying>>,
+    pub(super) loaded_track: RefCell<Option<NowPlaying>>,
     pub(super) external_snapshot: RefCell<Option<ExternalPlaybackSnapshot>>,
     pub(super) playback_state: Cell<PlaybackState>,
     syncing_visibility: Cell<bool>,
@@ -510,12 +510,11 @@ impl NowPlayingPanel {
                 _ => (true, true),
             }
         };
-        let has_track = track.is_some();
         *self.loaded_track.borrow_mut() = track;
         if id_changed {
             self.widgets.sound.set_track(sound_track_id);
         }
-        self.widgets.visualizer.set_has_track(has_track);
+        self.sync_media_presence();
         if id_changed {
             // A new track started: reset the visual engine's clock, water
             // surface, and impact overlay so ripples/sparks from the
@@ -549,8 +548,10 @@ impl NowPlayingPanel {
         if external_active && self.widgets.session.selected.get() == PanelTab::Sound {
             self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
         }
-        let has_media = external_active || self.loaded_track.borrow().is_some();
-        self.widgets.visualizer.set_has_track(has_media);
+        self.sync_visual_page_visibility();
+        self.sync_media_presence();
+        self.sync_visual_activity();
+        self.sync_bloom_activity();
         self.render_track();
     }
 
@@ -564,7 +565,7 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
-        if self.song_visuals_enabled.get() {
+        if self.song_visuals_active_for_media() {
             let bass = frame.bass_pressure();
             let playing = self.playback_state.get() == PlaybackState::Playing;
             let pressure = if playing {
@@ -580,14 +581,11 @@ impl NowPlayingPanel {
 
     pub(in crate::ui) fn set_song_visuals_enabled(&self, enabled: bool) {
         self.song_visuals_enabled.set(enabled);
-        self.widgets.visual_page.set_visible(enabled);
         if !enabled {
             self.widgets.visualizer.set_active(false);
             self.advance_swell(0);
-            if self.widgets.session.selected.get() == PanelTab::Visual {
-                self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
-            }
         }
+        self.sync_visual_page_visibility();
         self.sync_bloom_activity();
         self.sync_visual_activity();
     }
@@ -741,6 +739,9 @@ pub(in crate::ui) fn css() -> String {
     super::surface_css::css()
 }
 
+#[cfg(test)]
+#[path = "now_playing_external_tests.rs"]
+mod external_tests;
 #[cfg(test)]
 #[path = "now_playing_reactive_tests.rs"]
 mod reactive_tests;
