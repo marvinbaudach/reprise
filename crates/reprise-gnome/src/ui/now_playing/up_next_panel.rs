@@ -77,17 +77,34 @@ struct RowWidgets {
 impl RowWidgets {
     fn current_row_item(&self, sections: &[QueueSection]) -> Option<(QueueRow, QueueItem)> {
         let item = self.item.borrow().clone()?;
-        let row = classify(item.position(), sections)?;
-        let boxed = item.item()?.downcast::<glib::BoxedAnyObject>().ok()?;
-        let metadata = boxed.borrow::<QueueItemMetadata>();
-        Some((row, metadata.item()))
+        list_item_row_item(&item, sections)
     }
+}
+
+fn list_item_row_item(
+    item: &gtk4::ListItem,
+    sections: &[QueueSection],
+) -> Option<(QueueRow, QueueItem)> {
+    let row = classify(item.position(), sections)?;
+    let boxed = item.item()?.downcast::<glib::BoxedAnyObject>().ok()?;
+    let metadata = boxed.borrow::<QueueItemMetadata>();
+    Some((row, metadata.item()))
 }
 
 fn row_is_editable(row: Option<QueueRow>, item: QueueItem) -> bool {
     row.is_some_and(|row| {
         !crate::ui::track_list::queue_row_mapping::is_read_only_episode_projection(row, item)
     })
+}
+
+fn refresh_remove_visibility(
+    item: &gtk4::ListItem,
+    remove_button: &gtk4::Button,
+    sections: &[QueueSection],
+) {
+    let editable = list_item_row_item(item, sections)
+        .is_some_and(|(row, item)| row_is_editable(Some(row), item));
+    remove_button.set_visible(editable);
 }
 
 pub(in crate::ui) struct UpNextPanel {
@@ -274,6 +291,15 @@ fn build_factory(
             };
             let (row_widget, jump_button, remove_button, widgets) = build_row_widgets();
             let widgets = Rc::new(widgets);
+            let remove_on_position = remove_button.downgrade();
+            let sections_on_position = queue_sections.clone();
+            item.connect_position_notify(move |item| {
+                let Some(remove_button) = remove_on_position.upgrade() else {
+                    return;
+                };
+                let sections = sections_on_position.borrow().clone();
+                refresh_remove_visibility(item, &remove_button, &sections);
+            });
             let widgets_on_click = widgets.clone();
             let sections_on_click = queue_sections.clone();
             let on_jump = on_jump.clone();
@@ -446,9 +472,8 @@ fn build_factory(
                 .set_label(&crate::ui::track_list::queue_item_presentation::cell_text(
                     &metadata, "artist",
                 ));
-            let row = classify(item.position(), &queue_sections.borrow());
-            let editable = row_is_editable(row, metadata.item());
-            widgets.remove_button.set_visible(editable);
+            let sections = queue_sections.borrow().clone();
+            refresh_remove_visibility(item, &widgets.remove_button, &sections);
             widgets
                 .drop_target
                 .set_actions(gtk4::gdk::DragAction::COPY | gtk4::gdk::DragAction::MOVE);

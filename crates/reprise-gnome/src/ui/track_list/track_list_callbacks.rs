@@ -32,7 +32,7 @@ pub(in crate::ui) type OnSearchRestored = Rc<dyn Fn(&str)>;
 
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
-pub(in crate::ui) type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
+pub(in crate::ui) type OnQueueSelected = Rc<dyn Fn(Vec<i64>) -> usize>;
 /// Navigation callback for the action on a concrete missing-row toast.
 pub(in crate::ui) type OnShowMissing = Rc<dyn Fn(ViewSource)>;
 pub(in crate::ui) type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::QueueRow)>;

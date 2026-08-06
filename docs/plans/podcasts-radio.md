@@ -193,8 +193,8 @@ CREATE TABLE IF NOT EXISTS radio_stations (
 - **Episode identity = GUID (grilled decision, reversibility):** `UNIQUE(subscription_id, guid)` is
   the ONLY stable key — resume position, played state and `downloaded_path` hang off the GUID
   without exception, never off file or URL keys; YouTube GUID = video ID. This makes the
-  the implemented queue citizenship possible without re-keying: the `podcast_episodes.id` upserted
-  by GUID is the queue identity. Re-subscribing still finds orphaned downloads again
+  collision-safe direct episode projections possible without re-keying: the `podcast_episodes.id`
+  upserted by GUID is the episode identity. Re-subscribing still finds orphaned downloads again
   deterministically (7.4).
 - **Settings** (`settings` table, `library::settings`): `podcasts.import_count` (25),
   `podcasts.auto_download_default` (false), `podcasts.cleanup_policy` (`keep_all` |
@@ -382,9 +382,8 @@ UA is mandatory for radio-browser — the existing UA string satisfies it.
   `attach_bus_watch` gains a `MessageView::Tag` arm — `gst::tags::Title`/`Organization` out of the
   TagList, emitted only on change (the last value in the watch state, like `spectrum_analyzer`).
 - **Gapless contract:** external play parks the pre-feed (`set_next(None)` in the controller + a
-  reset in `play_uri`). An episode in the manual queue also sets `set_next(None)` at its boundary;
-  the outcome stays gapless-free, even though after it ends it continues via the normal queue
-  advance. Radio/YouTube never get into the `about-to-finish` handoff.
+  reset in `play_uri`). Episodes never enter the manual queue (QUE-12), and Radio/YouTube never get
+  into the `about-to-finish` handoff.
 - **Duration probe:** the existing position ticker supplies `duration_ms` — no special backend code.
 
 ### 6.2 MPRIS (`media_integration.rs` + `mpris/`)
@@ -401,11 +400,10 @@ count `external_ref` as loaded; **`can_seek` = track OR (external ∧ !live_stre
 Three sharpenings out of the grill (external never looks broken from the outside):
 
 - **Narrowed by POD-21:** `can_go_next`/`can_go_previous` are false only for external **without**
-  episode neighbors. A podcast/YouTube session with a frozen list context
-  reports the neighbors that actually exist: on a direct start, out of the rendered episode list;
-  when the origin is the "manual queue", out of its typed order.
-  Radio and contextless episodes stay false. Media keys thus follow the same boundaries as the
-  visible buttons; queue citizenship itself is governed by QUE-9.
+  episode neighbors. A podcast/YouTube session with a frozen list context reports the neighbors
+  that actually exist out of the rendered episode list. Radio and contextless episodes stay false.
+  Media keys thus follow the same boundaries as the visible buttons; QUE-12 excludes episodes from
+  the manual queue.
 - **`mpris:artUrl` = a remote URL pass-through:** podcast → the persisted `image_url`, radio →
   `favicon_url` (if present). GNOME Shell loads it itself — there is still **no
   in-app image downloader** (non-goal 8 stays untouched).
@@ -566,10 +564,9 @@ Error`.
   `Unsubscribe from “{show}”` (destructive). Station: `Play`/`Stop` · `Copy stream URL` · `Edit
   station…` (a small adw::Dialog: name/genre/URL) · ── · `Remove favorite` (destructive). In the
   spirit of CTX-5a: destructive at the bottom, context-named.
-  **Queue entries were deliberately missing in v1 (replaced grilled decision):** radio keeps the
-  asymmetry and still never shows "Play Next"/"Add to Queue". Episodes are now typed
-  citizens of the manual queue: "Play Next"/"Add to Queue" act on the current selection, and
-  the typed drag payload distinguishes track and episode IDs even when the numeric value is the same.
+  Radio and episodes never offer an enabled "Play Next"/"Add to Queue" action. The typed drag
+  payload still distinguishes track and episode IDs even when the numeric value is the same because
+  non-queue drop targets and direct episode projections consume that identity.
 - **Hover star:** the cell follows the `rating.rs` recipe — **real `gtk::Button`s, no GestureClick
   in ColumnView cells** (a documented finding), MotionController reveal, re-bind on cell recycling.
   Radio: a filled accent star = favorite, a click removes it. Podcast episode: the star acts on the
@@ -675,7 +672,7 @@ flipped to `[active]` in the respective implementation commit with rule-named te
   completion policy always offered "Play next" of the same show without automatic playback.
 - **POD-24** [gtk] — A directly started YouTube episode automatically continues through the next
   no-wrap item in its frozen rendered POD-21 context. RSS, and a YouTube episode without such a
-  neighbour, retain the manual next-unplayed offer. Explicit manual-queue playback remains QUE-9.
+  neighbour, retain the manual next-unplayed offer. QUE-12 excludes episodes from the manual queue.
   Podcast and YouTube sessions never produce scrobbles, listen events or play counts.
 - **POD-5** [gtk] — Downloads are opt-in (per subscription), live under the app's XDG data path and
   follow the cleanup policy; downloaded episodes play locally (the offline path).
@@ -772,7 +769,7 @@ starts the real yt-dlp.
 5. **Broad podcast auto-advance to the next episode of the same show** stays excluded: direct RSS
   episodes still end with played + stop + the manual "Play next" offer (6.3). POD-24 deliberately
   narrows this boundary for directly started YouTube episodes that already have a next item in
-  their frozen rendered context; queue citizenship remains separate under QUE-9.
+  their frozen rendered context; QUE-12 excludes episodes from the manual queue.
 6. **Desktop notifications** for new episodes (parity with the Concerts decision).
 7. **CLI/MCP surface** — a **named v1.1 candidate** (grilled decision): read-only `reprise-cli
   podcasts list` / `reprise://podcasts` + `reprise://radio` (pure cache reads, a package-M clone
@@ -851,7 +848,7 @@ onto dev as soon as Concerts is merged; the F tasks re-check both "next free num
 | 4 | Podcasts Add dialog: search (iTunes with `country=` from the locale + ytsearch, grouped, "audio only" label, source glyph tiles) AND URL paste (RSS + YouTube → preview + options) | dialog state units, URL detect units, `locale_country` test, fixture E2E, display test |
 | 5 | Radio Add dialog: search by votes with Add buttons; URL paste for direct streams AND M3U/PLS (down-parse) with an ICY preview | `rad_4_*`, playlist/ICY units, display test |
 | 6 | Add buttons are tinted rectangular buttons, clearly distinguished from chips (their own CSS class, never `.reprise-filter-chip`) | `src_2_*`, CSS class test, manual optics pass |
-| 7 | Context-menu removal + hover star with an undo toast (10 s, tombstone-based); unsubscribing keeps downloads, the commit-time toast offers [Delete files] → trash (never hard), multiple unsubscribes aggregate; radio never shows Play Next/Add to Queue, podcast and YouTube episodes offer both actions for the current selection including the keyboard and typed drag route | `src_4a_*`/`src_4b_*` including the trash test, aggregation units, tombstone cycle units, `acc_8_episode_menu_queue_actions_are_the_keyboard_partner_for_drag`, display test |
+| 7 | Context-menu removal + hover star with an undo toast (10 s, tombstone-based); unsubscribing keeps downloads, the commit-time toast offers [Delete files] → trash (never hard), multiple unsubscribes aggregate; radio, podcast and YouTube episodes never offer enabled Play Next/Add to Queue actions, while typed drag identity remains available to non-queue targets | `src_4a_*`/`src_4b_*` including the trash test, aggregation units, tombstone cycle units, `que_12_podcast_context_menu_queue_actions_are_present_but_disabled`, display test |
 | 8 | YouTube: the official UULF feed delivers the first long-form window; "Load more" extends it once via yt-dlp up to entry 40; audio-only/opus, bestaudio resolve per play (never persisted), yt-dlp errors readable, without the managed component it degrades as display (switch subtitle, the setting never auto-flipped) | `pod_3_*`, `pod_10_*`, fake binary tests, resolve generation test, prefs decision units |
 | 9 | Podcast resume: the position is persisted (pause/stop/switch/quit + throttle), playback continues; end → played; duration probe on the first play | `pod_4_*` resume units, store roundtrips |
 | 10 | Radio live: ICY now-playing in the table + player bar + MPRIS from one event; no seek, no duration, elapsed only; pause = disconnect-presented-as-pause (the bar dims the last title, the table "—", reconnect "live now", failure → paused + inline retry, never an empty bar); dead favorites re-resolve via uuid | `rad_2_*`/`rad_3_*`, pause state matrix, MPRIS matrix, StreamTags plumbing test |

@@ -52,10 +52,20 @@ pub struct UpNextQueue {
 }
 
 impl UpNextQueue {
-    pub fn append(&mut self, items: &[QueueItem]) {
+    /// Appends track items up to the shared capacity and returns how many
+    /// entries were accepted. Episode items never enter the manual queue.
+    pub fn append(&mut self, items: &[QueueItem]) -> usize {
         let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
         let remaining = limit.saturating_sub(self.ids.len());
-        self.ids.extend(items.iter().copied().take(remaining));
+        let before = self.ids.len();
+        self.ids.extend(
+            items
+                .iter()
+                .copied()
+                .filter(|item| matches!(item, QueueItem::Track(_)))
+                .take(remaining),
+        );
+        self.ids.len() - before
     }
 
     pub fn ids(&self) -> &[QueueItem] {
@@ -134,27 +144,38 @@ impl UpNextQueue {
 
     /// Inserts one item at `index` (clamped to the end) — QUE-3's drag of an
     /// Up-Next snapshot row into the Play Next section lands here. Respects
-    /// the same capacity limit as `append`.
-    pub fn insert(&mut self, index: usize, item: QueueItem) {
+    /// the same capacity limit as `append`. Returns whether the item was
+    /// accepted; episode items are always rejected.
+    pub fn insert(&mut self, index: usize, item: QueueItem) -> bool {
         let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
-        if self.ids.len() >= limit {
-            return;
+        if self.ids.len() >= limit || matches!(item, QueueItem::Episode(_)) {
+            return false;
         }
         let index = index.min(self.ids.len());
         self.ids.insert(index, item);
+        true
     }
 
     /// Puts `items` at the FRONT in the given order — the "Play next" context
     /// action (QUE-3), as opposed to `append`'s "Add to queue". Capacity
     /// overflow drops from the back of the existing list, never the new
-    /// front entries (the user's freshest intent wins).
-    pub fn prepend(&mut self, items: &[QueueItem]) {
+    /// front entries (the user's freshest intent wins). Returns the number
+    /// of track items accepted; episode items are ignored.
+    pub fn prepend(&mut self, items: &[QueueItem]) -> usize {
         let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
         let mut merged = Vec::with_capacity((items.len() + self.ids.len()).min(limit));
-        merged.extend(items.iter().copied().take(limit));
+        merged.extend(
+            items
+                .iter()
+                .copied()
+                .filter(|item| matches!(item, QueueItem::Track(_)))
+                .take(limit),
+        );
+        let accepted = merged.len();
         let remaining = limit.saturating_sub(merged.len());
         merged.extend(self.ids.iter().copied().take(remaining));
         self.ids = merged;
+        accepted
     }
 
     /// Empties the manual list — the "Clear queue" button (QUE-3), which
@@ -173,24 +194,69 @@ mod tests {
     }
 
     #[test]
-    fn que_9_manual_queue_preserves_track_and_episode_identity() {
+    fn que_12_manual_queue_mutations_accept_tracks_and_drop_episodes() {
         let mut queue = UpNextQueue::default();
-        queue.append(&[
-            QueueItem::Track(7),
-            QueueItem::Episode(7),
-            QueueItem::Track(7),
-        ]);
+        assert_eq!(
+            queue.append(&[
+                QueueItem::Track(7),
+                QueueItem::Episode(7),
+                QueueItem::Track(8),
+            ]),
+            2
+        );
+        assert_eq!(
+            queue.prepend(&[QueueItem::Episode(6), QueueItem::Track(5),]),
+            1
+        );
+        assert!(!queue.insert(1, QueueItem::Episode(9)));
+        assert!(queue.insert(1, QueueItem::Track(6)));
 
         assert_eq!(
             queue.ids(),
             &[
+                QueueItem::Track(5),
+                QueueItem::Track(6),
                 QueueItem::Track(7),
-                QueueItem::Episode(7),
-                QueueItem::Track(7),
+                QueueItem::Track(8),
             ]
         );
-        assert_eq!(queue.pop_front(), Some(QueueItem::Track(7)));
-        assert_eq!(queue.pop_front(), Some(QueueItem::Episode(7)));
+    }
+
+    #[test]
+    fn que_12_mixed_batches_keep_the_surviving_tracks_in_order() {
+        let mut appended = UpNextQueue::default();
+        assert_eq!(
+            appended.append(&[
+                QueueItem::Episode(1),
+                QueueItem::Track(20),
+                QueueItem::Episode(2),
+                QueueItem::Track(10),
+            ]),
+            2
+        );
+        assert_eq!(
+            appended.ids(),
+            &[QueueItem::Track(20), QueueItem::Track(10)]
+        );
+
+        let mut prepended = UpNextQueue::default();
+        prepended.append(&tracks(&[90]));
+        assert_eq!(
+            prepended.prepend(&[
+                QueueItem::Track(20),
+                QueueItem::Episode(2),
+                QueueItem::Track(10),
+            ]),
+            2
+        );
+        assert_eq!(
+            prepended.ids(),
+            &[
+                QueueItem::Track(20),
+                QueueItem::Track(10),
+                QueueItem::Track(90)
+            ]
+        );
     }
 
     #[test]
@@ -281,7 +347,7 @@ mod tests {
         let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap();
         let ids: Vec<_> = (0..=limit as i64).collect();
         let mut queue = UpNextQueue::default();
-        queue.append(&tracks(&ids));
+        assert_eq!(queue.append(&tracks(&ids)), limit);
         assert_eq!(queue.len(), limit);
         assert_eq!(
             queue.ids().last(),
@@ -302,9 +368,9 @@ mod que3_tests {
     fn insert_places_at_index_and_clamps_past_the_end() {
         let mut queue = UpNextQueue::default();
         queue.append(&tracks(&[1, 3]));
-        queue.insert(1, QueueItem::Track(2));
+        assert!(queue.insert(1, QueueItem::Track(2)));
         assert_eq!(queue.ids(), &[1, 2, 3]);
-        queue.insert(99, QueueItem::Track(4));
+        assert!(queue.insert(99, QueueItem::Track(4)));
         assert_eq!(queue.ids(), &[1, 2, 3, 4]);
     }
 

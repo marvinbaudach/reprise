@@ -3,7 +3,7 @@ use super::*;
 // ## format_drag_payload / parse_drag_payload round trips.
 
 #[test]
-fn que_9_round_trips_typed_items_without_losing_colliding_ids() {
+fn que_12_round_trips_typed_items_without_losing_colliding_ids() {
     let items = [
         QueueItem::Track(7),
         QueueItem::Episode(7),

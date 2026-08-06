@@ -13,17 +13,6 @@ pub const CONTEXT_MENU_SHOW_IN_MISSING: &str = N_!("Show in Missing files");
 pub const CONTEXT_MENU_NEW_PLAYLIST: &str = N_!("New playlist…");
 pub const CONTEXT_MENU_REMOVE_FROM_PLAYLIST: &str = N_!("Remove from playlist");
 
-/// Toast for a heterogeneous manual-queue drop.
-pub fn queue_items_added_to_queue_toast(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "{count} item added to queue",
-        "{count} items added to queue",
-        count,
-        &[("count", &count_text)],
-    )
-}
-
 pub fn remove_from_playlist_label(count: usize) -> String {
     destructive_count_label(
         count,

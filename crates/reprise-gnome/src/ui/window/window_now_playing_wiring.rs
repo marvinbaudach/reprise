@@ -138,8 +138,7 @@ pub(in crate::ui) fn install(
         let Some(player) = player_for_enqueue.upgrade() else {
             return false;
         };
-        player.append_queue_items(items);
-        true
+        player.append_queue_items(items) > 0
     });
 
     let player_for_sound = Rc::downgrade(player);

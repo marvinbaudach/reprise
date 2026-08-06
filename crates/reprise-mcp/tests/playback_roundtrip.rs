@@ -711,7 +711,7 @@ fn music_set_playback_reaches_each_mpris_setting() {
 }
 
 #[test]
-fn que_9_music_queue_reads_mixed_state_without_widening_legacy_track_ids() {
+fn que_12_music_queue_reads_mixed_state_without_widening_legacy_track_ids() {
     let Some(bus) = PrivateBus::start() else {
         eprintln!("environment-limited: dbus-daemon unavailable; skipping the MPRIS bus roundtrip");
         return;

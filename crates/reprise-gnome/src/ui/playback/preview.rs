@@ -109,7 +109,7 @@ mod tests {
     }
 
     #[test]
-    fn que_9_queued_episode_advances_without_earning_a_listen() {
+    fn que_12_queued_episode_advances_without_earning_a_listen() {
         assert!(PlaybackMode::QueuedEpisode.advances_queue_on_finish());
         assert!(!PlaybackMode::QueuedEpisode.credits_listening());
     }

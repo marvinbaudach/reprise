@@ -32,13 +32,11 @@ impl Transport {
             // them undoable by clearing the queue.
             QueueCommand::AddNext(ids) => {
                 let items = track_items(ids);
-                self.up_next.prepend(&items);
-                ids.len()
+                self.up_next.prepend(&items)
             }
             QueueCommand::AddLast(ids) => {
                 let items = track_items(ids);
-                self.up_next.append(&items);
-                ids.len()
+                self.up_next.append(&items)
             }
             // "Clearing a queue is not a stop command" (protocol): only the
             // explicit queue goes; the current track keeps playing.

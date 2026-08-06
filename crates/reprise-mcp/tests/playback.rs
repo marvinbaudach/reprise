@@ -251,7 +251,7 @@ fn music_queue_rejects_tracks_that_are_absent_or_missing() {
 }
 
 #[test]
-fn que_9_music_queue_rejects_an_episode_id_as_a_track_id() {
+fn que_12_music_queue_rejects_an_episode_id_as_a_track_id() {
     use reprise_core::podcasts::feed::ParsedEpisode;
     use reprise_core::podcasts::store::{self, NewSubscription};
     use reprise_core::podcasts::PodcastKind;
