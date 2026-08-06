@@ -70,9 +70,18 @@ struct RowWidgets {
     artist: gtk4::Label,
     remove_button: gtk4::Button,
     generation: Rc<Cell<u64>>,
-    row: Cell<Option<QueueRow>>,
-    editable: Cell<bool>,
+    item: RefCell<Option<gtk4::ListItem>>,
     drop_target: gtk4::DropTarget,
+}
+
+impl RowWidgets {
+    fn current_row_item(&self, sections: &[QueueSection]) -> Option<(QueueRow, QueueItem)> {
+        let item = self.item.borrow().clone()?;
+        let row = classify(item.position(), sections)?;
+        let boxed = item.item()?.downcast::<glib::BoxedAnyObject>().ok()?;
+        let metadata = boxed.borrow::<QueueItemMetadata>();
+        Some((row, metadata.item()))
+    }
 }
 
 fn row_is_editable(row: Option<QueueRow>, item: QueueItem) -> bool {
@@ -266,18 +275,31 @@ fn build_factory(
             let (row_widget, jump_button, remove_button, widgets) = build_row_widgets();
             let widgets = Rc::new(widgets);
             let widgets_on_click = widgets.clone();
+            let sections_on_click = queue_sections.clone();
             let on_jump = on_jump.clone();
             jump_button.connect_clicked(move |_| {
-                let row = widgets_on_click.row.get();
+                let row = {
+                    let sections = sections_on_click.borrow();
+                    widgets_on_click
+                        .current_row_item(&sections)
+                        .map(|(row, _)| row)
+                };
                 let callback = on_jump.borrow().clone();
                 if let (Some(row), Some(callback)) = (row, callback) {
                     callback(row);
                 }
             });
             let widgets_on_remove = widgets.clone();
+            let sections_on_remove = queue_sections.clone();
             let on_remove = on_remove.clone();
             remove_button.connect_clicked(move |_| {
-                let row = widgets_on_remove.row.get();
+                let row = {
+                    let sections = sections_on_remove.borrow();
+                    widgets_on_remove
+                        .current_row_item(&sections)
+                        .filter(|(row, item)| row_is_editable(Some(*row), *item))
+                        .map(|(row, _)| row)
+                };
                 let callback = on_remove.borrow().clone();
                 if let (Some(row), Some(callback)) = (row, callback) {
                     callback(row);
@@ -291,20 +313,20 @@ fn build_factory(
             let sections_for_keys = queue_sections.clone();
             let on_reorder_for_keys = on_reorder.clone();
             keys.connect_key_pressed(move |_, key, _, modifiers| {
-                if !widgets_for_keys.editable.get() {
-                    return gtk4::glib::Propagation::Proceed;
-                }
-                let Some(row) = widgets_for_keys.row.get() else {
-                    return gtk4::glib::Propagation::Proceed;
-                };
-                let play_next_len = sections_for_keys
-                    .borrow()
-                    .iter()
-                    .find_map(|section| {
+                let (row, play_next_len) = {
+                    let sections = sections_for_keys.borrow();
+                    let Some((row, item)) = widgets_for_keys.current_row_item(&sections) else {
+                        return gtk4::glib::Propagation::Proceed;
+                    };
+                    if !row_is_editable(Some(row), item) {
+                        return gtk4::glib::Propagation::Proceed;
+                    }
+                    let play_next_len = sections.iter().find_map(|section| {
                         matches!(section.kind, QueueSectionKind::PlayNext)
                             .then_some(section.len as usize)
-                    })
-                    .unwrap_or_default();
+                    });
+                    (row, play_next_len.unwrap_or_default())
+                };
                 let Some((from, to)) = keyboard_reorder_rows(row, play_next_len, key, modifiers)
                 else {
                     return gtk4::glib::Propagation::Proceed;
@@ -322,11 +344,13 @@ fn build_factory(
             let drag_source = gtk4::DragSource::new();
             drag_source.set_actions(gtk4::gdk::DragAction::MOVE);
             let widgets_for_drag = widgets.clone();
+            let sections_for_drag = queue_sections.clone();
             drag_source.connect_prepare(move |_, _, _| {
-                if !widgets_for_drag.editable.get() {
-                    return None;
-                }
-                let row = widgets_for_drag.row.get()?;
+                let (row, item) = {
+                    let sections = sections_for_drag.borrow();
+                    widgets_for_drag.current_row_item(&sections)?
+                };
+                row_is_editable(Some(row), item).then_some(())?;
                 Some(gtk4::gdk::ContentProvider::for_value(
                     &encode_drag_row(row).to_value(),
                 ))
@@ -334,16 +358,24 @@ fn build_factory(
             row_widget.add_controller(drag_source);
 
             let widgets_for_enter = widgets.clone();
-            widgets
-                .drop_target
-                .connect_enter(move |_, _, _| match widgets_for_enter.row.get() {
+            let sections_for_enter = queue_sections.clone();
+            widgets.drop_target.connect_enter(move |_, _, _| {
+                let row = {
+                    let sections = sections_for_enter.borrow();
+                    widgets_for_enter
+                        .current_row_item(&sections)
+                        .map(|(row, _)| row)
+                };
+                match row {
                     Some(QueueRow::PlayNext(_)) => {
                         gtk4::gdk::DragAction::COPY | gtk4::gdk::DragAction::MOVE
                     }
                     Some(_) => gtk4::gdk::DragAction::COPY,
                     None => gtk4::gdk::DragAction::empty(),
-                });
+                }
+            });
             let widgets_for_drop = widgets.clone();
+            let sections_for_drop = queue_sections.clone();
             let on_reorder = on_reorder.clone();
             let on_enqueue = on_enqueue.clone();
             widgets.drop_target.connect_drop(move |_, value, _, _| {
@@ -352,7 +384,13 @@ fn build_factory(
                 };
                 match decode_drop_payload(&payload) {
                     Some(PanelDropPayload::Reorder(from)) => {
-                        let Some(to) = widgets_for_drop.row.get() else {
+                        let to = {
+                            let sections = sections_for_drop.borrow();
+                            widgets_for_drop
+                                .current_row_item(&sections)
+                                .map(|(row, _)| row)
+                        };
+                        let Some(to) = to else {
                             return false;
                         };
                         if !matches!(to, QueueRow::PlayNext(_))
@@ -397,6 +435,7 @@ fn build_factory(
                 return;
             };
             let metadata = boxed.borrow::<QueueItemMetadata>();
+            widgets.item.replace(Some(item.clone()));
             widgets
                 .title
                 .set_label(crate::ui::track_list::queue_item_presentation::title(
@@ -408,17 +447,11 @@ fn build_factory(
                     &metadata, "artist",
                 ));
             let row = classify(item.position(), &queue_sections.borrow());
-            widgets.row.set(row);
             let editable = row_is_editable(row, metadata.item());
-            widgets.editable.set(editable);
             widgets.remove_button.set_visible(editable);
-            widgets.drop_target.set_actions(match row {
-                Some(QueueRow::PlayNext(_)) => {
-                    gtk4::gdk::DragAction::COPY | gtk4::gdk::DragAction::MOVE
-                }
-                Some(_) => gtk4::gdk::DragAction::COPY,
-                None => gtk4::gdk::DragAction::empty(),
-            });
+            widgets
+                .drop_target
+                .set_actions(gtk4::gdk::DragAction::COPY | gtk4::gdk::DragAction::MOVE);
             let generation = widgets.generation.get().wrapping_add(1);
             widgets.generation.set(generation);
             CoverLoader::set_placeholder(&widgets.cover);
@@ -450,8 +483,7 @@ fn build_factory(
             widgets
                 .generation
                 .set(widgets.generation.get().wrapping_add(1));
-            widgets.row.set(None);
-            widgets.editable.set(false);
+            widgets.item.replace(None);
             widgets.remove_button.set_visible(false);
             widgets
                 .drop_target
@@ -526,8 +558,7 @@ fn build_row_widgets() -> (gtk4::Box, gtk4::Button, gtk4::Button, RowWidgets) {
             artist,
             remove_button: remove_button.clone(),
             generation: Rc::new(Cell::new(0)),
-            row: Cell::new(None),
-            editable: Cell::new(false),
+            item: RefCell::new(None),
             // input-parity: ACC-8 keyboard=up-next-alt-arrows
             drop_target: gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::empty()),
         },
