@@ -70,6 +70,8 @@ require_executable .githooks/pre-push
 
 require_pattern 'merge-base --is-ancestor' scripts/check-merge-readiness.sh
 require_pattern 'status --porcelain' scripts/check-merge-readiness.sh
+require_pattern 'base_branch=\$\{base_ref#origin/\}' scripts/check-merge-readiness.sh
+require_pattern 'refs/heads/\$\{base_branch\}:refs/remotes/origin/\$\{base_branch\}' scripts/check-merge-readiness.sh
 require_pattern 'cargo fmt --check' scripts/check-merge-readiness.sh
 require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings' scripts/check-merge-readiness.sh
 require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
