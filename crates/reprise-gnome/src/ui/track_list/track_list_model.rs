@@ -102,6 +102,14 @@ mod imp {
     pub struct TrackListModel {
         pub conn: RefCell<Option<Rc<Db>>>,
         pub state: RefCell<ModelState>,
+        /// Bumped on every repopulation. A narrowed `items_changed` range is
+        /// computed synchronously but applied a main-loop turn later; if the
+        /// model was refilled in between, that range describes rows that no
+        /// longer exist as described, so the range is discarded in favour of a
+        /// full invalidation. Counting refills is enough — comparing the id
+        /// lists themselves would cost the sorted full-table query this whole
+        /// change exists to avoid.
+        pub generation: std::cell::Cell<u64>,
     }
 
     #[glib::object_subclass]
@@ -495,9 +503,14 @@ impl TrackListModel {
             filter_len: filter.chars().count(),
             exclude_ai,
         });
+        let generation = self.imp().generation.get();
         let change = requested_change
             .filter(|change| {
-                change.before_total == old_total
+                // Totals and bounds only prove the range FITS. The generation
+                // proves it still DESCRIBES this model: same row count with
+                // different rows underneath would otherwise pass.
+                change.generation == generation
+                    && change.before_total == old_total
                     && change.after_total == new_total
                     && change.position.saturating_add(change.removed) <= old_total
                     && change.position.saturating_add(change.added) <= new_total
@@ -508,13 +521,21 @@ impl TrackListModel {
                 added: new_total,
                 before_total: old_total,
                 after_total: new_total,
+                generation,
             });
+        self.imp().generation.set(generation.wrapping_add(1));
         super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
             position: change.position,
             removed: change.removed,
             added: change.added,
         });
         self.items_changed(change.position, change.removed, change.added);
+    }
+
+    /// How often the model has been repopulated. See `imp::TrackListModel::
+    /// generation` for why a narrowed change range is keyed on this.
+    pub(in crate::ui) fn generation(&self) -> u64 {
+        self.imp().generation.get()
     }
 
     /// Returns a clone of the `Track` at `position` (for row activation and,

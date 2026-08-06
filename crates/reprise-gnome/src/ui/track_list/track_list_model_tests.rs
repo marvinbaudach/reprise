@@ -161,10 +161,56 @@ fn tag_save_query_swap_emits_only_the_requested_changed_range() {
             added: 2,
             before_total: 3,
             after_total: 3,
+            generation: model.generation(),
         },
     );
 
     assert_eq!(*changes.borrow(), vec![(1, 2, 2)]);
+}
+
+/// The narrowed range is computed synchronously and applied a main-loop turn
+/// later. If anything refilled the model in between, the range describes rows
+/// that are no longer there — with an unchanged row count it would otherwise
+/// pass the totals check and leave GTK holding stale rows outside the
+/// announced range. A stale generation must fall back to invalidating
+/// everything.
+#[test]
+fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
+    let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
+    model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
+    let stale_generation = model.generation().wrapping_sub(1);
+
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let changes_for_signal = changes.clone();
+    model.connect_items_changed(move |_, position, removed, added| {
+        changes_for_signal
+            .borrow_mut()
+            .push((position, removed, added));
+    });
+
+    model.set_query_browsed_ai_changed(
+        &ViewSource::Library,
+        "title",
+        "asc",
+        "",
+        &BrowseFilter::default(),
+        &[],
+        false,
+        super::super::track_list_model_change::ModelChange {
+            position: 1,
+            removed: 2,
+            added: 2,
+            before_total: 3,
+            after_total: 3,
+            generation: stale_generation,
+        },
+    );
+
+    assert_eq!(
+        *changes.borrow(),
+        vec![(0, 3, 3)],
+        "a stale range must invalidate the whole model, not its own narrow slice"
+    );
 }
 
 #[test]

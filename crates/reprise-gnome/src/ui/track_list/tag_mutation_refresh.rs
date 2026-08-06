@@ -68,11 +68,13 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_view_ids(
     before_ids: &[i64],
     after_ids: Vec<i64>,
 ) {
-    let reload_change = changed_range(before_ids, &after_ids, ids).map(|model| ReloadChange {
-        model,
-        current_ids: after_ids,
-        query: reload_query_key(shared),
-    });
+    let generation = shared.model.generation();
+    let reload_change =
+        changed_range(before_ids, &after_ids, ids, generation).map(|model| ReloadChange {
+            model,
+            current_ids: after_ids,
+            query: reload_query_key(shared),
+        });
     refresh_with_reload_change(shared, ids, paths, anchor, reload_change);
 }
 

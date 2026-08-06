@@ -7,12 +7,16 @@ pub(super) struct ModelChange {
     pub(super) added: u32,
     pub(super) before_total: u32,
     pub(super) after_total: u32,
+    /// The model generation the range was computed against — see
+    /// `imp::TrackListModel::generation`.
+    pub(super) generation: u64,
 }
 
 pub(super) fn changed_range(
     before: &[i64],
     after: &[i64],
     changed_ids: &[i64],
+    generation: u64,
 ) -> Option<ModelChange> {
     let mut prefix = 0;
     while before.get(prefix) == after.get(prefix)
@@ -42,6 +46,7 @@ pub(super) fn changed_range(
         added: u32::try_from(after_end - prefix).ok()?,
         before_total: u32::try_from(before.len()).ok()?,
         after_total: u32::try_from(after.len()).ok()?,
+        generation,
     })
 }
 
@@ -55,13 +60,14 @@ mod tests {
         let after = [1, 2, 6, 7, 8, 3, 4, 5];
 
         assert_eq!(
-            changed_range(&before, &after, &[3, 4, 5]),
+            changed_range(&before, &after, &[3, 4, 5], 7),
             Some(ModelChange {
                 position: 2,
                 removed: 6,
                 added: 6,
                 before_total: 8,
                 after_total: 8,
+                generation: 7,
             })
         );
     }
@@ -71,13 +77,14 @@ mod tests {
         let ids = [1, 2, 3, 4, 5, 6];
 
         assert_eq!(
-            changed_range(&ids, &ids, &[3, 4]),
+            changed_range(&ids, &ids, &[3, 4], 7),
             Some(ModelChange {
                 position: 2,
                 removed: 2,
                 added: 2,
                 before_total: 6,
                 after_total: 6,
+                generation: 7,
             })
         );
     }
