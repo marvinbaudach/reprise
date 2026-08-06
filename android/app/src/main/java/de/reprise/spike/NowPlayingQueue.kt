@@ -61,7 +61,7 @@ internal fun NowPlayingQueuePage(
     }
 
     LaunchedEffect(playback.currentTrackId) {
-        load(firstLibraryWindow(), append = false)
+        reload()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

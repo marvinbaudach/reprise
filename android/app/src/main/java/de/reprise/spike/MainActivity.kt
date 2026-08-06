@@ -371,6 +371,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         setDockWindowMode(false)
+        // Stop accepting boundary calls while letting the single ordered lane
+        // finish operations already submitted against the service.
+        playbackControls.shutdown()
         // Compose disposal is not the release boundary: Android may destroy
         // the activity while dock mode is still the ViewModel's current mode.
         // First, and before the library handle is closed below: a heart tap that

@@ -1,6 +1,35 @@
 package de.reprise.spike
 
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+
+internal const val PLAYBACK_QUERIES_STOPPED = "playback controls are closing"
+
+/**
+ * One ordered lane for queue reads and edits.
+ *
+ * A single worker is load-bearing: position-based edits are separate calls at
+ * the FFI boundary, so submitting them to a pool could apply a later gesture
+ * before the earlier one. Reads share the lane so a refresh observes every
+ * edit submitted before it.
+ */
+internal class PlaybackQueryRunner(
+    private val worker: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "reprise-playback-queries")
+    },
+) {
+    fun <T> query(operation: () -> T, report: (Result<T>) -> Unit) {
+        try {
+            worker.execute { report(runCatching(operation)) }
+        } catch (rejected: RejectedExecutionException) {
+            report(Result.failure(IllegalStateException(PLAYBACK_QUERIES_STOPPED, rejected)))
+        }
+    }
+
+    fun shutdown() = worker.shutdown()
+}
 
 /** MainActivity's service-backed implementation, kept out of its composition root. */
 internal class ActivityPlaybackControls(
@@ -8,6 +37,7 @@ internal class ActivityPlaybackControls(
     private val connectedService: () -> ReprisePlaybackService?,
     private val postToMain: (() -> Unit) -> Unit,
     private val setFavouriteAction: (Long, Boolean, (String?) -> Unit) -> Unit,
+    private val queries: PlaybackQueryRunner = PlaybackQueryRunner(),
 ) : PlaybackControls {
     override fun togglePause() = command("change playback state") { togglePause() }
 
@@ -61,6 +91,8 @@ internal class ActivityPlaybackControls(
 
     override fun cancelSleepTimer() = command("cancel sleep timer") { cancelSleepTimer() }
 
+    fun shutdown() = queries.shutdown()
+
     private fun <T> query(
         report: (Result<T>) -> Unit,
         operation: ReprisePlaybackService.() -> T,
@@ -70,9 +102,10 @@ internal class ActivityPlaybackControls(
             report(Result.failure(IllegalStateException("playback is still connecting")))
             return
         }
-        Thread {
-            val outcome = runCatching { service.operation() }
+        queries.query(
+            operation = { service.operation() },
+        ) { outcome ->
             postToMain { report(outcome) }
-        }.start()
+        }
     }
 }

@@ -579,6 +579,8 @@ internal class ConfigurationTestPlaybackControls(
     private val startSleepTimer: (SleepTimerSelection) -> Unit = {},
     private val cancelSleepTimer: () -> Unit = {},
 ) : PlaybackControls {
+    private var deferredUpcomingOffset: Long? = null
+    private val deferredUpcomingLoads = mutableListOf<() -> Unit>()
     val seekPositions = mutableListOf<Long>()
     val ratingRequests = mutableListOf<Pair<Long, Int>>()
     val playUpcomingRequests = mutableListOf<Pair<Int, Long>>()
@@ -588,6 +590,15 @@ internal class ConfigurationTestPlaybackControls(
 
     /** What the write answers with; null is the database agreeing. */
     var ratingFailure: String? = null
+
+    fun deferUpcomingLoad(offset: Long) {
+        deferredUpcomingOffset = offset
+    }
+
+    fun completeDeferredUpcomingLoads() {
+        deferredUpcomingOffset = null
+        deferredUpcomingLoads.toList().also { deferredUpcomingLoads.clear() }.forEach { it() }
+    }
 
     override fun togglePause() = Unit
     override fun next() = Unit
@@ -611,7 +622,13 @@ internal class ConfigurationTestPlaybackControls(
         report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
     ) {
         loadUpcomingRequests += window
-        report(Result.success(loadUpcoming(window)))
+        val answer = Result.success(loadUpcoming(window))
+        if (window.offset == deferredUpcomingOffset) {
+            deferredUpcomingOffset = null
+            deferredUpcomingLoads += { report(answer) }
+        } else {
+            report(answer)
+        }
     }
 
     override fun playUpcomingTrackNow(
