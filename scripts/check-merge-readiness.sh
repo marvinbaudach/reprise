@@ -74,7 +74,18 @@ trap 'rm -rf "$tmp_root"' EXIT
 
 echo "== Workspace tests =="
 env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
-  cargo test --locked --workspace
+  REPRISE_AUDIO_SINK=fakesink \
+  cargo test --locked --workspace --exclude reprise-platform-linux
+
+# GStreamer pipelines and their GLib main-context work share process-global
+# state. Running the Linux backend tests in parallel can leave one test inside
+# a pipeline state transition while the stream-generation tests wait on their
+# shared audio-sink lock. Keep only this package serial; the rest of the
+# workspace still uses Cargo's normal parallelism.
+echo "== Linux platform tests (serialized GStreamer) =="
+env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
+  REPRISE_AUDIO_SINK=fakesink \
+  cargo test --locked -p reprise-platform-linux -- --test-threads=1
 
 echo "== Rule-named display tests =="
 scripts/check-display-tests.sh --rule-named
@@ -96,6 +107,9 @@ dbus-run-session -- cargo test --locked -p reprise-platform-linux \
   --test runtime_service -- --ignored --test-threads=1
 
 echo "== Dependency audit =="
-cargo audit
+if ! cargo audit; then
+  echo "live advisory refresh unavailable; checking the cached database" >&2
+  cargo audit --no-fetch
+fi
 
 echo "Merge-readiness checks passed against $base_ref"
