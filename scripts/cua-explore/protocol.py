@@ -419,7 +419,10 @@ class ActionGateway:
         action = parser(value, observation)
         if isinstance(action, FinishAction) and self.mission.workloads:
             missing = sorted(set(range(len(self.mission.workloads))) - self._completed_workloads)
-            if missing:
+            diagnostic_abort = action.reason.startswith(
+                ("agent-contract-mismatch:", "agent-internal-error:")
+            )
+            if missing and not diagnostic_abort:
                 raise ContractError(f"workloads incomplete: {missing}")
         if isinstance(action, RestartAction):
             if self._accepted_restarts >= self.mission.budgets.restarts:

@@ -9,12 +9,23 @@ python3 scripts/tests/cua-explore.py
 python3 scripts/tests/cua-explore-review.py
 python3 scripts/tests/cua-explore-audit-adversarial.py
 python3 scripts/tests/cua-explore-hover.py
+python3 scripts/tests/cua-explore-agent.py
 python3 scripts/cua-explore/protocol.py validate-mission \
   scripts/cua-explore/missions/first-time-exploration.json >/dev/null
 
 runner=scripts/cua-explore/run.sh
 if [[ ! -x $runner ]]; then
   echo "$runner must exist and be executable" >&2
+  exit 1
+fi
+agent=scripts/cua-explore/agents/reprise_ux_agent.py
+if [[ ! -x $agent ]]; then
+  echo "$agent must exist and be executable" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings -- '--agent-command-json' scripts/cua-explore/README.md || \
+   ! rg --quiet --fixed-strings 'agents/reprise_ux_agent.py' scripts/cua-explore/README.md; then
+  echo "exploratory README must document the bundled reasoning agent command" >&2
   exit 1
 fi
 help=$($runner --help)

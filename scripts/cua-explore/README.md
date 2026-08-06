@@ -17,6 +17,7 @@ The mission deck gives agents different goals and user mindsets:
 | Mission | Persona and pressure |
 | --- | --- |
 | `first-time-exploration` | A first-time listener with no Reprise vocabulary discovers local playback and reports unexplained states. |
+| `hover-affordance-sweep` | A reviewer points at every named button-like control before clicking anything. |
 | `section-search-isolation` | A curious source-switcher checks that search follows the visible section instead of silently affecting Music. |
 | `pointer-layout-reachability` | An impatient pointer user changes window sizes and probes handlers, hit targets, overlays, misrouted clicks, scrolling, and late layout movement. |
 | `offline-recovery` | A commuter loses and regains connectivity while local music and network-backed sources remain open. |
@@ -98,6 +99,31 @@ URLs, and exhausted budgets fail closed. The agent process receives only a
 small allowlisted environment and a disposable `HOME`; it is nevertheless an
 explicitly trusted executable, not a filesystem sandbox.
 
+## The bundled reasoning agent
+
+`agents/reprise_ux_agent.py` is the credential-free agent for
+`section-search-isolation`, `offline-recovery`, and `large-library-stress`. It is a
+seeded deterministic state machine: declarative workload phases are resolved against each
+fresh observation, every action passes a local copy of the protocol gate, and missing
+affordances get two observations plus a bounded alternate before a named note is retained.
+It does not use a model, network transport, API key, or credential environment variable.
+
+Pass the seed in the explicit agent argv; `run.sh --seed` controls only the built-in
+explorer:
+
+```sh
+agent_argv="[\"/usr/bin/python3\",\"$PWD/scripts/cua-explore/agents/reprise_ux_agent.py\",\"--seed\",\"11\"]"
+scripts/cua-explore/run.sh \
+  scripts/cua-explore/missions/section-search-isolation.json \
+  "$evidence_root/section-search-agent-11" \
+  --agent-command-json "$agent_argv"
+```
+
+Agent observations and findings are condensed into the finish reason and written in full
+to the disposable `HOME` as `agent-notes.jsonl`; the runner retains that file under
+`evidence/agent/`. The vocabulary-only `agents/probe_agent.py` records up to 15 normalized
+observations for the maintainer calibration run without attempting workload coverage.
+
 ## Evidence
 
 Each retained run contains:
@@ -108,6 +134,7 @@ Each retained run contains:
 - `trajectory.jsonl`: replayable typed actions and state identifiers;
 - `states/`: normalized CUA snapshots and screenshots around interactions;
 - `app-*.log`: one application log per launch or restart.
+- `agent/*.jsonl`: retained bundled-agent notes or vocabulary observations, when present.
 
 ## Hover acceptance
 
@@ -176,5 +203,5 @@ or explicitly accepted with evidence; a one-off heuristic finding is recorded
 for follow-up rather than silently discarded.
 
 Do not add this harness to `.github/workflows`. Large exploratory runs are
-expensive, nondeterministic by design when a reasoning agent is attached, and
+expensive, seed-varying by design when an exploratory agent is attached, and
 depend on human UX judgement.

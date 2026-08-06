@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -102,6 +103,19 @@ def prepare_hover(
     path = evidence_dir / "hover-preflight.json"
     path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return geometry
+
+
+def retain_agent_notes(profile_root: pathlib.Path, evidence_dir: pathlib.Path) -> None:
+    source = profile_root / "agent-home"
+    if not source.is_dir():
+        return
+    files = sorted(source.glob("*.jsonl"))
+    if not files:
+        return
+    target = evidence_dir / "agent"
+    target.mkdir(parents=True, exist_ok=True)
+    for path in files:
+        shutil.copy2(path, target / path.name)
 
 
 class RunError(RuntimeError):
@@ -571,6 +585,7 @@ def run(args: argparse.Namespace) -> int:
         pass
     finally:
         lifecycle.stop()
+        retain_agent_notes(profile_root, args.evidence_dir)
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()
