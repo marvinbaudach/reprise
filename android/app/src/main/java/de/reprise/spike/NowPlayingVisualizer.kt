@@ -12,9 +12,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -45,11 +48,12 @@ import kotlin.math.roundToInt
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 private const val VISUALIZER_CROSSFADE_MS = 120
-private const val UNAVAILABLE_EXPLANATION = "Needs track analysis"
 
 @Composable
 internal fun NowPlayingVisualizer(
+    trackId: Long,
     trackUri: String,
+    playbackFraction: Float,
     size: Int,
     shape: Shape,
 ) {
@@ -58,11 +62,13 @@ internal fun NowPlayingVisualizer(
     var menuOpen by remember { mutableStateOf(false) }
     var menuTouch by remember { mutableStateOf(Offset.Zero) }
     val haptics = LocalHapticFeedback.current
+    val renderedMode = control.selected
 
     Column {
         Box(
             modifier = Modifier
-                .size(size.dp)
+                .width(size.dp)
+                .height(size.dp)
                 .clip(shape)
                 .testTag("visualizer-surface")
                 .pointerInput(Unit) {
@@ -76,7 +82,7 @@ internal fun NowPlayingVisualizer(
                 },
         ) {
             AnimatedContent(
-                targetState = control.selected.renderedMode(),
+                targetState = renderedMode,
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("now-playing-cover"),
@@ -128,9 +134,6 @@ private fun Modifier.offsetAt(touch: Offset): Modifier = this.then(
     Modifier.offset { IntOffset(touch.x.roundToInt(), touch.y.roundToInt()) },
 )
 
-private fun MobileVisualizer.renderedMode(): MobileVisualizer =
-    if (available) this else MobileVisualizer.COVER
-
 @Composable
 private fun VisualizerBar(control: VisualizerControl) {
     Row(
@@ -141,7 +144,6 @@ private fun VisualizerBar(control: VisualizerControl) {
         MobileVisualizer.entries.forEach { mode ->
             TextButton(
                 onClick = { control.select(mode) },
-                enabled = mode.available,
                 modifier = Modifier
                     .testTag("visualizer-bar-${mode.name}")
                     .semantics {
@@ -159,34 +161,8 @@ private fun VisualizerBar(control: VisualizerControl) {
                         },
                     ),
             ) {
-                VisualizerModeLabel(mode)
+                Text(mode.label, maxLines = 1)
             }
-        }
-    }
-}
-
-/**
- * A mode's name, and — when it cannot be chosen — the one line that says why.
- *
- * Shared by the always-visible bar and the long-press menu on purpose. The
- * explanation used to live in the menu alone, so a listener who never long-holds
- * saw two permanently greyed entries with no reason given, and absent-for-a-
- * reason is indistinguishable from broken. The line is a child of the button
- * itself rather than a tooltip, which is also how a screen reader gets it: the
- * button merges its descendants, so the mode is announced with its reason and
- * its disabled state in one go.
- */
-@Composable
-private fun VisualizerModeLabel(mode: MobileVisualizer) {
-    Column {
-        Text(mode.label, maxLines = 1)
-        if (!mode.available) {
-            Text(
-                UNAVAILABLE_EXPLANATION,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
         }
     }
 }
@@ -201,7 +177,7 @@ private fun VisualizerMenu(
     DropdownMenu(expanded = expanded, onDismissRequest = dismiss) {
         MobileVisualizer.entries.forEach { mode ->
             DropdownMenuItem(
-                text = { VisualizerModeLabel(mode) },
+                text = { Text(mode.label, maxLines = 1) },
                 leadingIcon = {
                     MaterialSymbol(
                         name = if (mode == selected) "radio_button_checked" else "radio_button_unchecked",
@@ -209,7 +185,6 @@ private fun VisualizerMenu(
                         sizeSp = 20,
                     )
                 },
-                enabled = mode.available,
                 onClick = { select(mode) },
                 modifier = Modifier
                     .testTag("visualizer-menu-${mode.name}")

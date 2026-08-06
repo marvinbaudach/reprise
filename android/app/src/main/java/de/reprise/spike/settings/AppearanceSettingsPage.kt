@@ -108,32 +108,16 @@ private fun VisualizerChoiceRow(
     selected: Boolean,
     select: () -> Unit,
 ) {
-    // The row is the target. A disabled choice stays visibly disabled: the row
-    // takes no click either, so "Needs track analysis" is the whole answer
-    // rather than a label above a control that quietly does nothing.
+    // The row is the target, not the radio at its edge.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(
-                selected = selected,
-                enabled = mode.available,
-                onClick = select,
-                role = Role.RadioButton,
-            )
+            .selectable(selected = selected, onClick = select, role = Role.RadioButton)
             .testTag("settings-visualizer-${mode.name}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(mode.label)
-            if (!mode.available) {
-                Text(
-                    "Needs track analysis",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-        RadioButton(selected = selected, enabled = mode.available, onClick = null)
+        Text(mode.label, modifier = Modifier.weight(1f))
+        RadioButton(selected = selected, onClick = null)
     }
 }
 

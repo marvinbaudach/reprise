@@ -379,6 +379,14 @@ class MainActivity : ComponentActivity() {
         playbackBound = bindService(intent, playbackConnection, Context.BIND_AUTO_CREATE)
     }
 
+    override fun onResume() {
+        super.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+    }
+
     override fun onStop() {
         playbackService?.detachObserver()
         playbackService?.detachSettingsObserver()

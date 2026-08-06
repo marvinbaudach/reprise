@@ -1,8 +1,8 @@
 package de.reprise.spike
 
 import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,13 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -49,8 +47,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlin.math.PI
-import kotlin.math.sin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import uniffi.reprise_android_ffi.AndroidRepeatMode
@@ -146,7 +142,9 @@ private fun StackedNowPlayingContent(
                 }
             }
             NowPlayingVisualizer(
+                trackId = track.id,
                 trackUri = track.uri,
+                playbackFraction = playback.progressFraction,
                 size = metrics.coverSizeDp,
                 shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
             )
@@ -173,7 +171,7 @@ private fun StackedNowPlayingContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            WavySeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
+            SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             PlaybackActions(playback = playback, metrics = metrics, wideShort = false)
             RatingRow(track = track, surfaceState = surfaceState)
             playback.error?.let { message ->
@@ -209,7 +207,9 @@ private fun WideShortNowPlayingContent(
             contentAlignment = Alignment.Center,
         ) {
             NowPlayingVisualizer(
+                trackId = track.id,
                 trackUri = track.uri,
+                playbackFraction = playback.progressFraction,
                 size = metrics.coverSizeDp,
                 shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
             )
@@ -251,7 +251,7 @@ private fun WideShortNowPlayingContent(
                 }
             }
             RatingRow(track = track, surfaceState = surfaceState, wideShort = true)
-            WavySeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
+            SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             playback.error?.let { message ->
                 Text(
                     text = message,
@@ -269,7 +269,7 @@ private fun WideShortNowPlayingContent(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun WavySeekSlider(
+private fun SpectralSeekSlider(
     trackId: Long,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
@@ -292,15 +292,7 @@ private fun WavySeekSlider(
             },
             valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
-            track = {
-                WavySliderTrack(
-                    progress = if (durationMs > 0) {
-                        displayed.toFloat() / durationMs.toFloat()
-                    } else {
-                        0f
-                    },
-                )
-            },
+            track = { PlainSeekTrack(displayed, durationMs) },
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -321,47 +313,54 @@ private fun WavySeekSlider(
 }
 
 /**
- * The wave is what has been played. Right of the head the track is still to
- * come, so it stays a flat line — a wave there would claim motion the player
- * has not made yet.
+ * The seek bar: one colour, filled to the playhead.
+ *
+ * It used to draw `sin(x / 24dp · 2π)` under the head — a wave computed from
+ * nothing, which looked like a reading of the song and measured no audio at
+ * all. The real picture needs a stored spectrogram; the phone does not compute
+ * one and nothing carries the desktop's across yet, so the honest bar is a
+ * plain one. It is deliberately not a flattened version of the spectral bar:
+ * there is nothing here to under-draw.
  */
 @Composable
-private fun WavySliderTrack(progress: Float) {
-    val active = MaterialTheme.colorScheme.primary
-    val inactive = MaterialTheme.colorScheme.outline
+private fun PlainSeekTrack(positionMs: Long, durationMs: Long) {
+    val elapsed = MaterialTheme.colorScheme.primary
+    val remaining = MaterialTheme.colorScheme.outline
+    val fraction = if (durationMs > 0) {
+        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(32.dp),
+            .height(SEEK_TRACK_HEIGHT_DP.dp)
+            .testTag("now-playing-seek-track"),
     ) {
-        val center = size.height / 2f
-        val head = size.width * progress.coerceIn(0f, 1f)
-        val thickness = 3.dp.toPx()
+        val centre = size.height / 2f
+        val thickness = SEEK_TRACK_THICKNESS_DP.dp.toPx()
+        val head = size.width * fraction
         drawLine(
-            color = inactive,
-            start = Offset(head, center),
-            end = Offset(size.width, center),
+            color = remaining,
+            start = Offset(head, centre),
+            end = Offset(size.width, centre),
             strokeWidth = thickness,
             cap = StrokeCap.Round,
         )
-        if (head <= 0f) {
-            return@Canvas
+        if (head > 0f) {
+            drawLine(
+                color = elapsed,
+                start = Offset(0f, centre),
+                end = Offset(head, centre),
+                strokeWidth = thickness,
+                cap = StrokeCap.Round,
+            )
         }
-        val amplitude = 4.dp.toPx()
-        val wavelength = 24.dp.toPx()
-        val step = 2.dp.toPx()
-        fun waveAt(x: Float) = center + sin((x / wavelength) * 2.0 * PI).toFloat() * amplitude
-        val elapsed = Path()
-        elapsed.moveTo(0f, center)
-        var x = 0f
-        while (x < head) {
-            elapsed.lineTo(x, waveAt(x))
-            x += step
-        }
-        elapsed.lineTo(head, waveAt(head))
-        drawPath(elapsed, active, style = Stroke(width = thickness, cap = StrokeCap.Round))
     }
 }
+
+private const val SEEK_TRACK_HEIGHT_DP = 32
+private const val SEEK_TRACK_THICKNESS_DP = 3
 
 @Composable
 private fun PlaybackActions(
