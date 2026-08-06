@@ -80,8 +80,14 @@ fn build_row(
 ) -> gtk4::Box {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     row.add_css_class("reprise-sound-match");
+    // a11y-semantics: role=button name=sound-match state=focusable action=activate
     row.set_focusable(true);
     row.set_accessible_role(gtk4::AccessibleRole::Button);
+    row.update_property(&[gtk4::accessible::Property::Label(&format!(
+        "{} — {}",
+        neighbour.title, neighbour.artist
+    ))]);
+    // input-parity: ACC-8 keyboard=sound-match-enter-space
     row.set_cursor_from_name(Some("pointer"));
 
     let cover = gtk4::Image::builder()
@@ -119,6 +125,7 @@ fn build_row(
     row.append(&percentile);
 
     let id = neighbour.track_id;
+    // input-parity: ACC-8 keyboard=sound-match-enter-space
     let click = gtk4::GestureClick::new();
     click.set_button(1);
     click.connect_released({
@@ -126,6 +133,19 @@ fn build_row(
         move |_, _, _, _| invoke(&callbacks.play, id)
     });
     row.add_controller(click);
+    let keys = gtk4::EventControllerKey::new();
+    keys.connect_key_pressed({
+        let callbacks = callbacks.clone();
+        move |_, key, _, _| {
+            if is_activate_key(key) {
+                invoke(&callbacks.play, id);
+                gtk4::glib::Propagation::Stop
+            } else {
+                gtk4::glib::Propagation::Proceed
+            }
+        }
+    });
+    row.add_controller(keys);
     install_context_menu(
         &row,
         id,
@@ -193,18 +213,43 @@ fn install_context_menu(
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
     popover.set_parent(row);
     crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+    let pointer_popover = popover.clone();
+    // input-parity: ACC-8 keyboard=sound-menu-shift-f10
     let right_click = gtk4::GestureClick::new();
     right_click.set_button(3);
     right_click.connect_pressed(move |_, _, x, y| {
-        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(
+        pointer_popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(
             x.round() as i32,
             y.round() as i32,
             1,
             1,
         )));
-        popover.popup();
+        pointer_popover.popup();
     });
     row.add_controller(right_click);
+    let menu_keys = gtk4::EventControllerKey::new();
+    menu_keys.connect_key_pressed(move |_, key, _, modifiers| {
+        if is_context_menu_shortcut(key, modifiers) {
+            popover.set_pointing_to(None);
+            popover.popup();
+            gtk4::glib::Propagation::Stop
+        } else {
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+    row.add_controller(menu_keys);
+}
+
+fn is_activate_key(key: gtk4::gdk::Key) -> bool {
+    matches!(
+        key,
+        gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter | gtk4::gdk::Key::space
+    )
+}
+
+fn is_context_menu_shortcut(key: gtk4::gdk::Key, modifiers: gtk4::gdk::ModifierType) -> bool {
+    key == gtk4::gdk::Key::Menu
+        || (key == gtk4::gdk::Key::F10 && modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK))
 }
 
 fn add_action(
@@ -236,5 +281,31 @@ fn invoke(slot: &RefCell<Option<IdCallback>>, id: i64) {
     let callback = slot.borrow().clone();
     if let Some(callback) = callback {
         callback(id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keyboard_routes_match_the_pointer_actions() {
+        assert!(is_activate_key(gtk4::gdk::Key::Return));
+        assert!(is_activate_key(gtk4::gdk::Key::KP_Enter));
+        assert!(is_activate_key(gtk4::gdk::Key::space));
+        assert!(!is_activate_key(gtk4::gdk::Key::Escape));
+
+        assert!(is_context_menu_shortcut(
+            gtk4::gdk::Key::Menu,
+            gtk4::gdk::ModifierType::empty()
+        ));
+        assert!(is_context_menu_shortcut(
+            gtk4::gdk::Key::F10,
+            gtk4::gdk::ModifierType::SHIFT_MASK
+        ));
+        assert!(!is_context_menu_shortcut(
+            gtk4::gdk::Key::F10,
+            gtk4::gdk::ModifierType::empty()
+        ));
     }
 }
