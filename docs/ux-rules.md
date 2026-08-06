@@ -3299,11 +3299,20 @@ STYLE-1).
   see.
 
 - **AC-25** [replaced by AC-26]
-- **AC-26** [active] [gtk] — **Song Visuals follow the music, not the source.**
-  A playing YouTube episode or radio station gets the same treatment as a
-  local track: the Visual tab with its audio-reactive bars, and the cover
+- **AC-26** [active] [core] [gtk] — **Song Visuals follow the music, not the source.**
+  A radio station gets the same treatment as a local track: the Visual tab
+  with its audio-reactive bars, and the cover
   bloom and shimmer driven by the session's own artwork — one load, shared
   with the cover it already shows, never a second request for the same image.
+  A YouTube episode follows YouTube's own stored category: `Music` receives
+  that same treatment, while `News & Politics`, `Education` and the other
+  unambiguously spoken categories do not. A category that is absent or
+  ambiguous, including `Entertainment` and `Film & Animation`, keeps the
+  existing YouTube default and receives Song Visuals; unknown is not guessed
+  into speech. Reprise learns and stores the raw category only from the full
+  extraction that playback or download already performs — it never makes a
+  request solely to classify an episode, and existing unclassified episodes
+  remain unchanged until one of those operations naturally extracts them.
   An RSS podcast is speech, not music: speech has no spectrum worth drawing,
   so the bars would flicker around a voice instead of answering it. While an
   episode plays, the whole audio-reactive chain behaves as though the "Song
@@ -4482,7 +4491,11 @@ listening statistics.
   an unmetered connection.
 - **POD-3** [active] [core] — YouTube sits exclusively behind the
   yt-dlp provider boundary: flat playlist for listing, audio
-  resolution only at playback time and never persisted. Errors are
+  resolution only at playback time, with the ephemeral stream URL never
+  persisted. The same full playback extraction, and the existing download
+  extraction, may persist the raw first media category when yt-dlp supplies
+  one; flat listings never trigger an extra extraction for it, and a missing
+  or malformed category remains nullable and non-fatal. Errors are
   classified into actionable, provider-safe UI messages and never
   crash; operation, failure category, exit code or timeout are logged
   without URLs, tokens, cookie paths, raw provider text, or local

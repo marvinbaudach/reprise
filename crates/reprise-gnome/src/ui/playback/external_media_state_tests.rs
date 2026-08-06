@@ -19,6 +19,7 @@ fn podcast_session(
         automatic_advance,
         subscription_id: 42,
         kind: PodcastKind::Rss,
+        media_category: None,
         published_at: None,
         art_url: None,
         phase: PodcastPhase::Playing,
@@ -235,19 +236,61 @@ fn removing_a_show_matches_only_its_active_podcast_session() {
 }
 
 #[test]
-fn ac_26_external_snapshots_classify_youtube_and_radio_as_music() {
+fn ac_26_external_snapshots_follow_youtube_category_then_source_default() {
     let mut rss_session = podcast_session(None, None);
     rss_session.kind = PodcastKind::Rss;
+    rss_session.media_category = Some("Music".into());
     let rss = podcast_state(rss_session).snapshot().unwrap();
-    assert!(!rss.carries_music(), "an RSS podcast is speech");
+    assert!(
+        !rss.carries_music(),
+        "an RSS podcast stays speech even if a foreign category is present"
+    );
 
     let mut youtube_session = podcast_session(None, None);
     youtube_session.kind = PodcastKind::Youtube;
-    let youtube = podcast_state(youtube_session).snapshot().unwrap();
-    assert!(youtube.carries_music(), "YouTube carries Song Visuals");
+    youtube_session.media_category = Some("Music".into());
+    assert!(podcast_state(youtube_session.clone())
+        .snapshot()
+        .unwrap()
+        .carries_music());
+
+    youtube_session.media_category = Some("News & Politics".into());
+    assert!(!podcast_state(youtube_session.clone())
+        .snapshot()
+        .unwrap()
+        .carries_music());
+
+    youtube_session.media_category = Some("Entertainment".into());
+    assert!(podcast_state(youtube_session.clone())
+        .snapshot()
+        .unwrap()
+        .carries_music());
+
+    youtube_session.media_category = None;
+    assert!(
+        podcast_state(youtube_session)
+            .snapshot()
+            .unwrap()
+            .carries_music(),
+        "an unclassified YouTube episode keeps today's music default"
+    );
 
     let radio = radio_state().snapshot().unwrap();
     assert!(radio.carries_music(), "radio carries Song Visuals");
+}
+
+#[test]
+fn resolved_category_updates_only_the_matching_live_youtube_session() {
+    let mut session = podcast_session(None, None);
+    session.kind = PodcastKind::Youtube;
+    let mut state = podcast_state(session);
+    state.generation = 8;
+
+    assert!(!state.update_podcast_media_category(7, 7, Some("News & Politics".to_owned())));
+    assert!(state.snapshot().unwrap().carries_music());
+
+    assert!(state.update_podcast_media_category(8, 7, Some("News & Politics".to_owned())));
+    assert!(!state.snapshot().unwrap().carries_music());
 }
 
 #[test]

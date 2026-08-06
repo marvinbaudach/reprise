@@ -20,6 +20,7 @@ pub(super) fn external_episode_snapshot(
     ExternalPlaybackSnapshot {
         mode: PlaybackMode::Podcast,
         podcast_kind: Some(reprise_core::podcasts::PodcastKind::Rss),
+        media_category: None,
         media: ExternalMedia::Podcast {
             episode_id: 42,
             title: "External episode".into(),
@@ -49,6 +50,7 @@ pub(super) fn external_radio_snapshot(
     ExternalPlaybackSnapshot {
         mode: PlaybackMode::Radio,
         podcast_kind: None,
+        media_category: None,
         media: ExternalMedia::Radio {
             station_id: 7,
             name: "External radio".into(),
@@ -165,7 +167,7 @@ fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_26_youtube_keeps_the_visual_page_while_an_rss_podcast_hides_it() {
+fn ac_26_youtube_category_decides_whether_the_visual_page_stays() {
     gtk4::init().unwrap();
     let (_window, panel) =
         super::tests::test_panel("org.reprise.Reprise.ExternalVisualVisibilityTest");
@@ -173,6 +175,11 @@ fn ac_26_youtube_keeps_the_visual_page_while_an_rss_podcast_hides_it() {
 
     panel.set_external_snapshot(Some(external_youtube_snapshot()));
     assert!(panel.widgets.visual_page.is_visible());
+
+    let mut news = external_youtube_snapshot();
+    news.media_category = Some("News & Politics".into());
+    panel.set_external_snapshot(Some(news));
+    assert!(!panel.widgets.visual_page.is_visible());
 
     panel.set_external_snapshot(Some(external_episode_snapshot()));
     assert!(!panel.widgets.visual_page.is_visible());
