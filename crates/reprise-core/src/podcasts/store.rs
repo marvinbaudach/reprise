@@ -11,6 +11,7 @@ pub use super::downloads::{
     downloaded_paths_for_subscription, set_downloaded_file, set_downloaded_path,
 };
 pub use super::phone_sync::set_enabled as set_sync_to_phone;
+pub use super::store_metadata::save_youtube_resolution;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewSubscription {
@@ -675,12 +676,13 @@ pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, ru
         page_url: row.get(9)?,
         published_at: row.get(10)?,
         duration_secs: row.get(11)?,
-        downloaded_path: row.get(12)?,
-        downloaded_bytes: row.get(13)?,
-        played_at: row.get(14)?,
-        position_ms: row.get(15)?,
-        first_seen_at: row.get(16)?,
-        is_new: row.get(17)?,
+        media_category: row.get(12)?,
+        downloaded_path: row.get(13)?,
+        downloaded_bytes: row.get(14)?,
+        played_at: row.get(15)?,
+        position_ms: row.get(16)?,
+        first_seen_at: row.get(17)?,
+        is_new: row.get(18)?,
     })
 }
 

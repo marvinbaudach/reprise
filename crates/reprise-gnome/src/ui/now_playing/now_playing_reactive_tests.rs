@@ -37,24 +37,24 @@ fn ac_24_the_panel_head_looks_the_same_whichever_tab_is_open() {
     panel.set_song_visuals_enabled(true);
     panel.widgets.shimmer.set_light(0.8, 0.7);
     panel.widgets.shimmer.set_frame_time(15_000_000);
-    assert!(panel.widgets.shimmer.widget().is_visible());
+    assert!(shimmer_unpinned(&panel));
 
     // The Visual tab used to pin the backdrop and hide the disc, on the theory
     // that two light languages in one panel fight each other. In use the plain
     // treatment was better there too, so switching tabs must change nothing
     // about the head.
     panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);
-    assert!(panel.widgets.shimmer.widget().is_visible());
+    assert!(shimmer_unpinned(&panel));
 
     // Closing the panel still rests both: a pinned backdrop runs no tick, and
     // without that the paused breath would redraw a widget nobody can see.
     panel.set_transient_visibility(false);
-    assert!(!panel.widgets.shimmer.widget().is_visible());
+    assert!(!shimmer_unpinned(&panel));
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_25_a_podcast_takes_the_visual_tab_and_the_reactive_light_with_it() {
+fn ac_26_song_visuals_follow_music_instead_of_the_external_source() {
     if gtk4::init().is_err() {
         return;
     }
@@ -68,10 +68,9 @@ fn ac_25_a_podcast_takes_the_visual_tab_and_the_reactive_light_with_it() {
     // is not — it would answer "hidden" whatever the pin says.
     assert!(shimmer_unpinned(&panel));
 
-    // Exactly what the wiring hands the panel when an episode starts: the
-    // session, and the one effective answer the controller owns for it.
-    panel.set_external_snapshot(Some(super::tests::external_episode_snapshot()));
-    panel.set_song_visuals_enabled(false);
+    // The panel receives the module switch and the typed session separately;
+    // the snapshot's one music predicate decides the effective treatment.
+    panel.set_external_snapshot(Some(super::external_tests::external_episode_snapshot()));
 
     assert!(
         !panel.widgets.visual_page.is_visible(),
@@ -87,17 +86,20 @@ fn ac_25_a_podcast_takes_the_visual_tab_and_the_reactive_light_with_it() {
         "the reactive light rests for speech"
     );
 
-    // Radio is music, and the answer for it is the plugin's own again.
-    panel.set_external_snapshot(Some(super::tests::external_radio_snapshot()));
-    panel.set_song_visuals_enabled(true);
-    assert!(
-        panel.widgets.visual_page.is_visible(),
-        "radio keeps the visuals a podcast took away"
-    );
-    assert!(
-        shimmer_unpinned(&panel),
-        "radio gets the reactive light back"
-    );
+    for snapshot in [
+        super::external_tests::external_youtube_snapshot(),
+        super::external_tests::external_radio_snapshot(),
+    ] {
+        panel.set_external_snapshot(Some(snapshot));
+        assert!(
+            panel.widgets.visual_page.is_visible(),
+            "YouTube and radio keep the visuals a podcast took away"
+        );
+        assert!(
+            shimmer_unpinned(&panel),
+            "music gets the reactive light back"
+        );
+    }
 }
 
 fn shimmer_unpinned(panel: &NowPlayingPanel) -> bool {

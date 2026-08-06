@@ -296,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn que_9_episode_metadata_uses_its_own_namespace_and_track_free_fields() {
+    fn que_12_episode_metadata_uses_its_own_namespace_and_track_free_fields() {
         let state = MprisState {
             track_id: None,
             external_ref: Some("podcast/42".into()),

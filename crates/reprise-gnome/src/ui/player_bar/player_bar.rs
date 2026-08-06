@@ -100,6 +100,7 @@ pub struct PlayerBar {
     pub(in crate::ui) legend: crate::ui::player_bar::seek_legend::SeekLegend,
     /// Held so the legend keeps starting where the bar does.
     _time_alignment: gtk4::SizeGroup,
+    _transport_alignment: gtk4::SizeGroup,
     /// The last track the legend was offered for. A track change is what the
     /// count in settings counts, and a tag edit on the running track re-runs
     /// the same wiring — without this it would burn one of the three showings.
@@ -187,6 +188,7 @@ impl PlayerBar {
             live_station_label,
             waveform,
             legend,
+            transport_alignment,
             time_alignment,
             volume_icon,
             volume_scale,
@@ -283,6 +285,7 @@ impl PlayerBar {
             waveform,
             legend,
             _time_alignment: time_alignment,
+            _transport_alignment: transport_alignment,
             legend_track: Cell::new(None),
             seek_colouring: Cell::new(SeekColouring::DEFAULT),
             explain_action,

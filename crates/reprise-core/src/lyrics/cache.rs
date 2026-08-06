@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{LyricsBody, LyricsHit, LyricsQuery};
 
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
 pub(crate) const NEGATIVE_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

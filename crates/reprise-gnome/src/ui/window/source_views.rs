@@ -95,8 +95,7 @@ pub(in crate::ui) fn install(
                 let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) else {
                     return false;
                 };
-                player.append_queue_items(items);
-                true
+                player.append_queue_items(items) > 0
             }
         },
     );

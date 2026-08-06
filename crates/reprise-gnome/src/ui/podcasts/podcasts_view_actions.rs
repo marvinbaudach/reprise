@@ -53,7 +53,7 @@ impl PodcastsView {
             podcasts_context_menu::ACTION_ADD_TO_QUEUE,
             |view, ids| view.queue_selected_episodes(&ids, QueuePlacement::End),
         );
-        podcasts_context_menu::install_disabled_queue_actions(&group);
+        disable_episode_queue_actions(&group);
         self.add_target_action(
             &group,
             podcasts_context_menu::ACTION_TOGGLE_PLAYED,
@@ -455,6 +455,21 @@ enum QueuePlacement {
     End,
 }
 
+fn disable_episode_queue_actions(group: &gio::SimpleActionGroup) {
+    for name in [
+        podcasts_context_menu::ACTION_PLAY_NEXT,
+        podcasts_context_menu::ACTION_ADD_TO_QUEUE,
+    ] {
+        if let Some(action) = group
+            .lookup_action(name)
+            .and_then(|action| action.downcast::<gio::SimpleAction>().ok())
+        {
+            action.set_enabled(false);
+        }
+    }
+    podcasts_context_menu::install_disabled_queue_actions(group);
+}
+
 fn available_episode_items(db: &Db, episode_ids: &[i64]) -> Option<Vec<QueueItem>> {
     if episode_ids.is_empty() {
         return None;
@@ -504,6 +519,28 @@ mod batch_tests {
         };
 
         assert_eq!(batch_result_text(&result), "3 episodes updated");
+    }
+
+    #[test]
+    fn que_12_episode_queue_actions_are_disabled_before_the_menu_can_dispatch() {
+        let group = gio::SimpleActionGroup::new();
+        for name in [
+            podcasts_context_menu::ACTION_PLAY_NEXT,
+            podcasts_context_menu::ACTION_ADD_TO_QUEUE,
+        ] {
+            group.add_action(&gio::SimpleAction::new(name, None));
+        }
+
+        disable_episode_queue_actions(&group);
+
+        assert!(!group
+            .lookup_action(podcasts_context_menu::ACTION_PLAY_NEXT)
+            .unwrap()
+            .is_enabled());
+        assert!(!group
+            .lookup_action(podcasts_context_menu::ACTION_ADD_TO_QUEUE)
+            .unwrap()
+            .is_enabled());
     }
 
     #[test]

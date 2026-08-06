@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -11,10 +10,6 @@ use super::review_model::{candidate_description, candidate_label, field_label};
 use crate::ui::strings;
 
 type OnChoose = Rc<dyn Fn(DoctorReviewGroupId, &DoctorValue)>;
-
-thread_local! {
-    static STYLE_INSTALLED: Cell<bool> = const { Cell::new(false) };
-}
 
 pub(super) struct ReviewConflicts {
     pub(super) root: gtk4::Box,
@@ -52,7 +47,6 @@ impl ReviewConflicts {
         root.set_margin_bottom(12);
         root.add_css_class("card");
         root.add_css_class("doctor-conflicts-dashed");
-        ensure_style(&root.display());
         root.append(&heading);
         root.append(&optional);
         root.append(
@@ -113,21 +107,4 @@ impl ReviewConflicts {
         root.set_visible(!groups.is_empty());
         Self { root, skip }
     }
-}
-
-fn ensure_style(display: &gtk4::gdk::Display) {
-    STYLE_INSTALLED.with(|installed| {
-        if installed.replace(true) {
-            return;
-        }
-        let provider = gtk4::CssProvider::new();
-        provider.load_from_string(
-            ".doctor-conflicts-dashed { border: 1px dashed @borders; border-radius: 12px; padding: 12px; }",
-        );
-        gtk4::style_context_add_provider_for_display(
-            display,
-            &provider,
-            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-    });
 }

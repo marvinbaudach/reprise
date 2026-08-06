@@ -90,17 +90,6 @@ fn rate_limiter_reserves_three_concurrent_slots_monotonically() {
 }
 
 #[test]
-fn retry_after_accepts_delta_seconds_and_http_dates() {
-    let now = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    assert_eq!(parse_retry_after("12", now), Some(Duration::from_secs(12)));
-    assert_eq!(
-        parse_retry_after("Tue, 14 Nov 2023 22:13:25 GMT", now),
-        Some(Duration::from_secs(5))
-    );
-    assert_eq!(parse_retry_after("private metadata", now), None);
-}
-
-#[test]
 fn official_acoustid_shape_maps_recording_artists_groups_duration_and_releases() {
     let body = r#"{
       "status":"ok","results":[{"score":0.91,"recordings":[{

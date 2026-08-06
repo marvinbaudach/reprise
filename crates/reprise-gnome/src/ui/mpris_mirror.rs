@@ -420,8 +420,12 @@ impl PlayerController {
                 0,
                 crate::ui::playback::play_origin::PlayOrigin::library(),
             ),
-            MprisCommand::QueueAddNext(ids) => self.play_next(&ids),
-            MprisCommand::QueueAddLast(ids) => self.append_to_queue(&ids),
+            MprisCommand::QueueAddNext(ids) => {
+                self.play_next(&ids);
+            }
+            MprisCommand::QueueAddLast(ids) => {
+                self.append_to_queue(&ids);
+            }
             MprisCommand::QueueClear => self.clear_play_next(),
         }
     }
@@ -583,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn que_9_agent_queue_mirror_keeps_typed_items_beside_track_only_ids() {
+    fn que_12_agent_queue_mirror_keeps_typed_items_beside_track_only_ids() {
         let items = [
             QueueItem::Track(7),
             QueueItem::Episode(7),
@@ -601,7 +605,7 @@ mod tests {
     /// tracks that sit beyond what `play_next_items` says is there, so the two
     /// fields would describe different slices of the same queue.
     #[test]
-    fn que_9_the_track_only_view_never_reaches_past_the_reported_window() {
+    fn que_12_the_track_only_view_never_reaches_past_the_reported_window() {
         let mut items: Vec<QueueItem> = (0..AGENT_QUEUE_WINDOW as i64)
             .map(QueueItem::Episode)
             .collect();

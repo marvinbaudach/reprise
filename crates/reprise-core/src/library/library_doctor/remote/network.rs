@@ -250,7 +250,9 @@ fn http_get(agent: &ureq::Agent, url: &str) -> Result<HttpReply, RemoteProviderE
         .headers()
         .get("Retry-After")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| parse_retry_after(value, std::time::SystemTime::now()));
+        .and_then(|value| {
+            crate::source_error::parse_retry_after_at(Some(value), std::time::SystemTime::now())
+        });
     let body = response
         .body_mut()
         .read_to_string()
@@ -275,7 +277,9 @@ fn http_post(
         .headers()
         .get("Retry-After")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| parse_retry_after(value, std::time::SystemTime::now()));
+        .and_then(|value| {
+            crate::source_error::parse_retry_after_at(Some(value), std::time::SystemTime::now())
+        });
     let body = response
         .body_mut()
         .read_to_string()
@@ -355,20 +359,6 @@ fn request_delay(previous: Option<Instant>, now: Instant, interval: Duration) ->
             interval.saturating_sub(now.duration_since(value))
         }
     })
-}
-
-fn parse_retry_after(value: &str, now: std::time::SystemTime) -> Option<Duration> {
-    if let Ok(seconds) = value.trim().parse::<u64>() {
-        return Some(Duration::from_secs(seconds));
-    }
-    let deadline = chrono::DateTime::parse_from_rfc2822(value).ok()?;
-    let now: chrono::DateTime<chrono::Utc> = now.into();
-    deadline
-        .with_timezone(&chrono::Utc)
-        .signed_duration_since(now)
-        .to_std()
-        .ok()
-        .or(Some(Duration::ZERO))
 }
 
 fn cancellable_sleep(

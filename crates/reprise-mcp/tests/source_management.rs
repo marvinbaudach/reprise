@@ -356,34 +356,24 @@ fn adds_edits_and_removes_a_radio_favorite_without_echoing_its_stream_url() {
 
 #[test]
 fn adds_a_url_only_radio_favorite_from_icy_metadata() {
-    use std::io::{Read, Write};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 2_048];
-        let _ = stream.read(&mut request);
-        stream
-            .write_all(
-                b"HTTP/1.1 200 OK\r\n\
-                  Content-Type: audio/mpeg\r\n\
-                  Icy-Name: Local Metal\r\n\
-                  Icy-Genre: Metal\r\n\
-                  Icy-Br: 128\r\n\
-                  Content-Length: 0\r\n\
-                  Connection: close\r\n\r\n",
-            )
-            .unwrap();
-    });
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
+    let fixtures = TempDir::new().unwrap();
+    let stream_url = "https://radio.example.test/live";
+    std::fs::write(
+        fixtures
+            .path()
+            .join("stream-https___radio.example.test_live.headers.json"),
+        r#"[["content-type","audio/mpeg"],["icy-name","Local Metal"],["icy-genre","Metal"],["icy-br","128"]]"#,
+    )
+    .unwrap();
     set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
-    let mut client = McpClient::start(&path);
+    let mut client =
+        McpClient::start_with_env(&path, &[("REPRISE_RADIO_FIXTURE_DIR", fixtures.path())]);
 
     let response = client.call_tool(
         "music_manage_radio",
-        json!({ "action": "add", "url": format!("http://{address}/live") }),
+        json!({ "action": "add", "url": stream_url }),
     );
     let added = structured_ok(&response);
     assert_eq!(added["name"], "Local Metal");
@@ -391,63 +381,45 @@ fn adds_a_url_only_radio_favorite_from_icy_metadata() {
     assert_eq!(added["codec"], "MP3");
     assert_eq!(added["bitrate_kbps"], 128);
     assert_no_leaks(&serde_json::to_string(&response).unwrap());
-    server.join().unwrap();
 }
 
 #[test]
 fn resolves_a_pls_radio_favorite_before_probing_and_storing_it() {
-    use std::io::{Read, Write};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = std::thread::spawn(move || {
-        for request_number in 0..2 {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 2_048];
-            let _ = stream.read(&mut request);
-            if request_number == 0 {
-                let body = format!(
-                    "[playlist]\nNumberOfEntries=1\nFile1=http://{address}/live\nVersion=2\n"
-                );
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
-                .unwrap();
-            } else {
-                stream
-                    .write_all(
-                        b"HTTP/1.1 200 OK\r\n\
-                          Content-Type: audio/mpeg\r\n\
-                          Icy-Name: Playlist Metal\r\n\
-                          Icy-Genre: Metal\r\n\
-                          Icy-Br: 192\r\n\
-                          Content-Length: 0\r\n\
-                          Connection: close\r\n\r\n",
-                    )
-                    .unwrap();
-            }
-        }
-    });
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
+    let fixtures = TempDir::new().unwrap();
+    let playlist_url = "https://radio.example.test/metal.pls";
+    let stream_url = "https://radio.example.test/live";
+    std::fs::write(
+        fixtures
+            .path()
+            .join("stream-https___radio.example.test_metal.pls.body"),
+        format!("[playlist]\nNumberOfEntries=1\nFile1={stream_url}\nVersion=2\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        fixtures
+            .path()
+            .join("stream-https___radio.example.test_live.headers.json"),
+        r#"[["content-type","audio/mpeg"],["icy-name","Playlist Metal"],["icy-genre","Metal"],["icy-br","192"]]"#,
+    )
+    .unwrap();
     set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
-    let mut client = McpClient::start(&path);
+    let mut client =
+        McpClient::start_with_env(&path, &[("REPRISE_RADIO_FIXTURE_DIR", fixtures.path())]);
 
     let added = structured_ok(&client.call_tool(
         "music_manage_radio",
-        json!({ "action": "add", "url": format!("http://{address}/metal.pls") }),
+        json!({ "action": "add", "url": playlist_url }),
     ));
     assert_eq!(added["name"], "Playlist Metal");
     assert_eq!(added["bitrate_kbps"], 192);
-    server.join().unwrap();
 
     let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     let station = reprise_core::radio::station::get(&db, added["id"].as_i64().unwrap())
         .unwrap()
         .unwrap();
-    assert_eq!(station.stream_url, format!("http://{address}/live"));
+    assert_eq!(station.stream_url, stream_url);
 }
 
 #[test]

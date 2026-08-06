@@ -22,7 +22,7 @@ fn download_passes_audio_only_output_arguments() {
     );
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
 
-    runner
+    let metadata = runner
         .download("https://www.youtube.com/watch?v=v1", &output)
         .unwrap();
 
@@ -44,8 +44,13 @@ fn download_passes_audio_only_output_arguments() {
             "--audio-format",
             "opus",
             "--no-part",
+            // Each print carries its own marker so the reader finds the field
+            // by name, not by position — stdout also carries postprocess
+            // lines in yt-dlp's own format.
             "--print",
-            "after_move:filepath",
+            "after_move:reprise-file:%(filepath)s",
+            "--print",
+            "after_move:reprise-categories:%(categories)j",
             "-o",
             // Not `output` itself: a trailing `.part` is yt-dlp's own
             // marker and gets stripped, so the executor asks for a name it
@@ -58,6 +63,67 @@ fn download_passes_audio_only_output_arguments() {
     );
     assert_eq!(fs::read_to_string(&output).unwrap(), "downloaded");
     assert!(!postprocessed.exists());
+    assert!(
+        metadata.categories.is_empty(),
+        "a missing metadata line must leave the category unknown"
+    );
+}
+
+#[test]
+fn download_returns_categories_without_mistaking_them_for_the_filepath() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("episode.audio");
+    let postprocessed = directory.path().join("episode.opus");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf downloaded > '{}'\nprintf '%s\\n' 'reprise-file:{}' 'reprise-categories:[\"Music\"]'",
+            postprocessed.display(),
+            postprocessed.display()
+        ),
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    let metadata = runner
+        .download("https://www.youtube.com/watch?v=v1", &output)
+        .unwrap();
+
+    assert_eq!(metadata.categories, ["Music"]);
+    assert_eq!(fs::read_to_string(&output).unwrap(), "downloaded");
+}
+
+/// stdout is shared. `--progress` is on and only the `download:` phase carries
+/// our template, so a postprocess line arrives in yt-dlp's own format — and
+/// `-x --audio-format opus` means a postprocessor really does run. Reading the
+/// first line as the path handed `finalize_download` that foreign line and
+/// failed a download that had produced its file; reading the last two would
+/// still be a guess. Each field is found by its own marker instead.
+#[test]
+fn download_finds_its_fields_by_marker_even_with_foreign_lines_on_stdout() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("episode.audio");
+    let postprocessed = directory.path().join("episode.opus");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf downloaded > '{}'\nprintf '%s\\n' \
+             '[ExtractAudio] Destination: {}' \
+             'reprise-file:{}' \
+             '[Something] trailing chatter' \
+             'reprise-categories:[\"News & Politics\"]'",
+            postprocessed.display(),
+            postprocessed.display(),
+            postprocessed.display()
+        ),
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    let metadata = runner
+        .download("https://www.youtube.com/watch?v=v1", &output)
+        .unwrap();
+
+    assert_eq!(metadata.categories, ["News & Politics"]);
+    assert_eq!(fs::read_to_string(&output).unwrap(), "downloaded");
 }
 
 #[test]

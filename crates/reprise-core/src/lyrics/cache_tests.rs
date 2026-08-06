@@ -46,6 +46,31 @@ fn version_one_cache_record_is_ignored() {
 }
 
 #[test]
+fn version_two_negative_cache_is_invalidated_for_the_lrclib_search_chain() {
+    let temp = TempDir::new().unwrap();
+    let path = cache_file(temp.path(), &query());
+    fs::create_dir_all(temp.path()).unwrap();
+    fs::write(
+        &path,
+        r#"{
+          "version": 2,
+          "query": {
+            "title": "Synthetic Song",
+            "artist": "Example Artist",
+            "album": "Test Album",
+            "duration_ms": 180000
+          },
+          "fetched_at": 100,
+          "result": "NotFound"
+        }"#,
+    )
+    .unwrap();
+
+    assert!(read_cache(temp.path(), &query()).is_none());
+    assert!(!path.exists());
+}
+
+#[test]
 fn found_source_survives_a_cache_round_trip() {
     let temp = TempDir::new().unwrap();
 

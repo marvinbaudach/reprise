@@ -253,7 +253,7 @@ result.
   (P-6). No background event (deleted, unmounted, sync removal, watcher)
   stops the playing track — explicit user actions (double-click, Play
   all, OS-open) naturally change playback.
-- **PLAY-5c** [active] [core] — Unsubscribed episode hygiene: an episode
+- **PLAY-5c** [replaced by QUE-12] [core] — Unsubscribed episode hygiene: an episode
   whose show is no longer subscribed leaves the manual queue silently,
   including during session restoration and before queue advance.
 - **PLAY-6** [planned] [gtk] — Shuffle/Repeat are global player states
@@ -1164,8 +1164,7 @@ result.
   toast per file (noise) — row turns gray/disappears per the Missing
   rules, the ISSUES badge counts up. Exception: the currently playing
   queue item faults → skip. A track shows one toast "Track unavailable
-  — skipped"; consecutive unplayable queued episodes collapse into one
-  "Skipped N unplayable episodes" toast instead of one toast per skip.
+  — skipped".
 - **FB-7** [active] [core] — "Remove from library" does not delete but
   sets `removed_at` (tombstone); the row with ratings, play counts and
   playlist positions stays fully intact for 10 s, Undo only resets
@@ -1273,7 +1272,7 @@ result.
   the visible window bound widgets and work independent of queue length.
   With the panel closed or another tab active, item changes and reorders
   only update the model and render no panel rows.
-- **QUE-9** [active] [core] — The manual queue stores typed track and
+- **QUE-9** [replaced by QUE-12] [core] — The manual queue stores typed track and
   episode entries and preserves their identity even when their numeric
   IDs collide. RSS and YouTube episodes advance in manual queue order,
   never enter the container queue's automatic `QueueSnapshot` context,
@@ -1291,13 +1290,26 @@ result.
   section, labelled with the show or channel. The manual queue and container
   `QueueSnapshot` remain unchanged underneath and reappear unchanged when
   queue playback resumes.
-- **QUE-11** [active] [core] [gtk] — Session persistence keeps the typed
+- **QUE-11** [active] [core] [gtk] — Session persistence keeps the track-only
   manual queue, its current entry, and the stable identity of a loaded podcast
   or YouTube episode. Direct playback additionally stores its bounded frozen
-  episode-neighbour order; manual playback derives neighbours from the
-  restored typed queue. Signed or resolved stream URLs never persist. On cold
+  episode-neighbour order. Signed or resolved stream URLs never persist. On cold
   start the identity is validated against the current episode catalog and is
   reconstructed as paused metadata only.
+- **QUE-12** [active] [core] [gtk] — Replaces `QUE-9`. Podcast and YouTube
+  episodes never enter the manual queue. Core rejects episode items at every
+  manual-queue insertion point and session restore removes any pending or
+  current episode left by an older build. GTK queue actions and drop targets
+  accept and report only the surviving tracks; an episode-only action or drop
+  is disabled or refused without a success toast. `QueueItem::Episode` remains
+  available for direct episode rendering and outward typed projections.
+- **QUE-13** [active] [gtk] — Removing the Now Playing row of a directly loaded
+  podcast or YouTube episode ends that external session and reports one removed
+  row. Its frozen show-context rows remain read-only and are never removed from
+  the music queue.
+- **QUE-14** [active] [gtk] — The Up Next panel's remove control follows its
+  bound row's live position. When a model shift moves that row into a read-only
+  podcast or YouTube show context, the control disappears immediately.
 
 ## K. Filter & search visibility
 
@@ -2417,12 +2429,20 @@ property is set and yet nothing happens.
   specified for lyrics today; were it to arise, `NET-3` would govern it, not
   this rule — the two states must not be confused.
 - **LYR-5** [active] [core] — Lyrics providers run in this order: embedded
-  tags and `.lrc` sidecar locally, then LRCLIB, then NetEase. The first
-  synchronized result wins; the first plain result remains the fallback.
+  tags and `.lrc` sidecar locally, LRCLIB exact lookup, conservative LRCLIB
+  search, then NetEase. LRCLIB search runs only after a clean exact miss or to
+  upgrade an exact plain result. It requires normalized exact title and artist
+  plus duration within two seconds; album equality ranks otherwise valid
+  candidates, synchronized lyrics outrank plain lyrics, and an equally ranked
+  tie is rejected. An exact plain result remains the fallback unless search
+  finds one valid synchronized result. Across providers, the first
+  synchronized result wins and the first plain result remains the fallback.
   Instrumental stops the chain unless local text was already found. Transport
   and 5xx failures open a per-host circuit breaker after three failures for
-  five minutes; a user retry bypasses cache and breaker. The Lyrics footer
-  names the source and whether the result is synchronized.
+  five minutes. LRCLIB `429 Retry-After` blocks requests until its deadline; a
+  user retry bypasses cache and the ordinary breaker, but not that server
+  deadline. The Lyrics footer names the source and whether the result is
+  synchronized.
 - **LYR-6** [active] [core] [gtk] — With the Online Lyrics module enabled, a
   cancellable serial background run fills the lyrics cache for the present
   library after the cover batch, after completed library scans, and the moment
@@ -3280,29 +3300,40 @@ STYLE-1).
   panel looks the same whichever tab is open.** The Visual tab used to hold
   the backdrop at rest and darken the turning disc, on the theory that two
   light languages in one panel fight each other; in use the plain treatment
-  was simply better there too. The backdrop and the disc rest only when the
-  "Song Visuals" plugin is off or the panel is closed — the second because a
-  pinned backdrop runs no tick, and without it the paused breath would keep
-  redrawing a widget nobody can see.
+  was simply better there too. The backdrop and the disc rest when the
+  "Song Visuals" plugin is off, when the panel is closed, or when what plays
+  is not music (AC-26) — the second because a pinned backdrop runs no tick,
+  and without it the paused breath would keep redrawing a widget nobody can
+  see.
 
-- **AC-25** [active] [gtk] — **A podcast runs no audio visuals.** Speech has
-  no spectrum worth drawing: the bars flicker around a voice instead of
-  answering it, and the reactive light breathes on a signal with no beat in
-  it. While a podcast episode plays — reached directly from the Podcasts
-  view or as a queued episode, both count — the whole audio-reactive chain
-  behaves exactly as though the "Song Visuals" plugin (AC-23) were switched
-  off: the spectrum stops at the source, the Visual tab disappears from the
-  panel, the reactive light of AC-24 rests, and the bar's bass layers settle
-  instead of freezing at their last reading. The episode's own surfaces are
-  untouched — the seek bar, the source image, and the playing marker in the
-  episode list are status, not visualization. **Radio keeps its visuals**:
-  it plays music. When the episode ends, the plugin's own setting decides
-  again. A user who was on the Visual tab lands on Up Next and stays there,
-  the same way an external session already displaces the Lyrics tab
-  (`POD-21`). The
-  effective answer — plugin state AND playback mode — has exactly one owner
-  in the code; no surface pairs the switch with its own idea of what a
-  podcast is.
+- **AC-25** [replaced by AC-26]
+- **AC-26** [active] [core] [gtk] — **Song Visuals follow the music, not the source.**
+  A radio station gets the same treatment as a local track: the Visual tab
+  with its audio-reactive bars, and the cover
+  bloom and shimmer driven by the session's own artwork — one load, shared
+  with the cover it already shows, never a second request for the same image.
+  A YouTube episode follows YouTube's own stored category: `Music` receives
+  that same treatment, while `News & Politics`, `Education` and the other
+  unambiguously spoken categories do not. A category that is absent or
+  ambiguous, including `Entertainment` and `Film & Animation`, keeps the
+  existing YouTube default and receives Song Visuals; unknown is not guessed
+  into speech. Reprise learns and stores the raw category only from the full
+  extraction that playback or download already performs — it never makes a
+  request solely to classify an episode, and existing unclassified episodes
+  remain unchanged until one of those operations naturally extracts them.
+  An RSS podcast is speech, not music: speech has no spectrum worth drawing,
+  so the bars would flicker around a voice instead of answering it. While an
+  episode plays, the whole audio-reactive chain behaves as though the "Song
+  Visuals" plugin (AC-23) were off: **the spectrum stops at the source**, the
+  Visual tab disappears from the panel, the reactive light of AC-24 rests
+  without a cover, and **the bar's bass layers settle instead of freezing at
+  their last reading**. The episode's own surfaces are untouched — the seek
+  bar, the source image and the playing marker are status, not visualization.
+  A user who was on the Visual tab lands on Up Next and stays there, the same
+  way an external session displaces the Lyrics tab (`POD-21`). When the
+  episode ends, the plugin's own setting decides again. One predicate decides
+  the category, `ExternalPlaybackSnapshot::carries_music`; no surface
+  re-derives it from the media variant.
 
 ## Y. Library Doctor / Tag Cleanup
 
@@ -4468,7 +4499,11 @@ listening statistics.
   an unmetered connection.
 - **POD-3** [active] [core] — YouTube sits exclusively behind the
   yt-dlp provider boundary: flat playlist for listing, audio
-  resolution only at playback time and never persisted. Errors are
+  resolution only at playback time, with the ephemeral stream URL never
+  persisted. The same full playback extraction, and the existing download
+  extraction, may persist the raw first media category when yt-dlp supplies
+  one; flat listings never trigger an extra extraction for it, and a missing
+  or malformed category remains nullable and non-fatal. Errors are
   classified into actionable, provider-safe UI messages and never
   crash; operation, failure category, exit code or timeout are logged
   without URLs, tokens, cookie paths, raw provider text, or local
@@ -4684,7 +4719,9 @@ listening statistics.
   neighbours: ⏮/⏭ move to the adjacent row of the list it was started from,
   in rendered order, without wrapping. The neighbour list is frozen when
   playback starts. Radio has no neighbours. While any external session is
-  active the lyrics tab is hidden and the panel header shows the episode
+  active the lyrics tab is hidden; the Visual tab is hidden for whatever
+  AC-26 does not count as music — every RSS podcast, and a YouTube episode
+  whose own category says it is speech. The panel header shows the episode
   instead of "Nothing playing".
 - **POD-22** [active] [core] [gtk] — When yt-dlp classifies a YouTube
   failure as requiring verification, the failed episode row keeps its normal
@@ -4714,8 +4751,8 @@ listening statistics.
   POD-21 context has a next rendered episode, Reprise automatically starts that
   exact no-wrap neighbour — the same target as the enabled Next transport.
   RSS episodes and YouTube episodes without a next frozen neighbour keep the
-  manual next-unplayed offer preserved from POD-4; QUE-9 continues to own
-  automatic progress through explicitly queued episodes. Podcast and YouTube sessions
+  manual next-unplayed offer preserved from POD-4; QUE-12 excludes episodes
+  from the manual queue. Podcast and YouTube sessions
   produce neither scrobbles nor `listen_events` nor play counts. Covered by
   `pod_24_direct_youtube_completion_uses_the_frozen_next_episode`,
   `pod_24_finish_offers_next_unplayed_of_show`, and

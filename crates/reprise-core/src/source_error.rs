@@ -238,10 +238,30 @@ impl fmt::Display for SourceError {
 
 impl std::error::Error for SourceError {}
 
-/// Parses the delta-seconds form of an HTTP `Retry-After` header.
+/// Parses an HTTP `Retry-After` header against the current wall clock.
 #[must_use]
 pub fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
-    value?.trim().parse::<u64>().ok().map(Duration::from_secs)
+    parse_retry_after_at(value, std::time::SystemTime::now())
+}
+
+/// Parses either allowed `Retry-After` form against an injected wall clock.
+#[must_use]
+pub(crate) fn parse_retry_after_at(
+    value: Option<&str>,
+    now: std::time::SystemTime,
+) -> Option<Duration> {
+    let value = value?.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let deadline = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let now: chrono::DateTime<chrono::Utc> = now.into();
+    deadline
+        .with_timezone(&chrono::Utc)
+        .signed_duration_since(now)
+        .to_std()
+        .ok()
+        .or(Some(Duration::ZERO))
 }
 
 /// Returns the shared exponential retry delay, or `None` when retries stop.
@@ -391,10 +411,19 @@ mod tests {
     }
 
     #[test]
-    fn shared_retry_after_parser_accepts_delta_seconds_only() {
+    fn shared_retry_after_parser_accepts_delta_seconds_and_http_dates() {
         assert_eq!(
             super::parse_retry_after(Some(" 360 ")),
             Some(Duration::from_secs(360))
+        );
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        assert_eq!(
+            super::parse_retry_after_at(Some("Tue, 14 Nov 2023 22:13:25 GMT"), now),
+            Some(Duration::from_secs(5))
+        );
+        assert_eq!(
+            super::parse_retry_after_at(Some("Tue, 14 Nov 2023 22:13:15 GMT"), now),
+            Some(Duration::ZERO)
         );
         assert_eq!(super::parse_retry_after(Some("tomorrow")), None);
         assert_eq!(super::parse_retry_after(None), None);

@@ -87,7 +87,7 @@ impl TrackSpectrogram {
     /// the two would drift.
     ///
     /// Normalized per track (5th to 95th percentile, widened to at least
-    /// [`MIN_SPAN_OCTAVES`]), not against an absolute frequency range.
+    /// `MIN_SPAN_OCTAVES`), not against an absolute frequency range.
     /// Measured over a real library on 2026-08-05, an absolute axis put every
     /// sampled track inside one narrow band and the seek bar read as a single
     /// colour. What has to be visible is the travel within one track, so

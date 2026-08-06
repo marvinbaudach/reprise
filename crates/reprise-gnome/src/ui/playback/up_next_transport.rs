@@ -451,25 +451,22 @@ mod tests {
     }
 
     #[test]
-    fn play_5c_advance_drops_unsubscribed_episode_without_dropping_tracks() {
+    fn que_12_manual_queue_rejects_episodes_before_availability_cleanup() {
         let mut pending = UpNextQueue::default();
-        pending.append(&[
-            reprise_core::up_next::QueueItem::Track(8),
-            reprise_core::up_next::QueueItem::Episode(8),
-            reprise_core::up_next::QueueItem::Episode(7),
-        ]);
+        assert_eq!(
+            pending.append(&[
+                reprise_core::up_next::QueueItem::Track(8),
+                reprise_core::up_next::QueueItem::Episode(8),
+                reprise_core::up_next::QueueItem::Episode(7),
+            ]),
+            1
+        );
 
         assert_eq!(
             super::drop_unavailable_episodes(&mut pending, &std::collections::HashSet::from([7])),
-            1
+            0
         );
-        assert_eq!(
-            pending.ids(),
-            &[
-                reprise_core::up_next::QueueItem::Track(8),
-                reprise_core::up_next::QueueItem::Episode(7),
-            ]
-        );
+        assert_eq!(pending.ids(), &[reprise_core::up_next::QueueItem::Track(8)]);
     }
 
     #[test]

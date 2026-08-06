@@ -77,6 +77,8 @@ fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
     let bar = PlayerBar::new();
     let episode = |can_go_previous, can_go_next| ExternalPlaybackSnapshot {
         mode: PlaybackMode::Podcast,
+        podcast_kind: Some(reprise_core::podcasts::PodcastKind::Rss),
+        media_category: None,
         media: ExternalMedia::Podcast {
             episode_id: 7,
             title: "Episode".into(),
@@ -104,6 +106,8 @@ fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
 
     let radio = ExternalPlaybackSnapshot {
         mode: PlaybackMode::Radio,
+        podcast_kind: None,
+        media_category: None,
         media: ExternalMedia::Radio {
             station_id: 9,
             name: "Radio".into(),
@@ -146,6 +150,8 @@ fn play_13_live_mode_replaces_the_waveform_and_freezes_its_pulse_when_paused() {
     let bar = PlayerBar::new();
     let snapshot = ExternalPlaybackSnapshot {
         mode: PlaybackMode::Radio,
+        podcast_kind: None,
+        media_category: None,
         media: ExternalMedia::Radio {
             station_id: 9,
             name: "Example FM".into(),

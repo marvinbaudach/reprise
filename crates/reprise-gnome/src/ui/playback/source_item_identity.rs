@@ -114,6 +114,7 @@ mod tests {
             automatic_advance: None,
             subscription_id,
             kind,
+            media_category: None,
             published_at: None,
             art_url: None,
             phase: PodcastPhase::Playing,

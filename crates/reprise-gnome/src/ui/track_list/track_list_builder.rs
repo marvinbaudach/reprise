@@ -202,6 +202,7 @@ pub(in crate::ui) fn build(
     // the pointer sequence, and reordering by dragging a row matters more than
     // noticing that its scrollbar moved.
     {
+        // input-parity: ACC-8 keyboard=scrolled-window-navigation
         let scroll = gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::BOTH_AXES);
         scroll.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let shared_weak = Rc::downgrade(&shared);
@@ -215,6 +216,7 @@ pub(in crate::ui) fn build(
         });
         scrolled.add_controller(scroll);
 
+        // input-parity: ACC-8 keyboard=scrollbar-navigation
         let scrollbar_drag = gtk4::GestureDrag::new();
         scrollbar_drag.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let shared_weak = Rc::downgrade(&shared);

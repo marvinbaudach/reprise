@@ -35,6 +35,7 @@ pub(crate) mod track_list_activation;
 pub(in crate::ui) mod track_list_builder;
 pub(in crate::ui) mod track_list_callbacks;
 pub(crate) mod track_list_columns;
+mod track_list_context_action_states;
 pub(in crate::ui) mod track_list_context_keys;
 pub(crate) mod track_list_context_menu;
 pub(crate) mod track_list_dnd;

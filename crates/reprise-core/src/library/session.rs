@@ -280,7 +280,18 @@ fn normalize(mut state: SessionState) -> SessionState {
         truncate_utf8(label, 256);
     }
     let queue_limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
+    let persisted_episodes = state
+        .up_next
+        .ids()
+        .iter()
+        .copied()
+        .filter(|item| matches!(item, QueueItem::Episode(_)))
+        .collect::<Vec<_>>();
+    state.up_next.remove_ids(&persisted_episodes);
     state.up_next.truncate(queue_limit);
+    if matches!(state.current_up_next, Some(QueueItem::Episode(_))) {
+        state.current_up_next = None;
+    }
     if let Some(active) = state.active_episode.as_mut() {
         if active.episode_id <= 0 {
             state.active_episode = None;
@@ -774,3 +785,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "session_queue_tests.rs"]
+mod queue_tests;

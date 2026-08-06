@@ -86,6 +86,58 @@ fn episode_upsert_backfills_publication_date_and_artwork() {
 }
 
 #[test]
+fn youtube_resolution_persists_duration_and_category_atomically() {
+    let conn = conn();
+    let subscription_id = add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            ..subscription_draft()
+        },
+        10,
+    )
+    .unwrap();
+    let episode_id = upsert_episode(&conn, subscription_id, &parsed_episode("Video"), 20)
+        .unwrap()
+        .unwrap()
+        .episode_id;
+
+    save_youtube_resolution(&conn, episode_id, Some(93), Some("Music")).unwrap();
+
+    let stored = episode(&conn, episode_id).unwrap().unwrap();
+    assert_eq!(stored.duration_secs, Some(93));
+    assert_eq!(stored.media_category.as_deref(), Some("Music"));
+
+    save_youtube_resolution(&conn, episode_id, None, None).unwrap();
+    let stored = episode(&conn, episode_id).unwrap().unwrap();
+    assert_eq!(stored.duration_secs, Some(93));
+    assert_eq!(stored.media_category.as_deref(), Some("Music"));
+
+    conn.conn()
+        .execute(
+            "UPDATE podcast_episodes
+             SET duration_secs = NULL, media_category = NULL
+             WHERE id = ?1",
+            [episode_id],
+        )
+        .unwrap();
+    conn.conn()
+        .execute_batch(
+            "CREATE TRIGGER reject_media_category
+             BEFORE UPDATE OF media_category ON podcast_episodes
+             WHEN NEW.media_category = 'Music'
+             BEGIN
+               SELECT RAISE(ABORT, 'reject category');
+             END;",
+        )
+        .unwrap();
+    assert!(save_youtube_resolution(&conn, episode_id, Some(93), Some("Music")).is_err());
+    let stored = episode(&conn, episode_id).unwrap().unwrap();
+    assert_eq!(stored.duration_secs, None);
+    assert_eq!(stored.media_category, None);
+}
+
+#[test]
 fn future_only_baseline_replaces_and_clears_atomically() {
     let conn = conn();
     let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();

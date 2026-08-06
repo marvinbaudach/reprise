@@ -147,6 +147,11 @@ impl BloomArea {
         self.queue_draw();
     }
 
+    #[cfg(test)]
+    pub(super) fn has_texture(&self) -> bool {
+        self.imp().texture.borrow().is_some()
+    }
+
     /// One frame of the breath. Redraws only when something actually moved —
     /// a frame that would look identical is not worth invalidating for, and
     /// invalidation is what the remaining idle cost is made of.

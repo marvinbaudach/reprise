@@ -210,30 +210,22 @@ mod tests {
     }
 
     #[test]
-    fn play_5c_unsubscribed_episode_is_removed_from_a_restored_manual_queue() {
+    fn que_12_restored_manual_queue_cannot_seed_episode_items() {
         let tracks = HashSet::from([1]);
         let episodes = HashSet::from([7]);
         let mut pending = UpNextQueue::default();
-        pending.append(&[
-            reprise_core::up_next::QueueItem::Track(1),
-            reprise_core::up_next::QueueItem::Episode(7),
-            reprise_core::up_next::QueueItem::Episode(8),
-        ]);
-
-        let (pending, current) = validated_up_next(
-            pending,
-            Some(reprise_core::up_next::QueueItem::Episode(8)),
-            &tracks,
-            &episodes,
-        );
-
         assert_eq!(
-            pending.ids(),
-            &[
+            pending.append(&[
                 reprise_core::up_next::QueueItem::Track(1),
                 reprise_core::up_next::QueueItem::Episode(7),
-            ]
+                reprise_core::up_next::QueueItem::Episode(8),
+            ]),
+            1
         );
+
+        let (pending, current) = validated_up_next(pending, None, &tracks, &episodes);
+
+        assert_eq!(pending.ids(), &[reprise_core::up_next::QueueItem::Track(1)]);
         assert_eq!(current, None);
     }
 }

@@ -135,6 +135,7 @@ fn app_css() -> String {
         super::tag_editor_style::css(),
         info_panel_clip_css(),
         super::issues::css(),
+        super::library_doctor::css(),
         super::compact_player_layouts::mini_css(),
         super::scan_card_css::css(),
     ]
