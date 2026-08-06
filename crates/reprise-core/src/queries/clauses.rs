@@ -57,7 +57,7 @@ const SORT_WHITELIST: [(&str, &str); 12] = [
 /// The stored columns read by a track-list sort key.
 ///
 /// Tag editing uses this metadata to decide whether a successful patch can
-/// move rows under the active sort. Unknown keys mirror [`order_clause`]'s
+/// move rows under the active sort. Unknown keys mirror `order_clause`'s
 /// title fallback rather than claiming that no column affects their order.
 pub fn sort_key_columns(sort_field: &str) -> &'static [&'static str] {
     match sort_field {
