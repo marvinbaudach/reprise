@@ -34,6 +34,7 @@ VALUE_BEARING_ROLES = frozenset({*ENTRY_ROLES, "slider", "spin button"})
 ACTIONABLE_ROLES = frozenset(
     {*BUTTON_ROLES, *SOFT_HOVER_ROLES, *ENTRY_ROLES, "switch"}
 )
+WINDOW_ROLES = frozenset({"window", "frame", "dialog", "application"})
 BUSY_ROLES = frozenset({"progress bar", "spinner", "status", "statusbar"})
 BUSY_WORDS = (
     "loading",

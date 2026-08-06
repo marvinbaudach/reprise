@@ -225,16 +225,31 @@ class FixtureProfileTests(unittest.TestCase):
             validate_scratch_root(unsafe_child)
 
 
-def snapshot(elements, *, state_id="state", width=1200, height=800):
-    return normalize_snapshot(
-        {
-            "screenshot_width": width,
-            "screenshot_height": height,
-            "structuredContent": {"elements": elements},
-        },
-        state_id=state_id,
-        captured_ms=0,
-    )
+def window_element(x=0, y=0, w=1200, h=800, **extra):
+    """The depth-0 root cua-driver puts in front of every real snapshot."""
+    return {
+        "element_index": 0,
+        "label": "Reprise",
+        "role": "frame",
+        "depth": 0,
+        "parent_index": None,
+        "frame": {"x": x, "y": y, "w": w, "h": h},
+        "actions": [],
+        "enabled": True,
+        **extra,
+    }
+
+
+def snapshot(elements, *, state_id="state", width=1200, height=800, window=True):
+    raw = {"structuredContent": {"elements": list(elements)}}
+    if width is not None and height is not None:
+        raw["screenshot_width"] = width
+        raw["screenshot_height"] = height
+    if window is True:
+        window = (0, 0, width or 1200, height or 800)
+    if window is not None:
+        raw["structuredContent"]["elements"].insert(0, window_element(*window))
+    return normalize_snapshot(raw, state_id=state_id, captured_ms=0)
 
 
 def element(index, label, role="button", x=10, y=10, w=100, h=32, **extra):
@@ -279,6 +294,67 @@ class UxOracleTests(unittest.TestCase):
         findings = self.engine.inspect_snapshot(state)
 
         self.assertIn("invisible-actionable", {finding.code for finding in findings})
+
+    def test_a_snapshot_without_screenshot_dimensions_is_judged_by_the_window(
+        self,
+    ) -> None:
+        # The settling probes are fetched without screenshot_out_file, so they
+        # carry no screenshot_width/height. Reading that as a 0x0 window turned
+        # every visible control into an "outside the visible window" error.
+        state = snapshot(
+            [element(1, "Add filter", x=260, y=110, visible=True)],
+            width=None,
+            height=None,
+            window=(200, 50, 1200, 800),
+        )
+
+        findings = self.engine.inspect_snapshot(state)
+
+        self.assertEqual([finding.code for finding in findings], [])
+
+    def test_the_window_rectangle_is_read_in_screen_coordinates(self) -> None:
+        # Element frames are screen coordinates: a child at the top-left window
+        # corner reports the window's own origin. Comparing them against the
+        # screenshot size would call the right-hand half of the window invisible.
+        state = snapshot(
+            [
+                element(1, "Sidebar", x=200, y=50, visible=True),
+                element(2, "Right edge", x=1350, y=60, visible=True),
+            ],
+            width=1200,
+            height=800,
+            window=(200, 50, 1200, 800),
+        )
+
+        findings = self.engine.inspect_snapshot(state)
+
+        self.assertEqual([finding.code for finding in findings], [])
+
+    def test_an_element_beyond_the_window_rectangle_is_still_reported(self) -> None:
+        state = snapshot(
+            [element(1, "Hidden Save", x=1500, y=60, visible=True)],
+            width=1200,
+            height=800,
+            window=(200, 50, 1200, 800),
+        )
+
+        findings = self.engine.inspect_snapshot(state)
+
+        self.assertEqual(
+            [finding.code for finding in findings], ["invisible-actionable"]
+        )
+
+    def test_a_snapshot_without_any_geometry_is_not_judged(self) -> None:
+        state = snapshot(
+            [element(1, "Add filter", x=260, y=110, visible=True)],
+            width=None,
+            height=None,
+            window=None,
+        )
+
+        findings = self.engine.inspect_snapshot(state)
+
+        self.assertEqual([finding.code for finding in findings], [])
 
     def test_layout_shift_during_an_explicit_idle_probe_is_uninvited(self) -> None:
         before = snapshot(

@@ -15,6 +15,7 @@ from ui_vocabulary import (
     BUSY_WORDS,
     CANONICAL_ROW_ROLE,
     OFFLINE_WORDS,
+    WINDOW_ROLES,
     canonical_role,
 )
 
@@ -45,14 +46,19 @@ class Frame:
     def center(self) -> tuple[float, float]:
         return self.x + self.width / 2, self.y + self.height / 2
 
-    def intersects(self, width: float, height: float) -> bool:
+    @property
+    def has_area(self) -> bool:
+        return self.width > 0 and self.height > 0
+
+    def intersects_rect(self, other: "Frame") -> bool:
+        """Both rectangles must be expressed in the same coordinate system."""
         return (
-            self.width > 0
-            and self.height > 0
-            and self.x < width
-            and self.y < height
-            and self.x + self.width > 0
-            and self.y + self.height > 0
+            self.has_area
+            and other.has_area
+            and self.x < other.x + other.width
+            and self.y < other.y + other.height
+            and self.x + self.width > other.x
+            and self.y + self.height > other.y
         )
 
 
@@ -83,6 +89,20 @@ class Snapshot:
     elements: tuple[Element, ...]
     degraded: bool
     raw_signature: str
+    window_frame: Frame | None = None
+
+    @property
+    def viewport(self) -> Frame | None:
+        """The window rectangle element frames are measured against.
+
+        Element frames are screen coordinates, so the visible region is the
+        window's own frame - not the screenshot size, which is the window crop
+        anchored at (0, 0) and is missing entirely from the settling probes.
+        Without it there is nothing to judge against, and the oracle stays quiet.
+        """
+        if self.window_frame is not None and self.window_frame.has_area:
+            return self.window_frame
+        return None
 
     @property
     def by_key(self) -> Mapping[str, Element]:
@@ -152,6 +172,33 @@ class Finding:
     blocks_gate: bool = False
 
 
+def _root_window_frame(
+    candidates: Sequence[tuple[Mapping[str, Any], str, Frame]]
+) -> Frame | None:
+    """Pick the depth-0 root, the frame every other element is measured against."""
+    usable = [item for item in candidates if item[2].has_area]
+    if not usable:
+        return None
+    depths = [
+        (raw.get("depth"), frame)
+        for raw, _role, frame in usable
+        if isinstance(raw.get("depth"), int) and not isinstance(raw.get("depth"), bool)
+    ]
+    if depths:
+        return min(depths, key=lambda item: item[0])[1]
+    parentless = [
+        frame
+        for raw, _role, frame in usable
+        if "parent_index" in raw and raw.get("parent_index") is None
+    ]
+    if parentless:
+        return parentless[0]
+    windows = [frame for _raw, role, frame in usable if role in WINDOW_ROLES]
+    if windows:
+        return max(windows, key=lambda frame: frame.width * frame.height)
+    return None
+
+
 def normalize_snapshot(
     raw: Mapping[str, Any], *, state_id: str, captured_ms: int
 ) -> Snapshot:
@@ -162,6 +209,7 @@ def normalize_snapshot(
     if not isinstance(raw_elements, list):
         raw_elements = []
     sortable = []
+    root_candidates: list[tuple[Mapping[str, Any], str, Frame]] = []
     for raw_element in raw_elements:
         if not isinstance(raw_element, dict):
             continue
@@ -177,6 +225,7 @@ def normalize_snapshot(
             _number(frame_raw.get("h", frame_raw.get("height"))),
         )
         sortable.append((label, role, frame.x, frame.y, raw_element, frame))
+        root_candidates.append((raw_element, role, frame))
     sortable.sort(key=lambda item: item[:4])
     occurrences: dict[tuple[str, str], int] = {}
     elements = []
@@ -210,6 +259,7 @@ def normalize_snapshot(
         elements=tuple(elements),
         degraded=raw.get("degraded") is True,
         raw_signature=hashlib.sha256(signature_payload).hexdigest(),
+        window_frame=_root_window_frame(root_candidates),
     )
 
 
@@ -228,10 +278,15 @@ class OracleEngine:
                     blocks_gate=True,
                 )
             )
+        viewport = snapshot.viewport
+        if viewport is None:
+            # No window rectangle, no verdict. Judging visibility without one is
+            # how a run of 79 snapshots produced 981 invented errors.
+            return findings
         for element in snapshot.elements:
             if not element.enabled or not element.actionable:
                 continue
-            if not element.visible or not element.frame.intersects(snapshot.width, snapshot.height):
+            if not element.visible or not element.frame.intersects_rect(viewport):
                 findings.append(
                     Finding(
                         "invisible-actionable",
