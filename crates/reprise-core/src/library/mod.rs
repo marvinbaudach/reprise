@@ -34,7 +34,10 @@ pub mod tag_edit_session;
 mod tag_edit_write;
 #[cfg(test)]
 mod tag_edit_write_adversarial_tests;
+mod tag_edit_write_report;
+mod tag_file_write_pool;
 mod tag_mutation;
+mod tag_mutation_commit;
 mod tag_mutation_guarded;
 #[cfg(test)]
 mod tag_mutation_guarded_tests;

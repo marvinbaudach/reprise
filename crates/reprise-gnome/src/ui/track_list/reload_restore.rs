@@ -120,6 +120,41 @@ pub(in crate::ui) fn scroll_target(
     Some(target.clamp(0.0, upper_bound))
 }
 
+/// Names `track_id` as the scroll anchor while keeping that row at the same
+/// screen-space distance from the viewport top it had in `old_ids`.
+///
+/// The regular capture path anchors the row crossing the viewport top, so
+/// its offset is normally within one row. A row farther down the frame needs
+/// a negative offset: the viewport top is above that row's top. Resolving the
+/// new anchor after a resort then moves the scroll value while preserving the
+/// picture the user was looking at.
+pub(in crate::ui) fn reanchor_on_track(
+    mut opened: ReloadAnchor,
+    track_id: i64,
+    old_ids: &[i64],
+    row_height: f64,
+) -> ReloadAnchor {
+    // `is_finite` is not redundant next to `<= 0.0`: every comparison against
+    // NaN is false, so a NaN row height would pass a bare `<= 0.0` check and
+    // travel on into the offset arithmetic and the adjustment, where `clamp`
+    // cannot sanitise it either.
+    if !row_height.is_finite() || row_height <= 0.0 {
+        return opened;
+    }
+    let Some((anchor_id, anchor_offset)) = opened.anchor else {
+        return opened;
+    };
+    let Some(anchor_position) = old_ids.iter().position(|id| *id == anchor_id) else {
+        return opened;
+    };
+    let Some(track_position) = old_ids.iter().position(|id| *id == track_id) else {
+        return opened;
+    };
+    let position_delta = anchor_position as f64 - track_position as f64;
+    opened.anchor = Some((track_id, position_delta.mul_add(row_height, anchor_offset)));
+    opened
+}
+
 /// Computes the scroll offset that vertically centers `track_id` after a
 /// filter change. Returns `None` when no playing track exists, the track is
 /// outside the new view, or the whole list fits in the viewport.
@@ -173,6 +208,24 @@ mod tests {
         let anchor = Some((100_i64, 5.0));
         let current_ids = vec![10, 20, 30, 40, 50, 60, 70, 100, 80, 90];
         assert_eq!(scroll_target(anchor, &current_ids, 20.0, 50.0), Some(145.0));
+    }
+
+    #[test]
+    fn tag_1_reanchoring_on_an_edited_row_preserves_its_screen_offset() {
+        let opened = ReloadAnchor {
+            selected_ids: vec![7],
+            anchor: Some((20, 4.0)),
+        };
+        let old_ids = vec![10, 20, 30, 40, 50];
+
+        let reanchored = reanchor_on_track(opened, 40, &old_ids, 20.0);
+
+        assert_eq!(reanchored.anchor, Some((40, -36.0)));
+        assert_eq!(
+            scroll_target(reanchored.anchor, &old_ids, 20.0, 40.0),
+            Some(24.0),
+            "the edited row must keep the same place in the frame"
+        );
     }
 
     #[test]

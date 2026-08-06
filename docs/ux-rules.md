@@ -1440,8 +1440,11 @@ result.
   on the library, selection = the **written** tracks (on partial
   failures, the successful ones; unchanged after Cancel/Discard) —
   feedback about the user's own action is allowed, jumping to
-  uninvolved tracks is not. Mechanics at the root: the reload secures
-  selection via track IDs and scroll via an anchor (track ID + offset,
+  uninvolved tracks is not. When a written field participates in the
+  active sort, the first written row keeps the same place in the frame
+  while the scroll value follows its new sorted position; otherwise the
+  existing viewport anchor remains unchanged. Mechanics at the root: the
+  reload secures selection via track IDs and scroll via an anchor (track ID + offset,
   never pixels) and restores both — for every trigger (Save, watcher
   reconcile, sorting, rating). During the asynchronous tag-editor save,
   the scroll anchor is captured before the dialog opens and reused
