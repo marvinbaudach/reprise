@@ -3292,20 +3292,31 @@ STYLE-1).
   panel looks the same whichever tab is open.** The Visual tab used to hold
   the backdrop at rest and darken the turning disc, on the theory that two
   light languages in one panel fight each other; in use the plain treatment
-  was simply better there too. The backdrop and the disc rest only when the
-  "Song Visuals" plugin is off or the panel is closed — the second because a
-  pinned backdrop runs no tick, and without it the paused breath would keep
-  redrawing a widget nobody can see.
+  was simply better there too. The backdrop and the disc rest when the
+  "Song Visuals" plugin is off, when the panel is closed, or when what plays
+  is not music (AC-26) — the second because a pinned backdrop runs no tick,
+  and without it the paused breath would keep redrawing a widget nobody can
+  see.
 
 - **AC-25** [replaced by AC-26]
 - **AC-26** [active] [gtk] — **Song Visuals follow the music, not the source.**
   A playing YouTube episode or radio station gets the same treatment as a
   local track: the Visual tab with its audio-reactive bars, and the cover
-  bloom and shimmer driven by the session's own artwork. An RSS podcast is
-  speech, not music: its Visual tab is hidden, and the bloom and shimmer stay
-  at rest without a cover. One predicate decides it,
-  `ExternalPlaybackSnapshot::carries_music`; no surface re-derives the
-  category from the media variant.
+  bloom and shimmer driven by the session's own artwork — one load, shared
+  with the cover it already shows, never a second request for the same image.
+  An RSS podcast is speech, not music: speech has no spectrum worth drawing,
+  so the bars would flicker around a voice instead of answering it. While an
+  episode plays, the whole audio-reactive chain behaves as though the "Song
+  Visuals" plugin (AC-23) were off: **the spectrum stops at the source**, the
+  Visual tab disappears from the panel, the reactive light of AC-24 rests
+  without a cover, and **the bar's bass layers settle instead of freezing at
+  their last reading**. The episode's own surfaces are untouched — the seek
+  bar, the source image and the playing marker are status, not visualization.
+  A user who was on the Visual tab lands on Up Next and stays there, the same
+  way an external session displaces the Lyrics tab (`POD-21`). When the
+  episode ends, the plugin's own setting decides again. One predicate decides
+  the category, `ExternalPlaybackSnapshot::carries_music`; no surface
+  re-derives it from the media variant.
 
 ## Y. Library Doctor / Tag Cleanup
 

@@ -108,6 +108,27 @@ impl SourceImage {
         Self::new_with_dimensions(image_url, fallback_icon, size, size, images_allowed)
     }
 
+    /// Same as [`Self::new`], but also hands the decoded texture to
+    /// `on_texture`.
+    ///
+    /// A second surface that wants the same artwork — the Now Playing bloom
+    /// and shimmer want exactly the cover this widget shows — must not start
+    /// its own load. Both loads would begin in the same main-loop turn, before
+    /// either could populate the texture cache, so both would miss it, both
+    /// would take a queue slot and a worker, and both would ask the same
+    /// third-party host for the same image. One load, two consumers.
+    pub(crate) fn new_observed(
+        image_url: Option<&str>,
+        fallback_icon: &str,
+        size: i32,
+        images_allowed: bool,
+        on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
+    ) -> SourceImage {
+        let image = Self::build(fallback_icon, size, size);
+        image.set_url(image_url, size, size, images_allowed, on_texture);
+        image
+    }
+
     pub(crate) fn new_with_dimensions(
         image_url: Option<&str>,
         fallback_icon: &str,
@@ -115,6 +136,14 @@ impl SourceImage {
         height: i32,
         images_allowed: bool,
     ) -> SourceImage {
+        let image = Self::build(fallback_icon, width, height);
+        image.set_url(image_url, width, height, images_allowed, |_| {});
+        image
+    }
+
+    /// The widget tree alone, without a load — both constructors share it so
+    /// the artwork is only ever requested once, by whichever `set_url` follows.
+    fn build(fallback_icon: &str, width: i32, height: i32) -> SourceImage {
         let fallback = gtk4::Image::from_icon_name(fallback_icon);
         fallback.set_pixel_size(width.min(height));
         fallback.set_halign(gtk4::Align::Center);
@@ -153,21 +182,26 @@ impl SourceImage {
         root.add_named(&fallback, Some("fallback"));
         root.add_named(&artwork, Some("artwork"));
         root.set_visible_child(&fallback);
-        let image = Self {
+        Self {
             root,
             fallback,
             artwork,
             generation: Rc::new(Cell::new(0)),
-        };
-        image.set_url(image_url, width, height, images_allowed);
-        image
+        }
     }
 
     pub(crate) fn widget(&self) -> &gtk4::Stack {
         &self.root
     }
 
-    fn set_url(&self, image_url: Option<&str>, width: i32, height: i32, images_allowed: bool) {
+    fn set_url(
+        &self,
+        image_url: Option<&str>,
+        width: i32,
+        height: i32,
+        images_allowed: bool,
+        on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
+    ) {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
         self.root.set_visible_child(&self.fallback);
@@ -182,6 +216,10 @@ impl SourceImage {
             generation,
             &self.generation,
             move |texture| {
+                // The observer runs even if the widget itself is already gone:
+                // it feeds a different surface, whose own generation check
+                // decides whether the texture is still wanted.
+                on_texture(&texture);
                 let Some(root) = weak_root.upgrade() else {
                     return;
                 };
@@ -197,7 +235,7 @@ impl SourceImage {
 
 /// Loads source artwork through the one gated cache/queue/decode path and
 /// hands the finished texture to a generation-safe caller.
-pub(crate) fn load_texture(
+fn load_texture(
     image_url: Option<&str>,
     width: i32,
     height: i32,
