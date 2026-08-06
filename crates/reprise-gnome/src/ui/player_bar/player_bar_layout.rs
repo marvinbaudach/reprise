@@ -89,6 +89,9 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) live_station_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
     pub(in crate::ui) legend: super::seek_legend::SeekLegend,
+    /// Keeps the transport row centered while contextual actions appear to
+    /// its right. `GtkSizeGroup` stops aligning when its last owner is dropped.
+    pub(in crate::ui) transport_alignment: gtk4::SizeGroup,
     /// Kept alive with the widgets: a `GtkSizeGroup` that nothing holds stops
     /// aligning, and the legend would slide out from under the bar.
     pub(in crate::ui) time_alignment: gtk4::SizeGroup,
@@ -287,12 +290,25 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     // The information affordance sits immediately beside Repeat but outside
     // the transport group: it changes the visible detail surface, not
     // playback. External recovery actions follow it for the same reason.
-    let transport_shell = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
-    transport_shell.append(&transport_row);
-    transport_shell.append(&info_button);
-    transport_shell.append(&play_next_episode_button);
-    transport_shell.append(&retry_external_button);
-    transport_shell.set_halign(gtk4::Align::Center);
+    let transport_leading_balance = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let transport_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
+    transport_actions.append(&info_button);
+    transport_actions.append(&play_next_episode_button);
+    transport_actions.append(&retry_external_button);
+    let transport_alignment = gtk4::SizeGroup::new(gtk4::SizeGroupMode::Horizontal);
+    transport_alignment.add_widget(&transport_leading_balance);
+    transport_alignment.add_widget(&transport_actions);
+
+    // A symmetric leading balance keeps the transport row's own midpoint on
+    // the bar midpoint. Centering the row plus its one-sided actions as a
+    // single box shifted Play/Pause left whenever Sound was enabled.
+    let transport_shell = gtk4::Grid::builder()
+        .column_spacing(ZONE_SPACING)
+        .halign(gtk4::Align::Center)
+        .build();
+    transport_shell.attach(&transport_leading_balance, 0, 0, 1, 1);
+    transport_shell.attach(&transport_row, 1, 0, 1, 1);
+    transport_shell.attach(&transport_actions, 2, 0, 1, 1);
     center_zone.append(&transport_shell);
     center_zone.append(&seek_row);
     center_zone.append(&streaming_status_label);
@@ -441,6 +457,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         live_station_label,
         waveform,
         legend,
+        transport_alignment,
         time_alignment,
         volume_icon,
         volume_scale,
