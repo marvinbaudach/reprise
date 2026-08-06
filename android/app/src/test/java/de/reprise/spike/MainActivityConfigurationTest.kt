@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -173,6 +174,39 @@ class MainActivityConfigurationTest {
         compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
         compose.onNodeWithText("Album Song 1").assertDoesNotExist()
+    }
+
+    @Test
+    fun unheartingDoesNotDiscardAnotherLoadedWindowOrAnOpenAlbumOnRecreate() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        compose.waitForIdle()
+        compose.onNodeWithText("Artist 211").assertIsDisplayed()
+
+        compose.onNodeWithText("Favourites").performClick()
+        compose.onNodeWithText("Alpha Artist · First Record").assertIsDisplayed()
+        compose.onAllNodesWithTag(TRACK_HEART_TAG)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Alpha Artist · First Record").assertDoesNotExist()
+
+        compose.onNodeWithText("Albums").performClick()
+        compose.onNodeWithText(DEEP_ALBUM).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(210)
+        compose.waitForIdle()
+        compose.onNodeWithText("Album Song 211").assertIsDisplayed()
+
+        recreateAt("w916dp-h412dp-land")
+
+        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithText("Album Song 211").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to albums").performClick()
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithText("Artist 211").assertIsDisplayed()
     }
 
     /**
@@ -359,15 +393,30 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
                 album = "Second Album",
             ),
         )
+    private val seededFavouriteTracks = listOf(
+        configurationTestTrack(
+            FAVOURITE_TRACK_ID_BASE + 1,
+            "Alpha Artist · First Record",
+            rating = 5,
+        ),
+        configurationTestTrack(
+            FAVOURITE_TRACK_ID_BASE + 2,
+            "Alpha Artist · Second Record",
+            rating = 5,
+        ),
+        configurationTestTrack(
+            FAVOURITE_TRACK_ID_BASE + 3,
+            "Zulu Artist · Last Record",
+            rating = 5,
+        ),
+    )
     private val favouriteTracks: List<LibraryTrack>
         get() = if (favouritesEmpty) {
             emptyList()
         } else {
-            tracks.filter { trackRatings[it.id] == 5 } + listOf(
-                configurationTestTrack(31, "Alpha Artist · First Record", rating = 5),
-                configurationTestTrack(32, "Alpha Artist · Second Record", rating = 5),
-                configurationTestTrack(33, "Zulu Artist · Last Record", rating = 5),
-            )
+            (tracks.filter { trackRatings[it.id] == 5 } + seededFavouriteTracks).map { track ->
+                track.copy(rating = trackRatings[track.id] ?: track.rating)
+            }.filter { it.rating == 5 }
         }
 
     var favouritesEmpty = false
@@ -505,6 +554,7 @@ private const val DEEP_ALBUM = "Deep Album"
 /** Album tracks are their own rows, so they get their own ids and titles. */
 private const val ALBUM_TRACK_ID_BASE = 1_000_000L
 private const val ARTIST_TRACK_ID_BASE = 2_000_000L
+private const val FAVOURITE_TRACK_ID_BASE = 3_000_000L
 
 /** The library's own paging contract: honour the offset, the limit, and the end. */
 private fun <T> List<T>.window(range: LibraryWindowRange): LibraryWindow<T> {

@@ -100,6 +100,9 @@ class MainActivityMusicPathsTest {
         assertEquals(0, application.currentQueueIndex)
 
         application.favouritesEmpty = true
+        // This fixture change stands in for a rescan, so change the catalog
+        // shape too and make the replacement activity take up the fresh state.
+        application.catalogSize += 1
         compose.activityRule.scenario.recreate()
         shadowOf(Looper.getMainLooper()).idle()
         application.service.republish()

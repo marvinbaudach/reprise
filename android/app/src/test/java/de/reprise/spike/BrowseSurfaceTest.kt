@@ -282,6 +282,28 @@ class BrowseSurfaceTest {
         assertNull(window.nextRequest(lastRequestedOffset = firstRequest?.offset))
     }
 
+    @Test
+    fun shrinkingALoadedWindowInvalidatesTheOffsetThatCouldStallItsNextPage() {
+        val loadedRows = (1..400).map { rank ->
+            testBrowseTrack("favourite-$rank").copy(id = rank.toLong(), rating = 5)
+        }
+        var window = LibraryWindow(total = 800, rows = loadedRows, hasMore = true)
+        var lastRequestedOffset: Long? = 200
+
+        loadedRows.take(200).forEach { track ->
+            val removal = window.removeTrack(track.id, lastRequestedOffset)
+            window = removal.window
+            lastRequestedOffset = removal.lastRequestedOffset
+        }
+
+        assertEquals(200, window.rows.size)
+        assertEquals(600, window.total)
+        assertEquals(
+            LibraryWindowRange(offset = 200, limit = 200),
+            window.nextRequest(lastRequestedOffset),
+        )
+    }
+
 @Test
 fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
     val rows = (1..500).map { rank -> testBrowseTrack("title-$rank") }

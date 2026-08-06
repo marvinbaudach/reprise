@@ -78,14 +78,12 @@ internal data class LibraryCatalogShape(
     val titles: Long,
     val albums: Long,
     val artists: Long,
-    val favourites: Long = 0,
 )
 
 internal fun LibraryScreenState.Browse.catalogShape() = LibraryCatalogShape(
     titles = titles.total,
     albums = albums.total,
     artists = artists.total,
-    favourites = favourites.total,
 )
 
 /**

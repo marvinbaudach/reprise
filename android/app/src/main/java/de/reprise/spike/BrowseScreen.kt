@@ -440,10 +440,12 @@ internal fun BrowseScreen(
                         },
                         loadMore = ::loadMoreFavourites,
                         removeFavourite = { track ->
-                            visibleFavourites = visibleFavourites.copy(
-                                total = (visibleFavourites.total - 1).coerceAtLeast(0),
-                                rows = visibleFavourites.rows.filterNot { it.id == track.id },
+                            val removal = visibleFavourites.removeTrack(
+                                track.id,
+                                favouritesRequestedOffset,
                             )
+                            visibleFavourites = removal.window
+                            favouritesRequestedOffset = removal.lastRequestedOffset
                         },
                     )
                 }
