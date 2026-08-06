@@ -264,14 +264,12 @@ mod tests {
     }
 
     fn scrollable() -> gtk4::Adjustment {
-        // GtkAdjustment itself is a display-free GObject. The safe gtk-rs
-        // constructor nevertheless asserts that all of GTK was initialized,
-        // so use the same FFI constructor directly for these unit tests.
-        unsafe {
-            gtk4::glib::translate::from_glib_none(gtk4::ffi::gtk_adjustment_new(
-                0.0, 0.0, 10_000.0, 1.0, 10.0, 1_000.0,
-            ))
-        }
+        // GtkAdjustment itself is a display-free GObject. Default GObject
+        // construction plus the safe configure method avoids the GTK-init
+        // assertion in `Adjustment::new` and its builder.
+        let adjustment = gtk4::Adjustment::default();
+        adjustment.configure(0.0, 0.0, 10_000.0, 1.0, 10.0, 1_000.0);
+        adjustment
     }
 
     #[test]

@@ -15,7 +15,7 @@
 //! width away from the user: these columns stay `resizable`, and a header
 //! drag simply writes a new fixed width.
 //!
-//! [`instability`] states that contract as a check the per-table `style_9_…`
+//! `instability` states that contract as a check the per-table `style_9_…`
 //! tests run against their real `append_columns`.
 
 // Only the test-only helpers below traverse widgets and downcast; pinning

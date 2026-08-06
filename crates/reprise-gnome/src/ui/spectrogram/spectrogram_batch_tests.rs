@@ -64,6 +64,7 @@ fn batch_over(run: FakeRun) -> (Rc<SpectrogramBatch>, Rc<Cell<usize>>) {
 
 #[test]
 fn a_reported_bucket_moves_the_card_without_ending_the_run() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let run = FakeRun::default();
     run.queued.borrow_mut().push(progress(1, 4));
     run.queued.borrow_mut().push(progress(2, 4));
@@ -80,6 +81,7 @@ fn a_reported_bucket_moves_the_card_without_ending_the_run() {
 
 #[test]
 fn a_completed_run_settles_on_its_summary_and_stops_polling() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let run = FakeRun::default();
     run.queued.borrow_mut().push(progress(4, 4));
     run.finished.set(true);
@@ -97,6 +99,7 @@ fn a_completed_run_settles_on_its_summary_and_stops_polling() {
 
 #[test]
 fn a_stopped_run_is_reported_as_stopped_not_as_complete() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let run = FakeRun::default();
     run.finished.set(true);
     *run.summary.borrow_mut() = Some(summary(BackfillStatus::Cancelled, 2, 0));
@@ -110,6 +113,7 @@ fn a_stopped_run_is_reported_as_stopped_not_as_complete() {
 
 #[test]
 fn a_worker_that_vanishes_without_a_summary_counts_as_failed() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let run = FakeRun::default();
     run.finished.set(true);
     let (batch, _) = batch_over(run);
@@ -122,6 +126,7 @@ fn a_worker_that_vanishes_without_a_summary_counts_as_failed() {
 
 #[test]
 fn a_run_that_cannot_be_launched_fails_instead_of_reporting_progress() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let batch = SpectrogramBatch::new(|| None);
 
     batch.start();
@@ -132,6 +137,7 @@ fn a_run_that_cannot_be_launched_fails_instead_of_reporting_progress() {
 
 #[test]
 fn nav_7b_the_menu_item_starts_a_run_and_then_stops_that_same_run() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let (batch, cancels) = batch_over(FakeRun::default());
 
     batch.toggle();
@@ -144,6 +150,7 @@ fn nav_7b_the_menu_item_starts_a_run_and_then_stops_that_same_run() {
 
 #[test]
 fn nav_7b_a_second_start_never_opens_a_second_run() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let launches = Rc::new(Cell::new(0));
     let batch = SpectrogramBatch::new({
         let launches = launches.clone();
@@ -162,6 +169,7 @@ fn nav_7b_a_second_start_never_opens_a_second_run() {
 
 #[test]
 fn subscribers_see_every_step_of_a_run() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let seen = Rc::new(RefCell::new(Vec::new()));
     let run = FakeRun::default();
     run.queued.borrow_mut().push(progress(1, 2));
