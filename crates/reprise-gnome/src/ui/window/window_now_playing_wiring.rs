@@ -9,6 +9,7 @@ use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::playback::queue_transport::QueueContextWindow;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::track_list::queue_sections::ContextWindow;
+use crate::ui::track_list::TrackList;
 
 use super::metadata_navigation::MetadataNavigator;
 use super::window_queue_model::{install_refresh_callbacks, RefreshCallback, SharedQueueModel};
@@ -18,7 +19,20 @@ pub(in crate::ui) fn install(
     panel: &Rc<NowPlayingPanel>,
     queue_model: &SharedQueueModel,
     metadata_navigator: &MetadataNavigator,
+    track_list: &TrackList,
 ) {
+    let player_for_similar = Rc::downgrade(player);
+    let panel_for_similar = Rc::downgrade(panel);
+    track_list.set_on_find_similar(move |id| {
+        let (Some(player), Some(panel)) =
+            (player_for_similar.upgrade(), panel_for_similar.upgrade())
+        else {
+            return;
+        };
+        player.play_track_id(id);
+        panel.show_sound();
+    });
+
     let panel_for_info = Rc::downgrade(panel);
     player.bar.connect_sound_info_clicked(move || {
         if let Some(panel) = panel_for_info.upgrade() {
