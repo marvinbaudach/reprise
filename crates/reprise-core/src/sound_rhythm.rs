@@ -102,7 +102,7 @@ pub fn derive_rhythm_features(spectrogram: &TrackSpectrogram) -> RhythmFeatures 
 /// Tempo in BPM, or `None` when no lag in the musical window stands out from
 /// the rest.
 ///
-/// Shares [`bass_pulse_peak`] and its significance test with `pulse_strength`:
+/// Shares `bass_pulse_peak` and its significance test with `pulse_strength`:
 /// the tempo is that peak's period, its strength is that peak's height, and
 /// neither is reported for a peak that is not a beat. Two answers from one
 /// question, never two questions.
