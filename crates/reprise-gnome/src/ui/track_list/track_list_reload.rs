@@ -95,7 +95,7 @@ fn selected_ids_before_swap(shared: &Shared) -> Vec<i64> {
 /// centered_scroll_value` uses for the "jump to now playing" center (NAV-9b):
 /// `GtkColumnView` rows are uniform height by design, and there is no
 /// per-row height API to query instead.
-fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
+pub(in crate::ui) fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
     if n_rows == 0 {
         return None;
     }

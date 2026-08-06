@@ -37,6 +37,7 @@ const SETTLE: Duration = Duration::from_millis(500);
 /// realise its horizontally clipped row cells, so inspecting descendants
 /// cannot use it as rendering evidence.
 const EDITED_ARTIST: &str = "Edited Artist";
+const RESORTED_TITLE: &str = "Target 01";
 
 struct Fixture {
     track_list: TrackList,
@@ -153,6 +154,32 @@ fn visible_labels(fixture: &Fixture) -> Vec<String> {
     out
 }
 
+fn viewport_labels(fixture: &Fixture) -> Vec<String> {
+    fn collect(widget: &gtk4::Widget, viewport: &gtk4::ColumnView, out: &mut Vec<String>) {
+        if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+            let viewport_width = viewport.width() as f32;
+            let viewport_height = viewport.height() as f32;
+            if widget.compute_bounds(viewport).is_some_and(|bounds| {
+                bounds.x() < viewport_width
+                    && bounds.x() + bounds.width() > 0.0
+                    && bounds.y() < viewport_height
+                    && bounds.y() + bounds.height() > 0.0
+            }) {
+                out.push(label.text().to_string());
+            }
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            collect(&current, viewport, out);
+            child = current.next_sibling();
+        }
+    }
+    let viewport = &fixture.track_list.shared.column_view;
+    let mut out = Vec::new();
+    collect(viewport.upcast_ref(), viewport, &mut out);
+    out
+}
+
 /// Writes the new artist the way a successful tag write does: into the
 /// database, behind the view's back. Only a re-query (or a cell patch) can
 /// bring it on screen.
@@ -211,6 +238,170 @@ fn save_refresh(fixture: &Fixture) {
         &[PathBuf::from(&written.path)],
         anchor,
     );
+}
+
+fn year_resorting_library() -> (Fixture, Vec<i64>) {
+    adw::init().unwrap();
+    let conn = crate::test_db::open().unwrap();
+    let fixture_conn = crate::test_db::connection(&conn);
+    let tx = fixture_conn.unchecked_transaction().unwrap();
+    let mut id = 1_i64;
+    for position in 0..150 {
+        tx.execute(
+            "INSERT INTO tracks (id, path, title, artist, album, year, track_no, added_at) \
+             VALUES (?1, ?2, ?3, 'Alpha Artist', 'Earlier', 1980, ?4, 0)",
+            (
+                id,
+                format!("/synthetic/alpha-{position:03}.flac"),
+                format!("Alpha {position:03}"),
+                position + 1,
+            ),
+        )
+        .unwrap();
+        id += 1;
+    }
+    for track_no in 1..=13 {
+        tx.execute(
+            "INSERT INTO tracks (id, path, title, artist, album, year, track_no, added_at) \
+             VALUES (?1, ?2, ?3, 'Zulu Artist', 'Anchor Album', NULL, ?4, 0)",
+            (
+                id,
+                format!("/synthetic/anchor-{track_no:02}.flac"),
+                format!("Anchor {track_no:02}"),
+                track_no,
+            ),
+        )
+        .unwrap();
+        id += 1;
+    }
+    let mut edited_ids = Vec::new();
+    for track_no in 1..=13 {
+        edited_ids.push(id);
+        tx.execute(
+            "INSERT INTO tracks (id, path, title, artist, album, year, track_no, added_at) \
+             VALUES (?1, ?2, ?3, 'Zulu Artist', 'Target Album', NULL, ?4, 0)",
+            (
+                id,
+                format!("/synthetic/target-{track_no:02}.flac"),
+                format!("Target {track_no:02}"),
+                track_no,
+            ),
+        )
+        .unwrap();
+        id += 1;
+    }
+    for position in 0..40 {
+        tx.execute(
+            "INSERT INTO tracks (id, path, title, artist, album, year, track_no, added_at) \
+             VALUES (?1, ?2, ?3, 'Zulu Artist', ?4, ?5, 1, 0)",
+            (
+                id,
+                format!("/synthetic/later-{position:03}.flac"),
+                format!("Later {position:03}"),
+                format!("Later {position:03}"),
+                1990 + position,
+            ),
+        )
+        .unwrap();
+        id += 1;
+    }
+    tx.commit().unwrap();
+
+    let track_list = TrackList::new(
+        Rc::new(conn),
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        super::super::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    *track_list.shared.sort.borrow_mut() = crate::ui::track_list_sort::SortState {
+        field: "artist".into(),
+        dir: "asc".into(),
+    };
+    super::super::track_list_reload::reload(&track_list.shared);
+    let elsewhere = gtk4::Button::with_label("Elsewhere");
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    content.append(&elsewhere);
+    let table = track_list.widget();
+    table.set_vexpand(true);
+    content.append(table);
+    let window = adw::Window::builder()
+        .default_width(900)
+        .default_height(320)
+        .content(&content)
+        .build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        adjustment.upper() > adjustment.page_size()
+    });
+    let row_height = adjustment.upper() / f64::from(track_list.shared.model.n_items());
+    adjustment.set_value(160.0 * row_height);
+    let fixture = Fixture {
+        track_list,
+        window,
+        adjustment,
+        elsewhere,
+        queries: Rc::new(Cell::new(0)),
+    };
+    crate::ui::test_settle::settle_for(Duration::from_millis(100));
+    (fixture, edited_ids)
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let (fixture, edited_ids) = year_resorting_library();
+    assert!(viewport_labels(&fixture)
+        .iter()
+        .any(|label| label == RESORTED_TITLE));
+
+    let old_ids = fixture.track_list.shared.current_view_ids();
+    let anchor = capture_reload_anchor(&fixture.track_list.shared);
+    let writes = edited_ids
+        .iter()
+        .map(|edited_id| reprise_core::library::tag_edit::TrackWrite {
+            id: *edited_id,
+            path: PathBuf::from(format!("/synthetic/target-{edited_id}.flac")),
+            patch: reprise_core::library::tag_edit::TrackEditPatch {
+                tags: reprise_core::library::tag_edit::TagPatch {
+                    year: Some(Some(2099)),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        })
+        .collect::<Vec<_>>();
+    let row_height = fixture.adjustment.upper() / old_ids.len() as f64;
+    let anchor = crate::ui::tag_edit::tag_reload_anchor::post_save_reload_anchor(
+        anchor,
+        &edited_ids,
+        &writes,
+        "artist",
+        &old_ids,
+        row_height,
+    );
+    let anchor_id = anchor.anchor.map(|(track_id, _)| track_id).unwrap();
+    assert_eq!(anchor_id, edited_ids[0]);
+
+    let conn = crate::test_db::connection(&fixture.track_list.shared.conn);
+    for edited_id in &edited_ids {
+        conn.execute("UPDATE tracks SET year = 2099 WHERE id = ?1", [edited_id])
+            .unwrap();
+    }
+    refresh_after_tag_mutation_with_anchor(&fixture.track_list.shared, &edited_ids, &[], anchor);
+    crate::ui::test_settle::settle_for(SETTLE);
+
+    assert!(
+        viewport_labels(&fixture)
+            .iter()
+            .any(|label| label == RESORTED_TITLE),
+        "the edited album moved out of the viewport after its year changed"
+    );
+    fixture.window.close();
 }
 
 fn assert_no_visible_jump(samples: &Rc<RefCell<Vec<f64>>>, reference: f64, what: &str) {

@@ -38,13 +38,16 @@ use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
+use crate::ui::tag_edit::tag_reload_anchor::{post_save_reload_anchor, OpenedReloadState};
 use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::refresh_after_tag_mutation_with_anchor;
 use crate::ui::track_list::track_list_activation::current_queue_ids;
-use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
-use crate::ui::track_list::{reload_restore, show_toast, Shared, TrackList};
+use crate::ui::track_list::track_list_reload::{
+    capture_reload_anchor, reload_with_anchor, row_height,
+};
+use crate::ui::track_list::{show_toast, Shared, TrackList};
 use crate::ui::track_list_context_menu::current_selection_positions;
 use reprise_core::db::Db;
 
@@ -292,7 +295,13 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
     let conn = shared.conn.clone();
     let shared_for_saved = shared.clone();
     let browse = browsable_snapshot(shared);
-    let opened_anchor = capture_reload_anchor(shared);
+    let opened_reload = OpenedReloadState {
+        anchor: capture_reload_anchor(shared),
+        view_ids: browse
+            .as_ref()
+            .map(tag_editor::BrowseSnapshot::ids)
+            .unwrap_or_default(),
+    };
     tag_editor::present(
         &window,
         &conn,
@@ -306,7 +315,7 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
                 &writes,
                 &report,
                 ApplyOrigin::TrackList,
-                Some(opened_anchor.clone()),
+                Some(opened_reload.clone()),
             );
         },
     );
@@ -468,20 +477,12 @@ pub(in crate::ui) fn spawn_save(
     });
 }
 
-fn post_save_reload_anchor(
-    mut opened: reload_restore::ReloadAnchor,
-    updated_ids: &[i64],
-) -> reload_restore::ReloadAnchor {
-    opened.selected_ids = updated_ids.to_vec();
-    opened
-}
-
 fn finish_apply(
     shared: &Rc<Shared>,
     writes: &[TrackWrite],
     report: &TagBatchReport,
     origin: ApplyOrigin,
-    opened_anchor: Option<reload_restore::ReloadAnchor>,
+    opened_reload: Option<OpenedReloadState>,
 ) {
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
@@ -491,8 +492,21 @@ fn finish_apply(
             .filter(|write| !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id))
             .map(|write| write.path.clone())
             .collect();
-        let live_anchor = opened_anchor.unwrap_or_else(|| capture_reload_anchor(shared));
-        let save_anchor = post_save_reload_anchor(live_anchor, &report.updated_ids);
+        let live_reload = opened_reload.unwrap_or_else(|| OpenedReloadState {
+            anchor: capture_reload_anchor(shared),
+            view_ids: shared.current_view_ids(),
+        });
+        let sort_field = shared.sort.borrow().field.clone();
+        let live_row_height =
+            row_height(&shared.column_view, shared.model.n_items()).unwrap_or(0.0);
+        let save_anchor = post_save_reload_anchor(
+            live_reload.anchor,
+            &report.updated_ids,
+            writes,
+            &sort_field,
+            &live_reload.view_ids,
+            live_row_height,
+        );
         if !tag_changed_paths.is_empty() {
             let tag_changed_ids: Vec<i64> = writes
                 .iter()
@@ -509,7 +523,6 @@ fn finish_apply(
             );
         } else {
             let source = shared.source.borrow().clone();
-            let sort_field = shared.sort.borrow().field.clone();
             let browse = shared.browse_filter.borrow().clone();
             match tag_save_refresh::plan(writes, &report.updated_ids, &source, &sort_field, &browse)
             {
@@ -622,17 +635,20 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
             tracing::warn!("tag-edit smoke: database has no path");
             return;
         };
+        let opened_reload = OpenedReloadState {
+            anchor: capture_reload_anchor(&shared),
+            view_ids: shared.current_view_ids(),
+        };
         let report = reprise_core::db::Db::open_migrated(Some(&db_path))
             .map(|worker_conn| apply_track_writes(&worker_conn, &writes, &mut |_, _| {}));
         match report {
             Ok(report) => {
-                let anchor = capture_reload_anchor(&shared);
                 finish_apply(
                     &shared,
                     &writes,
                     &report,
                     ApplyOrigin::TrackList,
-                    Some(anchor),
+                    Some(opened_reload),
                 );
             }
             Err(error) => tracing::warn!(%error, "tag-edit smoke: could not open database"),
@@ -661,6 +677,7 @@ mod task_5_6_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::track_list::reload_restore;
 
     #[test]
     fn smoke_tag_edit_mode_parses_open_count_and_preserves_title_save() {
@@ -710,7 +727,7 @@ mod tests {
     #[test]
     fn tag_1_query_reload_keeps_the_scroll_anchor_from_editor_open() {
         let opened = reload_restore::capture(vec![61], Some((61, 7.5)));
-        let restored = post_save_reload_anchor(opened, &[61]);
+        let restored = post_save_reload_anchor(opened, &[61], &[], "artist", &[61], 20.0);
 
         assert_eq!(restored.selected_ids, vec![61]);
         assert_eq!(
