@@ -29,23 +29,23 @@ internal interface PlaybackControls {
     fun setRepeat(mode: AndroidRepeatMode)
 
     /**
-     * Saves one rating and answers through [report]: the failure to show, or
-     * null when the rating was saved.
+     * Saves one favourite state and answers through [report]: the failure to
+     * show, or null when the database accepted it.
      *
      * A callback rather than a return value because the write does not belong
      * on the thread that raises the tap — it is a SQLite transaction that can
      * queue behind a whole folder scan (see [RatingWriter]). What that must not
-     * cost is *when* the star moves: [report] is what the star waits for, so it
+     * cost is *when* the heart moves: [report] is what the heart waits for, so it
      * still moves only after the database agreed, never before and never in
      * hope. [report] is called on the main thread, exactly once per tap.
      */
-    fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit)
+    fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit)
 }
 
 /**
  * What the controls do when nobody has provided any: nothing.
  *
- * [setRating] is the one command that has to answer, and it answers with a
+ * [setFavourite] is the one command that has to answer, and it answers with a
  * failure rather than the `null` that means "saved". A preview or a test that
  * rates a track must not come away believing a write happened — a default that
  * pretends is worse than no default at all.
@@ -63,7 +63,7 @@ internal object DisconnectedPlaybackControls : PlaybackControls {
 
     override fun setRepeat(mode: AndroidRepeatMode) = Unit
 
-    override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) =
+    override fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) =
         report("Could not save rating: playback is not connected.")
 }
 

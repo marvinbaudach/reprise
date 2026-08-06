@@ -19,7 +19,7 @@ private const val DRAIN_TIMEOUT_MS = 2_000L
 internal const val RATING_WRITER_STOPPED = "the library is closing"
 
 /**
- * The activity's rating writer: one thread that owns every star tap.
+ * The activity's rating writer: one thread that owns every heart tap.
  *
  * A rating is a SQLite `UPDATE` behind the same handle a SAF scan holds for the
  * whole of its folder walk, so writing it where the tap happens puts the main
@@ -27,19 +27,18 @@ internal const val RATING_WRITER_STOPPED = "the library is closing"
  * Media3's application thread for the same reason (`play_recorder.rs`); this is
  * the discrete-action half of it.
  *
- * What deliberately does **not** change is *when* the star moves. This is not
- * fire-and-forget: every tap is answered, exactly once, through [rate]'s
+ * What deliberately does **not** change is *when* the heart moves. This is not
+ * fire-and-forget: every tap is answered, exactly once, through [setFavourite]'s
  * `report` — and the answer is delivered through [onMainThread] so the caller
  * may write Compose state from it directly. A tap that cannot even be queued is
- * answered too, because a star that neither moves nor explains itself is worse
+ * answered too, because a heart that neither moves nor explains itself is worse
  * than a slow one.
  *
- * One thread rather than a pool, and that is the load-bearing part: five taps
- * on five stars reach the database in the order they were made, so the rating
- * that survives is the last one tapped rather than whichever write won a race.
+ * One thread rather than a pool is load-bearing: quick toggles reach the
+ * database in order, so the final favourite state is the last one tapped.
  */
 internal class RatingWriter(
-    private val write: (Long, Int) -> Unit,
+    private val write: (Long, Boolean) -> Unit,
     private val onMainThread: (() -> Unit) -> Unit,
     private val worker: ExecutorService = singleRatingThread(),
 ) {
@@ -47,10 +46,10 @@ internal class RatingWriter(
      * Queues one rating and answers [report] on the main thread — with the
      * failure the write raised, or success once the database has agreed.
      */
-    fun rate(trackId: Long, rating: Int, report: (Result<Unit>) -> Unit) {
+    fun setFavourite(trackId: Long, favourite: Boolean, report: (Result<Unit>) -> Unit) {
         try {
             worker.execute {
-                val outcome = runCatching { write(trackId, rating) }
+                val outcome = runCatching { write(trackId, favourite) }
                 onMainThread { report(outcome) }
             }
         } catch (rejected: RejectedExecutionException) {

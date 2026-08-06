@@ -120,7 +120,7 @@ class BrowseSurfaceTest {
 
         var answered: String? = null
         var answers = 0
-        controls.setRating(trackId = 830, rating = 4) { message ->
+        controls.setFavourite(trackId = 830, favourite = true) { message ->
             answered = message
             answers += 1
         }
@@ -282,6 +282,28 @@ class BrowseSurfaceTest {
         assertNull(window.nextRequest(lastRequestedOffset = firstRequest?.offset))
     }
 
+    @Test
+    fun shrinkingALoadedWindowInvalidatesTheOffsetThatCouldStallItsNextPage() {
+        val loadedRows = (1..400).map { rank ->
+            testBrowseTrack("favourite-$rank").copy(id = rank.toLong(), rating = 5)
+        }
+        var window = LibraryWindow(total = 800, rows = loadedRows, hasMore = true)
+        var lastRequestedOffset: Long? = 200
+
+        loadedRows.take(200).forEach { track ->
+            val removal = window.removeTrack(track.id, lastRequestedOffset)
+            window = removal.window
+            lastRequestedOffset = removal.lastRequestedOffset
+        }
+
+        assertEquals(200, window.rows.size)
+        assertEquals(600, window.total)
+        assertEquals(
+            LibraryWindowRange(offset = 200, limit = 200),
+            window.nextRequest(lastRequestedOffset),
+        )
+    }
+
 @Test
 fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
     val rows = (1..500).map { rank -> testBrowseTrack("title-$rank") }
@@ -370,15 +392,17 @@ fun theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary() {
 }
 
 @Test
-fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
+fun restoringLibraryLoadsAllFourTabsThroughTheCorePort() {
     val title = testBrowseTrack("title")
     val album = testAlbum()
     val artist = testArtist()
+    val favourite = testBrowseTrack("favourite").copy(rating = 5)
     val titleWindow = LibraryWindow(total = 1_824, rows = listOf(title), hasMore = true)
     val port = RecordingBrowsePort(
         titleResults = mapOf("" to titleWindow),
         albums = completeWindow(listOf(album)),
         artists = completeWindow(listOf(artist)),
+        favourites = completeWindow(listOf(favourite)),
     )
 
     val state = LibrarySession(port).restore()
@@ -388,6 +412,7 @@ fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
             titles = titleWindow,
             albums = completeWindow(listOf(album)),
             artists = completeWindow(listOf(artist)),
+            favourites = completeWindow(listOf(favourite)),
             folderUri = "content://provider/tree/Music",
         ),
         state,
@@ -399,6 +424,7 @@ fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
             "search::0:200",
             "albums:0:200",
             "artists:0:200",
+            "favourites:0:200",
         ),
         port.operations,
     )
@@ -480,6 +506,8 @@ private class RecordingBrowsePort(
     private val titleResults: Map<String, LibraryWindow<LibraryTrack>> = emptyMap(),
     private val albums: LibraryWindow<LibraryAlbum> = completeWindow(emptyList()),
     private val artists: LibraryWindow<LibraryArtist> = completeWindow(emptyList()),
+    private val artistTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
+    private val favourites: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
     private val albumTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
     private val artwork: Map<String, String?> = emptyMap(),
     private val whileResolvingArtwork: (String) -> Unit = {},
@@ -524,6 +552,19 @@ private class RecordingBrowsePort(
         return artists
     }
 
+    override fun listArtistTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "artist:$artist:${window.offset}:${window.limit}"
+        return artistTracks
+    }
+
+    override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> {
+        operations += "favourites:${window.offset}:${window.limit}"
+        return favourites
+    }
+
     override fun listAlbumTracks(
         album: String,
         albumArtist: String,
@@ -543,7 +584,7 @@ private class RecordingBrowsePort(
         return artwork[trackUri]
     }
 
-    override fun setRating(trackId: Long, rating: Int) {
-        operations += "rating:$trackId:$rating"
+    override fun setFavourite(trackId: Long, favourite: Boolean) {
+        operations += "rating:$trackId:${if (favourite) 5 else 0}"
     }
 }

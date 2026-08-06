@@ -20,7 +20,15 @@ internal data class MainActivitySurfaceDependencies(
     val listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     val openAlbum: (LibraryAlbum) -> AlbumTrackList,
     val listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    val openArtist: (LibraryArtist) -> ArtistTrackList = { artist ->
+        ArtistTrackList(artist, LibraryWindow.empty())
+    },
+    val listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
+        { _, _ -> LibraryWindow.empty() },
+    val listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
+        { LibraryWindow.empty() },
     val loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
+    val playTracks: (PlaybackSelection, (String) -> Unit) -> Unit = { _, _ -> },
     val loadPlaybackSettings: () -> PlaybackSettingsUiState,
     val setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
     val replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,

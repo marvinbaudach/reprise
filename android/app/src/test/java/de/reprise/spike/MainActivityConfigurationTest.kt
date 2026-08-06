@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -175,6 +176,39 @@ class MainActivityConfigurationTest {
         compose.onNodeWithText("Album Song 1").assertDoesNotExist()
     }
 
+    @Test
+    fun unheartingDoesNotDiscardAnotherLoadedWindowOrAnOpenAlbumOnRecreate() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        compose.waitForIdle()
+        compose.onNodeWithText("Artist 211").assertIsDisplayed()
+
+        compose.onNodeWithText("Favourites").performClick()
+        compose.onNodeWithText("Alpha Artist · First Record").assertIsDisplayed()
+        compose.onAllNodesWithTag(TRACK_HEART_TAG)[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Alpha Artist · First Record").assertDoesNotExist()
+
+        compose.onNodeWithText("Albums").performClick()
+        compose.onNodeWithText(DEEP_ALBUM).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(210)
+        compose.waitForIdle()
+        compose.onNodeWithText("Album Song 211").assertIsDisplayed()
+
+        recreateAt("w916dp-h412dp-land")
+
+        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithText("Album Song 211").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to albums").performClick()
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithText("Artist 211").assertIsDisplayed()
+    }
+
     /**
      * And the same limit as everywhere else: rows kept across the turn can go
      * out of date, so a scan that changed the catalog closes the album rather
@@ -312,7 +346,7 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
     var catalogSize = CATALOG_SIZE
     private val tracks: List<LibraryTrack>
         get() = (1..catalogSize).map { index ->
-            configurationTrack(
+            configurationTestTrack(
                 id = index.toLong(),
                 title = if (index <= 4) "Rotation Song $index" else "Title $index",
                 rating = trackRatings[index.toLong()] ?: 2,
@@ -342,11 +376,59 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
         )
     private val albumTracks: List<LibraryTrack>
         get() = (1..catalogSize).map { index ->
-            configurationTrack(
+            configurationTestTrack(
                 id = ALBUM_TRACK_ID_BASE + index,
                 title = "Album Song $index",
             )
         }
+
+    private val artistTracks: List<LibraryTrack>
+        get() = listOf(
+            configurationTestTrack(ARTIST_TRACK_ID_BASE + 1, "Artist One · First Album").copy(
+                artist = "Artist 1",
+                album = "First Album",
+            ),
+            configurationTestTrack(ARTIST_TRACK_ID_BASE + 2, "Artist One · Second Album").copy(
+                artist = "Artist 1",
+                album = "Second Album",
+            ),
+        )
+    private val seededFavouriteTracks = listOf(
+        configurationTestTrack(
+            FAVOURITE_TRACK_ID_BASE + 1,
+            "Alpha Artist · First Record",
+            rating = 5,
+        ),
+        configurationTestTrack(
+            FAVOURITE_TRACK_ID_BASE + 2,
+            "Alpha Artist · Second Record",
+            rating = 5,
+        ),
+        configurationTestTrack(
+            FAVOURITE_TRACK_ID_BASE + 3,
+            "Zulu Artist · Last Record",
+            rating = 5,
+        ),
+    )
+    private val favouriteTracks: List<LibraryTrack>
+        get() = if (favouritesEmpty) {
+            emptyList()
+        } else {
+            (tracks.filter { trackRatings[it.id] == 5 } + seededFavouriteTracks).map { track ->
+                track.copy(rating = trackRatings[track.id] ?: track.rating)
+            }.filter { it.rating == 5 }
+        }
+
+    var favouritesEmpty = false
+    var currentQueue: List<LibraryTrack> = emptyList()
+        private set
+    var currentQueueIndex: Int? = null
+        private set
+
+    fun replaceQueue(tracks: List<LibraryTrack>, startIndex: Int = 0) {
+        currentQueue = tracks
+        currentQueueIndex = startIndex
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -368,6 +450,7 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             titles = tracks.window(firstLibraryWindow()),
             albums = albums.window(firstLibraryWindow()),
             artists = artists.window(firstLibraryWindow()),
+            favourites = favouriteTracks.window(firstLibraryWindow()),
         )
         return MainActivitySurfaceDependencies(
             initialTheme = MobileThemeSelection(
@@ -389,8 +472,18 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             listArtists = { range -> artists.window(range) },
             openAlbum = { album -> AlbumTrackList(album, albumTracks.window(firstLibraryWindow())) },
             listAlbumTracks = { _, range -> albumTracks.window(range) },
+            openArtist = { artist ->
+                ArtistTrackList(artist, artistTracks.window(firstLibraryWindow()))
+            },
+            listArtistTracks = { _, range -> artistTracks.window(range) },
+            listFavourites = { range -> favouriteTracks.window(range) },
             loadTrack = { id, deliver ->
-                deliver((tracks + albumTracks).firstOrNull { it.id == id })
+                deliver((tracks + albumTracks + artistTracks + favouriteTracks).firstOrNull {
+                    it.id == id
+                })
+            },
+            playTracks = { selection, _ ->
+                replaceQueue(selection.tracks, selection.startIndex)
             },
             loadPlaybackSettings = { PlaybackSettingsUiState(false, true, emptyList()) },
             setEqualizerEnabled = { enabled ->
@@ -444,7 +537,8 @@ class ConfigurationTestPlaybackControls(
     }
     override fun setShuffle(enabled: Boolean) = Unit
     override fun setRepeat(mode: AndroidRepeatMode) = Unit
-    override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) {
+    override fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) {
+        val rating = if (favourite) 5 else 0
         ratingRequests += trackId to rating
         if (ratingFailure == null) {
             store(trackId, rating)
@@ -459,6 +553,8 @@ private const val DEEP_ALBUM = "Deep Album"
 
 /** Album tracks are their own rows, so they get their own ids and titles. */
 private const val ALBUM_TRACK_ID_BASE = 1_000_000L
+private const val ARTIST_TRACK_ID_BASE = 2_000_000L
+private const val FAVOURITE_TRACK_ID_BASE = 3_000_000L
 
 /** The library's own paging contract: honour the offset, the limit, and the end. */
 private fun <T> List<T>.window(range: LibraryWindowRange): LibraryWindow<T> {
@@ -471,7 +567,7 @@ private fun <T> List<T>.window(range: LibraryWindowRange): LibraryWindow<T> {
     )
 }
 
-private fun configurationTrack(id: Long, title: String, rating: Int = 2) = LibraryTrack(
+internal fun configurationTestTrack(id: Long, title: String, rating: Int = 2) = LibraryTrack(
     id = id,
     uri = "content://provider/document/$id.flac",
     title = title,

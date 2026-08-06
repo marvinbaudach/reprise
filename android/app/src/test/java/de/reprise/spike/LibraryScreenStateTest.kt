@@ -148,10 +148,12 @@ fun knownTotalUsesHonestProgressFraction() {
 
 @Test
 fun rememberedReadableTreeListsCatalogWithoutScanning() {
+    val favourite = testTrack().copy(id = 2, title = "Favourite", rating = 5)
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = "content://provider/tree/Music",
         readable = true,
         tracks = listOf(testTrack()),
+        favouriteTracks = listOf(favourite),
     )
 
     val state = LibrarySession(port).restore()
@@ -161,11 +163,13 @@ fun rememberedReadableTreeListsCatalogWithoutScanning() {
             titles = completeTestWindow(listOf(testTrack())),
             albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
+            favourites = completeTestWindow(listOf(favourite)),
             folderUri = "content://provider/tree/Music",
         ),
         state,
     )
     assertEquals(listOf("content://provider/tree/Music"), port.configuredUris)
+    assertTrue(port.operations.contains("favourites:0:200"))
     assertEquals(1, port.listCalls)
     assertEquals(0, port.scanCalls)
 }
@@ -216,6 +220,7 @@ fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
             "search::0:200",
             "albums:0:200",
             "artists:0:200",
+            "favourites:0:200",
         ),
         port.operations,
     )
@@ -250,6 +255,7 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
             "search::0:200",
             "albums:0:200",
             "artists:0:200",
+            "favourites:0:200",
         ),
         port.operations,
     )
@@ -278,6 +284,8 @@ private class RecordingLibrarySessionPort(
     rememberedTreeUri: String?,
     private val readable: Boolean,
     private val tracks: List<LibraryTrack>,
+    private val artistTracks: List<LibraryTrack> = emptyList(),
+    private val favouriteTracks: List<LibraryTrack> = emptyList(),
 ) : LibrarySessionPort {
     private var remembered = rememberedTreeUri
     val configuredUris = mutableListOf<String>()
@@ -330,6 +338,19 @@ private class RecordingLibrarySessionPort(
         return completeTestWindow(emptyList())
     }
 
+    override fun listArtistTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "artist:$artist:${window.offset}:${window.limit}"
+        return completeTestWindow(artistTracks)
+    }
+
+    override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> {
+        operations += "favourites:${window.offset}:${window.limit}"
+        return completeTestWindow(favouriteTracks)
+    }
+
     override fun listAlbumTracks(
         album: String,
         albumArtist: String,
@@ -340,5 +361,5 @@ private class RecordingLibrarySessionPort(
 
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? = null
 
-    override fun setRating(trackId: Long, rating: Int) = Unit
+    override fun setFavourite(trackId: Long, favourite: Boolean) = Unit
 }

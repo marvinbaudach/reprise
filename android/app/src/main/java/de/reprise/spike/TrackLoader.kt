@@ -70,7 +70,7 @@ internal class TrackLoader(
      *
      * A request that cannot even be queued is dropped rather than answered.
      * That is teardown, and the only honest answer there is the empty row the
-     * caller already has: unlike a star tap, nobody is waiting to be told.
+     * caller already has: unlike a heart tap, nobody is waiting to be told.
      */
     fun load(trackId: Long, deliver: (LibraryTrack?) -> Unit) {
         askedFor.set(trackId)
