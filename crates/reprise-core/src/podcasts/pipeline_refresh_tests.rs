@@ -39,6 +39,31 @@ impl YoutubeFetcher for FakeYoutube {
     }
 }
 
+struct CategorizedYoutube;
+
+impl YoutubeFetcher for CategorizedYoutube {
+    fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
+        unreachable!("download_episode never lists the channel")
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        unreachable!("the metadata-aware download seam must be used")
+    }
+
+    fn download_with_metadata_and_progress(
+        &self,
+        _: &str,
+        destination: &Path,
+        _: &mut dyn FnMut(DownloadProgress),
+    ) -> Result<crate::podcasts::ytdlp::YoutubeDownloadMetadata, PodcastError> {
+        std::fs::write(destination, b"audio")
+            .map_err(|error| PodcastError::Body(error.to_string()))?;
+        Ok(crate::podcasts::ytdlp::YoutubeDownloadMetadata {
+            categories: vec!["News & Politics".to_owned()],
+        })
+    }
+}
+
 struct PartialFailureFeed {
     response: RefCell<Option<Response>>,
 }
@@ -402,6 +427,58 @@ fn download_episode_downloads_a_specific_episode_by_id_and_persists_its_size() {
         .unwrap();
     assert!(stored.downloaded_path.is_some());
     assert_eq!(stored.downloaded_bytes, Some(5));
+}
+
+#[test]
+fn youtube_download_persists_its_first_category_with_the_completed_file() {
+    let conn = conn();
+    crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+    let subscription_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://youtube.test/@news".to_owned(),
+            title: "News".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let episode_id = store::upsert_episode(
+        &conn,
+        subscription_id,
+        &ParsedEpisode {
+            guid: "news-video".to_owned(),
+            title: "Bulletin".to_owned(),
+            image_url: None,
+            audio_url: "https://youtube.test/watch?v=news".to_owned(),
+            page_url: None,
+            published_at: None,
+            duration_secs: None,
+        },
+        2,
+    )
+    .unwrap()
+    .unwrap()
+    .episode_id;
+    let directory = tempfile::tempdir().unwrap();
+
+    let outcome = download_episode(
+        &conn,
+        &FakeFeed::default(),
+        &CategorizedYoutube,
+        directory.path(),
+        episode_id,
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(outcome, DownloadState::Downloaded { bytes: 5 });
+    let stored = store::episode(&conn, episode_id).unwrap().unwrap();
+    assert_eq!(stored.media_category.as_deref(), Some("News & Politics"));
+    assert!(stored.downloaded_path.is_some());
 }
 
 #[test]

@@ -310,6 +310,23 @@ pub(crate) fn migrate_v52(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v59(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_media_category = has_column(conn, "podcast_episodes", "media_category")?;
+    if version >= 59 && has_media_category {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_media_category {
+        transaction.execute(
+            "ALTER TABLE podcast_episodes ADD COLUMN media_category TEXT",
+            [],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(59))?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, expected: &str) -> Result<bool, rusqlite::Error> {
     let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement

@@ -135,6 +135,7 @@ mod tests {
             position_ms: 0,
             first_seen_at: id,
             is_new: false,
+            media_category: None,
         }
     }
 

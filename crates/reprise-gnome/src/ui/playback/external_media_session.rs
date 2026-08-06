@@ -211,6 +211,7 @@ mod tests {
             position_ms: 22_000,
             first_seen_at: 10,
             is_new: false,
+            media_category: None,
         }
     }
 

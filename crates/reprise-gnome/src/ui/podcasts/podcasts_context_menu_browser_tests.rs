@@ -25,6 +25,7 @@ fn episode(id: i64, kind: PodcastKind) -> EpisodeRow {
         position_ms: 0,
         first_seen_at: 1,
         is_new: false,
+        media_category: None,
     }
 }
 

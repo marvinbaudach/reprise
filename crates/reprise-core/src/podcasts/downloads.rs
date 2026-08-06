@@ -87,10 +87,29 @@ pub(crate) fn persist_completed_if_active_in(
     path: &str,
     downloaded_bytes: u64,
 ) -> Result<bool, rusqlite::Error> {
+    persist_completed_with_category_if_active_in(conn, episode_id, path, downloaded_bytes, None)
+}
+
+pub(crate) fn persist_completed_with_category_if_active_in(
+    conn: &Connection,
+    episode_id: i64,
+    path: &str,
+    downloaded_bytes: u64,
+    media_category: Option<&str>,
+) -> Result<bool, rusqlite::Error> {
     let downloaded_bytes = downloaded_bytes.min(i64::MAX as u64) as i64;
     Ok(conn.execute(
         "UPDATE podcast_episodes
-         SET downloaded_path = ?2, downloaded_bytes = ?3
+         SET downloaded_path = ?2,
+             downloaded_bytes = ?3,
+             media_category = CASE
+               WHEN EXISTS (
+                 SELECT 1 FROM podcast_subscriptions s
+                 WHERE s.id = podcast_episodes.subscription_id
+                   AND s.kind = 'youtube'
+               ) THEN COALESCE(NULLIF(?4, ''), media_category)
+               ELSE media_category
+             END
          WHERE id = ?1
            AND removed_at IS NULL
            AND EXISTS (
@@ -98,7 +117,7 @@ pub(crate) fn persist_completed_if_active_in(
              WHERE s.id = podcast_episodes.subscription_id
                AND s.removed_at IS NULL
            )",
-        params![episode_id, path, downloaded_bytes],
+        params![episode_id, path, downloaded_bytes, media_category],
     )? != 0)
 }
 
