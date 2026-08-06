@@ -740,6 +740,9 @@ pub(in crate::ui) fn css() -> String {
 }
 
 #[cfg(test)]
+#[path = "now_playing_external_tests.rs"]
+mod external_tests;
+#[cfg(test)]
 #[path = "now_playing_reactive_tests.rs"]
 mod reactive_tests;
 #[cfg(test)]

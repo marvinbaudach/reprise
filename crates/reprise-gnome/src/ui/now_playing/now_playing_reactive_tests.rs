@@ -70,7 +70,7 @@ fn ac_26_song_visuals_follow_music_instead_of_the_external_source() {
 
     // The panel receives the module switch and the typed session separately;
     // the snapshot's one music predicate decides the effective treatment.
-    panel.set_external_snapshot(Some(super::tests::external_episode_snapshot()));
+    panel.set_external_snapshot(Some(super::external_tests::external_episode_snapshot()));
 
     assert!(
         !panel.widgets.visual_page.is_visible(),
@@ -87,8 +87,8 @@ fn ac_26_song_visuals_follow_music_instead_of_the_external_source() {
     );
 
     for snapshot in [
-        super::tests::external_youtube_snapshot(),
-        super::tests::external_radio_snapshot(),
+        super::external_tests::external_youtube_snapshot(),
+        super::external_tests::external_radio_snapshot(),
     ] {
         panel.set_external_snapshot(Some(snapshot));
         assert!(

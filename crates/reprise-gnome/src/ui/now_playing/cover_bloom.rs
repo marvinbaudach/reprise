@@ -165,6 +165,11 @@ impl CoverBloom {
         self.apply_light();
     }
 
+    #[cfg(test)]
+    pub(super) fn has_cover_for_test(&self) -> bool {
+        self.area.has_texture()
+    }
+
     pub(super) fn set_light(&self, pressure: f64, swell: f64) {
         if self.inner.mode.get() == Mode::Pinned {
             return;

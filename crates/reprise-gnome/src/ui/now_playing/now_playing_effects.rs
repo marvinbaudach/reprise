@@ -93,6 +93,22 @@ impl super::NowPlayingPanel {
             self.widgets.external_cover.append(source_image.widget());
             self.widgets.bloom.set_cover(None, generation);
             self.widgets.shimmer.set_cover(None, generation);
+            if external.carries_music() {
+                let bloom = self.widgets.bloom.clone();
+                let shimmer = self.widgets.shimmer.clone();
+                crate::ui::podcasts::source_image::load_texture(
+                    external.art_url.as_deref(),
+                    tokens::NOW_PLAYING_COVER_SIZE,
+                    tokens::NOW_PLAYING_COVER_SIZE,
+                    images_allowed,
+                    generation,
+                    &self.cover_generation,
+                    move |texture| {
+                        bloom.set_cover(Some(&texture), generation);
+                        shimmer.set_cover(Some(&texture), generation);
+                    },
+                );
+            }
             on_cover_resolved(None);
             return;
         }
