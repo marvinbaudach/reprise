@@ -68,7 +68,12 @@ internal fun NowPlayingSheet(
     PredictiveBackHandler {
         try {
             it.collect { event -> backProgress = event.progress }
-            close()
+            if (surfaceState.nowPlayingQueueVisible) {
+                surfaceState.showNowPlayingQueue(false)
+                backProgress = 0f
+            } else {
+                close()
+            }
         } catch (_: CancellationException) {
             backProgress = 0f
         }
@@ -134,20 +139,31 @@ private fun StackedNowPlayingContent(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
+                QueuePageButton(surfaceState)
+                SleepTimerControl(playback.sleepTimer)
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
             }
-            NowPlayingVisualizer(
-                trackId = track.id,
-                trackUri = track.uri,
-                playbackFraction = playback.progressFraction,
-                size = metrics.coverSizeDp,
-                shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-            )
+            if (surfaceState.nowPlayingQueueVisible) {
+                Box(
+                    modifier = Modifier.size(metrics.coverSizeDp.dp),
+                ) {
+                    NowPlayingQueuePage(playback, surfaceState)
+                }
+            } else {
+                NowPlayingVisualizer(
+                    trackId = track.id,
+                    trackUri = track.uri,
+                    playbackFraction = playback.progressFraction,
+                    size = metrics.coverSizeDp,
+                    shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
+                )
+            }
             Spacer(Modifier.height(20.dp))
             Text(
                 text = track.title,
+                modifier = Modifier.testTag("now-playing-title"),
                 style = TextStyle(
                     fontSize = metrics.titleSizeSp.sp,
                     lineHeight = metrics.titleLineHeightSp.sp,
@@ -203,13 +219,17 @@ private fun WideShortNowPlayingContent(
                 .fillMaxHeight(),
             contentAlignment = Alignment.Center,
         ) {
-            NowPlayingVisualizer(
-                trackId = track.id,
-                trackUri = track.uri,
-                playbackFraction = playback.progressFraction,
-                size = metrics.coverSizeDp,
-                shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-            )
+            if (surfaceState.nowPlayingQueueVisible) {
+                NowPlayingQueuePage(playback, surfaceState)
+            } else {
+                NowPlayingVisualizer(
+                    trackId = track.id,
+                    trackUri = track.uri,
+                    playbackFraction = playback.progressFraction,
+                    size = metrics.coverSizeDp,
+                    shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
+                )
+            }
         }
         Spacer(Modifier.width(24.dp))
         Column(
@@ -224,6 +244,7 @@ private fun WideShortNowPlayingContent(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = track.title,
+                        modifier = Modifier.testTag("now-playing-title"),
                         style = TextStyle(
                             fontSize = metrics.titleSizeSp.sp,
                             lineHeight = metrics.titleLineHeightSp.sp,
@@ -243,6 +264,8 @@ private fun WideShortNowPlayingContent(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                QueuePageButton(surfaceState)
+                SleepTimerControl(playback.sleepTimer)
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
@@ -261,6 +284,20 @@ private fun WideShortNowPlayingContent(
             Spacer(Modifier.weight(1f))
             PlaybackActions(playback = playback, metrics = metrics, wideShort = true)
         }
+    }
+}
+
+@Composable
+private fun QueuePageButton(surfaceState: MobileSurfaceViewModel) {
+    val visible = surfaceState.nowPlayingQueueVisible
+    IconButton(
+        onClick = { surfaceState.showNowPlayingQueue(!visible) },
+        modifier = Modifier.size(48.dp),
+    ) {
+        MaterialSymbol(
+            name = if (visible) "album" else "queue_music",
+            contentDescription = if (visible) "Show artwork" else "Show queue",
+        )
     }
 }
 

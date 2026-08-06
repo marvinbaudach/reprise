@@ -95,6 +95,7 @@ fn tapping_a_track_starts_a_core_queue_at_that_position() {
             current_track_uri: Some("content://provider/second.flac".to_owned()),
             position_ms: 0,
             duration_ms: 0,
+            automatic_advance_count: 0,
             shuffled: false,
             repeat: AndroidRepeatMode::Off,
             error: None,
@@ -174,6 +175,7 @@ fn an_empty_session_snapshot_has_no_current_track_identity() {
             current_track_uri: None,
             position_ms: 0,
             duration_ms: 0,
+            automatic_advance_count: 0,
             shuffled: false,
             repeat: AndroidRepeatMode::Off,
             error: None,
@@ -249,6 +251,7 @@ fn core_queue_owns_gapless_advance_and_manual_next_previous() {
             current_track_uri: Some("content://provider/second.flac".to_owned()),
             position_ms: 1_250,
             duration_ms: 180_000,
+            automatic_advance_count: 1,
             shuffled: false,
             repeat: AndroidRepeatMode::Off,
             error: None,
@@ -276,6 +279,52 @@ fn core_queue_owns_gapless_advance_and_manual_next_previous() {
             PortCall::CurrentGeneration,
             PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
         ]
+    );
+}
+
+#[test]
+fn snapshot_counts_automatic_advances_but_not_manual_skips() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(
+            vec![10, 11, 12],
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+                "content://provider/third.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+
+    assert_eq!(
+        fixture.session.snapshot().unwrap().automatic_advance_count,
+        0
+    );
+    fixture.session.next().unwrap();
+    fixture.session.previous().unwrap();
+    assert_eq!(
+        fixture.session.snapshot().unwrap().automatic_advance_count,
+        0
+    );
+
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+    bridge.emit(24, AndroidPlayerEvent::AdvancedToNext);
+    assert_eq!(
+        fixture.session.snapshot().unwrap().automatic_advance_count,
+        1
+    );
+    bridge.emit(
+        24,
+        AndroidPlayerEvent::Position {
+            position_ms: 1_250,
+            duration_ms: 180_000,
+        },
+    );
+    assert_eq!(
+        fixture.session.snapshot().unwrap().automatic_advance_count,
+        1
     );
 }
 

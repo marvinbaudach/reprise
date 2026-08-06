@@ -3,6 +3,8 @@ package de.reprise.spike
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
@@ -22,6 +24,9 @@ open class ReprisePlaybackService : MediaSessionService() {
     private var coreSession: AndroidPlaybackSession? = null
     private var observer: ((AndroidPlaybackSnapshot) -> Unit)? = null
     private var settingsObserver: (() -> Unit)? = null
+    private var sleepTimerObserver: ((SleepTimerUiState) -> Unit)? = null
+    private var latestPlaybackSnapshot: AndroidPlaybackSnapshot? = null
+    private lateinit var sleepTimer: SleepTimerController
     private val localBinder = LocalBinder()
 
     /**
@@ -32,6 +37,8 @@ open class ReprisePlaybackService : MediaSessionService() {
      */
     internal val coreListener = object : AndroidPlaybackListener {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
+            latestPlaybackSnapshot = snapshot
+            if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
             observer?.invoke(snapshot)
             if (snapshot.hasRunOut()) {
                 // The queue is empty, so this service has nothing left to keep
@@ -71,6 +78,12 @@ open class ReprisePlaybackService : MediaSessionService() {
             .build()
         val port = Media3PlaybackPort(player) { settingsObserver?.invoke() }
         playbackPort = port
+        sleepTimer = SleepTimerController(
+            handler = Handler(Looper.getMainLooper()),
+            applyVolume = ::applySleepTimerVolume,
+            pause = ::pauseForSleepTimer,
+            publish = { state -> sleepTimerObserver?.invoke(state) },
+        )
         val session = MediaSession.Builder(
             this,
             CoreControlledPlayer(player, mediaSessionCommands),
@@ -112,6 +125,8 @@ open class ReprisePlaybackService : MediaSessionService() {
     override fun onDestroy() {
         observer = null
         settingsObserver = null
+        sleepTimerObserver = null
+        if (::sleepTimer.isInitialized) sleepTimer.close()
         coreSession?.close()
         coreSession = null
         mediaSession?.let { session ->
@@ -143,6 +158,38 @@ open class ReprisePlaybackService : MediaSessionService() {
     internal fun detachSettingsObserver() {
         settingsObserver = null
     }
+
+    internal fun attachSleepTimerObserver(observer: (SleepTimerUiState) -> Unit) {
+        sleepTimerObserver = observer
+        observer(sleepTimer.state())
+    }
+
+    internal fun detachSleepTimerObserver() {
+        sleepTimerObserver = null
+    }
+
+    internal fun startSleepTimer(selection: SleepTimerSelection) {
+        sleepTimer.start(selection, latestPlaybackSnapshot)
+    }
+
+    internal fun cancelSleepTimer() {
+        sleepTimer.cancel()
+    }
+
+    internal fun sleepTimerState(): SleepTimerUiState = sleepTimer.state()
+
+    internal open fun applySleepTimerVolume(volume: Float) {
+        playbackPort?.setVolume(volume.toDouble())
+    }
+
+    internal open fun pauseForSleepTimer() {
+        if (latestPlaybackSnapshot?.state == AndroidPlaybackState.PLAYING) {
+            coreSession?.togglePause()
+        }
+    }
+
+    internal fun sleepTimerPlaybackPositionMs(): Long =
+        latestPlaybackSnapshot?.positionMs ?: 0L
 
     internal fun playTracks(tracks: List<LibraryTrack>, startIndex: Int) {
         coreSession().playTracks(
@@ -182,6 +229,25 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     internal fun equalizerSnapshot(): AndroidEqualizerSnapshot? =
         coreSession().equalizerSnapshot()
+
+    internal fun upcomingTracks(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
+        coreSession().upcomingTracks(window.toFfi()).toLibraryTracks()
+
+    internal fun playUpcomingTrackNow(position: Int, expectedTrackId: Long): Boolean =
+        coreSession().playUpcomingTrackNow(position.toULong(), expectedTrackId)
+
+    internal fun moveUpcomingTrack(
+        fromPosition: Int,
+        expectedTrackId: Long,
+        toPosition: Int,
+    ): Boolean = coreSession().moveUpcomingTrack(
+        fromPosition.toULong(),
+        expectedTrackId,
+        toPosition.toULong(),
+    )
+
+    internal fun removeUpcomingTrack(position: Int, expectedTrackId: Long): Boolean =
+        coreSession().removeUpcomingTrack(position.toULong(), expectedTrackId)
 
     private fun coreSession(): AndroidPlaybackSession = checkNotNull(coreSession) {
         "Core playback session is not ready"

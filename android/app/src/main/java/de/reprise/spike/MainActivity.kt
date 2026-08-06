@@ -52,7 +52,6 @@ import de.reprise.spike.ui.theme.RepriseTheme
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
-import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
@@ -116,28 +115,12 @@ class MainActivity : ComponentActivity() {
      * Every transport command the surface can issue, bound once here instead of
      * threaded through two composables that issue none of them.
      */
-    private val playbackControls = object : PlaybackControls {
-        override fun togglePause() =
-            runPlaybackCommand("change playback state") { togglePause() }
-
-        override fun next() = runPlaybackCommand("skip to the next track") { next() }
-
-        override fun previous() = runPlaybackCommand("return to the previous track") { previous() }
-
-        override fun seekTo(positionMs: Long) = runPlaybackCommand("seek") { seekTo(positionMs) }
-
-        override fun setShuffle(enabled: Boolean) =
-            runPlaybackCommand("change shuffle") { setShuffle(enabled) }
-
-        override fun setRepeat(mode: AndroidRepeatMode) =
-            runPlaybackCommand("change repeat") { setRepeat(mode) }
-
-        override fun setFavourite(
-            trackId: Long,
-            favourite: Boolean,
-            report: (String?) -> Unit,
-        ) = this@MainActivity.setFavourite(trackId, favourite, report)
-    }
+    private val playbackControls = ActivityPlaybackControls(
+        command = { action, operation -> runPlaybackCommand(action, command = operation) },
+        connectedService = { playbackService },
+        postToMain = { work -> runOnUiThread(work) },
+        setFavouriteAction = ::setFavourite,
+    )
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -154,12 +137,19 @@ class MainActivity : ComponentActivity() {
             val service = (binder as ReprisePlaybackService.LocalBinder).service()
             playbackService = service
             service.attachObserver { snapshot ->
-                runOnUiThread { playbackState.value = snapshot.toUiState() }
+                runOnUiThread {
+                    playbackState.value = snapshot.toUiState().copy(
+                        sleepTimer = playbackState.value.sleepTimer,
+                    )
+                }
             }
             service.attachSettingsObserver {
                 runOnUiThread {
                     playbackSettingsRevision.value += 1L
                 }
+            }
+            service.attachSleepTimerObserver { timer ->
+                runOnUiThread { playbackState.value = playbackState.value.copy(sleepTimer = timer) }
             }
         }
 
@@ -370,6 +360,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         playbackService?.detachObserver()
         playbackService?.detachSettingsObserver()
+        playbackService?.detachSleepTimerObserver()
         playbackService = null
         if (playbackBound) {
             unbindService(playbackConnection)
@@ -380,6 +371,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         setDockWindowMode(false)
+        // Stop accepting boundary calls while letting the single ordered lane
+        // finish operations already submitted against the service.
+        playbackControls.shutdown()
         // Compose disposal is not the release boundary: Android may destroy
         // the activity while dock mode is still the ViewModel's current mode.
         // First, and before the library handle is closed below: a heart tap that
@@ -616,6 +610,7 @@ class MainActivity : ComponentActivity() {
         runCatching { service.command() }
             .onFailure { error -> reportError("Could not $action: ${error.detail()}") }
     }
+
 }
 
 internal class UiProgress(
