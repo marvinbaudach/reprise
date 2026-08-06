@@ -36,6 +36,19 @@ FAILURE_LOG_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+APP_NAMESPACE_ARGV: tuple[str, ...] = (
+    "unshare",
+    "--user",
+    "--map-current-user",
+    "--net",
+    "--",
+)
+
+
+def app_launch_argv(app_binary: pathlib.Path) -> list[str]:
+    """Use a private network namespace without breaking D-Bus EXTERNAL auth."""
+    return [*APP_NAMESPACE_ARGV, str(app_binary)]
+
 
 class RunError(RuntimeError):
     """The isolated runner could not establish trustworthy evidence."""
@@ -121,14 +134,7 @@ class AppLifecycle:
             "REPRISE_LOG": "debug",
         }
         self.process = subprocess.Popen(
-            [
-                "unshare",
-                "--user",
-                "--map-root-user",
-                "--net",
-                "--",
-                str(self.app_binary),
-            ],
+            app_launch_argv(self.app_binary),
             stdout=self.log_handle,
             stderr=subprocess.STDOUT,
             env=environment,

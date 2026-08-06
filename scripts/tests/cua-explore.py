@@ -18,6 +18,28 @@ from explorer import DeterministicExplorer  # noqa: E402
 from agent_adapter import AgentError, ExternalAgent  # noqa: E402
 from driver import CuaExecutor  # noqa: E402
 from report import RunReport, confirm_findings, minimize_actions  # noqa: E402
+from runner import app_launch_argv  # noqa: E402
+
+
+class AppLaunchArgvTests(unittest.TestCase):
+    def test_app_launch_argv_keeps_a_private_network_namespace(self) -> None:
+        argv = app_launch_argv(pathlib.Path("/fixture/reprise"))
+
+        self.assertIn("--net", argv)
+
+    def test_app_launch_argv_does_not_map_root_because_dbus_external_auth_rejects_it(
+        self,
+    ) -> None:
+        argv = app_launch_argv(pathlib.Path("/fixture/reprise"))
+
+        self.assertIn("--map-current-user", argv)
+        self.assertNotIn("--map-root-user", argv)
+
+    def test_app_launch_argv_puts_the_binary_after_the_argument_separator(self) -> None:
+        binary = pathlib.Path("/fixture/reprise")
+        argv = app_launch_argv(binary)
+
+        self.assertEqual(argv[-2:], ["--", str(binary)])
 
 
 class MissionContractTests(unittest.TestCase):

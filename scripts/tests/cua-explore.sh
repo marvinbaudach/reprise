@@ -76,17 +76,33 @@ if [[ -z $validate_base_line || -z $create_base_line || $validate_base_line -ge 
   exit 1
 fi
 
-for required in 'unshare' '--map-root-user' '--net'; do
+for required in 'unshare' '--map-current-user' '--net'; do
   if ! rg --quiet --fixed-strings -- "$required" "$runner" scripts/cua-explore/runner.py; then
     echo "exploratory app must use a private network namespace: $required" >&2
     exit 1
   fi
 done
+# Mapping the app to root breaks D-Bus EXTERNAL authentication against the
+# user-owned private session bus.
+if rg --quiet --fixed-strings -- '--map-root-user' "$runner" scripts/cua-explore/runner.py; then
+  echo "exploratory app must not map root inside its network namespace" >&2
+  exit 1
+fi
 host_network=$(readlink /proc/self/ns/net)
-private_network=$(unshare --user --map-root-user --net readlink /proc/self/ns/net)
+private_network=$(unshare --user --map-current-user --net readlink /proc/self/ns/net)
 if [[ $host_network == "$private_network" ]]; then
   echo "exploratory app network namespace must differ from the host" >&2
   exit 1
+fi
+if command -v dbus-run-session >/dev/null && command -v dbus-send >/dev/null; then
+  if ! timeout 20 dbus-run-session -- unshare --user --map-current-user --net \
+    dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+    /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null; then
+    echo "exploratory app namespace must retain private session-bus access" >&2
+    exit 1
+  fi
+else
+  echo "skipping exploratory namespace D-Bus probe: dbus-run-session or dbus-send missing"
 fi
 
 if rg --quiet --fixed-strings 'cua-explore' .github/workflows; then
