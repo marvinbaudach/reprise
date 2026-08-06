@@ -13,6 +13,7 @@ pub mod episode_tags;
 pub mod feed;
 pub mod http;
 pub mod itunes;
+mod media_character;
 pub mod offline_add;
 pub mod phone_sync;
 pub mod pipeline;
@@ -22,12 +23,19 @@ pub mod refresh;
 pub mod source_artwork;
 pub mod status;
 pub mod store;
+mod store_metadata;
 pub mod url_detect;
 pub mod wanted_on_device;
 pub mod youtube;
 pub mod ytdlp;
 mod ytdlp_download;
 pub mod ytdlp_search;
+
+pub use media_character::{character_from_category, MediaCharacter};
+
+#[cfg(test)]
+#[path = "podcasts/media_character_tests.rs"]
+mod media_character_tests;
 
 pub const YOUTUBE_BROWSER_RECOVERY_MESSAGE: &str =
     "YouTube needs a signed-in browser — choose one in Plugins";
@@ -88,6 +96,7 @@ pub struct EpisodeRow {
     pub page_url: Option<String>,
     pub published_at: Option<i64>,
     pub duration_secs: Option<i64>,
+    pub media_category: Option<String>,
     pub downloaded_path: Option<String>,
     pub downloaded_bytes: Option<i64>,
     pub played_at: Option<i64>,

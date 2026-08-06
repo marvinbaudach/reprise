@@ -209,6 +209,9 @@ impl PlayerController {
             .map_or(PodcastKind::Rss, |episode| episode.kind);
         let subscription_id = row.as_ref().map_or(0, |episode| episode.subscription_id);
         let published_at = row.as_ref().and_then(|episode| episode.published_at);
+        let media_category = row
+            .as_ref()
+            .and_then(|episode| episode.media_category.clone());
         let art_url = row.and_then(|episode| episode.image_url.or(episode.show_image_url));
         let (title, show, source, resume_ms, duration_ms) = podcast_fields(&media);
         let needs_ytdlp = podcast_source_requires_resolution(kind, &source);
@@ -223,6 +226,7 @@ impl PlayerController {
             automatic_advance,
             subscription_id,
             kind,
+            media_category,
             published_at,
             art_url,
             phase,
@@ -289,17 +293,41 @@ impl PlayerController {
                     if !controller.external_generation_matches_podcast(generation) {
                         return;
                     }
-                    if let Some(duration) = audio.duration_secs {
-                        let _ = reprise_core::podcasts::store::save_duration(
-                            &controller.conn,
+                    let media_category = audio
+                        .categories
+                        .into_iter()
+                        .next()
+                        .filter(|category| !category.is_empty());
+                    // Playback goes ahead either way — a failed write costs the
+                    // stored duration and category, not the episode. But it
+                    // must not vanish: without this the classification would
+                    // simply never stick, and the panel would look like the
+                    // feature was never built.
+                    if let Err(error) = reprise_core::podcasts::store::save_youtube_resolution(
+                        &controller.conn,
+                        episode_id,
+                        audio.duration_secs,
+                        media_category.as_deref(),
+                    ) {
+                        tracing::warn!(
+                            %error,
                             episode_id,
-                            duration,
+                            "could not persist the resolved episode metadata"
                         );
+                    }
+                    if let Some(duration) = audio.duration_secs {
                         controller.update_podcast_duration(
                             generation,
                             episode_id,
                             duration * 1_000,
                         );
+                    }
+                    let category_changed = controller
+                        .external
+                        .borrow_mut()
+                        .update_podcast_media_category(generation, episode_id, media_category);
+                    if category_changed {
+                        controller.notify_external_changed();
                     }
                     let _ = controller.start_podcast_source(
                         generation,

@@ -150,6 +150,7 @@ mod tests {
             automatic_advance: None,
             subscription_id: 42,
             kind: reprise_core::podcasts::PodcastKind::Rss,
+            media_category: None,
             published_at: None,
             art_url: None,
             phase: PodcastPhase::Playing,
