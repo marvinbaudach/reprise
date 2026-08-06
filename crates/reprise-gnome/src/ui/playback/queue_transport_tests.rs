@@ -182,3 +182,27 @@ fn move_to_top_without_current_track_is_a_noop() {
     assert_eq!(move_rows_to_front(&mut context, &mut pending, &[]), 0);
     assert_eq!(pending.ids(), &[101, 102]);
 }
+
+#[test]
+fn que_13_removing_direct_episode_now_playing_ends_the_session_and_counts_it() {
+    use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+    let mut session_loaded = true;
+    assert_eq!(
+        remove_direct_episode_now_playing(true, &[QueueRow::UpNext(0)], || {
+            session_loaded = false;
+        }),
+        0,
+        "the frozen show context remains read-only"
+    );
+    assert!(session_loaded);
+
+    let removed = remove_direct_episode_now_playing(
+        true,
+        &[QueueRow::NowPlaying, QueueRow::UpNext(0)],
+        || session_loaded = false,
+    );
+
+    assert_eq!(removed, 1);
+    assert!(!session_loaded);
+}

@@ -8,6 +8,8 @@ use crate::ui::track_list_context_menu::current_selection_positions;
 use crate::ui::{strings, track_actions};
 use reprise_core::view_source::ViewSource;
 
+use super::track_list_callbacks::OnQueueSelected;
+
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -34,12 +36,13 @@ pub(in crate::ui) fn add_selected(shared: &Rc<Shared>, ids: &[i64]) {
         drop_callback(&ids);
         return;
     }
-    let count = ids.len();
     let callback = shared.on_queue_selected.borrow().clone();
     match callback {
         Some(callback) => {
-            callback(ids);
-            show_toast(shared, &strings::tracks_added_to_queue_toast(count));
+            let accepted = dispatch_queue_action(ids, &callback);
+            if accepted > 0 {
+                show_toast(shared, &strings::tracks_added_to_queue_toast(accepted));
+            }
         }
         None => tracing::warn!("add-to-queue fired without a callback"),
     }
@@ -52,15 +55,23 @@ pub(in crate::ui) fn play_next_selected(shared: &Rc<Shared>, ids: &[i64]) {
     let Some(ids) = track_actions::queue_selected_ids(ids) else {
         return;
     };
-    let count = ids.len();
     let callback = shared.on_play_next_selected.borrow().clone();
     match callback {
         Some(callback) => {
-            callback(ids);
-            show_toast(shared, &strings::tracks_added_to_queue_toast(count));
+            let accepted = dispatch_queue_action(ids, &callback);
+            if accepted > 0 {
+                show_toast(shared, &strings::tracks_added_to_queue_toast(accepted));
+            }
         }
         None => tracing::warn!("play-next fired without a callback"),
     }
+}
+
+fn dispatch_queue_action(ids: Vec<i64>, callback: &OnQueueSelected) -> usize {
+    if ids.is_empty() {
+        return 0;
+    }
+    callback(ids)
 }
 
 /// Context-menu "Play" (PLAY-4b) when the current source is the Queue view:
@@ -146,4 +157,32 @@ pub(in crate::ui) fn remove_selected(shared: &Rc<Shared>) {
         )
     };
     show_toast(shared, &message);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use super::dispatch_queue_action;
+    use crate::ui::track_list::track_list_callbacks::OnQueueSelected;
+
+    #[test]
+    fn que_12_queue_actions_skip_episode_only_and_count_only_mixed_tracks() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let callback: OnQueueSelected = {
+            let calls = calls.clone();
+            Rc::new(move |ids| {
+                let accepted = ids.len();
+                calls.borrow_mut().push(ids);
+                accepted
+            })
+        };
+
+        assert_eq!(dispatch_queue_action(Vec::new(), &callback), 0);
+        assert!(calls.borrow().is_empty(), "episode-only must not dispatch");
+
+        assert_eq!(dispatch_queue_action(vec![7, 9], &callback), 2);
+        assert_eq!(&*calls.borrow(), &[vec![7, 9]]);
+    }
 }

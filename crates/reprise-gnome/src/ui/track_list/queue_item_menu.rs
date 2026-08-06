@@ -22,6 +22,10 @@ pub(in crate::ui) fn route(items: &[QueueItem]) -> QueueMenuRoute {
     }
 }
 
+pub(in crate::ui) fn enqueue_enabled(items: &[QueueItem]) -> bool {
+    items.is_empty() || items.iter().any(|item| matches!(item, QueueItem::Track(_)))
+}
+
 pub(in crate::ui) fn build_common_queue_menu(count: usize, editable: bool) -> gio::Menu {
     let menu = gio::Menu::new();
     if !editable {
@@ -48,7 +52,7 @@ mod tests {
     use gtk4::gio::prelude::*;
     use reprise_core::up_next::QueueItem;
 
-    use super::{build_common_queue_menu, route, QueueMenuRoute};
+    use super::{build_common_queue_menu, enqueue_enabled, route, QueueMenuRoute};
 
     fn labels(menu: &gtk4::gio::Menu) -> Vec<String> {
         (0..menu.n_items())
@@ -83,5 +87,18 @@ mod tests {
         let editable_labels = labels(&build_common_queue_menu(2, true));
         assert_eq!(editable_labels, ["Move to top", "Remove 2 from queue"]);
         assert!(labels(&build_common_queue_menu(1, false)).is_empty());
+    }
+
+    #[test]
+    fn que_12_episode_only_selection_disables_enqueue_but_mixed_keeps_tracks_enabled() {
+        assert!(!enqueue_enabled(&[QueueItem::Episode(7)]));
+        assert!(enqueue_enabled(&[
+            QueueItem::Episode(7),
+            QueueItem::Track(8),
+        ]));
+        assert!(
+            enqueue_enabled(&[]),
+            "non-queue track sources have no typed rows"
+        );
     }
 }

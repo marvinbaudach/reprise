@@ -23,6 +23,8 @@ use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
 
+use super::queue_insertion::track_items;
+
 #[path = "queue_transport_projection.rs"]
 mod projection;
 
@@ -67,6 +69,21 @@ fn queue_purge_plan(ids: &[i64], loaded: Option<i64>) -> QueuePurgePlan {
 
 fn should_advance_after_user_delete(ids: &[i64], loaded: Option<i64>) -> bool {
     loaded.is_some_and(|id| ids.contains(&id))
+}
+
+fn remove_direct_episode_now_playing(
+    direct_episode: bool,
+    rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
+    stop: impl FnOnce(),
+) -> usize {
+    use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+    if direct_episode && rows.contains(&QueueRow::NowPlaying) {
+        stop();
+        1
+    } else {
+        0
+    }
 }
 
 /// `restored_placement_intact` says the loaded track is still exactly where a
@@ -381,25 +398,6 @@ impl PlayerController {
         self.advance_playback(AdvanceReason::Manual);
     }
 
-    /// Appends explicit user selections to visible Up Next without replacing
-    /// or starting the hidden playback context. Duplicates remain meaningful
-    /// user choices; an empty slice is a no-op.
-    pub(in crate::ui) fn append_to_queue(&self, ids: &[i64]) {
-        self.append_queue_items(&track_items(ids));
-    }
-
-    pub(in crate::ui) fn append_queue_items(&self, items: &[QueueItem]) {
-        if items.is_empty() {
-            tracing::debug!("append to queue: nothing to add; ignoring");
-            return;
-        }
-        self.up_next.borrow_mut().append(items);
-        self.notify_queue_changed();
-        let queue_len = self.up_next.borrow().len();
-        self.sync_transport_enabled(true);
-        tracing::info!(added = items.len(), queue_len, "items added to queue");
-    }
-
     /// Starts playback of `ids[start_index]` and loads the rest of `ids` into
     /// the queue as what auto-advance/previous/next step through. Row
     /// activation lands here — see `ui::track_list`'s `queue_ids_for_
@@ -445,23 +443,6 @@ impl PlayerController {
     /// borrow escapes (see `## Queue borrow discipline`).
     pub(in crate::ui) fn current_play_origin(&self) -> Option<super::play_origin::PlayOrigin> {
         self.play_origin.borrow().clone()
-    }
-
-    /// QUE-3's "Play next": the given ids jump the manual line (front of
-    /// Play Next), unlike `append_to_queue`'s back-of-line append.
-    pub(in crate::ui) fn play_next(&self, ids: &[i64]) {
-        self.play_next_items(&track_items(ids));
-    }
-
-    pub(in crate::ui) fn play_next_items(&self, items: &[QueueItem]) {
-        if items.is_empty() {
-            tracing::debug!("play next: nothing to add; ignoring");
-            return;
-        }
-        self.up_next.borrow_mut().prepend(items);
-        self.notify_queue_changed();
-        self.sync_transport_enabled(true);
-        tracing::info!(added = items.len(), "items queued to play next");
     }
 
     /// Moves selected composite Queue rows to the start of Play Next in
@@ -523,6 +504,8 @@ impl PlayerController {
         use crate::ui::track_list::queue_row_mapping::QueueRow;
 
         let direct_episode = projection::has_direct_episode_projection(&self.external.borrow());
+        let direct_episode_removed =
+            remove_direct_episode_now_playing(direct_episode, rows, || self.stop_external());
         let mut play_next_indices = Vec::new();
         let mut up_next_offsets = Vec::new();
         let mut remove_current = false;
@@ -532,14 +515,15 @@ impl PlayerController {
                 QueueRow::PlayNext(index) => play_next_indices.push(*index),
                 QueueRow::UpNext(offset) if !direct_episode => up_next_offsets.push(*offset),
                 QueueRow::NowPlaying if !direct_episode => remove_current = true,
-                QueueRow::UpNext(_) | QueueRow::NowPlaying => ignored += 1,
+                QueueRow::NowPlaying => {}
+                QueueRow::UpNext(_) => ignored += 1,
             }
         }
         if ignored > 0 {
             tracing::debug!(ignored, "episode context rows cannot be removed; ignoring");
         }
 
-        let mut removed = 0;
+        let mut removed = direct_episode_removed;
         if !play_next_indices.is_empty() {
             removed += self
                 .up_next
@@ -779,10 +763,6 @@ impl PlayerController {
         tracing::info!(deleted = ?loaded, "user deleted the loaded track; advancing playback");
         self.advance_playback(AdvanceReason::Automatic);
     }
-}
-
-fn track_items(ids: &[i64]) -> Vec<QueueItem> {
-    ids.iter().copied().map(QueueItem::Track).collect()
 }
 
 #[cfg(test)]

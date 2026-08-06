@@ -513,3 +513,83 @@ fn mixed_queue_panel_renders_episode_title_and_show() {
     assert!(labels.iter().any(|label| label == "Episode Seven"));
     assert!(labels.iter().any(|label| label == "Systems Weekly"));
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn que_14_shifted_show_context_row_hides_the_remove_button() {
+    use crate::ui::track_list::queue_sections::compose_virtual;
+
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at)
+             VALUES (20, '/tmp/track-twenty.mp3', 'Track Twenty', 'Artist', 0);
+             INSERT INTO podcast_subscriptions
+             (id, kind, feed_url, title, added_at)
+             VALUES (1, 'rss', 'https://example.test/feed', 'Systems Weekly', 0);
+             INSERT INTO podcast_episodes
+             (id, subscription_id, guid, title, audio_url, duration_secs, first_seen_at)
+             VALUES
+             (21, 1, 'episode-twenty-one', 'Episode Twenty One',
+              'https://example.test/twenty-one.mp3', 90, 0);",
+        )
+        .unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    let panel = UpNextPanel::new(conn, &cover_loader);
+    let empty_context: Rc<dyn crate::ui::track_list::queue_sections::ContextWindow> =
+        Rc::new(Vec::<reprise_core::up_next::QueueItem>::new());
+
+    let before = compose_virtual(
+        Some(reprise_core::up_next::QueueItem::Episode(19)),
+        &[track(20), reprise_core::up_next::QueueItem::Episode(21)],
+        None,
+        Some("Systems Weekly"),
+    );
+    panel.set_queue_model(&before, &empty_context);
+    let window = gtk4::Window::builder().child(panel.widget()).build();
+    window.present();
+    while glib::MainContext::default().iteration(false) {}
+
+    let mut before_buttons = Vec::new();
+    collect_buttons_with_class(
+        panel.widget().upcast_ref(),
+        "reprise-up-next-remove",
+        &mut before_buttons,
+    );
+    assert!(before_buttons[1].is_visible(), "the manual row is editable");
+
+    let mut after = compose_virtual(
+        Some(track(20)),
+        &[reprise_core::up_next::QueueItem::Episode(21)],
+        None,
+        Some("Systems Weekly"),
+    );
+    // Preserve the leading-removal delta that keeps the bound ListItem alive,
+    // while moving its surviving episode from the editable manual section to
+    // the read-only show section. This is the exact transition whose stale
+    // bind-time visibility left the remove control behind.
+    let episode_section = after
+        .sections
+        .iter_mut()
+        .find(|section| section.kind == QueueSectionKind::PlayNext)
+        .unwrap();
+    episode_section.kind = QueueSectionKind::UpNext {
+        source_label: "Systems Weekly".into(),
+    };
+    panel.set_queue_model(&after, &empty_context);
+    while glib::MainContext::default().iteration(false) {}
+
+    let mut after_buttons = Vec::new();
+    collect_buttons_with_class(
+        panel.widget().upcast_ref(),
+        "reprise-up-next-remove",
+        &mut after_buttons,
+    );
+    assert_eq!(after_buttons.len(), 1);
+    assert!(
+        !after_buttons[0].is_visible(),
+        "the shifted episode belongs to the read-only show context"
+    );
+}
