@@ -41,7 +41,7 @@ impl SoundWeighting {
     /// The weighting a setting token names, or `None` for a token no weighting
     /// uses. A surface that takes the token from a caller rather than from the
     /// database needs to tell a typo apart from an omission, which the
-    /// falling-back [`Self::from_setting`] cannot.
+    /// falling-back `Self::from_setting` cannot.
     pub fn from_setting_name(value: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
