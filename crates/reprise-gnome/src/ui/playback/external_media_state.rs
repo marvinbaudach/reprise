@@ -342,6 +342,17 @@ pub(super) enum NeighbourTransport {
 }
 
 impl ExternalPlaybackState {
+    /// Whether the spectrum source should run for the current session. The
+    /// module switch remains authoritative, while the media classification is
+    /// delegated to the snapshot's one `carries_music` predicate.
+    pub(in crate::ui) fn audio_reactive_enabled(&self, module_enabled: bool) -> bool {
+        module_enabled
+            && self
+                .snapshot()
+                .as_ref()
+                .is_none_or(ExternalPlaybackSnapshot::carries_music)
+    }
+
     pub(in crate::ui) fn mode(&self) -> PlaybackMode {
         match self.session {
             Some(ExternalSession::Podcast(ref session)) => match session.origin {

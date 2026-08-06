@@ -250,6 +250,22 @@ fn ac_26_external_snapshots_classify_youtube_and_radio_as_music() {
     assert!(radio.carries_music(), "radio carries Song Visuals");
 }
 
+#[test]
+fn ac_26_spectrum_follows_the_external_snapshot_and_the_module_switch() {
+    let rss = podcast_state(podcast_session(None, None));
+    assert!(!rss.audio_reactive_enabled(true));
+
+    let mut youtube_session = podcast_session(None, None);
+    youtube_session.kind = PodcastKind::Youtube;
+    let youtube = podcast_state(youtube_session);
+    assert!(youtube.audio_reactive_enabled(true));
+    assert!(!youtube.audio_reactive_enabled(false));
+
+    assert!(radio_state().audio_reactive_enabled(true));
+    assert!(!radio_state().audio_reactive_enabled(false));
+    assert!(ExternalPlaybackState::default().audio_reactive_enabled(true));
+}
+
 fn podcast_state(session: PodcastSession) -> ExternalPlaybackState {
     ExternalPlaybackState {
         session: Some(ExternalSession::Podcast(session)),
