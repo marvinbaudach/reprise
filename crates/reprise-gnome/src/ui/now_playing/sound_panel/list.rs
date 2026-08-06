@@ -229,7 +229,8 @@ fn install_context_menu(
     row.add_controller(right_click);
     let menu_keys = gtk4::EventControllerKey::new();
     menu_keys.connect_key_pressed(move |_, key, _, modifiers| {
-        if is_context_menu_shortcut(key, modifiers) {
+        if crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut(key, modifiers)
+        {
             popover.set_pointing_to(None);
             popover.popup();
             gtk4::glib::Propagation::Stop
@@ -245,11 +246,6 @@ fn is_activate_key(key: gtk4::gdk::Key) -> bool {
         key,
         gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter | gtk4::gdk::Key::space
     )
-}
-
-fn is_context_menu_shortcut(key: gtk4::gdk::Key, modifiers: gtk4::gdk::ModifierType) -> bool {
-    key == gtk4::gdk::Key::Menu
-        || (key == gtk4::gdk::Key::F10 && modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK))
 }
 
 fn add_action(
@@ -287,6 +283,7 @@ fn invoke(slot: &RefCell<Option<IdCallback>>, id: i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut;
 
     #[test]
     fn keyboard_routes_match_the_pointer_actions() {
