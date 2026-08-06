@@ -2,6 +2,7 @@ package de.reprise.spike
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -289,12 +292,7 @@ private fun SpectralSeekSlider(
             },
             valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
-            track = {
-                SpectralTrackBand(
-                    trackId = trackId,
-                    modifier = Modifier.height(32.dp),
-                )
-            },
+            track = { PlainSeekTrack(displayed, durationMs) },
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -313,6 +311,56 @@ private fun SpectralSeekSlider(
         }
     }
 }
+
+/**
+ * The seek bar: one colour, filled to the playhead.
+ *
+ * It used to draw `sin(x / 24dp · 2π)` under the head — a wave computed from
+ * nothing, which looked like a reading of the song and measured no audio at
+ * all. The real picture needs a stored spectrogram; the phone does not compute
+ * one and nothing carries the desktop's across yet, so the honest bar is a
+ * plain one. It is deliberately not a flattened version of the spectral bar:
+ * there is nothing here to under-draw.
+ */
+@Composable
+private fun PlainSeekTrack(positionMs: Long, durationMs: Long) {
+    val elapsed = MaterialTheme.colorScheme.primary
+    val remaining = MaterialTheme.colorScheme.outline
+    val fraction = if (durationMs > 0) {
+        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(SEEK_TRACK_HEIGHT_DP.dp)
+            .testTag("now-playing-seek-track"),
+    ) {
+        val centre = size.height / 2f
+        val thickness = SEEK_TRACK_THICKNESS_DP.dp.toPx()
+        val head = size.width * fraction
+        drawLine(
+            color = remaining,
+            start = Offset(head, centre),
+            end = Offset(size.width, centre),
+            strokeWidth = thickness,
+            cap = StrokeCap.Round,
+        )
+        if (head > 0f) {
+            drawLine(
+                color = elapsed,
+                start = Offset(0f, centre),
+                end = Offset(head, centre),
+                strokeWidth = thickness,
+                cap = StrokeCap.Round,
+            )
+        }
+    }
+}
+
+private const val SEEK_TRACK_HEIGHT_DP = 32
+private const val SEEK_TRACK_THICKNESS_DP = 3
 
 @Composable
 private fun PlaybackActions(

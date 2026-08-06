@@ -115,8 +115,6 @@ class MainActivity : ComponentActivity() {
     private val libraryRatingController by lazy {
         LibraryRatingSettingController(AndroidLibraryRatingSettingPort(library))
     }
-    private lateinit var analysis: MainActivityAnalysisDependencies
-    private lateinit var analysisVisibility: TrackAnalysisVisibility
 
     /**
      * Every transport command the surface can issue, bound once here instead of
@@ -182,9 +180,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
-        analysis = activityTrackAnalysis(this, surfaceProvider != null) { library }
-        analysisVisibility = TrackAnalysisVisibility(this, analysis.coordinator)
-        analysisVisibility.start()
         val libraryRating =
             (application as? MainActivityLibraryRatingProvider)?.mainActivityLibraryRating()
                 ?: if (surfaceProvider == null) productionLibraryRating() else legacyTestRating()
@@ -201,7 +196,6 @@ class MainActivity : ComponentActivity() {
             BindAmbientRuntime(ambientMotion, surface.animationsEnabled)
             LaunchedEffect(darkPalette) { configureEdgeToEdge(darkPalette) }
             LaunchedEffect(surfaceState.dockMode) { setDockWindowMode(surfaceState.dockMode) }
-            BindTrackAnalysis(analysis.coordinator, surfaceState.nowPlayingExpanded, playbackState.value)
             RepriseTheme(themeSelection, darkPalette) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -223,7 +217,6 @@ class MainActivity : ComponentActivity() {
                     ) {
                         CompositionLocalProvider(
                             LocalTrackArtwork provides surface.artwork(),
-                            LocalTrackRenderData provides analysis.renderData,
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalVisualizerControl provides VisualizerControl(visualizer) { mode ->
                                 runCatching { surface.selectVisualizer(mode) }
@@ -388,11 +381,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        analysisVisibility.resume()
     }
 
     override fun onPause() {
-        analysisVisibility.pause()
         super.onPause()
     }
 
@@ -409,8 +400,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         setDockWindowMode(false)
-        analysisVisibility.shutdown()
-        analysis.release()
         // Compose disposal is not the release boundary: Android may destroy
         // the activity while dock mode is still the ViewModel's current mode.
         // First, and before the library handle is closed below: a star tap that

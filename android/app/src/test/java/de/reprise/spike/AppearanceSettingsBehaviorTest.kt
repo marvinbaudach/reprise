@@ -48,8 +48,8 @@ class AppearanceSettingsBehaviorTest {
         compose.waitForIdle()
 
         openAppearanceSettings()
-        compose.onNodeWithTag("settings-visualizer-SPECTRUM").assertIsNotEnabled()
-        compose.onNodeWithTag("settings-visualizer-PREVIEW_BAND").assertIsNotEnabled()
+        compose.onNodeWithTag("settings-visualizer-SPECTRUM").assertDoesNotExist()
+        compose.onNodeWithTag("settings-visualizer-PREVIEW_BAND").assertDoesNotExist()
         compose.onNodeWithTag("settings-visualizer-AMBIENT").performClick()
         assertEquals(listOf(MobileVisualizer.AMBIENT), application.visualizerWrites)
 

@@ -10,7 +10,6 @@ use reprise_core::queries;
 
 use source::{BridgedSource, SafSource};
 
-mod analysis;
 mod appearance;
 #[cfg(test)]
 mod artwork_tests;
@@ -28,7 +27,6 @@ mod source_names;
 
 #[cfg(test)]
 mod log_capture;
-pub use analysis::*;
 pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,

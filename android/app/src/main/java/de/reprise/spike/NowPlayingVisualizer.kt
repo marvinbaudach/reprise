@@ -48,8 +48,6 @@ import kotlin.math.roundToInt
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 private const val VISUALIZER_CROSSFADE_MS = 120
-private const val UNAVAILABLE_EXPLANATION = "Needs track analysis"
-private const val PREVIEW_BAND_SLOT_DP = 30
 
 @Composable
 internal fun NowPlayingVisualizer(
@@ -60,24 +58,17 @@ internal fun NowPlayingVisualizer(
     shape: Shape,
 ) {
     val control = LocalVisualizerControl.current
-    val analysed = trackRenderDataAvailable(trackId)
     val visual = rememberTrackArtworkVisual(trackUri, AndroidArtworkSize.NOW_PLAYING)
     var menuOpen by remember { mutableStateOf(false) }
     var menuTouch by remember { mutableStateOf(Offset.Zero) }
     val haptics = LocalHapticFeedback.current
-    val renderedMode = control.selected.renderedMode(analysed)
+    val renderedMode = control.selected
 
     Column {
         Box(
             modifier = Modifier
                 .width(size.dp)
-                .height(
-                    (size + if (renderedMode == MobileVisualizer.PREVIEW_BAND) {
-                        PREVIEW_BAND_SLOT_DP
-                    } else {
-                        0
-                    }).dp,
-                )
+                .height(size.dp)
                 .clip(shape)
                 .testTag("visualizer-surface")
                 .pointerInput(Unit) {
@@ -109,34 +100,6 @@ internal fun NowPlayingVisualizer(
                     ) {
                         AmbientFields(visual?.ambientColors)
                     }
-                    MobileVisualizer.SPECTRUM -> Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .testTag("visualizer-spectrum-surface"),
-                    ) {
-                        ArtworkCover(visual, size, shape = shape)
-                        SpectralSpectrumColumn(
-                            trackId = trackId,
-                            position = playbackFraction,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                        )
-                    }
-                    MobileVisualizer.PREVIEW_BAND -> Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .testTag("visualizer-preview-surface"),
-                    ) {
-                        ArtworkCover(visual, size, shape = shape)
-                        SpectralTrackBand(
-                            trackId = trackId,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(PREVIEW_BAND_SLOT_DP.dp)
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                        )
-                    }
                     else -> Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -155,7 +118,6 @@ internal fun NowPlayingVisualizer(
                 VisualizerMenu(
                     expanded = menuOpen,
                     selected = control.selected,
-                    analysed = analysed,
                     dismiss = { menuOpen = false },
                     select = { mode ->
                         menuOpen = false
@@ -164,7 +126,7 @@ internal fun NowPlayingVisualizer(
                 )
             }
         }
-        VisualizerBar(control, analysed)
+        VisualizerBar(control)
     }
 }
 
@@ -172,27 +134,16 @@ private fun Modifier.offsetAt(touch: Offset): Modifier = this.then(
     Modifier.offset { IntOffset(touch.x.roundToInt(), touch.y.roundToInt()) },
 )
 
-private fun MobileVisualizer.renderedMode(analysed: Boolean): MobileVisualizer = when (this) {
-    MobileVisualizer.SPECTRUM,
-    MobileVisualizer.PREVIEW_BAND,
-    -> if (isAvailable(analysed)) this else MobileVisualizer.COVER
-    MobileVisualizer.COVER,
-    MobileVisualizer.AMBIENT,
-    -> this
-}
-
 @Composable
-private fun VisualizerBar(control: VisualizerControl, analysed: Boolean) {
+private fun VisualizerBar(control: VisualizerControl) {
     Row(
         modifier = Modifier
             .horizontalScroll(rememberScrollState())
             .padding(top = 8.dp),
     ) {
         MobileVisualizer.entries.forEach { mode ->
-            val available = mode.isAvailable(analysed)
             TextButton(
                 onClick = { control.select(mode) },
-                enabled = available,
                 modifier = Modifier
                     .testTag("visualizer-bar-${mode.name}")
                     .semantics {
@@ -210,34 +161,8 @@ private fun VisualizerBar(control: VisualizerControl, analysed: Boolean) {
                         },
                     ),
             ) {
-                VisualizerModeLabel(mode, available)
+                Text(mode.label, maxLines = 1)
             }
-        }
-    }
-}
-
-/**
- * A mode's name, and — when it cannot be chosen — the one line that says why.
- *
- * Shared by the always-visible bar and the long-press menu on purpose. The
- * explanation used to live in the menu alone, so a listener who never long-holds
- * saw two permanently greyed entries with no reason given, and absent-for-a-
- * reason is indistinguishable from broken. The line is a child of the button
- * itself rather than a tooltip, which is also how a screen reader gets it: the
- * button merges its descendants, so the mode is announced with its reason and
- * its disabled state in one go.
- */
-@Composable
-private fun VisualizerModeLabel(mode: MobileVisualizer, available: Boolean) {
-    Column {
-        Text(mode.label, maxLines = 1)
-        if (!available) {
-            Text(
-                UNAVAILABLE_EXPLANATION,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
         }
     }
 }
@@ -246,15 +171,13 @@ private fun VisualizerModeLabel(mode: MobileVisualizer, available: Boolean) {
 private fun VisualizerMenu(
     expanded: Boolean,
     selected: MobileVisualizer,
-    analysed: Boolean,
     dismiss: () -> Unit,
     select: (MobileVisualizer) -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = dismiss) {
         MobileVisualizer.entries.forEach { mode ->
-            val available = mode.isAvailable(analysed)
             DropdownMenuItem(
-                text = { VisualizerModeLabel(mode, available) },
+                text = { Text(mode.label, maxLines = 1) },
                 leadingIcon = {
                     MaterialSymbol(
                         name = if (mode == selected) "radio_button_checked" else "radio_button_unchecked",
@@ -262,7 +185,6 @@ private fun VisualizerMenu(
                         sizeSp = 20,
                     )
                 },
-                enabled = available,
                 onClick = { select(mode) },
                 modifier = Modifier
                     .testTag("visualizer-menu-${mode.name}")

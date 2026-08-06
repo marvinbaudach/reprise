@@ -53,16 +53,20 @@ class MainActivityVisualizerTest {
     }
 
     @Test
-    fun theRealActivityPathSharesOnePersistedFourEntryChoiceWithTheTouchAnchoredMenu() {
+    fun theRealActivityPathSharesOnePersistedTwoEntryChoiceWithTheTouchAnchoredMenu() {
         application.service.publish(m9bSnapshot(trackId = 1))
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
         compose.onNodeWithTag("library-mini-player").performClick()
 
         compose.onNodeWithTag("visualizer-bar-COVER").assertExists()
-        compose.onNodeWithTag("visualizer-bar-SPECTRUM").assertIsNotEnabled()
-        compose.onNodeWithTag("visualizer-bar-PREVIEW_BAND").assertIsNotEnabled()
         compose.onNodeWithTag("visualizer-bar-AMBIENT").assertExists()
+        // Absent, not greyed: they need a stored spectrogram, the phone no
+        // longer computes one, and nothing carries the desktop's across yet.
+        // An entry that can never become available explains a wait that never
+        // ends.
+        compose.onNodeWithTag("visualizer-bar-SPECTRUM").assertDoesNotExist()
+        compose.onNodeWithTag("visualizer-bar-PREVIEW_BAND").assertDoesNotExist()
 
         val surface = compose.onNodeWithTag("visualizer-surface")
         val surfaceBounds = surface.getUnclippedBoundsInRoot()
@@ -76,11 +80,12 @@ class MainActivityVisualizerTest {
             HapticFeedbackConstants.LONG_PRESS,
             lastHapticFeedback(compose.activity.window.decorView),
         )
-        listOf("Cover", "Spectrum", "Preview", "Ambient").forEach { label ->
+        listOf("Cover", "Ambient").forEach { label ->
             compose.onAllNodesWithText(label).assertCountEquals(2)
         }
-        compose.onNodeWithTag("visualizer-menu-SPECTRUM").assertIsNotEnabled()
-        compose.onNodeWithTag("visualizer-menu-PREVIEW_BAND").assertIsNotEnabled()
+        listOf("Spectrum", "Preview").forEach { label ->
+            compose.onAllNodesWithText(label).assertCountEquals(0)
+        }
         val anchorBounds = compose.onNodeWithTag("visualizer-menu-anchor").getUnclippedBoundsInRoot()
         assertTrue(anchorBounds.left > (surfaceBounds.left + surfaceBounds.right) / 2f)
         assertTrue(anchorBounds.top > (surfaceBounds.top + surfaceBounds.bottom) / 2f)
@@ -154,27 +159,25 @@ class MainActivityVisualizerTest {
     }
 
     /**
-     * The bar is on screen the whole time the sheet is; the menu needs a long
-     * press nobody is told about. A greyed entry that gives no reason there
-     * reads as a failure rather than as something the library has not computed
-     * yet — so the reason has to be where the greying is.
+     * The two modes that need an analysis are gone from both places at once.
+     *
+     * They were greyed with "Needs track analysis" while the phone still
+     * computed one. It does not any more, and nothing brings the desktop's
+     * across yet, so the greying explained a wait with no end. A surface that
+     * offers only what it can do says more than one that lists what it cannot.
      */
     @Test
-    fun theAlwaysVisibleBarSaysWhyItsGreyedEntriesCannotBeChosen() {
+    fun theModesThatNeedAnAnalysisAreOfferedNowhere() {
         application.service.publish(m9bSnapshot(trackId = 1))
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
         compose.onNodeWithTag("library-mini-player").performClick()
 
-        compose.onNodeWithTag("visualizer-bar-SPECTRUM")
-            .assertIsNotEnabled()
-            .assertTextContains("Needs track analysis")
-        compose.onNodeWithTag("visualizer-bar-PREVIEW_BAND")
-            .assertIsNotEnabled()
-            .assertTextContains("Needs track analysis")
-        // And only there: an explanation under every entry would say nothing.
         compose.onNodeWithTag("visualizer-bar-COVER").assertTextEquals("Cover")
         compose.onNodeWithTag("visualizer-bar-AMBIENT").assertTextEquals("Ambient")
+        compose.onNodeWithTag("visualizer-bar-SPECTRUM").assertDoesNotExist()
+        compose.onNodeWithTag("visualizer-bar-PREVIEW_BAND").assertDoesNotExist()
+        compose.onAllNodesWithText("Needs track analysis").assertCountEquals(0)
     }
 
     private fun openAmbient() {

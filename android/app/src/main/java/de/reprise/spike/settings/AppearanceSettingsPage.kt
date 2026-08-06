@@ -24,18 +24,15 @@ import de.reprise.spike.LocalLibraryRatingControl
 import de.reprise.spike.MobileTheme
 import de.reprise.spike.MobileThemeSelection
 import de.reprise.spike.MobileVisualizer
-import de.reprise.spike.trackRenderDataAvailable
 
 @Composable
 internal fun AppearanceSettingsPage(
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
-    playingTrackId: Long?,
     back: () -> Unit,
 ) {
     val visualizer = LocalVisualizerControl.current
     val libraryRating = LocalLibraryRatingControl.current
-    val trackAnalysed = trackRenderDataAvailable(playingTrackId)
     Column(modifier = Modifier.fillMaxSize()) {
         SettingsTopAppBar(
             title = "Appearance",
@@ -60,7 +57,6 @@ internal fun AppearanceSettingsPage(
                 VisualizerChoiceRow(
                     mode = mode,
                     selected = visualizer.selected == mode,
-                    available = mode.isAvailable(trackAnalysed),
                     select = { visualizer.select(mode) },
                 )
             }
@@ -110,35 +106,18 @@ private fun LibraryRatingRow(
 private fun VisualizerChoiceRow(
     mode: MobileVisualizer,
     selected: Boolean,
-    available: Boolean,
     select: () -> Unit,
 ) {
-    // The row is the target. A disabled choice stays visibly disabled: the row
-    // takes no click either, so "Needs track analysis" is the whole answer
-    // rather than a label above a control that quietly does nothing.
+    // The row is the target, not the radio at its edge.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(
-                selected = selected,
-                enabled = available,
-                onClick = select,
-                role = Role.RadioButton,
-            )
+            .selectable(selected = selected, onClick = select, role = Role.RadioButton)
             .testTag("settings-visualizer-${mode.name}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(mode.label)
-            if (!available) {
-                Text(
-                    "Needs track analysis",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-        RadioButton(selected = selected, enabled = available, onClick = null)
+        Text(mode.label, modifier = Modifier.weight(1f))
+        RadioButton(selected = selected, onClick = null)
     }
 }
 
