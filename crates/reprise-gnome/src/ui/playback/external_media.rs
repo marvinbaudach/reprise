@@ -298,12 +298,23 @@ impl PlayerController {
                         .into_iter()
                         .next()
                         .filter(|category| !category.is_empty());
-                    let _ = reprise_core::podcasts::store::save_youtube_resolution(
+                    // Playback goes ahead either way — a failed write costs the
+                    // stored duration and category, not the episode. But it
+                    // must not vanish: without this the classification would
+                    // simply never stick, and the panel would look like the
+                    // feature was never built.
+                    if let Err(error) = reprise_core::podcasts::store::save_youtube_resolution(
                         &controller.conn,
                         episode_id,
                         audio.duration_secs,
                         media_category.as_deref(),
-                    );
+                    ) {
+                        tracing::warn!(
+                            %error,
+                            episode_id,
+                            "could not persist the resolved episode metadata"
+                        );
+                    }
                     if let Some(duration) = audio.duration_secs {
                         controller.update_podcast_duration(
                             generation,

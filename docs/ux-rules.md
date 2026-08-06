@@ -4711,9 +4711,10 @@ listening statistics.
   neighbours: ⏮/⏭ move to the adjacent row of the list it was started from,
   in rendered order, without wrapping. The neighbour list is frozen when
   playback starts. Radio has no neighbours. While any external session is
-  active the lyrics tab is hidden; the Visual tab is hidden only for RSS
-  podcasts under AC-26. The panel header shows the episode instead of
-  "Nothing playing".
+  active the lyrics tab is hidden; the Visual tab is hidden for whatever
+  AC-26 does not count as music — every RSS podcast, and a YouTube episode
+  whose own category says it is speech. The panel header shows the episode
+  instead of "Nothing playing".
 - **POD-22** [active] [core] [gtk] — When yt-dlp classifies a YouTube
   failure as requiring verification, the failed episode row keeps its normal
   retry action and replaces the generic provider reason with the fixed,

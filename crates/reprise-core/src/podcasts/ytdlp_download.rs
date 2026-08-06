@@ -15,6 +15,16 @@ use super::ytdlp::YoutubeDownloadMetadata;
 use super::PodcastError;
 
 const PREFIX: &str = "reprise-progress:";
+/// Both `--print`s below carry a marker for the same reason the progress
+/// template does: stdout is not ours alone. `--progress` is on, and only the
+/// `download:` phase gets a template — a postprocess line (this command runs
+/// `-x --audio-format opus`, so FFmpeg does run) arrives in yt-dlp's own
+/// format and lands in `output_lines` with everything else. Reading "the first
+/// line" as the path would then hand `finalize_download` a progress line and
+/// fail a download that worked; reading "the last two" would still guess.
+/// A marker per field decides it outright, whatever else shares the stream.
+const FILEPATH_PREFIX: &str = "reprise-file:";
+const CATEGORIES_PREFIX: &str = "reprise-categories:";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const PROGRESS_TEMPLATE: &str =
     "download:reprise-progress:%(progress.downloaded_bytes)s\t%(progress.total_bytes)s\t%(progress.total_bytes_estimate)s";
@@ -59,9 +69,9 @@ pub(super) fn download(
             OsString::from("opus"),
             OsString::from("--no-part"),
             OsString::from("--print"),
-            OsString::from("after_move:filepath"),
+            OsString::from(format!("after_move:{FILEPATH_PREFIX}%(filepath)s")),
             OsString::from("--print"),
-            OsString::from("after_move:%(categories)j"),
+            OsString::from(format!("after_move:{CATEGORIES_PREFIX}%(categories)j")),
             OsString::from("-o"),
             requested_output.as_os_str().to_os_string(),
             OsString::from(video_url),
@@ -156,12 +166,28 @@ fn finalize_download(
     output_lines: &[String],
     output: &Path,
 ) -> Result<YoutubeDownloadMetadata, PodcastError> {
-    let mut lines = output_lines.iter().filter(|line| !line.trim().is_empty());
-    let filepath = lines.next().map(String::as_str).unwrap_or_default();
-    super::ytdlp::finalize_download(filepath, output)?;
-    let categories = lines
-        .next()
-        .and_then(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+    let marked = |prefix: &str| -> Option<String> {
+        output_lines
+            .iter()
+            .rev()
+            .find_map(|line| line.trim().strip_prefix(prefix).map(str::to_owned))
+    };
+    // No marker means an older yt-dlp, or a run whose print never fired. The
+    // path is required, so fall back to the previous behaviour — the last
+    // non-blank line — rather than failing a download that produced a file.
+    let filepath = marked(FILEPATH_PREFIX).unwrap_or_else(|| {
+        output_lines
+            .iter()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .cloned()
+            .unwrap_or_default()
+    });
+    super::ytdlp::finalize_download(&filepath, output)?;
+    // The category is optional by design: an absent, empty or unparseable
+    // value leaves the episode unclassified, never fails the download.
+    let categories = marked(CATEGORIES_PREFIX)
+        .and_then(|line| serde_json::from_str::<serde_json::Value>(&line).ok())
         .map_or_else(Vec::new, |value| {
             super::ytdlp::resolved::categories(Some(&value))
         });

@@ -24,13 +24,16 @@ pub(super) fn parse(
 }
 
 pub(in crate::podcasts) fn categories(value: Option<&Value>) -> Vec<String> {
+    // Keep the strings and skip anything else, rather than discarding the
+    // whole array over one odd element: a single non-string would otherwise
+    // throw away a perfectly good "Music" sitting next to it.
     value
         .and_then(Value::as_array)
-        .and_then(|values| {
+        .map(|values| {
             values
                 .iter()
-                .map(|value| value.as_str().map(str::to_owned))
-                .collect::<Option<Vec<_>>>()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect()
         })
         .unwrap_or_default()
 }
