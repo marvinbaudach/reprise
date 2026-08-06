@@ -52,7 +52,6 @@ import de.reprise.spike.ui.theme.RepriseTheme
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
-import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
@@ -116,28 +115,12 @@ class MainActivity : ComponentActivity() {
      * Every transport command the surface can issue, bound once here instead of
      * threaded through two composables that issue none of them.
      */
-    private val playbackControls = object : PlaybackControls {
-        override fun togglePause() =
-            runPlaybackCommand("change playback state") { togglePause() }
-
-        override fun next() = runPlaybackCommand("skip to the next track") { next() }
-
-        override fun previous() = runPlaybackCommand("return to the previous track") { previous() }
-
-        override fun seekTo(positionMs: Long) = runPlaybackCommand("seek") { seekTo(positionMs) }
-
-        override fun setShuffle(enabled: Boolean) =
-            runPlaybackCommand("change shuffle") { setShuffle(enabled) }
-
-        override fun setRepeat(mode: AndroidRepeatMode) =
-            runPlaybackCommand("change repeat") { setRepeat(mode) }
-
-        override fun setFavourite(
-            trackId: Long,
-            favourite: Boolean,
-            report: (String?) -> Unit,
-        ) = this@MainActivity.setFavourite(trackId, favourite, report)
-    }
+    private val playbackControls = ActivityPlaybackControls(
+        command = { action, operation -> runPlaybackCommand(action, command = operation) },
+        connectedService = { playbackService },
+        postToMain = { work -> runOnUiThread(work) },
+        setFavouriteAction = ::setFavourite,
+    )
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -616,6 +599,7 @@ class MainActivity : ComponentActivity() {
         runCatching { service.command() }
             .onFailure { error -> reportError("Could not $action: ${error.detail()}") }
     }
+
 }
 
 internal class UiProgress(

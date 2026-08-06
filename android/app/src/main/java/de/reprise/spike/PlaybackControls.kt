@@ -40,6 +40,30 @@ internal interface PlaybackControls {
      * hope. [report] is called on the main thread, exactly once per tap.
      */
     fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit)
+
+    fun loadUpcomingTracks(
+        window: LibraryWindowRange,
+        report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
+    ) = report(Result.failure(IllegalStateException("playback is not connected")))
+
+    fun playUpcomingTrackNow(
+        position: Int,
+        expectedTrackId: Long,
+        report: (Result<Boolean>) -> Unit,
+    ) = report(Result.failure(IllegalStateException("playback is not connected")))
+
+    fun moveUpcomingTrack(
+        fromPosition: Int,
+        expectedTrackId: Long,
+        toPosition: Int,
+        report: (Result<Boolean>) -> Unit,
+    ) = report(Result.failure(IllegalStateException("playback is not connected")))
+
+    fun removeUpcomingTrack(
+        position: Int,
+        expectedTrackId: Long,
+        report: (Result<Boolean>) -> Unit,
+    ) = report(Result.failure(IllegalStateException("playback is not connected")))
 }
 
 /**

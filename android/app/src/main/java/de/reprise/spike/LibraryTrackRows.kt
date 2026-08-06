@@ -1,6 +1,8 @@
 package de.reprise.spike
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,11 +24,26 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+internal data class QueueRowActions(
+    val play: (position: Int, expectedTrackId: Long) -> Unit,
+    val move: (fromPosition: Int, expectedTrackId: Long, toPosition: Int) -> Unit,
+    val remove: (position: Int, expectedTrackId: Long) -> Unit,
+)
 
 /**
  * The library's track list: the 72 dp rows, their continuation sentinel, and
@@ -45,6 +62,7 @@ internal fun TrackRows(
     loadMore: (LibraryWindowRange) -> Unit,
     subtitle: TrackRowSubtitle = TrackRowSubtitle.ARTIST_AND_ALBUM,
     onFavouriteChanged: (LibraryTrack, Boolean) -> Unit = { _, _ -> },
+    queueActions: QueueRowActions? = null,
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
     val content = trackListContent(tracks, lastRequestedOffset)
@@ -80,6 +98,8 @@ internal fun TrackRows(
                     loadMore,
                     subtitle,
                     onFavouriteChanged,
+                    queueActions,
+                    tracks.rows.size,
                 )
             }
         }
@@ -107,6 +127,8 @@ internal fun TrackRows(
                 loadMore,
                 subtitle,
                 onFavouriteChanged,
+                queueActions,
+                tracks.rows.size,
             )
         }
     }
@@ -124,6 +146,7 @@ private fun LibraryListKey.testTag(): String = when (this) {
     LibraryListKey.FAVOURITES -> "library-favourites-list"
     LibraryListKey.ALBUM_TRACKS -> "library-album-tracks-list"
     LibraryListKey.ARTIST_TRACKS -> "library-artist-tracks-list"
+    LibraryListKey.UPCOMING -> "now-playing-queue"
 }
 
 internal enum class TrackRowSubtitle {
@@ -141,6 +164,8 @@ private fun TrackListItem(
     loadMore: (LibraryWindowRange) -> Unit,
     subtitle: TrackRowSubtitle,
     onFavouriteChanged: (LibraryTrack, Boolean) -> Unit,
+    queueActions: QueueRowActions?,
+    rowCount: Int,
 ) {
     when (content) {
         is TrackListContent.Row -> LibraryTrackRow(
@@ -154,6 +179,9 @@ private fun TrackListItem(
             metrics = metrics,
             subtitle = subtitle,
             onFavouriteChanged = onFavouriteChanged,
+            queuePosition = content.index,
+            queueRowCount = rowCount,
+            queueActions = queueActions,
             play = { play(content.index) },
         )
         is TrackListContent.Continuation -> {
@@ -171,14 +199,52 @@ private fun LibraryTrackRow(
     metrics: LibraryFrameMetrics,
     subtitle: TrackRowSubtitle,
     onFavouriteChanged: (LibraryTrack, Boolean) -> Unit,
+    queuePosition: Int,
+    queueRowCount: Int,
+    queueActions: QueueRowActions?,
     play: () -> Unit,
 ) {
+    var swipeOffset by remember(track.id) { mutableFloatStateOf(0f) }
+    val queueGesture = if (queueActions == null) {
+        Modifier
+    } else {
+        Modifier.pointerInput(track.id, queuePosition, queueRowCount) {
+            detectHorizontalDragGestures(
+                onHorizontalDrag = { change, dragAmount ->
+                    change.consume()
+                    swipeOffset += dragAmount
+                },
+                onDragCancel = { swipeOffset = 0f },
+                onDragEnd = {
+                    if (abs(swipeOffset) >= size.width * QUEUE_REMOVE_FRACTION) {
+                        queueActions.remove(queuePosition, track.id)
+                    }
+                    swipeOffset = 0f
+                },
+            )
+        }
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .height(metrics.trackRowHeightDp.dp)
-            .testTag("library-track-row-${track.id}")
-            .clickable(onClick = play),
+            .clipToBounds()
+            .graphicsLayer { translationX = swipeOffset }
+            .testTag(
+                if (queueActions == null) {
+                    "library-track-row-${track.id}"
+                } else {
+                    "queue-track-row-${track.id}"
+                },
+            )
+            .then(queueGesture)
+            .clickable {
+                if (queueActions == null) {
+                    play()
+                } else {
+                    queueActions.play(queuePosition, track.id)
+                }
+            },
         color = if (presentation.isCurrent) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
         } else {
@@ -226,11 +292,21 @@ private fun LibraryTrackRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                FavouriteHeartButton(
-                    track = track,
-                    surfaceState = surfaceState,
-                    onConfirmed = { favourite -> onFavouriteChanged(track, favourite) },
-                )
+                if (queueActions == null) {
+                    FavouriteHeartButton(
+                        track = track,
+                        surfaceState = surfaceState,
+                        onConfirmed = { favourite -> onFavouriteChanged(track, favourite) },
+                    )
+                } else {
+                    QueueDragHandle(
+                        track = track,
+                        position = queuePosition,
+                        rowCount = queueRowCount,
+                        rowHeightDp = metrics.trackRowHeightDp,
+                        move = queueActions.move,
+                    )
+                }
                 Column(
                     modifier = Modifier.width(48.dp),
                     horizontalAlignment = Alignment.End,
@@ -258,6 +334,43 @@ private fun LibraryTrackRow(
         }
     }
 }
+
+@Composable
+private fun QueueDragHandle(
+    track: LibraryTrack,
+    position: Int,
+    rowCount: Int,
+    rowHeightDp: Int,
+    move: (Int, Long, Int) -> Unit,
+) {
+    var verticalDrag by remember(track.id) { mutableFloatStateOf(0f) }
+    Box(
+        modifier = Modifier
+            .width(48.dp)
+            .height(48.dp)
+            .testTag("queue-drag-handle-${track.id}")
+            .pointerInput(track.id, position, rowCount, rowHeightDp) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        verticalDrag += dragAmount
+                    },
+                    onDragCancel = { verticalDrag = 0f },
+                    onDragEnd = {
+                        val delta = (verticalDrag / rowHeightDp.dp.toPx()).roundToInt()
+                        val target = (position + delta).coerceIn(0, rowCount - 1)
+                        if (target != position) move(position, track.id, target)
+                        verticalDrag = 0f
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        MaterialSymbol("drag_handle", "Reorder ${track.title}")
+    }
+}
+
+private const val QUEUE_REMOVE_FRACTION = 0.75f
 
 @Composable
 private fun PlayCountBadge(playCount: Long) {
