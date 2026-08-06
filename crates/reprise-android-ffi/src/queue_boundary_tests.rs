@@ -113,6 +113,151 @@ fn upcoming_window_excludes_the_current_track_and_counts_beyond_the_page() {
 }
 
 #[test]
+fn negative_upcoming_offset_is_the_first_page_not_an_empty_contradiction() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [
+        track("Current"),
+        track("First"),
+        track("Second"),
+        track("Third"),
+    ];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    let window = session
+        .upcoming_tracks(WindowRange {
+            offset: -1,
+            limit: 2,
+        })
+        .unwrap();
+
+    assert_eq!(window.total, 3);
+    assert_eq!(
+        window.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("First").id, track("Second").id],
+    );
+    assert!(window.has_more);
+}
+
+#[test]
+fn live_deleted_upcoming_track_is_pruned_and_the_last_window_terminates() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(
+        directory.path(),
+        &["Current", "First", "Deleted", "Survivor"],
+    );
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [
+        track("Current"),
+        track("First"),
+        track("Deleted"),
+        track("Survivor"),
+    ];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
+    let database = reprise_core::db::Db::open_ready(&database_path).unwrap();
+    assert_eq!(
+        reprise_core::queries::remove_tracks_matching_paths(
+            &database,
+            &[(
+                track("Deleted").id,
+                std::path::PathBuf::from(&track("Deleted").path),
+            )],
+        )
+        .unwrap(),
+        vec![track("Deleted").id],
+    );
+    drop(database);
+
+    let window = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+
+    assert_eq!(window.total, 2);
+    assert_eq!(
+        window.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("First").id, track("Survivor").id],
+    );
+    assert!(
+        !window.has_more,
+        "the last page must terminate after pruning"
+    );
+}
+
+#[test]
+fn pruning_a_live_deleted_duplicate_keeps_the_loaded_current_slot() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "Survivor"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            vec![
+                track("Current").id,
+                track("Current").id,
+                track("Survivor").id,
+            ],
+            vec![
+                track("Current").path.clone(),
+                track("Current").path.clone(),
+                track("Survivor").path.clone(),
+            ],
+            0,
+        )
+        .unwrap();
+
+    let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
+    let database = reprise_core::db::Db::open_ready(&database_path).unwrap();
+    reprise_core::queries::remove_tracks_matching_paths(
+        &database,
+        &[(
+            track("Current").id,
+            std::path::PathBuf::from(&track("Current").path),
+        )],
+    )
+    .unwrap();
+    drop(database);
+
+    let window = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+
+    assert_eq!(
+        session.snapshot().unwrap().current_track_id,
+        Some(track("Current").id),
+        "pruning must not evict the already loaded current slot",
+    );
+    assert_eq!(window.total, 1);
+    assert_eq!(
+        window.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Survivor").id],
+    );
+    assert!(!window.has_more);
+}
+
+#[test]
 fn play_now_promotes_one_upcoming_track_without_dropping_the_others() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Target"]);
@@ -245,6 +390,42 @@ fn moving_and_removing_identity_checked_rows_changes_the_next_window() {
     assert_eq!(
         future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
         vec![track("Third").id, track("Second").id],
+    );
+}
+
+#[test]
+fn moving_an_upcoming_track_downward_changes_the_next_window() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [
+        track("Current"),
+        track("First"),
+        track("Second"),
+        track("Third"),
+    ];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    assert!(session
+        .move_upcoming_track(0, track("First").id, 2)
+        .unwrap());
+
+    let window = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    assert_eq!(
+        window.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Second").id, track("Third").id, track("First").id,],
     );
 }
 
