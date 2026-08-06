@@ -17,7 +17,6 @@ path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
 reprise-core = { path = "../reprise-core" }
-reprise-view = { path = "../reprise-view" }
 uniffi = { version = "0.32", features = ["cli"] }
 thiserror = "2"
 # The workspace's diagnostics facade, already used throughout reprise-core.
