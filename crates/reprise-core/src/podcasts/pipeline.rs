@@ -102,7 +102,7 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
     }
 
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError> {
-        super::ytdlp::YtDlp::download(self, url, destination)
+        super::ytdlp::YtDlp::download(self, url, destination).map(|_| ())
     }
 
     fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
@@ -117,7 +117,7 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
         destination: &Path,
         on_progress: &mut dyn FnMut(DownloadProgress),
     ) -> Result<(), PodcastError> {
-        super::ytdlp::YtDlp::download_with_progress(self, url, destination, on_progress)
+        super::ytdlp::YtDlp::download_with_progress(self, url, destination, on_progress).map(|_| ())
     }
 }
 

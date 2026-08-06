@@ -22,7 +22,7 @@ fn download_passes_audio_only_output_arguments() {
     );
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
 
-    runner
+    let metadata = runner
         .download("https://www.youtube.com/watch?v=v1", &output)
         .unwrap();
 
@@ -46,6 +46,8 @@ fn download_passes_audio_only_output_arguments() {
             "--no-part",
             "--print",
             "after_move:filepath",
+            "--print",
+            "after_move:%(categories)j",
             "-o",
             // Not `output` itself: a trailing `.part` is yt-dlp's own
             // marker and gets stripped, so the executor asks for a name it
@@ -58,6 +60,33 @@ fn download_passes_audio_only_output_arguments() {
     );
     assert_eq!(fs::read_to_string(&output).unwrap(), "downloaded");
     assert!(!postprocessed.exists());
+    assert!(
+        metadata.categories.is_empty(),
+        "a missing metadata line must leave the category unknown"
+    );
+}
+
+#[test]
+fn download_returns_categories_without_mistaking_them_for_the_filepath() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("episode.audio");
+    let postprocessed = directory.path().join("episode.opus");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf downloaded > '{}'\nprintf '%s\\n' '{}' '[\"Music\"]'",
+            postprocessed.display(),
+            postprocessed.display()
+        ),
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    let metadata = runner
+        .download("https://www.youtube.com/watch?v=v1", &output)
+        .unwrap();
+
+    assert_eq!(metadata.categories, ["Music"]);
+    assert_eq!(fs::read_to_string(&output).unwrap(), "downloaded");
 }
 
 #[test]

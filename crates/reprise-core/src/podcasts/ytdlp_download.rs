@@ -11,6 +11,7 @@ use std::{
 };
 
 use super::download_state::DownloadProgress;
+use super::ytdlp::YoutubeDownloadMetadata;
 use super::PodcastError;
 
 const PREFIX: &str = "reprise-progress:";
@@ -25,7 +26,7 @@ pub(super) fn download(
     video_url: &str,
     output: &Path,
     on_progress: &mut dyn FnMut(DownloadProgress),
-) -> Result<(), PodcastError> {
+) -> Result<YoutubeDownloadMetadata, PodcastError> {
     // `output` is `downloads::partial_path`'s temporary name, so it ends in
     // `.part` — a suffix yt-dlp reserves for its own partial downloads and
     // strips from the output template. It then writes the media under the
@@ -59,6 +60,8 @@ pub(super) fn download(
             OsString::from("--no-part"),
             OsString::from("--print"),
             OsString::from("after_move:filepath"),
+            OsString::from("--print"),
+            OsString::from("after_move:%(categories)j"),
             OsString::from("-o"),
             requested_output.as_os_str().to_os_string(),
             OsString::from(video_url),
@@ -140,13 +143,29 @@ pub(super) fn download(
         cleanup_artifacts(output);
         return Err(super::ytdlp::error_from_status("download", status, &stderr));
     }
-    match super::ytdlp::finalize_download(&output_lines.join("\n"), output) {
-        Ok(()) => Ok(()),
+    match finalize_download(&output_lines, output) {
+        Ok(metadata) => Ok(metadata),
         Err(_) => {
             cleanup_artifacts(output);
             Err(super::ytdlp::download_finalize_error())
         }
     }
+}
+
+fn finalize_download(
+    output_lines: &[String],
+    output: &Path,
+) -> Result<YoutubeDownloadMetadata, PodcastError> {
+    let mut lines = output_lines.iter().filter(|line| !line.trim().is_empty());
+    let filepath = lines.next().map(String::as_str).unwrap_or_default();
+    super::ytdlp::finalize_download(filepath, output)?;
+    let categories = lines
+        .next()
+        .and_then(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .map_or_else(Vec::new, |value| {
+            super::ytdlp::resolved::categories(Some(&value))
+        });
+    Ok(YoutubeDownloadMetadata { categories })
 }
 
 fn read_lines(stream: impl std::io::Read + Send + 'static) -> Receiver<std::io::Result<String>> {
