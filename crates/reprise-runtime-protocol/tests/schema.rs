@@ -663,7 +663,7 @@ fn the_queue_page_wire_field_names_are_the_checked_in_contract() {
 }
 
 #[test]
-fn que_9_mixed_queue_adds_typed_items_without_widening_legacy_track_ids() {
+fn que_12_mixed_queue_adds_typed_items_without_widening_legacy_track_ids() {
     let queue = QueueSnapshot {
         revision: 9,
         current_track_id: Some(42),

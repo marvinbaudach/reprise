@@ -200,7 +200,7 @@ mod tests {
     /// Without the per-kind match, playing episode 7 would light up track 7's
     /// row instead.
     #[test]
-    fn que_9_a_colliding_episode_id_never_marks_a_track_row_as_playing() {
+    fn que_12_a_colliding_episode_id_never_marks_a_track_row_as_playing() {
         let track = track_with_colliding_id();
         let episode = episode(PodcastKind::Youtube);
         let episode_mark = crate::ui::podcasts::EpisodeMark::new(7, false);

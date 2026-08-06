@@ -127,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn que_9_queue_snapshot_keeps_legacy_track_ids_beside_typed_items() {
+    fn que_12_queue_snapshot_keeps_legacy_track_ids_beside_typed_items() {
         let (control, receiver, state) = control();
         *state.lock().unwrap() = AgentQueueState {
             revision: 12,

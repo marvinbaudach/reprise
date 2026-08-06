@@ -524,7 +524,7 @@ impl TrackList {
         self.shared.source.borrow().clone()
     }
 
-    pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
+    pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) -> usize + 'static) {
         *self.shared.on_play_next_selected.borrow_mut() = Some(Rc::new(callback));
     }
 
@@ -534,7 +534,7 @@ impl TrackList {
         crate::ui::tag_edit_flow::begin_for_ids(&self.shared, ids);
     }
 
-    pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
+    pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) -> usize + 'static) {
         *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
     }
 

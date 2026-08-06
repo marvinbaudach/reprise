@@ -196,7 +196,8 @@ pub(in crate::ui) fn wire_queue_drop_target(shared: &Rc<Shared>, row: &gtk4::Lis
 /// never invoked), matching
 /// [`handle_playlist_drop`]'s contract.
 pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, items: &[QueueItem]) -> bool {
-    if items.is_empty() {
+    let tracks = queue_drop_tracks(items);
+    if tracks.is_empty() {
         return false;
     }
 
@@ -205,19 +206,13 @@ pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, items: &[QueueItem])
         tracing::warn!("queue drop fired but no on_queue_drop callback is wired; ignoring");
         return false;
     };
-    let appended = callback(items);
+    let appended = callback(&tracks);
     if appended {
         tracing::info!(
-            count = items.len(),
+            count = tracks.len(),
             "items appended to queue via drag and drop"
         );
-        let message = if items.iter().all(|item| item.track_id().is_some()) {
-            strings::tracks_added_to_queue_toast(items.len())
-        } else if items.iter().all(|item| item.episode_id().is_some()) {
-            strings::episodes_added_to_queue_toast(items.len())
-        } else {
-            strings::queue_items_added_to_queue_toast(items.len())
-        };
+        let message = strings::tracks_added_to_queue_toast(tracks.len());
         show_toast(shared, &message);
     } else {
         tracing::debug!("queue drop callback reported no-op; skipping toast");
@@ -225,9 +220,17 @@ pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, items: &[QueueItem])
     appended
 }
 
+fn queue_drop_tracks(items: &[QueueItem]) -> Vec<QueueItem> {
+    items
+        .iter()
+        .copied()
+        .filter(|item| matches!(item, QueueItem::Track(_)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{drop_added_rows, playlist_track_ids};
+    use super::{drop_added_rows, playlist_track_ids, queue_drop_tracks};
     use reprise_core::up_next::QueueItem;
 
     #[test]
@@ -246,6 +249,20 @@ mod tests {
         assert_eq!(
             playlist_track_ids(&[QueueItem::Track(7), QueueItem::Episode(7)]),
             None
+        );
+    }
+
+    #[test]
+    fn que_12_queue_drop_refuses_episode_only_and_keeps_mixed_tracks() {
+        assert!(queue_drop_tracks(&[QueueItem::Episode(7)]).is_empty());
+        assert_eq!(
+            queue_drop_tracks(&[
+                QueueItem::Episode(7),
+                QueueItem::Track(8),
+                QueueItem::Episode(9),
+                QueueItem::Track(10),
+            ]),
+            vec![QueueItem::Track(8), QueueItem::Track(10)]
         );
     }
 }

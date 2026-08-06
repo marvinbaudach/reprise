@@ -80,13 +80,16 @@ pub(super) fn fixture() -> Fixture {
 }
 
 #[test]
-fn que_9_runtime_queue_reads_keep_typed_items_beside_track_only_ids() {
+fn que_12_runtime_queue_reads_omit_rejected_episode_items() {
     let mut fixture = fixture();
-    fixture.transport.up_next.append(&[
-        reprise_core::up_next::QueueItem::Track(7),
-        reprise_core::up_next::QueueItem::Episode(7),
-        reprise_core::up_next::QueueItem::Track(8),
-    ]);
+    assert_eq!(
+        fixture.transport.up_next.append(&[
+            reprise_core::up_next::QueueItem::Track(7),
+            reprise_core::up_next::QueueItem::Episode(7),
+            reprise_core::up_next::QueueItem::Track(8),
+        ]),
+        2
+    );
 
     let snapshot = fixture.transport.queue_snapshot();
     assert_eq!(snapshot.play_next_track_ids, vec![7, 8]);
@@ -94,15 +97,19 @@ fn que_9_runtime_queue_reads_keep_typed_items_beside_track_only_ids() {
         snapshot.play_next_items,
         Some(vec![
             ProtocolQueueItem::track(7),
-            ProtocolQueueItem::episode(7),
             ProtocolQueueItem::track(8),
         ])
+    );
+    assert_eq!(
+        ProtocolQueueItem::episode(7).kind,
+        "episode",
+        "the outward protocol mapping remains available for direct projections"
     );
 
     let (track_ids, items, total) = fixture.transport.queue_page(QueueSection::PlayNext, 0, 200);
     assert_eq!(track_ids, vec![7, 8]);
     assert_eq!(Some(items), snapshot.play_next_items);
-    assert_eq!(total, 3);
+    assert_eq!(total, 2);
 }
 
 impl Fixture {

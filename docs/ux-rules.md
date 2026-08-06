@@ -253,7 +253,7 @@ result.
   (P-6). No background event (deleted, unmounted, sync removal, watcher)
   stops the playing track — explicit user actions (double-click, Play
   all, OS-open) naturally change playback.
-- **PLAY-5c** [active] [core] — Unsubscribed episode hygiene: an episode
+- **PLAY-5c** [replaced by QUE-12] [core] — Unsubscribed episode hygiene: an episode
   whose show is no longer subscribed leaves the manual queue silently,
   including during session restoration and before queue advance.
 - **PLAY-6** [planned] [gtk] — Shuffle/Repeat are global player states
@@ -1164,8 +1164,7 @@ result.
   toast per file (noise) — row turns gray/disappears per the Missing
   rules, the ISSUES badge counts up. Exception: the currently playing
   queue item faults → skip. A track shows one toast "Track unavailable
-  — skipped"; consecutive unplayable queued episodes collapse into one
-  "Skipped N unplayable episodes" toast instead of one toast per skip.
+  — skipped".
 - **FB-7** [active] [core] — "Remove from library" does not delete but
   sets `removed_at` (tombstone); the row with ratings, play counts and
   playlist positions stays fully intact for 10 s, Undo only resets
@@ -1273,7 +1272,7 @@ result.
   the visible window bound widgets and work independent of queue length.
   With the panel closed or another tab active, item changes and reorders
   only update the model and render no panel rows.
-- **QUE-9** [active] [core] — The manual queue stores typed track and
+- **QUE-9** [replaced by QUE-12] [core] — The manual queue stores typed track and
   episode entries and preserves their identity even when their numeric
   IDs collide. RSS and YouTube episodes advance in manual queue order,
   never enter the container queue's automatic `QueueSnapshot` context,
@@ -1291,13 +1290,19 @@ result.
   section, labelled with the show or channel. The manual queue and container
   `QueueSnapshot` remain unchanged underneath and reappear unchanged when
   queue playback resumes.
-- **QUE-11** [active] [core] [gtk] — Session persistence keeps the typed
+- **QUE-11** [active] [core] [gtk] — Session persistence keeps the track-only
   manual queue, its current entry, and the stable identity of a loaded podcast
   or YouTube episode. Direct playback additionally stores its bounded frozen
-  episode-neighbour order; manual playback derives neighbours from the
-  restored typed queue. Signed or resolved stream URLs never persist. On cold
+  episode-neighbour order. Signed or resolved stream URLs never persist. On cold
   start the identity is validated against the current episode catalog and is
   reconstructed as paused metadata only.
+- **QUE-12** [active] [core] [gtk] — Replaces `QUE-9`. Podcast and YouTube
+  episodes never enter the manual queue. Core rejects episode items at every
+  manual-queue insertion point and session restore removes any pending or
+  current episode left by an older build. GTK queue actions and drop targets
+  accept and report only the surviving tracks; an episode-only action or drop
+  is disabled or refused without a success toast. `QueueItem::Episode` remains
+  available for direct episode rendering and outward typed projections.
 
 ## K. Filter & search visibility
 
@@ -4714,8 +4719,8 @@ listening statistics.
   POD-21 context has a next rendered episode, Reprise automatically starts that
   exact no-wrap neighbour — the same target as the enabled Next transport.
   RSS episodes and YouTube episodes without a next frozen neighbour keep the
-  manual next-unplayed offer preserved from POD-4; QUE-9 continues to own
-  automatic progress through explicitly queued episodes. Podcast and YouTube sessions
+  manual next-unplayed offer preserved from POD-4; QUE-12 excludes episodes
+  from the manual queue. Podcast and YouTube sessions
   produce neither scrobbles nor `listen_events` nor play counts. Covered by
   `pod_24_direct_youtube_completion_uses_the_frozen_next_episode`,
   `pod_24_finish_offers_next_unplayed_of_show`, and

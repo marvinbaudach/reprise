@@ -93,17 +93,16 @@ fn a_queued_entry_can_be_played_out_of_turn_and_leaves_the_queue() {
 }
 
 #[test]
-fn playing_a_queued_episode_out_of_turn_is_refused_without_eating_the_entry() {
-    // `take_at` pops before the kind is known, so the obvious implementation
-    // removes the episode and then reports that the position held nothing:
-    // the entry is gone and the caller is told it never existed. The refusal
-    // has to leave the queue exactly as it found it.
+fn an_episode_cannot_be_seeded_as_a_runtime_queue_entry() {
     let mut fixture = fixture();
     fixture.play_tracks(vec![1], 0).unwrap();
-    fixture.transport.up_next.append(&[
-        reprise_core::up_next::QueueItem::Track(2),
-        reprise_core::up_next::QueueItem::Episode(9),
-    ]);
+    assert_eq!(
+        fixture.transport.up_next.append(&[
+            reprise_core::up_next::QueueItem::Track(2),
+            reprise_core::up_next::QueueItem::Episode(9),
+        ]),
+        1
+    );
     fixture.calls.clear();
 
     let refused = fixture.queue(&QueueCommand::PlayNextAt {
@@ -113,17 +112,13 @@ fn playing_a_queued_episode_out_of_turn_is_refused_without_eating_the_entry() {
 
     assert_eq!(
         refused,
-        Err(RuntimeError::Rejected(Rejected::UnsupportedCommand)),
-        "the entry exists, this runtime just cannot start it — that is not \
-         the same as there being no entry"
+        Err(RuntimeError::Rejected(Rejected::NoSuchQueueEntry)),
+        "the rejected episode never occupies a queue position"
     );
     assert_eq!(
         fixture.transport.up_next.ids(),
-        &[
-            reprise_core::up_next::QueueItem::Track(2),
-            reprise_core::up_next::QueueItem::Episode(9),
-        ],
-        "a refused command must leave the queue untouched"
+        &[reprise_core::up_next::QueueItem::Track(2),],
+        "the surviving track remains untouched"
     );
     assert!(
         fixture.calls.calls().is_empty(),

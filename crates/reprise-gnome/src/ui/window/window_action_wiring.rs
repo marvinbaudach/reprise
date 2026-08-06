@@ -123,10 +123,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         // player at all reports `false` rather than a false "appended").
         let player = player.clone();
         sidebar.set_on_queue_drop(move |items| match &player {
-            Some(player) => {
-                player.append_queue_items(items);
-                true
-            }
+            Some(player) => player.append_queue_items(items) > 0,
             None => {
                 tracing::warn!("player unavailable; ignoring queue drop");
                 false
@@ -261,6 +258,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             Some(player) => player.play_next(&ids),
             None => {
                 tracing::warn!("player unavailable; ignoring play-next action");
+                0
             }
         });
     }
@@ -270,6 +268,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             Some(player) => player.append_to_queue(&ids),
             None => {
                 tracing::warn!("player unavailable; ignoring context menu add-to-queue action");
+                0
             }
         });
     }
