@@ -71,6 +71,21 @@ fn should_advance_after_user_delete(ids: &[i64], loaded: Option<i64>) -> bool {
     loaded.is_some_and(|id| ids.contains(&id))
 }
 
+fn remove_direct_episode_now_playing(
+    direct_episode: bool,
+    rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
+    stop: impl FnOnce(),
+) -> usize {
+    use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+    if direct_episode && rows.contains(&QueueRow::NowPlaying) {
+        stop();
+        1
+    } else {
+        0
+    }
+}
+
 /// `restored_placement_intact` says the loaded track is still exactly where a
 /// normal start put it: selected and centered, never played (START-3). Its
 /// first Play only starts the audio, because the viewport is already the one
@@ -489,6 +504,8 @@ impl PlayerController {
         use crate::ui::track_list::queue_row_mapping::QueueRow;
 
         let direct_episode = projection::has_direct_episode_projection(&self.external.borrow());
+        let direct_episode_removed =
+            remove_direct_episode_now_playing(direct_episode, rows, || self.stop_external());
         let mut play_next_indices = Vec::new();
         let mut up_next_offsets = Vec::new();
         let mut remove_current = false;
@@ -498,14 +515,15 @@ impl PlayerController {
                 QueueRow::PlayNext(index) => play_next_indices.push(*index),
                 QueueRow::UpNext(offset) if !direct_episode => up_next_offsets.push(*offset),
                 QueueRow::NowPlaying if !direct_episode => remove_current = true,
-                QueueRow::UpNext(_) | QueueRow::NowPlaying => ignored += 1,
+                QueueRow::NowPlaying => {}
+                QueueRow::UpNext(_) => ignored += 1,
             }
         }
         if ignored > 0 {
             tracing::debug!(ignored, "episode context rows cannot be removed; ignoring");
         }
 
-        let mut removed = 0;
+        let mut removed = direct_episode_removed;
         if !play_next_indices.is_empty() {
             removed += self
                 .up_next

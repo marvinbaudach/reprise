@@ -1303,6 +1303,10 @@ result.
   accept and report only the surviving tracks; an episode-only action or drop
   is disabled or refused without a success toast. `QueueItem::Episode` remains
   available for direct episode rendering and outward typed projections.
+- **QUE-13** [active] [gtk] — Removing the Now Playing row of a directly loaded
+  podcast or YouTube episode ends that external session and reports one removed
+  row. Its frozen show-context rows remain read-only and are never removed from
+  the music queue.
 
 ## K. Filter & search visibility
 
