@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 
+SELECTION_MARKER_NOUNS = ("select", "track")
+
+
 @dataclass(frozen=True)
 class ActionTrace:
     action: Mapping[str, Any]
@@ -448,7 +451,8 @@ def _audit_batch(
 
     def has_selection_marker(trace: ActionTrace) -> bool:
         return any(
-            selection_pattern in label and "select" in label.casefold()
+            selection_pattern in label
+            and any(noun in label.casefold() for noun in SELECTION_MARKER_NOUNS)
             for label in trace.after_labels
         )
 

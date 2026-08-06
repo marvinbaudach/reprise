@@ -338,6 +338,44 @@ class WorkloadEvidenceAdversarialTests(unittest.TestCase):
 
         self.assertFalse(audit_action_workload(0, workload, traces)["complete"])
 
+    def test_batch_rejects_a_bare_count_without_a_noun(self) -> None:
+        workload = self.stress.workloads[0]
+        for labels in (("512",), ("Save 512",)):
+            with self.subTest(labels=labels):
+                traces = [
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Edit Tags"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Save 512"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                ]
+
+                self.assertFalse(
+                    audit_action_workload(0, workload, traces)["selection_observed"]
+                )
+
+    def test_batch_accepts_the_multi_tag_dialog_title(self) -> None:
+        workload = self.stress.workloads[0]
+        traces = [
+            ActionTrace(
+                action={"kind": "activate", "target_label": "Edit Tags"},
+                after_labels=("Edit 512 Tracks",),
+                state_changed=True,
+            ),
+            ActionTrace(
+                action={"kind": "activate", "target_label": "Save 512"},
+                after_labels=("Edit 512 Tracks",),
+                state_changed=True,
+            ),
+        ]
+
+        self.assertTrue(audit_action_workload(0, workload, traces)["selection_observed"])
+
     def test_scroll_rejects_the_oracles_actual_wrong_direction_code(self) -> None:
         workload = {"kind": "scroll-sweep", "directions": ["down"], "pages": 1}
         trace = ActionTrace(

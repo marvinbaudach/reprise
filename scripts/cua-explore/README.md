@@ -91,7 +91,7 @@ checks additionally require each cached source row exactly once during the
 offline visit and after reconnect. The batch checkpoint is audited
 independently: exactly 512 private database rows must carry the pinned genre and
 year, exactly 512 disposable FLAC copies must have changed, and no other row may
-carry those values. Exhausting the action budget without an explicit `finish`
+carry those values. Reprise does not show a selection count outside the tag dialog; the batch audit therefore accepts the dialog title as evidence—the missing display is an open UX finding, not a harness property. Exhausting the action budget without an explicit `finish`
 is a failed run. Arbitrary text,
 shell commands, destructive targets, stale element indices, unknown actions,
 URLs, and exhausted budgets fail closed. The agent process receives only a
