@@ -204,7 +204,8 @@ crates/reprise-gnome/src/ui/playback/external_media_state.rs:1
 crates/reprise-gnome/src/ui/playback/preview.rs:1
 crates/reprise-gnome/src/ui/playback/session_player.rs:3
 crates/reprise-gnome/src/ui/player_bar/player_bar_layout.rs:2
-crates/reprise-gnome/src/ui/player_bar/waveform_seek.rs:3
+crates/reprise-gnome/src/ui/player_bar/waveform_seek.rs:2
+crates/reprise-gnome/src/ui/player_bar/waveform_seek_state.rs:1
 crates/reprise-gnome/src/ui/playing_links.rs:1
 crates/reprise-gnome/src/ui/podcasts/mod.rs:1
 crates/reprise-gnome/src/ui/radio/mod.rs:1

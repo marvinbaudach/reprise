@@ -92,6 +92,7 @@ mod queue;
 mod smart;
 mod stats;
 mod surface_browse;
+mod track_summary;
 
 pub use album_directories::query_album_directories;
 pub use artist_context::{query_artist_albums, query_stats_album_target_for_path};
@@ -168,6 +169,7 @@ pub use maintenance::{
     query_track_summary, remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks,
     track_id_for_path, undo_tombstone,
 };
+pub use track_summary::TrackSummary;
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_missing_tracks`/`purge_tombstones`/`remove_tracks_matching_paths` all funnel
 // through; not part of the crate's public API, but `tests_issues.rs`'s
@@ -718,52 +720,6 @@ pub fn query_visible_track_ids_browsed(
         _ => query_track_ids_browsed_ai_conn(
             conn, source, sort_field, sort_dir, filter, browse, queue_ids, false,
         ),
-    }
-}
-
-/// The subset of a track's columns the player bar and queue playback path
-/// need: the file to hand `Player::play`, display metadata, and the duration
-/// play-tracking's 50%-listened check requires
-/// (`library::stats::should_count_play`). Deliberately narrower than the
-/// full `Track` (no rating/play_count/etc. — the bar doesn't display those),
-/// avoiding the cost of loading and holding the columns nothing here reads.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TrackSummary {
-    pub path: String,
-    pub title: String,
-    pub artist: String,
-    /// Stage 2 Task 6 (MPRIS): feeds `Metadata`'s `xesam:album`. Not used by
-    /// the player bar (which only shows title/artist), so it went unused
-    /// here until MPRIS needed it.
-    pub album: String,
-    /// Raw album artist tag (may be empty). Use `effective_album_artist()` to
-    /// get the display value that matches `AlbumSummary::album_artist` — i.e.
-    /// `album_artist` when non-empty, `artist` otherwise. Loaded alongside the
-    /// other summary fields so `notify_now_playing_album_changed` can send the
-    /// same effective-artist key the album grid uses for EQ-marker matching.
-    pub album_artist: String,
-    /// Raw genre and artist MBID are retained by the in-flight playback
-    /// snapshot so local listen history remains complete after catalog
-    /// deletion.
-    pub genre: String,
-    pub artist_mbid: Option<String>,
-    /// Optional release year displayed by metadata-rich player surfaces.
-    pub year: Option<i32>,
-    pub duration_ms: i64,
-}
-
-impl TrackSummary {
-    /// Returns the effective album artist: `album_artist` when non-empty
-    /// (trimmed), `artist` otherwise. Mirrors the SQL expression
-    /// `CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE
-    /// TRIM(artist) END` that `query_albums` uses for `AlbumSummary::
-    /// album_artist`, so the two sources always agree on the grouping key.
-    pub fn effective_album_artist(&self) -> &str {
-        if self.album_artist.trim().is_empty() {
-            &self.artist
-        } else {
-            &self.album_artist
-        }
     }
 }
 

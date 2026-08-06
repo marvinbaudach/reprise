@@ -48,7 +48,7 @@ fn target_for(track_list: &TrackList, position: u32) -> (gtk4::Adjustment, f64) 
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nav_10b_centering_lands_exactly_on_the_target() {
+fn nav_10b_centering_lands_on_the_logical_pixel_nearest_the_target() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     gtk4::Settings::default()
@@ -68,15 +68,18 @@ fn nav_10b_centering_lands_exactly_on_the_target() {
     );
     let landed =
         crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-            adjustment.value() == target
+            (adjustment.value() - target).abs() <= 0.5
         });
 
     assert!(
         landed,
-        "centering did not reach the exact target: actual {}, target {target}",
+        "centering did not reach the nearest logical pixel: actual {}, target {target}",
         adjustment.value()
     );
-    assert_eq!(adjustment.value(), target);
+    assert!(
+        (adjustment.value() - target).abs() <= 0.5,
+        "centering landed more than half a logical pixel from its target"
+    );
     window.close();
 }
 

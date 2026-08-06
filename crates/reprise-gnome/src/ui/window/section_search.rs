@@ -12,7 +12,7 @@
 //!   restored on a section switch, or pushed back by a view that cleared its
 //!   own chip — goes through here, so no participant has to guess which
 //!   section a query belongs to.
-//! * A section without a list ([`supports_search`] is false) can neither be
+//! * A section without a list ([`SectionSearch::supports_search`] is false) can neither be
 //!   searched nor reveal the bar: the lens is insensitive with a tooltip that
 //!   names the section, Ctrl+F is a no-op, and typing cannot open the strip.
 
