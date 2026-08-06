@@ -12,7 +12,7 @@ use super::{EpisodeRow, PodcastKind, SourceGroup};
 /// the wrong column the next time a migration adds one.
 pub(crate) const EPISODE_COLUMNS: &str =
     "e.id, e.subscription_id, e.guid, e.title, s.title, s.image_url, e.image_url, s.kind,
-     e.audio_url, e.page_url, e.published_at, e.duration_secs,
+     e.audio_url, e.page_url, e.published_at, e.duration_secs, e.media_category,
      e.downloaded_path, e.downloaded_bytes, e.played_at, e.position_ms,
      e.first_seen_at, e.first_seen_at > s.added_at";
 

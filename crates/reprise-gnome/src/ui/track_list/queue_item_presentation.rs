@@ -128,6 +128,7 @@ mod tests {
             position_ms: 0,
             first_seen_at: 0,
             is_new: true,
+            media_category: None,
         })
     }
 

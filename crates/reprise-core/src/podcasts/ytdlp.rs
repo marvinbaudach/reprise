@@ -91,6 +91,14 @@ pub struct YtDlpPlaylist {
 pub struct ResolvedAudio {
     pub stream_url: String,
     pub duration_secs: Option<i64>,
+    pub categories: Vec<String>,
+    pub track: Option<String>,
+    pub artist: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct YoutubeDownloadMetadata {
+    pub categories: Vec<String>,
 }
 
 impl YtDlp {
@@ -187,10 +195,14 @@ impl YtDlp {
             ["--no-warnings", "-f", "bestaudio", "-j", video_url],
             self.timeouts.resolve,
         )?;
-        parse_resolved_audio("resolve", &output)
+        resolved::parse("resolve", &output)
     }
 
-    pub fn download(&self, video_url: &str, output: &Path) -> Result<(), PodcastError> {
+    pub fn download(
+        &self,
+        video_url: &str,
+        output: &Path,
+    ) -> Result<YoutubeDownloadMetadata, PodcastError> {
         self.download_with_progress(video_url, output, &mut |_| {})
     }
 
@@ -199,7 +211,7 @@ impl YtDlp {
         video_url: &str,
         output: &Path,
         on_progress: &mut dyn FnMut(super::download_state::DownloadProgress),
-    ) -> Result<(), PodcastError> {
+    ) -> Result<YoutubeDownloadMetadata, PodcastError> {
         super::ytdlp_download::download(
             &self.binary,
             self.browser_session.as_deref(),
@@ -736,22 +748,6 @@ fn parse_playlist(operation: &'static str, body: &str) -> Result<YtDlpPlaylist, 
     })
 }
 
-fn parse_resolved_audio(
-    operation: &'static str,
-    body: &str,
-) -> Result<ResolvedAudio, PodcastError> {
-    let value: Value = serde_json::from_str(body).map_err(|_| response_error(operation))?;
-    let stream_url = value
-        .get("url")
-        .and_then(Value::as_str)
-        .filter(|url| !url.is_empty())
-        .ok_or_else(|| audio_unavailable_error(operation))?;
-    Ok(ResolvedAudio {
-        stream_url: stream_url.to_string(),
-        duration_secs: duration_secs(value.get("duration")),
-    })
-}
-
 fn duration_secs(value: Option<&Value>) -> Option<i64> {
     value
         .and_then(|value| {
@@ -762,6 +758,9 @@ fn duration_secs(value: Option<&Value>) -> Option<i64> {
         .filter(|duration| duration.is_finite() && *duration >= 0.0)
         .map(|duration| duration as i64)
 }
+
+#[path = "ytdlp_resolved.rs"]
+pub(super) mod resolved;
 
 fn integer_value(value: Option<&Value>) -> Option<i64> {
     value

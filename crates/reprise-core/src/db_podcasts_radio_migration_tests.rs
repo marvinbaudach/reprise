@@ -564,6 +564,50 @@ fn v49_adds_episode_artwork_without_changing_existing_rows() {
     );
 }
 
+#[test]
+fn v59_adds_nullable_media_category_without_backfilling_existing_episodes() {
+    let conn = db::open(None).unwrap();
+    db::migrate_connection(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'youtube', 'https://example.test/channel', 'Channel', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_episodes
+         (subscription_id, guid, title, audio_url, first_seen_at)
+         VALUES (1, 'video', 'Existing', 'https://example.test/watch?v=video', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute_batch(
+        "ALTER TABLE podcast_episodes DROP COLUMN media_category;
+         PRAGMA user_version = 58;",
+    )
+    .unwrap();
+
+    migrate_v59(&conn).unwrap();
+    migrate_v59(&conn).unwrap();
+
+    assert!(has_column(&conn, "podcast_episodes", "media_category").unwrap());
+    assert_eq!(
+        conn.query_row(
+            "SELECT media_category FROM podcast_episodes WHERE guid = 'video'",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .unwrap(),
+        None
+    );
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        59
+    );
+}
+
 // A database can carry the current `user_version` and still be missing this
 // migration's columns: the schema numbers in this repository were reassigned
 // during development, so a build whose `v40` meant something else could raise

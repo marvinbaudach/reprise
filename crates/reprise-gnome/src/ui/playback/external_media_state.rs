@@ -7,7 +7,7 @@
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use reprise_core::podcasts::{EpisodeRow, PodcastKind};
+use reprise_core::podcasts::{character_from_category, EpisodeRow, MediaCharacter, PodcastKind};
 use reprise_core::up_next::QueueItem;
 
 use super::preview::PlaybackMode;
@@ -234,6 +234,7 @@ pub(super) struct PodcastSession {
     pub(super) automatic_advance: Option<AutomaticAdvance>,
     pub(super) subscription_id: i64,
     pub(super) kind: PodcastKind,
+    pub(super) media_category: Option<String>,
     pub(super) published_at: Option<i64>,
     pub(super) art_url: Option<String>,
     pub(super) phase: PodcastPhase,
@@ -292,6 +293,7 @@ pub(super) enum ExternalSession {
 pub(in crate::ui) struct ExternalPlaybackSnapshot {
     pub(in crate::ui) mode: PlaybackMode,
     pub(in crate::ui) podcast_kind: Option<PodcastKind>,
+    pub(in crate::ui) media_category: Option<String>,
     pub(in crate::ui) media: ExternalMedia,
     pub(in crate::ui) art_url: Option<String>,
     pub(in crate::ui) can_go_previous: bool,
@@ -304,12 +306,14 @@ pub(in crate::ui) struct ExternalPlaybackSnapshot {
 }
 
 impl ExternalPlaybackSnapshot {
-    /// YouTube and radio carry music, so they get the Song Visuals treatment;
-    /// an RSS podcast is speech and stays quiet.
+    /// AC-26's single decision point for Song Visuals and spectrum capture.
     pub(in crate::ui) fn carries_music(&self) -> bool {
         match self.podcast_kind {
-            Some(PodcastKind::Youtube) => true,
             Some(PodcastKind::Rss) => false,
+            Some(PodcastKind::Youtube) => !matches!(
+                character_from_category(self.media_category.as_deref()),
+                MediaCharacter::Speech
+            ),
             None => matches!(self.media, ExternalMedia::Radio { .. }),
         }
     }
@@ -428,6 +432,38 @@ impl ExternalPlaybackState {
         self.bump_generation()
     }
 
+    pub(super) fn update_podcast_media_category(
+        &mut self,
+        generation: u64,
+        episode_id: i64,
+        media_category: Option<String>,
+    ) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+        let Some(media_category) = media_category.filter(|category| !category.is_empty()) else {
+            return false;
+        };
+        let Some(ExternalSession::Podcast(session)) = self.session.as_mut() else {
+            return false;
+        };
+        let ExternalMedia::Podcast {
+            episode_id: active_episode_id,
+            ..
+        } = session.media
+        else {
+            return false;
+        };
+        if session.kind != PodcastKind::Youtube || active_episode_id != episode_id {
+            return false;
+        }
+        if session.media_category.as_deref() == Some(media_category.as_str()) {
+            return false;
+        }
+        session.media_category = Some(media_category);
+        true
+    }
+
     pub(super) fn snapshot(&self) -> Option<ExternalPlaybackSnapshot> {
         match self.session.as_ref()? {
             ExternalSession::Podcast(session) => Some(ExternalPlaybackSnapshot {
@@ -436,6 +472,7 @@ impl ExternalPlaybackState {
                     PodcastOrigin::ManualQueue => PlaybackMode::QueuedEpisode,
                 },
                 podcast_kind: Some(session.kind),
+                media_category: session.media_category.clone(),
                 media: session.media.clone(),
                 art_url: session.art_url.clone(),
                 can_go_previous: session
@@ -455,6 +492,7 @@ impl ExternalPlaybackState {
             ExternalSession::Radio(session) => Some(ExternalPlaybackSnapshot {
                 mode: PlaybackMode::Radio,
                 podcast_kind: None,
+                media_category: None,
                 media: session.media.clone(),
                 art_url: session.art_url.clone(),
                 can_go_previous: false,

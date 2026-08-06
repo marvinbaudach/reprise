@@ -43,6 +43,7 @@ fn restored_session(
         automatic_advance: None,
         subscription_id: episode.subscription_id,
         kind: episode.kind,
+        media_category: episode.media_category.clone(),
         published_at: episode.published_at,
         art_url: episode
             .image_url
@@ -211,6 +212,7 @@ mod tests {
             position_ms: 22_000,
             first_seen_at: 10,
             is_new: false,
+            media_category: Some("Music".into()),
         }
     }
 
@@ -230,6 +232,7 @@ mod tests {
             super::super::external_media_state::PodcastPhase::Paused
         );
         assert_eq!(session.position_ms, 22_000);
+        assert_eq!(session.media_category.as_deref(), Some("Music"));
         assert_eq!(
             session.art_url.as_deref(),
             Some("https://images.test/show.jpg")
