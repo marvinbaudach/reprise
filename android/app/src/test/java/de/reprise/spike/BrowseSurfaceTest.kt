@@ -370,15 +370,17 @@ fun theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary() {
 }
 
 @Test
-fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
+fun restoringLibraryLoadsAllFourTabsThroughTheCorePort() {
     val title = testBrowseTrack("title")
     val album = testAlbum()
     val artist = testArtist()
+    val favourite = testBrowseTrack("favourite").copy(rating = 5)
     val titleWindow = LibraryWindow(total = 1_824, rows = listOf(title), hasMore = true)
     val port = RecordingBrowsePort(
         titleResults = mapOf("" to titleWindow),
         albums = completeWindow(listOf(album)),
         artists = completeWindow(listOf(artist)),
+        favourites = completeWindow(listOf(favourite)),
     )
 
     val state = LibrarySession(port).restore()
@@ -388,6 +390,7 @@ fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
             titles = titleWindow,
             albums = completeWindow(listOf(album)),
             artists = completeWindow(listOf(artist)),
+            favourites = completeWindow(listOf(favourite)),
             folderUri = "content://provider/tree/Music",
         ),
         state,
@@ -399,6 +402,7 @@ fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
             "search::0:200",
             "albums:0:200",
             "artists:0:200",
+            "favourites:0:200",
         ),
         port.operations,
     )
@@ -480,6 +484,8 @@ private class RecordingBrowsePort(
     private val titleResults: Map<String, LibraryWindow<LibraryTrack>> = emptyMap(),
     private val albums: LibraryWindow<LibraryAlbum> = completeWindow(emptyList()),
     private val artists: LibraryWindow<LibraryArtist> = completeWindow(emptyList()),
+    private val artistTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
+    private val favourites: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
     private val albumTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
     private val artwork: Map<String, String?> = emptyMap(),
     private val whileResolvingArtwork: (String) -> Unit = {},
@@ -522,6 +528,19 @@ private class RecordingBrowsePort(
     override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> {
         operations += "artists:${window.offset}:${window.limit}"
         return artists
+    }
+
+    override fun listArtistTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "artist:$artist:${window.offset}:${window.limit}"
+        return artistTracks
+    }
+
+    override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> {
+        operations += "favourites:${window.offset}:${window.limit}"
+        return favourites
     }
 
     override fun listAlbumTracks(
