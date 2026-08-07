@@ -10,7 +10,6 @@ use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 pub(super) const UP_NEXT_PAGE: &str = "up-next";
 pub(super) const LYRICS_PAGE: &str = "lyrics";
 pub(super) const VISUAL_PAGE: &str = "visual";
-pub(super) const SOUND_PAGE: &str = "sound";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum PanelTab {
@@ -18,15 +17,9 @@ pub(super) enum PanelTab {
     UpNext,
     Lyrics,
     Visual,
-    Sound,
 }
 
-pub(super) const PANEL_TABS: [PanelTab; 4] = [
-    PanelTab::UpNext,
-    PanelTab::Lyrics,
-    PanelTab::Visual,
-    PanelTab::Sound,
-];
+pub(super) const PANEL_TABS: [PanelTab; 3] = [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::Visual];
 
 impl PanelTab {
     pub(super) fn page_name(self) -> &'static str {
@@ -34,7 +27,6 @@ impl PanelTab {
             Self::UpNext => UP_NEXT_PAGE,
             Self::Lyrics => LYRICS_PAGE,
             Self::Visual => VISUAL_PAGE,
-            Self::Sound => SOUND_PAGE,
         }
     }
 
@@ -47,15 +39,18 @@ pub(super) fn should_render_up_next(panel_visible: bool, selected_tab: PanelTab)
     panel_visible && selected_tab == PanelTab::UpNext
 }
 
-pub(super) fn tab_after_sound_visibility_change(
+/// The page the stack has to show after `tab` became unavailable (`NPP-15`).
+///
+/// `None` means "leave the selection alone". Both callers — the Lyrics tab
+/// yielding to an external session and the Visual tab following the Song
+/// Visuals module — ask here rather than repeating the condition, because the
+/// same decision written twice is how two audible bugs got in before.
+pub(super) fn page_after_tab_hidden(
     selected: PanelTab,
-    sound_visible: bool,
-) -> PanelTab {
-    if !sound_visible && selected == PanelTab::Sound {
-        PanelTab::UpNext
-    } else {
-        selected
-    }
+    tab: PanelTab,
+    tab_visible: bool,
+) -> Option<&'static str> {
+    (!tab_visible && selected == tab).then_some(UP_NEXT_PAGE)
 }
 
 #[derive(Default)]
@@ -68,41 +63,37 @@ pub(super) struct TabFooters {
     pub(super) up_next: String,
     pub(super) lyrics: String,
     pub(super) visual: String,
-    pub(super) sound: String,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{tab_after_sound_visibility_change, PanelTab, PANEL_TABS, SOUND_PAGE};
+    use super::{page_after_tab_hidden, PanelTab, PANEL_TABS, UP_NEXT_PAGE};
 
     #[test]
-    fn npp_14_extension_tab_follows_the_three_built_in_tabs() {
+    fn npp_14_has_the_three_built_in_tabs_in_order() {
         assert_eq!(
             PANEL_TABS,
-            [
-                PanelTab::UpNext,
-                PanelTab::Lyrics,
-                PanelTab::Visual,
-                PanelTab::Sound,
-            ]
+            [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::Visual]
         );
-        assert_eq!(PanelTab::Sound.page_name(), SOUND_PAGE);
-        assert_eq!(PanelTab::from_page_name(SOUND_PAGE), Some(PanelTab::Sound));
     }
 
     #[test]
-    fn npp_15_hiding_the_open_extension_tab_falls_back_to_up_next() {
+    fn npp_15_hiding_the_selected_tab_falls_back_to_up_next() {
         assert_eq!(
-            tab_after_sound_visibility_change(PanelTab::Sound, false),
-            PanelTab::UpNext
+            page_after_tab_hidden(PanelTab::Lyrics, PanelTab::Lyrics, false),
+            Some(UP_NEXT_PAGE)
         );
         assert_eq!(
-            tab_after_sound_visibility_change(PanelTab::Lyrics, false),
-            PanelTab::Lyrics
+            page_after_tab_hidden(PanelTab::Visual, PanelTab::Visual, false),
+            Some(UP_NEXT_PAGE)
         );
         assert_eq!(
-            tab_after_sound_visibility_change(PanelTab::Sound, true),
-            PanelTab::Sound
+            page_after_tab_hidden(PanelTab::Lyrics, PanelTab::Visual, false),
+            None
+        );
+        assert_eq!(
+            page_after_tab_hidden(PanelTab::Visual, PanelTab::Visual, true),
+            None
         );
     }
 }

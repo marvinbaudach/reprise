@@ -66,21 +66,6 @@ pub fn set_last_scan_relinked(db: &Db, count: u32) -> Result<(), rusqlite::Error
     set_last_scan_relinked_in(conn, count)
 }
 
-pub fn get_sound_stats_feature_count(db: &Db) -> Result<Option<usize>, rusqlite::Error> {
-    Ok(
-        get_setting_in(db.conn(), super::SOUND_STATS_FEATURE_COUNT_KEY)?
-            .and_then(|value| value.parse::<usize>().ok()),
-    )
-}
-
-pub(crate) fn set_sound_stats_feature_count(db: &Db, count: usize) -> Result<(), rusqlite::Error> {
-    set_setting_in(
-        db.conn(),
-        super::SOUND_STATS_FEATURE_COUNT_KEY,
-        &count.to_string(),
-    )
-}
-
 pub fn get_onboarding_completed(db: &Db) -> Result<bool, rusqlite::Error> {
     let conn = db.conn();
     get_onboarding_completed_in(conn)
