@@ -3433,7 +3433,7 @@ msgstr[1] "{channels} canales"
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:382
 #, rust-format
 msgid "{visible} of {total} videos"
-msgstr ""
+msgstr "{visible} de {total} vídeos"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:392
 #, rust-format
@@ -5275,37 +5275,37 @@ msgstr "⌕ «{query}» en cualquier campo"
 #: crates/reprise-view/src/strings/browse.rs:30
 #, rust-format
 msgid "⌕ “{query}” in episode titles"
-msgstr ""
+msgstr "⌕ «{query}» en títulos de episodios"
 
 #: crates/reprise-view/src/strings/browse.rs:31
 #, rust-format
 msgid "⌕ “{query}” in video titles"
-msgstr ""
+msgstr "⌕ «{query}» en títulos de vídeos"
 
 #: crates/reprise-view/src/strings/browse.rs:32
 #, rust-format
 msgid "⌕ “{query}” in station names"
-msgstr ""
+msgstr "⌕ «{query}» en nombres de emisoras"
 
 #: crates/reprise-view/src/strings/browse.rs:33
 #, rust-format
 msgid "⌕ “{query}” in title and artist"
-msgstr ""
+msgstr "⌕ «{query}» en título y artista"
 
 #: crates/reprise-view/src/strings/browse.rs:34
 #, rust-format
 msgid "⌕ “{query}” in artist and venue"
-msgstr ""
+msgstr "⌕ «{query}» en artista y lugar"
 
 #: crates/reprise-view/src/strings/browse.rs:35
 #, rust-format
 msgid "⌕ “{query}” in file paths"
-msgstr ""
+msgstr "⌕ «{query}» en rutas de archivo"
 
 #: crates/reprise-view/src/strings/browse.rs:36
 #, rust-format
 msgid "Nothing to filter in {section}"
-msgstr ""
+msgstr "No hay nada que filtrar en {section}"
 
 #: crates/reprise-view/src/strings/browse.rs:37
 #, rust-format

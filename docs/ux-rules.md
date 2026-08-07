@@ -1695,9 +1695,10 @@ own statement).
   with a present downloaded file offers "Show in Files" (opens its folder and
   selects the file). A multi-selection where every episode has a file and all
   files share one folder offers "Open Folder" instead and opens only that
-  folder. In every other case—nothing downloaded, a recorded path missing on
-  disk, or a selection spanning folders—the entry is absent. Radio never
-  offers it.
+  folder. In every other case — nothing downloaded, a recorded path missing
+  on disk, or a selection spanning folders — the entry is absent. The
+  selection decides, not the rendered window: an episode a collapsed group
+  or a Shorts filter takes off screen still counts. Radio never offers it.
 
 ## O. Motion & Transitions
 

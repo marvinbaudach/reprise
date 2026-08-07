@@ -2,7 +2,7 @@
 //! `podcasts_view.rs` to keep it under the file-size gate.
 
 use super::super::podcasts_batch_actions::{self, BatchResult};
-use super::super::podcasts_episode_files::{file_reveal, FileReveal};
+use super::super::podcasts_episode_files::{file_reveal, EpisodePaths, FileReveal};
 use super::*;
 use crate::ui::podcasts::podcasts_playback::{activation_for_episode, EpisodeActivation};
 
@@ -50,20 +50,16 @@ impl PodcastsView {
             |view, ids| {
                 // Paths are resolved again here, not taken from the menu: a
                 // download can be deleted between opening the menu and
-                // clicking the entry.
-                let paths = ids
+                // clicking the entry. An episode the store cannot return is
+                // simply absent from the snapshot, which `lookup` reports as
+                // `None` — the same answer as a missing file, and the same
+                // outcome: `Hidden`.
+                let rows = ids
                     .iter()
-                    .map(|id| {
-                        podcasts::store::episode(&view.conn, *id)
-                            .ok()
-                            .flatten()
-                            .and_then(|episode| episode.downloaded_path)
-                            .filter(|path| !path.is_empty())
-                            .map(std::path::PathBuf::from)
-                            .filter(|path| path.exists())
-                    })
+                    .filter_map(|id| podcasts::store::episode(&view.conn, *id).ok().flatten())
                     .collect::<Vec<_>>();
-                match file_reveal(&paths) {
+                let paths = EpisodePaths::from_rows(&rows);
+                match file_reveal(&paths.lookup(&ids)) {
                     FileReveal::Hidden => {
                         tracing::debug!(
                             episode_ids = ?ids,
