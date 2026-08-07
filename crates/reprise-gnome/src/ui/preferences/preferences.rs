@@ -287,19 +287,18 @@ impl PreferencesContext {
         // stack in the dialog — a strong handle would keep this surface alive
         // for as long as the dialog and outlive its own owner.
         let context = Rc::downgrade(self);
-        let page_factory: Rc<dyn Fn(PageId) -> adw::PreferencesPage> =
-            Rc::new(move |id| {
-                let Some(context) = context.upgrade() else {
-                    return adw::PreferencesPage::new();
-                };
-                match id {
-                    PageId::Playback => context.playback_page(),
-                    PageId::Appearance => context.appearance_page(),
-                    PageId::Layout => context.layout_page(),
-                    PageId::Library => context.library_page(),
-                    PageId::Plugins => context.plugins_page(),
-                }
-            });
+        let page_factory: Rc<dyn Fn(PageId) -> adw::PreferencesPage> = Rc::new(move |id| {
+            let Some(context) = context.upgrade() else {
+                return adw::PreferencesPage::new();
+            };
+            match id {
+                PageId::Playback => context.playback_page(),
+                PageId::Appearance => context.appearance_page(),
+                PageId::Layout => context.layout_page(),
+                PageId::Library => context.library_page(),
+                PageId::Plugins => context.plugins_page(),
+            }
+        });
         let foreground_scan_progress = ScanChromeView::new();
         self.scan_controls
             .attach_chrome_view(&foreground_scan_progress);

@@ -1195,16 +1195,22 @@ result.
   no earlier than 30/90 days after disappearance (SET-4).
 - **FB-8** [active] [gtk] — In the main-window sidebar, Scanner and
   Relink scans run off-thread in the existing progress cards, stackable
-  with Sync/Doctor, in the bottom-anchored area. As long as at least one
-  progress card is visible, the card block **replaces** the full Issues
-  block; the heading "ISSUES" and Import errors / Missing files are neither
-  visible nor do they occupy extra space. Fully inactive progress cards
-  likewise occupy no space; only active or still-fading-out cards take part in
+  with Sync/Doctor, in the bottom-anchored area. The card block sits
+  **below** the Issues block and the two are visible at the same time: the
+  heading "ISSUES" and its rows — Import errors, Missing files, Library
+  Doctor — stay where they are while a job runs. Fully inactive progress cards
+  occupy no space; only active or still-fading-out cards take part in
   the layout. The bottom edge of the visible card block sits directly
   above the player bar, while all free sidebar height stays above the
-  block. After the last card has fully faded out, the Issues block
-  returns. Persistent device status remains visible independently of
+  block. Persistent device status remains visible independently of
   this.
+  *Amended 2026-08-07.* Until then a visible card **replaced** the whole
+  Issues block. That made starting any scan take the `ISSUES` section away,
+  including the Library Doctor's own result row — so the entry that says
+  "there is something to review here" was hidden by the job that produced it,
+  and `Missing files` disappeared for the duration of an unrelated scan. The
+  design shows both at once; coexistence is the rule now. Do not restore the
+  replacement.
   Card: spinner + title + % on the right (tabular) + 3px bar +
   ellipsized detail line. Clicking the card → Missing files; the visible
   Cancel button checks for abort before each audio file. Modal dialogs
@@ -3567,14 +3573,29 @@ means deterministic and high-confidence, never „without review".
   remain muted scan facts. Remote categories disappear completely while the
   remote switch is off.
 
-- **DOC-2c** [active] [gtk] — **A running scan shows the same two blocks,
-  counting up in the tense that is true.** During the job the Doctor shows
-  "Results found so far" with applied and decision blocks updating after each
-  completed track, all actions insensitive, and the locked-controls reason.
-  The applied block says "N fixes to apply" and keeps Undo disabled until the
-  quiet write finishes; only then does it use applied wording and the write
-  report's actual counts. Intermediate state is never persisted or
-  applicable. Cancel or error restores the last completed result.
+- **DOC-2c** [active] [gtk] — **Running and finished are two different
+  pages.** While a job runs the Doctor page shows the job title, the
+  „N/M tracks" line, a progress bar, at most the two live counters, and Cancel
+  as its only button. No „Scan again", no „Review", no „Undo", no
+  checked/skipped footer, no „results are kept" — every one of those describes
+  a scan that has ended. The counters are stated as forecasts
+  („N will be fixed quietly", „N waiting for you"), because the quiet write
+  starts when the scan completes, and a counter that would read zero is not
+  shown at all. The result page appears only once the quiet write has finished,
+  so the applied block never has to promise a past tense it has not earned.
+  Intermediate state is never persisted or applicable; cancel or error restores
+  the last completed result and discards the partial one. The locked-controls
+  reason is a tooltip on the control it disables, never a line of content.
+  *Amended 2026-08-07: this replaces "the same two blocks, counting up" — a
+  page that said "Results Found So Far", "27 checked · 0 skipped", "Scan again"
+  and "2 fixes to apply" at 1 % progress, i.e. in-progress and final vocabulary
+  at once.* *Tests:*
+  `doc_2c_the_running_page_offers_cancel_and_nothing_else`,
+  `doc_2c_a_zero_counter_is_not_rendered`,
+  `doc_2c_the_quiet_write_forecasts_nothing`,
+  `doc_2c_a_running_scan_shows_progress_and_no_result_vocabulary`,
+  `doc_2c_the_running_page_counters_are_forecasts_from_the_live_summary`,
+  `doc_2c_progress_fraction_survives_an_unknown_total`.
 
 - **DOC-3a** [active] [core] — **Review decides per field, and everything
   reviewable starts selected.** Every concrete track/field change has its own
@@ -3659,6 +3680,12 @@ means deterministic and high-confidence, never „without review".
   counts changes because that is what review decides. Completion names
   updated tracks and collected errors once, never per file. The remote toggle
   and selection remain locked during a write.
+  One job is one card, and its label stays readable: the title keeps a
+  legible minimum width and the detail line absorbs any shortfall, rather than
+  the title truncating to a few characters and making two different jobs look
+  like duplicates of each other. *Tests:*
+  `doc_5c_the_card_label_stays_whole_at_sidebar_width`,
+  `doc_5c_progress_uses_tracks_as_the_primary_currency`.
 
 - **DOC-5d** [active] [gtk] — **Result and app stay honestly current
   after writes.** After Apply or Revert, track list, Browse Bar,
@@ -3772,13 +3799,50 @@ means deterministic and high-confidence, never „without review".
   action. *Tests:* `doc_8c_start_page_carries_scope_remote_run_and_the_only_revert`,
   `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`.
 
-- **DOC-9a** [active] [gtk] — **The summary has no zero-count block.** The
-  applied, review, and conflict blocks follow DOC-2b's order and use written
-  tag changes as their shared unit, including album-level proposals expanded
-  over every affected track. *Tests:*
+- **DOC-9a** [active] [gtk] — **Three cards, no zero anywhere, and a
+  fixed order of emphasis.** The applied, review, and conflict blocks follow
+  DOC-2b's order and use written tag changes as their shared unit, including
+  album-level proposals expanded over every affected track.
+  **Nothing that counts zero is rendered:** not a detail line, not a category
+  line, not a block; all three empty is the "Nothing to fix" page, not a page
+  of zeros, and the empty state's own sentence drops its skipped clause at
+  zero.
+  **Each block is a card, not a paragraph:** a 20px leading icon aligned to the
+  first line, the heading, the muted detail lines, and the action inline at the
+  trailing edge, sized to its content — never a full-width button under the
+  text. The review card is the only one that carries emphasis (accent hairline,
+  accent icon, primary button); the applied card is a plain surface with `Undo`
+  as its only control; the conflicts card is the quietest thing on the page — a
+  dashed outline, no fill, a muted icon and no button at all, because it is a
+  pointer to the end of the review list.
+  **The column is flush left**, capped at 700px, and starts near the top of the
+  content area. Nothing on this page is centred.
+  **`Undo` is live exactly when there is something to undo:** after the quiet
+  write has run and while its cleanup is still on record. A quiet write that
+  failed or never ran renders no applied card at all, and a completed revert
+  takes the card away again.
+  **Every number describes this scan:** counts come from the stored scan, and
+  the muted facts line under the title takes the scope and the network flag from
+  that scan's own options rather than from the current controls. *Tests:*
   `doc_9a_summary_renders_three_blocks_and_never_a_zero_row`,
   `doc_9a_summary_omits_the_conflicts_block_without_conflicts`,
-  `doc_9a_every_visible_count_is_a_written_change_count`.
+  `doc_9a_every_visible_count_is_a_written_change_count`,
+  `doc_9a_a_scan_with_nothing_to_show_is_the_empty_state`,
+  `doc_9a_a_detail_line_that_would_read_zero_is_not_emitted`,
+  `doc_9a_review_lines_only_exist_for_classes_with_findings`,
+  `doc_9a_a_failed_quiet_write_claims_nothing`,
+  `doc_9a_the_applied_block_reports_the_write_not_the_plan`,
+  `doc_9a_scan_facts_describe_the_scan_not_the_controls`,
+  `doc_9a_scan_facts_stay_silent_about_zero_skipped_tracks`,
+  `doc_9a_singular_forms_go_through_ngettext`,
+  `doc_9a_the_action_sits_inline_at_the_trailing_edge_top_aligned`,
+  `doc_9a_the_conflicts_card_is_the_quietest_and_carries_no_button`,
+  `doc_9a_only_the_review_card_carries_the_accent_emphasis`,
+  `doc_9a_the_result_page_shows_three_cards_with_the_conflicts_card_quietest`,
+  `doc_9a_the_result_column_is_flush_left_and_capped`,
+  `doc_9a_a_clean_library_gets_the_empty_state_not_three_empty_blocks`,
+  `doc_9a_undo_is_dead_until_there_is_something_to_undo`,
+  `doc_9a_the_conflict_count_is_a_property_of_the_scanned_scope`.
 
 - **DOC-9b** [active] [gtk] — **The review list is grouped by album.** Rows
   appear in scope order under one header per album carrying a group checkbox,
