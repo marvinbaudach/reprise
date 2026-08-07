@@ -3944,6 +3944,17 @@ means deterministic and high-confidence, never „without review".
   database-backed places fall back to the remembered Music root. Back/Forward
   history, utility overlays, and raw widget focus remain process-local.
 
+- **BROWSE-13** [active] [gtk] — **A track-list cover is its album link.**
+  When the currently bound track has a nonblank album, its cover exposes the
+  shared link hover, pointer cursor, Link role, album-named accessible label,
+  keyboard focus, and Enter activation; a plain primary click opens that
+  track's album through the same central navigation intent as every other
+  album link. Control-click and Shift-click remain row-selection gestures and
+  are neither claimed nor activated by the link. A row without an unambiguous
+  album target exposes its cover as an image, with none of the link affordance
+  or activation. Rebinding or unbinding a recycled cell clears the previous
+  target. The unchanged context-menu route continues to follow CTX-4.
+
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
   existing directory represented by the live track paths of that album, but

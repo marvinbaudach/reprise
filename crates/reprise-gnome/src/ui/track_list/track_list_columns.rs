@@ -134,6 +134,81 @@ pub(super) fn apply_now_playing_item(
     playing
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CoverAlbumTarget {
+    track_id: i64,
+    album: String,
+    album_artist: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CoverLinkPresentation {
+    accessible_label: String,
+    target: Option<CoverAlbumTarget>,
+}
+
+fn cover_link_presentation(item: &QueueItemMetadata) -> CoverLinkPresentation {
+    let Some(track) = super::queue_item_presentation::track(item) else {
+        return CoverLinkPresentation {
+            accessible_label: super::queue_item_presentation::title(item).to_owned(),
+            target: None,
+        };
+    };
+    if track.album.trim().is_empty() {
+        return CoverLinkPresentation {
+            accessible_label: track.title.clone(),
+            target: None,
+        };
+    }
+
+    CoverLinkPresentation {
+        accessible_label: crate::ui::strings::formatted(
+            crate::ui::strings::GO_TO_ALBUM_NAMED,
+            &[("album", &track.album)],
+        ),
+        target: Some(CoverAlbumTarget {
+            track_id: track.id,
+            album: track.album.clone(),
+            album_artist: track.album_artist.clone(),
+        }),
+    }
+}
+
+fn arm_cover_album_link(cover: &TrackCover) -> crate::ui::link_activation::ActivationSlot {
+    let slot = Rc::new(RefCell::new(None));
+    crate::ui::link_activation::arm_slot(cover, "", &slot);
+    clear_cover_album_link(cover, &slot, "");
+    slot
+}
+
+fn clear_cover_album_link(
+    cover: &TrackCover,
+    slot: &crate::ui::link_activation::ActivationSlot,
+    accessible_label: &str,
+) {
+    *slot.borrow_mut() = None;
+    crate::ui::link_activation::unpresent(cover, accessible_label, gtk4::AccessibleRole::Img);
+}
+
+fn bind_cover_album_link(
+    cover: &TrackCover,
+    slot: &crate::ui::link_activation::ActivationSlot,
+    presentation: CoverLinkPresentation,
+    activate: Rc<dyn Fn(CoverAlbumTarget)>,
+) {
+    let CoverLinkPresentation {
+        accessible_label,
+        target,
+    } = presentation;
+    let Some(target) = target else {
+        clear_cover_album_link(cover, slot, &accessible_label);
+        return;
+    };
+
+    *slot.borrow_mut() = Some(Rc::new(move || activate(target.clone())));
+    crate::ui::link_activation::present(cover, &accessible_label);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum RatingRefresh {
     Row,
@@ -322,13 +397,19 @@ pub(in crate::ui) fn append_cover_column(
     shared: &Rc<Shared>,
     loader: &Rc<CoverLoader>,
 ) -> gtk4::ColumnViewColumn {
-    let generations: Rc<RefCell<HashMap<usize, Rc<Cell<u64>>>>> =
+    #[derive(Clone)]
+    struct CoverCellState {
+        generation: Rc<Cell<u64>>,
+        album_link: crate::ui::link_activation::ActivationSlot,
+    }
+
+    let cell_states: Rc<RefCell<HashMap<usize, CoverCellState>>> =
         Rc::new(RefCell::new(HashMap::new()));
 
     let factory = gtk4::SignalListItemFactory::new();
 
     {
-        let generations = generations.clone();
+        let cell_states = cell_states.clone();
         let shared = shared.clone();
         let column_view = column_view.clone();
         factory.connect_setup(move |_, obj| {
@@ -339,18 +420,23 @@ pub(in crate::ui) fn append_cover_column(
             let cover = TrackCover::new();
             track_list_row_interaction::expand_to_cell(&cover);
             cover.set_placeholder();
+            let album_link = arm_cover_album_link(&cover);
             track_list_context_menu::wire_context_menu_gesture(&cover, item, &shared, &column_view);
             track_list_dnd::wire_row_dnd(&cover, item, &shared);
-            generations
-                .borrow_mut()
-                .insert(item.as_ptr() as usize, Rc::new(Cell::new(0u64)));
+            cell_states.borrow_mut().insert(
+                item.as_ptr() as usize,
+                CoverCellState {
+                    generation: Rc::new(Cell::new(0u64)),
+                    album_link,
+                },
+            );
             item.set_child(Some(&cover));
             list_density::inherit(&column_view, &cover);
         });
     }
 
     {
-        let generations = generations.clone();
+        let cell_states = cell_states.clone();
         let loader = loader.clone();
         let shared = shared.clone();
         factory.connect_bind(move |_, obj| {
@@ -369,17 +455,28 @@ pub(in crate::ui) fn append_cover_column(
                 tracing::warn!("cover column bind: item is not typed queue metadata");
                 return;
             };
-            let metadata = boxed.borrow::<QueueItemMetadata>();
-            let accessible_label = super::queue_item_presentation::track(&metadata).map_or_else(
-                || super::queue_item_presentation::title(&metadata).to_owned(),
-                |track| {
-                    crate::ui::strings::formatted(
-                        crate::ui::strings::GO_TO_ALBUM_NAMED,
-                        &[("album", &track.album)],
-                    )
-                },
+            let metadata = boxed.borrow::<QueueItemMetadata>().clone();
+            let key = item.as_ptr() as usize;
+            let cell_state = cell_states
+                .borrow_mut()
+                .entry(key)
+                .or_insert_with(|| CoverCellState {
+                    generation: Rc::new(Cell::new(0u64)),
+                    album_link: arm_cover_album_link(&cover),
+                })
+                .clone();
+            let shared_for_link = shared.clone();
+            bind_cover_album_link(
+                &cover,
+                &cell_state.album_link,
+                cover_link_presentation(&metadata),
+                Rc::new(move |target| {
+                    let callback = shared_for_link.on_go_to_album.borrow().clone();
+                    if let Some(callback) = callback {
+                        callback(target.track_id, target.album, target.album_artist);
+                    }
+                }),
             );
-            cover.update_property(&[gtk4::accessible::Property::Label(&accessible_label)]);
             apply_now_playing_item(&cover, &metadata, &shared, true);
             let track_id = super::queue_item_presentation::rating_track_id(&metadata);
             now_playing_marker::register_cell(&shared, item, {
@@ -392,12 +489,7 @@ pub(in crate::ui) fn append_cover_column(
                 }
             });
 
-            let key = item.as_ptr() as usize;
-            let generation = generations
-                .borrow_mut()
-                .entry(key)
-                .or_insert_with(|| Rc::new(Cell::new(0u64)))
-                .clone();
+            let generation = cell_state.generation;
             // Bump before starting the load: this is the token the async
             // result must still match when it lands (see the doc comment
             // above) — a stale-in-flight load for whatever track this cell
@@ -421,21 +513,33 @@ pub(in crate::ui) fn append_cover_column(
     {
         // Drop this cell's marker entry on unbind so the registry stays bounded
         // to visible cells (see `now_playing_marker::unregister_cell`).
+        let cell_states = cell_states.clone();
         let shared = shared.clone();
         factory.connect_unbind(move |_, obj| {
             if let Some(item) = obj.downcast_ref::<gtk4::ListItem>() {
+                let album_link = cell_states
+                    .borrow()
+                    .get(&(item.as_ptr() as usize))
+                    .map(|state| state.album_link.clone());
+                if let (Some(cover), Some(album_link)) = (
+                    item.child()
+                        .and_then(|child| child.downcast::<TrackCover>().ok()),
+                    album_link,
+                ) {
+                    clear_cover_album_link(&cover, &album_link, "");
+                }
                 now_playing_marker::unregister_cell(&shared, item);
             }
         });
     }
 
     {
-        let generations = generations.clone();
+        let cell_states = cell_states.clone();
         factory.connect_teardown(move |_, obj| {
             let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
                 return;
             };
-            generations.borrow_mut().remove(&(item.as_ptr() as usize));
+            cell_states.borrow_mut().remove(&(item.as_ptr() as usize));
         });
     }
 
