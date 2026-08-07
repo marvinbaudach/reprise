@@ -344,10 +344,12 @@ pub fn to_download(count: usize) -> String {
     formatted(N_!("{count} to download"), &[("count", &count.to_string())])
 }
 
-/// `MTP-22`'s exact vocabulary for one category's `CategoryReading` — used
-/// both by the Next synchronization panel's per-category row and (via
-/// [`balance_text`]) by the sidebar card's full-balance tooltip, so the two
-/// surfaces never drift into different wording for the same numbers.
+/// `MTP-22`'s exact vocabulary for one category's `CategoryReading` — used by
+/// the "Up next" card's per-category row and, through the shared
+/// [`detailed_balance_parts`], by the sidebar card's full-balance tooltip, so
+/// the two surfaces never drift into different wording for the same numbers.
+/// (The device page's own one-line summary is the shorter [`balance_text`],
+/// built from `plan_balance_parts`; the split is deliberate.)
 pub fn category_reading_text(reading: &reprise_core::device_sync::CategoryReading) -> String {
     use reprise_core::device_sync::CategoryReading;
     match reading {
@@ -662,9 +664,41 @@ pub(super) fn sync_history_state(
     }
 }
 
+/// The running row's subtitle when no live progress snapshot exists yet.
+///
+/// Deliberately *not* `sync_history_outcome(Running)`: that word follows a date
+/// inside "{when} · {outcome}" and is lowercase in languages that want it so
+/// ("läuft"). Here it stands alone on its own line, where a lowercase fragment
+/// reads as a typo — so it gets its own message with its own context.
 pub fn sync_history_running() -> String {
-    sync_history_outcome(reprise_core::device_sync::sync_log::RunOutcome::Running)
+    history_outcome("device sync history standalone", "Running")
 }
+
+pub const CHANGE_CATEGORY: &str = N_!("Change {category}");
+pub const CHANGE_CATEGORY_CAP: &str = N_!("{category} size limit");
+
+/// Accessible name for a category row's "Change…" menu, which is visually
+/// tied to its row but reads as one of three identical buttons in the tree.
+pub fn change_category_label(kind: reprise_core::device_sync::SyncTargetKind) -> String {
+    formatted(CHANGE_CATEGORY, &[("category", category_name(kind))])
+}
+
+/// Accessible name for a category row's size-limit menu, whose visible label
+/// is the value rather than what it controls.
+pub fn change_cap_label(kind: reprise_core::device_sync::SyncTargetKind) -> String {
+    formatted(CHANGE_CATEGORY_CAP, &[("category", category_name(kind))])
+}
+
+/// `MTP-26`: the "Up next" heading row's status, one line per contents state.
+/// Rendered by `device_sync_verification_copy`, which stays display-free.
+pub const CONTENTS_NEVER_VERIFIED: &str = N_!("Device contents never verified");
+pub const CONTENTS_SCAN_INVITATION: &str =
+    N_!("Scan the device to see what's already there before syncing.");
+pub const CONTENTS_VERIFYING: &str = N_!("Verifying device contents…");
+pub const CONTENTS_VERIFYING_DETAIL: &str =
+    N_!("Reading storage over MTP — this can take a moment.");
+pub const CONTENTS_VERIFIED: &str = N_!("Device contents verified");
+pub const CONTENTS_NOT_VERIFIABLE: &str = N_!("Could not verify device contents");
 
 pub fn sync_history_running_since(time: &str) -> String {
     formatted(RUNNING_SINCE, &[("time", time)])

@@ -165,8 +165,13 @@ fn a_live_transfer_is_the_first_history_row_with_its_final_planned_count() {
     });
 }
 
+/// The error→outcome mapping only. It calls `record_rejected_start` directly,
+/// so it does *not* prove that any particular early return reaches it — see
+/// `start_transfer_now_closes_the_open_run_when_the_device_is_gone` for the
+/// call-site half, and the insufficient-space and transcode-probe tests for the
+/// two rejections that can only be discovered after the log is already open.
 #[test]
-fn every_transfer_start_rejection_closes_the_run_it_was_given() {
+fn rejecting_a_start_maps_every_error_to_a_closed_run() {
     run(async {
         let (_temp, conn) = fixture();
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
@@ -221,6 +226,48 @@ fn every_transfer_start_rejection_closes_the_run_it_was_given() {
                 "{case} must not leave a running row"
             );
         }
+    });
+}
+
+/// The call-site half. `start_transfer_now` is entered with an already-open
+/// run whenever a preparation download finishes, and by then the device may be
+/// gone — the exact window this task opened by moving `RunLog::open` earlier.
+/// Asserting on the recorded outcome, not on "it did not panic".
+#[test]
+fn start_transfer_now_closes_the_open_run_when_the_device_is_gone() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        let log = RunLog::open(
+            &runtime,
+            &reprise_core::device_sync::sync_log::RunStart {
+                device_serial: "a".into(),
+                device_name: "Phone a".into(),
+                transfer_profile: "opus_160".into(),
+                started_at: 5_000,
+                planned: 0,
+            },
+            true,
+        );
+        // "b" is not connected — the same shape as a phone unplugged during
+        // its preparation download.
+        let error = runtime
+            .start_transfer_now("b", SyncInitiator::Listener, log)
+            .expect_err("an absent device must not start a transfer");
+        assert!(matches!(error, SyncStartError::UnknownDevice));
+
+        let latest = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            latest.outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Cancelled,
+            "the run opened before preparation must be closed, not abandoned"
+        );
+        assert!(latest.finished_at.is_some(), "no dangling running row");
     });
 }
 

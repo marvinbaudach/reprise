@@ -66,7 +66,14 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
         &super::device_sync_strings::text(super::device_sync_strings::RENAME_DEVICE),
     )]);
     if let Some(name_label) = device_name.child().and_downcast::<gtk4::Label>() {
-        elide(&name_label);
+        // Ellipsize for `NPP-1`, but do NOT arm the ellipsis tooltip here: the
+        // inner label's tooltip wins over the button's, and the button's is the
+        // one carrying "Rename device" — or, for an unrememberable phone, the
+        // explanation of why it cannot be renamed. Arming both would hide that
+        // behind the plain full name on exactly the long names that ellipsize.
+        // `DeviceSyncPage::update` puts the full name into the button tooltip
+        // instead, so nothing is lost.
+        name_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     }
     let connection = label("MTP connected", "caption");
     connection.add_css_class("pill");

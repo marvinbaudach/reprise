@@ -75,9 +75,12 @@ fn descriptor_gaining_a_usb_serial_becomes_reconnectable_without_losing_mtp_acce
     assert!(identified.reconnectable);
 }
 
+/// A transport URI is a placeholder because it starts with `mtp:`, not because
+/// the function compares it against this connection's root — it never sees one.
+/// The name says so, so a later reader does not go looking for a rule that is
+/// not there.
 #[test]
-fn placeholder_names_are_trimmed_case_insensitive_and_transport_aware() {
-    let root = "mtp://Google_Pixel_8/";
+fn placeholder_names_are_trimmed_case_insensitive_and_reject_transport_uris() {
     for name in [
         "",
         "   ",
@@ -86,11 +89,48 @@ fn placeholder_names_are_trimmed_case_insensitive_and_transport_aware() {
         "unknown",
         "Unknown Device",
         "mtp: Pixel",
-        root,
+        "mtp://Google_Pixel_8/",
     ] {
         assert!(is_placeholder_name(name), "{name:?} must be a placeholder");
     }
-    assert!(!is_placeholder_name("Pixel 8"));
+    // Equality, never substring: a real name that merely contains or begins
+    // with a placeholder word must survive.
+    for name in ["Pixel 8", "MTPlayer", "Unknown Device Pro", "mtparty"] {
+        assert!(
+            !is_placeholder_name(name),
+            "{name:?} is a real name, not a placeholder"
+        );
+    }
+}
+
+#[test]
+fn a_manufacturer_already_named_in_the_product_is_not_repeated() {
+    let root = "mtp://x/";
+    // Whole word: "Samsung" is already there.
+    assert_eq!(
+        project_descriptor(
+            root,
+            None,
+            &facts(Some("s"), Some("Samsung"), Some("Samsung Galaxy S24")),
+            "mtp",
+        )
+        .unwrap()
+        .name,
+        "Samsung Galaxy S24"
+    );
+    // Substring only: "ASUS" hides inside "Pegasus" and must not suppress the
+    // manufacturer the way a bare `contains` would.
+    assert_eq!(
+        project_descriptor(
+            root,
+            None,
+            &facts(Some("s"), Some("ASUS"), Some("Pegasus 5")),
+            "mtp",
+        )
+        .unwrap()
+        .name,
+        "ASUS Pegasus 5"
+    );
 }
 
 #[test]

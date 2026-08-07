@@ -160,3 +160,67 @@ fn mtp_20_a_removal_reads_as_removed_rather_than_as_an_error() {
 
     assert!(line.starts_with("Removed"), "{line}");
 }
+
+/// A progress tick must move the numbers, not the widgets. Rebuilding the list
+/// on every `notify()` would collapse an expanded row and throw keyboard focus
+/// out of it several times a second while a sync runs — the reason `sync` keeps
+/// a signature at all.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_20_a_progress_tick_updates_the_live_row_instead_of_rebuilding_the_list() {
+    gtk4::init().expect("GTK test display");
+    let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let state = HistoryState::default();
+    let runs = vec![(run(RunOutcome::Running), Vec::new())];
+
+    let first = RunningProgress {
+        title: "Step 1 of 2 · 17 of 60 downloaded".into(),
+        fraction: 0.28,
+    };
+    sync(&container, &state, &runs, true, Some(&first));
+    let card = container.first_child().expect("history card");
+    let row_before = state
+        .live
+        .borrow()
+        .as_ref()
+        .map(|live| live.row.clone())
+        .expect("a running run must produce a live row");
+    assert_eq!(row_before.subtitle().as_str(), first.title);
+
+    let later = RunningProgress {
+        title: "Step 2 of 2 · 41 of 60 copied".into(),
+        fraction: 0.79,
+    };
+    sync(&container, &state, &runs, true, Some(&later));
+
+    assert_eq!(
+        container.first_child().as_ref(),
+        Some(&card),
+        "the card must survive a tick that only moved the percentage"
+    );
+    let row_after = state
+        .live
+        .borrow()
+        .as_ref()
+        .map(|live| live.row.clone())
+        .expect("the live row must still be tracked");
+    assert_eq!(row_after, row_before, "the row object must be the same one");
+    assert_eq!(row_after.subtitle().as_str(), later.title);
+    assert_eq!(
+        state
+            .live
+            .borrow()
+            .as_ref()
+            .map(|live| live.percent.label().to_string()),
+        Some("79 %".to_string())
+    );
+
+    // A run that actually ended is a different list, and must be rebuilt.
+    let finished = vec![(run(RunOutcome::Completed), Vec::new())];
+    sync(&container, &state, &finished, true, None);
+    assert_ne!(
+        container.first_child().as_ref(),
+        Some(&card),
+        "a changed run set must rebuild the card"
+    );
+}

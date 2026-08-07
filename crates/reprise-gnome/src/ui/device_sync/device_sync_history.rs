@@ -31,24 +31,106 @@ struct RunRowCopy {
     percent: Option<u64>,
 }
 
-/// Replaces the card inside `container` with one built from `runs`.
-pub(super) fn fill(
+/// Everything about a run that changes what its row *says*. A progress tick
+/// moves none of it, which is the whole point: see [`sync`].
+#[derive(Clone, PartialEq)]
+struct RunKey {
+    id: i64,
+    started_at: i64,
+    outcome: RunOutcome,
+    planned: u32,
+    copied: u32,
+    skipped: u32,
+    deleted: u32,
+    failed: u32,
+    detail: Option<String>,
+    deviations: usize,
+}
+
+/// The one row whose numbers move while a sync runs, kept so a progress tick
+/// can write into it instead of rebuilding the list around it.
+struct LiveRow {
+    row: adw::ExpanderRow,
+    percent: gtk4::Label,
+}
+
+/// What [`sync`] remembers between calls so it can tell a changed run set from
+/// a moved percentage. Owned by the page, one per device surface.
+#[derive(Default)]
+pub(super) struct HistoryState {
+    signature: std::cell::RefCell<Option<(bool, bool, Vec<RunKey>)>>,
+    live: std::cell::RefCell<Option<LiveRow>>,
+}
+
+/// Brings the card inside `container` up to date.
+///
+/// `DeviceSyncPage::update` runs on every `runtime.notify()`, which during a
+/// transfer means several times a second. Rebuilding the list that often would
+/// destroy and recreate every `ExpanderRow`, so an expanded row would collapse
+/// and keyboard focus would jump out of the list on each progress sample. The
+/// structure is therefore rebuilt only when the runs themselves change; a tick
+/// that moves nothing but the live row's percentage writes into the row that is
+/// already on screen.
+pub(super) fn sync(
     container: &gtk4::Box,
+    state: &HistoryState,
     runs: &[RunWithDeviations],
     rememberable: bool,
     running_progress: Option<&RunningProgress>,
 ) {
+    let signature = (
+        rememberable,
+        running_progress.is_some(),
+        runs.iter()
+            .take(SHOWN_RUNS)
+            .map(run_key)
+            .collect::<Vec<_>>(),
+    );
+    let unchanged = state
+        .signature
+        .borrow()
+        .as_ref()
+        .is_some_and(|previous| previous == &signature);
+    if unchanged {
+        if let (Some(live), Some(progress)) = (state.live.borrow().as_ref(), running_progress) {
+            live.row.set_subtitle(&progress.title);
+            live.percent.set_label(&percent_label(progress.fraction));
+        }
+        return;
+    }
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
-    container.append(&build(runs, rememberable, running_progress));
+    let (card, live) = build(runs, rememberable, running_progress);
+    container.append(&card);
+    *state.live.borrow_mut() = live;
+    *state.signature.borrow_mut() = Some(signature);
+}
+
+fn run_key((run, deviations): &RunWithDeviations) -> RunKey {
+    RunKey {
+        id: run.id,
+        started_at: run.started_at,
+        outcome: run.outcome,
+        planned: run.planned,
+        copied: run.copied,
+        skipped: run.skipped,
+        deleted: run.deleted,
+        failed: run.failed,
+        detail: run.detail.clone(),
+        deviations: deviations.len(),
+    }
+}
+
+fn percent_label(fraction: f64) -> String {
+    percent_label_from((fraction.clamp(0.0, 1.0) * 100.0).round() as u64)
 }
 
 fn build(
     runs: &[RunWithDeviations],
     rememberable: bool,
     running_progress: Option<&RunningProgress>,
-) -> gtk4::Box {
+) -> (gtk4::Box, Option<LiveRow>) {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 9);
     content.add_css_class("reprise-device-history");
 
@@ -99,16 +181,16 @@ fn build(
             .build();
         empty.add_css_class("dim-label");
         content.append(&empty);
-        return content;
+        return (content, None);
     }
 
+    let mut live_row = None;
     let list = gtk4::ListBox::new();
     list.set_selection_mode(gtk4::SelectionMode::None);
     list.add_css_class("boxed-list");
     for (run, found) in runs.iter().take(SHOWN_RUNS) {
-        let live = (run.outcome == RunOutcome::Running)
-            .then_some(running_progress)
-            .flatten();
+        let running = run.outcome == RunOutcome::Running;
+        let live = running.then_some(running_progress).flatten();
         let copy = run_row_copy(run, live);
         let row = adw::ExpanderRow::builder()
             .title(copy.headline)
@@ -119,9 +201,15 @@ fn build(
         icon.add_css_class(state.colour);
         row.add_prefix(&icon);
         if let Some(percent) = copy.percent {
-            let percent = gtk4::Label::new(Some(&format!("{percent} %")));
+            let percent = gtk4::Label::new(Some(&percent_label_from(percent)));
             percent.add_css_class("dim-label");
             row.add_suffix(&percent);
+            if running {
+                live_row = Some(LiveRow {
+                    row: row.clone(),
+                    percent,
+                });
+            }
         }
         if found.is_empty() {
             row.set_enable_expansion(false);
@@ -137,7 +225,11 @@ fn build(
         list.append(&row);
     }
     content.append(&list);
-    content
+    (content, live_row)
+}
+
+fn percent_label_from(percent: u64) -> String {
+    format!("{percent} %")
 }
 
 fn history_warning_copy(rememberable: bool) -> Option<(String, String)> {

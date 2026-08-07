@@ -11,24 +11,24 @@ pub(super) fn verification_copy(
 ) -> (String, String, bool) {
     match state {
         DeviceContentsState::NeverVerified => (
-            "Device contents never verified".to_string(),
-            "Scan the device to see what's already there before syncing.".to_string(),
+            device_sync_strings::text(device_sync_strings::CONTENTS_NEVER_VERIFIED),
+            device_sync_strings::text(device_sync_strings::CONTENTS_SCAN_INVITATION),
             true,
         ),
         DeviceContentsState::Verifying => (
-            "Verifying device contents…".to_string(),
-            "Reading storage over MTP — this can take a moment.".to_string(),
+            device_sync_strings::text(device_sync_strings::CONTENTS_VERIFYING),
+            device_sync_strings::text(device_sync_strings::CONTENTS_VERIFYING_DETAIL),
             false,
         ),
         DeviceContentsState::Verified => {
             let title = last_verified_at.map_or_else(
-                || "Device contents verified".to_string(),
+                || device_sync_strings::text(device_sync_strings::CONTENTS_VERIFIED),
                 |verified_at| device_sync_strings::verified_ago(now, verified_at),
             );
             (title, String::new(), true)
         }
         DeviceContentsState::Failed(error) => (
-            "Could not verify device contents".to_string(),
+            device_sync_strings::text(device_sync_strings::CONTENTS_NOT_VERIFIABLE),
             error.clone(),
             true,
         ),

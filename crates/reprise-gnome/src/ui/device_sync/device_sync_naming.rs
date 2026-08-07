@@ -22,8 +22,15 @@ impl DeviceSyncRuntime {
             return Err("this device has no stable identity to rename".into());
         }
 
+        // A placeholder counts as "no name of my own", exactly like an empty
+        // field. This is what makes `adopt_detected_device_name`'s refresh safe:
+        // because a placeholder can never be stored deliberately, a stored one
+        // can only have come from seeding the row at creation, so adopting a
+        // better detected name over it cannot discard a user's choice.
         let local_name = local_name.trim();
-        let name = if local_name.is_empty() {
+        let keeps_detected_name = local_name.is_empty()
+            || reprise_platform_linux::device_sync::is_placeholder_name(local_name);
+        let name = if keeps_detected_name {
             self.device_states
                 .borrow()
                 .iter()

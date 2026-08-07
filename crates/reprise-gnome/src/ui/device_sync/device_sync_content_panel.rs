@@ -429,9 +429,14 @@ fn build_category_row(
     let change_button = gtk4::MenuButton::new();
     change_button.set_label(&device_sync_strings::text(device_sync_strings::CHANGE));
     change_button.set_popover(Some(&change_popover));
+    // Three rows produce three buttons all labelled "Change…"; only reading
+    // order ties one to its category, which the accessibility tree does not
+    // convey. Name each after the row it belongs to.
+    change_button.update_property(&[gtk4::accessible::Property::Label(
+        &device_sync_strings::change_category_label(kind),
+    )]);
 
     let rule = detail("");
-    rule.set_hexpand(true);
 
     let cap_spin = gtk4::SpinButton::with_range(0.0, MAX_CAP_GIB, 1.0);
     cap_spin.set_digits(0);
@@ -476,8 +481,17 @@ fn build_category_row(
     let cap_button = gtk4::MenuButton::new();
     cap_button.add_css_class("flat");
     cap_button.set_popover(Some(&cap_popover));
+    // Its visible label is the cap phrase itself ("no size limit"), which says
+    // the value but not what it belongs to or that it can be edited.
+    cap_button.update_property(&[gtk4::accessible::Property::Label(
+        &device_sync_strings::change_cap_label(kind),
+    )]);
 
+    // The separator belongs to the sentence, so nothing between it and the cap
+    // phrase may expand: giving `rule` the extra width pushed the "·" across
+    // the row and left it floating on its own, reading as a stray dot.
     let rule_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    rule_row.set_halign(gtk4::Align::Start);
     rule_row.append(&rule);
     rule_row.append(&gtk4::Label::new(Some("·")));
     rule_row.append(&cap_button);

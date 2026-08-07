@@ -82,6 +82,13 @@ pub(super) fn load_device_memory(
     Ok((settings, targets))
 }
 
+/// Refreshes a name that was only ever seeded, never chosen.
+///
+/// Safe to write because `rename_remembered_device` refuses to *store* a
+/// placeholder — it treats one like an empty field and falls back to the
+/// detected name. A stored placeholder therefore always came from
+/// `load_or_create_settings` seeding the row from a descriptor that had nothing
+/// better at the time, and replacing it cannot discard anyone's choice.
 pub(super) fn adopt_detected_device_name(
     db: &Db,
     settings: &mut DeviceSettings,

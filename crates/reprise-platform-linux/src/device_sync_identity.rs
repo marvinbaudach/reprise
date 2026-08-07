@@ -39,7 +39,7 @@ pub fn project_descriptor(
             .clone()
             .unwrap_or_else(|| root_uri.to_string()),
         persistent_id: persistent_id.clone(),
-        name: detected_device_name(root_uri, mount_name, facts),
+        name: detected_device_name(mount_name, facts),
         root_uri: root_uri.to_string(),
         reconnectable: persistent_id.is_some(),
         icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
@@ -84,9 +84,12 @@ pub fn is_placeholder_name(name: &str) -> bool {
         || name.starts_with("mtp:")
 }
 
-fn detected_device_name(root_uri: &str, mount_name: &str, facts: &UsbFacts) -> String {
-    if !is_placeholder_name(mount_name) && !mount_name.trim().eq_ignore_ascii_case(root_uri.trim())
-    {
+fn detected_device_name(mount_name: &str, facts: &UsbFacts) -> String {
+    // No `root_uri` check here: `project_descriptor` has already established
+    // that every URI reaching this point begins with `mtp://`, so a mount name
+    // equal to it is caught by `is_placeholder_name`'s `mtp:` rule. The extra
+    // comparison this replaced could never change the outcome.
+    if !is_placeholder_name(mount_name) {
         return mount_name.trim().to_string();
     }
     if let Some(product) = facts
@@ -103,10 +106,10 @@ fn detected_device_name(root_uri: &str, mount_name: &str, facts: &UsbFacts) -> S
         else {
             return product.to_string();
         };
-        if product
-            .to_ascii_lowercase()
-            .contains(&manufacturer.to_ascii_lowercase())
-        {
+        // Word-boundary, not substring: "ASUS" occurs inside "Pegasus", and a
+        // raw `contains` would drop a legitimate manufacturer prefix on that
+        // coincidence.
+        if mentions_manufacturer(product, manufacturer) {
             return product.to_string();
         }
         return format!("{manufacturer} {product}");
@@ -120,6 +123,17 @@ fn detected_device_name(root_uri: &str, mount_name: &str, facts: &UsbFacts) -> S
             || "MTP device".to_string(),
             |value| format!("{value} device"),
         )
+}
+
+/// Whether `product` already names `manufacturer` as a word of its own, so
+/// "Samsung Galaxy S24" is not prefixed into "Samsung Samsung Galaxy S24"
+/// while "Pegasus 5" still earns its "ASUS" prefix.
+fn mentions_manufacturer(product: &str, manufacturer: &str) -> bool {
+    let manufacturer = manufacturer.to_ascii_lowercase();
+    product
+        .to_ascii_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| word == manufacturer)
 }
 
 /// Finds the USB device represented by a GVfs MTP URI and returns its serial

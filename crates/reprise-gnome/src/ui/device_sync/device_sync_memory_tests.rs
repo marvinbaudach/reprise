@@ -156,3 +156,48 @@ fn a_stored_placeholder_adopts_a_better_detected_name_but_a_custom_name_wins() {
         assert_eq!(runtime.devices()[0].name, "My phone");
     });
 }
+
+/// The refresh in `adopt_detected_device_name` is only safe because a
+/// placeholder can never be *stored* deliberately. Typing one into the rename
+/// dialog therefore means "go back to the detected name", exactly like leaving
+/// the field empty — otherwise a user who called their phone "Unknown" would
+/// have that silently overwritten on the next reconnect.
+#[test]
+fn renaming_a_device_to_a_placeholder_restores_the_detected_name() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let detected = DeviceDescriptor {
+            id: "pixel".into(),
+            persistent_id: Some("pixel".into()),
+            name: "Google Pixel 8".into(),
+            root_uri: "mtp://pixel/".into(),
+            reconnectable: true,
+            icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
+        };
+        let runtime = DeviceSyncRuntime::with_backend(
+            &conn,
+            Rc::new(FakeBackend::new(vec![detected.clone()], 1)),
+        );
+        settle().await;
+
+        for placeholder in ["mtp", "  Unknown Device  ", "MTP", ""] {
+            runtime
+                .rename_remembered_device("pixel", placeholder)
+                .unwrap();
+            assert_eq!(
+                runtime.devices()[0].name,
+                "Google Pixel 8",
+                "{placeholder:?} means 'no name of my own'"
+            );
+        }
+
+        // A real name still wins, and survives a reconnect.
+        runtime
+            .rename_remembered_device("pixel", "My phone")
+            .unwrap();
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(vec![detected], 1)));
+        settle().await;
+        assert_eq!(runtime.devices()[0].name, "My phone");
+    });
+}

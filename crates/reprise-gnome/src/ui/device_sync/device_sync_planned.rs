@@ -28,7 +28,7 @@ pub(in crate::ui::device_sync) use run_log::{now_seconds, RunLog};
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SyncInitiator {
+pub(in crate::ui::device_sync) enum SyncInitiator {
     Automatic,
     Listener,
 }
@@ -531,7 +531,7 @@ impl DeviceSyncRuntime {
     /// `pub(super)` so [`preparation::begin_prepared_sync`]'s async
     /// continuation can call it directly once every preparation download has
     /// been attempted.
-    pub(super) fn start_transfer_now(
+    pub(in crate::ui::device_sync) fn start_transfer_now(
         self: &Rc<Self>,
         device_id: &str,
         initiator: SyncInitiator,
