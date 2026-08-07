@@ -201,6 +201,7 @@ pub(super) fn begin_prepared_sync(
             return;
         };
         device.preparing = true;
+        device.active_initiator = Some(initiator);
         device.preparation_cancel = Some(cancel_flag.clone());
         device.preparation_run = PreparationRunState::Downloading {
             done: 0,
@@ -278,10 +279,26 @@ async fn run_preparation_then_sync(
     // discipline `resume_planned`/auto-start already follow.
     if let Err(error) = runtime.recompute_delta(&device_id) {
         tracing::warn!(%error, "could not refresh the sync plan after preparation downloads");
+        if let Some(device) = runtime
+            .device_states
+            .borrow_mut()
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
+            device.active_initiator = None;
+        }
         return;
     }
     if let Err(error) = runtime.start_transfer_now(&device_id, initiator) {
         tracing::warn!(%error, "could not start synchronization after preparation downloads");
+        if let Some(device) = runtime
+            .device_states
+            .borrow_mut()
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
+            device.active_initiator = None;
+        }
     }
 }
 
@@ -341,6 +358,7 @@ fn finish_preparation(weak: &Weak<DeviceSyncRuntime>, device_id: &str, success: 
             device.prepared_this_run = true;
         } else {
             device.prepared_this_run = false;
+            device.active_initiator = None;
             device.sync_phase = reprise_core::device_sync::PlannedSyncPhase::Idle;
         }
     }

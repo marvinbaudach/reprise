@@ -296,8 +296,9 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
             device.cancellable = None;
             device.planned_cancel = None;
             device.machine = None;
+            device.active_initiator = None;
             if successful {
-                device.resume_planned = false;
+                device.resume_initiator = None;
                 device.sync_error = None;
             }
         }
@@ -379,7 +380,7 @@ impl DeviceSyncRuntime {
         self.start_sync(device_id, SyncInitiator::Automatic)
     }
 
-    fn start_sync(
+    pub(super) fn start_sync(
         self: &Rc<Self>,
         device_id: &str,
         initiator: SyncInitiator,
@@ -539,6 +540,7 @@ impl DeviceSyncRuntime {
             device.machine = Some(machine.clone());
             device.planned_cancel = Some(cancelled.clone());
             device.cancellable = Some(cancellable.clone());
+            device.active_initiator = Some(initiator);
             device.sync_error = None;
             device.mtp_rate.reset();
             let targets = device.targets.clone();

@@ -67,14 +67,18 @@ impl DeviceSyncRuntime {
                 state.scanning = false;
                 state.scan_generation = state.scan_generation.saturating_add(1);
                 if state.machine.is_some() || state.preparing {
-                    state.resume_planned = state.descriptor.reconnectable;
+                    state.resume_initiator = state
+                        .descriptor
+                        .reconnectable
+                        .then_some(state.active_initiator)
+                        .flatten();
                     preparation::cancel_preparation(state);
                 }
             }
             states.retain(|state| {
                 incoming.contains_key(&state.descriptor.id)
                     || state.machine.is_some()
-                    || state.resume_planned
+                    || state.resume_initiator.is_some()
                     || state.descriptor.persistent_id.is_some()
             });
             for projected in projection {
