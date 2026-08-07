@@ -181,11 +181,27 @@ Vier Szenarien, je fünf Läufe, Median: Tippen (fünf Zeichen im ~120-ms-Takt),
 Clear per `Esc`, Clear per „Show all N tracks", und als Kontrolle dasselbe ohne
 geladenen Titel — die Differenz isoliert den Zentrier-Anteil.
 
-| Messgröße | Herleitung | **gemessen 2026-08-07** | Ziel |
-| --- | --- | --- | --- |
-| Tippen → Query fertig | ~400 ms | **346 ms** (8 Läufe, 340–398) | ≤ 200 ms |
-| Clear → Query fertig | ~400 ms | **414 ms** (8 Läufe, 334–745) | ≤ 60 ms |
-| Bewegung nach Modelltausch | ~128 ms Nachlauf | noch offen | keine zweite Bewegung nach ≥ 50 ms |
+| Messgröße | Basis `62604959` | **mit der Änderung** | Ziel | |
+| --- | --- | --- | --- | --- |
+| Tippen → Query fertig | 344 ms (338–360) | **141 ms** (139–161) | ≤ 200 ms | **erreicht** |
+| Clear → Query fertig | 388 ms (347–406) | **194 ms** (141–288) | ≤ 60 ms | **verfehlt** |
+| Viewport nach dem Filtern | zentriert den laufenden Titel | steht oben, kein Nachlauf | — | per Display-Test belegt |
+
+Beide Reihen mit demselben Messstand, je fünf Läufe, Median. Die Basis ist der
+exakte Abzweigpunkt des Branches, nicht der bewegliche `origin/dev` — zwischen
+der ersten Messung (`333c9a03`, 346/414 ms) und heute sind zwei fremde PRs
+gelandet, und ihre Wirkung darf der Änderung nicht gutgeschrieben werden. Dass
+die Basiswerte beider Stände praktisch gleich sind (344 vs. 346, 388 vs. 414),
+zeigt zugleich: sie berühren die Suchlatenz nicht.
+
+**Das Clear-Ziel ist verfehlt, und die Schätzung war schuld, nicht die
+Umsetzung.** Die Wartezeit ist tatsächlich vollständig weg — was die 194 ms
+füllt, ist Arbeit: die vollständige Bibliothek (1.909 Titel) neu aufbauen, dazu
+bei `RestorePreSearch` die sortierte Full-Table-Query für den Anker. Die 60 ms
+waren geschätzt, bevor gemessen war, was ein voller Reload kostet. Diese 194 ms
+weiter zu drücken, führt zum Modelltausch selbst — also zu der als „Verworfen"
+geführten Option C, die damit eine bezifferte Grundlage bekommt, falls sie
+jemand wieder aufgreifen will.
 
 Gemessen gegen einen Release-Build von `origin/dev` (`333c9a03`), isoliertes
 Profil mit einer Kopie der echten Bibliothek (1.874 Titel), Xvfb `:77`,
