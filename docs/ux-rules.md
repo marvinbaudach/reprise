@@ -1926,7 +1926,7 @@ the panel).
   or EPs from the last 90 days remain, plus exclusively future
   singles; incomplete data is never treated as future, secondary types
   stay out.
-- **NR-1a** [active] [core] — A library-wide MusicBrainz pipeline is
+- **NR-1a** [replaced by NR-27] [core] — A library-wide MusicBrainz pipeline is
   the sole source of truth for new releases and later artist-news
   views. Artist MBIDs come first from tags, otherwise from a persisted
   name resolution including negative results; artists are prioritized
@@ -2012,7 +2012,7 @@ the panel).
   entries individually recoverable. Retention: 6 months **and** at
   most 200 entries (the stricter limit wins), hard deletion, but never
   within the 90-day fetch window. Replaces NR-4.
-- **NR-13** [active] [gtk] — In the full Releases overview, released
+- **NR-13** [replaced by NR-28] [gtk] — In the full Releases overview, released
   releases already present in the library are marked and offer the
   action „Show in library" (navigate + focus, **no** direct play path).
   The delta popover does not list releases already complete in the
@@ -2163,6 +2163,32 @@ the panel).
   not enter the popover and do not badge. Duplicates collapse there
   the same way. Singles therefore announce themselves exactly when
   their chip is on — there is no separate preference.
+- **NR-27** [active] [core] — replaces NR-1a. A library-wide MusicBrainz
+  pipeline remains the sole source of truth for the releases catalog and
+  the artist-news views. Artist MBIDs come first from tags, otherwise
+  from a persisted name resolution including negative results; artists
+  are prioritized by play count. What the pipeline *stores* is the
+  artist's regular albums, EPs and singles as durable catalog rows
+  regardless of age — NR-24 owns that scope, and secondary types stay
+  out. The cap of twenty entries per artist belongs to the *news* path
+  alone: it bounds the delta candidates the popover and badge read, not
+  the catalog. Incomplete data is never treated as future.
+  *Reason:* NR-1a described a pipeline that kept only ninety days of
+  albums and exclusively future singles. NR-16 had already voided the
+  first half, and NR-24 voids the second. The rule survived both as
+  `[active]` while being false about persistence — found in review on
+  2026-08-07, not by a test, because every individual test agreed with
+  the code.
+- **NR-28** [active] [gtk] — replaces NR-13. The gap catalog never lists
+  a release that counts as owned under NR-24, so it carries no
+  „Show in library" action and never renders an `In library` status: a
+  row that could offer it is a row the filter has already removed. The
+  Updates popover's own row actions are unaffected and stay with NR-9c.
+  *Reason:* NR-13 promised an action the overview has not had since
+  NR-16 excluded complete releases. The status value stays in the model
+  because the presence it names is real, and a test pins that the
+  filtered view never yields it — a filter change that let owned rows
+  through would otherwise reintroduce the dead branch silently.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows

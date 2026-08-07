@@ -399,3 +399,21 @@ fn nr_24_released_singles_become_catalog_rows() {
         ]
     );
 }
+
+/// NR-27: a single that has already come out is durable catalog data, not
+/// news. Only a dated announcement still ahead of us is upcoming.
+#[test]
+fn nr_27_a_released_single_is_catalog_data_not_news() {
+    let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+    let past = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+    let ahead = NaiveDate::from_ymd_opt(2026, 8, 1).unwrap();
+
+    assert_eq!(
+        crate::artist_news_parsing::release_kind("single", "2020-01-01", past, today),
+        Some(NewsKind::Catalog)
+    );
+    assert_eq!(
+        crate::artist_news_parsing::release_kind("single", "2026-08-01", ahead, today),
+        Some(NewsKind::Upcoming)
+    );
+}

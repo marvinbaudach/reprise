@@ -718,3 +718,60 @@ fn nr_24_releases_view_is_limited_to_current_library_artists() {
         ["local"]
     );
 }
+
+/// NR-28: a row that could carry „In library" is a row the filter has already
+/// removed. The status value stays meaningful in the model — a filter change
+/// that let owned rows through would otherwise revive the dead branch in
+/// silence.
+#[test]
+fn nr_28_the_gap_view_never_reports_an_in_library_row() {
+    let owned = entry(
+        "owned",
+        "Owned",
+        "Album",
+        "2026-01-01",
+        LibraryPresence::Complete,
+        false,
+    );
+
+    assert_eq!(release_status(&owned, today()), ReleaseStatus::InLibrary);
+
+    let rows = filter_release_rows(vec![owned], &ReleasesFilter::default(), today());
+
+    assert!(
+        rows.is_empty(),
+        "an owned release never reaches the gap catalog, so its status never renders"
+    );
+}
+
+/// NR-27: the twenty-per-artist cap belongs to the news path alone. Capping
+/// the catalog would defeat a gap view: an artist with a long discography is
+/// exactly the artist with many gaps.
+#[test]
+fn nr_27_the_per_artist_cap_bounds_news_not_the_catalog() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
+             VALUES ('/music/one.flac', 'Track', 'Artist', 'Artist', 'Local', 0)",
+            [],
+        )
+        .unwrap();
+    for index in 0..25 {
+        db.conn()
+            .execute(
+                "INSERT INTO new_releases (
+                   release_group_mbid, artist_name, artist_mbid, title, release_type,
+                   first_release_date, fetched_at
+                 ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-07-01', 1)",
+                rusqlite::params![format!("release-{index}"), format!("Album {index}")],
+            )
+            .unwrap();
+    }
+
+    let catalog = query_releases_view(&db, &ReleasesFilter::default(), today()).unwrap();
+    let news = crate::artist_news::query_releases(&db, false, today()).unwrap();
+
+    assert_eq!(catalog.len(), 25, "the gap catalog keeps every album");
+    assert_eq!(news.len(), 20, "the news candidates stop at twenty");
+}

@@ -175,8 +175,8 @@ fn query_complete_history_in(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let counts = crate::artist_news::local_album_track_counts(conn)?;
-    let track_titles = crate::artist_news_query::local_track_titles(conn)?;
+    let library = crate::artist_news_query::local_library_index(conn)?;
+    let (counts, track_titles) = (library.album_track_counts, library.track_titles);
     for entry in &mut entries {
         entry.local_track_count = crate::artist_news_query::local_count_for_release(
             &counts,

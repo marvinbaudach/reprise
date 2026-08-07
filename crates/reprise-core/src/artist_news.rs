@@ -67,7 +67,6 @@ pub use crate::artist_news_parsing::{
     release_groups_url, ArtistMatch, ReleaseGroupPage,
 };
 
-pub(crate) use crate::artist_news_query::local_album_track_counts;
 #[cfg(test)]
 pub(crate) use crate::artist_news_query::presence_for;
 /// The query layer that reads releases back out and annotates library

@@ -165,7 +165,7 @@ thousands of rows, not millions, in a database that already holds every
 track. Acceptable, and stated here so it is a decision rather than a
 surprise.
 
-Migration v61 resets `artist_news_fetch.last_attempt_at` to zero and removes
+Migration v62 resets `artist_news_fetch.last_attempt_at` to zero and removes
 the dead `module.new_releases.include_singles` setting while preserving each
 known `artist_mbid`. This checkout already supported schema v60 when the
 design was implemented, so the originally planned migration number 40 was
@@ -335,7 +335,7 @@ Rule-named tests, per the repo's gate convention:
 - `nr_9c_owned_release_does_not_enter_the_popover`
 - `nr_9c_single_badges_only_when_its_chip_is_on`
 - `nr_9c_ancient_discovery_does_not_badge`
-- migration test: v61 resets the fetch ledger, preserves `artist_mbid`,
+- migration test: v62 resets the fetch ledger, preserves `artist_mbid`,
   removes the dead setting, and is idempotent.
 
 Core tests go to `artist_news_view_tests.rs` and
@@ -349,3 +349,41 @@ whose artists predate the window, confirming that the old rows are gone,
 that `All` brings them back, that the Single chip fills and empties the
 table without listing songs the library already holds, and that the
 duplicate pair from the screenshot renders once.
+
+## What review and the visual pass changed
+
+Four things were decided after the implementation landed, three of them
+found by looking rather than by testing.
+
+**"Clear all" returns to the default, not to the widest scope.** The
+screenshot showed it permanently on screen and accented, because the default
+is now itself a filter and the button's visibility was measured against the
+widest scope. Worse than the noise was the meaning: "clear" landed on the
+*most* open state and there was no one-click way back. It now appears only
+when the filter differs from the default and returns to it. The zero-result
+step and the shell's cross-section "clear filters" keep the old behaviour
+through a separate `show_widest()`, because at zero results under the default
+filter, returning to that same default would change nothing on screen.
+
+**`NR-1a` was false and still `[active]`.** It described a pipeline that kept
+ninety days of albums and exclusively future singles. NR-16 had already voided
+the first half and NR-24 voids the second, yet the rule stood unmarked.
+`NR-27` replaces it and states what the pipeline really does — durable album,
+EP and single catalog rows regardless of age, with the twenty-per-artist cap
+belonging to the news candidates alone.
+
+**`NR-13` promised an action that does not exist.** No "Show in library" lives
+in the gap catalog, and since NR-16 no owned release can even reach the table.
+`NR-28` replaces it and a test pins that the filtered view never yields the
+`In library` status, so a future filter change cannot revive the dead branch
+in silence.
+
+**One library scan instead of two.** `local_track_titles` was a second full
+pass over `tracks` beside `local_album_track_counts`, on every catalog render,
+badge count and popover open. Both indexes now come from a single
+`local_library_index`.
+
+The migration number moved from v61 to v62 during the merge with `dev`, which
+had claimed v61 for its own. Two migrations sharing a number do not conflict —
+the second silently skips, which on any database already at 61 would have
+meant the ledger reset never ran.

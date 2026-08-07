@@ -190,7 +190,7 @@ impl ReleasesView {
         {
             let shared = shared.clone();
             status_button.connect_clicked(move |_| match shared.empty_state.get() {
-                ReleasesEmptyState::NoResults => shared.filter_bar.clear_all(),
+                ReleasesEmptyState::NoResults => shared.filter_bar.show_widest(),
                 ReleasesEmptyState::NeverFetched | ReleasesEmptyState::Empty => {
                     request_fetch(&shared);
                 }
@@ -235,8 +235,12 @@ impl ReleasesView {
     }
 
     /// FIL-2: "Clear all" for this section — its query and its facets.
+    ///
+    /// The shell reaches for this when a search found nothing here, so it has
+    /// to open the catalog as wide as it goes. The filter row's own "Clear
+    /// all" is the narrower promise: back to the default.
     pub(in crate::ui) fn clear_all_filters(&self) {
-        self.shared.filter_bar.clear_all();
+        self.shared.filter_bar.show_widest();
     }
 
     pub(in crate::ui) fn set_on_launch_error(&self, callback: impl Fn(String) + 'static) {

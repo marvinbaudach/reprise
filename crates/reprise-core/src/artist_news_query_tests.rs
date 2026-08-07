@@ -453,7 +453,8 @@ fn dg_2_future_release_cannot_be_hidden_as_already_complete() {
 
 #[test]
 fn track_counts_survive_internal_whitespace_tagging_drift() {
-    use crate::artist_news::{local_album_track_counts, presence_for, LibraryPresence};
+    use crate::artist_news::{presence_for, LibraryPresence};
+    use crate::artist_news_query::local_album_track_counts;
 
     let conn = migrated_conn();
     conn.conn()
@@ -486,7 +487,8 @@ fn track_counts_survive_internal_whitespace_tagging_drift() {
 
 #[test]
 fn dg_2_duplicate_files_do_not_fake_complete_release_ownership() {
-    use crate::artist_news::{local_album_track_counts, presence_for, LibraryPresence};
+    use crate::artist_news::{presence_for, LibraryPresence};
+    use crate::artist_news_query::local_album_track_counts;
 
     let conn = migrated_conn();
     for (path, track_no) in [

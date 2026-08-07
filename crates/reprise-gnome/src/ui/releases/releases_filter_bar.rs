@@ -166,7 +166,11 @@ impl ReleasesFilterBar {
             return;
         }
         self.query.replace(String::new());
-        if let Some(callback) = self.on_query_changed.borrow().clone() {
+        // The borrow ends on this line. Left inside the `if let` condition it
+        // would live for the whole body, and a callback that touched this
+        // `RefCell` would panic instead of misbehaving visibly.
+        let callback = self.on_query_changed.borrow().clone();
+        if let Some(callback) = callback {
             callback("");
         }
     }
@@ -176,9 +180,24 @@ impl ReleasesFilterBar {
         self.rebuild();
     }
 
-    /// NR-25/FIL-2: one action restores the widest catalog scope and clears
-    /// this section's transient search query.
+    /// NR-25/FIL-2: takes the filter row back to its default and clears this
+    /// section's transient search query.
+    ///
+    /// Back to *default*, not to the widest scope: since the default is itself
+    /// a filter — five years, no singles — a "clear" that landed on the widest
+    /// would be a one-way door. It would be permanently offered, and the way
+    /// back would exist only chip by chip.
     pub(super) fn clear_all(self: &Rc<Self>) {
+        self.clear_query();
+        self.apply_filter(ReleasesFilter::default());
+    }
+
+    /// Opens the catalog as far as it goes — every type, every year.
+    ///
+    /// This is what the zero-result step and the shell's cross-section
+    /// "clear filters" need: at zero results under the default filter,
+    /// returning to that same default would change nothing on screen.
+    pub(super) fn show_widest(self: &Rc<Self>) {
         self.clear_query();
         self.apply_filter(ReleasesFilter::widest(false));
     }
@@ -194,7 +213,8 @@ impl ReleasesFilterBar {
     }
 
     fn notify_changed(&self) {
-        if let Some(callback) = self.on_changed.borrow().clone() {
+        let callback = self.on_changed.borrow().clone();
+        if let Some(callback) = callback {
             callback(self.filter());
         }
     }
@@ -224,10 +244,14 @@ impl ReleasesFilterBar {
         self.append_window_chip(filter.window);
         self.append_hidden_chip(filter.hidden);
 
-        let active = !filter.is_widest() || !query.is_empty();
-        self.clear_all.set_visible(active);
+        // Measured against the default, not the widest: the default view is
+        // the quiet one, so it offers no "Clear all" and no accent — while
+        // still naming its total, which is the only sign that five years and
+        // no singles are a choice someone made.
+        let dirty = filter != ReleasesFilter::default() || !query.is_empty();
+        self.clear_all.set_visible(dirty);
         let (shown, total) = self.counts.get();
-        if active {
+        if dirty && shown != total {
             self.result_label
                 .set_markup(&strings::release_count_line_markup(shown, total));
             self.result_label.add_css_class("accent");
@@ -321,8 +345,14 @@ impl ReleasesFilterBar {
     }
 }
 
+/// The unaccented count text. At the widest scope shown and total are the
+/// same number, and "629 of 629 gaps" says less than "629 gaps".
 fn release_count_presentation(shown: usize, total: usize) -> String {
-    strings::release_count_line(shown, total)
+    if shown == total {
+        strings::release_total_line(total)
+    } else {
+        strings::release_count_line(shown, total)
+    }
 }
 
 fn window_label(window: ReleaseWindow) -> &'static str {
@@ -382,7 +412,10 @@ mod tests {
 
     #[test]
     fn nr_25_widest_scope_count_line_names_shown_and_total() {
-        assert_eq!(release_count_presentation(19, 19), "19 of 19 gaps");
+        // Nothing is filtered away, so the line states one number.
+        assert_eq!(release_count_presentation(19, 19), "19 gaps");
+        // The default view filters, and says so without an alarm.
+        assert_eq!(release_count_presentation(168, 629), "168 of 629 gaps");
     }
 
     #[test]

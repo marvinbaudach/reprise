@@ -37,7 +37,7 @@ collapsing one — the exact pair from the bug screenshot.
    one row: album before EP before single.
 5. **The `Include Singles` preference is removed entirely**, together with the
    `include_singles` parameter threaded through the parse chain.
-6. **Migration v61** resets the per-artist fetch ledger so the catalog
+6. **Migration v62** resets the per-artist fetch ledger so the catalog
    backfills in ~1.5 days instead of up to seven.
 7. **The count line always reads `X of Y gaps`**, Y being the widest scope.
 8. **Popover and badge follow the whole persisted filter** — types and window.
@@ -190,9 +190,9 @@ join the durable set**, otherwise the Single chip shows a set that silently
 churns. Update the doc comment: afterwards only primary types the fetch no
 longer requests can still be reaped (legacy rows).
 
-### 2.3 Migration v61
+### 2.3 Migration v62
 
-New migration file beside the existing ones, `PRAGMA user_version = 61`, and
+New migration file beside the existing ones, `PRAGMA user_version = 62`, and
 raise the supported-version constant. It does two things:
 
 ```sql
@@ -208,9 +208,13 @@ every artist's cached answer is now incomplete. The existing 30-artists-per-run
 batching keeps the load bounded; the user sees the catalog fill within about a
 day and a half, or immediately via "Fetch now".
 
-The design originally reserved v40, but this checkout already supports schema
-v60. Database migrations are monotonic, so implementation uses the next valid
-version, v61, without changing the migration's contents or intent.
+The design originally reserved v40, but the branch point already supported
+schema v60, so the implementation took v61. `origin/dev` then landed its own
+v61 (`db_mobile_sync`) while this branch was being written, and two migrations
+sharing a number is not a merge conflict — it is a silent skip, because the
+second one checks `version >= 61`, finds it true and returns. The merge
+therefore renumbered this one to **v62**. Migrations are monotonic; only the
+number changed, never the contents or the intent.
 
 ## Package 3 — GTK surface
 
@@ -309,7 +313,7 @@ neighbours:
 - `nr_9c_owned_release_does_not_enter_the_popover`
 - `nr_9c_single_badges_only_when_its_chip_is_on`
 - `nr_9c_ancient_discovery_does_not_badge`
-- migration test: v61 zeroes `last_attempt_at`, keeps `artist_mbid`, drops the
+- migration test: v62 zeroes `last_attempt_at`, keeps `artist_mbid`, drops the
   dead setting key, and is idempotent
 
 ## Verification

@@ -69,17 +69,30 @@ impl ScopedRelease for StoredRelease {
     }
 }
 
-/// `(normalized album artist, normalized album) → distinct track count` for
-/// the local library. Numbered disc/track slots prevent duplicate files from
-/// inventing ownership; title identity is the conservative fallback for
-/// unnumbered files.
-pub(crate) fn local_album_track_counts(
-    conn: &Connection,
-) -> Result<std::collections::HashMap<(String, String), i64>, rusqlite::Error> {
+/// The two library identities the release catalog matches against.
+///
+/// Albums are keyed by `(album artist, album)`, singles by `(album artist,
+/// track title)` — two indexes over the very same rows. Building them in
+/// separate queries cost a second full scan of `tracks` on every catalog
+/// render, every badge count and every popover open, which is why they now
+/// share one pass.
+pub(crate) struct LocalLibraryIndex {
+    pub(crate) album_track_counts: std::collections::HashMap<(String, String), i64>,
+    pub(crate) track_titles: std::collections::HashSet<(String, String)>,
+}
+
+/// Reads both indexes in a single pass over the present library.
+///
+/// Numbered disc/track slots prevent duplicate files from inventing album
+/// ownership; title identity is the conservative fallback for unnumbered
+/// files. A track without an album contributes its title but no album slot —
+/// that used to be an `AND trim(album) <> ''` in SQL and is now the same
+/// decision in Rust, because the title index needs those rows.
+pub(crate) fn local_library_index(conn: &Connection) -> Result<LocalLibraryIndex, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT path, title, artist, album_artist, album, disc_no, track_no
          FROM tracks
-         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''",
+         WHERE removed_at IS NULL AND missing_since IS NULL",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -95,6 +108,7 @@ pub(crate) fn local_album_track_counts(
 
     let mut slots =
         std::collections::HashMap::<(String, String), std::collections::HashSet<String>>::new();
+    let mut track_titles = std::collections::HashSet::new();
     for row in rows {
         let (path, title, artist, album_artist, album, disc_no, track_no) = row?;
         let release_artist = if album_artist.trim().is_empty() {
@@ -102,6 +116,12 @@ pub(crate) fn local_album_track_counts(
         } else {
             album_artist
         };
+        if !release_artist.trim().is_empty() && !title.trim().is_empty() {
+            track_titles.insert((normalize(&release_artist), normalize(&title)));
+        }
+        if album.trim().is_empty() {
+            continue;
+        }
         let slot = match track_no.filter(|value| *value > 0) {
             Some(track_no) => format!("position:{}:{track_no}", disc_no.unwrap_or(1).max(1)),
             None if !title.trim().is_empty() => format!("title:{}", normalize(&title)),
@@ -112,47 +132,27 @@ pub(crate) fn local_album_track_counts(
             .or_default()
             .insert(slot);
     }
-    slots
+
+    let album_track_counts = slots
         .into_iter()
         .map(|(key, tracks)| {
             i64::try_from(tracks.len())
                 .map(|count| (key, count))
                 .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    Ok(LocalLibraryIndex {
+        album_track_counts,
+        track_titles,
+    })
 }
 
-/// `(normalized release artist, normalized track title)` identities for all
-/// present library tracks. A release artist is the album artist when known,
-/// with the track artist as the same fallback used by album ownership.
-pub(crate) fn local_track_titles(
+/// Album ownership alone, for the fetch pipeline — it never asks about
+/// singles, and it runs once per refresh rather than once per render.
+pub(crate) fn local_album_track_counts(
     conn: &Connection,
-) -> Result<std::collections::HashSet<(String, String)>, rusqlite::Error> {
-    let mut statement = conn.prepare(
-        "SELECT title, artist, album_artist
-         FROM tracks
-         WHERE removed_at IS NULL AND missing_since IS NULL",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-        ))
-    })?;
-    let mut titles = std::collections::HashSet::new();
-    for row in rows {
-        let (title, artist, album_artist) = row?;
-        let release_artist = if album_artist.trim().is_empty() {
-            artist
-        } else {
-            album_artist
-        };
-        if !release_artist.trim().is_empty() && !title.trim().is_empty() {
-            titles.insert((normalize(&release_artist), normalize(&title)));
-        }
-    }
-    Ok(titles)
+) -> Result<std::collections::HashMap<(String, String), i64>, rusqlite::Error> {
+    Ok(local_library_index(conn)?.album_track_counts)
 }
 
 pub(crate) fn local_count_for_release(
@@ -283,8 +283,8 @@ fn load_releases_in(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let counts = local_album_track_counts(conn)?;
-    let track_titles = local_track_titles(conn)?;
+    let library = local_library_index(conn)?;
+    let (counts, track_titles) = (library.album_track_counts, library.track_titles);
     for release in &mut releases {
         release.local_track_count = local_count_for_release(
             &counts,
