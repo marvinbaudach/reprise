@@ -97,14 +97,25 @@ pub(super) fn wire_search(
     }
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     search_entry.connect_search_changed(move |entry| {
-        if restoring.get() || !applies_here() {
-            return;
-        }
         // A same-value programmatic update (notably clear-all setting the
         // model first and the entry second) still has to cancel a pending
         // older debounce, or that stale text can reapply after the reset.
+        //
+        // SEARCH-9: this cancellation now runs *before* the guards below, and
+        // that ordering is load-bearing. With `search-delay` at 0 the
+        // `search-changed` of a programmatic `set_text` arrives while
+        // `restoring` is still set — a navigation restoring its own query —
+        // where the old code returned early and left a timer armed. That timer
+        // then fired against the view the user had just moved to, applying a
+        // query and a `pre_search_anchor` belonging to the view they had left.
+        // GTK's own 150 ms delay used to hide this by pushing the emission
+        // past the guard's reset; removing the delay removed the accident that
+        // made the old order work.
         if let Some(previous) = pending.borrow_mut().take() {
             previous.remove();
+        }
+        if restoring.get() || !applies_here() {
+            return;
         }
         let current_filter = track_list.shared.filter.borrow().clone();
         if current_filter == entry.text() {
@@ -173,6 +184,13 @@ fn prepare_track_view(
 ) {
     let shared = &track_list.shared;
     shared.restoring_view.set(true);
+    // SEARCH-9: an anchor belongs to the search it was captured in. Every route
+    // through here installs a different place's query and sort, so whatever the
+    // previous view had remembered points at a row this one may not even
+    // contain. `set_source_and_reload` clears it for plain source switches;
+    // this covers the navigation paths (sidebar, Back/Forward, session
+    // restore) that reach a new view without going through it.
+    shared.pre_search_anchor.set(None);
     *shared.filter.borrow_mut() = search.to_string();
     *shared.browse_filter.borrow_mut() = browse.clone();
     shared.browse_bar.restore_filter(browse);

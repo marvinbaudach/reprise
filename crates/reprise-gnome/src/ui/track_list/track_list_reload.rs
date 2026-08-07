@@ -59,6 +59,15 @@ pub(in crate::ui) use super::track_list_geometry::row_height;
 /// repopulated `ColumnView` doesn't have adjustment geometry until the next
 /// allocation pass" issue.
 const SCROLL_RESTORE_MAX_ATTEMPTS: u8 = 8;
+/// SEARCH-9: how many idle rounds `schedule_top_scroll_restore` re-applies its
+/// zero. Deliberately far below `SCROLL_RESTORE_MAX_ATTEMPTS`: it only has to
+/// outlast the one allocation that GTK's own scroll restore rides in on, and
+/// every extra round is a round in which the loop cannot tell a re-clamp from
+/// the user grabbing the scrollbar — and would snap a deliberate scroll back to
+/// the top. Two rounds cover the allocation with one to spare; eight would keep
+/// overriding the user for roughly the length of the nachlauf this rule set out
+/// to remove.
+const TOP_RESTORE_MAX_ATTEMPTS: u8 = 2;
 const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
 #[derive(Clone, Copy)]
@@ -176,7 +185,7 @@ fn restore_reload_anchor(
     // no id list at all, so the sorted full-table query disappears whenever
     // nothing is selected.
     if matches!(viewport, ReloadViewport::Top) {
-        schedule_top_scroll_restore(shared.column_view.clone(), SCROLL_RESTORE_MAX_ATTEMPTS);
+        schedule_top_scroll_restore(shared.column_view.clone(), TOP_RESTORE_MAX_ATTEMPTS);
     }
     // Resolving positions costs a sorted full-table id query; skip it when
     // the capture side already established there is nothing to put back and

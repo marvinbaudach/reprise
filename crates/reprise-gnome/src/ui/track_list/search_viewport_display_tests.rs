@@ -48,12 +48,28 @@ fn typed_search_reads_from_the_top_and_clearing_comes_back() {
     while gtk4::glib::MainContext::default().iteration(false) {}
 
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    // A freshly presented `ColumnView` reports no usable geometry until it has
+    // been allocated, and `upper` then still equals the page size — a scroll
+    // written before that point is clamped straight back to zero, and the
+    // precondition below fails for a reason that has nothing to do with what
+    // this test is about. Pumping the loop until the adjustment can actually
+    // hold a value is the difference between this test being deterministic and
+    // it passing whenever the allocation happens to win the race.
+    for _ in 0..200 {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        if adjustment.upper() > adjustment.page_size() {
+            break;
+        }
+    }
     adjustment.set_value(1200.0);
     while gtk4::glib::MainContext::default().iteration(false) {}
     let departed_from = adjustment.value();
     assert!(
         departed_from > 0.0,
-        "the test must start away from the top, else it proves nothing"
+        "the test must start away from the top, else it proves nothing \
+         (upper {}, page {})",
+        adjustment.upper(),
+        adjustment.page_size()
     );
 
     track_list.set_filter("Match");
