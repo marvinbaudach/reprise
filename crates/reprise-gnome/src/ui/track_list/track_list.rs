@@ -144,7 +144,6 @@ pub(in crate::ui) struct Shared {
     /// and consumed when the query goes empty again. `(track id, offset)`
     /// rather than a raw scroll value, for the same reason BROWSE-2 uses that
     /// form: after a re-sort a pixel value points at a different row.
-    #[expect(dead_code, reason = "wired by the next search-responsiveness task")]
     pub(in crate::ui) pre_search_anchor: Cell<Option<(i64, f64)>>,
     /// POD-20's shared loaded-episode marker. Separate from
     /// `playing_track_id` because the two id spaces are unrelated and may

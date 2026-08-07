@@ -15,7 +15,7 @@ use reprise_core::view_source::ViewSource;
 
 use crate::ui::column_layout::{ColumnId, ColumnRegistry};
 use crate::ui::sidebar::Sidebar;
-use crate::ui::track_list::{reload, TrackList};
+use crate::ui::track_list::{reload, track_list_reload, TrackList};
 use crate::ui::track_list_sort::{restored_sort, SortState};
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_VIEW_SESSION";
@@ -111,6 +111,11 @@ pub(super) fn wire_search(
             return;
         }
         let text = entry.text().to_string();
+        track_list_reload::prepare_filter_change(
+            &track_list.shared,
+            current_filter.as_str(),
+            text.as_str(),
+        );
         // Browser state follows the visible entry synchronously so leaving a
         // place during the debounce window still captures the exact query.
         *track_list.shared.filter.borrow_mut() = text.clone();
@@ -118,14 +123,17 @@ pub(super) fn wire_search(
         // tracks" and a hand-emptied field all arrive here as empty text, and
         // none of them is the middle of a sequence worth waiting out.
         if text.is_empty() {
-            track_list.reload();
+            track_list_reload::reload_filter_change(&track_list.shared, current_filter.as_str());
             return;
         }
         let track_list = track_list.clone();
         let pending_for_timeout = pending.clone();
         let source_id =
             glib::timeout_add_local(Duration::from_millis(SEARCH_DEBOUNCE_MS), move || {
-                track_list.reload();
+                track_list_reload::reload_filter_change(
+                    &track_list.shared,
+                    current_filter.as_str(),
+                );
                 pending_for_timeout.borrow_mut().take();
                 glib::ControlFlow::Break
             });

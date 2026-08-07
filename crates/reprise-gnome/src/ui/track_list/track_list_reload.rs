@@ -65,13 +65,19 @@ const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_mi
 pub(super) enum ReloadViewport {
     PreserveAnchor,
     CenterPlayingTrack,
+    /// SEARCH-9: a new result set is read from its top.
+    Top,
+    /// SEARCH-9: an emptied query returns to `Shared::pre_search_anchor`.
+    RestorePreSearch,
 }
 
 fn filter_change_viewport(previous: &str, current: &str) -> ReloadViewport {
     if previous == current {
         ReloadViewport::PreserveAnchor
+    } else if current.is_empty() {
+        ReloadViewport::RestorePreSearch
     } else {
-        ReloadViewport::CenterPlayingTrack
+        ReloadViewport::Top
     }
 }
 
@@ -165,12 +171,23 @@ fn restore_reload_anchor(
     hold: Option<AdjustmentHold>,
     resolved_ids: Option<Vec<i64>>,
 ) {
+    // SEARCH-9: a new result set is read from its top. Doing this before the
+    // early return below is what makes the typed-search path cheap — it needs
+    // no id list at all, so the sorted full-table query disappears whenever
+    // nothing is selected.
+    if matches!(viewport, ReloadViewport::Top) {
+        if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
+            adjustment.set_value(0.0);
+        }
+    }
     // Resolving positions costs a sorted full-table id query; skip it when
     // the capture side already established there is nothing to put back and
     // the caller did not request a playing-track reveal.
     let reveal_playing_track = matches!(viewport, ReloadViewport::CenterPlayingTrack)
         && shared.playing_track_id.get().is_some();
-    if reload_restore::is_noop(captured) && !reveal_playing_track {
+    let restores_pre_search = matches!(viewport, ReloadViewport::RestorePreSearch)
+        && shared.pre_search_anchor.get().is_some();
+    if reload_restore::is_noop(captured) && !reveal_playing_track && !restores_pre_search {
         return;
     }
     let current_ids = resolved_ids.unwrap_or_else(|| shared.current_view_ids());
@@ -188,6 +205,27 @@ fn restore_reload_anchor(
             return;
         }
     }
+
+    // SEARCH-9: the search is over — put the user back where it started. A
+    // consumed anchor is taken, not copied: the next search captures its own.
+    if matches!(viewport, ReloadViewport::RestorePreSearch) {
+        let anchor = shared.pre_search_anchor.take();
+        schedule_scroll_restore(
+            shared.column_view.clone(),
+            anchor,
+            current_ids,
+            SCROLL_RESTORE_MAX_ATTEMPTS,
+            hold,
+        );
+        return;
+    }
+
+    // `Top` already placed the viewport above; the captured anchor belongs to
+    // the pre-filter list and must not pull it back.
+    if matches!(viewport, ReloadViewport::Top) {
+        return;
+    }
+
     schedule_scroll_restore(
         shared.column_view.clone(),
         captured.anchor,
@@ -348,8 +386,30 @@ fn apply_scroll_anchor_if_allocated(
 /// `REPRISE_SMOKE_FILTER` dev hook (`arm_smoke_filter`), so both apply a new
 /// filter through the identical code path.
 pub(in crate::ui) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
-    let viewport = filter_change_viewport(shared.filter.borrow().as_str(), text);
+    let previous = shared.filter.borrow().clone();
+    prepare_filter_change(shared, previous.as_str(), text);
     *shared.filter.borrow_mut() = text.to_string();
+    reload_filter_change(shared, previous.as_str());
+}
+
+/// Captures the place a search leaves before its query is stored. The window
+/// calls this synchronously because browser state must follow the entry while
+/// the reload itself remains debounced.
+pub(in crate::ui) fn prepare_filter_change(shared: &Rc<Shared>, previous: &str, current: &str) {
+    // SEARCH-9: the empty → non-empty transition is the moment the user leaves
+    // their place. Capture it once; a refinement of an existing query must not
+    // overwrite it with a position inside the result set.
+    if previous.is_empty() && !current.is_empty() {
+        let captured = capture_reload_anchor(shared);
+        shared.pre_search_anchor.set(captured.anchor);
+    }
+}
+
+/// Reloads a filter already stored in `Shared`, retaining the previous value
+/// solely to choose SEARCH-9's viewport behavior.
+pub(in crate::ui) fn reload_filter_change(shared: &Rc<Shared>, previous: &str) {
+    let current = shared.filter.borrow().clone();
+    let viewport = filter_change_viewport(previous, current.as_str());
     reload_with_viewport(shared, viewport);
 }
 
@@ -381,6 +441,9 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: &ViewSou
         return;
     }
     *shared.filter.borrow_mut() = String::new();
+    // SEARCH-9: an anchor from the previous source points at a row this view
+    // does not contain.
+    shared.pre_search_anchor.set(None);
     *shared.browse_filter.borrow_mut() = BrowseFilter::default();
     shared.browse_bar.restore_filter(&BrowseFilter::default());
     let new_sort = resolve_sort_on_switch(&Default::default(), source);
@@ -425,11 +488,16 @@ pub(super) fn reload_with_anchor_and_viewport(
     model_change: Option<ModelChange>,
     current_ids: Option<Vec<i64>>,
 ) {
-    let hold = matches!(viewport, ReloadViewport::PreserveAnchor)
-        .then(|| gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view))
-        .flatten()
-        .filter(|_| captured.anchor.is_some())
-        .map(|adjustment| AdjustmentHold::new(&adjustment));
+    // SEARCH-9: `Top` writes the adjustment itself and wants no guard fighting
+    // it; only the two variants that restore a captured position need one.
+    let hold = matches!(
+        viewport,
+        ReloadViewport::PreserveAnchor | ReloadViewport::RestorePreSearch
+    )
+    .then(|| gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view))
+    .flatten()
+    .filter(|_| captured.anchor.is_some() || shared.pre_search_anchor.get().is_some())
+    .map(|adjustment| AdjustmentHold::new(&adjustment));
     run_query(shared, model_change);
     restore_reload_anchor(shared, captured, viewport, hold.clone(), current_ids);
     if let Some(hold) = hold {
@@ -572,210 +640,12 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
 }
 
 #[cfg(test)]
-mod display_tests {
-    use super::*;
-
-    fn has_row_intersecting_viewport(column_view: &gtk4::ColumnView) -> bool {
-        let viewport_width = column_view.width() as f32;
-        let viewport_height = column_view.height() as f32;
-        let mut pending = vec![column_view.clone().upcast::<gtk4::Widget>()];
-        while let Some(widget) = pending.pop() {
-            let is_row = widget.type_().name().contains("ColumnViewRow");
-            if is_row
-                && widget.compute_bounds(column_view).is_some_and(|bounds| {
-                    bounds.x() < viewport_width
-                        && bounds.x() + bounds.width() > 0.0
-                        && bounds.y() < viewport_height
-                        && bounds.y() + bounds.height() > 0.0
-                })
-            {
-                return true;
-            }
-            let mut child = widget.first_child();
-            while let Some(current) = child {
-                child = current.next_sibling();
-                pending.push(current);
-            }
-        }
-        false
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn tag_1_query_reloading_metadata_save_keeps_the_live_viewport() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let conn = crate::test_db::open().unwrap();
-        let fixture_conn = crate::test_db::connection(&conn);
-        let tx = fixture_conn.unchecked_transaction().unwrap();
-        for id in 1..=100 {
-            tx.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) \
-                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
-                (
-                    id,
-                    format!("/synthetic/{id:03}.flac"),
-                    format!("Track {id:03}"),
-                ),
-            )
-            .unwrap();
-        }
-        tx.commit().unwrap();
-        let track_list = super::super::TrackList::new(
-            Rc::new(conn),
-            Box::new(|_, _, _, _| {}),
-            |_, _, _, _| {},
-            super::super::queue_sections::QueueViewModel::default,
-            crate::ui::cover_download_worker::setup_for_test(),
-        );
-        let window = gtk4::Window::builder()
-            .default_width(900)
-            .default_height(320)
-            .child(track_list.widget())
-            .build();
-        window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        let position = 60;
-        track_list
-            .shared
-            .column_view
-            .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
-        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
-        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-            adjustment.value() > 0.0
-        });
-        let before = adjustment.value();
-        assert!(
-            before > 0.0,
-            "precondition: the list must be scrolled away from the top"
-        );
-
-        let opened_anchor = capture_reload_anchor(&track_list.shared);
-        // Reproduce the asynchronous Tag Editor boundary: by the time the
-        // worker completes, GTK may already report position zero while the
-        // closing dialog restores focus. Capturing at completion would
-        // therefore preserve the wrong position.
-        adjustment.set_value(0.0);
-        track_list.shared.selection.unselect_all();
-        let written_id = track_list.shared.model.track_at(position).unwrap().id;
-        let mut save_anchor = opened_anchor;
-        save_anchor.selected_ids = vec![written_id];
-        reload_with_anchor(&track_list.shared, &save_anchor);
-        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-            (adjustment.value() - before).abs() < 1.0
-        });
-
-        assert!(
-            adjustment.value() > 0.0,
-            "rating save must not leave the viewport at the table top"
-        );
-        assert!(
-            (adjustment.value() - before).abs() < 1.0,
-            "rating save moved the viewport: before={before}, after={}",
-            adjustment.value()
-        );
-        assert!(track_list.shared.selection.is_selected(position));
-        window.close();
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn tag_1_reload_with_a_deep_anchor_keeps_a_row_inside_the_viewport() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let conn = crate::test_db::open().unwrap();
-        let fixture_conn = crate::test_db::connection(&conn);
-        let tx = fixture_conn.unchecked_transaction().unwrap();
-        for id in 1..=200 {
-            tx.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) \
-                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
-                (
-                    id,
-                    format!("/synthetic/{id:03}.flac"),
-                    format!("Track {id:03}"),
-                ),
-            )
-            .unwrap();
-        }
-        tx.commit().unwrap();
-        let track_list = super::super::TrackList::new(
-            Rc::new(conn),
-            Box::new(|_, _, _, _| {}),
-            |_, _, _, _| {},
-            super::super::queue_sections::QueueViewModel::default,
-            crate::ui::cover_download_worker::setup_for_test(),
-        );
-        let window = gtk4::Window::builder()
-            .default_width(900)
-            .default_height(320)
-            .child(track_list.widget())
-            .build();
-        window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        let position = 150;
-        track_list
-            .shared
-            .column_view
-            .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
-        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
-        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-            adjustment.value() > adjustment.page_size() * 2.0
-        });
-        let anchor = capture_reload_anchor(&track_list.shared);
-        assert!(
-            anchor.anchor.is_some(),
-            "deep viewport must capture an anchor"
-        );
-
-        reload_with_anchor(&track_list.shared, &anchor);
-        crate::ui::test_settle::settle_for(SCROLL_ADJUSTMENT_HOLD);
-
-        assert!(
-            has_row_intersecting_viewport(&track_list.shared.column_view),
-            "reloaded ColumnView has no row widget intersecting its viewport"
-        );
-        window.close();
-    }
-}
+#[path = "track_list_reload_display_tests.rs"]
+mod display_tests;
 
 #[cfg(test)]
-mod tests {
-    use std::cell::RefCell;
-
-    use reprise_core::view_source::ViewSource;
-
-    use super::{filter_change_viewport, ReloadViewport};
-
-    #[test]
-    fn source_snapshot_releases_the_borrow_before_reentrant_work() {
-        let source = RefCell::new(ViewSource::Library);
-
-        let snapshot = super::source_snapshot(&source);
-        *source.borrow_mut() = ViewSource::Queue;
-
-        assert!(matches!(snapshot, ViewSource::Library));
-        assert!(matches!(*source.borrow(), ViewSource::Queue));
-    }
-
-    #[test]
-    fn fil_9_any_search_change_requests_playing_track_centering() {
-        assert!(matches!(
-            filter_change_viewport("", "Match"),
-            ReloadViewport::CenterPlayingTrack
-        ));
-        assert!(matches!(
-            filter_change_viewport("Match", ""),
-            ReloadViewport::CenterPlayingTrack
-        ));
-        assert!(matches!(
-            filter_change_viewport("Match", "Match"),
-            ReloadViewport::PreserveAnchor
-        ));
-    }
-}
+#[path = "track_list_reload_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "reveal_track_display_tests.rs"]
