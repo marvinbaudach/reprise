@@ -118,15 +118,6 @@ pub(super) async fn perform(
                         work.playlists_storage,
                     )
                     .await;
-                    copy_analysis_sidecar(
-                        runtime,
-                        work,
-                        entry.track.id,
-                        &entry.device_path,
-                        &work.playlists_path,
-                        work.playlists_storage,
-                    )
-                    .await;
                     work.log.copied(bytes);
                     Event::TrackCopied(Ok(bytes))
                 }
@@ -352,48 +343,41 @@ pub(super) async fn perform(
 pub(super) async fn copy_analysis_sidecar(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
-    track_id: i64,
-    device_path: &str,
-    target_path: &str,
-    storage_id: Option<StorageId>,
-) {
-    let Some(sidecar_path) =
-        reprise_core::device_sync::analysis_sidecar::device_path_for_track(device_path)
-    else {
-        return;
-    };
+    planned: &reprise_core::device_sync::AnalysisSidecarWrite,
+) -> bool {
+    let track_id = planned.track_id;
     let sidecar = match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
         &runtime.conn,
         track_id,
     ) {
         Ok(Some(sidecar)) => sidecar,
-        Ok(None) => return,
+        Ok(None) => return false,
         Err(error) => {
             tracing::warn!(track_id, %error, "could not load analysis sidecar data");
-            return;
+            return false;
         }
     };
     let bytes = match sidecar.encode() {
         Ok(bytes) => bytes,
         Err(error) => {
             tracing::warn!(track_id, %error, "could not encode analysis sidecar data");
-            return;
+            return false;
         }
     };
     let temporary_path = temporary_metadata_path(&work.device_id, track_id, "analysis");
     if let Err(error) = std::fs::write(&temporary_path, &bytes) {
         tracing::warn!(track_id, %error, "could not stage analysis sidecar data");
-        return;
+        return false;
     }
     let result = runtime
         .backend
         .replace_track(
             work.device_id.clone(),
             work.root_uri.clone(),
-            target_path.to_string(),
-            storage_id,
+            work.playlists_path.clone(),
+            work.playlists_storage,
             temporary_path.clone(),
-            sidecar_path.clone(),
+            planned.device_path.clone(),
             bytes.len() as u64,
             work.cancellable.clone(),
             Rc::new(|_, _| {}),
@@ -401,8 +385,10 @@ pub(super) async fn copy_analysis_sidecar(
         .await;
     let _ = std::fs::remove_file(temporary_path);
     if let Err(error) = result {
-        tracing::warn!(track_id, device_path = sidecar_path, %error, "could not copy analysis sidecar to device");
+        tracing::warn!(track_id, device_path = planned.device_path, %error, "could not copy analysis sidecar to device");
+        return false;
     }
+    true
 }
 
 pub(super) async fn write_track_metadata_list(

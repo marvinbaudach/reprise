@@ -62,9 +62,10 @@ pub use machine::{
     TransferSource,
 };
 pub use mirror::{
-    plan_mirror, DesiredManagedFile, ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput,
-    MirrorPlan, MirrorPlaylistProjection, MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack,
-    MirrorWarning, PlaylistWrite, UnavailableTrack,
+    plan_mirror, AnalysisSidecarWrite, DesiredManagedFile, DesktopAnalysis, ManagedDeviceFile,
+    ManagedRemoval, MirrorBlocker, MirrorInput, MirrorPlan, MirrorPlaylistProjection,
+    MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack, MirrorWarning, PlaylistWrite,
+    UnavailableTrack,
 };
 pub use page::{
     project_sync_page, SyncChangeSummary, SyncPageControls, SyncPageInput, SyncPageProjection,

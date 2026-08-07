@@ -97,6 +97,7 @@ fn empty_plan() -> MirrorPlan {
         desired_files: Vec::new(),
         copy: Vec::new(),
         replace: Vec::new(),
+        analysis_writes: Vec::new(),
         remove: Vec::new(),
         retained_unavailable: Vec::new(),
         playlist_writes: Vec::new(),

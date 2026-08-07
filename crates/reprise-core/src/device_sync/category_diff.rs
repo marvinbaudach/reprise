@@ -94,7 +94,7 @@ impl CategoryDiff {
     #[must_use]
     pub fn from_mirror_plan(plan: &MirrorPlan) -> Self {
         Self {
-            files_to_copy: plan.copy.len() + plan.replace.len(),
+            files_to_copy: plan.copy.len() + plan.replace.len() + plan.analysis_writes.len(),
             bytes_to_copy: plan.transfer_bytes,
             files_to_remove: plan.remove.len(),
             bytes_freed: plan.bytes_freed,
@@ -458,6 +458,7 @@ mod tests {
             inventory: Vec::new(),
             playlist_inventory: Vec::new(),
             managed_files: Vec::new(),
+            desktop_analyses: Vec::new(),
         });
 
         let category = CategoryDiff::from_mirror_plan(&mirror_plan);

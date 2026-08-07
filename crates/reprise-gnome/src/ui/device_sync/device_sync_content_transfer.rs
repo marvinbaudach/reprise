@@ -39,7 +39,11 @@ fn transfer_bytes(work: &PlannedWork) -> u64 {
 /// Publishes a content step's phase, but only while this run is still the
 /// device's current one — the same `Rc::ptr_eq` identity check the machine
 /// driver uses, so a superseded run cannot write over a newer run's phase.
-fn set_content_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, phase: PlannedSyncPhase) {
+pub(super) fn set_content_phase(
+    runtime: &Rc<DeviceSyncRuntime>,
+    work: &PlannedWork,
+    phase: PlannedSyncPhase,
+) {
     {
         let mut devices = runtime.device_states.borrow_mut();
         let Some(device) = devices
@@ -61,7 +65,7 @@ fn set_content_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, phase:
 }
 
 #[allow(clippy::too_many_arguments)]
-fn syncing_phase(
+pub(super) fn syncing_phase(
     step: SyncStep,
     done: usize,
     total: usize,
