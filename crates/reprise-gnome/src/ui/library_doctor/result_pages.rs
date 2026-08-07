@@ -8,6 +8,10 @@ use crate::ui::strings;
 
 type Callback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
+/// The mockup caps the empty state's sentence at 380px so it breaks into two
+/// comfortable lines instead of running the full column width.
+const EMPTY_BODY_WIDTH_CHARS: i32 = 48;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PostApplyModel {
     tracks: usize,
@@ -41,6 +45,7 @@ pub(in crate::ui) struct DoctorResultPages {
     post_conflicts: gtk4::Label,
     post_quiet: gtk4::Label,
     empty_body: gtk4::Label,
+    empty_facts: gtk4::Label,
     on_undo: Callback,
     on_done: Callback,
     on_scan_again: Callback,
@@ -70,17 +75,34 @@ impl DoctorResultPages {
         post.append(&post_quiet);
         root.add_named(&post, Some("post-apply"));
 
-        let empty_title = heading_label();
-        empty_title.set_label(&strings::text(strings::DOCTOR_NOTHING_TO_FIX));
-        let empty_body = body_label();
-        let scan_again = gtk4::Button::builder()
-            .label(strings::text(strings::DOCTOR_SCAN_AGAIN))
-            .css_classes(["suggested-action"])
-            .halign(gtk4::Align::Center)
+        // The empty state is a result, not a hero: flush left in the same
+        // column as the three cards, and top-weighted like them.
+        let empty_title = gtk4::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["title-2"])
             .build();
-        let empty = status_box("emblem-ok-symbolic", &empty_title);
+        empty_title.set_label(&strings::text(strings::DOCTOR_NOTHING_TO_FIX));
+        let empty_body = gtk4::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .max_width_chars(EMPTY_BODY_WIDTH_CHARS)
+            .css_classes(["dim-label"])
+            .build();
+        let empty_facts = gtk4::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["dim-label"])
+            .build();
+        let scan_again = gtk4::Button::with_label(&strings::text(strings::DOCTOR_SCAN_AGAIN));
+        let empty_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 16);
+        empty_actions.append(&scan_again);
+        empty_actions.append(&empty_facts);
+        let empty = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+        empty.set_valign(gtk4::Align::Start);
+        empty.append(&empty_title);
         empty.append(&empty_body);
-        empty.append(&scan_again);
+        empty.append(&empty_actions);
         root.add_named(&empty, Some("nothing"));
 
         let on_undo = Rc::new(RefCell::new(None::<Rc<dyn Fn()>>));
@@ -97,6 +119,7 @@ impl DoctorResultPages {
             post_conflicts,
             post_quiet,
             empty_body,
+            empty_facts,
             on_undo,
             on_done,
             on_scan_again,
@@ -125,7 +148,7 @@ impl DoctorResultPages {
         self.post_conflicts.set_label(&if model.conflicts == 0 {
             String::new()
         } else {
-            strings::doctor_conflicts_headline(model.conflicts)
+            strings::doctor_unresolved_spellings(model.conflicts)
         });
         self.post_conflicts.set_visible(model.conflicts > 0);
         self.post_quiet
@@ -133,9 +156,15 @@ impl DoctorResultPages {
         self.root.set_visible_child_name("post-apply");
     }
 
-    pub(in crate::ui) fn show_nothing(&self, checked: usize, skipped: usize) {
-        self.empty_body
-            .set_label(&strings::doctor_nothing_to_fix_body(checked, skipped));
+    /// A clean library. The body only names the skipped tracks when there were
+    /// any — this page may not print a `0` either.
+    pub(in crate::ui) fn show_nothing(&self, checked: usize, skipped: usize, facts: &str) {
+        self.empty_body.set_label(&if skipped > 0 {
+            strings::doctor_nothing_to_fix_body_skipped(checked, skipped)
+        } else {
+            strings::doctor_nothing_to_fix_body(checked)
+        });
+        self.empty_facts.set_label(facts);
         self.root.set_visible_child_name("nothing");
     }
 

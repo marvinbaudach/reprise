@@ -16,6 +16,10 @@ impl LibraryDoctorCoordinator {
     pub(super) fn start_auto_apply(self: &Rc<Self>, scan: DoctorScan) {
         let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::AutoApply);
         let total = session.freeze_plan().track_count();
+        // Hand the page its new scan before anything else can settle on it, and
+        // keep it on the running screen: the summary says "already applied", so
+        // it may not render until the write that makes that true has finished.
+        self.page.begin_quiet_write(scan.clone(), total);
         if total == 0 {
             self.page.complete_auto_apply(None);
             self.sidebar.refresh("Library Doctor scan completed");
@@ -31,7 +35,7 @@ impl LibraryDoctorCoordinator {
         self.cancellation.borrow_mut().replace(cancellation.clone());
         self.running.set(true);
         self.job_kind.set(Some(DoctorJobKind::Apply));
-        self.page.set_running(true);
+        self.page.set_controls_locked(true);
         self.progress.show(DoctorJobKind::Apply, 0, total);
         self.scan_controls.button.set_sensitive(false);
         let db_path = self.db_path.clone();
@@ -57,6 +61,11 @@ impl LibraryDoctorCoordinator {
         glib::spawn_future_local(async move {
             while let Ok(progress) = progress.recv().await {
                 if let Some(coordinator) = weak.upgrade() {
+                    coordinator.page.update_job(
+                        DoctorJobKind::Apply,
+                        progress.completed_tracks,
+                        progress.total_tracks,
+                    );
                     coordinator.progress.show(
                         DoctorJobKind::Apply,
                         progress.completed_tracks,

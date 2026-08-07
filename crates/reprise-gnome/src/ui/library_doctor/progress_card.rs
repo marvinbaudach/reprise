@@ -6,6 +6,10 @@ use gtk4::prelude::*;
 
 use crate::ui::strings;
 
+/// Enough for the longest of the three titles ("Checking tracks…") at the
+/// card's 12px bold, inside a 240px sidebar (NPP-1).
+const TITLE_MIN_CHARS: i32 = 16;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DoctorJobKind {
     Scan,
@@ -65,6 +69,12 @@ impl DoctorProgressCard {
             .xalign(0.0)
             .hexpand(true)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
+            // Ellipsizing alone lets GTK shrink this label to nothing: the card
+            // reported "Che…" for "Checking tracks…" because the percentage and
+            // a default-padded Cancel took the row's allocation first. A
+            // minimum in characters keeps the label whole and pushes the loss
+            // onto the detail line below, which is what it is there for.
+            .width_chars(TITLE_MIN_CHARS)
             .css_classes(["scan-card-title"])
             .build();
         let percent = gtk4::Label::builder()
@@ -73,7 +83,7 @@ impl DoctorProgressCard {
             .build();
         let cancel = gtk4::Button::builder()
             .label(strings::text(strings::CANCEL))
-            .css_classes(["flat"])
+            .css_classes(["flat", "scan-card-cancel"])
             .build();
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         header.append(&spinner);
@@ -196,7 +206,47 @@ impl DoctorProgressCard {
 
 #[cfg(test)]
 mod tests {
-    use super::{progress_presentation, DoctorJobKind};
+    use gtk4::prelude::*;
+
+    use super::{progress_presentation, DoctorJobKind, DoctorProgressCard};
+
+    /// NPP-1: the sidebar is 240px, and the card is a passenger in it.
+    const SIDEBAR_WIDTH: i32 = 240;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn doc_5c_the_card_label_stays_whole_at_sidebar_width() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let card = DoctorProgressCard::new();
+        card.show(DoctorJobKind::Scan, 742, 1648);
+        card.revealer.set_reveal_child(true);
+        let column = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        column.set_size_request(SIDEBAR_WIDTH, -1);
+        column.append(card.widget());
+        let window = gtk4::Window::builder()
+            .default_width(SIDEBAR_WIDTH)
+            .default_height(600)
+            .child(&column)
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert_eq!(card.title.label(), "Checking tracks…");
+        assert!(
+            !card.title.layout().is_ellipsized(),
+            "the job label must be readable, not truncated to a few characters"
+        );
+        // If anything has to give, it is the detail line — that is what its own
+        // ellipsis is for.
+        assert_eq!(
+            card.detail.ellipsize(),
+            gtk4::pango::EllipsizeMode::End,
+            "the detail line absorbs the shortfall"
+        );
+        window.close();
+    }
 
     #[test]
     fn doc_5c_progress_uses_tracks_as_the_primary_currency() {
