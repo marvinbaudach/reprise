@@ -40,19 +40,34 @@ pub(super) fn file_reveal(paths: &[Option<PathBuf>]) -> FileReveal {
     }
 }
 
-/// The downloaded files of the episodes currently on screen, taken when the
+/// The downloaded files of the episodes a render knows about, taken when the
 /// list is rendered. A download that finishes afterwards is not in here —
 /// the view re-renders on download state changes, and the action handler
 /// resolves the paths again from the store before it acts, so a stale
 /// snapshot can only hide the entry for a moment, never mislead it.
+///
+/// „Knows about" is deliberately wider than „shows": a group that is
+/// collapsed, or a channel with Shorts hidden, still keeps its off-screen
+/// episodes in the selection — `podcasts_view::retain_available` and
+/// `youtube_channel_detail::retain_selected` both prune against the full
+/// episode list, not the rendered window. A snapshot limited to the visible
+/// rows would answer „no file" for a selected-but-hidden episode and drop
+/// the menu entry for a selection that qualifies under `CTX-13`.
 pub(super) struct EpisodePaths {
     by_episode_id: BTreeMap<i64, PathBuf>,
 }
 
 impl EpisodePaths {
     pub(super) fn from_rows(rows: &[EpisodeRow]) -> Self {
+        Self::from_row_refs(rows)
+    }
+
+    /// The borrowing form, for the callers that hold the episodes across
+    /// several groups and would otherwise clone every row to call
+    /// [`EpisodePaths::from_rows`].
+    pub(super) fn from_row_refs<'a>(rows: impl IntoIterator<Item = &'a EpisodeRow>) -> Self {
         let by_episode_id = rows
-            .iter()
+            .into_iter()
             .filter_map(|row| {
                 let path = row
                     .downloaded_path

@@ -424,7 +424,11 @@ impl YoutubeChannelDetail {
         }
         let mut widgets = BTreeMap::new();
         let mut selection_widgets = BTreeMap::new();
-        let paths = Rc::new(EpisodePaths::from_rows(&projected.group.episodes));
+        // The channel's whole episode list, not the projected window: hiding
+        // Shorts or not having loaded more yet takes rows off screen without
+        // taking them out of the selection — `retain_selected` above prunes
+        // against this same full list, and `CTX-13` follows the selection.
+        let paths = Rc::new(EpisodePaths::from_row_refs(&rendered.group.episodes));
         for episode in &projected.group.episodes {
             self.content.append(&self.build_episode_row(
                 episode,

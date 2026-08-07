@@ -117,21 +117,7 @@ pub(super) fn replace(
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
     };
-    let expanded_episode_sources_snapshot = expanded_episode_sources.borrow();
-    let rendered_rows = groups
-        .iter()
-        .flat_map(|rendered| {
-            let all_visible =
-                expanded_episode_sources_snapshot.contains(&rendered.group.subscription_id);
-            let visible_count = super::podcasts_episode_window::visible_count(
-                rendered.group.episodes.len(),
-                all_visible,
-            );
-            rendered.group.episodes.iter().take(visible_count).cloned()
-        })
-        .collect::<Vec<_>>();
-    drop(expanded_episode_sources_snapshot);
-    let paths = Rc::new(EpisodePaths::from_rows(&rendered_rows));
+    let paths = Rc::new(EpisodePaths::from_row_refs(snapshot_rows(groups)));
     let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
@@ -150,6 +136,22 @@ pub(super) fn replace(
         container.append(&build_group(rendered, &context, &mut widgets));
     }
     widgets
+}
+
+/// `CTX-13`: the episodes a grouped render hands to [`EpisodePaths`] — every
+/// episode of every group, including the ones
+/// [`podcasts_episode_window::visible_count`] leaves off screen.
+///
+/// It has a name of its own because the tempting shortcut is to feed it the
+/// visible window instead. That is wrong and fails quietly: a collapsed group
+/// keeps its hidden episodes in the selection (`podcasts_view` prunes the
+/// selection against the full row set), so a window-sized snapshot answers
+/// "no file" for one of them and the menu entry disappears for a selection
+/// where every episode is downloaded.
+fn snapshot_rows(groups: &[RenderedSourceGroup]) -> impl Iterator<Item = &EpisodeRow> {
+    groups
+        .iter()
+        .flat_map(|rendered| rendered.group.episodes.iter())
 }
 
 fn build_group(
