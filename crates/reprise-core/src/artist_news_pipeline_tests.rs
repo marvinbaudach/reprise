@@ -24,7 +24,7 @@ fn migrated_conn() -> crate::db::Db {
 }
 
 #[test]
-fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
+fn nr_27_tag_mbid_skips_search_and_persists_releases() {
     let conn = migrated_conn();
     conn.conn()
         .execute(
@@ -100,7 +100,7 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
 }
 
 #[test]
-fn nr_16_refresh_excludes_featured_artist_credits_but_keeps_co_headliners() {
+fn nr_24_refresh_excludes_featured_artist_credits_but_keeps_co_headliners() {
     let db = migrated_conn();
     db.conn()
         .execute(
@@ -235,7 +235,7 @@ fn dg_3_refresh_pages_the_discography_and_enriches_local_matches() {
 }
 
 #[test]
-fn nr_1a_name_resolution_persists_positive_and_negative_results() {
+fn nr_27_name_resolution_persists_positive_and_negative_results() {
     let conn = migrated_conn();
     for (path, artist, plays) in [
         ("/music/pink.flac", "Pink Floyd", 20),

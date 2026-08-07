@@ -284,6 +284,7 @@ fn build_plan(
         &playlist_inventory,
         &mut plan,
     );
+    let owned_analysis_sidecars = owned_analysis_sidecar_paths(&plan, &managed_files);
     let known_paths = inventory
         .iter()
         .map(|file| file.device_path.clone())
@@ -302,9 +303,53 @@ fn build_plan(
                 .iter()
                 .map(|playlist| playlist.device_path.clone()),
         )
+        .chain(owned_analysis_sidecars)
         .collect::<HashSet<_>>();
     plan_orphan_removals(&known_paths, &managed_files, &mut plan);
     plan
+}
+
+/// The device paths whose audio this run puts on the device.
+///
+/// Two decisions turn on it — which sidecars this plan owns, and which
+/// sidecars it writes — and computing it twice is how those two drift apart.
+/// It takes the two fields rather than the whole plan so a caller holding
+/// `&mut MirrorPlan` can still write to the other fields.
+fn arriving_audio_paths<'a>(
+    copy: &'a [DesiredManagedFile],
+    replace: &'a [MirrorReplacement],
+) -> HashSet<&'a str> {
+    copy.iter()
+        .map(|file| file.device_path.as_str())
+        .chain(
+            replace
+                .iter()
+                .map(|replacement| replacement.desired.device_path.as_str()),
+        )
+        .collect()
+}
+
+fn owned_analysis_sidecar_paths(
+    plan: &MirrorPlan,
+    managed_files: &[ManagedDeviceFile],
+) -> HashSet<String> {
+    let resident = managed_files
+        .iter()
+        .map(|file| file.relative_path.as_str())
+        .collect::<HashSet<_>>();
+    let arriving = arriving_audio_paths(&plan.copy, &plan.replace);
+    plan.desired_files
+        .iter()
+        .map(|file| file.device_path.as_str())
+        .filter(|path| resident.contains(path) || arriving.contains(path))
+        .chain(
+            plan.retained_unavailable
+                .iter()
+                .map(|file| file.device_path.as_str())
+                .filter(|path| resident.contains(path)),
+        )
+        .filter_map(super::analysis_sidecar::device_path_for_track)
+        .collect()
 }
 
 fn plan_analysis_sidecars(
@@ -320,10 +365,18 @@ fn plan_analysis_sidecars(
         .iter()
         .map(|file| (file.relative_path.as_str(), file.size_bytes))
         .collect::<HashMap<_, _>>();
+    let arriving_audio = arriving_audio_paths(&plan.copy, &plan.replace);
+    let mut analysis_target_bytes = 0_u64;
     for desired in &plan.desired_files {
+        if !resident.contains_key(desired.device_path.as_str())
+            && !arriving_audio.contains(desired.device_path.as_str())
+        {
+            continue;
+        }
         let Some(size_bytes) = analyses.get(&desired.track.id).copied() else {
             continue;
         };
+        analysis_target_bytes = analysis_target_bytes.saturating_add(size_bytes);
         let Some(device_path) =
             super::analysis_sidecar::device_path_for_track(&desired.device_path)
         else {
@@ -349,12 +402,7 @@ fn plan_analysis_sidecars(
         .map(|sidecar| sidecar.size_bytes)
         .fold(0_u64, u64::saturating_add);
     plan.transfer_bytes = plan.transfer_bytes.saturating_add(analysis_bytes);
-    plan.target_bytes = plan.target_bytes.saturating_add(
-        plan.desired_files
-            .iter()
-            .filter_map(|desired| analyses.get(&desired.track.id).copied())
-            .fold(0_u64, u64::saturating_add),
-    );
+    plan.target_bytes = plan.target_bytes.saturating_add(analysis_target_bytes);
 }
 
 fn plan_file_changes(
@@ -470,9 +518,7 @@ fn plan_orphan_removals(
 
 fn is_removable_managed_path(path: &str) -> bool {
     let path = Path::new(path);
-    !super::analysis_sidecar::is_sidecar_path(path)
-        && !super::track_metadata_list::is_list_path(path)
-        && !super::lyrics_sidecar::is_sidecar_path(path)
+    !super::track_metadata_list::is_list_path(path) && !super::lyrics_sidecar::is_sidecar_path(path)
 }
 
 fn plan_playlists(

@@ -43,7 +43,7 @@ mod tests {
     use reprise_core::updates::badge_text as badge_presentation;
 
     #[test]
-    fn nr_9b_updates_badge_sums_only_enabled_ready_feeds_and_caps_at_nine_plus() {
+    fn nr_9c_updates_badge_sums_only_enabled_ready_feeds_and_caps_at_nine_plus() {
         assert_eq!(badge_presentation(0), None);
         assert_eq!(badge_presentation(1), Some("1".to_string()));
         assert_eq!(badge_presentation(9), Some("9".to_string()));

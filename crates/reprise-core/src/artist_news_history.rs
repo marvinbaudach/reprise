@@ -1,6 +1,6 @@
 //! Persistent history for the Releases full view, plus bounded retention for
-//! transient single rows. Album and EP catalog rows are durable because the
-//! Releases view uses them to report discography gaps.
+//! transient legacy rows. Album, EP, and Single catalog rows are durable
+//! because the Releases view uses them to report discography gaps.
 
 use std::cmp::Ordering;
 
@@ -9,7 +9,7 @@ use rusqlite::Connection;
 
 /// 6 months, approximated as flat 30-day months so the constant is a plain
 /// number instead of a calendar-walking calculation. Both this age limit and
-/// the count cap apply only to transient non-album/EP rows.
+/// the count cap apply only to transient non-catalog rows.
 const HISTORY_RETENTION_SECONDS: i64 = 6 * 30 * 24 * 60 * 60;
 const HISTORY_MAX_ENTRIES: usize = 200;
 /// Mirrors `NEWS_WINDOW_DAYS` in `artist_news.rs`: the fetch pipeline only
@@ -175,10 +175,16 @@ fn query_complete_history_in(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let counts = crate::artist_news::local_album_track_counts(conn)?;
+    let library = crate::artist_news_query::local_library_index(conn)?;
+    let (counts, track_titles) = (library.album_track_counts, library.track_titles);
     for entry in &mut entries {
-        entry.local_track_count =
-            crate::artist_news_query::local_track_count(&counts, &entry.artist_name, &entry.title);
+        entry.local_track_count = crate::artist_news_query::local_count_for_release(
+            &counts,
+            &track_titles,
+            &entry.artist_name,
+            &entry.title,
+            &entry.release_type,
+        );
         entry.presence = crate::artist_news_query::release_presence(
             &counts,
             &entry.artist_name,
@@ -219,12 +225,13 @@ fn local_today(now: i64) -> NaiveDate {
         .map_or_else(|| chrono::Utc::now().date_naive(), |dt| dt.date_naive())
 }
 
-/// Hard-deletes transient single rows that are beyond retention, protecting
+/// Hard-deletes transient legacy rows that are beyond retention, protecting
 /// anything still inside the fetch window (critical: see
-/// `FETCH_WINDOW_PROTECTION_DAYS` and module docs). Album and EP rows are
-/// durable catalog data. Any other row is deleted when it is NOT protected
-/// AND (it is older than `HISTORY_RETENTION_SECONDS` by `first_seen`, OR it
-/// falls beyond the `HISTORY_MAX_ENTRIES` newest transient rows).
+/// `FETCH_WINDOW_PROTECTION_DAYS` and module docs). Album, EP, and Single rows
+/// are durable catalog data. Only primary types no longer requested by the
+/// fetch remain eligible for deletion: they are removed when NOT protected
+/// AND (older than `HISTORY_RETENTION_SECONDS` by `first_seen`, OR beyond the
+/// `HISTORY_MAX_ENTRIES` newest transient rows).
 pub fn enforce_retention(db: &crate::db::Db, now: i64) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
     let today = local_today(now);
@@ -258,7 +265,10 @@ pub fn enforce_retention(db: &crate::db::Db, now: i64) -> Result<(), rusqlite::E
     let mut to_delete = Vec::new();
     let mut transient_index = 0;
     for (mbid, first_seen, first_release_date, release_type) in rows {
-        if release_type.eq_ignore_ascii_case("album") || release_type.eq_ignore_ascii_case("ep") {
+        if matches!(
+            release_type.to_ascii_lowercase().as_str(),
+            "album" | "ep" | "single"
+        ) {
             continue;
         }
         if is_protected_by_fetch_window(&first_release_date, window_start) {
@@ -349,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_16_restore_returns_a_single_hidden_gap() {
+    fn nr_24_restore_returns_a_single_hidden_gap() {
         let conn = migrated_conn();
         insert_history_row(&conn, "one", 1_000, "2026-01-01", "Album");
         insert_history_row(&conn, "two", 1_000, "2026-01-01", "Album");
@@ -386,7 +396,7 @@ mod tests {
                 &format!("row-{i}"),
                 now - i * 10,
                 "2000-01-01",
-                "Single",
+                "Legacy",
             );
         }
 
@@ -415,13 +425,13 @@ mod tests {
         let cutoff = now - HISTORY_RETENTION_SECONDS;
         // Both rows share an ancient, well-outside-the-window release date so
         // only the `first_seen` age criterion can explain the outcome.
-        insert_history_row(&conn, "just-too-old", cutoff - 1, "2000-01-01", "Single");
+        insert_history_row(&conn, "just-too-old", cutoff - 1, "2000-01-01", "Legacy");
         insert_history_row(
             &conn,
             "just-young-enough",
             cutoff + 1,
             "2000-01-01",
-            "Single",
+            "Legacy",
         );
 
         enforce_retention(&conn, now).unwrap();
@@ -431,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_16_retention_preserves_historical_album_and_ep_catalog_rows() {
+    fn nr_24_retention_preserves_historical_album_and_ep_catalog_rows() {
         let conn = migrated_conn();
         let now = 1_752_000_000_i64;
         let ancient_first_seen = now - HISTORY_RETENTION_SECONDS - 1;
@@ -442,6 +452,24 @@ mod tests {
 
         assert!(release_exists(&conn, "album"));
         assert!(release_exists(&conn, "ep"));
+    }
+
+    #[test]
+    fn nr_24_single_survives_cache_retention() {
+        let conn = migrated_conn();
+        let now = 1_752_000_000_i64;
+        let ancient_first_seen = now - HISTORY_RETENTION_SECONDS - 1;
+        insert_history_row(
+            &conn,
+            "durable-single",
+            ancient_first_seen,
+            "2023-01-01",
+            "Single",
+        );
+
+        enforce_retention(&conn, now).unwrap();
+
+        assert!(release_exists(&conn, "durable-single"));
     }
 
     #[test]
@@ -461,14 +489,14 @@ mod tests {
             "inside-window",
             ancient_first_seen,
             &inside_window,
-            "Single",
+            "Legacy",
         );
         insert_history_row(
             &conn,
             "outside-window",
             ancient_first_seen,
             &outside_window,
-            "Single",
+            "Legacy",
         );
 
         enforce_retention(&conn, now).unwrap();
@@ -493,20 +521,20 @@ mod tests {
         let future_date = (today + chrono::Duration::days(200))
             .format("%Y-%m-%d")
             .to_string();
-        insert_history_row(&conn, "future", ancient_first_seen, &future_date, "Single");
+        insert_history_row(&conn, "future", ancient_first_seen, &future_date, "Legacy");
         insert_history_row(
             &conn,
             "unparsable",
             ancient_first_seen,
             "not-a-date",
-            "Single",
+            "Legacy",
         );
         insert_history_row(
             &conn,
             "stale-control",
             ancient_first_seen,
             "2000-01-01",
-            "Single",
+            "Legacy",
         );
 
         enforce_retention(&conn, now).unwrap();

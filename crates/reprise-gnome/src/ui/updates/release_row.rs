@@ -4,10 +4,13 @@
 //! owning only the lead single off an album is `Partial`, distinct from
 //! owning nothing (`Absent`) or the whole thing (`Complete`). The primary
 //! action reflects that split: only a released, `Complete` match navigates
-//! to and focuses the album (never a play path, NR-13); both `Absent` and
-//! `Partial` open the release's announcement externally instead (NR-11),
-//! because owning just the single means the user wants the rest of the
-//! album, not a trip back to the one track they already have.
+//! to and focuses the album (never a play path — this branch is currently
+//! unreachable in the popover, since `delta_candidates`/NR-9c already
+//! excludes owned releases before a row is ever built; kept for the
+//! `primary_action`/`chip_presentation` pure functions' completeness).
+//! Both `Absent` and `Partial` open the release's announcement externally
+//! instead (NR-11), because owning just the single means the user wants the
+//! rest of the album, not a trip back to the one track they already have.
 
 use std::rc::Rc;
 
@@ -27,7 +30,9 @@ const COVER_EDGE: i32 = 40;
 /// Navigates to and focuses an in-library album by (title, artist). Kept as
 /// a plain closure type rather than a `MetadataNavigator` reference so this
 /// module — and the popover that owns it — stays navigation-agnostic; the
-/// window wires the real implementation (NR-13).
+/// window wires the real implementation. Currently unreachable via the
+/// popover's own data feed (see the module doc), since owned releases never
+/// reach a row to begin with.
 pub(in crate::ui) type OnShowAlbum = Rc<dyn Fn(&str, &str)>;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -139,7 +144,8 @@ pub(in crate::ui) use super::release_row_actions::launch_uri;
 
 /// One popover list entry. Hiding lives on the row itself rather than
 /// behind a separate destination, so it stays reachable regardless of list
-/// length; "Show in library" navigates and focuses (NR-13) and never plays.
+/// length; "Show in library" navigates and focuses, never plays (currently
+/// unreachable in practice — see the module doc).
 pub(in crate::ui) fn build(
     release: &StoredRelease,
     today: NaiveDate,
@@ -351,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_13_in_library_row_offers_show_in_library() {
+    fn in_library_row_offers_show_in_library() {
         let mut release = release_with_date("2026-01-01");
         release.presence = LibraryPresence::Complete;
         assert_eq!(
@@ -363,7 +369,7 @@ mod tests {
     /// In-library releases that have not been released yet must still open
     /// the announcement — "Show in library" would have nothing to reveal.
     #[test]
-    fn nr_13_upcoming_in_library_release_still_opens_announcement() {
+    fn upcoming_in_library_release_still_opens_announcement() {
         let mut release = release_with_date("2026-08-15");
         release.presence = LibraryPresence::Complete;
         assert_eq!(
@@ -437,11 +443,14 @@ mod tests {
         );
     }
 
-    /// NR-13: clicking "Show in library" navigates via the injected callback
-    /// and closes the popover first. It must never carry a play icon/path.
+    /// Clicking "Show in library" navigates via the injected callback and
+    /// closes the popover first. It must never carry a play icon/path. This
+    /// primary action is currently unreachable via the popover's own data
+    /// feed (see the module doc) but is asserted here for the pure
+    /// `primary_action`/`build` wiring regardless.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_13_show_in_library_closes_popover_and_navigates_without_play_icon() {
+    fn show_in_library_closes_popover_and_navigates_without_play_icon() {
         if gtk4::init().is_err() {
             return;
         }

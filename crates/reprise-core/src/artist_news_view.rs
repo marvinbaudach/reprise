@@ -11,38 +11,11 @@ use rusqlite::Connection;
 
 use crate::artist_news::{normalize, parse_partial_date, LibraryPresence};
 use crate::artist_news_history::{query_history_in, HistoryEntry};
-
-pub const RELEASES_FILTER_TYPE_KEY: &str = "releases.filter.type";
-pub const RELEASES_FILTER_HIDDEN_KEY: &str = "releases.filter.hidden";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReleaseTypeFilter {
-    Album,
-    Ep,
-}
-
-impl ReleaseTypeFilter {
-    pub const fn setting_value(self) -> &'static str {
-        match self {
-            Self::Album => "album",
-            Self::Ep => "ep",
-        }
-    }
-
-    fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "album" => Some(Self::Album),
-            "ep" => Some(Self::Ep),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ReleasesFilter {
-    pub release_type: Option<ReleaseTypeFilter>,
-    pub hidden: bool,
-}
+use crate::artist_news_scope::{
+    catalog_type, collapse_duplicates, counts_as_owned, ReleaseTypeSelection, ReleaseWindow,
+    ReleasesFilter, ScopedRelease, RELEASES_FILTER_HIDDEN_KEY, RELEASES_FILTER_TYPE_KEY,
+    RELEASES_FILTER_WINDOW_KEY,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseStatus {
@@ -58,12 +31,49 @@ pub enum ReleaseSortDirection {
     Descending,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleasesViewResult {
+    pub rows: Vec<HistoryEntry>,
+    pub widest_total: usize,
+}
+
+impl ScopedRelease for HistoryEntry {
+    fn artist_name(&self) -> &str {
+        &self.artist_name
+    }
+
+    fn title(&self) -> &str {
+        &self.title
+    }
+
+    fn first_release_date(&self) -> &str {
+        &self.first_release_date
+    }
+
+    fn release_type(&self) -> &str {
+        &self.release_type
+    }
+
+    fn track_count(&self) -> Option<i64> {
+        self.track_count
+    }
+
+    fn release_group_mbid(&self) -> &str {
+        &self.release_group_mbid
+    }
+}
+
 pub fn persisted_releases_filter(db: &crate::db::Db) -> Result<ReleasesFilter, rusqlite::Error> {
     let conn = db.conn();
     Ok(ReleasesFilter {
-        release_type: crate::library::settings::get_setting_in(conn, RELEASES_FILTER_TYPE_KEY)?
+        release_types: crate::library::settings::get_setting_in(conn, RELEASES_FILTER_TYPE_KEY)?
+            .map_or_else(ReleaseTypeSelection::default, |value| {
+                ReleaseTypeSelection::parse(&value).unwrap_or_default()
+            }),
+        window: crate::library::settings::get_setting_in(conn, RELEASES_FILTER_WINDOW_KEY)?
             .as_deref()
-            .and_then(ReleaseTypeFilter::parse),
+            .and_then(ReleaseWindow::parse)
+            .unwrap_or_default(),
         hidden: crate::library::settings::get_bool_in(conn, RELEASES_FILTER_HIDDEN_KEY, false)?,
     })
 }
@@ -81,22 +91,34 @@ pub fn release_status(entry: &HistoryEntry, today: NaiveDate) -> ReleaseStatus {
     }
 }
 
-pub fn filter_rows(rows: Vec<HistoryEntry>, filter: &ReleasesFilter) -> Vec<HistoryEntry> {
-    rows.into_iter()
+pub fn filter_rows(
+    rows: Vec<HistoryEntry>,
+    filter: &ReleasesFilter,
+    today: NaiveDate,
+) -> Vec<HistoryEntry> {
+    let cutoff = filter.window.cutoff(today);
+    let rows = rows
+        .into_iter()
         .filter(|entry| entry.hidden == filter.hidden)
-        .filter(|entry| entry.presence != LibraryPresence::Complete)
         .filter(|entry| {
-            matches!(
-                ReleaseTypeFilter::parse(&entry.release_type),
-                Some(ReleaseTypeFilter::Album | ReleaseTypeFilter::Ep)
+            !counts_as_owned(
+                entry.presence,
+                &entry.release_type,
+                &entry.first_release_date,
+                entry.track_count,
+                entry.local_track_count,
+                today,
             )
         })
+        .filter(|entry| catalog_type(&entry.release_type))
+        .filter(|entry| filter.release_types.includes(&entry.release_type))
         .filter(|entry| {
-            filter
-                .release_type
-                .is_none_or(|wanted| ReleaseTypeFilter::parse(&entry.release_type) == Some(wanted))
+            cutoff.is_none_or(|cutoff| {
+                parse_partial_date(&entry.first_release_date).is_none_or(|date| date >= cutoff)
+            })
         })
-        .collect()
+        .collect();
+    collapse_duplicates(rows)
 }
 
 pub fn sort_rows(
@@ -137,24 +159,36 @@ pub fn query_releases_view(
     filter: &ReleasesFilter,
     today: NaiveDate,
 ) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
-    let conn = db.conn();
-    query_releases_view_in(conn, filter, today)
+    Ok(query_releases_view_scope(db, filter, today)?.rows)
 }
 
-fn query_releases_view_in(
+pub fn query_releases_view_scope(
+    db: &crate::db::Db,
+    filter: &ReleasesFilter,
+    today: NaiveDate,
+) -> Result<ReleasesViewResult, rusqlite::Error> {
+    let conn = db.conn();
+    query_releases_view_scope_in(conn, filter, today)
+}
+
+fn query_releases_view_scope_in(
     conn: &Connection,
     filter: &ReleasesFilter,
     today: NaiveDate,
-) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
+) -> Result<ReleasesViewResult, rusqlite::Error> {
     let artists = current_library_artist_keys(conn)?;
     let rows = query_history_in(conn, today)?
         .into_iter()
         .filter(|entry| artists.contains(&normalize(&entry.artist_name)))
-        .collect();
-    Ok(sort_rows(
-        filter_rows(rows, filter),
+        .collect::<Vec<_>>();
+    let widest_total =
+        filter_rows(rows.clone(), &ReleasesFilter::widest(filter.hidden), today).len();
+    let rows = sort_rows(
+        filter_rows(rows, filter, today),
         ReleaseSortDirection::Descending,
-    ))
+    );
+    debug_assert!(rows.len() <= widest_total);
+    Ok(ReleasesViewResult { rows, widest_total })
 }
 
 fn current_library_artist_keys(
@@ -186,5 +220,7 @@ pub fn count_releases_view(
     today: NaiveDate,
 ) -> Result<i64, rusqlite::Error> {
     let conn = db.conn();
-    Ok(query_releases_view_in(conn, filter, today)?.len() as i64)
+    Ok(query_releases_view_scope_in(conn, filter, today)?
+        .rows
+        .len() as i64)
 }

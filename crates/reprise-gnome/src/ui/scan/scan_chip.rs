@@ -1,0 +1,347 @@
+//! Compact scan status shown in the Preferences dialog header chrome.
+
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use gtk4::prelude::*;
+use libadwaita as adw;
+use libadwaita::prelude::AnimationExt;
+
+use super::strings;
+
+#[cfg(test)]
+const CHIP_FADE_MS: u32 = crate::ui::motion::MICRO_MS;
+
+type Callback = Rc<dyn Fn()>;
+type CallbackSlot = Rc<RefCell<Option<Callback>>>;
+
+#[derive(Clone, Default)]
+pub(super) struct FadeGeneration(Rc<Cell<u64>>);
+
+impl FadeGeneration {
+    pub(super) fn start(&self) -> u64 {
+        let generation = self.0.get().wrapping_add(1);
+        self.0.set(generation);
+        generation
+    }
+
+    pub(super) fn is_current(&self, generation: u64) -> bool {
+        self.0.get() == generation
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ChipState {
+    label: String,
+    tooltip: Option<String>,
+    show_cancel: bool,
+    warning: bool,
+}
+
+fn chip_state(label: &str, tooltip: Option<&str>, warning: bool) -> ChipState {
+    ChipState {
+        label: label.to_owned(),
+        tooltip: tooltip.map(str::to_owned),
+        show_cancel: !warning,
+        warning,
+    }
+}
+
+const GEAR_SPINNING_CLASS: &str = "scan-chip-gear-spinning";
+
+/// Marks the gear as spinning while a scan runs. Reduced motion needs no
+/// second gate here: the spin is a CSS `@keyframes` animation, and GTK's CSS
+/// machinery stops those on `gtk-enable-animations=false` by itself (MOT-7,
+/// proven by `mot_7_css_honours_enable_animations_setting`). Consulting the
+/// setting from here instead cost a per-chip `gtk4::Settings` handler that
+/// outlived every Preferences dialog it was built for.
+fn apply_gear_motion(gear: &gtk4::Image, running: bool) {
+    if running {
+        gear.add_css_class(GEAR_SPINNING_CLASS);
+    } else {
+        gear.remove_css_class(GEAR_SPINNING_CLASS);
+    }
+}
+
+#[derive(Clone)]
+pub(in crate::ui) struct ScanChip {
+    inner: Rc<ScanChipWidgets>,
+}
+
+struct ScanChipWidgets {
+    root: gtk4::Overlay,
+    action: gtk4::Button,
+    gear: gtk4::Image,
+    label: gtk4::Label,
+    cancel: gtk4::Button,
+    fade_generation: FadeGeneration,
+    fade: RefCell<Option<adw::TimedAnimation>>,
+    on_activate: CallbackSlot,
+    on_cancel: CallbackSlot,
+}
+
+impl ScanChip {
+    pub(in crate::ui) fn new() -> Self {
+        let gear = gtk4::Image::from_icon_name("emblem-system-symbolic");
+        gear.add_css_class("scan-chip-gear");
+
+        let label = gtk4::Label::new(None);
+        label.add_css_class("scan-chip-label");
+        label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+
+        let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        content.append(&gear);
+        content.append(&label);
+
+        let action = gtk4::Button::builder()
+            .child(&content)
+            .has_frame(false)
+            .focusable(true)
+            .build();
+        action.add_css_class("scan-chip-action");
+
+        let cancel = gtk4::Button::with_label("×");
+        cancel.set_halign(gtk4::Align::End);
+        cancel.set_valign(gtk4::Align::Center);
+        // a11y-semantics: role=button name=cancel-scan state=focusable action=activate
+        cancel.set_focusable(true);
+        cancel.add_css_class("scan-chip-cancel");
+        cancel.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::SCAN_CHIP_CANCEL,
+        ))]);
+
+        let root = gtk4::Overlay::new();
+        root.add_css_class("scan-chip");
+        root.set_child(Some(&action));
+        root.add_overlay(&cancel);
+        root.set_opacity(0.0);
+        root.set_visible(false);
+
+        let on_activate: CallbackSlot = Rc::new(RefCell::new(None));
+        let activate_slot = on_activate.clone();
+        action.connect_clicked(move |_| {
+            let callback = activate_slot.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+
+        let on_cancel: CallbackSlot = Rc::new(RefCell::new(None));
+        let cancel_slot = on_cancel.clone();
+        cancel.connect_clicked(move |_| {
+            let callback = cancel_slot.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+
+        Self {
+            inner: Rc::new(ScanChipWidgets {
+                root,
+                action,
+                gear,
+                label,
+                cancel,
+                fade_generation: FadeGeneration::default(),
+                fade: RefCell::new(None),
+                on_activate,
+                on_cancel,
+            }),
+        }
+    }
+
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Widget {
+        self.inner.root.upcast_ref()
+    }
+
+    pub(in crate::ui) fn set_running(&self, label: &str, tooltip: Option<&str>) {
+        self.apply_state(&chip_state(label, tooltip, false));
+    }
+
+    pub(in crate::ui) fn set_warning(&self, label: &str, tooltip: Option<&str>) {
+        self.apply_state(&chip_state(label, tooltip, true));
+    }
+
+    pub(in crate::ui) fn hide(&self) {
+        self.fade_to(0.0, true);
+    }
+
+    pub(in crate::ui) fn set_on_activate(&self, callback: impl Fn() + 'static) {
+        *self.inner.on_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_cancel(&self, callback: impl Fn() + 'static) {
+        *self.inner.on_cancel.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    fn apply_state(&self, state: &ChipState) {
+        self.inner.label.set_label(&state.label);
+        self.inner.action.set_tooltip_text(state.tooltip.as_deref());
+        self.inner
+            .action
+            .update_property(&[gtk4::accessible::Property::Label(
+                &strings::scan_chip_accessible_label(&state.label),
+            )]);
+        self.inner.cancel.set_visible(state.show_cancel);
+        if state.warning {
+            self.inner.root.add_css_class("warning");
+        } else {
+            self.inner.root.remove_css_class("warning");
+        }
+        apply_gear_motion(&self.inner.gear, !state.warning);
+        self.inner.root.set_visible(true);
+        self.fade_to(1.0, false);
+    }
+
+    fn fade_to(&self, opacity: f64, hide_when_done: bool) {
+        let generation = self.inner.fade_generation.start();
+        if !crate::ui::motion::animations_enabled() {
+            if let Some(animation) = self.inner.fade.borrow_mut().take() {
+                animation.skip();
+            }
+            self.inner.root.set_opacity(opacity);
+            if hide_when_done {
+                self.inner.root.set_visible(false);
+            }
+            return;
+        }
+        let target = adw::PropertyAnimationTarget::new(&self.inner.root, "opacity");
+        let animation = crate::ui::motion::timed(
+            &self.inner.root,
+            self.inner.root.opacity(),
+            opacity,
+            crate::ui::motion::MICRO,
+            target,
+        );
+        if hide_when_done {
+            let root = self.inner.root.downgrade();
+            let fade_generation = self.inner.fade_generation.clone();
+            animation.connect_done(move |_| {
+                if fade_generation.is_current(generation) {
+                    if let Some(root) = root.upgrade() {
+                        root.set_visible(false);
+                    }
+                }
+            });
+        }
+        crate::ui::motion::replace_animation(&self.inner.fade, animation.clone());
+        animation.play();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn running_and_warning_states_keep_information_explicit() {
+        let running = chip_state("Scanning · 39%", Some("748 of 1,909 checked"), false);
+        assert_eq!(running.label, "Scanning · 39%");
+        assert_eq!(running.tooltip.as_deref(), Some("748 of 1,909 checked"));
+        assert!(running.show_cancel);
+        assert!(!running.warning);
+
+        let warning = chip_state(
+            "Library unavailable",
+            Some("/media/Music not mounted"),
+            true,
+        );
+        assert_eq!(warning.label, "Library unavailable");
+        assert!(!warning.label.contains('%'));
+        assert!(!warning.show_cancel);
+        assert!(warning.warning);
+    }
+
+    #[test]
+    fn scan_chip_css_uses_the_approved_geometry_and_colour_tokens() {
+        let css = super::super::scan_card_css::css();
+        for token in [
+            "border-radius: 999px",
+            "alpha(@accent_bg_color, 0.13)",
+            "alpha(@accent_color, 0.32)",
+            "color: @accent_color",
+            "font-size: 11.5px",
+            "font-weight: 600",
+            "@keyframes scan-chip-gear-spin",
+            "transform: rotate(360deg)",
+        ] {
+            assert!(css.contains(token), "missing scan-chip CSS token: {token}");
+        }
+    }
+
+    #[test]
+    fn contrast_1_the_chip_derives_every_colour_from_a_named_one() {
+        let css = super::super::scan_card_css::css();
+        let chip = css
+            .split(".scan-chip-action")
+            .next()
+            .expect("the chip block precedes the action block")
+            .rsplit_once(".scan-chip {")
+            .expect("the chip block is present")
+            .1;
+        // CONTRAST-1: a matching Adwaita named colour beats a hand-mixed one,
+        // and only a named colour follows a user-changed accent.
+        assert!(
+            !chip.contains("rgba(") && !chip.contains('#'),
+            "the chip still mixes a literal colour: {chip}"
+        );
+        for named in [
+            "@accent_bg_color",
+            "@accent_color",
+            "@warning_bg_color",
+            "@warning_color",
+        ] {
+            assert!(chip.contains(named), "chip colour {named} is missing");
+        }
+    }
+
+    #[test]
+    fn mot_1_the_gear_spin_period_comes_from_the_motion_module() {
+        let css = super::super::scan_card_css::css();
+        assert!(css.contains(&format!(
+            "animation: scan-chip-gear-spin {}ms linear infinite",
+            crate::ui::motion::INDICATOR_SPIN_MS
+        )));
+    }
+
+    #[test]
+    fn chip_fade_is_micro() {
+        assert_eq!(CHIP_FADE_MS, 150);
+        assert_eq!(CHIP_FADE_MS, crate::ui::motion::MICRO_MS);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_7_the_gear_spin_class_follows_the_scan_and_not_the_settings_singleton() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let previous = settings.is_gtk_enable_animations();
+
+        let chip = ScanChip::new();
+        chip.set_running("Scanning · 39%", None);
+        assert!(chip.inner.gear.has_css_class(GEAR_SPINNING_CLASS));
+
+        // Reduced motion stops the CSS keyframe inside GTK (MOT-7), so the
+        // class stays put. The chip listens to no `gtk4::Settings` signal of
+        // its own — one handler per Preferences open never came off again.
+        settings.set_gtk_enable_animations(false);
+        assert!(chip.inner.gear.has_css_class(GEAR_SPINNING_CLASS));
+        settings.set_gtk_enable_animations(true);
+
+        chip.set_warning("Library unavailable", None);
+        assert!(!chip.inner.gear.has_css_class(GEAR_SPINNING_CLASS));
+
+        settings.set_gtk_enable_animations(previous);
+    }
+
+    #[test]
+    fn replacing_a_fade_invalidates_its_completion_callback() {
+        let generation = FadeGeneration::default();
+        let hiding = generation.start();
+        assert!(generation.is_current(hiding));
+
+        generation.start();
+        assert!(!generation.is_current(hiding));
+    }
+}

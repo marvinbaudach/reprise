@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-07 14:49+0200\n"
+"POT-Creation-Date: 2026-08-07 15:07+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -1724,6 +1724,7 @@ msgid "Done"
 msgstr "Fertig"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:82
+#: crates/reprise-gnome/src/ui/strings_releases.rs:30
 msgid "All"
 msgstr "Alle"
 
@@ -2067,7 +2068,7 @@ msgid "Open in MusicBrainz"
 msgstr "In MusicBrainz öffnen"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:36
-#: crates/reprise-gnome/src/ui/strings_news.rs:146
+#: crates/reprise-gnome/src/ui/strings_news.rs:143
 msgid "New Releases"
 msgstr "Neue Veröffentlichungen"
 
@@ -2134,79 +2135,71 @@ msgid "All artists"
 msgstr "Alle Interpreten"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:56
-msgid "Include Singles"
-msgstr "Auch Singles einschließen"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:58
-msgid "Also report singles that have already been released"
-msgstr "Auch bereits veröffentlichte Singles melden"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:59
 msgid "Fetch now"
 msgstr "Jetzt abrufen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:60
+#: crates/reprise-gnome/src/ui/strings_news.rs:57
 msgid "Refresh failed · showing saved releases"
 msgstr "Aktualisierung fehlgeschlagen · zeigt gespeicherte Veröffentlichungen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:61
+#: crates/reprise-gnome/src/ui/strings_news.rs:58
 msgid "UPDATES"
 msgstr "AKTUALISIERUNGEN"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:62
+#: crates/reprise-gnome/src/ui/strings_news.rs:59
 msgid "RELEASES"
 msgstr "VERÖFFENTLICHUNGEN"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:63
+#: crates/reprise-gnome/src/ui/strings_news.rs:60
 msgid "CONCERTS"
 msgstr "KONZERTE"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:64
+#: crates/reprise-gnome/src/ui/strings_news.rs:61
 msgid "Concerts fetch failed"
 msgstr "Abrufen der Konzerte fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:65
+#: crates/reprise-gnome/src/ui/strings_news.rs:62
 msgid "Nothing new since your last look"
 msgstr "Nichts Neues seit deinem letzten Blick"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:66
+#: crates/reprise-gnome/src/ui/strings_news.rs:63
 msgid "Checking for new releases…"
 msgstr "Suche nach neuen Veröffentlichungen…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:67
+#: crates/reprise-gnome/src/ui/strings_news.rs:64
 msgid "No upcoming releases from your artists"
 msgstr "Keine bevorstehenden Veröffentlichungen Ihrer Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:68
+#: crates/reprise-gnome/src/ui/strings_news.rs:65
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:106
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:201
 msgid "Updated just now"
 msgstr "Gerade aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:69
+#: crates/reprise-gnome/src/ui/strings_news.rs:66
 msgid "See all"
 msgstr "Alle anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:70
-#: crates/reprise-gnome/src/ui/strings_releases.rs:33
+#: crates/reprise-gnome/src/ui/strings_news.rs:67
+#: crates/reprise-gnome/src/ui/strings_releases.rs:37
 msgid "Hide"
 msgstr "Ausblenden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:75
+#: crates/reprise-gnome/src/ui/strings_news.rs:72
 #, rust-format
 msgid "{count} track selected"
 msgid_plural "{count} tracks selected"
 msgstr[0] "{count} Titel ausgewählt"
 msgstr[1] "{count} Titel ausgewählt"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:86
+#: crates/reprise-gnome/src/ui/strings_news.rs:83
 #, rust-format
 msgid "{count} track · {duration}"
 msgid_plural "{count} tracks · {duration}"
 msgstr[0] "{count} Titel · {duration}"
 msgstr[1] "{count} Titel · {duration}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:97
+#: crates/reprise-gnome/src/ui/strings_news.rs:94
 #: crates/reprise-view/src/queue.rs:29
 #, rust-format
 msgid "Playing from {source} · {count} track"
@@ -2214,143 +2207,143 @@ msgid_plural "Playing from {source} · {count} tracks"
 msgstr[0] "Wiedergabe aus {source} · {count} Titel"
 msgstr[1] "Wiedergabe aus {source} · {count} Titel"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:106
+#: crates/reprise-gnome/src/ui/strings_news.rs:103
 #, rust-format
 msgid "{type} · {date}"
 msgstr "{type} · {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:113
+#: crates/reprise-gnome/src/ui/strings_news.rs:110
 #, rust-format
 msgid "MusicBrainz · Updated {date}"
 msgstr "MusicBrainz · Aktualisiert am {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:118
+#: crates/reprise-gnome/src/ui/strings_news.rs:115
 #, rust-format
 msgid "Cached · Updated {date}"
 msgstr "Zwischengespeichert · Aktualisiert am {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:129
+#: crates/reprise-gnome/src/ui/strings_news.rs:126
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:110
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr "Vor {age} Min. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:135
+#: crates/reprise-gnome/src/ui/strings_news.rs:132
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:116
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr "Vor {age} Std. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:138
+#: crates/reprise-gnome/src/ui/strings_news.rs:135
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:121
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr "Vor {age} Tg. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:143
+#: crates/reprise-gnome/src/ui/strings_news.rs:140
 #, rust-format
 msgid "{count} hidden · Show"
 msgstr "{count} ausgeblendet · Anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:147
+#: crates/reprise-gnome/src/ui/strings_news.rs:144
 msgid "released"
 msgstr "veröffentlicht"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:148
-#: crates/reprise-gnome/src/ui/strings_releases.rs:27
+#: crates/reprise-gnome/src/ui/strings_news.rs:145
+#: crates/reprise-gnome/src/ui/strings_releases.rs:31
 msgid "In library"
 msgstr "In der Musiksammlung"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:149
+#: crates/reprise-gnome/src/ui/strings_news.rs:146
 msgid "Single in library"
 msgstr "Single in der Musiksammlung"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:150
+#: crates/reprise-gnome/src/ui/strings_news.rs:147
 msgid "Show in library"
 msgstr "In der Musiksammlung anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:151
+#: crates/reprise-gnome/src/ui/strings_news.rs:148
 msgid "Open announcement"
 msgstr "Ankündigung öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:152
+#: crates/reprise-gnome/src/ui/strings_news.rs:149
 msgid "Show again"
 msgstr "Erneut anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:153
+#: crates/reprise-gnome/src/ui/strings_news.rs:150
 msgid "All caught up"
 msgstr "Alles aktuell"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:154
+#: crates/reprise-gnome/src/ui/strings_news.rs:151
 msgid "Retention: 6 months"
 msgstr "Aufbewahrung: 6 Monate"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:160
+#: crates/reprise-gnome/src/ui/strings_news.rs:157
 #, rust-format
 msgid "in {days} d"
 msgstr "in {days} Tg."
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:166
+#: crates/reprise-gnome/src/ui/strings_news.rs:163
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:49
 #, rust-format
 msgid "{count} new"
 msgstr "{count} neu"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:171
+#: crates/reprise-gnome/src/ui/strings_news.rs:168
 #, rust-format
 msgid "Show all concerts ({count}) →"
 msgstr "Alle Konzerte anzeigen ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:178
+#: crates/reprise-gnome/src/ui/strings_news.rs:175
 #, rust-format
 msgid "Show all releases ({count}) →"
 msgstr "Alle Veröffentlichungen anzeigen ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:185
+#: crates/reprise-gnome/src/ui/strings_news.rs:182
 msgid "unknown date"
 msgstr "unbekanntes Datum"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:194
+#: crates/reprise-gnome/src/ui/strings_news.rs:191
 msgid "Checking missing album covers…"
 msgstr "Fehlende Albumcover werden geprüft…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:195
+#: crates/reprise-gnome/src/ui/strings_news.rs:192
 msgid "Cover check complete"
 msgstr "Cover-Prüfung abgeschlossen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:196
+#: crates/reprise-gnome/src/ui/strings_news.rs:193
 msgid "Could not check album covers"
 msgstr "Albumcover konnten nicht geprüft werden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:197
+#: crates/reprise-gnome/src/ui/strings_news.rs:194
 msgid "Checking missing lyrics…"
 msgstr "Fehlende Songtexte werden geprüft…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:198
+#: crates/reprise-gnome/src/ui/strings_news.rs:195
 msgid "Lyrics check complete"
 msgstr "Songtext-Prüfung abgeschlossen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:199
+#: crates/reprise-gnome/src/ui/strings_news.rs:196
 msgid "Could not check lyrics"
 msgstr "Songtexte konnten nicht geprüft werden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:200
+#: crates/reprise-gnome/src/ui/strings_news.rs:197
 msgid "Analyzing library…"
 msgstr "Musiksammlung wird analysiert…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:201
+#: crates/reprise-gnome/src/ui/strings_news.rs:198
 msgid "Library analysis complete"
 msgstr "Analyse der Musiksammlung abgeschlossen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:202
+#: crates/reprise-gnome/src/ui/strings_news.rs:199
 msgid "Library analysis stopped"
 msgstr "Analyse der Musiksammlung abgebrochen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:203
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
 msgid "Could not analyze the library"
 msgstr "Musiksammlung konnte nicht analysiert werden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:216
+#: crates/reprise-gnome/src/ui/strings_news.rs:213
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
@@ -2359,17 +2352,17 @@ msgstr ""
 "{checked} von {total} geprüft · {downloaded} heruntergeladen · {unavailable} "
 "nicht verfügbar"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:228
+#: crates/reprise-gnome/src/ui/strings_news.rs:225
 #, rust-format
 msgid "{analyzed} of {total} analyzed"
 msgstr "{analyzed} von {total} analysiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:240
+#: crates/reprise-gnome/src/ui/strings_news.rs:237
 #, rust-format
 msgid "{analyzed} analyzed · {failed} failed"
 msgstr "{analyzed} analysiert · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:255
+#: crates/reprise-gnome/src/ui/strings_news.rs:252
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {cached} cached · {unavailable} unavailable"
@@ -2745,31 +2738,43 @@ msgstr "EP"
 msgid "Single"
 msgstr "Single"
 
+#: crates/reprise-gnome/src/ui/strings_releases.rs:27
+msgid "1 year"
+msgstr "1 Jahr"
+
 #: crates/reprise-gnome/src/ui/strings_releases.rs:28
+msgid "5 years"
+msgstr "5 Jahre"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:29
+msgid "10 years"
+msgstr "10 Jahre"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:32
 msgid "upcoming"
 msgstr "bevorstehend"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:29
+#: crates/reprise-gnome/src/ui/strings_releases.rs:33
 msgid "Incomplete"
 msgstr "Unvollständig"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:30
+#: crates/reprise-gnome/src/ui/strings_releases.rs:34
 msgid "Missing"
 msgstr "Fehlend"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:31
+#: crates/reprise-gnome/src/ui/strings_releases.rs:35
 msgid "No discography data yet"
 msgstr "Noch keine Diskografiedaten"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:32
-msgid "No missing albums or EPs"
-msgstr "Keine fehlenden Alben oder EPs"
+#: crates/reprise-gnome/src/ui/strings_releases.rs:36
+msgid "No missing releases"
+msgstr "Keine fehlenden Veröffentlichungen"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:34
+#: crates/reprise-gnome/src/ui/strings_releases.rs:38
 msgid "Couldn't refresh new releases"
 msgstr "Neuerscheinungen konnten nicht aktualisiert werden"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:36
+#: crates/reprise-gnome/src/ui/strings_releases.rs:40
 #, rust-format
 msgid ""
 "Showing saved releases from {time}. Announcement links need a connection."
@@ -2777,45 +2782,45 @@ msgstr ""
 "Es werden gespeicherte Veröffentlichungen von {time} angezeigt. Ankündigungs-"
 "Links brauchen eine Verbindung."
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:38
+#: crates/reprise-gnome/src/ui/strings_releases.rs:42
 msgid "There are no saved releases to show. Your library is unaffected."
 msgstr ""
 "Es sind keine gespeicherten Veröffentlichungen da, die gezeigt werden "
 "könnten. Deine Bibliothek ist unberührt."
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:39
+#: crates/reprise-gnome/src/ui/strings_releases.rs:43
 msgid "an earlier update"
 msgstr "einer früheren Aktualisierung"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:40
+#: crates/reprise-gnome/src/ui/strings_releases.rs:44
 msgid "Fetching releases…"
 msgstr "Veröffentlichungen werden abgerufen…"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:41
+#: crates/reprise-gnome/src/ui/strings_releases.rs:45
 msgid "Preparing release check…"
 msgstr "Veröffentlichungsabgleich wird vorbereitet…"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:57
+#: crates/reprise-gnome/src/ui/strings_releases.rs:61
 #, rust-format
 msgid "{shown} of {total} gaps"
 msgstr "{shown} von {total} Lücken"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:63
+#: crates/reprise-gnome/src/ui/strings_releases.rs:67
 #, rust-format
 msgid "{total} gaps"
 msgstr "{total} Lücken"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:68
+#: crates/reprise-gnome/src/ui/strings_releases.rs:72
 #, rust-format
 msgid "Show all {total} gaps"
 msgstr "Alle {total} Lücken anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:75
+#: crates/reprise-gnome/src/ui/strings_releases.rs:79
 #, rust-format
 msgid "{local} of {total} tracks"
 msgstr "{local} von {total} Titeln"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:86
+#: crates/reprise-gnome/src/ui/strings_releases.rs:90
 #, rust-format
 msgid "Checked {checked} of {total} artists"
 msgstr "{checked} von {total} Interpreten geprüft"
@@ -5212,13 +5217,18 @@ msgstr "Läuft seit {time}"
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:588
 msgid "This phone cannot be recognised — runs are not written to the history."
-msgstr "Dieses Handy kann nicht wiedererkannt werden — Läufe werden nicht in den Verlauf geschrieben."
+msgstr ""
+"Dieses Handy kann nicht wiedererkannt werden — Läufe werden nicht in den "
+"Verlauf geschrieben."
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:590
 msgid ""
 "The entries below come from a session where it had a stable identifier. "
 "Unlock the phone before plugging it in and the history is kept."
-msgstr "Die Einträge unten stammen aus einer Sitzung, in der es eine feste Kennung hatte. Entsperre das Handy vor dem Anstecken, dann bleibt der Verlauf erhalten."
+msgstr ""
+"Die Einträge unten stammen aus einer Sitzung, in der es eine feste Kennung "
+"hatte. Entsperre das Handy vor dem Anstecken, dann bleibt der Verlauf "
+"erhalten."
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:593
 msgid "Skipped"
@@ -5293,15 +5303,15 @@ msgstr "Prüfe das Gerät, um vor dem Sync zu sehen, was schon darauf ist."
 msgid "Verifying device contents…"
 msgstr "Geräteinhalt wird geprüft…"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:698
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:699
 msgid "Reading storage over MTP — this can take a moment."
 msgstr "Der Speicher wird über MTP gelesen — das kann einen Moment dauern."
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:699
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:700
 msgid "Device contents verified"
 msgstr "Geräteinhalt geprüft"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:700
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:701
 msgid "Could not verify device contents"
 msgstr "Geräteinhalt konnte nicht geprüft werden"
 
@@ -5622,6 +5632,15 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#~ msgid "Include Singles"
+#~ msgstr "Auch Singles einschließen"
+
+#~ msgid "Also report singles that have already been released"
+#~ msgstr "Auch bereits veröffentlichte Singles melden"
+
+#~ msgid "No missing albums or EPs"
+#~ msgstr "Keine fehlenden Alben oder EPs"
 
 #~ msgid "Sound"
 #~ msgstr "Klang"
