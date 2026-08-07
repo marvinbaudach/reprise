@@ -231,6 +231,16 @@ pub fn finish_run(db: &crate::db::Db, run: i64, summary: &RunSummary) -> Result<
     Ok(())
 }
 
+/// Replaces the provisional zero written before preparation with the final
+/// transfer-machine count. The run identity and outcome stay untouched.
+pub fn update_planned(db: &crate::db::Db, run: i64, planned: u32) -> Result<(), DbError> {
+    db.conn().execute(
+        "UPDATE sync_runs SET planned = ?2 WHERE id = ?1",
+        rusqlite::params![run, planned],
+    )?;
+    Ok(())
+}
+
 /// Records one file that did not go through cleanly.
 pub fn note_deviation(db: &crate::db::Db, run: i64, deviation: &Deviation) -> Result<(), DbError> {
     let conn = db.conn();

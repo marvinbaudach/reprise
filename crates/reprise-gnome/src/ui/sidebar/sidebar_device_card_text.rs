@@ -53,7 +53,7 @@ pub(super) fn leading_sentence(
 /// the leading sentence is.
 #[must_use]
 pub(super) fn tooltip_text(balance: &SyncBalance) -> String {
-    device_sync_strings::balance_text(balance)
+    device_sync_strings::detailed_balance_text(balance)
 }
 
 #[must_use]

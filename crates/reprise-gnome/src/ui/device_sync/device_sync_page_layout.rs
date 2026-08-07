@@ -20,12 +20,15 @@ pub(super) const CONTENT_MAX_WIDTH: i32 = 1_120;
 
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::ScrolledWindow,
-    /// The vertical content column, exposed so the caller can append
-    /// further cards (the Content/Next-synchronization panel, design 7a)
-    /// below the hero and playlist body without this module needing to
-    /// know about that panel's type.
+    /// The complete vertical page column. Its direct children are owned here:
+    /// hero, playlist/overview body, [`Self::up_next`] and [`Self::history`].
+    /// The caller only fills the two section containers.
     pub(super) content: gtk4::Box,
-    pub(super) device_name: gtk4::Label,
+    /// The heading row that accepts the Content panel's verification controls.
+    pub(super) up_next_heading: gtk4::Box,
+    /// Holds the externally owned Content panel below its "Up next" heading.
+    pub(super) up_next: gtk4::Box,
+    pub(super) device_name: gtk4::Button,
     pub(super) connection: gtk4::Label,
     pub(super) device_last_sync: gtk4::Label,
     pub(super) profile: gtk4::DropDown,
@@ -50,13 +53,28 @@ pub(super) struct DeviceDashboard {
     pub(super) progress_bar: gtk4::ProgressBar,
     pub(super) primary: gtk4::Button,
     pub(super) eject: gtk4::Button,
-    /// Holds the "Recent transfers" card, refilled on every update (MTP-20).
+    /// Holds the "Recent syncs" heading, warning, and card (MTP-20).
     pub(super) history: gtk4::Box,
 }
 
 pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashboard {
-    let device_name = label(&device.name, "title-1");
-    elide(&device_name);
+    let device_name = gtk4::Button::with_label(&device.name);
+    device_name.add_css_class("flat");
+    device_name.add_css_class("title-1");
+    device_name.set_halign(gtk4::Align::Start);
+    device_name.update_property(&[gtk4::accessible::Property::Label(
+        &super::device_sync_strings::text(super::device_sync_strings::RENAME_DEVICE),
+    )]);
+    if let Some(name_label) = device_name.child().and_downcast::<gtk4::Label>() {
+        // Ellipsize for `NPP-1`, but do NOT arm the ellipsis tooltip here: the
+        // inner label's tooltip wins over the button's, and the button's is the
+        // one carrying "Rename device" — or, for an unrememberable phone, the
+        // explanation of why it cannot be renamed. Arming both would hide that
+        // behind the plain full name on exactly the long names that ellipsize.
+        // `DeviceSyncPage::update` puts the full name into the button tooltip
+        // instead, so nothing is lost.
+        name_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    }
     let connection = label("MTP connected", "caption");
     connection.add_css_class("pill");
     connection.add_css_class("success");
@@ -210,6 +228,15 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     body.append(&playlists);
     body.append(&overview);
 
+    let up_next_title = label(
+        &super::device_sync_strings::text(super::device_sync_strings::UP_NEXT),
+        "title-2",
+    );
+    let up_next_heading = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    up_next_heading.append(&up_next_title);
+    let up_next = gtk4::Box::new(gtk4::Orientation::Vertical, 9);
+    up_next.append(&up_next_heading);
+
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 24);
     content.set_margin_top(28);
     content.set_margin_bottom(28);
@@ -218,6 +245,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     let history = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.append(&hero);
     content.append(&body);
+    content.append(&up_next);
     content.append(&history);
 
     let clamp = adw::Clamp::builder()
@@ -234,6 +262,8 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     DeviceDashboard {
         root,
         content,
+        up_next_heading,
+        up_next,
         device_name,
         connection,
         device_last_sync,

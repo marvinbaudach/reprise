@@ -353,8 +353,8 @@ fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
     let mut labels = Vec::new();
     collect_labels(root.upcast_ref::<gtk4::Widget>(), &mut labels);
     assert!(
-        labels.iter().any(|text| text.contains("Recent transfers")),
-        "the device page must name its transfer history: {labels:?}"
+        labels.iter().any(|text| text.contains("Recent syncs")),
+        "the device page must name its synchronization history: {labels:?}"
     );
     assert!(
         labels.iter().any(|text| text.contains("104 of 200 copied")),
@@ -364,6 +364,110 @@ fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
         labels.iter().any(|text| text.contains("Interrupted")),
         "a run that never finished must say so: {labels:?}"
     );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn device_page_sections_have_one_explicit_owner_and_order() {
+    gtk4::init().expect("GTK test display");
+
+    let (surface, _root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let content = surface
+        .history
+        .parent()
+        .expect("history must belong to the content column");
+    let children = std::iter::successors(
+        content.first_child(),
+        gtk4::prelude::WidgetExt::next_sibling,
+    )
+    .collect::<Vec<_>>();
+    assert_eq!(
+        children.len(),
+        4,
+        "the content column must contain only hero, body, Up next and Recent syncs"
+    );
+    assert_eq!(
+        content.last_child(),
+        Some(surface.history.clone().upcast()),
+        "the synchronization history must remain the page's final card"
+    );
+    let up_next = &children[2];
+    assert_eq!(
+        surface.content_panel.root().parent().as_ref(),
+        Some(up_next),
+        "the content panel belongs inside the explicit Up next section"
+    );
+    assert_eq!(
+        up_next.next_sibling(),
+        Some(surface.history.clone().upcast()),
+        "Up next and Recent syncs must be adjacent peer sections"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
+    gtk4::init().expect("GTK test display");
+    let mut device = device();
+    device.content_rows[0].item_count = 291;
+    device.content_rows[0].size_on_device_bytes = 1024 * 1024 * 1024;
+
+    let (surface, _root) = DeviceSyncPage::new(
+        &device,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let text = surface.root_text();
+    let lines = text.lines().collect::<Vec<_>>();
+    assert!(lines.contains(&"1 of 1 playlists · smart lists kept up to date"));
+    assert!(lines.contains(&"291 tracks"));
+    assert!(lines.contains(&"1.0 GiB"));
+    assert!(lines.contains(&"Nothing to transfer"));
+    assert!(!lines.contains(&"Storage by category"));
+    assert!(!lines.contains(&"Content"));
+    assert!(!lines.contains(&"Next synchronization"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn unrememberable_device_disables_hero_rename_with_the_history_explanation() {
+    gtk4::init().expect("GTK test display");
+    let mut device = device();
+    device.rememberable = false;
+    let (surface, _root) = DeviceSyncPage::new(
+        &device,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    assert!(!surface.device_name.is_sensitive());
+    let tooltip = surface.device_name.tooltip_text().unwrap_or_default();
+    assert!(tooltip.contains("runs are not written to the history"));
+    assert!(tooltip.contains("Unlock the phone before plugging it in"));
 }
 
 /// `MTP-46`, the visible half: the core gate already keeps a switched-off

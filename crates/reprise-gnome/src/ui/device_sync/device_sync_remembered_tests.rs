@@ -72,6 +72,24 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
 }
 
 #[test]
+fn an_empty_local_name_resets_a_connected_device_to_its_detected_name() {
+    run(async {
+        let (_temp, conn) = fixture();
+        disable_auto_start(&conn, "active");
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("active", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        runtime
+            .rename_remembered_device("active", "My phone")
+            .unwrap();
+        assert_eq!(runtime.devices()[0].name, "My phone");
+        runtime.rename_remembered_device("active", "   ").unwrap();
+        assert_eq!(runtime.devices()[0].name, "Phone active");
+    });
+}
+
+#[test]
 fn mtp_50_when_the_owner_disconnects_the_new_active_device_moves_above_history() {
     run(async {
         let (_temp, conn) = fixture();

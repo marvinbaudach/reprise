@@ -1,4 +1,5 @@
 use super::*;
+use reprise_core::device_sync::sync_log::{DeviationKind, RunOutcome};
 
 fn run(outcome: RunOutcome) -> RunRecord {
     RunRecord {
@@ -29,27 +30,89 @@ fn mtp_20_a_run_headline_names_when_it_ran_and_how_it_ended() {
 }
 
 #[test]
-fn mtp_20_the_balance_leads_with_what_arrived_and_what_did_not() {
-    let balance = run_balance(&run(RunOutcome::Completed));
-
-    assert!(balance.contains("198 of 200 copied"), "{balance}");
-    assert!(balance.contains("1 failed"), "{balance}");
-    assert!(balance.contains("3 removed"), "{balance}");
+fn an_unrememberable_phone_alone_reveals_the_stale_history_warning() {
+    assert!(history_warning_copy(false).is_some());
+    assert!(history_warning_copy(true).is_none());
 }
 
 #[test]
-fn mtp_20_a_clean_run_says_so_without_listing_zeroes() {
-    let mut clean = run(RunOutcome::Completed);
-    clean.copied = 200;
-    clean.skipped = 0;
-    clean.failed = 0;
-    clean.deleted = 0;
+fn a_running_record_renders_as_live_state_not_as_a_dated_result() {
+    let mut running = run(RunOutcome::Running);
+    running.finished_at = None;
+    running.copied = 0;
+    let progress = RunningProgress {
+        title: "Step 1 of 2 · Downloading 17 of 60 · 79%".into(),
+        fraction: 0.79,
+    };
 
-    let balance = run_balance(&clean);
+    let copy = run_row_copy(&running, Some(&progress));
 
-    assert!(balance.contains("200 of 200 copied"), "{balance}");
-    assert!(!balance.contains("failed"), "{balance}");
-    assert!(!balance.contains("removed"), "{balance}");
+    assert!(
+        copy.headline.starts_with("Running since "),
+        "{}",
+        copy.headline
+    );
+    assert!(!copy.headline.contains("2026"), "{}", copy.headline);
+    assert_eq!(copy.subtitle, progress.title);
+    assert_eq!(copy.percent, Some(79));
+}
+
+#[test]
+fn mtp_20_a_run_with_copies_and_failures_reports_both() {
+    let mut partial = run(RunOutcome::Completed);
+    partial.planned = 5;
+    partial.copied = 3;
+    partial.skipped = 0;
+    partial.failed = 2;
+    partial.deleted = 0;
+
+    let balance = run_balance(&partial);
+
+    assert_eq!(balance, "3 of 5 copied · 2 failed");
+}
+
+#[test]
+fn mtp_20_a_delete_only_run_omits_a_zero_copy_count() {
+    let mut deletion = run(RunOutcome::Completed);
+    deletion.planned = 0;
+    deletion.copied = 0;
+    deletion.skipped = 0;
+    deletion.failed = 0;
+    deletion.deleted = 4;
+
+    let balance = run_balance(&deletion);
+
+    assert_eq!(balance, "4 removed");
+    assert!(!balance.contains("0 of 0 copied"), "{balance}");
+}
+
+#[test]
+fn mtp_20_an_empty_run_has_a_non_blank_balance() {
+    let mut empty = run(RunOutcome::Completed);
+    empty.planned = 0;
+    empty.copied = 0;
+    empty.skipped = 0;
+    empty.failed = 0;
+    empty.deleted = 0;
+
+    let balance = run_balance(&empty);
+
+    assert_eq!(balance, "Nothing to transfer");
+    assert!(!balance.trim().is_empty());
+}
+
+#[test]
+fn mtp_20_a_copy_only_run_reports_its_copy_count() {
+    let mut copy = run(RunOutcome::Completed);
+    copy.planned = 5;
+    copy.copied = 5;
+    copy.skipped = 0;
+    copy.failed = 0;
+    copy.deleted = 0;
+
+    let balance = run_balance(&copy);
+
+    assert_eq!(balance, "5 of 5 copied");
 }
 
 #[test]
@@ -96,4 +159,68 @@ fn mtp_20_a_removal_reads_as_removed_rather_than_as_an_error() {
     });
 
     assert!(line.starts_with("Removed"), "{line}");
+}
+
+/// A progress tick must move the numbers, not the widgets. Rebuilding the list
+/// on every `notify()` would collapse an expanded row and throw keyboard focus
+/// out of it several times a second while a sync runs — the reason `sync` keeps
+/// a signature at all.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_20_a_progress_tick_updates_the_live_row_instead_of_rebuilding_the_list() {
+    gtk4::init().expect("GTK test display");
+    let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let state = HistoryState::default();
+    let runs = vec![(run(RunOutcome::Running), Vec::new())];
+
+    let first = RunningProgress {
+        title: "Step 1 of 2 · 17 of 60 downloaded".into(),
+        fraction: 0.28,
+    };
+    sync(&container, &state, &runs, true, Some(&first));
+    let card = container.first_child().expect("history card");
+    let row_before = state
+        .live
+        .borrow()
+        .as_ref()
+        .map(|live| live.row.clone())
+        .expect("a running run must produce a live row");
+    assert_eq!(row_before.subtitle().as_str(), first.title);
+
+    let later = RunningProgress {
+        title: "Step 2 of 2 · 41 of 60 copied".into(),
+        fraction: 0.79,
+    };
+    sync(&container, &state, &runs, true, Some(&later));
+
+    assert_eq!(
+        container.first_child().as_ref(),
+        Some(&card),
+        "the card must survive a tick that only moved the percentage"
+    );
+    let row_after = state
+        .live
+        .borrow()
+        .as_ref()
+        .map(|live| live.row.clone())
+        .expect("the live row must still be tracked");
+    assert_eq!(row_after, row_before, "the row object must be the same one");
+    assert_eq!(row_after.subtitle().as_str(), later.title);
+    assert_eq!(
+        state
+            .live
+            .borrow()
+            .as_ref()
+            .map(|live| live.percent.label().to_string()),
+        Some("79 %".to_string())
+    );
+
+    // A run that actually ended is a different list, and must be rebuilt.
+    let finished = vec![(run(RunOutcome::Completed), Vec::new())];
+    sync(&container, &state, &finished, true, None);
+    assert_ne!(
+        container.first_child().as_ref(),
+        Some(&card),
+        "a changed run set must rebuild the card"
+    );
 }

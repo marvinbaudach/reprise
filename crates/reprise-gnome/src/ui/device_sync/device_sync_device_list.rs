@@ -89,6 +89,17 @@ impl DeviceSyncRuntime {
                 if let Some(state) = states.iter_mut().find(|state| state.descriptor.id == id) {
                     let was_connected = state.connected;
                     let owned_session = state.session_state.opens_session();
+                    if let Err(error) = memory::adopt_detected_device_name(
+                        &self.conn,
+                        &mut state.settings,
+                        &descriptor,
+                    ) {
+                        tracing::warn!(
+                            device_id = descriptor.id,
+                            %error,
+                            "could not adopt the detected device name"
+                        );
+                    }
                     state.descriptor = descriptor;
                     state.connected = true;
                     state.session_state = projected.state;

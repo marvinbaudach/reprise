@@ -69,19 +69,7 @@ fn show(root: &gtk4::Button, runtime: &Rc<DeviceSyncRuntime>, device_id: &str, x
         let root = root.clone();
         let device_id = device_id.to_string();
         rename.connect_activate(move |_, _| {
-            let runtime = runtime.clone();
-            let device_id = device_id.clone();
-            crate::ui::dialogs::prompt_name(
-                &root,
-                &device_sync_strings::text(device_sync_strings::RENAME_DEVICE),
-                &device_sync_strings::text(device_sync_strings::LOCAL_DEVICE_NAME),
-                &device_sync_strings::text(device_sync_strings::RENAME),
-                move |name| {
-                    if let Err(error) = runtime.rename_remembered_device(&device_id, &name) {
-                        tracing::warn!(device_id, %error, "could not rename remembered device");
-                    }
-                },
-            );
+            crate::ui::device_sync::device_sync_rename::prompt(&root, &runtime, &device_id);
         });
     }
     actions.add_action(&rename);
