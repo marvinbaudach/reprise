@@ -16,9 +16,9 @@ use libadwaita::prelude::AnimationExt;
 #[cfg(test)]
 use super::waveform_primitives::BAR_GAP;
 use super::waveform_primitives::{
-    bar_played, bar_slot_width, fraction_at, interpolation_step, keyboard_seek_target,
-    resolve_bar_count, rounded_bar, should_redraw, update_accessible_value, RedrawSnapshot,
-    BAR_RADIUS, MINI_BAR_COUNT, MINI_BAR_GAP, MINI_BAR_RADIUS,
+    bar_played, bar_slot_width, fraction_at, frame_clock_stalled, keyboard_seek_target,
+    position_step, resolve_bar_count, rounded_bar, should_redraw, update_accessible_value,
+    velocity_between, RedrawSnapshot, BAR_RADIUS, MINI_BAR_COUNT, MINI_BAR_GAP, MINI_BAR_RADIUS,
 };
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use crate::ui::motion;
@@ -207,7 +207,8 @@ impl WaveformSeek {
             drag_fraction: None,
             target_fraction: 0.0,
             fraction_velocity: 0.0,
-            last_tick_us: 0,
+            last_position_us: 0,
+            last_frame_us: 0,
             build_progress: 1.0,
             build_start_us: 0,
             previous_bars: Vec::new(),
@@ -583,25 +584,24 @@ impl WaveformSeek {
         let mut s = self.state.borrow_mut();
         // Real monotonic time, NOT `frame_clock().frame_time()`: the frame
         // clock only advances while frames are being produced, so two
-        // position ticks arriving between frames used to read the same
-        // stale timestamp — `dt` collapsed to 1 µs, the velocity exploded,
-        // and the next real frame pinned the fill at 100% (the stuck-full
-        // bar bug). `frame_time` shares `g_get_monotonic_time`'s timescale,
-        // so mixing the two sources in `last_tick_us` is safe.
+        // position ticks arriving between frames used to read the same stale
+        // timestamp and explode the velocity. `frame_time` shares
+        // `g_get_monotonic_time`'s timescale, but the timestamps stay separate:
+        // position gaps estimate velocity, while frame gaps drive interpolation
+        // and reveal a stopped frame clock.
         let now = gtk4::glib::monotonic_time();
         let delta = (fraction - s.target_fraction).abs();
-        if delta > 0.05 || s.last_tick_us == 0 {
+        if delta > 0.05 || s.last_position_us == 0 {
             // Large discontinuity, seek, or no valid time reference yet — snap.
             s.fraction = fraction;
             s.target_fraction = fraction;
             s.fraction_velocity = 0.0;
-            s.last_tick_us = now;
         } else {
-            let dt = (now - s.last_tick_us).max(1) as f64;
-            s.fraction_velocity = (fraction - s.target_fraction) / dt;
+            let dt = (now - s.last_position_us).max(1) as f64;
+            s.fraction_velocity = velocity_between(s.target_fraction, fraction, dt);
             s.target_fraction = fraction;
-            s.last_tick_us = now;
         }
+        s.last_position_us = now;
         drop(s);
         update_accessible_value(&self.area, fraction, self.state.borrow().duration_ms);
         self.ensure_tick_callback();
@@ -648,14 +648,23 @@ impl WaveformSeek {
         let id = self.area.add_tick_callback(move |_, clock| {
             let now = clock.frame_time();
             let mut s = state.borrow_mut();
-            let dt = (now - s.last_tick_us).max(0) as f64;
+            let stalled = frame_clock_stalled(now, s.last_frame_us);
+            let dt = if stalled {
+                0.0
+            } else {
+                (now - s.last_frame_us).max(0) as f64
+            };
 
             if motion::animations_enabled() {
                 // Advance the smooth-position interpolation (never past the
-                // target — see `interpolation_step`).
-                s.fraction =
-                    interpolation_step(s.fraction, s.fraction_velocity, dt, s.target_fraction);
-                s.last_tick_us = now;
+                // target), or snap after a stopped frame clock.
+                (s.fraction, s.fraction_velocity) = position_step(
+                    s.fraction,
+                    s.fraction_velocity,
+                    dt,
+                    s.target_fraction,
+                    stalled,
+                );
 
                 // Advance the build-up animation.
                 if s.build_progress < 1.0 && s.build_start_us > 0 {
@@ -682,6 +691,7 @@ impl WaveformSeek {
                 s.crossfade_progress = 1.0;
                 s.crossfade_start_us = 0;
             }
+            s.last_frame_us = now;
 
             let accent = area.color();
             let accent = (
@@ -696,7 +706,7 @@ impl WaveformSeek {
             };
             s.head_colour_target = Some(target);
             s.head_colour = Some(match s.head_colour {
-                Some(current) if motion::animations_enabled() => {
+                Some(current) if motion::animations_enabled() && !stalled => {
                     smooth_towards(current, target, dt / 1_000_000.0, 0.120)
                 }
                 _ => target,
