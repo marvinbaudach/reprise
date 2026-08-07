@@ -135,6 +135,25 @@ exclude it - a blanket 48 px box blinds every icon button smaller than itself,
 which is exactly what the hover rule is about. The measurement is retained as
 `cursor-visibility.json` and in `summary.json` under `cursor_visibility`.
 
+`suspected-no-handler` cannot tell two different faults apart, because the
+explorer activates over AT-SPI: either the control does nothing at all, or only
+its accessibility action is unwired while a real click works. The click probe
+drives one control both ways and contrasts what each changed - state signature,
+changed pixels inside the element, and the rating stars, which are individual
+buttons labelled with a glyph:
+
+```sh
+scripts/cua-explore/run.sh --click-probe "☆" \
+  scripts/cua-explore/missions/first-time-exploration.json \
+  "$evidence_root/click-probe-1"
+```
+
+Neither row changing means the control does nothing. Only the pixel row changing
+means assistive technology is offered an action that goes nowhere. The pixel
+route is refused outright when the element's position was not measured, and a
+target below 8 px carries a warning rather than a silent coin toss. Retained as
+`click-probe.json` with two screenshots per route.
+
 Before trusting any hover verdict, settle whether a pointer move reaches the
 app at all. The probe places the pointer on one named control twice - once
 through cua-driver's `move_cursor`, once through a real X11 warp - and prints

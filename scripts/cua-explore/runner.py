@@ -490,6 +490,33 @@ def make_geometry_provider(pid: int, origin: Any = None) -> Any:
     return provider
 
 
+def run_click_probe(
+    transport: CliTransport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    origin: Any,
+    label: str,
+    evidence_dir: pathlib.Path,
+) -> None:
+    """Activate one control over AT-SPI and over pixels, then report both."""
+    from click_probe import probe_click, render_click_table, write_click_evidence
+
+    results = probe_click(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=session,
+        origin=origin,
+        label=label,
+        evidence_dir=evidence_dir,
+        geometry_provider=make_geometry_provider(pid, origin),
+    )
+    write_click_evidence(results, evidence_dir)
+    print(render_click_table(results))
+
+
 def _mission_for_agent(mission: Mission) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -703,6 +730,18 @@ def run(args: argparse.Namespace) -> int:
                 cursor_visibility.get("cursor_in_screenshot")
             )
             report.set_cursor_visibility(cursor_visibility)
+        if args.click_probe:
+            run_click_probe(
+                transport,
+                pid=pid,
+                window_id=window_id,
+                session=args.session,
+                origin=window_origin,
+                label=args.click_probe,
+                evidence_dir=args.evidence_dir,
+            )
+            finished = True
+            raise HoverSmokeComplete
         if args.hover_probe:
             if hover_geometry is None:
                 raise RunError("--hover-probe requires a mission with hover capability")
@@ -870,7 +909,7 @@ def run(args: argparse.Namespace) -> int:
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()
-    if args.hover_smoke or args.hover_probe:
+    if args.hover_smoke or args.hover_probe or args.click_probe:
         return 0
     ensure_run_complete(finished, summary)
     return 0
@@ -891,6 +930,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--gtk-animations", choices=("on", "off"), default="on")
     parser.add_argument("--hover-smoke", action="store_true")
     parser.add_argument("--hover-probe")
+    parser.add_argument("--click-probe")
     parser.add_argument("--window-origin")
     return parser.parse_args(argv)
 

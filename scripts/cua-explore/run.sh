@@ -15,6 +15,7 @@ usage:
   scripts/cua-explore/run.sh --validate-only MISSION.json
   scripts/cua-explore/run.sh --hover-smoke MISSION.json FRESH_OUTPUT_DIR [options]
   scripts/cua-explore/run.sh --hover-probe LABEL MISSION.json FRESH_OUTPUT_DIR [options]
+  scripts/cua-explore/run.sh --click-probe LABEL MISSION.json FRESH_OUTPUT_DIR [options]
   scripts/cua-explore/run.sh MISSION.json FRESH_OUTPUT_DIR [options]
 
 Runs opt-in exploratory UX agents in a disposable X11/D-Bus/XDG profile. It
@@ -53,6 +54,15 @@ if [[ ${1:-} == --hover-probe ]]; then
   hover_probe=${2:-}
   if [[ -z $hover_probe ]]; then
     echo "--hover-probe needs the label of a visible control" >&2
+    exit 2
+  fi
+  shift 2
+fi
+click_probe=
+if [[ ${1:-} == --click-probe ]]; then
+  click_probe=${2:-}
+  if [[ -z $click_probe ]]; then
+    echo "--click-probe needs the label of a visible control" >&2
     exit 2
   fi
   shift 2
@@ -231,6 +241,9 @@ if [[ $hover_smoke == true ]]; then
 fi
 if [[ -n $hover_probe ]]; then
   private_args+=(--hover-probe "$hover_probe")
+fi
+if [[ -n $click_probe ]]; then
+  private_args+=(--click-probe "$click_probe")
 fi
 if [[ -n $window_origin ]]; then
   private_args+=(--window-origin "$window_origin")
