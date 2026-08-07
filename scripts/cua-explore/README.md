@@ -74,12 +74,18 @@ normalising against it is right exactly when it is the same rectangle as the
 `list_windows` entry, and the sizes are the test for that. Geometry is resolved per element, not per tree: cua-driver returns one entry
 per indexed row - measured 180 against 485 nodes in the full walk, and not a
 cap, since its `max_elements` defaults to 5 000 - so the two trees are never
-the same shape. Each driver element is looked up on its own key of role, label,
-width and height; exactly one matching node wins, and no match or several means
-that element alone goes without geometry while the rest keep theirs. The
+the same shape. Elements are grouped by their own key of role, label, width and height. A group
+resolves only when the driver and the walk hold the same number of nodes for
+that key, and they are then paired in walk order - sound because both enumerate
+the same tree in pre-order and the driver's elements are a subset of the walk,
+so equal counts on a subset mean the sets are identical. Anything else leaves
+that group alone without geometry while the rest keep theirs. Pairings inside a
+group are counted separately as `resolved_ordered`, because they rest on that
+subset argument rather than on the key alone. The
 position oracles skip untrusted elements. `summary.json` records the quota
 under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
-outside the window) plus `geometry_calibration` and any `geometry_failures`.
+outside the window) together with up to 40 unresolved elements per reason -
+each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
 
 Before trusting any hover verdict, settle whether a pointer move reaches the
 app at all. The probe places the pointer on one named control twice - once

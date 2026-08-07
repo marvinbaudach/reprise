@@ -176,19 +176,29 @@ def _driver_key(element: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+UNRESOLVED_SAMPLE_LIMIT = 40
+LABEL_SAMPLE_LIMIT = 80
+
+
 @dataclass(frozen=True)
 class GeometryResolution:
-    """Per-element geometry plus the quota that says how far it carried."""
+    """Per-element geometry, the quota, and why the rest stayed unresolved."""
 
     frames: dict[int, tuple[float, float, float, float]]
     driver_elements: int
     walk_nodes: int
-    resolved: int
+    resolved_unique: int
+    resolved_ordered: int
     unmatched: int
     ambiguous: int
     out_of_window: int
     degenerate: int
+    unresolved: dict[str, list[dict[str, Any]]]
     calibration: dict[str, Any]
+
+    @property
+    def resolved(self) -> int:
+        return self.resolved_unique + self.resolved_ordered
 
     @property
     def trusted(self) -> bool:
@@ -199,6 +209,8 @@ class GeometryResolution:
             "driver_elements": self.driver_elements,
             "walk_nodes": self.walk_nodes,
             "resolved": self.resolved,
+            "resolved_unique": self.resolved_unique,
+            "resolved_ordered": self.resolved_ordered,
             "resolved_ratio": (
                 round(self.resolved / self.driver_elements, 4)
                 if self.driver_elements
@@ -208,8 +220,34 @@ class GeometryResolution:
             "ambiguous": self.ambiguous,
             "out_of_window": self.out_of_window,
             "degenerate": self.degenerate,
+            "unresolved": self.unresolved,
             "calibration": self.calibration,
         }
+
+
+def _sample(
+    unresolved: dict[str, list[dict[str, Any]]],
+    reason: str,
+    position: int,
+    element: Mapping[str, Any],
+    width: float,
+    height: float,
+    candidates: int,
+) -> None:
+    bucket = unresolved.setdefault(reason, [])
+    if len(bucket) >= UNRESOLVED_SAMPLE_LIMIT:
+        return
+    bucket.append(
+        {
+            "element_index": int(element.get("element_index", position)),
+            "role": str(element.get("role") or ""),
+            "label": str(element.get("label") or "")[:LABEL_SAMPLE_LIMIT],
+            "width": round(width),
+            "height": round(height),
+            "reason": reason,
+            "candidates": candidates,
+        }
+    )
 
 
 def resolve_driver_geometry(
@@ -221,11 +259,18 @@ def resolve_driver_geometry(
 
     cua-driver reports one entry per indexed row - measured 180 against 485
     nodes in the full walk - so the two trees are never the same shape and a
-    positional alignment cannot work. Each element is looked up on its own key
-    of role, label, width and height instead. Exactly one matching node wins;
-    no match or several means this element gets no geometry while the rest keep
-    theirs. A wrong position would still take two nodes that agree in all four,
-    and those are exactly what the ambiguity count throws out.
+    positional alignment cannot work. Elements are grouped by their own key of
+    role, label, width and height instead.
+
+    A group is resolved only when the driver and the walk hold the *same
+    number* of nodes for that key; then they are paired in walk order. That is
+    sound because both enumerate the same tree in pre-order and the driver's
+    elements are a subset of the walk, so equal counts on a subset mean the two
+    sets are identical and the k-th of each is the same node. Anything else -
+    no candidate, or a different count - leaves that group without geometry
+    while every other element keeps its own. Ordered pairings are counted
+    separately from single unique matches, because they rest on that subset
+    argument rather than on the key alone.
     """
     calibration = geometry_calibration(nodes, origin)
     if not calibration["consistent"]:
@@ -242,8 +287,9 @@ def resolve_driver_geometry(
             _key(item.role, item.label, item.width, item.height), []
         ).append(item)
 
-    frames: dict[int, tuple[float, float, float, float]] = {}
-    resolved = unmatched = ambiguous = out_of_window = degenerate = 0
+    groups: dict[tuple[Any, ...], list[tuple[int, Mapping[str, Any], float, float]]] = {}
+    unresolved: dict[str, list[dict[str, Any]]] = {}
+    degenerate = 0
     for position, element in enumerate(elements):
         if not isinstance(element, Mapping):
             continue
@@ -254,30 +300,57 @@ def resolve_driver_geometry(
             # The driver only reports a frame "when AT-SPI reports usable
             # bounds"; a virtualised row is not a failed match.
             degenerate += 1
+            _sample(unresolved, "degenerate", position, element, width, height, 0)
             continue
-        candidates = index.get(_driver_key(element), ())
-        if not candidates:
-            unmatched += 1
+        groups.setdefault(_driver_key(element), []).append(
+            (position, element, width, height)
+        )
+
+    frames: dict[int, tuple[float, float, float, float]] = {}
+    unique = ordered = unmatched = ambiguous = out_of_window = 0
+    for key, members in groups.items():
+        candidates = index.get(key, [])
+        if not candidates or len(candidates) != len(members):
+            reason = "unmatched" if not candidates else "ambiguous"
+            for position, element, width, height in members:
+                if reason == "unmatched":
+                    unmatched += 1
+                else:
+                    ambiguous += 1
+                _sample(
+                    unresolved, reason, position, element, width, height, len(candidates)
+                )
             continue
-        if len(candidates) > 1:
-            ambiguous += 1
-            continue
-        node = candidates[0]
-        rect = (origin.x + node.x, origin.y + node.y, node.width, node.height)
-        if not _inside(rect, origin):
-            out_of_window += 1
-            continue
-        frames[int(element.get("element_index", position))] = rect
-        resolved += 1
+        for (position, element, width, height), node in zip(members, candidates):
+            rect = (origin.x + node.x, origin.y + node.y, node.width, node.height)
+            if not _inside(rect, origin):
+                out_of_window += 1
+                _sample(
+                    unresolved,
+                    "out_of_window",
+                    position,
+                    element,
+                    width,
+                    height,
+                    len(candidates),
+                )
+                continue
+            frames[int(element.get("element_index", position))] = rect
+            if len(members) == 1:
+                unique += 1
+            else:
+                ordered += 1
     return GeometryResolution(
         frames=frames,
         driver_elements=len(elements),
         walk_nodes=len(nodes),
-        resolved=resolved,
+        resolved_unique=unique,
+        resolved_ordered=ordered,
         unmatched=unmatched,
         ambiguous=ambiguous,
         out_of_window=out_of_window,
         degenerate=degenerate,
+        unresolved=unresolved,
         calibration=calibration,
     )
 

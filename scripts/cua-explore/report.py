@@ -235,11 +235,29 @@ class RunReport:
                 f"({resolution.get('resolved_ratio')})"
             )
             lines.append(
+                f"  ({resolution.get('resolved_unique')} on a unique key, "
+                f"{resolution.get('resolved_ordered')} paired in walk order "
+                f"within an equally sized group)"
+            )
+            lines.append(
                 f"- Unresolved: {resolution.get('unmatched')} without a match, "
                 f"{resolution.get('ambiguous')} ambiguous, "
                 f"{resolution.get('degenerate')} without usable bounds, "
                 f"{resolution.get('out_of_window')} outside the window"
             )
+            unresolved = resolution.get("unresolved") or {}
+            for reason in sorted(unresolved):
+                entries = unresolved[reason]
+                if not entries:
+                    continue
+                lines.append(f"- `{reason}` ({len(entries)} shown):")
+                for entry in entries[:10]:
+                    lines.append(
+                        f"    - `{entry.get('role')}` "
+                        f"\"{entry.get('label')}\" "
+                        f"{entry.get('width')}x{entry.get('height')} "
+                        f"- {entry.get('candidates')} candidates"
+                    )
             lines.append("")
         if summary["geometry_failures"]:
             if not resolution:

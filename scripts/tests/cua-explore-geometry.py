@@ -174,6 +174,105 @@ class PerElementResolutionTests(unittest.TestCase):
             self.assertIn(key, record)
 
 
+class UnresolvedDiagnosticsTests(unittest.TestCase):
+    """Measure why an element stayed unresolved before changing the method."""
+
+    def test_every_reason_lists_its_elements_with_the_key(self) -> None:
+        elements = [
+            *ELEMENTS,
+            driver(11, "push button", "Ghost", 20, 20),
+            driver(13, "row", "Track 000999", 900, 1),
+        ]
+
+        record = resolve_driver_geometry(elements, NODES, ORIGIN).as_record()
+
+        ghost = record["unresolved"]["unmatched"][0]
+        self.assertEqual(ghost["element_index"], 11)
+        self.assertEqual(ghost["role"], "push button")
+        self.assertEqual(ghost["label"], "Ghost")
+        self.assertEqual([ghost["width"], ghost["height"]], [20, 20])
+        self.assertEqual(ghost["candidates"], 0)
+        self.assertEqual(
+            record["unresolved"]["degenerate"][0]["element_index"], 13
+        )
+
+    def test_an_ambiguous_group_reports_how_many_candidates_the_walk_offers(
+        self,
+    ) -> None:
+        nodes = [
+            FRAME_NODE,
+            node("row", "", 0, 10, 900, 28),
+            node("row", "", 0, 40, 900, 28),
+            node("row", "", 0, 70, 900, 28),
+        ]
+        elements = [
+            driver(0, "frame", "Reprise", 1200, 800, depth=0),
+            driver(7, "row", "", 900, 28),
+        ]
+
+        record = resolve_driver_geometry(elements, nodes, ORIGIN).as_record()
+
+        entry = record["unresolved"]["ambiguous"][0]
+        self.assertEqual(entry["element_index"], 7)
+        self.assertEqual(entry["candidates"], 3)
+
+    def test_the_list_is_capped_so_the_evidence_stays_readable(self) -> None:
+        elements = [
+            driver(0, "frame", "Reprise", 1200, 800, depth=0),
+            *[driver(100 + i, "label", f"miss {i}", 40, 12) for i in range(60)],
+        ]
+
+        record = resolve_driver_geometry(elements, NODES, ORIGIN).as_record()
+
+        self.assertEqual(record["unmatched"], 60)
+        self.assertEqual(len(record["unresolved"]["unmatched"]), 40)
+
+
+class OrderedGroupTests(unittest.TestCase):
+    """Same key, same count on both sides: pair them in walk order."""
+
+    NODES = [
+        FRAME_NODE,
+        node("row", "", 0, 10, 900, 28),
+        node("row", "", 0, 40, 900, 28),
+    ]
+    ELEMENTS = [
+        driver(0, "frame", "Reprise", 1200, 800, depth=0),
+        driver(7, "row", "", 900, 28),
+        driver(8, "row", "", 900, 28),
+    ]
+
+    def test_equal_counts_pair_in_order(self) -> None:
+        result = resolve_driver_geometry(self.ELEMENTS, self.NODES, ORIGIN)
+
+        self.assertEqual(result.frames[7], (205.0, 65.0, 900.0, 28.0))
+        self.assertEqual(result.frames[8], (205.0, 95.0, 900.0, 28.0))
+
+    def test_ordered_pairs_are_counted_apart_from_unique_matches(self) -> None:
+        record = resolve_driver_geometry(self.ELEMENTS, self.NODES, ORIGIN).as_record()
+
+        self.assertEqual(record["resolved_unique"], 1)
+        self.assertEqual(record["resolved_ordered"], 2)
+        self.assertEqual(record["resolved"], 3)
+
+    def test_unequal_counts_leave_the_whole_group_unresolved(self) -> None:
+        nodes = [*self.NODES, node("row", "", 0, 70, 900, 28)]
+
+        result = resolve_driver_geometry(self.ELEMENTS, nodes, ORIGIN)
+
+        self.assertEqual(result.ambiguous, 2)
+        self.assertNotIn(7, result.frames)
+        self.assertNotIn(8, result.frames)
+
+    def test_a_single_driver_element_against_several_nodes_stays_unresolved(
+        self,
+    ) -> None:
+        result = resolve_driver_geometry(self.ELEMENTS[:2], self.NODES, ORIGIN)
+
+        self.assertEqual(result.ambiguous, 1)
+        self.assertNotIn(7, result.frames)
+
+
 class RealTreeShapeTests(unittest.TestCase):
     """The measured shape: driver says 'window', Atspi says 'frame'."""
 
