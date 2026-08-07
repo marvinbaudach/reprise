@@ -286,6 +286,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         move |_| refresh()
     });
     super::spectrogram_batch_progress::install(scan_controls, &spectrogram_batch);
+    {
+        let batch = Rc::downgrade(&spectrogram_batch);
+        scan_controls.add_on_complete(move || {
+            if let Some(batch) = batch.upgrade() {
+                batch.start();
+            }
+        });
+    }
     // The colour of the seek bar arrives the way its shape already does: by
     // itself. The run is resumable, so a library that is already analyzed ends
     // it immediately and shows nothing; the menu item is the way to stop one

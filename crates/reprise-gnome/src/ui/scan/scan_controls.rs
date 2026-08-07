@@ -171,7 +171,7 @@ fn cloned_slot<T: Clone>(slot: &RefCell<Option<T>>) -> Option<T> {
 pub(in crate::ui) struct ScanCompletion(Rc<RefCell<Vec<OnScanComplete>>>);
 
 impl ScanCompletion {
-    pub(in crate::ui) fn set(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn add(&self, callback: impl Fn() + 'static) {
         self.0.borrow_mut().push(Rc::new(callback));
     }
 
@@ -428,8 +428,8 @@ impl ScanControls {
         }
     }
 
-    pub(in crate::ui) fn set_on_complete(&self, callback: impl Fn() + 'static) {
-        self.completion.set(callback);
+    pub(in crate::ui) fn add_on_complete(&self, callback: impl Fn() + 'static) {
+        self.completion.add(callback);
     }
 
     pub(in crate::ui) fn notify_complete(&self) {
