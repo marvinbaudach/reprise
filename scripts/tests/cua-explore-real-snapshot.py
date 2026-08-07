@@ -165,7 +165,7 @@ class RecordedHoverSweepTests(unittest.TestCase):
         _explorer, actions = self._drive()
         hovers = [action for action in actions if action["kind"] == "hover"]
 
-        self.assertGreaterEqual(len(hovers), 20)
+        self.assertGreaterEqual(len(hovers), 31)
 
     def test_the_sweep_records_what_it_covered(self) -> None:
         explorer, _actions = self._drive()
@@ -181,6 +181,41 @@ class RecordedHoverSweepTests(unittest.TestCase):
         _explorer, actions = self._drive()
 
         self.assertGreater(len(actions), 11)
+
+    def test_the_whole_budget_goes_to_the_one_reachable_section(self) -> None:
+        # Seven of the eight sections have no accessible handle. Splitting the
+        # budget eight ways capped the entry view at 25 of its 31 distinct
+        # targets, and the player bar - sorted last, because it sits at the
+        # bottom - was exactly what fell off the end.
+        explorer, _actions = self._drive()
+        entry = explorer.hover_coverage[0]
+
+        self.assertEqual(entry["candidates"], 31)
+        self.assertEqual(entry["hovered"], 31)
+        self.assertEqual(entry["skipped_budget"], 0)
+
+    def test_the_player_bar_controls_are_reached(self) -> None:
+        _explorer, actions = self._drive()
+        hovered = {
+            action["target"]["label"]
+            for action in actions
+            if action["kind"] == "hover"
+        }
+
+        for label in ("Play (Space)", "Shuffle", "Volume"):
+            self.assertIn(label, hovered)
+
+    def test_the_sweep_stays_inside_the_missions_action_budget(self) -> None:
+        _explorer, actions = self._drive()
+
+        self.assertLessEqual(len(actions), self.mission.budgets.actions)
+
+    def test_the_coverage_states_how_the_budget_was_divided(self) -> None:
+        explorer, _actions = self._drive()
+        entry = explorer.hover_coverage[0]
+
+        self.assertEqual(entry["planned_sections"], 1)
+        self.assertGreaterEqual(entry["limit_per_section"], 31)
 
     def test_every_hover_target_is_a_label_the_snapshot_offers(self) -> None:
         _explorer, actions = self._drive()

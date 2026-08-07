@@ -109,7 +109,12 @@ tiles softly - and only when its position was actually measured, since a
 placeholder frame would hover some other part of the window. Role spelling
 comes from the hover rulebook rather than the mission's list, because the driver
 answers with its own ("push button" for "button"). The sweep is bounded by the
-mission's action budget, spread evenly across sections; `summary.json` records
+mission's action budget, spread across the sections that actually have an
+accessible handle - a section that can never be visited gets no share. The
+reserve is the free exploration before the workload starts, one activation per
+reachable section, the checkpoint and the finish, plus a small margin. On the
+recorded snapshot that is 31 distinct targets in 44 actions against a budget of
+220, so the mission budget already covers the surface; `summary.json` records
 `hover_coverage` per section - candidates, reached, and how many were left to
 the budget - so a partial sweep is a stated result and never a silent one.
 

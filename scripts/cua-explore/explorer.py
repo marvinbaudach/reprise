@@ -12,8 +12,13 @@ from ui_vocabulary import canonical_role, hover_strictness
 
 DESTRUCTIVE_WORDS = ("delete", "remove", "forget", "eject", "trash", "erase")
 ASYNC_WORDS = ("refresh", "scan", "sync", "download", "analyze", "import", "save", "retry")
-MAX_HOVER_TARGETS_PER_SECTION = 28
+# A safety bound against a pathological tree, not the working limit: the
+# mission's action budget is what really bounds the sweep.
+MAX_HOVER_TARGETS_PER_SECTION = 200
 CURRENT_VIEW_SECTION = "(view on entry)"
+# Free exploration happens before the workload phase starts; those actions are
+# spent either way, so the hover budget has to account for them.
+EXPLORATION_PROPOSALS = 12
 SURFACE_PRIORITY = (
     "Music",
     "Queue",
@@ -47,6 +52,7 @@ class DeterministicExplorer:
         # What the sweep actually covered, so a truncated sweep is visible.
         self.hover_coverage: list[dict[str, Any]] = []
         self._hover_swept_current = False
+        self._hover_planned_sections = 0
 
     def propose(self, observation: Mapping[str, Any]) -> dict[str, Any]:
         state_id = str(observation.get("state_id", ""))
@@ -60,7 +66,7 @@ class DeterministicExplorer:
                 "duration_ms": 1_000,
                 "expect_status": True,
             }
-        if self._proposal_count >= 12:
+        if self._proposal_count >= EXPLORATION_PROPOSALS:
             workload_action = self._next_workload_action(state_id, observation)
             if workload_action is not None:
                 return workload_action
@@ -251,14 +257,16 @@ class DeterministicExplorer:
         return None
 
     def hover_budget_per_section(self, sections: int) -> int:
-        """Spread the action budget over the sections instead of overrunning it.
+        """Spread the action budget over the sections that can actually be swept.
 
-        Reserved: one activation per section, the workload checkpoint, the
-        finish action, and a small margin for recovery.
+        Reserved: the free exploration before the workload starts, one
+        activation per section, the workload checkpoint, the finish action, and
+        a small margin for recovery. Counting sections that have no accessible
+        handle would hand most of the budget to sections that are never visited.
         """
         if sections <= 0:
             return 0
-        reserve = sections + 2 + 4
+        reserve = sections + 2 + 4 + (EXPLORATION_PROPOSALS - 1)
         available = max(0, int(self.mission.budgets.actions) - reserve)
         return max(1, min(MAX_HOVER_TARGETS_PER_SECTION, available // sections))
 
@@ -307,7 +315,9 @@ class DeterministicExplorer:
                         label,
                     )
                 )
-            limit = self.hover_budget_per_section(len(sections) + 1)
+            limit = self.hover_budget_per_section(
+                self._hover_planned_sections or len(sections) + 1
+            )
             # One visit per label: two elements sharing a label would otherwise
             # spend two of the section's slots on the same measurement.
             ordered = []
@@ -332,6 +342,7 @@ class DeterministicExplorer:
                     "skipped_budget": len(ordered) - len(selected),
                     "skipped_without_geometry": without_geometry,
                     "limit_per_section": limit,
+                    "planned_sections": self._hover_planned_sections,
                 }
             )
             self._hover_pending_section = None
@@ -343,6 +354,12 @@ class DeterministicExplorer:
         # measures nothing - and used to abort the whole run.
         if not self._hover_swept_current:
             self._hover_swept_current = True
+            # Only sections with an accessible handle will ever be swept, so
+            # only those get a share of the budget.
+            offered = {str(label) for label in observation.get("actionable_labels", [])}
+            self._hover_planned_sections = 1 + sum(
+                1 for section in sections if section in offered
+            )
             self._hover_pending_section = CURRENT_VIEW_SECTION
             return self._next_hover_sweep_action(state_id, observation, workload)
         reachable = {

@@ -246,10 +246,24 @@ class RunReport:
         ]
         if summary.get("hover_coverage"):
             lines.extend(["## Hover coverage", ""])
+            planned = next(
+                (
+                    item.get("planned_sections")
+                    for item in summary["hover_coverage"]
+                    if item.get("planned_sections")
+                ),
+                None,
+            )
             lines.append(
                 f"- Hovered {summary['hover_reached']} of "
                 f"{summary['hover_candidates']} eligible targets"
             )
+            if planned:
+                lines.append(
+                    f"- The budget was divided over {planned} reachable "
+                    f"section(s); sections without an accessible handle get "
+                    f"no share, because they are never visited"
+                )
             for item in summary["hover_coverage"]:
                 lines.append(
                     f"    - `{item.get('section')}`: {item.get('hovered')} of "
