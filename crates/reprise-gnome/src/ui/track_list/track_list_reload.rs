@@ -176,9 +176,7 @@ fn restore_reload_anchor(
     // no id list at all, so the sorted full-table query disappears whenever
     // nothing is selected.
     if matches!(viewport, ReloadViewport::Top) {
-        if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
-            adjustment.set_value(0.0);
-        }
+        schedule_top_scroll_restore(shared.column_view.clone(), SCROLL_RESTORE_MAX_ATTEMPTS);
     }
     // Resolving positions costs a sorted full-table id query; skip it when
     // the capture side already established there is nothing to put back and
@@ -233,6 +231,36 @@ fn restore_reload_anchor(
         SCROLL_RESTORE_MAX_ATTEMPTS,
         hold,
     );
+}
+
+/// SEARCH-9: puts the viewport at the top of a freshly filtered list, and keeps
+/// it there.
+///
+/// A single write does not survive. `restore_reload_anchor` runs right after
+/// the model swap, while the rebuilt `ColumnView` still carries the *old*
+/// allocation; the allocation pass that follows restores GTK's own scroll
+/// position — the pre-filter value, clamped to the new and usually much
+/// shorter list. A display test caught exactly that: 486 instead of 0, 486
+/// being the clamped remains of where the list stood before the query.
+///
+/// So the zero is re-applied across idle rounds, like the anchor restore next
+/// door. Idle rather than the 16 ms timer that `schedule_centered_scroll_
+/// refinement` uses: this needs to outlast one allocation, not track a moving
+/// target, and the timer version is precisely the nachlauf SEARCH-9 set out to
+/// remove. It stops as soon as a round finds the value still at zero — at that
+/// point nothing is writing against us any more.
+fn schedule_top_scroll_restore(column_view: gtk4::ColumnView, attempts: u8) {
+    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) else {
+        return;
+    };
+    let already_settled = adjustment.value() == 0.0;
+    adjustment.set_value(0.0);
+    if already_settled || attempts == 0 {
+        return;
+    }
+    gtk4::glib::idle_add_local_once(move || {
+        schedule_top_scroll_restore(column_view, attempts - 1);
+    });
 }
 
 /// Puts the captured selection back on the rebuilt model. Rows the swap
