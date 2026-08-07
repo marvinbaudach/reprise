@@ -22,12 +22,15 @@ from ui_vocabulary import (
 
 GEOMETRY_EPSILON_PX = 6.0
 
-# The stall threshold is stated on app-attributable time - the excess a
-# sampling round-trip spends beyond what the same step's cheapest round-trip
-# cost. 250 ms is where a pause stops reading as instantaneous and starts
-# reading as a hiccup.
+# All three thresholds are stated on app-attributable time - wall time minus
+# the harness's own sleeps and get_window_state round-trips. 250 ms is where a
+# pause stops reading as instantaneous and starts reading as a hiccup, so it
+# serves both for late feedback and for a sampling gap that overshoots the
+# step's own baseline. 750 ms is the point at which an operation owes the user
+# a visible waiting state rather than silence.
+SLOW_FEEDBACK_MS = 250
 STALL_EXCESS_MS = 250
-
+SILENT_WAIT_MS = 750
 
 
 def element_flag(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
@@ -504,21 +507,38 @@ class OracleEngine:
         self, action: ActionEvidence, timeline: Sequence[Snapshot]
     ) -> list[Finding]:
         findings = []
-        if action.first_change_ms is not None and action.first_change_ms > 250:
+        # Every raw number here is wall time that contains the harness itself:
+        # one get_window_state is a subprocess round-trip (spawn, tree walk,
+        # PNG) costing hundreds of milliseconds, and the settle schedule sleeps
+        # on purpose. Judged raw, all three oracles fired on every single step.
+        app_first_change_ms = (
+            None
+            if action.first_change_ms is None
+            else max(
+                0, action.first_change_ms - action.snapshot_ms_before_first_change
+            )
+        )
+        if app_first_change_ms is not None and app_first_change_ms > SLOW_FEEDBACK_MS:
             findings.append(
                 Finding(
                     "slow-visible-feedback",
                     "warning",
                     0.7,
                     "Visible feedback arrived unusually late; timing remains a manual UX judgement.",
-                    {"first_change_ms": action.first_change_ms},
+                    {
+                        "app_first_change_ms": app_first_change_ms,
+                        "first_change_ms": action.first_change_ms,
+                        "blind_snapshot_ms": action.snapshot_ms_before_first_change,
+                    },
                 )
             )
         waiting_visible = any(self._has_waiting_state(snapshot) for snapshot in timeline)
+        harness_ms = action.settle_delay_ms + sum(action.snapshot_ms)
+        app_observation_ms = max(0, action.observation_ms - harness_ms)
         waited_without_feedback = (
             action.expect_effect == "required"
             and action.first_change_ms is None
-            and action.observation_ms >= 750
+            and app_observation_ms >= SILENT_WAIT_MS
         )
         if (action.expect_status or waited_without_feedback) and not waiting_visible:
             findings.append(
@@ -529,7 +549,9 @@ class OracleEngine:
                     "The operation took noticeable time without exposing progress or a waiting state.",
                     {
                         "dispatch_ms": action.elapsed_ms,
+                        "app_observation_ms": app_observation_ms,
                         "observation_ms": action.observation_ms,
+                        "harness_ms": harness_ms,
                         "status_expected": action.expect_status,
                     },
                 )

@@ -430,6 +430,16 @@ class DriverTimingEvidenceTests(unittest.TestCase):
         self.assertEqual(len(result.evidence.snapshot_ms), 3)
         self.assertTrue(all(value > 0 for value in result.evidence.snapshot_ms))
 
+    def test_a_quiet_app_produces_no_timing_findings_through_the_real_path(
+        self,
+    ) -> None:
+        result = self._run_step((0.01, 0.02, 0.03))
+
+        codes = {finding.code for finding in result.findings}
+        self.assertNotIn("main-loop-stall", codes)
+        self.assertNotIn("missing-waiting-feedback", codes)
+        self.assertNotIn("slow-visible-feedback", codes)
+
     def test_the_reported_observation_time_still_holds_the_raw_wall_time(self) -> None:
         result = self._run_step((0.05,))
 
@@ -500,6 +510,38 @@ class TimingAttributionTests(unittest.TestCase):
 
         self.assertEqual(stall.evidence["excess_ms"], [930])
         self.assertEqual(stall.evidence["baseline_ms"], 470)
+
+    def test_the_harnesss_own_waiting_is_not_missing_feedback(self) -> None:
+        self.assertNotIn("missing-waiting-feedback", self._codes())
+
+    def test_an_app_that_really_keeps_us_waiting_is_still_reported(self) -> None:
+        # 850 ms of deliberate sleep plus 1915 ms of round-trips leaves the app
+        # itself accountable for a full second here.
+        codes = self._codes(observation_ms=3800)
+
+        self.assertIn("missing-waiting-feedback", codes)
+
+    def test_an_explicit_wait_still_demands_a_visible_status(self) -> None:
+        codes = self._codes(kind="wait", expect_status=True, observation_ms=900)
+
+        self.assertIn("missing-waiting-feedback", codes)
+
+    def test_feedback_first_seen_after_our_own_blind_time_is_not_late(self) -> None:
+        # The change was noticed 500 ms in, but 470 ms of that was one snapshot
+        # during which we structurally could not have seen anything.
+        codes = self._codes(first_change_ms=500, snapshot_ms_before_first_change=470)
+
+        self.assertNotIn("slow-visible-feedback", codes)
+
+    def test_feedback_the_app_really_delayed_is_still_reported(self) -> None:
+        codes = self._codes(first_change_ms=1400, snapshot_ms_before_first_change=470)
+
+        self.assertIn("slow-visible-feedback", codes)
+
+    def test_a_change_seen_immediately_after_dispatch_is_never_late(self) -> None:
+        codes = self._codes(first_change_ms=8, snapshot_ms_before_first_change=0)
+
+        self.assertNotIn("slow-visible-feedback", codes)
 
 
 class UxOracleTests(unittest.TestCase):
