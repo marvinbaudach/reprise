@@ -127,25 +127,8 @@ class GeometryNode:
 # cua-driver and Atspi.get_role_name() do not always spell a role the same way.
 # Only equivalences we can name belong here; anything else fails loud, and the
 # error names both spellings so the pair can be added from a real run.
-# Measured pairs, each taken from a real run by comparing the driver's roles
-# against a role histogram of the live accessibility tree. Never guessed: an
-# unknown spelling stays unmatched and is reported with both names.
-ROLE_SYNONYMS = {
-    "push button": "button",
-    "frame": "window",
-    "grid cell": "table cell",
-    "group": "grouping",
-    "tree grid": "table",
-}
-
-
-def _role(role: str) -> str:
-    normalized = canonical_role(role)
-    return ROLE_SYNONYMS.get(normalized, normalized)
-
-
 def _key(role: str, label: str, width: float, height: float) -> tuple[Any, ...]:
-    return _role(role), label, round(width), round(height)
+    return canonical_role(role), label, round(width), round(height)
 
 
 def normalize_to_frame(nodes: Sequence[GeometryNode]) -> list[GeometryNode]:

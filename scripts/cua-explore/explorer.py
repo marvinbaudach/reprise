@@ -13,6 +13,7 @@ from ui_vocabulary import canonical_role, hover_strictness
 DESTRUCTIVE_WORDS = ("delete", "remove", "forget", "eject", "trash", "erase")
 ASYNC_WORDS = ("refresh", "scan", "sync", "download", "analyze", "import", "save", "retry")
 MAX_HOVER_TARGETS_PER_SECTION = 28
+CURRENT_VIEW_SECTION = "(view on entry)"
 SURFACE_PRIORITY = (
     "Music",
     "Queue",
@@ -45,6 +46,7 @@ class DeterministicExplorer:
         self._hover_seen: set[tuple[str, str]] = set()
         # What the sweep actually covered, so a truncated sweep is visible.
         self.hover_coverage: list[dict[str, Any]] = []
+        self._hover_swept_current = False
 
     def propose(self, observation: Mapping[str, Any]) -> dict[str, Any]:
         state_id = str(observation.get("state_id", ""))
@@ -73,7 +75,7 @@ class DeterministicExplorer:
         if action is None:
             action = self._search_action(state_id, signature, safe_labels)
         if action is None:
-            action = self._fallback_action(state_id)
+            action = self._fallback_action(state_id, observation)
         return action
 
     def _safe_label(self, label: str) -> bool:
@@ -129,7 +131,9 @@ class DeterministicExplorer:
             "fixture_token": token,
         }
 
-    def _fallback_action(self, state_id: str) -> dict[str, Any]:
+    def _fallback_action(
+        self, state_id: str, observation: Mapping[str, Any] | None = None
+    ) -> dict[str, Any]:
         fallbacks = []
         if "scroll" in self.mission.capabilities:
             fallbacks.extend(
@@ -157,7 +161,7 @@ class DeterministicExplorer:
                 "reason": "No safe novel action remains",
             }
         if self._fallback_index >= len(fallbacks) * 3:
-            workload_action = self._next_workload_action(state_id, {})
+            workload_action = self._next_workload_action(state_id, observation or {})
             if workload_action is not None:
                 return workload_action
         action = dict(fallbacks[self._fallback_index % len(fallbacks)])
@@ -303,8 +307,17 @@ class DeterministicExplorer:
                         label,
                     )
                 )
-            limit = self.hover_budget_per_section(len(sections))
-            selected = sorted(candidates)[:limit]
+            limit = self.hover_budget_per_section(len(sections) + 1)
+            # One visit per label: two elements sharing a label would otherwise
+            # spend two of the section's slots on the same measurement.
+            ordered = []
+            taken: set[str] = set()
+            for entry in sorted(candidates):
+                if entry[2] in taken:
+                    continue
+                taken.add(entry[2])
+                ordered.append(entry)
+            selected = ordered[:limit]
             for _y, _x, label in selected:
                 self._hover_seen.add((self._hover_pending_section, label))
                 self._workload_queue.append(
@@ -313,22 +326,47 @@ class DeterministicExplorer:
             self.hover_coverage.append(
                 {
                     "section": self._hover_pending_section,
-                    "candidates": len(candidates),
+                    "reachable": True,
+                    "candidates": len(ordered),
                     "hovered": len(selected),
-                    "skipped_budget": len(candidates) - len(selected),
+                    "skipped_budget": len(ordered) - len(selected),
                     "skipped_without_geometry": without_geometry,
                     "limit_per_section": limit,
                 }
             )
             self._hover_pending_section = None
-            self._hover_section_index += 1
             if self._workload_queue:
                 action = self._workload_queue.pop(0)
                 return {"schema_version": SCHEMA_VERSION, "state_id": state_id, **action}
-        if self._hover_section_index < len(sections):
+        # Sweep whatever is on screen first. The sidebar sections are not
+        # exposed to accessibility at all, so a sweep that only visits them
+        # measures nothing - and used to abort the whole run.
+        if not self._hover_swept_current:
+            self._hover_swept_current = True
+            self._hover_pending_section = CURRENT_VIEW_SECTION
+            return self._next_hover_sweep_action(state_id, observation, workload)
+        reachable = {
+            str(label) for label in observation.get("actionable_labels", [])
+        }
+        while self._hover_section_index < len(sections):
             section = sections[self._hover_section_index]
-            self._hover_pending_section = section
-            return self._activate(state_id, section)
+            self._hover_section_index += 1
+            if section in reachable:
+                self._hover_pending_section = section
+                return self._activate(state_id, section)
+            # Not a harness failure: the section simply has no accessible
+            # handle, which is itself worth reporting.
+            self.hover_coverage.append(
+                {
+                    "section": section,
+                    "reachable": False,
+                    "candidates": 0,
+                    "hovered": 0,
+                    "skipped_budget": 0,
+                    "skipped_without_geometry": 0,
+                    "limit_per_section": 0,
+                }
+            )
         return None
 
     def _activate(self, state_id: str, label: str) -> dict[str, Any]:

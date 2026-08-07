@@ -20,7 +20,11 @@ sys.path.insert(0, str(TEST_ROOT))
 from cua_explore_png import write_png  # noqa: E402
 from actions import HoverAction  # noqa: E402
 from driver import CuaExecutor, DriverError, hover_preflight  # noqa: E402
-from explorer import DeterministicExplorer, MAX_HOVER_TARGETS_PER_SECTION  # noqa: E402
+from explorer import (  # noqa: E402
+    CURRENT_VIEW_SECTION,
+    DeterministicExplorer,
+    MAX_HOVER_TARGETS_PER_SECTION,
+)
 from hover_geometry import (  # noqa: E402
     WindowGeometry,
     element_center,
@@ -686,12 +690,13 @@ class HoverSweepExplorerTests(unittest.TestCase):
 
         actions = self._drive(elements)
 
-        first_section = self.mission.workloads[0]["sections"][0]
-        count = sum(
-            action["kind"] == "hover" and action.get("section_for_test") == first_section
-            for action in actions
+        limit = self.explorer.hover_budget_per_section(
+            len(self.mission.workloads[0]["sections"]) + 1
         )
-        self.assertEqual(count, MAX_HOVER_TARGETS_PER_SECTION)
+        self.assertLessEqual(limit, MAX_HOVER_TARGETS_PER_SECTION)
+        for entry in self.explorer.hover_coverage:
+            self.assertLessEqual(entry["hovered"], limit)
+        self.assertEqual(self.explorer.hover_coverage[0]["hovered"], limit)
 
     def test_hover_sweep_explorer_accepts_the_drivers_own_role_spelling(self) -> None:
         # Measured: cua-driver reports "push button" where the mission lists
@@ -735,12 +740,13 @@ class HoverSweepExplorerTests(unittest.TestCase):
         self._drive(elements)
 
         first = self.explorer.hover_coverage[0]
-        self.assertEqual(first["section"], self.mission.workloads[0]["sections"][0])
-        self.assertEqual(first["candidates"], 40)
-        self.assertEqual(first["hovered"], MAX_HOVER_TARGETS_PER_SECTION)
-        self.assertEqual(
-            first["skipped_budget"], 40 - MAX_HOVER_TARGETS_PER_SECTION
+        self.assertEqual(first["section"], CURRENT_VIEW_SECTION)
+        limit = self.explorer.hover_budget_per_section(
+            len(self.mission.workloads[0]["sections"]) + 1
         )
+        self.assertEqual(first["candidates"], 40)
+        self.assertEqual(first["hovered"], limit)
+        self.assertEqual(first["skipped_budget"], 40 - limit)
         self.assertEqual(first["skipped_without_geometry"], 1)
 
     def test_a_small_budget_lowers_the_cap_instead_of_overrunning(self) -> None:
@@ -775,33 +781,44 @@ class HoverSweepExplorerTests(unittest.TestCase):
             report.set_hover_coverage(self.explorer.hover_coverage)
             summary = report.write()
 
-            self.assertEqual(summary["hover_candidates"], 40 * 7)
-            self.assertEqual(
-                summary["hover_reached"], MAX_HOVER_TARGETS_PER_SECTION * 7
+            # Entry view plus seven sections, each capped by the budget.
+            limit = self.explorer.hover_budget_per_section(
+                len(self.mission.workloads[0]["sections"]) + 1
             )
+            self.assertEqual(summary["hover_candidates"], 40 * 8)
+            self.assertEqual(summary["hover_reached"], limit * 8)
             self.assertIn(
                 "Hover coverage", (output / "report.md").read_text(encoding="utf-8")
             )
 
     def _drive(self, elements):
+        """Go through propose(), the way the runner does.
+
+        Calling the private workload method directly used to hide the warm-up
+        gate and let these tests pass while a real run never reached a hover.
+        """
+        sections = list(self.mission.workloads[0]["sections"])
         actions = []
-        observation = {"state_id": "s-0", "elements": [], "actionable_labels": []}
         current_section = None
+        observation = {
+            "state_id": "s-0",
+            "state_signature": "sig-0",
+            "elements": elements,
+            "actionable_labels": [item["label"] for item in elements] + sections,
+        }
         for index in range(self.mission.budgets.actions):
-            action = self.explorer._next_workload_action(
-                f"s-{index}", observation
-            )
+            action = self.explorer.propose(observation)
             self.assertIsNotNone(action)
-            if action["kind"] == "activate":
+            if action["kind"] == "activate" and action["target"]["label"] in sections:
                 current_section = action["target"]["label"]
-                observation = {
-                    "state_id": f"s-{index + 1}",
-                    "elements": elements,
-                    "actionable_labels": [item["label"] for item in elements],
-                }
             if action["kind"] == "hover":
                 action = {**action, "section_for_test": current_section}
             actions.append(action)
+            observation = {
+                **observation,
+                "state_id": f"s-{index + 1}",
+                "state_signature": f"sig-{index + 1}",
+            }
             if action["kind"] == "finish":
                 break
         return actions

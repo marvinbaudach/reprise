@@ -8,13 +8,45 @@ from typing import Mapping
 
 CANONICAL_ROW_ROLE = "row"
 
+# Every spelling variant seen from cua-driver or Atspi.get_role_name(), folded
+# onto one token. This is the only place that knows about spellings; the
+# geometry matcher and the hover sweep both go through canonical_role. Each
+# entry was measured, never guessed, and an unknown spelling still falls
+# through unchanged so it fails visibly where it is used.
 ROLE_ALIASES: Mapping[str, str] = {
     "list item": CANONICAL_ROW_ROLE,
+    "listitem": CANONICAL_ROW_ROLE,
     "table row": CANONICAL_ROW_ROLE,
+    "tablerow": CANONICAL_ROW_ROLE,
     "tree item": CANONICAL_ROW_ROLE,
+    "treeitem": CANONICAL_ROW_ROLE,
+    "push button": "button",
+    "pushbutton": "button",
+    "togglebutton": "toggle button",
+    "checkbox": "check box",
+    "radiobutton": "radio button",
+    "menuitem": "menu item",
+    "table cell": "grid cell",
+    "tablecell": "grid cell",
+    "gridcell": "grid cell",
+    "tree grid": "table",
+    "treegrid": "table",
+    "frame": "window",
+    "grouping": "group",
+    "scrollbar": "scroll bar",
 }
 
-ROW_ROLES = frozenset({CANONICAL_ROW_ROLE, *ROLE_ALIASES})
+# Only the spellings that really denote a row - ROLE_ALIASES also carries
+# button, cell and window variants now, and folding those in here would have
+# made the row matcher accept everything.
+ROW_ROLES = frozenset(
+    {CANONICAL_ROW_ROLE}
+    | {
+        spelling
+        for spelling, canonical in ROLE_ALIASES.items()
+        if canonical == CANONICAL_ROW_ROLE
+    }
+)
 BUTTON_ROLES = frozenset(
     {
         "button",

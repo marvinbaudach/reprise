@@ -90,6 +90,19 @@ under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
 outside the window) together with up to 40 unresolved elements per reason -
 each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
 
+Tests for the explorer start from `scripts/tests/fixtures/hover-sweep-observe.json`,
+a verbatim recording of cua-driver output from a live run, and drive the public
+`propose` entry point with the action gateway in the loop. Hand-written
+fixtures disagreed with the driver three times running - role spellings, the
+element container, the missing `actions` list - and each time the suite stayed
+green while the real run did nothing. Role spellings live in exactly one place,
+`ui_vocabulary.ROLE_ALIASES`; an unknown one still falls through unchanged and
+fails where it is used.
+
+The sidebar sections are not exposed to accessibility at all, so the sweep
+measures the view it starts in first and records any section it cannot reach as
+`reachable: false` instead of aborting the run.
+
 The hover sweep points at every visible, enabled, actionable element whose role
 has a hover contract - buttons and links strictly, rows, cells, tabs, chips and
 tiles softly - and only when its position was actually measured, since a
