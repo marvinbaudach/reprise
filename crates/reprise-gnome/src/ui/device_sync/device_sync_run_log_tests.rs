@@ -9,6 +9,74 @@
 
 use super::*;
 
+fn unremembered_start(started_at: i64) -> reprise_core::device_sync::sync_log::RunStart {
+    reprise_core::device_sync::sync_log::RunStart {
+        device_serial: "mtp://[usb:001,013]/".into(),
+        device_name: "Unknown Android phone".into(),
+        transfer_profile: "opus_160".into(),
+        started_at,
+        planned: 1,
+    }
+}
+
+#[test]
+fn an_unrememberable_device_run_records_start_outcome_and_deviation() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("mtp://[usb:001,013]/", false)],
+            1,
+        ));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        let log = RunLog::open(&runtime, &unremembered_start(4_000));
+        let opened = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(opened.started_at, 4_000);
+        assert_eq!(
+            opened.outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Running
+        );
+
+        reprise_core::device_sync::sync_log::note_deviation(
+            &conn,
+            opened.id,
+            &reprise_core::device_sync::sync_log::Deviation {
+                kind: reprise_core::device_sync::sync_log::DeviationKind::Failed,
+                track_id: Some(7),
+                device_path: "Music/Reprise/Track.opus".into(),
+                detail: "copy failed: device disconnected".into(),
+            },
+        )
+        .unwrap();
+        log.close(
+            &runtime,
+            &reprise_core::device_sync::SyncOutcome::Failed {
+                terminal_error: Some("device disconnected".into()),
+                failed_tracks: vec![7],
+            },
+            4_100,
+        );
+
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(recorded.device_serial, "mtp://[usb:001,013]/");
+        assert_eq!(recorded.finished_at, Some(4_100));
+        assert_eq!(
+            recorded.outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Failed
+        );
+        let deviations =
+            reprise_core::device_sync::sync_log::deviations(&conn, recorded.id).unwrap();
+        assert_eq!(deviations.len(), 1);
+        assert_eq!(deviations[0].track_id, Some(7));
+        assert_eq!(deviations[0].detail, "copy failed: device disconnected");
+    });
+}
+
 #[test]
 fn a_live_transfer_is_the_first_history_row_with_its_final_planned_count() {
     run(async {
@@ -78,7 +146,6 @@ fn rejecting_a_start_maps_every_error_to_a_closed_run() {
                     started_at: 1_000 + index as i64,
                     planned: 0,
                 },
-                true,
             );
             record_rejected_start(&runtime, "a", &log, &error);
             let latest = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
@@ -120,7 +187,6 @@ fn start_transfer_now_closes_the_open_run_when_the_device_is_gone() {
                 started_at: 5_000,
                 planned: 0,
             },
-            true,
         );
         // "b" is not connected — the same shape as a phone unplugged during
         // its preparation download.
@@ -138,5 +204,34 @@ fn start_transfer_now_closes_the_open_run_when_the_device_is_gone() {
             "the run opened before preparation must be closed, not abandoned"
         );
         assert!(latest.finished_at.is_some(), "no dangling running row");
+    });
+}
+
+#[test]
+fn an_unrememberable_device_rejected_start_is_recorded() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("mtp://[usb:001,013]/", false)],
+            1,
+        ));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        let log = RunLog::open(&runtime, &unremembered_start(5_000));
+        let error = runtime
+            .start_transfer_now("missing", SyncInitiator::Listener, log)
+            .expect_err("an absent device must reject the prepared run");
+        assert!(matches!(error, SyncStartError::UnknownDevice));
+
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(recorded.device_serial, "mtp://[usb:001,013]/");
+        assert_eq!(
+            recorded.outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Cancelled
+        );
+        assert!(recorded.finished_at.is_some());
     });
 }
