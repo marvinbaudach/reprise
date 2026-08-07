@@ -65,7 +65,11 @@ pub(super) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
 
 pub const SPACE_UNKNOWN: &str = N_!("Available space unknown");
 pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
-pub const CHOOSE_CONTENT: &str = N_!("Choose…");
+pub const CHANGE: &str = N_!("Change…");
+pub const CHANGE_CONTENT: &str = N_!("Change content…");
+pub const CHANGE_FOLDER: &str = N_!("Change folder…");
+pub const TARGET_FOLDER: &str = N_!("Target folder: {path}");
+pub const CAP_IN_GIB: &str = N_!("Size limit in GiB (0 means no size limit)");
 pub const CHOOSE_CATEGORY: &str = N_!("Choose {category}");
 pub const FILTER_SYNC_CONTENT: &str = N_!("Filter sync content");
 pub const SELECT_ALL: &str = N_!("Select all");
@@ -94,6 +98,12 @@ pub const PICKER_NEEDS_DOWNLOAD: &str = N_!("{count} still need downloading · p
 pub const TRACKS: &str = N_!("{count} tracks");
 pub const EPISODES: &str = N_!("{count} episodes");
 pub const UNKNOWN_SIZES: &str = N_!("+ {count} unknown sizes");
+pub const SMART_LISTS_UPDATED: &str = N_!("smart lists kept up to date");
+pub const SMART_LISTS_FROZEN: &str = N_!("smart lists keep their current contents");
+pub const ALL_EPISODES: &str = N_!("all episodes");
+pub const UNPLAYED_ONLY: &str = N_!("unplayed only");
+pub const PLAYED_ARE_REMOVED: &str = N_!("played are removed");
+pub const NO_SIZE_LIMIT: &str = N_!("no size limit");
 
 pub fn available_space(bytes: Option<u64>) -> String {
     bytes.map_or_else(
@@ -271,12 +281,67 @@ pub fn category_name(kind: reprise_core::device_sync::SyncTargetKind) -> &'stati
     }
 }
 
-/// Design 7a's cap column: "Cap 8.0 GiB" or "No cap".
+/// The category rule's size phrase: "max 8.0 GiB" or "no size limit".
 pub fn cap_text(cap_bytes: Option<u64>) -> String {
     cap_bytes.map_or_else(
-        || "No cap".to_string(),
-        |bytes| format!("Cap {}", file_size(bytes)),
+        || text(NO_SIZE_LIMIT),
+        |bytes| {
+            let size = file_size(bytes);
+            formatted(N_!("max {size}"), &[("size", &size)])
+        },
     )
+}
+
+pub fn selected_playlists(selected: usize, total: usize) -> String {
+    formatted(
+        N_!("{selected} of {total} playlists"),
+        &[
+            ("selected", &selected.to_string()),
+            ("total", &total.to_string()),
+        ],
+    )
+}
+
+pub fn target_folder(path: &str) -> String {
+    formatted(TARGET_FOLDER, &[("path", path)])
+}
+
+pub fn selected_channels(selected: usize) -> String {
+    formatted(
+        N_!("{selected} channels"),
+        &[("selected", &selected.to_string())],
+    )
+}
+
+pub fn selected_shows(selected: usize, total: usize) -> String {
+    formatted(
+        N_!("{selected} of {total} shows"),
+        &[
+            ("selected", &selected.to_string()),
+            ("total", &total.to_string()),
+        ],
+    )
+}
+
+pub fn latest_each(count: usize) -> String {
+    formatted(N_!("latest {count} each"), &[("count", &count.to_string())])
+}
+
+pub fn category_item_count(
+    kind: reprise_core::device_sync::SyncTargetKind,
+    count: usize,
+) -> String {
+    use reprise_core::device_sync::SyncTargetKind;
+    let message = if kind == SyncTargetKind::Playlists {
+        N_!("{count} tracks")
+    } else {
+        N_!("{count} episodes")
+    };
+    formatted(message, &[("count", &count.to_string())])
+}
+
+pub fn to_download(count: usize) -> String {
+    formatted(N_!("{count} to download"), &[("count", &count.to_string())])
 }
 
 /// `MTP-22`'s exact vocabulary for one category's `CategoryReading` — used
@@ -288,7 +353,7 @@ pub fn category_reading_text(reading: &reprise_core::device_sync::CategoryReadin
     match reading {
         CategoryReading::SourceOff => "Source off".to_string(),
         CategoryReading::UnavailableKeptOnPhone => "Unavailable, kept on phone".to_string(),
-        CategoryReading::Diff(diff) => balance_parts(
+        CategoryReading::Diff(diff) => detailed_balance_parts(
             diff.files_to_copy,
             diff.bytes_to_copy,
             diff.files_to_remove,
@@ -298,10 +363,10 @@ pub fn category_reading_text(reading: &reprise_core::device_sync::CategoryReadin
     }
 }
 
-/// `MTP-22`'s aggregate balance line — "To copy 14 files · 2.6 GiB", "To
-/// remove 3 files · 148 MiB", "Playlists rewritten 2".
+/// The compact aggregate result: "14 files to copy · 2.6 GiB · 3 to
+/// remove". Copy and removal counts stay separate.
 pub fn balance_text(balance: &reprise_core::device_sync::SyncBalance) -> String {
-    balance_parts(
+    plan_balance_parts(
         balance.files_to_copy,
         balance.bytes_to_copy,
         balance.files_to_remove,
@@ -310,7 +375,51 @@ pub fn balance_text(balance: &reprise_core::device_sync::SyncBalance) -> String 
     )
 }
 
-fn balance_parts(
+fn plan_balance_parts(
+    files_to_copy: usize,
+    bytes_to_copy: u64,
+    files_to_remove: usize,
+    _bytes_freed: u64,
+    playlists_rewritten: usize,
+) -> String {
+    let mut parts = Vec::new();
+    if files_to_copy > 0 {
+        let count = counted_files(files_to_copy);
+        parts.push(formatted(N_!("{count} to copy"), &[("count", &count)]));
+        parts.push(file_size(bytes_to_copy));
+    }
+    if files_to_remove > 0 {
+        parts.push(formatted(
+            N_!("{count} to remove"),
+            &[("count", &files_to_remove.to_string())],
+        ));
+    }
+    if playlists_rewritten > 0 {
+        parts.push(formatted(
+            N_!("{count} playlists to update"),
+            &[("count", &playlists_rewritten.to_string())],
+        ));
+    }
+    if parts.is_empty() {
+        return text(N_!("Nothing to transfer"));
+    }
+    parts.join(" · ")
+}
+
+/// The sidebar tooltip keeps the complete directional byte accounting from
+/// MTP-29; the device page's summary intentionally uses [`balance_text`]'s
+/// shorter result-oriented sentence.
+pub fn detailed_balance_text(balance: &reprise_core::device_sync::SyncBalance) -> String {
+    detailed_balance_parts(
+        balance.files_to_copy,
+        balance.bytes_to_copy,
+        balance.files_to_remove,
+        balance.bytes_freed,
+        balance.playlists_rewritten,
+    )
+}
+
+fn detailed_balance_parts(
     files_to_copy: usize,
     bytes_to_copy: u64,
     files_to_remove: usize,
@@ -349,18 +458,23 @@ fn counted_files(count: usize) -> String {
     }
 }
 
-/// Design 7a: "175.0 GiB free → 172.4 GiB after this sync". Collapses to a
+/// Design 2c: "175.0 → 172.4 GiB free". Collapses to a
 /// single figure when this sync would not move the free-space needle at
 /// all, so a device with nothing pending never shows a pointless arrow to
 /// the same number.
 pub fn free_space_line(free_before_bytes: u64, free_after_bytes: u64) -> String {
     if free_before_bytes == free_after_bytes {
-        return format!("{} free", file_size(free_before_bytes));
+        let size = file_size(free_before_bytes);
+        return formatted(N_!("{size} free"), &[("size", &size)]);
     }
-    format!(
-        "{} free \u{2192} {} after this sync",
-        file_size(free_before_bytes),
-        file_size(free_after_bytes)
+    let before = file_size(free_before_bytes);
+    let after = file_size(free_after_bytes);
+    let before = before
+        .strip_suffix(after.split_once(' ').map_or("", |(_, unit)| unit))
+        .map_or(before.as_str(), str::trim_end);
+    formatted(
+        N_!("{before} → {after} free"),
+        &[("before", before), ("after", &after)],
     )
 }
 
@@ -572,188 +686,5 @@ fn history_outcome(context: &str, message: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::TimeZone;
-    use reprise_core::device_sync::PreparationPhase;
-
-    #[test]
-    fn mtp_43_preparation_overview_is_absent_for_absent_and_nothing_missing() {
-        assert_eq!(preparation_overview(&PreparationPhase::Absent), None);
-        assert_eq!(
-            preparation_overview(&PreparationPhase::NothingMissing),
-            None
-        );
-    }
-
-    #[test]
-    fn mtp_43_preparation_overview_names_files_and_size_when_offered_or_planned() {
-        assert_eq!(
-            preparation_overview(&PreparationPhase::Offered {
-                files: 2,
-                bytes: 312 * 1024 * 1024
-            }),
-            Some("2 files to download · 312.0 MiB".to_string())
-        );
-        assert_eq!(
-            preparation_overview(&PreparationPhase::Planned {
-                files: 1,
-                bytes: 1024
-            }),
-            Some("1 file to download · 1.0 KiB".to_string())
-        );
-    }
-
-    #[test]
-    fn mtp_43_preparation_overview_omits_a_bogus_zero_byte_figure() {
-        assert_eq!(
-            preparation_overview(&PreparationPhase::Planned { files: 3, bytes: 0 }),
-            Some("3 files to download".to_string())
-        );
-    }
-
-    #[test]
-    fn mtp_43_preparation_titles_name_a_few_and_count_the_rest() {
-        assert_eq!(preparation_titles(&[]), None);
-        assert_eq!(
-            preparation_titles(&["Abendrot", "Nachtwind"]),
-            Some("Abendrot, Nachtwind".to_string())
-        );
-        assert_eq!(
-            preparation_titles(&["One", "Two", "Three"]),
-            Some("One, Two, Three".to_string())
-        );
-        assert_eq!(
-            preparation_titles(&["One", "Two", "Three", "Four", "Five"]),
-            Some("One, Two, Three \u{2026} and 2 more".to_string())
-        );
-    }
-
-    #[test]
-    fn mtp_43_preparation_overview_reads_skipped_episodes_while_offline() {
-        assert_eq!(
-            preparation_overview(&PreparationPhase::SkippedOffline { files: 2 }),
-            Some("2 episodes skipped · not downloaded".to_string())
-        );
-        assert_eq!(
-            preparation_overview(&PreparationPhase::SkippedOffline { files: 1 }),
-            Some("1 episode skipped · not downloaded".to_string())
-        );
-    }
-
-    #[test]
-    fn mtp_43_preparation_step_progress_is_always_step_one_of_two() {
-        assert_eq!(
-            preparation_step_progress(0, 2, 62),
-            "Step 1 of 2 · Downloading 1 of 2 · 62%"
-        );
-        assert_eq!(
-            preparation_step_progress(1, 2, 5),
-            "Step 1 of 2 · Downloading 2 of 2 · 5%"
-        );
-    }
-
-    #[test]
-    fn mtp_43_two_phase_title_prefixes_the_transfer_title_as_step_two() {
-        assert_eq!(
-            two_phase_title("Copying · 3 of 10"),
-            "Step 2 of 2 · Copying · 3 of 10"
-        );
-    }
-
-    #[test]
-    fn byte_formatting_uses_compact_binary_units() {
-        assert_eq!(format_bytes(0), "0 B");
-        assert_eq!(format_bytes(1_024), "1.0 KiB");
-        assert_eq!(format_bytes(2 * 1_024 * 1_024), "2.0 MiB");
-        assert_eq!(free_space(Some(2 * 1_024 * 1_024)), "2.0 MiB free");
-    }
-
-    #[test]
-    fn tip_2a_eject_tooltip_names_reason_while_syncing() {
-        assert_eq!(eject_tooltip(true), "Eject device — Sync in progress");
-        assert_eq!(eject_tooltip(false), "Eject device");
-    }
-
-    #[test]
-    fn device_open_action_names_its_target() {
-        assert_eq!(open_device_label("Pixel 8"), "Open Pixel 8");
-    }
-
-    #[test]
-    fn track_progress_keeps_both_counts_visible() {
-        assert_eq!(track_progress(2, 5), "2 of 5 tracks");
-    }
-
-    #[test]
-    fn mtp_22_balance_text_matches_the_designs_exact_vocabulary() {
-        use reprise_core::device_sync::SyncBalance;
-
-        let balance = SyncBalance {
-            files_to_copy: 14,
-            bytes_to_copy: (2.6 * 1024.0 * 1024.0 * 1024.0) as u64,
-            files_to_remove: 3,
-            bytes_freed: 148 * 1024 * 1024,
-            files_waiting_for_download: 0,
-            playlists_rewritten: 2,
-        };
-
-        assert_eq!(
-            balance_text(&balance),
-            "To copy 14 files · 2.6 GiB · To remove 3 files · 148.0 MiB · Playlists rewritten 2"
-        );
-    }
-
-    #[test]
-    fn mtp_22_deletions_only_balance_reads_frees_not_zero_bytes_to_copy() {
-        use reprise_core::device_sync::SyncBalance;
-
-        let balance = SyncBalance {
-            files_to_copy: 0,
-            bytes_to_copy: 0,
-            files_to_remove: 3,
-            bytes_freed: 148 * 1024 * 1024,
-            files_waiting_for_download: 0,
-            playlists_rewritten: 0,
-        };
-
-        assert_eq!(balance_text(&balance), "To remove 3 files · 148.0 MiB");
-    }
-
-    #[test]
-    fn cap_text_names_the_cap_or_says_there_is_none() {
-        assert_eq!(cap_text(Some(8 * 1024 * 1024 * 1024)), "Cap 8.0 GiB");
-        assert_eq!(cap_text(None), "No cap");
-    }
-
-    #[test]
-    fn free_space_line_shows_the_arrow_only_when_this_sync_moves_the_needle() {
-        const GIB: u64 = 1024 * 1024 * 1024;
-        assert_eq!(
-            free_space_line(175 * GIB, (172.4 * GIB as f64) as u64),
-            "175.0 GiB free \u{2192} 172.4 GiB after this sync"
-        );
-        assert_eq!(free_space_line(64 * GIB, 64 * GIB), "64.0 GiB free");
-    }
-
-    #[test]
-    fn relative_time_buckets_minutes_hours_and_days() {
-        let now = chrono::Utc.with_ymd_and_hms(2026, 7, 28, 12, 0, 0).unwrap();
-        assert_eq!(
-            relative_time(now, now - chrono::Duration::seconds(10)),
-            "just now"
-        );
-        assert_eq!(
-            relative_time(now, now - chrono::Duration::minutes(12)),
-            "12 min ago"
-        );
-        assert_eq!(
-            relative_time(now, now - chrono::Duration::hours(3)),
-            "3 h ago"
-        );
-        assert_eq!(
-            relative_time(now, now - chrono::Duration::days(2)),
-            "2 d ago"
-        );
-    }
-}
+#[path = "device_sync_strings_tests.rs"]
+mod tests;

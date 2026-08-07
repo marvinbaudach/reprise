@@ -1,7 +1,15 @@
 use super::*;
 
+pub use super::preparation::PreparationRunState;
+
 pub type BackendFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 pub(super) type StateCallback = Rc<dyn Fn(DeviceSyncState)>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum RefreshPurpose {
+    Normal,
+    VerifySync(Vec<SelectionSource>),
+}
 
 /// The injectable MTP transport seam (`MTP-23`). Every method takes the
 /// resolved absolute `target_path` of one of the three named sync targets
@@ -177,6 +185,8 @@ pub struct DeviceView {
     /// read from `POD-12`'s existing per-device subscription selection
     /// rather than computed here.
     pub youtube_selection: reprise_core::device_sync::YoutubeSelectionSummary,
+    /// Whether selected smart playlists follow their live definition.
+    pub keep_smart_playlists_updated: bool,
     pub podcast_selection: reprise_core::device_sync::PodcastSelectionSummary,
     /// `MTP-46`: which content sources the user currently has switched on.
     /// A switched-off source contributes no candidates in core, and its
@@ -222,7 +232,7 @@ pub(in crate::ui) fn empty_content_rows(
 ) -> [reprise_core::device_sync::device_view::CategoryContentRow; 3] {
     reprise_core::device_sync::SyncTargetKind::ALL.map(|kind| {
         let target = reprise_core::device_sync::SyncTarget::default_for(kind);
-        reprise_core::device_sync::device_view::project_category_content_row(&target, 0)
+        reprise_core::device_sync::device_view::project_category_content_row(&target, 0, 0)
     })
 }
 

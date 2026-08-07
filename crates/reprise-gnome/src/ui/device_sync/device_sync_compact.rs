@@ -316,6 +316,9 @@ impl DeviceSyncRuntime {
             DeviceSelection::Sources(sources) => sources.clone(),
             DeviceSelection::EntireLibrary => vec![EVERYTHING_SOURCE],
         };
+        let keep_smart_playlists_updated =
+            reprise_core::library::settings::get_bool(&self.conn, KEEP_SMART_UPDATED_KEY, true)
+                .map_err(|error| error.to_string())?;
         let (
             mut projection,
             podcast_plan,
@@ -538,6 +541,7 @@ impl DeviceSyncRuntime {
             device.targets = targets;
             device.youtube_selection = youtube_selection_summary;
             device.podcast_selection = podcast_selection_summary;
+            device.keep_smart_playlists_updated = keep_smart_playlists_updated;
             device.enabled_sources = enabled_sources;
             device.preparation = preparation_phase;
             device.preparation_missing = preparation_missing;

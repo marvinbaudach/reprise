@@ -36,9 +36,7 @@ pub(super) mod rate;
 #[path = "device_sync_types.rs"]
 mod types;
 
-pub use preparation::PreparationRunState;
 use rate::MtpRateMeter;
-use types::StateCallback;
 pub use types::*;
 
 struct DeviceState {
@@ -95,6 +93,7 @@ struct DeviceState {
     /// selection state rather than a second one.
     youtube_selection: YoutubeSelectionSummary,
     podcast_selection: PodcastSelectionSummary,
+    keep_smart_playlists_updated: bool,
     /// `MTP-46`: refreshed alongside the two summaries above, from the same
     /// `recompute_delta_silent` that already holds the connection — `view()`
     /// has none, and reading settings from the projection would put a
@@ -173,6 +172,7 @@ impl DeviceState {
             youtube_waiting: 0,
             youtube_selection: YoutubeSelectionSummary::default(),
             podcast_selection: PodcastSelectionSummary::default(),
+            keep_smart_playlists_updated: true,
             // Off until the first recompute reads the real switches: a row
             // that appears and then vanishes is worse than one that appears
             // once the answer is known.
@@ -242,8 +242,13 @@ impl DeviceState {
             category_bytes(&self.youtube_files),
             category_bytes(&self.podcast_files),
         ];
+        let item_counts = [
+            self.managed_files.len(),
+            self.youtube_files.len(),
+            self.podcast_files.len(),
+        ];
         let content_rows = std::array::from_fn(|i| {
-            project_category_content_row(&self.targets[i], device_bytes[i])
+            project_category_content_row(&self.targets[i], item_counts[i], device_bytes[i])
         });
         DeviceView {
             history: self.history.clone(),
@@ -276,6 +281,7 @@ impl DeviceState {
             youtube_bytes: device_bytes[1],
             podcast_bytes: device_bytes[2],
             youtube_selection: self.youtube_selection,
+            keep_smart_playlists_updated: self.keep_smart_playlists_updated,
             enabled_sources: self.enabled_sources,
             podcast_selection: self.podcast_selection,
             preparation: self.preparation.clone(),
@@ -767,12 +773,6 @@ fn cancel_device_run(device: &mut DeviceState) {
     if let Some(cancellable) = &device.cancellable {
         cancellable.cancel();
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum RefreshPurpose {
-    Normal,
-    VerifySync(Vec<SelectionSource>),
 }
 
 #[path = "device_sync_agent.rs"]

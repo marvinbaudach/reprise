@@ -1,7 +1,6 @@
-//! The device view's Content and Next synchronization sections (design 7a),
-//! plus the "Device contents never verified" banner and the two per-device
-//! switches. The Content section's target-folder path opens the E6 folder
-//! browser (`device_sync_target_browser`, `MTP-31`) via "Change folder…".
+//! The device view's one-row-per-source synchronization plan. Each row keeps
+//! its selection rule, projected result, content picker, folder browser, cap,
+//! and target switch together; the cross-category balance follows below.
 //!
 //! `MTP-37` (`E-6`, `E-8`): Reprise supports exactly one connected MTP
 //! device, so the sync rules that the 2026-07-28 addendum sent to a
@@ -24,12 +23,10 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::device_sync::device_view::project_category_segments;
-use reprise_core::device_sync::{
-    aggregate_balance, summarize_playlist_selection, PodcastSelectionSummary, SyncTargetKind,
-    YoutubeSelectionSummary,
-};
+use reprise_core::device_sync::{aggregate_balance, SyncTargetKind};
 
 use super::device_sync_category_bar::CategoryStorageBar;
+use super::device_sync_content_copy::{category_result_text, category_rule_prefix};
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceView};
 use super::device_sync_strings;
 use super::device_sync_verification_copy::verification_copy;
@@ -139,8 +136,11 @@ impl ContentPanelActions {
 struct CategoryRowWidgets {
     kind: SyncTargetKind,
     path: gtk4::Label,
-    selection: gtk4::Label,
-    size_label: gtk4::Label,
+    rule: gtk4::Label,
+    result_title: gtk4::Label,
+    result_detail: gtk4::Label,
+    cap_button: gtk4::MenuButton,
+    cap_popover_label: gtk4::Label,
     /// `MTP-37`: the cap in GiB, 0 meaning unlimited. Playlists have no cap
     /// concept (`MTP-38`) so this stays permanently insensitive for that
     /// row — see [`build_category_row`].
@@ -159,7 +159,6 @@ pub(super) struct ContentPanel {
     storage_bar: CategoryStorageBar,
     free_space_line: gtk4::Label,
     category_rows: [CategoryRowWidgets; 3],
-    next_sync_rows: [gtk4::Label; 3],
     balance_label: gtk4::Label,
     remove_deleted_switch: gtk4::Switch,
     sync_automatically_switch: gtk4::Switch,
@@ -186,31 +185,23 @@ impl ContentPanel {
         header.append(&verification_title);
         header.append(&scan_button);
 
-        let storage_title = heading("Storage by category");
         let storage_bar = CategoryStorageBar::new();
         let free_space_line = detail("");
-        let storage_box = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        storage_box.append(&storage_title);
-        storage_box.append(storage_bar.widget());
-        storage_box.append(&free_space_line);
 
-        let content_title = heading("Content");
         let category_list = gtk4::ListBox::new();
         category_list.set_selection_mode(gtk4::SelectionMode::None);
         category_list.set_show_separators(true);
         let category_rows = SyncTargetKind::ALL
             .map(|kind| build_category_row(kind, &category_list, actions, &updating));
 
-        let next_sync_title = heading("Next synchronization");
-        let next_sync_rows = std::array::from_fn(|_| detail(""));
-        let next_sync_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        for row in &next_sync_rows {
-            next_sync_box.append(row);
-        }
         let balance_label = gtk4::Label::new(None);
         balance_label.add_css_class("heading");
         balance_label.set_xalign(0.0);
-        next_sync_box.append(&balance_label);
+        balance_label.set_hexpand(true);
+        let summary = gtk4::Box::new(gtk4::Orientation::Horizontal, 18);
+        summary.append(&balance_label);
+        free_space_line.set_halign(gtk4::Align::End);
+        summary.append(&free_space_line);
 
         let remove_deleted_switch =
             labeled_switch("Remove from phone when deleted or unsubscribed here", {
@@ -250,13 +241,10 @@ impl ContentPanel {
         content.set_margin_bottom(16);
         content.set_margin_start(18);
         content.set_margin_end(18);
-        content.append(&storage_box);
-        content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
-        content.append(&content_title);
+        content.append(storage_bar.widget());
         content.append(&category_list);
         content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
-        content.append(&next_sync_title);
-        content.append(&next_sync_box);
+        content.append(&summary);
         content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         content.append(&row_widget(
             &remove_deleted_switch.0,
@@ -282,7 +270,6 @@ impl ContentPanel {
             storage_bar,
             free_space_line,
             category_rows,
-            next_sync_rows,
             balance_label,
             remove_deleted_switch: remove_deleted_switch.1,
             sync_automatically_switch: sync_automatically_switch.1,
@@ -326,7 +313,12 @@ impl ContentPanel {
             },
         ));
 
-        for (row, content_row) in self.category_rows.iter().zip(&device.content_rows) {
+        for ((row, content_row), reading) in self
+            .category_rows
+            .iter()
+            .zip(&device.content_rows)
+            .zip(&device.category_readings)
+        {
             // `MTP-46`: a switched-off source is not a category with nothing
             // in it, it is not a category at all.
             row.container.set_visible(match row.kind {
@@ -334,18 +326,23 @@ impl ContentPanel {
                 SyncTargetKind::PodcastEpisodes => device.enabled_sources.rss,
                 SyncTargetKind::Playlists => true,
             });
-            row.path.set_text(&content_row.target_path);
-            row.selection.set_text(&selection_summary_text(
+            row.path.set_text(&device_sync_strings::target_folder(
+                &content_row.target_path,
+            ));
+            row.rule.set_text(&category_rule_prefix(
                 row.kind,
                 &device.page.playlists,
                 device.page.unique_track_count,
                 device.youtube_selection,
                 device.podcast_selection,
+                device.keep_smart_playlists_updated,
             ));
-            row.size_label.set_text(&format!(
-                "{} on device",
-                device_sync_strings::file_size(content_row.size_on_device_bytes)
-            ));
+            let cap = device_sync_strings::cap_text(content_row.cap_bytes);
+            row.cap_button.set_label(&cap);
+            row.cap_popover_label.set_text(&cap);
+            let (title, detail) = category_result_text(row.kind, content_row, reading);
+            row.result_title.set_text(&title);
+            row.result_detail.set_text(&detail);
             row.cap_spin
                 .set_value(cap_bytes_to_gib(content_row.cap_bytes));
             row.cap_spin
@@ -354,26 +351,6 @@ impl ContentPanel {
             row.toggle.set_state(content_row.target_enabled);
         }
 
-        for ((kind, reading), label) in SyncTargetKind::ALL
-            .iter()
-            .zip(&device.category_readings)
-            .zip(&self.next_sync_rows)
-        {
-            // `MTP-46`: the same hiding as the Content rows above. This is a
-            // second place the category names itself, and a switched-off
-            // source announcing "YouTube audio: nothing to do" here would
-            // undo the point of hiding its row.
-            label.set_visible(match kind {
-                SyncTargetKind::YoutubeAudio => device.enabled_sources.youtube,
-                SyncTargetKind::PodcastEpisodes => device.enabled_sources.rss,
-                SyncTargetKind::Playlists => true,
-            });
-            label.set_text(&format!(
-                "{}: {}",
-                device_sync_strings::category_name(*kind),
-                device_sync_strings::category_reading_text(reading)
-            ));
-        }
         self.balance_label
             .set_text(&device_sync_strings::balance_text(&balance));
 
@@ -400,44 +377,62 @@ fn build_category_row(
     actions: &ContentPanelActions,
     updating: &Rc<Cell<bool>>,
 ) -> CategoryRowWidgets {
+    let icon = gtk4::Image::from_icon_name(match kind {
+        SyncTargetKind::Playlists => "view-list-symbolic",
+        SyncTargetKind::YoutubeAudio => "video-x-generic-symbolic",
+        SyncTargetKind::PodcastEpisodes => "audio-x-generic-symbolic",
+    });
+    // The storage bar uses the widget foreground at these same three
+    // opacities, so the icon and its segment stay one visual key in either
+    // theme without hard-coded colours.
+    icon.set_opacity(match kind {
+        SyncTargetKind::Playlists => 0.82,
+        SyncTargetKind::YoutubeAudio => 0.62,
+        SyncTargetKind::PodcastEpisodes => 0.42,
+    });
+    icon.set_pixel_size(24);
+
     let title = gtk4::Label::new(Some(device_sync_strings::category_name(kind)));
     title.add_css_class("heading");
     title.set_xalign(0.0);
     let path = detail("");
-    let browse_button = gtk4::Button::with_label("Change folder…");
-    browse_button.add_css_class("flat");
-    browse_button.set_halign(gtk4::Align::Start);
-    {
-        let open_folder_browser = actions.open_folder_browser.clone();
-        browse_button.connect_clicked(move |button| {
-            open_folder_browser(kind, button.clone().upcast());
-        });
-    }
-    let path_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    path_row.append(&path);
-    path_row.append(&browse_button);
-    let selection = detail("");
-    let choose_button = gtk4::Button::with_label(&device_sync_strings::text(
-        device_sync_strings::CHOOSE_CONTENT,
+    let change_content = gtk4::Button::with_label(&device_sync_strings::text(
+        device_sync_strings::CHANGE_CONTENT,
     ));
-    choose_button.add_css_class("flat");
+    change_content.add_css_class("flat");
     {
         let open_picker = actions.open_picker.clone();
-        choose_button.connect_clicked(move |button| {
+        change_content.connect_clicked(move |button| {
             open_picker(kind, button.clone().upcast());
         });
     }
-    let selection_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    selection.set_hexpand(true);
-    selection_row.append(&selection);
-    selection_row.append(&choose_button);
-    let size_label = detail("");
+    let change_folder = gtk4::Button::with_label(&device_sync_strings::text(
+        device_sync_strings::CHANGE_FOLDER,
+    ));
+    change_folder.add_css_class("flat");
+    {
+        let open_folder_browser = actions.open_folder_browser.clone();
+        change_folder.connect_clicked(move |button| {
+            open_folder_browser(kind, button.clone().upcast());
+        });
+    }
+    let change_menu_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    change_menu_box.set_margin_top(8);
+    change_menu_box.set_margin_bottom(8);
+    change_menu_box.set_margin_start(8);
+    change_menu_box.set_margin_end(8);
+    change_menu_box.append(&path);
+    change_menu_box.append(&change_content);
+    change_menu_box.append(&change_folder);
+    let change_popover = gtk4::Popover::new();
+    change_popover.set_child(Some(&change_menu_box));
+    let change_button = gtk4::MenuButton::new();
+    change_button.set_label(&device_sync_strings::text(device_sync_strings::CHANGE));
+    change_button.set_popover(Some(&change_popover));
 
-    // `MTP-37`: the cap becomes a real editable control here. Playlists
-    // have no cap concept (`MTP-38`'s `default_cap_bytes` is always
-    // `None`, and no eviction path reads a playlist cap), so that row's
-    // spin button stays permanently insensitive rather than offering a
-    // control that would silently do nothing.
+    let rule = detail("");
+    rule.set_hexpand(true);
+
     let cap_spin = gtk4::SpinButton::with_range(0.0, MAX_CAP_GIB, 1.0);
     cap_spin.set_digits(0);
     cap_spin.set_valign(gtk4::Align::Center);
@@ -464,17 +459,43 @@ fn build_category_row(
             set_target_cap(kind, cap_bytes);
         });
     }
+    let cap_popover_label = detail("");
+    let cap_explanation = detail(&device_sync_strings::text(device_sync_strings::CAP_IN_GIB));
     let cap_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    cap_row.append(&gtk4::Label::new(Some("Cap (GiB):")));
+    cap_row.set_margin_top(8);
+    cap_row.set_margin_bottom(8);
+    cap_row.set_margin_start(8);
+    cap_row.set_margin_end(8);
+    cap_row.append(&cap_popover_label);
     cap_row.append(&cap_spin);
+    let cap_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    cap_box.append(&cap_row);
+    cap_box.append(&cap_explanation);
+    let cap_popover = gtk4::Popover::new();
+    cap_popover.set_child(Some(&cap_box));
+    let cap_button = gtk4::MenuButton::new();
+    cap_button.add_css_class("flat");
+    cap_button.set_popover(Some(&cap_popover));
+
+    let rule_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    rule_row.append(&rule);
+    rule_row.append(&gtk4::Label::new(Some("·")));
+    rule_row.append(&cap_button);
 
     let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     labels.set_hexpand(true);
     labels.append(&title);
-    labels.append(&path_row);
-    labels.append(&selection_row);
-    labels.append(&size_label);
-    labels.append(&cap_row);
+    labels.append(&rule_row);
+
+    let result_title = gtk4::Label::new(None);
+    result_title.add_css_class("heading");
+    result_title.set_xalign(1.0);
+    let result_detail = detail("");
+    result_detail.set_xalign(1.0);
+    let result = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    result.set_valign(gtk4::Align::Center);
+    result.append(&result_title);
+    result.append(&result_detail);
 
     let toggle = gtk4::Switch::new();
     toggle.set_valign(gtk4::Align::Center);
@@ -496,15 +517,21 @@ fn build_category_row(
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     row.set_margin_top(8);
     row.set_margin_bottom(8);
+    row.append(&icon);
     row.append(&labels);
+    row.append(&result);
+    row.append(&change_button);
     row.append(&toggle);
     list.append(&row);
 
     CategoryRowWidgets {
         kind,
         path,
-        selection,
-        size_label,
+        rule,
+        result_title,
+        result_detail,
+        cap_button,
+        cap_popover_label,
         cap_spin,
         toggle,
         container: row,
@@ -536,79 +563,12 @@ fn row_widget(label: &gtk4::Label, switch: &gtk4::Switch) -> gtk4::Box {
     row
 }
 
-fn heading(text: &str) -> gtk4::Label {
-    let label = gtk4::Label::new(Some(text));
-    label.add_css_class("heading");
-    label.set_xalign(0.0);
-    label
-}
-
 fn detail(text: &str) -> gtk4::Label {
     let label = gtk4::Label::new(Some(text));
     label.add_css_class("dim-label");
     label.set_xalign(0.0);
     label.set_wrap(true);
     label
-}
-
-/// `MTP-37`: design 7a's per-category selection summary. Every branch is
-/// now a live read of real per-device selection state — Playlists via the
-/// existing engine (`selection::summarize_playlist_selection`, `MTP-45`),
-/// YouTube and podcasts via `POD-12`'s per-device subscription selection
-/// (`podcasts::phone_sync::selection_summary`, gathered by the caller into
-/// `youtube_selection`/`podcast_selection`). None of these are edited in
-/// this row — see the module doc on why that stays intentional — but none
-/// of them are fabricated either, unlike the "Rules from Preferences" stub
-/// this replaces.
-fn selection_summary_text(
-    kind: SyncTargetKind,
-    playlists: &[reprise_core::device_sync::SyncPlaylistRow],
-    unique_track_count: usize,
-    youtube_selection: YoutubeSelectionSummary,
-    podcast_selection: PodcastSelectionSummary,
-) -> String {
-    match kind {
-        SyncTargetKind::Playlists => {
-            let summary = summarize_playlist_selection(playlists, unique_track_count);
-            format!(
-                "{} of {} selected · {}",
-                summary.selected,
-                summary.available_total,
-                counted(summary.unique_track_count, "unique track", "unique tracks")
-            )
-        }
-        SyncTargetKind::YoutubeAudio => {
-            // `MTP-36`/`E-9`: the live pipeline resolves a real
-            // `latest_per_channel` (the global default or a channel's own
-            // override) before this is ever rendered, and — like the size
-            // cap has meant since `MTP-38` — a resolved `0` means
-            // *unlimited*, not "keep nothing"; `resolve_latest_per_channel`
-            // never returns `usize::MAX` for that. The `usize::MAX` check
-            // stays too, purely as a defensive "not yet computed" sentinel
-            // (`Default::default()`'s placeholder before a real recompute
-            // has run) — either value omits the "latest K each" clause
-            // instead of claiming a number nothing enforces or, worse,
-            // reading as "latest 0 each" and being misread as no episodes
-            // selected when in fact all of them are.
-            if matches!(youtube_selection.latest_per_channel, 0 | usize::MAX) {
-                format!(
-                    "{} of {} channels selected",
-                    youtube_selection.channels_selected, youtube_selection.channels_total
-                )
-            } else {
-                format!(
-                    "{} of {} channels · latest {} each",
-                    youtube_selection.channels_selected,
-                    youtube_selection.channels_total,
-                    youtube_selection.latest_per_channel
-                )
-            }
-        }
-        SyncTargetKind::PodcastEpisodes => format!(
-            "{} of {} shows selected · unplayed downloads only",
-            podcast_selection.shows_selected, podcast_selection.shows_total
-        ),
-    }
 }
 
 /// `MTP-37`: the cap spin button's displayed value — GiB, 0 for unlimited.
@@ -618,125 +578,9 @@ fn cap_bytes_to_gib(cap_bytes: Option<u64>) -> f64 {
     cap_bytes.map_or(0.0, |bytes| bytes as f64 / GIB_BYTES as f64)
 }
 
-fn counted(count: usize, singular: &str, plural: &str) -> String {
-    let noun = if count == 1 { singular } else { plural };
-    format!("{count} {noun}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn selection_summary_reads_the_live_playlist_projection() {
-        let playlists = [reprise_core::device_sync::SyncPlaylistRow {
-            source: reprise_core::device_sync::SelectionSource::Playlist(1),
-            name: Some("Road".into()),
-            smart: false,
-            selected: true,
-            available: true,
-            entry_count: 1,
-            unique_track_count: 1,
-            unavailable_count: 0,
-            target_bytes: 1,
-            last_synced_at: None,
-        }];
-
-        assert_eq!(
-            selection_summary_text(
-                SyncTargetKind::Playlists,
-                &playlists,
-                278,
-                YoutubeSelectionSummary::default(),
-                PodcastSelectionSummary::default(),
-            ),
-            "1 of 1 selected · 278 unique tracks"
-        );
-    }
-
-    /// `MTP-37`: the actual live-count *behaviour* — that enabling or
-    /// disabling a channel/show for this device changes what these
-    /// summaries report — is exercised end to end (DB through
-    /// `phone_sync::selection_summary` through the live runtime) by
-    /// `device_sync_selection_summary_tests::
-    /// mtp_51_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device`
-    /// and its podcast counterpart. This test only pins the exact copy
-    /// [`selection_summary_text`] renders for given inputs — it must not be
-    /// the only coverage the label has, the same gap that let the old
-    /// "Rules from Preferences" stub go unnoticed.
-    #[test]
-    fn mtp_51_selection_summary_renders_live_youtube_and_podcast_counts() {
-        assert_eq!(
-            selection_summary_text(
-                SyncTargetKind::YoutubeAudio,
-                &[],
-                0,
-                YoutubeSelectionSummary {
-                    channels_selected: 2,
-                    channels_total: 6,
-                    latest_per_channel: usize::MAX,
-                },
-                PodcastSelectionSummary::default(),
-            ),
-            "2 of 6 channels selected",
-            "MTP-36 has not landed yet, so no 'latest K each' clause is claimed"
-        );
-        assert_eq!(
-            selection_summary_text(
-                SyncTargetKind::YoutubeAudio,
-                &[],
-                0,
-                YoutubeSelectionSummary {
-                    channels_selected: 2,
-                    channels_total: 6,
-                    latest_per_channel: 5,
-                },
-                PodcastSelectionSummary::default(),
-            ),
-            "2 of 6 channels · latest 5 each",
-            "once MTP-36 lands and provides a real latest_per_channel, it is honoured"
-        );
-        assert_eq!(
-            selection_summary_text(
-                SyncTargetKind::PodcastEpisodes,
-                &[],
-                0,
-                YoutubeSelectionSummary::default(),
-                PodcastSelectionSummary {
-                    shows_selected: 3,
-                    shows_total: 5,
-                },
-            ),
-            "3 of 5 shows selected · unplayed downloads only"
-        );
-    }
-
-    /// `E-9`: `0` is the real, resolved value the pipeline hands the panel
-    /// for "unlimited" — never `usize::MAX`, which is a display-only
-    /// sentinel (see `mtp_51_selection_summary_renders_live_youtube_and_podcast_counts`).
-    /// Before this fix, `0` fell through to the "latest {n} each" branch and
-    /// rendered "latest 0 each", reading as "no episodes selected" when in
-    /// fact every episode of every selected channel was. Assert the literal
-    /// digit `0` never appears in the rendered summary.
-    #[test]
-    fn e_9_a_resolved_zero_latest_per_channel_reads_as_unlimited_not_a_quantity() {
-        let summary = selection_summary_text(
-            SyncTargetKind::YoutubeAudio,
-            &[],
-            0,
-            YoutubeSelectionSummary {
-                channels_selected: 4,
-                channels_total: 4,
-                latest_per_channel: 0,
-            },
-            PodcastSelectionSummary::default(),
-        );
-        assert_eq!(summary, "4 of 4 channels selected");
-        assert!(
-            !summary.contains('0'),
-            "unlimited (0) must never render as a quantity: {summary}"
-        );
-    }
 
     #[test]
     fn mtp_51_cap_gib_conversion_round_trips_and_treats_zero_as_unlimited() {

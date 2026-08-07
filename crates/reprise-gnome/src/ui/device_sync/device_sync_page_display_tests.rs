@@ -415,6 +415,37 @@ fn device_page_sections_have_one_explicit_owner_and_order() {
     );
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
+    gtk4::init().expect("GTK test display");
+    let mut device = device();
+    device.content_rows[0].item_count = 291;
+    device.content_rows[0].size_on_device_bytes = 1024 * 1024 * 1024;
+
+    let (surface, _root) = DeviceSyncPage::new(
+        &device,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let text = surface.root_text();
+    let lines = text.lines().collect::<Vec<_>>();
+    assert!(lines.contains(&"1 of 1 playlists · smart lists kept up to date"));
+    assert!(lines.contains(&"291 tracks"));
+    assert!(lines.contains(&"1.0 GiB"));
+    assert!(lines.contains(&"Nothing to transfer"));
+    assert!(!lines.contains(&"Storage by category"));
+    assert!(!lines.contains(&"Content"));
+    assert!(!lines.contains(&"Next synchronization"));
+}
+
 /// `MTP-46`, the visible half: the core gate already keeps a switched-off
 /// source out of the plan, but a Content row still reading "0 of 3 channels"
 /// would tell the user their phone is set up to receive something it will

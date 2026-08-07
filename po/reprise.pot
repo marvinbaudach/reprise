@@ -5280,3 +5280,78 @@ msgstr[1] ""
 #, rust-format
 msgid "{kind} · {path} — {detail}"
 msgstr ""
+
+
+msgid "Change…"
+msgstr ""
+
+msgid "Change content…"
+msgstr ""
+
+msgid "Change folder…"
+msgstr ""
+
+#, rust-format
+msgid "Target folder: {path}"
+msgstr ""
+
+msgid "Size limit in GiB (0 means no size limit)"
+msgstr ""
+
+msgid "smart lists kept up to date"
+msgstr ""
+
+msgid "smart lists keep their current contents"
+msgstr ""
+
+msgid "all episodes"
+msgstr ""
+
+msgid "unplayed only"
+msgstr ""
+
+msgid "played are removed"
+msgstr ""
+
+msgid "no size limit"
+msgstr ""
+
+#, rust-format
+msgid "max {size}"
+msgstr ""
+
+#, rust-format
+msgid "{selected} of {total} playlists"
+msgstr ""
+
+#, rust-format
+msgid "{selected} channels"
+msgstr ""
+
+#, rust-format
+msgid "{selected} of {total} shows"
+msgstr ""
+
+#, rust-format
+msgid "latest {count} each"
+msgstr ""
+
+#, rust-format
+msgid "{count} to download"
+msgstr ""
+
+#, rust-format
+msgid "{count} to copy"
+msgstr ""
+
+#, rust-format
+msgid "{count} to remove"
+msgstr ""
+
+#, rust-format
+msgid "{count} playlists to update"
+msgstr ""
+
+#, rust-format
+msgid "{before} → {after} free"
+msgstr ""
