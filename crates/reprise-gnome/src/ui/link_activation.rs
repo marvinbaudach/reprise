@@ -42,13 +42,7 @@ pub(in crate::ui) fn arm(
     activate: Rc<dyn Fn()>,
 ) {
     let widget = widget.upcast_ref::<gtk4::Widget>();
-    // a11y-semantics: role=link name=reveal-playing-album state=enabled action=activate
-    widget.set_focusable(true);
-    // input-parity: ACC-8 keyboard=link-enter-controller
-    widget.set_cursor_from_name(Some("pointer"));
-    widget.set_accessible_role(gtk4::AccessibleRole::Link);
-    widget.add_css_class(LINK_CLASS);
-    widget.update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
+    present(widget, accessible_label);
 
     // input-parity: ACC-8 keyboard=link-enter-controller
     let click = gtk4::GestureClick::new();
@@ -72,6 +66,30 @@ pub(in crate::ui) fn arm(
     let keys = gtk4::EventControllerKey::new();
     keys.connect_key_pressed(move |_, key, _, _| route_key(key, || activate()));
     widget.add_controller(keys);
+}
+
+pub(in crate::ui) fn present(widget: &impl IsA<gtk4::Widget>, accessible_label: &str) {
+    let widget = widget.upcast_ref::<gtk4::Widget>();
+    // a11y-semantics: role=link name=target state=enabled action=activate
+    widget.set_focusable(true);
+    // input-parity: ACC-8 keyboard=link-enter-controller
+    widget.set_cursor_from_name(Some("pointer"));
+    widget.set_accessible_role(gtk4::AccessibleRole::Link);
+    widget.add_css_class(LINK_CLASS);
+    widget.update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
+}
+
+pub(in crate::ui) fn unpresent(
+    widget: &impl IsA<gtk4::Widget>,
+    accessible_label: &str,
+    fallback_role: gtk4::AccessibleRole,
+) {
+    let widget = widget.upcast_ref::<gtk4::Widget>();
+    widget.set_focusable(false);
+    widget.set_cursor_from_name(None);
+    widget.set_accessible_role(fallback_role);
+    widget.remove_css_class(LINK_CLASS);
+    widget.update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
 }
 
 pub(in crate::ui) fn arm_slot(
