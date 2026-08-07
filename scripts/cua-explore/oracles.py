@@ -22,6 +22,12 @@ from ui_vocabulary import (
 
 GEOMETRY_EPSILON_PX = 6.0
 
+# The stall threshold is stated on app-attributable time - the excess a
+# sampling round-trip spends beyond what the same step's cheapest round-trip
+# cost. 250 ms is where a pause stops reading as instantaneous and starts
+# reading as a hiccup.
+STALL_EXCESS_MS = 250
+
 
 
 def element_flag(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
@@ -528,15 +534,27 @@ class OracleEngine:
                     },
                 )
             )
-        long_gaps = [gap for gap in action.sample_gaps_ms if gap >= 250]
-        if long_gaps:
+        # The cheapest snapshot of this same step is what a round-trip costs
+        # when the UI thread is free; anything a sample spends beyond that is
+        # time the main loop kept the accessibility bus waiting.
+        baseline_ms = min(action.snapshot_ms) if action.snapshot_ms else 0
+        excess_ms = [
+            round(gap - baseline_ms)
+            for gap in action.sample_gaps_ms
+            if gap - baseline_ms >= STALL_EXCESS_MS
+        ]
+        if excess_ms:
             findings.append(
                 Finding(
                     "main-loop-stall",
                     "warning",
                     0.8,
                     "Observation sampling detected one or more long UI response gaps.",
-                    {"gaps_ms": long_gaps},
+                    {
+                        "excess_ms": excess_ms,
+                        "baseline_ms": round(baseline_ms),
+                        "gaps_ms": list(action.sample_gaps_ms),
+                    },
                 )
             )
         return findings

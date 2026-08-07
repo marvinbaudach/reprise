@@ -437,6 +437,71 @@ class DriverTimingEvidenceTests(unittest.TestCase):
         self.assertGreaterEqual(result.evidence.observation_ms, harness - 5)
 
 
+class TimingAttributionTests(unittest.TestCase):
+    """Timing oracles must judge the app, never the harness's own cost."""
+
+    # Shape measured in a real run: one cua-driver round-trip costs ~470 ms
+    # (subprocess spawn, tree walk, PNG), and the settle schedule sleeps
+    # 100 + 250 + 500 = 850 ms on purpose.
+    REAL_SNAPSHOTS = (472, 467, 481, 495)
+    REAL_SETTLE_MS = 850
+
+    def setUp(self) -> None:
+        self.engine = OracleEngine()
+        self.state = snapshot([element(1, "Music", visible=True)])
+
+    def _codes(self, **evidence):
+        defaults = {
+            "kind": "activate",
+            "target_label": "Music",
+            "expect_effect": "required",
+            "elapsed_ms": 5,
+            "observation_ms": 2765,
+            "first_change_ms": None,
+            "settle_delay_ms": self.REAL_SETTLE_MS,
+            "snapshot_ms": self.REAL_SNAPSHOTS,
+            "snapshot_ms_before_first_change": 0,
+            "sample_gaps_ms": self.REAL_SNAPSHOTS[1:],
+        }
+        defaults.update(evidence)
+        findings = self.engine.analyze(
+            ActionEvidence(**defaults), self.state, self.state, settled=(self.state,)
+        )
+        return [finding.code for finding in findings]
+
+    def test_the_drivers_own_round_trip_is_not_a_main_loop_stall(self) -> None:
+        self.assertNotIn("main-loop-stall", self._codes())
+
+    def test_a_sample_far_above_the_steps_own_baseline_is_a_stall(self) -> None:
+        codes = self._codes(
+            snapshot_ms=(472, 467, 481, 1400), sample_gaps_ms=(467, 481, 1400)
+        )
+
+        self.assertIn("main-loop-stall", codes)
+
+    def test_the_stall_evidence_reports_the_excess_not_the_wall_time(self) -> None:
+        findings = self.engine.analyze(
+            ActionEvidence(
+                kind="activate",
+                target_label="Music",
+                expect_effect="required",
+                observation_ms=2765,
+                first_change_ms=None,
+                settle_delay_ms=self.REAL_SETTLE_MS,
+                snapshot_ms=(470, 1400),
+                snapshot_ms_before_first_change=0,
+                sample_gaps_ms=(1400,),
+            ),
+            self.state,
+            self.state,
+            settled=(self.state,),
+        )
+        stall = next(item for item in findings if item.code == "main-loop-stall")
+
+        self.assertEqual(stall.evidence["excess_ms"], [930])
+        self.assertEqual(stall.evidence["baseline_ms"], 470)
+
+
 class UxOracleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = OracleEngine()
