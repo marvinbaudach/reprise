@@ -15,11 +15,14 @@ use reprise_core::view_source::ViewSource;
 
 use crate::ui::column_layout::{ColumnId, ColumnRegistry};
 use crate::ui::sidebar::Sidebar;
-use crate::ui::track_list::{reload, TrackList};
+use crate::ui::track_list::{reload, track_list_reload, TrackList};
 use crate::ui::track_list_sort::{restored_sort, SortState};
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_VIEW_SESSION";
-const SEARCH_DEBOUNCE_MS: u64 = 200;
+/// SEARCH-9: the one and only wait between typing and the result. GTK's own
+/// `search-delay` is switched off in `window.rs`, so this is not stacked on
+/// top of anything — raising it here raises the felt latency one-to-one.
+const SEARCH_DEBOUNCE_MS: u64 = 150;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TrackViewSnapshot {
@@ -94,28 +97,54 @@ pub(super) fn wire_search(
     }
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     search_entry.connect_search_changed(move |entry| {
-        if restoring.get() || !applies_here() {
-            return;
-        }
         // A same-value programmatic update (notably clear-all setting the
         // model first and the entry second) still has to cancel a pending
         // older debounce, or that stale text can reapply after the reset.
+        //
+        // SEARCH-9: this cancellation now runs *before* the guards below, and
+        // that ordering is load-bearing. With `search-delay` at 0 the
+        // `search-changed` of a programmatic `set_text` arrives while
+        // `restoring` is still set — a navigation restoring its own query —
+        // where the old code returned early and left a timer armed. That timer
+        // then fired against the view the user had just moved to, applying a
+        // query and a `pre_search_anchor` belonging to the view they had left.
+        // GTK's own 150 ms delay used to hide this by pushing the emission
+        // past the guard's reset; removing the delay removed the accident that
+        // made the old order work.
         if let Some(previous) = pending.borrow_mut().take() {
             previous.remove();
+        }
+        if restoring.get() || !applies_here() {
+            return;
         }
         let current_filter = track_list.shared.filter.borrow().clone();
         if current_filter == entry.text() {
             return;
         }
         let text = entry.text().to_string();
+        track_list_reload::prepare_filter_change(
+            &track_list.shared,
+            current_filter.as_str(),
+            text.as_str(),
+        );
         // Browser state follows the visible entry synchronously so leaving a
         // place during the debounce window still captures the exact query.
-        *track_list.shared.filter.borrow_mut() = text;
+        *track_list.shared.filter.borrow_mut() = text.clone();
+        // SEARCH-9: clearing is not typing. Esc, the chip's ×, "Show all N
+        // tracks" and a hand-emptied field all arrive here as empty text, and
+        // none of them is the middle of a sequence worth waiting out.
+        if text.is_empty() {
+            track_list_reload::reload_filter_change(&track_list.shared, current_filter.as_str());
+            return;
+        }
         let track_list = track_list.clone();
         let pending_for_timeout = pending.clone();
         let source_id =
             glib::timeout_add_local(Duration::from_millis(SEARCH_DEBOUNCE_MS), move || {
-                track_list.reload();
+                track_list_reload::reload_filter_change(
+                    &track_list.shared,
+                    current_filter.as_str(),
+                );
                 pending_for_timeout.borrow_mut().take();
                 glib::ControlFlow::Break
             });
@@ -155,6 +184,13 @@ fn prepare_track_view(
 ) {
     let shared = &track_list.shared;
     shared.restoring_view.set(true);
+    // SEARCH-9: an anchor belongs to the search it was captured in. Every route
+    // through here installs a different place's query and sort, so whatever the
+    // previous view had remembered points at a row this one may not even
+    // contain. `set_source_and_reload` clears it for plain source switches;
+    // this covers the navigation paths (sidebar, Back/Forward, session
+    // restore) that reach a new view without going through it.
+    shared.pre_search_anchor.set(None);
     *shared.filter.borrow_mut() = search.to_string();
     *shared.browse_filter.borrow_mut() = browse.clone();
     shared.browse_bar.restore_filter(browse);
@@ -347,5 +383,18 @@ mod issue_view_tests {
         assert!(!record_issue_viewed(&conn, &ViewSource::Library, 333).unwrap());
         assert_eq!(settings::get_last_viewed_missing(&conn).unwrap(), 111);
         assert_eq!(settings::get_last_viewed_import_errors(&conn).unwrap(), 222);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SEARCH_DEBOUNCE_MS;
+
+    /// SEARCH-9: exactly one wait sits between a keystroke and the result, and
+    /// it is this one. 150 ms is the agreed value; the constant existing at
+    /// 200 means GTK's own 150 ms delay is stacked underneath it.
+    #[test]
+    fn search_9_debounce_is_the_only_wait() {
+        assert_eq!(SEARCH_DEBOUNCE_MS, 150);
     }
 }

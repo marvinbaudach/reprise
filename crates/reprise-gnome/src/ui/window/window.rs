@@ -65,6 +65,11 @@ pub fn build(
         .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
         .accessible_role(gtk4::AccessibleRole::SearchBox)
         .build();
+    // SEARCH-9: `GtkSearchEntry` throttles `search-changed` by its own
+    // `search-delay` (150 ms by default). Reprise debounces the query itself
+    // in `view_session::wire_search`, so leaving GTK's delay on stacked two
+    // waits and put half the latency out of reach of the code that owns it.
+    search_entry.set_search_delay(0);
     search_entry.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::SEARCH_PLACEHOLDER,
     ))]);

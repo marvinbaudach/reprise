@@ -1487,12 +1487,14 @@ result.
   sidebar place, and the sidebar row already names it (FIL-1c, revised
   2026-07-31). Selecting another sidebar row leaves it, like any other
   sidebar place.
-- **FIL-9** [active] [gtk] — When a search or facet filter is set,
-  changed or removed and the loaded track belongs to the new result
-  set, its marked row is vertically centered instead of anchored to the
-  top table edge. Selection and keyboard focus remain unchanged.
-  Without a loaded track visible in the target, the existing
-  ID-plus-offset anchor is retained.
+- **FIL-9** [active] [gtk] — When a **facet** filter is set, changed or
+  removed and the loaded track belongs to the new result set, its marked
+  row is vertically centered instead of anchored to the top table edge.
+  Selection and keyboard focus remain unchanged. Without a loaded track
+  visible in the target, the existing ID-plus-offset anchor is retained.
+  The header-bar search is no longer covered: SEARCH-9 governs it, because
+  a query changes with every keystroke and paid for the centering far more
+  often than a facet click does.
 
 ## L. Tag editor
 
@@ -2643,6 +2645,16 @@ property is set and yet nothing happens.
   to filter in {section}", Ctrl+F is a no-op, and the search bar cannot
   be revealed by typing either. The scoped chip each section shows for
   its own query is FIL-1d.
+- **SEARCH-9** [active] [gtk] — **Searching answers at once, and clearing
+  answers immediately.** Exactly one wait sits between a keystroke and the
+  result — the application's own debounce of 150 ms; the entry's built-in
+  `search-delay` is switched off so the two never stack. Emptying the query
+  waits not at all: Esc, the chip's ×, "Show all N tracks" and a
+  hand-cleared field reload straight away. A query that is set or refined
+  places the viewport at the top of its results and moves it no further
+  after the model swap — it centers nothing (superseding FIL-9 for search).
+  Emptying the query returns the viewport to where the list stood when the
+  search began, as an ID-plus-offset anchor; if that row is gone, to the top.
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
