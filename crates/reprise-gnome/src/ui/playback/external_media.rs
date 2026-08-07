@@ -12,6 +12,8 @@ use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 
 use crate::ui::player_controller::PlayerController;
 
+pub(super) use super::external_media_fields::session_id;
+use super::external_media_fields::{podcast_fields, radio_fields};
 use super::external_media_state::{
     podcast_source_requires_resolution, AutomaticAdvance, ExternalSession, NeighbourContext,
     PodcastOrigin, PodcastSession, RadioCommand, RadioSession, ResumePolicy,
@@ -736,74 +738,4 @@ impl PlayerController {
 
 pub(in crate::ui) fn media_from_episode(episode: &EpisodeRow) -> ExternalMedia {
     super::external_media_toast::media_from_episode(episode)
-}
-
-fn podcast_fields(media: &ExternalMedia) -> (String, String, EpisodeSource, i64, Option<i64>) {
-    let ExternalMedia::Podcast {
-        title,
-        show,
-        source,
-        resume_ms,
-        duration_ms,
-        ..
-    } = media
-    else {
-        unreachable!("podcast fields requested from radio media")
-    };
-    (
-        title.clone(),
-        show.clone(),
-        source.clone(),
-        *resume_ms,
-        *duration_ms,
-    )
-}
-
-fn podcast_identity_fields(
-    media: &ExternalMedia,
-) -> (i64, String, String, EpisodeSource, i64, Option<i64>) {
-    let ExternalMedia::Podcast {
-        episode_id,
-        title,
-        show,
-        source,
-        resume_ms,
-        duration_ms,
-    } = media
-    else {
-        unreachable!("podcast identity requested from radio media")
-    };
-    (
-        *episode_id,
-        title.clone(),
-        show.clone(),
-        source.clone(),
-        *resume_ms,
-        *duration_ms,
-    )
-}
-
-pub(super) fn session_id(media: &ExternalMedia) -> i64 {
-    match media {
-        ExternalMedia::Podcast { episode_id, .. } => *episode_id,
-        ExternalMedia::Radio { station_id, .. } => *station_id,
-    }
-}
-
-fn radio_fields(media: &ExternalMedia) -> (String, String, Option<String>) {
-    let (_, name, stream_url, uuid) = radio_identity_fields(media);
-    (name, stream_url, uuid)
-}
-
-fn radio_identity_fields(media: &ExternalMedia) -> (i64, String, String, Option<String>) {
-    let ExternalMedia::Radio {
-        station_id,
-        name,
-        stream_url,
-        uuid,
-    } = media
-    else {
-        unreachable!("radio fields requested from podcast media")
-    };
-    (*station_id, name.clone(), stream_url.clone(), uuid.clone())
 }

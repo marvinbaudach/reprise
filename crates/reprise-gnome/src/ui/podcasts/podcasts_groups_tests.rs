@@ -218,6 +218,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
                     unavailable_now: false,
                 },
                 selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+                paths: &Rc::new(EpisodePaths::from_rows(&[])),
                 unavailable_episode: None,
                 query: "",
             },
@@ -347,6 +348,7 @@ fn acc_1_every_point_of_a_grouped_episode_row_reaches_the_context_menu() {
                 unavailable_now: false,
             },
             selection: &selection,
+            paths: &Rc::new(EpisodePaths::from_rows(&[])),
             unavailable_episode: None,
             query: "",
         },
@@ -744,4 +746,45 @@ fn pod_13_a_failed_download_offers_a_sensitive_retry_action() {
         widgets.action.tooltip_text().as_deref(),
         Some(strings::text(strings::PODCAST_RETRY_DOWNLOAD)).as_deref()
     );
+}
+
+#[test]
+fn ctx_13_the_file_snapshot_spans_the_episodes_a_collapsed_group_hides() {
+    let episodes = (1..=15)
+        .map(|id| {
+            let mut row = episode(None);
+            row.id = id;
+            row
+        })
+        .collect::<Vec<_>>();
+    let rendered = RenderedSourceGroup {
+        summary: SourceSummary {
+            episode_count: episodes.len(),
+            new_count: 0,
+            downloaded_bytes: 0,
+            latest_published_at: None,
+        },
+        group: SourceGroup {
+            subscription_id: 1,
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes,
+        },
+    };
+
+    let snapshot = snapshot_rows(std::slice::from_ref(&rendered))
+        .map(|row| row.id)
+        .collect::<Vec<_>>();
+
+    // A collapsed group renders ten rows; the eleventh can still be selected
+    // from an earlier expansion, so the snapshot has to reach it.
+    assert_eq!(
+        crate::ui::podcasts::podcasts_episode_window::visible_count(15, false),
+        10,
+        "this test is only meaningful while the window is narrower than the group"
+    );
+    assert_eq!(snapshot, (1..=15).collect::<Vec<_>>());
 }

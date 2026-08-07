@@ -2,6 +2,7 @@
 //! `podcasts_view.rs` to keep it under the file-size gate.
 
 use super::super::podcasts_batch_actions::{self, BatchResult};
+use super::super::podcasts_episode_files::{file_reveal, EpisodePaths, FileReveal};
 use super::*;
 use crate::ui::podcasts::podcasts_playback::{activation_for_episode, EpisodeActivation};
 
@@ -39,6 +40,37 @@ impl PodcastsView {
                 if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
                     if let Some(url) = podcasts_context_menu::browser_url(&row) {
                         crate::ui::external_link::launch(url, "podcast episode page", None);
+                    }
+                }
+            },
+        );
+        self.add_selected_action(
+            &group,
+            podcasts_context_menu::ACTION_SHOW_IN_FILES,
+            |view, ids| {
+                // Paths are resolved again here, not taken from the menu: a
+                // download can be deleted between opening the menu and
+                // clicking the entry. An episode the store cannot return is
+                // simply absent from the snapshot, which `lookup` reports as
+                // `None` — the same answer as a missing file, and the same
+                // outcome: `Hidden`.
+                let rows = ids
+                    .iter()
+                    .filter_map(|id| podcasts::store::episode(&view.conn, *id).ok().flatten())
+                    .collect::<Vec<_>>();
+                let paths = EpisodePaths::from_rows(&rows);
+                match file_reveal(&paths.lookup(&ids)) {
+                    FileReveal::Hidden => {
+                        tracing::debug!(
+                            episode_ids = ?ids,
+                            "podcast file reveal became unavailable"
+                        );
+                    }
+                    FileReveal::Reveal(path) => {
+                        crate::ui::show_in_files::show_in_files(&[path]);
+                    }
+                    FileReveal::OpenFolder(folder) => {
+                        crate::ui::show_in_files::open_folder(&folder);
                     }
                 }
             },
