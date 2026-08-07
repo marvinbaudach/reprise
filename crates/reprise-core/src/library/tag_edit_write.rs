@@ -405,6 +405,65 @@ mod tests {
         assert_eq!(rating, 5);
     }
 
+    /// Defense in depth for the tag editor's year-wipe bug: the UI is what
+    /// used to send `year: Some(None)` for an untouched Mixed field, but the
+    /// write layer is where the damage happened, so it states the contract
+    /// itself. A patch that carries no year must leave the file's date alone;
+    /// only an explicit `Some(None)` may remove it. Both branches are checked
+    /// here so neither can rot into the other.
+    #[test]
+    fn a_patch_without_a_year_leaves_the_date_on_disk_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let (conn, id, path) = seeded_track(dir.path(), "keeps-year.flac");
+        assert_eq!(read_editable_tags(&path).unwrap().year, Some(1999));
+
+        let report = apply_track_writes(
+            &conn,
+            &[TrackWrite {
+                id,
+                path: path.clone(),
+                patch: TrackEditPatch {
+                    tags: TagPatch {
+                        title: Some("Renamed, still 1999".into()),
+                        ..TagPatch::default()
+                    },
+                    rating: Some(5),
+                },
+            }],
+            &mut |_, _| {},
+        );
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+
+        let tags = read_editable_tags(&path).unwrap();
+        assert_eq!(tags.title, "Renamed, still 1999");
+        assert_eq!(
+            tags.year,
+            Some(1999),
+            "a patch with no year must not touch the file's date"
+        );
+
+        // The counter-check: an explicit clear still clears, so the guard
+        // above is about `None` vs `Some(None)`, not about years being
+        // unremovable.
+        let report = apply_track_writes(
+            &conn,
+            &[TrackWrite {
+                id,
+                path: path.clone(),
+                patch: TrackEditPatch {
+                    tags: TagPatch {
+                        year: Some(None),
+                        ..TagPatch::default()
+                    },
+                    rating: None,
+                },
+            }],
+            &mut |_, _| {},
+        );
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        assert_eq!(read_editable_tags(&path).unwrap().year, None);
+    }
+
     #[test]
     fn tag_5_progress_reports_written_over_total() {
         let dir = tempfile::tempdir().unwrap();
