@@ -175,6 +175,7 @@ pub(super) fn begin_prepared_sync(
     runtime: &Rc<DeviceSyncRuntime>,
     device_id: &str,
     missing: Vec<MissingFile>,
+    initiator: super::planned::SyncInitiator,
 ) {
     let Some(downloader) = runtime.preparation_downloader.borrow().clone() else {
         // Defensive only: production always binds one at startup. Falling
@@ -184,7 +185,7 @@ pub(super) fn begin_prepared_sync(
             device_id,
             "no preparation downloader bound; starting synchronization without preparation"
         );
-        if let Err(error) = runtime.start_transfer_now(device_id) {
+        if let Err(error) = runtime.start_transfer_now(device_id, initiator) {
             tracing::warn!(%error, "could not start Android synchronization");
         }
         return;
@@ -200,6 +201,7 @@ pub(super) fn begin_prepared_sync(
             return;
         };
         device.preparing = true;
+        device.active_initiator = Some(initiator);
         device.preparation_cancel = Some(cancel_flag.clone());
         device.preparation_run = PreparationRunState::Downloading {
             done: 0,
@@ -215,7 +217,8 @@ pub(super) fn begin_prepared_sync(
     let weak = Rc::downgrade(runtime);
     let device_id = device_id.to_string();
     gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
-        run_preparation_then_sync(weak, device_id, missing, downloader, cancel_flag).await;
+        run_preparation_then_sync(weak, device_id, missing, downloader, cancel_flag, initiator)
+            .await;
     });
 }
 
@@ -225,6 +228,7 @@ async fn run_preparation_then_sync(
     missing: Vec<MissingFile>,
     downloader: Rc<dyn PreparationDownloader>,
     cancel_flag: Rc<Cell<bool>>,
+    initiator: super::planned::SyncInitiator,
 ) {
     let total = missing.len();
     for (index, file) in missing.iter().enumerate() {
@@ -275,10 +279,26 @@ async fn run_preparation_then_sync(
     // discipline `resume_planned`/auto-start already follow.
     if let Err(error) = runtime.recompute_delta(&device_id) {
         tracing::warn!(%error, "could not refresh the sync plan after preparation downloads");
+        if let Some(device) = runtime
+            .device_states
+            .borrow_mut()
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
+            device.active_initiator = None;
+        }
         return;
     }
-    if let Err(error) = runtime.start_transfer_now(&device_id) {
+    if let Err(error) = runtime.start_transfer_now(&device_id, initiator) {
         tracing::warn!(%error, "could not start synchronization after preparation downloads");
+        if let Some(device) = runtime
+            .device_states
+            .borrow_mut()
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
+            device.active_initiator = None;
+        }
     }
 }
 
@@ -338,6 +358,7 @@ fn finish_preparation(weak: &Weak<DeviceSyncRuntime>, device_id: &str, success: 
             device.prepared_this_run = true;
         } else {
             device.prepared_this_run = false;
+            device.active_initiator = None;
             device.sync_phase = reprise_core::device_sync::PlannedSyncPhase::Idle;
         }
     }

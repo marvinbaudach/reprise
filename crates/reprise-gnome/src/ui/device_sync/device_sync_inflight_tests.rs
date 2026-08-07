@@ -99,6 +99,12 @@ fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
+        crate::test_db::connection(&conn)
+            .execute(
+                "UPDATE tracks SET rating = 5, play_count = 31 WHERE id = 1",
+                [],
+            )
+            .unwrap();
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 20));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
@@ -119,6 +125,22 @@ fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
         assert_eq!(device.page.changes.additions, 0);
         assert_eq!(device.page.changes.replacements, 0);
         assert_eq!(backend.state.copy_order.borrow().len(), 1);
+        let metadata = backend
+            .state
+            .managed_copy_contents
+            .borrow()
+            .iter()
+            .find(|(_, path, _)| path == reprise_core::device_sync::track_metadata_list::FILE_NAME)
+            .map(|(_, _, bytes)| {
+                reprise_core::device_sync::track_metadata_list::TrackMetadataList::decode(bytes)
+                    .unwrap()
+            });
+        let metadata = metadata.expect("a resumed listener sync must keep its metadata cargo");
+        assert_eq!(metadata.entries.len(), 1);
+        assert_eq!(
+            (metadata.entries[0].rating, metadata.entries[0].play_count),
+            (5, 31)
+        );
     });
 }
 

@@ -47,6 +47,10 @@ impl LibrarySource for ExistingPathSource {
             .map(str::to_owned)
     }
 
+    fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf> {
+        at.strip_prefix(root).ok().map(Path::to_path_buf)
+    }
+
     fn open_read(&self, _at: &Path) -> io::Result<LibraryReadHandle> {
         Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -94,6 +98,10 @@ impl LibrarySource for UnknownProbeSource {
         None
     }
 
+    fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf> {
+        at.strip_prefix(root).ok().map(Path::to_path_buf)
+    }
+
     fn open_read(&self, _at: &Path) -> io::Result<LibraryReadHandle> {
         Err(io::Error::new(
             io::ErrorKind::NotConnected,
@@ -132,6 +140,10 @@ impl LibrarySource for NamedUnixSource {
 
     fn container_name(&self, at: &Path) -> Option<String> {
         super::source::UnixLibrarySource.container_name(at)
+    }
+
+    fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf> {
+        super::source::UnixLibrarySource.relative_path(root, at)
     }
 
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {

@@ -25,6 +25,7 @@ use std::sync::Mutex;
 struct ScriptedSource {
     items: Vec<super::source::LibraryWalkItem>,
     contents: HashMap<std::path::PathBuf, Vec<u8>>,
+    display_names: HashMap<std::path::PathBuf, String>,
     mount_point_counts: Mutex<HashMap<std::path::PathBuf, usize>>,
     open_counts: Mutex<HashMap<std::path::PathBuf, usize>>,
     probe_counts: Mutex<HashMap<std::path::PathBuf, usize>>,
@@ -35,6 +36,7 @@ impl ScriptedSource {
         Self {
             items,
             contents: HashMap::new(),
+            display_names: HashMap::new(),
             mount_point_counts: Mutex::new(HashMap::new()),
             open_counts: Mutex::new(HashMap::new()),
             probe_counts: Mutex::new(HashMap::new()),
@@ -43,6 +45,11 @@ impl ScriptedSource {
 
     fn with_content(mut self, path: std::path::PathBuf, bytes: Vec<u8>) -> Self {
         self.contents.insert(path, bytes);
+        self
+    }
+
+    fn with_display_name(mut self, path: std::path::PathBuf, name: &str) -> Self {
+        self.display_names.insert(path, name.to_owned());
         self
     }
 
@@ -90,11 +97,25 @@ impl super::source::LibrarySource for ScriptedSource {
     }
 
     fn display_name(&self, at: &std::path::Path) -> Option<String> {
-        super::source::UnixLibrarySource.display_name(at)
+        self.display_names
+            .get(at)
+            .cloned()
+            .or_else(|| super::source::UnixLibrarySource.display_name(at))
     }
 
     fn container_name(&self, at: &std::path::Path) -> Option<String> {
         super::source::UnixLibrarySource.container_name(at)
+    }
+
+    fn relative_path(
+        &self,
+        root: &std::path::Path,
+        at: &std::path::Path,
+    ) -> Option<std::path::PathBuf> {
+        self.display_names
+            .get(at)
+            .map(std::path::PathBuf::from)
+            .or_else(|| super::source::UnixLibrarySource.relative_path(root, at))
     }
 
     fn open_read(&self, at: &std::path::Path) -> std::io::Result<super::source::LibraryReadHandle> {
@@ -480,5 +501,287 @@ fn unknown_extension_keeps_the_path_read_unknown_format_verdict() {
     assert_eq!(
         source_kind,
         crate::models::ImportErrorKind::UnsupportedFormat
+    );
+}
+
+#[test]
+fn synced_metadata_replaces_only_the_tracks_named_by_the_desktop() {
+    use crate::device_sync::track_metadata_list::{
+        TrackMetadataEntry, TrackMetadataList, FILE_NAME,
+    };
+
+    let tmp = tempfile::tempdir().unwrap();
+    let first = fixture_copy(tmp.path(), "first.flac");
+    let second = fixture_copy(tmp.path(), "second.flac");
+    let unnamed = fixture_copy(tmp.path(), "unnamed.flac");
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let initial = ScriptedSource::new(vec![
+        scripted_file(&first),
+        scripted_file(&second),
+        scripted_file(&unnamed),
+    ]);
+    completed(scan_folder_with_source(&initial, &db, tmp.path()).unwrap());
+    db.conn()
+        .execute("UPDATE tracks SET rating = 2, play_count = 90", [])
+        .unwrap();
+
+    let list_path = tmp.path().join(FILE_NAME);
+    let list = TrackMetadataList::new(vec![
+        TrackMetadataEntry {
+            device_path: "first.flac".into(),
+            rating: 4,
+            play_count: 7,
+        },
+        TrackMetadataEntry {
+            device_path: "second.flac".into(),
+            rating: 5,
+            play_count: 3,
+        },
+        TrackMetadataEntry {
+            device_path: "not-on-this-phone.flac".into(),
+            rating: 5,
+            play_count: 999,
+        },
+    ])
+    .encode()
+    .unwrap();
+    let synced = ScriptedSource::new(vec![
+        scripted_file(&first),
+        scripted_file(&list_path),
+        scripted_file(&second),
+        scripted_file(&unnamed),
+    ])
+    .with_content(list_path, list);
+
+    completed(scan_folder_with_source(&synced, &db, tmp.path()).unwrap());
+
+    let stored = db
+        .conn()
+        .prepare("SELECT path, rating, play_count FROM tracks ORDER BY path")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i32>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        stored,
+        vec![
+            (first.to_string_lossy().into_owned(), 4, 7),
+            (second.to_string_lossy().into_owned(), 5, 3),
+            (unnamed.to_string_lossy().into_owned(), 2, 90),
+        ],
+        "the desktop replaces exact matches, while unknown and unnamed tracks stay harmless"
+    );
+    let favourites = crate::queries::query_track_window_browsed(
+        &db,
+        &crate::view_source::ViewSource::Library,
+        "artist",
+        "asc",
+        "",
+        &crate::queries::BrowseFilter {
+            rating: Some("5".into()),
+            ..crate::queries::BrowseFilter::default()
+        },
+        0,
+        10,
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        favourites
+            .iter()
+            .map(|track| track.path.as_str())
+            .collect::<Vec<_>>(),
+        [second.to_string_lossy().as_ref()],
+        "a desktop four stays four and therefore is not a phone favourite"
+    );
+}
+
+#[test]
+fn synced_metadata_uses_the_source_relative_name_not_an_opaque_handle() {
+    use crate::device_sync::track_metadata_list::{
+        TrackMetadataEntry, TrackMetadataList, FILE_NAME,
+    };
+
+    let tmp = tempfile::tempdir().unwrap();
+    let staging = fixture_copy(tmp.path(), "staging.flac");
+    let bytes = std::fs::read(&staging).unwrap();
+    std::fs::remove_file(staging).unwrap();
+    let track_handle = tmp.path().join("document-731.flac");
+    let list_handle = tmp.path().join("document-941.rpl");
+    let list = TrackMetadataList::new(vec![TrackMetadataEntry {
+        device_path: "Phone Song.flac".into(),
+        rating: 5,
+        play_count: 41,
+    }])
+    .encode()
+    .unwrap();
+    let source = ScriptedSource::new(vec![
+        scripted_virtual_file(&track_handle, bytes.len() as u64),
+        scripted_virtual_file(&list_handle, list.len() as u64),
+    ])
+    .with_content(track_handle.clone(), bytes)
+    .with_content(list_handle.clone(), list)
+    .with_display_name(track_handle.clone(), "Phone Song.flac")
+    .with_display_name(list_handle, FILE_NAME);
+    let db = crate::db::Db::open_in_memory().unwrap();
+
+    completed(scan_folder_with_source(&source, &db, tmp.path()).unwrap());
+
+    let track = crate::queries::query_library_text_search(
+        &db,
+        "",
+        crate::queries::WindowRange {
+            offset: 0,
+            limit: 10,
+        },
+    )
+    .unwrap()
+    .rows
+    .remove(0);
+    assert_eq!((track.rating, track.play_count), (5, 41));
+}
+
+#[test]
+fn played_track_imports_its_sidecar_under_the_phone_source_fingerprint_only() {
+    use crate::device_sync::analysis_sidecar::AnalysisSidecar;
+    use crate::device_sync::mobile_import::{import_analysis_for_track, AnalysisImportOutcome};
+    use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let first = fixture_copy(tmp.path(), "first.flac");
+    let neighbour = fixture_copy(tmp.path(), "neighbour.flac");
+    let sidecar_path = first.with_extension("reprise-analysis");
+    let sidecar = AnalysisSidecar::new(
+        TrackSourceFingerprint {
+            mtime_seconds: 10,
+            size_bytes: 20,
+            device: Some(30),
+            inode: Some(40),
+        },
+        TrackSpectrogram::from_cells(vec![7; 48]).unwrap(),
+        vec![2, 3, 5, 8],
+    )
+    .encode()
+    .unwrap();
+    let source = ScriptedSource::new(vec![
+        scripted_file(&first),
+        scripted_file(&sidecar_path),
+        scripted_file(&neighbour),
+    ])
+    .with_content(sidecar_path, sidecar);
+    let db = crate::db::Db::open_in_memory().unwrap();
+
+    completed(scan_folder_with_source(&source, &db, tmp.path()).unwrap());
+    let tracks = crate::queries::query_library_text_search(
+        &db,
+        "",
+        crate::queries::WindowRange {
+            offset: 0,
+            limit: 10,
+        },
+    )
+    .unwrap()
+    .rows;
+    let first_id = tracks.iter().find(|track| track.path == first).unwrap().id;
+    let neighbour_id = tracks
+        .iter()
+        .find(|track| track.path == neighbour)
+        .unwrap()
+        .id;
+
+    assert_eq!(
+        import_analysis_for_track(&source, &db, first_id).unwrap(),
+        AnalysisImportOutcome::Imported
+    );
+    assert_eq!(
+        crate::db_spectrogram::get_track_spectrogram(&db, first_id)
+            .unwrap()
+            .unwrap()
+            .cells(),
+        &[7; 48]
+    );
+    assert_eq!(
+        crate::db_spectrogram::get_waveform_peaks(&db, first_id).unwrap(),
+        Some(vec![2, 3, 5, 8])
+    );
+    assert_eq!(
+        crate::db_spectrogram::get_track_spectrogram(&db, neighbour_id).unwrap(),
+        None
+    );
+
+    db.conn()
+        .execute(
+            "UPDATE tracks SET file_size = file_size + 1 WHERE id = ?1",
+            [first_id],
+        )
+        .unwrap();
+    assert_eq!(
+        crate::db_spectrogram::get_track_spectrogram(&db, first_id).unwrap(),
+        None,
+        "the imported data must be invalidated by the phone file, not guarded by the desktop token"
+    );
+    assert_eq!(
+        crate::db_spectrogram::get_waveform_peaks(&db, first_id).unwrap(),
+        None
+    );
+
+    assert_eq!(
+        import_analysis_for_track(&source, &db, first_id).unwrap(),
+        AnalysisImportOutcome::Imported,
+        "the same desktop sidecar must be imported again after phone render data was invalidated"
+    );
+    assert_eq!(
+        crate::db_spectrogram::get_track_spectrogram(&db, first_id)
+            .unwrap()
+            .unwrap()
+            .cells(),
+        &[7; 48]
+    );
+    assert_eq!(
+        crate::db_spectrogram::get_waveform_peaks(&db, first_id).unwrap(),
+        Some(vec![2, 3, 5, 8])
+    );
+}
+
+#[test]
+fn a_scan_without_mobile_cargo_does_not_touch_existing_sidecar_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let track_path = fixture_copy(tmp.path(), "ordinary.flac");
+    let source = ScriptedSource::new(vec![scripted_file(&track_path)]);
+    let db = crate::db::Db::open_in_memory().unwrap();
+
+    completed(scan_folder_with_source(&source, &db, tmp.path()).unwrap());
+    let track_id = crate::queries::query_library_text_search(
+        &db,
+        "",
+        crate::queries::WindowRange {
+            offset: 0,
+            limit: 1,
+        },
+    )
+    .unwrap()
+    .rows[0]
+        .id;
+    crate::db_mobile_sync::register_sidecar(
+        db.conn(),
+        track_path.to_str().unwrap(),
+        Path::new("/phone/ordinary.reprise-analysis"),
+    )
+    .unwrap();
+
+    completed(scan_folder_with_source(&source, &db, tmp.path()).unwrap());
+
+    assert_eq!(
+        crate::db_mobile_sync::analysis_sidecar_state(&db, track_id)
+            .unwrap()
+            .map(|state| state.path),
+        Some("/phone/ordinary.reprise-analysis".into())
     );
 }

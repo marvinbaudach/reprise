@@ -13,6 +13,7 @@ internal data class MainActivitySurfaceDependencies(
     val initialState: LibraryScreenState,
     val artwork: () -> TrackArtwork?,
     val playbackControls: PlaybackControls,
+    val trackAnalysis: TrackAnalysisPort,
     val chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     val rescan: ((LibraryScreenState) -> Unit) -> Unit,
     val searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,

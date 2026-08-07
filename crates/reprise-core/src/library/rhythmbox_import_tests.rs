@@ -39,6 +39,10 @@ impl LibrarySource for MemoryRhythmboxSource {
         None
     }
 
+    fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf> {
+        at.strip_prefix(root).ok().map(Path::to_path_buf)
+    }
+
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
         let bytes = self.files.get(at).cloned().ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "in-memory source has no such item")

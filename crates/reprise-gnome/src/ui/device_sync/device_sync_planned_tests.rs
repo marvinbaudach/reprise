@@ -370,9 +370,10 @@ fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
             paths_at_delete.borrow().as_slice(),
             [
                 "Artist/Unknown Album/00 Track 1.opus",
+                "Artist/Unknown Album/00 Track 1.opus",
                 "Artist/Unknown Album/00 Track 1.opus"
             ],
-            "both the old audio and its sidecar are removed only after the replacement inventory is current"
+            "the old audio, lyrics and analysis paths are removed only after the replacement inventory is current"
         );
     });
 }
@@ -645,12 +646,17 @@ fn sync_now_mirrors_the_selection_without_legacy_pin_exceptions() {
         runtime.sync_now("a").unwrap();
         settle().await;
 
-        // Audio only: `/library/3.flac` and `/library/4.flac` have no
-        // sidecar next to them, so `LYR-7` leaves whatever `.lrc` may sit on
-        // the device alone.
+        // `/library/3.flac` and `/library/4.flac` have no lyrics beside them,
+        // so `LYR-7` leaves any `.lrc` alone. Analysis paths are Reprise-owned
+        // and follow each removed audio file.
         assert_eq!(
             backend.state.deleted.borrow().as_slice(),
-            ["Old/Three.flac", "Keep/Four.flac"]
+            [
+                "Old/Three.flac",
+                "Old/Three.reprise-analysis",
+                "Keep/Four.flac",
+                "Keep/Four.reprise-analysis"
+            ]
         );
         let ids = reprise_core::device_sync::settings::load_device_files(&conn, "a")
             .unwrap()
