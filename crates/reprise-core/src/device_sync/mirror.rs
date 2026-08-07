@@ -309,6 +309,26 @@ fn build_plan(
     plan
 }
 
+/// The device paths whose audio this run puts on the device.
+///
+/// Two decisions turn on it — which sidecars this plan owns, and which
+/// sidecars it writes — and computing it twice is how those two drift apart.
+/// It takes the two fields rather than the whole plan so a caller holding
+/// `&mut MirrorPlan` can still write to the other fields.
+fn arriving_audio_paths<'a>(
+    copy: &'a [DesiredManagedFile],
+    replace: &'a [MirrorReplacement],
+) -> HashSet<&'a str> {
+    copy.iter()
+        .map(|file| file.device_path.as_str())
+        .chain(
+            replace
+                .iter()
+                .map(|replacement| replacement.desired.device_path.as_str()),
+        )
+        .collect()
+}
+
 fn owned_analysis_sidecar_paths(
     plan: &MirrorPlan,
     managed_files: &[ManagedDeviceFile],
@@ -317,16 +337,7 @@ fn owned_analysis_sidecar_paths(
         .iter()
         .map(|file| file.relative_path.as_str())
         .collect::<HashSet<_>>();
-    let arriving = plan
-        .copy
-        .iter()
-        .map(|file| file.device_path.as_str())
-        .chain(
-            plan.replace
-                .iter()
-                .map(|replacement| replacement.desired.device_path.as_str()),
-        )
-        .collect::<HashSet<_>>();
+    let arriving = arriving_audio_paths(&plan.copy, &plan.replace);
     plan.desired_files
         .iter()
         .map(|file| file.device_path.as_str())
@@ -354,20 +365,11 @@ fn plan_analysis_sidecars(
         .iter()
         .map(|file| (file.relative_path.as_str(), file.size_bytes))
         .collect::<HashMap<_, _>>();
-    let arriving_audio = plan
-        .copy
-        .iter()
-        .map(|file| file.device_path.clone())
-        .chain(
-            plan.replace
-                .iter()
-                .map(|replacement| replacement.desired.device_path.clone()),
-        )
-        .collect::<HashSet<_>>();
+    let arriving_audio = arriving_audio_paths(&plan.copy, &plan.replace);
     let mut analysis_target_bytes = 0_u64;
     for desired in &plan.desired_files {
         if !resident.contains_key(desired.device_path.as_str())
-            && !arriving_audio.contains(&desired.device_path)
+            && !arriving_audio.contains(desired.device_path.as_str())
         {
             continue;
         }
