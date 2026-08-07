@@ -73,8 +73,8 @@ struct PlannedWork {
     device_id: String,
     root_uri: String,
     /// Whether the platform supplied a durable identity for database state.
-    /// A session-only device still transfers, but records nothing under its
-    /// volatile URI.
+    /// A session-only device still transfers and records its run, but writes
+    /// no identity-bound inventory under its volatile URI.
     persist_device_state: bool,
     initiator: SyncInitiator,
     machine: Rc<RefCell<DeviceSyncMachine>>,
@@ -455,7 +455,7 @@ impl DeviceSyncRuntime {
         device_id: &str,
         initiator: SyncInitiator,
     ) -> Result<(), SyncStartError> {
-        let (prepare, start, persist_device_state) = {
+        let (prepare, start) = {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
@@ -495,9 +495,9 @@ impl DeviceSyncRuntime {
                 started_at: now_seconds(),
                 planned: 0,
             };
-            (prepare, start, device.descriptor.persistent_id.is_some())
+            (prepare, start)
         };
-        let log = RunLog::open(self, &start, persist_device_state);
+        let log = RunLog::open(self, &start);
         self.reload_sync_history(device_id);
         if let Some(missing) = prepare {
             preparation::begin_prepared_sync(self, device_id, missing, initiator, log);

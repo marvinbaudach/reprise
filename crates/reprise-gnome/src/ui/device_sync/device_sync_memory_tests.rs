@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn mtp_49_unrememberable_device_is_usable_without_persisting_the_volatile_uri() {
+fn mtp_49_unrememberable_device_records_its_run_without_persisting_device_state() {
     run(async {
         let (_temp, conn) = fixture();
         let root_uri = "mtp://[usb:001,013]/";
@@ -26,6 +26,14 @@ fn mtp_49_unrememberable_device_is_usable_without_persisting_the_volatile_uri() 
                 [],
             )
             .unwrap();
+        let mut legacy_settings = reprise_core::device_sync::settings::load_or_create_settings(
+            &conn,
+            root_uri,
+            "Legacy transport row",
+        )
+        .unwrap();
+        legacy_settings.sync_automatically = false;
+        reprise_core::device_sync::settings::save_settings(&conn, &legacy_settings).unwrap();
         let backend = Rc::new(FakeBackend::new(vec![device], 1));
 
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
@@ -47,8 +55,19 @@ fn mtp_49_unrememberable_device_is_usable_without_persisting_the_volatile_uri() 
         runtime
             .set_playlist_selected(root_uri, SelectionSource::Playlist(10), true)
             .unwrap();
+        let (_subscription, completed) =
+            signal_when(&runtime, |state| state.devices[0].last_sync.is_some());
         runtime.sync_now(root_uri).unwrap();
-        settle().await;
+        let completed_before_timeout =
+            futures_lite::future::race(async { completed.recv().await.is_ok() }, async {
+                gtk4::glib::timeout_future(Duration::from_secs(2)).await;
+                false
+            })
+            .await;
+        assert!(
+            completed_before_timeout,
+            "the unrememberable sync must complete without a durable verification write"
+        );
         assert!(
             backend
                 .state
@@ -58,21 +77,49 @@ fn mtp_49_unrememberable_device_is_usable_without_persisting_the_volatile_uri() 
                 .any(|(device_id, _)| device_id == root_uri),
             "an unrememberable phone still performs the requested transfer"
         );
-        let persisted: i64 = crate::test_db::connection(&conn)
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(recorded.device_serial, root_uri);
+        assert_eq!(
+            recorded.outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Completed
+        );
+        assert!(recorded.finished_at.is_some());
+
+        let (device_settings, device_files, device_playlists, device_targets, last_verified_at): (
+            i64,
+            i64,
+            i64,
+            i64,
+            Option<i64>,
+        ) = crate::test_db::connection(&conn)
             .query_row(
                 "SELECT
-                   (SELECT COUNT(*) FROM device_settings WHERE device_serial = ?1) +
-                   (SELECT COUNT(*) FROM device_sync_targets WHERE device_serial = ?1) +
-                   (SELECT COUNT(*) FROM device_files WHERE device_serial = ?1) +
-                   (SELECT COUNT(*) FROM device_playlists WHERE device_serial = ?1) +
-                   (SELECT COUNT(*) FROM sync_runs WHERE device_serial = ?1)",
+                   (SELECT COUNT(*) FROM device_settings WHERE device_serial = ?1),
+                   (SELECT COUNT(*) FROM device_files WHERE device_serial = ?1),
+                   (SELECT COUNT(*) FROM device_playlists WHERE device_serial = ?1),
+                   (SELECT COUNT(*) FROM device_sync_targets WHERE device_serial = ?1),
+                   (SELECT last_verified_at FROM device_settings WHERE device_serial = ?1)",
                 [root_uri],
-                |row| row.get(0),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .unwrap();
+        assert_eq!(device_settings, 1, "the legacy fixture row remains present");
+        assert_eq!(device_files, 0, "inventory stays identity-bound");
+        assert_eq!(device_playlists, 0, "playlist memory stays identity-bound");
+        assert_eq!(device_targets, 0, "target memory stays identity-bound");
         assert_eq!(
-            persisted, 0,
-            "the volatile MTP URI must never be used as a memory key"
+            last_verified_at, None,
+            "verification timestamps stay identity-bound"
         );
     });
 }

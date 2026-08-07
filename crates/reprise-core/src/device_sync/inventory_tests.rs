@@ -7,6 +7,7 @@ use super::settings::{
     upsert_device_file, upsert_device_playlist, DeviceFileRecord, DevicePlaylistRecord,
     LegacyDeviceRekey,
 };
+use super::sync_log::{recent_runs, start_run, RunStart};
 use super::{
     load_or_create_targets, load_target, save_target, DeviceSelection, Mp3Quality, SelectionSource,
     StorageId, SyncTargetKind, TransferProfile, REPRISE_DEVICE_DIR,
@@ -174,6 +175,29 @@ fn mtp_50_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forg
         1,
         "forgetting one stable device must not delete unrelated history"
     );
+}
+
+#[test]
+fn forgetting_uri_keyed_device_settings_removes_its_run_rows() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let uri = "mtp://[usb:001,013]/";
+    load_or_create_settings(&db, uri, "Legacy phone").unwrap();
+    start_run(
+        &db,
+        &RunStart {
+            device_serial: uri.into(),
+            device_name: "Unknown Android phone".into(),
+            transfer_profile: "opus_160".into(),
+            started_at: 1_786_121_600,
+            planned: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(recent_runs(&db, 10).unwrap().len(), 1);
+
+    forget_device(&db, uri).unwrap();
+
+    assert!(recent_runs(&db, 10).unwrap().is_empty());
 }
 
 #[test]
