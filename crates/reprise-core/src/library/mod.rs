@@ -8,6 +8,7 @@ pub mod library_doctor;
 pub mod listenbrainz;
 pub mod m3u;
 pub(crate) mod mounts;
+pub mod path_guard;
 mod playlist_delete;
 pub mod playlist_membership;
 pub mod playlists;

@@ -5,9 +5,8 @@
 
 use chrono::NaiveDate;
 
-use crate::artist_news::{
-    mark_releases_seen, query_releases, refresh_with, unseen_release_count, FetchScope,
-};
+use crate::artist_news::{mark_releases_seen, refresh_with, unseen_release_count, FetchScope};
+use crate::artist_news_query::query_releases_in;
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const RELEASES: &str = r#"{"release-groups":[
@@ -53,7 +52,7 @@ fn nr_27_tag_mbid_skips_search_and_persists_releases() {
     assert_eq!(report.releases_upserted, 2);
     assert_eq!(urls.len(), 1);
     assert!(urls[0].contains("/release-group?"));
-    let releases = query_releases(&conn, true, date()).unwrap();
+    let releases = query_releases_in(conn.conn(), true, date()).unwrap();
     assert_eq!(releases.len(), 2);
     assert!(releases.iter().all(|release| {
         release.artist_name == "Pink Floyd" && release.artist_mbid == ARTIST_ID
@@ -73,7 +72,7 @@ fn nr_27_tag_mbid_skips_search_and_persists_releases() {
             [ARTIST_ID],
         )
         .unwrap();
-    let after_import = query_releases(&conn, true, date()).unwrap();
+    let after_import = query_releases_in(conn.conn(), true, date()).unwrap();
     assert_eq!(
         after_import.len(),
         2,
@@ -151,7 +150,7 @@ fn nr_24_refresh_excludes_featured_artist_credits_but_keeps_co_headliners() {
     )
     .unwrap();
 
-    let mut release_ids = query_releases(&db, true, date())
+    let mut release_ids = query_releases_in(db.conn(), true, date())
         .unwrap()
         .into_iter()
         .map(|release| release.release_group_mbid)

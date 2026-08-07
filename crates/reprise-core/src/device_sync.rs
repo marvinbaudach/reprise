@@ -1,8 +1,11 @@
-//! Pure device-synchronization planning and progress state.
+//! Device-synchronization planning and progress state.
 //!
-//! This module deliberately owns no filesystem or platform handles. Linux
-//! GIO/GVfs I/O lives in `reprise-platform-linux`; frontends feed validated
-//! tracks into the queue and project immutable snapshots into their UI.
+//! Planning owns no platform handles: Linux GIO/GVfs I/O lives in
+//! `reprise-platform-linux`; frontends feed validated tracks into the queue
+//! and project immutable snapshots into their UI. Filesystem access is
+//! confined to the two places whose subject is a file rather than a device —
+//! [`podcasts`] sizes what it plans to copy, [`staging`] writes what a backend
+//! will copy — so that no frontend has to reimplement either.
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
@@ -30,6 +33,7 @@ pub mod sanitize;
 pub mod selection;
 pub mod settings;
 pub mod snapshot;
+pub mod staging;
 pub mod storage;
 pub mod sync_log;
 pub mod targets;

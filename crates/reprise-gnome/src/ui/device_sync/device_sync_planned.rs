@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use reprise_core::device_sync::podcasts::PodcastSyncPlan;
@@ -24,8 +24,6 @@ use reprise_core::device_sync::{
 
 use super::*;
 use run_log::{now_seconds, RunLog};
-
-static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SyncInitiator {
@@ -387,24 +385,6 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
     }
     runtime.notify();
     runtime.refresh_contents(&work.device_id);
-}
-
-fn temporary_transcode_path(device_id: &str, track_id: i64, extension: &str) -> PathBuf {
-    let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let safe_device = reprise_core::device_sync::safe_component(device_id, "device");
-    std::env::temp_dir().join(format!(
-        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.{extension}",
-        std::process::id(),
-    ))
-}
-
-fn temporary_metadata_path(device_id: &str, track_id: i64, kind: &str) -> PathBuf {
-    let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let safe_device = reprise_core::device_sync::safe_component(device_id, "device");
-    std::env::temp_dir().join(format!(
-        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.{kind}",
-        std::process::id(),
-    ))
 }
 
 impl DeviceSyncRuntime {

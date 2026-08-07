@@ -6,9 +6,10 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    delta_candidates, hidden_release_count, mark_releases_seen, query_releases, set_release_hidden,
+    delta_candidates, hidden_release_count, mark_releases_seen, set_release_hidden,
     unseen_release_count,
 };
+use crate::artist_news_query::query_releases_in;
 use crate::library::settings::set_setting;
 
 fn date() -> NaiveDate {
@@ -208,7 +209,7 @@ fn updates_query_keeps_catalog_out_of_the_legacy_news_list() {
             .unwrap();
     }
 
-    let rows = query_releases(&conn, false, date()).unwrap();
+    let rows = query_releases_in(conn.conn(), false, date()).unwrap();
 
     assert_eq!(
         rows.into_iter()
@@ -238,7 +239,7 @@ fn updates_query_caps_each_artist_after_catalog_filtering() {
             .unwrap();
     }
 
-    let rows = query_releases(&conn, false, date()).unwrap();
+    let rows = query_releases_in(conn.conn(), false, date()).unwrap();
 
     assert_eq!(rows.len(), 20);
 }
@@ -253,14 +254,14 @@ fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
 
     assert_eq!(hidden_release_count(&conn).unwrap(), 1);
     assert_eq!(
-        query_releases(&conn, false, date())
+        query_releases_in(conn.conn(), false, date())
             .unwrap()
             .into_iter()
             .map(|release| release.release_group_mbid)
             .collect::<Vec<_>>(),
         ["two"]
     );
-    assert!(query_releases(&conn, true, date())
+    assert!(query_releases_in(conn.conn(), true, date())
         .unwrap()
         .into_iter()
         .find(|release| release.release_group_mbid == "one")
@@ -298,7 +299,10 @@ fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
     set_release_hidden(&conn, "one", false).unwrap();
 
     assert_eq!(hidden_release_count(&conn).unwrap(), 0);
-    assert_eq!(query_releases(&conn, false, date()).unwrap().len(), 2);
+    assert_eq!(
+        query_releases_in(conn.conn(), false, date()).unwrap().len(),
+        2
+    );
 }
 
 #[test]
@@ -337,7 +341,7 @@ fn query_marks_local_albums_instead_of_dropping_them() {
         )
         .unwrap();
 
-    let releases = query_releases(&conn, true, date()).unwrap();
+    let releases = query_releases_in(conn.conn(), true, date()).unwrap();
 
     assert_eq!(releases.len(), 2, "in-library releases stay in the list");
     let owned = releases
@@ -412,7 +416,7 @@ fn query_releases_reports_partial_ownership_for_a_single_track() {
         )
         .unwrap();
 
-    let releases = query_releases(&conn, false, date()).unwrap();
+    let releases = query_releases_in(conn.conn(), false, date()).unwrap();
     assert_eq!(releases.len(), 1);
     assert_eq!(releases[0].presence, LibraryPresence::Partial);
     assert_eq!(releases[0].local_track_count, 1);
@@ -445,7 +449,7 @@ fn dg_2_future_release_cannot_be_hidden_as_already_complete() {
             .unwrap();
     }
 
-    let releases = query_releases(&conn, false, date()).unwrap();
+    let releases = query_releases_in(conn.conn(), false, date()).unwrap();
 
     assert_eq!(releases[0].local_track_count, 2);
     assert_eq!(releases[0].presence, LibraryPresence::Partial);
