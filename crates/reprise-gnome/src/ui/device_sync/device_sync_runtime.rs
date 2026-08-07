@@ -18,7 +18,7 @@ use reprise_core::device_sync::device_view::{
     project_device_category_reading,
 };
 use reprise_core::device_sync::settings::{
-    forget_device, mark_device_playlists_synced, record_device_verification, rename_device,
+    forget_device, mark_device_playlists_synced, record_device_verification,
 };
 use reprise_core::device_sync::{
     aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
@@ -401,33 +401,6 @@ impl DeviceSyncRuntime {
         self.notify();
     }
 
-    pub fn rename_remembered_device(
-        self: &Rc<Self>,
-        device_id: &str,
-        local_name: &str,
-    ) -> Result<(), String> {
-        let rememberable = self
-            .device_states
-            .borrow()
-            .iter()
-            .find(|device| device.descriptor.id == device_id)
-            .is_some_and(|device| device.descriptor.persistent_id.is_some());
-        if !rememberable {
-            return Err("this device has no stable identity to rename".into());
-        }
-        rename_device(&self.conn, device_id, local_name).map_err(|error| error.to_string())?;
-        if let Some(device) = self
-            .device_states
-            .borrow_mut()
-            .iter_mut()
-            .find(|device| device.descriptor.id == device_id)
-        {
-            device.settings.device_name = local_name.trim().to_string();
-        }
-        self.notify();
-        Ok(())
-    }
-
     pub fn forget_remembered_device(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
         let can_forget = self
             .device_states
@@ -783,6 +756,8 @@ mod compact;
 mod device_list;
 #[path = "device_sync_memory.rs"]
 mod memory;
+#[path = "device_sync_naming.rs"]
+mod naming;
 #[path = "device_sync_picker_runtime.rs"]
 mod picker;
 #[path = "device_sync_planned.rs"]

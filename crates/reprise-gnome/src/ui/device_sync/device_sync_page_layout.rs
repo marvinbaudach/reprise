@@ -28,7 +28,7 @@ pub(super) struct DeviceDashboard {
     pub(super) up_next_heading: gtk4::Box,
     /// Holds the externally owned Content panel below its "Up next" heading.
     pub(super) up_next: gtk4::Box,
-    pub(super) device_name: gtk4::Label,
+    pub(super) device_name: gtk4::Button,
     pub(super) connection: gtk4::Label,
     pub(super) device_last_sync: gtk4::Label,
     pub(super) profile: gtk4::DropDown,
@@ -58,8 +58,16 @@ pub(super) struct DeviceDashboard {
 }
 
 pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashboard {
-    let device_name = label(&device.name, "title-1");
-    elide(&device_name);
+    let device_name = gtk4::Button::with_label(&device.name);
+    device_name.add_css_class("flat");
+    device_name.add_css_class("title-1");
+    device_name.set_halign(gtk4::Align::Start);
+    device_name.update_property(&[gtk4::accessible::Property::Label(
+        &super::device_sync_strings::text(super::device_sync_strings::RENAME_DEVICE),
+    )]);
+    if let Some(name_label) = device_name.child().and_downcast::<gtk4::Label>() {
+        elide(&name_label);
+    }
     let connection = label("MTP connected", "caption");
     connection.add_css_class("pill");
     connection.add_css_class("success");

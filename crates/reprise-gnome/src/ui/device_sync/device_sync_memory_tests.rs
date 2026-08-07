@@ -122,3 +122,37 @@ fn a_later_volume_projection_replaces_the_daemon_mount_name_and_identity() {
         assert!(corrected[0].page.controls.editable);
     });
 }
+
+#[test]
+fn a_stored_placeholder_adopts_a_better_detected_name_but_a_custom_name_wins() {
+    run(async {
+        let (_temp, conn) = fixture();
+        reprise_core::device_sync::settings::load_or_create_settings(&conn, "pixel", "mtp")
+            .unwrap();
+        let detected = DeviceDescriptor {
+            id: "pixel".into(),
+            persistent_id: Some("pixel".into()),
+            name: "Google Pixel 8".into(),
+            root_uri: "mtp://pixel/".into(),
+            reconnectable: true,
+            icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
+        };
+
+        let runtime = DeviceSyncRuntime::with_backend(
+            &conn,
+            Rc::new(FakeBackend::new(vec![detected.clone()], 1)),
+        );
+        settle().await;
+        assert_eq!(runtime.devices()[0].name, "Google Pixel 8");
+        let persisted =
+            reprise_core::device_sync::settings::load_or_create_settings(&conn, "pixel", "ignored")
+                .unwrap();
+        assert_eq!(persisted.device_name, "Google Pixel 8");
+
+        reprise_core::device_sync::settings::rename_device(&conn, "pixel", "My phone").unwrap();
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(vec![detected], 1)));
+        settle().await;
+        assert_eq!(runtime.devices()[0].name, "My phone");
+    });
+}

@@ -129,7 +129,7 @@ fn mtp_50_remembered_card_is_dimmed_has_no_diff_and_exposes_local_memory_actions
     let menu_source = include_str!("../device_sync/device_sync_card_menu.rs");
     assert!(menu_source.contains("BUTTON_SECONDARY"));
     assert!(menu_source.contains("FORGET_DEVICE"));
-    assert!(menu_source.contains("rename_remembered_device"));
+    assert!(menu_source.contains("device_sync_rename::prompt"));
     assert!(menu_source.contains("forget_remembered_device"));
 }
 

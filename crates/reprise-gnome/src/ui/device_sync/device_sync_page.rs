@@ -37,7 +37,7 @@ struct DeviceSyncPage {
     root: gtk4::glib::WeakRef<gtk4::Stack>,
     /// Container for the "Recent syncs" card (MTP-20).
     history: gtk4::Box,
-    device_name: gtk4::Label,
+    device_name: gtk4::Button,
     connection: gtk4::Label,
     device_last_sync: gtk4::Label,
     profile: gtk4::DropDown,
@@ -189,6 +189,17 @@ impl DeviceSyncPage {
         );
         self.updating.set(true);
         self.device_name.set_label(&device.name);
+        self.device_name.set_sensitive(device.rememberable);
+        if device.rememberable {
+            self.device_name
+                .set_tooltip_text(Some(&device_sync_strings::text(
+                    device_sync_strings::RENAME_DEVICE,
+                )));
+        } else {
+            let (title, detail) = device_sync_strings::sync_history_unrecorded_warning();
+            self.device_name
+                .set_tooltip_text(Some(&format!("{title}\n{detail}")));
+        }
         self.connection.remove_css_class("success");
         self.connection.remove_css_class("warning");
         self.connection.remove_css_class("dim-label");
@@ -535,6 +546,13 @@ pub(in crate::ui) fn open(
         PageActions::for_runtime(runtime, device_id),
         &ContentPanelActions::for_runtime(runtime, device_id),
     );
+    {
+        let runtime = runtime.clone();
+        let device_id = device_id.to_string();
+        surface.device_name.connect_clicked(move |button| {
+            super::device_sync_rename::prompt(button, &runtime, &device_id);
+        });
+    }
     if let Some(previous) = content_stack.child_by_name("device-sync") {
         content_stack.remove(&previous);
     }

@@ -11,6 +11,7 @@ mod device_sync_page_actions;
 mod device_sync_page_copy;
 mod device_sync_page_layout;
 mod device_sync_picker;
+pub(in crate::ui) mod device_sync_rename;
 pub(in crate::ui) mod device_sync_runtime;
 pub(in crate::ui) mod device_sync_smoke;
 pub(in crate::ui) mod device_sync_storage_bar;

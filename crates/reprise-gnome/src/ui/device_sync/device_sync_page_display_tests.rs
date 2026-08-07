@@ -446,6 +446,30 @@ fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
     assert!(!lines.contains(&"Next synchronization"));
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn unrememberable_device_disables_hero_rename_with_the_history_explanation() {
+    gtk4::init().expect("GTK test display");
+    let mut device = device();
+    device.rememberable = false;
+    let (surface, _root) = DeviceSyncPage::new(
+        &device,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    assert!(!surface.device_name.is_sensitive());
+    let tooltip = surface.device_name.tooltip_text().unwrap_or_default();
+    assert!(tooltip.contains("runs are not written to the history"));
+    assert!(tooltip.contains("Unlock the phone before plugging it in"));
+}
+
 /// `MTP-46`, the visible half: the core gate already keeps a switched-off
 /// source out of the plan, but a Content row still reading "0 of 3 channels"
 /// would tell the user their phone is set up to receive something it will

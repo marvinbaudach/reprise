@@ -1,7 +1,8 @@
 use gtk4::prelude::Cast;
 use reprise_core::db::Db;
 use reprise_core::device_sync::settings::{
-    list_remembered_devices, load_or_create_settings, rekey_legacy_device, LegacyDeviceRekey,
+    list_remembered_devices, load_or_create_settings, rekey_legacy_device, save_settings,
+    LegacyDeviceRekey,
 };
 use reprise_core::device_sync::{
     load_or_create_targets, DeviceSettings, SyncTarget, SyncTargetKind,
@@ -74,8 +75,23 @@ pub(super) fn load_device_memory(
             }
         }
     }
-    let settings = load_or_create_settings(db, stable_id, &descriptor.name)
+    let mut settings = load_or_create_settings(db, stable_id, &descriptor.name)
         .map_err(|error| error.to_string())?;
+    adopt_detected_device_name(db, &mut settings, descriptor)?;
     let targets = load_or_create_targets(db, stable_id).map_err(|error| error.to_string())?;
     Ok((settings, targets))
+}
+
+pub(super) fn adopt_detected_device_name(
+    db: &Db,
+    settings: &mut DeviceSettings,
+    descriptor: &DeviceDescriptor,
+) -> Result<(), String> {
+    if reprise_platform_linux::device_sync::is_placeholder_name(&settings.device_name)
+        && !reprise_platform_linux::device_sync::is_placeholder_name(&descriptor.name)
+    {
+        settings.device_name = descriptor.name.clone();
+        save_settings(db, settings).map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }

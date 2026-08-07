@@ -40,6 +40,43 @@ pub(super) fn prompt_name<W: IsA<gtk4::Widget>>(
     confirm_label: &str,
     on_confirm: impl Fn(String) + 'static,
 ) {
+    prompt_name_impl(
+        parent,
+        heading,
+        placeholder,
+        confirm_label,
+        false,
+        on_confirm,
+    );
+}
+
+/// The device rename variant: an empty confirmed value clears the local
+/// override and lets the caller restore the detected device name.
+pub(super) fn prompt_optional_name<W: IsA<gtk4::Widget>>(
+    parent: &W,
+    heading: &str,
+    placeholder: &str,
+    confirm_label: &str,
+    on_confirm: impl Fn(String) + 'static,
+) {
+    prompt_name_impl(
+        parent,
+        heading,
+        placeholder,
+        confirm_label,
+        true,
+        on_confirm,
+    );
+}
+
+fn prompt_name_impl<W: IsA<gtk4::Widget>>(
+    parent: &W,
+    heading: &str,
+    placeholder: &str,
+    confirm_label: &str,
+    allow_empty: bool,
+    on_confirm: impl Fn(String) + 'static,
+) {
     let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
     let entry = gtk4::Entry::builder()
         .placeholder_text(placeholder)
@@ -55,12 +92,12 @@ pub(super) fn prompt_name<W: IsA<gtk4::Widget>>(
     dialog.add_response(RESPONSE_CANCEL, &strings::text(strings::CANCEL));
     dialog.add_response(RESPONSE_CREATE, confirm_label);
     dialog.set_response_appearance(RESPONSE_CREATE, adw::ResponseAppearance::Suggested);
-    dialog.set_response_enabled(RESPONSE_CREATE, false);
+    dialog.set_response_enabled(RESPONSE_CREATE, allow_empty);
 
     entry.connect_changed({
         let dialog = dialog.clone();
         move |entry| {
-            let has_name = !entry.text().trim().is_empty();
+            let has_name = allow_empty || !entry.text().trim().is_empty();
             dialog.set_response_enabled(RESPONSE_CREATE, has_name);
         }
     });
