@@ -238,7 +238,7 @@ impl DeviceState {
             })
         };
         let device_bytes = [
-            category_bytes(&self.managed_files),
+            compact::verified_track_bytes(&self.managed_files),
             category_bytes(&self.youtube_files),
             category_bytes(&self.podcast_files),
         ];
