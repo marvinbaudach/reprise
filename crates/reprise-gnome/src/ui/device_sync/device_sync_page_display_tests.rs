@@ -456,3 +456,44 @@ fn mtp_46_a_switched_off_source_has_no_content_row_on_the_device_page() {
         "and must leave YouTube, its peer, alone"
     );
 }
+
+/// `NPP-1`'s second pitfall is not confined to the panel itself: a label
+/// without `ellipsize` reports its full text width as a *minimum*, and
+/// `AdwOverlaySplitView` hands the content pane that minimum before it lays
+/// out its own fixed 300 px column — which then leaves the window. The device
+/// hero showed it plainly: with a long connection status and sync history the
+/// card's width tracked the primary button's label, "Download & sync" versus
+/// "Cancel", 85 px apart. Measured against the clamp the page declares for
+/// itself, since a minimum above that clamp is exactly the broken state.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_1_a_talkative_device_hero_stays_inside_the_page_clamp() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let mut device = device();
+    device.name = "Marvin's Pixel 8 Pro".into();
+    device.memory_status = Some("This device can be used now but cannot be remembered".into());
+    device.last_sync = Some(chrono::Utc.with_ymd_and_hms(2026, 8, 7, 11, 49, 0).unwrap());
+    device.verified_managed_track_count = Some(214);
+    device.managed_track_count = 214;
+
+    let (_surface, root) = DeviceSyncPage::new(
+        &device,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let clamp = super::super::device_sync_page_layout::CONTENT_MAX_WIDTH;
+    let minimum = root.measure(gtk4::Orientation::Horizontal, -1).0;
+    assert!(
+        minimum <= clamp,
+        "the device page demands {minimum} px at minimum, past its own {clamp} px clamp — \
+         at that width AdwOverlaySplitView pushes the now-playing column out of the window"
+    );
+}

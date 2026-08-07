@@ -396,23 +396,23 @@ impl DeviceSyncPage {
         );
     }
 
-    /// `MTP-43`: the preparation overview — episode titles alongside the
-    /// count/size line so the user knows *what* is about to download, not
-    /// just how much. Hidden entirely for `Absent`/`NothingMissing`, exactly
-    /// like `device_sync_strings::preparation_overview` reports them.
+    /// `MTP-43`: the preparation overview — the first few episode titles
+    /// alongside the count/size line so the user knows *what* is about to
+    /// download, not just how much (`preparation_titles` counts the rest
+    /// rather than naming it). Hidden entirely for `Absent`/`NothingMissing`,
+    /// exactly like `device_sync_strings::preparation_overview` reports them.
     fn update_preparation(&self, device: &DeviceView) {
         let Some(summary) = device_sync_strings::preparation_overview(&device.preparation) else {
             self.preparation_box.set_visible(false);
             return;
         };
         let mut detail = summary;
-        if !device.preparation_missing.is_empty() {
-            let titles = device
-                .preparation_missing
-                .iter()
-                .map(|file| file.title.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
+        let titles = device
+            .preparation_missing
+            .iter()
+            .map(|file| file.title.as_str())
+            .collect::<Vec<_>>();
+        if let Some(titles) = device_sync_strings::preparation_titles(&titles) {
             detail = format!("{detail}\n{titles}");
         }
         self.preparation_detail.set_label(&detail);
