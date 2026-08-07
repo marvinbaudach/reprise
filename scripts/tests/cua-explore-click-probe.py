@@ -28,7 +28,11 @@ from click_probe import (  # noqa: E402
     write_click_evidence,
 )
 from cua_explore_png import write_png  # noqa: E402
-from hover_geometry import WindowGeometry  # noqa: E402
+from hover_geometry import (  # noqa: E402
+    WindowGeometry,
+    assert_point_inside,
+    window_pointer_point,
+)
 
 
 ORIGIN = WindowGeometry(200, 50, 1200, 800)
@@ -132,6 +136,42 @@ class StarCountTests(unittest.TestCase):
         self.assertEqual(counts["empty"], 22)
 
 
+class WindowPointerPointTests(unittest.TestCase):
+    """cua-driver takes click x/y with window_id in full-window space.
+
+    move_cursor with scope=desktop takes desktop coordinates instead - two
+    tools, two spaces. Using the desktop point for a click put every pixel
+    click exactly one window origin off target.
+    """
+
+    # The recorded rating star: screen (1366, 341), 16x24, window at (200, 50).
+    FRAME = {"x": 1366.0, "y": 341.0, "w": 16.0, "h": 24.0}
+
+    def test_the_point_is_the_centre_in_window_coordinates(self) -> None:
+        self.assertEqual(window_pointer_point(self.FRAME, ORIGIN), (1174.0, 303.0))
+
+    def test_the_point_always_lands_inside_its_own_target(self) -> None:
+        # This is what catches a doubled origin whatever the numbers are.
+        point = window_pointer_point(self.FRAME, ORIGIN)
+        left = self.FRAME["x"] - ORIGIN.x
+        top = self.FRAME["y"] - ORIGIN.y
+
+        self.assertGreaterEqual(point[0], left)
+        self.assertLessEqual(point[0], left + self.FRAME["w"])
+        self.assertGreaterEqual(point[1], top)
+        self.assertLessEqual(point[1], top + self.FRAME["h"])
+
+    def test_a_doubled_window_origin_is_refused_loudly(self) -> None:
+        doubled = (1174.0 + ORIGIN.x, 303.0 + ORIGIN.y)
+        rect = (1166.0, 291.0, 16.0, 24.0)
+
+        with self.assertRaisesRegex(Exception, "coordinate-space"):
+            assert_point_inside(doubled, rect)
+
+    def test_a_point_inside_its_target_passes(self) -> None:
+        assert_point_inside((1174.0, 303.0), (1166.0, 291.0, 16.0, 24.0))
+
+
 class ClickProbeTests(unittest.TestCase):
     def test_both_routes_are_probed_accessibility_first(self) -> None:
         results = run(RecordedStarTransport())
@@ -152,11 +192,22 @@ class ClickProbeTests(unittest.TestCase):
 
         results = run(transport)
 
+        # Window coordinates, so the window origin comes off exactly once.
         expected = (
-            target["frame"]["x"] + target["frame"]["w"] / 2,
-            target["frame"]["y"] + target["frame"]["h"] / 2,
+            target["frame"]["x"] + target["frame"]["w"] / 2 - ORIGIN.x,
+            target["frame"]["y"] + target["frame"]["h"] / 2 - ORIGIN.y,
         )
         self.assertEqual((results[1].address["x"], results[1].address["y"]), expected)
+
+    def test_the_dispatched_point_lies_inside_the_reported_rectangle(self) -> None:
+        results = {item.route: item for item in run(RecordedStarTransport())}
+        pixel = results["px"]
+        left, top, width, height = pixel.rect
+
+        self.assertGreaterEqual(pixel.address["x"], left)
+        self.assertLessEqual(pixel.address["x"], left + width)
+        self.assertGreaterEqual(pixel.address["y"], top)
+        self.assertLessEqual(pixel.address["y"], top + height)
 
     def test_a_route_that_works_only_on_pixels_is_visible_as_such(self) -> None:
         # The case that cannot be told apart today: the accessibility action is

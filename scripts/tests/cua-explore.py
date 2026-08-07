@@ -23,6 +23,7 @@ from oracles import (  # noqa: E402
 from explorer import DeterministicExplorer  # noqa: E402
 from agent_adapter import AgentError, ExternalAgent  # noqa: E402
 from driver import CuaExecutor  # noqa: E402
+from hover_geometry import WindowGeometry  # noqa: E402
 from report import RunReport, confirm_findings, minimize_actions  # noqa: E402
 from runner import app_launch_argv  # noqa: E402
 
@@ -996,7 +997,14 @@ class CuaExecutorTests(unittest.TestCase):
         ]
         transport = FakeTransport(snapshots)
         executor = CuaExecutor(
-            transport, pid=44, window_id=77, session="test", settle_delays=()
+            transport,
+            pid=44,
+            window_id=77,
+            session="test",
+            settle_delays=(),
+            # These fixtures state frames in window coordinates already, so the
+            # window sits at the origin; a pixel click needs it either way.
+            window_origin=WindowGeometry(0, 0, 800, 600),
         )
         action = ActionEvidence.activate("Retry", dispatch="px")
 
@@ -1046,7 +1054,12 @@ class CuaExecutorTests(unittest.TestCase):
         }
         transport = FakeTransport([before, after_pointer, after_ax])
         executor = CuaExecutor(
-            transport, pid=44, window_id=77, session="test", settle_delays=()
+            transport,
+            pid=44,
+            window_id=77,
+            session="test",
+            settle_delays=(),
+            window_origin=WindowGeometry(0, 0, 800, 600),
         )
 
         result = executor.execute_evidence(

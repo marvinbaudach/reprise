@@ -124,3 +124,35 @@ def to_screenshot_rect(
 def park_point(geometry: WindowGeometry) -> tuple[float, float]:
     margin = float(HOVER_PARK_MARGIN_PX)
     return geometry.x + margin, geometry.y + margin
+
+
+def assert_point_inside(
+    point: tuple[float, float], rect: tuple[float, float, float, float]
+) -> None:
+    """A dispatched pointer point must land inside the target it names.
+
+    If it does not, the two are in different coordinate spaces. That is a
+    programming error in the harness, not a measurement, and it has produced a
+    plausible-looking number three times now - so it fails loudly instead.
+    """
+    left, top, width, height = rect
+    if not (left <= point[0] <= left + width and top <= point[1] <= top + height):
+        raise DriverError(
+            f"coordinate-space error: pointer point {point} is not inside its "
+            f"target rectangle {rect}; the two are measured in different spaces"
+        )
+
+
+def window_pointer_point(
+    frame: Mapping[str, Any], origin: WindowGeometry
+) -> tuple[float, float]:
+    """The point to send with a window-scoped click, in window coordinates.
+
+    cua-driver takes click x/y together with window_id in full-window space,
+    while move_cursor with scope=desktop takes desktop coordinates. Sending the
+    desktop point to a click put every pixel click one window origin off.
+    """
+    rect = to_screenshot_rect(frame, origin)
+    point = to_screenshot_point(element_center(frame), origin)
+    assert_point_inside(point, rect)
+    return point

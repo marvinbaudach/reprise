@@ -634,15 +634,16 @@ class CuaExecutor:
         frame = target.get("frame")
         if not isinstance(frame, dict):
             raise DriverError("pointer target has no frame")
-        x = frame.get("x")
-        y = frame.get("y")
-        width = frame.get("w", frame.get("width"))
-        height = frame.get("h", frame.get("height"))
-        if not all(isinstance(value, (int, float)) for value in (x, y, width, height)):
-            raise DriverError("pointer target has incomplete geometry")
-        if width <= 0 or height <= 0:
-            raise DriverError("pointer target has non-positive geometry")
-        return {"x": x + width / 2, "y": y + height / 2}
+        origin = self.window_origin or self.hover_geometry
+        if origin is None:
+            raise DriverError(
+                "a pixel click needs the window origin: cua-driver takes x/y "
+                "with window_id in window coordinates"
+            )
+        from hover_geometry import window_pointer_point
+
+        x, y = window_pointer_point(frame, origin)
+        return {"x": x, "y": y}
 
     def _retain_step(self, result: StepResult) -> None:
         if self.evidence_dir is None:

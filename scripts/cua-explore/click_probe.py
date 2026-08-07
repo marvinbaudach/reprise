@@ -20,9 +20,9 @@ from atspi_geometry import GeometryError, resolve_driver_geometry
 from driver import DriverError
 from hover_geometry import (
     WindowGeometry,
-    element_center,
     frame_values,
     to_screenshot_rect,
+    window_pointer_point,
 )
 from hover_oracle import HOVER_MIN_CHANNEL_DELTA
 from oracles import normalize_snapshot
@@ -175,7 +175,9 @@ def probe_click(
                     f"{width:.0f}x{height:.0f} is too small for a dependable "
                     "pixel click; read this row with care"
                 )
-            centre = element_center(frame)
+            # One bridge for both probes; the guard inside refuses a point
+            # that is not inside its own target.
+            centre = window_pointer_point(frame, origin)
             address = {"x": centre[0], "y": centre[1]}
 
         before_signature = _signature(before_raw)

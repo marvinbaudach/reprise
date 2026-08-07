@@ -90,6 +90,15 @@ under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
 outside the window) together with up to 40 unresolved elements per reason -
 each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
 
+The two driver tools take pixels in different spaces, measured from their own
+schemas: `move_cursor` with `scope=desktop` takes desktop coordinates, while
+`click` takes x/y together with `window_id` in full-window space. Every pixel
+click therefore goes through `window_pointer_point`, which subtracts the window
+origin exactly once and then asserts the point lands inside the target's own
+rectangle. A point outside its target is a coordinate-space error in the
+harness, not a measurement, so it fails loudly rather than returning a number
+that looks like a finding.
+
 Positions are only ever compared where both sides were measured. An element
 whose geometry could not be resolved carries the driver's placeholder frame at
 the window origin, and comparing that against a real measurement reported a
