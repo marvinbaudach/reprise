@@ -16,6 +16,7 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 sys.path.insert(0, str(TEST_ROOT))
 
 from cua_explore_png import write_png  # noqa: E402
+from atspi_geometry import GeometryNode  # noqa: E402
 from hover_geometry import WindowGeometry  # noqa: E402
 from hover_probe import probe_hover, render_probe_table  # noqa: E402
 
@@ -69,7 +70,7 @@ class ProbeTransport:
                             "role": "button",
                             "depth": 3,
                             "parent_index": 0,
-                            "frame": dict(TARGET_FRAME),
+                            "frame": {"x": 200, "y": 50, "w": 160, "h": 120},
                             "enabled": True,
                         },
                     ]
@@ -108,6 +109,10 @@ def run(transport, **overrides):
                 "move_cursor", {"probe_method": "x11-warp", "x": x, "y": y}
             ),
             "x11_cursor": lambda: (290.0, 170.0),
+            "geometry_provider": lambda: [
+                GeometryNode("frame", "Reprise", -5, -5, 400, 300),
+                GeometryNode("push button", "Add filter", 55, 55, 160, 120),
+            ],
         }
         arguments.update(overrides)
         return probe_hover(transport, **arguments)
@@ -161,6 +166,23 @@ class HoverProbeTests(unittest.TestCase):
     def test_an_unknown_label_fails_loudly(self) -> None:
         with self.assertRaisesRegex(Exception, "Nope"):
             run(ProbeTransport(), label="Nope")
+
+    def test_the_driver_and_measured_positions_are_reported_side_by_side(
+        self,
+    ) -> None:
+        results = run(ProbeTransport())
+
+        for item in results:
+            # The driver puts every element on the window origin; the walk
+            # puts this button where it really is.
+            self.assertEqual(item.driver_frame, (200.0, 50.0, 160.0, 120.0))
+            self.assertEqual(item.measured_frame, (260.0, 110.0, 160.0, 120.0))
+
+    def test_the_table_shows_both_positions(self) -> None:
+        text = render_probe_table(run(ProbeTransport()))
+
+        for phrase in ("driver_frame", "measured_frame"):
+            self.assertIn(phrase, text)
 
     def test_the_table_names_the_verdict_inputs(self) -> None:
         text = render_probe_table(run(ProbeTransport()))

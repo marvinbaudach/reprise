@@ -93,6 +93,8 @@ class Element:
     focused: bool
     selected: bool
     value: str
+    # False when the harness could not prove this element's position.
+    geometry_trusted: bool = True
 
     @property
     def actionable(self) -> bool:
@@ -109,6 +111,7 @@ class Snapshot:
     degraded: bool
     raw_signature: str
     window_frame: Frame | None = None
+    geometry_trusted: bool = True
 
     @property
     def viewport(self) -> Frame | None:
@@ -270,6 +273,7 @@ def normalize_snapshot(
                 visible=element_flag(raw_element, "visible", True),
                 focused=element_flag(raw_element, "focused"),
                 selected=element_flag(raw_element, "selected"),
+                geometry_trusted=element_flag(raw_element, "geometry_trusted", True),
                 value="" if value_raw is None else str(value_raw),
             )
         )
@@ -283,6 +287,7 @@ def normalize_snapshot(
         degraded=raw.get("degraded") is True,
         raw_signature=hashlib.sha256(signature_payload).hexdigest(),
         window_frame=_root_window_frame(root_candidates),
+        geometry_trusted=raw.get("geometry_trusted") is not False,
     )
 
 
@@ -302,12 +307,15 @@ class OracleEngine:
                 )
             )
         viewport = snapshot.viewport
-        if viewport is None:
-            # No window rectangle, no verdict. Judging visibility without one is
-            # how a run of 79 snapshots produced 981 invented errors.
+        if viewport is None or not snapshot.geometry_trusted:
+            # No window rectangle or no proven positions, no verdict. Judging
+            # visibility without either is how a run of 79 snapshots produced
+            # 981 invented errors.
             return findings
         for element in snapshot.elements:
             if not element.enabled or not element.actionable:
+                continue
+            if not element.geometry_trusted:
                 continue
             if not element.visible or not element.frame.intersects_rect(viewport):
                 findings.append(
@@ -595,6 +603,10 @@ class OracleEngine:
         )
 
     def _layout_findings(self, timeline: Sequence[Snapshot]) -> list[Finding]:
+        # Layout shift is a comparison of positions; without proven positions
+        # there is nothing to compare.
+        if any(not snapshot.geometry_trusted for snapshot in timeline):
+            return []
         shifted: dict[str, float] = {}
         for earlier, later in zip(timeline, timeline[1:]):
             earlier_by_key = earlier.by_key

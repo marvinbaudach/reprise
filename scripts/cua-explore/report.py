@@ -104,7 +104,12 @@ class RunReport:
         self.steps: list[dict[str, Any]] = []
         self.workload_audits: dict[int, dict[str, Any]] = {}
         self.startup_timings: list[dict[str, Any]] = []
+        self.geometry_failures: list[str] = []
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def set_geometry_failures(self, failures: Sequence[str]) -> None:
+        """Snapshots whose element positions could not be proven; oracles stayed quiet."""
+        self.geometry_failures = [str(_sanitize(item)) for item in failures]
 
     def set_startup_timings(self, timings: Sequence[Mapping[str, Any]]) -> None:
         """Measured launch cost per app start; a slow start is a product finding."""
@@ -169,6 +174,8 @@ class RunReport:
                 "commit": self.commit,
                 "steps": len(self.steps),
                 "startup_timings": self.startup_timings,
+                "geometry_failures": self.geometry_failures,
+                "geometry_trusted": not self.geometry_failures,
                 "finding_counts": dict(sorted(severity_counts.items())),
                 "finding_codes": dict(sorted(code_counts.items())),
                 "required_workloads": self.required_workloads,
@@ -205,6 +212,17 @@ class RunReport:
             "- Status: advisory until reproduced in two fresh profiles",
             "",
         ]
+        if summary["geometry_failures"]:
+            lines.append("## Geometry")
+            lines.append("")
+            lines.append(
+                "Element positions could not be proven, so the position oracles "
+                "stayed silent for the affected snapshots:"
+            )
+            lines.append("")
+            for failure in summary["geometry_failures"][:10]:
+                lines.append(f"- {failure}")
+            lines.append("")
         if summary["startup_timings"]:
             lines.append("## Startup")
             lines.append("")

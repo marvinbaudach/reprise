@@ -152,6 +152,8 @@ class CuaExecutor:
         settle_delays: Sequence[float] = (0.10, 0.25, 0.50),
         oracle_engine: OracleEngine | None = None,
         hover_geometry: Any | None = None,
+        geometry_provider: Any | None = None,
+        window_origin: Any | None = None,
     ) -> None:
         self.transport = transport
         self.pid = pid
@@ -163,6 +165,11 @@ class CuaExecutor:
         self.settle_delays = tuple(settle_delays)
         self.oracle_engine = oracle_engine or OracleEngine()
         self.hover_geometry = hover_geometry
+        # The driver's own frames carry no usable position under X11/Xvfb, so
+        # the geometry provider walks the accessibility tree for us.
+        self.geometry_provider = geometry_provider
+        self.window_origin = window_origin
+        self.geometry_failures: list[str] = []
         self._hover_cursor_disabled = False
         self._state_counter = 0
         self._step_counter = 0
@@ -490,6 +497,7 @@ class CuaExecutor:
         captured_ms = round(time.monotonic() * 1000)
         round_trip_started = time.monotonic()
         raw = self.transport.call("get_window_state", payload)
+        raw = self.with_measured_geometry(raw)
         # Retained so the timing oracles can subtract the harness's own cost.
         self._snapshot_durations_ms.append(
             round((time.monotonic() - round_trip_started) * 1000)
@@ -500,6 +508,56 @@ class CuaExecutor:
             )
         return raw, normalize_snapshot(raw, state_id=state_id, captured_ms=captured_ms)
 
+    def with_measured_geometry(self, raw: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Replace the driver's placeholder positions with measured ones."""
+        origin = self.window_origin or self.hover_geometry
+        if self.geometry_provider is None or origin is None:
+            return raw
+        from atspi_geometry import GeometryError, align_driver_geometry
+
+        structured = raw.get("structuredContent")
+        container = structured if isinstance(structured, dict) else raw
+        elements = container.get("elements")
+        if not isinstance(elements, list):
+            return self._untrusted(raw, "snapshot carries no element list")
+        try:
+            frames = align_driver_geometry(elements, self.geometry_provider(), origin)
+        except GeometryError as error:
+            self.geometry_failures.append(str(error))
+            return self._untrusted(raw, str(error))
+        rebuilt = []
+        for index, element in enumerate(elements):
+            if not isinstance(element, dict):
+                rebuilt.append(element)
+                continue
+            rect = frames.get(int(element.get("element_index", index)))
+            if rect is None:
+                rebuilt.append({**element, "geometry_trusted": False})
+                continue
+            rebuilt.append(
+                {
+                    **element,
+                    "geometry_trusted": True,
+                    "frame": {
+                        "x": rect[0],
+                        "y": rect[1],
+                        "w": rect[2],
+                        "h": rect[3],
+                    },
+                }
+            )
+        if container is raw:
+            return {**raw, "elements": rebuilt, "geometry_trusted": True}
+        return {
+            **raw,
+            "structuredContent": {**structured, "elements": rebuilt},
+            "geometry_trusted": True,
+        }
+
+    @staticmethod
+    def _untrusted(raw: Mapping[str, Any], note: str) -> Mapping[str, Any]:
+        return {**raw, "geometry_trusted": False, "geometry_note": note}
+
     def _observation(self, state: Snapshot) -> dict[str, Any]:
         return {
             "schema_version": SCHEMA_VERSION,
@@ -507,6 +565,7 @@ class CuaExecutor:
             "state_signature": state.raw_signature,
             "window": {"width": state.width, "height": state.height},
             "degraded": state.degraded,
+            "geometry_trusted": state.geometry_trusted,
             "actionable_labels": list(state.actionable_labels),
             "elements": [
                 {

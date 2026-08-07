@@ -181,6 +181,7 @@ def run_hover_probe(
         evidence_dir=evidence_dir,
         x11_move=default_x11_move(),
         x11_cursor=default_x11_cursor(),
+        geometry_provider=make_geometry_provider(pid),
     )
     write_probe_evidence(results, evidence_dir)
     print(render_probe_table(results))
@@ -423,6 +424,16 @@ class AppLifecycle:
         )
 
 
+def make_geometry_provider(pid: int) -> Any:
+    """Walk the accessibility tree ourselves; the driver's frames carry no position."""
+    from atspi_geometry import walk_window_nodes
+
+    def provider() -> Any:
+        return walk_window_nodes(pid)
+
+    return provider
+
+
 def _mission_for_agent(mission: Mission) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -600,8 +611,12 @@ def run(args: argparse.Namespace) -> int:
 
     gateway = ActionGateway(mission)
     finished = False
+    executor: Any = None
     try:
         pid, window_id, generation = lifecycle.start()
+        window_origin = resolve_window_origin(
+            transport, pid=pid, window_id=window_id
+        )
         executor = CuaExecutor(
             transport,
             pid=pid,
@@ -610,6 +625,8 @@ def run(args: argparse.Namespace) -> int:
             state_prefix=f"launch-{generation}-state",
             fixture_tokens=mission.fixture_tokens,
             evidence_dir=args.evidence_dir / "states",
+            geometry_provider=make_geometry_provider(pid),
+            window_origin=window_origin,
         )
         observation = executor.observe()
         hover_geometry = None
@@ -717,6 +734,10 @@ def run(args: argparse.Namespace) -> int:
                         fixture_tokens=mission.fixture_tokens,
                         evidence_dir=args.evidence_dir / "states",
                         hover_geometry=hover_geometry,
+                        geometry_provider=make_geometry_provider(pid),
+                        window_origin=resolve_window_origin(
+                            transport, pid=pid, window_id=window_id
+                        ),
                     )
                     observation = executor.observe()
                     report.add_step(
@@ -771,6 +792,9 @@ def run(args: argparse.Namespace) -> int:
         lifecycle.stop()
         retain_agent_notes(profile_root, args.evidence_dir)
         report.set_startup_timings(lifecycle.startup_timings)
+        report.set_geometry_failures(
+            list(getattr(executor, "geometry_failures", []) or [])
+        )
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()

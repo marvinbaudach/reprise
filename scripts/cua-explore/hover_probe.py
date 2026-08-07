@@ -20,10 +20,12 @@ from driver import DriverError
 from hover_geometry import (
     WindowGeometry,
     element_center,
+    frame_values,
     park_point,
     to_screenshot_point,
     to_screenshot_rect,
 )
+from atspi_geometry import GeometryError, align_driver_geometry
 from hover_oracle import HOVER_CURSOR_EXCLUSION_PX, HOVER_MIN_CHANNEL_DELTA
 from pngdiff import UnmeasurableImage, UnsupportedImage, read_rgb, rect_change_ratio
 
@@ -37,6 +39,8 @@ class ProbeResult:
     changed_ratio: float | None
     changed_ratio_excluding_cursor: float | None
     rect: tuple[float, float, float, float] | None
+    driver_frame: tuple[float, float, float, float] | None = None
+    measured_frame: tuple[float, float, float, float] | None = None
     note: str = ""
 
 
@@ -100,6 +104,41 @@ def _find_element(raw: Mapping[str, Any], label: str) -> Mapping[str, Any]:
     raise DriverError(f"hover probe target is not on screen: {label}")
 
 
+def _rect(frame: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
+    try:
+        x, y, width, height = frame_values(frame)
+    except DriverError:
+        return None
+    return x, y, width, height
+
+
+def _measured_frame(
+    raw: Mapping[str, Any],
+    element: Mapping[str, Any],
+    origin: Any,
+    geometry_provider: Callable[[], Any] | None,
+) -> tuple[Mapping[str, Any], str]:
+    """Prefer our own measurement, and say plainly when we fall back."""
+    if geometry_provider is None:
+        return element.get("frame") or {}, ""
+    structured = raw.get("structuredContent")
+    container = structured if isinstance(structured, dict) else raw
+    elements = container.get("elements")
+    if not isinstance(elements, list):
+        return element.get("frame") or {}, "snapshot carries no element list"
+    try:
+        frames = align_driver_geometry(elements, geometry_provider(), origin)
+    except GeometryError as error:
+        return element.get("frame") or {}, f"measured geometry refused: {error}"
+    rect = frames.get(int(element.get("element_index", -1)))
+    if rect is None:
+        return (
+            element.get("frame") or {},
+            "this element has no unambiguous measured position",
+        )
+    return {"x": rect[0], "y": rect[1], "w": rect[2], "h": rect[3]}, ""
+
+
 def probe_hover(
     transport: Any,
     *,
@@ -111,6 +150,7 @@ def probe_hover(
     evidence_dir: pathlib.Path,
     x11_move: Callable[[float, float], None] | None = None,
     x11_cursor: Callable[[], tuple[float, float] | None] | None = None,
+    geometry_provider: Callable[[], Any] | None = None,
 ) -> list[ProbeResult]:
     """Place the pointer on one control twice and measure the pixels each time."""
     evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -159,6 +199,8 @@ def probe_hover(
                     changed_ratio=None,
                     changed_ratio_excluding_cursor=None,
                     rect=None,
+                    driver_frame=None,
+                    measured_frame=None,
                     note="xdotool is not installed, so the control route was skipped",
                 )
             )
@@ -166,7 +208,11 @@ def probe_hover(
         driver_move(*park)
         before_raw, before_path = snapshot(f"hover-probe-{method}-before")
         element = _find_element(before_raw, label)
-        frame = element.get("frame") or {}
+        driver_frame = _rect(element.get("frame") or {})
+        frame, measured_note = _measured_frame(
+            before_raw, element, origin, geometry_provider
+        )
+        measured_frame = _rect(frame)
         target = element_center(frame)
         rect = to_screenshot_rect(frame, origin)
         move(*target)
@@ -179,7 +225,7 @@ def probe_hover(
             cursor_size,
             cursor_size,
         )
-        note = ""
+        note = measured_note
         ratio: float | None = None
         ratio_excluding: float | None = None
         try:
@@ -196,7 +242,7 @@ def probe_hover(
                 exclude=cursor_box,
             ).ratio
         except (OSError, UnsupportedImage, UnmeasurableImage) as error:
-            note = f"pixel comparison failed: {error}"
+            note = f"{note} pixel comparison failed: {error}".strip()
         results.append(
             ProbeResult(
                 method=method,
@@ -211,6 +257,8 @@ def probe_hover(
                 changed_ratio=ratio,
                 changed_ratio_excluding_cursor=ratio_excluding,
                 rect=rect,
+                driver_frame=driver_frame,
+                measured_frame=measured_frame,
                 note=note,
             )
         )
@@ -222,20 +270,27 @@ def render_probe_table(results: Sequence[ProbeResult]) -> str:
     lines = [
         "hover probe: does a pointer move reach the app?",
         "",
-        f"{'method':<12} {'requested':<18} {'driver_cursor':<18} "
-        f"{'x11_cursor':<18} {'changed_ratio':<14} {'without cursor':<14}",
+        f"{'method':<12} {'driver_frame':<24} {'measured_frame':<24} "
+        f"{'requested':<16} {'driver_cursor':<16} {'x11_cursor':<16} "
+        f"{'changed_ratio':<14} {'without cursor':<14}",
     ]
     for item in results:
         def show(value):
             if value is None:
                 return "-"
+            if isinstance(value, tuple) and len(value) == 4:
+                return (
+                    f"({value[0]:.0f}, {value[1]:.0f}, "
+                    f"{value[2]:.0f}x{value[3]:.0f})"
+                )
             if isinstance(value, tuple):
                 return f"({value[0]:.0f}, {value[1]:.0f})"
             return f"{value:.4f}"
 
         lines.append(
-            f"{item.method:<12} {show(item.requested):<18} "
-            f"{show(item.driver_cursor):<18} {show(item.x11_cursor):<18} "
+            f"{item.method:<12} {show(item.driver_frame):<24} "
+            f"{show(item.measured_frame):<24} {show(item.requested):<16} "
+            f"{show(item.driver_cursor):<16} {show(item.x11_cursor):<16} "
             f"{show(item.changed_ratio):<14} "
             f"{show(item.changed_ratio_excluding_cursor):<14}"
         )
@@ -243,6 +298,10 @@ def render_probe_table(results: Sequence[ProbeResult]) -> str:
             lines.append(f"  note: {item.note}")
     lines.extend(
         [
+            "",
+            "driver_frame is what cua-driver claims, measured_frame is what the",
+            "accessibility walk says. If two differently sized controls share a",
+            "driver_frame, that column is the placeholder, not a position.",
             "",
             "Read it like this: x11_cursor is the ground truth for where the",
             "pointer actually is. If move_cursor leaves x11_cursor at the park",

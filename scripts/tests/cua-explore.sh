@@ -12,6 +12,7 @@ python3 scripts/tests/cua-explore-hover.py
 python3 scripts/tests/cua-explore-agent.py
 python3 scripts/tests/cua-explore-readiness.py
 python3 scripts/tests/cua-explore-hover-probe.py
+python3 scripts/tests/cua-explore-geometry.py
 python3 scripts/cua-explore/protocol.py validate-mission \
   scripts/cua-explore/missions/first-time-exploration.json >/dev/null
 

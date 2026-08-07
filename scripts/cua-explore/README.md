@@ -61,6 +61,16 @@ starts in that gap stays blind for its whole duration. The wait is condition
 based, capped at 60 seconds, and reports the driver's `degraded_reason` when the
 cap is reached.
 
+Element positions do not come from cua-driver. Under X11/Xvfb the AT-SPI SCREEN
+coordinate space reports (0, 0) for every node - measured on Reprise (170 of
+170) and on gnome-calculator (107 of 107) - so the driver adds the window origin
+and lands every element on the same pixel. The harness therefore walks the
+accessibility tree itself in WINDOW coordinates, normalises against the frame
+node, and adds the window origin from `list_windows`. Both walks are aligned by
+pre-order position and every pair is verified on role, label, width and height;
+any disagreement, and the position oracles go silent for that snapshot and the
+reason is recorded in `summary.json` under `geometry_failures`.
+
 Before trusting any hover verdict, settle whether a pointer move reaches the
 app at all. The probe places the pointer on one named control twice - once
 through cua-driver's `move_cursor`, once through a real X11 warp - and prints
@@ -73,7 +83,9 @@ scripts/cua-explore/run.sh --hover-probe "Add filter" \
   "$evidence_root/hover-probe-1"
 ```
 
-`x11_cursor` is the ground truth. If `move_cursor` leaves it at the park point,
+The table puts `driver_frame` next to `measured_frame`: if two differently
+sized controls share a `driver_frame`, that column is a placeholder rather than
+a position. `x11_cursor` is the ground truth. If `move_cursor` leaves it at the park point,
 the driver never moved the real pointer. If both routes land on the target but
 only the X11 row changes pixels, `move_cursor` draws an overlay and the hover
 path needs `xdotool`. The table is printed and retained as `hover-probe.json`
