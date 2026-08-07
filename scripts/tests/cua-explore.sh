@@ -120,6 +120,34 @@ else
   echo "skipping exploratory namespace D-Bus probe: dbus-run-session or dbus-send missing"
 fi
 
+for required in \
+  'org.freedesktop.secrets' \
+  'org.freedesktop.impl.portal.Secret' \
+  'XDG_DATA_DIRS="$stub_root:'; do
+  if ! rg --quiet --fixed-strings "$required" scripts/cua-common/session.sh; then
+    echo "private session must neutralise the secret service: $required" >&2
+    exit 1
+  fi
+done
+# The stub must make activation fail immediately instead of waiting out the
+# bus timeout. Measured on a developer host: 25s without it, 18ms with it.
+stub_root=$(mktemp -d)
+mkdir -p "$stub_root/dbus-1/services"
+printf '[D-BUS Service]\nName=org.freedesktop.secrets\nExec=/bin/false\n' \
+  >"$stub_root/dbus-1/services/org.freedesktop.secrets.service"
+secrets_started=$(date +%s%N)
+XDG_DATA_DIRS="$stub_root:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
+  timeout 30 dbus-run-session -- dbus-send --session --print-reply \
+  --dest=org.freedesktop.secrets /org/freedesktop/secrets \
+  org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1 || true
+secrets_elapsed=$(( ($(date +%s%N) - secrets_started) / 1000000 ))
+rm -rf "$stub_root"
+if (( secrets_elapsed > 5000 )); then
+  echo "secret-service stub must fail fast, took ${secrets_elapsed}ms" >&2
+  exit 1
+fi
+echo "secret-service activation fails in ${secrets_elapsed}ms with the stub"
+
 if rg --quiet --fixed-strings 'cua-explore' .github/workflows; then
   echo "exploratory UX runs must stay out of ordinary CI workflows" >&2
   exit 1
