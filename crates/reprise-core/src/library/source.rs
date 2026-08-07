@@ -240,6 +240,11 @@ pub trait LibrarySource: Send + Sync {
     /// empty rather than inventing a name from an identifier.
     fn container_name(&self, at: &Path) -> Option<String>;
 
+    /// The stable, source-visible path of `at` below the selected library
+    /// root. Filesystem sources strip the root; document providers rebuild it
+    /// from cursor display names instead of interpreting opaque document URIs.
+    fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf>;
+
     /// Opens `at` for reading without exposing the source's concrete storage
     /// handle. Failure is explicit: a source that cannot provide readable,
     /// seekable content must not compile with this contract unanswered.
@@ -363,6 +368,10 @@ impl LibrarySource for UnixLibrarySource {
             .file_name()
             .and_then(|name| name.to_str())
             .map(str::to_owned)
+    }
+
+    fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf> {
+        at.strip_prefix(root).ok().map(Path::to_path_buf)
     }
 
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
@@ -563,6 +572,10 @@ mod tests {
             None
         }
 
+        fn relative_path(&self, root: &Path, at: &Path) -> Option<std::path::PathBuf> {
+            at.strip_prefix(root).ok().map(Path::to_path_buf)
+        }
+
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
             Err(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
@@ -677,6 +690,10 @@ mod tests {
 
         fn container_name(&self, _at: &Path) -> Option<String> {
             None
+        }
+
+        fn relative_path(&self, root: &Path, at: &Path) -> Option<std::path::PathBuf> {
+            at.strip_prefix(root).ok().map(Path::to_path_buf)
         }
 
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {

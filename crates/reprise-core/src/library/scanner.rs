@@ -293,6 +293,7 @@ fn scan_folder_inner(
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
     let mut observed_audio_paths = HashSet::<PathBuf>::new();
+    let mut mobile_sync = mobile_sync::MobileSyncDiscovery::default();
     let mut mount_cache = mount::MountPointCache::new(source);
     let tx = conn.unchecked_transaction()?;
     let mut walk_failure = None;
@@ -324,6 +325,7 @@ fn scan_folder_inner(
                     return Ok(());
                 }
             };
+            mobile_sync.observe(source, root, &entry);
             if !entry.is_file {
                 return Ok(());
             }
@@ -631,6 +633,11 @@ fn scan_folder_inner(
         return Err(error);
     }
 
+    report.updated = report
+        .updated
+        .saturating_add(mobile_sync.apply_metadata(source, &tx)?);
+    mobile_sync.register_analysis_sidecars(&tx)?;
+
     // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
     // outcome. The guard's own evidence, `guard_evidence` (the wider
     // `removed_at IS NULL` list — see `scanner_vanish::guard_evidence_under_
@@ -703,6 +710,9 @@ fn scan_touched_library(report: &ScanReport) -> bool {
 // 800-line reason — see `scanner_progress.rs`'s own module doc comment.
 #[path = "scanner_progress.rs"]
 mod scan_progress;
+
+#[path = "scanner_mobile_sync.rs"]
+mod mobile_sync;
 
 #[path = "scanner_vanish.rs"]
 mod vanish;

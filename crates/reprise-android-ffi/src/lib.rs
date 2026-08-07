@@ -1,12 +1,11 @@
 //! Minimal Android library surface over `reprise-core`.
 
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-
 use reprise_core::db::Db;
 use reprise_core::library::scanner::{scan_folder_with_source_and_progress, ScanOutcome};
 use reprise_core::library::settings;
 use reprise_core::queries;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use source::{BridgedSource, SafSource};
 
@@ -28,6 +27,7 @@ mod source_names;
 
 #[cfg(test)]
 mod log_capture;
+mod mobile_sync;
 pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,

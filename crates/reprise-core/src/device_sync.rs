@@ -21,6 +21,7 @@ pub mod lyrics_sidecar;
 pub mod m3u;
 pub mod machine;
 pub mod mirror;
+pub mod mobile_import;
 pub mod page;
 pub mod podcasts;
 pub mod preparation;

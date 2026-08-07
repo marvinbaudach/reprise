@@ -83,6 +83,7 @@ impl BridgedSource {
     fn emit_children(
         &self,
         directory: &Path,
+        relative_directory: Option<&Path>,
         order: LibraryWalkOrder,
         visitor: &mut dyn LibraryWalkVisitor,
     ) -> LibraryWalkControl {
@@ -104,11 +105,18 @@ impl BridgedSource {
         let container_name = self.names.display_name(directory);
         for child in children {
             let path = std::path::PathBuf::from(&child.uri);
+            let relative_path = relative_directory
+                .zip(child.display_name.as_deref())
+                .map(|(directory, name)| directory.join(name));
             self.names.remember_child(
                 path.clone(),
                 child.display_name.clone(),
                 container_name.clone(),
             );
+            if let Some(relative_path) = &relative_path {
+                self.names
+                    .remember_relative_path(path.clone(), relative_path.clone());
+            }
             let is_directory = child.is_directory;
             let entry = LibraryEntry {
                 path: path.clone(),
@@ -118,7 +126,9 @@ impl BridgedSource {
             if visitor.visit(LibraryWalkItem::Entry(entry)) == LibraryWalkControl::Stop {
                 return LibraryWalkControl::Stop;
             }
-            if is_directory && self.emit_children(&path, order, visitor) == LibraryWalkControl::Stop
+            if is_directory
+                && self.emit_children(&path, relative_path.as_deref(), order, visitor)
+                    == LibraryWalkControl::Stop
             {
                 return LibraryWalkControl::Stop;
             }
@@ -144,6 +154,10 @@ impl LibrarySource for BridgedSource {
 
     fn container_name(&self, at: &Path) -> Option<String> {
         self.names.container_name(at)
+    }
+
+    fn relative_path(&self, _root: &Path, at: &Path) -> Option<PathBuf> {
+        self.names.relative_path(at)
     }
 
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
@@ -204,6 +218,7 @@ impl LibrarySource for BridgedSource {
     }
 
     fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor) {
+        self.names.clear_relative_paths();
         let root_facts = match self.source.probe(path_uri(root), true) {
             Ok(Some(facts)) => facts,
             Ok(None) => {
@@ -221,6 +236,8 @@ impl LibrarySource for BridgedSource {
         };
         self.names
             .remember_display_name(root.to_path_buf(), root_facts.display_name.clone());
+        self.names
+            .remember_relative_path(root.to_path_buf(), PathBuf::new());
         let root_entry = LibraryEntry {
             path: root.to_path_buf(),
             is_file: root_facts.is_file,
@@ -229,7 +246,7 @@ impl LibrarySource for BridgedSource {
         if visitor.visit(LibraryWalkItem::Entry(root_entry)) == LibraryWalkControl::Stop {
             return;
         }
-        self.emit_children(root, order, visitor);
+        self.emit_children(root, Some(Path::new("")), order, visitor);
     }
 }
 
@@ -628,6 +645,11 @@ mod tests {
             .metadata
             .iter()
             .all(|metadata| metadata.size == Some(5) && metadata.identity.is_none()));
+        assert_eq!(
+            bridged.relative_path(Path::new(root), Path::new(&song)),
+            Some(std::path::PathBuf::from("Album/song.FLAC")),
+            "nested device identities come from cursor names, never document URI parsing"
+        );
         assert_eq!(
             probe_calls.load(Ordering::Relaxed),
             1,
