@@ -87,7 +87,6 @@ pub struct PlayerBar {
     play_glyph: TransportGlyph,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
-    info_button: gtk4::Button,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
     pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
@@ -177,7 +176,6 @@ impl PlayerBar {
             play_glyph,
             next_button,
             repeat_button,
-            info_button,
             play_next_episode_button,
             retry_external_button,
             position_label,
@@ -273,7 +271,6 @@ impl PlayerBar {
             play_glyph,
             next_button,
             repeat_button,
-            info_button,
             play_next_episode_button,
             retry_external_button,
             position_label,
@@ -711,14 +708,6 @@ impl PlayerBar {
     /// value back via `set_repeat_indicator`.
     pub fn connect_repeat_clicked<F: Fn() + 'static>(&self, f: F) {
         self.repeat_button.connect_clicked(move |_| f());
-    }
-
-    pub(in crate::ui) fn connect_sound_info_clicked<F: Fn() + 'static>(&self, f: F) {
-        self.info_button.connect_clicked(move |_| f());
-    }
-
-    pub(in crate::ui) fn set_sound_info_visible(&self, visible: bool) {
-        self.info_button.set_visible(visible);
     }
 
     /// Updates transport-dependent controls and the stopped bar's reachability.

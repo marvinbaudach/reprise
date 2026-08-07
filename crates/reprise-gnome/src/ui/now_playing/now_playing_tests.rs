@@ -290,7 +290,7 @@ fn head_and_pill_match_the_21a_structure() {
     assert!(widgets.title.has_css_class("reprise-now-playing-title"));
     assert!(widgets.artist.has_css_class("reprise-now-playing-subtitle"));
     assert!(widgets.album.has_css_class("reprise-now-playing-subtitle"));
-    assert_eq!(PANEL_TABS.len(), 4);
+    assert_eq!(PANEL_TABS.len(), 3);
     assert!(widgets
         .tab_switcher
         .has_css_class("reprise-now-playing-tabs"));
@@ -299,7 +299,7 @@ fn head_and_pill_match_the_21a_structure() {
         Some(&widgets.tab_stack)
     );
     assert!(widgets.tab_stack.child_by_name(VISUAL_PAGE).is_some());
-    assert_eq!(widgets.tab_stack.pages().n_items(), 4);
+    assert_eq!(widgets.tab_stack.pages().n_items(), 3);
     let visual = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
     let page = widgets.tab_stack.page(&visual);
     assert_eq!(page.title().as_deref(), Some("Visuals"));
@@ -340,6 +340,17 @@ fn ac_23_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
     assert!(buttons
         .iter()
         .all(|button| gtk4::test_accessible_has_property(button, gtk4::AccessibleProperty::Label)));
+    assert_eq!(
+        buttons
+            .iter()
+            .map(gtk4::prelude::WidgetExt::tooltip_text)
+            .collect::<Vec<_>>(),
+        [
+            Some("Up Next".into()),
+            Some("Lyrics".into()),
+            Some("Visuals".into())
+        ]
+    );
 }
 
 #[test]

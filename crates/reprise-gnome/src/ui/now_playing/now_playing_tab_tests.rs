@@ -9,35 +9,24 @@ fn test_widgets(content: &impl IsA<gtk4::Widget>) -> PanelWidgets {
 }
 
 #[test]
-fn npp_14_built_in_tabs_precede_the_sound_extension() {
-    assert_eq!(TAB_ICONS_MAX_WIDTH, 224.0);
+fn npp_14_has_three_built_in_tabs_in_order() {
     assert_eq!(strings::text(strings::VISUAL), "Visuals");
-    assert_eq!(strings::text(strings::SOUND), "Sound");
     assert_eq!(PanelTab::Visual.page_name(), VISUAL_PAGE);
     assert_eq!(
         PANEL_TABS,
-        [
-            PanelTab::UpNext,
-            PanelTab::Lyrics,
-            PanelTab::Visual,
-            PanelTab::Sound,
-        ]
+        [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::Visual]
     );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn four_tab_labels_fit_the_300_px_panel_without_ellipsizing() {
+fn three_tab_labels_fit_the_300_px_panel_without_ellipsizing() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    content.set_width_request(600);
     let widgets = test_widgets(&content);
-    // Four tabs only exist while Sound Similarity is switched on; the module
-    // ships off, so its page starts hidden. Enabling it here is what puts the
-    // fourth label into the switcher — measuring the three-tab bar would not
-    // answer the question E3 asks.
-    widgets.sound_page.set_visible(true);
+
+    content.set_width_request(600);
     let window = gtk4::Window::builder()
         .default_width(900)
         .default_height(700)
@@ -51,18 +40,12 @@ fn four_tab_labels_fit_the_300_px_panel_without_ellipsizing() {
         adw::InlineViewSwitcherDisplayMode::Labels
     );
     let labels = descendant_labels(widgets.tab_switcher.upcast_ref());
-    for expected in ["Up Next", "Lyrics", "Visuals", "Sound"] {
+    for expected in ["Up Next", "Lyrics", "Visuals"] {
         let label = labels
             .iter()
             .find(|label| label.text().as_str() == expected)
             .unwrap_or_else(|| panic!("missing tab label {expected:?}"));
-        let (natural_width, _) = label.layout().pixel_size();
-        assert!(
-            !label.layout().is_ellipsized(),
-            "tab label {expected:?} is ellipsized: allocation {} px, text {} px",
-            label.width(),
-            natural_width
-        );
+        assert!(!label.layout().is_ellipsized());
     }
     window.close();
 }

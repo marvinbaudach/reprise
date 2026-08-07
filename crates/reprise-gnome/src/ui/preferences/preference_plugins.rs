@@ -19,7 +19,7 @@ enum PluginGroup {
     Connected,
 }
 
-const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals", "sound_similarity"];
+const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals"];
 const ONLINE_PLUGIN_IDS: &[&str] = &[
     "youtube",
     "podcasts",
@@ -44,7 +44,7 @@ fn plugin_ids_for_group(group: PluginGroup) -> &'static [&'static str] {
 fn plugin_uses_expander(id: &str) -> bool {
     matches!(
         id,
-        "sound_similarity" | "youtube" | "podcasts" | "radio" | "new_releases" | "concerts"
+        "youtube" | "podcasts" | "radio" | "new_releases" | "concerts"
     )
 }
 
@@ -219,7 +219,6 @@ pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
         "online_lyrics" => strings::ONLINE_LYRICS,
         "source_images" => strings::SOURCE_IMAGES,
         "song_visuals" => strings::SONG_VISUALS,
-        "sound_similarity" => strings::SOUND,
         _ => return descriptor.name.to_string(),
     };
     strings::text(message)
@@ -239,7 +238,6 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "online_lyrics" => strings::ONLINE_LYRICS_DESCRIPTION,
         "source_images" => strings::SOURCE_IMAGES_DESCRIPTION,
         "song_visuals" => strings::SONG_VISUALS_DESCRIPTION,
-        "sound_similarity" => strings::SOUND_SIMILARITY_DESCRIPTION,
         _ => return descriptor.description.to_string(),
     };
     strings::text(message)
@@ -280,19 +278,6 @@ fn persist_module_state(
                 }
                 Err(error.to_string())
             }
-        };
-    }
-    if descriptor.id == "sound_similarity" {
-        return match reprise_core::modules::set_enabled(&context.conn, descriptor, active) {
-            Ok(()) => {
-                context.info_panel.set_sound_similarity_enabled(active);
-                context.info_panel.refresh_sound_options();
-                if let Some(player) = &context.player {
-                    player.bar.set_sound_info_visible(active);
-                }
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
         };
     }
     let result = match descriptor.id {
@@ -463,11 +448,6 @@ fn settings_plugin_row(
         }
         "concerts" => {
             let rows = super::preference_concerts::build(&context.conn, &context.concerts, active);
-            rows.add_to(&row);
-            Rc::new(move |enabled| rows.set_sensitive(enabled))
-        }
-        "sound_similarity" => {
-            let rows = super::preference_sound_similarity::build(context, active);
             rows.add_to(&row);
             Rc::new(move |enabled| rows.set_sensitive(enabled))
         }

@@ -182,22 +182,9 @@ pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
     provides: &[provision!(PanelTab, "Visuals", "Now Playing")],
 };
 
-pub const SOUND_SIMILARITY_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "sound_similarity",
-    name: "Sound Similarity",
-    description: "Compare timbre, dynamics and tempo across the local library",
-    default_enabled: false,
-    applies_live: true,
-    provides: &[
-        provision!(PanelTab, "Sound", "Now Playing"),
-        provision!(ContextItem, "Find similar tracks", "Track menu"),
-    ],
-};
-
 /// Every optional integration the app currently exposes, in Plugins-page order.
 pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &SONG_VISUALS_MODULE,
-    &SOUND_SIMILARITY_MODULE,
     &LIBRARY_DOCTOR_MODULE,
     &NEW_RELEASES_MODULE,
     &CONCERTS_MODULE,
@@ -264,32 +251,6 @@ mod tests {
 
     fn migrated_db() -> crate::db::Db {
         crate::db::Db::open_in_memory().unwrap()
-    }
-
-    #[test]
-    fn sim_6_sound_similarity_is_a_live_opt_in_local_module() {
-        assert_eq!(SOUND_SIMILARITY_MODULE.id, "sound_similarity");
-        const { assert!(!SOUND_SIMILARITY_MODULE.default_enabled) };
-        const { assert!(SOUND_SIMILARITY_MODULE.applies_live) };
-        assert_eq!(
-            SOUND_SIMILARITY_MODULE.description,
-            "Compare timbre, dynamics and tempo across the local library"
-        );
-        assert_eq!(
-            SOUND_SIMILARITY_MODULE.provides,
-            &[
-                Provision {
-                    kind: ProvisionKind::PanelTab,
-                    label: "Sound",
-                    target: Some("Now Playing"),
-                },
-                Provision {
-                    kind: ProvisionKind::ContextItem,
-                    label: "Find similar tracks",
-                    target: Some("Track menu"),
-                },
-            ]
-        );
     }
 
     #[test]
@@ -384,10 +345,7 @@ mod tests {
         // network-reaching module escape the grandfathering evidence check,
         // and defaulting it to "online" would let an always-on local module
         // masquerade as proof that someone used an online feature.
-        assert_eq!(
-            local,
-            vec!["song_visuals", "sound_similarity", "library_doctor"]
-        );
+        assert_eq!(local, vec!["song_visuals", "library_doctor"]);
     }
 
     #[test]
