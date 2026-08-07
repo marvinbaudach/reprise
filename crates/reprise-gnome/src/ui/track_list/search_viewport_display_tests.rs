@@ -9,6 +9,16 @@ use gtk4::prelude::*;
 
 use crate::ui::track_list::TrackList;
 
+/// Lets the frame clock run for a moment so GTK can allocate. `iteration(false)`
+/// alone never blocks, so the clock never ticks and widgets stay unallocated —
+/// mirrors `preferences_window::tests::settle_for`.
+fn settle() {
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || quit.quit());
+    main_loop.run();
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn typed_search_reads_from_the_top_and_clearing_comes_back() {
@@ -45,24 +55,30 @@ fn typed_search_reads_from_the_top_and_clearing_comes_back() {
         .child(track_list.widget())
         .build();
     window.present();
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    settle();
 
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
     // A freshly presented `ColumnView` reports no usable geometry until it has
-    // been allocated, and `upper` then still equals the page size — a scroll
-    // written before that point is clamped straight back to zero, and the
-    // precondition below fails for a reason that has nothing to do with what
-    // this test is about. Pumping the loop until the adjustment can actually
-    // hold a value is the difference between this test being deterministic and
-    // it passing whenever the allocation happens to win the race.
-    for _ in 0..200 {
-        while gtk4::glib::MainContext::default().iteration(false) {}
+    // been allocated, and a scroll written before that point is clamped
+    // straight back to zero — the precondition below then fails for a reason
+    // that has nothing to do with what this test is about.
+    //
+    // Draining with `iteration(false)` is not enough and looked like it was:
+    // it never blocks, so the frame clock that drives allocation never gets a
+    // turn, and the adjustment stayed at `upper 0, page 0`. Running a real
+    // `MainLoop` briefly is what the preferences display tests already do
+    // (`preferences_window::tests::settle_for`), and it is the difference
+    // between this test being deterministic and passing whenever the
+    // allocation happens to win the race.
+    settle();
+    for _ in 0..20 {
         if adjustment.upper() > adjustment.page_size() {
             break;
         }
+        settle();
     }
     adjustment.set_value(1200.0);
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    settle();
     let departed_from = adjustment.value();
     assert!(
         departed_from > 0.0,
@@ -73,7 +89,7 @@ fn typed_search_reads_from_the_top_and_clearing_comes_back() {
     );
 
     track_list.set_filter("Match");
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    settle();
     assert_eq!(
         adjustment.value(),
         0.0,
@@ -81,7 +97,7 @@ fn typed_search_reads_from_the_top_and_clearing_comes_back() {
     );
 
     track_list.set_filter("");
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    settle();
     assert!(
         (adjustment.value() - departed_from).abs() < 40.0,
         "clearing returns within a row of where the search began: expected \
