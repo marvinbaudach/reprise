@@ -23,7 +23,7 @@ use reprise_core::device_sync::{
 };
 
 use super::*;
-use run_log::{now_seconds, RunLog};
+pub(in crate::ui::device_sync) use run_log::{now_seconds, RunLog};
 
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -193,6 +193,26 @@ fn removal_source_path(removal: &ManagedRemoval) -> Option<PathBuf> {
     }
 }
 
+pub(in crate::ui::device_sync) fn record_rejected_start(
+    runtime: &DeviceSyncRuntime,
+    device_id: &str,
+    log: &RunLog,
+    error: &SyncStartError,
+) {
+    let outcome = match error {
+        SyncStartError::UnknownDevice | SyncStartError::Busy => SyncOutcome::Cancelled,
+        SyncStartError::InsufficientSpace { .. } | SyncStartError::Planning(_) => {
+            SyncOutcome::Failed {
+                terminal_error: Some(error.to_string()),
+                failed_tracks: Vec::new(),
+            }
+        }
+    };
+    log.close(runtime, &outcome, now_seconds());
+    runtime.reload_sync_history(device_id);
+    runtime.notify();
+}
+
 /// Drives one run to its end.
 ///
 /// The machine emits at most one actionable effect at a time, so this is a
@@ -294,8 +314,26 @@ fn is_current_run(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) -> bool {
         .is_some_and(|current| Rc::ptr_eq(current, &work.machine))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PhaseKind {
+    Idle,
+    ComputingDelta,
+    Syncing(SyncStep),
+    Finishing,
+}
+
+fn phase_kind(phase: &PlannedSyncPhase) -> PhaseKind {
+    match phase {
+        PlannedSyncPhase::Idle => PhaseKind::Idle,
+        PlannedSyncPhase::ComputingDelta => PhaseKind::ComputingDelta,
+        PlannedSyncPhase::Syncing { step, .. } => PhaseKind::Syncing(*step),
+        PlannedSyncPhase::Finishing => PhaseKind::Finishing,
+    }
+}
+
 fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
     let phase = work.machine.borrow().phase().clone();
+    let mut changed_kind = false;
     {
         let mut devices = runtime.device_states.borrow_mut();
         if let Some(device) = devices
@@ -307,6 +345,7 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
                 .as_ref()
                 .is_some_and(|current| Rc::ptr_eq(current, &work.machine));
             if is_current {
+                changed_kind = phase_kind(&device.sync_phase) != phase_kind(&phase);
                 // Progress arrives per track, counting from zero each time, so
                 // the rate meter needs a fresh baseline whenever a new copy
                 // starts. Without it every sample below the previous track's
@@ -323,6 +362,9 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
                 device.sync_phase = phase;
             }
         }
+    }
+    if changed_kind {
+        runtime.reload_sync_history(&work.device_id);
     }
     runtime.notify();
 }
@@ -433,7 +475,7 @@ impl DeviceSyncRuntime {
         device_id: &str,
         initiator: SyncInitiator,
     ) -> Result<(), SyncStartError> {
-        let prepare = {
+        let (prepare, start, persist_device_state) = {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
@@ -461,17 +503,27 @@ impl DeviceSyncRuntime {
                     "device storage is read-only".into(),
                 ));
             }
-            preparation::should_prepare(
+            let prepare = preparation::should_prepare(
                 reprise_core::device_sync::primary_action(&device.preparation),
                 &device.preparation_missing,
             )
-            .then(|| device.preparation_missing.clone())
+            .then(|| device.preparation_missing.clone());
+            let start = RunStart {
+                device_serial: device_id.to_string(),
+                device_name: device.settings.device_name.clone(),
+                transfer_profile: device.settings.profile.storage_value().to_owned(),
+                started_at: now_seconds(),
+                planned: 0,
+            };
+            (prepare, start, device.descriptor.persistent_id.is_some())
         };
+        let log = RunLog::open(self, &start, persist_device_state);
+        self.reload_sync_history(device_id);
         if let Some(missing) = prepare {
-            preparation::begin_prepared_sync(self, device_id, missing, initiator);
+            preparation::begin_prepared_sync(self, device_id, missing, initiator, log);
             return Ok(());
         }
-        self.start_transfer_now(device_id, initiator)
+        self.start_transfer_now(device_id, initiator, log)
     }
 
     /// The transfer-machine half of a run — unchanged from before `MTP-43`
@@ -483,164 +535,163 @@ impl DeviceSyncRuntime {
         self: &Rc<Self>,
         device_id: &str,
         initiator: SyncInitiator,
+        log: RunLog,
     ) -> Result<(), SyncStartError> {
-        {
-            let devices = self.device_states.borrow();
-            let device = devices
-                .iter()
-                .find(|device| {
-                    device.descriptor.id == device_id
-                        && device.connected
-                        && device.session_state.opens_session()
-                })
-                .ok_or(SyncStartError::UnknownDevice)?;
-            if device.is_busy() {
-                return Err(SyncStartError::Busy);
-            }
-            if device.scanning {
-                return Err(SyncStartError::Planning(
-                    "device storage inspection is still running".into(),
-                ));
-            }
-            if device.scan_error.is_some() {
-                return Err(SyncStartError::Planning(
-                    "device storage inspection is unavailable".into(),
-                ));
-            }
-            if device.storage.access == reprise_core::device_sync::DeviceStorageAccess::ReadOnly {
-                return Err(SyncStartError::Planning(
-                    "device storage is read-only".into(),
-                ));
-            }
-        }
-        self.recompute_delta(device_id)
-            .map_err(SyncStartError::Planning)?;
-        let required_transcode_profiles = {
-            let devices = self.device_states.borrow();
-            let device = devices
-                .iter()
-                .find(|device| {
-                    device.descriptor.id == device_id
-                        && device.connected
-                        && device.session_state.opens_session()
-                })
-                .ok_or(SyncStartError::UnknownDevice)?;
-            if !device.mirror_plan.blockers.is_empty() {
-                return Err(SyncStartError::Planning(blocker_message(
-                    &device.mirror_plan,
-                )));
-            }
-            DeviceSyncMachine::new(device_id.to_string(), device.mirror_plan.clone())
-                .transfers()
-                .iter()
-                .filter_map(|operation| transcode_profile(operation.desired.action))
-                .collect::<HashSet<_>>()
-        };
-        for profile in required_transcode_profiles {
-            self.backend
-                .probe_transcode(profile)
-                .map_err(SyncStartError::Planning)?;
-        }
-        let work = {
-            let mut devices = self.device_states.borrow_mut();
-            let device = devices
-                .iter_mut()
-                .find(|device| {
-                    device.descriptor.id == device_id
-                        && device.connected
-                        && device.session_state.opens_session()
-                })
-                .ok_or(SyncStartError::UnknownDevice)?;
-            if device.is_busy() {
-                return Err(SyncStartError::Busy);
-            }
-            if !device.mirror_plan.blockers.is_empty() {
-                return Err(SyncStartError::Planning(blocker_message(
-                    &device.mirror_plan,
-                )));
-            }
-            if let Some(available_bytes) = device.storage.free_bytes {
-                if device.mirror_plan.transfer_bytes > available_bytes {
-                    let error = SyncStartError::InsufficientSpace {
-                        required_bytes: device.mirror_plan.transfer_bytes,
-                        available_bytes,
-                    };
-                    device.sync_error = Some(SyncFailure {
-                        message: error.to_string(),
-                        failed_tracks: Vec::new(),
-                    });
-                    drop(devices);
-                    self.notify();
-                    return Err(error);
+        let rejection_log = log.clone();
+        let result = (|| {
+            {
+                let devices = self.device_states.borrow();
+                let device = devices
+                    .iter()
+                    .find(|device| {
+                        device.descriptor.id == device_id
+                            && device.connected
+                            && device.session_state.opens_session()
+                    })
+                    .ok_or(SyncStartError::UnknownDevice)?;
+                if device.is_busy() {
+                    return Err(SyncStartError::Busy);
+                }
+                if device.scanning {
+                    return Err(SyncStartError::Planning(
+                        "device storage inspection is still running".into(),
+                    ));
+                }
+                if device.scan_error.is_some() {
+                    return Err(SyncStartError::Planning(
+                        "device storage inspection is unavailable".into(),
+                    ));
+                }
+                if device.storage.access == reprise_core::device_sync::DeviceStorageAccess::ReadOnly
+                {
+                    return Err(SyncStartError::Planning(
+                        "device storage is read-only".into(),
+                    ));
                 }
             }
-            let machine = Rc::new(RefCell::new(DeviceSyncMachine::new(
-                device_id.to_string(),
-                device.mirror_plan.clone(),
-            )));
-            // The run opens synchronously, so a caller that starts a sync sees
-            // the device busy the moment `sync_now` returns rather than one
-            // main-loop turn later.
-            let pending = machine.borrow_mut().dispatch(Event::Start);
-            let cancelled = Arc::new(AtomicBool::new(false));
-            let cancellable = gio::Cancellable::new();
-            device.sync_phase = machine.borrow().phase().clone();
-            device.machine = Some(machine.clone());
-            device.planned_cancel = Some(cancelled.clone());
-            device.cancellable = Some(cancellable.clone());
-            device.active_initiator = Some(initiator);
-            device.sync_error = None;
-            device.mtp_rate.reset();
-            let targets = device.targets.clone();
-            let persist_device_state = device.descriptor.persistent_id.is_some();
-            let log = RunLog::open(
-                self,
-                &RunStart {
-                    device_serial: device_id.to_string(),
-                    device_name: device.settings.device_name.clone(),
-                    transfer_profile: device.settings.profile.storage_value().to_owned(),
-                    started_at: now_seconds(),
-                    // The additive content copies count as planned work too
-                    // (`MTP-23`); leaving them out would make the log report a
-                    // run smaller than the one that actually happened.
-                    planned: u32::try_from(
-                        device.mirror_plan.copy.len()
-                            + device.mirror_plan.replace.len()
-                            + device.mirror_plan.analysis_writes.len()
-                            + device.podcast_plan.to_copy.len()
-                            + device.youtube_plan.to_copy.len(),
-                    )
-                    .unwrap_or(u32::MAX),
-                },
-                persist_device_state,
-            );
-            PlannedWork {
-                device_id: device_id.to_string(),
-                root_uri: device.descriptor.root_uri.clone(),
-                persist_device_state,
-                initiator,
-                machine,
-                podcasts: device.podcast_plan.clone(),
-                youtube: device.youtube_plan.clone(),
-                playlists_path: target_path(&targets, SyncTargetKind::Playlists),
-                podcasts_path: target_path(&targets, SyncTargetKind::PodcastEpisodes),
-                youtube_path: target_path(&targets, SyncTargetKind::YoutubeAudio),
-                playlists_storage: target_storage(&targets, SyncTargetKind::Playlists),
-                podcasts_storage: target_storage(&targets, SyncTargetKind::PodcastEpisodes),
-                youtube_storage: target_storage(&targets, SyncTargetKind::YoutubeAudio),
-                cancelled,
-                cancellable,
-                transcoded: None,
-                pending,
-                log,
+            if let Err(error) = self.recompute_delta(device_id) {
+                return Err(SyncStartError::Planning(error));
             }
-        };
-        self.notify();
-        let weak = Rc::downgrade(self);
-        gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
-            run_planned_sync(weak, work).await;
-        });
-        Ok(())
+            let required_transcode_profiles = {
+                let devices = self.device_states.borrow();
+                let device = devices
+                    .iter()
+                    .find(|device| {
+                        device.descriptor.id == device_id
+                            && device.connected
+                            && device.session_state.opens_session()
+                    })
+                    .ok_or(SyncStartError::UnknownDevice)?;
+                if !device.mirror_plan.blockers.is_empty() {
+                    return Err(SyncStartError::Planning(blocker_message(
+                        &device.mirror_plan,
+                    )));
+                }
+                DeviceSyncMachine::new(device_id.to_string(), device.mirror_plan.clone())
+                    .transfers()
+                    .iter()
+                    .filter_map(|operation| transcode_profile(operation.desired.action))
+                    .collect::<HashSet<_>>()
+            };
+            for profile in required_transcode_profiles {
+                if let Err(error) = self.backend.probe_transcode(profile) {
+                    return Err(SyncStartError::Planning(error));
+                }
+            }
+            let log = log;
+            let work = {
+                let mut devices = self.device_states.borrow_mut();
+                let device = devices
+                    .iter_mut()
+                    .find(|device| {
+                        device.descriptor.id == device_id
+                            && device.connected
+                            && device.session_state.opens_session()
+                    })
+                    .ok_or(SyncStartError::UnknownDevice)?;
+                if device.is_busy() {
+                    return Err(SyncStartError::Busy);
+                }
+                if !device.mirror_plan.blockers.is_empty() {
+                    return Err(SyncStartError::Planning(blocker_message(
+                        &device.mirror_plan,
+                    )));
+                }
+                if let Some(available_bytes) = device.storage.free_bytes {
+                    if device.mirror_plan.transfer_bytes > available_bytes {
+                        let error = SyncStartError::InsufficientSpace {
+                            required_bytes: device.mirror_plan.transfer_bytes,
+                            available_bytes,
+                        };
+                        device.sync_error = Some(SyncFailure {
+                            message: error.to_string(),
+                            failed_tracks: Vec::new(),
+                        });
+                        drop(devices);
+                        self.notify();
+                        return Err(error);
+                    }
+                }
+                let machine = Rc::new(RefCell::new(DeviceSyncMachine::new(
+                    device_id.to_string(),
+                    device.mirror_plan.clone(),
+                )));
+                // The run opens synchronously, so a caller that starts a sync sees
+                // the device busy the moment `sync_now` returns rather than one
+                // main-loop turn later.
+                let pending = machine.borrow_mut().dispatch(Event::Start);
+                let cancelled = Arc::new(AtomicBool::new(false));
+                let cancellable = gio::Cancellable::new();
+                device.sync_phase = machine.borrow().phase().clone();
+                device.machine = Some(machine.clone());
+                device.planned_cancel = Some(cancelled.clone());
+                device.cancellable = Some(cancellable.clone());
+                device.active_initiator = Some(initiator);
+                device.sync_error = None;
+                device.mtp_rate.reset();
+                let targets = device.targets.clone();
+                let persist_device_state = device.descriptor.persistent_id.is_some();
+                let planned = u32::try_from(
+                    device.mirror_plan.copy.len()
+                        + device.mirror_plan.replace.len()
+                        + device.mirror_plan.analysis_writes.len()
+                        + device.podcast_plan.to_copy.len()
+                        + device.youtube_plan.to_copy.len(),
+                )
+                .unwrap_or(u32::MAX);
+                log.set_planned(self, planned);
+                PlannedWork {
+                    device_id: device_id.to_string(),
+                    root_uri: device.descriptor.root_uri.clone(),
+                    persist_device_state,
+                    initiator,
+                    machine,
+                    podcasts: device.podcast_plan.clone(),
+                    youtube: device.youtube_plan.clone(),
+                    playlists_path: target_path(&targets, SyncTargetKind::Playlists),
+                    podcasts_path: target_path(&targets, SyncTargetKind::PodcastEpisodes),
+                    youtube_path: target_path(&targets, SyncTargetKind::YoutubeAudio),
+                    playlists_storage: target_storage(&targets, SyncTargetKind::Playlists),
+                    podcasts_storage: target_storage(&targets, SyncTargetKind::PodcastEpisodes),
+                    youtube_storage: target_storage(&targets, SyncTargetKind::YoutubeAudio),
+                    cancelled,
+                    cancellable,
+                    transcoded: None,
+                    pending,
+                    log,
+                }
+            };
+            self.notify();
+            let weak = Rc::downgrade(self);
+            gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
+                run_planned_sync(weak, work).await;
+            });
+            Ok(())
+        })();
+        if let Err(error) = &result {
+            record_rejected_start(self, device_id, &rejection_log, error);
+        }
+        result
     }
 
     pub fn eject(self: &Rc<Self>, device_id: &str) {
@@ -660,3 +711,35 @@ mod content_transfer;
 mod effects;
 #[path = "device_sync_run_log.rs"]
 mod run_log;
+
+#[cfg(test)]
+mod phase_kind_tests {
+    use super::*;
+
+    fn copying(done: u32) -> PlannedSyncPhase {
+        PlannedSyncPhase::Syncing {
+            step: SyncStep::Copying,
+            done,
+            total: 10,
+            current_track: "Track".into(),
+            bytes_done: u64::from(done),
+            bytes_total: 10,
+        }
+    }
+
+    #[test]
+    fn history_reload_key_ignores_progress_ticks_but_changes_with_the_step() {
+        assert_eq!(phase_kind(&copying(1)), phase_kind(&copying(9)));
+        assert_ne!(
+            phase_kind(&copying(9)),
+            phase_kind(&PlannedSyncPhase::Syncing {
+                step: SyncStep::WritingPlaylists,
+                done: 0,
+                total: 1,
+                current_track: String::new(),
+                bytes_done: 0,
+                bytes_total: 0,
+            })
+        );
+    }
+}

@@ -466,16 +466,18 @@ pub const RECENT_SYNCS: &str = N_!("Recent syncs");
 const LAST_RUNS: &str = N_!("last {count} runs");
 pub const NO_SYNCHRONIZATION_YET: &str = N_!("No synchronization has run yet.");
 pub const UNKNOWN_TIME: &str = N_!("unknown time");
-pub const RUNNING: &str = N_!("Running");
-pub const COMPLETED: &str = N_!("Completed");
-pub const CANCELLED: &str = N_!("Cancelled");
 pub const FAILED: &str = N_!("Failed");
-pub const INTERRUPTED: &str = N_!("Interrupted");
-pub const NOTHING_TO_TRANSFER: &str = N_!("Nothing to transfer");
-pub const SKIPPED: &str = N_!("Skipped");
-pub const REMOVED: &str = N_!("Removed");
-pub const KEPT_ORIGINAL: &str = N_!("Kept original");
-pub const PLAYLIST_FAILED: &str = N_!("Playlist failed");
+const RUNNING_SINCE: &str = N_!("Running since {time}");
+const HISTORY_NOT_RECORDED: &str =
+    N_!("This phone cannot be recognised — runs are not written to the history.");
+const HISTORY_FROM_STABLE_SESSION: &str = N_!(
+    "The entries below come from a session where it had a stable identifier. Unlock the phone before plugging it in and the history is kept."
+);
+pub(super) const NOTHING_TO_TRANSFER: &str = N_!("Nothing to transfer");
+pub(super) const SKIPPED: &str = N_!("Skipped");
+pub(super) const REMOVED: &str = N_!("Removed");
+pub(super) const KEPT_ORIGINAL: &str = N_!("Kept original");
+pub(super) const PLAYLIST_FAILED: &str = N_!("Playlist failed");
 
 pub fn sync_history_heading() -> String {
     text(RECENT_SYNCS)
@@ -505,102 +507,68 @@ pub fn sync_history_headline(
 }
 
 fn sync_history_outcome(outcome: reprise_core::device_sync::sync_log::RunOutcome) -> String {
+    sync_history_state(outcome).word
+}
+
+pub(super) struct SyncHistoryState {
+    word: String,
+    pub(super) icon: &'static str,
+    pub(super) colour: &'static str,
+}
+
+pub(super) fn sync_history_state(
+    outcome: reprise_core::device_sync::sync_log::RunOutcome,
+) -> SyncHistoryState {
     use reprise_core::device_sync::sync_log::RunOutcome;
-    text(match outcome {
-        RunOutcome::Running => RUNNING,
-        RunOutcome::Completed => COMPLETED,
-        RunOutcome::Cancelled => CANCELLED,
-        RunOutcome::Failed => FAILED,
-        RunOutcome::Interrupted => INTERRUPTED,
-    })
+    match outcome {
+        RunOutcome::Running => SyncHistoryState {
+            word: history_outcome("device sync history outcome", "Running"),
+            icon: "content-loading-symbolic",
+            colour: "accent",
+        },
+        RunOutcome::Completed => SyncHistoryState {
+            word: history_outcome("device sync history outcome", "Completed"),
+            icon: "object-select-symbolic",
+            colour: "success",
+        },
+        RunOutcome::Cancelled | RunOutcome::Failed | RunOutcome::Interrupted => SyncHistoryState {
+            word: match outcome {
+                RunOutcome::Cancelled => {
+                    history_outcome("device sync history outcome", "Cancelled")
+                }
+                RunOutcome::Failed => history_outcome("device sync history outcome", "Failed"),
+                RunOutcome::Interrupted => {
+                    history_outcome("device sync history outcome", "Interrupted")
+                }
+                _ => unreachable!(),
+            },
+            icon: "dialog-warning-symbolic",
+            colour: "warning",
+        },
+    }
 }
 
-pub fn sync_history_balance(run: &reprise_core::device_sync::sync_log::RunRecord) -> String {
-    let mut parts = Vec::new();
-    if run.planned > 0 || run.copied > 0 {
-        parts.push(history_plural(
-            "device sync history balance",
-            "{copied} of {planned} copied",
-            "{copied} of {planned} copied",
-            run.planned.max(run.copied),
-            &[
-                ("copied", &run.copied.to_string()),
-                ("planned", &run.planned.to_string()),
-            ],
-        ));
-    }
-    if run.skipped > 0 {
-        parts.push(history_plural(
-            "device sync history balance",
-            "{count} skipped",
-            "{count} skipped",
-            run.skipped,
-            &[("count", &run.skipped.to_string())],
-        ));
-    }
-    if run.failed > 0 {
-        parts.push(history_plural(
-            "device sync history balance",
-            "{count} failed",
-            "{count} failed",
-            run.failed,
-            &[("count", &run.failed.to_string())],
-        ));
-    }
-    if run.deleted > 0 {
-        parts.push(history_plural(
-            "device sync history balance",
-            "{count} removed",
-            "{count} removed",
-            run.deleted,
-            &[("count", &run.deleted.to_string())],
-        ));
-    }
-    if let Some(detail) = &run.detail {
-        parts.push(detail.clone());
-    }
-    if parts.is_empty() {
-        return text(NOTHING_TO_TRANSFER);
-    }
-    parts.join(" · ")
+pub fn sync_history_running() -> String {
+    sync_history_outcome(reprise_core::device_sync::sync_log::RunOutcome::Running)
 }
 
-pub fn sync_history_deviation_line(
-    deviation: &reprise_core::device_sync::sync_log::Deviation,
-) -> String {
-    let kind = sync_history_deviation_kind(deviation.kind);
-    formatted(
-        N_!("{kind} · {path} — {detail}"),
-        &[
-            ("kind", &kind),
-            ("path", &deviation.device_path),
-            ("detail", &deviation.detail),
-        ],
+pub fn sync_history_running_since(time: &str) -> String {
+    formatted(RUNNING_SINCE, &[("time", time)])
+}
+
+pub fn sync_history_unrecorded_warning() -> (String, String) {
+    (
+        text(HISTORY_NOT_RECORDED),
+        text(HISTORY_FROM_STABLE_SESSION),
     )
 }
 
-fn sync_history_deviation_kind(kind: reprise_core::device_sync::sync_log::DeviationKind) -> String {
-    use reprise_core::device_sync::sync_log::DeviationKind;
-    text(match kind {
-        DeviationKind::Skipped => SKIPPED,
-        DeviationKind::Failed => FAILED,
-        DeviationKind::Deleted => REMOVED,
-        DeviationKind::ConversionFallback => KEPT_ORIGINAL,
-        DeviationKind::PlaylistWriteFailed => PLAYLIST_FAILED,
-    })
-}
+pub use super::device_sync_history_balance_copy::{
+    sync_history_balance, sync_history_deviation_line,
+};
 
-fn history_plural(
-    context: &str,
-    singular: &str,
-    plural: &str,
-    count: u32,
-    values: &[(&str, &str)],
-) -> String {
-    crate::i18n::format_message(
-        &crate::i18n::npgettext(context, singular, plural, count),
-        values,
-    )
+fn history_outcome(context: &str, message: &str) -> String {
+    crate::i18n::pgettext(context, message)
 }
 
 #[cfg(test)]

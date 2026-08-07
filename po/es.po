@@ -5473,17 +5473,35 @@ msgstr "Aún no se ha ejecutado ninguna sincronización."
 msgid "unknown time"
 msgstr "hora desconocida"
 
+#, rust-format
+msgid "Running since {time}"
+msgstr "Running since {time}"
+
+msgid "This phone cannot be recognised — runs are not written to the history."
+msgstr "This phone cannot be recognised — runs are not written to the history."
+
+msgid "The entries below come from a session where it had a stable identifier. Unlock the phone before plugging it in and the history is kept."
+msgstr "The entries below come from a session where it had a stable identifier. Unlock the phone before plugging it in and the history is kept."
+
+msgctxt "device sync history outcome"
 msgid "Running"
-msgstr "En curso"
+msgstr "Running"
 
+msgctxt "device sync history outcome"
 msgid "Completed"
-msgstr "Completada"
+msgstr "Completed"
 
+msgctxt "device sync history outcome"
 msgid "Cancelled"
-msgstr "Cancelada"
+msgstr "Cancelled"
 
+msgctxt "device sync history outcome"
+msgid "Failed"
+msgstr "Failed"
+
+msgctxt "device sync history outcome"
 msgid "Interrupted"
-msgstr "Interrumpida"
+msgstr "Interrupted"
 
 msgid "Nothing to transfer"
 msgstr "Nada que transferir"

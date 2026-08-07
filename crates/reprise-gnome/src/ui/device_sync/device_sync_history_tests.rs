@@ -30,6 +30,34 @@ fn mtp_20_a_run_headline_names_when_it_ran_and_how_it_ended() {
 }
 
 #[test]
+fn an_unrememberable_phone_alone_reveals_the_stale_history_warning() {
+    assert!(history_warning_copy(false).is_some());
+    assert!(history_warning_copy(true).is_none());
+}
+
+#[test]
+fn a_running_record_renders_as_live_state_not_as_a_dated_result() {
+    let mut running = run(RunOutcome::Running);
+    running.finished_at = None;
+    running.copied = 0;
+    let progress = RunningProgress {
+        title: "Step 1 of 2 · Downloading 17 of 60 · 79%".into(),
+        fraction: 0.79,
+    };
+
+    let copy = run_row_copy(&running, Some(&progress));
+
+    assert!(
+        copy.headline.starts_with("Running since "),
+        "{}",
+        copy.headline
+    );
+    assert!(!copy.headline.contains("2026"), "{}", copy.headline);
+    assert_eq!(copy.subtitle, progress.title);
+    assert_eq!(copy.percent, Some(79));
+}
+
+#[test]
 fn mtp_20_a_run_with_copies_and_failures_reports_both() {
     let mut partial = run(RunOutcome::Completed);
     partial.planned = 5;

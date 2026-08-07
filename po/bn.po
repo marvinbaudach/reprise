@@ -5282,15 +5282,33 @@ msgstr ""
 msgid "unknown time"
 msgstr ""
 
+#, rust-format
+msgid "Running since {time}"
+msgstr ""
+
+msgid "This phone cannot be recognised — runs are not written to the history."
+msgstr ""
+
+msgid "The entries below come from a session where it had a stable identifier. Unlock the phone before plugging it in and the history is kept."
+msgstr ""
+
+msgctxt "device sync history outcome"
 msgid "Running"
 msgstr ""
 
+msgctxt "device sync history outcome"
 msgid "Completed"
 msgstr ""
 
+msgctxt "device sync history outcome"
 msgid "Cancelled"
 msgstr ""
 
+msgctxt "device sync history outcome"
+msgid "Failed"
+msgstr ""
+
+msgctxt "device sync history outcome"
 msgid "Interrupted"
 msgstr ""
 

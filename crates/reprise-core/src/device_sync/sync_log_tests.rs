@@ -1,11 +1,27 @@
 use super::sync_log::{
-    deviations, finish_run, note_deviation, recent_runs, start_run, summarize, Deviation,
-    DeviationKind, RunCounters, RunOutcome, RunStart, RunSummary, RETAINED_RUNS,
+    deviations, finish_run, note_deviation, recent_runs, start_run, summarize, update_planned,
+    Deviation, DeviationKind, RunCounters, RunOutcome, RunStart, RunSummary, RETAINED_RUNS,
 };
 use crate::device_sync::machine::SyncOutcome;
 
 fn database() -> crate::db::Db {
     crate::db::Db::open_in_memory().unwrap()
+}
+
+#[test]
+fn mtp_20_a_running_run_accepts_its_real_planned_count_without_changing_identity() {
+    let conn = database();
+    let mut begin = start();
+    begin.planned = 0;
+    let run = start_run(&conn, &begin).unwrap();
+
+    update_planned(&conn, run, 37).unwrap();
+
+    let loaded = recent_runs(&conn, 10).unwrap();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].id, run);
+    assert_eq!(loaded[0].planned, 37);
+    assert_eq!(loaded[0].outcome, RunOutcome::Running);
 }
 
 fn start() -> RunStart {

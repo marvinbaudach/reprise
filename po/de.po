@@ -5471,20 +5471,38 @@ msgstr "Es wurde noch keine Synchronisierung durchgeführt."
 msgid "unknown time"
 msgstr "unbekannte Zeit"
 
+#, rust-format
+msgid "Running since {time}"
+msgstr "Läuft seit {time}"
+
+msgid "This phone cannot be recognised — runs are not written to the history."
+msgstr "Dieses Telefon kann nicht erkannt werden — Durchläufe werden nicht im Verlauf gespeichert."
+
+msgid "The entries below come from a session where it had a stable identifier. Unlock the phone before plugging it in and the history is kept."
+msgstr "Die Einträge unten stammen aus einer Sitzung mit stabiler Kennung. Entsperre das Telefon vor dem Anschließen, damit der Verlauf gespeichert wird."
+
+msgctxt "device sync history outcome"
 msgid "Running"
-msgstr "Läuft"
+msgstr "läuft"
 
+msgctxt "device sync history outcome"
 msgid "Completed"
-msgstr "Abgeschlossen"
+msgstr "abgeschlossen"
 
+msgctxt "device sync history outcome"
 msgid "Cancelled"
-msgstr "Abgebrochen"
+msgstr "abgebrochen"
 
+msgctxt "device sync history outcome"
+msgid "Failed"
+msgstr "fehlgeschlagen"
+
+msgctxt "device sync history outcome"
 msgid "Interrupted"
-msgstr "Unterbrochen"
+msgstr "unterbrochen"
 
 msgid "Nothing to transfer"
-msgstr "Nichts zu übertragen"
+msgstr "nichts zu kopieren"
 
 msgid "Skipped"
 msgstr "Übersprungen"

@@ -139,6 +139,91 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
     });
 }
 
+#[test]
+fn a_live_transfer_is_the_first_history_row_with_its_final_planned_count() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let (started, releases) = backend.gate_copies(&["a"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+        started.recv().await.unwrap();
+
+        let device = runtime.devices().remove(0);
+        assert_eq!(device.history.len(), 1);
+        assert_eq!(
+            device.history[0].0.outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Running
+        );
+        assert_eq!(device.history[0].0.planned, 1);
+
+        releases["a"].send(()).await.unwrap();
+        settle().await;
+    });
+}
+
+#[test]
+fn every_transfer_start_rejection_closes_the_run_it_was_given() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        let cases = [
+            ("unknown device", SyncStartError::UnknownDevice),
+            ("busy device", SyncStartError::Busy),
+            ("scanning", SyncStartError::Planning("scanning".into())),
+            ("scan error", SyncStartError::Planning("scan error".into())),
+            ("read only", SyncStartError::Planning("read only".into())),
+            ("blockers", SyncStartError::Planning("blockers".into())),
+            (
+                "insufficient space",
+                SyncStartError::InsufficientSpace {
+                    required_bytes: 2,
+                    available_bytes: 1,
+                },
+            ),
+            (
+                "recompute delta",
+                SyncStartError::Planning("recompute".into()),
+            ),
+            ("transcode probe", SyncStartError::Planning("probe".into())),
+        ];
+        for (index, (case, error)) in cases.into_iter().enumerate() {
+            let log = RunLog::open(
+                &runtime,
+                &reprise_core::device_sync::sync_log::RunStart {
+                    device_serial: "a".into(),
+                    device_name: "Phone a".into(),
+                    transfer_profile: "opus_160".into(),
+                    started_at: 1_000 + index as i64,
+                    planned: 0,
+                },
+                true,
+            );
+            record_rejected_start(&runtime, "a", &log, &error);
+            let latest = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+                .unwrap()
+                .remove(0);
+            let expected = if matches!(error, SyncStartError::UnknownDevice | SyncStartError::Busy)
+            {
+                reprise_core::device_sync::sync_log::RunOutcome::Cancelled
+            } else {
+                reprise_core::device_sync::sync_log::RunOutcome::Failed
+            };
+            assert_eq!(latest.outcome, expected, "{case}");
+            assert!(
+                latest.finished_at.is_some(),
+                "{case} must not leave a running row"
+            );
+        }
+    });
+}
+
 /// `MTP-38`, finding 1: once the folder browser (`MTP-31`) has persisted a
 /// storage for the Playlists target, `sync_now`'s actual transfer must
 /// carry that `storage_id` through to the backend — not silently
@@ -488,6 +573,12 @@ fn missing_selected_transcode_capability_blocks_before_any_managed_deletion_or_c
             runtime.sync_now("a"),
             Err(SyncStartError::Planning("opusenc is missing".into()))
         );
+        let runs = reprise_core::device_sync::sync_log::recent_runs(&conn, 10).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Failed
+        );
         assert!(backend.state.deleted.borrow().is_empty());
         assert!(backend.state.copy_order.borrow().is_empty());
         assert!(backend.state.planned_operations.borrow().is_empty());
@@ -685,6 +776,12 @@ fn insufficient_space_is_projected_as_a_device_warning() {
                 available_bytes: 50_000,
             })
         ));
+        let runs = reprise_core::device_sync::sync_log::recent_runs(&conn, 10).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Failed
+        );
         let device = runtime.devices().remove(0);
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
         assert!(device

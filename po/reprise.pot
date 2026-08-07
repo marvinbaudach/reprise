@@ -5189,19 +5189,33 @@ msgstr ""
 msgid "unknown time"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:454
+#, rust-format
+msgid "Running since {time}"
+msgstr ""
+
+msgid "This phone cannot be recognised — runs are not written to the history."
+msgstr ""
+
+msgid "The entries below come from a session where it had a stable identifier. Unlock the phone before plugging it in and the history is kept."
+msgstr ""
+
+msgctxt "device sync history outcome"
 msgid "Running"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:455
+msgctxt "device sync history outcome"
 msgid "Completed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:456
+msgctxt "device sync history outcome"
 msgid "Cancelled"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:458
+msgctxt "device sync history outcome"
+msgid "Failed"
+msgstr ""
+
+msgctxt "device sync history outcome"
 msgid "Interrupted"
 msgstr ""
 

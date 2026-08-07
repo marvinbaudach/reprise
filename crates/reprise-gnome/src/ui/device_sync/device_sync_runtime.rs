@@ -794,6 +794,6 @@ mod target_actions;
 
 pub(super) use picker::*;
 #[cfg(test)]
-pub(super) use planned::SyncStartError;
+pub(super) use planned::{record_rejected_start, RunLog, SyncStartError};
 #[cfg(test)]
 pub(super) use preparation::PreparationDownloader;
