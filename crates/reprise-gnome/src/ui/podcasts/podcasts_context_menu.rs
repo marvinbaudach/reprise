@@ -8,6 +8,7 @@ use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
+use super::podcasts_episode_files::{file_reveal, EpisodePaths, FileReveal};
 use super::podcasts_selection::{PodcastSelection, SelectMode};
 use crate::ui::strings;
 
@@ -18,6 +19,7 @@ pub(super) const ACTION_PLAY_NEXT: &str = "play-next";
 pub(super) const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
 pub(super) const ACTION_PLAY_NEXT_UNAVAILABLE: &str = "play-next-unavailable";
 pub(super) const ACTION_ADD_TO_QUEUE_UNAVAILABLE: &str = "add-to-queue-unavailable";
+pub(super) const ACTION_SHOW_IN_FILES: &str = "show-in-files";
 pub(super) const ACTION_TOGGLE_PLAYED: &str = "toggle-played";
 pub(super) const ACTION_TOGGLE_DOWNLOAD: &str = "toggle-download";
 pub(super) const ACTION_REMOVE_EPISODE: &str = "remove-episode";
@@ -36,6 +38,7 @@ const ACTIONS: &[&str] = &[
     ACTION_ADD_TO_QUEUE,
     ACTION_PLAY_NEXT_UNAVAILABLE,
     ACTION_ADD_TO_QUEUE_UNAVAILABLE,
+    ACTION_SHOW_IN_FILES,
     ACTION_TOGGLE_PLAYED,
     ACTION_TOGGLE_DOWNLOAD,
     ACTION_REMOVE_EPISODE,
@@ -133,7 +136,8 @@ pub(super) fn sync_control(
 }
 
 pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
-    build_for_selection(row, &[row.id], None)
+    let paths = EpisodePaths::from_rows(std::slice::from_ref(row));
+    build_for_selection(row, &[row.id], None, &paths)
 }
 
 pub(super) fn browser_url(row: &EpisodeRow) -> Option<&str> {
@@ -148,6 +152,7 @@ pub(super) fn build_for_selection(
     row: &EpisodeRow,
     selected_ids: &[i64],
     unavailable_episode: Option<i64>,
+    paths: &EpisodePaths,
 ) -> gio::Menu {
     // A menu acts on the row it was opened on. It widens to the whole
     // selection only when that row is part of it — the same rule
@@ -160,11 +165,12 @@ pub(super) fn build_for_selection(
     } else {
         vec![row.id]
     };
+    let reveal = file_reveal(&paths.lookup(&target_ids));
     let queue_available = !target_ids
         .iter()
         .any(|episode_id| Some(*episode_id) == unavailable_episode);
     if target_ids.len() <= 1 {
-        return build_single(row, &target_ids, queue_available);
+        return build_single(row, &target_ids, queue_available, &reveal);
     }
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
@@ -179,6 +185,7 @@ pub(super) fn build_for_selection(
         append_selected(&primary, &entry.label, entry.action, &target_ids);
     }
     menu.append_section(None, &primary);
+    append_file_reveal(&menu, &reveal, &target_ids);
     let destructive = gio::Menu::new();
     let remove = multi_selection_destructive_entry();
     append_selected(&destructive, &remove.label, remove.action, &target_ids);
@@ -193,6 +200,7 @@ pub(super) fn popup_for_row(
     parent: &impl IsA<gtk4::Widget>,
     row: &EpisodeRow,
     selection: &Rc<RefCell<PodcastSelection>>,
+    paths: &Rc<EpisodePaths>,
     unavailable_episode: Option<i64>,
     select_action: &str,
     at: Option<(f64, f64)>,
@@ -209,6 +217,7 @@ pub(super) fn popup_for_row(
         row,
         &selected_ids,
         unavailable_episode,
+        paths,
     )));
     popover.set_has_arrow(false);
     popover.set_parent(parent);
@@ -224,7 +233,12 @@ pub(super) fn popup_for_row(
     popover.popup();
 }
 
-fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> gio::Menu {
+fn build_single(
+    row: &EpisodeRow,
+    target_ids: &[i64],
+    queue_available: bool,
+    reveal: &FileReveal,
+) -> gio::Menu {
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
     append_targeted(
@@ -280,6 +294,7 @@ fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> 
         row.id,
     );
     menu.append_section(None, &primary);
+    append_file_reveal(&menu, reveal, target_ids);
 
     let destructive = gio::Menu::new();
     append_targeted(
@@ -296,6 +311,22 @@ fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> 
     );
     menu.append_section(None, &destructive);
     menu
+}
+
+fn append_file_reveal(menu: &gio::Menu, reveal: &FileReveal, target_ids: &[i64]) {
+    let label = match reveal {
+        FileReveal::Hidden => return,
+        FileReveal::Reveal(_) => strings::CONTEXT_MENU_SHOW_IN_FILES,
+        FileReveal::OpenFolder(_) => strings::PODCAST_OPEN_FOLDER,
+    };
+    let files = gio::Menu::new();
+    append_selected(
+        &files,
+        &strings::text(label),
+        ACTION_SHOW_IN_FILES,
+        target_ids,
+    );
+    menu.append_section(None, &files);
 }
 
 fn append_browser_action(menu: &gio::Menu, row: &EpisodeRow) {
@@ -459,333 +490,8 @@ fn popup_at(row: &EpisodeRow, parent: &gtk4::Widget, x: i32, y: i32) {
 }
 
 #[cfg(test)]
-mod tests {
-    use gtk4::glib;
-    use reprise_core::podcasts::PodcastKind;
-
-    use super::*;
-
-    fn episode(id: i64, played: bool) -> EpisodeRow {
-        EpisodeRow {
-            id,
-            subscription_id: 7,
-            guid: format!("episode-{id}"),
-            title: format!("Episode {id}"),
-            show: "Show".into(),
-            show_image_url: None,
-            image_url: None,
-            kind: PodcastKind::Rss,
-            audio_url: format!("https://example.test/{id}.mp3"),
-            page_url: None,
-            published_at: None,
-            duration_secs: None,
-            downloaded_path: None,
-            downloaded_bytes: None,
-            played_at: played.then_some(10),
-            position_ms: 0,
-            first_seen_at: 1,
-            is_new: false,
-            media_category: None,
-        }
-    }
-
-    fn collect_entries(model: &gio::MenuModel, entries: &mut Vec<(String, String)>) {
-        for item in 0..model.n_items() {
-            let label = model
-                .item_attribute_value(item, "label", Some(glib::VariantTy::STRING))
-                .and_then(|value| value.get::<String>());
-            let action = model
-                .item_attribute_value(item, "action", Some(glib::VariantTy::STRING))
-                .and_then(|value| value.get::<String>());
-            if let (Some(label), Some(action)) = (label, action) {
-                entries.push((label, action));
-            }
-            if let Some(section) = model.item_link(item, "section") {
-                collect_entries(&section, entries);
-            }
-        }
-    }
-
-    fn menu_entries(menu: &gio::Menu) -> Vec<(String, String)> {
-        let mut entries = Vec::new();
-        collect_entries(menu.upcast_ref(), &mut entries);
-        entries
-    }
-
-    fn collect_targets(model: &gio::MenuModel, targets: &mut Vec<(String, Vec<i64>)>) {
-        for item in 0..model.n_items() {
-            let action = model
-                .item_attribute_value(item, "action", Some(glib::VariantTy::STRING))
-                .and_then(|value| value.get::<String>());
-            // Single-episode actions carry a bare `i64`, batch actions an
-            // array of them. Both answer the same question here: which
-            // episodes would this entry act on?
-            let target = model
-                .item_attribute_value(item, "target", None)
-                .and_then(|target| {
-                    target
-                        .get::<i64>()
-                        .map(|episode_id| vec![episode_id])
-                        .or_else(|| target.get::<Vec<i64>>())
-                });
-            if let (Some(action), Some(target)) = (action, target) {
-                targets.push((action, target));
-            }
-            if let Some(section) = model.item_link(item, "section") {
-                collect_targets(&section, targets);
-            }
-        }
-    }
-
-    /// Every menu entry that acts on episodes, with the episodes it acts on.
-    /// The source-level entries — unsubscribe, phone sync — are excluded:
-    /// their target is a `subscription_id`, which is a different thing that
-    /// happens to be an `i64`.
-    fn episode_targets(menu: &gio::Menu) -> Vec<(String, Vec<i64>)> {
-        let mut targets = Vec::new();
-        collect_targets(menu.upcast_ref(), &mut targets);
-        targets
-            .retain(|(action, _)| !action.contains(ACTION_UNSUBSCRIBE) && !action.contains("sync"));
-        targets
-    }
-
-    #[test]
-    fn src_12b_a_menu_on_a_row_outside_the_selection_acts_on_that_row_alone() {
-        let row = episode(3, false);
-
-        let menu = build_for_selection(&row, &[1, 2], None);
-
-        let actions = menu_entries(&menu)
-            .into_iter()
-            .map(|(_, action)| action)
-            .collect::<Vec<_>>();
-        assert!(
-            actions.contains(&"podcasts.play".to_owned()),
-            "a row outside the selection gets its own single-row menu: {actions:?}"
-        );
-        let targets = episode_targets(&menu);
-        assert!(
-            !targets.is_empty(),
-            "the menu carries episode targets at all"
-        );
-        for (action, target) in targets {
-            assert_eq!(
-                target,
-                vec![3],
-                "`{action}` must never reach episodes the menu was not opened on"
-            );
-        }
-    }
-
-    #[test]
-    fn src_12b_a_menu_on_a_selected_row_acts_on_the_whole_selection() {
-        let row = episode(2, false);
-
-        let menu = build_for_selection(&row, &[1, 2, 3], None);
-
-        let targets = episode_targets(&menu);
-        assert!(
-            !targets.is_empty(),
-            "the menu carries episode targets at all"
-        );
-        for (action, target) in targets {
-            assert_eq!(target, vec![1, 2, 3], "`{action}` acts on the selection");
-        }
-    }
-
-    #[test]
-    fn src_4b_single_selection_keeps_existing_actions_and_adds_queue_routes() {
-        let row = episode(1, false);
-
-        let entries = menu_entries(&build_for_selection(&row, &[row.id], None));
-
-        assert_eq!(
-            entries,
-            vec![
-                (strings::text(strings::PODCAST_PLAY), "podcasts.play".into()),
-                (
-                    strings::text(strings::PODCAST_COPY_URL),
-                    "podcasts.copy-url".into(),
-                ),
-                (
-                    strings::text(strings::CONTEXT_MENU_PLAY_NEXT),
-                    "podcasts.play-next".into(),
-                ),
-                (
-                    strings::text(strings::CONTEXT_MENU_ADD_TO_QUEUE),
-                    "podcasts.add-to-queue".into(),
-                ),
-                (
-                    strings::text(strings::PODCAST_MARK_PLAYED),
-                    "podcasts.toggle-played".into(),
-                ),
-                (
-                    strings::text(strings::PODCAST_DOWNLOAD),
-                    "podcasts.toggle-download".into(),
-                ),
-                (
-                    strings::text(strings::PODCAST_REMOVE_EPISODE),
-                    "podcasts.remove-episode".into(),
-                ),
-                (
-                    strings::podcast_unsubscribe_from("Show"),
-                    "podcasts.unsubscribe".into(),
-                ),
-            ]
-        );
-    }
-
-    #[test]
-    fn src_12b_multi_selection_hides_single_targets_and_offers_explicit_played_states() {
-        let mut entries = multi_selection_primary_entries();
-        entries.push(multi_selection_destructive_entry());
-        let actions = entries.iter().map(|entry| entry.action).collect::<Vec<_>>();
-
-        assert!(!actions.contains(&ACTION_PLAY));
-        assert!(!actions.contains(&ACTION_COPY_URL));
-        assert!(entries.iter().any(|entry| {
-            entry.action == ACTION_MARK_PLAYED_SELECTED
-                && entry.label == strings::text(strings::PODCAST_MARK_PLAYED)
-        }));
-        assert!(entries.iter().any(|entry| {
-            entry.action == ACTION_MARK_UNPLAYED_SELECTED
-                && entry.label == strings::text(strings::PODCAST_MARK_UNPLAYED)
-        }));
-        assert!(actions.contains(&ACTION_DOWNLOAD_SELECTED));
-        assert!(actions.contains(&ACTION_DELETE_DOWNLOADS_SELECTED));
-        assert!(actions.contains(&ACTION_REMOVE_SELECTED));
-        assert!(!actions.contains(&ACTION_UNSUBSCRIBE));
-        // The destructive entry is the last one and sits alone in its section;
-        // the split is a property of the two builders, not of an index.
-        assert_eq!(
-            multi_selection_destructive_entry().action,
-            ACTION_REMOVE_SELECTED
-        );
-        assert!(!multi_selection_primary_entries()
-            .iter()
-            .any(|entry| entry.action == ACTION_REMOVE_SELECTED));
-    }
-
-    #[test]
-    fn src_4b_podcast_context_menu_exposes_queue_membership_actions() {
-        assert!(ACTIONS.contains(&ACTION_PLAY_NEXT));
-        assert!(ACTIONS.contains(&ACTION_ADD_TO_QUEUE));
-    }
-
-    #[test]
-    fn acc_8_episode_menu_queue_actions_are_the_keyboard_partner_for_drag() {
-        let row = episode(1, false);
-        let entries = menu_entries(&build_for_selection(&row, &[1, 2], None));
-        let actions = entries
-            .iter()
-            .map(|(_, action)| action.as_str())
-            .collect::<Vec<_>>();
-
-        assert!(actions.contains(&"podcasts.play-next"));
-        assert!(actions.contains(&"podcasts.add-to-queue"));
-    }
-
-    #[test]
-    fn ctx_12_unresolvable_episode_routes_to_disabled_queue_actions() {
-        let row = episode(1, false);
-        let entries = menu_entries(&build_for_selection(&row, &[1, 2], Some(2)));
-        let actions = entries
-            .iter()
-            .map(|(_, action)| action.as_str())
-            .collect::<Vec<_>>();
-
-        assert!(actions.contains(&"podcasts.play-next-unavailable"));
-        assert!(actions.contains(&"podcasts.add-to-queue-unavailable"));
-
-        let group = gio::SimpleActionGroup::new();
-        install_disabled_queue_actions(&group);
-        assert!(!group
-            .lookup_action(ACTION_PLAY_NEXT_UNAVAILABLE)
-            .expect("play-next unavailable action")
-            .is_enabled());
-        assert!(!group
-            .lookup_action(ACTION_ADD_TO_QUEUE_UNAVAILABLE)
-            .expect("add-to-queue unavailable action")
-            .is_enabled());
-    }
-
-    #[test]
-    fn pod_6_context_menu_exposes_individual_episode_removal() {
-        assert!(ACTIONS.contains(&ACTION_REMOVE_EPISODE));
-    }
-
-    #[test]
-    fn pod_12_youtube_exposes_phone_sync_action_just_like_rss() {
-        let group = SourceGroup {
-            subscription_id: 1,
-            title: "Channel".into(),
-            author: None,
-            image_url: None,
-            kind: PodcastKind::Youtube,
-            sync_to_phone: false,
-            episodes: Vec::new(),
-        };
-        let menu = build_source(
-            &group,
-            &[PodcastSyncDevice {
-                id: "mtp:pixel".into(),
-                name: "Pixel".into(),
-            }],
-            &[],
-        );
-        // Open channel, "Sync to <device>", and Unsubscribe.
-        assert_eq!(menu.n_items(), 3);
-    }
-
-    #[test]
-    fn pod_12_sync_control_is_hidden_without_a_connected_device() {
-        assert_eq!(sync_control(&[], &[]), SyncControl::Hidden);
-    }
-
-    #[test]
-    fn pod_12_one_connected_device_is_targeted_directly() {
-        let devices = [PodcastSyncDevice {
-            id: "mtp:pixel".into(),
-            name: "Pixel".into(),
-        }];
-
-        assert_eq!(
-            sync_control(&devices, &["mtp:pixel".into()]),
-            SyncControl::Direct {
-                device: devices[0].clone(),
-                selected: true,
-            }
-        );
-    }
-
-    #[test]
-    fn pod_12_multiple_connected_devices_offer_independent_choices() {
-        let devices = [
-            PodcastSyncDevice {
-                id: "mtp:phone".into(),
-                name: "Phone".into(),
-            },
-            PodcastSyncDevice {
-                id: "mtp:tablet".into(),
-                name: "Tablet".into(),
-            },
-        ];
-
-        assert_eq!(
-            sync_control(&devices, &["mtp:tablet".into()]),
-            SyncControl::Chooser(vec![
-                DeviceSyncChoice {
-                    device: devices[0].clone(),
-                    selected: false,
-                },
-                DeviceSyncChoice {
-                    device: devices[1].clone(),
-                    selected: true,
-                },
-            ])
-        );
-    }
-}
+#[path = "podcasts_context_menu_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "podcasts_source_menu_tests.rs"]
