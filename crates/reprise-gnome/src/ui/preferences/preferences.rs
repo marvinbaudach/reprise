@@ -279,22 +279,32 @@ impl PreferencesContext {
         self.equalizer_surfaces.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
         self.plugin_rows.borrow_mut().clear();
-        use super::preferences_window::{PageId, PAGE_ORDER};
-        let pages = PAGE_ORDER.map(|id| {
-            let page = match id {
-                PageId::Playback => self.playback_page(),
-                PageId::Appearance => self.appearance_page(),
-                PageId::Layout => self.layout_page(),
-                PageId::Library => self.library_page(),
-                PageId::Plugins => self.plugins_page(),
-            };
-            (id, page)
-        });
+        use super::preferences_window::PageId;
+        // SET-8: handed to the shell as a factory rather than five finished
+        // pages, so only the page in sight is built. See
+        // `preferences_window::build` for why the shell calls this
+        // synchronously. Weak, because the closure lives in the stack, the
+        // stack in the dialog — a strong handle would keep this surface alive
+        // for as long as the dialog and outlive its own owner.
+        let context = Rc::downgrade(self);
+        let page_factory: Rc<dyn Fn(PageId) -> adw::PreferencesPage> =
+            Rc::new(move |id| {
+                let Some(context) = context.upgrade() else {
+                    return adw::PreferencesPage::new();
+                };
+                match id {
+                    PageId::Playback => context.playback_page(),
+                    PageId::Appearance => context.appearance_page(),
+                    PageId::Layout => context.layout_page(),
+                    PageId::Library => context.library_page(),
+                    PageId::Plugins => context.plugins_page(),
+                }
+            });
         let foreground_scan_progress = ScanChromeView::new();
         self.scan_controls
             .attach_chrome_view(&foreground_scan_progress);
         let shell = super::preferences_window::build(
-            pages,
+            page_factory,
             Some(foreground_scan_progress.line_widget()),
             Some(foreground_scan_progress.chip_widget()),
         );

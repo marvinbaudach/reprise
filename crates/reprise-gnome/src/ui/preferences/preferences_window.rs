@@ -117,17 +117,67 @@ pub(in crate::ui) fn selected_sidebar_focus_target(sidebar: &gtk4::ListBox) -> g
     row.upcast()
 }
 
+/// SET-8: builds a page on first sight, not on open.
+///
+/// The dialog used to build all five pages and hand them here, and both halves
+/// of that cost scale with the page count: the pages themselves (measured 128 ms
+/// median, Plugins alone 66–110 of it) and adding each one to the `ViewStack`,
+/// which realises it (another 130 ms). Together that was two thirds of the
+/// 314 ms it took the dialog to appear — spent on four pages nobody had asked
+/// to see.
+///
+/// Each stack child is therefore an empty `adw::Bin`, filled the moment its page
+/// becomes visible. **Synchronously**, via `visible-child` notification: the
+/// sidebar's row-selected handler, the `initial_page` navigation and the smoke
+/// hooks all reach a page by setting the visible child, and callers that follow
+/// such a jump — `present_plugins` highlighting rows it just navigated to —
+/// must find the page already there. An idle-deferred build would hand them an
+/// empty one.
 pub(in crate::ui) fn build(
-    pages: [(PageId, adw::PreferencesPage); PAGE_ORDER.len()],
+    page_factory: std::rc::Rc<dyn Fn(PageId) -> adw::PreferencesPage>,
     edge_line: Option<&gtk4::Widget>,
     status_chip: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
     stack.set_vexpand(true);
-    for (id, page) in pages {
-        page.add_css_class("reprise-preferences-page");
-        stack.add_titled_with_icon(&page, Some(id.name()), &id.title(), id.icon_name());
+    for id in PAGE_ORDER {
+        let holder = adw::Bin::new();
+        holder.set_vexpand(true);
+        stack.add_titled_with_icon(&holder, Some(id.name()), &id.title(), id.icon_name());
     }
+
+    let materialize_page = {
+        let stack = stack.clone();
+        std::rc::Rc::new(move |id: PageId| {
+            let Some(holder) = stack
+                .child_by_name(id.name())
+                .and_then(|child| child.downcast::<adw::Bin>().ok())
+            else {
+                return;
+            };
+            // Qualified: `child`/`set_child` exist on several traits in scope
+            // through the two preludes, and an unqualified call resolves to the
+            // wrong one.
+            if adw::prelude::BinExt::child(&holder).is_some() {
+                return;
+            }
+            let page = page_factory(id);
+            page.add_css_class("reprise-preferences-page");
+            adw::prelude::BinExt::set_child(&holder, Some(&page));
+        })
+    };
+
+    stack.connect_visible_child_notify({
+        let materialize_page = materialize_page.clone();
+        move |stack| {
+            let Some(name) = stack.visible_child_name() else {
+                return;
+            };
+            if let Some(id) = PAGE_ORDER.iter().find(|id| id.name() == name.as_str()) {
+                materialize_page(*id);
+            }
+        }
+    });
 
     // Vertical page navigation (redesign): a sidebar list drives the stack,
     // replacing the former top ViewSwitcher. A row's list index equals its
@@ -192,8 +242,22 @@ pub(in crate::ui) fn build(
 
     // Start on Appearance (the established default), highlighting its row —
     // which also drives the stack and content title through the handler.
+    //
+    // SET-8: this is also what materializes the opening page. The
+    // `visible-child` notification below fires from here, so no page needs
+    // building before this point — and building `PAGE_ORDER`'s first entry
+    // eagerly would build Playback, which is not the page anyone is about to
+    // see.
     stack.set_visible_child_name("appearance");
     sidebar_list.select_row(sidebar_list.row_at_index(appearance_index()).as_ref());
+    // Belt and braces: if the stack ever opens on a page whose notification
+    // did not fire (an identical name assignment emits nothing), the visible
+    // page would stay an empty holder. Ask for it once, explicitly.
+    if let Some(name) = stack.visible_child_name() {
+        if let Some(id) = PAGE_ORDER.iter().find(|id| id.name() == name.as_str()) {
+            materialize_page(*id);
+        }
+    }
 
     let root_page =
         adw::NavigationPage::with_tag(&split, &strings::text(strings::PREFERENCES), "preferences");
@@ -437,13 +501,13 @@ mod tests {
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
-        let pages = PAGE_ORDER.map(|id| {
-            let page = adw::PreferencesPage::builder()
-                .title(id.title())
-                .icon_name(id.icon_name())
-                .build();
-            (id, page)
-        });
+        let pages: std::rc::Rc<dyn Fn(PageId) -> adw::PreferencesPage> =
+            std::rc::Rc::new(|id: PageId| {
+                adw::PreferencesPage::builder()
+                    .title(id.title())
+                    .icon_name(id.icon_name())
+                    .build()
+            });
 
         let shell = build(pages, None, None);
 
@@ -488,13 +552,13 @@ mod tests {
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
-        let pages = PAGE_ORDER.map(|id| {
-            let page = adw::PreferencesPage::builder()
-                .title(id.title())
-                .icon_name(id.icon_name())
-                .build();
-            (id, page)
-        });
+        let pages: std::rc::Rc<dyn Fn(PageId) -> adw::PreferencesPage> =
+            std::rc::Rc::new(|id: PageId| {
+                adw::PreferencesPage::builder()
+                    .title(id.title())
+                    .icon_name(id.icon_name())
+                    .build()
+            });
         let shell = build(pages, None, None);
         let detail =
             adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Columns");
@@ -687,8 +751,12 @@ mod tests {
         parent.close();
     }
 
-    pub(super) fn test_pages() -> [(PageId, adw::PreferencesPage); PAGE_ORDER.len()] {
-        PAGE_ORDER.map(|id| {
+    /// SET-8: a factory, like the real caller hands `build`. The pages carry a
+    /// group and a row so a materialized page has real content to allocate —
+    /// the geometry tests below measure where things land, and an empty page
+    /// would let them pass without proving anything.
+    pub(super) fn test_pages() -> std::rc::Rc<dyn Fn(PageId) -> adw::PreferencesPage> {
+        std::rc::Rc::new(|id: PageId| {
             let page = adw::PreferencesPage::builder()
                 .title(id.title())
                 .icon_name(id.icon_name())
@@ -696,7 +764,7 @@ mod tests {
             let group = adw::PreferencesGroup::new();
             group.add(&adw::ActionRow::builder().title(id.title()).build());
             page.add(&group);
-            (id, page)
+            page
         })
     }
 
