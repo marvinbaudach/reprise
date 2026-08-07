@@ -296,7 +296,15 @@ impl DeviceSyncRuntime {
     }
 
     pub(super) fn recompute_delta_silent(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
-        let (settings, storage, managed_files, podcast_files, youtube_files, targets) = self
+        let (
+            settings,
+            storage,
+            managed_files,
+            managed_files_scanned,
+            podcast_files,
+            youtube_files,
+            targets,
+        ) = self
             .device_states
             .borrow()
             .iter()
@@ -306,6 +314,7 @@ impl DeviceSyncRuntime {
                     device.settings.clone(),
                     device.storage.clone(),
                     device.managed_files.clone(),
+                    device.ever_inspected && device.scan_error.is_none(),
                     device.podcast_files.clone(),
                     device.youtube_files.clone(),
                     device.targets.clone(),
@@ -360,6 +369,7 @@ impl DeviceSyncRuntime {
                 inventory: files,
                 playlist_inventory,
                 managed_files,
+                managed_files_scanned,
                 desktop_analyses,
                 storage: storage.clone(),
             });

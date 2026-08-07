@@ -18,7 +18,7 @@ use gtk4::gio::prelude::*;
 use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::{
     DeviceStorageAccess, DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile,
-    StorageId, SyncTarget,
+    StorageId, SyncTarget, SyncTargetKind,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -336,9 +336,16 @@ impl DeviceBackend for FakeBackend {
         let source_contents = std::fs::read(source_path).ok();
         let is_track_metadata =
             relative_target == reprise_core::device_sync::track_metadata_list::FILE_NAME;
-        let is_analysis = reprise_core::device_sync::analysis_sidecar::is_sidecar_path(
-            std::path::Path::new(&relative_target),
-        );
+        let is_playlists_target =
+            state
+                .last_inspected_targets
+                .borrow()
+                .as_ref()
+                .is_some_and(|targets| {
+                    targets.iter().any(|target| {
+                        target.kind == SyncTargetKind::Playlists && target.path == target_path
+                    })
+                });
         if !is_track_metadata {
             state
                 .transfer_storage_ids
@@ -416,7 +423,7 @@ impl DeviceBackend for FakeBackend {
             if let Some(observer) = observer {
                 observer(&relative_target);
             }
-            if is_analysis {
+            if is_playlists_target {
                 let mut managed_files = state.managed_files.borrow_mut();
                 if let Some(file) = managed_files
                     .iter_mut()

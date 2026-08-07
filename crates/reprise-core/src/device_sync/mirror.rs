@@ -60,6 +60,7 @@ pub struct MirrorInput {
     pub inventory: Vec<DeviceFileRecord>,
     pub playlist_inventory: Vec<DevicePlaylistRecord>,
     pub managed_files: Vec<ManagedDeviceFile>,
+    pub managed_files_scanned: bool,
     pub desktop_analyses: Vec<DesktopAnalysis>,
 }
 
@@ -191,6 +192,7 @@ pub fn plan_mirror(input: MirrorInput) -> MirrorPlan {
         input.inventory,
         input.playlist_inventory,
         input.managed_files,
+        input.managed_files_scanned,
         &input.desktop_analyses,
     )
 }
@@ -201,6 +203,7 @@ fn build_plan(
     mut inventory: Vec<DeviceFileRecord>,
     mut playlist_inventory: Vec<DevicePlaylistRecord>,
     mut managed_files: Vec<ManagedDeviceFile>,
+    managed_files_scanned: bool,
     desktop_analyses: &[DesktopAnalysis],
 ) -> MirrorPlan {
     inventory.sort_by(|left, right| {
@@ -261,6 +264,10 @@ fn build_plan(
         .cloned()
         .map(|file| (file.track_id, file))
         .collect::<HashMap<_, _>>();
+    let managed_paths = managed_files
+        .iter()
+        .map(|file| file.relative_path.as_str())
+        .collect::<HashSet<_>>();
 
     let mut plan = MirrorPlan {
         target_bytes: desired_files
@@ -274,6 +281,8 @@ fn build_plan(
         &inventory,
         &inventory_by_id,
         &unavailable,
+        managed_files_scanned,
+        &managed_paths,
         &mut plan,
     );
     plan_analysis_sidecars(desktop_analyses, &managed_files, &mut plan);
@@ -410,6 +419,8 @@ fn plan_file_changes(
     inventory: &[DeviceFileRecord],
     inventory_by_id: &HashMap<i64, DeviceFileRecord>,
     unavailable: &HashMap<i64, UnavailableTrack>,
+    managed_files_scanned: bool,
+    managed_paths: &HashSet<&str>,
     plan: &mut MirrorPlan,
 ) {
     let mut desired_ids = desired.keys().copied().collect::<Vec<_>>();
@@ -418,6 +429,13 @@ fn plan_file_changes(
         let file = &desired[&track_id];
         match inventory_by_id.get(&track_id) {
             None => plan.copy.push(file.clone()),
+            Some(existing)
+                if inventory_matches(existing, file)
+                    && managed_files_scanned
+                    && !managed_paths.contains(existing.device_path.as_str()) =>
+            {
+                plan.copy.push(file.clone());
+            }
             Some(existing) if inventory_matches(existing, file) => {}
             Some(existing) if safe_managed_path(&existing.device_path) => {
                 plan.replace.push(MirrorReplacement {
