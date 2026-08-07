@@ -731,4 +731,57 @@ fn played_track_imports_its_sidecar_under_the_phone_source_fingerprint_only() {
         crate::db_spectrogram::get_waveform_peaks(&db, first_id).unwrap(),
         None
     );
+
+    assert_eq!(
+        import_analysis_for_track(&source, &db, first_id).unwrap(),
+        AnalysisImportOutcome::Imported,
+        "the same desktop sidecar must be imported again after phone render data was invalidated"
+    );
+    assert_eq!(
+        crate::db_spectrogram::get_track_spectrogram(&db, first_id)
+            .unwrap()
+            .unwrap()
+            .cells(),
+        &[7; 48]
+    );
+    assert_eq!(
+        crate::db_spectrogram::get_waveform_peaks(&db, first_id).unwrap(),
+        Some(vec![2, 3, 5, 8])
+    );
+}
+
+#[test]
+fn a_scan_without_mobile_cargo_does_not_touch_existing_sidecar_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let track_path = fixture_copy(tmp.path(), "ordinary.flac");
+    let source = ScriptedSource::new(vec![scripted_file(&track_path)]);
+    let db = crate::db::Db::open_in_memory().unwrap();
+
+    completed(scan_folder_with_source(&source, &db, tmp.path()).unwrap());
+    let track_id = crate::queries::query_library_text_search(
+        &db,
+        "",
+        crate::queries::WindowRange {
+            offset: 0,
+            limit: 1,
+        },
+    )
+    .unwrap()
+    .rows[0]
+        .id;
+    crate::db_mobile_sync::register_sidecar(
+        db.conn(),
+        track_path.to_str().unwrap(),
+        Path::new("/phone/ordinary.reprise-analysis"),
+    )
+    .unwrap();
+
+    completed(scan_folder_with_source(&source, &db, tmp.path()).unwrap());
+
+    assert_eq!(
+        crate::db_mobile_sync::analysis_sidecar_state(&db, track_id)
+            .unwrap()
+            .map(|state| state.path),
+        Some("/phone/ordinary.reprise-analysis".into())
+    );
 }

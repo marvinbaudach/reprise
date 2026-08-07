@@ -42,6 +42,19 @@ fn analysis_sidecar_rejects_a_recognisable_future_version() {
 }
 
 #[test]
+fn analysis_sidecar_reports_an_invalid_optional_field_tag_separately_from_magic() {
+    let mut encoded = AnalysisSidecar::new(source(), TrackSpectrogram::empty(), vec![1])
+        .encode()
+        .unwrap();
+    encoded[26] = 7;
+
+    assert_eq!(
+        AnalysisSidecar::decode(&encoded).unwrap_err().to_string(),
+        "analysis sidecar optional field has invalid tag 7"
+    );
+}
+
+#[test]
 fn analysis_sidecar_path_follows_the_transcoded_audio_name() {
     assert_eq!(
         device_path_for_track("Artist/Album/01 Song.opus"),

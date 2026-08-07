@@ -50,6 +50,9 @@ impl MobileSyncDiscovery {
         &self,
         conn: &Connection,
     ) -> Result<(), rusqlite::Error> {
+        if self.metadata_list.is_none() && self.analysis_sidecars_by_device_path.is_empty() {
+            return Ok(());
+        }
         for (device_path, track_path) in &self.tracks_by_device_path {
             let sidecar = crate::device_sync::analysis_sidecar::device_path_for_track(device_path)
                 .and_then(|sidecar| self.analysis_sidecars_by_device_path.get(&sidecar));

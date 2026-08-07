@@ -113,6 +113,8 @@ impl AnalysisSidecar {
 pub enum AnalysisSidecarError {
     #[error("analysis sidecar has the wrong magic")]
     InvalidMagic,
+    #[error("analysis sidecar optional field has invalid tag {0}")]
+    InvalidOptionalFieldTag(u8),
     #[error("analysis sidecar version {0} is not supported")]
     UnsupportedVersion(u16),
     #[error("analysis sidecar ended before its declared data")]
@@ -193,7 +195,7 @@ impl<'a> Reader<'a> {
         match self.take(1)?[0] {
             0 => Ok(None),
             1 => self.i64().map(Some),
-            _ => Err(AnalysisSidecarError::InvalidMagic),
+            tag => Err(AnalysisSidecarError::InvalidOptionalFieldTag(tag)),
         }
     }
 
