@@ -1141,8 +1141,10 @@ result.
   ellipsized detail line. Clicking the card → Missing files; the visible
   Cancel button checks for abort before each audio file.
 - **FB-2b** [planned] [gtk] — Scan, Sync and playlist import use the
-  same full card contract from FB-8 for every run > ~1 s, including
-  visible Cancel and navigation to the associated view.
+  same full card contract from FB-8 in the main-window sidebar for every
+  run > ~1 s, including visible Cancel and navigation to the associated
+  view. Modal dialogs carry their status in chrome according to FB-9
+  instead of duplicating that card contract in their content flow.
 - **FB-3** [active] [core] — Errors: individual errors during a run are
   collected, never toasted individually. At the end, ONE toast with
   "N failed · Details" → Details opens the relevant view/dialog.
@@ -1184,13 +1186,13 @@ result.
   ("7 removed" must stay true). Auto-clean (opt-in, default off, deleted
   tracks only) hard-deletes without a toast and without Undo — it fires
   no earlier than 30/90 days after disappearance (SET-4).
-- **FB-8** [active] [gtk] — Scanner and Relink scans run off-thread in
-  the existing progress cards, stackable with Sync/Doctor, in the
-  bottom-anchored area. As long as at least one progress card is
-  visible, the card block **replaces** the full Issues block; the
-  heading "ISSUES" and Import errors / Missing files are neither visible
-  nor do they occupy extra space. Fully inactive progress cards likewise
-  occupy no space; only active or still-fading-out cards take part in
+- **FB-8** [active] [gtk] — In the main-window sidebar, Scanner and
+  Relink scans run off-thread in the existing progress cards, stackable
+  with Sync/Doctor, in the bottom-anchored area. As long as at least one
+  progress card is visible, the card block **replaces** the full Issues
+  block; the heading "ISSUES" and Import errors / Missing files are neither
+  visible nor do they occupy extra space. Fully inactive progress cards
+  likewise occupy no space; only active or still-fading-out cards take part in
   the layout. The bottom edge of the visible card block sits directly
   above the player bar, while all free sidebar height stays above the
   block. After the last card has fully faded out, the Issues block
@@ -1198,7 +1200,33 @@ result.
   this.
   Card: spinner + title + % on the right (tabular) + 3px bar +
   ellipsized detail line. Clicking the card → Missing files; the visible
-  Cancel button checks for abort before each audio file.
+  Cancel button checks for abort before each audio file. Modal dialogs
+  carry the same work in their chrome according to FB-9; they do not add
+  this sidebar card to their content flow.
+- **FB-9** [planned] [gtk] — Transient status indicators do not displace
+  existing layout. Use the first implementation that applies, in this
+  order: (1) **chrome** — the header, footer or edge region of the window
+  or dialog, as an overlay with no layout height of its own; this is the
+  first choice for global states; (2) **reserved space** — a line of fixed
+  height that is always present and names the resting state at rest
+  ("Library up to date"), so it never sits empty; (3) **state change of an
+  existing element** — the row that triggers the action shows the progress
+  itself, at unchanged height. Three prohibitions: never insert a banner
+  above the content and remove it again; never let an indicator's own
+  height change with its state (error text, a second line, a growing
+  detail list); never leave an empty placeholder that occupies area without
+  saying anything. One task's status is never duplicated within the same
+  window. The rule is per window, not app-wide: the main window may retain
+  its one sidebar card while a modal dialog uses its one chrome location,
+  regardless of which page is open. The short status is icon, percentage
+  and Cancel; details are spelled out only where the user can act on them,
+  otherwise they belong in the tooltip. Progress bars are ≤ 2–3 px high and
+  sit on an edge, never between two elements. Background status fades in
+  place with the Micro token (150 ms), never with a height animation.
+  Continuous gear rotation and indeterminate pulsing obey the central
+  reduced-motion gate and remain statically legible when animations are
+  disabled.
+  <!-- REVIEW: Rule proposal -->
 
 ## H. File association & OS integration
 
@@ -1736,6 +1764,13 @@ place (MOT-2, the motion reading of P-4).
   (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog,
   Popover — e.g. the push/pop slides of the settings subpages) count
   as system-given and are exempt from the token requirement.
+  A continuous activity indicator that Reprise draws itself (the scan
+  chip's gear) is a loop, not a transition: none of the four tokens
+  describes it. Its period is named in `ui/motion.rs` alongside them
+  (`INDICATOR_SPIN_MS`, 1,200 ms, linear, matching `gtk::Spinner`'s
+  pace) and is never written into a CSS string by hand. Linear easing
+  is permitted here for the same reason it is permitted for progress
+  bars: a rotation has no start and no end to ease.
   **The accent is not its own animation.** Changing its source reloads one
   named color; the carrying widget's existing transition applies. The play
   button, for example, transitions `background-color` and `box-shadow` on
