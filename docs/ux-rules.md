@@ -1203,7 +1203,7 @@ result.
   Cancel button checks for abort before each audio file. Modal dialogs
   carry the same work in their chrome according to FB-9; they do not add
   this sidebar card to their content flow.
-- **FB-9** [planned] [gtk] — Transient status indicators do not displace
+- **FB-9** [active] [gtk] — Transient status indicators do not displace
   existing layout. Use the first implementation that applies, in this
   order: (1) **chrome** — the header, footer or edge region of the window
   or dialog, as an overlay with no layout height of its own; this is the
@@ -1226,7 +1226,15 @@ result.
   Continuous gear rotation and indeterminate pulsing obey the central
   reduced-motion gate and remain statically legible when animations are
   disabled.
-  <!-- REVIEW: Rule proposal -->
+  Named exception: the shared source-error banner of NR-21, CONC-11,
+  POD-19, RAD-2 and NET-3 may still be inserted above a populated view and
+  removed again when the next refresh succeeds. This is a documented
+  deviation, not a second sanctioned pattern — it is precisely what the
+  first prohibition names, and it is carried only because those five
+  surfaces shipped before this rule became enforceable. It expires when
+  those views are next reworked: the failure notice then moves into chrome
+  or a reserved line, and this paragraph goes with the last in-flow
+  banner. No new surface may cite it.
 
 ## H. File association & OS integration
 
