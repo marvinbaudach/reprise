@@ -26,7 +26,7 @@ from agent_adapter import ExternalAgent
 from driver import CliTransport, CuaExecutor, DriverError, hover_preflight
 from hover_geometry import WindowGeometry, resolve_window_origin
 from explorer import DeterministicExplorer
-from fixtures import FixtureError, audit_batch_edit
+from fixtures import FixtureError, audit_batch_edit, build_plan
 from protocol import ActionGateway, ContractError, Mission, load_mission
 from report import RunReport
 from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
@@ -52,6 +52,26 @@ APP_NAMESPACE_ARGV: tuple[str, ...] = (
 # element, and the whole run then explores a tree it cannot see.
 ACCESSIBILITY_READY_TIMEOUT_SECONDS = 60.0
 ACCESSIBILITY_POLL_SECONDS = 0.25
+
+# A 100k-row library takes far longer to reach its first frame than a 128-row
+# one. A fixed cap turned that product property into a harness abort at zero
+# steps, so the allowance scales with the fixture and stays generous.
+STARTUP_TIMEOUT_BASE_SECONDS = 120.0
+STARTUP_TIMEOUT_SECONDS_PER_10K_ROWS = 60.0
+STARTUP_TIMEOUT_CAP_SECONDS = 1_200.0
+STARTUP_POLL_SECONDS = 0.25
+
+
+def startup_timeout_seconds(profile: str) -> float:
+    """How long this fixture profile may take to reach a usable window."""
+    try:
+        track_count = build_plan(profile).track_count
+    except FixtureError:
+        track_count = 0
+    scaled = STARTUP_TIMEOUT_BASE_SECONDS + (
+        track_count / 10_000 * STARTUP_TIMEOUT_SECONDS_PER_10K_ROWS
+    )
+    return min(STARTUP_TIMEOUT_CAP_SECONDS, scaled)
 
 
 def app_launch_argv(app_binary: pathlib.Path) -> list[str]:
@@ -247,6 +267,8 @@ class AppLifecycle:
         session: str = "explore",
         ready_timeout_seconds: float = ACCESSIBILITY_READY_TIMEOUT_SECONDS,
         ready_poll_seconds: float = ACCESSIBILITY_POLL_SECONDS,
+        window_timeout_seconds: float = STARTUP_TIMEOUT_BASE_SECONDS,
+        window_poll_seconds: float = STARTUP_POLL_SECONDS,
     ) -> None:
         self.app_binary = app_binary
         self.profile_root = profile_root
@@ -257,6 +279,9 @@ class AppLifecycle:
         self.session = session
         self.ready_timeout_seconds = ready_timeout_seconds
         self.ready_poll_seconds = ready_poll_seconds
+        self.window_timeout_seconds = window_timeout_seconds
+        self.window_poll_seconds = window_poll_seconds
+        self.startup_timings: list[dict[str, int]] = []
         self.process: subprocess.Popen[str] | None = None
         self.log_handle = None
         self.launch_count = 0
@@ -291,8 +316,18 @@ class AppLifecycle:
             env=environment,
             text=True,
         )
+        launched_at = time.monotonic()
         window_id = self._wait_for_window(self.process.pid)
+        window_ms = round((time.monotonic() - launched_at) * 1000)
         self._wait_for_accessibility_tree(self.process.pid, window_id)
+        # A slow start is a product finding; retain it instead of hiding it.
+        self.startup_timings.append(
+            {
+                "launch": self.launch_count,
+                "window_ms": window_ms,
+                "accessibility_tree_ms": round((time.monotonic() - launched_at) * 1000),
+            }
+        )
         return self.process.pid, window_id, self.launch_count
 
     def restart(self) -> tuple[int, int, int]:
@@ -325,15 +360,22 @@ class AppLifecycle:
                     raise RunError(f"application log is missing '{required}'")
 
     def _wait_for_window(self, pid: int) -> int:
-        for _ in range(120):
+        started = time.monotonic()
+        deadline = started + self.window_timeout_seconds
+        while True:
             if self.process is None or self.process.poll() is not None:
                 raise RunError("Reprise exited before exposing a window")
             response = self.transport.call("list_windows", {"pid": pid})
             window_id = _window_id(response)
             if window_id is not None:
                 return window_id
-            time.sleep(0.25)
-        raise RunError("Reprise did not expose a CUA window within 30 seconds")
+            if time.monotonic() >= deadline:
+                waited = time.monotonic() - started
+                raise RunError(
+                    "Reprise did not expose a CUA window after "
+                    f"{waited:.1f}s (limit {self.window_timeout_seconds:g}s)"
+                )
+            time.sleep(self.window_poll_seconds)
 
     def _wait_for_accessibility_tree(self, pid: int, window_id: int) -> Mapping[str, Any]:
         return wait_for_accessibility_tree(
@@ -490,6 +532,8 @@ def run(args: argparse.Namespace) -> int:
         quit_delay_seconds=min(7_200, mission.budgets.seconds + 60),
         transport=transport,
         session=args.session,
+        window_timeout_seconds=startup_timeout_seconds(mission.profile),
+        ready_timeout_seconds=startup_timeout_seconds(mission.profile),
     )
     report = RunReport(
         args.evidence_dir,
@@ -678,6 +722,7 @@ def run(args: argparse.Namespace) -> int:
     finally:
         lifecycle.stop()
         retain_agent_notes(profile_root, args.evidence_dir)
+        report.set_startup_timings(lifecycle.startup_timings)
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()

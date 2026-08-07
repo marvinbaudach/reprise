@@ -103,7 +103,12 @@ class RunReport:
         self.required_audits = tuple(required_audits)
         self.steps: list[dict[str, Any]] = []
         self.workload_audits: dict[int, dict[str, Any]] = {}
+        self.startup_timings: list[dict[str, Any]] = []
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def set_startup_timings(self, timings: Sequence[Mapping[str, Any]]) -> None:
+        """Measured launch cost per app start; a slow start is a product finding."""
+        self.startup_timings = [dict(_sanitize(timing)) for timing in timings]
 
     def add_workload_audit(self, audit: Mapping[str, Any]) -> None:
         workload_index = int(audit.get("workload_index", -1))
@@ -163,6 +168,7 @@ class RunReport:
                 "seed": self.seed,
                 "commit": self.commit,
                 "steps": len(self.steps),
+                "startup_timings": self.startup_timings,
                 "finding_counts": dict(sorted(severity_counts.items())),
                 "finding_codes": dict(sorted(code_counts.items())),
                 "required_workloads": self.required_workloads,
@@ -198,9 +204,18 @@ class RunReport:
             f"- Actions: {summary['steps']}",
             "- Status: advisory until reproduced in two fresh profiles",
             "",
-            "## Findings",
-            "",
         ]
+        if summary["startup_timings"]:
+            lines.append("## Startup")
+            lines.append("")
+            for timing in summary["startup_timings"]:
+                lines.append(
+                    f"- Launch {timing.get('launch')}: window after "
+                    f"{timing.get('window_ms')} ms, usable accessibility tree after "
+                    f"{timing.get('accessibility_tree_ms')} ms"
+                )
+            lines.append("")
+        lines.extend(["## Findings", ""])
         if not findings:
             lines.append("No anomaly was observed within this mission and action budget.")
         for finding in findings:
