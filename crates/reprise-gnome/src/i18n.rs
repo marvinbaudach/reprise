@@ -4,7 +4,8 @@ use std::sync::OnceLock;
 
 use gettextrs::{
     bind_textdomain_codeset, bindtextdomain, gettext as gettext_message,
-    ngettext as ngettext_message, setlocale, textdomain, LocaleCategory,
+    ngettext as ngettext_message, npgettext as npgettext_message, setlocale, textdomain,
+    LocaleCategory,
 };
 
 const DEFAULT_PACKAGE: &str = "reprise";
@@ -108,6 +109,10 @@ pub fn gettext(message: &str) -> String {
 
 pub fn ngettext(singular: &str, plural: &str, count: u32) -> String {
     ngettext_message(singular, plural, count)
+}
+
+pub fn npgettext(context: &str, singular: &str, plural: &str, count: u32) -> String {
+    npgettext_message(context, singular, plural, count)
 }
 
 pub fn format_message(message: &str, values: &[(&str, &str)]) -> String {

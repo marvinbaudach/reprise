@@ -1,4 +1,5 @@
 use super::*;
+use reprise_core::device_sync::sync_log::{DeviationKind, RunOutcome};
 
 fn run(outcome: RunOutcome) -> RunRecord {
     RunRecord {
@@ -29,27 +30,61 @@ fn mtp_20_a_run_headline_names_when_it_ran_and_how_it_ended() {
 }
 
 #[test]
-fn mtp_20_the_balance_leads_with_what_arrived_and_what_did_not() {
-    let balance = run_balance(&run(RunOutcome::Completed));
+fn mtp_20_a_run_with_copies_and_failures_reports_both() {
+    let mut partial = run(RunOutcome::Completed);
+    partial.planned = 5;
+    partial.copied = 3;
+    partial.skipped = 0;
+    partial.failed = 2;
+    partial.deleted = 0;
 
-    assert!(balance.contains("198 of 200 copied"), "{balance}");
-    assert!(balance.contains("1 failed"), "{balance}");
-    assert!(balance.contains("3 removed"), "{balance}");
+    let balance = run_balance(&partial);
+
+    assert_eq!(balance, "3 of 5 copied · 2 failed");
 }
 
 #[test]
-fn mtp_20_a_clean_run_says_so_without_listing_zeroes() {
-    let mut clean = run(RunOutcome::Completed);
-    clean.copied = 200;
-    clean.skipped = 0;
-    clean.failed = 0;
-    clean.deleted = 0;
+fn mtp_20_a_delete_only_run_omits_a_zero_copy_count() {
+    let mut deletion = run(RunOutcome::Completed);
+    deletion.planned = 0;
+    deletion.copied = 0;
+    deletion.skipped = 0;
+    deletion.failed = 0;
+    deletion.deleted = 4;
 
-    let balance = run_balance(&clean);
+    let balance = run_balance(&deletion);
 
-    assert!(balance.contains("200 of 200 copied"), "{balance}");
-    assert!(!balance.contains("failed"), "{balance}");
-    assert!(!balance.contains("removed"), "{balance}");
+    assert_eq!(balance, "4 removed");
+    assert!(!balance.contains("0 of 0 copied"), "{balance}");
+}
+
+#[test]
+fn mtp_20_an_empty_run_has_a_non_blank_balance() {
+    let mut empty = run(RunOutcome::Completed);
+    empty.planned = 0;
+    empty.copied = 0;
+    empty.skipped = 0;
+    empty.failed = 0;
+    empty.deleted = 0;
+
+    let balance = run_balance(&empty);
+
+    assert_eq!(balance, "Nothing to transfer");
+    assert!(!balance.trim().is_empty());
+}
+
+#[test]
+fn mtp_20_a_copy_only_run_reports_its_copy_count() {
+    let mut copy = run(RunOutcome::Completed);
+    copy.planned = 5;
+    copy.copied = 5;
+    copy.skipped = 0;
+    copy.failed = 0;
+    copy.deleted = 0;
+
+    let balance = run_balance(&copy);
+
+    assert_eq!(balance, "5 of 5 copied");
 }
 
 #[test]

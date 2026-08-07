@@ -5261,3 +5261,77 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+
+# Device sync history
+msgid "Recent syncs"
+msgstr ""
+
+msgid "No synchronization has run yet."
+msgstr ""
+
+msgid "unknown time"
+msgstr ""
+
+msgid "Running"
+msgstr ""
+
+msgid "Completed"
+msgstr ""
+
+msgid "Cancelled"
+msgstr ""
+
+msgid "Interrupted"
+msgstr ""
+
+msgid "Nothing to transfer"
+msgstr ""
+
+msgid "Skipped"
+msgstr ""
+
+msgid "Removed"
+msgstr ""
+
+msgid "Kept original"
+msgstr ""
+
+msgid "Playlist failed"
+msgstr ""
+
+#, rust-format
+msgid "{when} · {outcome}"
+msgstr ""
+
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{copied} of {planned} copied"
+msgid_plural "{copied} of {planned} copied"
+msgstr[0] ""
+msgstr[1] ""
+
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} skipped"
+msgid_plural "{count} skipped"
+msgstr[0] ""
+msgstr[1] ""
+
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} failed"
+msgid_plural "{count} failed"
+msgstr[0] ""
+msgstr[1] ""
+
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} removed"
+msgid_plural "{count} removed"
+msgstr[0] ""
+msgstr[1] ""
+
+#, rust-format
+msgid "{kind} · {path} — {detail}"
+msgstr ""

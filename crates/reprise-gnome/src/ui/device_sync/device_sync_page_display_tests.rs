@@ -353,8 +353,8 @@ fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
     let mut labels = Vec::new();
     collect_labels(root.upcast_ref::<gtk4::Widget>(), &mut labels);
     assert!(
-        labels.iter().any(|text| text.contains("Recent transfers")),
-        "the device page must name its transfer history: {labels:?}"
+        labels.iter().any(|text| text.contains("Recent syncs")),
+        "the device page must name its synchronization history: {labels:?}"
     );
     assert!(
         labels.iter().any(|text| text.contains("104 of 200 copied")),

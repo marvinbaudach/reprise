@@ -44,7 +44,7 @@ pub(super) struct DeviceDashboard {
     pub(super) progress_bar: gtk4::ProgressBar,
     pub(super) primary: gtk4::Button,
     pub(super) eject: gtk4::Button,
-    /// Holds the "Recent transfers" card, refilled on every update (MTP-20).
+    /// Holds the "Recent syncs" card, refilled on every update (MTP-20).
     pub(super) history: gtk4::Box,
 }
 

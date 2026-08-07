@@ -35,7 +35,7 @@ struct PlaylistRowWidgets {
 
 struct DeviceSyncPage {
     root: gtk4::glib::WeakRef<gtk4::Stack>,
-    /// Container for the "Recent transfers" card (MTP-20).
+    /// Container for the "Recent syncs" card (MTP-20).
     history: gtk4::Box,
     device_name: gtk4::Label,
     connection: gtk4::Label,
