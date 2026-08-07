@@ -181,17 +181,36 @@ Vier Szenarien, je fünf Läufe, Median: Tippen (fünf Zeichen im ~120-ms-Takt),
 Clear per `Esc`, Clear per „Show all N tracks", und als Kontrolle dasselbe ohne
 geladenen Titel — die Differenz isoliert den Zentrier-Anteil.
 
-| Messgröße | heute (Erwartung) | Ziel |
-| --- | --- | --- |
-| Tippen → Zähler steht | ~400 ms | ≤ 200 ms |
-| Clear → Zähler steht | ~400 ms | ≤ 60 ms |
-| Bewegung nach Modelltausch | ~128 ms Nachlauf | keine zweite Bewegung nach ≥ 50 ms |
+| Messgröße | Herleitung | **gemessen 2026-08-07** | Ziel |
+| --- | --- | --- | --- |
+| Tippen → Query fertig | ~400 ms | **346 ms** (8 Läufe, 340–398) | ≤ 200 ms |
+| Clear → Query fertig | ~400 ms | **414 ms** (8 Läufe, 334–745) | ≤ 60 ms |
+| Bewegung nach Modelltausch | ~128 ms Nachlauf | noch offen | keine zweite Bewegung nach ≥ 50 ms |
 
-Die Erwartungswerte sind Herleitungen aus dem Code, keine Messwerte — die
-Vorher-Messung ersetzt sie durch echte Zahlen, und erst danach wird die
-Debounce-Dauer endgültig festgezurrt. Die Gegenprobe mit zurückgedrehter Änderung
-ist Pflicht: kommen die alten Werte nicht reproduzierbar heraus, misst der
-Messstand etwas anderes als die Änderung.
+Gemessen gegen einen Release-Build von `origin/dev` (`333c9a03`), isoliertes
+Profil mit einer Kopie der echten Bibliothek (1.874 Titel), Xvfb `:77`,
+`dbus-run-session`, `fakesink`. Fünf Zeichen im 120-ms-Takt.
+
+**Der Kanal ist ein anderer als geplant.** In einer frischen `dbus-run-session`
+gibt es keinen AT-SPI-Registry, der Trefferzähler ist also nicht auslesbar.
+Statt dessen dient die App eigene Logzeile `query matched N tracks` aus
+`run_query` als Endpunkt — millisekundengenau, ohne Sonde, und näher an der
+Sache: sie markiert exakt den Abschluss der Query. Was sie **nicht** abdeckt,
+ist die Zeit bis zum fertigen Bild; dafür bleibt es bei der Videospur.
+
+**Bekannte Schwäche des Messstands:** das Leeren des Suchfelds zwischen zwei
+Läufen (`ctrl+a`, `BackSpace`) greift nicht zuverlässig, weshalb Folgeläufe
+teils an bestehenden Text anhängten und dann null Treffer maßen. Die
+Latenzaussage trägt das trotzdem — die ~350 ms sind fast vollständig Wartezeit
+und fallen unabhängig von der Trefferzahl an, was die enge Streuung über beide
+Reihen (340–398 ms bei 0 wie bei 13 Treffern) bestätigt. Vor der
+Nachher-Messung wird das Leeren repariert, sonst ist der Vergleich der
+Clear-Werte wertlos.
+
+Die Debounce-Dauer wird erst nach der Nachher-Messung endgültig festgezurrt.
+Die Gegenprobe mit zurückgedrehter Änderung ist Pflicht: kommen die alten Werte
+nicht reproduzierbar heraus, misst der Messstand etwas anderes als die
+Änderung.
 
 ## Teil 4 — SEARCH-9
 
