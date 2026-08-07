@@ -3,8 +3,33 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
+
+
+# A selection marker is the count standing next to a selection noun, as in the
+# tag dialog title "Edit 512 Tracks" or a status line "512 selected". The count
+# merely occurring somewhere inside a longer string is not evidence: the 100k
+# fixture names its rows "Track NNNNNN", so "Track 005128" would otherwise pass.
+SELECTION_MARKER_NOUNS = ("tracks", "track", "songs", "song", "items", "item", "selected")
+SELECTION_MARKER_VERBS = ("selected", "selection", "select")
+
+
+def selection_marker_pattern(selection_count: int) -> re.Pattern[str]:
+    """Match the count immediately adjacent to a selection noun, either order."""
+    nouns = "|".join(re.escape(noun) for noun in SELECTION_MARKER_NOUNS)
+    verbs = "|".join(re.escape(verb) for verb in SELECTION_MARKER_VERBS)
+    count = re.escape(str(selection_count))
+    return re.compile(
+        rf"(?<!\d){count}(?!\d)[\s\u00a0]*(?:{nouns})\b"
+        rf"|\b(?:{verbs})[\s:\u00a0]*(?<!\d){count}(?!\d)",
+        re.IGNORECASE,
+    )
+
+
+def label_shows_selection_count(label: str, selection_count: int) -> bool:
+    return selection_marker_pattern(selection_count).search(label) is not None
 
 
 @dataclass(frozen=True)
@@ -19,6 +44,7 @@ class ActionTrace:
     after_actionable_labels: tuple[str, ...] = ()
     before_values: tuple[tuple[str, str], ...] = ()
     after_values: tuple[tuple[str, str], ...] = ()
+    after_roles: tuple[tuple[str, str], ...] = ()
     finding_codes: tuple[str, ...] = ()
     state_changed: bool = False
     after_busy: bool = False
@@ -444,13 +470,10 @@ def _audit_batch(
 ) -> dict[str, Any]:
     field_tokens = workload.get("field_tokens", {})
     selection_count = int(workload.get("selection_count", 0))
-    selection_pattern = str(selection_count)
+    selection_pattern = selection_marker_pattern(selection_count)
 
     def has_selection_marker(trace: ActionTrace) -> bool:
-        return any(
-            selection_pattern in label and "select" in label.casefold()
-            for label in trace.after_labels
-        )
+        return any(selection_pattern.search(label) for label in trace.after_labels)
 
     edit_index = next(
         (
@@ -573,6 +596,55 @@ def _audit_batch(
     }
 
 
+def _audit_hover_sweep(
+    workload: Mapping[str, Any], traces: Sequence[ActionTrace]
+) -> dict[str, Any]:
+    sections = tuple(str(item) for item in workload.get("sections", []))
+    minimum = int(workload.get("min_targets_per_section", 0))
+    visited = {section: False for section in sections}
+    hovered = {section: 0 for section in sections}
+    measured = {section: 0 for section in sections}
+    hover_findings: list[dict[str, Any]] = []
+    current_section: str | None = None
+    unmeasured_codes = {"hover-unmeasurable", "hover-skipped"}
+    for trace in traces:
+        action = trace.action
+        if action.get("kind") == "activate" and action.get("target_label") in visited:
+            current_section = str(action.get("target_label"))
+            if trace.state_changed:
+                visited[current_section] = True
+            continue
+        if action.get("kind") != "hover" or current_section is None:
+            continue
+        label = str(action.get("target_label", ""))
+        roles = dict(trace.after_roles)
+        codes = [str(code) for code in trace.finding_codes]
+        hovered[current_section] += 1
+        if not unmeasured_codes.intersection(codes):
+            measured[current_section] += 1
+        hover_findings.append(
+            {
+                "section": current_section,
+                "label": label,
+                "role": roles.get(label, "unknown"),
+                "codes": codes,
+            }
+        )
+    complete = bool(sections) and all(
+        visited[section]
+        and hovered[section] >= minimum
+        and measured[section] >= 1
+        for section in sections
+    )
+    return {
+        "complete": complete,
+        "sections_visited": visited,
+        "hovered_per_section": hovered,
+        "measured_per_section": measured,
+        "hover_findings": hover_findings,
+    }
+
+
 def audit_action_workload(
     workload_index: int,
     workload: Mapping[str, Any],
@@ -595,6 +667,8 @@ def audit_action_workload(
         details = _audit_section_search(workload, traces, fixture_tokens or {})
     elif kind == "restart":
         details = _audit_restart(workload, traces, fixture_tokens or {})
+    elif kind == "hover-sweep":
+        details = _audit_hover_sweep(workload, traces)
     else:
         details = {"complete": False, "error": "unsupported workload kind"}
     return {"workload_index": workload_index, "kind": kind, **details}

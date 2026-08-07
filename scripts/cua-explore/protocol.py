@@ -19,6 +19,7 @@ from actions import (
     ConnectivityAction,
     FinishAction,
     HotkeyAction,
+    HoverAction,
     PressAction,
     ResizeAction,
     RestartAction,
@@ -42,6 +43,7 @@ ALLOWED_PROFILES = {
 ALLOWED_MODES = {"discovery", "adversarial", "first-time", "replay"}
 ALLOWED_ACTIONS = {
     "activate",
+    "hover",
     "type",
     "press",
     "hotkey",
@@ -63,6 +65,7 @@ ALLOWED_ORACLES = {
     "main-loop-stall",
     "accessibility",
     "offline-continuity",
+    "hover-affordance",
 }
 ALLOWED_KEYS = {
     "tab",
@@ -95,6 +98,7 @@ ALLOWED_WORKLOADS = {
     "scroll-sweep",
     "offline-transition",
     "restart",
+    "hover-sweep",
 }
 DESTRUCTIVE_TARGET_WORDS = ("delete", "remove", "forget", "eject", "trash", "erase")
 EXTERNAL_TARGET_PHRASES = ("open in browser", "open website", "external link")
@@ -240,6 +244,12 @@ def _validate_workloads(
                 "search_token",
                 "status_label",
             },
+            "hover-sweep": {
+                "kind",
+                "sections",
+                "min_targets_per_section",
+                "roles",
+            },
         }[kind]
         _reject_unknown(workload, allowed_fields, f"{kind} workload")
         if kind == "batch-edit":
@@ -305,6 +315,23 @@ def _validate_workloads(
                     raise ContractError(f"unknown restart search token: {search_token}")
             if workload.get("connectivity") is not None:
                 _string(workload.get("status_label"), "restart status_label")
+        elif kind == "hover-sweep":
+            sections = workload.get("sections")
+            roles = workload.get("roles")
+            if not isinstance(sections, list) or not sections:
+                raise ContractError("hover-sweep sections must be a non-empty list")
+            if not isinstance(roles, list) or not roles:
+                raise ContractError("hover-sweep roles must be a non-empty list")
+            for section in sections:
+                _string(section, "hover-sweep section")
+            for role in roles:
+                _string(role, "hover-sweep role")
+            _integer(
+                workload.get("min_targets_per_section"),
+                "hover-sweep min_targets_per_section",
+                1,
+                28,
+            )
 
 
 def load_mission(path: pathlib.Path | str) -> Mission:
@@ -392,7 +419,10 @@ class ActionGateway:
         action = parser(value, observation)
         if isinstance(action, FinishAction) and self.mission.workloads:
             missing = sorted(set(range(len(self.mission.workloads))) - self._completed_workloads)
-            if missing:
+            diagnostic_abort = action.reason.startswith(
+                ("agent-contract-mismatch:", "agent-internal-error:")
+            )
+            if missing and not diagnostic_abort:
                 raise ContractError(f"workloads incomplete: {missing}")
         if isinstance(action, RestartAction):
             if self._accepted_restarts >= self.mission.budgets.restarts:
@@ -446,6 +476,19 @@ class ActionGateway:
             target_label=self._target(value, observation),
             dispatch=dispatch,
             expect_effect=expect_effect,
+        )
+
+    def _parse_hover(
+        self, value: Mapping[str, Any], observation: Mapping[str, Any]
+    ) -> AcceptedAction:
+        _reject_unknown(
+            value,
+            {"schema_version", "state_id", "kind", "target"},
+            "action",
+        )
+        return HoverAction(
+            state_id=value["state_id"],
+            target_label=self._target(value, observation),
         )
 
     def _parse_type(self, value: Mapping[str, Any], observation: Mapping[str, Any]) -> AcceptedAction:

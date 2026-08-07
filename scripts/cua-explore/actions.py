@@ -18,6 +18,13 @@ class ActivateAction:
 
 
 @dataclass(frozen=True)
+class HoverAction:
+    state_id: str
+    target_label: str
+    kind: ClassVar[str] = "hover"
+
+
+@dataclass(frozen=True)
 class TypeAction:
     state_id: str
     target_label: str
@@ -98,6 +105,7 @@ class FinishAction:
 
 AcceptedAction: TypeAlias = (
     ActivateAction
+    | HoverAction
     | TypeAction
     | PressAction
     | HotkeyAction

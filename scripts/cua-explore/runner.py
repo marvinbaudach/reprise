@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -22,11 +23,13 @@ from actions import (
     action_to_dict,
 )
 from agent_adapter import ExternalAgent
-from driver import CliTransport, CuaExecutor, DriverError
+from driver import CliTransport, CuaExecutor, DriverError, hover_preflight
+from hover_geometry import WindowGeometry, resolve_window_origin
 from explorer import DeterministicExplorer
-from fixtures import FixtureError, audit_batch_edit
+from fixtures import FixtureError, audit_batch_edit, build_plan
 from protocol import ActionGateway, ContractError, Mission, load_mission
 from report import RunReport
+from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
 from workload_audit import ActionTrace, audit_action_workload
 
 
@@ -36,9 +39,204 @@ FAILURE_LOG_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+APP_NAMESPACE_ARGV: tuple[str, ...] = (
+    "unshare",
+    "--user",
+    "--map-current-user",
+    "--net",
+    "--",
+)
+
+# The X11 window appears before the app registers itself with the AT-SPI
+# registry. Snapshots taken in that gap are degraded and carry a single
+# element, and the whole run then explores a tree it cannot see.
+ACCESSIBILITY_READY_TIMEOUT_SECONDS = 60.0
+ACCESSIBILITY_POLL_SECONDS = 0.25
+
+# A 100k-row library takes far longer to reach its first frame than a 128-row
+# one. A fixed cap turned that product property into a harness abort at zero
+# steps, so the allowance scales with the fixture and stays generous.
+STARTUP_TIMEOUT_BASE_SECONDS = 120.0
+STARTUP_TIMEOUT_SECONDS_PER_10K_ROWS = 60.0
+STARTUP_TIMEOUT_CAP_SECONDS = 1_200.0
+STARTUP_POLL_SECONDS = 0.25
+
+
+def startup_timeout_seconds(profile: str) -> float:
+    """How long this fixture profile may take to reach a usable window."""
+    try:
+        track_count = build_plan(profile).track_count
+    except FixtureError:
+        track_count = 0
+    scaled = STARTUP_TIMEOUT_BASE_SECONDS + (
+        track_count / 10_000 * STARTUP_TIMEOUT_SECONDS_PER_10K_ROWS
+    )
+    return min(STARTUP_TIMEOUT_CAP_SECONDS, scaled)
+
+
+def app_launch_argv(app_binary: pathlib.Path) -> list[str]:
+    """Use a private network namespace without breaking D-Bus EXTERNAL auth."""
+    return [*APP_NAMESPACE_ARGV, str(app_binary)]
+
+
+def write_gtk_animation_settings(profile_root: pathlib.Path, mode: str) -> pathlib.Path | None:
+    """Set GTK animations only inside the disposable profile."""
+    if mode == "on":
+        return None
+    if mode != "off":
+        raise RunError("--gtk-animations must be on or off")
+    path = profile_root / "config" / "gtk-4.0" / "settings.ini"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[Settings]\ngtk-enable-animations=0\n", encoding="utf-8")
+    return path
+
+
+def parse_window_origin(value: str | None) -> tuple[int, int] | None:
+    if value is None:
+        return None
+    try:
+        x_text, y_text = value.split(",", maxsplit=1)
+        return int(x_text), int(y_text)
+    except (TypeError, ValueError) as error:
+        raise RunError("--window-origin must be X,Y") from error
+
+
+def measure_cursor_visibility(
+    transport: CliTransport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    origin: Any,
+    evidence_dir: pathlib.Path,
+) -> dict[str, Any]:
+    """Measure once per run whether the pointer lands in the screenshot."""
+    from hover_probe import measure_cursor_in_screenshot
+
+    def snapshot(stem: str) -> pathlib.Path:
+        path = evidence_dir / f"{stem}.png"
+        transport.call(
+            "get_window_state",
+            {
+                "pid": pid,
+                "window_id": window_id,
+                "session": session,
+                "screenshot_out_file": str(path),
+            },
+        )
+        return path
+
+    def move(x: float, y: float) -> None:
+        transport.call(
+            "move_cursor",
+            {
+                "pid": pid,
+                "window_id": window_id,
+                "session": session,
+                "scope": "desktop",
+                "x": x,
+                "y": y,
+            },
+        )
+
+    return measure_cursor_in_screenshot(snapshot=snapshot, move=move, origin=origin)
+
+
+def prepare_hover(
+    transport: CliTransport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    evidence_dir: pathlib.Path,
+    window: Mapping[str, Any],
+    origin_override: tuple[int, int] | None = None,
+) -> WindowGeometry:
+    if origin_override is None:
+        geometry = resolve_window_origin(transport, pid=pid, window_id=window_id)
+    else:
+        width = window.get("width")
+        height = window.get("height")
+        if not isinstance(width, int) or not isinstance(height, int):
+            raise RunError("hover window dimensions are unavailable")
+        geometry = WindowGeometry(*origin_override, width, height)
+    cursor = measure_cursor_visibility(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=session,
+        origin=geometry,
+        evidence_dir=evidence_dir,
+    )
+    (evidence_dir / "cursor-visibility.json").write_text(
+        json.dumps(cursor, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    evidence = hover_preflight(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=session,
+        origin=geometry,
+    )
+    path = evidence_dir / "hover-preflight.json"
+    path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return geometry, cursor
+
+
+def retain_agent_notes(profile_root: pathlib.Path, evidence_dir: pathlib.Path) -> None:
+    source = profile_root / "agent-home"
+    if not source.is_dir():
+        return
+    files = sorted(source.glob("*.jsonl"))
+    if not files:
+        return
+    target = evidence_dir / "agent"
+    target.mkdir(parents=True, exist_ok=True)
+    for path in files:
+        shutil.copy2(path, target / path.name)
+
 
 class RunError(RuntimeError):
     """The isolated runner could not establish trustworthy evidence."""
+
+
+class HoverSmokeComplete(RuntimeError):
+    """Internal control flow after a successful preflight-only run."""
+
+
+def run_hover_probe(
+    transport: CliTransport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    geometry: Any,
+    label: str,
+    evidence_dir: pathlib.Path,
+) -> None:
+    """Measure whether a pointer move reaches the app, both ways, and report."""
+    from hover_probe import (
+        default_x11_cursor,
+        default_x11_move,
+        probe_hover,
+        render_probe_table,
+        write_probe_evidence,
+    )
+
+    results = probe_hover(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=session,
+        origin=geometry,
+        label=label,
+        evidence_dir=evidence_dir,
+        x11_move=default_x11_move(),
+        x11_cursor=default_x11_cursor(),
+        geometry_provider=make_geometry_provider(pid, geometry),
+    )
+    write_probe_evidence(results, evidence_dir)
+    print(render_probe_table(results))
 
 
 def _private_environment_required() -> None:
@@ -65,6 +263,73 @@ def _walk_objects(value: Any) -> Iterator[Mapping[str, Any]]:
             yield from _walk_objects(child)
 
 
+def _snapshot_sources(response: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    structured = response.get("structuredContent")
+    if isinstance(structured, dict):
+        return structured, response
+    return (response,)
+
+
+def snapshot_element_count(response: Mapping[str, Any]) -> int:
+    for source in _snapshot_sources(response):
+        elements = source.get("elements")
+        if isinstance(elements, list):
+            return len(elements)
+    for source in _snapshot_sources(response):
+        count = source.get("element_count")
+        if isinstance(count, int):
+            return count
+    return 0
+
+
+def snapshot_degraded_reason(response: Mapping[str, Any]) -> str:
+    for source in _snapshot_sources(response):
+        reason = source.get("degraded_reason")
+        if isinstance(reason, str) and reason:
+            return reason
+    return "none reported"
+
+
+def accessibility_tree_ready(response: Mapping[str, Any]) -> bool:
+    """A snapshot is usable once it is undegraded and holds more than the window."""
+    degraded = any(
+        source.get("degraded") is True for source in _snapshot_sources(response)
+    )
+    return not degraded and snapshot_element_count(response) > 1
+
+
+def wait_for_accessibility_tree(
+    transport: Any,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    is_alive: Any | None = None,
+    timeout_seconds: float = ACCESSIBILITY_READY_TIMEOUT_SECONDS,
+    poll_seconds: float = ACCESSIBILITY_POLL_SECONDS,
+    monotonic: Any = time.monotonic,
+    sleep: Any = time.sleep,
+) -> Mapping[str, Any]:
+    """Poll get_window_state until the AT-SPI bridge exposes a usable tree."""
+    deadline = monotonic() + timeout_seconds
+    payload = {"pid": pid, "window_id": window_id, "session": session}
+    last: Mapping[str, Any] = {}
+    while True:
+        if is_alive is not None and not is_alive():
+            raise RunError("Reprise exited before the accessibility tree appeared")
+        last = transport.call("get_window_state", payload)
+        if accessibility_tree_ready(last):
+            return last
+        if monotonic() >= deadline:
+            raise RunError(
+                "the accessibility tree never became available within "
+                f"{timeout_seconds:g}s "
+                f"(degraded_reason={snapshot_degraded_reason(last)}, "
+                f"element_count={snapshot_element_count(last)})"
+            )
+        sleep(poll_seconds)
+
+
 def _window_id(response: Mapping[str, Any]) -> int | None:
     for item in _walk_objects(response):
         candidate = item.get("window_id")
@@ -86,6 +351,11 @@ class AppLifecycle:
         connectivity_file: pathlib.Path,
         quit_delay_seconds: int,
         transport: CliTransport,
+        session: str = "explore",
+        ready_timeout_seconds: float = ACCESSIBILITY_READY_TIMEOUT_SECONDS,
+        ready_poll_seconds: float = ACCESSIBILITY_POLL_SECONDS,
+        window_timeout_seconds: float = STARTUP_TIMEOUT_BASE_SECONDS,
+        window_poll_seconds: float = STARTUP_POLL_SECONDS,
     ) -> None:
         self.app_binary = app_binary
         self.profile_root = profile_root
@@ -93,6 +363,12 @@ class AppLifecycle:
         self.connectivity_file = connectivity_file
         self.quit_delay_seconds = quit_delay_seconds
         self.transport = transport
+        self.session = session
+        self.ready_timeout_seconds = ready_timeout_seconds
+        self.ready_poll_seconds = ready_poll_seconds
+        self.window_timeout_seconds = window_timeout_seconds
+        self.window_poll_seconds = window_poll_seconds
+        self.startup_timings: list[dict[str, int]] = []
         self.process: subprocess.Popen[str] | None = None
         self.log_handle = None
         self.launch_count = 0
@@ -121,20 +397,24 @@ class AppLifecycle:
             "REPRISE_LOG": "debug",
         }
         self.process = subprocess.Popen(
-            [
-                "unshare",
-                "--user",
-                "--map-root-user",
-                "--net",
-                "--",
-                str(self.app_binary),
-            ],
+            app_launch_argv(self.app_binary),
             stdout=self.log_handle,
             stderr=subprocess.STDOUT,
             env=environment,
             text=True,
         )
+        launched_at = time.monotonic()
         window_id = self._wait_for_window(self.process.pid)
+        window_ms = round((time.monotonic() - launched_at) * 1000)
+        self._wait_for_accessibility_tree(self.process.pid, window_id)
+        # A slow start is a product finding; retain it instead of hiding it.
+        self.startup_timings.append(
+            {
+                "launch": self.launch_count,
+                "window_ms": window_ms,
+                "accessibility_tree_ms": round((time.monotonic() - launched_at) * 1000),
+            }
+        )
         return self.process.pid, window_id, self.launch_count
 
     def restart(self) -> tuple[int, int, int]:
@@ -167,15 +447,74 @@ class AppLifecycle:
                     raise RunError(f"application log is missing '{required}'")
 
     def _wait_for_window(self, pid: int) -> int:
-        for _ in range(120):
+        started = time.monotonic()
+        deadline = started + self.window_timeout_seconds
+        while True:
             if self.process is None or self.process.poll() is not None:
                 raise RunError("Reprise exited before exposing a window")
             response = self.transport.call("list_windows", {"pid": pid})
             window_id = _window_id(response)
             if window_id is not None:
                 return window_id
-            time.sleep(0.25)
-        raise RunError("Reprise did not expose a CUA window within 30 seconds")
+            if time.monotonic() >= deadline:
+                waited = time.monotonic() - started
+                raise RunError(
+                    "Reprise did not expose a CUA window after "
+                    f"{waited:.1f}s (limit {self.window_timeout_seconds:g}s)"
+                )
+            time.sleep(self.window_poll_seconds)
+
+    def _wait_for_accessibility_tree(self, pid: int, window_id: int) -> Mapping[str, Any]:
+        return wait_for_accessibility_tree(
+            self.transport,
+            pid=pid,
+            window_id=window_id,
+            session=self.session,
+            is_alive=lambda: self.process is not None and self.process.poll() is None,
+            timeout_seconds=self.ready_timeout_seconds,
+            poll_seconds=self.ready_poll_seconds,
+        )
+
+
+def make_geometry_provider(pid: int, origin: Any = None) -> Any:
+    """Walk the accessibility tree ourselves; the driver's frames carry no position."""
+    from atspi_geometry import walk_window_nodes
+
+    size = (
+        (float(origin.width), float(origin.height)) if origin is not None else None
+    )
+
+    def provider() -> Any:
+        return walk_window_nodes(pid, size)
+
+    return provider
+
+
+def run_click_probe(
+    transport: CliTransport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    origin: Any,
+    label: str,
+    evidence_dir: pathlib.Path,
+) -> None:
+    """Activate one control over AT-SPI and over pixels, then report both."""
+    from click_probe import probe_click, render_click_table, write_click_evidence
+
+    results = probe_click(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=session,
+        origin=origin,
+        label=label,
+        evidence_dir=evidence_dir,
+        geometry_provider=make_geometry_provider(pid, origin),
+    )
+    write_click_evidence(results, evidence_dir)
+    print(render_click_table(results))
 
 
 def _mission_for_agent(mission: Mission) -> dict[str, Any]:
@@ -225,7 +564,7 @@ def _trace_from_observations(
     def rows(observation: Mapping[str, Any]) -> tuple[tuple[str, float], ...]:
         projected = []
         for item in elements(observation):
-            if item.get("role") != "row" or not item.get("label"):
+            if not is_row(str(item.get("role", ""))) or not item.get("label"):
                 continue
             frame = item.get("frame", {})
             y = frame.get("y", 0.0) if isinstance(frame, dict) else 0.0
@@ -246,8 +585,6 @@ def _trace_from_observations(
             if item.get("label")
         )
 
-    busy_roles = {"progress bar", "spinner", "status", "statusbar"}
-    busy_words = {"loading", "refreshing", "scanning", "saving", "working", "progress"}
     after_elements = elements(after)
     return ActionTrace(
         action=action,
@@ -264,11 +601,19 @@ def _trace_from_observations(
         ),
         before_values=values(before),
         after_values=values(after),
+        after_roles=tuple(
+            (str(item["label"]), str(item.get("role", "")))
+            for item in after_elements
+            if item.get("label")
+        ),
         finding_codes=tuple(finding_codes),
         state_changed=before.get("state_signature") != after.get("state_signature"),
         after_busy=any(
-            item.get("role") in busy_roles
-            or any(word in str(item.get("label", "")).casefold() for word in busy_words)
+            str(item.get("role", "")) in BUSY_ROLES
+            or any(
+                word in str(item.get("label", "")).casefold()
+                for word in BUSY_WORDS
+            )
             for item in after_elements
         ),
     )
@@ -282,11 +627,9 @@ def ensure_run_complete(finished: bool, summary: Mapping[str, Any]) -> None:
 
 
 def _snapshot_has_busy_state(snapshot: Any) -> bool:
-    busy_roles = {"progress bar", "spinner", "status", "statusbar"}
-    busy_words = ("loading", "refreshing", "scanning", "saving", "working", "progress")
     return any(
-        item.role in busy_roles
-        or any(word in item.label.casefold() for word in busy_words)
+        item.role in BUSY_ROLES
+        or any(word in item.label.casefold() for word in BUSY_WORDS)
         for item in snapshot.elements
     )
 
@@ -302,6 +645,7 @@ def run(args: argparse.Namespace) -> int:
     if fixture_manifest.get("profile") != mission.profile:
         raise RunError("fixture profile does not match mission")
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
+    write_gtk_animation_settings(profile_root, args.gtk_animations)
     connectivity_file = profile_root / "connectivity.state"
     connectivity_file.write_text("online\n", encoding="utf-8")
     transport = CliTransport(
@@ -315,6 +659,9 @@ def run(args: argparse.Namespace) -> int:
         connectivity_file=connectivity_file,
         quit_delay_seconds=min(7_200, mission.budgets.seconds + 60),
         transport=transport,
+        session=args.session,
+        window_timeout_seconds=startup_timeout_seconds(mission.profile),
+        ready_timeout_seconds=startup_timeout_seconds(mission.profile),
     )
     report = RunReport(
         args.evidence_dir,
@@ -342,13 +689,19 @@ def run(args: argparse.Namespace) -> int:
             timeout_seconds=args.agent_timeout,
             private_home=private_agent_home,
         )
+        explorer = None
     else:
-        agent_context = contextlib.nullcontext(DeterministicExplorer(mission, args.seed))
+        explorer = DeterministicExplorer(mission, args.seed)
+        agent_context = contextlib.nullcontext(explorer)
 
     gateway = ActionGateway(mission)
     finished = False
+    executor: Any = None
     try:
         pid, window_id, generation = lifecycle.start()
+        window_origin = resolve_window_origin(
+            transport, pid=pid, window_id=window_id
+        )
         executor = CuaExecutor(
             transport,
             pid=pid,
@@ -357,8 +710,55 @@ def run(args: argparse.Namespace) -> int:
             state_prefix=f"launch-{generation}-state",
             fixture_tokens=mission.fixture_tokens,
             evidence_dir=args.evidence_dir / "states",
+            geometry_provider=make_geometry_provider(pid, window_origin),
+            window_origin=window_origin,
         )
         observation = executor.observe()
+        hover_geometry = None
+        if "hover" in mission.capabilities:
+            hover_geometry, cursor_visibility = prepare_hover(
+                transport,
+                pid=pid,
+                window_id=window_id,
+                session=args.session,
+                evidence_dir=args.evidence_dir,
+                window=observation["window"],
+                origin_override=parse_window_origin(args.window_origin),
+            )
+            executor.hover_geometry = hover_geometry
+            executor.exclude_cursor = bool(
+                cursor_visibility.get("cursor_in_screenshot")
+            )
+            report.set_cursor_visibility(cursor_visibility)
+        if args.click_probe:
+            run_click_probe(
+                transport,
+                pid=pid,
+                window_id=window_id,
+                session=args.session,
+                origin=window_origin,
+                label=args.click_probe,
+                evidence_dir=args.evidence_dir,
+            )
+            finished = True
+            raise HoverSmokeComplete
+        if args.hover_probe:
+            if hover_geometry is None:
+                raise RunError("--hover-probe requires a mission with hover capability")
+            run_hover_probe(
+                transport,
+                pid=pid,
+                window_id=window_id,
+                session=args.session,
+                geometry=hover_geometry,
+                label=args.hover_probe,
+                evidence_dir=args.evidence_dir,
+            )
+            finished = True
+            raise HoverSmokeComplete
+        if args.hover_smoke:
+            finished = True
+            raise HoverSmokeComplete
         with agent_context as agent:
             for _ in range(mission.budgets.actions):
                 if lifecycle.process is None or lifecycle.process.poll() is not None:
@@ -426,6 +826,9 @@ def run(args: argparse.Namespace) -> int:
                     before_observation = observation
                     before_state = observation["state_id"]
                     pid, window_id, generation = lifecycle.restart()
+                    restart_origin = resolve_window_origin(
+                        transport, pid=pid, window_id=window_id
+                    )
                     executor = CuaExecutor(
                         transport,
                         pid=pid,
@@ -434,6 +837,11 @@ def run(args: argparse.Namespace) -> int:
                         state_prefix=f"launch-{generation}-state",
                         fixture_tokens=mission.fixture_tokens,
                         evidence_dir=args.evidence_dir / "states",
+                        hover_geometry=hover_geometry,
+                        geometry_provider=make_geometry_provider(
+                            pid, restart_origin
+                        ),
+                        window_origin=restart_origin,
                     )
                     observation = executor.observe()
                     report.add_step(
@@ -482,11 +890,27 @@ def run(args: argparse.Namespace) -> int:
                 traces.append(
                     trace
                 )
+    except HoverSmokeComplete:
+        pass
     finally:
         lifecycle.stop()
+        retain_agent_notes(profile_root, args.evidence_dir)
+        report.set_startup_timings(lifecycle.startup_timings)
+        report.set_geometry_failures(
+            list(getattr(executor, "geometry_failures", []) or [])
+        )
+        report.set_geometry_calibration(
+            getattr(executor, "geometry_calibration", None)
+        )
+        report.set_geometry_resolution(
+            getattr(executor, "geometry_resolution", None)
+        )
+        report.set_hover_coverage(getattr(explorer, "hover_coverage", None))
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()
+    if args.hover_smoke or args.hover_probe or args.click_probe:
+        return 0
     ensure_run_complete(finished, summary)
     return 0
 
@@ -503,6 +927,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--agent-command-json")
     parser.add_argument("--agent-timeout", type=float, default=30.0)
+    parser.add_argument("--gtk-animations", choices=("on", "off"), default="on")
+    parser.add_argument("--hover-smoke", action="store_true")
+    parser.add_argument("--hover-probe")
+    parser.add_argument("--click-probe")
+    parser.add_argument("--window-origin")
     return parser.parse_args(argv)
 
 
