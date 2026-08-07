@@ -206,7 +206,7 @@ pub(in crate::ui) fn theme_css(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::style::accent::AccentSource;
+    use crate::ui::style::accent::{AccentSource, APP_ACCENT};
 
     #[test]
     fn default_theme_is_listed() {
@@ -233,13 +233,18 @@ mod tests {
         ] {
             assert!(css.contains(name), "missing color definition: {name}");
         }
+        // The accent roles are asserted through `APP_ACCENT`, not a repeated
+        // literal: `data/brand/palette.toml` is the one maintained source.
         for definition in [
-            "@define-color accent_color #4FDBD4;",
-            "@define-color accent_bg_color #4FDBD4;",
-            "@define-color accent_fg_color #04140f;",
-            "@define-color reprise_player_accent @accent_color;",
+            format!("@define-color accent_color {APP_ACCENT};"),
+            format!("@define-color accent_bg_color {APP_ACCENT};"),
+            "@define-color accent_fg_color #04140f;".to_string(),
+            "@define-color reprise_player_accent @accent_color;".to_string(),
         ] {
-            assert!(css.contains(definition), "missing definition: {definition}");
+            assert!(
+                css.contains(&definition),
+                "missing definition: {definition}"
+            );
         }
     }
 

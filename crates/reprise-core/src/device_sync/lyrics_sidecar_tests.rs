@@ -26,3 +26,22 @@ fn lyr_7_sidecar_detection_is_case_insensitive() {
     assert!(is_sidecar_path(Path::new("Artist/Album/Song.LRC")));
     assert!(!is_sidecar_path(Path::new("Artist/Album/Song.flac")));
 }
+
+#[test]
+fn lyr_7_the_source_size_is_the_byte_count_of_the_library_sidecar() {
+    let library = tempfile::tempdir().unwrap();
+    let sidecar = library.path().join("Song.lrc");
+    std::fs::write(&sidecar, b"[00:01.00] a line").unwrap();
+
+    assert_eq!(source_file_size(&sidecar), Some(17));
+}
+
+#[test]
+fn lyr_7_a_missing_sidecar_and_a_directory_both_have_no_source_size() {
+    let library = tempfile::tempdir().unwrap();
+    let directory = library.path().join("Song.lrc");
+    std::fs::create_dir(&directory).unwrap();
+
+    assert_eq!(source_file_size(&library.path().join("Absent.lrc")), None);
+    assert_eq!(source_file_size(&directory), None);
+}

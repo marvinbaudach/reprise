@@ -1,4 +1,6 @@
-//! Pure path projection for synchronized-lyrics attachments on a device.
+//! Path projection for synchronized-lyrics attachments on a device, and the
+//! one question about the library those paths lead to: is the sidecar still
+//! there, and how large is it.
 
 use std::path::{Path, PathBuf};
 
@@ -27,6 +29,19 @@ pub fn device_path_for_track(device_path: &str) -> Option<String> {
             .to_string_lossy()
             .into_owned(),
     )
+}
+
+/// The size of the library sidecar at `source_path`, or `None` when there is
+/// no regular file there.
+///
+/// `LYR-7` asks this twice with the same answer in mind. A copy needs the byte
+/// count the transfer will announce; a removal needs to know the library still
+/// holds the sidecar the device copy was mirrored from, because a `.lrc` with
+/// no library counterpart is the user's own and stays. A directory or a broken
+/// symlink is not a sidecar either, so `is_file` decides, not mere existence.
+pub fn source_file_size(source_path: &Path) -> Option<u64> {
+    let metadata = std::fs::metadata(source_path).ok()?;
+    metadata.is_file().then_some(metadata.len())
 }
 
 pub fn is_sidecar_path(path: &Path) -> bool {
