@@ -2697,17 +2697,15 @@ property is set and yet nothing happens.
   not change with the track. Newly loaded synchronized lyrics start at line 0 and
   position it per LYR-4. Without animations, cover and content switch hard
   (MOT-7).
-- **NPP-14** [active] [gtk] — At the regular fixed 300 px panel width the
-  switcher uses the four short labels **Up Next · Lyrics · Visuals · Sound**
-  in that order without ellipsizing. Built-in tabs always precede extension
-  tabs; extensions follow in activation order. Every tab retains an installed
-  symbolic icon, but icons replace labels only at the measured compact
-  breakpoint of 224 px or below — never merely because the regular panel is
-  narrow.
+- **NPP-14** [active] [gtk] — The switcher carries the three built-in tabs
+  **Up Next · Lyrics · Visuals**, in that order, as installed symbolic icons
+  only at every panel width and never as painted text. Each icon retains its
+  title as its accessible name and tooltip. Built-in tabs always precede any
+  extension tabs, which follow in activation order.
 - **NPP-15** [active] [gtk] — Disabling an extension never leaves its selected
-  page empty. If its tab is open, selection falls back to **Up Next** before
-  the page is hidden; disabling it while another tab is selected leaves that
-  selection unchanged.
+  page empty. If an extension's tab is open, selection falls back to **Up
+  Next** before the page is hidden; disabling an extension while another tab
+  is selected leaves that selection unchanged.
 - **NPP-16** [planned] [gtk] — Once a fifth reachable panel tab exists, the
   switcher moves extension tabs beyond the fourth into an overflow menu whose
   button carries their count. No overflow control exists while four tabs are
@@ -3133,8 +3131,8 @@ STYLE-1).
 
 ## X. Song Visuals
 
-<!-- History: This section used to be called „Local Sound Profile" and
-     carried the rules for Song Analysis (Audio Character), Create Similar
+<!-- History: This section previously also carried the rules for Song
+     Analysis (Audio Character), Create Similar
      Mix, and Related Artist Discovery. These features were removed (chore
      eda0edaebb); their rules AC-1..AC-6, AC-9, and AC-12..AC-18 are deleted
      here (git preserves the history). What remains are the still-active
@@ -4040,7 +4038,7 @@ available. The player plays only finished files.
 <!-- Section letter: Z (single-pane track browser) is the last
      single-letter section; A–Z are assigned (T doubly occupied —
      legacy), AA (External changes) and AB (Instrumental) are assigned;
-     AC is the rule prefix of the "Local sound profile" (section X), so
+     AC is the stable rule prefix of Song Visuals (section X), so
      compact mode continues with AD. The rules describe an already
      implemented and tested feature: they start directly at [active]
      with existing mini_* tests as evidence. Reference frames from the
@@ -4895,59 +4893,20 @@ plan.
 
 ## AH. Sound Similarity
 
-Sound Similarity is an optional local module. Its stored profile is a derived
-cache over the spectrogram, never a second audio decode or a mutation of the
-rendering dataset. It compares the playing track with the local library and
-keeps all ranking work off the GTK thread.
+Sound Similarity was removed on 2026-08-07 because its top matches were
+audibly unrelated despite reporting 100% similarity. The rules remain as
+append-only history; the separate spectrogram feature is unchanged.
 
-- **SIM-1** [active] [core] — A sound profile lives in its own versioned cache
-  and follows the spectrogram's source-identity invalidation and track
-  deletion. A stale format is absent and is derived again from the stored
-  spectrogram; the spectrogram schema itself gains no recommendation scalar.
-- **SIM-2** [replaced by SIM-9] — The earlier rule compared band means and the
-  mastering scalars alone. Measured over a real library that found the same
-  production and not the genre, and the weights it fixed were nominal rather
-  than effective; SIM-9 adds the temporal half and the scale that makes a
-  weight mean what it says.
-- **SIM-3** [active] [core] — A row's percentage is its rank in the current
-  track's distance distribution across the complete eligible library. Same
-  album (album title plus album artist) and same artist exclusions are applied
-  only after those ranks are formed, so changing a filter never changes the
-  meaning of a percentage.
-- **SIM-4** [active] [core] [gtk] — The Sound tab remains present while analysis is
-  incomplete and shows numeric progress. Results require at least 50 current
-  profiles and the playing track's profile. Profile markers are library-wide
-  feature percentiles; the tempo axis is disabled while tempo is excluded.
-- **SIM-5** [active] [gtk] — The default result limit is seven. **Add to
-  queue** appends exactly the currently shown matches in their displayed
-  nearest-first order and never shuffles them.
-- **SIM-6** [active] [core] — Sound Similarity is a live, default-off Local
-  module. Its defaults exclude the same album, retain the same artist, omit
-  tempo, use Default weighting, and show seven matches. Its static registry
-  declaration provides both the Sound panel tab and **Find similar tracks**.
-- **SIM-7** [active] [gtk] — **Find similar tracks** appears in a single,
-  present-track context menu only while the module is enabled; disabling the
-  module removes the route.
-- **SIM-8** [active] [gtk] — Plugin provision badges are derived from the
-  static registry, never current enable state. A provision-kind set is the
-  unbadged group norm only when it occurs at least twice and strictly more
-  often than the runner-up; otherwise every row is badged. Panel-tab and
-  sidebar-section badges use the accent, while all other kinds are neutral.
-- **SIM-9** [active] [core] — The comparison carries how a track is produced
-  *and* how it moves, both derived from the stored spectrogram alone. Band
-  means and per-band positive flux stay L2-normalized and are compared with
-  cosine distance, each divided by the library's own spread so that a nominal
-  weight is an effective one. Centroid mean, centroid variance, frame-level
-  crest, onset rate, flux mean, flux variation, pulse strength and an enabled
-  tempo estimate are standardized against library spread; zero spread
-  contributes zero. The default weights are bands 0.30, timbre 0.12,
-  dynamics 0.08, rhythm 0.50, tempo 0.
-- **SIM-10** [active] [core] — At most two matches carry the same artist, and
-  the list fills up with the next nearest track by someone else. The nearest
-  match is never displaced by this. Tracks that name no artist are not capped
-  against each other, because unnamed is not a shared identity. The cap applies
-  whatever **Exclude tracks by the same artist** is set to; that setting is the
-  stricter step, not a replacement.
+- **SIM-1** [removed] — Removed with the derived sound-profile cache; spectrogram storage and invalidation remain.
+- **SIM-2** [removed] — Removed with the retired distance model it described.
+- **SIM-3** [removed] — Removed because similarity ranking and percentages no longer exist.
+- **SIM-4** [removed] — Removed with the Sound panel, profile progress, and profile axes.
+- **SIM-5** [removed] — Removed with the neighbour list and its queue action.
+- **SIM-6** [removed] — Removed with the Sound Similarity module registration and preferences.
+- **SIM-7** [removed] — Removed with the Find similar tracks context-menu route.
+- **SIM-8** [removed] — Removed as a Sound Similarity requirement; generic plugin badges remain governed by their shared implementation.
+- **SIM-9** [removed] — Removed with the spectral and rhythm distance derivation.
+- **SIM-10** [removed] — Removed with neighbour ranking and artist caps.
 
 ---
 
