@@ -1,7 +1,8 @@
 //! Shared scan cancellation, progress fan-out, and trigger state.
 
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::path::{Path, PathBuf};
+use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -9,14 +10,158 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library::scanner::ScanProgress;
 
-use super::scan_progress::{
-    EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView,
-};
+use super::scan_chrome::{ScanChromeView, WeakScanChromeView};
+use super::scan_progress::{EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator};
 use super::strings;
 
 type OnScanComplete = Rc<dyn Fn()>;
 type OnCancelRequested = Rc<dyn Fn()>;
 type OnScanStateChanged = Rc<dyn Fn(bool)>;
+type OnPresentationChanged = dyn Fn(Option<String>);
+
+pub(in crate::ui) struct ScanPresentationSubscription {
+    _callback: Rc<OnPresentationChanged>,
+}
+
+trait ScanPresentation {
+    fn show(&self, progress: &ScanProgress);
+    fn show_batch(&self, title: &str, detail: &str, fraction: f64);
+    fn show_unavailable(&self, root: &Path);
+    fn finish(&self);
+}
+
+impl ScanPresentation for ScanProgressView {
+    fn show(&self, progress: &ScanProgress) {
+        ScanProgressView::show(self, progress);
+    }
+
+    fn show_batch(&self, title: &str, detail: &str, fraction: f64) {
+        ScanProgressView::show_batch(self, title, detail, fraction);
+    }
+
+    fn show_unavailable(&self, root: &Path) {
+        ScanProgressView::show_unavailable(self, root);
+    }
+
+    fn finish(&self) {
+        ScanProgressView::finish(self);
+    }
+}
+
+impl ScanPresentation for ScanChromeView {
+    fn show(&self, progress: &ScanProgress) {
+        ScanChromeView::show(self, progress);
+    }
+
+    fn show_batch(&self, title: &str, detail: &str, fraction: f64) {
+        ScanChromeView::show_batch(self, title, detail, fraction);
+    }
+
+    fn show_unavailable(&self, root: &Path) {
+        ScanChromeView::show_unavailable(self, root);
+    }
+
+    fn finish(&self) {
+        ScanChromeView::finish(self);
+    }
+}
+
+#[derive(Clone)]
+enum ScanSurface {
+    Card(ScanProgressView),
+    Chrome(ScanChromeView),
+}
+
+impl ScanPresentation for ScanSurface {
+    fn show(&self, progress: &ScanProgress) {
+        match self {
+            Self::Card(view) => view.show(progress),
+            Self::Chrome(view) => view.show(progress),
+        }
+    }
+
+    fn show_batch(&self, title: &str, detail: &str, fraction: f64) {
+        match self {
+            Self::Card(view) => view.show_batch(title, detail, fraction),
+            Self::Chrome(view) => view.show_batch(title, detail, fraction),
+        }
+    }
+
+    fn show_unavailable(&self, root: &Path) {
+        match self {
+            Self::Card(view) => view.show_unavailable(root),
+            Self::Chrome(view) => view.show_unavailable(root),
+        }
+    }
+
+    fn finish(&self) {
+        match self {
+            Self::Card(view) => view.finish(),
+            Self::Chrome(view) => view.finish(),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum PresentationState {
+    Scan(ScanProgress),
+    Batch {
+        title: String,
+        detail: String,
+        fraction: f64,
+    },
+    Unavailable(PathBuf),
+}
+
+fn replay_presentation(
+    state: Option<&PresentationState>,
+    presentation: &(impl ScanPresentation + ?Sized),
+) {
+    match state {
+        Some(PresentationState::Scan(progress)) => presentation.show(progress),
+        Some(PresentationState::Batch {
+            title,
+            detail,
+            fraction,
+        }) => presentation.show_batch(title, detail, *fraction),
+        Some(PresentationState::Unavailable(root)) => presentation.show_unavailable(root),
+        None => {}
+    }
+}
+
+fn presentation_detail(state: Option<&PresentationState>) -> Option<String> {
+    match state {
+        Some(PresentationState::Scan(ScanProgress::Discovering)) => {
+            Some(strings::text(strings::SCAN_DISCOVERING))
+        }
+        Some(PresentationState::Scan(ScanProgress::Scanning {
+            total: None,
+            current_path,
+            ..
+        })) => current_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .filter(|name| !name.is_empty())
+            .or_else(|| Some(strings::text(strings::SCAN_DISCOVERING))),
+        Some(PresentationState::Scan(ScanProgress::Scanning {
+            processed,
+            total: Some(total),
+            ..
+        })) => Some(strings::scan_progress(*processed, *total)),
+        Some(PresentationState::Scan(ScanProgress::Fetching { done, total })) => {
+            Some(strings::scan_card_tooltip(total.saturating_sub(*done)))
+        }
+        Some(PresentationState::Batch { title, detail, .. }) => Some(if detail.is_empty() {
+            title.clone()
+        } else {
+            detail.clone()
+        }),
+        Some(PresentationState::Unavailable(root)) => {
+            Some(strings::library_folder_not_mounted(&root.to_string_lossy()))
+        }
+        None => None,
+    }
+}
 
 fn cloned_slot<T: Clone>(slot: &RefCell<Option<T>>) -> Option<T> {
     slot.borrow().clone()
@@ -59,8 +204,9 @@ impl ScanCancellation {
 pub(in crate::ui) struct ScanControls {
     pub(in crate::ui) button: gtk4::Button,
     primary_progress: ScanProgressView,
-    pub(in crate::ui) foreground_progress: Rc<RefCell<Vec<WeakScanProgressView>>>,
-    current_progress: Rc<RefCell<Option<ScanProgress>>>,
+    foreground_progress: Rc<RefCell<Vec<WeakScanChromeView>>>,
+    last_presentation: Rc<RefCell<Option<PresentationState>>>,
+    presentation_observers: Rc<RefCell<Vec<Weak<OnPresentationChanged>>>>,
     completion: ScanCompletion,
     cancellation: ScanCancellation,
     on_cancel_requested: Rc<RefCell<Vec<OnCancelRequested>>>,
@@ -76,7 +222,8 @@ impl ScanControls {
             button: button.clone(),
             primary_progress: progress.clone(),
             foreground_progress: Rc::new(RefCell::new(Vec::new())),
-            current_progress: Rc::new(RefCell::new(None)),
+            last_presentation: Rc::new(RefCell::new(None)),
+            presentation_observers: Rc::new(RefCell::new(Vec::new())),
             completion: ScanCompletion::default(),
             cancellation: ScanCancellation::default(),
             on_cancel_requested: Rc::new(RefCell::new(Vec::new())),
@@ -146,51 +293,76 @@ impl ScanControls {
         }
     }
 
-    pub(in crate::ui) fn attach_progress_view(&self, progress: &ScanProgressView) {
+    pub(in crate::ui) fn attach_chrome_view(&self, progress: &ScanChromeView) {
         self.foreground_progress
             .borrow_mut()
             .push(progress.downgrade());
-        let current = self.current_progress.borrow().clone();
-        if let Some(current) = current {
-            progress.show(&current);
+        let current = self.last_presentation.borrow().clone();
+        replay_presentation(current.as_ref(), progress);
+    }
+
+    pub(in crate::ui) fn subscribe_presentation(
+        &self,
+        callback: impl Fn(Option<String>) + 'static,
+    ) -> ScanPresentationSubscription {
+        let callback: Rc<OnPresentationChanged> = Rc::new(callback);
+        self.presentation_observers
+            .borrow_mut()
+            .push(Rc::downgrade(&callback));
+        let detail = self.current_presentation_detail();
+        callback(detail);
+        ScanPresentationSubscription {
+            _callback: callback,
         }
     }
 
-    fn live_progress_views(&self) -> Vec<ScanProgressView> {
+    pub(in crate::ui) fn current_presentation_detail(&self) -> Option<String> {
+        let current = self.last_presentation.borrow();
+        presentation_detail(current.as_ref())
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn foreground_progress_count(&self) -> usize {
+        self.foreground_progress.borrow().len()
+    }
+
+    fn live_progress_views(&self) -> Vec<ScanSurface> {
         let foreground = {
             let mut weak_views = self.foreground_progress.borrow_mut();
             let mut live = Vec::with_capacity(weak_views.len());
             weak_views.retain(|weak| match weak.upgrade() {
                 Some(view) => {
-                    live.push(view);
+                    live.push(ScanSurface::Chrome(view));
                     true
                 }
                 None => false,
             });
             live
         };
-        std::iter::once(self.primary_progress.clone())
+        std::iter::once(ScanSurface::Card(self.primary_progress.clone()))
             .chain(foreground)
             .collect()
     }
 
     pub(in crate::ui) fn show_progress(&self, progress: &ScanProgress) {
         let phase_changed = {
-            let current = self.current_progress.borrow();
+            let current = self.last_presentation.borrow();
             !matches!(
                 (current.as_ref(), progress),
-                (Some(ScanProgress::Discovering), ScanProgress::Discovering)
-                    | (
-                        Some(ScanProgress::Scanning { .. }),
-                        ScanProgress::Scanning { .. }
-                    )
-                    | (
-                        Some(ScanProgress::Fetching { .. }),
-                        ScanProgress::Fetching { .. }
-                    )
+                (
+                    Some(PresentationState::Scan(ScanProgress::Discovering)),
+                    ScanProgress::Discovering
+                ) | (
+                    Some(PresentationState::Scan(ScanProgress::Scanning { .. })),
+                    ScanProgress::Scanning { .. }
+                ) | (
+                    Some(PresentationState::Scan(ScanProgress::Fetching { .. })),
+                    ScanProgress::Fetching { .. }
+                )
             )
         };
-        *self.current_progress.borrow_mut() = Some(progress.clone());
+        *self.last_presentation.borrow_mut() = Some(PresentationState::Scan(progress.clone()));
+        self.notify_presentation_changed();
         log_progress(progress, phase_changed);
         for view in self.live_progress_views() {
             view.show(progress);
@@ -207,7 +379,8 @@ impl ScanControls {
     }
 
     pub(in crate::ui) fn finish_progress(&self) {
-        self.current_progress.borrow_mut().take();
+        self.last_presentation.borrow_mut().take();
+        self.notify_presentation_changed();
         for view in self.live_progress_views() {
             view.finish();
         }
@@ -223,6 +396,9 @@ impl ScanControls {
     }
 
     pub(in crate::ui) fn show_root_unavailable(&self, root: &std::path::Path) {
+        *self.last_presentation.borrow_mut() =
+            Some(PresentationState::Unavailable(root.to_path_buf()));
+        self.notify_presentation_changed();
         for view in self.live_progress_views() {
             view.show_unavailable(root);
         }
@@ -238,6 +414,12 @@ impl ScanControls {
     }
 
     pub(in crate::ui) fn show_batch_progress(&self, title: &str, detail: &str, fraction: f64) {
+        *self.last_presentation.borrow_mut() = Some(PresentationState::Batch {
+            title: title.to_owned(),
+            detail: detail.to_owned(),
+            fraction,
+        });
+        self.notify_presentation_changed();
         for view in self.live_progress_views() {
             view.show_batch(title, detail, fraction);
         }
@@ -259,6 +441,25 @@ impl ScanControls {
             .borrow()
             .as_ref()
             .and_then(glib::WeakRef::upgrade)
+    }
+
+    fn notify_presentation_changed(&self) {
+        let detail = self.current_presentation_detail();
+        let callbacks = {
+            let mut weak_callbacks = self.presentation_observers.borrow_mut();
+            let mut callbacks = Vec::with_capacity(weak_callbacks.len());
+            weak_callbacks.retain(|weak| match weak.upgrade() {
+                Some(callback) => {
+                    callbacks.push(callback);
+                    true
+                }
+                None => false,
+            });
+            callbacks
+        };
+        for callback in callbacks {
+            callback(detail.clone());
+        }
     }
 }
 
@@ -328,6 +529,40 @@ fn progress_percent(done: u64, total: u64) -> u32 {
 #[cfg(test)]
 mod refcell_tests {
     use std::cell::RefCell;
+    use std::path::Path;
+
+    use reprise_core::library::scanner::ScanProgress;
+
+    use super::{replay_presentation, PresentationState, ScanPresentation};
+
+    #[derive(Debug, PartialEq)]
+    enum RecordedState {
+        Batch(String, String, f64),
+        Unavailable(String),
+    }
+
+    #[derive(Default)]
+    struct RecordingPresentation(RefCell<Vec<RecordedState>>);
+
+    impl ScanPresentation for RecordingPresentation {
+        fn show(&self, _progress: &ScanProgress) {}
+
+        fn show_batch(&self, title: &str, detail: &str, fraction: f64) {
+            self.0.borrow_mut().push(RecordedState::Batch(
+                title.to_owned(),
+                detail.to_owned(),
+                fraction,
+            ));
+        }
+
+        fn show_unavailable(&self, root: &Path) {
+            self.0.borrow_mut().push(RecordedState::Unavailable(
+                root.to_string_lossy().into_owned(),
+            ));
+        }
+
+        fn finish(&self) {}
+    }
 
     #[test]
     fn cloned_slot_releases_the_borrow_before_reentrant_work() {
@@ -338,5 +573,34 @@ mod refcell_tests {
 
         assert_eq!(cloned.as_deref(), Some("indicator"));
         assert!(slot.borrow().is_none());
+    }
+
+    #[test]
+    fn attaching_replays_an_active_batch_and_an_unavailable_root() {
+        let presentation = RecordingPresentation::default();
+        replay_presentation(
+            Some(&PresentationState::Batch {
+                title: "Checking missing lyrics…".to_owned(),
+                detail: "748 of 1,909 checked · 6 cached · 113 unavailable".to_owned(),
+                fraction: 0.39,
+            }),
+            &presentation,
+        );
+        replay_presentation(
+            Some(&PresentationState::Unavailable("/media/Music".into())),
+            &presentation,
+        );
+
+        assert_eq!(
+            presentation.0.into_inner(),
+            vec![
+                RecordedState::Batch(
+                    "Checking missing lyrics…".to_owned(),
+                    "748 of 1,909 checked · 6 cached · 113 unavailable".to_owned(),
+                    0.39,
+                ),
+                RecordedState::Unavailable("/media/Music".to_owned()),
+            ]
+        );
     }
 }

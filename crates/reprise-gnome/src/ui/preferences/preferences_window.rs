@@ -20,6 +20,9 @@ pub(in crate::ui) const PAGE_ORDER: [PageId; 5] = [
     PageId::Plugins,
 ];
 
+// One 40 px end-title-button strip plus the dialog's 12 px chrome inset.
+const STATUS_CHIP_END_INSET: i32 = 52;
+
 impl PageId {
     fn name(self) -> &'static str {
         match self {
@@ -58,6 +61,12 @@ pub(in crate::ui) struct PreferencesShell {
     pub(in crate::ui) navigation: adw::NavigationView,
     pub(in crate::ui) stack: adw::ViewStack,
     pub(in crate::ui) sidebar: gtk4::ListBox,
+    #[cfg(test)]
+    pub(in crate::ui) root_overlay: gtk4::Overlay,
+    #[cfg(test)]
+    pub(in crate::ui) content_header: adw::HeaderBar,
+    #[cfg(test)]
+    pub(in crate::ui) content_title: adw::WindowTitle,
 }
 
 /// One sidebar entry (icon + title) for `id`; its list index equals the
@@ -105,7 +114,8 @@ pub(in crate::ui) fn selected_sidebar_focus_target(sidebar: &gtk4::ListBox) -> g
 
 pub(in crate::ui) fn build(
     pages: [(PageId, adw::PreferencesPage); PAGE_ORDER.len()],
-    foreground_top_bar: Option<&gtk4::Widget>,
+    edge_line: Option<&gtk4::Widget>,
+    status_chip: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
     stack.set_vexpand(true);
@@ -157,11 +167,18 @@ pub(in crate::ui) fn build(
     content_header.set_title_widget(Some(&content_title));
     let content_toolbar = adw::ToolbarView::new();
     content_toolbar.add_top_bar(&content_header);
-    if let Some(foreground_top_bar) = foreground_top_bar {
-        content_toolbar.add_top_bar(foreground_top_bar);
-    }
     content_toolbar.set_content(Some(&stack));
-    let content_page = adw::NavigationPage::new(&content_toolbar, &PageId::Appearance.title());
+    let content_overlay = gtk4::Overlay::new();
+    content_overlay.set_child(Some(&content_toolbar));
+    if let Some(status_chip) = status_chip {
+        status_chip.set_halign(gtk4::Align::End);
+        status_chip.set_valign(gtk4::Align::Start);
+        status_chip.set_margin_end(STATUS_CHIP_END_INSET);
+        content_overlay.add_overlay(status_chip);
+        content_overlay.set_measure_overlay(status_chip, false);
+        content_overlay.set_clip_overlay(status_chip, true);
+    }
+    let content_page = adw::NavigationPage::new(&content_overlay, &PageId::Appearance.title());
 
     let split = adw::NavigationSplitView::builder()
         .sidebar(&sidebar_page)
@@ -178,19 +195,82 @@ pub(in crate::ui) fn build(
     let navigation = adw::NavigationView::new();
     navigation.add(&root_page);
 
+    let root_overlay = gtk4::Overlay::new();
+    root_overlay.set_child(Some(&navigation));
+    if let Some(edge_line) = edge_line {
+        edge_line.set_halign(gtk4::Align::Fill);
+        edge_line.set_valign(gtk4::Align::Start);
+        edge_line.set_hexpand(true);
+        root_overlay.add_overlay(edge_line);
+        root_overlay.set_measure_overlay(edge_line, false);
+        root_overlay.set_clip_overlay(edge_line, true);
+    }
+
     let dialog = adw::Dialog::builder()
-        .child(&navigation)
+        .child(&root_overlay)
         .title(strings::text(strings::PREFERENCES))
         .content_width(760)
         .content_height(680)
         .build();
+    if let Some(status_chip) = status_chip {
+        center_chip_when_visible(&dialog, &content_header, status_chip);
+    }
 
     PreferencesShell {
         dialog,
         navigation,
         stack,
         sidebar: sidebar_list,
+        #[cfg(test)]
+        root_overlay,
+        #[cfg(test)]
+        content_header,
+        #[cfg(test)]
+        content_title,
     }
+}
+
+fn center_chip_when_visible(dialog: &adw::Dialog, header: &adw::HeaderBar, chip: &gtk4::Widget) {
+    let header_weak = header.downgrade();
+    let chip_weak = chip.downgrade();
+    dialog.connect_map(move |_| {
+        let Some(header) = header_weak.upgrade() else {
+            return;
+        };
+        let Some(chip) = chip_weak.upgrade().filter(gtk4::Widget::is_visible) else {
+            return;
+        };
+        queue_chip_center(&header, &chip);
+    });
+
+    let header = header.downgrade();
+    chip.connect_visible_notify(move |chip| {
+        if !chip.is_visible() {
+            return;
+        }
+        let Some(header) = header.upgrade() else {
+            return;
+        };
+        queue_chip_center(&header, chip);
+    });
+}
+
+fn queue_chip_center(header: &adw::HeaderBar, chip: &gtk4::Widget) {
+    let header = header.downgrade();
+    let chip = chip.downgrade();
+    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(1), move || {
+        let Some(header) = header.upgrade() else {
+            return gtk4::glib::ControlFlow::Break;
+        };
+        let Some(chip) = chip.upgrade() else {
+            return gtk4::glib::ControlFlow::Break;
+        };
+        if header.height() <= 0 || chip.height() <= 0 {
+            return gtk4::glib::ControlFlow::Continue;
+        }
+        chip.set_margin_top((header.height() - chip.height()).max(0) / 2);
+        gtk4::glib::ControlFlow::Break
+    });
 }
 
 pub(in crate::ui) fn css() -> String {
@@ -203,12 +283,16 @@ pub(in crate::ui) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use gtk4::gio;
     use gtk4::prelude::*;
     use libadwaita as adw;
     use libadwaita::prelude::*;
+    use reprise_core::library::scanner::ScanProgress;
 
     use super::*;
+    use crate::ui::scan_chrome::ScanChromeView;
 
     #[test]
     fn page_spacing_css_applies_one_compact_inset_to_every_settings_page() {
@@ -227,6 +311,15 @@ mod tests {
             1,
             "the page stack must fill the toolbar content height so short pages stay top-aligned"
         );
+    }
+
+    #[test]
+    fn fb_9_foreground_progress_is_not_a_toolbar_top_bar() {
+        let source = include_str!("preferences_window.rs");
+        let retired_parameter = ["foreground_", "top_bar"].concat();
+        let retired_parenting = ["content_toolbar.add_", "top_bar(foreground"].concat();
+        assert!(!source.contains(&retired_parameter));
+        assert!(!source.contains(&retired_parenting));
     }
 
     #[test]
@@ -293,7 +386,7 @@ mod tests {
             (id, page)
         });
 
-        let shell = build(pages, None);
+        let shell = build(pages, None, None);
 
         assert_eq!(shell.dialog.content_width(), 760);
         assert_eq!(shell.dialog.content_height(), 680);
@@ -320,6 +413,11 @@ mod tests {
                 .child_by_name(id.name())
                 .is_some_and(|page| page.has_css_class("reprise-preferences-page")));
         }
+        assert_eq!(
+            shell.dialog.child().as_ref(),
+            Some(shell.root_overlay.upcast_ref())
+        );
+        assert!(shell.navigation.is_ancestor(&shell.root_overlay));
     }
 
     #[test]
@@ -338,7 +436,7 @@ mod tests {
                 .build();
             (id, page)
         });
-        let shell = build(pages, None);
+        let shell = build(pages, None, None);
         let detail =
             adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Columns");
 
@@ -347,36 +445,251 @@ mod tests {
         assert_eq!(shell.navigation.visible_page().as_ref(), Some(&detail));
         assert_eq!(
             shell.dialog.child().as_ref(),
-            Some(shell.navigation.upcast_ref())
+            Some(shell.root_overlay.upcast_ref())
         );
         assert!(shell.navigation.pop());
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn foreground_progress_is_parented_inside_the_preferences_dialog() {
+    fn fb_9_header_and_content_allocations_do_not_move_when_chrome_appears() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.PreferencesProgressTest")
+            .application_id("org.reprise.Reprise.PreferencesChromeGeometryTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
-        let pages = PAGE_ORDER.map(|id| {
+        let parent = adw::ApplicationWindow::new(&app);
+        parent.set_default_size(900, 760);
+        parent.present();
+        crate::ui::style::install();
+        let pages = test_pages();
+        let chrome = ScanChromeView::new();
+        let shell = build(
+            pages,
+            Some(chrome.line_widget()),
+            Some(chrome.chip_widget()),
+        );
+        shell.dialog.present(Some(&parent));
+        settle_layout();
+
+        let header_height = shell.content_header.height();
+        let title_position = shell
+            .content_title
+            .compute_point(&shell.content_header, &gtk4::graphene::Point::new(0.0, 0.0))
+            .expect("content title must be allocated inside its header");
+        let content_position = shell
+            .stack
+            .compute_point(&shell.root_overlay, &gtk4::graphene::Point::new(0.0, 0.0))
+            .expect("page stack must be allocated inside the dialog");
+
+        chrome.show(&ScanProgress::Scanning {
+            processed: 39,
+            total: Some(100),
+            current_path: PathBuf::from("/music/track.flac"),
+        });
+        settle_layout();
+
+        assert_eq!(shell.content_header.height(), header_height);
+        assert_eq!(
+            shell
+                .content_title
+                .compute_point(&shell.content_header, &gtk4::graphene::Point::new(0.0, 0.0),),
+            Some(title_position)
+        );
+        assert_eq!(
+            shell
+                .stack
+                .compute_point(&shell.root_overlay, &gtk4::graphene::Point::new(0.0, 0.0),),
+            Some(content_position)
+        );
+        assert_eq!(
+            chrome.chip_widget().margin_top(),
+            (shell.content_header.height() - chrome.chip_widget().height()).max(0) / 2,
+            "chip inset must be derived from the allocated header height"
+        );
+        let chip_position = chrome
+            .chip_widget()
+            .compute_point(&shell.content_header, &gtk4::graphene::Point::new(0.0, 0.0))
+            .expect("chip and header must share the content overlay");
+        assert!(
+            chip_position.x() + chrome.chip_widget().width() as f32
+                <= (shell.content_header.width() - 40) as f32,
+            "the overlay chip must leave the header close-button strip clickable"
+        );
+
+        shell.dialog.force_close();
+        parent.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fb_9_counterprobe_legacy_toolbar_status_moves_the_content() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let header = adw::HeaderBar::new();
+        let legacy_status = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        legacy_status.set_height_request(100);
+        legacy_status.set_visible(false);
+        let content = gtk4::Label::new(Some("First content element"));
+        content.set_valign(gtk4::Align::Start);
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&header);
+        toolbar.add_top_bar(&legacy_status);
+        toolbar.set_content(Some(&content));
+        let window = gtk4::Window::builder()
+            .default_width(760)
+            .default_height(680)
+            .child(&toolbar)
+            .build();
+        window.present();
+        settle_layout();
+        let idle_y = content
+            .compute_point(&window, &gtk4::graphene::Point::new(0.0, 0.0))
+            .expect("content must be allocated")
+            .y();
+
+        legacy_status.set_visible(true);
+        settle_layout();
+        let active_y = content
+            .compute_point(&window, &gtk4::graphene::Point::new(0.0, 0.0))
+            .expect("content must remain allocated")
+            .y();
+
+        assert!(
+            active_y - idle_y >= 100.0,
+            "the retired in-flow status path must reproduce its layout jump"
+        );
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fb_9_one_chrome_instance_survives_all_five_page_switches() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.PreferencesChromePagesTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let parent = adw::ApplicationWindow::new(&app);
+        parent.set_default_size(900, 760);
+        parent.present();
+        crate::ui::style::install();
+        let chrome = ScanChromeView::new();
+        chrome.show(&ScanProgress::Scanning {
+            processed: 39,
+            total: Some(100),
+            current_path: PathBuf::from("/music/track.flac"),
+        });
+        let shell = build(
+            test_pages(),
+            Some(chrome.line_widget()),
+            Some(chrome.chip_widget()),
+        );
+        shell.dialog.present(Some(&parent));
+        settle_layout();
+        let line_parent = chrome.line_widget().parent();
+        let chip_parent = chrome.chip_widget().parent();
+
+        assert_eq!(
+            chrome.chip_widget().margin_top(),
+            (shell.content_header.height() - chrome.chip_widget().height()).max(0) / 2,
+            "an initially visible replayed chip must also be centered"
+        );
+
+        for index in 0..PAGE_ORDER.len() as i32 {
+            shell
+                .sidebar
+                .select_row(shell.sidebar.row_at_index(index).as_ref());
+            settle_layout();
+            assert!(chrome.line_widget().is_visible());
+            assert!(chrome.chip_widget().is_visible());
+            assert_eq!(chrome.line_widget().parent(), line_parent);
+            assert_eq!(chrome.chip_widget().parent(), chip_parent);
+            assert!(chrome.line_widget().is_ancestor(&shell.root_overlay));
+            assert!(chrome.chip_widget().is_ancestor(&shell.root_overlay));
+        }
+        let mut ancestor = shell.root_overlay.parent();
+        let mut clipped_inside_dialog = false;
+        while let Some(widget) = ancestor {
+            clipped_inside_dialog |= widget.overflow() == gtk4::Overflow::Hidden;
+            ancestor = widget.parent();
+        }
+        assert!(
+            clipped_inside_dialog,
+            "the dialog host must clip the edge line inside its rounded surface"
+        );
+
+        shell.dialog.force_close();
+        parent.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fb_9_visual_scan_chrome_fixture() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let parent = gtk4::Window::builder()
+            .title("Reprise FB-9 Visual Fixture")
+            .default_width(900)
+            .default_height(760)
+            .build();
+        parent.present();
+        settle_layout();
+        assert!(parent.is_mapped());
+        crate::ui::style::install();
+
+        let chrome = ScanChromeView::new();
+        if std::env::var("REPRISE_FB9_VISUAL_STATE").as_deref() == Ok("running") {
+            chrome.show(&ScanProgress::Scanning {
+                processed: 748,
+                total: Some(1_909),
+                current_path: PathBuf::from("/music/Album/track.flac"),
+            });
+        }
+        let shell = build(
+            test_pages(),
+            Some(chrome.line_widget()),
+            Some(chrome.chip_widget()),
+        );
+        shell.dialog.present(Some(&parent));
+        settle_layout();
+        assert!(shell.dialog.is_mapped());
+
+        let hold_ms = std::env::var("REPRISE_FB9_VISUAL_HOLD_MS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(200);
+        settle_for(std::time::Duration::from_millis(hold_ms));
+
+        shell.dialog.force_close();
+        parent.close();
+    }
+
+    fn test_pages() -> [(PageId, adw::PreferencesPage); PAGE_ORDER.len()] {
+        PAGE_ORDER.map(|id| {
             let page = adw::PreferencesPage::builder()
                 .title(id.title())
                 .icon_name(id.icon_name())
                 .build();
+            let group = adw::PreferencesGroup::new();
+            group.add(&adw::ActionRow::builder().title(id.title()).build());
+            page.add(&group);
             (id, page)
-        });
-        let progress = gtk4::Revealer::new();
+        })
+    }
 
-        let shell = build(pages, Some(progress.upcast_ref()));
+    fn settle_layout() {
+        settle_for(std::time::Duration::from_millis(80));
+    }
 
-        assert!(progress.parent().is_some());
-        assert_eq!(
-            shell.dialog.child().as_ref(),
-            Some(shell.navigation.upcast_ref())
-        );
-        assert!(progress.is_ancestor(&shell.navigation));
+    fn settle_for(duration: std::time::Duration) {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(duration, move || quit.quit());
+        main_loop.run();
     }
 }
