@@ -18,7 +18,7 @@ use reprise_core::device_sync::device_view::{
     project_device_category_reading,
 };
 use reprise_core::device_sync::settings::{
-    forget_device, mark_device_playlists_synced, record_device_verification, rename_device,
+    forget_device, mark_device_playlists_synced, record_device_verification,
 };
 use reprise_core::device_sync::{
     aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
@@ -36,9 +36,7 @@ pub(super) mod rate;
 #[path = "device_sync_types.rs"]
 mod types;
 
-pub use preparation::PreparationRunState;
 use rate::MtpRateMeter;
-use types::StateCallback;
 pub use types::*;
 
 struct DeviceState {
@@ -95,6 +93,7 @@ struct DeviceState {
     /// selection state rather than a second one.
     youtube_selection: YoutubeSelectionSummary,
     podcast_selection: PodcastSelectionSummary,
+    keep_smart_playlists_updated: bool,
     /// `MTP-46`: refreshed alongside the two summaries above, from the same
     /// `recompute_delta_silent` that already holds the connection — `view()`
     /// has none, and reading settings from the projection would put a
@@ -173,6 +172,7 @@ impl DeviceState {
             youtube_waiting: 0,
             youtube_selection: YoutubeSelectionSummary::default(),
             podcast_selection: PodcastSelectionSummary::default(),
+            keep_smart_playlists_updated: true,
             // Off until the first recompute reads the real switches: a row
             // that appears and then vanishes is worse than one that appears
             // once the answer is known.
@@ -242,8 +242,13 @@ impl DeviceState {
             category_bytes(&self.youtube_files),
             category_bytes(&self.podcast_files),
         ];
+        let item_counts = [
+            self.managed_files.len(),
+            self.youtube_files.len(),
+            self.podcast_files.len(),
+        ];
         let content_rows = std::array::from_fn(|i| {
-            project_category_content_row(&self.targets[i], device_bytes[i])
+            project_category_content_row(&self.targets[i], item_counts[i], device_bytes[i])
         });
         DeviceView {
             history: self.history.clone(),
@@ -276,6 +281,7 @@ impl DeviceState {
             youtube_bytes: device_bytes[1],
             podcast_bytes: device_bytes[2],
             youtube_selection: self.youtube_selection,
+            keep_smart_playlists_updated: self.keep_smart_playlists_updated,
             enabled_sources: self.enabled_sources,
             podcast_selection: self.podcast_selection,
             preparation: self.preparation.clone(),
@@ -393,33 +399,6 @@ impl DeviceSyncRuntime {
             preparation::cancel_preparation(device);
         }
         self.notify();
-    }
-
-    pub fn rename_remembered_device(
-        self: &Rc<Self>,
-        device_id: &str,
-        local_name: &str,
-    ) -> Result<(), String> {
-        let rememberable = self
-            .device_states
-            .borrow()
-            .iter()
-            .find(|device| device.descriptor.id == device_id)
-            .is_some_and(|device| device.descriptor.persistent_id.is_some());
-        if !rememberable {
-            return Err("this device has no stable identity to rename".into());
-        }
-        rename_device(&self.conn, device_id, local_name).map_err(|error| error.to_string())?;
-        if let Some(device) = self
-            .device_states
-            .borrow_mut()
-            .iter_mut()
-            .find(|device| device.descriptor.id == device_id)
-        {
-            device.settings.device_name = local_name.trim().to_string();
-        }
-        self.notify();
-        Ok(())
     }
 
     pub fn forget_remembered_device(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
@@ -769,12 +748,6 @@ fn cancel_device_run(device: &mut DeviceState) {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum RefreshPurpose {
-    Normal,
-    VerifySync(Vec<SelectionSource>),
-}
-
 #[path = "device_sync_agent.rs"]
 mod agent;
 #[path = "device_sync_compact.rs"]
@@ -783,6 +756,8 @@ mod compact;
 mod device_list;
 #[path = "device_sync_memory.rs"]
 mod memory;
+#[path = "device_sync_naming.rs"]
+mod naming;
 #[path = "device_sync_picker_runtime.rs"]
 mod picker;
 #[path = "device_sync_planned.rs"]
@@ -794,6 +769,6 @@ mod target_actions;
 
 pub(super) use picker::*;
 #[cfg(test)]
-pub(super) use planned::SyncStartError;
+pub(super) use planned::{record_rejected_start, RunLog, SyncInitiator, SyncStartError};
 #[cfg(test)]
 pub(super) use preparation::PreparationDownloader;

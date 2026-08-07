@@ -182,6 +182,9 @@ pub struct CategoryContentRow {
     /// Independent of any global "sync this content type" rule (`MTP-38`'s
     /// doc comment); there is no second, competing toggle here.
     pub target_enabled: bool,
+    /// Files already present in this category. Combined with the computed
+    /// diff to describe the result of the next synchronization.
+    pub item_count: usize,
     pub size_on_device_bytes: u64,
     pub cap_bytes: Option<u64>,
 }
@@ -191,12 +194,14 @@ pub struct CategoryContentRow {
 #[must_use]
 pub fn project_category_content_row(
     target: &SyncTarget,
+    item_count: usize,
     size_on_device_bytes: u64,
 ) -> CategoryContentRow {
     CategoryContentRow {
         kind: target.kind,
         target_path: target.path.clone(),
         target_enabled: target.enabled,
+        item_count,
         size_on_device_bytes,
         cap_bytes: target.cap_bytes,
     }
@@ -352,11 +357,12 @@ mod tests {
             cap_bytes: Some(8 * 1024 * 1024 * 1024),
         };
 
-        let row = project_category_content_row(&target, 42);
+        let row = project_category_content_row(&target, 7, 42);
 
         assert_eq!(row.kind, SyncTargetKind::YoutubeAudio);
         assert_eq!(row.target_path, "/Music/Reprise-YouTube");
         assert!(!row.target_enabled);
+        assert_eq!(row.item_count, 7);
         assert_eq!(row.size_on_device_bytes, 42);
         assert_eq!(row.cap_bytes, Some(8 * 1024 * 1024 * 1024));
     }

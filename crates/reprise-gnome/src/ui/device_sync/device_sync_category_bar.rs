@@ -80,6 +80,23 @@ impl CategoryStorageBar {
             let foreground = widget.color();
             let width = f64::from(width.max(0));
             let height = f64::from(height.max(0));
+
+            // The five segments cover only what is *used*; free space has no
+            // segment. Without a track behind them a nearly empty device drew
+            // a short stub floating in the card instead of a bar with room
+            // left in it — which is the one thing this bar exists to show.
+            let _ = context.save();
+            rounded_track(context, width, height);
+            context.clip_preserve();
+            context.set_source_rgba(
+                f64::from(foreground.red()),
+                f64::from(foreground.green()),
+                f64::from(foreground.blue()),
+                0.08,
+            );
+            let _ = context.fill_preserve();
+            context.new_path();
+
             let mut x = 0.0;
             for segment in segments(&data) {
                 let segment_width = width * segment.bytes as f64 / data.total_bytes as f64;
@@ -97,6 +114,7 @@ impl CategoryStorageBar {
                 }
                 x += segment_width;
             }
+            let _ = context.restore();
         });
         Self { widget, data }
     }
@@ -110,6 +128,33 @@ impl CategoryStorageBar {
         self.widget.set_visible(data.is_some());
         self.widget.queue_draw();
     }
+}
+
+/// The bar's outline: a pill, so the track reads as a container with room in
+/// it rather than as a rectangle that happens to be partly filled.
+fn rounded_track(context: &gtk4::cairo::Context, width: f64, height: f64) {
+    let radius = (height / 2.0).min(width / 2.0);
+    if radius <= 0.0 {
+        context.rectangle(0.0, 0.0, width, height);
+        return;
+    }
+    let right = width - radius;
+    context.new_sub_path();
+    context.arc(
+        right,
+        radius,
+        radius,
+        -std::f64::consts::FRAC_PI_2,
+        std::f64::consts::FRAC_PI_2,
+    );
+    context.arc(
+        radius,
+        radius,
+        radius,
+        std::f64::consts::FRAC_PI_2,
+        3.0 * std::f64::consts::FRAC_PI_2,
+    );
+    context.close_path();
 }
 
 /// Diagonal-line fill for the "Incoming this sync" segment — deliberately

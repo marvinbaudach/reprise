@@ -488,6 +488,12 @@ fn missing_selected_transcode_capability_blocks_before_any_managed_deletion_or_c
             runtime.sync_now("a"),
             Err(SyncStartError::Planning("opusenc is missing".into()))
         );
+        let runs = reprise_core::device_sync::sync_log::recent_runs(&conn, 10).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Failed
+        );
         assert!(backend.state.deleted.borrow().is_empty());
         assert!(backend.state.copy_order.borrow().is_empty());
         assert!(backend.state.planned_operations.borrow().is_empty());
@@ -685,6 +691,12 @@ fn insufficient_space_is_projected_as_a_device_warning() {
                 available_bytes: 50_000,
             })
         ));
+        let runs = reprise_core::device_sync::sync_log::recent_runs(&conn, 10).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Failed
+        );
         let device = runtime.devices().remove(0);
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
         assert!(device

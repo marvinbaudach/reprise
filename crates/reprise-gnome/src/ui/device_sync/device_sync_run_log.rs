@@ -12,7 +12,7 @@ use reprise_core::device_sync::SyncOutcome;
 use super::*;
 
 /// Wall-clock seconds, for log entries a person reads later.
-pub(super) fn now_seconds() -> i64 {
+pub(in crate::ui::device_sync) fn now_seconds() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs() as i64)
@@ -24,13 +24,14 @@ pub(super) fn now_seconds() -> i64 {
 /// The log must never be able to break a sync, so every write is best-effort:
 /// a failure is logged and dropped rather than propagated. A run whose opening
 /// entry could not be written simply carries no id and records nothing.
-pub(super) struct RunLog {
+#[derive(Clone)]
+pub(in crate::ui::device_sync) struct RunLog {
     run: Option<i64>,
     counters: RunCounters,
 }
 
 impl RunLog {
-    pub(super) fn open(
+    pub(in crate::ui::device_sync) fn open(
         runtime: &DeviceSyncRuntime,
         start: &RunStart,
         persist_device_state: bool,
@@ -55,6 +56,15 @@ impl RunLog {
     pub(super) fn copied(&mut self, bytes: u64) {
         self.counters.copied = self.counters.copied.saturating_add(1);
         self.counters.bytes_copied = self.counters.bytes_copied.saturating_add(bytes);
+    }
+
+    pub(super) fn set_planned(&self, runtime: &DeviceSyncRuntime, planned: u32) {
+        let Some(run) = self.run else {
+            return;
+        };
+        if let Err(error) = sync_log::update_planned(&runtime.conn, run, planned) {
+            tracing::warn!(%error, "could not update the device sync log plan");
+        }
     }
 
     pub(super) fn deleted(&mut self) {
@@ -86,7 +96,7 @@ impl RunLog {
         }
     }
 
-    pub(super) fn close(
+    pub(in crate::ui::device_sync) fn close(
         &self,
         runtime: &DeviceSyncRuntime,
         outcome: &SyncOutcome,

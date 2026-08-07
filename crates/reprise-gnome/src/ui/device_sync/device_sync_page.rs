@@ -35,9 +35,12 @@ struct PlaylistRowWidgets {
 
 struct DeviceSyncPage {
     root: gtk4::glib::WeakRef<gtk4::Stack>,
-    /// Container for the "Recent transfers" card (MTP-20).
+    /// Container for the "Recent syncs" card (MTP-20).
     history: gtk4::Box,
-    device_name: gtk4::Label,
+    /// Lets the history card tell a changed run set from a moved percentage,
+    /// so a progress tick does not rebuild the list under the user's cursor.
+    history_state: super::device_sync_history::HistoryState,
+    device_name: gtk4::Button,
     connection: gtk4::Label,
     device_last_sync: gtk4::Label,
     profile: gtk4::DropDown,
@@ -78,7 +81,13 @@ impl DeviceSyncPage {
             .eject
             .set_tooltip_text(Some(&device_sync_strings::eject_tooltip(false)));
         let content_panel = ContentPanel::new(content_actions);
-        dashboard.content.append(content_panel.root());
+        dashboard.up_next_heading.append(content_panel.header());
+        dashboard.up_next.append(content_panel.root());
+        debug_assert_eq!(
+            dashboard.content.last_child(),
+            Some(dashboard.history.clone().upcast()),
+            "the dashboard owns the complete section order"
+        );
 
         let disconnected = adw::StatusPage::builder()
             .icon_name("phone-symbolic")
@@ -128,6 +137,7 @@ impl DeviceSyncPage {
         let surface = Rc::new(Self {
             root: root_ref,
             history: dashboard.history,
+            history_state: super::device_sync_history::HistoryState::default(),
             device_name: dashboard.device_name,
             connection: dashboard.connection,
             device_last_sync: dashboard.device_last_sync,
@@ -168,9 +178,40 @@ impl DeviceSyncPage {
     }
 
     fn update(&self, device: &DeviceView) {
-        super::device_sync_history::fill(&self.history, &device.history);
+        let progress = progress_copy(device);
+        let history_progress = progress.as_ref().map(|(title, _, _, fraction)| {
+            super::device_sync_history::RunningProgress {
+                title: title.clone(),
+                fraction: *fraction,
+            }
+        });
+        super::device_sync_history::sync(
+            &self.history,
+            &self.history_state,
+            &device.history,
+            device.rememberable,
+            history_progress.as_ref(),
+        );
         self.updating.set(true);
         self.device_name.set_label(&device.name);
+        self.device_name.set_sensitive(device.rememberable);
+        // The name itself leads, because it is what an ellipsized title hides;
+        // the action or the reason it is unavailable follows on its own line.
+        if device.rememberable {
+            let action = device_sync_strings::text(device_sync_strings::RENAME_DEVICE);
+            self.device_name
+                .set_tooltip_text(Some(&format!("{}\n{action}", device.name)));
+            self.device_name
+                .update_property(&[gtk4::accessible::Property::Label(&action)]);
+        } else {
+            let (title, detail) = device_sync_strings::sync_history_unrecorded_warning();
+            self.device_name
+                .set_tooltip_text(Some(&format!("{}\n{title}\n{detail}", device.name)));
+            // A disabled button that still announces "Rename device" tells a
+            // screen-reader user the state but not the reason.
+            self.device_name
+                .update_property(&[gtk4::accessible::Property::Label(&title)]);
+        }
         self.connection.remove_css_class("success");
         self.connection.remove_css_class("warning");
         self.connection.remove_css_class("dim-label");
@@ -245,7 +286,7 @@ impl DeviceSyncPage {
         self.storage_bar.update(&device.page.storage);
         self.update_notice(device);
         self.update_preparation(device);
-        self.update_progress(device);
+        self.update_progress(progress.as_ref());
         self.update_actions(device);
         self.content_panel.update(device);
         self.updating.set(false);
@@ -419,16 +460,16 @@ impl DeviceSyncPage {
         self.preparation_box.set_visible(true);
     }
 
-    fn update_progress(&self, device: &DeviceView) {
-        let Some((title, subtitle, speed, fraction)) = progress_copy(device) else {
+    fn update_progress(&self, progress: Option<&(String, String, String, f64)>) {
+        let Some((title, subtitle, speed, fraction)) = progress else {
             self.progress_box.set_visible(false);
             return;
         };
-        self.progress_title.set_label(&title);
-        self.progress_detail.set_label(&subtitle);
-        self.progress_speed.set_label(&speed);
+        self.progress_title.set_label(title);
+        self.progress_detail.set_label(subtitle);
+        self.progress_speed.set_label(speed);
         self.progress_box.set_visible(true);
-        self.progress_bar.set_fraction(fraction);
+        self.progress_bar.set_fraction(*fraction);
     }
 
     fn update_actions(&self, device: &DeviceView) {
@@ -517,6 +558,13 @@ pub(in crate::ui) fn open(
         PageActions::for_runtime(runtime, device_id),
         &ContentPanelActions::for_runtime(runtime, device_id),
     );
+    {
+        let runtime = runtime.clone();
+        let device_id = device_id.to_string();
+        surface.device_name.connect_clicked(move |button| {
+            super::device_sync_rename::prompt(button, &runtime, &device_id);
+        });
+    }
     if let Some(previous) = content_stack.child_by_name("device-sync") {
         content_stack.remove(&previous);
     }

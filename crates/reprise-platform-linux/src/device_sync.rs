@@ -14,8 +14,11 @@ pub use reprise_core::device_sync::{DeviceStorageInspection, DeviceStorageSnapsh
 #[path = "device_sync_identity.rs"]
 mod identity;
 pub use identity::{
-    descriptor_from_mount, project_descriptor, usb_serial_from_sysfs, DeviceDescriptor,
+    descriptor_from_mount, is_placeholder_name, project_descriptor, usb_facts_for_address,
+    usb_serial_from_sysfs, DeviceDescriptor, UsbFacts,
 };
+#[cfg(test)]
+pub(crate) use identity::{mount_display_name, usb_serial_from_volume_identifier};
 
 const ENUMERATE_ATTRIBUTES: &str = "standard::name,standard::type,standard::size";
 const ENUMERATE_BATCH_SIZE: i32 = 64;
@@ -144,13 +147,15 @@ fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
             continue;
         }
         let uuid = volume.uuid();
-        let usb_serial = usb_serial_from_sysfs(&root_uri, Path::new("/sys/bus/usb/devices"));
-        let Some(mut descriptor) = project_descriptor(
+        let unix_device = volume.identifier(gio::VOLUME_IDENTIFIER_KIND_UNIX_DEVICE);
+        let facts = identity::usb_facts_from_volume_identifier(
+            unix_device.as_deref(),
             &root_uri,
-            uuid.as_deref(),
-            usb_serial.as_deref(),
-            &volume.name(),
-        ) else {
+            Path::new("/sys/bus/usb/devices"),
+        );
+        let Some(mut descriptor) =
+            project_descriptor(&root_uri, uuid.as_deref(), &facts, &volume.name())
+        else {
             continue;
         };
         descriptor.icon = volume.icon();
@@ -745,6 +750,10 @@ fn is_audio_file(name: &str) -> bool {
 #[cfg(test)]
 #[path = "device_sync_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "device_sync_identity_tests.rs"]
+mod identity_tests;
 
 #[cfg(test)]
 #[path = "device_sync_browser_tests.rs"]
