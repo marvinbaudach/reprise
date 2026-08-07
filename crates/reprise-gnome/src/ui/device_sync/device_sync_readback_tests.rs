@@ -42,7 +42,7 @@ fn mtp_10_success_stays_finishing_until_device_contents_are_verified() {
 
         let device = runtime.devices().remove(0);
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
-        assert_eq!(device.verified_managed_track_count, Some(0));
+        assert_eq!(device.verified_managed_track_count, Some(1));
         assert!(
             reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
                 .unwrap()

@@ -1018,6 +1018,13 @@ result.
   episode ages out of the rule's window. Playlists additionally offer
   "Everything" and "Keep smart playlists up to date on each sync", because a
   smart playlist not re-evaluated at sync time freezes on the phone.
+- **MTP-52** [active] [core] [gtk] — After a complete, successful device scan,
+  a selected track whose recorded device path is missing from the phone is
+  copied again through the ordinary transfer plan, together with its analysis
+  sidecar. The desktop inventory records what Reprise remembers writing, not
+  proof that the file is still there. A device that was never scanned, or whose
+  scan failed, keeps the inventory-only guard and schedules no such recovery;
+  a matching file that is present remains untouched.
 
 ## F. Settings & modals
 

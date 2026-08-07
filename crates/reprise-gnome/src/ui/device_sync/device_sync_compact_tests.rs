@@ -108,6 +108,48 @@ fn save_sources(conn: &Rc<Db>, device_id: &str, sources: Vec<SelectionSource>) {
     .unwrap();
 }
 
+fn register_inventoried_track(conn: &Db, temp: &tempfile::TempDir, track_id: i64) {
+    let source_path = temp.path().join(format!("{track_id}.flac"));
+    let metadata = std::fs::metadata(&source_path).unwrap();
+    let source_mtime = metadata
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    upsert_device_file(
+        conn,
+        &DeviceFileRecord {
+            device_serial: "a".into(),
+            track_id,
+            source_path: source_path.to_string_lossy().into_owned(),
+            source_size: metadata.len(),
+            source_mtime,
+            device_path: format!("Artist/Unknown Album/00 Track {track_id}.opus"),
+            device_size: 100,
+            profile_fingerprint: "opus-vbr-160-v1".into(),
+            pinned: false,
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn mtp_52_successful_runtime_scan_marks_missing_inventoried_track_for_copy() {
+    run(async {
+        let (temp, conn) = fixture();
+        add_playlist(&conn, 10, "Road", &[1]);
+        save_sources(&conn, "a", vec![SelectionSource::Playlist(10)]);
+        register_inventoried_track(&conn, &temp, 1);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        assert_eq!(runtime.devices()[0].page.changes.additions, 1);
+    });
+}
+
 #[test]
 fn compact_page_projects_profile_playlist_sizes_deduplicated_delta_and_storage() {
     run(async {
