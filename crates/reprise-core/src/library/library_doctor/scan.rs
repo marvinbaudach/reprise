@@ -157,9 +157,22 @@ impl<'connection> LibraryDoctor<'connection> {
                             &mut track_groups,
                         );
                     }
+                    // Groups are deliberately reported as none while the scan
+                    // runs. A spelling conflict is a statement about several
+                    // tracks disagreeing with each other, and a running scan
+                    // has not met them all yet: `add_grouped_field` cannot tie
+                    // a single track against itself, so the local part of
+                    // `track_groups` is always empty here, while the remote
+                    // part is whatever this one track's lookup happened to
+                    // return — and `merge` adds that up per track. Either way
+                    // the sum is a forecast, not a count, and it disagreed
+                    // visibly with the tracks-checked number beside it. The
+                    // completed scan recomputes over the whole set below, from
+                    // the scanned tracks alone, and is the only place this
+                    // number is true.
                     preview_summary.merge(super::presentation::partial_scan_summary(
                         &track_proposals,
-                        track_groups.len(),
+                        0,
                         1,
                         0,
                     ));

@@ -83,6 +83,103 @@ fn doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary() {
     );
 }
 
+fn scan_selection(db: &crate::db::Db, track_ids: Vec<i64>) -> (DoctorScan, Vec<DoctorScanSummary>) {
+    let mut published = Vec::new();
+    let outcome = LibraryDoctor::new(db)
+        .scan_local(
+            &LocalScanRequest {
+                scope: DoctorScopeRequest::Selection { track_ids },
+            },
+            |progress| {
+                published.push(progress.summary);
+                ScanControl::Continue
+            },
+        )
+        .unwrap();
+    let DoctorScanOutcome::Completed(scan) = outcome else {
+        panic!("scan must complete")
+    };
+    (scan, published)
+}
+
+fn track_id(db: &crate::db::Db, path: &Path) -> i64 {
+    db.conn()
+        .query_row(
+            "SELECT id FROM tracks WHERE path=?1",
+            [path.to_string_lossy().as_ref()],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+/// Every number on the result page describes the scan that produced it.
+///
+/// Three tracks share one normalised artist key: two spell it "Artist One",
+/// one "artist one". Across all three the majority settles it and there is no
+/// conflict at all. Across only the first two it is a tie, and the conflict is
+/// real — with exactly the two scanned tracks as its members. Widening or
+/// narrowing the scope therefore has to change the count, which is the whole
+/// claim: the number is not a property of the library, it is a property of the
+/// scan.
+#[test]
+fn doc_9a_the_conflict_count_is_a_property_of_the_scanned_scope() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = fixture(dir.path(), "one.flac", "Artist One");
+    let second = fixture(dir.path(), "two.flac", "artist one");
+    let third = fixture(dir.path(), "three.flac", "Artist One");
+    let db = crate::db::Db::open_in_memory().unwrap();
+    crate::library::scanner::scan_folder(&db, dir.path()).unwrap();
+    let (first, second, third) = (
+        track_id(&db, &first),
+        track_id(&db, &second),
+        track_id(&db, &third),
+    );
+
+    let (tied, published) = scan_selection(&db, vec![first, second]);
+    // The fixture writes the same text to artist and album artist, so the tie
+    // shows up once per field. Pin the artist one and read its membership.
+    let artist_groups = tied
+        .unresolved_groups
+        .iter()
+        .filter(|group| group.field == DoctorField::Artist)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        artist_groups.len(),
+        1,
+        "two spellings, one each — nothing decides between them"
+    );
+    let members = &artist_groups[0].members;
+    assert_eq!(members.len(), 2, "only the scanned tracks may be counted");
+    let mut counted = members
+        .iter()
+        .map(|member| member.track_id)
+        .collect::<Vec<_>>();
+    counted.sort_unstable();
+    assert_eq!(counted, vec![first.min(second), first.max(second)]);
+    assert_eq!(
+        scan_summary(&tied, tied.options.remote_enabled).unresolved_groups,
+        tied.unresolved_groups.len(),
+        "the summary reports the scan's own groups, not a library-wide count"
+    );
+
+    let (decided, _) = scan_selection(&db, vec![first, second, third]);
+    assert_eq!(
+        decided.unresolved_groups.len(),
+        0,
+        "with the third track in scope the majority spelling wins outright"
+    );
+
+    // While the scan runs the answer is not knowable yet — no track on its own
+    // can disagree with another — so the live summary reports none rather than
+    // a number that contradicts the tracks-checked count beside it.
+    assert!(
+        published
+            .iter()
+            .all(|summary| summary.unresolved_groups == 0),
+        "a running scan must not publish a conflict count"
+    );
+}
+
 #[test]
 fn doc_8b_a_scan_with_no_auto_rows_creates_no_job() {
     let dir = tempfile::tempdir().unwrap();
