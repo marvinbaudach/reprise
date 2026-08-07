@@ -215,9 +215,7 @@ result.
   housekeeping.** Its sections contain Compact Mode; Library Doctor and
   Import playlist…; then Preferences, Keyboard Shortcuts, Help, and About
   Reprise. It exposes no scan, scan-cancel, analysis, or analysis-cancel
-  action. Manual rescans remain available in Preferences → Library and from
-  the library's unavailable or empty retry state, and retain the scan card's
-  minimum perceivable progress time. Rendering-data backfill
+  action. Rendering-data backfill
   starts after the window's first idle frame and after every completed scan;
   starting it again while it runs is a no-op. When its progress card is
   visible and no scan owns that card, the card's cancel action can stop it.
@@ -226,6 +224,14 @@ result.
   `nav_15_a_second_start_never_opens_a_second_run`,
   `nav_15_a_started_run_can_still_be_cancelled_from_its_progress_card`,
   `scan_completion_notifies_cover_and_rendering_follow_ups`.
+- **NAV-15b** [active] [manual] — **A manual rescan keeps its own doors.**
+  With the header item gone, Preferences → Library and the track list's
+  unavailable or empty retry state are the two ways to start a scan by
+  hand. Both start a real scan and both raise the scan card, which stays
+  visible for its minimum perceivable time even when the scan finishes at
+  once. Checked by hand because no automated level drives either entry
+  point end to end: the cua-e2e scenario that once proved this path drove
+  the header item and retired with NAV-7.
 
 ## C. Playback, queue, shuffle, filter
 
@@ -1698,10 +1704,10 @@ own statement).
   ArtistDetail | Playlist | Queue`. The missing view and smart
   playlists render as `LibraryTracks`.
 - **CTX-2** [active] [gtk] — Selection actions only. No global entry in
-  the track menu (no „Rescan library" — that lives in the hamburger
-  menu). Right-clicking an unselected row selects it first; the menu
-  always applies to the visible selection. Shift+F10 / menu key open
-  on the keyboard selection.
+  the track menu (no „Rescan library" — that lives in Preferences →
+  Library, NAV-15b). Right-clicking an unselected row selects it first;
+  the menu always applies to the visible selection. Shift+F10 / menu key
+  open on the keyboard selection.
 - **CTX-3** [active] [gtk] — No „Play" entry. The primary action is
   double-click/Enter (PLAY-2). The first menu entry is „Play next" (in
   the queue: „Move to top").
