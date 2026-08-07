@@ -138,6 +138,14 @@ pub(in crate::ui) struct Shared {
     /// just left, so `track_list_reload::capture_reload_anchor` reads this and
     /// anchors on where the viewport is going instead.
     pub(in crate::ui) track_reveal_pending: Cell<bool>,
+    /// SEARCH-9: where the list stood before a search narrowed it, so clearing
+    /// the search can put the user back instead of dropping them at the top or
+    /// on the playing track. Captured once on the empty → non-empty transition
+    /// and consumed when the query goes empty again. `(track id, offset)`
+    /// rather than a raw scroll value, for the same reason BROWSE-2 uses that
+    /// form: after a re-sort a pixel value points at a different row.
+    #[expect(dead_code, reason = "wired by the next search-responsiveness task")]
+    pub(in crate::ui) pre_search_anchor: Cell<Option<(i64, f64)>>,
     /// POD-20's shared loaded-episode marker. Separate from
     /// `playing_track_id` because the two id spaces are unrelated and may
     /// collide numerically; the marker also retains running versus paused.

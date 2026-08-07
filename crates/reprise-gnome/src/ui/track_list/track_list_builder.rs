@@ -94,6 +94,7 @@ pub(in crate::ui) fn build(
         playing_track_id: Cell::new(None),
         track_reveal_generation: Cell::new(0),
         track_reveal_pending: Cell::new(false),
+        pre_search_anchor: Cell::new(None),
         playing_episode: Cell::new(None),
         now_playing_markers: RefCell::new(std::collections::HashMap::new()),
         rating_cells: RefCell::new(std::collections::HashMap::new()),
