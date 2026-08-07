@@ -228,6 +228,97 @@ class UnresolvedDiagnosticsTests(unittest.TestCase):
         self.assertEqual(len(record["unresolved"]["unmatched"]), 40)
 
 
+class MeasuredRoleSynonymTests(unittest.TestCase):
+    """Spellings taken from a real run, not guessed."""
+
+    CASES = (
+        ("group", "grouping", 1190, 655),
+        ("grid cell", "table cell", 100, 45),
+        ("tree grid", "table", 1190, 581),
+        ("window", "frame", 1200, 800),
+        ("push button", "button", 34, 34),
+    )
+
+    def test_each_measured_pair_resolves(self) -> None:
+        for driver_role, walk_role, width, height in self.CASES:
+            with self.subTest(driver=driver_role, walk=walk_role):
+                nodes = [
+                    FRAME_NODE,
+                    node(walk_role, "Sample", 0, 60, width, height),
+                ]
+                elements = [
+                    driver(0, "window", "Reprise", 1200, 800, depth=0),
+                    driver(4, driver_role, "Sample", width, height),
+                ]
+
+                result = resolve_driver_geometry(elements, nodes, ORIGIN)
+
+                self.assertIn(4, result.frames)
+
+    def test_an_unknown_spelling_still_fails_visibly_with_both_names(self) -> None:
+        nodes = [FRAME_NODE, node("canvas", "Sample", 0, 60, 40, 40)]
+        elements = [
+            driver(0, "window", "Reprise", 1200, 800, depth=0),
+            driver(4, "drawing area", "Sample", 40, 40),
+        ]
+
+        record = resolve_driver_geometry(elements, nodes, ORIGIN).as_record()
+
+        entry = record["unresolved"]["unmatched"][0]
+        self.assertEqual(entry["role"], "drawing area")
+        self.assertEqual(entry["candidates"], 0)
+
+
+class SubsetViolationTests(unittest.TestCase):
+    """Tell 'the driver has more' apart from 'the walk has more'."""
+
+    def _resolve(self, driver_count, walk_count):
+        nodes = [
+            FRAME_NODE,
+            *[
+                node("table cell", "3:00", 0, 60 + 45 * i, 100, 45)
+                for i in range(walk_count)
+            ],
+        ]
+        elements = [
+            driver(0, "window", "Reprise", 1200, 800, depth=0),
+            *[
+                driver(10 + i, "grid cell", "3:00", 100, 45)
+                for i in range(driver_count)
+            ],
+        ]
+        return resolve_driver_geometry(elements, nodes, ORIGIN)
+
+    def test_more_driver_elements_than_nodes_is_a_subset_violation(self) -> None:
+        # 38 grid cells against a single table cell: either the rows are
+        # virtualised or the driver invents them. Either way the subset
+        # argument behind ordered pairing does not hold here.
+        record = self._resolve(driver_count=38, walk_count=1).as_record()
+
+        self.assertEqual(record["subset_violations"], 38)
+        self.assertEqual(record["walk_surplus"], 0)
+        self.assertEqual(record["ambiguous"], 38)
+
+    def test_more_nodes_than_driver_elements_is_ordinary_filtering(self) -> None:
+        record = self._resolve(driver_count=2, walk_count=5).as_record()
+
+        self.assertEqual(record["subset_violations"], 0)
+        self.assertEqual(record["walk_surplus"], 2)
+
+    def test_the_entries_name_both_counts(self) -> None:
+        record = self._resolve(driver_count=38, walk_count=1).as_record()
+
+        entry = record["unresolved"]["ambiguous"][0]
+        self.assertEqual(entry["driver_count"], 38)
+        self.assertEqual(entry["candidates"], 1)
+
+    def test_equal_counts_still_pair_and_report_no_violation(self) -> None:
+        record = self._resolve(driver_count=4, walk_count=4).as_record()
+
+        self.assertEqual(record["resolved_ordered"], 4)
+        self.assertEqual(record["subset_violations"], 0)
+
+
 class OrderedGroupTests(unittest.TestCase):
     """Same key, same count on both sides: pair them in walk order."""
 

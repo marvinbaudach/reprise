@@ -127,9 +127,16 @@ class GeometryNode:
 # cua-driver and Atspi.get_role_name() do not always spell a role the same way.
 # Only equivalences we can name belong here; anything else fails loud, and the
 # error names both spellings so the pair can be added from a real run.
-# Measured pairs: cua-driver calls the toplevel "window" where Atspi's
-# get_role_name() says "frame", and spells buttons without the "push".
-ROLE_SYNONYMS = {"push button": "button", "frame": "window"}
+# Measured pairs, each taken from a real run by comparing the driver's roles
+# against a role histogram of the live accessibility tree. Never guessed: an
+# unknown spelling stays unmatched and is reported with both names.
+ROLE_SYNONYMS = {
+    "push button": "button",
+    "frame": "window",
+    "grid cell": "table cell",
+    "group": "grouping",
+    "tree grid": "table",
+}
 
 
 def _role(role: str) -> str:
@@ -193,6 +200,8 @@ class GeometryResolution:
     ambiguous: int
     out_of_window: int
     degenerate: int
+    subset_violations: int
+    walk_surplus: int
     unresolved: dict[str, list[dict[str, Any]]]
     calibration: dict[str, Any]
 
@@ -220,6 +229,8 @@ class GeometryResolution:
             "ambiguous": self.ambiguous,
             "out_of_window": self.out_of_window,
             "degenerate": self.degenerate,
+            "subset_violations": self.subset_violations,
+            "walk_surplus": self.walk_surplus,
             "unresolved": self.unresolved,
             "calibration": self.calibration,
         }
@@ -233,6 +244,7 @@ def _sample(
     width: float,
     height: float,
     candidates: int,
+    driver_count: int = 1,
 ) -> None:
     bucket = unresolved.setdefault(reason, [])
     if len(bucket) >= UNRESOLVED_SAMPLE_LIMIT:
@@ -246,6 +258,7 @@ def _sample(
             "height": round(height),
             "reason": reason,
             "candidates": candidates,
+            "driver_count": driver_count,
         }
     )
 
@@ -308,17 +321,35 @@ def resolve_driver_geometry(
 
     frames: dict[int, tuple[float, float, float, float]] = {}
     unique = ordered = unmatched = ambiguous = out_of_window = 0
+    subset_violations = walk_surplus = 0
     for key, members in groups.items():
         candidates = index.get(key, [])
         if not candidates or len(candidates) != len(members):
             reason = "unmatched" if not candidates else "ambiguous"
+            if reason == "ambiguous":
+                # More driver elements than nodes means the driver is reporting
+                # something the walk cannot see - virtualised rows, or rows the
+                # driver synthesises. Either way the subset argument behind
+                # ordered pairing does not hold for this key, which is exactly
+                # why the group stays unresolved.
+                if len(members) > len(candidates):
+                    subset_violations += len(members)
+                else:
+                    walk_surplus += len(members)
             for position, element, width, height in members:
                 if reason == "unmatched":
                     unmatched += 1
                 else:
                     ambiguous += 1
                 _sample(
-                    unresolved, reason, position, element, width, height, len(candidates)
+                    unresolved,
+                    reason,
+                    position,
+                    element,
+                    width,
+                    height,
+                    len(candidates),
+                    len(members),
                 )
             continue
         for (position, element, width, height), node in zip(members, candidates):
@@ -333,6 +364,7 @@ def resolve_driver_geometry(
                     width,
                     height,
                     len(candidates),
+                    len(members),
                 )
                 continue
             frames[int(element.get("element_index", position))] = rect
@@ -350,6 +382,8 @@ def resolve_driver_geometry(
         ambiguous=ambiguous,
         out_of_window=out_of_window,
         degenerate=degenerate,
+        subset_violations=subset_violations,
+        walk_surplus=walk_surplus,
         unresolved=unresolved,
         calibration=calibration,
     )

@@ -245,6 +245,23 @@ class RunReport:
                 f"{resolution.get('degenerate')} without usable bounds, "
                 f"{resolution.get('out_of_window')} outside the window"
             )
+            violations = resolution.get("subset_violations") or 0
+            if violations:
+                lines.append(
+                    f"- **{violations} elements sit in groups where the driver "
+                    f"reports more nodes than the walk can see.** Ordered "
+                    f"pairing is refused there, and its subset argument is "
+                    f"weakened for the "
+                    f"{resolution.get('resolved_ordered')} elements it did "
+                    f"resolve elsewhere - treat those with care."
+                )
+            else:
+                lines.append(
+                    f"- No group had more driver elements than walk nodes, so "
+                    f"the subset argument behind the "
+                    f"{resolution.get('resolved_ordered')} ordered pairings "
+                    f"held everywhere it was checked."
+                )
             unresolved = resolution.get("unresolved") or {}
             for reason in sorted(unresolved):
                 entries = unresolved[reason]
@@ -256,7 +273,8 @@ class RunReport:
                         f"    - `{entry.get('role')}` "
                         f"\"{entry.get('label')}\" "
                         f"{entry.get('width')}x{entry.get('height')} "
-                        f"- {entry.get('candidates')} candidates"
+                        f"- {entry.get('driver_count')} driver, "
+                        f"{entry.get('candidates')} walk"
                     )
             lines.append("")
         if summary["geometry_failures"]:

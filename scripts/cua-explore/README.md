@@ -81,7 +81,10 @@ the same tree in pre-order and the driver's elements are a subset of the walk,
 so equal counts on a subset mean the sets are identical. Anything else leaves
 that group alone without geometry while the rest keep theirs. Pairings inside a
 group are counted separately as `resolved_ordered`, because they rest on that
-subset argument rather than on the key alone. The
+subset argument rather than on the key alone. `subset_violations` counts the
+elements in groups where the driver reports *more* nodes than the walk can see:
+those never pair, and a non-zero count is evidence against the subset argument
+everywhere else too. The
 position oracles skip untrusted elements. `summary.json` records the quota
 under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
 outside the window) together with up to 40 unresolved elements per reason -
