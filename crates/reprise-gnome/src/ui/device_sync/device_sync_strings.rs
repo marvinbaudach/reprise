@@ -413,6 +413,27 @@ fn preparation_skipped_offline(files: usize) -> String {
     format!("{files} {noun} skipped · not downloaded")
 }
 
+/// How many episode titles the preparation overview names before it starts
+/// counting. `MTP-43` wants the user to know *what* is about to download,
+/// not to read the whole queue: pasting all of them into one label grew the
+/// overview card several screens tall and pulled the page's layout with it.
+const PREPARATION_TITLE_PREVIEW: usize = 3;
+
+/// "Nachtwind, Abendrot … and 57 more" — the titles line below
+/// `preparation_files_to_download`. `None` when nothing is named, so the
+/// caller appends no empty line.
+pub fn preparation_titles(titles: &[&str]) -> Option<String> {
+    let shown = titles.len().min(PREPARATION_TITLE_PREVIEW);
+    if shown == 0 {
+        return None;
+    }
+    let named = titles[..shown].join(", ");
+    Some(match titles.len() - shown {
+        0 => named,
+        rest => format!("{named} \u{2026} and {rest} more"),
+    })
+}
+
 /// "Step 1 of 2 · Downloading 1 of 2 · 62%" — the preparation download's own
 /// progress line. Always step 1: a preparation phase only ever precedes the
 /// transfer, never follows it.
@@ -486,6 +507,23 @@ mod tests {
         assert_eq!(
             preparation_overview(&PreparationPhase::Planned { files: 3, bytes: 0 }),
             Some("3 files to download".to_string())
+        );
+    }
+
+    #[test]
+    fn mtp_43_preparation_titles_name_a_few_and_count_the_rest() {
+        assert_eq!(preparation_titles(&[]), None);
+        assert_eq!(
+            preparation_titles(&["Abendrot", "Nachtwind"]),
+            Some("Abendrot, Nachtwind".to_string())
+        );
+        assert_eq!(
+            preparation_titles(&["One", "Two", "Three"]),
+            Some("One, Two, Three".to_string())
+        );
+        assert_eq!(
+            preparation_titles(&["One", "Two", "Three", "Four", "Five"]),
+            Some("One, Two, Three \u{2026} and 2 more".to_string())
         );
     }
 

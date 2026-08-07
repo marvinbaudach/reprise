@@ -12,6 +12,12 @@ pub(super) const MUSIC_TRANSFER_PROFILE_HEADING: &str =
 
 const OVERVIEW_WIDTH_CHARS: i32 = 42;
 
+/// The width the content column clamps to — and, because `elide` keeps the
+/// hero shrinkable, also a ceiling the page never *demands*. The two are the
+/// same number on purpose: a minimum above the clamp is precisely what
+/// pushes the now-playing column out of the window (`NPP-1`).
+pub(super) const CONTENT_MAX_WIDTH: i32 = 1_120;
+
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::ScrolledWindow,
     /// The vertical content column, exposed so the caller can append
@@ -50,10 +56,13 @@ pub(super) struct DeviceDashboard {
 
 pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashboard {
     let device_name = label(&device.name, "title-1");
+    elide(&device_name);
     let connection = label("MTP connected", "caption");
     connection.add_css_class("pill");
     connection.add_css_class("success");
+    elide(&connection);
     let device_last_sync = label("", "dim-label");
+    elide(&device_last_sync);
     let status = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
     status.set_valign(gtk4::Align::Center);
     status.append(&connection);
@@ -212,7 +221,7 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     content.append(&history);
 
     let clamp = adw::Clamp::builder()
-        .maximum_size(1120)
+        .maximum_size(CONTENT_MAX_WIDTH)
         .tightening_threshold(900)
         .child(&content)
         .build();
@@ -271,6 +280,21 @@ fn label(text: &str, class: &str) -> gtk4::Label {
     label.set_xalign(0.0);
     label.add_css_class(class);
     label
+}
+
+/// Lets a hero label give up width instead of dictating the whole page's
+/// minimum. `NPP-1`'s second pitfall applies to the content pane just as it
+/// does inside the panel: a label without `ellipsize` reports its full text
+/// width as its *minimum*, `AdwOverlaySplitView` hands the content pane that
+/// minimum, and the fixed 300 px now-playing column is pushed out of the
+/// window — visibly so, since the identity line then tracked the primary
+/// button's label ("Download & sync" vs "Cancel") pixel for pixel. The
+/// natural width stays uncapped on purpose: the surrounding `AdwClamp` is
+/// what decides how much of the text is actually shown, and the tooltip
+/// carries the rest.
+fn elide(label: &gtk4::Label) {
+    label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    crate::ui::ellipsis_tooltip::arm(label);
 }
 
 fn detail_label() -> gtk4::Label {
