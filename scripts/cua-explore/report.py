@@ -108,6 +108,7 @@ class RunReport:
         self.geometry_calibration: dict[str, Any] | None = None
         self.geometry_resolution: dict[str, Any] | None = None
         self.cursor_visibility: dict[str, Any] | None = None
+        self.hover_coverage: list[dict[str, Any]] = []
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def set_geometry_failures(self, failures: Sequence[str]) -> None:
@@ -119,6 +120,10 @@ class RunReport:
         self.geometry_calibration = (
             dict(_sanitize(calibration)) if calibration else None
         )
+
+    def set_hover_coverage(self, coverage: Sequence[Mapping[str, Any]] | None) -> None:
+        """Per section: how many hover targets existed and how many were reached."""
+        self.hover_coverage = [dict(_sanitize(item)) for item in coverage or ()]
 
     def set_cursor_visibility(self, measurement: Mapping[str, Any] | None) -> None:
         """Whether the pointer reaches the capture, and therefore needs excluding."""
@@ -195,6 +200,13 @@ class RunReport:
                 "geometry_calibration": self.geometry_calibration,
                 "geometry_resolution": self.geometry_resolution,
                 "cursor_visibility": self.cursor_visibility,
+                "hover_coverage": self.hover_coverage,
+                "hover_candidates": sum(
+                    int(item.get("candidates", 0)) for item in self.hover_coverage
+                ),
+                "hover_reached": sum(
+                    int(item.get("hovered", 0)) for item in self.hover_coverage
+                ),
                 "geometry_trusted": not self.geometry_failures,
                 "finding_counts": dict(sorted(severity_counts.items())),
                 "finding_codes": dict(sorted(code_counts.items())),
@@ -232,6 +244,21 @@ class RunReport:
             "- Status: advisory until reproduced in two fresh profiles",
             "",
         ]
+        if summary.get("hover_coverage"):
+            lines.extend(["## Hover coverage", ""])
+            lines.append(
+                f"- Hovered {summary['hover_reached']} of "
+                f"{summary['hover_candidates']} eligible targets"
+            )
+            for item in summary["hover_coverage"]:
+                lines.append(
+                    f"    - `{item.get('section')}`: {item.get('hovered')} of "
+                    f"{item.get('candidates')} "
+                    f"(cap {item.get('limit_per_section')}, "
+                    f"{item.get('skipped_budget')} left to budget, "
+                    f"{item.get('skipped_without_geometry')} without geometry)"
+                )
+            lines.append("")
         resolution = summary.get("geometry_resolution")
         if resolution:
             lines.extend(["## Geometry", ""])

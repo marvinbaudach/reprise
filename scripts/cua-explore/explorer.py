@@ -7,7 +7,7 @@ import hashlib
 from typing import Any, Mapping
 
 from protocol import Mission, SCHEMA_VERSION
-from ui_vocabulary import canonical_role
+from ui_vocabulary import canonical_role, hover_strictness
 
 
 DESTRUCTIVE_WORDS = ("delete", "remove", "forget", "eject", "trash", "erase")
@@ -43,6 +43,8 @@ class DeterministicExplorer:
         self._hover_section_index = 0
         self._hover_pending_section: str | None = None
         self._hover_seen: set[tuple[str, str]] = set()
+        # What the sweep actually covered, so a truncated sweep is visible.
+        self.hover_coverage: list[dict[str, Any]] = []
 
     def propose(self, observation: Mapping[str, Any]) -> dict[str, Any]:
         state_id = str(observation.get("state_id", ""))
@@ -244,6 +246,18 @@ class DeterministicExplorer:
             }
         return None
 
+    def hover_budget_per_section(self, sections: int) -> int:
+        """Spread the action budget over the sections instead of overrunning it.
+
+        Reserved: one activation per section, the workload checkpoint, the
+        finish action, and a small margin for recovery.
+        """
+        if sections <= 0:
+            return 0
+        reserve = sections + 2 + 4
+        available = max(0, int(self.mission.budgets.actions) - reserve)
+        return max(1, min(MAX_HOVER_TARGETS_PER_SECTION, available // sections))
+
     def _next_hover_sweep_action(
         self,
         state_id: str,
@@ -252,20 +266,32 @@ class DeterministicExplorer:
     ) -> dict[str, Any] | None:
         sections = tuple(str(item) for item in workload.get("sections", []))
         if self._hover_pending_section is not None:
-            roles = {canonical_role(str(item)) for item in workload.get("roles", [])}
+            # The mission names its roles in AT-SPI spelling, but the driver
+            # answers with its own ("push button" for "button"), so matching
+            # that list literally produced zero hovers. Anything the hover
+            # rulebook has a contract for is a target: buttons and links
+            # strictly, rows, cells, tabs, chips and tiles softly.
+            extra = {canonical_role(str(item)) for item in workload.get("roles", [])}
             candidates = []
+            without_geometry = 0
             for item in observation.get("elements", []):
                 if not isinstance(item, dict):
                     continue
                 label = str(item.get("label") or "")
+                role = canonical_role(str(item.get("role", "")))
                 if (
                     not label
                     or item.get("actionable") is not True
                     or item.get("enabled") is not True
                     or item.get("visible") is not True
-                    or canonical_role(str(item.get("role", ""))) not in roles
+                    or (hover_strictness(role) == "skip" and role not in extra)
                     or (self._hover_pending_section, label) in self._hover_seen
                 ):
+                    continue
+                if item.get("geometry_trusted") is False:
+                    # Its frame is the driver's placeholder, so hovering it
+                    # would measure some other part of the window.
+                    without_geometry += 1
                     continue
                 frame = item.get("frame", {})
                 if not isinstance(frame, dict):
@@ -277,11 +303,23 @@ class DeterministicExplorer:
                         label,
                     )
                 )
-            for _y, _x, label in sorted(candidates)[:MAX_HOVER_TARGETS_PER_SECTION]:
+            limit = self.hover_budget_per_section(len(sections))
+            selected = sorted(candidates)[:limit]
+            for _y, _x, label in selected:
                 self._hover_seen.add((self._hover_pending_section, label))
                 self._workload_queue.append(
                     {"kind": "hover", "target": {"label": label}}
                 )
+            self.hover_coverage.append(
+                {
+                    "section": self._hover_pending_section,
+                    "candidates": len(candidates),
+                    "hovered": len(selected),
+                    "skipped_budget": len(candidates) - len(selected),
+                    "skipped_without_geometry": without_geometry,
+                    "limit_per_section": limit,
+                }
+            )
             self._hover_pending_section = None
             self._hover_section_index += 1
             if self._workload_queue:

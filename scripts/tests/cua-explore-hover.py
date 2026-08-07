@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import sys
@@ -677,7 +678,8 @@ class HoverSweepExplorerTests(unittest.TestCase):
         )
 
         labels = {action["target"]["label"] for action in actions if action["kind"] == "hover"}
-        self.assertEqual(labels, {"Good"})
+        # Rows answer softly; disabled, hidden and passive elements are skipped.
+        self.assertEqual(labels, {"Good", "Row"})
 
     def test_hover_sweep_explorer_caps_targets_per_section(self) -> None:
         elements = [self._element(f"Button {index}", y=index) for index in range(40)]
@@ -690,6 +692,96 @@ class HoverSweepExplorerTests(unittest.TestCase):
             for action in actions
         )
         self.assertEqual(count, MAX_HOVER_TARGETS_PER_SECTION)
+
+    def test_hover_sweep_explorer_accepts_the_drivers_own_role_spelling(self) -> None:
+        # Measured: cua-driver reports "push button" where the mission lists
+        # "button". Matching the mission list literally produced 0 hovers.
+        actions = self._drive(
+            [
+                self._element("Shuffle", role="push button"),
+                self._element("Play (Space)", role="push button", y=20),
+            ]
+        )
+
+        labels = {
+            action["target"]["label"] for action in actions if action["kind"] == "hover"
+        }
+        self.assertEqual(labels, {"Shuffle", "Play (Space)"})
+
+    def test_hover_sweep_explorer_skips_elements_without_measured_geometry(self) -> None:
+        actions = self._drive(
+            [
+                self._element("Solid", role="push button"),
+                self._element("Placeholder", role="push button", y=20, geometry=False),
+            ]
+        )
+
+        labels = {
+            action["target"]["label"] for action in actions if action["kind"] == "hover"
+        }
+        self.assertEqual(labels, {"Solid"})
+
+    def test_hover_sweep_explorer_records_what_it_covered_and_what_it_left(
+        self,
+    ) -> None:
+        elements = [
+            self._element(f"Button {index}", role="push button", y=index)
+            for index in range(40)
+        ]
+        elements.append(
+            self._element("Placeholder", role="push button", y=99, geometry=False)
+        )
+
+        self._drive(elements)
+
+        first = self.explorer.hover_coverage[0]
+        self.assertEqual(first["section"], self.mission.workloads[0]["sections"][0])
+        self.assertEqual(first["candidates"], 40)
+        self.assertEqual(first["hovered"], MAX_HOVER_TARGETS_PER_SECTION)
+        self.assertEqual(
+            first["skipped_budget"], 40 - MAX_HOVER_TARGETS_PER_SECTION
+        )
+        self.assertEqual(first["skipped_without_geometry"], 1)
+
+    def test_a_small_budget_lowers_the_cap_instead_of_overrunning(self) -> None:
+        mission = dataclasses.replace(
+            self.mission,
+            budgets=dataclasses.replace(self.mission.budgets, actions=30),
+        )
+        explorer = DeterministicExplorer(mission, 1)
+        sections = len(mission.workloads[0]["sections"])
+
+        self.assertLess(explorer.hover_budget_per_section(sections), 28)
+        self.assertGreaterEqual(explorer.hover_budget_per_section(sections), 1)
+
+    def test_the_coverage_reaches_the_evidence(self) -> None:
+        from report import RunReport
+
+        elements = [
+            self._element(f"Button {index}", role="push button", y=index)
+            for index in range(40)
+        ]
+        self._drive(elements)
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory)
+            report = RunReport(
+                output,
+                mission_id="hover-affordance-sweep",
+                profile="mixed-sources-128",
+                seed=1,
+                commit="abc",
+            )
+            report.set_hover_coverage(self.explorer.hover_coverage)
+            summary = report.write()
+
+            self.assertEqual(summary["hover_candidates"], 40 * 7)
+            self.assertEqual(
+                summary["hover_reached"], MAX_HOVER_TARGETS_PER_SECTION * 7
+            )
+            self.assertIn(
+                "Hover coverage", (output / "report.md").read_text(encoding="utf-8")
+            )
 
     def _drive(self, elements):
         actions = []
@@ -724,6 +816,7 @@ class HoverSweepExplorerTests(unittest.TestCase):
         enabled=True,
         visible=True,
         actionable=True,
+        geometry=True,
     ):
         return {
             "label": label,
@@ -731,6 +824,7 @@ class HoverSweepExplorerTests(unittest.TestCase):
             "enabled": enabled,
             "visible": visible,
             "actionable": actionable,
+            "geometry_trusted": geometry,
             "frame": {"x": x, "y": y, "width": 20, "height": 20},
         }
 

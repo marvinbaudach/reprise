@@ -662,8 +662,10 @@ def run(args: argparse.Namespace) -> int:
             timeout_seconds=args.agent_timeout,
             private_home=private_agent_home,
         )
+        explorer = None
     else:
-        agent_context = contextlib.nullcontext(DeterministicExplorer(mission, args.seed))
+        explorer = DeterministicExplorer(mission, args.seed)
+        agent_context = contextlib.nullcontext(explorer)
 
     gateway = ActionGateway(mission)
     finished = False
@@ -864,6 +866,7 @@ def run(args: argparse.Namespace) -> int:
         report.set_geometry_resolution(
             getattr(executor, "geometry_resolution", None)
         )
+        report.set_hover_coverage(getattr(explorer, "hover_coverage", None))
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()

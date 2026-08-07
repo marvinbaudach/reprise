@@ -90,6 +90,16 @@ under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
 outside the window) together with up to 40 unresolved elements per reason -
 each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
 
+The hover sweep points at every visible, enabled, actionable element whose role
+has a hover contract - buttons and links strictly, rows, cells, tabs, chips and
+tiles softly - and only when its position was actually measured, since a
+placeholder frame would hover some other part of the window. Role spelling
+comes from the hover rulebook rather than the mission's list, because the driver
+answers with its own ("push button" for "button"). The sweep is bounded by the
+mission's action budget, spread evenly across sections; `summary.json` records
+`hover_coverage` per section - candidates, reached, and how many were left to
+the budget - so a partial sweep is a stated result and never a silent one.
+
 The cursor exclusion box is switched by measurement, not by assumption. Once
 per launch the runner parks the pointer, moves it away and parks it again,
 comparing the parked region across the three captures: a drawn pointer
