@@ -2,7 +2,7 @@
 //! annotates them with local-library presence. Split out of
 //! `artist_news.rs` purely to stay under the project's 800-line rule;
 //! re-exported from there so existing callers keep using
-//! `artist_news::{query_releases, StoredRelease, LibraryPresence, ...}`.
+//! `artist_news::{StoredRelease, LibraryPresence, ...}`.
 
 use std::cmp::Ordering;
 
@@ -219,15 +219,6 @@ pub(crate) fn release_presence(
     } else {
         presence
     }
-}
-
-pub fn query_releases(
-    db: &crate::db::Db,
-    include_hidden: bool,
-    today: NaiveDate,
-) -> Result<Vec<StoredRelease>, rusqlite::Error> {
-    let conn = db.conn();
-    query_releases_in(conn, include_hidden, today)
 }
 
 pub(crate) fn query_releases_in(

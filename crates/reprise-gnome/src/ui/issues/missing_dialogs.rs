@@ -7,6 +7,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
+use reprise_core::library::path_guard::{self, Unresolvable};
 use reprise_core::library::relink::{self, FolderRelinkReport, RelinkMismatch, RelinkTarget};
 use reprise_core::library::settings;
 
@@ -76,9 +77,7 @@ fn is_outside_library(path: &Path, library_root: Option<&Path>) -> bool {
     let Some(root) = library_root else {
         return false;
     };
-    let normalized_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let normalized_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    !normalized_path.starts_with(normalized_root)
+    !path_guard::is_within(root, path, Unresolvable::CompareAsWritten)
 }
 
 fn library_root(context: &LocateContext) -> Result<Option<PathBuf>, rusqlite::Error> {

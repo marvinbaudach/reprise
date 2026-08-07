@@ -38,7 +38,7 @@ echo "== Frontend thinness =="
 # separate zero-tolerance ban below.
 declare -A budget=(
   [rusqlite]=114
-  [filesystem]=21
+  [filesystem]=13
   [threads]=15
   [workers]=7
 )
@@ -212,7 +212,6 @@ crates/reprise-gnome/src/ui/radio/mod.rs:1
 crates/reprise-gnome/src/ui/releases/mod.rs:1
 crates/reprise-gnome/src/ui/releases/releases_columns.rs:1
 crates/reprise-gnome/src/ui/releases/releases_empty_state.rs:1
-crates/reprise-gnome/src/ui/releases/releases_filter_bar.rs:1
 crates/reprise-gnome/src/ui/releases/releases_model.rs:1
 crates/reprise-gnome/src/ui/releases/releases_presentation.rs:1
 crates/reprise-gnome/src/ui/releases/releases_view.rs:1

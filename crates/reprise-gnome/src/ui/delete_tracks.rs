@@ -12,6 +12,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::library::path_guard;
 
 use crate::ui::track_list::{reload, show_toast, Shared};
 use crate::ui::track_list_context_menu::current_selection_positions;
@@ -332,26 +333,13 @@ fn safe_scratch_tracks(tracks: &[(i64, PathBuf)]) -> bool {
     let Ok(scan_root) = std::env::var("REPRISE_SCAN_DIR") else {
         return false;
     };
-    paths_within_temp_root(
+    path_guard::paths_within_temp_root(
         Path::new(&scan_root),
         &tracks
             .iter()
             .map(|(_, path)| path.clone())
             .collect::<Vec<_>>(),
     )
-}
-
-fn paths_within_temp_root(root: &Path, paths: &[PathBuf]) -> bool {
-    let Ok(root) = std::fs::canonicalize(root) else {
-        return false;
-    };
-    let Ok(temp) = std::fs::canonicalize(std::env::temp_dir()) else {
-        return false;
-    };
-    root.starts_with(temp)
-        && paths.iter().all(|path| {
-            std::fs::canonicalize(path).is_ok_and(|canonical| canonical.starts_with(&root))
-        })
 }
 
 #[cfg(test)]
@@ -367,25 +355,8 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn smoke_guard_accepts_only_existing_files_inside_temporary_root() {
-        let root = tempfile::tempdir().unwrap();
-        let inside = root.path().join("inside.flac");
-        std::fs::write(&inside, b"scratch").unwrap();
-        let outside_root = tempfile::tempdir().unwrap();
-        let outside = outside_root.path().join("outside.flac");
-        std::fs::write(&outside, b"scratch").unwrap();
-
-        assert!(paths_within_temp_root(
-            root.path(),
-            std::slice::from_ref(&inside),
-        ));
-        assert!(!paths_within_temp_root(root.path(), &[inside, outside]));
-        assert!(!paths_within_temp_root(
-            root.path(),
-            &[root.path().join("missing.flac")],
-        ));
-    }
+    // The smoke guard itself is proved in
+    // `reprise_core::library::path_guard`, which now owns it.
 
     #[test]
     fn stale_track_identity_survives_remove_dialog_and_trash_cleanup() {

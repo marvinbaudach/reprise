@@ -71,11 +71,11 @@ pub use crate::artist_news_parsing::{
 pub(crate) use crate::artist_news_query::presence_for;
 /// The query layer that reads releases back out and annotates library
 /// presence lives in `artist_news_query`; re-exported here so existing
-/// callers keep using `artist_news::{query_releases, StoredRelease, ...}`.
+/// callers keep using `artist_news::{StoredRelease, ...}`.
 pub use crate::artist_news_query::{
     delta_candidates, hidden_release_count, mark_releases_seen, query_artist_news,
-    query_artist_news_by_name, query_releases, set_release_hidden, unseen_release_count,
-    LibraryPresence, StoredRelease,
+    query_artist_news_by_name, set_release_hidden, unseen_release_count, LibraryPresence,
+    StoredRelease,
 };
 
 pub use crate::artist_news_scope::{

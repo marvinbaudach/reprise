@@ -44,7 +44,11 @@ pub(super) async fn perform(
             };
             let request = TranscodeRequest {
                 source: entry.track.source_path.clone(),
-                output: temporary_transcode_path(&work.device_id, entry.track.id, extension),
+                output: reprise_core::device_sync::staging::temporary_path(
+                    &work.device_id,
+                    entry.track.id,
+                    extension,
+                ),
                 profile,
                 metadata: reprise_platform_linux::device_transfer::AudioMetadata::for_track(
                     &entry.track,
@@ -105,7 +109,7 @@ pub(super) async fn perform(
                 )
                 .await;
             if temporary {
-                let _ = std::fs::remove_file(&path);
+                reprise_core::device_sync::staging::discard(&path);
             }
             match result {
                 Ok(_) => {
@@ -364,11 +368,18 @@ pub(super) async fn copy_analysis_sidecar(
             return false;
         }
     };
-    let temporary_path = temporary_metadata_path(&work.device_id, track_id, "analysis");
-    if let Err(error) = std::fs::write(&temporary_path, &bytes) {
-        tracing::warn!(track_id, %error, "could not stage analysis sidecar data");
-        return false;
-    }
+    let temporary_path = match reprise_core::device_sync::staging::stage_bytes(
+        &work.device_id,
+        track_id,
+        "analysis",
+        &bytes,
+    ) {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!(track_id, %error, "could not stage analysis sidecar data");
+            return false;
+        }
+    };
     let result = runtime
         .backend
         .replace_track(
@@ -383,7 +394,7 @@ pub(super) async fn copy_analysis_sidecar(
             Rc::new(|_, _| {}),
         )
         .await;
-    let _ = std::fs::remove_file(temporary_path);
+    reprise_core::device_sync::staging::discard(&temporary_path);
     if let Err(error) = result {
         tracing::warn!(track_id, device_path = planned.device_path, %error, "could not copy analysis sidecar to device");
         return false;
@@ -416,9 +427,13 @@ pub(super) async fn write_track_metadata_list(
     let bytes = reprise_core::device_sync::track_metadata_list::TrackMetadataList::new(entries)
         .encode()
         .map_err(|error| format!("could not encode track metadata list: {error}"))?;
-    let temporary_path = temporary_metadata_path(&work.device_id, 0, "track-metadata");
-    std::fs::write(&temporary_path, &bytes)
-        .map_err(|error| format!("could not stage track metadata list: {error}"))?;
+    let temporary_path = reprise_core::device_sync::staging::stage_bytes(
+        &work.device_id,
+        0,
+        "track-metadata",
+        &bytes,
+    )
+    .map_err(|error| format!("could not stage track metadata list: {error}"))?;
     let result = runtime
         .backend
         .replace_track(
@@ -433,7 +448,7 @@ pub(super) async fn write_track_metadata_list(
             Rc::new(|_, _| {}),
         )
         .await;
-    let _ = std::fs::remove_file(temporary_path);
+    reprise_core::device_sync::staging::discard(&temporary_path);
     result
         .map(|_| ())
         .map_err(|error| format!("could not write track metadata list: {error}"))
@@ -452,12 +467,11 @@ pub(super) async fn copy_lyrics_sidecar(
     else {
         return;
     };
-    let Ok(metadata) = std::fs::metadata(&sidecar.source_path) else {
+    let Some(source_bytes) =
+        reprise_core::device_sync::lyrics_sidecar::source_file_size(&sidecar.source_path)
+    else {
         return;
     };
-    if !metadata.is_file() {
-        return;
-    }
     let result = runtime
         .backend
         .replace_track(
@@ -467,7 +481,7 @@ pub(super) async fn copy_lyrics_sidecar(
             storage_id,
             sidecar.source_path.clone(),
             sidecar.device_path.clone(),
-            metadata.len(),
+            source_bytes,
             work.cancellable.clone(),
             Rc::new(|_, _| {}),
         )
@@ -510,7 +524,7 @@ pub(super) async fn remove_lyrics_sidecar(
     else {
         return;
     };
-    if !std::fs::metadata(&sidecar.source_path).is_ok_and(|metadata| metadata.is_file()) {
+    if reprise_core::device_sync::lyrics_sidecar::source_file_size(&sidecar.source_path).is_none() {
         return;
     }
     if let Err(error) = runtime
