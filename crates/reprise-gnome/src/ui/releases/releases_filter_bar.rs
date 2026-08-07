@@ -443,4 +443,29 @@ mod tests {
         assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
         assert!(bar.chips.child_at_index(0).is_some());
     }
+
+    /// NR-25: the default view is the quiet one. The row still names its
+    /// total, but offers no "Clear all" and accents nothing — the button
+    /// appears when the reader has changed something, not because the
+    /// default itself filters.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nr_25_the_default_filter_row_offers_no_clear_all() {
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let bar = ReleasesFilterBar::new(conn);
+        bar.set_counts(168, 629);
+
+        assert!(
+            !bar.clear_all.get_visible(),
+            "a default filter row has nothing to clear"
+        );
+
+        bar.apply_filter(ReleasesFilter::widest(false));
+
+        assert!(
+            bar.clear_all.get_visible(),
+            "widening the scope is a change, and a change is undoable"
+        );
+    }
 }

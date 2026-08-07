@@ -775,3 +775,16 @@ fn nr_27_the_per_artist_cap_bounds_news_not_the_catalog() {
     assert_eq!(catalog.len(), 25, "the gap catalog keeps every album");
     assert_eq!(news.len(), 20, "the news candidates stop at twenty");
 }
+
+/// NR-25: the default view is the quiet one, and the filter row decides that
+/// by comparing what it loaded against `ReleasesFilter::default()`. If a
+/// freshly installed library does not produce exactly that value, the row
+/// offers "Clear all" forever and accents a count nobody filtered.
+#[test]
+fn nr_25_a_fresh_library_loads_exactly_the_default_filter() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+
+    let loaded = persisted_releases_filter(&db).unwrap();
+
+    assert_eq!(loaded, ReleasesFilter::default());
+}
