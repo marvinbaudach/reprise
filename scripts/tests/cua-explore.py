@@ -13,7 +13,12 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 
 from protocol import ActionGateway, ContractError, load_mission  # noqa: E402
 from fixtures import FixtureError, build_plan, validate_scratch_root  # noqa: E402
-from oracles import ActionEvidence, OracleEngine, normalize_snapshot  # noqa: E402
+from oracles import (  # noqa: E402
+    ActionEvidence,
+    OracleEngine,
+    element_flag,
+    normalize_snapshot,
+)
 from explorer import DeterministicExplorer  # noqa: E402
 from agent_adapter import AgentError, ExternalAgent  # noqa: E402
 from driver import CuaExecutor  # noqa: E402
@@ -262,6 +267,102 @@ def element(index, label, role="button", x=10, y=10, w=100, h=32, **extra):
         "enabled": True,
         **extra,
     }
+
+
+def driver_element(index, label, role, x, y, w, h, *, depth=3, parent_index=0, enabled=True):
+    """Exactly the key set cua-driver emits: no 'visible', no 'states'."""
+    return {
+        "depth": depth,
+        "element_index": index,
+        "element_token": f"tok-{index}",
+        "enabled": enabled,
+        "frame": {"x": x, "y": y, "w": w, "h": h},
+        "label": label,
+        "parent_index": parent_index,
+        "role": role,
+        "value": "",
+    }
+
+
+class DriverFieldSetTests(unittest.TestCase):
+    """The oracle must not invent findings from fields the driver never sends."""
+
+    def setUp(self) -> None:
+        self.engine = OracleEngine()
+        self.raw = {
+            "structuredContent": {
+                "elements": [
+                    driver_element(
+                        0, "Reprise", "frame", 200, 50, 1200, 800,
+                        depth=0, parent_index=None,
+                    ),
+                    driver_element(7, "Add filter", "button", 260, 110, 96, 34),
+                    driver_element(9, "Music", "row", 220, 200, 400, 28),
+                    driver_element(
+                        11, "Save", "button", 900, 700, 80, 30, enabled=False
+                    ),
+                ]
+            }
+        }
+
+    def _snapshot(self):
+        return normalize_snapshot(self.raw, state_id="probe", captured_ms=0)
+
+    def test_absent_visible_key_falls_back_to_the_declared_default(self) -> None:
+        elements = {element.label: element for element in self._snapshot().elements}
+
+        self.assertTrue(elements["Add filter"].visible)
+        self.assertTrue(elements["Add filter"].enabled)
+        self.assertFalse(elements["Save"].enabled)
+
+    def test_absent_focus_and_selection_keys_stay_false(self) -> None:
+        elements = {element.label: element for element in self._snapshot().elements}
+
+        self.assertFalse(elements["Add filter"].focused)
+        self.assertFalse(elements["Add filter"].selected)
+
+    def test_a_real_driver_snapshot_produces_no_findings(self) -> None:
+        findings = self.engine.inspect_snapshot(self._snapshot())
+
+        self.assertEqual([finding.code for finding in findings], [])
+
+    def test_an_element_outside_the_window_is_still_reported(self) -> None:
+        self.raw["structuredContent"]["elements"].append(
+            driver_element(13, "Off window", "button", 1500, 110, 60, 34)
+        )
+
+        findings = self.engine.inspect_snapshot(self._snapshot())
+
+        self.assertEqual(
+            [finding.code for finding in findings], ["invisible-actionable"]
+        )
+
+
+class BooleanStateTests(unittest.TestCase):
+    def test_a_direct_boolean_wins(self) -> None:
+        self.assertFalse(element_flag({"visible": False}, "visible", True))
+        self.assertTrue(element_flag({"visible": True}, "visible", False))
+
+    def test_a_present_states_list_decides(self) -> None:
+        self.assertTrue(
+            element_flag({"states": ["visible", "enabled"]}, "visible", False)
+        )
+        self.assertFalse(
+            element_flag({"states": ["enabled"]}, "visible", True)
+        )
+
+    def test_a_direct_boolean_outranks_the_states_list(self) -> None:
+        self.assertFalse(
+            element_flag({"visible": False, "states": ["visible"]}, "visible", True)
+        )
+
+    def test_neither_key_nor_states_falls_back_to_the_default(self) -> None:
+        self.assertTrue(element_flag({}, "visible", True))
+        self.assertFalse(element_flag({}, "selected", False))
+
+    def test_an_empty_states_list_carries_no_information(self) -> None:
+        self.assertTrue(element_flag({"states": []}, "visible", True))
+        self.assertFalse(element_flag({"states": []}, "selected", False))
 
 
 class UxOracleTests(unittest.TestCase):

@@ -23,12 +23,21 @@ from ui_vocabulary import (
 GEOMETRY_EPSILON_PX = 6.0
 
 
-def _bool(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
+def element_flag(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
+    """Read a boolean element state from whatever shape the driver reports.
+
+    A direct boolean wins. Otherwise a non-empty states list decides by
+    membership. If the driver sends neither - the current cua-driver sends no
+    'visible' key and no 'states' list at all - the declared default applies.
+    Silently ignoring the default here made every element count as invisible.
+    """
     direct = element.get(key)
     if isinstance(direct, bool):
         return direct
-    states = element.get("states", [])
-    return isinstance(states, list) and key in states if direct is None else default
+    states = element.get("states")
+    if isinstance(states, list) and states:
+        return key in states
+    return default
 
 
 def _number(value: Any, default: float = 0.0) -> float:
@@ -243,10 +252,10 @@ def normalize_snapshot(
                 role=role,
                 frame=frame,
                 actions=actions,
-                enabled=_bool(raw_element, "enabled", True),
-                visible=_bool(raw_element, "visible", True),
-                focused=_bool(raw_element, "focused"),
-                selected=_bool(raw_element, "selected"),
+                enabled=element_flag(raw_element, "enabled", True),
+                visible=element_flag(raw_element, "visible", True),
+                focused=element_flag(raw_element, "focused"),
+                selected=element_flag(raw_element, "selected"),
                 value="" if value_raw is None else str(value_raw),
             )
         )
