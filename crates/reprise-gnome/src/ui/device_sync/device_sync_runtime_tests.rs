@@ -781,6 +781,8 @@ mod podcast_removal_tests;
 mod preparation_tests;
 #[path = "device_sync_readback_tests.rs"]
 mod readback_tests;
+#[path = "device_sync_run_log_tests.rs"]
+mod run_log_tests;
 #[path = "device_sync_safety_tests.rs"]
 mod safety_tests;
 #[path = "device_sync_selection_summary_tests.rs"]
