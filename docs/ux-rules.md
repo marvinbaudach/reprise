@@ -1204,20 +1204,28 @@ result.
   carry the same work in their chrome according to FB-9; they do not add
   this sidebar card to their content flow.
 - **FB-9** [planned] [gtk] — Transient status indicators do not displace
-  existing layout. Use the first available implementation in this order:
-  (1) an unmeasured chrome overlay, such as a thin edge line plus a compact
-  status chip; (2) an unmeasured overlay inside an otherwise stable
-  surface; (3) a fixed-size status slot that is already reserved in the
-  resting layout. Never insert or remove a banner/card in content flow,
-  animate the size, margins or position of existing content, or duplicate
-  one task's status within the same window. The rule is per window, not
-  app-wide: the main window may retain its one sidebar card while a modal
-  dialog uses its one chrome location. The compact surface names phase and
-  percentage; detailed counters belong in its tooltip or in a related,
-  fixed-height one-line subtitle. Background status fades in place with the
-  Micro token. Continuous gear rotation and indeterminate pulsing obey the
-  central reduced-motion gate and remain statically legible when animations
-  are disabled.
+  existing layout. Use the first implementation that applies, in this
+  order: (1) **chrome** — the header, footer or edge region of the window
+  or dialog, as an overlay with no layout height of its own; this is the
+  first choice for global states; (2) **reserved space** — a line of fixed
+  height that is always present and names the resting state at rest
+  ("Library up to date"), so it never sits empty; (3) **state change of an
+  existing element** — the row that triggers the action shows the progress
+  itself, at unchanged height. Three prohibitions: never insert a banner
+  above the content and remove it again; never let an indicator's own
+  height change with its state (error text, a second line, a growing
+  detail list); never leave an empty placeholder that occupies area without
+  saying anything. One task's status is never duplicated within the same
+  window. The rule is per window, not app-wide: the main window may retain
+  its one sidebar card while a modal dialog uses its one chrome location,
+  regardless of which page is open. The short status is icon, percentage
+  and Cancel; details are spelled out only where the user can act on them,
+  otherwise they belong in the tooltip. Progress bars are ≤ 2–3 px high and
+  sit on an edge, never between two elements. Background status fades in
+  place with the Micro token (150 ms), never with a height animation.
+  Continuous gear rotation and indeterminate pulsing obey the central
+  reduced-motion gate and remain statically legible when animations are
+  disabled.
   <!-- REVIEW: Rule proposal -->
 
 ## H. File association & OS integration
@@ -1756,6 +1764,13 @@ place (MOT-2, the motion reading of P-4).
   (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog,
   Popover — e.g. the push/pop slides of the settings subpages) count
   as system-given and are exempt from the token requirement.
+  A continuous activity indicator that Reprise draws itself (the scan
+  chip's gear) is a loop, not a transition: none of the four tokens
+  describes it. Its period is named in `ui/motion.rs` alongside them
+  (`INDICATOR_SPIN_MS`, 1,200 ms, linear, matching `gtk::Spinner`'s
+  pace) and is never written into a CSS string by hand. Linear easing
+  is permitted here for the same reason it is permitted for progress
+  bars: a rotation has no start and no end to ease.
   **The accent is not its own animation.** Changing its source reloads one
   named color; the carrying widget's existing transition applies. The play
   button, for example, transitions `background-color` and `box-shadow` on
