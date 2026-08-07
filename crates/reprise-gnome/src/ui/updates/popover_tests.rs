@@ -86,8 +86,8 @@ fn shared_footer_uses_the_oldest_active_feed_and_names_failures() {
 }
 
 /// A no-op stand-in for the window-supplied navigation callback: these
-/// tests exercise fetch/render/badge behavior, not NR-13 navigation (that
-/// lives in `release_row.rs`'s own tests).
+/// tests exercise fetch/render/badge behavior, not "Show in library"
+/// navigation (that lives in `release_row.rs`'s own tests).
 fn noop_show_album() -> release_row::OnShowAlbum {
     Rc::new(|_, _| {})
 }
