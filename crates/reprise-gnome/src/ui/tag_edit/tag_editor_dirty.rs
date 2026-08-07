@@ -122,6 +122,33 @@ pub(in crate::ui) fn parse_number_field(text: &str) -> Result<Option<u32>, Parse
     number_patch(true, text).map(|value| value.unwrap_or(None))
 }
 
+/// Save-time commit for Year/Track-number, the two fields whose validity is
+/// only knowable once the user presses Save (see `tag_editor_save.rs`).
+///
+/// The guard is the whole point: a Mixed number field is deliberately left
+/// blank (`tag_editor_form::init_field` — no prefilled value), so blank means
+/// "every track keeps its own value", NOT "clear it on every track". Saving
+/// used to push the blank field into the session unconditionally, which turned
+/// a multi-album selection whose only real edit was the rating into a
+/// `year = Some(None)` patch per track, and `tag_mutation::set_patch_fields`
+/// dutifully called `remove_date()` on each file — years silently deleted from
+/// the tags on disk. A blank field therefore only commits once the user has
+/// actually armed it, which the live "changed" wiring records as pending; a
+/// field carrying text always commits, so deliberately clearing a uniform year
+/// still works.
+pub(in crate::ui) fn commit_number_field_on_save(
+    session: &mut TagEditSession,
+    scope: PendingScope,
+    field: TagField,
+    text: &str,
+    value: Option<u32>,
+) {
+    if text.trim().is_empty() && !field_is_armed(session, scope, field) {
+        return;
+    }
+    session.set_pending(scope, field, &FieldValue::Number(value));
+}
+
 /// TAG-5: whether the "Review changes" expander should be shown. Multi
 /// mode shows it whenever anything is effectively pending; SingleNav only
 /// once pending reaches beyond the current track (`> 1` — a lone track can
