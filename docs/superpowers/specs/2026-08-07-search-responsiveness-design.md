@@ -21,8 +21,10 @@ Dazu kommt eine zweite, unabhängige Ursache. `filter_change_viewport`
 (`track_list_reload.rs:70`) stellt bei **jeder** Filteränderung auf
 `CenterPlayingTrack`. Das ist kein Versehen, sondern die aktive Regel **FIL-9**
 (`ux-rules.md:1440`): ist der geladene Titel Teil der neuen Ergebnismenge, wird
-seine Zeile zentriert statt an der Tabellenoberkante verankert. Diese Spec löst
-FIL-9 ab — die Regel hat einen realen Preis, den sie damals nicht beziffert hat.
+seine Zeile zentriert statt an der Tabellenoberkante verankert. FIL-9 deckt
+dabei Suche **und** Facetten ab. Diese Spec nimmt ihr die Suche und lässt ihr
+die Facetten — die Regel hat einen realen Preis, den sie damals nicht beziffert
+hat, und er fällt beim Tippen ungleich häufiger an als bei einem Facettenklick.
 
 Läuft ein Titel und ist er im Ergebnis — also praktisch immer, wenn man beim
 Hören sucht —, kostet jedes Feuern des Debounce:
@@ -194,21 +196,31 @@ Messstand etwas anderes als die Änderung.
 ## Teil 4 — SEARCH-9
 
 Das Verhalten wird als neue Regel in `docs/ux-rules.md` festgeschrieben —
-`SEARCH-9` ist frei (`SEARCH-1` bis `SEARCH-8` sind vergeben). **`SEARCH-9`
-ersetzt `FIL-9`**, die bisher das Zentrieren bei jeder Filteränderung
-vorschrieb; `FIL-9` erhält den projektüblichen Vermerk
-`[replaced by SEARCH-9]` und behält seinen Text, damit die Entscheidung
-nachvollziehbar bleibt. Der bestehende Test
-`fil_9_any_search_change_requests_playing_track_centering`
-(`track_list_reload.rs`) weicht dem neuen `search_9_…`-Test.
+`SEARCH-9` ist frei (`SEARCH-1` bis `SEARCH-8` sind vergeben).
 
-Zu FIL-9 gehört ein Nebensatz, der mit abgelöst wird: „ohne geladenen Titel im
-Ziel bleibt der bestehende ID-plus-Offset-Anker erhalten". Auch dieser Fall geht
-künftig auf `Top`. Eine frisch gefilterte Trefferliste an der Position der
-ungefilterten Liste zu verankern hat keinen Adressaten — die Zeile, auf die der
-Anker zeigte, ist im Ergebnis meist gar nicht mehr enthalten.
+**`FIL-9` wird nicht ersetzt, sondern eingeschränkt.** Sie bleibt `[active]` und
+regelt weiterhin das Zentrieren bei **Facetten**-Filtern; ihr Text wird um die
+Textsuche gekürzt und verweist auf `SEARCH-9`. Das hält den in „Geltungsbereich"
+gezogenen Schnitt auch im Regelwerk durch, statt den Facettenpfad ungeregelt
+zurückzulassen.
 
-Sie deckt vier Aussagen ab:
+Zum Suchanteil von FIL-9 gehört ein Nebensatz, der mit abgelöst wird: „ohne
+geladenen Titel im Ziel bleibt der bestehende ID-plus-Offset-Anker erhalten".
+Auch dieser Fall geht bei der Suche künftig auf `Top`. Eine frisch gefilterte
+Trefferliste an der Position der ungefilterten Liste zu verankern hat keinen
+Adressaten — die Zeile, auf die der Anker zeigte, ist im Ergebnis meist gar
+nicht mehr enthalten.
+
+Die vier vorhandenen `fil_9_…`-Tests werden dabei einzeln entschieden:
+
+| Test | Ort | Los |
+| --- | --- | --- |
+| `fil_9_any_search_change_requests_playing_track_centering` | `track_list_reload.rs:764` | wird zum `search_9_…`-Test der neuen Dreiteilung |
+| `fil_9_filter_changes_center_the_visible_playing_track` | `current_track_selection_tests.rs:119` | Display-Test, filtert über Suchtext — wird auf einen Facettenfilter umgestellt und bleibt FIL-9 |
+| `fil_9_filter_change_centers_playing_track_in_new_results` | `reload_restore.rs:232` | prüft `centered_track_scroll_target`, das für Facetten weiter gilt — bleibt unverändert |
+| `fil_9_reveal_drops_when_the_track_left_the_view` | `track_reveal.rs:217` | betrifft den Reveal-Pfad, nicht das Filtern — bleibt unverändert |
+
+`SEARCH-9` deckt vier Aussagen ab:
 
 1. Zwischen Eingabe und Ergebnis liegt **genau eine** Wartezeit, und zwar die der
    Anwendung; die Drosselung des Eingabefelds ist abgeschaltet.
