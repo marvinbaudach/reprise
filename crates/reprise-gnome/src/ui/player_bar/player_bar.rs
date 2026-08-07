@@ -146,6 +146,12 @@ pub struct PlayerBar {
     /// Callback fired when the user clicks the artist label — navigates to
     /// the artist view (spec 1.5).
     pub(super) on_artist_click: crate::ui::link_activation::ActivationSlot,
+    /// The title/artist pair the bar shows, or is on its way to showing.
+    ///
+    /// `set_track` compares against this rather than against the labels: a
+    /// running crossfade has not swapped their text yet, so mid-fade they
+    /// still read the *previous* track and would answer the question wrong.
+    pub(super) displayed_track: RefCell<(String, String)>,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
     pub(super) current_track_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
@@ -306,6 +312,7 @@ impl PlayerBar {
             on_title_click,
             on_cover_click,
             on_artist_click,
+            displayed_track: RefCell::new((String::new(), String::new())),
             current_track_animation: Rc::new(RefCell::new(None)),
             track_animation_generation: Rc::new(Cell::new(0)),
             current_icon_animation: Rc::new(RefCell::new(None)),
@@ -328,22 +335,18 @@ impl PlayerBar {
 
     /// Applies a `PlaybackState`: cross-fades the play/pause icon in two 75 ms
     /// halves and refreshes sensitivity.
+    ///
+    /// The button only moves when it changes what it says. Every manual jump
+    /// restarts the pipeline, which reports `Playing` a second time (see
+    /// `Player::try_play`), so without this guard each track change re-ran the
+    /// crossfade under an unchanged glyph and the pause button visibly blinked
+    /// mid-track. MOT-5 grants the crossfade and the pulse to Play↔Pause —
+    /// the moment the button reads differently — and to nothing else. Same
+    /// discipline the waveform already keeps in `set_paused`, which returns
+    /// early once its desaturation target is already the current one.
     pub fn set_state(&self, state: PlaybackState) {
         let was_playing = self.playback_state.get() == PlaybackState::Playing;
         let is_playing = state == PlaybackState::Playing;
-        let new_glyph = if is_playing {
-            Glyph::Pause
-        } else {
-            Glyph::Play
-        };
-        let tooltip = if is_playing {
-            strings::text(strings::TOOLTIP_PAUSE)
-        } else {
-            strings::text(strings::TOOLTIP_PLAY)
-        };
-        self.play_pause_button.set_tooltip_text(Some(&tooltip));
-        self.play_pause_button
-            .update_property(&[gtk4::accessible::Property::Label(&tooltip)]);
         self.playback_state.set(state);
         self.waveform.set_paused(!is_playing);
         self.refresh_live_badge_pulse();
@@ -356,10 +359,26 @@ impl PlayerBar {
         if state == PlaybackState::Stopped {
             self.set_position(0, 0);
         }
-        if was_playing != is_playing {
-            self.animate_play_pulse();
+        // `Stopped` and `Paused` read the same on this button, so the glyph
+        // follows `is_playing` alone — which makes this the one comparison
+        // that decides whether anything about the button changes at all.
+        if was_playing == is_playing {
+            return;
         }
-        self.animate_play_icon_change(new_glyph);
+        let tooltip = if is_playing {
+            strings::text(strings::TOOLTIP_PAUSE)
+        } else {
+            strings::text(strings::TOOLTIP_PLAY)
+        };
+        self.play_pause_button.set_tooltip_text(Some(&tooltip));
+        self.play_pause_button
+            .update_property(&[gtk4::accessible::Property::Label(&tooltip)]);
+        self.animate_play_pulse();
+        self.animate_play_icon_change(if is_playing {
+            Glyph::Pause
+        } else {
+            Glyph::Play
+        });
     }
 
     pub(super) fn refresh_live_badge_pulse(&self) {
