@@ -35,6 +35,7 @@ class FixturePlan:
     all_paths_disposable: bool
     metadata_dimensions: tuple[str, ...]
     podcast_episode_count: int = 0
+    youtube_episode_count: int = 0
     radio_station_count: int = 0
 
 
@@ -48,6 +49,7 @@ PLANS = {
         "mixed-sources-128", 128, 128, True, True,
         ("title", "artist", "album", "genre", "year", "rating"),
         podcast_episode_count=1,
+        youtube_episode_count=1,
         radio_station_count=1,
     ),
     "writable-512": FixturePlan(
@@ -197,6 +199,7 @@ def _seed_source_rows(conn: sqlite3.Connection) -> None:
         "online-sources-enabled",
         "online_sources.first_enable_completed",
         "module.podcasts.enabled",
+        "module.youtube.enabled",
         "module.radio.enabled",
     ):
         conn.execute(
@@ -219,6 +222,23 @@ def _seed_source_rows(conn: sqlite3.Connection) -> None:
              published_at, duration_secs, first_seen_at)
         VALUES (1, 1, 'fixture-podcast-needle', 'Fixture Podcast Needle',
                 'https://fixture.invalid/episode.flac', 2, 60, 2)
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO podcast_subscriptions
+            (id, kind, feed_url, title, author, added_at)
+        VALUES (2, 'youtube', 'https://fixture.invalid/channel',
+                'Fixture Channel', 'Fixture Author', 1)
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO podcast_episodes
+            (id, subscription_id, guid, title, audio_url,
+             published_at, duration_secs, first_seen_at)
+        VALUES (2, 2, 'fixture-youtube-needle', 'Fixture YouTube Needle',
+                'https://fixture.invalid/video.flac', 2, 60, 2)
         """
     )
     conn.execute(
@@ -309,7 +329,11 @@ def prepare_profile(
             _write_disposable_tracks(
                 conn, music_root, plan.writable_track_count, profile
             )
-            if plan.podcast_episode_count or plan.radio_station_count:
+            if (
+                plan.podcast_episode_count
+                or plan.youtube_episode_count
+                or plan.radio_station_count
+            ):
                 _seed_source_rows(conn)
             conn.commit()
 

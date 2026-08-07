@@ -6,17 +6,18 @@
   "mode": "adversarial",
   "agent": "required",
   "profile": "mixed-sources-128",
-  "budgets": {"actions": 80, "seconds": 1200, "restarts": 1},
-  "capabilities": ["activate", "type", "press", "hotkey", "scroll", "set-connectivity", "restart", "wait", "complete-workload", "finish"],
+  "budgets": {"actions": 90, "seconds": 1200, "restarts": 1},
+  "capabilities": ["activate", "hover", "type", "press", "hotkey", "scroll", "set-connectivity", "restart", "wait", "complete-workload", "finish"],
   "fixture_tokens": {
     "SEARCH_NEEDLE": "Writable Batch 0042",
     "PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle",
+    "YOUTUBE_ONLY_NEEDLE": "Fixture YouTube Needle",
     "RADIO_ONLY_NEEDLE": "Fixture Radio Needle",
     "NO_MATCH": "NoSuchFixtureResult"
   },
-  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "main-loop-stall", "accessibility", "offline-continuity"],
+  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "main-loop-stall", "accessibility", "offline-continuity", "hover-affordance"],
   "workloads": [
-    {"kind": "offline-transition", "phases": ["online", "offline", "online"], "interrupt": "source-refresh", "source_tokens": {"Podcasts / YouTube": "PODCAST_ONLY_NEEDLE", "Radio": "RADIO_ONLY_NEEDLE"}},
+    {"kind": "offline-transition", "phases": ["online", "offline", "online"], "interrupt": "source-refresh", "source_tokens": {"Podcasts": "PODCAST_ONLY_NEEDLE", "YouTube": "YOUTUBE_ONLY_NEEDLE", "Radio": "RADIO_ONLY_NEEDLE"}},
     {"kind": "restart", "connectivity": "offline", "status_label": "No connection"}
   ],
   "success": [

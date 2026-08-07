@@ -151,7 +151,24 @@ cua_common_exec_private() {
 
   mkdir -m 700 "$runtime_dir"
   mkdir -p "$root_profile/data" "$root_profile/cache" "$root_profile/config"
+  # There is no keyring in the private session, but the desktop portal still
+  # asks for one. Without these stubs the bus waits out its activation timeout
+  # (measured 25s on a developer host, 120s under the default
+  # service_start_timeout) and short missions get killed mid-run. Failing the
+  # activation immediately is the honest answer for a session that has no
+  # secret store; Reprise only reads the keyring from the scrobbling
+  # preference pages, never at startup.
+  local stub_root="$root_profile/dbus-stubs"
+  local stub_dir="$stub_root/dbus-1/services"
+  local stub_service
+  mkdir -p "$stub_dir"
+  for stub_service in org.freedesktop.secrets org.freedesktop.impl.portal.Secret; do
+    printf '[D-BUS Service]\nName=%s\nExec=/bin/false\n' "$stub_service" \
+      >"$stub_dir/$stub_service.service"
+  done
+  XDG_DATA_DIRS="$stub_root:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
   dbus-run-session -- env \
+    XDG_DATA_DIRS="$stub_root:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
     XDG_RUNTIME_DIR="$runtime_dir" \
     XDG_DATA_HOME="$root_profile/data" \
     XDG_CACHE_HOME="$root_profile/cache" \

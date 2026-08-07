@@ -17,6 +17,7 @@ The mission deck gives agents different goals and user mindsets:
 | Mission | Persona and pressure |
 | --- | --- |
 | `first-time-exploration` | A first-time listener with no Reprise vocabulary discovers local playback and reports unexplained states. |
+| `hover-affordance-sweep` | A reviewer points at every named button-like control before clicking anything. |
 | `section-search-isolation` | A curious source-switcher checks that search follows the visible section instead of silently affecting Music. |
 | `pointer-layout-reachability` | An impatient pointer user changes window sizes and probes handlers, hit targets, overlays, misrouted clicks, scrolling, and late layout movement. |
 | `offline-recovery` | A commuter loses and regains connectivity while local music and network-backed sources remain open. |
@@ -52,6 +53,147 @@ scripts/cua-explore/run.sh \
   scripts/cua-explore/missions/first-time-exploration.json \
   "$evidence_root/first-time-seed-11" --seed 11
 ```
+
+After every launch and every restart the runner polls `get_window_state` until
+the snapshot is undegraded and holds more than the bare window element. The X11
+window exists before the app registers with the AT-SPI registry, and a run that
+starts in that gap stays blind for its whole duration. The wait is condition
+based, capped at 60 seconds, and reports the driver's `degraded_reason` when the
+cap is reached.
+
+Element positions do not come from cua-driver. Under X11/Xvfb the AT-SPI SCREEN
+coordinate space reports (0, 0) for every node - measured on Reprise (170 of
+170) and on gnome-calculator (107 of 107) - so the driver adds the window origin
+and lands every element on the same pixel. The harness therefore walks the
+accessibility tree itself in WINDOW coordinates, starting at the frame child of
+the application - the application node carries no component interface, and
+starting there would shift both walks by one level - normalises against the
+frame node, and adds the window origin from `list_windows`. The frame node's
+own WINDOW rectangle is retained in `summary.json` as `geometry_calibration`:
+normalising against it is right exactly when it is the same rectangle as the
+`list_windows` entry, and the sizes are the test for that. Geometry is resolved per element, not per tree: cua-driver returns one entry
+per indexed row - measured 180 against 485 nodes in the full walk, and not a
+cap, since its `max_elements` defaults to 5 000 - so the two trees are never
+the same shape. Elements are grouped by their own key of role, label, width and height. A group
+resolves only when the driver and the walk hold the same number of nodes for
+that key, and they are then paired in walk order - sound because both enumerate
+the same tree in pre-order and the driver's elements are a subset of the walk,
+so equal counts on a subset mean the sets are identical. Anything else leaves
+that group alone without geometry while the rest keep theirs. Pairings inside a
+group are counted separately as `resolved_ordered`, because they rest on that
+subset argument rather than on the key alone. `subset_violations` counts the
+elements in groups where the driver reports *more* nodes than the walk can see:
+those never pair, and a non-zero count is evidence against the subset argument
+everywhere else too. The
+position oracles skip untrusted elements. `summary.json` records the quota
+under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
+outside the window) together with up to 40 unresolved elements per reason -
+each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
+
+The two driver tools take pixels in different spaces, measured from their own
+schemas: `move_cursor` with `scope=desktop` takes desktop coordinates, while
+`click` takes x/y together with `window_id` in full-window space. Every pixel
+click therefore goes through `window_pointer_point`, which subtracts the window
+origin exactly once and then asserts the point lands inside the target's own
+rectangle. A point outside its target is a coordinate-space error in the
+harness, not a measurement, so it fails loudly rather than returning a number
+that looks like a finding.
+
+Positions are only ever compared where both sides were measured. An element
+whose geometry could not be resolved carries the driver's placeholder frame at
+the window origin, and comparing that against a real measurement reported a
+toast's buttons as moving 1051 px while they had not moved at all - six
+reproduced `uninvited-layout-shift` findings that were entirely that artefact.
+The same guard applies to the scroll-direction median, where a single
+placeholder row is enough to invert the verdict.
+
+Tests for the explorer start from `scripts/tests/fixtures/hover-sweep-observe.json`,
+a verbatim recording of cua-driver output from a live run, and drive the public
+`propose` entry point with the action gateway in the loop. Hand-written
+fixtures disagreed with the driver three times running - role spellings, the
+element container, the missing `actions` list - and each time the suite stayed
+green while the real run did nothing. Role spellings live in exactly one place,
+`ui_vocabulary.ROLE_ALIASES`; an unknown one still falls through unchanged and
+fails where it is used.
+
+The sidebar sections are not exposed to accessibility at all, so the sweep
+measures the view it starts in first and records any section it cannot reach as
+`reachable: false` instead of aborting the run.
+
+The hover sweep points at every visible, enabled, actionable element whose role
+has a hover contract - buttons and links strictly, rows, cells, tabs, chips and
+tiles softly - and only when its position was actually measured, since a
+placeholder frame would hover some other part of the window. Role spelling
+comes from the hover rulebook rather than the mission's list, because the driver
+answers with its own ("push button" for "button"). The sweep is bounded by the
+mission's action budget, spread across the sections that actually have an
+accessible handle - a section that can never be visited gets no share. The
+reserve is the free exploration before the workload starts, one activation per
+reachable section, the checkpoint and the finish, plus a small margin. On the
+recorded snapshot that is 31 distinct targets in 44 actions against a budget of
+220, so the mission budget already covers the surface; `summary.json` records
+`hover_coverage` per section - candidates, reached, and how many were left to
+the budget - so a partial sweep is a stated result and never a silent one.
+
+The cursor exclusion box is switched by measurement, not by assumption. Once
+per launch the runner parks the pointer, moves it away and parks it again,
+comparing the parked region across the three captures: a drawn pointer
+disappears and comes back, a moving interface does not return to the same
+pixels. Only when the pointer really lands in the capture does the hover oracle
+exclude it - a blanket 48 px box blinds every icon button smaller than itself,
+which is exactly what the hover rule is about. The measurement is retained as
+`cursor-visibility.json` and in `summary.json` under `cursor_visibility`.
+
+The same label appears several times in the tree - a cell, a button and a
+toggle button can all read "Add filter" - and only one of them carries the
+AT-SPI action. cua-driver reports no actions at all, so picking a target by
+role landed on a shell that never had one and the app was blamed for it. The
+accessibility walk reads the Action interface per node and the matcher hangs it
+on the driver element that owns it, over the same bridge as the geometry.
+Exactly one candidate with an action is the target; several refuse the choice;
+none is its own finding, `no-accessible-action`, because a control that offers
+assistive technology nothing to invoke is a real fault and a different one from
+an action that fires and does nothing. `suspected-no-handler` now means only
+the latter.
+
+`suspected-no-handler` cannot tell two different faults apart, because the
+explorer activates over AT-SPI: either the control does nothing at all, or only
+its accessibility action is unwired while a real click works. The click probe
+drives one control both ways and contrasts what each changed - state signature,
+changed pixels inside the element, and the rating stars, which are individual
+buttons labelled with a glyph:
+
+```sh
+scripts/cua-explore/run.sh --click-probe "☆" \
+  scripts/cua-explore/missions/first-time-exploration.json \
+  "$evidence_root/click-probe-1"
+```
+
+Neither row changing means the control does nothing. Only the pixel row changing
+means assistive technology is offered an action that goes nowhere. The pixel
+route is refused outright when the element's position was not measured, and a
+target below 8 px carries a warning rather than a silent coin toss. Retained as
+`click-probe.json` with two screenshots per route.
+
+Before trusting any hover verdict, settle whether a pointer move reaches the
+app at all. The probe places the pointer on one named control twice - once
+through cua-driver's `move_cursor`, once through a real X11 warp - and prints
+the changed-pixel ratio inside the element's rectangle plus where X actually
+reports the pointer:
+
+```sh
+scripts/cua-explore/run.sh --hover-probe "Add filter" \
+  scripts/cua-explore/missions/hover-affordance-sweep.json \
+  "$evidence_root/hover-probe-1"
+```
+
+The table puts `driver_frame` next to `measured_frame`: if two differently
+sized controls share a `driver_frame`, that column is a placeholder rather than
+a position. `x11_cursor` is the ground truth. If `move_cursor` leaves it at the park point,
+the driver never moved the real pointer. If both routes land on the target but
+only the X11 row changes pixels, `move_cursor` draws an overlay and the hover
+path needs `xdotool`. The table is printed and retained as `hover-probe.json`
+next to the two screenshots per route.
 
 Every output directory must be new. Repeat a suspicious observation with a
 second seed and fresh generated profile before treating it as confirmed:
@@ -91,12 +233,37 @@ checks additionally require each cached source row exactly once during the
 offline visit and after reconnect. The batch checkpoint is audited
 independently: exactly 512 private database rows must carry the pinned genre and
 year, exactly 512 disposable FLAC copies must have changed, and no other row may
-carry those values. Exhausting the action budget without an explicit `finish`
+carry those values. Reprise does not show a selection count outside the tag dialog; the batch audit therefore accepts the dialog title as evidence—the missing display is an open UX finding, not a harness property. Exhausting the action budget without an explicit `finish`
 is a failed run. Arbitrary text,
 shell commands, destructive targets, stale element indices, unknown actions,
 URLs, and exhausted budgets fail closed. The agent process receives only a
 small allowlisted environment and a disposable `HOME`; it is nevertheless an
 explicitly trusted executable, not a filesystem sandbox.
+
+## The bundled reasoning agent
+
+`agents/reprise_ux_agent.py` is the credential-free agent for
+`section-search-isolation`, `offline-recovery`, and `large-library-stress`. It is a
+seeded deterministic state machine: declarative workload phases are resolved against each
+fresh observation, every action passes a local copy of the protocol gate, and missing
+affordances get two observations plus a bounded alternate before a named note is retained.
+It does not use a model, network transport, API key, or credential environment variable.
+
+Pass the seed in the explicit agent argv; `run.sh --seed` controls only the built-in
+explorer:
+
+```sh
+agent_argv="[\"/usr/bin/python3\",\"$PWD/scripts/cua-explore/agents/reprise_ux_agent.py\",\"--seed\",\"11\"]"
+scripts/cua-explore/run.sh \
+  scripts/cua-explore/missions/section-search-isolation.json \
+  "$evidence_root/section-search-agent-11" \
+  --agent-command-json "$agent_argv"
+```
+
+Agent observations and findings are condensed into the finish reason and written in full
+to the disposable `HOME` as `agent-notes.jsonl`; the runner retains that file under
+`evidence/agent/`. The vocabulary-only `agents/probe_agent.py` records up to 15 normalized
+observations for the maintainer calibration run without attempting workload coverage.
 
 ## Evidence
 
@@ -108,6 +275,25 @@ Each retained run contains:
 - `trajectory.jsonl`: replayable typed actions and state identifiers;
 - `states/`: normalized CUA snapshots and screenshots around interactions;
 - `app-*.log`: one application log per launch or restart.
+- `agent/*.jsonl`: retained bundled-agent notes or vocabulary observations, when present.
+
+## Hover acceptance
+
+The `hover` action moves the real desktop pointer after a driver preflight, captures a
+baseline and hovered PNG, compares only the target rectangle, and returns the pointer to a
+safe park point. Buttons and links without a visible change are errors; rows and cells are
+warnings, while unsupported images or geometry produce informational evidence. Run the
+single-dispatch safety check with `run.sh --hover-smoke MISSION OUTPUT`. Authoritative
+sweeps use `--gtk-animations off`; compare an optional `on` run with `hover_compare.py` to
+find affordances that disappear when GTK animations are disabled. Icon buttons without an
+accessible name remain outside the sweep and are reported by the accessibility oracle.
+
+The agent-free `hover-affordance-sweep` mission visits Music, Queue, Playlists, Podcasts,
+YouTube, Radio, and My Stats in that order. In each section it hovers at most 28 named,
+actionable, enabled, visible button-like elements, sorted by geometry and label. Its
+workload is complete when every section was reached, the configured minimum target count
+was hovered, and at least one hover per section produced measurable screenshots. Hover
+findings are the mission result and do not themselves make the workload incomplete.
 
 Start review with `report.md`, then inspect the referenced before/action/after
 states. A report with no findings means only that no anomaly was observed within
@@ -158,5 +344,5 @@ or explicitly accepted with evidence; a one-off heuristic finding is recorded
 for follow-up rather than silently discarded.
 
 Do not add this harness to `.github/workflows`. Large exploratory runs are
-expensive, nondeterministic by design when a reasoning agent is attached, and
+expensive, seed-varying by design when an exploratory agent is attached, and
 depend on human UX judgement.

@@ -8,6 +8,13 @@ cd "$repo_root"
 python3 scripts/tests/cua-explore.py
 python3 scripts/tests/cua-explore-review.py
 python3 scripts/tests/cua-explore-audit-adversarial.py
+python3 scripts/tests/cua-explore-hover.py
+python3 scripts/tests/cua-explore-agent.py
+python3 scripts/tests/cua-explore-readiness.py
+python3 scripts/tests/cua-explore-hover-probe.py
+python3 scripts/tests/cua-explore-geometry.py
+python3 scripts/tests/cua-explore-real-snapshot.py
+python3 scripts/tests/cua-explore-click-probe.py
 python3 scripts/cua-explore/protocol.py validate-mission \
   scripts/cua-explore/missions/first-time-exploration.json >/dev/null
 
@@ -16,15 +23,25 @@ if [[ ! -x $runner ]]; then
   echo "$runner must exist and be executable" >&2
   exit 1
 fi
+agent=scripts/cua-explore/agents/reprise_ux_agent.py
+if [[ ! -x $agent ]]; then
+  echo "$agent must exist and be executable" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings -- '--agent-command-json' scripts/cua-explore/README.md || \
+   ! rg --quiet --fixed-strings 'agents/reprise_ux_agent.py' scripts/cua-explore/README.md; then
+  echo "exploratory README must document the bundled reasoning agent command" >&2
+  exit 1
+fi
 help=$($runner --help)
-for phrase in "opt-in" "not ordinary CI" "fresh output" "100,000" "512"; do
+for phrase in "opt-in" "not ordinary CI" "fresh output" "100,000" "512" "--hover-smoke" "--gtk-animations"; do
   if [[ $help != *"$phrase"* ]]; then
     echo "exploratory runner help must mention: $phrase" >&2
     exit 1
   fi
 done
 missions=$($runner --list-missions)
-for mission in first-time-exploration large-library-stress offline-recovery section-search-isolation pointer-layout-reachability; do
+for mission in first-time-exploration hover-affordance-sweep large-library-stress offline-recovery section-search-isolation pointer-layout-reachability; do
   if ! rg --quiet --fixed-strings --line-regexp "$mission" <<<"$missions"; then
     echo "exploratory runner must list mission: $mission" >&2
     exit 1
@@ -76,18 +93,62 @@ if [[ -z $validate_base_line || -z $create_base_line || $validate_base_line -ge 
   exit 1
 fi
 
-for required in 'unshare' '--map-root-user' '--net'; do
+for required in 'unshare' '--map-current-user' '--net'; do
   if ! rg --quiet --fixed-strings -- "$required" "$runner" scripts/cua-explore/runner.py; then
     echo "exploratory app must use a private network namespace: $required" >&2
     exit 1
   fi
 done
+# Mapping the app to root breaks D-Bus EXTERNAL authentication against the
+# user-owned private session bus.
+if rg --quiet --fixed-strings -- '--map-root-user' "$runner" scripts/cua-explore/runner.py; then
+  echo "exploratory app must not map root inside its network namespace" >&2
+  exit 1
+fi
 host_network=$(readlink /proc/self/ns/net)
-private_network=$(unshare --user --map-root-user --net readlink /proc/self/ns/net)
+private_network=$(unshare --user --map-current-user --net readlink /proc/self/ns/net)
 if [[ $host_network == "$private_network" ]]; then
   echo "exploratory app network namespace must differ from the host" >&2
   exit 1
 fi
+if command -v dbus-run-session >/dev/null && command -v dbus-send >/dev/null; then
+  if ! timeout 20 dbus-run-session -- unshare --user --map-current-user --net \
+    dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+    /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null; then
+    echo "exploratory app namespace must retain private session-bus access" >&2
+    exit 1
+  fi
+else
+  echo "skipping exploratory namespace D-Bus probe: dbus-run-session or dbus-send missing"
+fi
+
+for required in \
+  'org.freedesktop.secrets' \
+  'org.freedesktop.impl.portal.Secret' \
+  'XDG_DATA_DIRS="$stub_root:'; do
+  if ! rg --quiet --fixed-strings "$required" scripts/cua-common/session.sh; then
+    echo "private session must neutralise the secret service: $required" >&2
+    exit 1
+  fi
+done
+# The stub must make activation fail immediately instead of waiting out the
+# bus timeout. Measured on a developer host: 25s without it, 18ms with it.
+stub_root=$(mktemp -d)
+mkdir -p "$stub_root/dbus-1/services"
+printf '[D-BUS Service]\nName=org.freedesktop.secrets\nExec=/bin/false\n' \
+  >"$stub_root/dbus-1/services/org.freedesktop.secrets.service"
+secrets_started=$(date +%s%N)
+XDG_DATA_DIRS="$stub_root:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
+  timeout 30 dbus-run-session -- dbus-send --session --print-reply \
+  --dest=org.freedesktop.secrets /org/freedesktop/secrets \
+  org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1 || true
+secrets_elapsed=$(( ($(date +%s%N) - secrets_started) / 1000000 ))
+rm -rf "$stub_root"
+if (( secrets_elapsed > 5000 )); then
+  echo "secret-service stub must fail fast, took ${secrets_elapsed}ms" >&2
+  exit 1
+fi
+echo "secret-service activation fails in ${secrets_elapsed}ms with the stub"
 
 if rg --quiet --fixed-strings 'cua-explore' .github/workflows; then
   echo "exploratory UX runs must stay out of ordinary CI workflows" >&2

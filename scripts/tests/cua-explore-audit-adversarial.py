@@ -2,6 +2,7 @@
 """Adversarial regressions for workload-evidence false positives."""
 
 import pathlib
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -12,8 +13,119 @@ EXPLORE_ROOT = REPO_ROOT / "scripts" / "cua-explore"
 sys.path.insert(0, str(EXPLORE_ROOT))
 
 from protocol import load_mission  # noqa: E402
-from fixtures import FixtureError, validate_scratch_base  # noqa: E402
+from fixtures import (  # noqa: E402
+    FixtureError,
+    _seed_source_rows,
+    build_plan,
+    validate_scratch_base,
+)
+from oracles import normalize_snapshot  # noqa: E402
+from ui_vocabulary import (  # noqa: E402
+    CANONICAL_ROW_ROLE,
+    KNOWN_SECTION_LABELS,
+    canonical_role,
+)
 from workload_audit import ActionTrace, audit_action_workload  # noqa: E402
+
+
+class UiVocabularyContractTests(unittest.TestCase):
+    def test_role_aliases_map_table_row_to_the_canonical_row_role(self) -> None:
+        self.assertEqual(canonical_role("table row"), CANONICAL_ROW_ROLE)
+
+    def test_normalize_snapshot_canonicalises_row_roles(self) -> None:
+        snapshot = normalize_snapshot(
+            {
+                "structuredContent": {
+                    "elements": [{"label": "Track", "role": "table row"}]
+                }
+            },
+            state_id="state-1",
+            captured_ms=0,
+        )
+
+        self.assertEqual(snapshot.elements[0].role, CANONICAL_ROW_ROLE)
+
+    def test_no_module_redefines_the_busy_role_table(self) -> None:
+        definitions = []
+        for path in sorted(EXPLORE_ROOT.glob("*.py")):
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if line.lstrip().startswith(("BUSY_ROLES =", "busy_roles =")):
+                    definitions.append((path.name, line_number))
+
+        self.assertEqual([name for name, _line in definitions], ["ui_vocabulary.py"])
+
+    def test_known_section_labels_contain_podcasts_and_youtube_separately(self) -> None:
+        self.assertIn("Podcasts", KNOWN_SECTION_LABELS)
+        self.assertIn("YouTube", KNOWN_SECTION_LABELS)
+        self.assertNotIn("Podcasts / YouTube", KNOWN_SECTION_LABELS)
+
+
+class SourceRouteContractTests(unittest.TestCase):
+    def test_every_mission_route_label_exists_in_the_known_section_vocabulary(self) -> None:
+        labels = set()
+        for mission_path in sorted((EXPLORE_ROOT / "missions").glob("*.json")):
+            mission = load_mission(mission_path)
+            for workload in mission.workloads:
+                labels.update(workload.get("route_tokens", {}))
+                labels.update(workload.get("source_tokens", {}))
+                labels.update(workload.get("unsupported", []))
+                labels.update(workload.get("sections", []))
+
+        self.assertLessEqual(labels, set(KNOWN_SECTION_LABELS))
+
+    def test_mixed_sources_profile_seeds_a_youtube_subscription_and_episode(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        connection.executescript(
+            """
+            CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE podcast_subscriptions (
+                id INTEGER PRIMARY KEY, kind TEXT, feed_url TEXT, title TEXT,
+                author TEXT, added_at INTEGER
+            );
+            CREATE TABLE podcast_episodes (
+                id INTEGER PRIMARY KEY, subscription_id INTEGER, guid TEXT,
+                title TEXT, audio_url TEXT, published_at INTEGER,
+                duration_secs INTEGER, first_seen_at INTEGER
+            );
+            CREATE TABLE radio_stations (
+                id INTEGER PRIMARY KEY, uuid TEXT, name TEXT, stream_url TEXT,
+                genre TEXT, added_at INTEGER
+            );
+            """
+        )
+
+        _seed_source_rows(connection)
+
+        self.assertEqual(build_plan("mixed-sources-128").youtube_episode_count, 1)
+        self.assertEqual(
+            connection.execute(
+                """
+                SELECT s.kind, s.title, e.title
+                FROM podcast_subscriptions AS s
+                JOIN podcast_episodes AS e ON e.subscription_id = s.id
+                WHERE s.kind = 'youtube'
+                """
+            ).fetchone(),
+            ("youtube", "Fixture Channel", "Fixture YouTube Needle"),
+        )
+        self.assertEqual(
+            connection.execute(
+                "SELECT value FROM settings WHERE key = 'module.youtube.enabled'"
+            ).fetchone(),
+            ("1",),
+        )
+
+    def test_section_search_mission_covers_podcasts_and_youtube_separately(self) -> None:
+        mission = load_mission(
+            EXPLORE_ROOT / "missions" / "section-search-isolation.json"
+        )
+        routes = mission.workloads[0]["route_tokens"]
+
+        self.assertEqual(routes["Podcasts"], "PODCAST_ONLY_NEEDLE")
+        self.assertEqual(routes["YouTube"], "YOUTUBE_ONLY_NEEDLE")
+        self.assertNotIn("Podcasts / YouTube", routes)
 
 
 class WorkloadEvidenceAdversarialTests(unittest.TestCase):
@@ -225,6 +337,93 @@ class WorkloadEvidenceAdversarialTests(unittest.TestCase):
         ]
 
         self.assertFalse(audit_action_workload(0, workload, traces)["complete"])
+
+    def test_batch_rejects_a_bare_count_without_a_noun(self) -> None:
+        workload = self.stress.workloads[0]
+        for labels in (("512",), ("Save 512",)):
+            with self.subTest(labels=labels):
+                traces = [
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Edit Tags"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Save 512"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                ]
+
+                self.assertFalse(
+                    audit_action_workload(0, workload, traces)["selection_observed"]
+                )
+
+    def test_batch_rejects_a_row_title_that_merely_contains_the_digits(self) -> None:
+        # The 100k fixture names its rows "Track NNNNNN". "Track 005128" holds
+        # both the digits 512 and the word "track" without any selection ever
+        # being visible.
+        workload = self.stress.workloads[0]
+        for labels in (
+            ("Track 005128",),
+            ("Track 005120", "Track 105129"),
+            ("5124 tracks scanned",),
+        ):
+            with self.subTest(labels=labels):
+                traces = [
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Edit Tags"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Save 512"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                ]
+
+                self.assertFalse(
+                    audit_action_workload(0, workload, traces)["selection_observed"]
+                )
+
+    def test_batch_accepts_a_visible_selection_count(self) -> None:
+        workload = self.stress.workloads[0]
+        for labels in (("512 selected",), ("Selected: 512",), ("512 tracks",)):
+            with self.subTest(labels=labels):
+                traces = [
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Edit Tags"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Save 512"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                ]
+
+                self.assertTrue(
+                    audit_action_workload(0, workload, traces)["selection_observed"]
+                )
+
+    def test_batch_accepts_the_multi_tag_dialog_title(self) -> None:
+        workload = self.stress.workloads[0]
+        traces = [
+            ActionTrace(
+                action={"kind": "activate", "target_label": "Edit Tags"},
+                after_labels=("Edit 512 Tracks",),
+                state_changed=True,
+            ),
+            ActionTrace(
+                action={"kind": "activate", "target_label": "Save 512"},
+                after_labels=("Edit 512 Tracks",),
+                state_changed=True,
+            ),
+        ]
+
+        self.assertTrue(audit_action_workload(0, workload, traces)["selection_observed"])
 
     def test_scroll_rejects_the_oracles_actual_wrong_direction_code(self) -> None:
         workload = {"kind": "scroll-sweep", "directions": ["down"], "pages": 1}

@@ -9,39 +9,45 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
-
-ACTIONABLE_ROLES = {
-    "button",
-    "check box",
-    "entry",
-    "link",
-    "menu item",
-    "row",
-    "switch",
-    "tab",
-    "toggle button",
-}
-BUSY_ROLES = {"progress bar", "spinner", "status", "statusbar"}
-BUSY_WORDS = (
-    "loading",
-    "refreshing",
-    "scanning",
-    "saving",
-    "working",
-    "progress",
-    "queued",
-    "waiting",
+from ui_vocabulary import (
+    ACTIONABLE_ROLES,
+    BUSY_ROLES,
+    BUSY_WORDS,
+    CANONICAL_ROW_ROLE,
+    OFFLINE_WORDS,
+    WINDOW_ROLES,
+    canonical_role,
 )
-OFFLINE_WORDS = ("offline", "no connection", "needs network", "queued offline")
+
+
 GEOMETRY_EPSILON_PX = 6.0
 
+# All three thresholds are stated on app-attributable time - wall time minus
+# the harness's own sleeps and get_window_state round-trips. 250 ms is where a
+# pause stops reading as instantaneous and starts reading as a hiccup, so it
+# serves both for late feedback and for a sampling gap that overshoots the
+# step's own baseline. 750 ms is the point at which an operation owes the user
+# a visible waiting state rather than silence.
+SLOW_FEEDBACK_MS = 250
+STALL_EXCESS_MS = 250
+SILENT_WAIT_MS = 750
 
-def _bool(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
+
+def element_flag(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
+    """Read a boolean element state from whatever shape the driver reports.
+
+    A direct boolean wins. Otherwise a non-empty states list decides by
+    membership. If the driver sends neither - the current cua-driver sends no
+    'visible' key and no 'states' list at all - the declared default applies.
+    Silently ignoring the default here made every element count as invisible.
+    """
     direct = element.get(key)
     if isinstance(direct, bool):
         return direct
-    states = element.get("states", [])
-    return isinstance(states, list) and key in states if direct is None else default
+    states = element.get("states")
+    if isinstance(states, list) and states:
+        return key in states
+    return default
 
 
 def _number(value: Any, default: float = 0.0) -> float:
@@ -59,14 +65,19 @@ class Frame:
     def center(self) -> tuple[float, float]:
         return self.x + self.width / 2, self.y + self.height / 2
 
-    def intersects(self, width: float, height: float) -> bool:
+    @property
+    def has_area(self) -> bool:
+        return self.width > 0 and self.height > 0
+
+    def intersects_rect(self, other: "Frame") -> bool:
+        """Both rectangles must be expressed in the same coordinate system."""
         return (
-            self.width > 0
-            and self.height > 0
-            and self.x < width
-            and self.y < height
-            and self.x + self.width > 0
-            and self.y + self.height > 0
+            self.has_area
+            and other.has_area
+            and self.x < other.x + other.width
+            and self.y < other.y + other.height
+            and self.x + self.width > other.x
+            and self.y + self.height > other.y
         )
 
 
@@ -82,6 +93,8 @@ class Element:
     focused: bool
     selected: bool
     value: str
+    # False when the harness could not prove this element's position.
+    geometry_trusted: bool = True
 
     @property
     def actionable(self) -> bool:
@@ -97,6 +110,21 @@ class Snapshot:
     elements: tuple[Element, ...]
     degraded: bool
     raw_signature: str
+    window_frame: Frame | None = None
+    geometry_trusted: bool = True
+
+    @property
+    def viewport(self) -> Frame | None:
+        """The window rectangle element frames are measured against.
+
+        Element frames are screen coordinates, so the visible region is the
+        window's own frame - not the screenshot size, which is the window crop
+        anchored at (0, 0) and is missing entirely from the settling probes.
+        Without it there is nothing to judge against, and the oracle stays quiet.
+        """
+        if self.window_frame is not None and self.window_frame.has_area:
+            return self.window_frame
+        return None
 
     @property
     def by_key(self) -> Mapping[str, Element]:
@@ -142,6 +170,13 @@ class ActionEvidence:
     by: str = "page"
     connectivity_state: str | None = None
     sample_gaps_ms: tuple[int, ...] = ()
+    # Harness cost, so the timing oracles can subtract themselves out.
+    # True when the resolved target really offers an AT-SPI action, False when
+    # no node with that label offers one, None when no walk was available.
+    target_has_action: bool | None = None
+    settle_delay_ms: int = 0
+    snapshot_ms: tuple[int, ...] = ()
+    snapshot_ms_before_first_change: int = 0
 
     @classmethod
     def activate(cls, target_label: str, **kwargs: Any) -> "ActionEvidence":
@@ -166,6 +201,33 @@ class Finding:
     blocks_gate: bool = False
 
 
+def _root_window_frame(
+    candidates: Sequence[tuple[Mapping[str, Any], str, Frame]]
+) -> Frame | None:
+    """Pick the depth-0 root, the frame every other element is measured against."""
+    usable = [item for item in candidates if item[2].has_area]
+    if not usable:
+        return None
+    depths = [
+        (raw.get("depth"), frame)
+        for raw, _role, frame in usable
+        if isinstance(raw.get("depth"), int) and not isinstance(raw.get("depth"), bool)
+    ]
+    if depths:
+        return min(depths, key=lambda item: item[0])[1]
+    parentless = [
+        frame
+        for raw, _role, frame in usable
+        if "parent_index" in raw and raw.get("parent_index") is None
+    ]
+    if parentless:
+        return parentless[0]
+    windows = [frame for _raw, role, frame in usable if role in WINDOW_ROLES]
+    if windows:
+        return max(windows, key=lambda frame: frame.width * frame.height)
+    return None
+
+
 def normalize_snapshot(
     raw: Mapping[str, Any], *, state_id: str, captured_ms: int
 ) -> Snapshot:
@@ -176,6 +238,7 @@ def normalize_snapshot(
     if not isinstance(raw_elements, list):
         raw_elements = []
     sortable = []
+    root_candidates: list[tuple[Mapping[str, Any], str, Frame]] = []
     for raw_element in raw_elements:
         if not isinstance(raw_element, dict):
             continue
@@ -183,7 +246,7 @@ def normalize_snapshot(
         if not isinstance(frame_raw, dict):
             frame_raw = {}
         label = str(raw_element.get("label") or "")
-        role = str(raw_element.get("role") or "unknown").lower()
+        role = canonical_role(str(raw_element.get("role") or "unknown"))
         frame = Frame(
             _number(frame_raw.get("x")),
             _number(frame_raw.get("y")),
@@ -191,6 +254,7 @@ def normalize_snapshot(
             _number(frame_raw.get("h", frame_raw.get("height"))),
         )
         sortable.append((label, role, frame.x, frame.y, raw_element, frame))
+        root_candidates.append((raw_element, role, frame))
     sortable.sort(key=lambda item: item[:4])
     occurrences: dict[tuple[str, str], int] = {}
     elements = []
@@ -208,10 +272,11 @@ def normalize_snapshot(
                 role=role,
                 frame=frame,
                 actions=actions,
-                enabled=_bool(raw_element, "enabled", True),
-                visible=_bool(raw_element, "visible", True),
-                focused=_bool(raw_element, "focused"),
-                selected=_bool(raw_element, "selected"),
+                enabled=element_flag(raw_element, "enabled", True),
+                visible=element_flag(raw_element, "visible", True),
+                focused=element_flag(raw_element, "focused"),
+                selected=element_flag(raw_element, "selected"),
+                geometry_trusted=element_flag(raw_element, "geometry_trusted", True),
                 value="" if value_raw is None else str(value_raw),
             )
         )
@@ -224,6 +289,8 @@ def normalize_snapshot(
         elements=tuple(elements),
         degraded=raw.get("degraded") is True,
         raw_signature=hashlib.sha256(signature_payload).hexdigest(),
+        window_frame=_root_window_frame(root_candidates),
+        geometry_trusted=raw.get("geometry_trusted") is not False,
     )
 
 
@@ -242,10 +309,18 @@ class OracleEngine:
                     blocks_gate=True,
                 )
             )
+        viewport = snapshot.viewport
+        if viewport is None or not snapshot.geometry_trusted:
+            # No window rectangle or no proven positions, no verdict. Judging
+            # visibility without either is how a run of 79 snapshots produced
+            # 981 invented errors.
+            return findings
         for element in snapshot.elements:
             if not element.enabled or not element.actionable:
                 continue
-            if not element.visible or not element.frame.intersects(snapshot.width, snapshot.height):
+            if not element.geometry_trusted:
+                continue
+            if not element.visible or not element.frame.intersects_rect(viewport):
                 findings.append(
                     Finding(
                         "invisible-actionable",
@@ -287,12 +362,12 @@ class OracleEngine:
             cached_before = {
                 element.label
                 for element in before.elements
-                if element.role == "row" and element.label
+                if element.role == CANONICAL_ROW_ROLE and element.label
             }
             cached_after = {
                 element.label
                 for element in projected.elements
-                if element.role == "row" and element.label
+                if element.role == CANONICAL_ROW_ROLE and element.label
             }
             lost_cached = sorted(cached_before - cached_after)
             if lost_cached:
@@ -333,6 +408,20 @@ class OracleEngine:
                     "error",
                     0.9,
                     f"'{action.target_label}' worked through accessibility but not at its visible pointer target.",
+                    {"target": action.target_label},
+                    blocks_gate=True,
+                )
+            ]
+        if action.dispatch == "ax" and action.target_has_action is False:
+            # Not a dead handler: no node with this label offers assistive
+            # technology any action to invoke in the first place. Reporting it
+            # as a no-handler blamed the app for a target the harness picked.
+            return [
+                Finding(
+                    "no-accessible-action",
+                    "error",
+                    0.9,
+                    f"'{action.target_label}' offers assistive technology no action to invoke.",
                     {"target": action.target_label},
                     blocks_gate=True,
                 )
@@ -385,9 +474,24 @@ class OracleEngine:
     def _scroll_findings(
         self, action: ActionEvidence, before: Snapshot, after: Snapshot
     ) -> list[Finding]:
-        before_rows = {key: value for key, value in before.by_key.items() if value.role == "row"}
-        after_rows = {key: value for key, value in after.by_key.items() if value.role == "row"}
-        shared = sorted(set(before_rows) & set(after_rows))
+        before_rows = {
+            key: value
+            for key, value in before.by_key.items()
+            if value.role == CANONICAL_ROW_ROLE
+        }
+        after_rows = {
+            key: value
+            for key, value in after.by_key.items()
+            if value.role == CANONICAL_ROW_ROLE
+        }
+        # Same reason as the layout comparison: a row that lost its measured
+        # position carries the placeholder frame, and one of those in the
+        # sample drags the median far enough to invert the verdict.
+        shared = sorted(
+            key
+            for key in set(before_rows) & set(after_rows)
+            if before_rows[key].geometry_trusted and after_rows[key].geometry_trusted
+        )
         findings = []
         if shared and action.direction in {"up", "down"}:
             delta = statistics.median(
@@ -435,21 +539,38 @@ class OracleEngine:
         self, action: ActionEvidence, timeline: Sequence[Snapshot]
     ) -> list[Finding]:
         findings = []
-        if action.first_change_ms is not None and action.first_change_ms > 250:
+        # Every raw number here is wall time that contains the harness itself:
+        # one get_window_state is a subprocess round-trip (spawn, tree walk,
+        # PNG) costing hundreds of milliseconds, and the settle schedule sleeps
+        # on purpose. Judged raw, all three oracles fired on every single step.
+        app_first_change_ms = (
+            None
+            if action.first_change_ms is None
+            else max(
+                0, action.first_change_ms - action.snapshot_ms_before_first_change
+            )
+        )
+        if app_first_change_ms is not None and app_first_change_ms > SLOW_FEEDBACK_MS:
             findings.append(
                 Finding(
                     "slow-visible-feedback",
                     "warning",
                     0.7,
                     "Visible feedback arrived unusually late; timing remains a manual UX judgement.",
-                    {"first_change_ms": action.first_change_ms},
+                    {
+                        "app_first_change_ms": app_first_change_ms,
+                        "first_change_ms": action.first_change_ms,
+                        "blind_snapshot_ms": action.snapshot_ms_before_first_change,
+                    },
                 )
             )
         waiting_visible = any(self._has_waiting_state(snapshot) for snapshot in timeline)
+        harness_ms = action.settle_delay_ms + sum(action.snapshot_ms)
+        app_observation_ms = max(0, action.observation_ms - harness_ms)
         waited_without_feedback = (
             action.expect_effect == "required"
             and action.first_change_ms is None
-            and action.observation_ms >= 750
+            and app_observation_ms >= SILENT_WAIT_MS
         )
         if (action.expect_status or waited_without_feedback) and not waiting_visible:
             findings.append(
@@ -460,20 +581,34 @@ class OracleEngine:
                     "The operation took noticeable time without exposing progress or a waiting state.",
                     {
                         "dispatch_ms": action.elapsed_ms,
+                        "app_observation_ms": app_observation_ms,
                         "observation_ms": action.observation_ms,
+                        "harness_ms": harness_ms,
                         "status_expected": action.expect_status,
                     },
                 )
             )
-        long_gaps = [gap for gap in action.sample_gaps_ms if gap >= 250]
-        if long_gaps:
+        # The cheapest snapshot of this same step is what a round-trip costs
+        # when the UI thread is free; anything a sample spends beyond that is
+        # time the main loop kept the accessibility bus waiting.
+        baseline_ms = min(action.snapshot_ms) if action.snapshot_ms else 0
+        excess_ms = [
+            round(gap - baseline_ms)
+            for gap in action.sample_gaps_ms
+            if gap - baseline_ms >= STALL_EXCESS_MS
+        ]
+        if excess_ms:
             findings.append(
                 Finding(
                     "main-loop-stall",
                     "warning",
                     0.8,
                     "Observation sampling detected one or more long UI response gaps.",
-                    {"gaps_ms": long_gaps},
+                    {
+                        "excess_ms": excess_ms,
+                        "baseline_ms": round(baseline_ms),
+                        "gaps_ms": list(action.sample_gaps_ms),
+                    },
                 )
             )
         return findings
@@ -492,6 +627,10 @@ class OracleEngine:
         )
 
     def _layout_findings(self, timeline: Sequence[Snapshot]) -> list[Finding]:
+        # Layout shift is a comparison of positions; without proven positions
+        # there is nothing to compare.
+        if any(not snapshot.geometry_trusted for snapshot in timeline):
+            return []
         shifted: dict[str, float] = {}
         for earlier, later in zip(timeline, timeline[1:]):
             earlier_by_key = earlier.by_key
@@ -500,6 +639,13 @@ class OracleEngine:
                 left = earlier_by_key[key]
                 right = later_by_key[key]
                 if left.role in BUSY_ROLES:
+                    continue
+                # An element whose position was not measured on both sides
+                # carries the driver's placeholder frame at the window origin.
+                # Comparing that against a real measurement reported a toast's
+                # buttons as moving 1051 px while they had not moved at all -
+                # six reproduced findings that were entirely this artefact.
+                if not (left.geometry_trusted and right.geometry_trusted):
                     continue
                 lx, ly = left.frame.center
                 rx, ry = right.frame.center

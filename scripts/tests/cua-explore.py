@@ -4,6 +4,7 @@ import json
 import pathlib
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -13,11 +14,39 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 
 from protocol import ActionGateway, ContractError, load_mission  # noqa: E402
 from fixtures import FixtureError, build_plan, validate_scratch_root  # noqa: E402
-from oracles import ActionEvidence, OracleEngine, normalize_snapshot  # noqa: E402
+from oracles import (  # noqa: E402
+    ActionEvidence,
+    OracleEngine,
+    element_flag,
+    normalize_snapshot,
+)
 from explorer import DeterministicExplorer  # noqa: E402
 from agent_adapter import AgentError, ExternalAgent  # noqa: E402
 from driver import CuaExecutor  # noqa: E402
+from hover_geometry import WindowGeometry  # noqa: E402
 from report import RunReport, confirm_findings, minimize_actions  # noqa: E402
+from runner import app_launch_argv  # noqa: E402
+
+
+class AppLaunchArgvTests(unittest.TestCase):
+    def test_app_launch_argv_keeps_a_private_network_namespace(self) -> None:
+        argv = app_launch_argv(pathlib.Path("/fixture/reprise"))
+
+        self.assertIn("--net", argv)
+
+    def test_app_launch_argv_does_not_map_root_because_dbus_external_auth_rejects_it(
+        self,
+    ) -> None:
+        argv = app_launch_argv(pathlib.Path("/fixture/reprise"))
+
+        self.assertIn("--map-current-user", argv)
+        self.assertNotIn("--map-root-user", argv)
+
+    def test_app_launch_argv_puts_the_binary_after_the_argument_separator(self) -> None:
+        binary = pathlib.Path("/fixture/reprise")
+        argv = app_launch_argv(binary)
+
+        self.assertEqual(argv[-2:], ["--", str(binary)])
 
 
 class MissionContractTests(unittest.TestCase):
@@ -29,7 +58,7 @@ class MissionContractTests(unittest.TestCase):
 
         self.assertEqual(mission.profile, "stress-100k")
         self.assertEqual(mission.persona, "experienced library power user")
-        self.assertEqual(mission.budgets.actions, 120)
+        self.assertEqual(mission.budgets.actions, 130)
         self.assertIn("feedback", mission.oracles)
         self.assertIn("layout-shift", mission.oracles)
         self.assertIn("pointer-reachability", mission.oracles)
@@ -54,6 +83,7 @@ class MissionContractTests(unittest.TestCase):
             {mission.mission_id for mission in missions},
             {
                 "first-time-exploration",
+                "hover-affordance-sweep",
                 "large-library-stress",
                 "offline-recovery",
                 "pointer-layout-reachability",
@@ -202,16 +232,31 @@ class FixtureProfileTests(unittest.TestCase):
             validate_scratch_root(unsafe_child)
 
 
-def snapshot(elements, *, state_id="state", width=1200, height=800):
-    return normalize_snapshot(
-        {
-            "screenshot_width": width,
-            "screenshot_height": height,
-            "structuredContent": {"elements": elements},
-        },
-        state_id=state_id,
-        captured_ms=0,
-    )
+def window_element(x=0, y=0, w=1200, h=800, **extra):
+    """The depth-0 root cua-driver puts in front of every real snapshot."""
+    return {
+        "element_index": 0,
+        "label": "Reprise",
+        "role": "frame",
+        "depth": 0,
+        "parent_index": None,
+        "frame": {"x": x, "y": y, "w": w, "h": h},
+        "actions": [],
+        "enabled": True,
+        **extra,
+    }
+
+
+def snapshot(elements, *, state_id="state", width=1200, height=800, window=True):
+    raw = {"structuredContent": {"elements": list(elements)}}
+    if width is not None and height is not None:
+        raw["screenshot_width"] = width
+        raw["screenshot_height"] = height
+    if window is True:
+        window = (0, 0, width or 1200, height or 800)
+    if window is not None:
+        raw["structuredContent"]["elements"].insert(0, window_element(*window))
+    return normalize_snapshot(raw, state_id=state_id, captured_ms=0)
 
 
 def element(index, label, role="button", x=10, y=10, w=100, h=32, **extra):
@@ -224,6 +269,280 @@ def element(index, label, role="button", x=10, y=10, w=100, h=32, **extra):
         "enabled": True,
         **extra,
     }
+
+
+def driver_element(index, label, role, x, y, w, h, *, depth=3, parent_index=0, enabled=True):
+    """Exactly the key set cua-driver emits: no 'visible', no 'states'."""
+    return {
+        "depth": depth,
+        "element_index": index,
+        "element_token": f"tok-{index}",
+        "enabled": enabled,
+        "frame": {"x": x, "y": y, "w": w, "h": h},
+        "label": label,
+        "parent_index": parent_index,
+        "role": role,
+        "value": "",
+    }
+
+
+class DriverFieldSetTests(unittest.TestCase):
+    """The oracle must not invent findings from fields the driver never sends."""
+
+    def setUp(self) -> None:
+        self.engine = OracleEngine()
+        self.raw = {
+            "structuredContent": {
+                "elements": [
+                    driver_element(
+                        0, "Reprise", "frame", 200, 50, 1200, 800,
+                        depth=0, parent_index=None,
+                    ),
+                    driver_element(7, "Add filter", "button", 260, 110, 96, 34),
+                    driver_element(9, "Music", "row", 220, 200, 400, 28),
+                    driver_element(
+                        11, "Save", "button", 900, 700, 80, 30, enabled=False
+                    ),
+                ]
+            }
+        }
+
+    def _snapshot(self):
+        return normalize_snapshot(self.raw, state_id="probe", captured_ms=0)
+
+    def test_absent_visible_key_falls_back_to_the_declared_default(self) -> None:
+        elements = {element.label: element for element in self._snapshot().elements}
+
+        self.assertTrue(elements["Add filter"].visible)
+        self.assertTrue(elements["Add filter"].enabled)
+        self.assertFalse(elements["Save"].enabled)
+
+    def test_absent_focus_and_selection_keys_stay_false(self) -> None:
+        elements = {element.label: element for element in self._snapshot().elements}
+
+        self.assertFalse(elements["Add filter"].focused)
+        self.assertFalse(elements["Add filter"].selected)
+
+    def test_a_real_driver_snapshot_produces_no_findings(self) -> None:
+        findings = self.engine.inspect_snapshot(self._snapshot())
+
+        self.assertEqual([finding.code for finding in findings], [])
+
+    def test_an_element_outside_the_window_is_still_reported(self) -> None:
+        self.raw["structuredContent"]["elements"].append(
+            driver_element(13, "Off window", "button", 1500, 110, 60, 34)
+        )
+
+        findings = self.engine.inspect_snapshot(self._snapshot())
+
+        self.assertEqual(
+            [finding.code for finding in findings], ["invisible-actionable"]
+        )
+
+
+class BooleanStateTests(unittest.TestCase):
+    def test_a_direct_boolean_wins(self) -> None:
+        self.assertFalse(element_flag({"visible": False}, "visible", True))
+        self.assertTrue(element_flag({"visible": True}, "visible", False))
+
+    def test_a_present_states_list_decides(self) -> None:
+        self.assertTrue(
+            element_flag({"states": ["visible", "enabled"]}, "visible", False)
+        )
+        self.assertFalse(
+            element_flag({"states": ["enabled"]}, "visible", True)
+        )
+
+    def test_a_direct_boolean_outranks_the_states_list(self) -> None:
+        self.assertFalse(
+            element_flag({"visible": False, "states": ["visible"]}, "visible", True)
+        )
+
+    def test_neither_key_nor_states_falls_back_to_the_default(self) -> None:
+        self.assertTrue(element_flag({}, "visible", True))
+        self.assertFalse(element_flag({}, "selected", False))
+
+    def test_an_empty_states_list_carries_no_information(self) -> None:
+        self.assertTrue(element_flag({"states": []}, "visible", True))
+        self.assertFalse(element_flag({"states": []}, "selected", False))
+
+
+class SlowRoundTripTransport:
+    """A driver whose get_window_state costs real time, like the CLI does."""
+
+    def __init__(self, round_trip_seconds=0.06):
+        self.round_trip_seconds = round_trip_seconds
+        self.calls = []
+
+    def call(self, tool, payload):
+        self.calls.append(tool)
+        if tool == "get_window_state":
+            time.sleep(self.round_trip_seconds)
+            return {
+                "screenshot_width": 800,
+                "screenshot_height": 600,
+                "structuredContent": {
+                    "elements": [
+                        driver_element(
+                            0, "Reprise", "frame", 0, 0, 800, 600,
+                            depth=0, parent_index=None,
+                        ),
+                        driver_element(4, "Music", "button", 10, 10, 90, 30),
+                    ]
+                },
+            }
+        return {"effect": "confirmed", "verified": True}
+
+    def resize_window(self, window_id, width, height):
+        return {"effect": "unverifiable"}
+
+    def set_connectivity(self, state):
+        return {"effect": "confirmed"}
+
+    def wmctrl_geometry(self, window_id):
+        raise AssertionError("not used")
+
+
+class DriverTimingEvidenceTests(unittest.TestCase):
+    """The driver must hand the oracles its own cost, or nothing is subtracted."""
+
+    def _run_step(self, settle_delays):
+        transport = SlowRoundTripTransport()
+        executor = CuaExecutor(
+            transport,
+            pid=1,
+            window_id=2,
+            session="test",
+            settle_delays=settle_delays,
+        )
+        return executor._execute(
+            None, ActionEvidence.connectivity("online")
+        )
+
+    def test_the_requested_settle_time_is_reported(self) -> None:
+        result = self._run_step((0.02, 0.03))
+
+        self.assertEqual(result.evidence.settle_delay_ms, 50)
+
+    def test_every_snapshot_after_dispatch_is_measured(self) -> None:
+        result = self._run_step((0.01, 0.01))
+
+        # after-snapshot plus one per settle sample, and none of them free.
+        self.assertEqual(len(result.evidence.snapshot_ms), 3)
+        self.assertTrue(all(value > 0 for value in result.evidence.snapshot_ms))
+
+    def test_a_quiet_app_produces_no_timing_findings_through_the_real_path(
+        self,
+    ) -> None:
+        result = self._run_step((0.01, 0.02, 0.03))
+
+        codes = {finding.code for finding in result.findings}
+        self.assertNotIn("main-loop-stall", codes)
+        self.assertNotIn("missing-waiting-feedback", codes)
+        self.assertNotIn("slow-visible-feedback", codes)
+
+    def test_the_reported_observation_time_still_holds_the_raw_wall_time(self) -> None:
+        result = self._run_step((0.05,))
+
+        harness = result.evidence.settle_delay_ms + sum(result.evidence.snapshot_ms)
+        self.assertGreaterEqual(result.evidence.observation_ms, harness - 5)
+
+
+class TimingAttributionTests(unittest.TestCase):
+    """Timing oracles must judge the app, never the harness's own cost."""
+
+    # Shape measured in a real run: one cua-driver round-trip costs ~470 ms
+    # (subprocess spawn, tree walk, PNG), and the settle schedule sleeps
+    # 100 + 250 + 500 = 850 ms on purpose.
+    REAL_SNAPSHOTS = (472, 467, 481, 495)
+    REAL_SETTLE_MS = 850
+
+    def setUp(self) -> None:
+        self.engine = OracleEngine()
+        self.state = snapshot([element(1, "Music", visible=True)])
+
+    def _codes(self, **evidence):
+        defaults = {
+            "kind": "activate",
+            "target_label": "Music",
+            "expect_effect": "required",
+            "elapsed_ms": 5,
+            "observation_ms": 2765,
+            "first_change_ms": None,
+            "settle_delay_ms": self.REAL_SETTLE_MS,
+            "snapshot_ms": self.REAL_SNAPSHOTS,
+            "snapshot_ms_before_first_change": 0,
+            "sample_gaps_ms": self.REAL_SNAPSHOTS[1:],
+        }
+        defaults.update(evidence)
+        findings = self.engine.analyze(
+            ActionEvidence(**defaults), self.state, self.state, settled=(self.state,)
+        )
+        return [finding.code for finding in findings]
+
+    def test_the_drivers_own_round_trip_is_not_a_main_loop_stall(self) -> None:
+        self.assertNotIn("main-loop-stall", self._codes())
+
+    def test_a_sample_far_above_the_steps_own_baseline_is_a_stall(self) -> None:
+        codes = self._codes(
+            snapshot_ms=(472, 467, 481, 1400), sample_gaps_ms=(467, 481, 1400)
+        )
+
+        self.assertIn("main-loop-stall", codes)
+
+    def test_the_stall_evidence_reports_the_excess_not_the_wall_time(self) -> None:
+        findings = self.engine.analyze(
+            ActionEvidence(
+                kind="activate",
+                target_label="Music",
+                expect_effect="required",
+                observation_ms=2765,
+                first_change_ms=None,
+                settle_delay_ms=self.REAL_SETTLE_MS,
+                snapshot_ms=(470, 1400),
+                snapshot_ms_before_first_change=0,
+                sample_gaps_ms=(1400,),
+            ),
+            self.state,
+            self.state,
+            settled=(self.state,),
+        )
+        stall = next(item for item in findings if item.code == "main-loop-stall")
+
+        self.assertEqual(stall.evidence["excess_ms"], [930])
+        self.assertEqual(stall.evidence["baseline_ms"], 470)
+
+    def test_the_harnesss_own_waiting_is_not_missing_feedback(self) -> None:
+        self.assertNotIn("missing-waiting-feedback", self._codes())
+
+    def test_an_app_that_really_keeps_us_waiting_is_still_reported(self) -> None:
+        # 850 ms of deliberate sleep plus 1915 ms of round-trips leaves the app
+        # itself accountable for a full second here.
+        codes = self._codes(observation_ms=3800)
+
+        self.assertIn("missing-waiting-feedback", codes)
+
+    def test_an_explicit_wait_still_demands_a_visible_status(self) -> None:
+        codes = self._codes(kind="wait", expect_status=True, observation_ms=900)
+
+        self.assertIn("missing-waiting-feedback", codes)
+
+    def test_feedback_first_seen_after_our_own_blind_time_is_not_late(self) -> None:
+        # The change was noticed 500 ms in, but 470 ms of that was one snapshot
+        # during which we structurally could not have seen anything.
+        codes = self._codes(first_change_ms=500, snapshot_ms_before_first_change=470)
+
+        self.assertNotIn("slow-visible-feedback", codes)
+
+    def test_feedback_the_app_really_delayed_is_still_reported(self) -> None:
+        codes = self._codes(first_change_ms=1400, snapshot_ms_before_first_change=470)
+
+        self.assertIn("slow-visible-feedback", codes)
+
+    def test_a_change_seen_immediately_after_dispatch_is_never_late(self) -> None:
+        codes = self._codes(first_change_ms=8, snapshot_ms_before_first_change=0)
+
+        self.assertNotIn("slow-visible-feedback", codes)
 
 
 class UxOracleTests(unittest.TestCase):
@@ -256,6 +575,67 @@ class UxOracleTests(unittest.TestCase):
         findings = self.engine.inspect_snapshot(state)
 
         self.assertIn("invisible-actionable", {finding.code for finding in findings})
+
+    def test_a_snapshot_without_screenshot_dimensions_is_judged_by_the_window(
+        self,
+    ) -> None:
+        # The settling probes are fetched without screenshot_out_file, so they
+        # carry no screenshot_width/height. Reading that as a 0x0 window turned
+        # every visible control into an "outside the visible window" error.
+        state = snapshot(
+            [element(1, "Add filter", x=260, y=110, visible=True)],
+            width=None,
+            height=None,
+            window=(200, 50, 1200, 800),
+        )
+
+        findings = self.engine.inspect_snapshot(state)
+
+        self.assertEqual([finding.code for finding in findings], [])
+
+    def test_the_window_rectangle_is_read_in_screen_coordinates(self) -> None:
+        # Element frames are screen coordinates: a child at the top-left window
+        # corner reports the window's own origin. Comparing them against the
+        # screenshot size would call the right-hand half of the window invisible.
+        state = snapshot(
+            [
+                element(1, "Sidebar", x=200, y=50, visible=True),
+                element(2, "Right edge", x=1350, y=60, visible=True),
+            ],
+            width=1200,
+            height=800,
+            window=(200, 50, 1200, 800),
+        )
+
+        findings = self.engine.inspect_snapshot(state)
+
+        self.assertEqual([finding.code for finding in findings], [])
+
+    def test_an_element_beyond_the_window_rectangle_is_still_reported(self) -> None:
+        state = snapshot(
+            [element(1, "Hidden Save", x=1500, y=60, visible=True)],
+            width=1200,
+            height=800,
+            window=(200, 50, 1200, 800),
+        )
+
+        findings = self.engine.inspect_snapshot(state)
+
+        self.assertEqual(
+            [finding.code for finding in findings], ["invisible-actionable"]
+        )
+
+    def test_a_snapshot_without_any_geometry_is_not_judged(self) -> None:
+        state = snapshot(
+            [element(1, "Add filter", x=260, y=110, visible=True)],
+            width=None,
+            height=None,
+            window=None,
+        )
+
+        findings = self.engine.inspect_snapshot(state)
+
+        self.assertEqual([finding.code for finding in findings], [])
 
     def test_layout_shift_during_an_explicit_idle_probe_is_uninvited(self) -> None:
         before = snapshot(
@@ -467,7 +847,8 @@ class DeterministicExplorerTests(unittest.TestCase):
         self.assertEqual(
             mission.workloads[0]["source_tokens"],
             {
-                "Podcasts / YouTube": "PODCAST_ONLY_NEEDLE",
+                "Podcasts": "PODCAST_ONLY_NEEDLE",
+                "YouTube": "YOUTUBE_ONLY_NEEDLE",
                 "Radio": "RADIO_ONLY_NEEDLE",
             },
         )
@@ -616,7 +997,14 @@ class CuaExecutorTests(unittest.TestCase):
         ]
         transport = FakeTransport(snapshots)
         executor = CuaExecutor(
-            transport, pid=44, window_id=77, session="test", settle_delays=()
+            transport,
+            pid=44,
+            window_id=77,
+            session="test",
+            settle_delays=(),
+            # These fixtures state frames in window coordinates already, so the
+            # window sits at the origin; a pixel click needs it either way.
+            window_origin=WindowGeometry(0, 0, 800, 600),
         )
         action = ActionEvidence.activate("Retry", dispatch="px")
 
@@ -666,7 +1054,12 @@ class CuaExecutorTests(unittest.TestCase):
         }
         transport = FakeTransport([before, after_pointer, after_ax])
         executor = CuaExecutor(
-            transport, pid=44, window_id=77, session="test", settle_delays=()
+            transport,
+            pid=44,
+            window_id=77,
+            session="test",
+            settle_delays=(),
+            window_origin=WindowGeometry(0, 0, 800, 600),
         )
 
         result = executor.execute_evidence(
