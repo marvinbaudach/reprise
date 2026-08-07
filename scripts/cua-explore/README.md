@@ -90,6 +90,14 @@ under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
 outside the window) together with up to 40 unresolved elements per reason -
 each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
 
+Positions are only ever compared where both sides were measured. An element
+whose geometry could not be resolved carries the driver's placeholder frame at
+the window origin, and comparing that against a real measurement reported a
+toast's buttons as moving 1051 px while they had not moved at all - six
+reproduced `uninvited-layout-shift` findings that were entirely that artefact.
+The same guard applies to the scroll-direction median, where a single
+placeholder row is enough to invert the verdict.
+
 Tests for the explorer start from `scripts/tests/fixtures/hover-sweep-observe.json`,
 a verbatim recording of cua-driver output from a live run, and drive the public
 `propose` entry point with the action gateway in the loop. Hand-written

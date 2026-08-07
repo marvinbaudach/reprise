@@ -467,7 +467,14 @@ class OracleEngine:
             for key, value in after.by_key.items()
             if value.role == CANONICAL_ROW_ROLE
         }
-        shared = sorted(set(before_rows) & set(after_rows))
+        # Same reason as the layout comparison: a row that lost its measured
+        # position carries the placeholder frame, and one of those in the
+        # sample drags the median far enough to invert the verdict.
+        shared = sorted(
+            key
+            for key in set(before_rows) & set(after_rows)
+            if before_rows[key].geometry_trusted and after_rows[key].geometry_trusted
+        )
         findings = []
         if shared and action.direction in {"up", "down"}:
             delta = statistics.median(
@@ -615,6 +622,13 @@ class OracleEngine:
                 left = earlier_by_key[key]
                 right = later_by_key[key]
                 if left.role in BUSY_ROLES:
+                    continue
+                # An element whose position was not measured on both sides
+                # carries the driver's placeholder frame at the window origin.
+                # Comparing that against a real measurement reported a toast's
+                # buttons as moving 1051 px while they had not moved at all -
+                # six reproduced findings that were entirely this artefact.
+                if not (left.geometry_trusted and right.geometry_trusted):
                     continue
                 lx, ly = left.frame.center
                 rx, ry = right.frame.center

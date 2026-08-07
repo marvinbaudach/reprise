@@ -18,12 +18,15 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXPLORE_ROOT = REPO_ROOT / "scripts" / "cua-explore"
-FIXTURE = pathlib.Path(__file__).resolve().parent / "fixtures" / "hover-sweep-observe.json"
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
+FIXTURE = FIXTURES / "hover-sweep-observe.json"
+TOAST_FIXTURE = FIXTURES / "layout-shift-toast.json"
 sys.path.insert(0, str(EXPLORE_ROOT))
 
 from driver import CuaExecutor  # noqa: E402
 from explorer import DeterministicExplorer  # noqa: E402
 from protocol import ActionGateway, ContractError, load_mission  # noqa: E402
+from oracles import ActionEvidence, OracleEngine, normalize_snapshot  # noqa: E402
 from ui_vocabulary import canonical_role, hover_strictness  # noqa: E402
 
 
@@ -228,6 +231,109 @@ class RecordedHoverSweepTests(unittest.TestCase):
         for action in actions:
             if action["kind"] == "hover":
                 self.assertIn(action["target"]["label"], labels)
+
+
+class RecordedLayoutShiftTests(unittest.TestCase):
+    """The toast finding was the harness reading its own placeholder frame."""
+
+    def setUp(self) -> None:
+        raw = json.loads(TOAST_FIXTURE.read_text(encoding="utf-8"))
+        self.before = normalize_snapshot(
+            raw["before"], state_id="before", captured_ms=0
+        )
+        self.after = normalize_snapshot(raw["after"], state_id="after", captured_ms=500)
+        self.engine = OracleEngine()
+
+    def _codes(self, before=None, after=None):
+        findings = self.engine.analyze(
+            ActionEvidence(kind="wait", expect_effect="none"),
+            before or self.before,
+            after or self.after,
+            settled=(after or self.after,),
+        )
+        return [item.code for item in findings]
+
+    def test_the_recording_really_holds_the_placeholder_fallback(self) -> None:
+        before = {item.label: item for item in self.before.elements}
+        after = {item.label: item for item in self.after.elements}
+
+        self.assertTrue(before["Dismiss"].geometry_trusted)
+        self.assertFalse(after["Dismiss"].geometry_trusted)
+        # Same rectangle in both real measurements; only the fallback differs.
+        self.assertEqual(before["Dismiss"].frame.x, 966.0)
+        self.assertEqual(after["Dismiss"].frame.x, 200.0)
+
+    def test_an_unmeasured_position_is_not_a_layout_shift(self) -> None:
+        self.assertNotIn("uninvited-layout-shift", self._codes())
+
+    def test_a_real_shift_beside_the_toast_is_still_reported(self) -> None:
+        # Move an element that keeps measured geometry on both sides.
+        raw = json.loads(TOAST_FIXTURE.read_text(encoding="utf-8"))
+        moved = []
+        for item in raw["after"]["elements"]:
+            item = dict(item)
+            if item.get("label") == "Add filter":
+                frame = dict(item["frame"])
+                frame["y"] = float(frame["y"]) + 90
+                item["frame"] = frame
+            moved.append(item)
+        after = normalize_snapshot(
+            {**raw["after"], "elements": moved}, state_id="moved", captured_ms=500
+        )
+
+        codes = self._codes(after=after)
+
+        self.assertIn("uninvited-layout-shift", codes)
+
+
+class RecordedScrollDirectionTests(unittest.TestCase):
+    """The same placeholder artefact could invert a scroll verdict."""
+
+    def setUp(self) -> None:
+        self.raw = json.loads(TOAST_FIXTURE.read_text(encoding="utf-8"))
+        self.engine = OracleEngine()
+
+    def _snapshot(self, elements, state_id):
+        return normalize_snapshot(
+            {**self.raw["before"], "elements": elements},
+            state_id=state_id,
+            captured_ms=0,
+        )
+
+    def _scrolled(self, *, poison):
+        """Real rows answering an upward scroll; optionally one loses geometry.
+
+        Scrolling up moves the content down, so the rows' y grows.
+        """
+        after = []
+        poisoned = False
+        for item in self.raw["before"]["elements"]:
+            item = dict(item)
+            if canonical_role(str(item.get("role", ""))) == "row":
+                frame = dict(item["frame"])
+                if poison and not poisoned:
+                    poisoned = True
+                    item["geometry_trusted"] = False
+                    frame["x"], frame["y"] = 200, 50
+                else:
+                    frame["y"] = float(frame["y"]) + 40
+                item["frame"] = frame
+            after.append(item)
+        return after
+
+    def _codes(self, poison):
+        findings = self.engine.analyze(
+            ActionEvidence.scroll("up", amount=1, by="page"),
+            self._snapshot(self.raw["before"]["elements"], "before"),
+            self._snapshot(self._scrolled(poison=poison), "after"),
+        )
+        return [item.code for item in findings]
+
+    def test_a_correct_scroll_stays_uncriticised(self) -> None:
+        self.assertNotIn("wrong-scroll-direction", self._codes(poison=False))
+
+    def test_one_unmeasured_row_does_not_invert_the_verdict(self) -> None:
+        self.assertNotIn("wrong-scroll-direction", self._codes(poison=True))
 
 
 if __name__ == "__main__":
