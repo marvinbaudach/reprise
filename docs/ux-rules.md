@@ -1112,6 +1112,13 @@ result.
   header, which never disappears, and offers "Show the N sources"; revealing
   it shows every source read-only. Connected services collapses the same way
   and is labelled "Scrobbling · needs online sources".
+- **SET-12** [active] [gtk] — Replaces `SIM-8`, which stated the same thing
+  inside a module that no longer exists: plugin provision badges are derived
+  from the static registry, never from current enable state. A provision-kind
+  set is the unbadged group norm only when it occurs at least twice and
+  strictly more often than the runner-up; otherwise every row is badged.
+  Panel-tab and sidebar-section badges use the accent, while all other kinds
+  are neutral.
 
 ## G. Feedback vocabulary
 
@@ -4893,20 +4900,62 @@ plan.
 
 ## AH. Sound Similarity
 
-Sound Similarity was removed on 2026-08-07 because its top matches were
-audibly unrelated despite reporting 100% similarity. The rules remain as
-append-only history; the separate spectrogram feature is unchanged.
+Sound Similarity was removed on 2026-08-07 because its nearest matches were
+audibly unrelated while reporting 100% similarity. The rules stay here in full
+as append-only history; the separate spectrogram feature is unchanged. SIM-8
+was the only one of them that governed behaviour outside this module — plugin
+provision badges — and that behaviour is still live, now under `SET-12`.
 
-- **SIM-1** [removed] — Removed with the derived sound-profile cache; spectrogram storage and invalidation remain.
-- **SIM-2** [removed] — Removed with the retired distance model it described.
-- **SIM-3** [removed] — Removed because similarity ranking and percentages no longer exist.
-- **SIM-4** [removed] — Removed with the Sound panel, profile progress, and profile axes.
-- **SIM-5** [removed] — Removed with the neighbour list and its queue action.
-- **SIM-6** [removed] — Removed with the Sound Similarity module registration and preferences.
-- **SIM-7** [removed] — Removed with the Find similar tracks context-menu route.
-- **SIM-8** [removed] — Removed as a Sound Similarity requirement; generic plugin badges remain governed by their shared implementation.
-- **SIM-9** [removed] — Removed with the spectral and rhythm distance derivation.
-- **SIM-10** [removed] — Removed with neighbour ranking and artist caps.
+- **SIM-1** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — A sound profile lives in its own versioned cache
+  and follows the spectrogram's source-identity invalidation and track
+  deletion. A stale format is absent and is derived again from the stored
+  spectrogram; the spectrogram schema itself gains no recommendation scalar.
+- **SIM-2** [replaced by SIM-9] — The earlier rule compared band means and the
+  mastering scalars alone. Measured over a real library that found the same
+  production and not the genre, and the weights it fixed were nominal rather
+  than effective; SIM-9 adds the temporal half and the scale that makes a
+  weight mean what it says.
+- **SIM-3** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — A row's percentage is its rank in the current
+  track's distance distribution across the complete eligible library. Same
+  album (album title plus album artist) and same artist exclusions are applied
+  only after those ranks are formed, so changing a filter never changes the
+  meaning of a percentage.
+- **SIM-4** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — The Sound tab remains present while analysis is
+  incomplete and shows numeric progress. Results require at least 50 current
+  profiles and the playing track's profile. Profile markers are library-wide
+  feature percentiles; the tempo axis is disabled while tempo is excluded.
+- **SIM-5** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — The default result limit is seven. **Add to
+  queue** appends exactly the currently shown matches in their displayed
+  nearest-first order and never shuffles them.
+- **SIM-6** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Sound Similarity is a live, default-off Local
+  module. Its defaults exclude the same album, retain the same artist, omit
+  tempo, use Default weighting, and show seven matches. Its static registry
+  declaration provides both the Sound panel tab and **Find similar tracks**.
+- **SIM-7** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — **Find similar tracks** appears in a single,
+  present-track context menu only while the module is enabled; disabling the
+  module removes the route.
+- **SIM-8** [replaced by SET-12] — Plugin provision badges are derived from the
+  static registry, never current enable state. A provision-kind set is the
+  unbadged group norm only when it occurs at least twice and strictly more
+  often than the runner-up; otherwise every row is badged. Panel-tab and
+  sidebar-section badges use the accent, while all other kinds are neutral.
+  The rule was never specific to Sound Similarity and outlived it; `SET-12`
+  restates it where the plugin list is governed.
+- **SIM-9** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — The comparison carries how a track is produced
+  *and* how it moves, both derived from the stored spectrogram alone. Band
+  means and per-band positive flux stay L2-normalized and are compared with
+  cosine distance, each divided by the library's own spread so that a nominal
+  weight is an effective one. Centroid mean, centroid variance, frame-level
+  crest, onset rate, flux mean, flux variation, pulse strength and an enabled
+  tempo estimate are standardized against library spread; zero spread
+  contributes zero. The default weights are bands 0.30, timbre 0.12,
+  dynamics 0.08, rhythm 0.50, tempo 0.
+- **SIM-10** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — At most two matches carry the same artist, and
+  the list fills up with the next nearest track by someone else. The nearest
+  match is never displaced by this. Tracks that name no artist are not capped
+  against each other, because unnamed is not a shared identity. The cap applies
+  whatever **Exclude tracks by the same artist** is set to; that setting is the
+  stricter step, not a replacement.
 
 ---
 

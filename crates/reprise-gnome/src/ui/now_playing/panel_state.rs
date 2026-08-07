@@ -39,6 +39,20 @@ pub(super) fn should_render_up_next(panel_visible: bool, selected_tab: PanelTab)
     panel_visible && selected_tab == PanelTab::UpNext
 }
 
+/// The page the stack has to show after `tab` became unavailable (`NPP-15`).
+///
+/// `None` means "leave the selection alone". Both callers — the Lyrics tab
+/// yielding to an external session and the Visual tab following the Song
+/// Visuals module — ask here rather than repeating the condition, because the
+/// same decision written twice is how two audible bugs got in before.
+pub(super) fn page_after_tab_hidden(
+    selected: PanelTab,
+    tab: PanelTab,
+    tab_visible: bool,
+) -> Option<&'static str> {
+    (!tab_visible && selected == tab).then_some(UP_NEXT_PAGE)
+}
+
 #[derive(Default)]
 pub(super) struct TabSession {
     pub(super) selected: Cell<PanelTab>,
@@ -53,19 +67,7 @@ pub(super) struct TabFooters {
 
 #[cfg(test)]
 mod tests {
-    use super::{PanelTab, PANEL_TABS, UP_NEXT_PAGE};
-
-    fn page_after_extension_visibility_change<'a>(
-        selected_page: &'a str,
-        extension_page: &str,
-        extension_visible: bool,
-    ) -> &'a str {
-        if !extension_visible && selected_page == extension_page {
-            UP_NEXT_PAGE
-        } else {
-            selected_page
-        }
-    }
+    use super::{page_after_tab_hidden, PanelTab, PANEL_TABS, UP_NEXT_PAGE};
 
     #[test]
     fn npp_14_has_the_three_built_in_tabs_in_order() {
@@ -76,18 +78,22 @@ mod tests {
     }
 
     #[test]
-    fn npp_15_hiding_the_selected_extension_falls_back_to_up_next() {
+    fn npp_15_hiding_the_selected_tab_falls_back_to_up_next() {
         assert_eq!(
-            page_after_extension_visibility_change("extension", "extension", false),
-            UP_NEXT_PAGE
+            page_after_tab_hidden(PanelTab::Lyrics, PanelTab::Lyrics, false),
+            Some(UP_NEXT_PAGE)
         );
         assert_eq!(
-            page_after_extension_visibility_change("lyrics", "extension", false),
-            "lyrics"
+            page_after_tab_hidden(PanelTab::Visual, PanelTab::Visual, false),
+            Some(UP_NEXT_PAGE)
         );
         assert_eq!(
-            page_after_extension_visibility_change("extension", "extension", true),
-            "extension"
+            page_after_tab_hidden(PanelTab::Lyrics, PanelTab::Visual, false),
+            None
+        );
+        assert_eq!(
+            page_after_tab_hidden(PanelTab::Visual, PanelTab::Visual, true),
+            None
         );
     }
 }

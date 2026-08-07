@@ -483,8 +483,12 @@ impl NowPlayingPanel {
         let external_active = snapshot.is_some();
         *self.external_snapshot.borrow_mut() = snapshot;
         self.widgets.lyrics_page.set_visible(!external_active);
-        if external_active && self.widgets.session.selected.get() == PanelTab::Lyrics {
-            self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        if let Some(page) = page_after_tab_hidden(
+            self.widgets.session.selected.get(),
+            PanelTab::Lyrics,
+            !external_active,
+        ) {
+            self.widgets.tab_stack.set_visible_child_name(page);
         }
         self.sync_visual_page_visibility();
         self.sync_media_presence();

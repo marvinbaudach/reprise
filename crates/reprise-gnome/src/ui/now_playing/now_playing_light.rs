@@ -5,7 +5,7 @@
 //! hands them to the cover lift, the backdrop, the shimmer and the readout —
 //! having two such places is how a duplicated predicate drifts.
 
-use super::panel_state::{PanelTab, UP_NEXT_PAGE};
+use super::panel_state::{page_after_tab_hidden, PanelTab};
 use super::surface::NowPlayingPanel;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::swell::Swell;
@@ -25,8 +25,12 @@ impl NowPlayingPanel {
     pub(super) fn sync_visual_page_visibility(&self) {
         let visible = self.song_visuals_active_for_media();
         self.widgets.visual_page.set_visible(visible);
-        if !visible && self.widgets.session.selected.get() == PanelTab::Visual {
-            self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        if let Some(page) = page_after_tab_hidden(
+            self.widgets.session.selected.get(),
+            PanelTab::Visual,
+            visible,
+        ) {
+            self.widgets.tab_stack.set_visible_child_name(page);
         }
     }
 
