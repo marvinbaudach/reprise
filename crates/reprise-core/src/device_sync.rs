@@ -429,6 +429,9 @@ mod storage_tests;
 mod inventory_tests;
 
 #[cfg(test)]
+#[path = "device_sync/mirror_inventory_truth_tests.rs"]
+mod mirror_inventory_truth_tests;
+#[cfg(test)]
 #[path = "device_sync/mirror_tests.rs"]
 mod mirror_tests;
 

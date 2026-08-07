@@ -101,6 +101,7 @@ pub struct SyncPageInput {
     pub inventory: Vec<DeviceFileRecord>,
     pub playlist_inventory: Vec<DevicePlaylistRecord>,
     pub managed_files: Vec<ManagedDeviceFile>,
+    pub managed_files_scanned: bool,
     pub desktop_analyses: Vec<super::DesktopAnalysis>,
     pub storage: DeviceStorageSnapshot,
 }
@@ -192,6 +193,7 @@ pub fn project_sync_page(input: SyncPageInput) -> SyncPageProjection {
         inventory: input.inventory,
         playlist_inventory: input.playlist_inventory,
         managed_files: input.managed_files,
+        managed_files_scanned: input.managed_files_scanned,
         desktop_analyses: input.desktop_analyses,
     });
     let storage = project_storage(&input.storage, &plan);
