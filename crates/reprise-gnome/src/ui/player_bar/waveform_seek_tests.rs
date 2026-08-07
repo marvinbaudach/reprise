@@ -1,5 +1,7 @@
 use super::*;
-use crate::ui::player_bar::waveform_primitives::compute_bar_count;
+use crate::ui::player_bar::waveform_primitives::{
+    compute_bar_count, frame_clock_stalled, interpolation_step, position_step, velocity_between,
+};
 use libadwaita::prelude::AnimationExt;
 
 #[path = "waveform_seek_colour_tests.rs"]
@@ -109,6 +111,31 @@ fn interpolation_step_recovers_a_fill_stuck_beyond_the_target() {
 fn interpolation_step_stays_inside_the_unit_range() {
     assert_eq!(interpolation_step(0.99, 0.5, 16_000.0, 1.0), 1.0);
     assert_eq!(interpolation_step(0.01, -0.5, 16_000.0, 0.0), 0.0);
+}
+
+#[test]
+fn frame_clock_stalled_only_fires_after_a_real_gap() {
+    let now = 10_000_000;
+
+    assert!(!frame_clock_stalled(now, now - 16_000));
+    assert!(!frame_clock_stalled(now, now - 240_000));
+    assert!(frame_clock_stalled(now, now - 5_000_000));
+    assert!(frame_clock_stalled(now, 0));
+}
+
+#[test]
+fn position_step_snaps_to_the_target_after_a_stall() {
+    assert_eq!(position_step(0.10, 3.3e-9, 0.0, 0.42, true), (0.42, 0.0));
+}
+
+#[test]
+fn position_step_interpolates_normally_without_a_stall() {
+    let velocity = 1e-6;
+
+    assert_eq!(
+        position_step(0.10, velocity, 16_000.0, 0.20, false),
+        (interpolation_step(0.10, velocity, 16_000.0, 0.20), velocity)
+    );
 }
 
 #[test]
@@ -230,11 +257,30 @@ fn stagger_factor_is_zero_at_start_and_one_at_completion() {
 fn smooth_fraction_velocity_is_computed_from_delta() {
     // Pure logic test: given target=0.5, old_target=0.0, dt=1_000_000 us
     // the velocity should be 0.5/1_000_000 per microsecond.
-    let old_target = 0.0_f64;
-    let new_target = 0.5_f64;
-    let dt = 1_000_000_i64;
-    let velocity = (new_target - old_target) / dt as f64;
+    let velocity = velocity_between(0.0, 0.5, 1_000_000.0);
     assert!((velocity - 5e-7).abs() < 1e-12);
+}
+
+#[test]
+fn velocity_is_measured_between_position_ticks_not_frames() {
+    // A 500 ms position tick for a 200-second track advances by 0.0025.
+    // The frame clock ran 16 ms ago, but that must not inflate the estimate.
+    let previous_target = 0.10;
+    let new_target = 0.1025;
+    let last_position_us = 1_000_000;
+    let last_frame_us = 1_484_000;
+    let now_us = 1_500_000;
+
+    let velocity = velocity_between(
+        previous_target,
+        new_target,
+        (now_us - last_position_us) as f64,
+    );
+    let frame_based_velocity =
+        velocity_between(previous_target, new_target, (now_us - last_frame_us) as f64);
+
+    assert!((velocity - 5e-9).abs() < 1e-12);
+    assert!(frame_based_velocity > velocity * 30.0);
 }
 
 #[test]
@@ -313,7 +359,7 @@ fn mot_7_waveform_position_hard_switches_when_system_animations_are_disabled() {
 
     let waveform = WaveformSeek::new();
     waveform.set_fraction(0.20);
-    waveform.state.borrow_mut().last_tick_us = gtk4::glib::monotonic_time() - 1_000_000;
+    waveform.state.borrow_mut().last_position_us = gtk4::glib::monotonic_time() - 1_000_000;
     waveform.set_fraction_smooth(0.22);
 
     let state = waveform.state.borrow();
