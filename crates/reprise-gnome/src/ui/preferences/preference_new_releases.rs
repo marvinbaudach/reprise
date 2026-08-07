@@ -36,10 +36,7 @@ pub(in crate::ui) fn build(
     enabled: bool,
 ) -> NewReleasePreferenceRows {
     let rows = NewReleasePreferenceRows {
-        rows: Rc::new(vec![
-            scope_row(conn, enabled).upcast(),
-            singles_row(conn, enabled).upcast(),
-        ]),
+        rows: Rc::new(vec![scope_row(conn, enabled).upcast()]),
     };
     let alive = rows.rows[0].downgrade();
     let target = rows.clone();
@@ -73,25 +70,6 @@ pub(in crate::ui) fn scope_row(conn: &Rc<Db>, enabled: bool) -> adw::ComboRow {
             reprise_core::artist_news::set_fetch_all_artists(&conn, row.selected() == 1)
         {
             tracing::warn!(%error, "could not save New Releases artist scope");
-        }
-    });
-    row
-}
-
-pub(in crate::ui) fn singles_row(conn: &Rc<Db>, enabled: bool) -> adw::SwitchRow {
-    let active = reprise_core::artist_news::include_singles(conn).unwrap_or(false);
-    let row = adw::SwitchRow::builder()
-        .title(strings::text(strings::NEW_RELEASES_INCLUDE_SINGLES))
-        .subtitle(strings::text(
-            strings::NEW_RELEASES_INCLUDE_SINGLES_DESCRIPTION,
-        ))
-        .active(active)
-        .sensitive(enabled)
-        .build();
-    let conn = conn.clone();
-    row.connect_active_notify(move |row| {
-        if let Err(error) = reprise_core::artist_news::set_include_singles(&conn, row.is_active()) {
-            tracing::warn!(%error, "could not save New Releases singles setting");
         }
     });
     row

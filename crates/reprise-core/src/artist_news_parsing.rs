@@ -88,8 +88,8 @@ pub fn parse_artist_mbid(json: &str, artist: &str) -> ArtistMatch {
     }
 }
 
-pub fn parse_release_groups(json: &str, today: NaiveDate, include_singles: bool) -> Vec<AlbumNews> {
-    parse_release_group_page(json, today, include_singles).map_or_else(Vec::new, |page| page.items)
+pub fn parse_release_groups(json: &str, today: NaiveDate) -> Vec<AlbumNews> {
+    parse_release_group_page(json, today).map_or_else(Vec::new, |page| page.items)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,28 +103,21 @@ pub(crate) struct PrimaryArtistReleaseGroupPage {
     pub excluded_release_group_mbids: Vec<String>,
 }
 
-pub fn parse_release_group_page(
-    json: &str,
-    today: NaiveDate,
-    include_singles: bool,
-) -> Option<ReleaseGroupPage> {
-    parse_release_group_page_for_artist(json, today, include_singles, None)
-        .map(|parsed| parsed.page)
+pub fn parse_release_group_page(json: &str, today: NaiveDate) -> Option<ReleaseGroupPage> {
+    parse_release_group_page_for_artist(json, today, None).map(|parsed| parsed.page)
 }
 
 pub(crate) fn parse_release_group_page_for_primary_artist(
     json: &str,
     today: NaiveDate,
-    include_singles: bool,
     artist_mbid: &str,
 ) -> Option<PrimaryArtistReleaseGroupPage> {
-    parse_release_group_page_for_artist(json, today, include_singles, Some(artist_mbid))
+    parse_release_group_page_for_artist(json, today, Some(artist_mbid))
 }
 
 fn parse_release_group_page_for_artist(
     json: &str,
     today: NaiveDate,
-    include_singles: bool,
     artist_mbid: Option<&str>,
 ) -> Option<PrimaryArtistReleaseGroupPage> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
@@ -146,7 +139,7 @@ fn parse_release_group_page_for_artist(
             }
             continue;
         }
-        if let Some(item) = parse_release_group(group, today, include_singles) {
+        if let Some(item) = parse_release_group(group, today) {
             items.push(item);
         }
     }
@@ -259,7 +252,6 @@ pub(crate) fn sort_release_groups(items: &mut [AlbumNews]) {
 fn parse_release_group(
     group: &serde_json::Value,
     today: NaiveDate,
-    include_singles: bool,
 ) -> Option<(AlbumNews, NaiveDate)> {
     let mbid = group.get("id")?.as_str()?.to_string();
     let title = group.get("title")?.as_str()?.trim().to_string();
@@ -278,13 +270,7 @@ fn parse_release_group(
         .to_string();
     let (kind, release_date) = match parse_partial_date(&date_text) {
         Some(release_date) => (
-            release_kind(
-                &primary_type_normalized,
-                &date_text,
-                release_date,
-                today,
-                include_singles,
-            )?,
+            release_kind(&primary_type_normalized, &date_text, release_date, today)?,
             release_date,
         ),
         None if matches!(primary_type_normalized.as_str(), "album" | "ep") => {
@@ -310,17 +296,12 @@ pub(crate) fn release_kind(
     date_text: &str,
     release_date: NaiveDate,
     today: NaiveDate,
-    include_singles: bool,
 ) -> Option<NewsKind> {
     let delta = release_date.signed_duration_since(today).num_days();
     match primary_type {
-        // An announced single needs an exact date to be trustworthy; that
-        // rule predates the switch and stays on unconditionally, so turning
-        // the switch off never shows *less* than before.
+        // An announced single needs an exact date to be trustworthy.
         "single" if date_text.len() == 10 && delta > 0 => Some(NewsKind::Upcoming),
-        "single" if !include_singles => None,
-        "single" if delta >= -NEWS_WINDOW_DAYS => Some(NewsKind::New),
-        "single" => None,
+        "single" => Some(NewsKind::Catalog),
         _ if delta >= 0 => Some(NewsKind::Upcoming),
         _ if delta >= -NEWS_WINDOW_DAYS => Some(NewsKind::New),
         _ => Some(NewsKind::Catalog),

@@ -9,6 +9,7 @@ use crate::artist_news::{
     delta_candidates, hidden_release_count, mark_releases_seen, query_releases, set_release_hidden,
     unseen_release_count,
 };
+use crate::library::settings::set_setting;
 
 fn date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 7, 13).unwrap()
@@ -24,7 +25,7 @@ fn insert_release(db: &crate::db::Db, mbid: &str, seen_at: Option<i64>) {
             "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, seen_at
-         ) VALUES (?1, 'Artist', 'artist-id', 'Release', 'Album', '2026-08-01', 1, ?2)",
+         ) VALUES (?1, 'Artist', 'artist-id', ?1, 'Album', '2026-08-01', 1, ?2)",
             rusqlite::params![mbid, seen_at],
         )
         .unwrap();
@@ -91,6 +92,79 @@ fn popover_candidates_and_badge_exclude_complete_albums_from_the_same_set() {
 }
 
 #[test]
+fn nr_9c_owned_release_does_not_enter_the_popover() {
+    let db = migrated_conn();
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, first_seen, track_count
+             ) VALUES ('majority', 'Artist', 'artist-id', 'Majority Album', 'Album',
+                       '2026-06-01', 1, 1, 12)",
+            [],
+        )
+        .unwrap();
+    for index in 1..=7 {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (
+                   path, title, artist, album_artist, album, disc_no, track_no, added_at
+                 ) VALUES (?1, ?2, 'Artist', 'Artist', 'Majority Album', 1, ?3, 0)",
+                rusqlite::params![
+                    format!("/music/majority-{index}.flac"),
+                    format!("Track {index}"),
+                    index
+                ],
+            )
+            .unwrap();
+    }
+
+    assert!(delta_candidates(&db, date()).unwrap().is_empty());
+    assert_eq!(unseen_release_count(&db, date()).unwrap(), 0);
+}
+
+#[test]
+fn nr_9c_single_badges_only_when_its_chip_is_on() {
+    let db = migrated_conn();
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, first_seen
+             ) VALUES ('single', 'Artist', 'artist-id', 'New Single', 'Single',
+                       '2026-06-01', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+    assert_eq!(unseen_release_count(&db, date()).unwrap(), 0);
+    set_setting(&db, "releases.filter.type", "single").unwrap();
+    assert_eq!(unseen_release_count(&db, date()).unwrap(), 1);
+    assert_eq!(
+        delta_candidates(&db, date()).unwrap()[0].release_group_mbid,
+        "single"
+    );
+}
+
+#[test]
+fn nr_9c_ancient_discovery_does_not_badge() {
+    let db = migrated_conn();
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, first_seen
+             ) VALUES ('ancient', 'Artist', 'artist-id', 'Ancient Album', 'Album',
+                       '1975-01-01', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+    assert!(delta_candidates(&db, date()).unwrap().is_empty());
+    assert_eq!(unseen_release_count(&db, date()).unwrap(), 0);
+}
+
+#[test]
 fn nr_3a_opening_marks_seen_clears_badge() {
     let conn = migrated_conn();
     insert_release(&conn, "one", None);
@@ -117,7 +191,7 @@ fn nr_3a_opening_marks_seen_clears_badge() {
 }
 
 #[test]
-fn nr_16_updates_query_excludes_historical_catalog_releases() {
+fn updates_query_keeps_catalog_out_of_the_legacy_news_list() {
     let conn = migrated_conn();
     for (id, title, first_release_date) in [
         ("catalog-album", "Older Album", "2024-10-18"),
@@ -144,8 +218,8 @@ fn nr_16_updates_query_excludes_historical_catalog_releases() {
     );
     assert_eq!(
         unseen_release_count(&conn, date()).unwrap(),
-        1,
-        "historical catalog rows do not inflate the Updates badge"
+        2,
+        "the persisted five-year catalog scope includes the historical gap"
     );
 }
 
@@ -379,7 +453,8 @@ fn dg_2_future_release_cannot_be_hidden_as_already_complete() {
 
 #[test]
 fn track_counts_survive_internal_whitespace_tagging_drift() {
-    use crate::artist_news::{local_album_track_counts, presence_for, LibraryPresence};
+    use crate::artist_news::{presence_for, LibraryPresence};
+    use crate::artist_news_query::local_album_track_counts;
 
     let conn = migrated_conn();
     conn.conn()
@@ -412,7 +487,8 @@ fn track_counts_survive_internal_whitespace_tagging_drift() {
 
 #[test]
 fn dg_2_duplicate_files_do_not_fake_complete_release_ownership() {
-    use crate::artist_news::{local_album_track_counts, presence_for, LibraryPresence};
+    use crate::artist_news::{presence_for, LibraryPresence};
+    use crate::artist_news_query::local_album_track_counts;
 
     let conn = migrated_conn();
     for (path, track_no) in [

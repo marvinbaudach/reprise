@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use reprise_core::artist_news::ReleasesFilter;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ReleasesEmptyState {
     List,
@@ -24,12 +26,16 @@ pub(super) fn releases_empty_state_for(
     }
 }
 
+pub(super) fn releases_scope_is_filtered(filter: &ReleasesFilter, query: &str) -> bool {
+    !filter.is_widest() || !query.trim().is_empty()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn nr_17_releases_empty_state_matrix_has_one_next_step() {
+    fn nr_25_releases_empty_state_matrix_has_one_next_step() {
         assert_eq!(
             releases_empty_state_for(1, false, true),
             ReleasesEmptyState::List
@@ -45,6 +51,16 @@ mod tests {
         assert_eq!(
             releases_empty_state_for(0, false, false),
             ReleasesEmptyState::Empty
+        );
+    }
+
+    #[test]
+    fn nr_25_gaps_beyond_the_window_offer_show_all() {
+        let filter = ReleasesFilter::default();
+        assert!(releases_scope_is_filtered(&filter, ""));
+        assert_eq!(
+            releases_empty_state_for(0, true, false),
+            ReleasesEmptyState::NoResults
         );
     }
 }

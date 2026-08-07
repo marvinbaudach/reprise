@@ -11,6 +11,7 @@ use rusqlite::Connection;
 
 use crate::artist_news::{normalize, AlbumNews, ArtistNews, NewsKind};
 use crate::artist_news_parsing::{parse_partial_date, release_kind};
+use crate::artist_news_scope::{catalog_type, collapse_duplicates, counts_as_owned, ScopedRelease};
 
 const MAX_NEWS_ITEMS_PER_ARTIST: usize = 20;
 
@@ -42,17 +43,56 @@ pub struct StoredRelease {
     pub local_track_count: i64,
 }
 
-/// `(normalized album artist, normalized album) → distinct track count` for
-/// the local library. Numbered disc/track slots prevent duplicate files from
-/// inventing ownership; title identity is the conservative fallback for
-/// unnumbered files.
-pub(crate) fn local_album_track_counts(
-    conn: &Connection,
-) -> Result<std::collections::HashMap<(String, String), i64>, rusqlite::Error> {
+impl ScopedRelease for StoredRelease {
+    fn artist_name(&self) -> &str {
+        &self.artist_name
+    }
+
+    fn title(&self) -> &str {
+        &self.title
+    }
+
+    fn first_release_date(&self) -> &str {
+        &self.first_release_date
+    }
+
+    fn release_type(&self) -> &str {
+        &self.release_type
+    }
+
+    fn track_count(&self) -> Option<i64> {
+        self.track_count
+    }
+
+    fn release_group_mbid(&self) -> &str {
+        &self.release_group_mbid
+    }
+}
+
+/// The two library identities the release catalog matches against.
+///
+/// Albums are keyed by `(album artist, album)`, singles by `(album artist,
+/// track title)` — two indexes over the very same rows. Building them in
+/// separate queries cost a second full scan of `tracks` on every catalog
+/// render, every badge count and every popover open, which is why they now
+/// share one pass.
+pub(crate) struct LocalLibraryIndex {
+    pub(crate) album_track_counts: std::collections::HashMap<(String, String), i64>,
+    pub(crate) track_titles: std::collections::HashSet<(String, String)>,
+}
+
+/// Reads both indexes in a single pass over the present library.
+///
+/// Numbered disc/track slots prevent duplicate files from inventing album
+/// ownership; title identity is the conservative fallback for unnumbered
+/// files. A track without an album contributes its title but no album slot —
+/// that used to be an `AND trim(album) <> ''` in SQL and is now the same
+/// decision in Rust, because the title index needs those rows.
+pub(crate) fn local_library_index(conn: &Connection) -> Result<LocalLibraryIndex, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT path, title, artist, album_artist, album, disc_no, track_no
          FROM tracks
-         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''",
+         WHERE removed_at IS NULL AND missing_since IS NULL",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -68,6 +108,7 @@ pub(crate) fn local_album_track_counts(
 
     let mut slots =
         std::collections::HashMap::<(String, String), std::collections::HashSet<String>>::new();
+    let mut track_titles = std::collections::HashSet::new();
     for row in rows {
         let (path, title, artist, album_artist, album, disc_no, track_no) = row?;
         let release_artist = if album_artist.trim().is_empty() {
@@ -75,6 +116,12 @@ pub(crate) fn local_album_track_counts(
         } else {
             album_artist
         };
+        if !release_artist.trim().is_empty() && !title.trim().is_empty() {
+            track_titles.insert((normalize(&release_artist), normalize(&title)));
+        }
+        if album.trim().is_empty() {
+            continue;
+        }
         let slot = match track_no.filter(|value| *value > 0) {
             Some(track_no) => format!("position:{}:{track_no}", disc_no.unwrap_or(1).max(1)),
             None if !title.trim().is_empty() => format!("title:{}", normalize(&title)),
@@ -85,14 +132,41 @@ pub(crate) fn local_album_track_counts(
             .or_default()
             .insert(slot);
     }
-    slots
+
+    let album_track_counts = slots
         .into_iter()
         .map(|(key, tracks)| {
             i64::try_from(tracks.len())
                 .map(|count| (key, count))
                 .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    Ok(LocalLibraryIndex {
+        album_track_counts,
+        track_titles,
+    })
+}
+
+/// Album ownership alone, for the fetch pipeline — it never asks about
+/// singles, and it runs once per refresh rather than once per render.
+pub(crate) fn local_album_track_counts(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<(String, String), i64>, rusqlite::Error> {
+    Ok(local_library_index(conn)?.album_track_counts)
+}
+
+pub(crate) fn local_count_for_release(
+    album_counts: &std::collections::HashMap<(String, String), i64>,
+    track_titles: &std::collections::HashSet<(String, String)>,
+    artist: &str,
+    title: &str,
+    release_type: &str,
+) -> i64 {
+    if release_type.eq_ignore_ascii_case("single") {
+        i64::from(track_titles.contains(&(normalize(artist), normalize(title))))
+    } else {
+        local_track_count(album_counts, artist, title)
+    }
 }
 
 pub(crate) fn local_track_count(
@@ -161,6 +235,28 @@ pub(crate) fn query_releases_in(
     include_hidden: bool,
     today: NaiveDate,
 ) -> Result<Vec<StoredRelease>, rusqlite::Error> {
+    let mut releases = load_releases_in(conn, include_hidden, today)?;
+    releases.retain(|release| {
+        parse_partial_date(&release.first_release_date)
+            .and_then(|release_date| {
+                release_kind(
+                    &release.release_type.to_ascii_lowercase(),
+                    &release.first_release_date,
+                    release_date,
+                    today,
+                )
+            })
+            .is_some_and(|kind| kind != NewsKind::Catalog)
+    });
+    cap_releases_per_artist(&mut releases);
+    Ok(releases)
+}
+
+fn load_releases_in(
+    conn: &Connection,
+    include_hidden: bool,
+    today: NaiveDate,
+) -> Result<Vec<StoredRelease>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT release_group_mbid, artist_name, artist_mbid, title, release_type,
                 first_release_date, fetched_at, seen_at, hidden,
@@ -187,10 +283,16 @@ pub(crate) fn query_releases_in(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let counts = local_album_track_counts(conn)?;
+    let library = local_library_index(conn)?;
+    let (counts, track_titles) = (library.album_track_counts, library.track_titles);
     for release in &mut releases {
-        release.local_track_count =
-            local_track_count(&counts, &release.artist_name, &release.title);
+        release.local_track_count = local_count_for_release(
+            &counts,
+            &track_titles,
+            &release.artist_name,
+            &release.title,
+            &release.release_type,
+        );
         release.presence = release_presence(
             &counts,
             &release.artist_name,
@@ -200,20 +302,11 @@ pub(crate) fn query_releases_in(
             today,
         );
     }
-    releases.retain(|release| {
-        parse_partial_date(&release.first_release_date)
-            .and_then(|release_date| {
-                release_kind(
-                    &release.release_type.to_ascii_lowercase(),
-                    &release.first_release_date,
-                    release_date,
-                    today,
-                    true,
-                )
-            })
-            .is_some_and(|kind| kind != NewsKind::Catalog)
-    });
     releases.sort_by(|left, right| compare_stored_releases(left, right, today));
+    Ok(releases)
+}
+
+fn cap_releases_per_artist(releases: &mut Vec<StoredRelease>) {
     let mut per_artist = std::collections::HashMap::<String, usize>::new();
     releases.retain(|release| {
         let count = per_artist.entry(release.artist_mbid.clone()).or_default();
@@ -223,11 +316,10 @@ pub(crate) fn query_releases_in(
         *count += 1;
         true
     });
-    Ok(releases)
 }
 
-/// The visible release candidates for the Updates popover, excluding releases
-/// the library already owns completely.
+/// The visible release candidates for the Updates popover under the persisted
+/// catalog scope, excluding anything the library counts as owned.
 ///
 /// This is also the set [`unseen_release_count`] counts. Keeping the filter in
 /// one query prevents the popover list and its badge from disagreeing.
@@ -236,8 +328,30 @@ pub fn delta_candidates(
     today: NaiveDate,
 ) -> Result<Vec<StoredRelease>, rusqlite::Error> {
     let conn = db.conn();
-    let mut releases = query_releases_in(conn, false, today)?;
-    releases.retain(|release| release.presence != LibraryPresence::Complete);
+    let filter = crate::artist_news_view::persisted_releases_filter(db)?;
+    let cutoff = filter.window.cutoff(today);
+    let mut releases = load_releases_in(conn, false, today)?
+        .into_iter()
+        .filter(|release| {
+            !counts_as_owned(
+                release.presence,
+                &release.release_type,
+                &release.first_release_date,
+                release.track_count,
+                release.local_track_count,
+                today,
+            )
+        })
+        .filter(|release| catalog_type(&release.release_type))
+        .filter(|release| filter.release_types.includes(&release.release_type))
+        .filter(|release| {
+            cutoff.is_none_or(|cutoff| {
+                parse_partial_date(&release.first_release_date).is_none_or(|date| date >= cutoff)
+            })
+        })
+        .collect();
+    releases = collapse_duplicates(releases);
+    cap_releases_per_artist(&mut releases);
     Ok(releases)
 }
 
@@ -337,7 +451,6 @@ fn query_artist_news_in(
                         &release.first_release_date,
                         release_date,
                         today,
-                        true,
                     )
                 })
                 .unwrap_or(NewsKind::New),
