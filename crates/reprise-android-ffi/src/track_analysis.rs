@@ -7,6 +7,8 @@ use reprise_view::waveform::{shape_display_peaks, DisplayBar};
 
 use crate::{LibraryError, MusicLibrary};
 
+const MAX_TRACK_RENDER_BAR_COUNT: usize = 4_096;
+
 /// One fully shaped seek-bar cell with its Rust-owned spectral colour.
 #[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
 pub struct AndroidTrackRenderBar {
@@ -40,7 +42,9 @@ impl MusicLibrary {
         let Some((peaks, spectrogram)) = peaks.zip(spectrogram) else {
             return Ok(None);
         };
-        let count = bar_count as usize;
+        let count = (bar_count as usize)
+            .min(MAX_TRACK_RENDER_BAR_COUNT)
+            .min(usize::MAX / peaks.len().max(1));
         let display_bars = shape_display_peaks(&peaks, count);
         if display_bars.is_empty() {
             return Ok(None);
@@ -98,6 +102,7 @@ mod tests {
     use reprise_core::queries::{query_library_text_search, WindowRange};
     use reprise_core::spectrogram::{TrackSpectrogram, SPECTROGRAM_BAND_COUNT};
     use reprise_core::waveform::TrackRenderData;
+    use reprise_view::spectral_colour::spectral_colour;
 
     use crate::MusicLibrary;
 
@@ -156,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn finished_bars_are_shaped_and_coloured_in_rust_while_no_analysis_is_none() {
+    fn real_library_render_data_crosses_the_boundary_with_view_owned_colours() {
         let (_directory, library, analysed_id, plain_id) = library_with_two_tracks();
 
         let bars = library.track_render_bars(analysed_id, 2).unwrap().unwrap();
@@ -170,7 +175,7 @@ mod tests {
             "second shaped level was {}",
             bars[1].level,
         );
-        let expected_colour = (0.693_792_159_161_754, 0.631_262_916_780_478_9, 1.0);
+        let expected_colour = spectral_colour(f64::from(u8::MAX / 2 + 1) / f64::from(u8::MAX));
         for actual in [
             (bars[0].red, bars[0].green, bars[0].blue),
             (bars[1].red, bars[1].green, bars[1].blue),
@@ -187,5 +192,17 @@ mod tests {
             }
         }
         assert_eq!(library.track_render_bars(plain_id, 2).unwrap(), None);
+    }
+
+    #[test]
+    fn public_bar_count_is_bounded_before_bucket_arithmetic() {
+        let (_directory, library, analysed_id, _plain_id) = library_with_two_tracks();
+
+        let bars = library
+            .track_render_bars(analysed_id, 4_097)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(bars.len(), 4_096);
     }
 }

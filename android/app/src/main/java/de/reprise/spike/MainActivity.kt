@@ -106,15 +106,7 @@ class MainActivity : ComponentActivity() {
         TrackAnalysisLoader(
             importAnalysis = { trackId -> library.importTrackAnalysis(trackId) },
             readBars = { trackId, count ->
-                library.trackRenderBars(trackId, count.toUInt())?.map { bar ->
-                    SpectralBar(
-                        silence = bar.silence,
-                        level = bar.level,
-                        red = bar.red,
-                        green = bar.green,
-                        blue = bar.blue,
-                    )
-                }
+                library.trackRenderBars(trackId, count.toUInt())?.map { it.toSpectralBar() }
             },
             onMainThread = { work -> runOnUiThread { work() } },
         )

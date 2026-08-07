@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
+import uniffi.reprise_android_ffi.AndroidTrackRenderBar
 
 private const val TAG = "RepriseAnalysis"
 private const val SHUTDOWN_TIMEOUT_MS = 2_000L
@@ -20,6 +21,14 @@ internal data class SpectralBar(
     val red: Double,
     val green: Double,
     val blue: Double,
+)
+
+internal fun AndroidTrackRenderBar.toSpectralBar() = SpectralBar(
+    silence = silence,
+    level = level,
+    red = red,
+    green = green,
+    blue = blue,
 )
 
 /** The analysis edge used by the playing-track lifecycle and seek surface. */
