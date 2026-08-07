@@ -1,7 +1,5 @@
 use super::*;
 
-use std::time::Duration;
-
 fn test_widgets(content: &impl IsA<gtk4::Widget>) -> PanelWidgets {
     let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
@@ -20,48 +18,38 @@ fn npp_14_has_three_built_in_tabs_in_order() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn three_tab_labels_fit_the_300_px_panel_without_ellipsizing() {
+fn npp_14_tabs_are_always_icon_only_with_installed_labeled_symbols() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content);
 
-    content.set_width_request(600);
-    let window = gtk4::Window::builder()
-        .default_width(900)
-        .default_height(700)
-        .child(widgets.column.widget())
-        .build();
-    window.present();
-    crate::ui::test_settle::settle_for(Duration::from_millis(100));
-
     assert_eq!(
         widgets.tab_switcher.display_mode(),
-        adw::InlineViewSwitcherDisplayMode::Labels
+        adw::InlineViewSwitcherDisplayMode::Icons
     );
-    let labels = descendant_labels(widgets.tab_switcher.upcast_ref());
-    for expected in ["Up Next", "Lyrics", "Visuals"] {
-        let label = labels
-            .iter()
-            .find(|label| label.text().as_str() == expected)
-            .unwrap_or_else(|| panic!("missing tab label {expected:?}"));
-        assert!(!label.layout().is_ellipsized());
-    }
-    window.close();
-}
+    assert!(widgets
+        .tab_switcher
+        .parent()
+        .is_some_and(|parent| parent.is::<gtk4::Box>()));
 
-fn descendant_labels(root: &gtk4::Widget) -> Vec<gtk4::Label> {
-    let mut labels = Vec::new();
-    let mut pending = vec![root.clone()];
-    while let Some(widget) = pending.pop() {
-        if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
-            labels.push(label);
-        }
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            child = current.next_sibling();
-            pending.push(current);
-        }
+    let icon_theme = gtk4::IconTheme::for_display(&gtk4::gdk::Display::default().unwrap());
+    for (index, expected) in [
+        ("Up Next", "view-list-symbolic"),
+        ("Lyrics", "document-edit-symbolic"),
+        ("Visuals", "network-cellular-signal-excellent-symbolic"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let page = widgets
+            .tab_stack
+            .pages()
+            .item(index as u32)
+            .and_downcast::<adw::ViewStackPage>()
+            .unwrap();
+        assert_eq!(page.title().as_deref(), Some(expected.0));
+        assert_eq!(page.icon_name().as_deref(), Some(expected.1));
+        assert!(icon_theme.has_icon(expected.1));
     }
-    labels
 }

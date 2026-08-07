@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::BreakpointBinExt;
 use reprise_core::db::Db;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 
@@ -29,7 +28,6 @@ use crate::ui::swell::Swell;
 
 type OnVoid = Rc<dyn Fn()>;
 const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
-const TAB_ICONS_MAX_WIDTH: f64 = 224.0;
 
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
@@ -197,26 +195,12 @@ fn build_widgets_for_session(
     lyrics.set_tab_open(session.selected.get() == PanelTab::Lyrics);
     let tab_switcher = adw::InlineViewSwitcher::builder()
         .stack(&tab_stack)
-        .display_mode(adw::InlineViewSwitcherDisplayMode::Labels)
+        .display_mode(adw::InlineViewSwitcherDisplayMode::Icons)
         .can_shrink(true)
         .homogeneous(true)
         .build();
     tab_switcher.add_css_class("reprise-now-playing-tabs");
-    let tabs = adw::BreakpointBin::new();
-    tabs.set_size_request(1, TAB_SWITCHER_MIN_HEIGHT);
-    tabs.set_child(Some(&tab_switcher));
-    let narrow = adw::BreakpointCondition::new_length(
-        adw::BreakpointConditionLengthType::MaxWidth,
-        TAB_ICONS_MAX_WIDTH,
-        adw::LengthUnit::Px,
-    );
-    let breakpoint = adw::Breakpoint::new(narrow);
-    breakpoint.add_setter(
-        &tab_switcher,
-        "display-mode",
-        Some(&adw::InlineViewSwitcherDisplayMode::Icons.to_value()),
-    );
-    tabs.add_breakpoint(breakpoint);
+    tab_switcher.set_size_request(1, TAB_SWITCHER_MIN_HEIGHT);
 
     let footer = gtk4::Label::new(None);
     footer.add_css_class("reprise-now-playing-footer");
@@ -281,7 +265,7 @@ fn build_widgets_for_session(
     track_content.add_css_class("reprise-now-playing-track-content");
     track_content.append(&head_overlay);
     stage.append(&track_content);
-    stage.append(&tabs);
+    stage.append(&tab_switcher);
     stage.append(&tab_stack);
     stage.append(&footer);
 

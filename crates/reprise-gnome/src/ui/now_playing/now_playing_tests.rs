@@ -316,20 +316,20 @@ fn head_and_pill_match_the_21a_structure() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
+fn npp_14_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
-    widgets
-        .tab_switcher
-        .set_display_mode(adw::InlineViewSwitcherDisplayMode::Icons);
-    let responsive_tabs = widgets
+    assert_eq!(
+        widgets.tab_switcher.display_mode(),
+        adw::InlineViewSwitcherDisplayMode::Icons
+    );
+    assert!(widgets
         .tab_switcher
         .parent()
-        .and_downcast::<adw::BreakpointBin>()
-        .expect("the tab switcher lives in its responsive bin");
-    assert_eq!(responsive_tabs.width_request(), 1);
-    assert_eq!(responsive_tabs.height_request(), 50);
+        .is_some_and(|parent| parent.is::<gtk4::Box>()));
+    assert_eq!(widgets.tab_switcher.width_request(), 1);
+    assert_eq!(widgets.tab_switcher.height_request(), 50);
 
     let buttons = widget_tree(widgets.tab_switcher.upcast_ref())
         .into_iter()
