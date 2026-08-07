@@ -12,7 +12,7 @@ fn migrated_conn() -> crate::db::Db {
 }
 
 #[test]
-fn nr_1a_fetch_queue_prioritizes_top_artists_and_includes_the_never_checked_rest() {
+fn nr_27_fetch_queue_prioritizes_top_artists_and_includes_the_never_checked_rest() {
     let conn = migrated_conn();
     for index in 0..27 {
         conn.conn()

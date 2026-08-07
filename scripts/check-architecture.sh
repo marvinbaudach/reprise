@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ARCH_LINT_SIZE_ROOT points the size rules at a fixture tree so
+# scripts/tests/architecture-size-limits.sh can prove they all report before
+# the script exits. It covers the size section only; everything below it needs
+# a real cargo workspace, and a fixture run stops at the exit above it.
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-cd "$repo_root"
+cd "${ARCH_LINT_SIZE_ROOT:-$repo_root}"
 
 echo "== Architecture lint =="
 
+# Every size rule reports before any of them exits. A single oversized file
+# used to abort the script here, which silently skipped the tighter 600-line
+# limits below — so a composition root could drift over its budget and nobody
+# saw it until the unrelated 800-line offender was fixed. Collect, then exit.
 failed=0
 while IFS= read -r file; do
   lines=$(wc -l < "$file")
@@ -15,14 +23,10 @@ while IFS= read -r file; do
   fi
 done < <(find crates -name '*.rs' -type f | sort)
 
-if (( failed != 0 )); then
-  exit 1
-fi
-
 window_lines=$(wc -l < crates/reprise-gnome/src/ui/window/window.rs)
 if (( window_lines >= 600 )); then
   echo "window.rs has $window_lines lines; the composition root must stay below 600" >&2
-  exit 1
+  failed=1
 fi
 
 for orchestrator in \
@@ -31,9 +35,19 @@ for orchestrator in \
   lines=$(wc -l < "$orchestrator")
   if (( lines >= 600 )); then
     echo "$orchestrator has $lines lines; UI orchestrators must stay below 600" >&2
-    exit 1
+    failed=1
   fi
 done
+
+if (( failed != 0 )); then
+  exit 1
+fi
+
+# Everything below needs a real cargo workspace. A fixture run stops here.
+if [[ -n ${ARCH_LINT_SIZE_ROOT:-} ]]; then
+  echo "size rules passed (fixture run)"
+  exit 0
+fi
 
 if cargo tree -p reprise-core | rg --quiet '(^| )(gtk4|libadwaita|gstreamer|zbus)( |$| v)'; then
   echo "reprise-core must not depend on GTK, libadwaita, GStreamer, or zbus" >&2

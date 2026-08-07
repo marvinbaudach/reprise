@@ -224,7 +224,7 @@ fn updates_query_keeps_catalog_out_of_the_legacy_news_list() {
 }
 
 #[test]
-fn nr_1a_updates_query_caps_each_artist_after_catalog_filtering() {
+fn updates_query_caps_each_artist_after_catalog_filtering() {
     let conn = migrated_conn();
     for index in 0..21 {
         conn.conn()
@@ -302,7 +302,7 @@ fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
 }
 
 #[test]
-fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
+fn query_marks_local_albums_instead_of_dropping_them() {
     let conn = migrated_conn();
     conn.conn()
         .execute(
