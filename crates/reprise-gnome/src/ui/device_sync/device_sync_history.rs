@@ -1,13 +1,16 @@
-//! "Recent transfers" on the device page: what each run did (MTP-20).
+//! "Recent syncs" on the device page: what each run did (MTP-20).
 //!
 //! The core records runs but deliberately holds no wording, so the phrasing
-//! lives here. A run is one expandable row — headline and balance closed,
-//! its deviations inside. Successful copies are a number, not a list.
+//! lives in the GTK layer's `device_sync_strings` sibling. A run is one
+//! expandable row — headline and balance closed, its deviations inside.
+//! Successful copies are a number, not a list.
 
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::device_sync::sync_log::{Deviation, DeviationKind, RunOutcome, RunRecord};
+use reprise_core::device_sync::sync_log::{Deviation, RunRecord};
+
+use super::device_sync_strings;
 
 /// How many runs the page offers before it stops being scannable.
 pub(super) const SHOWN_RUNS: usize = 10;
@@ -28,7 +31,7 @@ fn build(runs: &[RunWithDeviations]) -> gtk4::Box {
     content.add_css_class("reprise-device-history");
 
     let title = gtk4::Label::builder()
-        .label("Recent transfers")
+        .label(device_sync_strings::sync_history_heading())
         .xalign(0.0)
         .build();
     title.add_css_class("title-2");
@@ -36,7 +39,7 @@ fn build(runs: &[RunWithDeviations]) -> gtk4::Box {
 
     if runs.is_empty() {
         let empty = gtk4::Label::builder()
-            .label("No synchronization has run yet.")
+            .label(device_sync_strings::sync_history_empty_state())
             .xalign(0.0)
             .build();
         empty.add_css_class("dim-label");
@@ -72,63 +75,25 @@ fn build(runs: &[RunWithDeviations]) -> gtk4::Box {
 /// When it ran and how it ended.
 fn run_headline(run: &RunRecord) -> String {
     let when = chrono::DateTime::from_timestamp(run.started_at, 0).map_or_else(
-        || "unknown time".to_owned(),
+        device_sync_strings::sync_history_unknown_time,
         |stamp| {
             chrono::DateTime::<chrono::Local>::from(stamp)
                 .format("%-d %b %Y, %H:%M")
                 .to_string()
         },
     );
-    format!("{when} · {}", outcome_word(run.outcome))
-}
-
-fn outcome_word(outcome: RunOutcome) -> &'static str {
-    match outcome {
-        RunOutcome::Running => "Running",
-        RunOutcome::Completed => "Completed",
-        RunOutcome::Cancelled => "Cancelled",
-        RunOutcome::Failed => "Failed",
-        RunOutcome::Interrupted => "Interrupted",
-    }
+    device_sync_strings::sync_history_headline(&when, run.outcome)
 }
 
 /// What arrived and what did not. Zero counts are left out — a clean run
 /// should read as clean, not as a row of noughts.
 fn run_balance(run: &RunRecord) -> String {
-    let mut parts = vec![format!("{} of {} copied", run.copied, run.planned)];
-    if run.skipped > 0 {
-        parts.push(format!("{} skipped", run.skipped));
-    }
-    if run.failed > 0 {
-        parts.push(format!("{} failed", run.failed));
-    }
-    if run.deleted > 0 {
-        parts.push(format!("{} removed", run.deleted));
-    }
-    if let Some(detail) = &run.detail {
-        parts.push(detail.clone());
-    }
-    parts.join(" · ")
+    device_sync_strings::sync_history_balance(run)
 }
 
 /// One file that did not go through cleanly.
 fn deviation_line(deviation: &Deviation) -> String {
-    format!(
-        "{} · {} — {}",
-        kind_word(deviation.kind),
-        deviation.device_path,
-        deviation.detail
-    )
-}
-
-fn kind_word(kind: DeviationKind) -> &'static str {
-    match kind {
-        DeviationKind::Skipped => "Skipped",
-        DeviationKind::Failed => "Failed",
-        DeviationKind::Deleted => "Removed",
-        DeviationKind::ConversionFallback => "Kept original",
-        DeviationKind::PlaylistWriteFailed => "Playlist failed",
-    }
+    device_sync_strings::sync_history_deviation_line(deviation)
 }
 
 #[cfg(test)]

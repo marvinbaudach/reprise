@@ -469,6 +469,142 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
+pub const RECENT_SYNCS: &str = N_!("Recent syncs");
+pub const NO_SYNCHRONIZATION_YET: &str = N_!("No synchronization has run yet.");
+pub const UNKNOWN_TIME: &str = N_!("unknown time");
+pub const RUNNING: &str = N_!("Running");
+pub const COMPLETED: &str = N_!("Completed");
+pub const CANCELLED: &str = N_!("Cancelled");
+pub const FAILED: &str = N_!("Failed");
+pub const INTERRUPTED: &str = N_!("Interrupted");
+pub const NOTHING_TO_TRANSFER: &str = N_!("Nothing to transfer");
+pub const SKIPPED: &str = N_!("Skipped");
+pub const REMOVED: &str = N_!("Removed");
+pub const KEPT_ORIGINAL: &str = N_!("Kept original");
+pub const PLAYLIST_FAILED: &str = N_!("Playlist failed");
+
+pub fn sync_history_heading() -> String {
+    text(RECENT_SYNCS)
+}
+
+pub fn sync_history_empty_state() -> String {
+    text(NO_SYNCHRONIZATION_YET)
+}
+
+pub fn sync_history_unknown_time() -> String {
+    text(UNKNOWN_TIME)
+}
+
+pub fn sync_history_headline(
+    when: &str,
+    outcome: reprise_core::device_sync::sync_log::RunOutcome,
+) -> String {
+    let outcome = sync_history_outcome(outcome);
+    formatted(
+        N_!("{when} · {outcome}"),
+        &[("when", when), ("outcome", &outcome)],
+    )
+}
+
+fn sync_history_outcome(outcome: reprise_core::device_sync::sync_log::RunOutcome) -> String {
+    use reprise_core::device_sync::sync_log::RunOutcome;
+    text(match outcome {
+        RunOutcome::Running => RUNNING,
+        RunOutcome::Completed => COMPLETED,
+        RunOutcome::Cancelled => CANCELLED,
+        RunOutcome::Failed => FAILED,
+        RunOutcome::Interrupted => INTERRUPTED,
+    })
+}
+
+pub fn sync_history_balance(run: &reprise_core::device_sync::sync_log::RunRecord) -> String {
+    let mut parts = Vec::new();
+    if run.planned > 0 || run.copied > 0 {
+        parts.push(history_plural(
+            "device sync history balance",
+            "{copied} of {planned} copied",
+            "{copied} of {planned} copied",
+            run.planned.max(run.copied),
+            &[
+                ("copied", &run.copied.to_string()),
+                ("planned", &run.planned.to_string()),
+            ],
+        ));
+    }
+    if run.skipped > 0 {
+        parts.push(history_plural(
+            "device sync history balance",
+            "{count} skipped",
+            "{count} skipped",
+            run.skipped,
+            &[("count", &run.skipped.to_string())],
+        ));
+    }
+    if run.failed > 0 {
+        parts.push(history_plural(
+            "device sync history balance",
+            "{count} failed",
+            "{count} failed",
+            run.failed,
+            &[("count", &run.failed.to_string())],
+        ));
+    }
+    if run.deleted > 0 {
+        parts.push(history_plural(
+            "device sync history balance",
+            "{count} removed",
+            "{count} removed",
+            run.deleted,
+            &[("count", &run.deleted.to_string())],
+        ));
+    }
+    if let Some(detail) = &run.detail {
+        parts.push(detail.clone());
+    }
+    if parts.is_empty() {
+        return text(NOTHING_TO_TRANSFER);
+    }
+    parts.join(" · ")
+}
+
+pub fn sync_history_deviation_line(
+    deviation: &reprise_core::device_sync::sync_log::Deviation,
+) -> String {
+    let kind = sync_history_deviation_kind(deviation.kind);
+    formatted(
+        N_!("{kind} · {path} — {detail}"),
+        &[
+            ("kind", &kind),
+            ("path", &deviation.device_path),
+            ("detail", &deviation.detail),
+        ],
+    )
+}
+
+fn sync_history_deviation_kind(kind: reprise_core::device_sync::sync_log::DeviationKind) -> String {
+    use reprise_core::device_sync::sync_log::DeviationKind;
+    text(match kind {
+        DeviationKind::Skipped => SKIPPED,
+        DeviationKind::Failed => FAILED,
+        DeviationKind::Deleted => REMOVED,
+        DeviationKind::ConversionFallback => KEPT_ORIGINAL,
+        DeviationKind::PlaylistWriteFailed => PLAYLIST_FAILED,
+    })
+}
+
+fn history_plural(
+    context: &str,
+    singular: &str,
+    plural: &str,
+    count: u32,
+    values: &[(&str, &str)],
+) -> String {
+    crate::i18n::format_message(
+        &crate::i18n::npgettext(context, singular, plural, count),
+        values,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

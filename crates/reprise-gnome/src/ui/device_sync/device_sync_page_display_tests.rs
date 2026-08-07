@@ -353,8 +353,8 @@ fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
     let mut labels = Vec::new();
     collect_labels(root.upcast_ref::<gtk4::Widget>(), &mut labels);
     assert!(
-        labels.iter().any(|text| text.contains("Recent transfers")),
-        "the device page must name its transfer history: {labels:?}"
+        labels.iter().any(|text| text.contains("Recent syncs")),
+        "the device page must name its synchronization history: {labels:?}"
     );
     assert!(
         labels.iter().any(|text| text.contains("104 of 200 copied")),
@@ -363,6 +363,34 @@ fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
     assert!(
         labels.iter().any(|text| text.contains("Interrupted")),
         "a run that never finished must say so: {labels:?}"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn sync_history_is_the_last_card_in_the_content_column() {
+    gtk4::init().expect("GTK test display");
+
+    let (surface, _root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let content = surface
+        .history
+        .parent()
+        .expect("history must belong to the content column");
+    assert_eq!(
+        content.last_child(),
+        Some(surface.history.clone().upcast()),
+        "the synchronization history must remain the page's final card"
     );
 }
 

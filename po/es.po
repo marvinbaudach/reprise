@@ -5434,6 +5434,79 @@ msgstr "Chromium (CSD)"
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
 
+# Device sync history
+msgid "Recent syncs"
+msgstr "Sincronizaciones recientes"
+
+msgid "No synchronization has run yet."
+msgstr "Aún no se ha ejecutado ninguna sincronización."
+
+msgid "unknown time"
+msgstr "hora desconocida"
+
+msgid "Running"
+msgstr "En curso"
+
+msgid "Completed"
+msgstr "Completada"
+
+msgid "Cancelled"
+msgstr "Cancelada"
+
+msgid "Interrupted"
+msgstr "Interrumpida"
+
+msgid "Nothing to transfer"
+msgstr "Nada que transferir"
+
+msgid "Skipped"
+msgstr "Omitido"
+
+msgid "Removed"
+msgstr "Eliminado"
+
+msgid "Kept original"
+msgstr "Original conservado"
+
+msgid "Playlist failed"
+msgstr "Lista de reproducción fallida"
+
+#, rust-format
+msgid "{when} · {outcome}"
+msgstr "{when} · {outcome}"
+
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{copied} of {planned} copied"
+msgid_plural "{copied} of {planned} copied"
+msgstr[0] "{copied} de {planned} copiado"
+msgstr[1] "{copied} de {planned} copiados"
+
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} skipped"
+msgid_plural "{count} skipped"
+msgstr[0] "{count} omitido"
+msgstr[1] "{count} omitidos"
+
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} failed"
+msgid_plural "{count} failed"
+msgstr[0] "{count} fallido"
+msgstr[1] "{count} fallidos"
+
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} removed"
+msgid_plural "{count} removed"
+msgstr[0] "{count} eliminado"
+msgstr[1] "{count} eliminados"
+
+#, rust-format
+msgid "{kind} · {path} — {detail}"
+msgstr "{kind} · {path} — {detail}"
+
 #, rust-format
 #~ msgid "{count} item added to queue"
 #~ msgid_plural "{count} items added to queue"

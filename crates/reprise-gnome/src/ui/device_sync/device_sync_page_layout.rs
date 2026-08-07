@@ -20,10 +20,10 @@ pub(super) const CONTENT_MAX_WIDTH: i32 = 1_120;
 
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::ScrolledWindow,
-    /// The vertical content column, exposed so the caller can append
-    /// further cards (the Content/Next-synchronization panel, design 7a)
-    /// below the hero and playlist body without this module needing to
-    /// know about that panel's type.
+    /// The vertical content column, preloaded with the hero and playlist
+    /// body. The caller appends the Content/Next-synchronization panel
+    /// (design 7a), then [`Self::history`], because this module deliberately
+    /// does not know that panel's type.
     pub(super) content: gtk4::Box,
     pub(super) device_name: gtk4::Label,
     pub(super) connection: gtk4::Label,
@@ -50,7 +50,8 @@ pub(super) struct DeviceDashboard {
     pub(super) progress_bar: gtk4::ProgressBar,
     pub(super) primary: gtk4::Button,
     pub(super) eject: gtk4::Button,
-    /// Holds the "Recent transfers" card, refilled on every update (MTP-20).
+    /// Holds the "Recent syncs" card, refilled on every update (MTP-20).
+    /// The caller places it after the externally owned content panel.
     pub(super) history: gtk4::Box,
 }
 
@@ -218,7 +219,6 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     let history = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.append(&hero);
     content.append(&body);
-    content.append(&history);
 
     let clamp = adw::Clamp::builder()
         .maximum_size(CONTENT_MAX_WIDTH)

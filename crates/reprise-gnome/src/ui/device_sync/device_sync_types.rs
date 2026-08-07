@@ -186,7 +186,7 @@ pub struct DeviceView {
     /// snapshot rather than read here, because the panel does not touch the
     /// database (`ARCH-2`'s thin frontend).
     pub enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources,
-    /// The recorded runs shown under "Recent transfers" (MTP-20).
+    /// The recorded runs shown under "Recent syncs" (MTP-20).
     pub history: Vec<crate::ui::device_sync::device_sync_history::RunWithDeviations>,
     /// `MTP-42`'s preparation-phase projection (design 7f, `MTP-43`) — the
     /// device page's preparation overview, switch behavior, and primary

@@ -5147,3 +5147,93 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:451
+msgid "Recent syncs"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:452
+msgid "No synchronization has run yet."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:453
+msgid "unknown time"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:454
+msgid "Running"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:455
+msgid "Completed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:456
+msgid "Cancelled"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:458
+msgid "Interrupted"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:459
+msgid "Nothing to transfer"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:460
+msgid "Skipped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:461
+msgid "Removed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:462
+msgid "Kept original"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:463
+msgid "Playlist failed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:483
+#, rust-format
+msgid "{when} · {outcome}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:504
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{copied} of {planned} copied"
+msgid_plural "{copied} of {planned} copied"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:516
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} skipped"
+msgid_plural "{count} skipped"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:525
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} failed"
+msgid_plural "{count} failed"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:534
+#, rust-format
+msgctxt "device sync history balance"
+msgid "{count} removed"
+msgid_plural "{count} removed"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:554
+#, rust-format
+msgid "{kind} · {path} — {detail}"
+msgstr ""
