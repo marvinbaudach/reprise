@@ -170,6 +170,7 @@ class CuaExecutor:
         self.geometry_provider = geometry_provider
         self.window_origin = window_origin
         self.geometry_failures: list[str] = []
+        self.geometry_calibration: Any | None = None
         self._hover_cursor_disabled = False
         self._state_counter = 0
         self._step_counter = 0
@@ -513,7 +514,11 @@ class CuaExecutor:
         origin = self.window_origin or self.hover_geometry
         if self.geometry_provider is None or origin is None:
             return raw
-        from atspi_geometry import GeometryError, align_driver_geometry
+        from atspi_geometry import (
+            GeometryError,
+            align_driver_geometry,
+            geometry_calibration,
+        )
 
         structured = raw.get("structuredContent")
         container = structured if isinstance(structured, dict) else raw
@@ -521,7 +526,9 @@ class CuaExecutor:
         if not isinstance(elements, list):
             return self._untrusted(raw, "snapshot carries no element list")
         try:
-            frames = align_driver_geometry(elements, self.geometry_provider(), origin)
+            nodes = self.geometry_provider()
+            self.geometry_calibration = geometry_calibration(nodes, origin)
+            frames = align_driver_geometry(elements, nodes, origin)
         except GeometryError as error:
             self.geometry_failures.append(str(error))
             return self._untrusted(raw, str(error))

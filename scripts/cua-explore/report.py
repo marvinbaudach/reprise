@@ -105,11 +105,18 @@ class RunReport:
         self.workload_audits: dict[int, dict[str, Any]] = {}
         self.startup_timings: list[dict[str, Any]] = []
         self.geometry_failures: list[str] = []
+        self.geometry_calibration: dict[str, Any] | None = None
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def set_geometry_failures(self, failures: Sequence[str]) -> None:
         """Snapshots whose element positions could not be proven; oracles stayed quiet."""
         self.geometry_failures = [str(_sanitize(item)) for item in failures]
+
+    def set_geometry_calibration(self, calibration: Mapping[str, Any] | None) -> None:
+        """The measured shadow border, so the normalisation stays checkable."""
+        self.geometry_calibration = (
+            dict(_sanitize(calibration)) if calibration else None
+        )
 
     def set_startup_timings(self, timings: Sequence[Mapping[str, Any]]) -> None:
         """Measured launch cost per app start; a slow start is a product finding."""
@@ -175,6 +182,7 @@ class RunReport:
                 "steps": len(self.steps),
                 "startup_timings": self.startup_timings,
                 "geometry_failures": self.geometry_failures,
+                "geometry_calibration": self.geometry_calibration,
                 "geometry_trusted": not self.geometry_failures,
                 "finding_counts": dict(sorted(severity_counts.items())),
                 "finding_codes": dict(sorted(code_counts.items())),

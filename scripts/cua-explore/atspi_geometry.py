@@ -30,6 +30,86 @@ MAX_WALK_NODES = 4000
 MAX_WALK_DEPTH = 40
 
 
+def choose_frame(
+    candidates: Sequence[tuple[str, str, float, float]],
+    window_size: tuple[float, float] | None,
+) -> int:
+    """Pick the frame the driver is describing, or refuse.
+
+    cua-driver's element 0 is the frame, not the application node, and the
+    application node carries no component interface at all. Starting one level
+    too high shifts both pre-order walks against each other.
+    """
+    frames = [
+        index
+        for index, (role, _label, _width, _height) in enumerate(candidates)
+        if canonical_role(role) in WINDOW_ROLES
+    ]
+    if not frames:
+        raise GeometryError(
+            f"the application exposes no frame child ({len(candidates)} children)"
+        )
+    if len(frames) == 1:
+        return frames[0]
+    if window_size is None:
+        raise GeometryError(
+            f"ambiguous: {len(frames)} frames and no window size to match against"
+        )
+    matching = [
+        index
+        for index in frames
+        if abs(candidates[index][2] - window_size[0]) <= SIZE_TOLERANCE_PX
+        and abs(candidates[index][3] - window_size[1]) <= SIZE_TOLERANCE_PX
+    ]
+    if len(matching) == 1:
+        return matching[0]
+    if not matching:
+        raise GeometryError(
+            f"ambiguous: none of {len(frames)} frames matches the window size "
+            f"{window_size!r}"
+        )
+    raise GeometryError(
+        f"ambiguous: two frames of the same size match {window_size!r}"
+    )
+
+
+def geometry_calibration(
+    nodes: Sequence[GeometryNode], origin: Any
+) -> dict[str, Any]:
+    """Measure the shadow border instead of assuming it.
+
+    The frame node reports a non-zero WINDOW position (measured: -5, -5), which
+    is the offset between the WINDOW coordinate origin and the frame itself.
+    Normalising against the frame removes exactly that offset - and it is the
+    right thing to do precisely when the frame node and the list_windows entry
+    describe the same rectangle. Sizes are the test for that: measured 1200x800
+    on both sides. If they ever disagree, the two are different rectangles and
+    anchoring one on the other would be meaningless, so the caller refuses.
+    """
+    frame = next(
+        (item for item in nodes if canonical_role(item.role) in WINDOW_ROLES), None
+    )
+    if frame is None:
+        raise GeometryError("the accessibility walk contains no frame node")
+    shadow = (-frame.x, -frame.y)
+    size_matches = (
+        abs(frame.width - origin.width) <= SIZE_TOLERANCE_PX
+        and abs(frame.height - origin.height) <= SIZE_TOLERANCE_PX
+    )
+    return {
+        "frame_window_rect": [frame.x, frame.y, frame.width, frame.height],
+        "window_rect": [
+            float(origin.x),
+            float(origin.y),
+            float(origin.width),
+            float(origin.height),
+        ],
+        "window_origin_offset": [shadow[0], shadow[1]],
+        "size_matches_list_windows": size_matches,
+        "consistent": size_matches,
+    }
+
+
 class GeometryError(RuntimeError):
     """Element geometry could not be established beyond doubt."""
 
@@ -47,7 +127,9 @@ class GeometryNode:
 # cua-driver and Atspi.get_role_name() do not always spell a role the same way.
 # Only equivalences we can name belong here; anything else fails loud, and the
 # error names both spellings so the pair can be added from a real run.
-ROLE_SYNONYMS = {"push button": "button"}
+# Measured pairs: cua-driver calls the toplevel "window" where Atspi's
+# get_role_name() says "frame", and spells buttons without the "push".
+ROLE_SYNONYMS = {"push button": "button", "frame": "window"}
 
 
 def _role(role: str) -> str:
@@ -106,9 +188,15 @@ def align_driver_geometry(
     label, width and height. Any disagreement fails the whole snapshot rather
     than attaching a position to the wrong element.
     """
+    counts = f"driver {len(elements)}, walk {len(nodes)}"
     if len(elements) != len(nodes):
+        raise GeometryError(f"node count differs: {counts}")
+    calibration = geometry_calibration(nodes, origin)
+    if not calibration["consistent"]:
         raise GeometryError(
-            f"node count differs: driver {len(elements)}, walk {len(nodes)}"
+            f"frame size differs from the list_windows entry ({counts}): "
+            f"frame {calibration['frame_window_rect']}, window "
+            f"{calibration['window_rect']}"
         )
     normalized = normalize_to_frame(nodes)
     keys = [_driver_key(element) for element in elements]
@@ -120,7 +208,7 @@ def align_driver_geometry(
             for position in (2, 3)
         ):
             raise GeometryError(
-                f"driver and walk disagree at node {index}: "
+                f"driver and walk disagree at node {index} ({counts}): "
                 f"{driver_key!r} against {node_key!r}"
             )
     # Twins that are identical in role, label and size cannot be told apart by
@@ -136,13 +224,13 @@ def align_driver_geometry(
             item.width,
             item.height,
         )
-        _require_inside(rect, origin, index)
+        _require_inside(rect, origin, index, counts)
         frames[int(element.get("element_index", index))] = rect
     return frames
 
 
 def _require_inside(
-    rect: tuple[float, float, float, float], origin: Any, index: int
+    rect: tuple[float, float, float, float], origin: Any, index: int, counts: str = ""
 ) -> None:
     slack = WINDOW_BOUNDS_TOLERANCE_PX
     if (
@@ -152,13 +240,19 @@ def _require_inside(
         or rect[1] > origin.y + origin.height + slack
     ):
         raise GeometryError(
-            f"node {index} lands outside the window: {rect!r} against "
+            f"node {index} lands outside the window ({counts}): {rect!r} against "
             f"({origin.x}, {origin.y}, {origin.width}, {origin.height})"
         )
 
 
-def walk_window_nodes(pid: int) -> list[GeometryNode]:
-    """Pre-order walk of one application's accessibility tree in WINDOW coords.
+def walk_window_nodes(
+    pid: int, window_size: tuple[float, float] | None = None
+) -> list[GeometryNode]:
+    """Pre-order walk of one window's accessibility tree in WINDOW coordinates.
+
+    Starts at the frame child, because that is where cua-driver's element 0
+    starts; the application node above it carries no component interface at all
+    and would shift both walks against each other by one level.
 
     Deliberately thin: everything worth testing lives in the pure functions
     above. Requires the Atspi GObject bindings on the host.
@@ -186,6 +280,32 @@ def walk_window_nodes(pid: int) -> list[GeometryNode]:
             continue
     if application is None:
         raise GeometryError(f"no accessibility application for pid {pid}")
+
+    candidates = []
+    children = []
+    for index in range(application.get_child_count()):
+        child = application.get_child_at_index(index)
+        if child is None:
+            continue
+        try:
+            component = child.get_component_iface()
+            extents = (
+                component.get_extents(Atspi.CoordType.WINDOW)
+                if component is not None
+                else None
+            )
+            candidates.append(
+                (
+                    child.get_role_name(),
+                    child.get_name() or "",
+                    float(extents.width) if extents is not None else 0.0,
+                    float(extents.height) if extents is not None else 0.0,
+                )
+            )
+            children.append(child)
+        except Exception as error:  # noqa: BLE001
+            raise GeometryError(f"the accessibility walk failed: {error}") from error
+    frame = children[choose_frame(candidates, window_size)]
 
     nodes: list[GeometryNode] = []
 
@@ -224,5 +344,5 @@ def walk_window_nodes(pid: int) -> list[GeometryNode]:
             if child is not None:
                 visit(child, depth + 1)
 
-    visit(application, 0)
+    visit(frame, 0)
     return nodes

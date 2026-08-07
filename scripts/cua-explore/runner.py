@@ -181,7 +181,7 @@ def run_hover_probe(
         evidence_dir=evidence_dir,
         x11_move=default_x11_move(),
         x11_cursor=default_x11_cursor(),
-        geometry_provider=make_geometry_provider(pid),
+        geometry_provider=make_geometry_provider(pid, geometry),
     )
     write_probe_evidence(results, evidence_dir)
     print(render_probe_table(results))
@@ -424,12 +424,16 @@ class AppLifecycle:
         )
 
 
-def make_geometry_provider(pid: int) -> Any:
+def make_geometry_provider(pid: int, origin: Any = None) -> Any:
     """Walk the accessibility tree ourselves; the driver's frames carry no position."""
     from atspi_geometry import walk_window_nodes
 
+    size = (
+        (float(origin.width), float(origin.height)) if origin is not None else None
+    )
+
     def provider() -> Any:
-        return walk_window_nodes(pid)
+        return walk_window_nodes(pid, size)
 
     return provider
 
@@ -625,7 +629,7 @@ def run(args: argparse.Namespace) -> int:
             state_prefix=f"launch-{generation}-state",
             fixture_tokens=mission.fixture_tokens,
             evidence_dir=args.evidence_dir / "states",
-            geometry_provider=make_geometry_provider(pid),
+            geometry_provider=make_geometry_provider(pid, window_origin),
             window_origin=window_origin,
         )
         observation = executor.observe()
@@ -725,6 +729,9 @@ def run(args: argparse.Namespace) -> int:
                     before_observation = observation
                     before_state = observation["state_id"]
                     pid, window_id, generation = lifecycle.restart()
+                    restart_origin = resolve_window_origin(
+                        transport, pid=pid, window_id=window_id
+                    )
                     executor = CuaExecutor(
                         transport,
                         pid=pid,
@@ -734,10 +741,10 @@ def run(args: argparse.Namespace) -> int:
                         fixture_tokens=mission.fixture_tokens,
                         evidence_dir=args.evidence_dir / "states",
                         hover_geometry=hover_geometry,
-                        geometry_provider=make_geometry_provider(pid),
-                        window_origin=resolve_window_origin(
-                            transport, pid=pid, window_id=window_id
+                        geometry_provider=make_geometry_provider(
+                            pid, restart_origin
                         ),
+                        window_origin=restart_origin,
                     )
                     observation = executor.observe()
                     report.add_step(
@@ -794,6 +801,9 @@ def run(args: argparse.Namespace) -> int:
         report.set_startup_timings(lifecycle.startup_timings)
         report.set_geometry_failures(
             list(getattr(executor, "geometry_failures", []) or [])
+        )
+        report.set_geometry_calibration(
+            getattr(executor, "geometry_calibration", None)
         )
         report.write()
     lifecycle.assert_clean_logs()

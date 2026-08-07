@@ -65,8 +65,13 @@ Element positions do not come from cua-driver. Under X11/Xvfb the AT-SPI SCREEN
 coordinate space reports (0, 0) for every node - measured on Reprise (170 of
 170) and on gnome-calculator (107 of 107) - so the driver adds the window origin
 and lands every element on the same pixel. The harness therefore walks the
-accessibility tree itself in WINDOW coordinates, normalises against the frame
-node, and adds the window origin from `list_windows`. Both walks are aligned by
+accessibility tree itself in WINDOW coordinates, starting at the frame child of
+the application - the application node carries no component interface, and
+starting there would shift both walks by one level - normalises against the
+frame node, and adds the window origin from `list_windows`. The frame node's
+own WINDOW rectangle is retained in `summary.json` as `geometry_calibration`:
+normalising against it is right exactly when it is the same rectangle as the
+`list_windows` entry, and the sizes are the test for that. Both walks are aligned by
 pre-order position and every pair is verified on role, label, width and height;
 any disagreement, and the position oracles go silent for that snapshot and the
 reason is recorded in `summary.json` under `geometry_failures`.

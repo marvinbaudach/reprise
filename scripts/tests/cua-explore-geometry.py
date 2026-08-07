@@ -16,6 +16,8 @@ from atspi_geometry import (  # noqa: E402
     GeometryError,
     GeometryNode,
     align_driver_geometry,
+    choose_frame,
+    geometry_calibration,
     normalize_to_frame,
 )
 from hover_geometry import WindowGeometry  # noqa: E402
@@ -41,8 +43,10 @@ def driver(index, role, label, w, h, depth=1):
     }
 
 
-# The frame node sits at (-5, -5) in WINDOW coordinates: the CSD shadow border.
-FRAME_NODE = node("frame", "Reprise", -5, -5, 1210, 810)
+# Measured shape: the frame node sits at (-5, -5) in WINDOW coordinates - the
+# offset of the WINDOW origin - but is the same 1200x800 rectangle that
+# list_windows reports.
+FRAME_NODE = node("frame", "Reprise", -5, -5, 1200, 800)
 NODES = [
     FRAME_NODE,
     node("push button", "Shuffle", -5, 41, 34, 34),
@@ -50,7 +54,7 @@ NODES = [
     node("row", "Track 000001", 0, 120, 900, 28),
 ]
 ELEMENTS = [
-    driver(0, "frame", "Reprise", 1210, 810, depth=0),
+    driver(0, "frame", "Reprise", 1200, 800, depth=0),
     driver(3, "push button", "Shuffle", 34, 34),
     driver(5, "push button", "Main menu", 34, 34),
     driver(9, "row", "Track 000001", 900, 28),
@@ -74,7 +78,7 @@ class NormalisationTests(unittest.TestCase):
         normalized = normalize_to_frame(NODES)
 
         self.assertEqual(
-            [item.width for item in normalized], [1210.0, 34.0, 34.0, 900.0]
+            [item.width for item in normalized], [1200.0, 34.0, 34.0, 900.0]
         )
 
     def test_a_walk_without_a_frame_node_is_refused(self) -> None:
@@ -125,7 +129,7 @@ class AlignmentTests(unittest.TestCase):
             node("push button", "", 90, 10, 34, 34),
         ]
         elements = [
-            driver(0, "frame", "Reprise", 1210, 810, depth=0),
+            driver(0, "frame", "Reprise", 1200, 800, depth=0),
             driver(3, "push button", "", 34, 34),
             driver(5, "push button", "", 34, 34),
         ]
@@ -150,6 +154,152 @@ class AlignmentTests(unittest.TestCase):
         frames = align_driver_geometry(ELEMENTS, nodes, ORIGIN)
 
         self.assertIn(9, frames)
+
+
+class FrameSelectionTests(unittest.TestCase):
+    """The walk must start where cua-driver starts: at the frame, not the app."""
+
+    def test_the_frame_child_is_chosen_over_the_application_node(self) -> None:
+        candidates = [
+            ("frame", "Reprise", 1200.0, 800.0),
+            ("frame", "About Reprise", 400.0, 300.0),
+        ]
+
+        self.assertEqual(choose_frame(candidates, (1200.0, 800.0)), 0)
+
+    def test_the_frame_matching_the_window_size_wins(self) -> None:
+        candidates = [
+            ("frame", "About Reprise", 400.0, 300.0),
+            ("frame", "Reprise", 1200.0, 800.0),
+        ]
+
+        self.assertEqual(choose_frame(candidates, (1200.0, 800.0)), 1)
+
+    def test_no_frame_at_all_is_refused(self) -> None:
+        with self.assertRaisesRegex(GeometryError, "no frame"):
+            choose_frame([("panel", "", 100.0, 100.0)], (1200.0, 800.0))
+
+    def test_two_frames_of_the_same_size_are_refused(self) -> None:
+        candidates = [
+            ("frame", "One", 1200.0, 800.0),
+            ("frame", "Two", 1200.0, 800.0),
+        ]
+
+        with self.assertRaisesRegex(GeometryError, "two frames|ambiguous"):
+            choose_frame(candidates, (1200.0, 800.0))
+
+    def test_a_single_frame_is_taken_even_without_a_size_match(self) -> None:
+        self.assertEqual(choose_frame([("frame", "Reprise", 10.0, 10.0)], None), 0)
+
+
+class RealTreeShapeTests(unittest.TestCase):
+    """The measured shape: driver says 'window', Atspi says 'frame'."""
+
+    DRIVER = [
+        {
+            "element_index": 0,
+            "role": "window",
+            "label": "Reprise",
+            "depth": 0,
+            "frame": {"x": 200, "y": 50, "w": 1200, "h": 800},
+        },
+        {
+            "element_index": 1,
+            "role": "panel",
+            "label": "",
+            "depth": 1,
+            "frame": {"x": 200, "y": 50, "w": 1190, "h": 790},
+        },
+        {
+            "element_index": 2,
+            "role": "push button",
+            "label": "Shuffle",
+            "depth": 3,
+            "frame": {"x": 200, "y": 50, "w": 34, "h": 34},
+        },
+        {
+            "element_index": 3,
+            "role": "push button",
+            "label": "Main menu",
+            "depth": 3,
+            "frame": {"x": 200, "y": 50, "w": 34, "h": 34},
+        },
+    ]
+    WALK = [
+        node("frame", "Reprise", -5, -5, 1200, 800),
+        node("panel", "", -5, -5, 1190, 790),
+        node("push button", "Shuffle", -5, 41, 34, 34),
+        node("push button", "Main menu", 1105, 41, 34, 34),
+    ]
+
+    def test_the_two_root_spellings_are_the_same_node(self) -> None:
+        frames = align_driver_geometry(self.DRIVER, self.WALK, ORIGIN)
+
+        self.assertEqual(frames[0], (200.0, 50.0, 1200.0, 800.0))
+
+    def test_shuffle_and_main_menu_stop_sharing_a_point(self) -> None:
+        frames = align_driver_geometry(self.DRIVER, self.WALK, ORIGIN)
+
+        self.assertEqual(frames[2], (200.0, 96.0, 34.0, 34.0))
+        self.assertEqual(frames[3], (1310.0, 96.0, 34.0, 34.0))
+        self.assertNotEqual(frames[2][:2], frames[3][:2])
+
+
+class CalibrationTests(unittest.TestCase):
+    """The shadow normalisation must be a recorded measurement, not a belief."""
+
+    def test_the_measurement_is_reported_for_the_evidence(self) -> None:
+        record = geometry_calibration(NODES, ORIGIN)
+
+        self.assertEqual(record["frame_window_rect"], [-5.0, -5.0, 1200.0, 800.0])
+        self.assertEqual(record["window_rect"], [200.0, 50.0, 1200.0, 800.0])
+        self.assertEqual(record["window_origin_offset"], [5.0, 5.0])
+        self.assertTrue(record["size_matches_list_windows"])
+
+    def test_a_frame_that_does_not_match_the_window_size_is_refused(self) -> None:
+        # If the frame node and the list_windows entry are different
+        # rectangles, anchoring one on the other is meaningless.
+        nodes = list(NODES)
+        nodes[0] = node("frame", "Reprise", -5, -5, 640, 480)
+
+        with self.assertRaisesRegex(GeometryError, "frame size"):
+            align_driver_geometry(
+                [driver(0, "frame", "Reprise", 640, 480, depth=0), *ELEMENTS[1:]],
+                nodes,
+                ORIGIN,
+            )
+
+    def test_a_frame_of_the_window_size_calibrates_to_no_shadow(self) -> None:
+        nodes = [
+            node("frame", "Reprise", 0, 0, 1200, 800),
+            node("push button", "Shuffle", 0, 46, 34, 34),
+        ]
+        record = geometry_calibration(nodes, ORIGIN)
+
+        self.assertEqual(record["window_origin_offset"], [0.0, 0.0])
+        self.assertTrue(record["size_matches_list_windows"])
+
+
+class RefusalDetailTests(unittest.TestCase):
+    """Every refusal must say enough to tell a level offset from a real mismatch."""
+
+    def test_a_count_mismatch_names_both_counts(self) -> None:
+        with self.assertRaisesRegex(GeometryError, r"driver 4, walk 3"):
+            align_driver_geometry(ELEMENTS, NODES[:-1], ORIGIN)
+
+    def test_a_key_disagreement_names_both_counts_too(self) -> None:
+        wrong = list(NODES)
+        wrong[2] = node("push button", "Something else", 1105, 41, 34, 34)
+
+        with self.assertRaisesRegex(GeometryError, r"driver 4, walk 4"):
+            align_driver_geometry(ELEMENTS, wrong, ORIGIN)
+
+    def test_an_out_of_window_node_names_both_counts_too(self) -> None:
+        nodes = list(NODES)
+        nodes[3] = node("row", "Track 000001", 4000, 120, 900, 28)
+
+        with self.assertRaisesRegex(GeometryError, r"driver 4, walk 4"):
+            align_driver_geometry(ELEMENTS, nodes, ORIGIN)
 
 
 class GeometryTrustTests(unittest.TestCase):
@@ -256,6 +406,16 @@ class DriverGeometryTests(unittest.TestCase):
         self.assertEqual(
             executor.geometry_failures, ["the Atspi bindings are unavailable"]
         )
+
+    def test_the_calibration_measurement_is_retained_for_the_evidence(self) -> None:
+        _transport, executor = self._executor(lambda: list(NODES))
+
+        executor.observe()
+
+        self.assertEqual(
+            executor.geometry_calibration["window_origin_offset"], [5.0, 5.0]
+        )
+        self.assertTrue(executor.geometry_calibration["consistent"])
 
     def test_without_a_provider_the_snapshot_is_left_alone(self) -> None:
         transport = GeometryDriverTransport()
