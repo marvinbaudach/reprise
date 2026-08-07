@@ -366,6 +366,34 @@ fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
     );
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn sync_history_is_the_last_card_in_the_content_column() {
+    gtk4::init().expect("GTK test display");
+
+    let (surface, _root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let content = surface
+        .history
+        .parent()
+        .expect("history must belong to the content column");
+    assert_eq!(
+        content.last_child(),
+        Some(surface.history.clone().upcast()),
+        "the synchronization history must remain the page's final card"
+    );
+}
+
 /// `MTP-46`, the visible half: the core gate already keeps a switched-off
 /// source out of the plan, but a Content row still reading "0 of 3 channels"
 /// would tell the user their phone is set up to receive something it will

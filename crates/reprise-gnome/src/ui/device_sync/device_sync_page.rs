@@ -79,6 +79,7 @@ impl DeviceSyncPage {
             .set_tooltip_text(Some(&device_sync_strings::eject_tooltip(false)));
         let content_panel = ContentPanel::new(content_actions);
         dashboard.content.append(content_panel.root());
+        dashboard.content.append(&dashboard.history);
 
         let disconnected = adw::StatusPage::builder()
             .icon_name("phone-symbolic")
