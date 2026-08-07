@@ -4,12 +4,17 @@
 //! the Adwaita accent, the warning state the Adwaita warning colour, each with
 //! the same surface/border/text weighting (CONTRAST-1 — a matching named
 //! colour outranks a custom alpha, and the chip follows a changed accent).
+//! The edge line is the other half of that indicator and derives the same way,
+//! so both move together and the track stays visible in light mode too.
 
 /// Chip surface alpha over its named background colour.
 const CHIP_SURFACE_ALPHA: &str = "0.13";
 
 /// Chip hairline alpha over its named foreground colour.
 const CHIP_BORDER_ALPHA: &str = "0.32";
+
+/// Edge-line track alpha over the named window foreground colour.
+const EDGE_TRACK_ALPHA: &str = "0.10";
 
 pub(in crate::ui) fn css() -> String {
     let spin_ms = crate::ui::motion::INDICATOR_SPIN_MS;
@@ -92,13 +97,13 @@ pub(in crate::ui) fn css() -> String {
     }}\
     .scan-edge-line trough {{\
         min-height: 2px;\
-        background: rgba(255, 255, 255, 0.10);\
+        background: alpha(@window_fg_color, {EDGE_TRACK_ALPHA});\
         border: none;\
         border-radius: 0;\
     }}\
     .scan-edge-line trough progress {{\
         min-height: 2px;\
-        background: #2ec27e;\
+        background: @accent_bg_color;\
         border-radius: 0;\
     }}\
     "

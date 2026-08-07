@@ -174,10 +174,25 @@ mod tests {
     #[test]
     fn edge_css_is_two_pixels_with_the_approved_track_and_fill() {
         let css = super::super::scan_card_css::css();
-        assert!(css.contains(".scan-edge-line trough"));
-        assert!(css.contains("min-height: 2px"));
-        assert!(css.contains("rgba(255, 255, 255, 0.10)"));
-        assert!(css.contains("#2ec27e"));
+        let edge = css
+            .split_once(".scan-edge-line {")
+            .expect("the edge-line block is present")
+            .1;
+        assert!(edge.contains(".scan-edge-line trough"));
+        assert!(edge.contains("min-height: 2px"));
+        // CONTRAST-1: the line is the other half of the chip, so it derives
+        // every colour from a named one — the fill follows a changed accent
+        // and the track stays visible in light mode as well as dark.
+        assert!(
+            !edge.contains("rgba(") && !edge.contains('#'),
+            "the edge line still mixes a literal colour: {edge}"
+        );
+        for named in [
+            "alpha(@window_fg_color, 0.10)",
+            "background: @accent_bg_color",
+        ] {
+            assert!(edge.contains(named), "edge line colour {named} is missing");
+        }
     }
 
     /// Runs the main loop for `ms` so frame-clock driven animation advances.
