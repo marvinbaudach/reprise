@@ -584,47 +584,6 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fb_9_counterprobe_legacy_toolbar_status_moves_the_content() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let header = adw::HeaderBar::new();
-        let legacy_status = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        legacy_status.set_height_request(100);
-        legacy_status.set_visible(false);
-        let content = gtk4::Label::new(Some("First content element"));
-        content.set_valign(gtk4::Align::Start);
-        let toolbar = adw::ToolbarView::new();
-        toolbar.add_top_bar(&header);
-        toolbar.add_top_bar(&legacy_status);
-        toolbar.set_content(Some(&content));
-        let window = gtk4::Window::builder()
-            .default_width(760)
-            .default_height(680)
-            .child(&toolbar)
-            .build();
-        window.present();
-        settle_layout();
-        let idle_y = content
-            .compute_point(&window, &gtk4::graphene::Point::new(0.0, 0.0))
-            .expect("content must be allocated")
-            .y();
-
-        legacy_status.set_visible(true);
-        settle_layout();
-        let active_y = content
-            .compute_point(&window, &gtk4::graphene::Point::new(0.0, 0.0))
-            .expect("content must remain allocated")
-            .y();
-
-        assert!(
-            active_y - idle_y >= 100.0,
-            "the retired in-flow status path must reproduce its layout jump"
-        );
-        window.close();
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
     fn fb_9_one_chrome_instance_survives_all_five_page_switches() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();

@@ -1,6 +1,7 @@
 //! Isolated display evidence that the preferences status chip is *measured*
 //! against the header it floats over, on both axes, and stays measured while
-//! the dialog is open.
+//! the dialog is open — plus the counterprobe that the arrangement it replaced
+//! really did displace the page.
 
 use std::path::PathBuf;
 
@@ -13,6 +14,14 @@ use reprise_core::library::scanner::ScanProgress;
 use super::tests::{settle_layout, test_pages};
 use super::*;
 use crate::ui::scan_chrome::ScanChromeView;
+use crate::ui::scan_progress::ScanProgressView;
+
+/// Floor for the counterprobe's measured displacement. The scan card really
+/// occupies 88 px under the app stylesheet at Adwaita's default font metrics;
+/// the floor sits below that so a different font size cannot make the
+/// counterprobe flaky. What it has to prove is a whole card's worth of
+/// displacement, not one exact pixel count.
+const RETIRED_TOP_BAR_MIN_JUMP_PX: f32 = 80.0;
 
 /// A presented preferences dialog whose scan chrome is already running, so the
 /// chip is visible and allocated. The parent window keeps the application
@@ -74,6 +83,83 @@ fn origin_in_header(widget: &gtk4::Widget, header: &adw::HeaderBar) -> f32 {
         .compute_point(header, &gtk4::graphene::Point::new(0.0, 0.0))
         .expect("the widget must be allocated inside the content header")
         .x()
+}
+
+/// The counterprobe for the whole feature: the arrangement this branch retired
+/// really did shove the page down when a scan started, so the overlay chrome
+/// that replaced it is solving a real problem.
+///
+/// It is the *real* widget, not a stand-in. `ScanProgressView` is still alive
+/// in the main window's sidebar, so the retired arrangement can be rebuilt from
+/// it exactly as the dialog used to mount it — the revealer handed to
+/// `AdwToolbarView::add_top_bar` as a second top bar — and driven through its
+/// real `show` API with a real `ScanProgress`. Only the test builds this;
+/// production must never parent it here again.
+///
+/// The measurement is taken after a plain main-context drain, while the card's
+/// crossfade has not yet revealed it. That is the mechanism: a crossfade
+/// animates opacity, so the card claims its full height from the very first
+/// layout pass, long before anyone can see it.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fb_9_counterprobe_legacy_toolbar_status_moves_the_content() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    // The card is styled by the app stylesheet; an unstyled probe would measure
+    // a card the user never sees.
+    crate::ui::style::install();
+    let legacy_status = ScanProgressView::new();
+    let header = adw::HeaderBar::new();
+    let content = gtk4::Label::new(Some("First content element"));
+    content.set_valign(gtk4::Align::Start);
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&header);
+    toolbar.add_top_bar(legacy_status.widget());
+    toolbar.set_content(Some(&content));
+    let window = gtk4::Window::builder()
+        .default_width(760)
+        .default_height(680)
+        .child(&toolbar)
+        .build();
+    window.present();
+    settle_layout();
+    let content_y = || {
+        content
+            .compute_point(&window, &gtk4::graphene::Point::new(0.0, 0.0))
+            .expect("the content must be allocated below the toolbar's top bars")
+            .y()
+    };
+    let idle_y = content_y();
+    assert_eq!(
+        legacy_status.widget().height(),
+        0,
+        "a dormant scan card must reserve nothing, or there is no jump to measure"
+    );
+
+    legacy_status.show(&ScanProgress::Scanning {
+        processed: 39,
+        total: Some(100),
+        current_path: PathBuf::from("/music/track.flac"),
+    });
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    let jump = content_y() - idle_y;
+    let card_height = legacy_status.widget().height() as f32;
+
+    assert!(
+        !legacy_status.widget().is_child_revealed(),
+        "the card must still be mid-crossfade, so the jump is proven to precede it"
+    );
+    assert_eq!(
+        jump, card_height,
+        "the content must move by exactly the height the retired card claims"
+    );
+    assert!(
+        jump >= RETIRED_TOP_BAR_MIN_JUMP_PX,
+        "the retired in-flow status path must reproduce its layout jump \
+         (measured {jump} px, floor {RETIRED_TOP_BAR_MIN_JUMP_PX} px)"
+    );
+
+    window.close();
 }
 
 #[test]
