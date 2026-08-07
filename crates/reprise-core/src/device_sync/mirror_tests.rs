@@ -106,6 +106,7 @@ fn a_resident_analysis_of_the_expected_size_plans_no_write() {
     assert!(plan.copy.is_empty());
     assert!(plan.replace.is_empty());
     assert!(plan.analysis_writes.is_empty());
+    assert!(plan.remove.is_empty());
     assert_eq!(plan.transfer_bytes, 0);
 }
 
@@ -141,18 +142,113 @@ fn a_track_without_desktop_analysis_plans_no_sidecar_or_placeholder() {
 }
 
 #[test]
-fn generated_metadata_files_are_known_but_never_orphan_removals() {
-    let mut mirror_input = synced_audio_input();
-    mirror_input.managed_files.extend([
-        ManagedDeviceFile {
-            relative_path: "Album Artist/Album/Unknown.reprise-analysis".into(),
+fn analyses_are_planned_only_for_audio_that_is_resident_or_arriving() {
+    let source = SelectionSource::Playlist(10);
+    let resident = track(1, "/music/one.mp3", Some(192), 10_000, 240_000);
+    let missing = track(2, "/music/two.mp3", Some(192), 10_000, 240_000);
+    let resident_path = "Album Artist/Album/01 Track 1.mp3";
+    let missing_path = "Album Artist/Album/02 Track 2.mp3";
+    let mut mirror_input = input(
+        vec![source.clone()],
+        vec![playlist(
+            source,
+            "More selected than resident",
+            vec![
+                MirrorTrack::Available(resident.clone()),
+                MirrorTrack::Available(missing.clone()),
+            ],
+        )],
+    );
+    mirror_input.inventory = vec![
+        inventory(&resident, resident_path, "copy-original-v1"),
+        inventory(&missing, missing_path, "copy-original-v1"),
+    ];
+    mirror_input.managed_files.push(ManagedDeviceFile {
+        relative_path: resident_path.into(),
+        size_bytes: resident.size_bytes,
+    });
+    mirror_input.desktop_analyses = vec![
+        DesktopAnalysis {
+            track_id: resident.id,
             size_bytes: 123,
         },
-        ManagedDeviceFile {
-            relative_path: "reprise-track-metadata.rpl".into(),
-            size_bytes: 45,
+        DesktopAnalysis {
+            track_id: missing.id,
+            size_bytes: 456,
         },
-    ]);
+    ];
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+    assert_eq!(
+        plan.analysis_writes
+            .iter()
+            .map(|write| write.track_id)
+            .collect::<Vec<_>>(),
+        vec![resident.id]
+    );
+    assert_eq!(plan.transfer_bytes, 123);
+    assert_eq!(plan.target_bytes, 480_123);
+}
+
+#[test]
+fn an_analysis_without_resident_or_arriving_audio_is_removed() {
+    let mut mirror_input = synced_audio_input();
+    mirror_input.managed_files = vec![ManagedDeviceFile {
+        relative_path: "Album Artist/Album/01 Track 1.reprise-analysis".into(),
+        size_bytes: 123,
+    }];
+
+    let plan = plan_mirror(mirror_input);
+
+    assert_eq!(
+        plan.remove,
+        vec![ManagedRemoval::Orphan(ManagedDeviceFile {
+            relative_path: "Album Artist/Album/01 Track 1.reprise-analysis".into(),
+            size_bytes: 123,
+        })]
+    );
+    assert_eq!(plan.bytes_freed, 123);
+}
+
+#[test]
+fn an_analysis_arriving_with_its_audio_is_not_removed() {
+    let source = SelectionSource::Playlist(10);
+    let arriving = track(1, "/music/one.mp3", Some(192), 10_000, 240_000);
+    let mut mirror_input = input(
+        vec![source.clone()],
+        vec![playlist(
+            source,
+            "Arriving",
+            vec![MirrorTrack::Available(arriving)],
+        )],
+    );
+    mirror_input.desktop_analyses.push(DesktopAnalysis {
+        track_id: 1,
+        size_bytes: 123,
+    });
+    mirror_input.managed_files.push(ManagedDeviceFile {
+        relative_path: "Album Artist/Album/01 Track 1.reprise-analysis".into(),
+        size_bytes: 122,
+    });
+
+    let plan = plan_mirror(mirror_input);
+
+    assert_eq!(plan.copy.len(), 1);
+    assert_eq!(plan.analysis_writes.len(), 1);
+    assert_eq!(plan.analysis_writes[0].existing_size_bytes, Some(122));
+    assert!(plan.remove.is_empty());
+}
+
+#[test]
+fn the_device_metadata_list_is_never_an_orphan_removal() {
+    let mut mirror_input = synced_audio_input();
+    mirror_input.managed_files.push(ManagedDeviceFile {
+        relative_path: "reprise-track-metadata.rpl".into(),
+        size_bytes: 45,
+    });
 
     let plan = plan_mirror(mirror_input);
 
