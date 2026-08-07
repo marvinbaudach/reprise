@@ -370,7 +370,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
                 &strings::text(strings::LIBRARY_DOCTOR),
                 pending_doctor_count,
                 NavIcon::LibraryDoctor,
-                "win.library-doctor",
+                "win.library-doctor-findings",
             );
         }
     }

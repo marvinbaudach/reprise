@@ -146,7 +146,7 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
 }
 
 #[test]
-fn fb_8_bottom_region_replaces_issues_instead_of_stacking_progress() {
+fn fb_8_bottom_region_keeps_issues_above_the_progress_cards() {
     assert_eq!(
         sidebar_root_order(),
         [
@@ -155,31 +155,21 @@ fn fb_8_bottom_region_replaces_issues_instead_of_stacking_progress() {
             SidebarRootChild::Issues,
         ]
     );
-    assert_eq!(issues_surface_for_progress(false), IssuesSurface::Issues);
-    assert_eq!(
-        issues_surface_for_progress(true),
-        IssuesSurface::Activity,
-        "a visible scanner must hide both the Issues heading and its source rows"
-    );
     let placement = bottom_region_placement();
     assert!(
         !placement.vexpand,
-        "the replacement region must not request additional vertical space"
+        "the bottom region must not request additional vertical space"
     );
     assert_eq!(
         placement.valign,
         gtk4::Align::End,
-        "the replacement region must prefer the bottom of any parent allocation"
-    );
-    assert!(
-        !placement.vhomogeneous,
-        "the replacement region must measure only its visible surface"
+        "the bottom region must prefer the bottom of any parent allocation"
     );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fb_8_scanner_visibility_switches_the_whole_bottom_region() {
+fn fb_8_a_visible_progress_card_no_longer_hides_the_issues_block() {
     gtk4::init().unwrap();
     let scrolled = gtk4::ScrolledWindow::builder().vexpand(true).build();
     let activity = SidebarActivitySlot::new();
@@ -202,44 +192,44 @@ fn fb_8_scanner_visibility_switches_the_whole_bottom_region() {
 
     assert!(root.vexpands());
     assert!(root.is_vexpand_set());
+    assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
     let region = root
         .last_child()
-        .and_then(|widget| widget.downcast::<gtk4::Stack>().ok())
-        .expect("the sidebar must end in one replacement region");
-    assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
-    assert_eq!(
-        region.visible_child_name().as_deref(),
-        Some("issues"),
-        "the persistent Issues surface is the idle state"
-    );
+        .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
+        .expect("the sidebar must end in one bottom region");
     assert!(!region.vexpands());
     assert_eq!(region.valign(), gtk4::Align::End);
+
+    // The Issues block is the region's first child and the progress cards sit
+    // below it. Neither ever replaces the other.
+    let issues_block = region
+        .first_child()
+        .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
+        .expect("the Issues block leads the bottom region");
+    let progress_root = region
+        .last_child()
+        .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
+        .expect("the progress cards follow it");
+    assert_ne!(issues_block, progress_root);
+    assert!(issues.is_visible());
+
     scanner.set_visible(true);
     scanner.set_reveal_child(true);
-    assert_eq!(
-        region.visible_child_name().as_deref(),
-        Some("activity"),
-        "scanner progress must replace the heading and issue rows"
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(
+        issues.is_visible(),
+        "a running job must not take the Issues rows away — FB-8, amended"
     );
-    let progress_root = region
-        .visible_child()
-        .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
-        .expect("the activity surface must be the shared progress root");
-    let spacer = progress_root
-        .first_child()
-        .expect("the progress root must reserve flexible space above its cards");
-    assert!(spacer.vexpands());
+    assert!(scanner.is_visible());
     assert_eq!(
         progress_root.last_child().as_ref(),
         Some(scanner.upcast_ref())
     );
+
     scanner.set_reveal_child(false);
     scanner.set_visible(false);
-    assert_eq!(
-        region.visible_child_name().as_deref(),
-        Some("issues"),
-        "Issues must return when the scanner has fully hidden"
-    );
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(issues.is_visible());
     window.close();
 }
 

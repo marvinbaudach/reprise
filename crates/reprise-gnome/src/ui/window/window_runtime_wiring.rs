@@ -214,6 +214,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let rescan_watcher_state = watcher_state.clone();
     let menu_preferences = preferences.clone();
     let cancel_scan_controls = scan_controls.clone();
+    let findings_library_doctor = library_doctor.clone();
     let menu_library_doctor = library_doctor;
     let stop_player = player.as_ref().map(|player| {
         let player = Rc::downgrade(player);
@@ -250,6 +251,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 move || batch.toggle()
             }),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),
+            on_library_doctor_findings: Rc::new(move || findings_library_doctor.open_findings()),
             on_import_playlist: {
                 let sidebar = sidebar.clone();
                 Rc::new(move || sidebar.activate_import_playlist())

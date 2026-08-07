@@ -62,9 +62,7 @@ use reprise_core::db::Db;
 use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
 #[cfg(test)]
-use super::sidebar_issues_section::{
-    bottom_region_placement, issues_surface_for_progress, IssuesSurface,
-};
+use super::sidebar_issues_section::bottom_region_placement;
 use super::sidebar_navigation_scroller::build_navigation_scroller;
 use super::sidebar_root::build_root;
 #[cfg(test)]

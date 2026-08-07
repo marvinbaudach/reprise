@@ -42,14 +42,13 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
     sidebar.append_doctor_card(&doctor);
     assert!(!relink.is_visible());
     assert!(!doctor.is_visible());
+    // FB-8, amended: the cards no longer occupy a stack page of their own, so
+    // the progress root does not have to fight for an allocation — the bottom
+    // region is what hugs the sidebar's bottom edge, with the Issues block above
+    // the cards and both visible at once.
     assert!(
-        sidebar.activity_slot.progress_widget().vexpands(),
-        "the active progress page must fill the allocation owned by the non-expanding stack"
-    );
-    assert_eq!(
-        sidebar.activity_slot.progress_widget().valign(),
-        gtk4::Align::Fill,
-        "the allocated progress root must lay out its bottom spacer"
+        !sidebar.activity_slot.progress_widget().vexpands(),
+        "the progress root rides along with the bottom region instead of expanding"
     );
     let root = sidebar.widget();
     let page = adw::NavigationPage::builder()

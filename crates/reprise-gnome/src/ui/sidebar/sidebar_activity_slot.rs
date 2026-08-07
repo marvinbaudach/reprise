@@ -5,27 +5,23 @@
 //! either activity out of the slot or reorder the two relative to each other.
 
 use std::cell::RefCell;
-use std::rc::Rc;
 
 use gtk4::prelude::*;
 
 pub(super) struct SidebarActivitySlot {
     /// Persistent device state remains independent from Issues/progress.
     root: gtk4::Box,
-    /// Long-running cards temporarily replace Issues while any is visible.
+    /// Long-running cards, pinned below the Issues block (FB-8, amended).
     progress_root: gtk4::Box,
     progress_spacer: gtk4::Box,
     device_section: RefCell<Option<gtk4::Widget>>,
     scan_card: RefCell<Option<gtk4::Widget>>,
     doctor_card: RefCell<Option<gtk4::Widget>>,
     relink_card: RefCell<Option<gtk4::Widget>>,
-    issues_stack: Rc<RefCell<gtk4::glib::WeakRef<gtk4::Stack>>>,
-    progress_cards: Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>,
 }
 
 impl SidebarActivitySlot {
     pub(super) fn new() -> Self {
-        let issues_stack = gtk4::glib::WeakRef::new();
         let progress_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         let progress_spacer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         progress_spacer.set_vexpand(true);
@@ -38,8 +34,6 @@ impl SidebarActivitySlot {
             scan_card: RefCell::new(None),
             doctor_card: RefCell::new(None),
             relink_card: RefCell::new(None),
-            issues_stack: Rc::new(RefCell::new(issues_stack)),
-            progress_cards: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -65,7 +59,7 @@ impl SidebarActivitySlot {
             card,
             Some(self.progress_spacer.upcast_ref::<gtk4::Widget>()),
         );
-        self.track_progress_visibility(card);
+        Self::track_progress_visibility(card);
     }
 
     pub(super) fn set_relink_card(&self, card: &impl IsA<gtk4::Widget>) {
@@ -79,7 +73,7 @@ impl SidebarActivitySlot {
             .or_else(|| Some(self.progress_spacer.clone().upcast()));
         self.progress_root
             .reorder_child_after(card, predecessor.as_ref());
-        self.track_progress_visibility(card);
+        Self::track_progress_visibility(card);
     }
 
     pub(super) fn set_doctor_card(&self, card: &impl IsA<gtk4::Widget>) {
@@ -92,46 +86,20 @@ impl SidebarActivitySlot {
             .or_else(|| Some(self.progress_spacer.clone().upcast()));
         self.progress_root
             .reorder_child_after(card, predecessor.as_ref());
-        self.track_progress_visibility(card);
+        Self::track_progress_visibility(card);
     }
 
-    pub(super) fn attach_issues_stack(&self, stack: &gtk4::Stack) {
-        self.issues_stack.borrow().set(Some(stack));
-        self.show_surface_for_progress();
-    }
-
-    fn track_progress_visibility(&self, card: &gtk4::Widget) {
-        let weak = gtk4::glib::WeakRef::new();
-        weak.set(Some(card));
-        self.progress_cards.borrow_mut().push(weak);
-        let issues_stack = self.issues_stack.clone();
-        let progress_cards = self.progress_cards.clone();
-        let refresh: Rc<dyn Fn()> = Rc::new(move || {
-            show_surface_for_progress(&issues_stack, &progress_cards);
-        });
-        card.connect_visible_notify({
-            let refresh = refresh.clone();
-            move |_| refresh()
-        });
+    /// An unrevealed `GtkRevealer` still reports its child's natural height, so
+    /// the sidebar would reserve room for cards nobody can see. Keep each card's
+    /// `visible` in step with its reveal state; that is all this tracking has to
+    /// do now that the Issues block above it no longer moves out of the way
+    /// (FB-8, amended).
+    fn track_progress_visibility(card: &gtk4::Widget) {
         if let Some(revealer) = card.downcast_ref::<gtk4::Revealer>() {
-            revealer.connect_reveal_child_notify({
-                let refresh = refresh.clone();
-                move |revealer| {
-                    sync_revealer_visibility(revealer);
-                    refresh();
-                }
-            });
-            revealer.connect_child_revealed_notify(move |revealer| {
-                sync_revealer_visibility(revealer);
-                refresh();
-            });
+            revealer.connect_reveal_child_notify(sync_revealer_visibility);
+            revealer.connect_child_revealed_notify(sync_revealer_visibility);
             sync_revealer_visibility(revealer);
         }
-        self.show_surface_for_progress();
-    }
-
-    fn show_surface_for_progress(&self) {
-        show_surface_for_progress(&self.issues_stack, &self.progress_cards);
     }
 }
 
@@ -139,29 +107,6 @@ fn sync_revealer_visibility(revealer: &gtk4::Revealer) {
     let should_be_visible = revealer.reveals_child() || revealer.is_child_revealed();
     if revealer.is_visible() != should_be_visible {
         revealer.set_visible(should_be_visible);
-    }
-}
-
-fn show_surface_for_progress(
-    issues_stack: &RefCell<gtk4::glib::WeakRef<gtk4::Stack>>,
-    progress_cards: &RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>,
-) {
-    let progress_visible = progress_cards
-        .borrow()
-        .iter()
-        .filter_map(gtk4::glib::WeakRef::upgrade)
-        .any(|card| {
-            card.downcast_ref::<gtk4::Revealer>().map_or_else(
-                || card.is_visible(),
-                |revealer| revealer.reveals_child() || revealer.is_child_revealed(),
-            )
-        });
-    let stack = issues_stack.borrow().upgrade();
-    if let Some(stack) = stack {
-        super::sidebar_issues_section::show_issues_surface(
-            &stack,
-            super::sidebar_issues_section::issues_surface_for_progress(progress_visible),
-        );
     }
 }
 
@@ -248,6 +193,21 @@ mod tests {
         assert!(!scan.is_visible());
         assert!(!doctor.is_visible());
         assert!(!relink.is_visible());
+
+        // One job is one card. Re-attaching — which happens whenever the
+        // Doctor's coordinator is rebuilt — replaces the previous widget instead
+        // of stacking a second one next to it.
+        slot.set_doctor_card(&doctor);
+        slot.set_doctor_card(&doctor);
+        let mut cards = 0;
+        let mut child = slot.progress_widget().first_child();
+        while let Some(widget) = child {
+            child = widget.next_sibling();
+            if widget.downcast_ref::<gtk4::Revealer>().is_some() {
+                cards += 1;
+            }
+        }
+        assert_eq!(cards, 3, "scan, doctor and relink — one card each");
 
         device.set_visible(true);
         scan.set_reveal_child(true);
