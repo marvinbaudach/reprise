@@ -9,6 +9,9 @@ pub(super) const BAR_WIDTH: f64 = 3.0;
 pub(super) const BAR_RADIUS: f64 = BAR_WIDTH / 2.0;
 pub(super) const BAR_GAP: f64 = 2.0;
 const MAX_BAR_COUNT: usize = 160;
+/// A longer frame gap means the frame clock stopped while the window was
+/// hidden, occluded, on another workspace, or the machine was suspended.
+const FRAME_STALL_US: i64 = 250_000;
 
 /// Mini-player waveform (redesign frame 1e / MINI-1): a fixed, reduced bar
 /// count whose bars fill the width (equal-width) instead of the dense
@@ -71,6 +74,36 @@ pub(super) fn interpolation_step(fraction: f64, velocity: f64, dt_us: f64, targe
         advanced.max(target)
     };
     bounded.clamp(0.0, 1.0)
+}
+
+/// Whether no frame has been observed yet or the frame clock missed enough
+/// frames that interpolating the accumulated playback gap would be visible.
+pub(super) fn frame_clock_stalled(now_us: i64, last_frame_us: i64) -> bool {
+    last_frame_us <= 0 || now_us.saturating_sub(last_frame_us) > FRAME_STALL_US
+}
+
+/// Advances playback position by one frame, snapping directly to the current
+/// target after a frame-clock stall instead of animating stale progress.
+pub(super) fn position_step(
+    fraction: f64,
+    velocity: f64,
+    dt_us: f64,
+    target: f64,
+    stalled: bool,
+) -> (f64, f64) {
+    if stalled {
+        (target, 0.0)
+    } else {
+        (
+            interpolation_step(fraction, velocity, dt_us, target),
+            velocity,
+        )
+    }
+}
+
+/// Estimates fraction-per-microsecond from two playback-position reports.
+pub(super) fn velocity_between(previous_target: f64, fraction: f64, dt_us: f64) -> f64 {
+    (fraction - previous_target) / dt_us.max(1.0)
 }
 
 /// Maps a pointer `x` within `width` to a 0..1 seek fraction.

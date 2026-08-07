@@ -88,7 +88,8 @@ pub(in crate::ui::player_bar::waveform_seek) struct State {
     // Smooth interpolation.
     pub(in crate::ui::player_bar::waveform_seek) target_fraction: f64,
     pub(in crate::ui::player_bar::waveform_seek) fraction_velocity: f64, // fraction-per-microsecond
-    pub(in crate::ui::player_bar::waveform_seek) last_tick_us: i64,
+    pub(in crate::ui::player_bar::waveform_seek) last_position_us: i64,
+    pub(in crate::ui::player_bar::waveform_seek) last_frame_us: i64,
     // Build-up animation.
     pub(in crate::ui::player_bar::waveform_seek) build_progress: f64, // 0.0 = not started, 1.0 = complete
     pub(in crate::ui::player_bar::waveform_seek) build_start_us: i64, // 0 means not running
@@ -142,7 +143,8 @@ impl Default for State {
             drag_fraction: None,
             target_fraction: 0.0,
             fraction_velocity: 0.0,
-            last_tick_us: 0,
+            last_position_us: 0,
+            last_frame_us: 0,
             build_progress: 1.0,
             build_start_us: 0,
             previous_bars: Vec::new(),
