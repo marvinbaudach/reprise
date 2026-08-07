@@ -409,11 +409,14 @@ fn deleted_library_rows_are_removed_instead_of_being_retained_as_unavailable() {
         runtime.sync_now("a").unwrap();
         settle().await;
 
-        // No `.lrc` alongside: the library holds none for this track, so
-        // `LYR-7` has nothing it can prove Reprise mirrored to the device.
+        // No `.lrc` alongside: `LYR-7` leaves it alone. The analysis extension
+        // is Reprise-owned, so it follows the removed audio unconditionally.
         assert_eq!(
             backend.state.deleted.borrow().as_slice(),
-            ["Artist/Album/01 Track 1.mp3"]
+            [
+                "Artist/Album/01 Track 1.mp3",
+                "Artist/Album/01 Track 1.reprise-analysis"
+            ]
         );
     });
 }

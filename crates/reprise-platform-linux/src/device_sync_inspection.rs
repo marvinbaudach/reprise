@@ -237,6 +237,12 @@ fn is_managed_item_file(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     !name.ends_with(".part")
         && !reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(std::path::Path::new(&name))
+        && !reprise_core::device_sync::analysis_sidecar::is_sidecar_path(std::path::Path::new(
+            &name,
+        ))
+        && !reprise_core::device_sync::track_metadata_list::is_list_path(std::path::Path::new(
+            &name,
+        ))
 }
 
 /// The accept predicate for the YouTube-audio and podcast-episode targets:
@@ -365,5 +371,16 @@ mod tests {
     fn lyr_7_lrc_attachments_are_not_independent_managed_inventory_entries() {
         assert!(!is_managed_item_file("Artist/Album/Song.lrc"));
         assert!(is_managed_item_file("Artist/Album/Song.opus"));
+    }
+
+    #[test]
+    fn analysis_sidecars_are_not_independent_managed_inventory_entries() {
+        assert!(!is_managed_item_file("Artist/Album/Song.reprise-analysis"));
+        assert!(is_managed_item_file("Artist/Album/Song.opus"));
+    }
+
+    #[test]
+    fn track_metadata_list_is_not_an_independent_managed_inventory_entry() {
+        assert!(!is_managed_item_file("reprise-track-metadata.rpl"));
     }
 }

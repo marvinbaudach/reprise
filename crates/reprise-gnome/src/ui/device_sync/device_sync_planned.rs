@@ -27,6 +27,12 @@ use run_log::{now_seconds, RunLog};
 
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SyncInitiator {
+    Automatic,
+    Listener,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SyncStartError {
     UnknownDevice,
@@ -72,6 +78,7 @@ struct PlannedWork {
     /// A session-only device still transfers, but records nothing under its
     /// volatile URI.
     persist_device_state: bool,
+    initiator: SyncInitiator,
     machine: Rc<RefCell<DeviceSyncMachine>>,
     /// The additive content plans (`MTP-23`). The machine above owns only the
     /// music and playlist mirror; podcast episodes and YouTube audio are
@@ -200,7 +207,18 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
             return;
         };
         if let Effect::Finished(outcome) = effect {
-            let outcome = content_transfer::run_content_phase(&runtime, &mut work, outcome).await;
+            let mut outcome =
+                content_transfer::run_content_phase(&runtime, &mut work, outcome).await;
+            if matches!(outcome, SyncOutcome::Completed { .. })
+                && work.initiator == SyncInitiator::Listener
+            {
+                if let Err(error) = effects::write_track_metadata_list(&runtime, &work).await {
+                    outcome = SyncOutcome::Failed {
+                        terminal_error: Some(error),
+                        failed_tracks: Vec::new(),
+                    };
+                }
+            }
             finish_sync(&runtime, &work, outcome);
             return;
         }
@@ -331,6 +349,15 @@ fn temporary_transcode_path(device_id: &str, track_id: i64, extension: &str) -> 
     ))
 }
 
+fn temporary_metadata_path(device_id: &str, track_id: i64, kind: &str) -> PathBuf {
+    let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let safe_device = reprise_core::device_sync::safe_component(device_id, "device");
+    std::env::temp_dir().join(format!(
+        "reprise-sync-{safe_device}-{}-{track_id}-{sequence}.{kind}",
+        std::process::id(),
+    ))
+}
+
 impl DeviceSyncRuntime {
     /// `MTP-43`: the entry point every "Sync now"/"Download & sync" click
     /// goes through. `MTP-42`'s `primary_action` — read from the phase
@@ -342,6 +369,21 @@ impl DeviceSyncRuntime {
     /// disconnected device is rejected immediately, exactly as before this
     /// split existed.
     pub fn sync_now(self: &Rc<Self>, device_id: &str) -> Result<(), SyncStartError> {
+        self.start_sync(device_id, SyncInitiator::Listener)
+    }
+
+    pub(super) fn sync_automatically(
+        self: &Rc<Self>,
+        device_id: &str,
+    ) -> Result<(), SyncStartError> {
+        self.start_sync(device_id, SyncInitiator::Automatic)
+    }
+
+    fn start_sync(
+        self: &Rc<Self>,
+        device_id: &str,
+        initiator: SyncInitiator,
+    ) -> Result<(), SyncStartError> {
         let prepare = {
             let devices = self.device_states.borrow();
             let device = devices
@@ -377,10 +419,10 @@ impl DeviceSyncRuntime {
             .then(|| device.preparation_missing.clone())
         };
         if let Some(missing) = prepare {
-            preparation::begin_prepared_sync(self, device_id, missing);
+            preparation::begin_prepared_sync(self, device_id, missing, initiator);
             return Ok(());
         }
-        self.start_transfer_now(device_id)
+        self.start_transfer_now(device_id, initiator)
     }
 
     /// The transfer-machine half of a run — unchanged from before `MTP-43`
@@ -391,6 +433,7 @@ impl DeviceSyncRuntime {
     pub(super) fn start_transfer_now(
         self: &Rc<Self>,
         device_id: &str,
+        initiator: SyncInitiator,
     ) -> Result<(), SyncStartError> {
         {
             let devices = self.device_states.borrow();
@@ -524,6 +567,7 @@ impl DeviceSyncRuntime {
                 device_id: device_id.to_string(),
                 root_uri: device.descriptor.root_uri.clone(),
                 persist_device_state,
+                initiator,
                 machine,
                 podcasts: device.podcast_plan.clone(),
                 youtube: device.youtube_plan.clone(),

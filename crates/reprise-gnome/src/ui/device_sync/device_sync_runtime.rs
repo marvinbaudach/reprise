@@ -682,7 +682,7 @@ impl DeviceSyncRuntime {
                         })
                 };
                 if should_resume {
-                    if let Err(error) = runtime.sync_now(&id) {
+                    if let Err(error) = runtime.sync_automatically(&id) {
                         tracing::warn!(device_id = id, %error, "could not resume device synchronization");
                     }
                 } else if just_connected {
@@ -708,7 +708,7 @@ impl DeviceSyncRuntime {
                             })
                     };
                     if facts.is_some_and(should_auto_start) {
-                        if let Err(error) = runtime.sync_now(&id) {
+                        if let Err(error) = runtime.sync_automatically(&id) {
                             tracing::warn!(device_id = id, %error, "could not start automatic device synchronization");
                         }
                     }
