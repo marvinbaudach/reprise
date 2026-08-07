@@ -26,6 +26,7 @@ mod artist_news_parsing;
 mod artist_news_pipeline;
 mod artist_news_query;
 pub mod artist_news_refresh;
+mod artist_news_scope;
 mod artist_news_view;
 pub mod artist_portrait;
 pub mod browser;

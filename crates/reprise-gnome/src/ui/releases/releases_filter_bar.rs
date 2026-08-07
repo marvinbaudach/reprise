@@ -1,12 +1,10 @@
-#![allow(dead_code)]
-
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use reprise_core::artist_news::{
-    persisted_releases_filter, ReleaseTypeFilter, ReleasesFilter, RELEASES_FILTER_HIDDEN_KEY,
-    RELEASES_FILTER_TYPE_KEY,
+    persisted_releases_filter, ReleaseTypeSelection, ReleaseWindow, ReleasesFilter,
+    RELEASES_FILTER_HIDDEN_KEY, RELEASES_FILTER_TYPE_KEY, RELEASES_FILTER_WINDOW_KEY,
 };
 use reprise_core::db::Db;
 
@@ -16,8 +14,6 @@ use crate::ui::strings;
 use reprise_view::search_scope::SearchScope;
 
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
-const FACET_PAGE: &str = "facets";
-const VALUE_PAGE: &str = "values";
 
 type OnChanged = Rc<dyn Fn(ReleasesFilter)>;
 /// SEARCH-8: fired when the bar itself changes the query — the chip's ×
@@ -26,85 +22,58 @@ type OnChanged = Rc<dyn Fn(ReleasesFilter)>;
 type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum FilterFacet {
-    Type,
-    Hidden,
+enum TypeChip {
+    Album,
+    Ep,
+    Single,
 }
 
-pub(super) fn remove_filter(filter: &ReleasesFilter, facet: FilterFacet) -> ReleasesFilter {
-    match facet {
-        FilterFacet::Type => ReleasesFilter {
-            release_type: None,
-            ..filter.clone()
+fn toggle_type(
+    selection: ReleaseTypeSelection,
+    chip: TypeChip,
+    active: bool,
+) -> ReleaseTypeSelection {
+    match chip {
+        TypeChip::Album => ReleaseTypeSelection {
+            album: active,
+            ..selection
         },
-        FilterFacet::Hidden => ReleasesFilter {
-            hidden: false,
-            ..filter.clone()
+        TypeChip::Ep => ReleaseTypeSelection {
+            ep: active,
+            ..selection
         },
-    }
-}
-
-fn active_facets(filter: &ReleasesFilter) -> Vec<FilterFacet> {
-    let mut facets = Vec::new();
-    if filter.release_type.is_some() {
-        facets.push(FilterFacet::Type);
-    }
-    if filter.hidden {
-        facets.push(FilterFacet::Hidden);
-    }
-    facets
-}
-
-fn facet_label(facet: FilterFacet) -> String {
-    strings::text(match facet {
-        FilterFacet::Type => strings::RELEASES_TYPE,
-        FilterFacet::Hidden => strings::RELEASES_HIDDEN,
-    })
-}
-
-fn chip_label(filter: &ReleasesFilter, facet: FilterFacet) -> String {
-    match facet {
-        FilterFacet::Type => strings::text(match filter.release_type {
-            Some(ReleaseTypeFilter::Album) => strings::RELEASES_ALBUM,
-            Some(ReleaseTypeFilter::Ep) => strings::RELEASES_EP,
-            None => strings::RELEASES_TYPE,
-        }),
-        _ => facet_label(facet),
+        TypeChip::Single => ReleaseTypeSelection {
+            single: active,
+            ..selection
+        },
     }
 }
 
 fn persist_filter(db: &Db, filter: &ReleasesFilter) -> Result<(), rusqlite::Error> {
-    let conn = &db;
     reprise_core::library::settings::set_setting(
-        conn,
+        db,
         RELEASES_FILTER_TYPE_KEY,
-        filter
-            .release_type
-            .map_or("", ReleaseTypeFilter::setting_value),
+        &filter.release_types.setting_value(),
     )?;
-    reprise_core::library::settings::set_bool(conn, RELEASES_FILTER_HIDDEN_KEY, filter.hidden)
+    reprise_core::library::settings::set_setting(
+        db,
+        RELEASES_FILTER_WINDOW_KEY,
+        filter.window.setting_value(),
+    )?;
+    reprise_core::library::settings::set_bool(db, RELEASES_FILTER_HIDDEN_KEY, filter.hidden)
 }
 
 pub(super) struct ReleasesFilterBar {
     root: gtk4::Box,
     conn: Rc<Db>,
     filter: RefCell<ReleasesFilter>,
-    section_label: gtk4::Label,
     chips: gtk4::FlowBox,
-    add_filter: gtk4::MenuButton,
-    popover: gtk4::Popover,
-    chooser_stack: gtk4::Stack,
-    facet_list: gtk4::ListBox,
-    value_list: gtk4::ListBox,
-    chooser_back: gtk4::Button,
-    chooser_facets: RefCell<Vec<FilterFacet>>,
-    chooser_values: RefCell<Vec<(String, ReleasesFilter)>>,
     result_label: gtk4::Label,
     clear_all: gtk4::Button,
     counts: Cell<(usize, usize)>,
     /// SEARCH-8: this section's query. Deliberately *beside* `ReleasesFilter`
-    /// rather than inside it: that type is the persisted one, and a query
-    /// that rode along in it would be restored on the next launch.
+    /// rather than inside it: that type is persisted, while a query must not
+    /// be restored on the next launch.
     query: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
     on_query_changed: RefCell<Option<OnQueryChanged>>,
@@ -125,6 +94,7 @@ impl ReleasesFilterBar {
         section_label.add_css_class("dim-label");
         section_label.add_css_class("caption-heading");
         root.append(&section_label);
+
         let chips = gtk4::FlowBox::builder()
             .selection_mode(gtk4::SelectionMode::None)
             .column_spacing(6)
@@ -133,29 +103,6 @@ impl ReleasesFilterBar {
             .max_children_per_line(20)
             .build();
         root.append(&chips);
-
-        let chooser_stack = gtk4::Stack::new();
-        chooser_stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
-        chooser_stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
-        let facet_list = gtk4::ListBox::new();
-        facet_list.add_css_class("boxed-list");
-        let facet_box = page_box();
-        facet_box.append(&facet_list);
-        chooser_stack.add_named(&facet_box, Some(FACET_PAGE));
-        let value_list = gtk4::ListBox::new();
-        value_list.add_css_class("boxed-list");
-        let value_box = page_box();
-        let chooser_back = gtk4::Button::from_icon_name("go-previous-symbolic");
-        chooser_back.add_css_class("flat");
-        value_box.append(&chooser_back);
-        value_box.append(&value_list);
-        chooser_stack.add_named(&value_box, Some(VALUE_PAGE));
-        let popover = gtk4::Popover::new();
-        popover.set_child(Some(&chooser_stack));
-        let add_filter = gtk4::MenuButton::new();
-        add_filter.set_label(&strings::text(strings::RELEASES_ADD_FILTER));
-        add_filter.add_css_class("pill");
-        add_filter.set_popover(Some(&popover));
 
         let result_label = gtk4::Label::new(None);
         result_label.add_css_class("dim-label");
@@ -170,16 +117,7 @@ impl ReleasesFilterBar {
             root,
             conn,
             filter: RefCell::new(filter),
-            section_label,
             chips,
-            add_filter,
-            popover,
-            chooser_stack,
-            facet_list,
-            value_list,
-            chooser_back,
-            chooser_facets: RefCell::new(Vec::new()),
-            chooser_values: RefCell::new(Vec::new()),
             result_label,
             clear_all,
             counts: Cell::new((0, 0)),
@@ -187,7 +125,7 @@ impl ReleasesFilterBar {
             on_changed: RefCell::new(None),
             on_query_changed: RefCell::new(None),
         });
-        wire(&bar);
+        wire_clear_all(&bar);
         bar.rebuild();
         bar
     }
@@ -220,13 +158,9 @@ impl ReleasesFilterBar {
         }
         self.query.replace(query.trim().to_owned());
         self.rebuild();
-        if let Some(callback) = self.on_changed.borrow().clone() {
-            callback(self.filter());
-        }
+        self.notify_changed();
     }
 
-    /// The bar removed the query itself (its chip's ×, or "Clear all"), so
-    /// the header entry has to follow.
     fn clear_query(self: &Rc<Self>) {
         if self.query.borrow().is_empty() {
             return;
@@ -242,11 +176,11 @@ impl ReleasesFilterBar {
         self.rebuild();
     }
 
-    /// FIL-2: "Clear all" drops this section's query together with its
-    /// facets, and nothing outside this section.
+    /// NR-25/FIL-2: one action restores the widest catalog scope and clears
+    /// this section's transient search query.
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.clear_query();
-        self.apply_filter(ReleasesFilter::default());
+        self.apply_filter(ReleasesFilter::widest(false));
     }
 
     fn apply_filter(self: &Rc<Self>, filter: ReleasesFilter) {
@@ -254,61 +188,45 @@ impl ReleasesFilterBar {
             tracing::warn!(%error, "could not persist Releases filter");
             return;
         }
-        self.filter.replace(filter.clone());
-        self.popover.popdown();
+        self.filter.replace(filter);
         self.rebuild();
+        self.notify_changed();
+    }
+
+    fn notify_changed(&self) {
         if let Some(callback) = self.on_changed.borrow().clone() {
-            callback(filter);
+            callback(self.filter());
         }
     }
 
     fn rebuild(self: &Rc<Self>) {
-        if let Some(wrapper) = self
-            .add_filter
-            .parent()
-            .and_downcast::<gtk4::FlowBoxChild>()
-        {
-            wrapper.set_child(gtk4::Widget::NONE);
-        }
         self.chips.remove_all();
         let filter = self.filter();
         let query = self.query();
-        let facets = active_facets(&filter);
-        let active = !facets.is_empty() || !query.is_empty();
-        // FIL-1a/FIL-1d: the search chip is the row's first chip.
         if !query.is_empty() {
-            let weak = Rc::downgrade(self);
-            let chip = search_chip::build(SearchScope::Releases, &query, move || {
-                let Some(bar) = weak.upgrade() else {
-                    return;
-                };
-                bar.clear_query();
-                bar.rebuild();
-                let callback = bar.on_changed.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(bar.filter());
-                }
-            });
-            self.chips.append(&chip);
+            self.append_search_chip(&query);
         }
-        for facet in facets {
-            let button = gtk4::Button::with_label(&format!("{}  ×", chip_label(&filter, facet)));
-            button.add_css_class("flat");
-            button.add_css_class(CHIP_CSS_CLASS);
-            button.set_size_request(-1, 20);
-            let weak = Rc::downgrade(self);
-            button.connect_clicked(move |_| {
-                if let Some(bar) = weak.upgrade() {
-                    bar.apply_filter(remove_filter(&bar.filter(), facet));
-                }
-            });
-            self.chips.append(&button);
+        for (chip, selected, label) in [
+            (
+                TypeChip::Album,
+                filter.release_types.album,
+                strings::RELEASES_ALBUM,
+            ),
+            (TypeChip::Ep, filter.release_types.ep, strings::RELEASES_EP),
+            (
+                TypeChip::Single,
+                filter.release_types.single,
+                strings::RELEASES_SINGLE,
+            ),
+        ] {
+            self.append_type_chip(chip, selected, label);
         }
-        self.chips.append(&self.add_filter);
-        self.section_label.set_visible(active);
+        self.append_window_chip(filter.window);
+        self.append_hidden_chip(filter.hidden);
+
+        let active = !filter.is_widest() || !query.is_empty();
         self.clear_all.set_visible(active);
         let (shown, total) = self.counts.get();
-        // FIL-2: the shown number is accented while a restriction is active.
         if active {
             self.result_label
                 .set_markup(&strings::release_count_line_markup(shown, total));
@@ -316,62 +234,104 @@ impl ReleasesFilterBar {
         } else {
             self.result_label.remove_css_class("accent");
             self.result_label
-                .set_text(&strings::release_total_line(total));
+                .set_text(&release_count_presentation(shown, total));
         }
-        self.rebuild_facets();
     }
 
-    fn rebuild_facets(&self) {
-        self.facet_list.remove_all();
-        let active = active_facets(&self.filter());
-        let facets = [FilterFacet::Type, FilterFacet::Hidden]
-            .into_iter()
-            .filter(|facet| !active.contains(facet))
-            .collect::<Vec<_>>();
-        for facet in &facets {
-            self.facet_list.append(&chooser_row(&facet_label(*facet)));
-        }
-        self.chooser_facets.replace(facets);
-        self.chooser_stack.set_visible_child_name(FACET_PAGE);
+    fn append_search_chip(self: &Rc<Self>, query: &str) {
+        let weak = Rc::downgrade(self);
+        let chip = search_chip::build(SearchScope::Releases, query, move || {
+            let Some(bar) = weak.upgrade() else {
+                return;
+            };
+            bar.clear_query();
+            bar.rebuild();
+            bar.notify_changed();
+        });
+        self.chips.append(&chip);
     }
 
-    fn show_values(&self, facet: FilterFacet) {
-        self.value_list.remove_all();
-        let current = self.filter();
-        let values = match facet {
-            FilterFacet::Hidden => vec![(
-                strings::text(strings::RELEASES_HIDDEN),
-                ReleasesFilter {
-                    hidden: true,
-                    ..current
-                },
-            )],
-            FilterFacet::Type => [ReleaseTypeFilter::Album, ReleaseTypeFilter::Ep]
-                .into_iter()
-                .map(|release_type| {
-                    let filter = ReleasesFilter {
-                        release_type: Some(release_type),
-                        ..current.clone()
-                    };
-                    (chip_label(&filter, FilterFacet::Type), filter)
-                })
-                .collect(),
-        };
-        for (label, _) in &values {
-            self.value_list.append(&chooser_row(label));
+    fn append_type_chip(self: &Rc<Self>, chip: TypeChip, selected: bool, label: &str) {
+        let button = gtk4::ToggleButton::with_label(&strings::text(label));
+        button.add_css_class("pill");
+        button.set_active(selected);
+        let weak = Rc::downgrade(self);
+        button.connect_toggled(move |button| {
+            let Some(bar) = weak.upgrade() else {
+                return;
+            };
+            let current = bar.filter();
+            bar.apply_filter(ReleasesFilter {
+                release_types: toggle_type(current.release_types, chip, button.is_active()),
+                ..current
+            });
+        });
+        self.chips.append(&button);
+    }
+
+    fn append_window_chip(self: &Rc<Self>, selected: ReleaseWindow) {
+        let menu = gtk4::MenuButton::new();
+        menu.set_label(&strings::text(window_label(selected)));
+        menu.add_css_class("pill");
+        let list = gtk4::ListBox::new();
+        list.add_css_class("boxed-list");
+        let values = [
+            ReleaseWindow::OneYear,
+            ReleaseWindow::FiveYears,
+            ReleaseWindow::TenYears,
+            ReleaseWindow::All,
+        ];
+        for value in values {
+            list.append(&chooser_row(&strings::text(window_label(value))));
         }
-        self.chooser_values.replace(values);
-        self.chooser_stack.set_visible_child_name(VALUE_PAGE);
+        let popover = gtk4::Popover::new();
+        popover.set_child(Some(&padded(&list)));
+        menu.set_popover(Some(&popover));
+        let weak = Rc::downgrade(self);
+        list.connect_row_activated(move |_, row| {
+            let Some(bar) = weak.upgrade() else {
+                return;
+            };
+            let Some(window) = values.get(row.index() as usize).copied() else {
+                return;
+            };
+            bar.apply_filter(ReleasesFilter {
+                window,
+                ..bar.filter()
+            });
+        });
+        self.chips.append(&menu);
+    }
+
+    fn append_hidden_chip(self: &Rc<Self>, selected: bool) {
+        let button = gtk4::ToggleButton::with_label(&strings::text(strings::RELEASES_HIDDEN));
+        button.add_css_class("pill");
+        button.set_active(selected);
+        let weak = Rc::downgrade(self);
+        button.connect_toggled(move |button| {
+            let Some(bar) = weak.upgrade() else {
+                return;
+            };
+            bar.apply_filter(ReleasesFilter {
+                hidden: button.is_active(),
+                ..bar.filter()
+            });
+        });
+        self.chips.append(&button);
     }
 }
 
-fn page_box() -> gtk4::Box {
-    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    page.set_margin_top(8);
-    page.set_margin_bottom(8);
-    page.set_margin_start(8);
-    page.set_margin_end(8);
-    page
+fn release_count_presentation(shown: usize, total: usize) -> String {
+    strings::release_count_line(shown, total)
+}
+
+fn window_label(window: ReleaseWindow) -> &'static str {
+    match window {
+        ReleaseWindow::OneYear => strings::RELEASES_WINDOW_ONE_YEAR,
+        ReleaseWindow::FiveYears => strings::RELEASES_WINDOW_FIVE_YEARS,
+        ReleaseWindow::TenYears => strings::RELEASES_WINDOW_TEN_YEARS,
+        ReleaseWindow::All => strings::RELEASES_WINDOW_ALL,
+    }
 }
 
 fn chooser_row(label: &str) -> gtk4::ListBoxRow {
@@ -386,99 +346,55 @@ fn chooser_row(label: &str) -> gtk4::ListBoxRow {
     gtk4::ListBoxRow::builder().child(&label).build()
 }
 
-fn wire(bar: &Rc<ReleasesFilterBar>) {
-    {
-        let weak = Rc::downgrade(bar);
-        bar.add_filter.connect_active_notify(move |button| {
-            if button.is_active() {
-                if let Some(bar) = weak.upgrade() {
-                    bar.rebuild_facets();
-                }
-            }
-        });
-    }
-    {
-        let weak = Rc::downgrade(bar);
-        bar.facet_list.connect_row_activated(move |_, row| {
-            let Some(bar) = weak.upgrade() else {
-                return;
-            };
-            let facet = bar
-                .chooser_facets
-                .borrow()
-                .get(row.index() as usize)
-                .copied();
-            if let Some(facet) = facet {
-                bar.show_values(facet);
-            }
-        });
-    }
-    {
-        let weak = Rc::downgrade(bar);
-        bar.value_list.connect_row_activated(move |_, row| {
-            let Some(bar) = weak.upgrade() else {
-                return;
-            };
-            let filter = bar
-                .chooser_values
-                .borrow()
-                .get(row.index() as usize)
-                .map(|(_, filter)| filter.clone());
-            if let Some(filter) = filter {
-                bar.apply_filter(filter);
-            }
-        });
-    }
-    {
-        let weak = Rc::downgrade(bar);
-        bar.chooser_back.connect_clicked(move |_| {
-            if let Some(bar) = weak.upgrade() {
-                bar.rebuild_facets();
-            }
-        });
-    }
-    {
-        let weak = Rc::downgrade(bar);
-        bar.clear_all.connect_clicked(move |_| {
-            if let Some(bar) = weak.upgrade() {
-                bar.clear_all();
-            }
-        });
-    }
+fn padded(child: &impl IsA<gtk4::Widget>) -> gtk4::Box {
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    page.set_margin_top(8);
+    page.set_margin_bottom(8);
+    page.set_margin_start(8);
+    page.set_margin_end(8);
+    page.append(child);
+    page
+}
+
+fn wire_clear_all(bar: &Rc<ReleasesFilterBar>) {
+    let weak = Rc::downgrade(bar);
+    bar.clear_all.connect_clicked(move |_| {
+        if let Some(bar) = weak.upgrade() {
+            bar.clear_all();
+        }
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reprise_core::artist_news::ReleaseTypeFilter;
 
     #[test]
-    fn nr_17_each_release_chip_removes_only_its_own_constraint() {
-        let filter = ReleasesFilter {
-            release_type: Some(ReleaseTypeFilter::Ep),
-            hidden: true,
-        };
-        assert_eq!(
-            remove_filter(&filter, FilterFacet::Type),
-            ReleasesFilter {
-                release_type: None,
-                ..filter.clone()
-            }
-        );
-        assert_eq!(
-            remove_filter(&filter, FilterFacet::Hidden),
-            ReleasesFilter {
-                hidden: false,
-                ..filter
-            }
-        );
+    fn nr_25_type_toggles_are_independent_and_empty_means_every_type() {
+        let selection = ReleaseTypeSelection::default();
+        let selection = toggle_type(selection, TypeChip::Album, false);
+        let selection = toggle_type(selection, TypeChip::Ep, false);
+        assert!(selection.is_empty());
+        assert!(selection.includes("Album"));
+        assert!(selection.includes("EP"));
+        assert!(selection.includes("Single"));
+    }
+
+    #[test]
+    fn nr_25_widest_scope_count_line_names_shown_and_total() {
+        assert_eq!(release_count_presentation(19, 19), "19 of 19 gaps");
     }
 
     #[test]
     fn sticky_release_filter_round_trips_every_facet() {
         let conn = crate::test_db::open().unwrap();
         let filter = ReleasesFilter {
-            release_type: Some(ReleaseTypeFilter::Album),
+            release_types: ReleaseTypeSelection {
+                album: true,
+                ep: false,
+                single: true,
+            },
+            window: ReleaseWindow::TenYears,
             hidden: true,
         };
         persist_filter(&conn, &filter).unwrap();
@@ -487,11 +403,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_17_filter_header_is_permanent_and_reserves_its_height() {
+    fn nr_25_filter_header_is_permanent_and_reserves_its_height() {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ReleasesFilterBar::new(conn);
         assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
-        assert!(bar.add_filter.is_visible());
+        assert!(bar.chips.child_at_index(0).is_some());
     }
 }

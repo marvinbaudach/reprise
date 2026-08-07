@@ -9,14 +9,16 @@ use std::rc::Rc;
 use chrono::Local;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::artist_news::{self, ReleaseSortDirection, ReleasesFilter};
+use reprise_core::artist_news::{self, ReleaseSortDirection};
 use reprise_core::artist_news_history::HistoryEntry;
 use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
 use reprise_core::source_error::{FailureAction, FailureSurface, SourceError, SourceErrorKind};
 
 use super::releases_columns;
-use super::releases_empty_state::{releases_empty_state_for, ReleasesEmptyState};
+use super::releases_empty_state::{
+    releases_empty_state_for, releases_scope_is_filtered, ReleasesEmptyState,
+};
 use super::releases_failure_ui::{
     failure_support, releases_failure_presentation, row_is_dimmed, update_failure_for_connectivity,
 };
@@ -281,16 +283,10 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let query = shared.filter_bar.query();
     // FIL-1d: the query narrows what the facets already returned, matching
     // release title and artist — the two fields the chip names.
-    let rows = releases_matching(
-        artist_news::query_releases_view(&shared.conn, &filter, today)?,
-        &query,
-    );
-    let restricted = filter != ReleasesFilter::default() || !query.is_empty();
-    let total = if restricted {
-        artist_news::count_releases_view(&shared.conn, &ReleasesFilter::default(), today)? as usize
-    } else {
-        rows.len()
-    };
+    let scoped = artist_news::query_releases_view_scope(&shared.conn, &filter, today)?;
+    let rows = releases_matching(scoped.rows, &query);
+    let restricted = releases_scope_is_filtered(&filter, &query);
+    let total = scoped.widest_total;
     let latest = artist_news::latest_fetched_at(&shared.conn)?;
     shared.filter_bar.set_counts(rows.len(), total);
     shared.rows.replace(rows.clone());

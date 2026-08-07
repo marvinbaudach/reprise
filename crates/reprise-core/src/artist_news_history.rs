@@ -176,9 +176,15 @@ fn query_complete_history_in(
         .collect::<Result<Vec<_>, _>>()?;
 
     let counts = crate::artist_news::local_album_track_counts(conn)?;
+    let track_titles = crate::artist_news_query::local_track_titles(conn)?;
     for entry in &mut entries {
-        entry.local_track_count =
-            crate::artist_news_query::local_track_count(&counts, &entry.artist_name, &entry.title);
+        entry.local_track_count = crate::artist_news_query::local_count_for_release(
+            &counts,
+            &track_titles,
+            &entry.artist_name,
+            &entry.title,
+            &entry.release_type,
+        );
         entry.presence = crate::artist_news_query::release_presence(
             &counts,
             &entry.artist_name,
@@ -353,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_16_restore_returns_a_single_hidden_gap() {
+    fn nr_24_restore_returns_a_single_hidden_gap() {
         let conn = migrated_conn();
         insert_history_row(&conn, "one", 1_000, "2026-01-01", "Album");
         insert_history_row(&conn, "two", 1_000, "2026-01-01", "Album");
@@ -435,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_16_retention_preserves_historical_album_and_ep_catalog_rows() {
+    fn nr_24_retention_preserves_historical_album_and_ep_catalog_rows() {
         let conn = migrated_conn();
         let now = 1_752_000_000_i64;
         let ancient_first_seen = now - HISTORY_RETENTION_SECONDS - 1;

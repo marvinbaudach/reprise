@@ -79,12 +79,16 @@ pub use crate::artist_news_query::{
     LibraryPresence, StoredRelease,
 };
 
+pub use crate::artist_news_scope::{
+    counts_as_owned, ReleaseTypeSelection, ReleaseWindow, ReleasesFilter,
+    RELEASES_FILTER_HIDDEN_KEY, RELEASES_FILTER_TYPE_KEY, RELEASES_FILTER_WINDOW_KEY,
+};
+
 /// Decisions and queries for the persistent Releases full view.
 pub use crate::artist_news_view::{
     count_releases_view, filter_rows as filter_release_rows, persisted_releases_filter,
-    query_releases_view, release_status, sort_rows as sort_release_rows, ReleaseSortDirection,
-    ReleaseStatus, ReleaseTypeFilter, ReleasesFilter, RELEASES_FILTER_HIDDEN_KEY,
-    RELEASES_FILTER_TYPE_KEY,
+    query_releases_view, query_releases_view_scope, release_status, sort_rows as sort_release_rows,
+    ReleaseSortDirection, ReleaseStatus, ReleasesViewResult,
 };
 
 /// Staleness policy (when a refresh is due, the per-install jitter, and the

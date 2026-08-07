@@ -2682,6 +2682,18 @@ msgid "No discography data yet"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:32
+msgid "1 year"
+msgstr "1 an"
+
+msgid "5 years"
+msgstr "5 ans"
+
+msgid "10 years"
+msgstr "10 ans"
+
+msgid "No missing releases"
+msgstr "Aucune sortie manquante"
+
 msgid "No missing albums or EPs"
 msgstr ""
 
