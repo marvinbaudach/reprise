@@ -5003,6 +5003,35 @@ msgstr "Olvidar dispositivo"
 msgid "Music · Opus 160 kbit/s"
 msgstr "Música · Opus 160 kbit/s"
 
+msgid "Up next"
+msgstr "Up next"
+
+msgid "Rescan"
+msgstr "Rescan"
+
+#, rust-format
+msgid "verified {time}"
+msgstr "verified {time}"
+
+msgid "just now"
+msgstr "just now"
+
+#, rust-format
+msgid "{minutes} min ago"
+msgstr "{minutes} min ago"
+
+#, rust-format
+msgid "{hours} h ago"
+msgstr "{hours} h ago"
+
+#, rust-format
+msgid "{days} d ago"
+msgstr "{days} d ago"
+
+#, rust-format
+msgid "last {count} runs"
+msgstr "last {count} runs"
+
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:29
 #, rust-format
 msgid "Syncing {name} · {percent}%"

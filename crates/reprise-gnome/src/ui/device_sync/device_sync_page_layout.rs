@@ -20,11 +20,14 @@ pub(super) const CONTENT_MAX_WIDTH: i32 = 1_120;
 
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::ScrolledWindow,
-    /// The vertical content column, preloaded with the hero and playlist
-    /// body. The caller appends the Content/Next-synchronization panel
-    /// (design 7a), then [`Self::history`], because this module deliberately
-    /// does not know that panel's type.
+    /// The complete vertical page column. Its direct children are owned here:
+    /// hero, playlist/overview body, [`Self::up_next`] and [`Self::history`].
+    /// The caller only fills the two section containers.
     pub(super) content: gtk4::Box,
+    /// The heading row that accepts the Content panel's verification controls.
+    pub(super) up_next_heading: gtk4::Box,
+    /// Holds the externally owned Content panel below its "Up next" heading.
+    pub(super) up_next: gtk4::Box,
     pub(super) device_name: gtk4::Label,
     pub(super) connection: gtk4::Label,
     pub(super) device_last_sync: gtk4::Label,
@@ -50,8 +53,7 @@ pub(super) struct DeviceDashboard {
     pub(super) progress_bar: gtk4::ProgressBar,
     pub(super) primary: gtk4::Button,
     pub(super) eject: gtk4::Button,
-    /// Holds the "Recent syncs" card, refilled on every update (MTP-20).
-    /// The caller places it after the externally owned content panel.
+    /// Holds the "Recent syncs" heading, warning, and card (MTP-20).
     pub(super) history: gtk4::Box,
 }
 
@@ -211,6 +213,15 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     body.append(&playlists);
     body.append(&overview);
 
+    let up_next_title = label(
+        &super::device_sync_strings::text(super::device_sync_strings::UP_NEXT),
+        "title-2",
+    );
+    let up_next_heading = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    up_next_heading.append(&up_next_title);
+    let up_next = gtk4::Box::new(gtk4::Orientation::Vertical, 9);
+    up_next.append(&up_next_heading);
+
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 24);
     content.set_margin_top(28);
     content.set_margin_bottom(28);
@@ -219,6 +230,8 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     let history = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.append(&hero);
     content.append(&body);
+    content.append(&up_next);
+    content.append(&history);
 
     let clamp = adw::Clamp::builder()
         .maximum_size(CONTENT_MAX_WIDTH)
@@ -234,6 +247,8 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     DeviceDashboard {
         root,
         content,
+        up_next_heading,
+        up_next,
         device_name,
         connection,
         device_last_sync,

@@ -368,7 +368,7 @@ fn mtp_20_the_page_shows_the_recorded_runs_with_their_deviations() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn sync_history_is_the_last_card_in_the_content_column() {
+fn device_page_sections_have_one_explicit_owner_and_order() {
     gtk4::init().expect("GTK test display");
 
     let (surface, _root) = DeviceSyncPage::new(
@@ -387,10 +387,31 @@ fn sync_history_is_the_last_card_in_the_content_column() {
         .history
         .parent()
         .expect("history must belong to the content column");
+    let children = std::iter::successors(
+        content.first_child(),
+        gtk4::prelude::WidgetExt::next_sibling,
+    )
+    .collect::<Vec<_>>();
+    assert_eq!(
+        children.len(),
+        4,
+        "the content column must contain only hero, body, Up next and Recent syncs"
+    );
     assert_eq!(
         content.last_child(),
         Some(surface.history.clone().upcast()),
         "the synchronization history must remain the page's final card"
+    );
+    let up_next = &children[2];
+    assert_eq!(
+        surface.content_panel.root().parent().as_ref(),
+        Some(up_next),
+        "the content panel belongs inside the explicit Up next section"
+    );
+    assert_eq!(
+        up_next.next_sibling(),
+        Some(surface.history.clone().upcast()),
+        "Up next and Recent syncs must be adjacent peer sections"
     );
 }
 

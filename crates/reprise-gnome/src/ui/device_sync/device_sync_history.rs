@@ -27,7 +27,7 @@ pub(super) fn fill(container: &gtk4::Box, runs: &[RunWithDeviations]) {
 }
 
 fn build(runs: &[RunWithDeviations]) -> gtk4::Box {
-    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 9);
     content.add_css_class("reprise-device-history");
 
     let title = gtk4::Label::builder()
@@ -35,7 +35,16 @@ fn build(runs: &[RunWithDeviations]) -> gtk4::Box {
         .xalign(0.0)
         .build();
     title.add_css_class("title-2");
-    content.append(&title);
+    let caption = gtk4::Label::builder()
+        .label(device_sync_strings::sync_history_caption(SHOWN_RUNS))
+        .xalign(1.0)
+        .hexpand(true)
+        .build();
+    caption.add_css_class("dim-label");
+    let heading = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    heading.append(&title);
+    heading.append(&caption);
+    content.append(&heading);
 
     if runs.is_empty() {
         let empty = gtk4::Label::builder()

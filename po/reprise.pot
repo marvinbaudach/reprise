@@ -4721,6 +4721,35 @@ msgstr ""
 msgid "Music · Opus 160 kbit/s"
 msgstr ""
 
+msgid "Up next"
+msgstr ""
+
+msgid "Rescan"
+msgstr ""
+
+#, rust-format
+msgid "verified {time}"
+msgstr ""
+
+msgid "just now"
+msgstr ""
+
+#, rust-format
+msgid "{minutes} min ago"
+msgstr ""
+
+#, rust-format
+msgid "{hours} h ago"
+msgstr ""
+
+#, rust-format
+msgid "{days} d ago"
+msgstr ""
+
+#, rust-format
+msgid "last {count} runs"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:29
 #, rust-format
 msgid "Syncing {name} · {percent}%"

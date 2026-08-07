@@ -21,6 +21,13 @@ pub const LOCAL_DEVICE_NAME: &str = N_!("Local device name");
 pub const RENAME: &str = N_!("Rename");
 pub const FORGET_DEVICE: &str = N_!("Forget device");
 pub const MUSIC_TRANSFER_PROFILE_HEADING: &str = N_!("Music · Opus 160 kbit/s");
+pub const UP_NEXT: &str = N_!("Up next");
+pub const RESCAN: &str = N_!("Rescan");
+pub(super) const VERIFIED_AGO: &str = N_!("verified {time}");
+pub(super) const JUST_NOW: &str = N_!("just now");
+pub(super) const MINUTES_AGO: &str = N_!("{minutes} min ago");
+pub(super) const HOURS_AGO: &str = N_!("{hours} h ago");
+pub(super) const DAYS_AGO: &str = N_!("{days} d ago");
 
 /// Spinner tooltip while syncing, e.g. "Syncing Pixel 8 · 42%".
 pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {
@@ -52,7 +59,7 @@ pub fn eject_tooltip(syncing: bool) -> String {
     })
 }
 
-fn formatted(message: &str, values: &[(&str, &str)]) -> String {
+pub(super) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
     crate::i18n::format_message(&text(message), values)
 }
 
@@ -359,21 +366,7 @@ pub fn free_space_line(free_before_bytes: u64, free_after_bytes: u64) -> String 
 
 /// Design 7c: "synced 12 min ago". Coarse buckets are deliberate — the
 /// sidebar card is a glance surface, not a log.
-pub fn relative_time(
-    now: chrono::DateTime<chrono::Utc>,
-    then: chrono::DateTime<chrono::Utc>,
-) -> String {
-    let minutes = now.signed_duration_since(then).num_minutes().max(0);
-    if minutes < 1 {
-        "just now".to_string()
-    } else if minutes < 60 {
-        format!("{minutes} min ago")
-    } else if minutes < 24 * 60 {
-        format!("{} h ago", minutes / 60)
-    } else {
-        format!("{} d ago", minutes / (24 * 60))
-    }
-}
+pub use super::device_sync_time_copy::{relative_time, verified_ago};
 
 /// `MTP-43`'s preparation overview: "2 files to download · 312 MiB" for
 /// `Offered`/`Planned`, "2 episodes skipped · not downloaded" for
@@ -470,6 +463,7 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 pub const RECENT_SYNCS: &str = N_!("Recent syncs");
+const LAST_RUNS: &str = N_!("last {count} runs");
 pub const NO_SYNCHRONIZATION_YET: &str = N_!("No synchronization has run yet.");
 pub const UNKNOWN_TIME: &str = N_!("unknown time");
 pub const RUNNING: &str = N_!("Running");
@@ -485,6 +479,10 @@ pub const PLAYLIST_FAILED: &str = N_!("Playlist failed");
 
 pub fn sync_history_heading() -> String {
     text(RECENT_SYNCS)
+}
+
+pub fn sync_history_caption(count: usize) -> String {
+    formatted(LAST_RUNS, &[("count", &count.to_string())])
 }
 
 pub fn sync_history_empty_state() -> String {

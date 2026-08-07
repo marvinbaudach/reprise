@@ -23,7 +23,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::device_sync::device_view::{project_category_segments, DeviceContentsState};
+use reprise_core::device_sync::device_view::project_category_segments;
 use reprise_core::device_sync::{
     aggregate_balance, summarize_playlist_selection, PodcastSelectionSummary, SyncTargetKind,
     YoutubeSelectionSummary,
@@ -32,6 +32,7 @@ use reprise_core::device_sync::{
 use super::device_sync_category_bar::CategoryStorageBar;
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceView};
 use super::device_sync_strings;
+use super::device_sync_verification_copy::verification_copy;
 
 /// A category's cap column is edited in GiB (`MTP-37`); 0 clears the cap.
 const GIB_BYTES: u64 = 1024 * 1024 * 1024;
@@ -152,8 +153,8 @@ struct CategoryRowWidgets {
 
 pub(super) struct ContentPanel {
     root: adw::Bin,
+    header: gtk4::Box,
     verification_title: gtk4::Label,
-    verification_detail: gtk4::Label,
     scan_button: gtk4::Button,
     storage_bar: CategoryStorageBar,
     free_space_line: gtk4::Label,
@@ -170,20 +171,20 @@ impl ContentPanel {
     pub(super) fn new(actions: &ContentPanelActions) -> Self {
         let updating = Rc::new(Cell::new(false));
 
-        let verification_title = heading("");
-        let verification_detail = detail("");
-        let scan_button = gtk4::Button::with_label("Scan device");
+        let verification_title = detail("");
+        verification_title.set_halign(gtk4::Align::End);
+        let scan_button =
+            gtk4::Button::with_label(&device_sync_strings::text(device_sync_strings::RESCAN));
         {
             let scan = actions.scan_device.clone();
             scan_button.connect_clicked(move |_| scan());
         }
-        let verification_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        let verification_labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        verification_labels.set_hexpand(true);
-        verification_labels.append(&verification_title);
-        verification_labels.append(&verification_detail);
-        verification_row.append(&verification_labels);
-        verification_row.append(&scan_button);
+        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        header.set_hexpand(true);
+        header.set_halign(gtk4::Align::End);
+        header.set_valign(gtk4::Align::Center);
+        header.append(&verification_title);
+        header.append(&scan_button);
 
         let storage_title = heading("Storage by category");
         let storage_bar = CategoryStorageBar::new();
@@ -249,8 +250,6 @@ impl ContentPanel {
         content.set_margin_bottom(16);
         content.set_margin_start(18);
         content.set_margin_end(18);
-        content.append(&verification_row);
-        content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         content.append(&storage_box);
         content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         content.append(&content_title);
@@ -277,8 +276,8 @@ impl ContentPanel {
 
         Self {
             root,
+            header,
             verification_title,
-            verification_detail,
             scan_button,
             storage_bar,
             free_space_line,
@@ -296,12 +295,16 @@ impl ContentPanel {
         &self.root
     }
 
+    pub(super) fn header(&self) -> &gtk4::Box {
+        &self.header
+    }
+
     pub(super) fn update(&self, device: &DeviceView) {
         self.updating.set(true);
 
-        let (title, subtitle, can_scan) = verification_copy(&device.contents_state);
+        let (title, _subtitle, can_scan) =
+            verification_copy(&device.contents_state, device.last_sync, chrono::Utc::now());
         self.verification_title.set_text(&title);
-        self.verification_detail.set_text(&subtitle);
         self.scan_button.set_sensitive(can_scan);
 
         let balance = aggregate_balance(&device.category_readings);
@@ -548,34 +551,6 @@ fn detail(text: &str) -> gtk4::Label {
     label
 }
 
-/// `MTP-26`: the verification banner's title, detail text, and whether
-/// "Scan device" should be enabled. Pure — kept separate from the widget
-/// so the exact copy is unit-tested without a display.
-fn verification_copy(state: &DeviceContentsState) -> (String, String, bool) {
-    match state {
-        DeviceContentsState::NeverVerified => (
-            "Device contents never verified".to_string(),
-            "Scan the device to see what's already there before syncing.".to_string(),
-            true,
-        ),
-        DeviceContentsState::Verifying => (
-            "Verifying device contents…".to_string(),
-            "Reading storage over MTP — this can take a moment.".to_string(),
-            false,
-        ),
-        DeviceContentsState::Verified => (
-            "Device contents verified".to_string(),
-            "Storage, content and the sync plan below reflect what Reprise found.".to_string(),
-            true,
-        ),
-        DeviceContentsState::Failed(error) => (
-            "Could not verify device contents".to_string(),
-            error.clone(),
-            true,
-        ),
-    }
-}
-
 /// `MTP-37`: design 7a's per-category selection summary. Every branch is
 /// now a live read of real per-device selection state — Playlists via the
 /// existing engine (`selection::summarize_playlist_selection`, `MTP-45`),
@@ -651,29 +626,6 @@ fn counted(count: usize, singular: &str, plural: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn mtp_26_verification_copy_names_all_four_states_and_gates_the_scan_action() {
-        let (title, _, can_scan) = verification_copy(&DeviceContentsState::NeverVerified);
-        assert_eq!(title, "Device contents never verified");
-        assert!(can_scan);
-
-        let (_, _, can_scan) = verification_copy(&DeviceContentsState::Verifying);
-        assert!(
-            !can_scan,
-            "a scan already in flight must not offer a second one"
-        );
-
-        let (title, _, can_scan) = verification_copy(&DeviceContentsState::Verified);
-        assert_eq!(title, "Device contents verified");
-        assert!(can_scan);
-
-        let (title, detail, can_scan) =
-            verification_copy(&DeviceContentsState::Failed("MTP timeout".into()));
-        assert_eq!(title, "Could not verify device contents");
-        assert_eq!(detail, "MTP timeout");
-        assert!(can_scan, "a failed scan must still offer retry");
-    }
 
     #[test]
     fn selection_summary_reads_the_live_playlist_projection() {
