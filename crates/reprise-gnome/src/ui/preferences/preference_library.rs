@@ -32,6 +32,22 @@ fn apply_rescan_row_state(row: &adw::ActionRow, state: &RescanRowState) {
     row.set_opacity(f64::from(state.opacity_percent) / 100.0);
 }
 
+/// Paints `row` from the scan state the context currently holds. Both the
+/// initial paint and every later toggle go through here, so the dimming and
+/// the subtitle cannot drift apart.
+fn sync_rescan_row(context: &PreferencesContext, row: &adw::ActionRow) {
+    apply_rescan_row_state(
+        row,
+        &rescan_row_state(
+            context
+                .scan_controls
+                .current_presentation_detail()
+                .as_deref(),
+            !context.scan_button.is_sensitive(),
+        ),
+    );
+}
+
 fn build_rescan_row(callback: Rc<dyn Fn()>) -> adw::ActionRow {
     let idle_subtitle = strings::text(strings::LIBRARY_UP_TO_DATE);
     let row = adw::ActionRow::builder()
@@ -44,9 +60,18 @@ fn build_rescan_row(callback: Rc<dyn Fn()>) -> adw::ActionRow {
     // Ellipsizing alone still lets Pango advertise the full natural width.
     // Cap the internal subtitle label's character request so long scan detail
     // cannot widen the row or the dialog before it is ellipsized.
-    if let Some(subtitle) = descendant_label_with_text(row.upcast_ref(), &idle_subtitle) {
-        subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        subtitle.set_max_width_chars(1);
+    match descendant_label_with_text(row.upcast_ref(), &idle_subtitle) {
+        Some(subtitle) => {
+            subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+            subtitle.set_max_width_chars(1);
+        }
+        // Losing the label is not cosmetic: without the cap, long scan detail
+        // widens the row and with it the whole dialog. Say so instead of
+        // silently shipping the bug back.
+        None => tracing::warn!(
+            "no subtitle label found in the rescan row's AdwActionRow template; \
+             scan detail can widen the preferences dialog"
+        ),
     }
     row.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
     row.connect_activated(move |_| callback());
@@ -160,20 +185,15 @@ impl PreferencesContext {
                 context.track_list.rescan_library();
             }
         }));
-        apply_rescan_row_state(
-            &rescan,
-            &rescan_row_state(
-                self.scan_controls.current_presentation_detail().as_deref(),
-                !self.scan_button.is_sensitive(),
-            ),
-        );
+        sync_rescan_row(self, &rescan);
         let rescan_for_activity = rescan.downgrade();
-        self.scan_button.connect_sensitive_notify(move |button| {
-            let Some(rescan) = rescan_for_activity.upgrade() else {
+        let weak = Rc::downgrade(self);
+        self.scan_button.connect_sensitive_notify(move |_| {
+            let (Some(context), Some(rescan)) = (weak.upgrade(), rescan_for_activity.upgrade())
+            else {
                 return;
             };
-            rescan.set_sensitive(button.is_sensitive());
-            rescan.set_opacity(if button.is_sensitive() { 1.0 } else { 0.45 });
+            sync_rescan_row(&context, &rescan);
         });
         let rescan_for_detail = rescan.downgrade();
         let subscription = self.scan_controls.subscribe_presentation(move |detail| {
@@ -222,6 +242,27 @@ mod tests {
                 opacity_percent: 45,
             }
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fb_9_rescan_subtitle_label_stays_reachable_and_width_capped() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let row = build_rescan_row(Rc::new(|| {}));
+
+        let subtitle = descendant_label_with_text(
+            row.upcast_ref(),
+            &strings::text(strings::LIBRARY_UP_TO_DATE),
+        )
+        .expect(
+            "the AdwActionRow template must still expose its subtitle label; \
+             without it the width cap is silently lost and long scan detail \
+             widens the preferences dialog again",
+        );
+
+        assert_eq!(subtitle.max_width_chars(), 1);
+        assert_eq!(subtitle.ellipsize(), gtk4::pango::EllipsizeMode::End);
     }
 
     #[test]

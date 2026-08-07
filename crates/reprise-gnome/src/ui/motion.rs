@@ -16,6 +16,12 @@ use libadwaita as adw;
 use libadwaita::prelude::AnimationExt;
 
 pub(in crate::ui) const MICRO_MS: u32 = 150;
+/// One turn of a continuous activity indicator Reprise draws itself (the scan
+/// chip's gear). Not a fifth interaction token: it is a loop, not a
+/// transition, so none of the four durations applies — it is named here so the
+/// period lives with the other durations instead of loose in a CSS string, and
+/// it matches `gtk::Spinner`'s pace so the two read as one vocabulary.
+pub(in crate::ui) const INDICATOR_SPIN_MS: u32 = 1200;
 pub(in crate::ui) const STANDARD_MS: u32 = 250;
 pub(in crate::ui) const AMBIENT_MS: u32 = 400;
 // My Stats bar-only entrance motion.
@@ -148,6 +154,7 @@ mod tests {
     #[test]
     fn motion_tokens_match_the_approved_values() {
         assert_eq!(MICRO_MS, 150);
+        assert_eq!(INDICATOR_SPIN_MS, 1200);
         assert_eq!(STANDARD_MS, 250);
         assert_eq!(AMBIENT_MS, 400);
         assert_eq!(STATS_HORIZONTAL_BAR_MS, 450);

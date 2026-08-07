@@ -20,8 +20,13 @@ pub(in crate::ui) const PAGE_ORDER: [PageId; 5] = [
     PageId::Plugins,
 ];
 
-// One 40 px end-title-button strip plus the dialog's 12 px chrome inset.
-const STATUS_CHIP_END_INSET: i32 = 52;
+// Horizontal inset for the status chip, used only until the header's
+// end-title-button strip has been allocated and can be measured: Adwaita's
+// 40 px button strip plus the gap below.
+const STATUS_CHIP_FALLBACK_END_INSET: i32 = 52;
+
+// Breathing space between the status chip and the header's title buttons.
+const STATUS_CHIP_END_GAP: i32 = 12;
 
 impl PageId {
     fn name(self) -> &'static str {
@@ -173,7 +178,7 @@ pub(in crate::ui) fn build(
     if let Some(status_chip) = status_chip {
         status_chip.set_halign(gtk4::Align::End);
         status_chip.set_valign(gtk4::Align::Start);
-        status_chip.set_margin_end(STATUS_CHIP_END_INSET);
+        status_chip.set_margin_end(STATUS_CHIP_FALLBACK_END_INSET);
         content_overlay.add_overlay(status_chip);
         content_overlay.set_measure_overlay(status_chip, false);
         content_overlay.set_clip_overlay(status_chip, true);
@@ -213,7 +218,7 @@ pub(in crate::ui) fn build(
         .content_height(680)
         .build();
     if let Some(status_chip) = status_chip {
-        center_chip_when_visible(&dialog, &content_header, status_chip);
+        place_chip_when_visible(&dialog, &content_toolbar, &content_header, status_chip);
     }
 
     PreferencesShell {
@@ -230,32 +235,81 @@ pub(in crate::ui) fn build(
     }
 }
 
-fn center_chip_when_visible(dialog: &adw::Dialog, header: &adw::HeaderBar, chip: &gtk4::Widget) {
-    let header_weak = header.downgrade();
-    let chip_weak = chip.downgrade();
-    dialog.connect_map(move |_| {
-        let Some(header) = header_weak.upgrade() else {
-            return;
-        };
-        let Some(chip) = chip_weak.upgrade().filter(gtk4::Widget::is_visible) else {
-            return;
-        };
-        queue_chip_center(&header, &chip);
-    });
+/// Keeps the overlay chip aligned with the header it floats over: centred in
+/// the header's height and clear of its title buttons.
+///
+/// GTK4 has no `size-allocate` signal, so the header's own re-allocation is
+/// not directly observable — but `AdwToolbarView` publishes the very height
+/// the placement depends on, and notifies when a font metric change (GNOME's
+/// text scaling, a larger interface font) grows the header under an open
+/// dialog.
+fn place_chip_when_visible(
+    dialog: &adw::Dialog,
+    toolbar: &adw::ToolbarView,
+    header: &adw::HeaderBar,
+    chip: &gtk4::Widget,
+) {
+    let on_map = chip_placement_trigger(header, chip);
+    dialog.connect_map(move |_| on_map());
 
+    let on_header_resize = chip_placement_trigger(header, chip);
+    toolbar.connect_top_bar_height_notify(move |_| on_header_resize());
+
+    let on_visible = chip_placement_trigger(header, chip);
+    chip.connect_visible_notify(move |_| on_visible());
+}
+
+fn chip_placement_trigger(header: &adw::HeaderBar, chip: &gtk4::Widget) -> impl Fn() {
     let header = header.downgrade();
-    chip.connect_visible_notify(move |chip| {
-        if !chip.is_visible() {
-            return;
-        }
+    let chip = chip.downgrade();
+    move || {
         let Some(header) = header.upgrade() else {
             return;
         };
-        queue_chip_center(&header, chip);
-    });
+        let Some(chip) = chip.upgrade().filter(gtk4::Widget::is_visible) else {
+            return;
+        };
+        queue_chip_placement(&header, &chip);
+    }
 }
 
-fn queue_chip_center(header: &adw::HeaderBar, chip: &gtk4::Widget) {
+/// The header's end-title-button strip — the `GtkCenterBox` end child of
+/// `AdwHeaderBar`'s template — once it is visible and allocated. `None` while
+/// the header is unallocated, or if a future Adwaita lays its header out
+/// differently; callers then keep the fallback inset.
+fn header_end_strip(header: &adw::HeaderBar) -> Option<gtk4::Widget> {
+    let center_box = descendant_center_box(header.upcast_ref())?;
+    let end = center_box.end_widget()?;
+    (end.is_visible() && end.width() > 0).then_some(end)
+}
+
+/// The horizontal inset that keeps the status chip clear of the header's
+/// title buttons: the distance from the header's trailing edge to the strip's
+/// leading edge, plus a gap.
+fn header_end_inset(header: &adw::HeaderBar) -> Option<i32> {
+    if header.width() <= 0 {
+        return None;
+    }
+    let strip = header_end_strip(header)?;
+    let origin = strip.compute_point(header, &gtk4::graphene::Point::new(0.0, 0.0))?;
+    Some((header.width() - origin.x() as i32).max(0) + STATUS_CHIP_END_GAP)
+}
+
+fn descendant_center_box(widget: &gtk4::Widget) -> Option<gtk4::CenterBox> {
+    if let Ok(center_box) = widget.clone().downcast::<gtk4::CenterBox>() {
+        return Some(center_box);
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(center_box) = descendant_center_box(&current) {
+            return Some(center_box);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
+fn queue_chip_placement(header: &adw::HeaderBar, chip: &gtk4::Widget) {
     let header = header.downgrade();
     let chip = chip.downgrade();
     gtk4::glib::timeout_add_local(std::time::Duration::from_millis(1), move || {
@@ -269,6 +323,7 @@ fn queue_chip_center(header: &adw::HeaderBar, chip: &gtk4::Widget) {
             return gtk4::glib::ControlFlow::Continue;
         }
         chip.set_margin_top((header.height() - chip.height()).max(0) / 2);
+        chip.set_margin_end(header_end_inset(&header).unwrap_or(STATUS_CHIP_FALLBACK_END_INSET));
         gtk4::glib::ControlFlow::Break
     });
 }
@@ -280,6 +335,10 @@ pub(in crate::ui) fn css() -> String {
      }"
     .to_string()
 }
+
+#[cfg(test)]
+#[path = "preferences_chrome_placement_tests.rs"]
+mod chrome_placement_tests;
 
 #[cfg(test)]
 mod tests {
@@ -669,7 +728,7 @@ mod tests {
         parent.close();
     }
 
-    fn test_pages() -> [(PageId, adw::PreferencesPage); PAGE_ORDER.len()] {
+    pub(super) fn test_pages() -> [(PageId, adw::PreferencesPage); PAGE_ORDER.len()] {
         PAGE_ORDER.map(|id| {
             let page = adw::PreferencesPage::builder()
                 .title(id.title())
@@ -682,7 +741,7 @@ mod tests {
         })
     }
 
-    fn settle_layout() {
+    pub(super) fn settle_layout() {
         settle_for(std::time::Duration::from_millis(80));
     }
 

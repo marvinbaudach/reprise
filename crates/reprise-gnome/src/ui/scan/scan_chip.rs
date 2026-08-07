@@ -47,15 +47,19 @@ fn chip_state(label: &str, tooltip: Option<&str>, warning: bool) -> ChipState {
     }
 }
 
-fn gear_should_spin(running: bool, animations_enabled: bool) -> bool {
-    running && animations_enabled
-}
+const GEAR_SPINNING_CLASS: &str = "scan-chip-gear-spinning";
 
+/// Marks the gear as spinning while a scan runs. Reduced motion needs no
+/// second gate here: the spin is a CSS `@keyframes` animation, and GTK's CSS
+/// machinery stops those on `gtk-enable-animations=false` by itself (MOT-7,
+/// proven by `mot_7_css_honours_enable_animations_setting`). Consulting the
+/// setting from here instead cost a per-chip `gtk4::Settings` handler that
+/// outlived every Preferences dialog it was built for.
 fn apply_gear_motion(gear: &gtk4::Image, running: bool) {
-    if gear_should_spin(running, crate::ui::motion::animations_enabled()) {
-        gear.add_css_class("scan-chip-gear-spinning");
+    if running {
+        gear.add_css_class(GEAR_SPINNING_CLASS);
     } else {
-        gear.remove_css_class("scan-chip-gear-spinning");
+        gear.remove_css_class(GEAR_SPINNING_CLASS);
     }
 }
 
@@ -70,7 +74,6 @@ struct ScanChipWidgets {
     gear: gtk4::Image,
     label: gtk4::Label,
     cancel: gtk4::Button,
-    running: Rc<Cell<bool>>,
     fade_generation: FadeGeneration,
     fade: RefCell<Option<adw::TimedAnimation>>,
     on_activate: CallbackSlot,
@@ -132,17 +135,6 @@ impl ScanChip {
             }
         });
 
-        let running = Rc::new(Cell::new(false));
-        if let Some(settings) = gtk4::Settings::default() {
-            let gear = gear.downgrade();
-            let running = running.clone();
-            settings.connect_gtk_enable_animations_notify(move |_| {
-                if let Some(gear) = gear.upgrade() {
-                    apply_gear_motion(&gear, running.get());
-                }
-            });
-        }
-
         Self {
             inner: Rc::new(ScanChipWidgets {
                 root,
@@ -150,7 +142,6 @@ impl ScanChip {
                 gear,
                 label,
                 cancel,
-                running,
                 fade_generation: FadeGeneration::default(),
                 fade: RefCell::new(None),
                 on_activate,
@@ -197,8 +188,7 @@ impl ScanChip {
         } else {
             self.inner.root.remove_css_class("warning");
         }
-        self.inner.running.set(!state.warning);
-        apply_gear_motion(&self.inner.gear, self.inner.running.get());
+        apply_gear_motion(&self.inner.gear, !state.warning);
         self.inner.root.set_visible(true);
         self.fade_to(1.0, false);
     }
@@ -267,9 +257,9 @@ mod tests {
         let css = super::super::scan_card_css::css();
         for token in [
             "border-radius: 999px",
-            "rgba(46, 194, 126, 0.13)",
-            "rgba(46, 194, 126, 0.32)",
-            "#a9e6c8",
+            "alpha(@accent_bg_color, 0.13)",
+            "alpha(@accent_color, 0.32)",
+            "color: @accent_color",
             "font-size: 11.5px",
             "font-weight: 600",
             "@keyframes scan-chip-gear-spin",
@@ -280,12 +270,69 @@ mod tests {
     }
 
     #[test]
-    fn chip_fade_is_micro_and_gear_motion_obeys_the_central_gate() {
+    fn contrast_1_the_chip_derives_every_colour_from_a_named_one() {
+        let css = super::super::scan_card_css::css();
+        let chip = css
+            .split(".scan-chip-action")
+            .next()
+            .expect("the chip block precedes the action block")
+            .rsplit_once(".scan-chip {")
+            .expect("the chip block is present")
+            .1;
+        // CONTRAST-1: a matching Adwaita named colour beats a hand-mixed one,
+        // and only a named colour follows a user-changed accent.
+        assert!(
+            !chip.contains("rgba(") && !chip.contains('#'),
+            "the chip still mixes a literal colour: {chip}"
+        );
+        for named in [
+            "@accent_bg_color",
+            "@accent_color",
+            "@warning_bg_color",
+            "@warning_color",
+        ] {
+            assert!(chip.contains(named), "chip colour {named} is missing");
+        }
+    }
+
+    #[test]
+    fn mot_1_the_gear_spin_period_comes_from_the_motion_module() {
+        let css = super::super::scan_card_css::css();
+        assert!(css.contains(&format!(
+            "animation: scan-chip-gear-spin {}ms linear infinite",
+            crate::ui::motion::INDICATOR_SPIN_MS
+        )));
+    }
+
+    #[test]
+    fn chip_fade_is_micro() {
         assert_eq!(CHIP_FADE_MS, 150);
         assert_eq!(CHIP_FADE_MS, crate::ui::motion::MICRO_MS);
-        assert!(gear_should_spin(true, true));
-        assert!(!gear_should_spin(true, false));
-        assert!(!gear_should_spin(false, true));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_7_the_gear_spin_class_follows_the_scan_and_not_the_settings_singleton() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let previous = settings.is_gtk_enable_animations();
+
+        let chip = ScanChip::new();
+        chip.set_running("Scanning · 39%", None);
+        assert!(chip.inner.gear.has_css_class(GEAR_SPINNING_CLASS));
+
+        // Reduced motion stops the CSS keyframe inside GTK (MOT-7), so the
+        // class stays put. The chip listens to no `gtk4::Settings` signal of
+        // its own — one handler per Preferences open never came off again.
+        settings.set_gtk_enable_animations(false);
+        assert!(chip.inner.gear.has_css_class(GEAR_SPINNING_CLASS));
+        settings.set_gtk_enable_animations(true);
+
+        chip.set_warning("Library unavailable", None);
+        assert!(!chip.inner.gear.has_css_class(GEAR_SPINNING_CLASS));
+
+        settings.set_gtk_enable_animations(previous);
     }
 
     #[test]
