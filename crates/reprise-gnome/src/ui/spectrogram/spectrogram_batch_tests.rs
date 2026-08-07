@@ -136,20 +136,20 @@ fn a_run_that_cannot_be_launched_fails_instead_of_reporting_progress() {
 }
 
 #[test]
-fn nav_7b_the_menu_item_starts_a_run_and_then_stops_that_same_run() {
+fn nav_15_a_started_run_can_still_be_cancelled_from_its_progress_card() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let (batch, cancels) = batch_over(FakeRun::default());
 
-    batch.toggle();
+    batch.start();
     assert!(batch.is_running());
     assert_eq!(cancels.get(), 0);
 
-    batch.toggle();
+    batch.cancel();
     assert_eq!(cancels.get(), 1);
 }
 
 #[test]
-fn nav_7b_a_second_start_never_opens_a_second_run() {
+fn nav_15_a_second_start_never_opens_a_second_run() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let launches = Rc::new(Cell::new(0));
     let batch = SpectrogramBatch::new({

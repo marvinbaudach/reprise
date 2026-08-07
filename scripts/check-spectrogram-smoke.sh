@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# NAV-7b: a freshly scanned library analyzes itself, with no user action at all.
+# NAV-15: a freshly scanned library analyzes itself, with no user action at all.
 # Nothing here asks for the analysis — the app is started, and the spectrograms
 # must simply be there afterwards. The unit tests cover the state machine with a
 # fake run; this covers what they cannot: the autostart, a real GStreamer

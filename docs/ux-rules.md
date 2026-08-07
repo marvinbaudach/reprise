@@ -153,11 +153,11 @@ result.
   location including scroll position; no history stack is reconstructed.
 - **NAV-6** [active] [e2e] — Search (Ctrl+F) filters the current view
   live; Esc clears and closes. Search never navigates on its own.
-- **NAV-7** [active] [e2e] — Hamburger menu: "Scan Library" → starts the
+- **NAV-7** [replaced by NAV-15] — Hamburger menu: "Scan Library" → starts the
   scan, stays in the view (card appears). "Preferences" → Preferences
   window. "Keyboard Shortcuts" → shortcuts overlay. "About Reprise" →
   About dialog. No menu item silently switches the content view.
-- **NAV-7b** [active] [gtk] — The seek bar's colour arrives the way its
+- **NAV-7b** [replaced by NAV-15] — The seek bar's colour arrives the way its
   shape already does: by itself. The analysis starts with the app and is
   resumable, so a library that is already done ends it at once and shows
   nothing — a run appears on the scan card (P-1) only when it has real
@@ -211,6 +211,21 @@ result.
   `nav_14_escape_discards_the_new_playlist_row_and_the_playlist`,
   `nav_14_an_empty_name_keeps_the_untitled_playlist`,
   `nav_14_import_playlist_lives_in_the_overflow_menu`.
+- **NAV-15** [active] [gtk] — **The primary menu offers decisions, not
+  housekeeping.** Its sections contain Compact Mode; Library Doctor and
+  Import playlist…; then Preferences, Keyboard Shortcuts, Help, and About
+  Reprise. It exposes no scan, scan-cancel, analysis, or analysis-cancel
+  action. Manual rescans remain available in Preferences → Library and from
+  the library's unavailable or empty retry state, and retain the scan card's
+  minimum perceivable progress time. Rendering-data backfill
+  starts after the window's first idle frame and after every completed scan;
+  starting it again while it runs is a no-op. When its progress card is
+  visible and no scan owns that card, the card's cancel action can stop it.
+  *Tests:* `nav_15_library_section_omits_manual_analysis`,
+  `nav_15_library_section_omits_header_rescan`,
+  `nav_15_a_second_start_never_opens_a_second_run`,
+  `nav_15_a_started_run_can_still_be_cancelled_from_its_progress_card`,
+  `scan_completion_notifies_cover_and_rendering_follow_ups`.
 
 ## C. Playback, queue, shuffle, filter
 

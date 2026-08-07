@@ -14,8 +14,6 @@ use crate::ui::track_list::TrackList;
 
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
-pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
-pub(super) const ACTION_ANALYZE_LIBRARY: &str = "analyze-library";
 pub(super) const ACTION_LIBRARY_DOCTOR: &str = "library-doctor";
 pub(super) const ACTION_IMPORT_PLAYLIST: &str = "import-playlist";
 pub(super) const ACTION_STOP_PLAYBACK: &str = "stop-playback";
@@ -28,11 +26,6 @@ const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
 pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
-    pub(super) on_rescan_library: Rc<dyn Fn()>,
-    pub(super) on_cancel_scan: Rc<dyn Fn()>,
-    /// Starts the library analysis, or stops the running one. One callback for
-    /// both, because the menu item is one item with two labels.
-    pub(super) on_analyze_library: Rc<dyn Fn()>,
     pub(super) on_library_doctor: Rc<dyn Fn()>,
     pub(super) on_import_playlist: Rc<dyn Fn()>,
     pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
@@ -47,33 +40,8 @@ fn view_section_entries() -> Vec<(String, &'static str)> {
     )]
 }
 
-/// Which long-running library jobs are currently going, which is all the
-/// library section needs to know to label its two toggling items.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct LibraryMenuState {
-    pub(super) is_scanning: bool,
-    pub(super) is_analyzing: bool,
-}
-
-/// Rebuilds the library section of the primary menu with the correct label
-/// for the current job state: "Rescan Library" when idle, "Cancel Scan"
-/// when a scan is running, and the same pairing for "Analyze Library" /
-/// "Stop Analysis". GTK reads the `gio::Menu` model on each popover open, so
-/// rebuilding here is sufficient.
-pub(super) fn update_library_section(menu: &gio::Menu, state: LibraryMenuState) {
-    menu.remove_all();
-    let scan_label = if state.is_scanning {
-        strings::text(strings::CANCEL_SCAN)
-    } else {
-        strings::text(strings::RESCAN_LIBRARY)
-    };
-    menu.append(Some(&scan_label), Some("win.rescan-library"));
-    let analyze_label = if state.is_analyzing {
-        strings::text(strings::STOP_ANALYSIS)
-    } else {
-        strings::text(strings::ANALYZE_LIBRARY)
-    };
-    menu.append(Some(&analyze_label), Some("win.analyze-library"));
+fn build_library_section() -> gio::Menu {
+    let menu = gio::Menu::new();
     menu.append(
         Some(&strings::text(strings::LIBRARY_DOCTOR)),
         Some("win.library-doctor"),
@@ -82,6 +50,7 @@ pub(super) fn update_library_section(menu: &gio::Menu, state: LibraryMenuState) 
         Some(&strings::text(strings::IMPORT_PLAYLIST)),
         Some("win.import-playlist"),
     );
+    menu
 }
 
 /// Settings section: preferences, shortcuts, help, and about.
@@ -97,7 +66,7 @@ fn settings_section_entries() -> Vec<(String, &'static str)> {
     ]
 }
 
-fn build_primary_menu(library: &gio::Menu) -> gio::Menu {
+fn build_primary_menu() -> gio::Menu {
     let view = gio::Menu::new();
     for (label, action) in view_section_entries() {
         view.append(Some(&label), Some(action));
@@ -106,9 +75,10 @@ fn build_primary_menu(library: &gio::Menu) -> gio::Menu {
     for (label, action) in settings_section_entries() {
         settings.append(Some(&label), Some(action));
     }
+    let library = build_library_section();
     let menu = gio::Menu::new();
     menu.append_section(None, &view);
-    menu.append_section(None, library);
+    menu.append_section(None, &library);
     menu.append_section(None, &settings);
     menu
 }
@@ -119,17 +89,8 @@ pub(super) fn install(
     window: &adw::ApplicationWindow,
     track_list: &Rc<TrackList>,
     callbacks: Callbacks,
-    scan_controls: &super::scan_flow::ScanControls,
-) -> gio::Menu {
-    let library = gio::Menu::new();
-    update_library_section(
-        &library,
-        LibraryMenuState {
-            is_scanning: scan_controls.is_scanning(),
-            is_analyzing: false,
-        },
-    );
-    let menu = build_primary_menu(&library);
+) {
+    let menu = build_primary_menu();
 
     let menu_button = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
@@ -186,28 +147,6 @@ pub(super) fn install(
     }
     window.add_action(&minimal);
     arm_smoke_minimal_view(&minimal);
-
-    let rescan = gio::SimpleAction::new(ACTION_RESCAN_LIBRARY, None);
-    {
-        let rescan_cb = callbacks.on_rescan_library.clone();
-        let cancel_cb = callbacks.on_cancel_scan.clone();
-        let scan_controls = scan_controls.clone();
-        rescan.connect_activate(move |_, _| {
-            if scan_controls.is_scanning() {
-                cancel_cb();
-            } else {
-                rescan_cb();
-            }
-        });
-    }
-    window.add_action(&rescan);
-
-    let analyze = gio::SimpleAction::new(ACTION_ANALYZE_LIBRARY, None);
-    {
-        let cb = callbacks.on_analyze_library.clone();
-        analyze.connect_activate(move |_, _| cb());
-    }
-    window.add_action(&analyze);
 
     let library_doctor = gio::SimpleAction::new(ACTION_LIBRARY_DOCTOR, None);
     {
@@ -273,8 +212,6 @@ pub(super) fn install(
         });
     }
     window.add_action(&about);
-
-    library
 }
 
 fn arm_smoke_minimal_view(action: &gio::SimpleAction) {
@@ -314,9 +251,7 @@ mod tests {
 
     #[test]
     fn primary_menu_omits_stop_playback_when_transport_is_persistent() {
-        let library = gio::Menu::new();
-        update_library_section(&library, LibraryMenuState::default());
-        let menu = build_primary_menu(&library);
+        let menu = build_primary_menu();
         let actions = (0..menu.n_items())
             .filter_map(|index| menu.item_link(index, gio::MENU_LINK_SECTION))
             .flat_map(|section| {
@@ -335,23 +270,14 @@ mod tests {
 
     #[test]
     fn doc_8a_the_menu_carries_exactly_one_library_doctor_item_and_no_sync_device() {
-        let menu = gio::Menu::new();
-        update_library_section(&menu, LibraryMenuState::default());
+        let menu = build_library_section();
         let actions: Vec<_> = (0..menu.n_items())
             .filter_map(|i| {
                 menu.item_attribute_value(i, "action", Some(glib::VariantTy::STRING))
                     .and_then(|v| v.get::<String>())
             })
             .collect();
-        assert_eq!(
-            actions,
-            [
-                "win.rescan-library",
-                "win.analyze-library",
-                "win.library-doctor",
-                "win.import-playlist"
-            ]
-        );
+        assert_eq!(actions, ["win.library-doctor", "win.import-playlist"]);
         assert_eq!(
             actions
                 .iter()
@@ -364,14 +290,7 @@ mod tests {
 
     #[test]
     fn nav_14_import_playlist_lives_in_the_overflow_menu() {
-        let menu = gio::Menu::new();
-        update_library_section(
-            &menu,
-            LibraryMenuState {
-                is_scanning: false,
-                is_analyzing: false,
-            },
-        );
+        let menu = build_library_section();
         let actions = (0..menu.n_items())
             .filter_map(|index| {
                 menu.item_attribute_value(index, "action", Some(glib::VariantTy::STRING))
@@ -384,78 +303,57 @@ mod tests {
     }
 
     #[test]
-    fn nav_7b_library_section_offers_analysis_next_to_the_scan() {
-        let menu = gio::Menu::new();
-        update_library_section(&menu, LibraryMenuState::default());
-        let label = menu
-            .item_attribute_value(1, "label", Some(glib::VariantTy::STRING))
-            .and_then(|v| v.get::<String>());
+    fn nav_15_library_section_omits_manual_analysis() {
+        let menu = build_library_section();
+        let actions = (0..menu.n_items())
+            .filter_map(|index| {
+                menu.item_attribute_value(index, "action", Some(glib::VariantTy::STRING))
+                    .and_then(|value| value.get::<String>())
+            })
+            .collect::<Vec<_>>();
+        assert!(!actions.iter().any(|action| action == "win.analyze-library"));
+    }
+
+    #[test]
+    fn nav_15_library_section_has_no_stop_analysis_state() {
+        let menu = build_library_section();
+        let labels = (0..menu.n_items())
+            .filter_map(|index| {
+                menu.item_attribute_value(index, "label", Some(glib::VariantTy::STRING))
+                    .and_then(|value| value.get::<String>())
+            })
+            .collect::<Vec<_>>();
         assert_eq!(
-            label.as_deref(),
-            Some(strings::text(strings::ANALYZE_LIBRARY).as_str())
+            labels,
+            [
+                strings::text(strings::LIBRARY_DOCTOR),
+                strings::text(strings::IMPORT_PLAYLIST)
+            ]
         );
     }
 
     #[test]
-    fn nav_7b_library_section_offers_to_stop_a_running_analysis() {
-        let menu = gio::Menu::new();
-        update_library_section(
-            &menu,
-            LibraryMenuState {
-                is_scanning: false,
-                is_analyzing: true,
-            },
-        );
-        let label = menu
-            .item_attribute_value(1, "label", Some(glib::VariantTy::STRING))
-            .and_then(|v| v.get::<String>());
-        assert_eq!(
-            label.as_deref(),
-            Some(strings::text(strings::STOP_ANALYSIS).as_str())
-        );
+    fn nav_15_library_section_is_static() {
+        let menu = build_library_section();
+        let actions = (0..menu.n_items())
+            .filter_map(|index| {
+                menu.item_attribute_value(index, "action", Some(glib::VariantTy::STRING))
+                    .and_then(|value| value.get::<String>())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actions, ["win.library-doctor", "win.import-playlist"]);
     }
 
     #[test]
-    fn nav_7b_a_running_scan_and_a_running_analysis_label_independently() {
-        let menu = gio::Menu::new();
-        update_library_section(
-            &menu,
-            LibraryMenuState {
-                is_scanning: true,
-                is_analyzing: true,
-            },
-        );
-        let label_at = |index| {
-            menu.item_attribute_value(index, "label", Some(glib::VariantTy::STRING))
-                .and_then(|v| v.get::<String>())
-        };
-        assert_eq!(
-            label_at(0).as_deref(),
-            Some(strings::text(strings::CANCEL_SCAN).as_str())
-        );
-        assert_eq!(
-            label_at(1).as_deref(),
-            Some(strings::text(strings::STOP_ANALYSIS).as_str())
-        );
-    }
-
-    #[test]
-    fn library_section_shows_cancel_when_scanning() {
-        let menu = gio::Menu::new();
-        update_library_section(
-            &menu,
-            LibraryMenuState {
-                is_scanning: true,
-                is_analyzing: false,
-            },
-        );
-        let label = menu
-            .item_attribute_value(0, "label", Some(glib::VariantTy::STRING))
-            .and_then(|v| v.get::<String>());
-        assert_eq!(
-            label.as_deref(),
-            Some(strings::text(strings::CANCEL_SCAN).as_str())
-        );
+    fn nav_15_library_section_omits_header_rescan() {
+        let menu = build_library_section();
+        let actions = (0..menu.n_items())
+            .filter_map(|index| {
+                menu.item_attribute_value(index, "action", Some(glib::VariantTy::STRING))
+                    .and_then(|value| value.get::<String>())
+            })
+            .collect::<Vec<_>>();
+        assert!(!actions.iter().any(|action| action == "win.rescan-library"));
     }
 
     #[test]
@@ -528,8 +426,7 @@ mod tests {
 
     #[test]
     fn no_rhythmbox_import_in_visible_menu() {
-        let library = gio::Menu::new();
-        update_library_section(&library, LibraryMenuState::default());
+        let library = build_library_section();
         let library_actions: Vec<String> = (0..library.n_items())
             .filter_map(|i| {
                 library
