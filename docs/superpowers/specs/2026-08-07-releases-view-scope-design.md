@@ -49,7 +49,7 @@ Three further defects sharpen the same complaint:
 - No deletion by the window. It is a filter, not retention; `All` must
   always be able to show what the cache holds, and the fetch-window
   protection in `artist_news_history.rs` stays untouched.
-- `NEWS_WINDOW_DAYS` and the per-artist news cap from `NR-1a` stay as they
+- `NEWS_WINDOW_DAYS` and the per-artist news cap from `NR-1a` (now `NR-27`) stay as they
   are. The delta popover's candidate scope follows the persisted Releases
   filters, while its visit-batch and stamping semantics remain unchanged.
 

@@ -2,7 +2,7 @@
 slug: releases-view-scope
 worktree: /home/marvin/Projects/reprise-releases-view-scope
 branch: feature/releases-view-scope
-phase: coded
+phase: refactored
 codex_session:
 created: 2026-08-07
 ---
@@ -112,8 +112,10 @@ the logic.
 - `track_count IS NULL` → not owned; the row stays visible exactly as today.
 
 `LibraryPresence::Complete` keeps its strict meaning — do **not** loosen
-`presence_for`. `NR-13`'s "Show in library" and the `X of Y tracks` status
-label depend on it.
+`presence_for`. The Updates popover's "Show in library" action and the
+`X of Y tracks` status label depend on it. (The gap catalog's own
+"Show in library" promise died with `NR-13`; `NR-28` replaced it, because a
+row that could offer it is a row the filter already removed.)
 
 ### 1.4 Single ownership needs a track-title map
 
@@ -331,7 +333,7 @@ neighbours:
 
 ## Out of scope
 
-- No change to `NEWS_WINDOW_DAYS`, to the per-artist news cap (`NR-1a`), or to
+- No change to `NEWS_WINDOW_DAYS`, to the per-artist news cap (`NR-1a`, now `NR-27`), or to
   what the fetch requests.
 - No deletion of catalog rows by the window — it is a filter.
 - No new network requests, no new provider, no new UI beyond the filter row.

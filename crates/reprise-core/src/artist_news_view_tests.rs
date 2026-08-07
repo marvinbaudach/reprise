@@ -770,10 +770,18 @@ fn nr_27_the_per_artist_cap_bounds_news_not_the_catalog() {
     }
 
     let catalog = query_releases_view(&db, &ReleasesFilter::default(), today()).unwrap();
-    let news = crate::artist_news::query_releases(&db, false, today()).unwrap();
+    // `delta_candidates` on purpose, not `query_releases`: the popover and the
+    // badge read this one, and the two call the capping helper from separate
+    // sites. Asserting through the other function would stay green while the
+    // shipped path lost its cap.
+    let candidates = crate::artist_news::delta_candidates(&db, today()).unwrap();
 
     assert_eq!(catalog.len(), 25, "the gap catalog keeps every album");
-    assert_eq!(news.len(), 20, "the news candidates stop at twenty");
+    assert_eq!(
+        candidates.len(),
+        20,
+        "the popover's candidates stop at twenty"
+    );
 }
 
 /// NR-25: the default view is the quiet one, and the filter row decides that
