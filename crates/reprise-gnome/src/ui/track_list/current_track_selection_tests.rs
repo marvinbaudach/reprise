@@ -3,6 +3,7 @@
 //! start-restore tests already use.
 
 use super::*;
+use reprise_core::queries::BrowseFilter;
 
 #[test]
 fn nav_10b_playback_scroll_policy_distinguishes_user_intent() {
@@ -129,9 +130,18 @@ fn fil_9_filter_changes_center_the_visible_playing_track() {
             format!("Other Track {id:03}")
         };
         tx.execute(
-            "INSERT INTO tracks (id, path, title, artist, added_at) \
-             VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
-            (id, format!("/synthetic/{id:03}.flac"), title),
+            "INSERT INTO tracks (id, path, title, artist, genre, added_at) \
+             VALUES (?1, ?2, ?3, 'Synthetic Artist', ?4, 0)",
+            (
+                id,
+                format!("/synthetic/{id:03}.flac"),
+                title,
+                if (31..=60).contains(&id) {
+                    "Synthetic"
+                } else {
+                    "Other"
+                },
+            ),
         )
         .unwrap();
     }
@@ -164,7 +174,11 @@ fn fil_9_filter_changes_center_the_visible_playing_track() {
     while gtk4::glib::MainContext::default().iteration(false) {}
     track_list.update_current_track(playing_id, None, CurrentTrackChange::PlaybackStarted);
 
-    track_list.set_filter("Match");
+    *track_list.shared.browse_filter.borrow_mut() = BrowseFilter {
+        genre: Some("Synthetic".to_string()),
+        ..BrowseFilter::default()
+    };
+    crate::ui::track_list::track_list_reload::reload_centering_playing_track(&track_list.shared);
     assert_eq!(track_list.shared.model.n_items(), 30);
     assert_playing_track_centered(&track_list, playing_id, &adjustment);
 
@@ -178,7 +192,8 @@ fn fil_9_filter_changes_center_the_visible_playing_track() {
     adjustment.set_value(f64::from(filtered_position) * filtered_row_height);
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    track_list.set_filter("");
+    *track_list.shared.browse_filter.borrow_mut() = BrowseFilter::default();
+    crate::ui::track_list::track_list_reload::reload_centering_playing_track(&track_list.shared);
     assert_eq!(track_list.shared.model.n_items(), 100);
     assert_playing_track_centered(&track_list, playing_id, &adjustment);
 
