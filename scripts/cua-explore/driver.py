@@ -227,7 +227,7 @@ class CuaExecutor:
         self._hover_cursor_disabled = True
 
     def execute_hover(self, action: HoverAction) -> StepResult:
-        from hover_geometry import desktop_point, park_point
+        from hover_geometry import element_center, park_point
         from hover_oracle import HOVER_SETTLE_MS, analyze_hover
 
         if self.hover_geometry is None:
@@ -243,7 +243,7 @@ class CuaExecutor:
         frame = target.get("frame")
         if not isinstance(frame, dict):
             raise DriverError("hover target has no frame")
-        pointer = desktop_point(frame, self.hover_geometry)
+        pointer = element_center(frame)
         started = time.monotonic()
         try:
             response = self._move_pointer(pointer)
@@ -267,20 +267,14 @@ class CuaExecutor:
                 pathlib.Path("missing-hover-before.png"),
                 pathlib.Path("missing-hover-after.png"),
                 target,
-                pointer=(
-                    float(frame.get("x", 0)) + float(frame.get("w", frame.get("width", 0))) / 2,
-                    float(frame.get("y", 0)) + float(frame.get("h", frame.get("height", 0))) / 2,
-                ),
+                origin=self.hover_geometry,
             )
         else:
             hover_findings = analyze_hover(
                 self.evidence_dir / f"{stem}-before.png",
                 self.evidence_dir / f"{stem}-after.png",
                 target,
-                pointer=(
-                    float(frame.get("x", 0)) + float(frame.get("w", frame.get("width", 0))) / 2,
-                    float(frame.get("y", 0)) + float(frame.get("h", frame.get("height", 0))) / 2,
-                ),
+                origin=self.hover_geometry,
             )
         findings.extend(hover_findings)
         result = StepResult(

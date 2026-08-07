@@ -74,9 +74,8 @@ def resolve_window_origin(
     return geometry
 
 
-def desktop_point(
-    frame: Mapping[str, Any], geometry: WindowGeometry
-) -> tuple[float, float]:
+def frame_values(frame: Mapping[str, Any]) -> tuple[float, float, float, float]:
+    """The one reader of an element frame, in the driver's screen coordinates."""
     values = (
         _number(frame.get("x")),
         _number(frame.get("y")),
@@ -88,7 +87,38 @@ def desktop_point(
     x, y, width, height = values
     if width <= 0 or height <= 0:
         raise DriverError("hover target has non-positive geometry")
-    return geometry.x + x + width / 2, geometry.y + y + height / 2
+    return x, y, width, height
+
+
+def element_center(frame: Mapping[str, Any]) -> tuple[float, float]:
+    """The pointer target, in screen coordinates.
+
+    Element frames are already screen coordinates - the root element and a
+    child at the window's top-left corner report the same origin - so adding
+    the window origin here aimed the pointer one window offset away.
+    """
+    x, y, width, height = frame_values(frame)
+    return x + width / 2, y + height / 2
+
+
+def to_screenshot_point(
+    point: tuple[float, float], origin: WindowGeometry
+) -> tuple[float, float]:
+    """A screen point expressed relative to the window screenshot."""
+    return point[0] - origin.x, point[1] - origin.y
+
+
+def to_screenshot_rect(
+    frame: Mapping[str, Any], origin: WindowGeometry
+) -> tuple[float, float, float, float]:
+    """An element rectangle expressed relative to the window screenshot.
+
+    The screenshot is the window crop anchored at (0, 0); the frame is in
+    screen coordinates. This subtraction is the only bridge between the two.
+    """
+    x, y, width, height = frame_values(frame)
+    left, top = to_screenshot_point((x, y), origin)
+    return left, top, width, height
 
 
 def park_point(geometry: WindowGeometry) -> tuple[float, float]:

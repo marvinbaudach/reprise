@@ -22,9 +22,11 @@ from driver import CuaExecutor, DriverError, hover_preflight  # noqa: E402
 from explorer import DeterministicExplorer, MAX_HOVER_TARGETS_PER_SECTION  # noqa: E402
 from hover_geometry import (  # noqa: E402
     WindowGeometry,
-    desktop_point,
+    element_center,
     park_point,
     resolve_window_origin,
+    to_screenshot_point,
+    to_screenshot_rect,
 )
 from hover_compare import compare_hover_summaries  # noqa: E402
 from hover_oracle import analyze_hover  # noqa: E402
@@ -177,8 +179,85 @@ class HoverOracleTests(unittest.TestCase):
                     "visible": visible,
                     "frame": {"x": x, "y": y, "width": width, "height": height},
                 },
-                pointer=(x + width / 2, y + height / 2),
+                origin=WindowGeometry(0, 0, 120, 120),
             )
+
+
+class HoverMeasurementRegionTests(unittest.TestCase):
+    """The compared pixels must be the element, not a region one offset away."""
+
+    ORIGIN = WindowGeometry(200, 50, 400, 300)
+    FRAME = {"x": 260, "y": 110, "width": 160, "height": 120}
+    # Translated: (60, 60, 160, 120) inside the 400x300 window screenshot.
+
+    def _pngs(self, root, changed_box):
+        left, top, width, height = changed_box
+        before = root / "before.png"
+        after = root / "after.png"
+        rows = [[(30, 30, 30)] * 400 for _ in range(300)]
+        write_png(before, 400, 300, rows)
+        changed = [list(row) for row in rows]
+        for y in range(top, top + height):
+            for x in range(left, left + width):
+                changed[y][x] = (220, 220, 220)
+        write_png(after, 400, 300, changed)
+        return before, after
+
+    def _analyze(self, changed_box):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            before, after = self._pngs(root, changed_box)
+            return analyze_hover(
+                before,
+                after,
+                {
+                    "label": "Target",
+                    "role": "button",
+                    "enabled": True,
+                    "visible": True,
+                    "frame": self.FRAME,
+                },
+                origin=self.ORIGIN,
+            )
+
+    def test_a_change_inside_the_translated_rectangle_counts_as_hover(self) -> None:
+        findings = self._analyze((60, 60, 160, 120))
+
+        self.assertEqual([finding.code for finding in findings], [])
+
+    def test_a_change_at_the_untranslated_position_does_not_count(self) -> None:
+        # Exactly the bug: comparing screen coordinates against the window crop
+        # measured a region one window origin away from the element.
+        findings = self._analyze((260, 110, 140, 120))
+
+        self.assertEqual(
+            [finding.code for finding in findings], ["hover-affordance-missing"]
+        )
+
+    def test_a_rectangle_beyond_the_screenshot_is_only_unmeasurable_when_it_is(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            before, after = self._pngs(root, (60, 60, 160, 120))
+            findings = analyze_hover(
+                before,
+                after,
+                {
+                    "label": "Right edge",
+                    "role": "button",
+                    "enabled": True,
+                    "visible": True,
+                    # Screen x 480 sits inside a window that starts at 200 and
+                    # is 400 wide; only the naive reading pushes it off-image.
+                    "frame": {"x": 480, "y": 110, "width": 100, "height": 100},
+                },
+                origin=self.ORIGIN,
+            )
+
+        self.assertNotIn(
+            "hover-unmeasurable", {finding.code for finding in findings}
+        )
 
 
 class GeometryTransport:
@@ -230,14 +309,35 @@ class HoverGeometryTests(unittest.TestCase):
         with self.assertRaises(DriverError):
             resolve_window_origin(transport, pid=44, window_id=77)
 
-    def test_desktop_point_is_the_element_centre_plus_the_window_origin(self) -> None:
-        geometry = WindowGeometry(30, 40, 800, 600)
+    def test_the_pointer_target_is_the_element_centre_in_screen_coordinates(
+        self,
+    ) -> None:
+        # Element frames are already screen coordinates: the root element and a
+        # child at the window's top-left corner report the same x/y. Adding the
+        # window origin again put the pointer one window offset away.
+        point = element_center({"x": 60, "y": 80, "width": 100, "height": 100})
 
-        point = desktop_point(
-            {"x": 20, "y": 30, "width": 120, "height": 40}, geometry
+        self.assertEqual(point, (110.0, 130.0))
+
+    def test_the_comparison_rectangle_drops_the_window_origin(self) -> None:
+        # The screenshot is the window crop, anchored at (0, 0).
+        rect = to_screenshot_rect(
+            {"x": 60, "y": 80, "width": 100, "height": 100},
+            WindowGeometry(30, 40, 800, 600),
         )
 
-        self.assertEqual(point, (110.0, 90.0))
+        self.assertEqual(rect, (30.0, 40.0, 100.0, 100.0))
+
+    def test_a_screen_point_translates_into_the_same_screenshot_space(self) -> None:
+        point = to_screenshot_point((110.0, 130.0), WindowGeometry(30, 40, 800, 600))
+
+        self.assertEqual(point, (80.0, 90.0))
+
+    def test_an_incomplete_frame_is_a_driver_error_not_a_silent_zero(self) -> None:
+        for frame in ({"x": 1, "y": 2, "width": 3}, {"x": 1, "y": 2, "w": 0, "h": 9}):
+            with self.subTest(frame=frame):
+                with self.assertRaises(DriverError):
+                    element_center(frame)
 
     def test_park_point_sits_inside_the_window_but_outside_any_element(self) -> None:
         geometry = WindowGeometry(30, 40, 800, 600)
@@ -331,7 +431,7 @@ class RecordingHoverTransport:
                             "actions": ["click"],
                             "enabled": True,
                             "visible": True,
-                            "frame": {"x": 10, "y": 10, "w": 100, "h": 100},
+                            "frame": {"x": 60, "y": 80, "w": 100, "h": 100},
                         }
                     ]
                 },
@@ -383,6 +483,20 @@ class HoverDriverTests(unittest.TestCase):
         moves = [payload for tool, payload in transport.calls if tool == "move_cursor"]
         self.assertEqual((moves[0]["x"], moves[0]["y"]), (32.0, 42.0))
         self.assertEqual(moves[-1], moves[0])
+
+    def test_execute_hover_aims_at_the_element_centre_without_re_adding_the_origin(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            transport = RecordingHoverTransport()
+            self._executor(transport, pathlib.Path(directory)).execute(
+                HoverAction("state-1", "Target")
+            )
+
+        moves = [payload for tool, payload in transport.calls if tool == "move_cursor"]
+        # Window at (30, 40); element frame (60, 80, 100, 100) in screen
+        # coordinates, so the centre is (110, 130) - not (140, 170).
+        self.assertEqual((moves[1]["x"], moves[1]["y"]), (110.0, 130.0))
 
     def test_execute_hover_records_a_finding_when_nothing_changed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

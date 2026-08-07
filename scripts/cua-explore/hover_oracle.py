@@ -19,21 +19,6 @@ HOVER_PARK_MARGIN_PX = 2
 HOVER_MIN_RECT_PX = 6
 
 
-def _frame(element: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
-    frame = element.get("frame")
-    if not isinstance(frame, dict):
-        return None
-    values = (
-        frame.get("x"),
-        frame.get("y"),
-        frame.get("w", frame.get("width")),
-        frame.get("h", frame.get("height")),
-    )
-    if not all(isinstance(value, (int, float)) for value in values):
-        return None
-    return tuple(float(value) for value in values)  # type: ignore[return-value]
-
-
 def _info(code: str, summary: str, evidence: Mapping[str, Any]) -> Finding:
     return Finding(code, "info", 1.0, summary, evidence)
 
@@ -60,7 +45,7 @@ def analyze_hover(
     after_path: pathlib.Path | str,
     element: Mapping[str, Any],
     *,
-    pointer: tuple[float, float],
+    origin: Any,
 ) -> tuple[Finding, ...]:
     """Return a finding only when hover is absent, weak, skipped, or unmeasurable."""
     label = str(element.get("label") or "")
@@ -83,8 +68,15 @@ def analyze_hover(
                 evidence,
             ),
         )
-    rect = _frame(element)
-    if rect is None:
+    # Both the rectangle and the cursor box live in screenshot coordinates,
+    # translated from the element's screen coordinates at exactly one place.
+    from driver import DriverError
+    from hover_geometry import element_center, to_screenshot_point, to_screenshot_rect
+
+    try:
+        rect = to_screenshot_rect(element.get("frame") or {}, origin)
+        pointer = to_screenshot_point(element_center(element.get("frame") or {}), origin)
+    except DriverError:
         return (
             _info(
                 "hover-unmeasurable",
