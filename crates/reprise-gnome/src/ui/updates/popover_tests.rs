@@ -279,15 +279,22 @@ fn nr_9c_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
         .unwrap();
     reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
     let now = chrono::Utc::now().timestamp();
-    for mbid in ["release-one", "release-two"] {
+    // Distinct titles, because NR-24 collapses entries that share artist,
+    // title, and release date into one row. Two rows differing only by MBID
+    // are duplicates of the same work, and counting them twice is exactly
+    // what this batch is no longer allowed to do.
+    for (mbid, title) in [
+        ("release-one", "First Release"),
+        ("release-two", "Second Release"),
+    ] {
         crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at
-             ) VALUES (?1, 'Artist', 'artist', 'Release', 'Album',
-                       '2026-08-01', ?2)",
-                rusqlite::params![mbid, now],
+             ) VALUES (?1, 'Artist', 'artist', ?2, 'Album',
+                       '2026-08-01', ?3)",
+                rusqlite::params![mbid, title, now],
             )
             .unwrap();
     }
