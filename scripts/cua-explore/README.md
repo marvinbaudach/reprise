@@ -61,6 +61,24 @@ starts in that gap stays blind for its whole duration. The wait is condition
 based, capped at 60 seconds, and reports the driver's `degraded_reason` when the
 cap is reached.
 
+Before trusting any hover verdict, settle whether a pointer move reaches the
+app at all. The probe places the pointer on one named control twice - once
+through cua-driver's `move_cursor`, once through a real X11 warp - and prints
+the changed-pixel ratio inside the element's rectangle plus where X actually
+reports the pointer:
+
+```sh
+scripts/cua-explore/run.sh --hover-probe "Add filter" \
+  scripts/cua-explore/missions/hover-affordance-sweep.json \
+  "$evidence_root/hover-probe-1"
+```
+
+`x11_cursor` is the ground truth. If `move_cursor` leaves it at the park point,
+the driver never moved the real pointer. If both routes land on the target but
+only the X11 row changes pixels, `move_cursor` draws an overlay and the hover
+path needs `xdotool`. The table is printed and retained as `hover-probe.json`
+next to the two screenshots per route.
+
 Every output directory must be new. Repeat a suspicious observation with a
 second seed and fresh generated profile before treating it as confirmed:
 

@@ -152,6 +152,40 @@ class HoverSmokeComplete(RuntimeError):
     """Internal control flow after a successful preflight-only run."""
 
 
+def run_hover_probe(
+    transport: CliTransport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    geometry: Any,
+    label: str,
+    evidence_dir: pathlib.Path,
+) -> None:
+    """Measure whether a pointer move reaches the app, both ways, and report."""
+    from hover_probe import (
+        default_x11_cursor,
+        default_x11_move,
+        probe_hover,
+        render_probe_table,
+        write_probe_evidence,
+    )
+
+    results = probe_hover(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=session,
+        origin=geometry,
+        label=label,
+        evidence_dir=evidence_dir,
+        x11_move=default_x11_move(),
+        x11_cursor=default_x11_cursor(),
+    )
+    write_probe_evidence(results, evidence_dir)
+    print(render_probe_table(results))
+
+
 def _private_environment_required() -> None:
     required = {
         "GDK_BACKEND": "x11",
@@ -590,6 +624,20 @@ def run(args: argparse.Namespace) -> int:
                 origin_override=parse_window_origin(args.window_origin),
             )
             executor.hover_geometry = hover_geometry
+        if args.hover_probe:
+            if hover_geometry is None:
+                raise RunError("--hover-probe requires a mission with hover capability")
+            run_hover_probe(
+                transport,
+                pid=pid,
+                window_id=window_id,
+                session=args.session,
+                geometry=hover_geometry,
+                label=args.hover_probe,
+                evidence_dir=args.evidence_dir,
+            )
+            finished = True
+            raise HoverSmokeComplete
         if args.hover_smoke:
             finished = True
             raise HoverSmokeComplete
@@ -726,7 +774,7 @@ def run(args: argparse.Namespace) -> int:
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()
-    if args.hover_smoke:
+    if args.hover_smoke or args.hover_probe:
         return 0
     ensure_run_complete(finished, summary)
     return 0
@@ -746,6 +794,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--agent-timeout", type=float, default=30.0)
     parser.add_argument("--gtk-animations", choices=("on", "off"), default="on")
     parser.add_argument("--hover-smoke", action="store_true")
+    parser.add_argument("--hover-probe")
     parser.add_argument("--window-origin")
     return parser.parse_args(argv)
 
