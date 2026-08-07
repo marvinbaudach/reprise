@@ -19,8 +19,13 @@ Kette — obwohl ein Clear kein Tippen ist und auf nichts warten muss.
 
 Dazu kommt eine zweite, unabhängige Ursache. `filter_change_viewport`
 (`track_list_reload.rs:70`) stellt bei **jeder** Filteränderung auf
-`CenterPlayingTrack`. Läuft ein Titel und ist er im Ergebnis — also praktisch
-immer, wenn man beim Hören sucht —, kostet jedes Feuern des Debounce:
+`CenterPlayingTrack`. Das ist kein Versehen, sondern die aktive Regel **FIL-9**
+(`ux-rules.md:1440`): ist der geladene Titel Teil der neuen Ergebnismenge, wird
+seine Zeile zentriert statt an der Tabellenoberkante verankert. Diese Spec löst
+FIL-9 ab — die Regel hat einen realen Preis, den sie damals nicht beziffert hat.
+
+Läuft ein Titel und ist er im Ergebnis — also praktisch immer, wenn man beim
+Hören sucht —, kostet jedes Feuern des Debounce:
 
 - eine sortierte Full-Table-ID-Query (`current_view_ids()`), auch wenn es nichts
   wiederherzustellen gibt, weil `reveal_playing_track` den `is_noop`-Early-Return
@@ -189,8 +194,21 @@ Messstand etwas anderes als die Änderung.
 ## Teil 4 — SEARCH-9
 
 Das Verhalten wird als neue Regel in `docs/ux-rules.md` festgeschrieben —
-`SEARCH-9` ist frei (`SEARCH-1` bis `SEARCH-8` sind vergeben). Sie deckt vier
-Aussagen ab:
+`SEARCH-9` ist frei (`SEARCH-1` bis `SEARCH-8` sind vergeben). **`SEARCH-9`
+ersetzt `FIL-9`**, die bisher das Zentrieren bei jeder Filteränderung
+vorschrieb; `FIL-9` erhält den projektüblichen Vermerk
+`[replaced by SEARCH-9]` und behält seinen Text, damit die Entscheidung
+nachvollziehbar bleibt. Der bestehende Test
+`fil_9_any_search_change_requests_playing_track_centering`
+(`track_list_reload.rs`) weicht dem neuen `search_9_…`-Test.
+
+Zu FIL-9 gehört ein Nebensatz, der mit abgelöst wird: „ohne geladenen Titel im
+Ziel bleibt der bestehende ID-plus-Offset-Anker erhalten". Auch dieser Fall geht
+künftig auf `Top`. Eine frisch gefilterte Trefferliste an der Position der
+ungefilterten Liste zu verankern hat keinen Adressaten — die Zeile, auf die der
+Anker zeigte, ist im Ergebnis meist gar nicht mehr enthalten.
+
+Sie deckt vier Aussagen ab:
 
 1. Zwischen Eingabe und Ergebnis liegt **genau eine** Wartezeit, und zwar die der
    Anwendung; die Drosselung des Eingabefelds ist abgeschaltet.
