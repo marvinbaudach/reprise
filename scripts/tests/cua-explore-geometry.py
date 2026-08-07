@@ -28,8 +28,10 @@ from oracles import OracleEngine, normalize_snapshot  # noqa: E402
 ORIGIN = WindowGeometry(200, 50, 1200, 800)
 
 
-def node(role, label, x, y, w, h):
-    return GeometryNode(role=role, label=label, x=x, y=y, width=w, height=h)
+def node(role, label, x, y, w, h, actions=()):
+    return GeometryNode(
+        role=role, label=label, x=x, y=y, width=w, height=h, actions=tuple(actions)
+    )
 
 
 def driver(index, role, label, w, h, depth=1):
@@ -471,6 +473,43 @@ class RefusalDetailTests(unittest.TestCase):
 
         self.assertEqual(result.unmatched, 1)
         self.assertEqual(result.resolved, 3)
+
+
+class ActionCarryingTests(unittest.TestCase):
+    """Measured: only one of three same-labelled nodes carries the action."""
+
+    # Straight from a live tree: the shells report no action at all.
+    TRIO_WALK = [
+        FRAME_NODE,
+        node("table cell", "Add filter", 12, 54, 191, 50),
+        node("button", "Add filter", 12, 54, 185, 44),
+        node("toggle button", "Add filter", 12, 54, 185, 44, actions=("click",)),
+    ]
+    TRIO_DRIVER = [
+        driver(0, "window", "Reprise", 1200, 800, depth=0),
+        driver(2, "grid cell", "Add filter", 191, 50),
+        driver(3, "button", "Add filter", 185, 44),
+        driver(4, "toggle button", "Add filter", 185, 44),
+    ]
+
+    def test_the_actions_reach_the_driver_element_that_owns_them(self) -> None:
+        result = resolve_driver_geometry(self.TRIO_DRIVER, self.TRIO_WALK, ORIGIN)
+
+        self.assertEqual(result.actions[4], ("click",))
+        self.assertEqual(result.actions[3], ())
+        self.assertEqual(result.actions[2], ())
+
+    def test_a_node_without_an_action_interface_reports_none(self) -> None:
+        result = resolve_driver_geometry(ELEMENTS, NODES, ORIGIN)
+
+        self.assertEqual(result.actions[3], ())
+
+    def test_the_quota_counts_how_many_elements_carry_an_action(self) -> None:
+        record = resolve_driver_geometry(
+            self.TRIO_DRIVER, self.TRIO_WALK, ORIGIN
+        ).as_record()
+
+        self.assertEqual(record["with_action"], 1)
 
 
 class GeometryTrustTests(unittest.TestCase):

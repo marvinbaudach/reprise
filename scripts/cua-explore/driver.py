@@ -388,6 +388,11 @@ class CuaExecutor:
             observation_ms=observation_ms,
             first_change_ms=first_change_ms,
             sample_gaps_ms=tuple(sample_gaps),
+            target_has_action=(
+                self.target_carries_action(before_raw, evidence.target_label)
+                if evidence.target_label
+                else None
+            ),
             settle_delay_ms=round(sum(self.settle_delays) * 1000),
             snapshot_ms=tuple(self._snapshot_durations_ms),
             snapshot_ms_before_first_change=snapshot_ms_before_first_change,
@@ -556,6 +561,9 @@ class CuaExecutor:
                 {
                     **element,
                     "geometry_trusted": True,
+                    "actions": list(resolution.actions.get(
+                        int(element.get("element_index", index)), ()
+                    )),
                     "frame": {
                         "x": rect[0],
                         "y": rect[1],
@@ -617,13 +625,39 @@ class CuaExecutor:
         matches = [item for item in elements if isinstance(item, dict) and item.get("label") == label]
         if not matches:
             raise DriverError(f"fresh snapshot no longer exposes target: {label}")
+        # The same label appears several times - a cell, a button and a toggle
+        # button can all read "Add filter" - and only one of them carries the
+        # AT-SPI action. Picking by role landed on a shell that never had one.
+        carrying = [item for item in matches if item.get("actions")]
+        if len(carrying) == 1:
+            return carrying[0]
+        if len(carrying) > 1:
+            raise DriverError(
+                f"more than one node labelled {label!r} carries an action; "
+                "refusing to guess which one the user would mean"
+            )
         actionable = [
             item
             for item in matches
-            if item.get("actions")
-            or canonical_role(str(item.get("role", ""))) in ACTIONABLE_ROLES
+            if canonical_role(str(item.get("role", ""))) in ACTIONABLE_ROLES
         ]
         return actionable[0] if actionable else matches[0]
+
+    def target_carries_action(
+        self, raw: Mapping[str, Any], label: str | None
+    ) -> bool | None:
+        """Does any node with this label offer an action? None when unknown."""
+        structured = raw.get("structuredContent")
+        container = structured if isinstance(structured, dict) else raw
+        elements = container.get("elements", [])
+        matches = [
+            item
+            for item in elements
+            if isinstance(item, dict) and item.get("label") == label
+        ]
+        if not any("actions" in item for item in matches):
+            return None
+        return any(item.get("actions") for item in matches)
 
     def _address(self, target: Mapping[str, Any], dispatch: str) -> Mapping[str, Any]:
         if dispatch == "ax":

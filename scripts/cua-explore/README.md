@@ -144,6 +144,18 @@ exclude it - a blanket 48 px box blinds every icon button smaller than itself,
 which is exactly what the hover rule is about. The measurement is retained as
 `cursor-visibility.json` and in `summary.json` under `cursor_visibility`.
 
+The same label appears several times in the tree - a cell, a button and a
+toggle button can all read "Add filter" - and only one of them carries the
+AT-SPI action. cua-driver reports no actions at all, so picking a target by
+role landed on a shell that never had one and the app was blamed for it. The
+accessibility walk reads the Action interface per node and the matcher hangs it
+on the driver element that owns it, over the same bridge as the geometry.
+Exactly one candidate with an action is the target; several refuse the choice;
+none is its own finding, `no-accessible-action`, because a control that offers
+assistive technology nothing to invoke is a real fault and a different one from
+an action that fires and does nothing. `suspected-no-handler` now means only
+the latter.
+
 `suspected-no-handler` cannot tell two different faults apart, because the
 explorer activates over AT-SPI: either the control does nothing at all, or only
 its accessibility action is unwired while a real click works. The click probe

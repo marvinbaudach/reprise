@@ -171,6 +171,9 @@ class ActionEvidence:
     connectivity_state: str | None = None
     sample_gaps_ms: tuple[int, ...] = ()
     # Harness cost, so the timing oracles can subtract themselves out.
+    # True when the resolved target really offers an AT-SPI action, False when
+    # no node with that label offers one, None when no walk was available.
+    target_has_action: bool | None = None
     settle_delay_ms: int = 0
     snapshot_ms: tuple[int, ...] = ()
     snapshot_ms_before_first_change: int = 0
@@ -405,6 +408,20 @@ class OracleEngine:
                     "error",
                     0.9,
                     f"'{action.target_label}' worked through accessibility but not at its visible pointer target.",
+                    {"target": action.target_label},
+                    blocks_gate=True,
+                )
+            ]
+        if action.dispatch == "ax" and action.target_has_action is False:
+            # Not a dead handler: no node with this label offers assistive
+            # technology any action to invoke in the first place. Reporting it
+            # as a no-handler blamed the app for a target the harness picked.
+            return [
+                Finding(
+                    "no-accessible-action",
+                    "error",
+                    0.9,
+                    f"'{action.target_label}' offers assistive technology no action to invoke.",
                     {"target": action.target_label},
                     blocks_gate=True,
                 )

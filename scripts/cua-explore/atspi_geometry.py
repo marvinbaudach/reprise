@@ -122,6 +122,10 @@ class GeometryNode:
     y: float
     width: float
     height: float
+    # Action names from the AT-SPI Action interface. The driver does not report
+    # these at all, and the same label often appears several times with only
+    # one of them carrying the action.
+    actions: tuple[str, ...] = ()
 
 
 # cua-driver and Atspi.get_role_name() do not always spell a role the same way.
@@ -151,6 +155,7 @@ def normalize_to_frame(nodes: Sequence[GeometryNode]) -> list[GeometryNode]:
             y=item.y - frame.y,
             width=item.width,
             height=item.height,
+            actions=item.actions,
         )
         for item in nodes
     ]
@@ -175,6 +180,7 @@ class GeometryResolution:
     """Per-element geometry, the quota, and why the rest stayed unresolved."""
 
     frames: dict[int, tuple[float, float, float, float]]
+    actions: dict[int, tuple[str, ...]]
     driver_elements: int
     walk_nodes: int
     resolved_unique: int
@@ -203,6 +209,7 @@ class GeometryResolution:
             "resolved": self.resolved,
             "resolved_unique": self.resolved_unique,
             "resolved_ordered": self.resolved_ordered,
+            "with_action": sum(1 for names in self.actions.values() if names),
             "resolved_ratio": (
                 round(self.resolved / self.driver_elements, 4)
                 if self.driver_elements
@@ -303,6 +310,7 @@ def resolve_driver_geometry(
         )
 
     frames: dict[int, tuple[float, float, float, float]] = {}
+    actions: dict[int, tuple[str, ...]] = {}
     unique = ordered = unmatched = ambiguous = out_of_window = 0
     subset_violations = walk_surplus = 0
     for key, members in groups.items():
@@ -350,13 +358,16 @@ def resolve_driver_geometry(
                     len(members),
                 )
                 continue
-            frames[int(element.get("element_index", position))] = rect
+            element_index = int(element.get("element_index", position))
+            frames[element_index] = rect
+            actions[element_index] = tuple(node.actions)
             if len(members) == 1:
                 unique += 1
             else:
                 ordered += 1
     return GeometryResolution(
         frames=frames,
+        actions=actions,
         driver_elements=len(elements),
         walk_nodes=len(nodes),
         resolved_unique=unique,
@@ -380,6 +391,23 @@ def _inside(rect: tuple[float, float, float, float], origin: Any) -> bool:
         or rect[0] > origin.x + origin.width + slack
         or rect[1] > origin.y + origin.height + slack
     )
+
+
+def _action_names(node: Any) -> tuple[str, ...]:
+    """What the AT-SPI Action interface offers on this node, if anything."""
+    try:
+        action = node.get_action_iface()
+    except Exception:  # noqa: BLE001 - a node without the interface is normal
+        return ()
+    if action is None:
+        return ()
+    try:
+        count = action.get_n_actions()
+        return tuple(
+            str(action.get_action_name(index) or "") for index in range(count)
+        )
+    except Exception:  # noqa: BLE001
+        return ()
 
 
 def walk_window_nodes(
@@ -452,6 +480,7 @@ def walk_window_nodes(
         try:
             role = node.get_role_name()
             label = node.get_name() or ""
+            names = _action_names(node)
             component = node.get_component_iface()
             extents = (
                 component.get_extents(Atspi.CoordType.WINDOW)
@@ -470,6 +499,7 @@ def walk_window_nodes(
                 y=float(extents.y),
                 width=float(extents.width),
                 height=float(extents.height),
+                actions=names,
             )
         )
         try:

@@ -336,5 +336,108 @@ class RecordedScrollDirectionTests(unittest.TestCase):
         self.assertNotIn("wrong-scroll-direction", self._codes(poison=True))
 
 
+class RecordedActionTargetTests(unittest.TestCase):
+    """Activate the node that carries the action, not the shell around it."""
+
+    # Measured on the live tree: of the three "Add filter" nodes only the
+    # toggle button offers an action.
+    ACTIONS = {4: ("click",)}
+
+    def _executor(self, actions):
+        transport = RecordedTransport()
+        for item in transport.raw["elements"]:
+            # A walk always writes the key, empty when the node offers nothing.
+            item["actions"] = list(actions.get(item.get("element_index"), ()))
+        executor = CuaExecutor(
+            transport, pid=1, window_id=2, session="t", settle_delays=()
+        )
+        return transport, executor
+
+    def test_the_recording_holds_three_nodes_with_that_label(self) -> None:
+        labels = [
+            item
+            for item in recorded_raw()["elements"]
+            if item.get("label") == "Add filter"
+        ]
+
+        self.assertEqual(
+            [item["role"] for item in labels],
+            ["grid cell", "button", "toggle button"],
+        )
+
+    def test_the_only_node_with_an_action_is_chosen(self) -> None:
+        transport, executor = self._executor(self.ACTIONS)
+        raw = transport.call("get_window_state", {})
+
+        target = executor._target(raw, "Add filter")
+
+        self.assertEqual(target["element_index"], 4)
+
+    def test_without_any_action_the_choice_is_flagged_rather_than_guessed(
+        self,
+    ) -> None:
+        transport, executor = self._executor({})
+        raw = transport.call("get_window_state", {})
+
+        target = executor._target(raw, "Add filter")
+
+        self.assertFalse(executor.target_carries_action(raw, "Add filter"))
+        self.assertIsNotNone(target)
+
+    def test_a_single_action_bearing_node_reports_as_carrying_one(self) -> None:
+        transport, executor = self._executor(self.ACTIONS)
+        raw = transport.call("get_window_state", {})
+
+        self.assertTrue(executor.target_carries_action(raw, "Add filter"))
+
+    def test_two_action_bearing_nodes_are_refused_rather_than_guessed(self) -> None:
+        transport, executor = self._executor({3: ("click",), 4: ("click",)})
+        raw = transport.call("get_window_state", {})
+
+        with self.assertRaisesRegex(Exception, "more than one"):
+            executor._target(raw, "Add filter")
+
+
+class NoAccessibleActionFindingTests(unittest.TestCase):
+    """A control with no action at all is its own finding, not a no-handler."""
+
+    def setUp(self) -> None:
+        self.engine = OracleEngine()
+        self.state = normalize_snapshot(
+            recorded_raw(), state_id="s", captured_ms=0
+        )
+
+    def _codes(self, **evidence):
+        defaults = {
+            "kind": "activate",
+            "target_label": "Add filter",
+            "dispatch": "ax",
+            "expect_effect": "required",
+            "effect": "suspected_noop",
+        }
+        defaults.update(evidence)
+        findings = self.engine.analyze(
+            ActionEvidence(**defaults), self.state, self.state, settled=(self.state,)
+        )
+        return [item.code for item in findings]
+
+    def test_a_target_without_an_action_is_named_as_such(self) -> None:
+        codes = self._codes(target_has_action=False)
+
+        self.assertIn("no-accessible-action", codes)
+        self.assertNotIn("suspected-no-handler", codes)
+
+    def test_an_action_that_fired_and_did_nothing_stays_a_no_handler(self) -> None:
+        codes = self._codes(target_has_action=True)
+
+        self.assertIn("suspected-no-handler", codes)
+        self.assertNotIn("no-accessible-action", codes)
+
+    def test_without_a_walk_the_old_verdict_is_kept(self) -> None:
+        codes = self._codes(target_has_action=None)
+
+        self.assertIn("suspected-no-handler", codes)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
