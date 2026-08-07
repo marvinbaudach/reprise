@@ -41,6 +41,39 @@ trait CoverTarget: Clone + 'static {
     fn show_texture(&self, texture: &gdk::Texture);
 }
 
+/// The recycling guard a load runs under: the token this request was issued
+/// with, plus the counter saying which token is still the current one. A row
+/// that scrolled away — or a bar whose track moved on — bumps the counter, and
+/// every older request in flight goes quiet instead of writing a stale cover.
+///
+/// The two always travel together, so they travel as one.
+#[derive(Clone, Copy)]
+struct RequestGuard<'a> {
+    token: u64,
+    current: &'a Rc<Cell<u64>>,
+}
+
+/// What a target shows between the request and its answer.
+///
+/// The two callers want opposite things, and neither is a safe default for
+/// the other.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WhileResolving {
+    /// A recycled list row starts out carrying the *previous row's* artwork —
+    /// a different track's cover, not a stale version of this one. It must go
+    /// at once, before anything is known.
+    ShowPlaceholder,
+    /// A now-playing surface shows one track at a time, and the next track is
+    /// usually from the same album: the cache is keyed by track path, so the
+    /// second track of an album misses even though it resolves to the very
+    /// same file. Blanking up front turns that into a placeholder flash
+    /// between two identical covers. The placeholder still goes up the moment
+    /// the *local* answer comes back empty — before the network is asked,
+    /// which may take seconds or never answer — so a track without artwork
+    /// never keeps its predecessor's cover on screen.
+    KeepPreviousCover,
+}
+
 impl CoverTarget for gtk4::Image {
     fn show_placeholder(&self) {
         CoverLoader::set_placeholder(self);
@@ -124,7 +157,14 @@ impl CoverLoader {
         token: u64,
         current: &Rc<Cell<u64>>,
     ) {
-        self.load_target(image, track_path, size, token, current, |_| {});
+        self.load_target(
+            image,
+            track_path,
+            size,
+            RequestGuard { token, current },
+            WhileResolving::ShowPlaceholder,
+            |_| {},
+        );
     }
 
     /// Loads into a picture and calls `on_loaded` only while `token` is still
@@ -139,9 +179,14 @@ impl CoverLoader {
         current: &Rc<Cell<u64>>,
         on_loaded: impl Fn(bool) + 'static,
     ) {
-        self.load_target(picture, track_path, size, token, current, move |path| {
-            on_loaded(path.is_some());
-        });
+        self.load_target(
+            picture,
+            track_path,
+            size,
+            RequestGuard { token, current },
+            WhileResolving::ShowPlaceholder,
+            move |path| on_loaded(path.is_some()),
+        );
     }
 
     pub fn load_into_track_cover(
@@ -152,13 +197,24 @@ impl CoverLoader {
         token: u64,
         current: &Rc<Cell<u64>>,
     ) {
-        self.load_target(cover, track_path, size, token, current, |_| {});
+        self.load_target(
+            cover,
+            track_path,
+            size,
+            RequestGuard { token, current },
+            WhileResolving::ShowPlaceholder,
+            |_| {},
+        );
     }
 
-    /// Loads a cover and reports both successful and empty resolutions while
-    /// `token` is current. Replacement animations use this to keep the
-    /// outgoing cover visible until the new paintable or placeholder is ready.
-    pub fn load_into_with_resolution(
+    /// Loads the cover of the track a now-playing surface currently shows —
+    /// the player bar, the mini-player, the Now Playing panel — and reports
+    /// both successful and empty resolutions while `token` is current.
+    ///
+    /// These surfaces keep the cover they have until the next one is known;
+    /// see `WhileResolving::KeepPreviousCover` for why they, and only they,
+    /// get that treatment.
+    pub fn load_into_now_playing(
         self: &Rc<Self>,
         image: &gtk4::Image,
         track_path: &str,
@@ -167,7 +223,14 @@ impl CoverLoader {
         current: &Rc<Cell<u64>>,
         on_resolved: impl Fn(Option<PathBuf>) + 'static,
     ) {
-        self.load_target(image, track_path, size, token, current, on_resolved);
+        self.load_target(
+            image,
+            track_path,
+            size,
+            RequestGuard { token, current },
+            WhileResolving::KeepPreviousCover,
+            on_resolved,
+        );
     }
 
     fn load_target<T: CoverTarget>(
@@ -175,10 +238,11 @@ impl CoverLoader {
         target: &T,
         track_path: &str,
         size: ThumbnailSize,
-        token: u64,
-        current: &Rc<Cell<u64>>,
+        guard: RequestGuard<'_>,
+        while_resolving: WhileResolving,
         on_resolved: impl Fn(Option<PathBuf>) + 'static,
     ) {
+        let RequestGuard { token, current } = guard;
         if current.get() != token {
             return;
         }
@@ -188,7 +252,9 @@ impl CoverLoader {
             on_resolved(Some(cached.path));
             return;
         }
-        target.show_placeholder();
+        if while_resolving == WhileResolving::ShowPlaceholder {
+            target.show_placeholder();
+        }
 
         let this = self.clone();
         let target = target.clone();
@@ -216,6 +282,14 @@ impl CoverLoader {
                 return;
             }
             if cache_path.is_none() {
+                // The local answer is in, and it is empty. Whatever a
+                // now-playing surface still shows belongs to the previous
+                // track and is wrong from here on — so the placeholder goes up
+                // now, ahead of the network question below, which may take
+                // seconds or never answer. A list row is already showing it.
+                if while_resolving == WhileResolving::KeepPreviousCover {
+                    target.show_placeholder();
+                }
                 // Asking the download worker means it reads the file's tags to
                 // work out which album to ask about. If it already came back
                 // empty for this track, and nothing has changed since, that
@@ -301,6 +375,12 @@ impl CoverLoader {
                 }
                 Err(error) => {
                     tracing::debug!(%error, path = %path_owned, "cover texture load failed");
+                    // A resolved path that will not decode leaves the same
+                    // hole as no path at all, and this is the one route to it
+                    // that never passed the empty-resolution branch above.
+                    if while_resolving == WhileResolving::KeepPreviousCover {
+                        target.show_placeholder();
+                    }
                     on_resolved(None);
                 }
             }
@@ -311,6 +391,86 @@ impl CoverLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn controlled_loader() -> (Rc<CoverLoader>, async_channel::Receiver<DownloadRequest>) {
+        let (worker, requests) = async_channel::unbounded();
+        let loader = CoverLoader::new(CoverDownloadRuntime {
+            enabled: Rc::new(Cell::new(true)),
+            worker,
+        });
+        (loader, requests)
+    }
+
+    fn pump_until(condition: impl Fn() -> bool) {
+        let context = glib::MainContext::default();
+        for _ in 0..10_000 {
+            if condition() {
+                return;
+            }
+            while context.pending() {
+                context.iteration(false);
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    /// A now-playing surface shows one track at a time, so its cover may only
+    /// be taken down once something is known about the next one. Blanking it
+    /// up front makes every track change inside one album flash the
+    /// placeholder on the way to the same artwork — the in-memory cache is
+    /// keyed by track path, so the second track of an album is a miss even
+    /// though it resolves to the identical file.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn a_now_playing_cover_survives_until_the_next_track_is_resolved() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let (loader, _requests) = controlled_loader();
+        let image = gtk4::Image::new();
+        let current = Rc::new(Cell::new(1));
+
+        loader.load_into_now_playing(
+            &image,
+            "/missing/now-playing-cover-test.flac",
+            ThumbnailSize::Bar,
+            1,
+            &current,
+            |_| {},
+        );
+        assert!(
+            image.icon_name().is_none(),
+            "the cover was blanked before the new track had resolved to anything"
+        );
+
+        // The local answer is what decides. Once it comes back empty, whatever
+        // the surface still shows is wrong and the placeholder goes up — before
+        // the network is asked, which may take seconds or never answer.
+        pump_until(|| image.icon_name().is_some());
+        assert_eq!(image.icon_name().as_deref(), Some(PLACEHOLDER_ICON));
+    }
+
+    /// The opposite discipline, and the reason the policy above cannot simply
+    /// be the loader's default: a recycled list row starts out carrying the
+    /// previous row's cover, which is a different track's artwork, not a
+    /// slightly stale version of the same one.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn a_recycled_list_row_drops_the_previous_cover_immediately() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let (loader, _requests) = controlled_loader();
+        let image = gtk4::Image::new();
+        let current = Rc::new(Cell::new(1));
+
+        loader.load_into(
+            &image,
+            "/missing/list-row-cover-test.flac",
+            ThumbnailSize::List,
+            1,
+            &current,
+        );
+        assert_eq!(image.icon_name().as_deref(), Some(PLACEHOLDER_ICON));
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
