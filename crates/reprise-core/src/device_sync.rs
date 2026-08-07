@@ -9,6 +9,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
+pub mod analysis_sidecar;
 pub mod auto_start;
 pub mod browser;
 pub mod cap;
@@ -31,6 +32,7 @@ pub mod snapshot;
 pub mod storage;
 pub mod sync_log;
 pub mod targets;
+pub mod track_metadata_list;
 pub mod transfer;
 
 pub use auto_start::{should_auto_start, AutoStartFacts};
