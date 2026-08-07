@@ -1,9 +1,9 @@
-//! Schema v61: invalidates the per-artist Releases fetch cache after singles
+//! Schema v62: invalidates the per-artist Releases fetch cache after singles
 //! become durable catalog data and removes their retired preference.
 
 use rusqlite::Connection;
 
-const SCHEMA_V61: &str = r#"
+const SCHEMA_V62: &str = r#"
 UPDATE artist_news_fetch SET last_attempt_at = 0;
 DELETE FROM settings WHERE key = 'module.new_releases.include_singles';
 "#;
@@ -14,14 +14,14 @@ DELETE FROM settings WHERE key = 'module.new_releases.include_singles';
 /// be discarded. Preserving each `artist_mbid` avoids repeating artist-search
 /// requests, while the existing thirty-artist rotation keeps the refetch load
 /// bounded.
-pub(crate) fn migrate_v61(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v62(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 61 {
+    if version >= 62 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute_batch(SCHEMA_V61)?;
-    transaction.pragma_update(None, "user_version", 61)?;
+    transaction.execute_batch(SCHEMA_V62)?;
+    transaction.pragma_update(None, "user_version", 62)?;
     transaction.commit()
 }
 
@@ -30,7 +30,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn v61_resets_release_fetches_preserves_identity_and_drops_the_dead_setting() {
+    fn v62_resets_release_fetches_preserves_identity_and_drops_the_dead_setting() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate_connection(&conn).unwrap();
         conn.execute(
@@ -46,10 +46,10 @@ mod tests {
             [],
         )
         .unwrap();
-        conn.pragma_update(None, "user_version", 60).unwrap();
+        conn.pragma_update(None, "user_version", 61).unwrap();
 
-        migrate_v61(&conn).unwrap();
-        migrate_v61(&conn).unwrap();
+        migrate_v62(&conn).unwrap();
+        migrate_v62(&conn).unwrap();
 
         let (artist_mbid, last_attempt_at): (Option<String>, i64) = conn
             .query_row(
@@ -74,6 +74,6 @@ mod tests {
         assert_eq!(artist_mbid.as_deref(), Some("artist-mbid"));
         assert_eq!(last_attempt_at, 0);
         assert_eq!(setting_count, 0);
-        assert_eq!(version, 61);
+        assert_eq!(version, 62);
     }
 }

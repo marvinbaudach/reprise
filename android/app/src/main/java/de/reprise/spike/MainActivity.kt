@@ -102,6 +102,16 @@ class MainActivity : ComponentActivity() {
         read = { trackId -> session.trackById(trackId) },
         onMainThread = { work -> runOnUiThread { work() } },
     )
+    private val analysisDelegate = lazy {
+        TrackAnalysisLoader(
+            importAnalysis = { trackId -> library.importTrackAnalysis(trackId) },
+            readBars = { trackId, count ->
+                library.trackRenderBars(trackId, count.toUInt())?.map { it.toSpectralBar() }
+            },
+            onMainThread = { work -> runOnUiThread { work() } },
+        )
+    }
+    private val analysis by analysisDelegate
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -203,6 +213,7 @@ class MainActivity : ComponentActivity() {
                         CompositionLocalProvider(
                             LocalTrackArtwork provides surface.artwork(),
                             LocalPlaybackControls provides surface.playbackControls,
+                            LocalTrackAnalysis provides surface.trackAnalysis,
                             LocalVisualizerControl provides VisualizerControl(visualizer) { mode ->
                                 runCatching { surface.selectVisualizer(mode) }
                                     .onSuccess { selected -> visualizer = selected }
@@ -258,6 +269,7 @@ class MainActivity : ComponentActivity() {
         initialState = restoreLibrary(),
         artwork = { artwork },
         playbackControls = playbackControls,
+        trackAnalysis = analysis,
         chooseFolder = ::chooseTree,
         rescan = ::rescan,
         searchTitles = { query, range -> session.searchTitles(query, range) },
@@ -390,6 +402,9 @@ class MainActivity : ComponentActivity() {
         // object only once the last one has returned. `TrackArtwork.shutdown`
         // carries the reasoning.
         tracks.shutdown()
+        if (analysisDelegate.isInitialized() && !analysisDelegate.value.shutdown()) {
+            Log.w(TAG, "Track analysis was still being prepared when the screen closed")
+        }
         if (artworkDelegate.isInitialized()) {
             artworkDelegate.value.shutdown()
         }

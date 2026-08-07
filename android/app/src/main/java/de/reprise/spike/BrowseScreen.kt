@@ -89,6 +89,7 @@ internal fun BrowseScreen(
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
 ) {
+    val trackAnalysis = LocalTrackAnalysis.current
     val selectedTab = surfaceState.selectedTab
     val searchVisible = surfaceState.searchVisible
     val searchText = surfaceState.searchText
@@ -293,6 +294,7 @@ internal fun BrowseScreen(
     val playingTrackId = playback.currentTrackId
     LaunchedEffect(playingTrackId, playback.currentTrackUri) {
         if (playingTrackId != null) {
+            trackAnalysis.prepare(playingTrackId)
             loadTrack(playingTrackId) { track ->
                 answeredTrack = AnsweredTrack(playingTrackId, track)
             }

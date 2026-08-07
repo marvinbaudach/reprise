@@ -147,6 +147,13 @@ fi
 # application composition root. Keeping every other workspace crate out of
 # its normal dependency graph prevents Android from silently inheriting GTK,
 # Linux platform services, or another frontend's presentation layer.
+#
+# `reprise-view` is the exception, and deliberately so: it is not another
+# frontend's presentation layer but the toolkit-neutral one every frontend
+# shares, and the rule immediately above holds it to `reprise-core` alone —
+# so allowing it here adds no third-party dependency and no byte of GTK.
+# Forbidding it would mean Android re-implementing the shaping and the colour
+# axis in Kotlin, which is exactly the drift the crate exists to prevent.
 android_ffi_tree=$(run_dependency_probe "reprise-android-ffi all features" \
   -p reprise-android-ffi --all-features -e normal --prefix none --target all) || exit 1
 if printf '%s\n' "$android_ffi_tree" | rg --quiet "$banned_dependency_families"; then
@@ -156,10 +163,10 @@ if printf '%s\n' "$android_ffi_tree" | rg --quiet "$banned_dependency_families";
 fi
 stray_android_ffi_edge=$(printf '%s\n' "$android_ffi_tree" \
   | rg '^reprise-[a-z-]+ ' \
-  | rg -v '^(reprise-android-ffi|reprise-core) ' \
+  | rg -v '^(reprise-android-ffi|reprise-core|reprise-view) ' \
   | sort -u || true)
 if [[ -n "$stray_android_ffi_edge" ]]; then
-  echo "reprise-android-ffi may depend on reprise-core only; found:" >&2
+  echo "reprise-android-ffi may depend on reprise-core and reprise-view only; found:" >&2
   echo "$stray_android_ffi_edge" >&2
   exit 1
 fi

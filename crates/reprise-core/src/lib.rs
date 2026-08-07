@@ -50,6 +50,7 @@ mod db_library_doctor_remote;
 mod db_library_exclusions;
 mod db_listen_history;
 mod db_mix_planner;
+mod db_mobile_sync;
 mod db_new_releases_accent;
 mod db_new_releases_history;
 mod db_online_sources;

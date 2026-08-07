@@ -56,7 +56,11 @@ mod tests {
     }
 
     #[test]
-    fn fresh_database_reaches_supported_schema_without_sound_features() {
+    /// The claim here is that the drop happened, not which number the schema
+    /// stopped at — so it reads the shared constant rather than a literal.
+    /// Pinned to `60` this went red the moment another branch added a
+    /// migration, which says nothing about sound features.
+    fn fresh_database_reaches_the_current_schema_without_sound_features() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate_connection(&conn).unwrap();
 

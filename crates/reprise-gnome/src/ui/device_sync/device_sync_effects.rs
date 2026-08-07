@@ -118,6 +118,15 @@ pub(super) async fn perform(
                         work.playlists_storage,
                     )
                     .await;
+                    copy_analysis_sidecar(
+                        runtime,
+                        work,
+                        entry.track.id,
+                        &entry.device_path,
+                        &work.playlists_path,
+                        work.playlists_storage,
+                    )
+                    .await;
                     work.log.copied(bytes);
                     Event::TrackCopied(Ok(bytes))
                 }
@@ -258,6 +267,14 @@ pub(super) async fn perform(
                     work.playlists_storage,
                 )
                 .await;
+                remove_analysis_sidecar(
+                    runtime,
+                    work,
+                    &path,
+                    &work.playlists_path,
+                    work.playlists_storage,
+                )
+                .await;
                 work.log.deleted();
                 // Deletions are recorded individually: the mirror owns
                 // Music/Reprise, so "what did it remove" is exactly the
@@ -289,7 +306,7 @@ pub(super) async fn perform(
             }))
         }
         Effect::RemoveReplacedFile { device_path } => {
-            let sidecar_is_still_current = replacement_keeps_sidecar(work, &device_path);
+            let lyrics_are_still_current = replacement_keeps_lyrics_sidecar(work, &device_path);
             let source_path = replaced_source_path(work, &device_path);
             let result = runtime
                 .backend
@@ -300,11 +317,24 @@ pub(super) async fn perform(
                     device_path.clone(),
                 )
                 .await;
-            if result.is_ok() && !sidecar_is_still_current {
-                remove_lyrics_sidecar(
+            if result.is_ok() {
+                if !lyrics_are_still_current {
+                    remove_lyrics_sidecar(
+                        runtime,
+                        work,
+                        source_path.as_deref(),
+                        &device_path,
+                        &work.playlists_path,
+                        work.playlists_storage,
+                    )
+                    .await;
+                }
+                // Analysis is derived from the exact audio bytes. Never retain
+                // an old sidecar across an audio replacement, even when the
+                // projected device filename remains the same.
+                remove_analysis_sidecar(
                     runtime,
                     work,
-                    source_path.as_deref(),
                     &device_path,
                     &work.playlists_path,
                     work.playlists_storage,
@@ -317,6 +347,110 @@ pub(super) async fn perform(
             }))
         }
     }
+}
+
+pub(super) async fn copy_analysis_sidecar(
+    runtime: &Rc<DeviceSyncRuntime>,
+    work: &PlannedWork,
+    track_id: i64,
+    device_path: &str,
+    target_path: &str,
+    storage_id: Option<StorageId>,
+) {
+    let Some(sidecar_path) =
+        reprise_core::device_sync::analysis_sidecar::device_path_for_track(device_path)
+    else {
+        return;
+    };
+    let sidecar = match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
+        &runtime.conn,
+        track_id,
+    ) {
+        Ok(Some(sidecar)) => sidecar,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(track_id, %error, "could not load analysis sidecar data");
+            return;
+        }
+    };
+    let bytes = match sidecar.encode() {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(track_id, %error, "could not encode analysis sidecar data");
+            return;
+        }
+    };
+    let temporary_path = temporary_metadata_path(&work.device_id, track_id, "analysis");
+    if let Err(error) = std::fs::write(&temporary_path, &bytes) {
+        tracing::warn!(track_id, %error, "could not stage analysis sidecar data");
+        return;
+    }
+    let result = runtime
+        .backend
+        .replace_track(
+            work.device_id.clone(),
+            work.root_uri.clone(),
+            target_path.to_string(),
+            storage_id,
+            temporary_path.clone(),
+            sidecar_path.clone(),
+            bytes.len() as u64,
+            work.cancellable.clone(),
+            Rc::new(|_, _| {}),
+        )
+        .await;
+    let _ = std::fs::remove_file(temporary_path);
+    if let Err(error) = result {
+        tracing::warn!(track_id, device_path = sidecar_path, %error, "could not copy analysis sidecar to device");
+    }
+}
+
+pub(super) async fn write_track_metadata_list(
+    runtime: &Rc<DeviceSyncRuntime>,
+    work: &PlannedWork,
+) -> Result<(), String> {
+    let desired_files = work.machine.borrow().plan().desired_files.clone();
+    let mut entries = Vec::with_capacity(desired_files.len());
+    for desired in desired_files {
+        let Some(track) =
+            reprise_core::queries::query_present_track_by_id(&runtime.conn, desired.track.id)
+                .map_err(|error| format!("could not read track metadata: {error}"))?
+        else {
+            continue;
+        };
+        entries.push(
+            reprise_core::device_sync::track_metadata_list::TrackMetadataEntry {
+                device_path: desired.device_path,
+                rating: track.rating,
+                play_count: track.play_count,
+            },
+        );
+    }
+    entries.sort_by(|left, right| left.device_path.cmp(&right.device_path));
+    let bytes = reprise_core::device_sync::track_metadata_list::TrackMetadataList::new(entries)
+        .encode()
+        .map_err(|error| format!("could not encode track metadata list: {error}"))?;
+    let temporary_path = temporary_metadata_path(&work.device_id, 0, "track-metadata");
+    std::fs::write(&temporary_path, &bytes)
+        .map_err(|error| format!("could not stage track metadata list: {error}"))?;
+    let result = runtime
+        .backend
+        .replace_track(
+            work.device_id.clone(),
+            work.root_uri.clone(),
+            work.playlists_path.clone(),
+            work.playlists_storage,
+            temporary_path.clone(),
+            reprise_core::device_sync::track_metadata_list::FILE_NAME.into(),
+            bytes.len() as u64,
+            work.cancellable.clone(),
+            Rc::new(|_, _| {}),
+        )
+        .await;
+    let _ = std::fs::remove_file(temporary_path);
+    result
+        .map(|_| ())
+        .map_err(|error| format!("could not write track metadata list: {error}"))
 }
 
 pub(super) async fn copy_lyrics_sidecar(
@@ -411,6 +545,35 @@ pub(super) async fn remove_lyrics_sidecar(
     }
 }
 
+pub(super) async fn remove_analysis_sidecar(
+    runtime: &Rc<DeviceSyncRuntime>,
+    work: &PlannedWork,
+    device_path: &str,
+    target_path: &str,
+    storage_id: Option<StorageId>,
+) {
+    if reprise_core::device_sync::analysis_sidecar::is_sidecar_path(Path::new(device_path)) {
+        return;
+    }
+    let Some(sidecar_path) =
+        reprise_core::device_sync::analysis_sidecar::device_path_for_track(device_path)
+    else {
+        return;
+    };
+    if let Err(error) = runtime
+        .backend
+        .delete_track(
+            work.root_uri.clone(),
+            target_path.to_string(),
+            storage_id,
+            sidecar_path.clone(),
+        )
+        .await
+    {
+        tracing::warn!(device_path = sidecar_path, %error, "could not remove analysis sidecar from device");
+    }
+}
+
 /// The library file the device file being replaced was mirrored from, taken
 /// from the inventory row the plan carries for it.
 fn replaced_source_path(work: &PlannedWork, replaced_path: &str) -> Option<PathBuf> {
@@ -423,7 +586,7 @@ fn replaced_source_path(work: &PlannedWork, replaced_path: &str) -> Option<PathB
         .map(|replacement| PathBuf::from(&replacement.existing.source_path))
 }
 
-fn replacement_keeps_sidecar(work: &PlannedWork, replaced_path: &str) -> bool {
+fn replacement_keeps_lyrics_sidecar(work: &PlannedWork, replaced_path: &str) -> bool {
     let Some(replaced_sidecar) =
         reprise_core::device_sync::lyrics_sidecar::device_path_for_track(replaced_path)
     else {
