@@ -749,3 +749,7 @@ fn notify_playlist_mutated(shared: &Rc<Shared>) {
         ),
     }
 }
+
+#[cfg(test)]
+#[path = "context_menu_scroll_display_tests.rs"]
+mod context_menu_scroll_display_tests;
