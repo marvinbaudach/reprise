@@ -5,7 +5,7 @@
 //!
 //! ## Shortcut wiring mechanisms
 //!
-//! Ctrl+F, `i`, and Space are each backed by a `gio::SimpleAction` in the window's
+//! Ctrl+F and Space are each backed by a `gio::SimpleAction` in the window's
 //! own `"win"` action group, exactly the way the brief asks for ("this also
 //! lays groundwork for a future menu" — a menu item can bind to `win.focus-
 //! search`/`win.toggle-play-pause` by name without this module knowing a
@@ -16,10 +16,6 @@
 //!   set_accels_for_action`. Nothing else in this app binds Ctrl+F, and
 //!   opening focuses and selects the existing query, while invoking it again
 //!   closes the bar without clearing that query.
-//!
-//! - **i** uses the same action/accelerator path and opens the retained Sound
-//!   tab when that module is enabled. The panel owns the disabled no-op, so
-//!   the shortcut never exposes a hidden page.
 //!
 //! - **Space** uses a capture-phase `EventControllerKey`, not an application
 //!   accelerator. The controller inspects the actual focused widget before
@@ -63,7 +59,6 @@ use super::player_controller::PlayerController;
 /// internal identifiers, not user-facing text.
 const ACTION_TOGGLE_PLAY_PAUSE: &str = "toggle-play-pause";
 const ACTION_FOCUS_SEARCH: &str = "focus-search";
-const ACTION_SHOW_SOUND: &str = "show-sound";
 pub(in crate::ui) const SIDEBAR_TOGGLE_CSS_CLASS: &str = "reprise-sidebar-toggle";
 
 /// Pure decision for the Space key: should it toggle playback, or be left
@@ -148,34 +143,20 @@ pub fn wire(
 ) {
     let ShortcutHooks {
         focus_active_content,
-        show_sound,
         search_available,
     } = hooks;
     wire_toggle_play_pause(app, window, player);
     wire_window_lifecycle(app, window);
     wire_focus_search(app, window, search_bar, search_entry, search_available);
-    wire_show_sound(app, window, show_sound);
     wire_escape(search_bar, search_entry, focus_active_content);
 }
 
-/// The three shell decisions the shortcuts have to ask about rather than
-/// make: where Escape hands focus, what "Show sound" opens, and — SEARCH-8 —
+/// The shell decisions the shortcuts have to ask about rather than make:
+/// where Escape hands focus and — SEARCH-8 —
 /// whether the visible section has a list for Ctrl+F to filter at all.
 pub struct ShortcutHooks {
     pub focus_active_content: Rc<dyn Fn() -> bool>,
-    pub show_sound: Rc<dyn Fn()>,
     pub search_available: Rc<dyn Fn() -> bool>,
-}
-
-fn wire_show_sound(
-    app: &adw::Application,
-    window: &adw::ApplicationWindow,
-    show_sound: Rc<dyn Fn()>,
-) {
-    let action = gio::SimpleAction::new(ACTION_SHOW_SOUND, None);
-    action.connect_activate(move |_, _| show_sound());
-    window.add_action(&action);
-    app.set_accels_for_action(&format!("win.{ACTION_SHOW_SOUND}"), &["i"]);
 }
 
 /// Space: `win.toggle-play-pause`, dispatched by a focus-sensitive capture

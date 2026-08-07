@@ -31,8 +31,6 @@ mod online_sources_tool;
 mod playback;
 mod playlist_update;
 mod server;
-mod sound_similarity;
-mod sound_tools;
 mod source_actions;
 mod source_data;
 mod source_tools;

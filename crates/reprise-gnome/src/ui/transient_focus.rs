@@ -213,8 +213,7 @@ fn focus_visible_row(view: &gtk4::Widget) -> bool {
         return false;
     }
     let row_height = upper / f64::from(rows);
-    let Some(position) =
-        topmost_fully_visible_row(value, adjustment.page_size(), row_height, rows)
+    let Some(position) = topmost_fully_visible_row(value, adjustment.page_size(), row_height, rows)
     else {
         return false;
     };
@@ -305,7 +304,10 @@ mod tests {
             super::topmost_fully_visible_row(6_624.0, 250.0, 32.0, 300),
             Some(207)
         );
-        assert_eq!(super::topmost_fully_visible_row(0.0, 250.0, 32.0, 300), Some(0));
+        assert_eq!(
+            super::topmost_fully_visible_row(0.0, 250.0, 32.0, 300),
+            Some(0)
+        );
     }
 
     /// A viewport too short to hold one row whole has no still resting place:
