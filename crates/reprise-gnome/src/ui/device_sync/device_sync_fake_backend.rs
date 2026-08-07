@@ -336,6 +336,9 @@ impl DeviceBackend for FakeBackend {
         let source_contents = std::fs::read(source_path).ok();
         let is_track_metadata =
             relative_target == reprise_core::device_sync::track_metadata_list::FILE_NAME;
+        let is_analysis = reprise_core::device_sync::analysis_sidecar::is_sidecar_path(
+            std::path::Path::new(&relative_target),
+        );
         if !is_track_metadata {
             state
                 .transfer_storage_ids
@@ -412,6 +415,20 @@ impl DeviceBackend for FakeBackend {
             let observer = state.copy_observer.borrow().clone();
             if let Some(observer) = observer {
                 observer(&relative_target);
+            }
+            if is_analysis {
+                let mut managed_files = state.managed_files.borrow_mut();
+                if let Some(file) = managed_files
+                    .iter_mut()
+                    .find(|file| file.relative_path == relative_target)
+                {
+                    file.size_bytes = expected_size;
+                } else {
+                    managed_files.push(ManagedDeviceFile {
+                        relative_path: relative_target.clone(),
+                        size_bytes: expected_size,
+                    });
+                }
             }
             state
                 .copy_order

@@ -121,6 +121,41 @@ fn synced_audio_without_sidecars_plans_one_analysis_copy_per_track() {
 }
 
 #[test]
+fn an_analysis_write_cycle_reinspects_to_a_plan_without_a_second_write() {
+    run(async {
+        let (temp, conn) = fixture();
+        seed_render_data(&conn, 1, 7, 3);
+        select_road_playlist(&conn, &[1]);
+        let synced_audio = register_synced_track(&conn, &temp, 1);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.managed_files.replace(vec![synced_audio]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        assert_eq!(runtime.devices()[0].page.changes.additions, 1);
+        let (_subscription, verified) =
+            signal_when(&runtime, |state| state.devices[0].last_sync.is_some());
+
+        runtime.sync_now("a").unwrap();
+        verified.recv().await.unwrap();
+
+        let copied_analysis_count = backend
+            .state
+            .managed_copies
+            .borrow()
+            .iter()
+            .filter(|(_, path)| path.ends_with(".reprise-analysis"))
+            .count();
+        assert_eq!(copied_analysis_count, 1);
+        assert_eq!(
+            runtime.devices()[0].page.changes.additions,
+            0,
+            "the verification inspection must make the completed sidecar write current"
+        );
+    });
+}
+
+#[test]
 fn unreadable_analysis_for_one_track_does_not_block_the_other_tracks_plan() {
     run(async {
         let (temp, conn) = fixture();
