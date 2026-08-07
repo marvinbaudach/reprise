@@ -76,3 +76,49 @@ fn mtp_49_unrememberable_device_is_usable_without_persisting_the_volatile_uri() 
         );
     });
 }
+
+#[test]
+fn a_later_volume_projection_replaces_the_daemon_mount_name_and_identity() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let root_uri = "mtp://Google_Pixel_10_Pro_XL_59100DLCQ006SB/";
+        let daemon_mount = DeviceDescriptor {
+            id: root_uri.into(),
+            persistent_id: None,
+            name: "mtp".into(),
+            root_uri: root_uri.into(),
+            reconnectable: false,
+            icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
+        };
+        let volume = DeviceDescriptor {
+            id: "59100DLCQ006SB".into(),
+            persistent_id: Some("59100DLCQ006SB".into()),
+            name: "Pixel 10 Pro XL".into(),
+            root_uri: root_uri.into(),
+            reconnectable: true,
+            icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
+        };
+        let backend = Rc::new(FakeBackend::new(vec![daemon_mount], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let first = runtime.devices();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].id, root_uri);
+        assert_eq!(first[0].name, "mtp");
+        assert!(!first[0].rememberable);
+        assert!(first[0].page.controls.editable);
+
+        backend.set_devices(&[volume]);
+        settle().await;
+
+        let corrected = runtime.devices();
+        assert_eq!(corrected.len(), 1, "the first projection must be replaced");
+        assert_eq!(corrected[0].id, "59100DLCQ006SB");
+        assert_eq!(corrected[0].name, "Pixel 10 Pro XL");
+        assert!(corrected[0].connected);
+        assert!(corrected[0].rememberable);
+        assert_eq!(corrected[0].memory_status, None);
+        assert!(corrected[0].page.controls.editable);
+    });
+}
