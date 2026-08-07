@@ -15,10 +15,10 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 from atspi_geometry import (  # noqa: E402
     GeometryError,
     GeometryNode,
-    align_driver_geometry,
     choose_frame,
     geometry_calibration,
     normalize_to_frame,
+    resolve_driver_geometry,
 )
 from hover_geometry import WindowGeometry  # noqa: E402
 from driver import CuaExecutor  # noqa: E402
@@ -86,43 +86,43 @@ class NormalisationTests(unittest.TestCase):
             normalize_to_frame([node("push button", "Shuffle", 0, 0, 34, 34)])
 
 
-class AlignmentTests(unittest.TestCase):
-    def test_two_different_buttons_get_two_different_points(self) -> None:
-        frames = align_driver_geometry(ELEMENTS, NODES, ORIGIN)
+class PerElementResolutionTests(unittest.TestCase):
+    """The driver reports a filtered subset, so match element by element."""
 
-        self.assertEqual(frames[3], (200.0, 96.0, 34.0, 34.0))
-        self.assertEqual(frames[5], (1310.0, 96.0, 34.0, 34.0))
-        self.assertNotEqual(frames[3], frames[5])
+    def test_two_different_buttons_get_two_different_points(self) -> None:
+        result = resolve_driver_geometry(ELEMENTS, NODES, ORIGIN)
+
+        self.assertEqual(result.frames[3], (200.0, 96.0, 34.0, 34.0))
+        self.assertEqual(result.frames[5], (1310.0, 96.0, 34.0, 34.0))
 
     def test_the_window_origin_from_list_windows_is_added(self) -> None:
-        frames = align_driver_geometry(ELEMENTS, NODES, ORIGIN)
+        result = resolve_driver_geometry(ELEMENTS, NODES, ORIGIN)
 
         # Row at WINDOW (0, 120); frame at (-5, -5) -> normalised (5, 125).
-        self.assertEqual(frames[9], (205.0, 175.0, 900.0, 28.0))
+        self.assertEqual(result.frames[9], (205.0, 175.0, 900.0, 28.0))
 
-    def test_a_different_node_count_is_refused(self) -> None:
-        with self.assertRaisesRegex(GeometryError, "node count"):
-            align_driver_geometry(ELEMENTS, NODES[:-1], ORIGIN)
+    def test_a_walk_with_far_more_nodes_still_resolves(self) -> None:
+        # Measured: driver 180 nodes, walk 485. The trees never match in size.
+        extra = [node("label", f"filler {i}", 10, 10 + i, 5, 5) for i in range(40)]
 
-    def test_a_role_or_label_disagreement_is_refused(self) -> None:
-        wrong = list(NODES)
-        wrong[2] = node("push button", "Something else", 1105, 41, 34, 34)
+        result = resolve_driver_geometry(ELEMENTS, [*NODES, *extra], ORIGIN)
 
-        with self.assertRaisesRegex(GeometryError, "disagree"):
-            align_driver_geometry(ELEMENTS, wrong, ORIGIN)
+        self.assertEqual(result.resolved, 4)
+        self.assertEqual(result.unmatched, 0)
 
-    def test_a_size_disagreement_is_refused(self) -> None:
-        wrong = list(NODES)
-        wrong[1] = node("push button", "Shuffle", -5, 41, 48, 48)
-
-        with self.assertRaisesRegex(GeometryError, "disagree"):
-            align_driver_geometry(ELEMENTS, wrong, ORIGIN)
-
-    def test_indistinguishable_twins_lose_their_geometry_instead_of_guessing(
+    def test_one_unmatched_element_does_not_cost_the_others_their_geometry(
         self,
     ) -> None:
-        # Same role, same label, same size: the walk order may line them up
-        # correctly, but nothing in the data proves it.
+        elements = [*ELEMENTS, driver(11, "push button", "Ghost", 20, 20)]
+
+        result = resolve_driver_geometry(elements, NODES, ORIGIN)
+
+        self.assertEqual(result.unmatched, 1)
+        self.assertEqual(result.resolved, 4)
+        self.assertNotIn(11, result.frames)
+        self.assertIn(3, result.frames)
+
+    def test_indistinguishable_twins_stay_unresolved(self) -> None:
         nodes = [
             FRAME_NODE,
             node("push button", "", 10, 10, 34, 34),
@@ -131,65 +131,47 @@ class AlignmentTests(unittest.TestCase):
         elements = [
             driver(0, "frame", "Reprise", 1200, 800, depth=0),
             driver(3, "push button", "", 34, 34),
-            driver(5, "push button", "", 34, 34),
         ]
 
-        frames = align_driver_geometry(elements, nodes, ORIGIN)
+        result = resolve_driver_geometry(elements, nodes, ORIGIN)
 
-        self.assertNotIn(3, frames)
-        self.assertNotIn(5, frames)
-        self.assertIn(0, frames)
+        self.assertEqual(result.ambiguous, 1)
+        self.assertNotIn(3, result.frames)
 
-    def test_geometry_that_lands_outside_the_window_is_refused(self) -> None:
+    def test_virtualised_rows_are_counted_apart_from_real_misses(self) -> None:
+        # The driver documents that it only reports a frame "when AT-SPI
+        # reports usable bounds"; degenerate rows must not look like a miss.
+        elements = [*ELEMENTS, driver(13, "row", "Track 000999", 900, 1)]
+
+        result = resolve_driver_geometry(elements, NODES, ORIGIN)
+
+        self.assertEqual(result.degenerate, 1)
+        self.assertEqual(result.unmatched, 0)
+
+    def test_a_node_outside_the_window_is_counted_and_dropped(self) -> None:
         nodes = list(NODES)
         nodes[3] = node("row", "Track 000001", 4000, 120, 900, 28)
 
-        with self.assertRaisesRegex(GeometryError, "outside the window"):
-            align_driver_geometry(ELEMENTS, nodes, ORIGIN)
+        result = resolve_driver_geometry(ELEMENTS, nodes, ORIGIN)
+
+        self.assertEqual(result.out_of_window, 1)
+        self.assertNotIn(9, result.frames)
+        self.assertEqual(result.resolved, 3)
 
     def test_a_role_alias_still_matches(self) -> None:
         nodes = list(NODES)
         nodes[3] = node("table row", "Track 000001", 0, 120, 900, 28)
 
-        frames = align_driver_geometry(ELEMENTS, nodes, ORIGIN)
+        self.assertIn(9, resolve_driver_geometry(ELEMENTS, nodes, ORIGIN).frames)
 
-        self.assertIn(9, frames)
+    def test_the_record_carries_the_quota_for_the_evidence(self) -> None:
+        record = resolve_driver_geometry(ELEMENTS, NODES, ORIGIN).as_record()
 
-
-class FrameSelectionTests(unittest.TestCase):
-    """The walk must start where cua-driver starts: at the frame, not the app."""
-
-    def test_the_frame_child_is_chosen_over_the_application_node(self) -> None:
-        candidates = [
-            ("frame", "Reprise", 1200.0, 800.0),
-            ("frame", "About Reprise", 400.0, 300.0),
-        ]
-
-        self.assertEqual(choose_frame(candidates, (1200.0, 800.0)), 0)
-
-    def test_the_frame_matching_the_window_size_wins(self) -> None:
-        candidates = [
-            ("frame", "About Reprise", 400.0, 300.0),
-            ("frame", "Reprise", 1200.0, 800.0),
-        ]
-
-        self.assertEqual(choose_frame(candidates, (1200.0, 800.0)), 1)
-
-    def test_no_frame_at_all_is_refused(self) -> None:
-        with self.assertRaisesRegex(GeometryError, "no frame"):
-            choose_frame([("panel", "", 100.0, 100.0)], (1200.0, 800.0))
-
-    def test_two_frames_of_the_same_size_are_refused(self) -> None:
-        candidates = [
-            ("frame", "One", 1200.0, 800.0),
-            ("frame", "Two", 1200.0, 800.0),
-        ]
-
-        with self.assertRaisesRegex(GeometryError, "two frames|ambiguous"):
-            choose_frame(candidates, (1200.0, 800.0))
-
-    def test_a_single_frame_is_taken_even_without_a_size_match(self) -> None:
-        self.assertEqual(choose_frame([("frame", "Reprise", 10.0, 10.0)], None), 0)
+        self.assertEqual(record["driver_elements"], 4)
+        self.assertEqual(record["resolved"], 4)
+        self.assertEqual(record["resolved_ratio"], 1.0)
+        for key in ("unmatched", "ambiguous", "out_of_window", "degenerate"):
+            self.assertIn(key, record)
 
 
 class RealTreeShapeTests(unittest.TestCase):
@@ -233,12 +215,12 @@ class RealTreeShapeTests(unittest.TestCase):
     ]
 
     def test_the_two_root_spellings_are_the_same_node(self) -> None:
-        frames = align_driver_geometry(self.DRIVER, self.WALK, ORIGIN)
+        frames = resolve_driver_geometry(self.DRIVER, self.WALK, ORIGIN).frames
 
         self.assertEqual(frames[0], (200.0, 50.0, 1200.0, 800.0))
 
     def test_shuffle_and_main_menu_stop_sharing_a_point(self) -> None:
-        frames = align_driver_geometry(self.DRIVER, self.WALK, ORIGIN)
+        frames = resolve_driver_geometry(self.DRIVER, self.WALK, ORIGIN).frames
 
         self.assertEqual(frames[2], (200.0, 96.0, 34.0, 34.0))
         self.assertEqual(frames[3], (1310.0, 96.0, 34.0, 34.0))
@@ -263,7 +245,7 @@ class CalibrationTests(unittest.TestCase):
         nodes[0] = node("frame", "Reprise", -5, -5, 640, 480)
 
         with self.assertRaisesRegex(GeometryError, "frame size"):
-            align_driver_geometry(
+            resolve_driver_geometry(
                 [driver(0, "frame", "Reprise", 640, 480, depth=0), *ELEMENTS[1:]],
                 nodes,
                 ORIGIN,
@@ -281,25 +263,24 @@ class CalibrationTests(unittest.TestCase):
 
 
 class RefusalDetailTests(unittest.TestCase):
-    """Every refusal must say enough to tell a level offset from a real mismatch."""
+    """The one remaining all-or-nothing refusal must stay diagnosable."""
 
-    def test_a_count_mismatch_names_both_counts(self) -> None:
-        with self.assertRaisesRegex(GeometryError, r"driver 4, walk 3"):
-            align_driver_geometry(ELEMENTS, NODES[:-1], ORIGIN)
-
-    def test_a_key_disagreement_names_both_counts_too(self) -> None:
-        wrong = list(NODES)
-        wrong[2] = node("push button", "Something else", 1105, 41, 34, 34)
-
-        with self.assertRaisesRegex(GeometryError, r"driver 4, walk 4"):
-            align_driver_geometry(ELEMENTS, wrong, ORIGIN)
-
-    def test_an_out_of_window_node_names_both_counts_too(self) -> None:
+    def test_the_anchor_refusal_names_both_node_counts(self) -> None:
         nodes = list(NODES)
-        nodes[3] = node("row", "Track 000001", 4000, 120, 900, 28)
+        nodes[0] = node("frame", "Reprise", -5, -5, 640, 480)
+        elements = [driver(0, "frame", "Reprise", 640, 480, depth=0), *ELEMENTS[1:]]
 
         with self.assertRaisesRegex(GeometryError, r"driver 4, walk 4"):
-            align_driver_geometry(ELEMENTS, nodes, ORIGIN)
+            resolve_driver_geometry(elements, nodes, ORIGIN)
+
+    def test_a_size_mismatch_no_longer_costs_the_whole_snapshot(self) -> None:
+        wrong = list(NODES)
+        wrong[1] = node("push button", "Shuffle", -5, 41, 48, 48)
+
+        result = resolve_driver_geometry(ELEMENTS, wrong, ORIGIN)
+
+        self.assertEqual(result.unmatched, 1)
+        self.assertEqual(result.resolved, 3)
 
 
 class GeometryTrustTests(unittest.TestCase):
@@ -407,6 +388,42 @@ class DriverGeometryTests(unittest.TestCase):
             executor.geometry_failures, ["the Atspi bindings are unavailable"]
         )
 
+    def test_an_unresolved_element_loses_only_its_own_geometry(self) -> None:
+        transport = GeometryDriverTransport(
+            extra={
+                "element_index": 11,
+                "role": "push button",
+                "label": "Ghost",
+                "depth": 3,
+                "frame": {"x": 200, "y": 50, "w": 20, "h": 20},
+            }
+        )
+        executor = CuaExecutor(
+            transport,
+            pid=1,
+            window_id=2,
+            session="t",
+            settle_delays=(),
+            geometry_provider=lambda: list(NODES),
+            window_origin=ORIGIN,
+        )
+
+        observation = executor.observe()
+
+        by_label = {item["label"]: item for item in observation["elements"]}
+        self.assertTrue(observation["geometry_trusted"])
+        self.assertEqual(by_label["Shuffle"]["frame"]["x"], 200.0)
+        self.assertFalse(by_label["Ghost"]["geometry_trusted"])
+        self.assertTrue(by_label["Shuffle"]["geometry_trusted"])
+
+    def test_the_resolution_quota_reaches_the_evidence(self) -> None:
+        _transport, executor = self._executor(lambda: list(NODES))
+
+        executor.observe()
+
+        self.assertEqual(executor.geometry_resolution["resolved"], 4)
+        self.assertEqual(executor.geometry_resolution["resolved_ratio"], 1.0)
+
     def test_the_calibration_measurement_is_retained_for_the_evidence(self) -> None:
         _transport, executor = self._executor(lambda: list(NODES))
 
@@ -429,9 +446,15 @@ class DriverGeometryTests(unittest.TestCase):
 
 
 class GeometryDriverTransport:
+    def __init__(self, extra=None):
+        self.extra = extra
+
     def call(self, tool, payload):
         if tool == "get_window_state":
-            return {"structuredContent": {"elements": [dict(item) for item in ELEMENTS]}}
+            elements = [dict(item) for item in ELEMENTS]
+            if self.extra is not None:
+                elements.append(dict(self.extra))
+            return {"structuredContent": {"elements": elements}}
         return {"effect": "confirmed"}
 
     def resize_window(self, *args):

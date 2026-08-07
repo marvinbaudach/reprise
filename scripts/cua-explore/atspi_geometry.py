@@ -176,73 +176,120 @@ def _driver_key(element: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def align_driver_geometry(
+@dataclass(frozen=True)
+class GeometryResolution:
+    """Per-element geometry plus the quota that says how far it carried."""
+
+    frames: dict[int, tuple[float, float, float, float]]
+    driver_elements: int
+    walk_nodes: int
+    resolved: int
+    unmatched: int
+    ambiguous: int
+    out_of_window: int
+    degenerate: int
+    calibration: dict[str, Any]
+
+    @property
+    def trusted(self) -> bool:
+        return self.resolved > 0
+
+    def as_record(self) -> dict[str, Any]:
+        return {
+            "driver_elements": self.driver_elements,
+            "walk_nodes": self.walk_nodes,
+            "resolved": self.resolved,
+            "resolved_ratio": (
+                round(self.resolved / self.driver_elements, 4)
+                if self.driver_elements
+                else 0.0
+            ),
+            "unmatched": self.unmatched,
+            "ambiguous": self.ambiguous,
+            "out_of_window": self.out_of_window,
+            "degenerate": self.degenerate,
+            "calibration": self.calibration,
+        }
+
+
+def resolve_driver_geometry(
     elements: Sequence[Mapping[str, Any]],
     nodes: Sequence[GeometryNode],
     origin: Any,
-) -> dict[int, tuple[float, float, float, float]]:
-    """Map each driver element_index to a screen rectangle, or refuse.
+) -> GeometryResolution:
+    """Give every driver element its own position, or none.
 
-    Both walks enumerate the same accessibility tree in the same pre-order, so
-    they are aligned by position - and every pair is then verified on role,
-    label, width and height. Any disagreement fails the whole snapshot rather
-    than attaching a position to the wrong element.
+    cua-driver reports one entry per indexed row - measured 180 against 485
+    nodes in the full walk - so the two trees are never the same shape and a
+    positional alignment cannot work. Each element is looked up on its own key
+    of role, label, width and height instead. Exactly one matching node wins;
+    no match or several means this element gets no geometry while the rest keep
+    theirs. A wrong position would still take two nodes that agree in all four,
+    and those are exactly what the ambiguity count throws out.
     """
-    counts = f"driver {len(elements)}, walk {len(nodes)}"
-    if len(elements) != len(nodes):
-        raise GeometryError(f"node count differs: {counts}")
     calibration = geometry_calibration(nodes, origin)
     if not calibration["consistent"]:
         raise GeometryError(
-            f"frame size differs from the list_windows entry ({counts}): "
+            f"frame size differs from the list_windows entry "
+            f"(driver {len(elements)}, walk {len(nodes)}): "
             f"frame {calibration['frame_window_rect']}, window "
             f"{calibration['window_rect']}"
         )
     normalized = normalize_to_frame(nodes)
-    keys = [_driver_key(element) for element in elements]
-    for index, (element, item) in enumerate(zip(elements, normalized)):
-        node_key = _key(item.role, item.label, item.width, item.height)
-        driver_key = keys[index]
-        if node_key[:2] != driver_key[:2] or any(
-            abs(node_key[position] - driver_key[position]) > SIZE_TOLERANCE_PX
-            for position in (2, 3)
-        ):
-            raise GeometryError(
-                f"driver and walk disagree at node {index} ({counts}): "
-                f"{driver_key!r} against {node_key!r}"
-            )
-    # Twins that are identical in role, label and size cannot be told apart by
-    # anything in the data, so they get no geometry at all.
-    ambiguous = {key for key, count in Counter(keys).items() if count > 1}
+    index: dict[tuple[Any, ...], list[GeometryNode]] = {}
+    for item in normalized:
+        index.setdefault(
+            _key(item.role, item.label, item.width, item.height), []
+        ).append(item)
+
     frames: dict[int, tuple[float, float, float, float]] = {}
-    for index, (element, item) in enumerate(zip(elements, normalized)):
-        if keys[index] in ambiguous:
+    resolved = unmatched = ambiguous = out_of_window = degenerate = 0
+    for position, element in enumerate(elements):
+        if not isinstance(element, Mapping):
             continue
-        rect = (
-            origin.x + item.x,
-            origin.y + item.y,
-            item.width,
-            item.height,
-        )
-        _require_inside(rect, origin, index, counts)
-        frames[int(element.get("element_index", index))] = rect
-    return frames
+        frame = element.get("frame") or {}
+        width = float(frame.get("w", frame.get("width", 0)) or 0)
+        height = float(frame.get("h", frame.get("height", 0)) or 0)
+        if width <= 1 or height <= 1:
+            # The driver only reports a frame "when AT-SPI reports usable
+            # bounds"; a virtualised row is not a failed match.
+            degenerate += 1
+            continue
+        candidates = index.get(_driver_key(element), ())
+        if not candidates:
+            unmatched += 1
+            continue
+        if len(candidates) > 1:
+            ambiguous += 1
+            continue
+        node = candidates[0]
+        rect = (origin.x + node.x, origin.y + node.y, node.width, node.height)
+        if not _inside(rect, origin):
+            out_of_window += 1
+            continue
+        frames[int(element.get("element_index", position))] = rect
+        resolved += 1
+    return GeometryResolution(
+        frames=frames,
+        driver_elements=len(elements),
+        walk_nodes=len(nodes),
+        resolved=resolved,
+        unmatched=unmatched,
+        ambiguous=ambiguous,
+        out_of_window=out_of_window,
+        degenerate=degenerate,
+        calibration=calibration,
+    )
 
 
-def _require_inside(
-    rect: tuple[float, float, float, float], origin: Any, index: int, counts: str = ""
-) -> None:
+def _inside(rect: tuple[float, float, float, float], origin: Any) -> bool:
     slack = WINDOW_BOUNDS_TOLERANCE_PX
-    if (
+    return not (
         rect[0] < origin.x - slack
         or rect[1] < origin.y - slack
         or rect[0] > origin.x + origin.width + slack
         or rect[1] > origin.y + origin.height + slack
-    ):
-        raise GeometryError(
-            f"node {index} lands outside the window ({counts}): {rect!r} against "
-            f"({origin.x}, {origin.y}, {origin.width}, {origin.height})"
-        )
+    )
 
 
 def walk_window_nodes(

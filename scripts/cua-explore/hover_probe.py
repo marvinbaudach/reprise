@@ -25,7 +25,7 @@ from hover_geometry import (
     to_screenshot_point,
     to_screenshot_rect,
 )
-from atspi_geometry import GeometryError, align_driver_geometry
+from atspi_geometry import GeometryError, resolve_driver_geometry
 from hover_oracle import HOVER_CURSOR_EXCLUSION_PX, HOVER_MIN_CHANNEL_DELTA
 from pngdiff import UnmeasurableImage, UnsupportedImage, read_rgb, rect_change_ratio
 
@@ -127,14 +127,17 @@ def _measured_frame(
     if not isinstance(elements, list):
         return element.get("frame") or {}, "snapshot carries no element list"
     try:
-        frames = align_driver_geometry(elements, geometry_provider(), origin)
+        resolution = resolve_driver_geometry(elements, geometry_provider(), origin)
     except GeometryError as error:
         return element.get("frame") or {}, f"measured geometry refused: {error}"
-    rect = frames.get(int(element.get("element_index", -1)))
+    rect = resolution.frames.get(int(element.get("element_index", -1)))
     if rect is None:
+        record = resolution.as_record()
         return (
             element.get("frame") or {},
-            "this element has no unambiguous measured position",
+            "this element has no unambiguous measured position "
+            f"(resolved {record['resolved']}/{record['driver_elements']}, "
+            f"unmatched {record['unmatched']}, ambiguous {record['ambiguous']})",
         )
     return {"x": rect[0], "y": rect[1], "w": rect[2], "h": rect[3]}, ""
 

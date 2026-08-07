@@ -71,10 +71,15 @@ starting there would shift both walks by one level - normalises against the
 frame node, and adds the window origin from `list_windows`. The frame node's
 own WINDOW rectangle is retained in `summary.json` as `geometry_calibration`:
 normalising against it is right exactly when it is the same rectangle as the
-`list_windows` entry, and the sizes are the test for that. Both walks are aligned by
-pre-order position and every pair is verified on role, label, width and height;
-any disagreement, and the position oracles go silent for that snapshot and the
-reason is recorded in `summary.json` under `geometry_failures`.
+`list_windows` entry, and the sizes are the test for that. Geometry is resolved per element, not per tree: cua-driver returns one entry
+per indexed row - measured 180 against 485 nodes in the full walk, and not a
+cap, since its `max_elements` defaults to 5 000 - so the two trees are never
+the same shape. Each driver element is looked up on its own key of role, label,
+width and height; exactly one matching node wins, and no match or several means
+that element alone goes without geometry while the rest keep theirs. The
+position oracles skip untrusted elements. `summary.json` records the quota
+under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
+outside the window) plus `geometry_calibration` and any `geometry_failures`.
 
 Before trusting any hover verdict, settle whether a pointer move reaches the
 app at all. The probe places the pointer on one named control twice - once

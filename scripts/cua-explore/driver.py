@@ -171,6 +171,7 @@ class CuaExecutor:
         self.window_origin = window_origin
         self.geometry_failures: list[str] = []
         self.geometry_calibration: Any | None = None
+        self.geometry_resolution: Any | None = None
         self._hover_cursor_disabled = False
         self._state_counter = 0
         self._step_counter = 0
@@ -514,11 +515,7 @@ class CuaExecutor:
         origin = self.window_origin or self.hover_geometry
         if self.geometry_provider is None or origin is None:
             return raw
-        from atspi_geometry import (
-            GeometryError,
-            align_driver_geometry,
-            geometry_calibration,
-        )
+        from atspi_geometry import GeometryError, resolve_driver_geometry
 
         structured = raw.get("structuredContent")
         container = structured if isinstance(structured, dict) else raw
@@ -526,12 +523,22 @@ class CuaExecutor:
         if not isinstance(elements, list):
             return self._untrusted(raw, "snapshot carries no element list")
         try:
-            nodes = self.geometry_provider()
-            self.geometry_calibration = geometry_calibration(nodes, origin)
-            frames = align_driver_geometry(elements, nodes, origin)
+            resolution = resolve_driver_geometry(
+                elements, self.geometry_provider(), origin
+            )
         except GeometryError as error:
             self.geometry_failures.append(str(error))
             return self._untrusted(raw, str(error))
+        self.geometry_calibration = resolution.calibration
+        self.geometry_resolution = resolution.as_record()
+        frames = resolution.frames
+        if not resolution.trusted:
+            self.geometry_failures.append(
+                "no element could be matched to a measured position "
+                f"({resolution.driver_elements} driver elements, "
+                f"{resolution.walk_nodes} walk nodes)"
+            )
+            return self._untrusted(raw, "no element resolved")
         rebuilt = []
         for index, element in enumerate(elements):
             if not isinstance(element, dict):
@@ -585,6 +592,7 @@ class CuaExecutor:
                     "selected": element.selected,
                     "value": element.value,
                     "actionable": element.actionable,
+                    "geometry_trusted": element.geometry_trusted,
                     "frame": dataclasses.asdict(element.frame),
                 }
                 for element in state.elements

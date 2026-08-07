@@ -805,6 +805,9 @@ def run(args: argparse.Namespace) -> int:
         report.set_geometry_calibration(
             getattr(executor, "geometry_calibration", None)
         )
+        report.set_geometry_resolution(
+            getattr(executor, "geometry_resolution", None)
+        )
         report.write()
     lifecycle.assert_clean_logs()
     summary = report.write()

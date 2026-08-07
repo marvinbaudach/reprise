@@ -106,6 +106,7 @@ class RunReport:
         self.startup_timings: list[dict[str, Any]] = []
         self.geometry_failures: list[str] = []
         self.geometry_calibration: dict[str, Any] | None = None
+        self.geometry_resolution: dict[str, Any] | None = None
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def set_geometry_failures(self, failures: Sequence[str]) -> None:
@@ -117,6 +118,10 @@ class RunReport:
         self.geometry_calibration = (
             dict(_sanitize(calibration)) if calibration else None
         )
+
+    def set_geometry_resolution(self, resolution: Mapping[str, Any] | None) -> None:
+        """How many driver elements got a measured position, and why the rest did not."""
+        self.geometry_resolution = dict(_sanitize(resolution)) if resolution else None
 
     def set_startup_timings(self, timings: Sequence[Mapping[str, Any]]) -> None:
         """Measured launch cost per app start; a slow start is a product finding."""
@@ -183,6 +188,7 @@ class RunReport:
                 "startup_timings": self.startup_timings,
                 "geometry_failures": self.geometry_failures,
                 "geometry_calibration": self.geometry_calibration,
+                "geometry_resolution": self.geometry_resolution,
                 "geometry_trusted": not self.geometry_failures,
                 "finding_counts": dict(sorted(severity_counts.items())),
                 "finding_codes": dict(sorted(code_counts.items())),
@@ -220,9 +226,24 @@ class RunReport:
             "- Status: advisory until reproduced in two fresh profiles",
             "",
         ]
-        if summary["geometry_failures"]:
-            lines.append("## Geometry")
+        resolution = summary.get("geometry_resolution")
+        if resolution:
+            lines.extend(["## Geometry", ""])
+            lines.append(
+                f"- Measured positions: {resolution.get('resolved')} of "
+                f"{resolution.get('driver_elements')} driver elements "
+                f"({resolution.get('resolved_ratio')})"
+            )
+            lines.append(
+                f"- Unresolved: {resolution.get('unmatched')} without a match, "
+                f"{resolution.get('ambiguous')} ambiguous, "
+                f"{resolution.get('degenerate')} without usable bounds, "
+                f"{resolution.get('out_of_window')} outside the window"
+            )
             lines.append("")
+        if summary["geometry_failures"]:
+            if not resolution:
+                lines.extend(["## Geometry", ""])
             lines.append(
                 "Element positions could not be proven, so the position oracles "
                 "stayed silent for the affected snapshots:"
