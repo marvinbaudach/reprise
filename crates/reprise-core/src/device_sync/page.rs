@@ -101,6 +101,7 @@ pub struct SyncPageInput {
     pub inventory: Vec<DeviceFileRecord>,
     pub playlist_inventory: Vec<DevicePlaylistRecord>,
     pub managed_files: Vec<ManagedDeviceFile>,
+    pub desktop_analyses: Vec<super::DesktopAnalysis>,
     pub storage: DeviceStorageSnapshot,
 }
 
@@ -191,6 +192,7 @@ pub fn project_sync_page(input: SyncPageInput) -> SyncPageProjection {
         inventory: input.inventory,
         playlist_inventory: input.playlist_inventory,
         managed_files: input.managed_files,
+        desktop_analyses: input.desktop_analyses,
     });
     let storage = project_storage(&input.storage, &plan);
     let page = SyncPageState {
@@ -200,8 +202,18 @@ pub fn project_sync_page(input: SyncPageInput) -> SyncPageProjection {
         unique_track_count,
         target_bytes: plan.target_bytes,
         changes: SyncChangeSummary {
-            additions: plan.copy.len(),
-            replacements: plan.replace.len(),
+            additions: plan.copy.len()
+                + plan
+                    .analysis_writes
+                    .iter()
+                    .filter(|write| write.existing_size_bytes.is_none())
+                    .count(),
+            replacements: plan.replace.len()
+                + plan
+                    .analysis_writes
+                    .iter()
+                    .filter(|write| write.existing_size_bytes.is_some())
+                    .count(),
             removals: plan.remove.len(),
             retained_unavailable: plan.retained_unavailable.len(),
             playlist_writes: plan.playlist_writes.len(),

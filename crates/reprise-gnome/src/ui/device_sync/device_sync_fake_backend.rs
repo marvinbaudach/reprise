@@ -81,6 +81,7 @@ pub(super) struct FakeState {
     pub(super) transfer_storage_ids: RefCell<Vec<(String, Option<StorageId>)>>,
     pub(super) inspection_roots: RefCell<Vec<String>>,
     pub(super) last_inspected_targets: RefCell<Option<[SyncTarget; 3]>>,
+    pub(super) managed_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) podcast_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) youtube_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) ejected: RefCell<Vec<String>>,
@@ -283,6 +284,7 @@ impl DeviceBackend for FakeBackend {
         let storage_access = self.state.storage_access.get();
         let gate = self.state.inspection_gate.borrow_mut().take();
         let inspection_error = self.state.inspection_error.borrow_mut().take();
+        let managed_files = self.state.managed_files.borrow().clone();
         let podcast_files = self.state.podcast_files.borrow().clone();
         let youtube_files = self.state.youtube_files.borrow().clone();
         self.state.inspection_roots.borrow_mut().push(root_uri);
@@ -309,7 +311,7 @@ impl DeviceBackend for FakeBackend {
                     total_bytes,
                     ..DeviceStorageSnapshot::default()
                 },
-                managed_files: Vec::new(),
+                managed_files,
                 podcast_files,
                 youtube_files,
             })

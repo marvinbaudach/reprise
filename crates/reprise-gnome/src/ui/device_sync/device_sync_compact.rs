@@ -344,6 +344,7 @@ impl DeviceSyncRuntime {
             }
             let (frozen_smart_sources, frozen_smart_track_ids) =
                 apply_frozen_smart_snapshots(conn, device_id, &selected, &mut playlists)?;
+            let desktop_analyses = desktop_analysis_sizes(conn, &selected, &playlists)?;
             let published_frozen_sources = playlist_inventory
                 .iter()
                 .filter(|playlist| frozen_smart_sources.contains(&playlist.source))
@@ -356,6 +357,7 @@ impl DeviceSyncRuntime {
                 inventory: files,
                 playlist_inventory,
                 managed_files,
+                desktop_analyses,
                 storage: storage.clone(),
             });
             reprise_core::device_sync::apply_frozen_smart_playlist_policy(
@@ -554,6 +556,47 @@ impl DeviceSyncRuntime {
             .map(|device| device.settings.clone())
             .ok_or_else(|| "device is not connected".to_string())
     }
+}
+
+fn desktop_analysis_sizes(
+    conn: &Db,
+    selected: &[SelectionSource],
+    playlists: &[reprise_core::device_sync::MirrorPlaylistSnapshot],
+) -> Result<Vec<reprise_core::device_sync::DesktopAnalysis>, String> {
+    let mut track_ids = playlists
+        .iter()
+        .filter(|playlist| selected.contains(&playlist.source))
+        .flat_map(|playlist| &playlist.entries)
+        .filter_map(|track| match track {
+            reprise_core::device_sync::MirrorTrack::Available(track) => Some(track.id),
+            reprise_core::device_sync::MirrorTrack::Unavailable(_) => None,
+        })
+        .collect::<Vec<_>>();
+    track_ids.sort_unstable();
+    track_ids.dedup();
+    let mut analyses = Vec::new();
+    for track_id in track_ids {
+        let Some(sidecar) =
+            reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(conn, track_id)
+                .map_err(|error| error.to_string())?
+        else {
+            continue;
+        };
+        let size_bytes = u64::try_from(sidecar.encode().map_err(|error| error.to_string())?.len())
+            .map_err(|_| "analysis sidecar length does not fit u64".to_string())?;
+        analyses.push(reprise_core::device_sync::DesktopAnalysis {
+            track_id,
+            size_bytes,
+        });
+    }
+    Ok(analyses)
+}
+
+pub(super) fn is_verified_track_file(file: &reprise_core::device_sync::ManagedDeviceFile) -> bool {
+    let path = std::path::Path::new(&file.relative_path);
+    !file.relative_path.to_ascii_lowercase().ends_with(".m3u8")
+        && !reprise_core::device_sync::analysis_sidecar::is_sidecar_path(path)
+        && !reprise_core::device_sync::track_metadata_list::is_list_path(path)
 }
 
 fn update_runtime_target(

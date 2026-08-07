@@ -44,6 +44,82 @@ fn copied_analysis(
     AnalysisSidecar::decode(bytes).unwrap()
 }
 
+fn register_synced_track(conn: &Db, temp: &tempfile::TempDir, track_id: i64) -> ManagedDeviceFile {
+    let source_path = temp.path().join(format!("{track_id}.flac"));
+    let metadata = std::fs::metadata(&source_path).unwrap();
+    let source_mtime = metadata
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let device_path = format!("Artist/Unknown Album/00 Track {track_id}.opus");
+    upsert_device_file(
+        conn,
+        &DeviceFileRecord {
+            device_serial: "a".into(),
+            track_id,
+            source_path: source_path.to_string_lossy().into_owned(),
+            source_size: metadata.len(),
+            source_mtime,
+            device_path: device_path.clone(),
+            device_size: 100,
+            profile_fingerprint: "opus-vbr-160-v1".into(),
+            pinned: false,
+        },
+    )
+    .unwrap();
+    ManagedDeviceFile {
+        relative_path: device_path,
+        size_bytes: 100,
+    }
+}
+
+#[test]
+fn synced_audio_without_sidecars_plans_one_analysis_copy_per_track() {
+    run(async {
+        let (temp, conn) = fixture();
+        seed_render_data(&conn, 1, 7, 3);
+        seed_render_data(&conn, 2, 8, 5);
+        select_road_playlist(&conn, &[1, 2]);
+        let managed_files = [
+            register_synced_track(&conn, &temp, 1),
+            register_synced_track(&conn, &temp, 2),
+        ];
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.managed_files.replace(managed_files.to_vec());
+
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let device = runtime.devices().remove(0);
+        assert_eq!(device.page.changes.additions, 2);
+        assert_eq!(device.page.changes.replacements, 0);
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let copied_paths = backend
+            .state
+            .managed_copies
+            .borrow()
+            .iter()
+            .map(|(_, path)| path.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            copied_paths
+                .iter()
+                .filter(|path| path.ends_with(".reprise-analysis"))
+                .count(),
+            2
+        );
+        assert!(
+            copied_paths.iter().all(|path| !path.ends_with(".opus")),
+            "missing analyses must not cause audio copies: {copied_paths:?}"
+        );
+    });
+}
+
 #[test]
 fn analysis_sidecar_is_written_beside_its_transcoded_track_with_the_database_fingerprint() {
     run(async {
@@ -78,30 +154,21 @@ fn a_partial_sync_never_rewrites_the_untouched_tracks_analysis() {
         seed_render_data(&conn, 1, 7, 3);
         seed_render_data(&conn, 2, 8, 5);
         select_road_playlist(&conn, &[1, 2]);
-        let source_path = temp.path().join("2.flac");
-        let metadata = std::fs::metadata(&source_path).unwrap();
-        let source_mtime = metadata
-            .modified()
+        let synced_audio = register_synced_track(&conn, &temp, 2);
+        let sidecar_size = AnalysisSidecar::for_track(&conn, 2)
             .unwrap()
-            .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() as i64;
-        upsert_device_file(
-            &conn,
-            &DeviceFileRecord {
-                device_serial: "a".into(),
-                track_id: 2,
-                source_path: source_path.to_string_lossy().into_owned(),
-                source_size: metadata.len(),
-                source_mtime,
-                device_path: "Artist/Unknown Album/00 Track 2.opus".into(),
-                device_size: 100,
-                profile_fingerprint: "opus-vbr-160-v1".into(),
-                pinned: false,
-            },
-        )
-        .unwrap();
+            .encode()
+            .unwrap()
+            .len() as u64;
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.managed_files.replace(vec![
+            synced_audio,
+            ManagedDeviceFile {
+                relative_path: "Artist/Unknown Album/00 Track 2.reprise-analysis".into(),
+                size_bytes: sidecar_size,
+            },
+        ]);
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         settle().await;
 

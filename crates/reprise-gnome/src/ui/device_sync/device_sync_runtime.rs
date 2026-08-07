@@ -523,7 +523,7 @@ impl DeviceSyncRuntime {
                     inspection
                         .managed_files
                         .iter()
-                        .filter(|file| !file.relative_path.to_ascii_lowercase().ends_with(".m3u8"))
+                        .filter(|file| compact::is_verified_track_file(file))
                         .count()
                 });
             let inspection_error = result.as_ref().err().cloned();
