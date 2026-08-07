@@ -654,3 +654,7 @@ mod reveal_track_display_tests;
 #[cfg(test)]
 #[path = "glide_reload_display_tests.rs"]
 mod glide_reload_display_tests;
+
+#[cfg(test)]
+#[path = "search_viewport_display_tests.rs"]
+mod search_viewport_display_tests;
