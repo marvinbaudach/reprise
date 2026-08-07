@@ -33,6 +33,7 @@ Environment overrides (all optional):
 | `PTR_E2E_N_TRACKS` | `5` | Number of copies of the core crate's `sine.flac` fixture scanned into the library. |
 | `PTR_E2E_OUT_DIR` | `/tmp/reprise-ptr-e2e` | Where screenshots and the app log are left after the run. Cleared at the start of each run. |
 | `PTR_E2E_PREFERENCES_ONLY` | `0` | Set to `1` to run only the Preferences pointer flow, independently of list geometry. |
+| `PTR_E2E_SEARCH_CHIP_ONLY` | `0` | Set to `1` to run only the search-chip flow: type a query, then prove one real click on the chip's × removes it. Covers the shared chrome, so it stands for every section's filter row. |
 | `PTR_E2E_COMPACT_SEEK_ONLY` | `0` | Set to `1` to run only the mini-player seek flow (MINI-1/MINI-2). Replaces the short fixtures with a single generated long track, so it runs alone; needs `ffmpeg`. |
 | `COMPACT_SEEK_FIXTURE_S` | `180` | Length in seconds of that generated track. |
 

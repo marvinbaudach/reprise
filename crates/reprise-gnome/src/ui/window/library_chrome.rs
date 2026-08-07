@@ -50,7 +50,7 @@ pub(in crate::ui) fn build(
     search_bar.connect_entry(search_entry);
     search_bar.set_key_capture_widget(Some(key_capture_widget));
     wire_search_toggle(&search_toggle, &search_bar, search_entry);
-    wire_search_focus_collapse(&search_bar, search_entry);
+    wire_search_focus_collapse(&search_bar, search_entry, key_capture_widget);
 
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
@@ -80,39 +80,114 @@ pub(in crate::ui) fn search_toggle_active(search_mode: bool, query: &str) -> boo
     search_mode || !query.trim().is_empty()
 }
 
-fn should_collapse_search_after_focus_change(search_mode: bool, entry_has_focus: bool) -> bool {
-    search_mode && !entry_has_focus
+fn should_collapse_search_after_focus_change(
+    search_mode: bool,
+    entry_has_focus: bool,
+    pointer_button_held: bool,
+) -> bool {
+    // `pointer_button_held` is the whole reason this is not just
+    // `search_mode && !entry_has_focus`. A press moves focus out of the entry
+    // *before* the release that completes the click. Collapsing in that gap
+    // removes a whole top bar, so everything below it — the filter row with
+    // the search chip, "Clear all" and the facet pills — jumps up by the
+    // strip's height, the release lands on whatever moved into its place, and
+    // GTK never emits `clicked`. What the user saw was the strip vanishing on
+    // the first click and the chip needing a second one. So: never collapse
+    // mid-click; the release hook below finishes the job.
+    search_mode && !entry_has_focus && !pointer_button_held
 }
 
-fn wire_search_focus_collapse(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) {
-    let focus = gtk4::EventControllerFocus::new();
-    let bar = search_bar.downgrade();
-    focus.connect_contains_focus_notify(move |focus| {
-        let Some(bar) = bar.upgrade() else {
-            return;
-        };
-        if !should_collapse_search_after_focus_change(bar.is_search_mode(), focus.contains_focus())
-        {
-            return;
-        }
-        // Pointer activation transfers focus before emitting `clicked`. Wait
-        // until that click has run so the search toggle cannot observe the
-        // blur-driven collapse as a request to reopen the bar.
-        let bar = bar.downgrade();
-        let focus = focus.downgrade();
-        gtk4::glib::idle_add_local_once(move || {
-            let (Some(bar), Some(focus)) = (bar.upgrade(), focus.upgrade()) else {
-                return;
-            };
-            if should_collapse_search_after_focus_change(
-                bar.is_search_mode(),
-                focus.contains_focus(),
-            ) {
-                bar.set_search_mode(false);
+fn wire_search_focus_collapse(
+    search_bar: &gtk4::SearchBar,
+    search_entry: &gtk4::SearchEntry,
+    pointer_root: &impl IsA<gtk4::Widget>,
+) {
+    let held = Rc::new(std::cell::Cell::new(false));
+    let released = wire_search_focus_collapse_with(search_bar, search_entry, &held);
+
+    // Why an event controller and not `GdkDevice::modifier_state`: on X11
+    // that state is only refreshed from events the toolkit itself received,
+    // and it read "no button down" throughout a real held click — measured,
+    // not assumed. The button events are the authority.
+    //
+    // Legacy (not `GtkGestureClick`) and capture phase: this watcher must
+    // observe every press and release anywhere in the window without ever
+    // claiming the sequence, or it would eat the very clicks it exists to
+    // protect.
+    let controller = gtk4::EventControllerLegacy::new();
+    controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    controller.connect_event(move |_, event| {
+        match event.event_type() {
+            gtk4::gdk::EventType::ButtonPress => held.set(true),
+            gtk4::gdk::EventType::ButtonRelease => {
+                held.set(false);
+                released();
             }
-        });
+            _ => {}
+        }
+        gtk4::glib::Propagation::Proceed
+    });
+    pointer_root.as_ref().add_controller(controller);
+}
+
+/// The wiring above with the pointer-button state handed in, so a test can
+/// hold a button down without a device. Returns the hook to call when the
+/// pointer is released: a collapse that was postponed mid-click runs then.
+fn wire_search_focus_collapse_with(
+    search_bar: &gtk4::SearchBar,
+    search_entry: &gtk4::SearchEntry,
+    held: &Rc<std::cell::Cell<bool>>,
+) -> impl Fn() + 'static {
+    let focus = gtk4::EventControllerFocus::new();
+    let postponed = Rc::new(std::cell::Cell::new(false));
+
+    // One collapse, deferred to an idle by both callers. Pointer activation
+    // transfers focus before emitting `clicked`, so running inside the event
+    // would let the search toggle read the blur-driven collapse as a request
+    // to reopen the bar. When the idle finds a button still down it does not
+    // collapse; it records that one is owed, and the release hook re-runs it.
+    let collapse = {
+        let bar = search_bar.downgrade();
+        let focus = focus.downgrade();
+        let held = held.clone();
+        let postponed = postponed.clone();
+        Rc::new(move || {
+            let (bar, focus, held, postponed) =
+                (bar.clone(), focus.clone(), held.clone(), postponed.clone());
+            gtk4::glib::idle_add_local_once(move || {
+                let (Some(bar), Some(focus)) = (bar.upgrade(), focus.upgrade()) else {
+                    return;
+                };
+                if !bar.is_search_mode() || focus.contains_focus() {
+                    postponed.set(false);
+                    return;
+                }
+                if should_collapse_search_after_focus_change(
+                    bar.is_search_mode(),
+                    focus.contains_focus(),
+                    held.get(),
+                ) {
+                    bar.set_search_mode(false);
+                    postponed.set(false);
+                    return;
+                }
+                // Mid-click: the release hook owns this collapse now.
+                postponed.set(true);
+            });
+        })
+    };
+
+    let collapse_on_blur = collapse.clone();
+    focus.connect_contains_focus_notify(move |_| {
+        collapse_on_blur();
     });
     search_entry.add_controller(focus);
+
+    move || {
+        if postponed.replace(false) {
+            collapse();
+        }
+    }
 }
 
 fn update_preserved_query(search_mode: bool, query: &str, preserved_query: &mut String) {
@@ -224,6 +299,26 @@ mod tests {
 
     fn test_content() -> gtk4::Label {
         gtk4::Label::new(Some("Library"))
+    }
+
+    /// The deferred collapse is a timer, not an idle: pumping a drained main
+    /// context proves nothing about it, so these helpers pump against the
+    /// clock instead.
+    fn pump_for(duration: std::time::Duration) {
+        let deadline = std::time::Instant::now() + duration;
+        while std::time::Instant::now() < deadline {
+            while gtk4::glib::MainContext::default().iteration(false) {}
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    fn settle_until(label: &str, condition: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !condition() {
+            while gtk4::glib::MainContext::default().iteration(false) {}
+            assert!(std::time::Instant::now() < deadline, "timed out: {label}");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 
     #[test]
@@ -443,9 +538,29 @@ mod tests {
 
     #[test]
     fn search_7_focus_loss_collapses_only_an_open_search() {
-        assert!(should_collapse_search_after_focus_change(true, false));
-        assert!(!should_collapse_search_after_focus_change(true, true));
-        assert!(!should_collapse_search_after_focus_change(false, false));
+        assert!(should_collapse_search_after_focus_change(
+            true, false, false
+        ));
+        assert!(!should_collapse_search_after_focus_change(
+            true, true, false
+        ));
+        assert!(!should_collapse_search_after_focus_change(
+            false, false, false
+        ));
+    }
+
+    // FIL-1a: the press that blurs the entry is the first half of a click on
+    // something below the strip — most often the search chip's ×. Collapsing
+    // between press and release moves that target out from under the pointer
+    // and the click is lost, so a held button postpones the collapse.
+    #[test]
+    fn search_7_a_held_pointer_button_postpones_the_collapse() {
+        assert!(!should_collapse_search_after_focus_change(
+            true, false, true
+        ));
+        assert!(should_collapse_search_after_focus_change(
+            true, false, false
+        ));
     }
 
     #[test]
@@ -474,11 +589,70 @@ mod tests {
         assert!(chrome.search_bar.is_search_mode());
 
         content.grab_focus();
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        settle_until("the blurred search strip collapses", || {
+            !chrome.search_bar.is_search_mode()
+        });
 
         assert!(!chrome.search_bar.is_search_mode());
         assert_eq!(entry.text(), "falling");
         assert!(chrome.search_toggle.is_active());
+    }
+
+    // FIL-1a regression: the strip must not collapse while the click that
+    // blurred the entry is still held. The real failure this covers is the
+    // search chip needing two clicks — the first press collapsed the strip,
+    // the filter row jumped up by its height, and the release missed the
+    // chip. Proven at the pointer level by
+    // `scripts/ptr-e2e/search-chip.sh`; proven here without a device by
+    // handing the "button is down" answer in.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_7_a_held_click_keeps_the_strip_in_place_until_release() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.SearchHeldClickTest")
+            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let header = adw::HeaderBar::new();
+        let entry = gtk4::SearchEntry::new();
+        let content = gtk4::Button::with_label("Filter chip");
+        let search_bar = gtk4::SearchBar::new();
+        search_bar.set_child(Some(&entry));
+        search_bar.connect_entry(&entry);
+        let held = Rc::new(std::cell::Cell::new(true));
+        let released = wire_search_focus_collapse_with(&search_bar, &entry, &held);
+        let root = adw::ToolbarView::new();
+        root.add_top_bar(&header);
+        root.add_top_bar(&search_bar);
+        root.set_content(Some(&content));
+        window.set_content(Some(&root));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        search_bar.set_search_mode(true);
+        entry.set_text("falling");
+        entry.grab_focus();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(search_bar.is_search_mode());
+
+        // The press: focus moves to the chip, the button is still down.
+        content.grab_focus();
+        pump_for(std::time::Duration::from_millis(200));
+        assert!(
+            search_bar.is_search_mode(),
+            "the strip must stay put while the click is still held, or the \
+             release lands on whatever moved into the chip's place"
+        );
+
+        // The release.
+        held.set(false);
+        released();
+        settle_until("the strip collapses once the button is up", || {
+            !search_bar.is_search_mode()
+        });
     }
 
     #[test]
