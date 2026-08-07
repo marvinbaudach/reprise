@@ -1,7 +1,12 @@
 use std::cell::Cell;
 
 /// Reprise's brand accent: the thick barline of the repeat-sign logo.
-pub(in crate::ui) const APP_ACCENT: &str = "#4FDBD4";
+///
+/// Lifted at compile time out of `data/brand/palette.toml` by the crate's
+/// build script, so the brand has exactly one maintained source. It stays a
+/// plain constant — the accent is needed while the theme CSS is built at
+/// startup, long before anything may touch the filesystem.
+pub(in crate::ui) const APP_ACCENT: &str = env!("REPRISE_APP_ACCENT");
 
 /// Dark foreground for text and glyphs on [`APP_ACCENT`]. Its 11.16:1 WCAG
 /// contrast ratio is comfortably above the 4.5:1 AA requirement for text.
@@ -96,10 +101,30 @@ mod tests {
             AccentSource::DEFAULT
         );
         assert_eq!(AccentSource::DEFAULT, AccentSource::App);
-        assert_eq!(APP_ACCENT, "#4FDBD4");
         assert_eq!(ACCENT_SOURCE_SETTING_KEY, "ui.accent-source");
         assert_eq!(accent_fg(AccentSource::App), Some("#04140f"));
         assert_eq!(accent_fg(AccentSource::System), None);
+    }
+
+    /// Proves the derivation rather than restating the colour: the build
+    /// script lifts [`APP_ACCENT`] out of the brand palette, and this reads
+    /// the same file back. The parse is deliberately written out again here
+    /// so a bug in the build script cannot vouch for itself.
+    #[test]
+    fn app_accent_is_the_teal_the_brand_palette_declares() {
+        const PALETTE: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../data/brand/palette.toml"
+        ));
+
+        let declared = PALETTE
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .find(|(key, _)| key.trim() == "reprise_teal")
+            .map(|(_, value)| value.trim().trim_matches('"'))
+            .expect("the brand palette declares reprise_teal");
+
+        assert_eq!(APP_ACCENT, declared);
     }
 
     #[test]

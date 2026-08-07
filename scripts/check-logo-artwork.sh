@@ -319,7 +319,15 @@ for directory, names, files in os.walk(root):
         except (UnicodeDecodeError, OSError):
             continue
         hits = [value for value in palette.values() if value in text]
-        if not hits or relative == palette_path or relative.parts[0] == "docs":
+        # Prose is not a maintained source. `docs/` narrates the design and
+        # `.superpowers/sdd/` is the append-only ledger of finished tasks, so a
+        # colour named in one of their sentences is a quotation of history, not
+        # a value anyone edits to restyle the brand -- rewriting it there would
+        # falsify the record instead of removing a duplicate.
+        prose = relative.parts[0] == "docs" or (
+            relative.parts[:2] == (".superpowers", "sdd") and relative.suffix == ".md"
+        )
+        if not hits or relative == palette_path or prose:
             continue
         derived = (
             str(relative).startswith("data/icons/") or
