@@ -11,6 +11,7 @@ use std::sync::Mutex;
 pub(super) struct SourceNames {
     display: Mutex<HashMap<PathBuf, Option<String>>>,
     container: Mutex<HashMap<PathBuf, Option<String>>>,
+    relative: Mutex<HashMap<PathBuf, PathBuf>>,
 }
 
 impl SourceNames {
@@ -32,11 +33,27 @@ impl SourceNames {
         }
     }
 
+    pub(super) fn remember_relative_path(&self, at: PathBuf, relative: PathBuf) {
+        if let Ok(mut paths) = self.relative.lock() {
+            paths.insert(at, relative);
+        }
+    }
+
+    pub(super) fn clear_relative_paths(&self) {
+        if let Ok(mut paths) = self.relative.lock() {
+            paths.clear();
+        }
+    }
+
     pub(super) fn display_name(&self, at: &Path) -> Option<String> {
         self.display.lock().ok()?.get(at)?.clone()
     }
 
     pub(super) fn container_name(&self, at: &Path) -> Option<String> {
         self.container.lock().ok()?.get(at)?.clone()
+    }
+
+    pub(super) fn relative_path(&self, at: &Path) -> Option<PathBuf> {
+        self.relative.lock().ok()?.get(at).cloned()
     }
 }

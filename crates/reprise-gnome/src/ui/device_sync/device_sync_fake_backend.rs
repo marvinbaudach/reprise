@@ -68,6 +68,10 @@ pub(super) struct FakeState {
     /// the right named target (`MTP-38`) was used, without touching a real
     /// or simulated filesystem.
     pub(super) managed_copies: RefCell<Vec<(String, String)>>,
+    /// Bytes handed to the backend for generated attachments. Audio produced
+    /// by the fake transcoder has no real temporary file, so absent sources
+    /// are simply not recorded here.
+    pub(super) managed_copy_contents: RefCell<Vec<(String, String, Vec<u8>)>>,
     pub(super) managed_deleted: RefCell<Vec<(String, String)>>,
     /// `MTP-38`/finding-1 proof: the `storage_id` each `replace_track`/
     /// `delete_track`/`replace_playlist` call actually reached this double
@@ -319,7 +323,7 @@ impl DeviceBackend for FakeBackend {
         _root_uri: String,
         target_path: String,
         storage_id: Option<StorageId>,
-        _source_path: PathBuf,
+        source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
         cancellable: gio::Cancellable,
@@ -327,10 +331,15 @@ impl DeviceBackend for FakeBackend {
     ) -> TestFuture<CopyOutcome> {
         let state = self.state.clone();
         let delay_ms = self.delay_ms;
-        state
-            .transfer_storage_ids
-            .borrow_mut()
-            .push((target_path.clone(), storage_id));
+        let source_contents = std::fs::read(source_path).ok();
+        let is_track_metadata =
+            relative_target == reprise_core::device_sync::track_metadata_list::FILE_NAME;
+        if !is_track_metadata {
+            state
+                .transfer_storage_ids
+                .borrow_mut()
+                .push((target_path.clone(), storage_id));
+        }
         Box::pin(async move {
             if reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(std::path::Path::new(
                 &relative_target,
@@ -341,6 +350,16 @@ impl DeviceBackend for FakeBackend {
             }
             if let Some(error) = state.replace_track_error.borrow().clone() {
                 return Err(error);
+            }
+            if is_track_metadata {
+                if let Some(contents) = source_contents {
+                    state.managed_copy_contents.borrow_mut().push((
+                        target_path,
+                        relative_target,
+                        contents,
+                    ));
+                }
+                return Ok(CopyOutcome::Copied);
             }
             state
                 .planned_operations
@@ -399,7 +418,14 @@ impl DeviceBackend for FakeBackend {
             state
                 .managed_copies
                 .borrow_mut()
-                .push((target_path, relative_target));
+                .push((target_path.clone(), relative_target.clone()));
+            if let Some(contents) = source_contents {
+                state.managed_copy_contents.borrow_mut().push((
+                    target_path,
+                    relative_target,
+                    contents,
+                ));
+            }
             Ok(CopyOutcome::Copied)
         })
     }
