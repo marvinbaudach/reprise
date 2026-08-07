@@ -610,6 +610,14 @@ pub(super) fn is_verified_track_file(file: &reprise_core::device_sync::ManagedDe
         && !reprise_core::device_sync::track_metadata_list::is_list_path(path)
 }
 
+pub(super) fn verified_track_bytes(files: &[reprise_core::device_sync::ManagedDeviceFile]) -> u64 {
+    files
+        .iter()
+        .filter(|file| is_verified_track_file(file))
+        .map(|file| file.size_bytes)
+        .fold(0_u64, u64::saturating_add)
+}
+
 fn update_runtime_target(
     devices: &mut [DeviceState],
     device_id: &str,
