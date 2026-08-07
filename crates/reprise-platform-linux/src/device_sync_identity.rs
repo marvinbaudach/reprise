@@ -42,22 +42,29 @@ pub fn project_descriptor(
 pub fn descriptor_from_mount(mount: &gio::Mount) -> Option<DeviceDescriptor> {
     let root_uri = mount.root().uri();
     let uuid = mount.uuid();
-    let unix_device = mount
-        .volume()
+    let volume = mount.volume();
+    let unix_device = volume
+        .as_ref()
         .and_then(|volume| volume.identifier(gio::VOLUME_IDENTIFIER_KIND_UNIX_DEVICE));
     let usb_serial = usb_serial_from_volume_identifier(
         unix_device.as_deref(),
         &root_uri,
         Path::new("/sys/bus/usb/devices"),
     );
+    let mount_name = mount.name();
+    let volume_name = volume.as_ref().map(gio::prelude::VolumeExt::name);
     let mut descriptor = project_descriptor(
         &root_uri,
         uuid.as_deref(),
         usb_serial.as_deref(),
-        &mount.name(),
+        &mount_display_name(&mount_name, volume_name.as_deref()),
     )?;
     descriptor.icon = mount.icon();
     Some(descriptor)
+}
+
+pub(crate) fn mount_display_name(mount_name: &str, volume_name: Option<&str>) -> String {
+    volume_name.unwrap_or(mount_name).to_string()
 }
 
 /// Finds the USB device represented by a GVfs MTP URI and reads its stable

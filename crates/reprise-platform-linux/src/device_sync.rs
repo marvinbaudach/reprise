@@ -13,11 +13,11 @@ pub use reprise_core::device_sync::{DeviceStorageInspection, DeviceStorageSnapsh
 
 #[path = "device_sync_identity.rs"]
 mod identity;
-#[cfg(test)]
-pub(crate) use identity::usb_serial_from_volume_identifier;
 pub use identity::{
     descriptor_from_mount, project_descriptor, usb_serial_from_sysfs, DeviceDescriptor,
 };
+#[cfg(test)]
+pub(crate) use identity::{mount_display_name, usb_serial_from_volume_identifier};
 
 const ENUMERATE_ATTRIBUTES: &str = "standard::name,standard::type,standard::size";
 const ENUMERATE_BATCH_SIZE: i32 = 64;

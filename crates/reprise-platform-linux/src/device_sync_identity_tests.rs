@@ -54,6 +54,15 @@ fn descriptor_gaining_a_usb_serial_becomes_reconnectable_without_losing_mtp_acce
 }
 
 #[test]
+fn fallback_mount_prefers_its_owning_volume_name() {
+    assert_eq!(
+        mount_display_name("mtp", Some("Pixel 10 Pro XL")),
+        "Pixel 10 Pro XL"
+    );
+    assert_eq!(mount_display_name("mtp", None), "mtp");
+}
+
+#[test]
 fn mtp_49_volume_unix_device_identifier_resolves_the_usb_serial() {
     let sysfs = tempfile::tempdir().unwrap();
     let device = sysfs.path().join("3-1.4");
