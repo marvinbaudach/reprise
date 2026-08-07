@@ -41,8 +41,23 @@ impl PlayerBar {
     }
 
     /// Shows `title`/`artist` and starts their shared 250 ms crossfade.
+    ///
+    /// The crossfade belongs to the track *change*. Re-feeding the pair the
+    /// bar already carries — a tag edit on the playing track re-reads title
+    /// and artist whichever field was edited, and re-announcing the loaded
+    /// track re-sends both — names nothing new, so cover and metadata stay
+    /// where they are. The link labels are applied either way: they follow
+    /// the playback mode, which can change under an unchanged track.
     pub fn set_track(&self, title: &str, artist: &str, links: LinkLabels) {
         self.apply_link_labels(links, true);
+        let unchanged = {
+            let displayed = self.displayed_track.borrow();
+            displayed.0 == title && displayed.1 == artist
+        };
+        if unchanged {
+            return;
+        }
+        *self.displayed_track.borrow_mut() = (title.to_owned(), artist.to_owned());
         self.animate_track_change(title, artist);
     }
 
@@ -142,6 +157,9 @@ impl PlayerBar {
     pub fn clear_track(&self) {
         let generation = self.track_animation_generation.get().wrapping_add(1);
         self.track_animation_generation.set(generation);
+        // Nothing is shown any more, so the next load — even of the track that
+        // was just cleared — is a change again.
+        *self.displayed_track.borrow_mut() = (String::new(), String::new());
         let previous = self.current_track_animation.borrow_mut().take();
         if let Some(previous) = previous {
             previous.skip();

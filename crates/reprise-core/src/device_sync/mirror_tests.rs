@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use super::{
-    plan_mirror, DeviceFileRecord, DevicePlaylistRecord, ManagedDeviceFile, ManagedRemoval,
-    MirrorBlocker, MirrorInput, MirrorPlaylistSnapshot, MirrorTrack, MirrorWarning, Mp3Quality,
-    SelectionSource, SyncTrack, TransferProfile, UnavailableTrack,
+    plan_mirror, DesktopAnalysis, DeviceFileRecord, DevicePlaylistRecord, ManagedDeviceFile,
+    ManagedRemoval, MirrorBlocker, MirrorInput, MirrorPlaylistSnapshot, MirrorTrack, MirrorWarning,
+    Mp3Quality, SelectionSource, SyncTrack, TransferProfile, UnavailableTrack,
 };
 
 fn track(
@@ -49,6 +49,7 @@ fn input(selected: Vec<SelectionSource>, playlists: Vec<MirrorPlaylistSnapshot>)
         inventory: Vec::new(),
         playlist_inventory: Vec::new(),
         managed_files: Vec::new(),
+        desktop_analyses: Vec::new(),
     }
 }
 
@@ -64,6 +65,98 @@ fn inventory(track: &SyncTrack, path: &str, fingerprint: &str) -> DeviceFileReco
         profile_fingerprint: fingerprint.into(),
         pinned: false,
     }
+}
+
+fn synced_audio_input() -> MirrorInput {
+    let source = SelectionSource::Playlist(10);
+    let wanted = track(1, "/music/one.mp3", Some(192), 10_000, 240_000);
+    let device_path = "Album Artist/Album/01 Track 1.mp3";
+    let mut mirror_input = input(
+        vec![source.clone()],
+        vec![playlist(
+            source,
+            "Analysed",
+            vec![MirrorTrack::Available(wanted.clone())],
+        )],
+    );
+    mirror_input
+        .inventory
+        .push(inventory(&wanted, device_path, "copy-original-v1"));
+    mirror_input.managed_files.push(ManagedDeviceFile {
+        relative_path: device_path.into(),
+        size_bytes: wanted.size_bytes,
+    });
+    mirror_input
+}
+
+#[test]
+fn a_resident_analysis_of_the_expected_size_plans_no_write() {
+    let mut mirror_input = synced_audio_input();
+    mirror_input.desktop_analyses.push(DesktopAnalysis {
+        track_id: 1,
+        size_bytes: 123,
+    });
+    mirror_input.managed_files.push(ManagedDeviceFile {
+        relative_path: "Album Artist/Album/01 Track 1.reprise-analysis".into(),
+        size_bytes: 123,
+    });
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+    assert!(plan.analysis_writes.is_empty());
+    assert_eq!(plan.transfer_bytes, 0);
+}
+
+#[test]
+fn a_resident_analysis_of_a_different_size_plans_only_its_rewrite() {
+    let mut mirror_input = synced_audio_input();
+    mirror_input.desktop_analyses.push(DesktopAnalysis {
+        track_id: 1,
+        size_bytes: 123,
+    });
+    mirror_input.managed_files.push(ManagedDeviceFile {
+        relative_path: "Album Artist/Album/01 Track 1.reprise-analysis".into(),
+        size_bytes: 122,
+    });
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+    assert_eq!(plan.analysis_writes.len(), 1);
+    assert_eq!(plan.analysis_writes[0].existing_size_bytes, Some(122));
+    assert_eq!(plan.analysis_writes[0].size_bytes, 123);
+    assert_eq!(plan.transfer_bytes, 123);
+}
+
+#[test]
+fn a_track_without_desktop_analysis_plans_no_sidecar_or_placeholder() {
+    let plan = plan_mirror(synced_audio_input());
+
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+    assert!(plan.analysis_writes.is_empty());
+}
+
+#[test]
+fn generated_metadata_files_are_known_but_never_orphan_removals() {
+    let mut mirror_input = synced_audio_input();
+    mirror_input.managed_files.extend([
+        ManagedDeviceFile {
+            relative_path: "Album Artist/Album/Unknown.reprise-analysis".into(),
+            size_bytes: 123,
+        },
+        ManagedDeviceFile {
+            relative_path: "reprise-track-metadata.rpl".into(),
+            size_bytes: 45,
+        },
+    ]);
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.remove.is_empty());
 }
 
 #[test]

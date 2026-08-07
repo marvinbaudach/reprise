@@ -255,7 +255,7 @@ impl PlayerController {
             let now_playing = self.now_playing.clone();
             let mpris_state = self.mpris_state.clone();
             let bar_cover_target = self.bar.cover_image().clone();
-            self.cover_loader.load_into_with_resolution(
+            self.cover_loader.load_into_now_playing(
                 &bar_cover_target,
                 path,
                 ThumbnailSize::Bar,
@@ -283,24 +283,29 @@ impl PlayerController {
                 },
             );
         } else {
-            self.cover_loader.load_into(
+            self.cover_loader.load_into_now_playing(
                 self.bar.cover_image(),
                 path,
                 ThumbnailSize::Bar,
                 bar_generation,
                 &self.bar_cover_generation,
+                |_| {},
             );
         }
 
         let compact_generation = self.compact_cover_generation.get().wrapping_add(1);
         self.compact_cover_generation.set(compact_generation);
-        self.compact_player.set_cover_placeholder();
-        self.cover_loader.load_into(
+        // No placeholder up front: the loader puts one up itself the moment
+        // the new track resolves to nothing. Blanking here instead made every
+        // track change within one album flash the mini-player's cover, which
+        // has no crossfade to hide it behind.
+        self.cover_loader.load_into_now_playing(
             self.compact_player.cover_image(),
             path,
             ThumbnailSize::Bar,
             compact_generation,
             &self.compact_cover_generation,
+            |_| {},
         );
     }
 

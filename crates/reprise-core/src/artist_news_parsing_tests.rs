@@ -59,7 +59,6 @@ fn dg_3_release_group_pages_report_the_next_musicbrainz_offset() {
           ]
         }"#,
         date(),
-        false,
     )
     .unwrap();
 
@@ -123,7 +122,7 @@ fn artist_match_rejects_ambiguous_exact_candidates_and_bad_json() {
 
 #[test]
 fn release_parser_keeps_regular_albums_eps_and_owned_titles() {
-    let items = parse_release_groups(RELEASES, date(), false);
+    let items = parse_release_groups(RELEASES, date());
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].title, "Future Album");
     assert_eq!(items[0].kind, NewsKind::Upcoming);
@@ -131,20 +130,20 @@ fn release_parser_keeps_regular_albums_eps_and_owned_titles() {
 }
 
 #[test]
-fn release_parser_excludes_secondary_and_non_album_types() {
+fn release_parser_excludes_secondary_types_but_keeps_primary_singles() {
     let json = r#"{"release-groups":[
       {"id":"1","title":"Live Album","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":["Live"]},
       {"id":"2","title":"Remix EP","first-release-date":"2026-07-01","primary-type":"EP","secondary-types":["Remix"]},
       {"id":"3","title":"Single","first-release-date":"2026-07-01","primary-type":"Single","secondary-types":[]},
       {"id":"4","title":"Regular","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, date(), false);
+    let items = parse_release_groups(json, date());
     assert_eq!(
         items
             .iter()
             .map(|item| item.title.as_str())
             .collect::<Vec<_>>(),
-        ["Regular"]
+        ["Regular", "Single"]
     );
 }
 
@@ -157,7 +156,7 @@ fn date_filter_keeps_current_albums_and_catalogues_missing_dates() {
       {"id":"too-old","title":"Too Old","first-release-date":"2026-04-13","primary-type":"Album"},
       {"id":"unknown","title":"Unknown","primary-type":"Album"}
     ]}"#;
-    let items = parse_release_groups(json, date(), false);
+    let items = parse_release_groups(json, date());
     assert_eq!(items.len(), 5);
     assert!(items
         .iter()
@@ -180,7 +179,7 @@ fn dg_3_undated_albums_and_eps_remain_catalog_but_singles_stay_out() {
       {"id":"single","title":"Undated Single","primary-type":"Single"}
     ]}"#;
 
-    let items = parse_release_groups(json, date(), true);
+    let items = parse_release_groups(json, date());
 
     assert_eq!(
         items
@@ -203,7 +202,7 @@ fn nr_1a_album_and_ep_window_starts_ninety_days_ago() {
       {"id":"future","title":"Distant Future","first-release-date":"2028-01-01","primary-type":"Album"}
     ]}"#;
 
-    let items = parse_release_groups(json, date(), false);
+    let items = parse_release_groups(json, date());
     let titles = items
         .iter()
         .filter(|item| item.kind != NewsKind::Catalog)
@@ -217,14 +216,14 @@ fn nr_1a_album_and_ep_window_starts_ninety_days_ago() {
 }
 
 #[test]
-fn nr_16_catalog_keeps_historical_albums_and_eps_without_old_singles() {
+fn nr_24_catalog_keeps_historical_albums_eps_and_singles() {
     let json = r#"{"release-groups":[
       {"id":"album","title":"Older Album","first-release-date":"2020-03-01","primary-type":"Album"},
       {"id":"ep","title":"Older EP","first-release-date":"2024-10-18","primary-type":"EP"},
       {"id":"single","title":"Older Single","first-release-date":"2024-09-01","primary-type":"Single"}
     ]}"#;
 
-    let items = parse_release_groups(json, date(), true);
+    let items = parse_release_groups(json, date());
 
     assert_eq!(
         items
@@ -233,13 +232,14 @@ fn nr_16_catalog_keeps_historical_albums_and_eps_without_old_singles() {
             .collect::<Vec<_>>(),
         [
             ("Older EP", NewsKind::Catalog),
+            ("Older Single", NewsKind::Catalog),
             ("Older Album", NewsKind::Catalog),
         ]
     );
 }
 
 #[test]
-fn nr_1a_singles_require_a_complete_future_date() {
+fn nr_24_only_an_exact_future_single_is_upcoming() {
     let json = r#"{"release-groups":[
       {"id":"future","title":"Future Single","first-release-date":"2026-07-14","primary-type":"Single"},
       {"id":"today","title":"Today Single","first-release-date":"2026-07-13","primary-type":"Single"},
@@ -248,30 +248,42 @@ fn nr_1a_singles_require_a_complete_future_date() {
       {"id":"year","title":"Year Single","first-release-date":"2027","primary-type":"Single"}
     ]}"#;
 
-    let titles = parse_release_groups(json, date(), false)
+    let rows = parse_release_groups(json, date())
         .into_iter()
-        .map(|item| item.title)
+        .map(|item| (item.title, item.kind))
         .collect::<Vec<_>>();
 
-    assert_eq!(titles, ["Future Single"]);
+    assert_eq!(
+        rows,
+        [
+            ("Future Single".to_string(), NewsKind::Upcoming),
+            ("Year Single".to_string(), NewsKind::Catalog),
+            ("Month Single".to_string(), NewsKind::Catalog),
+            ("Today Single".to_string(), NewsKind::Catalog),
+            ("Past Single".to_string(), NewsKind::Catalog),
+        ]
+    );
 }
 
 #[test]
-fn nr_1a_singles_window_starts_ninety_days_ago() {
-    // Same boundary as `nr_1a_album_and_ep_window_starts_ninety_days_ago`,
-    // pinned for the singles path: with `include_singles` on, a released
-    // single follows the same `NEWS_WINDOW_DAYS` window as albums and EPs.
+fn nr_24_released_singles_are_catalog_data_regardless_of_news_age() {
     let json = r#"{"release-groups":[
       {"id":"single-edge","title":"Single Edge","first-release-date":"2026-04-14","primary-type":"Single"},
       {"id":"too-old","title":"Too Old Single","first-release-date":"2026-04-13","primary-type":"Single"}
     ]}"#;
 
-    let titles = parse_release_groups(json, date(), true)
+    let rows = parse_release_groups(json, date())
         .into_iter()
-        .map(|item| item.title)
+        .map(|item| (item.title, item.kind))
         .collect::<Vec<_>>();
 
-    assert_eq!(titles, ["Single Edge"]);
+    assert_eq!(
+        rows,
+        [
+            ("Single Edge".to_string(), NewsKind::Catalog),
+            ("Too Old Single".to_string(), NewsKind::Catalog),
+        ]
+    );
 }
 
 #[test]
@@ -289,7 +301,7 @@ fn nr_1a_secondary_types_are_excluded_before_query_time_news_cap() {
     }
     let json = format!(r#"{{"release-groups":[{}]}}"#, groups.join(","));
 
-    let items = parse_release_groups(&json, date(), false);
+    let items = parse_release_groups(&json, date());
 
     assert_eq!(items.len(), 21);
     assert!(items.iter().all(|item| item.title != "Live"));
@@ -308,7 +320,7 @@ fn releases_sort_upcoming_ascending_then_new_descending() {
       {"id":"u2","title":"Upcoming 2","first-release-date":"2026-09-01","primary-type":"Album"},
       {"id":"n2","title":"New 2","first-release-date":"2026-05-01","primary-type":"Album"}
     ]}"#;
-    let titles = parse_release_groups(json, date(), false)
+    let titles = parse_release_groups(json, date())
         .into_iter()
         .map(|item| item.title)
         .collect::<Vec<_>>();
@@ -333,7 +345,7 @@ fn upcoming_album_survives_a_local_title_match() {
     let json = r#"{"release-groups":[
       {"id":"1","title":"Eclipse","first-release-date":"2026-09-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, date(), false);
+    let items = parse_release_groups(json, date());
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Eclipse");
     assert_eq!(items[0].kind, NewsKind::Upcoming);
@@ -345,7 +357,7 @@ fn released_owned_album_is_retained_for_query_time_presence() {
       {"id":"1","title":"Owned Album","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]},
       {"id":"2","title":"Single Only","first-release-date":"2026-07-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, date(), false);
+    let items = parse_release_groups(json, date());
     let titles = items
         .iter()
         .map(|item| item.title.as_str())
@@ -358,7 +370,7 @@ fn upcoming_album_is_retained_without_fetch_time_library_input() {
     let json = r#"{"release-groups":[
       {"id":"1","title":"Eclipse","first-release-date":"2026-09-01","primary-type":"Album","secondary-types":[]}
     ]}"#;
-    let items = parse_release_groups(json, date(), false);
+    let items = parse_release_groups(json, date());
 
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Eclipse");
@@ -372,30 +384,18 @@ const SINGLES: &str = r#"{"release-groups":[
 ]}"#;
 
 #[test]
-fn released_singles_are_dropped_while_the_switch_is_off() {
-    let items = parse_release_groups(SINGLES, date(), false);
-    let titles = items
+fn nr_24_released_singles_become_catalog_rows() {
+    let items = parse_release_groups(SINGLES, date());
+    let kinds = items
         .iter()
-        .map(|item| item.title.as_str())
+        .map(|item| (item.title.as_str(), item.kind))
         .collect::<Vec<_>>();
     assert_eq!(
-        titles,
-        ["Announced Single"],
-        "an announced single with an exact date passes regardless of the switch"
-    );
-}
-
-#[test]
-fn released_singles_pass_within_the_window_while_the_switch_is_on() {
-    let items = parse_release_groups(SINGLES, date(), true);
-    let mut titles = items
-        .iter()
-        .map(|item| item.title.as_str())
-        .collect::<Vec<_>>();
-    titles.sort_unstable();
-    assert_eq!(
-        titles,
-        ["Announced Single", "Released Single"],
-        "'Old Single' is outside NEWS_WINDOW_DAYS and stays out"
+        kinds,
+        [
+            ("Announced Single", NewsKind::Upcoming),
+            ("Released Single", NewsKind::Catalog),
+            ("Old Single", NewsKind::Catalog),
+        ]
     );
 }

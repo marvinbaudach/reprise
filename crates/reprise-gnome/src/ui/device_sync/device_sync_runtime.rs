@@ -523,7 +523,7 @@ impl DeviceSyncRuntime {
                     inspection
                         .managed_files
                         .iter()
-                        .filter(|file| !file.relative_path.to_ascii_lowercase().ends_with(".m3u8"))
+                        .filter(|file| compact::is_verified_track_file(file))
                         .count()
                 });
             let inspection_error = result.as_ref().err().cloned();
@@ -575,7 +575,7 @@ impl DeviceSyncRuntime {
                                 .iter()
                                 .find(|device| device.descriptor.id == id)
                                 .map_or(0, |device| {
-                                    category_bytes(&device.managed_files)
+                                    compact::verified_track_bytes(&device.managed_files)
                                         .saturating_add(category_bytes(&device.youtube_files))
                                         .saturating_add(category_bytes(&device.podcast_files))
                                 });
@@ -629,7 +629,7 @@ impl DeviceSyncRuntime {
                                 device.last_sync = Some(verified_at);
                                 device.verified_managed_track_count = verified_track_count;
                                 device.size_on_device_bytes = Some(
-                                    category_bytes(&device.managed_files)
+                                    compact::verified_track_bytes(&device.managed_files)
                                         .saturating_add(category_bytes(&device.youtube_files))
                                         .saturating_add(category_bytes(&device.podcast_files)),
                                 );

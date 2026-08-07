@@ -414,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_17_table_has_the_five_named_columns() {
+    fn nr_25_table_has_the_five_named_columns() {
         let columns = column_contract();
         assert_eq!(&columns[..5], ["Date", "Title", "Artist", "Type", "Status"]);
     }

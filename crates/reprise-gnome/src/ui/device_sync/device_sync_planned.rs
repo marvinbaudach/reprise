@@ -207,6 +207,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
             return;
         };
         if let Effect::Finished(outcome) = effect {
+            let outcome = run_analysis_phase(&runtime, &mut work, outcome).await;
             let mut outcome =
                 content_transfer::run_content_phase(&runtime, &mut work, outcome).await;
             if matches!(outcome, SyncOutcome::Completed { .. })
@@ -229,6 +230,53 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
         work.pending = work.machine.borrow_mut().dispatch(event);
         publish_phase(&runtime, &work);
     }
+}
+
+async fn run_analysis_phase(
+    runtime: &Rc<DeviceSyncRuntime>,
+    work: &mut PlannedWork,
+    outcome: SyncOutcome,
+) -> SyncOutcome {
+    if !matches!(outcome, SyncOutcome::Completed { .. }) {
+        return outcome;
+    }
+    let writes = work.machine.borrow().plan().analysis_writes.clone();
+    let analysis_bytes = writes
+        .iter()
+        .map(|write| write.size_bytes)
+        .fold(0_u64, u64::saturating_add);
+    let mut bytes_done = work
+        .machine
+        .borrow()
+        .plan()
+        .transfer_bytes
+        .saturating_sub(analysis_bytes);
+    for (index, write) in writes.iter().enumerate() {
+        if !is_current_run(runtime, work)
+            || work.machine.borrow().is_cancelled()
+            || work.cancelled.load(Ordering::SeqCst)
+            || work.cancellable.is_cancelled()
+        {
+            return SyncOutcome::Cancelled;
+        }
+        content_transfer::set_content_phase(
+            runtime,
+            work,
+            content_transfer::syncing_phase(
+                SyncStep::Copying,
+                index,
+                writes.len(),
+                write.device_path.clone(),
+                bytes_done,
+                work.machine.borrow().plan().transfer_bytes,
+            ),
+        );
+        if effects::copy_analysis_sidecar(runtime, work, write).await {
+            work.log.copied(write.size_bytes);
+        }
+        bytes_done = bytes_done.saturating_add(write.size_bytes);
+    }
+    outcome
 }
 
 /// Whether this run still owns its device.
@@ -558,6 +606,7 @@ impl DeviceSyncRuntime {
                     planned: u32::try_from(
                         device.mirror_plan.copy.len()
                             + device.mirror_plan.replace.len()
+                            + device.mirror_plan.analysis_writes.len()
                             + device.podcast_plan.to_copy.len()
                             + device.youtube_plan.to_copy.len(),
                     )
