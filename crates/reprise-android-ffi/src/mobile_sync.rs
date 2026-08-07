@@ -5,17 +5,41 @@ impl MusicLibrary {
     /// Lazily imports desktop rendering data for the track being presented.
     /// Missing and malformed sidecars are ordinary no-data outcomes.
     pub fn import_track_analysis(&self, track_id: i64) -> Result<(), LibraryError> {
+        let (source, sidecar_path) = {
+            let state = self.lock()?;
+            let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
+            let sidecar_path =
+                reprise_core::device_sync::mobile_import::analysis_sidecar_path_for_track(
+                    &state.db, track_id,
+                )
+                .map_err(database_error)?;
+            (tree.source.clone(), sidecar_path)
+        };
+        let Some(sidecar_path) = sidecar_path else {
+            return Ok(());
+        };
+        let Some(bytes) = reprise_core::device_sync::mobile_import::read_analysis_sidecar(
+            source.as_ref(),
+            track_id,
+            &sidecar_path,
+        ) else {
+            return Ok(());
+        };
         let state = self.lock()?;
-        let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
-        reprise_core::device_sync::mobile_import::import_analysis_for_track(
-            tree.source.as_ref(),
+        reprise_core::device_sync::mobile_import::import_analysis_bytes_for_track(
             &state.db,
             track_id,
+            &sidecar_path,
+            &bytes,
         )
         .map(|_| ())
-        .map_err(|error| LibraryError::Database {
-            detail: error.to_string(),
-        })
+        .map_err(database_error)
+    }
+}
+
+fn database_error(error: impl std::fmt::Display) -> LibraryError {
+    LibraryError::Database {
+        detail: error.to_string(),
     }
 }
 
@@ -24,6 +48,7 @@ mod tests {
     use std::fs::File;
     use std::os::fd::IntoRawFd;
     use std::path::PathBuf;
+    use std::sync::{Arc, Weak};
 
     use reprise_core::device_sync::analysis_sidecar::AnalysisSidecar;
     use reprise_core::spectrogram::{TrackSourceFingerprint, TrackSpectrogram};
@@ -44,6 +69,7 @@ mod tests {
     struct SyncedTrackSource {
         audio: PathBuf,
         sidecar: PathBuf,
+        library: Weak<MusicLibrary>,
     }
 
     impl SafSource for SyncedTrackSource {
@@ -94,7 +120,14 @@ mod tests {
         fn open_read_fd(&self, uri: String) -> Result<i32, SafSourceError> {
             let path = match uri.as_str() {
                 TRACK => &self.audio,
-                SIDECAR => &self.sidecar,
+                SIDECAR => {
+                    let library = self.library.upgrade().expect("library still open");
+                    assert!(
+                        library.state.try_lock().is_ok(),
+                        "the SAF sidecar read must not hold the app-wide library lock"
+                    );
+                    &self.sidecar
+                }
                 _ => {
                     return Err(SafSourceError::Io {
                         detail: format!("unexpected document {uri}"),
@@ -128,17 +161,20 @@ mod tests {
         .encode()
         .unwrap();
         std::fs::write(&sidecar_path, sidecar).unwrap();
-        let library = MusicLibrary::open(
-            directory.path().to_str().unwrap(),
-            directory.path().join("cache").to_str().unwrap(),
-        )
-        .unwrap();
+        let library = Arc::new(
+            MusicLibrary::open(
+                directory.path().to_str().unwrap(),
+                directory.path().join("cache").to_str().unwrap(),
+            )
+            .unwrap(),
+        );
         library
             .set_tree_uri(
                 ROOT.into(),
                 Box::new(SyncedTrackSource {
                     audio,
                     sidecar: sidecar_path,
+                    library: Arc::downgrade(&library),
                 }),
             )
             .unwrap();
