@@ -32,7 +32,7 @@ pub(super) struct CardContent<'a> {
 pub(super) fn applied_card(heading: String, lines: Vec<String>, undo: &gtk4::Button) -> adw::Bin {
     let card = card_shell(
         &CardContent {
-            icon_name: "emblem-ok-symbolic",
+            icon_name: super::DOCTOR_DONE_GLYPH,
             icon_class: Some("accent"),
             heading,
             heading_class: Some("heading"),

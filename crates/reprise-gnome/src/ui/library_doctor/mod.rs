@@ -53,6 +53,13 @@ use summary_page::LibraryDoctorPage;
 /// design's stethoscope is not worth a bundled asset for two 20px slots.
 pub(in crate::ui) const DOCTOR_GLYPH: &str = "system-search-symbolic";
 
+/// The "this is done" glyph. **Not** `emblem-ok-symbolic`: that name is absent
+/// from the installed Adwaita symbolic set (checked against
+/// `/usr/share/icons/Adwaita/symbolic`), so it renders as the missing-image
+/// box — visible in the result card's screenshot before this. Six other call
+/// sites in this app still use the missing name; they are outside this change.
+pub(in crate::ui) const DOCTOR_DONE_GLYPH: &str = "object-select-symbolic";
+
 pub(in crate::ui) fn css() -> String {
     [
         ".doctor-conflicts-dashed { border: 1px dashed @borders; border-radius: 12px; padding: 12px; }",

@@ -3843,6 +3843,13 @@ means deterministic and high-confidence, never „without review".
   `doc_9a_a_clean_library_gets_the_empty_state_not_three_empty_blocks`,
   `doc_9a_undo_is_dead_until_there_is_something_to_undo`,
   `doc_9a_the_conflict_count_is_a_property_of_the_scanned_scope`.
+  Two defects this rule's own screenshot pass caught, both older than it:
+  `emblem-ok-symbolic` is not in the installed Adwaita symbolic set and drew the
+  missing-image box, so the Doctor's "done" glyph is `object-select-symbolic`
+  now (six other call sites in the app still use the missing name); and the
+  `ISSUES` action row only answered the keyboard, because
+  `GtkListBoxRow::activate` does not fire for a single click on a row the list
+  box has no source for — it carries a click gesture as well now.
 
 - **DOC-9b** [active] [gtk] — **The review list is grouped by album.** Rows
   appear in scope order under one header per album carrying a group checkbox,

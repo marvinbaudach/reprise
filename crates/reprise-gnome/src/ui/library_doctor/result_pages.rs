@@ -68,7 +68,7 @@ impl DoctorResultPages {
         actions.set_halign(gtk4::Align::Center);
         actions.append(&undo);
         actions.append(&done);
-        let post = status_box("emblem-ok-symbolic", &post_title);
+        let post = status_box(super::DOCTOR_DONE_GLYPH, &post_title);
         post.append(&post_counts);
         post.append(&post_conflicts);
         post.append(&actions);
