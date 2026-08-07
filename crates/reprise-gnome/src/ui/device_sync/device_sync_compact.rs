@@ -576,13 +576,24 @@ fn desktop_analysis_sizes(
     track_ids.dedup();
     let mut analyses = Vec::new();
     for track_id in track_ids {
-        let Some(sidecar) =
-            reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(conn, track_id)
-                .map_err(|error| error.to_string())?
-        else {
-            continue;
+        let sidecar = match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
+            conn, track_id,
+        ) {
+            Ok(Some(sidecar)) => sidecar,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::warn!(track_id, %error, "could not load analysis sidecar data");
+                continue;
+            }
         };
-        let size_bytes = u64::try_from(sidecar.encode().map_err(|error| error.to_string())?.len())
+        let bytes = match sidecar.encode() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::warn!(track_id, %error, "could not encode analysis sidecar data");
+                continue;
+            }
+        };
+        let size_bytes = u64::try_from(bytes.len())
             .map_err(|_| "analysis sidecar length does not fit u64".to_string())?;
         analyses.push(reprise_core::device_sync::DesktopAnalysis {
             track_id,

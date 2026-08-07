@@ -121,6 +121,53 @@ fn synced_audio_without_sidecars_plans_one_analysis_copy_per_track() {
 }
 
 #[test]
+fn unreadable_analysis_for_one_track_does_not_block_the_other_tracks_plan() {
+    run(async {
+        let (temp, conn) = fixture();
+        seed_render_data(&conn, 1, 7, 3);
+        seed_render_data(&conn, 2, 8, 5);
+        crate::test_db::connection(&conn)
+            .execute(
+                "UPDATE track_spectrograms SET data = 'abcdefghijklmnopqrstuvwx' WHERE track_id = 1",
+                [],
+            )
+            .unwrap();
+        select_road_playlist(&conn, &[1, 2]);
+        let managed_files = [
+            register_synced_track(&conn, &temp, 1),
+            register_synced_track(&conn, &temp, 2),
+        ];
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.managed_files.replace(managed_files.to_vec());
+
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let device = runtime.devices().remove(0);
+        assert_eq!(device.page.changes.additions, 1);
+        assert_eq!(device.page.changes.replacements, 0);
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let copied_paths = backend
+            .state
+            .managed_copies
+            .borrow()
+            .iter()
+            .map(|(_, path)| path.clone())
+            .collect::<Vec<_>>();
+        assert!(copied_paths
+            .iter()
+            .any(|path| path.ends_with("Track 2.reprise-analysis")));
+        assert!(
+            copied_paths.iter().all(|path| !path.contains("Track 1")),
+            "the unreadable analysis must be skipped without copying its audio: {copied_paths:?}"
+        );
+    });
+}
+
+#[test]
 fn analysis_sidecar_is_written_beside_its_transcoded_track_with_the_database_fingerprint() {
     run(async {
         let (_temp, conn) = fixture();
