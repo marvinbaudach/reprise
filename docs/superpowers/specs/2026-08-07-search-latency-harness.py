@@ -53,6 +53,21 @@ def x(display, *args):
     )
 
 
+def clear_field(display):
+    """Empty the search entry, verifiably.
+
+    `ctrl+a` + `BackSpace` looked right and was not: on several runs the
+    characters landed on top of the previous query instead of replacing it, so
+    the run measured "loveloveloveove" — zero hits, and a cheaper reload than
+    the one under test. Select-all can miss because focus is not always inside
+    the entry at that moment, and one BackSpace on a non-selection deletes one
+    character. Enough BackSpaces to outlast any query this harness types is
+    crude but has no failure mode.
+    """
+    for _ in range(24):
+        x(display, "key", "BackSpace")
+
+
 def run(display, window, logfile, scenario, chars, interval_ms, settle_s):
     x(display, "windowactivate", "--sync", window)
     time.sleep(0.4)
@@ -61,8 +76,7 @@ def run(display, window, logfile, scenario, chars, interval_ms, settle_s):
         # Start from an empty, open search field.
         x(display, "key", "ctrl+f")
         time.sleep(0.6)
-        x(display, "key", "--clearmodifiers", "ctrl+a")
-        x(display, "key", "BackSpace")
+        clear_field(display)
         time.sleep(settle_s)
         before = len(log_events(logfile))
         for index, char in enumerate(chars):
@@ -74,8 +88,7 @@ def run(display, window, logfile, scenario, chars, interval_ms, settle_s):
         # Arrive filtered, then clear with Esc.
         x(display, "key", "ctrl+f")
         time.sleep(0.6)
-        x(display, "key", "--clearmodifiers", "ctrl+a")
-        x(display, "key", "BackSpace")
+        clear_field(display)
         time.sleep(0.4)
         for index, char in enumerate(chars):
             if index:

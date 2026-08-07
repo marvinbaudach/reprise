@@ -1,3 +1,11 @@
+---
+slug: search-responsiveness
+worktree: /home/marvin/Projects/reprise/.worktrees/search-responsiveness
+branch: feature/search-responsiveness
+phase: coded
+codex_session:
+created: 2026-08-07
+---
 # Search Responsiveness — Umsetzungsplan
 
 > **Für agentische Bearbeiter:** ERFORDERLICHER SUB-SKILL: `superpowers:subagent-driven-development` (empfohlen) oder `superpowers:executing-plans`, Aufgabe für Aufgabe. Schritte nutzen Checkbox-Syntax (`- [ ]`).
