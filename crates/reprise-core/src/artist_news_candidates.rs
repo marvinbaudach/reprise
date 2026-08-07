@@ -8,7 +8,6 @@ use rusqlite::Connection;
 use crate::artist_news::normalize;
 
 const FETCH_ALL_ARTISTS_KEY: &str = "module.new_releases.all_artists";
-const INCLUDE_SINGLES_KEY: &str = "module.new_releases.include_singles";
 const TOP_ARTIST_COUNT: usize = 20;
 const REST_ARTISTS_PER_RUN: usize = 30;
 
@@ -30,19 +29,6 @@ pub fn configured_fetch_scope(db: &crate::db::Db) -> Result<FetchScope, rusqlite
 pub fn set_fetch_all_artists(db: &crate::db::Db, all_artists: bool) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
     crate::library::settings::set_bool_in(conn, FETCH_ALL_ARTISTS_KEY, all_artists)
-}
-
-/// Whether already-released singles count as news. Off by default: singles
-/// are the most common release type, so switching this on noticeably
-/// increases how much the badge reports.
-pub fn include_singles(db: &crate::db::Db) -> Result<bool, rusqlite::Error> {
-    let conn = db.conn();
-    crate::library::settings::get_bool_in(conn, INCLUDE_SINGLES_KEY, false)
-}
-
-pub fn set_include_singles(db: &crate::db::Db, include: bool) -> Result<(), rusqlite::Error> {
-    let conn = db.conn();
-    crate::library::settings::set_bool_in(conn, INCLUDE_SINGLES_KEY, include)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -3,7 +3,6 @@
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::db::{Db, DbError};
-use crate::sound_features::{derive_sound_features, SOUND_FEATURES_FORMAT_VERSION};
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram, SPECTROGRAM_FORMAT_VERSION};
 use crate::waveform::TrackRenderData;
 const SCHEMA_V55: &str = r#"
@@ -52,7 +51,6 @@ pub struct PendingRenderDataTrack {
     pub track_id: i64,
     pub path: String,
     pub source: TrackSourceFingerprint,
-    pub spectrogram: Option<TrackSpectrogram>,
 }
 
 pub fn set_track_spectrogram(
@@ -67,11 +65,6 @@ pub fn set_track_spectrogram(
         return Ok(SpectrogramStoreOutcome::SourceChanged);
     }
     write_spectrogram(&transaction, track_id, source, spectrogram)?;
-    crate::db_sound_features::write_sound_features(
-        &transaction,
-        track_id,
-        &derive_sound_features(spectrogram),
-    )?;
     transaction.commit()?;
     Ok(SpectrogramStoreOutcome::Stored)
 }
@@ -92,11 +85,6 @@ pub fn set_track_render_data(
         rusqlite::params![data.waveform_peaks, track_id],
     )?;
     write_spectrogram(&transaction, track_id, source, &data.spectrogram)?;
-    crate::db_sound_features::write_sound_features(
-        &transaction,
-        track_id,
-        &derive_sound_features(&data.spectrogram),
-    )?;
     transaction.commit()?;
     Ok(SpectrogramStoreOutcome::Stored)
 }
@@ -243,15 +231,6 @@ pub(crate) fn restore_render_data(
                 data,
             ],
         )?;
-        if *format_version == SPECTROGRAM_FORMAT_VERSION {
-            if let Ok(spectrogram) = TrackSpectrogram::from_cells(data.clone()) {
-                crate::db_sound_features::write_sound_features(
-                    conn,
-                    track_id,
-                    &derive_sound_features(&spectrogram),
-                )?;
-            }
-        }
     }
     Ok(())
 }
@@ -305,46 +284,29 @@ pub fn get_waveform_peaks(db: &Db, track_id: i64) -> Result<Option<Vec<u8>>, DbE
 /// Returns live tracks whose rendering data is absent or stale, in stable id order.
 pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>, DbError> {
     let mut statement = db.conn().prepare(&format!(
-        "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode, \
-                CASE WHEN t.waveform_peaks IS NOT NULL THEN s.data END \
+        "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode \
          FROM tracks t \
          LEFT JOIN track_spectrograms s ON s.track_id = t.id \
            AND s.format_version = ?1 AND s.source_mtime = t.file_mtime \
            AND s.source_size = t.file_size AND s.source_device IS t.device \
            AND s.source_inode IS t.inode \
-         LEFT JOIN track_sound_features f ON f.track_id = t.id AND f.format_version = ?2 \
-         WHERE {} AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR f.track_id IS NULL) \
+         WHERE {} AND (t.waveform_peaks IS NULL OR s.track_id IS NULL) \
          ORDER BY t.id",
         crate::queries::PRESENT
     ))?;
     let tracks = statement
-        .query_map(
-            [SPECTROGRAM_FORMAT_VERSION, SOUND_FEATURES_FORMAT_VERSION],
-            |row| {
-                let spectrogram = row
-                    .get::<_, Option<Vec<u8>>>(6)?
-                    .map(TrackSpectrogram::from_cells)
-                    .transpose()
-                    .map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            6,
-                            rusqlite::types::Type::Blob,
-                            Box::new(error),
-                        )
-                    })?;
-                Ok(PendingRenderDataTrack {
-                    track_id: row.get(0)?,
-                    path: row.get(1)?,
-                    source: TrackSourceFingerprint {
-                        mtime_seconds: row.get(2)?,
-                        size_bytes: row.get(3)?,
-                        device: row.get(4)?,
-                        inode: row.get(5)?,
-                    },
-                    spectrogram,
-                })
-            },
-        )?
+        .query_map([SPECTROGRAM_FORMAT_VERSION], |row| {
+            Ok(PendingRenderDataTrack {
+                track_id: row.get(0)?,
+                path: row.get(1)?,
+                source: TrackSourceFingerprint {
+                    mtime_seconds: row.get(2)?,
+                    size_bytes: row.get(3)?,
+                    device: row.get(4)?,
+                    inode: row.get(5)?,
+                },
+            })
+        })?
         .collect::<Result<_, _>>()?;
     Ok(tracks)
 }
@@ -442,7 +404,6 @@ mod tests {
                         inode: Some(41),
                         ..source()
                     },
-                    spectrogram: None,
                 },
                 PendingRenderDataTrack {
                     track_id: 2,
@@ -451,7 +412,6 @@ mod tests {
                         inode: Some(42),
                         ..source()
                     },
-                    spectrogram: None,
                 },
             ]
         );

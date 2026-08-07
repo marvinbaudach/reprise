@@ -24,6 +24,14 @@ impl crate::library::source::LibrarySource for InMemoryAlbumSource {
         crate::library::source::UnixLibrarySource.container_name(at)
     }
 
+    fn relative_path(
+        &self,
+        root: &std::path::Path,
+        at: &std::path::Path,
+    ) -> Option<std::path::PathBuf> {
+        crate::library::source::UnixLibrarySource.relative_path(root, at)
+    }
+
     fn open_read(
         &self,
         at: &std::path::Path,

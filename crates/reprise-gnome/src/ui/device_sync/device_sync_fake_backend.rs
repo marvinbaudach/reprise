@@ -68,6 +68,10 @@ pub(super) struct FakeState {
     /// the right named target (`MTP-38`) was used, without touching a real
     /// or simulated filesystem.
     pub(super) managed_copies: RefCell<Vec<(String, String)>>,
+    /// Bytes handed to the backend for generated attachments. Audio produced
+    /// by the fake transcoder has no real temporary file, so absent sources
+    /// are simply not recorded here.
+    pub(super) managed_copy_contents: RefCell<Vec<(String, String, Vec<u8>)>>,
     pub(super) managed_deleted: RefCell<Vec<(String, String)>>,
     /// `MTP-38`/finding-1 proof: the `storage_id` each `replace_track`/
     /// `delete_track`/`replace_playlist` call actually reached this double
@@ -77,6 +81,7 @@ pub(super) struct FakeState {
     pub(super) transfer_storage_ids: RefCell<Vec<(String, Option<StorageId>)>>,
     pub(super) inspection_roots: RefCell<Vec<String>>,
     pub(super) last_inspected_targets: RefCell<Option<[SyncTarget; 3]>>,
+    pub(super) managed_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) podcast_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) youtube_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) ejected: RefCell<Vec<String>>,
@@ -279,6 +284,7 @@ impl DeviceBackend for FakeBackend {
         let storage_access = self.state.storage_access.get();
         let gate = self.state.inspection_gate.borrow_mut().take();
         let inspection_error = self.state.inspection_error.borrow_mut().take();
+        let managed_files = self.state.managed_files.borrow().clone();
         let podcast_files = self.state.podcast_files.borrow().clone();
         let youtube_files = self.state.youtube_files.borrow().clone();
         self.state.inspection_roots.borrow_mut().push(root_uri);
@@ -305,7 +311,7 @@ impl DeviceBackend for FakeBackend {
                     total_bytes,
                     ..DeviceStorageSnapshot::default()
                 },
-                managed_files: Vec::new(),
+                managed_files,
                 podcast_files,
                 youtube_files,
             })
@@ -319,7 +325,7 @@ impl DeviceBackend for FakeBackend {
         _root_uri: String,
         target_path: String,
         storage_id: Option<StorageId>,
-        _source_path: PathBuf,
+        source_path: PathBuf,
         relative_target: String,
         expected_size: u64,
         cancellable: gio::Cancellable,
@@ -327,10 +333,18 @@ impl DeviceBackend for FakeBackend {
     ) -> TestFuture<CopyOutcome> {
         let state = self.state.clone();
         let delay_ms = self.delay_ms;
-        state
-            .transfer_storage_ids
-            .borrow_mut()
-            .push((target_path.clone(), storage_id));
+        let source_contents = std::fs::read(source_path).ok();
+        let is_track_metadata =
+            relative_target == reprise_core::device_sync::track_metadata_list::FILE_NAME;
+        let is_analysis = reprise_core::device_sync::analysis_sidecar::is_sidecar_path(
+            std::path::Path::new(&relative_target),
+        );
+        if !is_track_metadata {
+            state
+                .transfer_storage_ids
+                .borrow_mut()
+                .push((target_path.clone(), storage_id));
+        }
         Box::pin(async move {
             if reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(std::path::Path::new(
                 &relative_target,
@@ -341,6 +355,16 @@ impl DeviceBackend for FakeBackend {
             }
             if let Some(error) = state.replace_track_error.borrow().clone() {
                 return Err(error);
+            }
+            if is_track_metadata {
+                if let Some(contents) = source_contents {
+                    state.managed_copy_contents.borrow_mut().push((
+                        target_path,
+                        relative_target,
+                        contents,
+                    ));
+                }
+                return Ok(CopyOutcome::Copied);
             }
             state
                 .planned_operations
@@ -392,6 +416,20 @@ impl DeviceBackend for FakeBackend {
             if let Some(observer) = observer {
                 observer(&relative_target);
             }
+            if is_analysis {
+                let mut managed_files = state.managed_files.borrow_mut();
+                if let Some(file) = managed_files
+                    .iter_mut()
+                    .find(|file| file.relative_path == relative_target)
+                {
+                    file.size_bytes = expected_size;
+                } else {
+                    managed_files.push(ManagedDeviceFile {
+                        relative_path: relative_target.clone(),
+                        size_bytes: expected_size,
+                    });
+                }
+            }
             state
                 .copy_order
                 .borrow_mut()
@@ -399,7 +437,14 @@ impl DeviceBackend for FakeBackend {
             state
                 .managed_copies
                 .borrow_mut()
-                .push((target_path, relative_target));
+                .push((target_path.clone(), relative_target.clone()));
+            if let Some(contents) = source_contents {
+                state.managed_copy_contents.borrow_mut().push((
+                    target_path,
+                    relative_target,
+                    contents,
+                ));
+            }
             Ok(CopyOutcome::Copied)
         })
     }

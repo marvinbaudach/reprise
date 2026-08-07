@@ -72,9 +72,6 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(super) play_glyph: TransportGlyph,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
-    pub(in crate::ui) info_button: gtk4::Button,
-    #[cfg(test)]
-    pub(in crate::ui) transport_row: gtk4::Box,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
     pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
@@ -202,11 +199,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
     next_button.set_sensitive(false);
     let repeat_button = transport_toggle(ICON_REPEAT_ALL, strings::REPEAT);
-    let info_button = gtk4::Button::builder()
-        .icon_name("dialog-information-symbolic")
-        .tooltip_text(strings::text(strings::SOUND_INFO_TOOLTIP))
-        .css_classes(["flat"])
-        .build();
     let play_next_episode_button =
         gtk4::Button::with_label(&strings::text(strings::PODCAST_PLAY_NEXT_EPISODE));
     play_next_episode_button.set_visible(false);
@@ -287,12 +279,10 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 
     // — Center zone (transport + seek + legend) —
     let center_zone = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    // The information affordance sits immediately beside Repeat but outside
-    // the transport group: it changes the visible detail surface, not
-    // playback. External recovery actions follow it for the same reason.
+    // External recovery actions sit outside the transport group because they
+    // operate on the loaded source rather than playback mode.
     let transport_leading_balance = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     let transport_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
-    transport_actions.append(&info_button);
     transport_actions.append(&play_next_episode_button);
     transport_actions.append(&retry_external_button);
     let transport_alignment = gtk4::SizeGroup::new(gtk4::SizeGroupMode::Horizontal);
@@ -301,7 +291,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 
     // A symmetric leading balance keeps the transport row's own midpoint on
     // the bar midpoint. Centering the row plus its one-sided actions as a
-    // single box shifted Play/Pause left whenever Sound was enabled.
+    // single box would shift Play/Pause left when an action becomes visible.
     let transport_shell = gtk4::Grid::builder()
         .column_spacing(ZONE_SPACING)
         .halign(gtk4::Align::Center)
@@ -439,9 +429,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         play_pause_button,
         next_button,
         repeat_button,
-        info_button,
-        #[cfg(test)]
-        transport_row,
         play_glyph,
         play_next_episode_button,
         retry_external_button,

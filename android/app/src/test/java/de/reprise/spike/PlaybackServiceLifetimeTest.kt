@@ -238,6 +238,7 @@ private fun snapshot(state: AndroidPlaybackState, trackId: Long?) = AndroidPlayb
     currentTrackUri = trackId?.let { "content://provider/document/song.flac" },
     positionMs = 0,
     durationMs = 0,
+    automaticAdvanceCount = 0u,
     shuffled = false,
     repeat = AndroidRepeatMode.OFF,
     error = null,

@@ -290,7 +290,7 @@ fn head_and_pill_match_the_21a_structure() {
     assert!(widgets.title.has_css_class("reprise-now-playing-title"));
     assert!(widgets.artist.has_css_class("reprise-now-playing-subtitle"));
     assert!(widgets.album.has_css_class("reprise-now-playing-subtitle"));
-    assert_eq!(PANEL_TABS.len(), 4);
+    assert_eq!(PANEL_TABS.len(), 3);
     assert!(widgets
         .tab_switcher
         .has_css_class("reprise-now-playing-tabs"));
@@ -299,7 +299,7 @@ fn head_and_pill_match_the_21a_structure() {
         Some(&widgets.tab_stack)
     );
     assert!(widgets.tab_stack.child_by_name(VISUAL_PAGE).is_some());
-    assert_eq!(widgets.tab_stack.pages().n_items(), 4);
+    assert_eq!(widgets.tab_stack.pages().n_items(), 3);
     let visual = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
     let page = widgets.tab_stack.page(&visual);
     assert_eq!(page.title().as_deref(), Some("Visuals"));
@@ -316,20 +316,20 @@ fn head_and_pill_match_the_21a_structure() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
+fn npp_14_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
-    widgets
-        .tab_switcher
-        .set_display_mode(adw::InlineViewSwitcherDisplayMode::Icons);
-    let responsive_tabs = widgets
+    assert_eq!(
+        widgets.tab_switcher.display_mode(),
+        adw::InlineViewSwitcherDisplayMode::Icons
+    );
+    assert!(widgets
         .tab_switcher
         .parent()
-        .and_downcast::<adw::BreakpointBin>()
-        .expect("the tab switcher lives in its responsive bin");
-    assert_eq!(responsive_tabs.width_request(), 1);
-    assert_eq!(responsive_tabs.height_request(), 50);
+        .is_some_and(|parent| parent.is::<gtk4::Box>()));
+    assert_eq!(widgets.tab_switcher.width_request(), 1);
+    assert_eq!(widgets.tab_switcher.height_request(), 50);
 
     let buttons = widget_tree(widgets.tab_switcher.upcast_ref())
         .into_iter()
@@ -340,6 +340,17 @@ fn ac_23_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
     assert!(buttons
         .iter()
         .all(|button| gtk4::test_accessible_has_property(button, gtk4::AccessibleProperty::Label)));
+    assert_eq!(
+        buttons
+            .iter()
+            .map(gtk4::prelude::WidgetExt::tooltip_text)
+            .collect::<Vec<_>>(),
+        [
+            Some("Up Next".into()),
+            Some("Lyrics".into()),
+            Some("Visuals".into())
+        ]
+    );
 }
 
 #[test]

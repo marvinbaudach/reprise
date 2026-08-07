@@ -2,7 +2,6 @@ package de.reprise.spike
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -68,7 +65,12 @@ internal fun NowPlayingSheet(
     PredictiveBackHandler {
         try {
             it.collect { event -> backProgress = event.progress }
-            close()
+            if (surfaceState.nowPlayingQueueVisible) {
+                surfaceState.showNowPlayingQueue(false)
+                backProgress = 0f
+            } else {
+                close()
+            }
         } catch (_: CancellationException) {
             backProgress = 0f
         }
@@ -134,20 +136,31 @@ private fun StackedNowPlayingContent(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
+                QueuePageButton(surfaceState)
+                SleepTimerControl(playback.sleepTimer)
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
             }
-            NowPlayingVisualizer(
-                trackId = track.id,
-                trackUri = track.uri,
-                playbackFraction = playback.progressFraction,
-                size = metrics.coverSizeDp,
-                shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-            )
+            if (surfaceState.nowPlayingQueueVisible) {
+                Box(
+                    modifier = Modifier.size(metrics.coverSizeDp.dp),
+                ) {
+                    NowPlayingQueuePage(playback, surfaceState)
+                }
+            } else {
+                NowPlayingVisualizer(
+                    trackId = track.id,
+                    trackUri = track.uri,
+                    playbackFraction = playback.progressFraction,
+                    size = metrics.coverSizeDp,
+                    shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
+                )
+            }
             Spacer(Modifier.height(20.dp))
             Text(
                 text = track.title,
+                modifier = Modifier.testTag("now-playing-title"),
                 style = TextStyle(
                     fontSize = metrics.titleSizeSp.sp,
                     lineHeight = metrics.titleLineHeightSp.sp,
@@ -203,13 +216,17 @@ private fun WideShortNowPlayingContent(
                 .fillMaxHeight(),
             contentAlignment = Alignment.Center,
         ) {
-            NowPlayingVisualizer(
-                trackId = track.id,
-                trackUri = track.uri,
-                playbackFraction = playback.progressFraction,
-                size = metrics.coverSizeDp,
-                shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-            )
+            if (surfaceState.nowPlayingQueueVisible) {
+                NowPlayingQueuePage(playback, surfaceState)
+            } else {
+                NowPlayingVisualizer(
+                    trackId = track.id,
+                    trackUri = track.uri,
+                    playbackFraction = playback.progressFraction,
+                    size = metrics.coverSizeDp,
+                    shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
+                )
+            }
         }
         Spacer(Modifier.width(24.dp))
         Column(
@@ -224,6 +241,7 @@ private fun WideShortNowPlayingContent(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = track.title,
+                        modifier = Modifier.testTag("now-playing-title"),
                         style = TextStyle(
                             fontSize = metrics.titleSizeSp.sp,
                             lineHeight = metrics.titleLineHeightSp.sp,
@@ -243,6 +261,8 @@ private fun WideShortNowPlayingContent(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                QueuePageButton(surfaceState)
+                SleepTimerControl(playback.sleepTimer)
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
@@ -261,6 +281,20 @@ private fun WideShortNowPlayingContent(
             Spacer(Modifier.weight(1f))
             PlaybackActions(playback = playback, metrics = metrics, wideShort = true)
         }
+    }
+}
+
+@Composable
+private fun QueuePageButton(surfaceState: MobileSurfaceViewModel) {
+    val visible = surfaceState.nowPlayingQueueVisible
+    IconButton(
+        onClick = { surfaceState.showNowPlayingQueue(!visible) },
+        modifier = Modifier.size(48.dp),
+    ) {
+        MaterialSymbol(
+            name = if (visible) "album" else "queue_music",
+            contentDescription = if (visible) "Show artwork" else "Show queue",
+        )
     }
 }
 
@@ -289,7 +323,7 @@ private fun SpectralSeekSlider(
             },
             valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
-            track = { PlainSeekTrack(displayed, durationMs) },
+            track = { SpectralSeekTrack(trackId, displayed, durationMs) },
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -308,56 +342,6 @@ private fun SpectralSeekSlider(
         }
     }
 }
-
-/**
- * The seek bar: one colour, filled to the playhead.
- *
- * It used to draw `sin(x / 24dp · 2π)` under the head — a wave computed from
- * nothing, which looked like a reading of the song and measured no audio at
- * all. The real picture needs a stored spectrogram; the phone does not compute
- * one and nothing carries the desktop's across yet, so the honest bar is a
- * plain one. It is deliberately not a flattened version of the spectral bar:
- * there is nothing here to under-draw.
- */
-@Composable
-private fun PlainSeekTrack(positionMs: Long, durationMs: Long) {
-    val elapsed = MaterialTheme.colorScheme.primary
-    val remaining = MaterialTheme.colorScheme.outline
-    val fraction = if (durationMs > 0) {
-        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(SEEK_TRACK_HEIGHT_DP.dp)
-            .testTag("now-playing-seek-track"),
-    ) {
-        val centre = size.height / 2f
-        val thickness = SEEK_TRACK_THICKNESS_DP.dp.toPx()
-        val head = size.width * fraction
-        drawLine(
-            color = remaining,
-            start = Offset(head, centre),
-            end = Offset(size.width, centre),
-            strokeWidth = thickness,
-            cap = StrokeCap.Round,
-        )
-        if (head > 0f) {
-            drawLine(
-                color = elapsed,
-                start = Offset(0f, centre),
-                end = Offset(head, centre),
-                strokeWidth = thickness,
-                cap = StrokeCap.Round,
-            )
-        }
-    }
-}
-
-private const val SEEK_TRACK_HEIGHT_DP = 32
-private const val SEEK_TRACK_THICKNESS_DP = 3
 
 @Composable
 private fun PlaybackActions(

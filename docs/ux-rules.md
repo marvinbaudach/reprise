@@ -1112,6 +1112,13 @@ result.
   header, which never disappears, and offers "Show the N sources"; revealing
   it shows every source read-only. Connected services collapses the same way
   and is labelled "Scrobbling · needs online sources".
+- **SET-12** [active] [gtk] — Replaces `SIM-8`, which stated the same thing
+  inside a module that no longer exists: plugin provision badges are derived
+  from the static registry, never from current enable state. A provision-kind
+  set is the unbadged group norm only when it occurs at least twice and
+  strictly more often than the runner-up; otherwise every row is badged.
+  Panel-tab and sidebar-section badges use the accent, while all other kinds
+  are neutral.
 
 ## G. Feedback vocabulary
 
@@ -1134,8 +1141,10 @@ result.
   ellipsized detail line. Clicking the card → Missing files; the visible
   Cancel button checks for abort before each audio file.
 - **FB-2b** [planned] [gtk] — Scan, Sync and playlist import use the
-  same full card contract from FB-8 for every run > ~1 s, including
-  visible Cancel and navigation to the associated view.
+  same full card contract from FB-8 in the main-window sidebar for every
+  run > ~1 s, including visible Cancel and navigation to the associated
+  view. Modal dialogs carry their status in chrome according to FB-9
+  instead of duplicating that card contract in their content flow.
 - **FB-3** [active] [core] — Errors: individual errors during a run are
   collected, never toasted individually. At the end, ONE toast with
   "N failed · Details" → Details opens the relevant view/dialog.
@@ -1177,13 +1186,13 @@ result.
   ("7 removed" must stay true). Auto-clean (opt-in, default off, deleted
   tracks only) hard-deletes without a toast and without Undo — it fires
   no earlier than 30/90 days after disappearance (SET-4).
-- **FB-8** [active] [gtk] — Scanner and Relink scans run off-thread in
-  the existing progress cards, stackable with Sync/Doctor, in the
-  bottom-anchored area. As long as at least one progress card is
-  visible, the card block **replaces** the full Issues block; the
-  heading "ISSUES" and Import errors / Missing files are neither visible
-  nor do they occupy extra space. Fully inactive progress cards likewise
-  occupy no space; only active or still-fading-out cards take part in
+- **FB-8** [active] [gtk] — In the main-window sidebar, Scanner and
+  Relink scans run off-thread in the existing progress cards, stackable
+  with Sync/Doctor, in the bottom-anchored area. As long as at least one
+  progress card is visible, the card block **replaces** the full Issues
+  block; the heading "ISSUES" and Import errors / Missing files are neither
+  visible nor do they occupy extra space. Fully inactive progress cards
+  likewise occupy no space; only active or still-fading-out cards take part in
   the layout. The bottom edge of the visible card block sits directly
   above the player bar, while all free sidebar height stays above the
   block. After the last card has fully faded out, the Issues block
@@ -1191,7 +1200,33 @@ result.
   this.
   Card: spinner + title + % on the right (tabular) + 3px bar +
   ellipsized detail line. Clicking the card → Missing files; the visible
-  Cancel button checks for abort before each audio file.
+  Cancel button checks for abort before each audio file. Modal dialogs
+  carry the same work in their chrome according to FB-9; they do not add
+  this sidebar card to their content flow.
+- **FB-9** [planned] [gtk] — Transient status indicators do not displace
+  existing layout. Use the first implementation that applies, in this
+  order: (1) **chrome** — the header, footer or edge region of the window
+  or dialog, as an overlay with no layout height of its own; this is the
+  first choice for global states; (2) **reserved space** — a line of fixed
+  height that is always present and names the resting state at rest
+  ("Library up to date"), so it never sits empty; (3) **state change of an
+  existing element** — the row that triggers the action shows the progress
+  itself, at unchanged height. Three prohibitions: never insert a banner
+  above the content and remove it again; never let an indicator's own
+  height change with its state (error text, a second line, a growing
+  detail list); never leave an empty placeholder that occupies area without
+  saying anything. One task's status is never duplicated within the same
+  window. The rule is per window, not app-wide: the main window may retain
+  its one sidebar card while a modal dialog uses its one chrome location,
+  regardless of which page is open. The short status is icon, percentage
+  and Cancel; details are spelled out only where the user can act on them,
+  otherwise they belong in the tooltip. Progress bars are ≤ 2–3 px high and
+  sit on an edge, never between two elements. Background status fades in
+  place with the Micro token (150 ms), never with a height animation.
+  Continuous gear rotation and indeterminate pulsing obey the central
+  reduced-motion gate and remain statically legible when animations are
+  disabled.
+  <!-- REVIEW: Rule proposal -->
 
 ## H. File association & OS integration
 
@@ -1691,6 +1726,14 @@ own statement).
   Activating either route revalidates every selected episode against the
   current subscription and tombstone state; a stale or mixed-validity
   selection is refused as a whole and is never guessed from a numeric ID.
+- **CTX-13** [active] [gtk] — Podcast and YouTube episodes. A single episode
+  with a present downloaded file offers "Show in Files" (opens its folder and
+  selects the file). A multi-selection where every episode has a file and all
+  files share one folder offers "Open Folder" instead and opens only that
+  folder. In every other case — nothing downloaded, a recorded path missing
+  on disk, or a selection spanning folders — the entry is absent. The
+  selection decides, not the rendered window: an episode a collapsed group
+  or a Shorts filter takes off screen still counts. Radio never offers it.
 
 ## O. Motion & Transitions
 
@@ -1721,6 +1764,13 @@ place (MOT-2, the motion reading of P-4).
   (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog,
   Popover — e.g. the push/pop slides of the settings subpages) count
   as system-given and are exempt from the token requirement.
+  A continuous activity indicator that Reprise draws itself (the scan
+  chip's gear) is a loop, not a transition: none of the four tokens
+  describes it. Its period is named in `ui/motion.rs` alongside them
+  (`INDICATOR_SPIN_MS`, 1,200 ms, linear, matching `gtk::Spinner`'s
+  pace) and is never written into a CSS string by hand. Linear easing
+  is permitted here for the same reason it is permitted for progress
+  bars: a rotation has no start and no end to ease.
   **The accent is not its own animation.** Changing its source reloads one
   named color; the carrying widget's existing transition applies. The play
   button, for example, transitions `background-color` and `box-shadow` on
@@ -1911,7 +1961,7 @@ the panel).
   or EPs from the last 90 days remain, plus exclusively future
   singles; incomplete data is never treated as future, secondary types
   stay out.
-- **NR-1a** [active] [core] — A library-wide MusicBrainz pipeline is
+- **NR-1a** [replaced by NR-27] [core] — A library-wide MusicBrainz pipeline is
   the sole source of truth for new releases and later artist-news
   views. Artist MBIDs come first from tags, otherwise from a persisted
   name resolution including negative results; artists are prioritized
@@ -1997,7 +2047,7 @@ the panel).
   entries individually recoverable. Retention: 6 months **and** at
   most 200 entries (the stricter limit wins), hard deletion, but never
   within the 90-day fetch window. Replaces NR-4.
-- **NR-13** [active] [gtk] — In the full Releases overview, released
+- **NR-13** [replaced by NR-28] [gtk] — In the full Releases overview, released
   releases already present in the library are marked and offer the
   action „Show in library" (navigate + focus, **no** direct play path).
   The delta popover does not list releases already complete in the
@@ -2016,7 +2066,7 @@ the panel).
   Opening stamps the entire delta set of both sections in the current
   scope. Releases fully present in the library are listed and
   stamped, but never count toward the unseen badge.
-- **NR-9b** [active] [core] [gtk] — The popover shows one visit batch:
+- **NR-9b** [replaced by NR-9c] [core] [gtk] — The popover shows one visit batch:
   every unseen entry, or, when none is unseen, every entry carrying the
   newest `seen_at` stamp. Opening stamps the complete unseen batch in
   scope, including entries below the visible cap. Rows and section
@@ -2041,7 +2091,7 @@ the panel).
   location in SMART, before Concerts and only with the `new_releases`
   module active. Its badge equals exactly the number of rows visible
   on opening after persistent filters; 0 renders no badge.
-- **NR-16** [active] [core] [gtk] — The full releases view is a
+- **NR-16** [replaced by NR-24] [core] [gtk] — The full releases view is a
   discography-gap catalog for artists currently represented in the
   library. It contains regular albums and EPs regardless of age, but
   never singles or releases already fully present. Individual
@@ -2051,7 +2101,7 @@ the panel).
   official MusicBrainz edition. Hidden gaps remain recoverable via the
   hidden filter; album and EP catalog rows are not subject to any
   time-based retention.
-- **NR-17** [active] [gtk] — The gap view remains the table `Date ·
+- **NR-17** [replaced by NR-25] [gtk] — The gap view remains the table `Date ·
   Title · Artist · Type · Status`, sorted by date descending by
   default. Status is `upcoming`, `Missing`, `Incomplete`, or — when
   the length is known — `X of Y tracks`. The permanent filter row now
@@ -2059,7 +2109,7 @@ the panel).
   external release URL, Hidden activates `Show again`. An empty
   default filter confirms „No missing albums or EPs"; the footer
   contains no six-month retention.
-- **NR-18** [active] [core] [gtk] — „Releases" remains a sidebar
+- **NR-18** [replaced by NR-26] [core] [gtk] — „Releases" remains a sidebar
   location in SMART, before Concerts, visible only with the
   `new_releases` module active. Its badge equals exactly the number of
   discography gaps visible with the persistent Type/Hidden filters; 0
@@ -2113,6 +2163,67 @@ the panel).
   2026-08-04, after the rule's own display tests had passed — the two
   halves of the surface were each self-consistent and only disagreed
   with each other (see also STYLE-1).
+- **NR-24** [active] [core] [gtk] — The catalog contains albums, EPs,
+  and singles for artists currently in the library; secondary types
+  never enter. A release counts as owned, and therefore does not
+  appear, when its distinct local track identities cover at least the
+  smallest official MusicBrainz edition, or more than half the
+  official track count of an already-released release, or, for a
+  single, when the library holds any track by that artist under that
+  title. Unknown official counts and not-yet-released titles never
+  count as owned. Entries sharing artist, normalized title, and
+  release date collapse to one row: album ahead of EP ahead of single.
+  Catalog rows of all three types are durable and exempt from
+  time-based cache retention.
+- **NR-25** [active] [gtk] — The gap view remains the table `Date ·
+  Title · Artist · Type · Status`, sorted by date descending by
+  default. Its permanent filter row carries independent Album, EP,
+  and Single toggles — album and EP on by default, single off — a
+  persistent window `1 year · 5 years · 10 years · All` defaulting to
+  five years, and the Hidden chip. An empty type selection shows every
+  type; a release without a parsable date survives every window. The
+  count line always names shown and total, the total being the widest
+  scope. Activation opens the external release URL, and Hidden
+  activates `Show again`. Zero results offer exactly one "Show all"
+  step clearing type, window, and hidden together.
+- **NR-26** [active] [core] [gtk] — "Releases" remains a sidebar
+  location in SMART, before Concerts, visible only with the
+  `new_releases` module active. Its badge equals the number of gaps
+  visible under the persistent type, window, and hidden filters; 0
+  renders no badge.
+- **NR-9c** [active] [core] [gtk] — NR-9b's batch and stamping
+  semantics remain unchanged. The delta popover and its badge draw
+  from the same persisted filter as the full view. Releases owned
+  under NR-24, filtered out by type or window, or already hidden do
+  not enter the popover and do not badge. Duplicates collapse there
+  the same way. Singles therefore announce themselves exactly when
+  their chip is on — there is no separate preference.
+- **NR-27** [active] [core] — replaces NR-1a. A library-wide MusicBrainz
+  pipeline remains the sole source of truth for the releases catalog and
+  the artist-news views. Artist MBIDs come first from tags, otherwise
+  from a persisted name resolution including negative results; artists
+  are prioritized by play count. What the pipeline *stores* is the
+  artist's regular albums, EPs and singles as durable catalog rows
+  regardless of age — NR-24 owns that scope, and secondary types stay
+  out. The cap of twenty entries per artist belongs to the *news* path
+  alone: it bounds the delta candidates the popover and badge read, not
+  the catalog. Incomplete data is never treated as future.
+  *Reason:* NR-1a described a pipeline that kept only ninety days of
+  albums and exclusively future singles. NR-16 had already voided the
+  first half, and NR-24 voids the second. The rule survived both as
+  `[active]` while being false about persistence — found in review on
+  2026-08-07, not by a test, because every individual test agreed with
+  the code.
+- **NR-28** [active] [gtk] — replaces NR-13. The gap catalog never lists
+  a release that counts as owned under NR-24, so it carries no
+  „Show in library" action and never renders an `In library` status: a
+  row that could offer it is a row the filter has already removed. The
+  Updates popover's own row actions are unaffected and stay with NR-9c.
+  *Reason:* NR-13 promised an action the overview has not had since
+  NR-16 excluded complete releases. The status value stays in the model
+  because the presence it names is real, and a test pins that the
+  filtered view never yields it — a filter change that let owned rows
+  through would otherwise reintroduce the dead branch silently.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
@@ -2689,17 +2800,15 @@ property is set and yet nothing happens.
   not change with the track. Newly loaded synchronized lyrics start at line 0 and
   position it per LYR-4. Without animations, cover and content switch hard
   (MOT-7).
-- **NPP-14** [active] [gtk] — At the regular fixed 300 px panel width the
-  switcher uses the four short labels **Up Next · Lyrics · Visuals · Sound**
-  in that order without ellipsizing. Built-in tabs always precede extension
-  tabs; extensions follow in activation order. Every tab retains an installed
-  symbolic icon, but icons replace labels only at the measured compact
-  breakpoint of 224 px or below — never merely because the regular panel is
-  narrow.
+- **NPP-14** [active] [gtk] — The switcher carries the three built-in tabs
+  **Up Next · Lyrics · Visuals**, in that order, as installed symbolic icons
+  only at every panel width and never as painted text. Each icon retains its
+  title as its accessible name and tooltip. Built-in tabs always precede any
+  extension tabs, which follow in activation order.
 - **NPP-15** [active] [gtk] — Disabling an extension never leaves its selected
-  page empty. If its tab is open, selection falls back to **Up Next** before
-  the page is hidden; disabling it while another tab is selected leaves that
-  selection unchanged.
+  page empty. If an extension's tab is open, selection falls back to **Up
+  Next** before the page is hidden; disabling an extension while another tab
+  is selected leaves that selection unchanged.
 - **NPP-16** [planned] [gtk] — Once a fifth reachable panel tab exists, the
   switcher moves extension tabs beyond the fourth into an overflow menu whose
   button carries their count. No overflow control exists while four tabs are
@@ -3125,8 +3234,8 @@ STYLE-1).
 
 ## X. Song Visuals
 
-<!-- History: This section used to be called „Local Sound Profile" and
-     carried the rules for Song Analysis (Audio Character), Create Similar
+<!-- History: This section previously also carried the rules for Song
+     Analysis (Audio Character), Create Similar
      Mix, and Related Artist Discovery. These features were removed (chore
      eda0edaebb); their rules AC-1..AC-6, AC-9, and AC-12..AC-18 are deleted
      here (git preserves the history). What remains are the still-active
@@ -4032,7 +4141,7 @@ available. The player plays only finished files.
 <!-- Section letter: Z (single-pane track browser) is the last
      single-letter section; A–Z are assigned (T doubly occupied —
      legacy), AA (External changes) and AB (Instrumental) are assigned;
-     AC is the rule prefix of the "Local sound profile" (section X), so
+     AC is the stable rule prefix of Song Visuals (section X), so
      compact mode continues with AD. The rules describe an already
      implemented and tested feature: they start directly at [active]
      with existing mini_* tests as evidence. Reference frames from the
@@ -4887,12 +4996,13 @@ plan.
 
 ## AH. Sound Similarity
 
-Sound Similarity is an optional local module. Its stored profile is a derived
-cache over the spectrogram, never a second audio decode or a mutation of the
-rendering dataset. It compares the playing track with the local library and
-keeps all ranking work off the GTK thread.
+Sound Similarity was removed on 2026-08-07 because its nearest matches were
+audibly unrelated while reporting 100% similarity. The rules stay here in full
+as append-only history; the separate spectrogram feature is unchanged. SIM-8
+was the only one of them that governed behaviour outside this module — plugin
+provision badges — and that behaviour is still live, now under `SET-12`.
 
-- **SIM-1** [active] [core] — A sound profile lives in its own versioned cache
+- **SIM-1** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — A sound profile lives in its own versioned cache
   and follows the spectrogram's source-identity invalidation and track
   deletion. A stale format is absent and is derived again from the stored
   spectrogram; the spectrogram schema itself gains no recommendation scalar.
@@ -4901,31 +5011,33 @@ keeps all ranking work off the GTK thread.
   production and not the genre, and the weights it fixed were nominal rather
   than effective; SIM-9 adds the temporal half and the scale that makes a
   weight mean what it says.
-- **SIM-3** [active] [core] — A row's percentage is its rank in the current
+- **SIM-3** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — A row's percentage is its rank in the current
   track's distance distribution across the complete eligible library. Same
   album (album title plus album artist) and same artist exclusions are applied
   only after those ranks are formed, so changing a filter never changes the
   meaning of a percentage.
-- **SIM-4** [active] [core] [gtk] — The Sound tab remains present while analysis is
+- **SIM-4** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — The Sound tab remains present while analysis is
   incomplete and shows numeric progress. Results require at least 50 current
   profiles and the playing track's profile. Profile markers are library-wide
   feature percentiles; the tempo axis is disabled while tempo is excluded.
-- **SIM-5** [active] [gtk] — The default result limit is seven. **Add to
+- **SIM-5** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — The default result limit is seven. **Add to
   queue** appends exactly the currently shown matches in their displayed
   nearest-first order and never shuffles them.
-- **SIM-6** [active] [core] — Sound Similarity is a live, default-off Local
+- **SIM-6** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Sound Similarity is a live, default-off Local
   module. Its defaults exclude the same album, retain the same artist, omit
   tempo, use Default weighting, and show seven matches. Its static registry
   declaration provides both the Sound panel tab and **Find similar tracks**.
-- **SIM-7** [active] [gtk] — **Find similar tracks** appears in a single,
+- **SIM-7** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — **Find similar tracks** appears in a single,
   present-track context menu only while the module is enabled; disabling the
   module removes the route.
-- **SIM-8** [active] [gtk] — Plugin provision badges are derived from the
+- **SIM-8** [replaced by SET-12] — Plugin provision badges are derived from the
   static registry, never current enable state. A provision-kind set is the
   unbadged group norm only when it occurs at least twice and strictly more
   often than the runner-up; otherwise every row is badged. Panel-tab and
   sidebar-section badges use the accent, while all other kinds are neutral.
-- **SIM-9** [active] [core] — The comparison carries how a track is produced
+  The rule was never specific to Sound Similarity and outlived it; `SET-12`
+  restates it where the plugin list is governed.
+- **SIM-9** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — The comparison carries how a track is produced
   *and* how it moves, both derived from the stored spectrogram alone. Band
   means and per-band positive flux stay L2-normalized and are compared with
   cosine distance, each divided by the library's own spread so that a nominal
@@ -4934,7 +5046,7 @@ keeps all ranking work off the GTK thread.
   tempo estimate are standardized against library spread; zero spread
   contributes zero. The default weights are bands 0.30, timbre 0.12,
   dynamics 0.08, rhythm 0.50, tempo 0.
-- **SIM-10** [active] [core] — At most two matches carry the same artist, and
+- **SIM-10** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — At most two matches carry the same artist, and
   the list fills up with the next nearest track by someone else. The nearest
   match is never displaced by this. Tracks that name no artist are not capped
   against each other, because unnamed is not a shared identity. The cap applies

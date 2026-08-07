@@ -54,6 +54,75 @@ fn mtp_10_success_stays_finishing_until_device_contents_are_verified() {
 }
 
 #[test]
+fn verified_music_size_excludes_analysis_and_metadata_inventory_entries() {
+    run(async {
+        let (temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let source_path = temp.path().join("1.flac");
+        let metadata = std::fs::metadata(&source_path).unwrap();
+        let source_mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        reprise_core::device_sync::settings::upsert_device_file(
+            &conn,
+            &reprise_core::device_sync::settings::DeviceFileRecord {
+                device_serial: "a".into(),
+                track_id: 1,
+                source_path: source_path.to_string_lossy().into_owned(),
+                source_size: metadata.len(),
+                source_mtime,
+                device_path: "Artist/Unknown Album/00 Track 1.opus".into(),
+                device_size: 100,
+                profile_fingerprint: "opus-vbr-160-v1".into(),
+                pinned: false,
+            },
+        )
+        .unwrap();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.managed_files.replace(vec![
+            ManagedDeviceFile {
+                relative_path: "Artist/Unknown Album/00 Track 1.opus".into(),
+                size_bytes: 100,
+            },
+            ManagedDeviceFile {
+                relative_path: "Artist/Unknown Album/00 Track 1.reprise-analysis".into(),
+                size_bytes: 60,
+            },
+            ManagedDeviceFile {
+                relative_path: reprise_core::device_sync::track_metadata_list::FILE_NAME.into(),
+                size_bytes: 40,
+            },
+        ]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        assert_eq!(
+            runtime.devices()[0].content_rows[0].size_on_device_bytes,
+            100,
+            "the live content row must count music without its generated metadata"
+        );
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let device = runtime.devices().remove(0);
+        let remembered = reprise_core::device_sync::settings::list_remembered_devices(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|device| device.stable_id == "a")
+            .unwrap();
+        assert_eq!(device.verified_managed_track_count, Some(1));
+        assert_eq!(
+            (device.size_on_device_bytes, remembered.size_on_device_bytes),
+            (Some(100), Some(100))
+        );
+    });
+}
+
+#[test]
 fn mtp_10_failed_readback_never_claims_a_successful_sync() {
     run(async {
         let (_temp, conn) = fixture();

@@ -24,12 +24,16 @@ pub const RELEASES_HIDDEN: &str = N_!("Hidden");
 pub const RELEASES_ALBUM: &str = N_!("Album");
 pub const RELEASES_EP: &str = N_!("EP");
 pub const RELEASES_SINGLE: &str = N_!("Single");
+pub const RELEASES_WINDOW_ONE_YEAR: &str = N_!("1 year");
+pub const RELEASES_WINDOW_FIVE_YEARS: &str = N_!("5 years");
+pub const RELEASES_WINDOW_TEN_YEARS: &str = N_!("10 years");
+pub const RELEASES_WINDOW_ALL: &str = N_!("All");
 pub const RELEASES_IN_LIBRARY: &str = N_!("In library");
 pub const RELEASES_UPCOMING: &str = N_!("upcoming");
 pub const RELEASES_INCOMPLETE: &str = N_!("Incomplete");
 pub const RELEASES_MISSING: &str = N_!("Missing");
 pub const RELEASES_NO_DATA_TITLE: &str = N_!("No discography data yet");
-pub const RELEASES_EMPTY_TITLE: &str = N_!("No missing albums or EPs");
+pub const RELEASES_EMPTY_TITLE: &str = N_!("No missing releases");
 pub const RELEASES_HIDE: &str = N_!("Hide");
 pub const RELEASES_COULD_NOT_REFRESH: &str = N_!("Couldn't refresh new releases");
 pub const RELEASES_CACHED_FAILURE_DESCRIPTION: &str =
@@ -106,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_17_release_counts_name_discography_gaps() {
+    fn nr_25_release_counts_name_discography_gaps() {
         assert_eq!(release_count_line(8, 19), "8 of 19 gaps");
         assert_eq!(release_total_line(19), "19 gaps");
     }

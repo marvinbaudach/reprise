@@ -12,7 +12,7 @@ fn migrated_conn() -> crate::db::Db {
 }
 
 #[test]
-fn nr_1a_fetch_queue_prioritizes_top_artists_and_includes_the_never_checked_rest() {
+fn nr_27_fetch_queue_prioritizes_top_artists_and_includes_the_never_checked_rest() {
     let conn = migrated_conn();
     for index in 0..27 {
         conn.conn()
@@ -220,14 +220,4 @@ fn configured_scope_round_trips_without_a_date() {
         configured_fetch_scope(&conn).unwrap(),
         FetchScope::TopArtists
     );
-}
-
-#[test]
-fn include_singles_setting_defaults_to_off_and_round_trips() {
-    let conn = migrated_conn();
-    assert!(!crate::artist_news::include_singles(&conn).unwrap());
-    crate::artist_news::set_include_singles(&conn, true).unwrap();
-    assert!(crate::artist_news::include_singles(&conn).unwrap());
-    crate::artist_news::set_include_singles(&conn, false).unwrap();
-    assert!(!crate::artist_news::include_singles(&conn).unwrap());
 }

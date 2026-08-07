@@ -23,7 +23,6 @@ pub const ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY: &str = "online_sources.firs
 pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
 pub const NEW_RELEASES_LAST_COMPLETED_AT_KEY: &str = "new_releases.last_completed_at";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
-pub const SOUND_STATS_FEATURE_COUNT_KEY: &str = "sound.stats_feature_count";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
 /// an error — for a key that has never been written, matching every other

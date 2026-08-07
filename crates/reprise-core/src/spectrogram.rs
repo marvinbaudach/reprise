@@ -168,28 +168,6 @@ fn band_centre_octaves() -> Vec<f64> {
         .collect()
 }
 
-/// A stored cell back to absolute dBFS.
-///
-/// The exact inverse of the producer's quantization: the cell scale is linear
-/// in dB between [`SPECTROGRAM_FLOOR_DBFS`] and [`SPECTROGRAM_CEILING_DBFS`].
-/// Every derivation over the stored cells decodes through here, so there is
-/// one answer to what a cell means.
-pub(crate) fn cell_dbfs(cell: u8) -> f32 {
-    SPECTROGRAM_FLOOR_DBFS
-        + f32::from(cell) / 255.0 * (SPECTROGRAM_CEILING_DBFS - SPECTROGRAM_FLOOR_DBFS)
-}
-
-/// A stored cell back to linear power.
-///
-/// A floor cell reads as true silence rather than as the floor's own energy,
-/// so a silent band contributes nothing to a sum instead of a constant offset.
-pub(crate) fn cell_energy(cell: u8) -> f32 {
-    if cell == 0 {
-        return 0.0;
-    }
-    10.0_f32.powf(cell_dbfs(cell) / 10.0)
-}
-
 /// A stored cell back to a linear amplitude weight.
 fn cell_amplitude(cell: u8) -> f64 {
     if cell == 0 {

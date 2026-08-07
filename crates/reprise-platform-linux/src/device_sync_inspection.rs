@@ -89,7 +89,7 @@ impl DeviceStorage {
         inspection.managed_files = inspect_target_folder(
             &playlists_storage,
             &playlists_components,
-            is_managed_item_file,
+            is_known_managed_item_file,
         )
         .await?;
         inspection.snapshot.reprise_music_bytes = inspection
@@ -233,7 +233,13 @@ async fn other_music_bytes(storage: &gio::File, excluded: &[String]) -> Result<u
     Ok(total)
 }
 
-fn is_managed_item_file(name: &str) -> bool {
+/// Whether a regular file belongs in the device inventory.
+///
+/// This answers only whether the planner needs to know the file exists.
+/// Whether an unmatched file may be removed is a separate Core planning
+/// decision: generated analysis sidecars and the metadata list are known here
+/// but deliberately protected there.
+fn is_known_managed_item_file(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     !name.ends_with(".part")
         && !reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(std::path::Path::new(&name))
@@ -244,7 +250,7 @@ fn is_managed_item_file(name: &str) -> bool {
 /// (no `.m3u8`), so a stray non-audio file under them is left alone rather
 /// than swept into the inventory.
 fn managed_audio_file(name: &str) -> bool {
-    is_audio_file(name) && is_managed_item_file(name)
+    is_audio_file(name) && is_known_managed_item_file(name)
 }
 
 /// The `SyncTarget` for `kind` out of the freshly loaded three — falls back
@@ -353,7 +359,7 @@ async fn filesystem_bytes(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_managed_item_file, managed_audio_file};
+    use super::{is_known_managed_item_file, managed_audio_file};
 
     #[test]
     fn mtp_47_a_podcast_file_named_audio_is_managed_by_the_inventory() {
@@ -363,7 +369,20 @@ mod tests {
 
     #[test]
     fn lyr_7_lrc_attachments_are_not_independent_managed_inventory_entries() {
-        assert!(!is_managed_item_file("Artist/Album/Song.lrc"));
-        assert!(is_managed_item_file("Artist/Album/Song.opus"));
+        assert!(!is_known_managed_item_file("Artist/Album/Song.lrc"));
+        assert!(is_known_managed_item_file("Artist/Album/Song.opus"));
+    }
+
+    #[test]
+    fn analysis_sidecars_are_visible_to_the_managed_inventory() {
+        assert!(is_known_managed_item_file(
+            "Artist/Album/Song.reprise-analysis"
+        ));
+        assert!(is_known_managed_item_file("Artist/Album/Song.opus"));
+    }
+
+    #[test]
+    fn track_metadata_list_is_visible_to_the_managed_inventory() {
+        assert!(is_known_managed_item_file("reprise-track-metadata.rpl"));
     }
 }

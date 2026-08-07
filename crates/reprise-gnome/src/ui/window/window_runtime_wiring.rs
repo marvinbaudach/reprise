@@ -573,14 +573,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         let active_content_focus = active_content_focus.clone();
         Rc::new(move || active_content_focus.focus())
     };
-    let show_sound: Rc<dyn Fn()> = {
-        let panel = Rc::downgrade(info_panel);
-        Rc::new(move || {
-            if let Some(panel) = panel.upgrade() {
-                panel.show_sound();
-            }
-        })
-    };
     super::shortcuts::wire(
         app,
         window,
@@ -588,7 +580,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         search_entry,
         super::shortcuts::ShortcutHooks {
             focus_active_content,
-            show_sound,
             // SEARCH-8: Ctrl+F is a no-op where the visible section has no
             // list to filter.
             search_available: {

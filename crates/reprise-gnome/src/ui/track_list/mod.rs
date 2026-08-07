@@ -58,7 +58,6 @@ pub(in crate::ui) mod track_list_rescan;
 pub(in crate::ui) mod track_list_row_interaction;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
-mod track_list_sound_similarity;
 pub(crate) mod track_list_title_column;
 mod track_list_toast;
 mod track_list_wiring;

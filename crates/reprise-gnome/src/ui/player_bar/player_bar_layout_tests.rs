@@ -8,18 +8,6 @@ use gtk4::prelude::*;
 use super::{build, PLAY_CSS_CLASS};
 
 #[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn sound_info_button_is_adjacent_to_but_outside_the_transport_row() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    gtk4::init().unwrap();
-    let layout = build();
-
-    assert!(layout.info_button.is_ancestor(&layout.root));
-    assert!(!layout.info_button.is_ancestor(&layout.transport_row));
-    assert!(layout.transport_row.is_ancestor(&layout.root));
-}
-
-#[test]
 fn ac_24_the_transport_control_stays_still() {
     // The play/pause button is what a pointer aims at, and once the running
     // track scrolls out of the list it is the only place the playback state is

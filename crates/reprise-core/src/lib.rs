@@ -26,6 +26,7 @@ mod artist_news_parsing;
 mod artist_news_pipeline;
 mod artist_news_query;
 pub mod artist_news_refresh;
+mod artist_news_scope;
 mod artist_news_view;
 pub mod artist_portrait;
 pub mod browser;
@@ -41,6 +42,7 @@ mod db_change_log;
 mod db_concerts;
 mod db_device_sync;
 mod db_drop_audio_analysis_mix;
+mod db_drop_sound_features;
 mod db_equalizer;
 mod db_grandfather;
 mod db_library_doctor;
@@ -48,6 +50,7 @@ mod db_library_doctor_remote;
 mod db_library_exclusions;
 mod db_listen_history;
 mod db_mix_planner;
+mod db_mobile_sync;
 mod db_new_releases_accent;
 mod db_new_releases_history;
 mod db_online_sources;
@@ -55,7 +58,7 @@ mod db_play_journal;
 mod db_podcasts_radio;
 mod db_recently_added;
 mod db_release_discography;
-mod db_sound_features;
+mod db_releases_view_scope;
 mod db_spectrogram;
 mod db_sync_log;
 mod db_tag_write_jobs;
@@ -83,15 +86,6 @@ pub mod queue;
 pub mod radio;
 pub mod remote_image;
 pub mod scrobbling;
-pub mod sound_distance;
-pub mod sound_features;
-pub mod sound_file_info;
-pub mod sound_neighbours;
-pub mod sound_preferences;
-pub mod sound_profile;
-pub mod sound_rhythm;
-pub mod sound_snapshot;
-pub mod sound_stats;
 pub mod source_error;
 pub mod spectrogram;
 pub mod spectrogram_backfill;
@@ -121,17 +115,3 @@ mod artist_news_query_tests;
 mod artist_news_view_tests;
 #[cfg(test)]
 mod fingerprint_tests;
-#[cfg(test)]
-mod sound_distance_tests;
-#[cfg(test)]
-mod sound_features_tests;
-#[cfg(test)]
-mod sound_neighbours_tests;
-#[cfg(test)]
-mod sound_profile_tests;
-#[cfg(test)]
-mod sound_rhythm_tests;
-#[cfg(test)]
-mod sound_snapshot_tests;
-#[cfg(test)]
-mod sound_stats_tests;

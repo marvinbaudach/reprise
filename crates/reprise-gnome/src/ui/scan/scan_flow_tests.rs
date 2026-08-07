@@ -3,9 +3,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use gtk4::prelude::*;
 use reprise_core::library::scanner::ScanProgress;
 
 use super::{publish_latest_progress, ScanCompletion, ScanControls};
+use crate::ui::scan_chrome::ScanChromeView;
 use crate::ui::scan_progress::ScanProgressView;
 
 #[test]
@@ -81,7 +83,7 @@ fn progress_channel_keeps_only_the_latest_pending_update() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn foreground_progress_view_replays_and_tracks_the_active_scan() {
+fn fb_9_foreground_progress_view_replays_and_tracks_the_active_scan() {
     if gtk4::init().is_err() {
         return;
     }
@@ -93,24 +95,26 @@ fn foreground_progress_view_replays_and_tracks_the_active_scan() {
         total: Some(5),
         current_path: PathBuf::from("song.flac"),
     });
-    let foreground = ScanProgressView::new();
+    let foreground = ScanChromeView::new();
 
-    controls.attach_progress_view(&foreground);
+    controls.attach_chrome_view(&foreground);
 
     assert!(main.widget().reveals_child());
-    assert!(foreground.widget().reveals_child());
+    assert!(foreground.chip_widget().is_visible());
+    assert!(foreground.line_widget().is_visible());
     controls.finish_progress();
     assert!(main.widget().reveals_child());
-    assert!(foreground.widget().reveals_child());
+    assert!(foreground.chip_widget().is_visible());
     let main_loop = gtk4::glib::MainLoop::new(None, false);
     let quit = main_loop.clone();
-    gtk4::glib::timeout_add_local_once(Duration::from_millis(720), move || quit.quit());
+    gtk4::glib::timeout_add_local_once(Duration::from_millis(900), move || quit.quit());
     main_loop.run();
     assert!(!main.widget().reveals_child());
-    assert!(!foreground.widget().reveals_child());
+    assert!(!foreground.chip_widget().is_visible());
+    assert!(!foreground.line_widget().is_visible());
 
     drop(foreground);
     controls.show_progress(&ScanProgress::Discovering);
     assert!(main.widget().reveals_child());
-    assert!(controls.foreground_progress.borrow().is_empty());
+    assert_eq!(controls.foreground_progress_count(), 0);
 }

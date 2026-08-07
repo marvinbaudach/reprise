@@ -72,7 +72,8 @@ struct DeviceState {
     sync_phase: PlannedSyncPhase,
     sync_error: Option<SyncFailure>,
     planned_cancel: Option<Arc<AtomicBool>>,
-    resume_planned: bool,
+    active_initiator: Option<planned::SyncInitiator>,
+    resume_initiator: Option<planned::SyncInitiator>,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
     verified_managed_track_count: Option<usize>,
     size_on_device_bytes: Option<u64>,
@@ -159,7 +160,8 @@ impl DeviceState {
             sync_phase,
             sync_error: None,
             planned_cancel: None,
-            resume_planned: false,
+            active_initiator: None,
+            resume_initiator: None,
             last_sync: None,
             verified_managed_track_count: None,
             size_on_device_bytes: None,
@@ -236,7 +238,7 @@ impl DeviceState {
             })
         };
         let device_bytes = [
-            category_bytes(&self.managed_files),
+            compact::verified_track_bytes(&self.managed_files),
             category_bytes(&self.youtube_files),
             category_bytes(&self.podcast_files),
         ];
@@ -521,7 +523,7 @@ impl DeviceSyncRuntime {
                     inspection
                         .managed_files
                         .iter()
-                        .filter(|file| !file.relative_path.to_ascii_lowercase().ends_with(".m3u8"))
+                        .filter(|file| compact::is_verified_track_file(file))
                         .count()
                 });
             let inspection_error = result.as_ref().err().cloned();
@@ -573,7 +575,7 @@ impl DeviceSyncRuntime {
                                 .iter()
                                 .find(|device| device.descriptor.id == id)
                                 .map_or(0, |device| {
-                                    category_bytes(&device.managed_files)
+                                    compact::verified_track_bytes(&device.managed_files)
                                         .saturating_add(category_bytes(&device.youtube_files))
                                         .saturating_add(category_bytes(&device.podcast_files))
                                 });
@@ -627,7 +629,7 @@ impl DeviceSyncRuntime {
                                 device.last_sync = Some(verified_at);
                                 device.verified_managed_track_count = verified_track_count;
                                 device.size_on_device_bytes = Some(
-                                    category_bytes(&device.managed_files)
+                                    compact::verified_track_bytes(&device.managed_files)
                                         .saturating_add(category_bytes(&device.youtube_files))
                                         .saturating_add(category_bytes(&device.podcast_files)),
                                 );
@@ -666,23 +668,24 @@ impl DeviceSyncRuntime {
                     }
                 }
                 runtime.notify();
-                let should_resume = {
+                let resume_initiator = {
                     let mut devices = runtime.device_states.borrow_mut();
                     devices
                         .iter_mut()
                         .find(|device| device.descriptor.id == id)
-                        .is_some_and(|device| {
-                            let resume = device.resume_planned
+                        .and_then(|device| {
+                            let resume = device.resume_initiator.is_some()
                                 && device.connected
                                 && !device.is_active();
                             if resume {
-                                device.resume_planned = false;
+                                device.resume_initiator.take()
+                            } else {
+                                None
                             }
-                            resume
                         })
                 };
-                if should_resume {
-                    if let Err(error) = runtime.sync_now(&id) {
+                if let Some(initiator) = resume_initiator {
+                    if let Err(error) = runtime.start_sync(&id, initiator) {
                         tracing::warn!(device_id = id, %error, "could not resume device synchronization");
                     }
                 } else if just_connected {
@@ -708,7 +711,7 @@ impl DeviceSyncRuntime {
                             })
                     };
                     if facts.is_some_and(should_auto_start) {
-                        if let Err(error) = runtime.sync_now(&id) {
+                        if let Err(error) = runtime.sync_automatically(&id) {
                             tracing::warn!(device_id = id, %error, "could not start automatic device synchronization");
                         }
                     }
