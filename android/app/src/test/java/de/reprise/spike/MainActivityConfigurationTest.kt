@@ -262,6 +262,26 @@ class MainActivityConfigurationTest {
     }
 
     @Test
+    fun currentTrackImportRunsThroughOnCreateAndRecreateWithoutTouchingItsNeighbour() {
+        application.replaceQueue(
+            listOf(
+                configurationTestTrack(1, "Playing"),
+                configurationTestTrack(2, "Neighbour"),
+            ),
+        )
+        service.publish(playingSnapshot(positionMs = 12_000))
+        shadowOf(Looper.getMainLooper()).idle()
+        compose.waitForIdle()
+
+        assertEquals(listOf(1L), application.analysisImports)
+
+        recreateAt("w916dp-h412dp-land")
+
+        assertTrue(application.analysisImports.size >= 2)
+        assertEquals(setOf(1L), application.analysisImports.toSet())
+    }
+
+    @Test
     fun portraitMeasurementsStayPutAndWideShortUsesThe17aGeometry() {
         assertEquals(1, shadowOf(application).boundServiceConnections.size)
         service.publish(playingSnapshot(positionMs = 12_000))
@@ -337,6 +357,19 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
         cancelSleepTimer = { service.cancelSleepTimer() },
     )
     val visualizerWrites = mutableListOf<MobileVisualizer>()
+    val analysisImports = mutableListOf<Long>()
+    private val trackAnalysis = object : TrackAnalysisPort {
+        override val revision = 0L
+        override fun prepare(trackId: Long) {
+            analysisImports += trackId
+        }
+
+        override fun loadBars(
+            trackId: Long,
+            count: Int,
+            deliver: (List<SpectralBar>?) -> Unit,
+        ) = deliver(null)
+    }
     val ambientScheduleEvents = mutableListOf<Boolean>()
     var animationsEnabled = true
     val trackRatings = mutableMapOf<Long, Int>()
@@ -510,6 +543,7 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             initialState = browse,
             artwork = { null },
             playbackControls = controls,
+            trackAnalysis = trackAnalysis,
             chooseFolder = { _, _ -> },
             rescan = {},
             searchTitles = { query, range ->
