@@ -105,6 +105,8 @@ source "$REPO_ROOT/scripts/ptr-e2e/preferences.sh"
 source "$REPO_ROOT/scripts/ptr-e2e/column-reorder.sh"
 # shellcheck source=compact-seek.sh
 source "$REPO_ROOT/scripts/ptr-e2e/compact-seek.sh"
+# shellcheck source=search-chip.sh
+source "$REPO_ROOT/scripts/ptr-e2e/search-chip.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
 APP_ID="org.reprise.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
@@ -449,6 +451,18 @@ assert_log_contains_since() {
   fi
 }
 
+assert_log_absent_since() {
+  local since_line="$1" pattern="$2" description="$3"
+  local plain
+  plain="$(tail -n "+$((since_line + 1))" "$APP_LOG" | sed -E "$ANSI_STRIP_RE")"
+  if grep -qi -- "$pattern" <<<"$plain"; then
+    log_fail "log unexpectedly showed: $description (pattern: $pattern)"
+    grep -i -- "$pattern" <<<"$plain" | tail -1 | sed 's/^/[ptr-e2e]   -> /' >&2
+  else
+    log_step "log check OK: no $description"
+  fi
+}
+
 assert_log_absent() {
   local pattern="$1" description="$2"
   local plain
@@ -540,6 +554,14 @@ fi
 
 if [ "$PTR_E2E_COMPACT_SEEK_ONLY" = "1" ]; then
   run_compact_seek_flow
+  assert_log_absent \
+    'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
+    'GTK/GLib critical, panic, or RefCell borrow failure'
+  exit 0
+fi
+
+if [ "${PTR_E2E_SEARCH_CHIP_ONLY:-0}" = "1" ]; then
+  run_search_chip_flow
   assert_log_absent \
     'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
     'GTK/GLib critical, panic, or RefCell borrow failure'

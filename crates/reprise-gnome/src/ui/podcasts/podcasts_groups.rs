@@ -13,6 +13,7 @@ use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu;
 use super::podcasts_context_surface;
+use super::podcasts_episode_files::EpisodePaths;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     duration, file_size, on_phone, relative_date, source_header, status_pill, RenderedSourceGroup,
@@ -77,6 +78,7 @@ struct GroupRenderContext<'a> {
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &'a Rc<RefCell<PodcastSelection>>,
+    paths: &'a Rc<EpisodePaths>,
 }
 
 struct EpisodeRenderContext<'a> {
@@ -85,6 +87,7 @@ struct EpisodeRenderContext<'a> {
     images_allowed: bool,
     network: RowNetworkState,
     selection: &'a Rc<RefCell<PodcastSelection>>,
+    paths: &'a Rc<EpisodePaths>,
     unavailable_episode: Option<i64>,
     /// `POD-25` / FIL-5: accented inside this row's title where it matched.
     query: &'a str,
@@ -114,6 +117,7 @@ pub(super) fn replace(
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
     };
+    let paths = Rc::new(EpisodePaths::from_row_refs(snapshot_rows(groups)));
     let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
@@ -126,11 +130,28 @@ pub(super) fn replace(
         connectivity,
         unavailable_episode,
         selection,
+        paths: &paths,
     };
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut widgets));
     }
     widgets
+}
+
+/// `CTX-13`: the episodes a grouped render hands to [`EpisodePaths`] — every
+/// episode of every group, including the ones
+/// [`podcasts_episode_window::visible_count`] leaves off screen.
+///
+/// It has a name of its own because the tempting shortcut is to feed it the
+/// visible window instead. That is wrong and fails quietly: a collapsed group
+/// keeps its hidden episodes in the selection (`podcasts_view` prunes the
+/// selection against the full row set), so a window-sized snapshot answers
+/// "no file" for one of them and the menu entry disappears for a selection
+/// where every episode is downloaded.
+fn snapshot_rows(groups: &[RenderedSourceGroup]) -> impl Iterator<Item = &EpisodeRow> {
+    groups
+        .iter()
+        .flat_map(|rendered| rendered.group.episodes.iter())
 }
 
 fn build_group(
@@ -218,6 +239,7 @@ fn build_group(
                     unavailable_now: context.unavailable_episode == Some(episode.id),
                 },
                 selection: context.selection,
+                paths: context.paths,
                 unavailable_episode: context.unavailable_episode,
                 query: context.query,
             },
@@ -375,6 +397,7 @@ fn episode_row(
         &root,
         row,
         context.selection,
+        context.paths,
         context.unavailable_episode,
         SELECT_ROW_ACTION,
     );
@@ -441,6 +464,7 @@ fn episode_row(
     let menu = podcasts_context_surface::episode_menu_button(
         row,
         context.selection,
+        context.paths,
         context.unavailable_episode,
         SELECT_ROW_ACTION,
     );

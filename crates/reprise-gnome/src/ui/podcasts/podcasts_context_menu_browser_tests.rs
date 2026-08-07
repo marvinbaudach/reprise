@@ -4,6 +4,7 @@ use gtk4::prelude::*;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 
 use super::{browser_url, build, build_for_selection};
+use crate::ui::podcasts::podcasts_episode_files::EpisodePaths;
 
 fn episode(id: i64, kind: PodcastKind) -> EpisodeRow {
     EpisodeRow {
@@ -126,7 +127,8 @@ fn src_12b_multi_selection_hides_open_in_browser_instead_of_targeting_one_row() 
     let mut youtube = episode(1, PodcastKind::Youtube);
     youtube.audio_url = "https://www.youtube.com/watch?v=video-id".into();
 
-    let menu = build_for_selection(&youtube, &[youtube.id, 99], None);
+    let paths = EpisodePaths::from_rows(&[]);
+    let menu = build_for_selection(&youtube, &[youtube.id, 99], None, &paths);
 
     assert!(
         !menu_actions(&menu)

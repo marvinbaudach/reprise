@@ -7,7 +7,7 @@ use rusqlite::{Connection, OptionalExtension};
 use crate::db::{Db, DbError};
 use crate::spectrogram::TrackSourceFingerprint;
 
-const SCHEMA_V60: &str = r#"
+const SCHEMA_V61: &str = r#"
 CREATE TABLE IF NOT EXISTS track_analysis_sidecars (
   track_id                 INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   sidecar_path             TEXT NOT NULL,
@@ -23,14 +23,14 @@ CREATE TABLE IF NOT EXISTS track_analysis_sidecars (
 );
 "#;
 
-pub(crate) fn migrate_v60(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v61(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 60 {
+    if version >= 61 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute_batch(SCHEMA_V60)?;
-    transaction.pragma_update(None, "user_version", 60)?;
+    transaction.execute_batch(SCHEMA_V61)?;
+    transaction.pragma_update(None, "user_version", 61)?;
     transaction.commit()
 }
 

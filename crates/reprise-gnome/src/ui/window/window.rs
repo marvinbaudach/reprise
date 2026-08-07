@@ -434,13 +434,7 @@ pub fn build(
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
-        super::window_now_playing_wiring::install(
-            player,
-            &info_panel,
-            &queue_model,
-            &metadata_navigator,
-            &track_list,
-        );
+        super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
     }
     let player_bar_widget = player
         .as_ref()

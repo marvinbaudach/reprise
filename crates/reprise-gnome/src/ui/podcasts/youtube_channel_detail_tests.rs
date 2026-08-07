@@ -52,7 +52,8 @@ fn render_channel_row(resume: bool) -> gtk4::Widget {
     if resume {
         episode.position_ms = 1_800_000;
     }
-    detail.build_episode_row(&episode, &mut BTreeMap::new(), &mut BTreeMap::new())
+    let paths = Rc::new(EpisodePaths::from_rows(std::slice::from_ref(&episode)));
+    detail.build_episode_row(&episode, &paths, &mut BTreeMap::new(), &mut BTreeMap::new())
 }
 
 /// `SRC-16`: the same episode status reads as the same chip on both episode

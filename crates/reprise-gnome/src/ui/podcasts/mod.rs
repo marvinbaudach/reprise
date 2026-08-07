@@ -15,6 +15,7 @@ mod podcasts_device_sync;
 mod podcasts_dnd;
 mod podcasts_download_presentation;
 mod podcasts_empty_state;
+mod podcasts_episode_files;
 mod podcasts_episode_window;
 mod podcasts_filter_bar;
 mod podcasts_groups;

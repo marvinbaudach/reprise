@@ -162,8 +162,33 @@ fn row_count(view: &gtk4::Widget) -> Option<u32> {
         .map(|model| model.n_items())
 }
 
-/// Moves keyboard focus onto the row `view` is currently showing at its top
-/// edge, and reports whether that worked.
+/// The topmost row `view` is showing *whole*, if it is showing one.
+///
+/// The row at the very top edge is usually clipped: the viewport's top edge
+/// falls somewhere inside it. Focusing that row is not free — GTK reveals a
+/// row it hands focus to, and revealing a clipped row scrolls the list up by
+/// the hidden part. [`AdjustmentHold`] then pulls the value back an idle
+/// later, so what the user sees is a twitch up and back every time a context
+/// menu or dialog closes. The first row that is fully on screen has nothing
+/// to reveal, so focusing it moves nothing.
+///
+/// `None` when no row fits the viewport whole (a viewport shorter than one
+/// row, or an empty list): there is no resting place to focus, so the caller
+/// leaves focus to its fallback rather than pick a row that scrolls.
+fn topmost_fully_visible_row(value: f64, page: f64, row_height: f64, rows: u32) -> Option<u32> {
+    if row_height <= 0.0 || !value.is_finite() || !page.is_finite() || rows == 0 {
+        return None;
+    }
+    let first_whole = (value / row_height).ceil().max(0.0);
+    let last_whole = ((value + page) / row_height).floor() - 1.0;
+    if first_whole > last_whole || first_whole >= f64::from(rows) {
+        return None;
+    }
+    Some(first_whole as u32)
+}
+
+/// Moves keyboard focus onto a row `view` is already showing in full, and
+/// reports whether that worked.
 ///
 /// Plain `set_focus` on a list view is not enough, and is in fact the whole
 /// problem: the view hands focus to *its* focus row, and a view whose model
@@ -173,8 +198,9 @@ fn row_count(view: &gtk4::Widget) -> Option<u32> {
 /// moves neither scroll nor view", violated by the focus restore rather than
 /// by the save.
 ///
-/// Focusing a row that is already on screen keeps the viewport exactly where
-/// it is, because there is nothing to reveal.
+/// Which row is picked matters as much as picking one at all: see
+/// [`topmost_fully_visible_row`] for why the clipped row at the top edge is
+/// the wrong answer.
 fn focus_visible_row(view: &gtk4::Widget) -> bool {
     let Some(rows) = row_count(view).filter(|rows| *rows > 0) else {
         return false;
@@ -187,11 +213,10 @@ fn focus_visible_row(view: &gtk4::Widget) -> bool {
         return false;
     }
     let row_height = upper / f64::from(rows);
-    if row_height <= 0.0 {
+    let Some(position) = topmost_fully_visible_row(value, adjustment.page_size(), row_height, rows)
+    else {
         return false;
-    }
-    let position = (value / row_height).floor().max(0.0) as u32;
-    let position = position.min(rows - 1);
+    };
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(false);
     let hold = AdjustmentHold::new(&adjustment);
@@ -261,6 +286,54 @@ fn wire_close_shortcut(dialog: &adw::Dialog) {
 mod tests {
     use gtk4::prelude::*;
     use libadwaita::prelude::*;
+
+    /// 32 px rows, a 250 px viewport, scrolled so the top edge cuts row 207
+    /// four pixels in — the state the Play-next report was made from.
+    #[test]
+    fn the_clipped_row_at_the_top_edge_is_never_the_one_focus_lands_on() {
+        assert_eq!(
+            super::topmost_fully_visible_row(6_628.0, 250.0, 32.0, 300),
+            Some(208),
+            "row 207 is cut by the viewport's top edge; focusing it scrolls"
+        );
+    }
+
+    #[test]
+    fn a_row_aligned_viewport_focuses_the_row_at_its_top_edge() {
+        assert_eq!(
+            super::topmost_fully_visible_row(6_624.0, 250.0, 32.0, 300),
+            Some(207)
+        );
+        assert_eq!(
+            super::topmost_fully_visible_row(0.0, 250.0, 32.0, 300),
+            Some(0)
+        );
+    }
+
+    /// A viewport too short to hold one row whole has no still resting place:
+    /// every row it could focus is clipped, so it focuses none of them.
+    #[test]
+    fn a_viewport_shorter_than_a_row_offers_no_row_to_rest_on() {
+        assert_eq!(super::topmost_fully_visible_row(0.0, 20.0, 32.0, 300), None);
+        assert_eq!(super::topmost_fully_visible_row(0.0, 250.0, 32.0, 0), None);
+        assert_eq!(super::topmost_fully_visible_row(0.0, 250.0, 0.0, 300), None);
+    }
+
+    /// At the very bottom the first whole row must still be a real row —
+    /// running past the model would scroll instead of resting.
+    #[test]
+    fn the_last_page_stays_inside_the_model() {
+        // 300 rows of 32 px = 9600 px; a 250 px page bottoms out at 9350.
+        assert_eq!(
+            super::topmost_fully_visible_row(9_350.0, 250.0, 32.0, 300),
+            Some(293)
+        );
+        assert_eq!(
+            super::topmost_fully_visible_row(9_600.0, 250.0, 32.0, 300),
+            None,
+            "past the end there is no whole row left to focus"
+        );
+    }
 
     #[test]
     fn control_w_is_the_only_transient_close_shortcut() {
