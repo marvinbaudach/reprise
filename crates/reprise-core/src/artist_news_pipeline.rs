@@ -6,7 +6,7 @@
 use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::artist_news::{include_singles, normalize, AlbumNews};
+use crate::artist_news::{normalize, AlbumNews};
 use crate::artist_news_candidates::{artists_for_fetch, ArtistCandidate, FetchScope};
 use crate::artist_news_parsing::{
     artist_payload_valid, artist_search_url, parse_artist_mbid,
@@ -170,7 +170,6 @@ where
         ..RefreshReport::default()
     };
     (hooks.on_progress)(RefreshProgress { checked: 0, total });
-    let include_singles = include_singles(db).map_err(database_error)?;
     let local_track_counts =
         crate::artist_news_query::local_album_track_counts(conn).map_err(database_error)?;
     for (index, candidate) in candidates.into_iter().enumerate() {
@@ -230,23 +229,22 @@ where
                     break 'candidate;
                 }
             };
-            let discography =
-                match fetch_release_discography(&mbid, today, include_singles, hooks.fetch) {
-                    Ok(discography) => discography,
-                    Err(error) => {
-                        record_failure(&mut report, error);
-                        crate::artist_news_ledger::record_attempt(
-                            conn,
-                            &artist_key,
-                            Some(&mbid),
-                            now,
-                            crate::artist_news_ledger::FetchOutcome::Failed,
-                            0,
-                        )
-                        .map_err(database_error)?;
-                        break 'candidate;
-                    }
-                };
+            let discography = match fetch_release_discography(&mbid, today, hooks.fetch) {
+                Ok(discography) => discography,
+                Err(error) => {
+                    record_failure(&mut report, error);
+                    crate::artist_news_ledger::record_attempt(
+                        conn,
+                        &artist_key,
+                        Some(&mbid),
+                        now,
+                        crate::artist_news_ledger::FetchOutcome::Failed,
+                        0,
+                    )
+                    .map_err(database_error)?;
+                    break 'candidate;
+                }
+            };
             sync_releases(
                 conn,
                 &candidate.name,
@@ -294,7 +292,6 @@ struct FetchedDiscography {
 fn fetch_release_discography<F>(
     artist_mbid: &str,
     today: NaiveDate,
-    include_singles: bool,
     fetch: &mut F,
 ) -> Result<FetchedDiscography, SourceError>
 where
@@ -307,9 +304,8 @@ where
     loop {
         let body = fetch(&release_groups_page_url(artist_mbid, offset))
             .map_err(|error| source_error_for_fetch(&error))?;
-        let page =
-            parse_release_group_page_for_primary_artist(&body, today, include_singles, artist_mbid)
-                .ok_or_else(invalid_response_source_error)?;
+        let page = parse_release_group_page_for_primary_artist(&body, today, artist_mbid)
+            .ok_or_else(invalid_response_source_error)?;
         excluded_release_group_mbids.extend(page.excluded_release_group_mbids);
         items.extend(
             page.page

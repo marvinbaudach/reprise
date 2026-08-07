@@ -38,7 +38,7 @@ pub struct ArtistNews {
 /// in `artist_news_candidates`; re-exported here so existing callers keep
 /// using `artist_news::{FetchScope, configured_fetch_scope, ...}`.
 pub use crate::artist_news_candidates::{
-    configured_fetch_scope, include_singles, set_fetch_all_artists, set_include_singles, FetchScope,
+    configured_fetch_scope, set_fetch_all_artists, FetchScope,
 };
 // `artists_for_fetch` is called directly by `artist_news_pipeline` (not
 // through this facade); the re-export below only exists so the test suite

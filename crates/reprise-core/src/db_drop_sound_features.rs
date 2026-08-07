@@ -56,14 +56,14 @@ mod tests {
     }
 
     #[test]
-    fn fresh_database_reaches_v60_without_sound_features() {
+    fn fresh_database_reaches_supported_schema_without_sound_features() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate_connection(&conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 60);
+        assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
         assert!(!table_exists(&conn, "track_sound_features"));
     }
 

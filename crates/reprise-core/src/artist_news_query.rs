@@ -208,7 +208,6 @@ pub(crate) fn query_releases_in(
                     &release.first_release_date,
                     release_date,
                     today,
-                    true,
                 )
             })
             .is_some_and(|kind| kind != NewsKind::Catalog)
@@ -337,7 +336,6 @@ fn query_artist_news_in(
                         &release.first_release_date,
                         release_date,
                         today,
-                        true,
                     )
                 })
                 .unwrap_or(NewsKind::New),
