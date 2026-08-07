@@ -549,7 +549,7 @@ class HoverRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             transport = RecordingHoverTransport()
 
-            geometry = prepare_hover(
+            geometry, cursor = prepare_hover(
                 transport,
                 pid=44,
                 window_id=77,
@@ -560,8 +560,11 @@ class HoverRunnerTests(unittest.TestCase):
             )
 
             self.assertEqual(geometry, WindowGeometry(30, 40, 800, 600))
+            # The cursor measurement runs once per launch, before any hover.
+            self.assertIn("cursor_in_screenshot", cursor)
+            # The cursor probe runs first; the preflight is the tail.
             self.assertEqual(
-                [tool for tool, _payload in transport.calls[:3]],
+                [tool for tool, _payload in transport.calls[-3:]],
                 ["move_cursor", "get_cursor_position", "get_window_state"],
             )
             self.assertTrue((pathlib.Path(directory) / "hover-preflight.json").is_file())

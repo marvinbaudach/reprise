@@ -46,6 +46,7 @@ def analyze_hover(
     element: Mapping[str, Any],
     *,
     origin: Any,
+    exclude_cursor: bool = True,
 ) -> tuple[Finding, ...]:
     """Return a finding only when hover is absent, weak, skipped, or unmeasurable."""
     label = str(element.get("label") or "")
@@ -95,12 +96,18 @@ def analyze_hover(
         )
     cursor_size = float(HOVER_CURSOR_EXCLUSION_PX)
     cursor_box = (
-        pointer[0] - cursor_size / 2,
-        pointer[1] - cursor_size / 2,
-        cursor_size,
-        cursor_size,
+        (
+            pointer[0] - cursor_size / 2,
+            pointer[1] - cursor_size / 2,
+            cursor_size,
+            cursor_size,
+        )
+        if exclude_cursor
+        else None
     )
-    if _intersection_area(rect, cursor_box) > width * height * 0.5:
+    # Without a cursor in the capture the box is pure loss: it blinds every
+    # icon button smaller than 48 px, which is exactly what BTN-1 is about.
+    if cursor_box is not None and _intersection_area(rect, cursor_box) > width * height * 0.5:
         return (
             _info(
                 "hover-unmeasurable",

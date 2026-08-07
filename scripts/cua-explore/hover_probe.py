@@ -104,6 +104,63 @@ def _find_element(raw: Mapping[str, Any], label: str) -> Mapping[str, Any]:
     raise DriverError(f"hover probe target is not on screen: {label}")
 
 
+def measure_cursor_in_screenshot(
+    *,
+    snapshot: Callable[[str], Any],
+    move: Callable[[float, float], None],
+    origin: WindowGeometry,
+) -> dict[str, Any]:
+    """Does the pointer appear in the window screenshot at all?
+
+    Three shots at the park point - parked, pointer moved away, parked again.
+    A drawn cursor disappears and comes back; a moving interface does not come
+    back to the same pixels. The park point is the window corner plus a small
+    margin, so nothing interactive should live there.
+
+    The answer decides whether the hover oracle needs its cursor exclusion box.
+    Under Xvfb the X11 cursor is not composited into the capture, and a blanket
+    48 px box then blinds the very icon buttons the hover rule is about.
+    """
+    park = park_point(origin)
+    away = (origin.x + origin.width / 2, origin.y + origin.height / 2)
+    size = float(HOVER_CURSOR_EXCLUSION_PX)
+    left, top = to_screenshot_point(park, origin)
+    rect = (left - size / 2, top - size / 2, size, size)
+
+    move(*park)
+    parked = snapshot("cursor-probe-parked")
+    move(*away)
+    moved = snapshot("cursor-probe-away")
+    move(*park)
+    returned = snapshot("cursor-probe-returned")
+
+    note = ""
+    moved_ratio = returned_ratio = 0.0
+    try:
+        first = read_rgb(parked)
+        second = read_rgb(moved)
+        third = read_rgb(returned)
+        moved_ratio = rect_change_ratio(
+            first, second, rect, channel_delta=HOVER_MIN_CHANNEL_DELTA
+        ).ratio
+        returned_ratio = rect_change_ratio(
+            first, third, rect, channel_delta=HOVER_MIN_CHANNEL_DELTA
+        ).ratio
+    except (OSError, UnsupportedImage, UnmeasurableImage) as error:
+        note = f"cursor probe could not compare pixels: {error}"
+    # The pointer left and came back: the region must change, then match again.
+    visible = not note and moved_ratio > 0.0 and returned_ratio == 0.0
+    return {
+        "cursor_in_screenshot": visible,
+        "probe_point": [float(park[0]), float(park[1])],
+        "rect": [float(value) for value in rect],
+        "ratio_moved_away": moved_ratio,
+        "ratio_returned": returned_ratio,
+        "method": "park-away-park",
+        "note": note,
+    }
+
+
 def _rect(frame: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
     try:
         x, y, width, height = frame_values(frame)

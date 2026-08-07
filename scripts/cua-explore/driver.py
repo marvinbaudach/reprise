@@ -165,6 +165,8 @@ class CuaExecutor:
         self.settle_delays = tuple(settle_delays)
         self.oracle_engine = oracle_engine or OracleEngine()
         self.hover_geometry = hover_geometry
+        # Set from a measurement once per run; see measure_cursor_in_screenshot.
+        self.exclude_cursor = True
         # The driver's own frames carry no usable position under X11/Xvfb, so
         # the geometry provider walks the accessibility tree for us.
         self.geometry_provider = geometry_provider
@@ -277,6 +279,7 @@ class CuaExecutor:
                 pathlib.Path("missing-hover-after.png"),
                 target,
                 origin=self.hover_geometry,
+                exclude_cursor=self.exclude_cursor,
             )
         else:
             hover_findings = analyze_hover(
@@ -284,6 +287,7 @@ class CuaExecutor:
                 self.evidence_dir / f"{stem}-after.png",
                 target,
                 origin=self.hover_geometry,
+                exclude_cursor=self.exclude_cursor,
             )
         findings.extend(hover_findings)
         result = StepResult(

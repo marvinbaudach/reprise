@@ -90,6 +90,15 @@ under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
 outside the window) together with up to 40 unresolved elements per reason -
 each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
 
+The cursor exclusion box is switched by measurement, not by assumption. Once
+per launch the runner parks the pointer, moves it away and parks it again,
+comparing the parked region across the three captures: a drawn pointer
+disappears and comes back, a moving interface does not return to the same
+pixels. Only when the pointer really lands in the capture does the hover oracle
+exclude it - a blanket 48 px box blinds every icon button smaller than itself,
+which is exactly what the hover rule is about. The measurement is retained as
+`cursor-visibility.json` and in `summary.json` under `cursor_visibility`.
+
 Before trusting any hover verdict, settle whether a pointer move reaches the
 app at all. The probe places the pointer on one named control twice - once
 through cua-driver's `move_cursor`, once through a real X11 warp - and prints

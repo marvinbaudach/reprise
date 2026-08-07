@@ -18,7 +18,12 @@ sys.path.insert(0, str(TEST_ROOT))
 from cua_explore_png import write_png  # noqa: E402
 from atspi_geometry import GeometryNode  # noqa: E402
 from hover_geometry import WindowGeometry  # noqa: E402
-from hover_probe import probe_hover, render_probe_table  # noqa: E402
+from hover_oracle import analyze_hover  # noqa: E402
+from hover_probe import (  # noqa: E402
+    measure_cursor_in_screenshot,
+    probe_hover,
+    render_probe_table,
+)
 
 
 ORIGIN = WindowGeometry(200, 50, 400, 300)
@@ -116,6 +121,124 @@ def run(transport, **overrides):
         }
         arguments.update(overrides)
         return probe_hover(transport, **arguments)
+
+
+class CursorVisibilityTests(unittest.TestCase):
+    """Decide the cursor exclusion box by measurement, not by assumption."""
+
+    def _measure(self, *, cursor_drawn):
+        """Three shots: parked, moved away, parked again."""
+        state = {"at": None}
+        shots = []
+
+        def move(x, y):
+            state["at"] = (x, y)
+
+        def snapshot(stem):
+            path = pathlib.Path(self.root) / f"{stem}.png"
+            rows = [[(30, 30, 30)] * 400 for _ in range(300)]
+            if cursor_drawn and state["at"] == self.park:
+                for y in range(2, 14):
+                    for x in range(2, 14):
+                        rows[y][x] = (240, 240, 240)
+            write_png(path, 400, 300, rows)
+            shots.append(stem)
+            return path
+
+        record = measure_cursor_in_screenshot(
+            snapshot=snapshot, move=move, origin=ORIGIN
+        )
+        return record, shots
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        self.park = (ORIGIN.x + 2, ORIGIN.y + 2)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_a_cursor_that_is_captured_is_detected(self) -> None:
+        record, _shots = self._measure(cursor_drawn=True)
+
+        self.assertTrue(record["cursor_in_screenshot"])
+
+    def test_a_cursor_that_never_reaches_the_image_is_detected_too(self) -> None:
+        record, _shots = self._measure(cursor_drawn=False)
+
+        self.assertFalse(record["cursor_in_screenshot"])
+        self.assertEqual(record["ratio_moved_away"], 0.0)
+
+    def test_the_measurement_is_retained_for_the_evidence(self) -> None:
+        record, shots = self._measure(cursor_drawn=True)
+
+        self.assertEqual(len(shots), 3)
+        self.assertEqual(record["probe_point"], [202.0, 52.0])
+        self.assertIn("rect", record)
+        self.assertEqual(record["method"], "park-away-park")
+
+    def test_a_permanent_change_is_not_mistaken_for_a_cursor(self) -> None:
+        # A region that differs in every shot is a moving UI, not the pointer:
+        # the cursor must come back when the pointer comes back.
+        counter = {"n": 0}
+
+        def move(x, y):
+            return None
+
+        def snapshot(stem):
+            counter["n"] += 1
+            path = pathlib.Path(self.root) / f"{stem}.png"
+            rows = [[(30 + counter["n"] * 40, 30, 30)] * 400 for _ in range(300)]
+            write_png(path, 400, 300, rows)
+            return path
+
+        record = measure_cursor_in_screenshot(
+            snapshot=snapshot, move=move, origin=ORIGIN
+        )
+
+        self.assertFalse(record["cursor_in_screenshot"])
+
+
+class ConditionalExclusionTests(unittest.TestCase):
+    """A small icon button must stay measurable when no cursor is drawn."""
+
+    ORIGIN_ = ORIGIN
+    SMALL = {"x": 260, "y": 110, "w": 36, "h": 34}
+
+    def _analyze(self, exclude_cursor):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            before, after = root / "b.png", root / "a.png"
+            rows = [[(30, 30, 30)] * 400 for _ in range(300)]
+            write_png(before, 400, 300, rows)
+            changed = [list(r) for r in rows]
+            for y in range(60, 94):
+                for x in range(60, 96):
+                    changed[y][x] = (220, 220, 220)
+            write_png(after, 400, 300, changed)
+            return analyze_hover(
+                before,
+                after,
+                {
+                    "label": "Back to previous view",
+                    "role": "button",
+                    "enabled": True,
+                    "visible": True,
+                    "frame": self.SMALL,
+                },
+                origin=self.ORIGIN_,
+                exclude_cursor=exclude_cursor,
+            )
+
+    def test_the_box_still_protects_when_a_cursor_is_drawn(self) -> None:
+        codes = [item.code for item in self._analyze(True)]
+
+        self.assertEqual(codes, ["hover-unmeasurable"])
+
+    def test_without_a_drawn_cursor_the_small_button_is_judged(self) -> None:
+        findings = self._analyze(False)
+
+        self.assertEqual([item.code for item in findings], [])
 
 
 class HoverProbeTests(unittest.TestCase):

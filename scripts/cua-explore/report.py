@@ -107,6 +107,7 @@ class RunReport:
         self.geometry_failures: list[str] = []
         self.geometry_calibration: dict[str, Any] | None = None
         self.geometry_resolution: dict[str, Any] | None = None
+        self.cursor_visibility: dict[str, Any] | None = None
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def set_geometry_failures(self, failures: Sequence[str]) -> None:
@@ -118,6 +119,10 @@ class RunReport:
         self.geometry_calibration = (
             dict(_sanitize(calibration)) if calibration else None
         )
+
+    def set_cursor_visibility(self, measurement: Mapping[str, Any] | None) -> None:
+        """Whether the pointer reaches the capture, and therefore needs excluding."""
+        self.cursor_visibility = dict(_sanitize(measurement)) if measurement else None
 
     def set_geometry_resolution(self, resolution: Mapping[str, Any] | None) -> None:
         """How many driver elements got a measured position, and why the rest did not."""
@@ -189,6 +194,7 @@ class RunReport:
                 "geometry_failures": self.geometry_failures,
                 "geometry_calibration": self.geometry_calibration,
                 "geometry_resolution": self.geometry_resolution,
+                "cursor_visibility": self.cursor_visibility,
                 "geometry_trusted": not self.geometry_failures,
                 "finding_counts": dict(sorted(severity_counts.items())),
                 "finding_codes": dict(sorted(code_counts.items())),

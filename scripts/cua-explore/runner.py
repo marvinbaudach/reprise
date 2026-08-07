@@ -101,6 +101,47 @@ def parse_window_origin(value: str | None) -> tuple[int, int] | None:
         raise RunError("--window-origin must be X,Y") from error
 
 
+def measure_cursor_visibility(
+    transport: CliTransport,
+    *,
+    pid: int,
+    window_id: int,
+    session: str,
+    origin: Any,
+    evidence_dir: pathlib.Path,
+) -> dict[str, Any]:
+    """Measure once per run whether the pointer lands in the screenshot."""
+    from hover_probe import measure_cursor_in_screenshot
+
+    def snapshot(stem: str) -> pathlib.Path:
+        path = evidence_dir / f"{stem}.png"
+        transport.call(
+            "get_window_state",
+            {
+                "pid": pid,
+                "window_id": window_id,
+                "session": session,
+                "screenshot_out_file": str(path),
+            },
+        )
+        return path
+
+    def move(x: float, y: float) -> None:
+        transport.call(
+            "move_cursor",
+            {
+                "pid": pid,
+                "window_id": window_id,
+                "session": session,
+                "scope": "desktop",
+                "x": x,
+                "y": y,
+            },
+        )
+
+    return measure_cursor_in_screenshot(snapshot=snapshot, move=move, origin=origin)
+
+
 def prepare_hover(
     transport: CliTransport,
     *,
@@ -119,6 +160,17 @@ def prepare_hover(
         if not isinstance(width, int) or not isinstance(height, int):
             raise RunError("hover window dimensions are unavailable")
         geometry = WindowGeometry(*origin_override, width, height)
+    cursor = measure_cursor_visibility(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=session,
+        origin=geometry,
+        evidence_dir=evidence_dir,
+    )
+    (evidence_dir / "cursor-visibility.json").write_text(
+        json.dumps(cursor, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     evidence = hover_preflight(
         transport,
         pid=pid,
@@ -128,7 +180,7 @@ def prepare_hover(
     )
     path = evidence_dir / "hover-preflight.json"
     path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return geometry
+    return geometry, cursor
 
 
 def retain_agent_notes(profile_root: pathlib.Path, evidence_dir: pathlib.Path) -> None:
@@ -635,7 +687,7 @@ def run(args: argparse.Namespace) -> int:
         observation = executor.observe()
         hover_geometry = None
         if "hover" in mission.capabilities:
-            hover_geometry = prepare_hover(
+            hover_geometry, cursor_visibility = prepare_hover(
                 transport,
                 pid=pid,
                 window_id=window_id,
@@ -645,6 +697,10 @@ def run(args: argparse.Namespace) -> int:
                 origin_override=parse_window_origin(args.window_origin),
             )
             executor.hover_geometry = hover_geometry
+            executor.exclude_cursor = bool(
+                cursor_visibility.get("cursor_in_screenshot")
+            )
+            report.set_cursor_visibility(cursor_visibility)
         if args.hover_probe:
             if hover_geometry is None:
                 raise RunError("--hover-probe requires a mission with hover capability")
