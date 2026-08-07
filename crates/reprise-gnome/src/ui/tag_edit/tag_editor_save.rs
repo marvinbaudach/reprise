@@ -99,9 +99,9 @@ use reprise_core::library::tag_edit::TrackWrite;
 use reprise_core::library::tag_edit_session::{SessionMode, TagEditSession};
 
 use crate::ui::strings;
-use crate::ui::tag_editor_dirty::{parse_number_field, session_scope};
+use crate::ui::tag_editor_dirty::{commit_number_field_on_save, parse_number_field, session_scope};
 use crate::ui::tag_editor_state::*;
-use reprise_core::library::tag_edit_session::{FieldValue, TagField};
+use reprise_core::library::tag_edit_session::TagField;
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct SaveWidgets<'a> {
@@ -134,7 +134,11 @@ pub(in crate::ui) fn wire(
         // session via `tag_editor_dirty::wire`'s live "changed" wiring —
         // only Year/Track-number's validity can only be known at save time
         // (a partially-typed number is a normal interim keystroke, not yet
-        // an error), so only those two get committed here.
+        // an error), so only those two get committed here. That commit goes
+        // through `commit_number_field_on_save`, never `set_pending`
+        // directly: a blank Mixed field means "leave every track alone", and
+        // pushing it unconditionally used to wipe the years off whole
+        // multi-album selections (see that function's doc comment).
         Rc::new(move || {
             let year_value = parse_number_field(&year.text());
             let track_value = if track_number.is_editable() {
@@ -153,9 +157,21 @@ pub(in crate::ui) fn wire(
             let batch = {
                 let mut session = session.borrow_mut();
                 let scope = session_scope(session.mode());
-                session.set_pending(scope, TagField::Year, &FieldValue::Number(year_value));
+                commit_number_field_on_save(
+                    &mut session,
+                    scope,
+                    TagField::Year,
+                    &year.text(),
+                    year_value,
+                );
                 if track_number.is_editable() {
-                    session.set_pending(scope, TagField::TrackNo, &FieldValue::Number(track_value));
+                    commit_number_field_on_save(
+                        &mut session,
+                        scope,
+                        TagField::TrackNo,
+                        &track_number.text(),
+                        track_value,
+                    );
                 }
                 session.write_batch()
             };
