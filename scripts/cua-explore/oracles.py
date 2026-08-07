@@ -23,6 +23,7 @@ from ui_vocabulary import (
 GEOMETRY_EPSILON_PX = 6.0
 
 
+
 def element_flag(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
     """Read a boolean element state from whatever shape the driver reports.
 
@@ -157,6 +158,10 @@ class ActionEvidence:
     by: str = "page"
     connectivity_state: str | None = None
     sample_gaps_ms: tuple[int, ...] = ()
+    # Harness cost, so the timing oracles can subtract themselves out.
+    settle_delay_ms: int = 0
+    snapshot_ms: tuple[int, ...] = ()
+    snapshot_ms_before_first_change: int = 0
 
     @classmethod
     def activate(cls, target_label: str, **kwargs: Any) -> "ActionEvidence":

@@ -166,6 +166,7 @@ class CuaExecutor:
         self._hover_cursor_disabled = False
         self._state_counter = 0
         self._step_counter = 0
+        self._snapshot_durations_ms: list[int] = []
         if evidence_dir is not None:
             evidence_dir.mkdir(parents=True, exist_ok=True)
 
@@ -315,10 +316,16 @@ class CuaExecutor:
         self._step_counter += 1
         before_raw, before = self._snapshot(f"step-{self._step_counter:04}-before")
         started = time.monotonic()
+        # From here on every snapshot round-trip is harness cost inside the
+        # observation window, so measure it from the same starting line.
+        self._snapshot_durations_ms = []
         response = self._dispatch(accepted, evidence, before_raw)
         action_elapsed_ms = round((time.monotonic() - started) * 1000)
         after_raw, after = self._snapshot(f"step-{self._step_counter:04}-after")
         first_change_ms = action_elapsed_ms if before.state_signature != after.state_signature else None
+        # A change caught by the after-snapshot was seen at the first
+        # opportunity, so nothing was blind before it.
+        snapshot_ms_before_first_change = 0
         settled = [after]
         ax_probe_changed = False
         if (
@@ -352,6 +359,7 @@ class CuaExecutor:
             sample_gaps.append(round((now - sample_started) * 1000))
             if first_change_ms is None and before.state_signature != sample.state_signature:
                 first_change_ms = round((now - started) * 1000)
+                snapshot_ms_before_first_change = sum(self._snapshot_durations_ms)
             settled.append(sample)
         observation_ms = round((time.monotonic() - started) * 1000)
         effect = response.get("effect")
@@ -373,6 +381,9 @@ class CuaExecutor:
             observation_ms=observation_ms,
             first_change_ms=first_change_ms,
             sample_gaps_ms=tuple(sample_gaps),
+            settle_delay_ms=round(sum(self.settle_delays) * 1000),
+            snapshot_ms=tuple(self._snapshot_durations_ms),
+            snapshot_ms_before_first_change=snapshot_ms_before_first_change,
         )
         findings = self.oracle_engine.analyze(
             completed_evidence,
@@ -483,7 +494,12 @@ class CuaExecutor:
             json_path = self.evidence_dir / f"{stem}.json"
             payload["screenshot_out_file"] = str(self.evidence_dir / f"{stem}.png")
         captured_ms = round(time.monotonic() * 1000)
+        round_trip_started = time.monotonic()
         raw = self.transport.call("get_window_state", payload)
+        # Retained so the timing oracles can subtract the harness's own cost.
+        self._snapshot_durations_ms.append(
+            round((time.monotonic() - round_trip_started) * 1000)
+        )
         if json_path is not None:
             json_path.write_text(
                 json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8"

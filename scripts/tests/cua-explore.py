@@ -4,6 +4,7 @@ import json
 import pathlib
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -363,6 +364,77 @@ class BooleanStateTests(unittest.TestCase):
     def test_an_empty_states_list_carries_no_information(self) -> None:
         self.assertTrue(element_flag({"states": []}, "visible", True))
         self.assertFalse(element_flag({"states": []}, "selected", False))
+
+
+class SlowRoundTripTransport:
+    """A driver whose get_window_state costs real time, like the CLI does."""
+
+    def __init__(self, round_trip_seconds=0.06):
+        self.round_trip_seconds = round_trip_seconds
+        self.calls = []
+
+    def call(self, tool, payload):
+        self.calls.append(tool)
+        if tool == "get_window_state":
+            time.sleep(self.round_trip_seconds)
+            return {
+                "screenshot_width": 800,
+                "screenshot_height": 600,
+                "structuredContent": {
+                    "elements": [
+                        driver_element(
+                            0, "Reprise", "frame", 0, 0, 800, 600,
+                            depth=0, parent_index=None,
+                        ),
+                        driver_element(4, "Music", "button", 10, 10, 90, 30),
+                    ]
+                },
+            }
+        return {"effect": "confirmed", "verified": True}
+
+    def resize_window(self, window_id, width, height):
+        return {"effect": "unverifiable"}
+
+    def set_connectivity(self, state):
+        return {"effect": "confirmed"}
+
+    def wmctrl_geometry(self, window_id):
+        raise AssertionError("not used")
+
+
+class DriverTimingEvidenceTests(unittest.TestCase):
+    """The driver must hand the oracles its own cost, or nothing is subtracted."""
+
+    def _run_step(self, settle_delays):
+        transport = SlowRoundTripTransport()
+        executor = CuaExecutor(
+            transport,
+            pid=1,
+            window_id=2,
+            session="test",
+            settle_delays=settle_delays,
+        )
+        return executor._execute(
+            None, ActionEvidence.connectivity("online")
+        )
+
+    def test_the_requested_settle_time_is_reported(self) -> None:
+        result = self._run_step((0.02, 0.03))
+
+        self.assertEqual(result.evidence.settle_delay_ms, 50)
+
+    def test_every_snapshot_after_dispatch_is_measured(self) -> None:
+        result = self._run_step((0.01, 0.01))
+
+        # after-snapshot plus one per settle sample, and none of them free.
+        self.assertEqual(len(result.evidence.snapshot_ms), 3)
+        self.assertTrue(all(value > 0 for value in result.evidence.snapshot_ms))
+
+    def test_the_reported_observation_time_still_holds_the_raw_wall_time(self) -> None:
+        result = self._run_step((0.05,))
+
+        harness = result.evidence.settle_delay_ms + sum(result.evidence.snapshot_ms)
+        self.assertGreaterEqual(result.evidence.observation_ms, harness - 5)
 
 
 class UxOracleTests(unittest.TestCase):
