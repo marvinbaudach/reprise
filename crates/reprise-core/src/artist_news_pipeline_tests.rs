@@ -100,7 +100,7 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
 }
 
 #[test]
-fn nr_16_refresh_excludes_featured_artist_credits_but_keeps_co_headliners() {
+fn nr_24_refresh_excludes_featured_artist_credits_but_keeps_co_headliners() {
     let db = migrated_conn();
     db.conn()
         .execute(
