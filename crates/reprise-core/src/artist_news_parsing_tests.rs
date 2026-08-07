@@ -194,7 +194,7 @@ fn dg_3_undated_albums_and_eps_remain_catalog_but_singles_stay_out() {
 }
 
 #[test]
-fn nr_1a_album_and_ep_window_starts_ninety_days_ago() {
+fn album_and_ep_window_starts_ninety_days_ago() {
     let json = r#"{"release-groups":[
       {"id":"album-edge","title":"Album Edge","first-release-date":"2026-04-14","primary-type":"Album"},
       {"id":"ep-edge","title":"EP Edge","first-release-date":"2026-04-14","primary-type":"EP"},
@@ -287,7 +287,7 @@ fn nr_24_released_singles_are_catalog_data_regardless_of_news_age() {
 }
 
 #[test]
-fn nr_1a_secondary_types_are_excluded_before_query_time_news_cap() {
+fn secondary_types_are_excluded_before_query_time_news_cap() {
     let mut groups = vec![
         r#"{"id":"live","title":"Live","first-release-date":"2026-08-01","primary-type":"Album","secondary-types":["Live"]}"#
             .to_string(),
