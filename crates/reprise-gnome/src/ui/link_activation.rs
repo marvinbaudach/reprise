@@ -21,6 +21,21 @@ pub(in crate::ui) fn route_key(
     }
 }
 
+fn route_pointer_click(
+    modifiers: gtk4::gdk::ModifierType,
+    claim: impl FnOnce(),
+    activate: impl FnOnce(),
+) {
+    let selection_modifiers =
+        gtk4::gdk::ModifierType::CONTROL_MASK | gtk4::gdk::ModifierType::SHIFT_MASK;
+    if modifiers.intersects(selection_modifiers) {
+        return;
+    }
+
+    claim();
+    activate();
+}
+
 pub(in crate::ui) fn arm(
     widget: &impl IsA<gtk4::Widget>,
     accessible_label: &str,
@@ -39,12 +54,18 @@ pub(in crate::ui) fn arm(
     let click = gtk4::GestureClick::new();
     let click_activate = activate.clone();
     click.connect_released(move |gesture, _, _, _| {
-        // Claim the sequence so an enclosing row gesture does not also fire.
-        // A link inside a row that itself acts on click (the My Stats song
-        // rows) must navigate *instead of* triggering the row, not as well
-        // as — otherwise one click both opens the library and starts a track.
-        gesture.set_state(gtk4::EventSequenceState::Claimed);
-        click_activate();
+        route_pointer_click(
+            gesture.current_event_state(),
+            || {
+                // Claim the sequence so an enclosing row gesture does not
+                // also fire. A link inside a row that itself acts on click
+                // (the My Stats song rows) must navigate *instead of*
+                // triggering the row, not as well as — otherwise one click
+                // both opens the library and starts a track.
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
+            },
+            || click_activate(),
+        );
     });
     widget.add_controller(click);
 
@@ -104,5 +125,26 @@ mod tests {
             gtk4::glib::Propagation::Proceed
         );
         assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn selection_modifiers_leave_pointer_click_unclaimed_and_inactive() {
+        for (modifiers, expected_calls, expected_claims) in [
+            (gtk4::gdk::ModifierType::empty(), 1, 1),
+            (gtk4::gdk::ModifierType::CONTROL_MASK, 0, 0),
+            (gtk4::gdk::ModifierType::SHIFT_MASK, 0, 0),
+        ] {
+            let calls = Cell::new(0);
+            let claims = Cell::new(0);
+
+            route_pointer_click(
+                modifiers,
+                || claims.set(claims.get() + 1),
+                || calls.set(calls.get() + 1),
+            );
+
+            assert_eq!(calls.get(), expected_calls, "modifiers: {modifiers:?}");
+            assert_eq!(claims.get(), expected_claims, "modifiers: {modifiers:?}");
+        }
     }
 }
