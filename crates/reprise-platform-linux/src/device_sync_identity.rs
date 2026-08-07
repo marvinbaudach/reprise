@@ -42,7 +42,14 @@ pub fn project_descriptor(
 pub fn descriptor_from_mount(mount: &gio::Mount) -> Option<DeviceDescriptor> {
     let root_uri = mount.root().uri();
     let uuid = mount.uuid();
-    let usb_serial = usb_serial_from_sysfs(&root_uri, Path::new("/sys/bus/usb/devices"));
+    let unix_device = mount
+        .volume()
+        .and_then(|volume| volume.identifier(gio::VOLUME_IDENTIFIER_KIND_UNIX_DEVICE));
+    let usb_serial = usb_serial_from_volume_identifier(
+        unix_device.as_deref(),
+        &root_uri,
+        Path::new("/sys/bus/usb/devices"),
+    );
     let mut descriptor = project_descriptor(
         &root_uri,
         uuid.as_deref(),
@@ -58,6 +65,25 @@ pub fn descriptor_from_mount(mount: &gio::Mount) -> Option<DeviceDescriptor> {
 /// malformed, unreadable, or transient entries simply mean "unrememberable".
 pub fn usb_serial_from_sysfs(root_uri: &str, sysfs_root: &Path) -> Option<String> {
     let (bus, device) = mtp_usb_address(root_uri)?;
+    usb_serial_for_address(bus, device, sysfs_root)
+}
+
+/// Resolves the USB serial from the stable volume identifier when GVfs
+/// publishes one, retaining the legacy MTP URI address as a fallback.
+pub(crate) fn usb_serial_from_volume_identifier(
+    unix_device: Option<&str>,
+    root_uri: &str,
+    sysfs_root: &Path,
+) -> Option<String> {
+    if let Some((bus, device)) = unix_device.and_then(unix_device_usb_address) {
+        if let Some(serial) = usb_serial_for_address(bus, device, sysfs_root) {
+            return Some(serial);
+        }
+    }
+    usb_serial_from_sysfs(root_uri, sysfs_root)
+}
+
+fn usb_serial_for_address(bus: u32, device: u32, sysfs_root: &Path) -> Option<String> {
     let entries = fs::read_dir(sysfs_root).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
@@ -74,6 +100,14 @@ pub fn usb_serial_from_sysfs(root_uri: &str, sysfs_root: &Path) -> Option<String
         }
     }
     None
+}
+
+fn unix_device_usb_address(identifier: &str) -> Option<(u32, u32)> {
+    let relative = Path::new(identifier).strip_prefix("/dev/bus/usb").ok()?;
+    let mut components = relative.iter();
+    let bus = components.next()?.to_str()?.parse().ok()?;
+    let device = components.next()?.to_str()?.parse().ok()?;
+    components.next().is_none().then_some((bus, device))
 }
 
 fn mtp_usb_address(root_uri: &str) -> Option<(u32, u32)> {
