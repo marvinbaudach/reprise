@@ -167,7 +167,7 @@ use preferences::{
 #[allow(unused_imports)]
 pub(crate) use scan::{scan_card_css, scan_flow};
 #[allow(unused_imports)]
-use scan::{scan_controls, scan_progress, scan_watcher, scan_worker};
+use scan::{scan_chrome, scan_controls, scan_progress, scan_watcher, scan_worker};
 #[allow(unused_imports)]
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
 #[allow(unused_imports)]

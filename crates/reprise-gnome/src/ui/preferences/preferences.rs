@@ -20,8 +20,8 @@ use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::podcasts::PodcastsRuntime;
 use crate::ui::preference_playback::build_equalizer_surface;
+use crate::ui::scan_chrome::ScanChromeView;
 use crate::ui::scan_flow::ScanControls;
-use crate::ui::scan_progress::ScanProgressView;
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::status_bar::StatusBar;
@@ -116,7 +116,7 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) library_player_bar: LibraryPlayerBarShell,
     pub(in crate::ui) info_panel: Rc<NowPlayingPanel>,
     pub(in crate::ui) scan_button: gtk4::Button,
-    scan_controls: ScanControls,
+    pub(in crate::ui) scan_controls: ScanControls,
     pub(in crate::ui) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
     pub(in crate::ui) player: Option<Rc<PlayerController>>,
     pub(in crate::ui) syncing_effect_controls: Cell<bool>,
@@ -290,13 +290,23 @@ impl PreferencesContext {
             };
             (id, page)
         });
-        let foreground_scan_progress = ScanProgressView::new();
+        let foreground_scan_progress = ScanChromeView::new();
         self.scan_controls
-            .attach_progress_view(&foreground_scan_progress);
+            .attach_chrome_view(&foreground_scan_progress);
         let shell = super::preferences_window::build(
             pages,
-            Some(foreground_scan_progress.widget().upcast_ref()),
+            Some(foreground_scan_progress.line_widget()),
+            Some(foreground_scan_progress.chip_widget()),
         );
+        let preferences_sidebar = shell.sidebar.clone();
+        foreground_scan_progress.set_on_activate(move || {
+            let Some(index) = super::preferences_window::page_index_by_name("library") else {
+                return;
+            };
+            preferences_sidebar.select_row(preferences_sidebar.row_at_index(index).as_ref());
+        });
+        let scan_controls = self.scan_controls.clone();
+        foreground_scan_progress.set_on_cancel(move || scan_controls.request_cancel());
         let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&self.window);
         shell.dialog.connect_closed(move |_| {
             let _keep_progress_alive_until_closed = &foreground_scan_progress;

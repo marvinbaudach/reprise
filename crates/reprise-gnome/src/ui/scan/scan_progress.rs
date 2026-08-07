@@ -9,11 +9,30 @@ use reprise_core::library::scanner::ScanProgress;
 
 use super::strings;
 
-const PULSE_INTERVAL: Duration = Duration::from_millis(100);
-const PULSE_STEP: f64 = 0.08;
-const MIN_VISIBLE_TIME: Duration = Duration::from_millis(700);
+pub(super) const PULSE_INTERVAL: Duration = Duration::from_millis(100);
+pub(super) const PULSE_STEP: f64 = 0.08;
+pub(super) const MIN_VISIBLE_TIME: Duration = Duration::from_millis(700);
 
-fn remaining_visible_time(visible_for: Duration) -> Option<Duration> {
+#[derive(Clone, Default)]
+pub(super) struct PulseGeneration(Rc<Cell<u64>>);
+
+impl PulseGeneration {
+    pub(super) fn start(&self) -> u64 {
+        let generation = self.0.get().wrapping_add(1);
+        self.0.set(generation);
+        generation
+    }
+
+    pub(super) fn cancel(&self) {
+        self.0.set(self.0.get().wrapping_add(1));
+    }
+
+    pub(super) fn is_current(&self, generation: u64) -> bool {
+        self.0.get() == generation
+    }
+}
+
+pub(super) fn remaining_visible_time(visible_for: Duration) -> Option<Duration> {
     (visible_for < MIN_VISIBLE_TIME).then(|| MIN_VISIBLE_TIME - visible_for)
 }
 
@@ -129,20 +148,11 @@ struct ScanProgressWidgets {
     progress: gtk4::ProgressBar,
     detail: gtk4::Label,
     cancel: gtk4::Button,
-    pulse_generation: Rc<Cell<u64>>,
+    pulse_generation: PulseGeneration,
     visibility_generation: Rc<Cell<u64>>,
     visible_since: Cell<Option<std::time::Instant>>,
     phase: Rc<Cell<DisplayPhase>>,
     on_cancel: OnCancelSlot,
-}
-
-#[derive(Clone)]
-pub(in crate::ui) struct WeakScanProgressView(Weak<ScanProgressWidgets>);
-
-impl WeakScanProgressView {
-    pub(in crate::ui) fn upgrade(&self) -> Option<ScanProgressView> {
-        self.0.upgrade().map(|inner| ScanProgressView { inner })
-    }
 }
 
 impl ScanProgressView {
@@ -261,17 +271,13 @@ impl ScanProgressView {
                 progress,
                 detail,
                 cancel,
-                pulse_generation: Rc::new(Cell::new(0)),
+                pulse_generation: PulseGeneration::default(),
                 visibility_generation: Rc::new(Cell::new(0)),
                 visible_since: Cell::new(None),
                 phase: Rc::new(Cell::new(DisplayPhase::Hidden)),
                 on_cancel,
             }),
         }
-    }
-
-    pub(in crate::ui) fn downgrade(&self) -> WeakScanProgressView {
-        WeakScanProgressView(Rc::downgrade(&self.inner))
     }
 
     /// Sets the callback invoked when the user right-clicks or long-presses
@@ -424,8 +430,7 @@ impl ScanProgressView {
     }
 
     fn start_pulsing(&self) -> bool {
-        let generation = self.inner.pulse_generation.get().wrapping_add(1);
-        self.inner.pulse_generation.set(generation);
+        let generation = self.inner.pulse_generation.start();
         self.inner.progress.set_fraction(0.0);
         if !crate::ui::motion::animations_enabled() {
             return false;
@@ -435,7 +440,7 @@ impl ScanProgressView {
         let progress = self.inner.progress.downgrade();
         let pulse_generation = self.inner.pulse_generation.clone();
         glib::timeout_add_local(PULSE_INTERVAL, move || {
-            if pulse_generation.get() != generation {
+            if !pulse_generation.is_current(generation) {
                 return glib::ControlFlow::Break;
             }
             let Some(progress) = progress.upgrade() else {
@@ -452,9 +457,7 @@ impl ScanProgressView {
     }
 
     fn cancel_pulsing(&self) {
-        self.inner
-            .pulse_generation
-            .set(self.inner.pulse_generation.get().wrapping_add(1));
+        self.inner.pulse_generation.cancel();
     }
 }
 

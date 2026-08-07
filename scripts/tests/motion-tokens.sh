@@ -21,6 +21,27 @@ printf '%s\n' \
   '}' > "$ui_root/clean.rs"
 MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" >/dev/null
 
+# Clean CSS: a token interpolation carries no digit in front of the unit, an
+# `animation-delay` is a phase offset rather than a duration, and a test module
+# may quote the rendered number it asserts on.
+printf '%s\n' \
+  'fn clean_css() -> String {' \
+  '    format!(' \
+  '        ".spin {{ animation: gear-spin {SPIN_MS}ms linear infinite; }}\' \
+  '         .bar-2 {{ animation-delay: -450ms; }}\' \
+  '         .fade {{ transition: opacity {TRANSITION}; }}"' \
+  '    )' \
+  '}' \
+  '' \
+  '#[cfg(test)]' \
+  'mod tests {' \
+  '    #[test]' \
+  '    fn renders_the_token() {' \
+  '        assert!(clean_css().contains("animation: gear-spin 1200ms linear"));' \
+  '    }' \
+  '}' > "$ui_root/clean_css.rs"
+MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" >/dev/null
+
 # Bad file: every idiomatic literal spelling must be caught, including
 # suffix/hex variants, a builder `.duration()`, a nested-comma constructor
 # arg, and a trailing comma.
@@ -50,6 +71,49 @@ rg --quiet 'set_transition_duration\(0x96,' "$fixture/err" # M2 hex + L1 trailin
 rg --quiet '250_u32' "$fixture/err"                      # M2 _u32 + M3 nested-comma arg
 
 rm "$ui_root/bad.rs"
+
+# Bad CSS: every hand-written duration spelling is caught, and a production
+# rule below an inline test module is still reached (the test block is cut out,
+# not truncated away with the rest of the file).
+printf '%s\n' \
+  'fn spin_css() -> String {' \
+  '    ".gear { animation: gear-spin 1200ms linear infinite; }\' \
+  '     .calm { animation-duration: 720ms; }"' \
+  '        .to_string()' \
+  '}' \
+  '' \
+  '#[cfg(test)]' \
+  'mod tests {' \
+  '    #[test]' \
+  '    fn quotes_a_duration() {' \
+  '        assert!(spin_css().contains("animation-duration: 999ms"));' \
+  '    }' \
+  '}' \
+  '' \
+  'fn fade_css() -> String {' \
+  '    ".fade { transition: opacity 300ms ease-out; }\' \
+  '     .slide { transition-duration: 250ms; }"' \
+  '        .to_string()' \
+  '}' > "$ui_root/bad_css.rs"
+
+if MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" \
+    >"$fixture/out" 2>"$fixture/err"; then
+  echo "motion token lint accepted literal CSS durations" >&2
+  exit 1
+fi
+rg --quiet 'literal CSS animation duration.*bad_css.rs' "$fixture/err"
+rg --quiet 'animation: gear-spin 1200ms' "$fixture/err"       # shorthand
+rg --quiet 'animation-duration: 720ms' "$fixture/err"         # explicit duration
+rg --quiet 'transition: opacity 300ms' "$fixture/err"         # transition shorthand
+rg --quiet 'transition-duration: 250ms' "$fixture/err"        # below the test module
+# The assertion inside the test module is not reported as a violation.
+if rg --quiet 'animation-duration: 999ms' "$fixture/err"; then
+  echo "motion token lint flagged a duration quoted by a test" >&2
+  exit 1
+fi
+rm "$ui_root/bad_css.rs"
+MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" >/dev/null
+
 printf '%s\n' \
   'fn policy(widget: &Widget, target: Target) {' \
   '    TimedAnimation::new(widget, 0.0, 1.0, 1, target);' \
