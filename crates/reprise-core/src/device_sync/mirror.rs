@@ -46,6 +46,12 @@ pub struct ManagedDeviceFile {
     pub size_bytes: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DesktopAnalysis {
+    pub track_id: i64,
+    pub size_bytes: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MirrorInput {
     pub selected: Vec<SelectionSource>,
@@ -54,6 +60,7 @@ pub struct MirrorInput {
     pub inventory: Vec<DeviceFileRecord>,
     pub playlist_inventory: Vec<DevicePlaylistRecord>,
     pub managed_files: Vec<ManagedDeviceFile>,
+    pub desktop_analyses: Vec<DesktopAnalysis>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,6 +76,14 @@ pub struct DesiredManagedFile {
 pub struct MirrorReplacement {
     pub existing: DeviceFileRecord,
     pub desired: DesiredManagedFile,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AnalysisSidecarWrite {
+    pub track_id: i64,
+    pub device_path: String,
+    pub size_bytes: u64,
+    pub existing_size_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -115,6 +130,7 @@ pub struct MirrorPlan {
     pub desired_files: Vec<DesiredManagedFile>,
     pub copy: Vec<DesiredManagedFile>,
     pub replace: Vec<MirrorReplacement>,
+    pub analysis_writes: Vec<AnalysisSidecarWrite>,
     pub remove: Vec<ManagedRemoval>,
     pub retained_unavailable: Vec<DeviceFileRecord>,
     pub playlist_writes: Vec<PlaylistWrite>,
@@ -175,6 +191,7 @@ pub fn plan_mirror(input: MirrorInput) -> MirrorPlan {
         input.inventory,
         input.playlist_inventory,
         input.managed_files,
+        &input.desktop_analyses,
     )
 }
 
@@ -184,6 +201,7 @@ fn build_plan(
     mut inventory: Vec<DeviceFileRecord>,
     mut playlist_inventory: Vec<DevicePlaylistRecord>,
     mut managed_files: Vec<ManagedDeviceFile>,
+    desktop_analyses: &[DesktopAnalysis],
 ) -> MirrorPlan {
     inventory.sort_by(|left, right| {
         left.track_id
@@ -258,6 +276,7 @@ fn build_plan(
         &unavailable,
         &mut plan,
     );
+    plan_analysis_sidecars(desktop_analyses, &managed_files, &mut plan);
     plan_playlists(
         playlists,
         &desired_by_id,
@@ -286,6 +305,56 @@ fn build_plan(
         .collect::<HashSet<_>>();
     plan_orphan_removals(&known_paths, &managed_files, &mut plan);
     plan
+}
+
+fn plan_analysis_sidecars(
+    desktop_analyses: &[DesktopAnalysis],
+    managed_files: &[ManagedDeviceFile],
+    plan: &mut MirrorPlan,
+) {
+    let analyses = desktop_analyses
+        .iter()
+        .map(|analysis| (analysis.track_id, analysis.size_bytes))
+        .collect::<HashMap<_, _>>();
+    let resident = managed_files
+        .iter()
+        .map(|file| (file.relative_path.as_str(), file.size_bytes))
+        .collect::<HashMap<_, _>>();
+    for desired in &plan.desired_files {
+        let Some(size_bytes) = analyses.get(&desired.track.id).copied() else {
+            continue;
+        };
+        let Some(device_path) =
+            super::analysis_sidecar::device_path_for_track(&desired.device_path)
+        else {
+            continue;
+        };
+        let existing_size_bytes = resident.get(device_path.as_str()).copied();
+        // Size is deliberately a coarse change signal. It catches a sidecar
+        // whose encoded shape changed without reading every file back over
+        // MTP, but cannot distinguish recomputed analyses of the same length.
+        if existing_size_bytes == Some(size_bytes) {
+            continue;
+        }
+        plan.analysis_writes.push(AnalysisSidecarWrite {
+            track_id: desired.track.id,
+            device_path,
+            size_bytes,
+            existing_size_bytes,
+        });
+    }
+    let analysis_bytes = plan
+        .analysis_writes
+        .iter()
+        .map(|sidecar| sidecar.size_bytes)
+        .fold(0_u64, u64::saturating_add);
+    plan.transfer_bytes = plan.transfer_bytes.saturating_add(analysis_bytes);
+    plan.target_bytes = plan.target_bytes.saturating_add(
+        plan.desired_files
+            .iter()
+            .filter_map(|desired| analyses.get(&desired.track.id).copied())
+            .fold(0_u64, u64::saturating_add),
+    );
 }
 
 fn plan_file_changes(
@@ -383,6 +452,9 @@ fn plan_orphan_removals(
             continue;
         }
         if safe_managed_path(&file.relative_path) {
+            if !is_removable_managed_path(&file.relative_path) {
+                continue;
+            }
             plan.bytes_freed = plan.bytes_freed.saturating_add(file.size_bytes);
             plan.remove.push(ManagedRemoval::Orphan(file.clone()));
         } else {
@@ -394,6 +466,13 @@ fn plan_orphan_removals(
             );
         }
     }
+}
+
+fn is_removable_managed_path(path: &str) -> bool {
+    let path = Path::new(path);
+    !super::analysis_sidecar::is_sidecar_path(path)
+        && !super::track_metadata_list::is_list_path(path)
+        && !super::lyrics_sidecar::is_sidecar_path(path)
 }
 
 fn plan_playlists(
