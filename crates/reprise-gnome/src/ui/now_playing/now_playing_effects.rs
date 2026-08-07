@@ -125,7 +125,7 @@ impl super::NowPlayingPanel {
             let bloom = self.widgets.bloom.clone();
             let shimmer = self.widgets.shimmer.clone();
             let cover_widget = self.widgets.cover.clone();
-            self.cover_loader.load_into_with_resolution(
+            self.cover_loader.load_into_now_playing(
                 &self.widgets.cover,
                 &track.path,
                 ThumbnailSize::Full,

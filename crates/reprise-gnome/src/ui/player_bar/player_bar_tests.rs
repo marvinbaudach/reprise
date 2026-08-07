@@ -18,6 +18,20 @@ fn run_until_idle() {
     main_loop.run();
 }
 
+/// Pumps the main loop until `condition` holds, with a hard ceiling so a
+/// never-satisfied condition fails on the assertion that follows instead of
+/// hanging. Waits on the state an animation produces rather than on a
+/// duration: a requested main-loop stretch is only a lower bound under
+/// X11/Xvfb (see `mot_5_play_pause_pulses_on_state_change`).
+fn pump_until(condition: impl Fn() -> bool) {
+    for _ in 0..200 {
+        if condition() {
+            return;
+        }
+        run_main_loop_for(5);
+    }
+}
+
 fn track_links() -> crate::ui::playing_links::LinkLabels {
     crate::ui::playing_links::player_bar_labels(
         crate::ui::playback::preview::PlaybackMode::Queue,
@@ -263,6 +277,122 @@ fn mot_5_play_pause_pulses_on_state_change() {
     // the stable behavior boundaries.
     run_main_loop_for(motion::MICRO_MS + 20);
     assert!(!bar.play_pause_button.has_css_class("pulsing"));
+
+    settings.set_gtk_enable_animations(previous);
+    window.close();
+}
+
+/// MOT-5 grants the transport button its crossfade and its pulse for Play↔
+/// Pause — for the moment the button changes what it says. A track change
+/// while playback runs is not that moment: `Player::try_play` reports
+/// `Playing` again for every manual jump, and the button reads "Pause"
+/// before and after. Nothing about it may move.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_a_track_change_leaves_the_transport_button_alone() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let bar = PlayerBar::new();
+    let window = gtk4::Window::new();
+    window.set_child(Some(bar.widget()));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    bar.set_transport_enabled(true, false);
+    bar.set_track("First", "First artist", track_links());
+    // The one legitimate crossfade: the button starts on Play and this is the
+    // moment it changes what it says. Let it settle before measuring.
+    bar.set_state(PlaybackState::Playing);
+    pump_until(|| {
+        bar.play_glyph.glyph() == Glyph::Pause && bar.play_glyph.widget().opacity() == 1.0
+    });
+    assert_eq!(bar.play_glyph.glyph(), Glyph::Pause);
+    assert_eq!(bar.play_glyph.widget().opacity(), 1.0);
+
+    // Skipping to the next track: new metadata, and a second `Playing` from
+    // the restarted pipeline.
+    let settled_icon = bar.icon_animation_generation.get();
+    let settled_pulse = bar.play_pulse_generation.get();
+    bar.set_track("Second", "Second artist", track_links());
+    bar.set_state(PlaybackState::Playing);
+
+    assert_eq!(
+        bar.icon_animation_generation.get(),
+        settled_icon,
+        "the unchanged transport glyph was cross-faded a second time"
+    );
+    assert_eq!(
+        bar.play_pulse_generation.get(),
+        settled_pulse,
+        "the unchanged transport button was pulsed a second time"
+    );
+    assert_eq!(bar.play_glyph.glyph(), Glyph::Pause);
+    assert_eq!(bar.play_glyph.widget().opacity(), 1.0);
+
+    settings.set_gtk_enable_animations(previous);
+    window.close();
+}
+
+/// MOT-5 gives the metadata surfaces their crossfade for the track change —
+/// for the moment they name something else. Re-feeding the same pair is not
+/// that moment: a tag edit on the playing track re-reads title and artist
+/// whichever field was actually edited, and re-announcing the loaded track
+/// re-sends what the bar already shows.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_re_feeding_the_same_track_does_not_crossfade_the_metadata() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let bar = PlayerBar::new();
+    let window = gtk4::Window::new();
+    window.set_child(Some(bar.widget()));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    bar.set_track("Title", "Artist", track_links());
+    pump_until(|| bar.title_label.text() == "Title" && bar.title_label.opacity() == 1.0);
+    assert_eq!(bar.title_label.text(), "Title");
+
+    let settled = bar.track_animation_generation.get();
+    bar.set_track("Title", "Artist", track_links());
+    assert_eq!(
+        bar.track_animation_generation.get(),
+        settled,
+        "the unchanged title and artist were cross-faded again"
+    );
+    assert_eq!(bar.title_label.opacity(), 1.0);
+
+    // A real change still moves — and is recognised while the previous fade is
+    // still running, which is why the comparison cannot read the labels: their
+    // text is only swapped at the halfway point.
+    bar.set_track("Second", "Artist", track_links());
+    assert_eq!(
+        bar.track_animation_generation.get(),
+        settled.wrapping_add(1)
+    );
+    bar.set_track("Second", "Artist", track_links());
+    assert_eq!(
+        bar.track_animation_generation.get(),
+        settled.wrapping_add(1),
+        "a repeat during the running fade restarted it"
+    );
+
+    // Clearing forgets what was shown, so the same track can be loaded again.
+    bar.clear_track();
+    bar.set_track("Second", "Artist", track_links());
+    assert_eq!(
+        bar.track_animation_generation.get(),
+        settled.wrapping_add(3),
+        "a fresh load after clear_track must be announced again"
+    );
 
     settings.set_gtk_enable_animations(previous);
     window.close();

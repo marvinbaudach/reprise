@@ -772,7 +772,7 @@ fn conc_1_concerts_row_is_module_gated_and_badged_from_the_filtered_view() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_18_releases_row_is_module_gated_before_concerts_and_badged_from_the_filtered_view() {
+fn nr_26_releases_row_is_module_gated_before_concerts_and_badged_from_the_filtered_view() {
     assert_update_feed_rows_are_module_gated_ordered_and_badged();
 }
 

@@ -38,7 +38,7 @@ fn nr_5b_opening_the_popover_never_requests_navigation() {
 /// The visible batch is capped at five, but opening must stamp every unseen
 /// candidate so the badge can clear and the jump row can lead to the rest.
 #[test]
-fn nr_9b_opening_stamps_every_unseen_candidate_not_only_the_visible_batch() {
+fn nr_9c_opening_stamps_every_unseen_candidate_not_only_the_visible_batch() {
     let mut releases: Vec<_> = (1..=7).map(|n| release(&format!("release-{n}"))).collect();
     let mut already_seen = release("already-seen");
     already_seen.seen_at = Some(50);
@@ -269,7 +269,7 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
 /// exercises the same production code path the real signal would.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_9b_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
+fn nr_9c_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
@@ -279,15 +279,22 @@ fn nr_9b_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
         .unwrap();
     reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
     let now = chrono::Utc::now().timestamp();
-    for mbid in ["release-one", "release-two"] {
+    // Distinct titles, because NR-24 collapses entries that share artist,
+    // title, and release date into one row. Two rows differing only by MBID
+    // are duplicates of the same work, and counting them twice is exactly
+    // what this batch is no longer allowed to do.
+    for (mbid, title) in [
+        ("release-one", "First Release"),
+        ("release-two", "Second Release"),
+    ] {
         crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at
-             ) VALUES (?1, 'Artist', 'artist', 'Release', 'Album',
-                       '2026-08-01', ?2)",
-                rusqlite::params![mbid, now],
+             ) VALUES (?1, 'Artist', 'artist', ?2, 'Album',
+                       '2026-08-01', ?3)",
+                rusqlite::params![mbid, title, now],
             )
             .unwrap();
     }

@@ -193,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_17_status_pills_describe_discography_gaps() {
+    fn nr_25_status_pills_describe_discography_gaps() {
         assert_eq!(
             release_status_label(&entry("2027", LibraryPresence::Complete, false), today()),
             "In library"
@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_17_activation_uses_restore_or_external_release_link() {
+    fn nr_25_activation_uses_restore_or_external_release_link() {
         let hidden = entry("2026-01-01", LibraryPresence::Complete, true);
         assert_eq!(
             releases_row_action(&hidden, today()),

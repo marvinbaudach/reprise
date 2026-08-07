@@ -1926,7 +1926,7 @@ the panel).
   or EPs from the last 90 days remain, plus exclusively future
   singles; incomplete data is never treated as future, secondary types
   stay out.
-- **NR-1a** [active] [core] — A library-wide MusicBrainz pipeline is
+- **NR-1a** [replaced by NR-27] [core] — A library-wide MusicBrainz pipeline is
   the sole source of truth for new releases and later artist-news
   views. Artist MBIDs come first from tags, otherwise from a persisted
   name resolution including negative results; artists are prioritized
@@ -2012,7 +2012,7 @@ the panel).
   entries individually recoverable. Retention: 6 months **and** at
   most 200 entries (the stricter limit wins), hard deletion, but never
   within the 90-day fetch window. Replaces NR-4.
-- **NR-13** [active] [gtk] — In the full Releases overview, released
+- **NR-13** [replaced by NR-28] [gtk] — In the full Releases overview, released
   releases already present in the library are marked and offer the
   action „Show in library" (navigate + focus, **no** direct play path).
   The delta popover does not list releases already complete in the
@@ -2031,7 +2031,7 @@ the panel).
   Opening stamps the entire delta set of both sections in the current
   scope. Releases fully present in the library are listed and
   stamped, but never count toward the unseen badge.
-- **NR-9b** [active] [core] [gtk] — The popover shows one visit batch:
+- **NR-9b** [replaced by NR-9c] [core] [gtk] — The popover shows one visit batch:
   every unseen entry, or, when none is unseen, every entry carrying the
   newest `seen_at` stamp. Opening stamps the complete unseen batch in
   scope, including entries below the visible cap. Rows and section
@@ -2056,7 +2056,7 @@ the panel).
   location in SMART, before Concerts and only with the `new_releases`
   module active. Its badge equals exactly the number of rows visible
   on opening after persistent filters; 0 renders no badge.
-- **NR-16** [active] [core] [gtk] — The full releases view is a
+- **NR-16** [replaced by NR-24] [core] [gtk] — The full releases view is a
   discography-gap catalog for artists currently represented in the
   library. It contains regular albums and EPs regardless of age, but
   never singles or releases already fully present. Individual
@@ -2066,7 +2066,7 @@ the panel).
   official MusicBrainz edition. Hidden gaps remain recoverable via the
   hidden filter; album and EP catalog rows are not subject to any
   time-based retention.
-- **NR-17** [active] [gtk] — The gap view remains the table `Date ·
+- **NR-17** [replaced by NR-25] [gtk] — The gap view remains the table `Date ·
   Title · Artist · Type · Status`, sorted by date descending by
   default. Status is `upcoming`, `Missing`, `Incomplete`, or — when
   the length is known — `X of Y tracks`. The permanent filter row now
@@ -2074,7 +2074,7 @@ the panel).
   external release URL, Hidden activates `Show again`. An empty
   default filter confirms „No missing albums or EPs"; the footer
   contains no six-month retention.
-- **NR-18** [active] [core] [gtk] — „Releases" remains a sidebar
+- **NR-18** [replaced by NR-26] [core] [gtk] — „Releases" remains a sidebar
   location in SMART, before Concerts, visible only with the
   `new_releases` module active. Its badge equals exactly the number of
   discography gaps visible with the persistent Type/Hidden filters; 0
@@ -2128,6 +2128,67 @@ the panel).
   2026-08-04, after the rule's own display tests had passed — the two
   halves of the surface were each self-consistent and only disagreed
   with each other (see also STYLE-1).
+- **NR-24** [active] [core] [gtk] — The catalog contains albums, EPs,
+  and singles for artists currently in the library; secondary types
+  never enter. A release counts as owned, and therefore does not
+  appear, when its distinct local track identities cover at least the
+  smallest official MusicBrainz edition, or more than half the
+  official track count of an already-released release, or, for a
+  single, when the library holds any track by that artist under that
+  title. Unknown official counts and not-yet-released titles never
+  count as owned. Entries sharing artist, normalized title, and
+  release date collapse to one row: album ahead of EP ahead of single.
+  Catalog rows of all three types are durable and exempt from
+  time-based cache retention.
+- **NR-25** [active] [gtk] — The gap view remains the table `Date ·
+  Title · Artist · Type · Status`, sorted by date descending by
+  default. Its permanent filter row carries independent Album, EP,
+  and Single toggles — album and EP on by default, single off — a
+  persistent window `1 year · 5 years · 10 years · All` defaulting to
+  five years, and the Hidden chip. An empty type selection shows every
+  type; a release without a parsable date survives every window. The
+  count line always names shown and total, the total being the widest
+  scope. Activation opens the external release URL, and Hidden
+  activates `Show again`. Zero results offer exactly one "Show all"
+  step clearing type, window, and hidden together.
+- **NR-26** [active] [core] [gtk] — "Releases" remains a sidebar
+  location in SMART, before Concerts, visible only with the
+  `new_releases` module active. Its badge equals the number of gaps
+  visible under the persistent type, window, and hidden filters; 0
+  renders no badge.
+- **NR-9c** [active] [core] [gtk] — NR-9b's batch and stamping
+  semantics remain unchanged. The delta popover and its badge draw
+  from the same persisted filter as the full view. Releases owned
+  under NR-24, filtered out by type or window, or already hidden do
+  not enter the popover and do not badge. Duplicates collapse there
+  the same way. Singles therefore announce themselves exactly when
+  their chip is on — there is no separate preference.
+- **NR-27** [active] [core] — replaces NR-1a. A library-wide MusicBrainz
+  pipeline remains the sole source of truth for the releases catalog and
+  the artist-news views. Artist MBIDs come first from tags, otherwise
+  from a persisted name resolution including negative results; artists
+  are prioritized by play count. What the pipeline *stores* is the
+  artist's regular albums, EPs and singles as durable catalog rows
+  regardless of age — NR-24 owns that scope, and secondary types stay
+  out. The cap of twenty entries per artist belongs to the *news* path
+  alone: it bounds the delta candidates the popover and badge read, not
+  the catalog. Incomplete data is never treated as future.
+  *Reason:* NR-1a described a pipeline that kept only ninety days of
+  albums and exclusively future singles. NR-16 had already voided the
+  first half, and NR-24 voids the second. The rule survived both as
+  `[active]` while being false about persistence — found in review on
+  2026-08-07, not by a test, because every individual test agreed with
+  the code.
+- **NR-28** [active] [gtk] — replaces NR-13. The gap catalog never lists
+  a release that counts as owned under NR-24, so it carries no
+  „Show in library" action and never renders an `In library` status: a
+  row that could offer it is a row the filter has already removed. The
+  Updates popover's own row actions are unaffected and stay with NR-9c.
+  *Reason:* NR-13 promised an action the overview has not had since
+  NR-16 excluded complete releases. The status value stays in the model
+  because the presence it names is real, and a test pins that the
+  filtered view never yields it — a filter change that let owned rows
+  through would otherwise reintroduce the dead branch silently.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
