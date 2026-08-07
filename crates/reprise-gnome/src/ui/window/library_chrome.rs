@@ -5,6 +5,7 @@ use std::rc::Rc;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+pub(in crate::ui) use super::library_chrome_css::css;
 use super::strings;
 
 pub(in crate::ui) struct LibraryChrome {
@@ -235,9 +236,11 @@ fn wire_search_toggle(
 
     let toggle_weak = toggle.downgrade();
     let bar = search_bar.downgrade();
-    // `connect_changed`, not `connect_search_changed`: the latter is debounced
-    // so the query can settle before re-running it, but the lens only reflects
-    // "a query exists" (SEARCH-3) and must not lag behind typing by ~150 ms.
+    // `connect_changed`, not `connect_search_changed`: the lens only reflects
+    // "a query exists" (SEARCH-3) and must follow every keystroke. Since
+    // SEARCH-9 the entry's own `search-delay` is 0 and the two signals fire
+    // together, but the app's debounce still sits behind `search_changed` in
+    // `view_session`, and the lens must not wait for it.
     let stash = preserved_query.clone();
     search_entry.connect_changed(move |entry| {
         let (Some(toggle), Some(bar)) = (toggle_weak.upgrade(), bar.upgrade()) else {
@@ -274,21 +277,6 @@ pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button
 pub(in crate::ui) fn build_maintenance_actions() -> LibraryMaintenanceActions {
     let scan = action_button("folder-open-symbolic", &strings::text(strings::SCAN_FOLDER));
     LibraryMaintenanceActions { scan }
-}
-
-pub(in crate::ui) fn css() -> String {
-    ".reprise-library-split .reprise-library-sidebar { \
-       background-color: @sidebar_bg_color; \
-       border-right: 1px solid rgba(255, 255, 255, 0.06); }\n\
-     .reprise-library-header { \
-       background-color: @headerbar_bg_color; \
-       border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
-     .reprise-search-strip { \
-       background-color: @headerbar_bg_color; \
-       border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
-     .reprise-library-sidebar .caption-heading { \
-       color: @reprise_secondary_fg_color; }"
-        .to_string()
 }
 
 #[cfg(test)]

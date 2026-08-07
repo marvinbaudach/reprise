@@ -19,7 +19,10 @@ use crate::ui::track_list::{reload, TrackList};
 use crate::ui::track_list_sort::{restored_sort, SortState};
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_VIEW_SESSION";
-const SEARCH_DEBOUNCE_MS: u64 = 200;
+/// SEARCH-9: the one and only wait between typing and the result. GTK's own
+/// `search-delay` is switched off in `window.rs`, so this is not stacked on
+/// top of anything — raising it here raises the felt latency one-to-one.
+const SEARCH_DEBOUNCE_MS: u64 = 150;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TrackViewSnapshot {
@@ -110,7 +113,14 @@ pub(super) fn wire_search(
         let text = entry.text().to_string();
         // Browser state follows the visible entry synchronously so leaving a
         // place during the debounce window still captures the exact query.
-        *track_list.shared.filter.borrow_mut() = text;
+        *track_list.shared.filter.borrow_mut() = text.clone();
+        // SEARCH-9: clearing is not typing. Esc, the chip's ×, "Show all N
+        // tracks" and a hand-emptied field all arrive here as empty text, and
+        // none of them is the middle of a sequence worth waiting out.
+        if text.is_empty() {
+            track_list.reload();
+            return;
+        }
         let track_list = track_list.clone();
         let pending_for_timeout = pending.clone();
         let source_id =
@@ -347,5 +357,18 @@ mod issue_view_tests {
         assert!(!record_issue_viewed(&conn, &ViewSource::Library, 333).unwrap());
         assert_eq!(settings::get_last_viewed_missing(&conn).unwrap(), 111);
         assert_eq!(settings::get_last_viewed_import_errors(&conn).unwrap(), 222);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SEARCH_DEBOUNCE_MS;
+
+    /// SEARCH-9: exactly one wait sits between a keystroke and the result, and
+    /// it is this one. 150 ms is the agreed value; the constant existing at
+    /// 200 means GTK's own 150 ms delay is stacked underneath it.
+    #[test]
+    fn search_9_debounce_is_the_only_wait() {
+        assert_eq!(SEARCH_DEBOUNCE_MS, 150);
     }
 }
