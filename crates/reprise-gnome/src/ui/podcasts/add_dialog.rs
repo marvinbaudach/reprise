@@ -21,7 +21,9 @@ use super::add_dialog_input::{
     classify_input, dialog_hint, dialog_status_hint, dialog_title, primary_action_for_connectivity,
     submit_refusal, AddInput,
 };
-use super::add_dialog_results::{clear, result_section, rss_candidate, youtube_candidate};
+use super::add_dialog_results::{
+    clear, partition_dormant_search_results, result_section, rss_candidate, youtube_candidate,
+};
 use super::add_dialog_rows::{append_candidate, append_heading, append_preview, Preview};
 #[cfg(test)]
 use super::add_dialog_rows::{candidate_row, images_allowed};
@@ -370,7 +372,10 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
             let query = terms.clone();
             let task = one_shot_task::spawn("reprise-podcast-search", move || {
                 podcasts::itunes::search_in_country(&terms, &country)
-                    .map(|rows| rows.into_iter().map(rss_candidate).collect::<Vec<_>>())
+                    .map(|mut rows| {
+                        partition_dormant_search_results(&mut rows, chrono::Utc::now().timestamp());
+                        rows.into_iter().map(rss_candidate).collect::<Vec<_>>()
+                    })
                     .map_err(|error| preview_error(&error))
             });
             attach_candidates(

@@ -11,6 +11,9 @@ use reprise_core::podcasts::{self, PodcastKind};
 
 use crate::ui::strings;
 
+const SECONDS_PER_DAY: i64 = 86_400;
+const LAST_EPISODE_ABSOLUTE_AFTER_DAYS: usize = 365;
+
 /// `SRC-9`: the subscriber count is optional context, so it is appended only
 /// when the channel actually publishes one.
 pub(super) fn youtube_subtitle(matching_videos: usize, followers: Option<u64>) -> String {
@@ -26,20 +29,38 @@ pub(super) fn youtube_subtitle(matching_videos: usize, followers: Option<u64>) -
 
 pub(super) fn last_episode_segment(last_episode: Option<i64>, now: i64) -> Option<String> {
     let last_episode = last_episode?;
-    let days = usize::try_from((now - last_episode).max(0) / 86_400).unwrap_or(usize::MAX);
+    let days = last_episode_age_days(last_episode, now);
+    if days >= LAST_EPISODE_ABSOLUTE_AFTER_DAYS {
+        let date = DateTime::<Utc>::from_timestamp(last_episode, 0)?;
+        return Some(strings::podcast_last_episode_on(
+            &date.with_timezone(&Local).format("%b %Y").to_string(),
+        ));
+    }
     match days {
         0 => Some(strings::text(strings::PODCAST_LAST_EPISODE_TODAY)),
         1 => Some(strings::text(strings::PODCAST_LAST_EPISODE_YESTERDAY)),
         2..=6 => Some(strings::podcast_last_episode_days(days)),
         7..=34 => Some(strings::podcast_last_episode_weeks(days / 7)),
-        35..=364 => Some(strings::podcast_last_episode_months(days / 30)),
-        _ => {
-            let date = DateTime::<Utc>::from_timestamp(last_episode, 0)?;
-            Some(strings::podcast_last_episode_on(
-                &date.with_timezone(&Local).format("%b %Y").to_string(),
-            ))
-        }
+        _ => Some(strings::podcast_last_episode_months(days / 30)),
     }
+}
+
+fn last_episode_age_days(last_episode: i64, now: i64) -> usize {
+    usize::try_from((now - last_episode).max(0) / SECONDS_PER_DAY).unwrap_or(usize::MAX)
+}
+
+/// `SRC-20`: keep Apple's relevance order inside each side of the freshness
+/// boundary. A missing date is evidence of nothing and therefore stays with
+/// the fresh results.
+pub(super) fn partition_dormant_search_results(
+    rows: &mut [podcasts::itunes::SearchResult],
+    now: i64,
+) {
+    rows.sort_by_key(|row| {
+        row.last_episode.is_some_and(|last_episode| {
+            last_episode_age_days(last_episode, now) >= LAST_EPISODE_ABSOLUTE_AFTER_DAYS
+        })
+    });
 }
 
 pub(super) fn rss_subtitle(author: Option<&str>, last_episode: Option<i64>, now: i64) -> String {
@@ -148,6 +169,34 @@ mod tests {
             "New 4 days ago"
         );
         assert_eq!(rss_subtitle(None, None, now), "");
+    }
+
+    #[test]
+    fn src_20_search_keeps_fresh_then_dormant_apple_relevance_order() {
+        let now = Utc
+            .with_ymd_and_hms(2026, 8, 15, 12, 0, 0)
+            .unwrap()
+            .timestamp();
+        let mut rows = podcasts::itunes::parse_results(
+            r#"{"results":[
+              {"collectionName":"Dormant A","feedUrl":"https://e.test/dormant-a","releaseDate":"2025-08-15T12:00:00Z"},
+              {"collectionName":"Fresh A","feedUrl":"https://e.test/fresh-a","releaseDate":"2026-08-14T12:00:00Z"},
+              {"collectionName":"Undated","feedUrl":"https://e.test/undated"},
+              {"collectionName":"Fresh B","feedUrl":"https://e.test/fresh-b","releaseDate":"2025-08-16T12:00:00Z"},
+              {"collectionName":"Dormant B","feedUrl":"https://e.test/dormant-b","releaseDate":"2020-01-01T00:00:00Z"}
+            ]}"#,
+        )
+        .unwrap();
+
+        partition_dormant_search_results(&mut rows, now);
+
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Fresh A", "Undated", "Fresh B", "Dormant A", "Dormant B"],
+            "the partition keeps Apple's order within both groups and treats no date as fresh"
+        );
     }
 
     #[test]

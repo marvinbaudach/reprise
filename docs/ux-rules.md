@@ -4880,6 +4880,14 @@ listening statistics.
   lookup requests a refused source is promised never to make. Both halves are
   read once, when the dialog is built, and a failed consent lookup counts as
   refused.
+- **SRC-20** [active] [gtk] — **Dormant Apple Podcasts search results sink
+  without losing relevance order.** Search results whose newest episode is at
+  least 365 days old move after every fresher result, using the exact boundary
+  at which `SRC-18` switches to `Last <Mon Year>`. The partition is stable:
+  fresh shows keep Apple's order among themselves, and dormant shows do too.
+  A result with no usable date stays in the fresh group, because absence is
+  not evidence that a show is dormant. This applies only to text search;
+  country charts keep their chart order untouched.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
