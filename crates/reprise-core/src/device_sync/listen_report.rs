@@ -1,4 +1,16 @@
 //! Versioned phone-to-desktop listening report and acknowledgement formats.
+//!
+//! A report is `RPT-BACK`, a little-endian `u16` version, then two counted
+//! sections. Listen entries contain `u64 sequence`, a `u32`-length UTF-8
+//! device path, `i64 played_at`, and `u64 ms_played`; rating entries contain
+//! the same identity fields followed by `i32 rating` and `i64 rated_at`.
+//! The acknowledgement is `RPT-ACKN`, the same version, and one `u64` high
+//! water mark. Sequence bytes stored in SQLite use the same little-endian
+//! representation so the full unsigned range survives a round trip.
+
+use rusqlite::{Connection, OptionalExtension};
+
+use crate::library::stats_screen::ListenEventSnapshot;
 
 const REPORT_MAGIC: &[u8; 8] = b"RPT-BACK";
 const ACKNOWLEDGEMENT_MAGIC: &[u8; 8] = b"RPT-ACKN";
@@ -125,6 +137,163 @@ impl ListenReportAcknowledgement {
         }
         Ok(acknowledgement)
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ListenReportApplySummary {
+    pub listens_applied: usize,
+    pub ratings_applied: usize,
+    pub ratings_ignored: usize,
+    pub unresolved: usize,
+    pub acknowledged_sequence: Option<u64>,
+}
+
+/// Applies every action newer than this device's durable high-water mark.
+///
+/// Track mutations and the new mark commit in one immediate transaction. A
+/// missing device path is counted but still acknowledged, allowing the phone
+/// to prune an action for a file the desktop no longer owns.
+pub fn apply_listen_report(
+    db: &crate::db::Db,
+    device_serial: &str,
+    report: &ListenReport,
+) -> Result<ListenReportApplySummary, rusqlite::Error> {
+    crate::events::in_txn_immediate(db.conn(), |conn| {
+        let previous = load_applied_sequence(conn, device_serial)?;
+        let mut summary = ListenReportApplySummary::default();
+        for entry in report
+            .listens
+            .iter()
+            .filter(|entry| previous.is_none_or(|sequence| entry.sequence > sequence))
+        {
+            let Some((track_id, snapshot)) =
+                resolve_track(conn, device_serial, &entry.device_path)?
+            else {
+                summary.unresolved += 1;
+                continue;
+            };
+            let ms_played = i64::try_from(entry.ms_played)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+            crate::library::stats::record_play_in(conn, track_id, entry.played_at)?;
+            crate::library::stats_screen::record_listen_event_in(
+                conn,
+                track_id,
+                entry.played_at,
+                ms_played,
+                &snapshot,
+            )?;
+            summary.listens_applied += 1;
+        }
+        for entry in report
+            .ratings
+            .iter()
+            .filter(|entry| previous.is_none_or(|sequence| entry.sequence > sequence))
+        {
+            let Some((track_id, _)) = resolve_track(conn, device_serial, &entry.device_path)?
+            else {
+                summary.unresolved += 1;
+                continue;
+            };
+            if crate::library::stats::set_rating_if_newer_in(
+                conn,
+                track_id,
+                entry.rating,
+                entry.rated_at,
+            )? {
+                summary.ratings_applied += 1;
+            } else {
+                summary.ratings_ignored += 1;
+            }
+        }
+        summary.acknowledged_sequence = match (previous, report.highest_sequence()) {
+            (Some(previous), Some(incoming)) => Some(previous.max(incoming)),
+            (previous, incoming) => previous.or(incoming),
+        };
+        if summary.acknowledged_sequence != previous {
+            save_applied_sequence(
+                conn,
+                device_serial,
+                summary
+                    .acknowledged_sequence
+                    .expect("a changed acknowledgement is present"),
+            )?;
+        }
+        Ok(summary)
+    })
+}
+
+fn resolve_track(
+    conn: &Connection,
+    device_serial: &str,
+    device_path: &str,
+) -> Result<Option<(i64, ListenEventSnapshot)>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT t.id, t.title, t.artist, t.album, t.album_artist, t.genre,
+                t.duration_ms, t.path, t.artist_mbid
+           FROM device_files AS files
+           JOIN tracks AS t ON t.id = files.track_id
+          WHERE files.device_serial = ?1 AND files.device_path = ?2
+            AND t.removed_at IS NULL",
+        rusqlite::params![device_serial, device_path],
+        |row| {
+            Ok((
+                row.get(0)?,
+                ListenEventSnapshot {
+                    title: row.get(1)?,
+                    artist: row.get(2)?,
+                    album: row.get(3)?,
+                    album_artist: row.get(4)?,
+                    genre: row.get(5)?,
+                    duration_ms: row.get(6)?,
+                    path: row.get(7)?,
+                    artist_mbid: row.get(8)?,
+                },
+            ))
+        },
+    )
+    .optional()
+}
+
+fn load_applied_sequence(
+    conn: &Connection,
+    device_serial: &str,
+) -> Result<Option<u64>, rusqlite::Error> {
+    let encoded = conn
+        .query_row(
+            "SELECT applied_sequence FROM device_listen_report_state
+              WHERE device_serial = ?1",
+            [device_serial],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()?;
+    encoded
+        .map(|encoded| {
+            encoded
+                .try_into()
+                .map(u64::from_le_bytes)
+                .map_err(|_encoded: Vec<u8>| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Blob,
+                        "listen-report sequence is not eight bytes".into(),
+                    )
+                })
+        })
+        .transpose()
+}
+
+fn save_applied_sequence(
+    conn: &Connection,
+    device_serial: &str,
+    sequence: u64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO device_listen_report_state (device_serial, applied_sequence)
+         VALUES (?1, ?2)
+         ON CONFLICT(device_serial) DO UPDATE SET applied_sequence = excluded.applied_sequence",
+        rusqlite::params![device_serial, sequence.to_le_bytes()],
+    )?;
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]

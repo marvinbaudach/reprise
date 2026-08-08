@@ -112,6 +112,25 @@ pub(crate) fn set_rating_for_registered_track(
     Ok(changed == 1)
 }
 
+/// Applies a timestamped rating only when it is strictly newer than the row.
+///
+/// A missing timestamp is older than every timestamp the phone can report;
+/// equality deliberately keeps the desktop value.
+pub(crate) fn set_rating_if_newer_in(
+    conn: &Connection,
+    track_id: i64,
+    rating: i32,
+    rated_at: i64,
+) -> Result<bool, rusqlite::Error> {
+    let clamped = rating.clamp(RATING_MIN, RATING_MAX);
+    let changed = conn.execute(
+        "UPDATE tracks SET rating = ?1, rated_at = ?2
+          WHERE id = ?3 AND (rated_at IS NULL OR rated_at < ?2)",
+        rusqlite::params![clamped, rated_at, track_id],
+    )?;
+    Ok(changed == 1)
+}
+
 /// Increments `track_id`'s play count and sets `last_played_at` to
 /// `now_unix` (seconds since the Unix epoch — the same unit `scanner.rs`
 /// uses for `added_at`/`occurred_at`).
