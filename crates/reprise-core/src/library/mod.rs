@@ -35,6 +35,7 @@ pub mod tag_edit_session;
 mod tag_edit_write;
 #[cfg(test)]
 mod tag_edit_write_adversarial_tests;
+mod tag_edit_write_pipeline;
 mod tag_edit_write_report;
 mod tag_file_write_pool;
 mod tag_mutation;
