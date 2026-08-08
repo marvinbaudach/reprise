@@ -89,7 +89,7 @@ struct EpisodeRenderContext<'a> {
     selection: &'a Rc<RefCell<PodcastSelection>>,
     paths: &'a Rc<EpisodePaths>,
     unavailable_episode: Option<i64>,
-    /// `POD-25` / FIL-5: accented inside this row's title where it matched.
+    /// `POD-25` / FIL-5a: accented inside this row's title where it matched.
     query: &'a str,
 }
 
@@ -404,14 +404,15 @@ fn episode_row(
     super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
     let title = gtk4::Label::new(None);
+    title.add_css_class("reprise-source-row-title");
+    let palette = crate::ui::search_highlight::accent_palette(&title);
     title.set_markup(&super::podcasts_title::markup_matching(
         title_parts,
         context.query,
-        crate::ui::track_list::match_highlight::accent_foreground(&title).as_deref(),
+        Some(&palette),
     ));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    title.add_css_class("reprise-source-row-title");
     if loaded {
         title.add_css_class(playing_marker::PLAYING_TITLE_CLASS);
     }
@@ -510,6 +511,10 @@ mod expansion_tests;
 #[cfg(test)]
 #[path = "podcasts_groups_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "podcasts_search_highlight_tests.rs"]
+mod search_highlight_tests;
 
 #[cfg(test)]
 #[path = "podcasts_source_row_tests.rs"]

@@ -93,7 +93,11 @@ impl ConcertsView {
         let on_open: OnOpenTarget = Rc::new(move |target| {
             external_link::launch(&target, "concert", Some(&launch_error_for_open));
         });
-        let columns = concerts_columns::append_columns(&column_view, &on_open);
+        let query_source: crate::ui::search_highlight::QuerySource = {
+            let filter_bar = filter_bar.clone();
+            Rc::new(move || filter_bar.query())
+        };
+        let columns = concerts_columns::append_columns(&column_view, &on_open, &query_source);
 
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)

@@ -116,7 +116,8 @@ impl ReleasesView {
                 external_link::launch(&url, "Bandcamp purchase", Some(&shared.on_launch_error));
             }
         });
-        let date_column = releases_columns::append_columns(&column_view, &on_set_hidden, &on_open);
+        let date_column =
+            releases_columns::append_columns(&column_view, &on_set_hidden, &on_open, &filter_bar);
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
             .vexpand(true)

@@ -18,9 +18,10 @@ use super::track_list_columns::{
     clear_missing_title, toggle_class, NOW_PLAYING_CLASS, NOW_PLAYING_TITLE_CLASS,
 };
 use super::{
-    list_density, match_highlight, queue_item_presentation, strings, track_list_context_menu,
-    track_list_dnd, track_list_row_interaction, Shared,
+    list_density, queue_item_presentation, strings, track_list_context_menu, track_list_dnd,
+    track_list_row_interaction, Shared,
 };
+use crate::ui::search_highlight;
 
 pub(in crate::ui) fn append_title_column(
     column_view: &gtk4::ColumnView,
@@ -117,9 +118,9 @@ pub(in crate::ui) fn append_title_column(
             apply_missing_title(&label, &missing_tooltip, track);
         } else if let Some(track) = track {
             apply_missing_title(&label, &missing_tooltip, track);
-            match match_highlight::highlight_from_filter(&track.title, &shared_for_bind.filter, {
+            match search_highlight::highlight_from_filter(&track.title, &shared_for_bind.filter, {
                 let label = label.clone();
-                move || match_highlight::accent_foreground(&label)
+                move || search_highlight::accent_palette(&label)
             }) {
                 Some(markup) => label.set_markup(&markup),
                 None => label.set_text(&track.title),

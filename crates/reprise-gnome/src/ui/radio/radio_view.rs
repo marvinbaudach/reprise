@@ -124,7 +124,17 @@ impl RadioView {
                 cells_for_state.reapply();
             });
         }
-        radio_columns::append_columns(&column_view, &live_source, &connectivity_source, &cells);
+        let query_source: crate::ui::search_highlight::QuerySource = {
+            let filter_bar = filter_bar.clone();
+            Rc::new(move || filter_bar.filter().query)
+        };
+        radio_columns::append_columns(
+            &column_view,
+            &live_source,
+            &connectivity_source,
+            &cells,
+            &query_source,
+        );
         {
             let live = live_source.clone();
             let connectivity = connectivity_source.clone();
@@ -358,10 +368,6 @@ fn on_external_snapshot(
         shared.error_banner.hide();
     }
     render_rows(shared);
-    // The station list itself is unchanged for a pure playback snapshot, so
-    // `render_rows` left the store alone; the live parts of the visible rows
-    // are pushed straight into their cells instead.
-    shared.cells.reapply();
     shared
         .reveal
         .on_external_change(was_connected, reveal_change(shared));
@@ -399,6 +405,10 @@ fn render_rows(shared: &Rc<Shared>) {
     let total = shared.rows.borrow().len();
     shared.filter_bar.set_counts(rows.len(), total);
     shared.model.replace(rows.clone());
+    // FIL-5a: a refined query can keep exactly the same station rows, in
+    // which case the model deliberately emits no rebind signal. Reapply the
+    // bound cells so their in-place search markup still follows the query.
+    shared.cells.reapply();
     apply_empty_state(
         shared,
         radio_empty_state_for(rows.len(), shared.filter_bar.filter().is_active()),

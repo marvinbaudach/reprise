@@ -78,6 +78,7 @@ mod scan;
 mod scrobbling;
 mod scroll_center;
 mod scroll_glide;
+mod search_highlight;
 pub mod session_restore;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;

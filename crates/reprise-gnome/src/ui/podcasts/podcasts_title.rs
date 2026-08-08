@@ -76,27 +76,32 @@ pub(super) fn markup(parts: &TitleParts) -> String {
     markup_matching(parts, "", None)
 }
 
-/// `POD-25` / FIL-5: the same title, with the section's query accented
+/// `POD-25` / FIL-5a: the same title, with the section's query accented
 /// inside it — the promise the chip makes ("in episode titles") made
 /// visible in every row that survived it. Highlighting reuses the track
 /// list's own helper, so a hit reads the same wherever the user finds it.
-/// The dimmed channel tail is never highlighted: it is the part the row
-/// plays *down*, and accenting it would fight that.
+/// A dimmed YouTube channel tail remains part of the stored title and is
+/// searched as such, so a matching term is highlighted there too while the
+/// surrounding tail keeps its dim text level.
 ///
 /// Known gap: the filter folds case with full Unicode `to_lowercase`, this
 /// accent with `to_ascii_lowercase` (the track table's rule, kept so a hit
 /// reads the same in both places). A title that matches only under
 /// non-ASCII case folding is therefore listed but not accented — the same
-/// shape of accepted gap FIL-5 already names for hidden columns, never a
+/// shape of accepted gap FIL-5a still names for hidden columns, never a
 /// wrong row.
-pub(super) fn markup_matching(parts: &TitleParts, query: &str, accent: Option<&str>) -> String {
-    let distinct =
-        crate::ui::track_list::match_highlight::highlight_markup(&parts.distinct, query, accent)
-            .unwrap_or_else(|| gtk4::glib::markup_escape_text(&parts.distinct).to_string());
+pub(super) fn markup_matching(
+    parts: &TitleParts,
+    query: &str,
+    palette: Option<&crate::ui::search_highlight::HighlightPalette>,
+) -> String {
+    let distinct = crate::ui::search_highlight::highlight_markup(&parts.distinct, query, palette)
+        .unwrap_or_else(|| gtk4::glib::markup_escape_text(&parts.distinct).to_string());
     let Some(dimmed) = parts.dimmed.as_deref() else {
         return distinct;
     };
-    let dimmed = gtk4::glib::markup_escape_text(dimmed);
+    let dimmed = crate::ui::search_highlight::highlight_markup(dimmed, query, palette)
+        .unwrap_or_else(|| gtk4::glib::markup_escape_text(dimmed).to_string());
     format!("{distinct}<span alpha=\"55%\">{dimmed}</span>")
 }
 
@@ -104,12 +109,12 @@ pub(super) fn markup_matching(parts: &TitleParts, query: &str, accent: Option<&s
 mod tests {
     use super::*;
 
-    /// UX POD-25 / FIL-5: the query is accented inside the episode title it
+    /// UX POD-25 / FIL-5a: the query is accented inside the episode title it
     /// matched — case-insensitively, mid-word, every occurrence — and the
-    /// dimmed channel tail is left alone. Without a query the markup is
-    /// exactly what it always was.
+    /// dimmed channel tail follows the same rule because it remains part of
+    /// the searched title. Without a query the markup is unchanged.
     #[test]
-    fn pod_25_matching_titles_accent_the_query_and_leave_the_tail_dimmed() {
+    fn fil_5a_matching_titles_accent_the_query_and_keep_the_tail_dimmed() {
         let parts = TitleParts {
             distinct: "Antwerpen: Wie ein Hafen wirklich funktioniert".into(),
             dimmed: Some(" | Werkbank".into()),
@@ -118,10 +123,9 @@ mod tests {
         assert_eq!(
             markup_matching(&parts, "wer", None),
             "Ant<b>wer</b>pen: Wie ein Hafen wirklich funktioniert\
-             <span alpha=\"55%\"> | Werkbank</span>"
+             <span alpha=\"55%\"> | <b>Wer</b>kbank</span>"
         );
-        // Every occurrence, not only the first — and the dimmed tail's own
-        // "Werkbank" stays untouched.
+        // Every occurrence, including the dimmed tail's own "Werkbank".
         assert_eq!(
             markup_matching(
                 &TitleParts {
@@ -132,7 +136,7 @@ mod tests {
                 None
             ),
             "<b>Wer</b>kzeuge und Aus<b>wer</b>tung\
-             <span alpha=\"55%\"> | Werkbank</span>"
+             <span alpha=\"55%\"> | <b>Wer</b>kbank</span>"
         );
         assert_eq!(markup_matching(&parts, "  ", None), markup(&parts));
         assert_eq!(
@@ -142,7 +146,7 @@ mod tests {
         );
     }
 
-    /// UX POD-25 / FIL-5: markup in a title is escaped, highlighted or not —
+    /// UX POD-25 / FIL-5a: markup in a title is escaped, highlighted or not —
     /// an episode called `Rock & <Roll>` must never become markup.
     #[test]
     fn pod_25_highlighting_still_escapes_the_title() {

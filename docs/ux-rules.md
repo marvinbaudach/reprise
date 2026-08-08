@@ -1493,11 +1493,20 @@ result.
 - **FIL-4** [replaced by SEARCH-3] [gtk] — The search field carries its
   state: as soon as the field contains text, it gets an accent border +
   tinted background — even unfocused.
-- **FIL-5** [active] [gtk] — Hit highlighting: the search term is
+- **FIL-5** [replaced by FIL-5a] [gtk] — Hit highlighting: the search term is
   highlighted in all searched, visible text columns (Title, Artist,
   Album, Genre; accent bold, Pango-escaped). If the only matching
   column is hidden, the row stays unmarked — an accepted remaining gap.
   Chip wording stays "in any field".
+- **FIL-5a** [active] [gtk] — Every visible field that participates in the
+  current view's query marks every matching occurrence with the same
+  Pango-escaped accent-bold foreground and translucent accent tint (18%
+  background alpha). The foreground is mixed toward that label's text color,
+  so the mark survives both titles and dim subtitles. This binds the fields
+  FIL-1d names in Music and every sibling track source, Podcasts, YouTube,
+  Radio, Releases (title and artist explicitly), Concerts and Missing files;
+  a visible field the view does not search stays unmarked. A hidden matching
+  track column still leaves the row unmarked, the accepted gap from FIL-5.
 - **FIL-6** [active] [gtk] — Zero-hit empty state: StatusPage with
   exactly one button "Show all 1,664 tracks" (= Clear all) —
   FB-5-compliant; the one step guaranteedly leads to content, never
@@ -5196,10 +5205,11 @@ listening statistics.
   facet narrows the list the status line reads "N of TOTAL episodes"
   with the shown number accented, and returns to the unfiltered summary
   ("3 shows · 13 episodes · 1 new") once nothing restricts. Inside every
-  rendered episode title the query itself is accented, the way FIL-5
-  already accents it in the track table — the same helper, so a hit reads
-  the same wherever the user finds it; a channel tail the row deliberately
-  dims (POD-15) is never accented.
+  rendered episode title the query itself is accented per FIL-5a — the same
+  helper, so a hit reads the same wherever the user finds it. A YouTube
+  channel tail the row deliberately dims (POD-15) remains part of the stored
+  and searched episode title, so a hit inside that tail is accented too while
+  the surrounding tail stays dim.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

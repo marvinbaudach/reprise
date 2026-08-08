@@ -8,6 +8,7 @@ use gtk4::prelude::*;
 use reprise_core::artist_news::{release_status, ReleaseStatus};
 use reprise_core::artist_news_history::HistoryEntry;
 
+use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::ReleaseObject;
 use super::releases_presentation::{
     bandcamp_purchase_target, format_release_date, release_status_label, release_type_label,
@@ -42,6 +43,7 @@ fn text_column(
     title: &str,
     id: Option<&str>,
     sizing: widths::Sizing,
+    query: Option<&crate::ui::search_highlight::QuerySource>,
     render: impl Fn(&HistoryEntry) -> String + 'static,
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
@@ -55,6 +57,7 @@ fn text_column(
         label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         item.set_child(Some(&label));
     });
+    let query = query.cloned();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -65,7 +68,12 @@ fn text_column(
         let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
             return;
         };
-        label.set_text(&render(&object.entry()));
+        let text = render(&object.entry());
+        if let Some(query) = query.as_ref() {
+            crate::ui::search_highlight::apply(&label, &text, &query());
+        } else {
+            label.set_text(&text);
+        }
     });
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -319,6 +327,20 @@ pub(super) fn append_columns(
     view: &gtk4::ColumnView,
     on_set_hidden: &OnSetHidden,
     on_open: &OnOpenTarget,
+    filter_bar: &Rc<ReleasesFilterBar>,
+) -> gtk4::ColumnViewColumn {
+    let query: crate::ui::search_highlight::QuerySource = {
+        let filter_bar = filter_bar.clone();
+        Rc::new(move || filter_bar.query())
+    };
+    append_columns_with_query(view, on_set_hidden, on_open, &query)
+}
+
+fn append_columns_with_query(
+    view: &gtk4::ColumnView,
+    on_set_hidden: &OnSetHidden,
+    on_open: &OnOpenTarget,
+    query: &crate::ui::search_highlight::QuerySource,
 ) -> gtk4::ColumnViewColumn {
     let titles = column_contract();
     let date = text_column(
@@ -326,6 +348,7 @@ pub(super) fn append_columns(
         &titles[0],
         Some("date"),
         widths::Sizing::pinned(widths::DATE),
+        None,
         |entry| format_release_date(&entry.first_release_date, Local::now().date_naive()),
     );
     // Title is the filler: it owns whatever width the pinned columns leave.
@@ -334,6 +357,7 @@ pub(super) fn append_columns(
         &titles[1],
         None,
         widths::Sizing::filler(widths::TITLE_MIN),
+        Some(query),
         |entry| entry.title.clone(),
     );
     text_column(
@@ -341,6 +365,7 @@ pub(super) fn append_columns(
         &titles[2],
         None,
         widths::Sizing::pinned(widths::NAME),
+        Some(query),
         |entry| entry.artist_name.clone(),
     );
     text_column(
@@ -348,6 +373,7 @@ pub(super) fn append_columns(
         &titles[3],
         None,
         widths::Sizing::pinned(widths::SHORT_LABEL),
+        None,
         |entry| release_type_label(&entry.release_type),
     );
     status_column(view, on_set_hidden);
@@ -379,6 +405,73 @@ mod tests {
         }
     }
 
+    fn descendant_labels(widget: &gtk4::Widget) -> Vec<gtk4::Label> {
+        let mut labels = widget
+            .clone()
+            .downcast::<gtk4::Label>()
+            .ok()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            labels.extend(descendant_labels(&current));
+            child = current.next_sibling();
+        }
+        labels
+    }
+
+    /// UX FIL-5a: Releases marks the matching title and artist, leaves an
+    /// unrelated visible field plain, and keeps selection as a separate row
+    /// state under the translucent 18% text tint.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_5a_releases_mark_hits_without_replacing_selection_tint() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let store = gtk4::gio::ListStore::new::<ReleaseObject>();
+        store.append(&ReleaseObject::new(entry(
+            "Falling Leaves",
+            "Falling Apart",
+            "Album",
+            "2026-01-02",
+        )));
+        let selection = gtk4::SingleSelection::new(Some(store));
+        selection.set_selected(0);
+        let view = gtk4::ColumnView::new(Some(selection.clone()));
+        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(|| "fall".into());
+        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let labels = descendant_labels(view.upcast_ref());
+        for text in ["Falling Apart", "Falling Leaves"] {
+            assert!(
+                labels
+                    .iter()
+                    .any(|label| label.text() == text && label.uses_markup()),
+                "searched field {text:?} was not highlighted"
+            );
+        }
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.text() == "Album" && !label.uses_markup()),
+            "a non-searched field claimed the hit"
+        );
+        assert_eq!(
+            selection.selected(),
+            0,
+            "highlighting replaced row selection"
+        );
+    }
+
     /// STYLE-9: the releases table must not re-measure itself
     /// from the rows currently on screen, or every scroll shifts the columns.
     #[test]
@@ -397,7 +490,8 @@ mod tests {
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
         let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
         let on_open: OnOpenTarget = Rc::new(|_| {});
-        append_columns(&view, &on_set_hidden, &on_open);
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
 
         crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {
             store.splice(
