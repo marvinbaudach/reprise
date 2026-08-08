@@ -58,19 +58,34 @@ impl Palette {
     /// lightest one when the text is light-on-dark, the darkest one when it is
     /// dark-on-light. Derived by measuring the palette rather than by naming a
     /// field, so retuning a colour cannot silently invalidate the choice.
-    pub(in crate::ui::style) fn critical_accent_surface(&self, is_dark: bool) -> &'static str {
-        let luminance = |hex: &str| {
-            super::color_math::relative_luminance(
-                super::color_math::parse_hex_rgb(hex).expect("palette colour must use #RRGGBB"),
-            )
-        };
+    ///
+    /// Accent-tinted chip fills count as surfaces here even though they have no
+    /// hex literal. The tint drags a surface far toward the accent — in the dark
+    /// palettes it triples the luminance of the lightest plain surface — so chip
+    /// text, not popover text, is the real worst case. Measuring only the named
+    /// surfaces left accent text on chips at 3.4:1 while every test passed.
+    pub(in crate::ui::style) fn critical_accent_surface(
+        &self,
+        is_dark: bool,
+        accent: [u8; 3],
+    ) -> [u8; 3] {
+        use super::color_math::{composite, parse_hex_rgb, relative_luminance};
+
+        let chip_tint: f64 = super::tokens::CHIP_BG_HOVER_ALPHA
+            .parse()
+            .expect("the chip tint token is a decimal fraction");
+
         self.surfaces()
             .into_iter()
+            .flat_map(|hex| {
+                let surface = parse_hex_rgb(hex).expect("palette colour must use #RRGGBB");
+                [surface, composite(accent, surface, chip_tint)]
+            })
             .reduce(|worst, surface| {
                 let take_surface = if is_dark {
-                    luminance(surface) > luminance(worst)
+                    relative_luminance(surface) > relative_luminance(worst)
                 } else {
-                    luminance(surface) < luminance(worst)
+                    relative_luminance(surface) < relative_luminance(worst)
                 };
                 if take_surface {
                     surface
@@ -211,8 +226,12 @@ pub(in crate::ui) fn theme_css(
     let accent_css = super::accent::css_overrides(source);
     // Accent foregrounds are used app-wide, so the role is derived against the
     // palette's worst-case surface rather than against any one widget's.
-    let accent_text =
-        super::accent::accent_text_color(source, p.critical_accent_surface(is_dark), is_dark);
+    let accent = super::accent::effective_accent_rgb(source);
+    let accent_text = super::accent::accent_text_color(
+        accent,
+        p.critical_accent_surface(is_dark, accent),
+        is_dark,
+    );
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\

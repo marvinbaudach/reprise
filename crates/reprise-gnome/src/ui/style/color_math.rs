@@ -99,6 +99,23 @@ pub(in crate::ui::style) fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
     ])
 }
 
+/// Flattens `foreground` at `alpha` over an opaque `background`, the way GTK
+/// composites an `alpha(...)` fill. Needed to reason about tinted surfaces,
+/// which have no hex literal of their own.
+pub(in crate::ui::style) fn composite(
+    foreground: [u8; 3],
+    background: [u8; 3],
+    alpha: f64,
+) -> [u8; 3] {
+    let alpha = alpha.clamp(0.0, 1.0);
+    let blend = |index: usize| {
+        let value =
+            f64::from(foreground[index]) * alpha + f64::from(background[index]) * (1.0 - alpha);
+        value.round().clamp(0.0, 255.0) as u8
+    };
+    [blend(0), blend(1), blend(2)]
+}
+
 /// Black or white, whichever contrasts more against `background`. This is the
 /// most readable foreground that exists for a surface, so it is what callers
 /// fall back to when tinted text cannot reach their threshold at all.
