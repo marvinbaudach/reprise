@@ -3412,22 +3412,22 @@ msgstr[1] "{count} Episoden"
 #, rust-format
 msgid "New {count} day ago"
 msgid_plural "New {count} days ago"
-msgstr[0] "Neu vor {count} Tag"
-msgstr[1] "Neu vor {count} Tagen"
+msgstr[0] "Neu seit {count} Tag"
+msgstr[1] "Neu seit {count} Tagen"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:229
 #, rust-format
 msgid "New {count} week ago"
 msgid_plural "New {count} weeks ago"
-msgstr[0] "Neu vor {count} Woche"
-msgstr[1] "Neu vor {count} Wochen"
+msgstr[0] "Neu seit {count} Woche"
+msgstr[1] "Neu seit {count} Wochen"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:239
 #, rust-format
 msgid "{count} month ago"
 msgid_plural "{count} months ago"
-msgstr[0] "vor {count} Monat"
-msgstr[1] "vor {count} Monaten"
+msgstr[0] "seit {count} Monat"
+msgstr[1] "seit {count} Monaten"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:247
 #, rust-format
