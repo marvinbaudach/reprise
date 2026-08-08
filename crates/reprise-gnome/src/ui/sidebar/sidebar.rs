@@ -21,13 +21,16 @@
 //! pointer), which is exactly what `connect_row_selected`/`connect_row_
 //! activated` hand back.
 //!
-//! ## Rebuild-on-refresh, not incremental updates
+//! ## Rebuild-on-refresh, with one incremental hot path
 //!
 //! `rebuild` tears down every row and rebuilds the whole list from a fresh
 //! set of queries every time counts might have changed (after a scan, after
 //! playlist CRUD — see `refresh`/`create_playlist_and_stay`). This is
 //! simpler than diffing the previous row set against new data and is cheap
-//! enough at this scale (a handful of playlists/smart lists). The previously
+//! enough at this scale (a handful of playlists/smart lists). Queue-length
+//! changes are the deliberate exception: they update the retained Queue badge
+//! label without querying or replacing any row, because every track change
+//! emits that notification. The previously
 //! selected source is re-selected afterwards (see `rebuild`'s `force_select`
 //! parameter) so a routine counts refresh never silently changes what's on
 //! screen.
@@ -101,6 +104,15 @@ pub(in crate::ui) struct Shared {
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
     /// provider`) to a closure over the `PlayerController`.
     pub(in crate::ui) queue_len_provider: Box<dyn Fn() -> usize>,
+    /// Retained count label for the Queue row. Unlike every database-backed
+    /// counter, queue length changes on each track transition and is updated
+    /// in place without rebuilding the sidebar.
+    pub(in crate::ui) queue_count_label: RefCell<Option<gtk4::Label>>,
+    /// Retained Releases badge and latest-wins token for its background
+    /// projection. That projection builds a local-library index and must
+    /// never run on GTK's main thread for a file-backed production database.
+    pub(in crate::ui) releases_count_label: RefCell<Option<gtk4::Label>>,
+    pub(in crate::ui) releases_count_generation: Cell<u64>,
     /// Which source is logically selected right now — kept in sync by the
     /// `row-selected` handler and used by a routine `rebuild` (`force_select
     /// = None`) to re-select the same source's (rebuilt) row afterwards.
@@ -167,9 +179,8 @@ pub(in crate::ui) struct Shared {
     /// `on_queue_reorder` degraded-no-op convention. No sidebar `rebuild`/
     /// track-list reload runs from the drop handler itself: `append_to_
     /// queue` already funnels through `PlayerController::notify_queue_
-    /// changed`, whose `window.rs` wiring refreshes this sidebar's Queue
-    /// count *and* reloads the Queue view if visible (trigger inventory
-    /// item 6 in `Sidebar::refresh`'s doc comment).
+    /// changed`, whose `window.rs` wiring updates this sidebar's retained
+    /// Queue badge *and* reloads the Queue view if visible.
     pub(in crate::ui) on_queue_drop: RefCell<Option<OnQueueDrop>>,
     /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
     /// export dialog plus playlist-delete confirmation — hence `pub(in crate::ui)`,
@@ -229,6 +240,9 @@ impl Sidebar {
             listbox: listbox.clone(),
             issues_listbox: issues_listbox.clone(),
             queue_len_provider: Box::new(queue_len_provider),
+            queue_count_label: RefCell::new(None),
+            releases_count_label: RefCell::new(None),
+            releases_count_generation: Cell::new(0),
             current_source: RefCell::new(ViewSource::default()),
             rows: RefCell::new(Vec::new()),
             playlist_add_button: RefCell::new(None),
@@ -357,14 +371,28 @@ impl Sidebar {
     /// 5. **Issue view opened** — `view_session::record_issue_viewed` writes
     ///    the relevant timestamp, then refreshes so its new-since-viewed
     ///    badge clears immediately.
-    /// 6. **Queue length mutation** — `queue_transport::wire_sidebar_count`
-    ///    refreshes after a queue is replaced, appended, restored, or purged.
+    ///
+    /// Queue length is intentionally absent from this inventory:
+    /// [`Self::refresh_queue_count`] updates only its retained badge.
     ///
     /// See the module doc's `## Reentrancy` section for why a rebuild
     /// triggered by this very sidebar's own selection is still safe to feed
     /// back into it.
     pub fn refresh(&self, reason: &str) {
         rebuild(&self.shared, None, reason);
+    }
+
+    /// Updates the Queue badge in place. Queue changes are playback state,
+    /// not library mutations, so they must not rerun database-backed counts.
+    pub fn refresh_queue_count(&self) {
+        let count = (self.shared.queue_len_provider)() as i64;
+        let label = self.shared.queue_count_label.borrow().clone();
+        if let Some(label) = label {
+            super::sidebar_presentation::update_live_count_label(
+                &label,
+                super::sidebar_presentation::nonzero_count(count),
+            );
+        }
     }
 
     /// Rebuilds counts and selects `source` through the normal row-selected
@@ -496,3 +524,7 @@ mod resolve_select_source_tests;
 #[cfg(test)]
 #[path = "sidebar_layout_tests.rs"]
 mod sidebar_layout_tests;
+
+#[cfg(test)]
+#[path = "sidebar_queue_count_tests.rs"]
+mod sidebar_queue_count_tests;

@@ -18,6 +18,12 @@ use reprise_core::models::Track;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
+#[derive(Clone)]
+pub(in crate::ui) struct ActivationQueueCacheEntry {
+    generation: u64,
+    ids: Vec<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::ui) struct MissingActivationNotice {
     pub(in crate::ui) message: String,
@@ -125,7 +131,12 @@ fn show_missing_activation(shared: &Rc<Shared>, notice: MissingActivationNotice)
 
 /// Builds the `(ids, start_index)` pair `OnActivate` carries: every track id
 /// in the activated row's *current* source/sort/filter view, via
-/// `queries::query_track_ids` — deliberately not `TrackListModel::
+/// `queries::query_track_ids` on the first activation of a model generation,
+/// then from `Shared::activation_queue_cache` for later activations of that
+/// same rendered generation. `TrackListModel::generation` changes whenever
+/// source, sort, filter, browse facets, or the underlying library is reloaded,
+/// so a mutation cannot leave the activation path pointing at stale rows.
+/// The full-list query is deliberately not `TrackListModel::
 /// track_at`/`query_track_window`, which are windowed and capped at
 /// `MAX_WINDOW_LIMIT` (500, sized for one `ColumnView` page) rather than a
 /// whole playback queue (`QUEUE_LIMIT`, 10,000). `shared.source`/`shared.
@@ -152,10 +163,18 @@ pub(in crate::ui) fn queue_ids_for_activation(
     position: u32,
     activated_id: i64,
 ) -> (Vec<i64>, usize) {
+    let generation = shared.model.generation();
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
     let browse = shared.browse_filter.borrow().clone();
+
+    if !matches!(source, ViewSource::Queue) {
+        let cached = shared.activation_queue_cache.borrow().clone();
+        if let Some(entry) = cached.filter(|entry| entry.generation == generation) {
+            return (entry.ids, position as usize);
+        }
+    }
 
     let queue_ids = if matches!(source, ViewSource::Queue) {
         current_queue_ids(shared)
@@ -190,6 +209,12 @@ pub(in crate::ui) fn queue_ids_for_activation(
                     queries::QUEUE_LIMIT
                 );
             }
+            if !matches!(source, ViewSource::Queue) {
+                *shared.activation_queue_cache.borrow_mut() = Some(ActivationQueueCacheEntry {
+                    generation,
+                    ids: ids.clone(),
+                });
+            }
             (ids, position as usize)
         }
         Err(error) => {
@@ -217,3 +242,7 @@ pub(in crate::ui) fn current_queue_ids(shared: &Shared) -> Vec<i64> {
         .filter_map(reprise_core::up_next::QueueItem::track_id)
         .collect()
 }
+
+#[cfg(test)]
+#[path = "track_list_activation_tests.rs"]
+mod tests;

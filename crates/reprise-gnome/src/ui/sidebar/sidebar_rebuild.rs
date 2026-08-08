@@ -32,6 +32,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         reason,
         "sidebar refresh #{refresh_number} ({reason})"
     );
+    let today = chrono::Local::now().date_naive();
 
     let (
         music_count,
@@ -50,12 +51,10 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         radio_enabled,
         radio_count,
         releases_enabled,
-        releases_count,
         concerts_enabled,
         concerts_count,
     ) = {
         let conn = &shared.conn;
-        let today = chrono::Local::now().date_naive();
         let music_count =
             queries::query_track_count(conn, &ViewSource::Library, "", &[]).unwrap_or(0);
         let missing_count = queries::count_missing(conn).unwrap_or_else(|error| {
@@ -176,16 +175,6 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             0
         };
         let releases_enabled = modules::is_enabled(conn, &NEW_RELEASES_MODULE).unwrap_or(false);
-        let releases_count = if releases_enabled {
-            artist_news::persisted_releases_filter(conn)
-                .and_then(|filter| artist_news::count_releases_view(conn, &filter, today))
-                .unwrap_or_else(|error| {
-                    tracing::error!(%error, "failed to count Releases rows for sidebar badge");
-                    0
-                })
-        } else {
-            0
-        };
         let concerts_enabled = modules::is_enabled(conn, &CONCERTS_MODULE).unwrap_or(false);
         let concerts_count = if concerts_enabled {
             concerts::config::persisted_filter(conn)
@@ -217,7 +206,6 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             radio_enabled,
             radio_count,
             releases_enabled,
-            releases_count,
             concerts_enabled,
             concerts_count,
         )
@@ -228,6 +216,8 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     shared.listbox.remove_all();
     shared.issues_listbox.remove_all();
     shared.rows.borrow_mut().clear();
+    *shared.queue_count_label.borrow_mut() = None;
+    *shared.releases_count_label.borrow_mut() = None;
     *shared.playlist_add_button.borrow_mut() = None;
 
     sidebar_presentation::append_header(
@@ -314,11 +304,12 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         );
     }
     if releases_enabled {
+        let releases_count = request_releases_count(shared, today);
         add_row(
             shared,
             ViewSource::Releases,
             &strings::text(strings::RELEASES),
-            sidebar_presentation::nonzero_count(releases_count),
+            releases_count.and_then(sidebar_presentation::nonzero_count),
             NavIcon::Releases,
         );
     }
@@ -391,9 +382,9 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         // track list and never get a row. Their absence from the row set is
         // the normal state, so falling back to Library here would route the
         // user out of the scope they are looking at — which is exactly what
-        // every queue mutation ("up next changed", i.e. every play started
-        // from a scope) used to do, dropping the scope chip and re-showing
-        // the whole library. Leave the selection empty instead.
+        // queue mutations used to trigger this rebuild, dropping the scope
+        // chip and re-showing the whole library. Leave the selection empty
+        // instead.
         tracing::debug!(
             scope = %requested_source.label(),
             "scope view has no sidebar row; leaving the selection empty"
@@ -423,6 +414,66 @@ pub(in crate::ui) const fn doctor_issue_visible(pending_count: u32) -> bool {
     pending_count > 0
 }
 
+/// Starts the expensive Releases projection away from GTK's main thread.
+/// In-memory databases cannot be reopened by a worker, so display tests use
+/// the same query synchronously; production databases are always file-backed.
+fn request_releases_count(shared: &Rc<Shared>, today: chrono::NaiveDate) -> Option<i64> {
+    let generation = shared.releases_count_generation.get() + 1;
+    shared.releases_count_generation.set(generation);
+
+    let Some(database_path) = shared.conn.path() else {
+        return artist_news::persisted_releases_filter(&shared.conn)
+            .and_then(|filter| artist_news::count_releases_view(&shared.conn, &filter, today))
+            .map_err(|error| {
+                tracing::error!(%error, "failed to count Releases rows for sidebar badge");
+                error
+            })
+            .ok();
+    };
+
+    let receiver = match crate::ui::one_shot_task::spawn("reprise-sidebar-releases", move || {
+        let db =
+            reprise_core::db::Db::open_ready(&database_path).map_err(|error| error.to_string())?;
+        let filter =
+            artist_news::persisted_releases_filter(&db).map_err(|error| error.to_string())?;
+        artist_news::count_releases_view(&db, &filter, today).map_err(|error| error.to_string())
+    }) {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            tracing::error!(%error, "failed to start Releases sidebar count worker");
+            return None;
+        }
+    };
+    let weak = Rc::downgrade(shared);
+    gtk4::glib::spawn_future_local(async move {
+        let result = receiver.recv().await;
+        let Some(shared) = weak.upgrade() else {
+            return;
+        };
+        if shared.releases_count_generation.get() != generation {
+            return;
+        }
+        match result {
+            Ok(Ok(count)) => {
+                let label = shared.releases_count_label.borrow().clone();
+                if let Some(label) = label {
+                    sidebar_presentation::update_live_count_label(
+                        &label,
+                        sidebar_presentation::nonzero_count(count),
+                    );
+                }
+            }
+            Ok(Err(error)) => {
+                tracing::error!(%error, "failed to count Releases rows for sidebar badge");
+            }
+            Err(error) => {
+                tracing::error!(%error, "Releases sidebar count worker closed without a result");
+            }
+        }
+    });
+    None
+}
+
 fn add_row(
     shared: &Rc<Shared>,
     source: ViewSource,
@@ -441,6 +492,14 @@ fn add_row(
     let (row, editor) = if editing_playlist_id.is_some() {
         let (row, editor) = sidebar_presentation::build_editable_playlist_row(title, count);
         (row, Some(editor))
+    } else if matches!(source, ViewSource::Queue | ViewSource::Releases) {
+        let (row, count_label) = sidebar_presentation::build_live_count_nav_row(title, count, icon);
+        if matches!(source, ViewSource::Queue) {
+            *shared.queue_count_label.borrow_mut() = Some(count_label);
+        } else {
+            *shared.releases_count_label.borrow_mut() = Some(count_label);
+        }
+        (row, None)
     } else {
         (
             sidebar_presentation::build_nav_row(title, count, icon),

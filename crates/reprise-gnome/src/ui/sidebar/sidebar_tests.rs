@@ -13,6 +13,9 @@ fn test_shared() -> Rc<Shared> {
         listbox: gtk4::ListBox::new(),
         issues_listbox: gtk4::ListBox::new(),
         queue_len_provider: Box::new(|| 0),
+        queue_count_label: RefCell::new(None),
+        releases_count_label: RefCell::new(None),
+        releases_count_generation: Cell::new(0),
         current_source: RefCell::new(ViewSource::default()),
         rows: RefCell::new(Vec::new()),
         playlist_add_button: RefCell::new(None),
@@ -34,7 +37,7 @@ fn test_shared() -> Rc<Shared> {
 /// `sidebar_presentation::build_nav_row`).
 fn numeric_badge_text(widget: &gtk4::Widget) -> Option<String> {
     if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
-        if label.has_css_class("numeric") {
+        if label.has_css_class("numeric") && label.is_visible() {
             return Some(label.text().to_string());
         }
     }
@@ -100,6 +103,7 @@ fn queue_row_installs_a_drop_target_but_library_row_does_not() {
         "the Library nav row must not accept drops"
     );
 }
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn handle_queue_drop_dispatches_ids_to_the_wired_callback() {
@@ -428,14 +432,13 @@ fn focus_driven_selection_browses_without_routing_but_activation_routes() {
 }
 
 /// UX FIL-1c: an album/artist/genre scope is opened through in-view
-/// navigation and has no sidebar row of its own. A routine counts refresh —
-/// the one every queue mutation fires ("up next changed"), i.e. every single
-/// play started from inside the scope — must not read that missing row as a
-/// vanished source and route the user back to the whole library, which is
-/// what dropped the scope chip and re-showed every artist.
+/// navigation and has no sidebar row of its own. A database-backed counts
+/// refresh must not read that missing row as a vanished source and route the
+/// user back to the whole library, which would drop the scope chip and
+/// re-show every artist.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fil_1c_scope_view_survives_the_queue_refresh_a_play_triggers() {
+fn fil_1c_scope_view_survives_a_database_backed_sidebar_refresh() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let shared = test_shared();
@@ -453,7 +456,7 @@ fn fil_1c_scope_view_survives_the_queue_refresh_a_play_triggers() {
     let scope = ViewSource::Artist("Lorna Shore".into());
     *shared.current_source.borrow_mut() = scope.clone();
 
-    rebuild(&shared, None, "up next changed");
+    rebuild(&shared, None, "library content changed");
 
     assert!(
         routed.borrow().is_empty(),
@@ -744,12 +747,22 @@ fn assert_update_feed_rows_are_module_gated_ordered_and_badged() {
         .position(|(_, source, _)| matches!(source, ViewSource::MyStats))
         .unwrap();
     assert!(releases < concerts && concerts < stats);
+    let releases_row = rows[releases].0.clone();
+    let concerts_row = rows[concerts].0.clone();
+    drop(rows);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while numeric_badge_text(releases_row.upcast_ref()).is_none()
+        && std::time::Instant::now() < deadline
+    {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
     assert_eq!(
-        numeric_badge_text(rows[releases].0.upcast_ref()),
+        numeric_badge_text(releases_row.upcast_ref()),
         Some("1".to_string())
     );
     assert_eq!(
-        numeric_badge_text(rows[concerts].0.upcast_ref()),
+        numeric_badge_text(concerts_row.upcast_ref()),
         Some("1".to_string())
     );
 }
