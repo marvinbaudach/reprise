@@ -328,7 +328,7 @@ fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
 }
 
 @Test
-fun libraryFrameUsesTheExactTwoAMetricsAndOnlyBackedDestination() {
+fun libraryFrameUsesTheExactTwoAMetricsAndAllFourBrowseDestinations() {
     assertEquals(
         LibraryFrameMetrics(
             topAppBarHeightDp = 64,
@@ -340,7 +340,10 @@ fun libraryFrameUsesTheExactTwoAMetricsAndOnlyBackedDestination() {
         ),
         libraryFrameMetrics,
     )
-    assertEquals(listOf(LibraryDestination.LIBRARY), libraryDestinations)
+    assertEquals(
+        listOf(BrowseTab.TITLES, BrowseTab.ARTISTS, BrowseTab.ALBUMS, BrowseTab.FAVOURITES),
+        libraryDestinations,
+    )
 }
 
 @Test
@@ -392,17 +395,11 @@ fun theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary() {
 }
 
 @Test
-fun restoringLibraryLoadsAllFourTabsThroughTheCorePort() {
+fun restoringLibraryLoadsOnlyTheDefaultDestinationThroughTheCorePort() {
     val title = testBrowseTrack("title")
-    val album = testAlbum()
-    val artist = testArtist()
-    val favourite = testBrowseTrack("favourite").copy(rating = 5)
     val titleWindow = LibraryWindow(total = 1_824, rows = listOf(title), hasMore = true)
     val port = RecordingBrowsePort(
         titleResults = mapOf("" to titleWindow),
-        albums = completeWindow(listOf(album)),
-        artists = completeWindow(listOf(artist)),
-        favourites = completeWindow(listOf(favourite)),
     )
 
     val state = LibrarySession(port).restore()
@@ -410,10 +407,11 @@ fun restoringLibraryLoadsAllFourTabsThroughTheCorePort() {
     assertEquals(
         LibraryScreenState.Browse(
             titles = titleWindow,
-            albums = completeWindow(listOf(album)),
-            artists = completeWindow(listOf(artist)),
-            favourites = completeWindow(listOf(favourite)),
+            albums = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+            favourites = LibraryWindow.empty(),
             folderUri = "content://provider/tree/Music",
+            loadedTabs = setOf(BrowseTab.TITLES),
         ),
         state,
     )
@@ -422,9 +420,6 @@ fun restoringLibraryLoadsAllFourTabsThroughTheCorePort() {
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "search::0:200",
-            "albums:0:200",
-            "artists:0:200",
-            "favourites:0:200",
         ),
         port.operations,
     )

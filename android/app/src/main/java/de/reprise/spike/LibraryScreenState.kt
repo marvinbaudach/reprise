@@ -102,6 +102,7 @@ internal sealed interface LibraryScreenState {
         val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
         val message: String? = null,
         val folderUri: String? = null,
+        val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
     ) : LibraryScreenState
 }
 

@@ -6,17 +6,13 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -28,13 +24,17 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.settings.SettingsNavigation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 
 /**
  * One answered request for the playing track's row, carrying the id it was
@@ -43,11 +43,11 @@ import kotlinx.coroutines.delay
  */
 private data class AnsweredTrack(val id: Long, val track: LibraryTrack?)
 
-internal enum class BrowseTab(val label: String) {
-    TITLES("Titles"),
-    ALBUMS("Albums"),
-    ARTISTS("Artists"),
-    FAVOURITES("Favourites"),
+internal enum class BrowseTab(val label: String, val symbol: String) {
+    TITLES("Titles", "library_music"),
+    ARTISTS("Artists", "artist"),
+    ALBUMS("Albums", "album"),
+    FAVOURITES("Favourites", "favorite"),
 }
 
 /**
@@ -112,6 +112,9 @@ internal fun BrowseScreen(
     var visibleFavourites by remember(state) {
         mutableStateOf(restored?.favourites ?: state.favourites)
     }
+    var loadedTabs by remember(state) {
+        mutableStateOf(restored?.loadedTabs ?: state.loadedTabs)
+    }
     var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var selectedArtist by remember(state) { mutableStateOf(restored?.openArtist) }
     var browseError by remember(state) { mutableStateOf(state.message) }
@@ -126,6 +129,34 @@ internal fun BrowseScreen(
     val nowPlayingExpanded = surfaceState.nowPlayingExpanded
     val settingsVisible = surfaceState.settingsVisible
     var settingsState by remember { mutableStateOf<PlaybackSettingsUiState?>(null) }
+    val pagerState = rememberPagerState(
+        initialPage = selectedTab.ordinal,
+        pageCount = { BrowseTab.entries.size },
+    )
+
+    fun selectDestination(tab: BrowseTab) {
+        if (tab == BrowseTab.FAVOURITES) {
+            loadedTabs -= BrowseTab.FAVOURITES
+        }
+        if (tab != selectedTab) {
+            selectedAlbum = null
+            selectedArtist = null
+        }
+        surfaceState.showNowPlaying(false)
+        surfaceState.selectTab(tab)
+    }
+
+    LaunchedEffect(selectedTab) {
+        if (pagerState.currentPage != selectedTab.ordinal) {
+            pagerState.animateScrollToPage(selectedTab.ordinal)
+        }
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .drop(1)
+            .collect { page -> selectDestination(BrowseTab.entries[page]) }
+    }
 
     // A failure has to leave a *state* behind, never null: null renders
     // nothing at all, and there is no previous state to fall back on the first
@@ -193,6 +224,7 @@ internal fun BrowseScreen(
         albums = visibleAlbums,
         artists = visibleArtists,
         favourites = visibleFavourites,
+        loadedTabs = loadedTabs,
         openAlbum = selectedAlbum,
         openArtist = selectedArtist,
     )
@@ -203,8 +235,29 @@ internal fun BrowseScreen(
     // underneath, there is nothing to take up and the refinement is asked for
     // again rather than replayed from rows that no longer describe it.
     LaunchedEffect(state) {
-        if (searchText.isNotEmpty() && restored == null) {
+        if (selectedTab == BrowseTab.TITLES && searchText.isNotEmpty() && restored == null) {
             search(searchText)
+        }
+    }
+
+    LaunchedEffect(selectedTab, state, loadedTabs) {
+        if (selectedTab in loadedTabs) return@LaunchedEffect
+        runCatching {
+            when (selectedTab) {
+                BrowseTab.TITLES -> searchTitles(searchText, firstLibraryWindow())
+                    .also { visibleTitles = it }
+                BrowseTab.ARTISTS -> listArtists(firstLibraryWindow())
+                    .also { visibleArtists = it }
+                BrowseTab.ALBUMS -> listAlbums(firstLibraryWindow())
+                    .also { visibleAlbums = it }
+                BrowseTab.FAVOURITES -> listFavourites(firstLibraryWindow())
+                    .also { visibleFavourites = it }
+            }
+        }.onSuccess {
+            loadedTabs = loadedTabs + selectedTab
+            browseError = null
+        }.onFailure { error ->
+            browseError = error.browseDetail("load ${selectedTab.label.lowercase()}")
         }
     }
 
@@ -309,155 +362,158 @@ internal fun BrowseScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         val libraryScaffold: @Composable (Modifier) -> Unit = { frameModifier ->
             Scaffold(
-            modifier = frameModifier,
-            containerColor = MaterialTheme.colorScheme.background,
-            topBar = {
-                LibraryTopAppBar(
-                    surfaceLayout = surfaceLayout,
-                    searching = searchVisible,
-                    toggleSearch = {
-                        if (searchVisible) {
-                            surfaceState.closeSearch()
-                            if (searchText.isNotEmpty()) search("")
-                        } else {
-                            surfaceState.openSearch()
-                        }
-                    },
-                    rescan = rescan,
-                    openSettings = ::openSettings,
-                )
-            },
-            bottomBar = {
-                LibraryBottomFrame(
-                    surfaceLayout = surfaceLayout,
-                    currentTrack = currentTrack,
-                    playback = playback,
-                    openNowPlaying = { surfaceState.showNowPlaying(true) },
-                )
-            },
+                modifier = frameModifier,
+                containerColor = MaterialTheme.colorScheme.background,
+                topBar = {
+                    LibraryTopAppBar(
+                        surfaceLayout = surfaceLayout,
+                        searching = searchVisible,
+                        toggleSearch = {
+                            if (searchVisible) {
+                                surfaceState.closeSearch()
+                                if (searchText.isNotEmpty()) search("")
+                            } else {
+                                surfaceState.openSearch()
+                            }
+                        },
+                        rescan = rescan,
+                        openSettings = ::openSettings,
+                    )
+                },
+                bottomBar = {
+                    LibraryBottomFrame(
+                        surfaceLayout = surfaceLayout,
+                        currentTrack = currentTrack,
+                        playback = playback,
+                        selectedTab = selectedTab,
+                        selectTab = ::selectDestination,
+                        openNowPlaying = { surfaceState.showNowPlaying(true) },
+                    )
+                },
             ) { contentPadding ->
                 Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(contentPadding),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding),
                 ) {
-                BrowseFilterChips(
-                    surfaceLayout = surfaceLayout,
-                    selected = selectedTab,
-                    select = { tab ->
-                        if (tab != selectedTab) {
-                            selectedAlbum = null
-                            selectedArtist = null
+                    // Both of these are state rather than acknowledgements, so both
+                    // stand until something supersedes them — see TransientMessage
+                    // for the distinction and for the third kind.
+                    browseError?.let { BrowseErrorLine(it) }
+                    playback.error?.let { BrowseErrorLine(it) }
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("library-destination-pager"),
+                        key = { page -> BrowseTab.entries[page] },
+                    ) { page ->
+                        val tab = BrowseTab.entries[page]
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("library-page-${tab.name}"),
+                        ) {
+                            when (tab) {
+                                BrowseTab.TITLES -> TitlesTab(
+                                    surfaceLayout = surfaceLayout,
+                                    surfaceState = surfaceState,
+                                    tracks = visibleTitles,
+                                    searchVisible = searchVisible,
+                                    searchText = searchText,
+                                    search = ::search,
+                                    playback = playback,
+                                    lastRequestedOffset = titlesRequestedOffset,
+                                    play = { index ->
+                                        play(PlaybackSelection(visibleTitles.rows, index))
+                                    },
+                                    loadMore = ::loadMoreTitles,
+                                )
+                                BrowseTab.ALBUMS -> AlbumsTab(
+                                    surfaceLayout = surfaceLayout,
+                                    surfaceState = surfaceState,
+                                    albums = visibleAlbums,
+                                    selectedAlbum = selectedAlbum,
+                                    playback = playback,
+                                    openAlbum = { album ->
+                                        runCatching { openAlbum(album) }
+                                            .onSuccess { detail ->
+                                                selectedAlbum = detail
+                                                albumRequestedOffset = null
+                                                browseError = null
+                                            }
+                                            .onFailure { error ->
+                                                browseError = error.browseDetail("open the album")
+                                            }
+                                    },
+                                    closeAlbum = { selectedAlbum = null },
+                                    play = { index ->
+                                        selectedAlbum?.let { play(it.playbackSelection(index)) }
+                                    },
+                                    albumsRequestedOffset = albumsRequestedOffset,
+                                    albumRequestedOffset = albumRequestedOffset,
+                                    loadMoreAlbums = ::loadMoreAlbums,
+                                    loadMoreAlbumTracks = ::loadMoreAlbumTracks,
+                                )
+                                BrowseTab.ARTISTS -> ArtistsTab(
+                                    surfaceLayout = surfaceLayout,
+                                    surfaceState = surfaceState,
+                                    artists = visibleArtists,
+                                    selectedArtist = selectedArtist,
+                                    playback = playback,
+                                    openArtist = { artist ->
+                                        runCatching { openArtist(artist) }
+                                            .onSuccess { detail ->
+                                                selectedArtist = detail
+                                                artistRequestedOffset = null
+                                                browseError = null
+                                            }
+                                            .onFailure { error ->
+                                                browseError = error.browseDetail("open the artist")
+                                            }
+                                    },
+                                    closeArtist = { selectedArtist = null },
+                                    play = { index ->
+                                        selectedArtist?.let { play(it.playbackSelection(index)) }
+                                    },
+                                    lastRequestedOffset = artistsRequestedOffset,
+                                    artistRequestedOffset = artistRequestedOffset,
+                                    loadMoreArtists = ::loadMoreArtists,
+                                    loadMoreArtistTracks = ::loadMoreArtistTracks,
+                                )
+                                BrowseTab.FAVOURITES -> FavouritesTab(
+                                    surfaceLayout = surfaceLayout,
+                                    surfaceState = surfaceState,
+                                    tracks = visibleFavourites,
+                                    playback = playback,
+                                    lastRequestedOffset = favouritesRequestedOffset,
+                                    play = { index ->
+                                        play(PlaybackSelection(visibleFavourites.rows, index))
+                                    },
+                                    loadMore = ::loadMoreFavourites,
+                                    removeFavourite = { track ->
+                                        val removal = visibleFavourites.removeTrack(
+                                            track.id,
+                                            favouritesRequestedOffset,
+                                        )
+                                        visibleFavourites = removal.window
+                                        favouritesRequestedOffset = removal.lastRequestedOffset
+                                    },
+                                )
+                            }
                         }
-                        if (tab == BrowseTab.FAVOURITES) {
-                            runCatching { listFavourites(firstLibraryWindow()) }
-                                .onSuccess { favourites ->
-                                    visibleFavourites = favourites
-                                    favouritesRequestedOffset = null
-                                    browseError = null
-                                }
-                                .onFailure { error ->
-                                    browseError = error.browseDetail("refresh favourites")
-                                }
-                        }
-                        surfaceState.selectTab(tab)
-                    },
-                )
-                // Both of these are state rather than acknowledgements, so both
-                // stand until something supersedes them — see TransientMessage
-                // for the distinction and for the third kind.
-                browseError?.let { BrowseErrorLine(it) }
-                playback.error?.let { BrowseErrorLine(it) }
-                when (selectedTab) {
-                    BrowseTab.TITLES -> TitlesTab(
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        tracks = visibleTitles,
-                        searchVisible = searchVisible,
-                        searchText = searchText,
-                        search = ::search,
-                        playback = playback,
-                        lastRequestedOffset = titlesRequestedOffset,
-                        play = { index -> play(PlaybackSelection(visibleTitles.rows, index)) },
-                        loadMore = ::loadMoreTitles,
-                    )
-                    BrowseTab.ALBUMS -> AlbumsTab(
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        albums = visibleAlbums,
-                        selectedAlbum = selectedAlbum,
-                        playback = playback,
-                        openAlbum = { album ->
-                            runCatching { openAlbum(album) }
-                                .onSuccess { detail ->
-                                    selectedAlbum = detail
-                                    albumRequestedOffset = null
-                                    browseError = null
-                                }
-                                .onFailure { error ->
-                                    browseError = error.browseDetail("open the album")
-                                }
-                        },
-                        closeAlbum = { selectedAlbum = null },
-                        play = { index -> selectedAlbum?.let { play(it.playbackSelection(index)) } },
-                        albumsRequestedOffset = albumsRequestedOffset,
-                        albumRequestedOffset = albumRequestedOffset,
-                        loadMoreAlbums = ::loadMoreAlbums,
-                        loadMoreAlbumTracks = ::loadMoreAlbumTracks,
-                    )
-                    BrowseTab.ARTISTS -> ArtistsTab(
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        artists = visibleArtists,
-                        selectedArtist = selectedArtist,
-                        playback = playback,
-                        openArtist = { artist ->
-                            runCatching { openArtist(artist) }
-                                .onSuccess { detail ->
-                                    selectedArtist = detail
-                                    artistRequestedOffset = null
-                                    browseError = null
-                                }
-                                .onFailure { error ->
-                                    browseError = error.browseDetail("open the artist")
-                                }
-                        },
-                        closeArtist = { selectedArtist = null },
-                        play = { index ->
-                            selectedArtist?.let { play(it.playbackSelection(index)) }
-                        },
-                        lastRequestedOffset = artistsRequestedOffset,
-                        artistRequestedOffset = artistRequestedOffset,
-                        loadMoreArtists = ::loadMoreArtists,
-                        loadMoreArtistTracks = ::loadMoreArtistTracks,
-                    )
-                    BrowseTab.FAVOURITES -> FavouritesTab(
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        tracks = visibleFavourites,
-                        playback = playback,
-                        lastRequestedOffset = favouritesRequestedOffset,
-                        play = { index ->
-                            play(PlaybackSelection(visibleFavourites.rows, index))
-                        },
-                        loadMore = ::loadMoreFavourites,
-                        removeFavourite = { track ->
-                            val removal = visibleFavourites.removeTrack(
-                                track.id,
-                                favouritesRequestedOffset,
-                            )
-                            visibleFavourites = removal.window
-                            favouritesRequestedOffset = removal.lastRequestedOffset
-                        },
-                    )
-                }
+                    }
                 }
             }
         }
         if (!surfaceState.dockMode) {
             if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
                 Row(modifier = Modifier.fillMaxSize()) {
-                    LibraryNavigationRail(surfaceLayout)
+                    LibraryNavigationRail(
+                        surfaceLayout = surfaceLayout,
+                        selectedTab = selectedTab,
+                        selectTab = ::selectDestination,
+                    )
                     libraryScaffold(Modifier.weight(1f))
                 }
             } else {
@@ -552,36 +608,4 @@ private fun BrowseErrorLine(message: String) {
         color = MaterialTheme.colorScheme.error,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
     )
-}
-
-@Composable
-private fun BrowseFilterChips(
-    surfaceLayout: SurfaceLayout,
-    selected: BrowseTab,
-    select: (BrowseTab) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        BrowseTab.entries.forEach { tab ->
-            FilterChip(
-                selected = tab == selected,
-                onClick = { select(tab) },
-                label = { Text(tab.label) },
-                leadingIcon = if (tab == selected) {
-                    { MaterialSymbol("check", "", sizeSp = 18) }
-                } else {
-                    null
-                },
-                modifier = Modifier.height(
-                    libraryFrameMetrics(surfaceLayout).filterChipHeightDp.dp,
-                ),
-                shape = MaterialTheme.shapes.small,
-            )
-        }
-    }
 }
