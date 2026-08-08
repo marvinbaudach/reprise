@@ -1,7 +1,7 @@
 use super::sync_log::{
-    close_orphaned_runs, deviations, finish_run, note_deviation, recent_runs, start_run, summarize,
-    update_planned, Deviation, DeviationKind, RunCounters, RunOutcome, RunStart, RunSummary,
-    GLOBAL_RETAINED_RUNS, RETAINED_RUNS,
+    close_orphaned_runs, deviations, finish_run, note_deviation, recent_runs,
+    recent_runs_for_device, start_run, summarize, update_planned, Deviation, DeviationKind,
+    RunCounters, RunOutcome, RunStart, RunSummary, GLOBAL_RETAINED_RUNS, RETAINED_RUNS,
 };
 use crate::device_sync::machine::SyncOutcome;
 
@@ -354,4 +354,42 @@ fn mtp_20_a_run_that_only_lost_tracks_says_so_instead_of_staying_silent() {
 
     assert_eq!(summary.outcome, RunOutcome::Failed);
     assert_eq!(summary.detail.as_deref(), Some("3 tracks failed"));
+}
+
+/// The page asks for one device's history. Taking the newest N rows overall
+/// and filtering afterwards finds the wrong ones as soon as a second, busier
+/// device is logging — and pays a deviations query for every row it discards.
+#[test]
+fn mtp_20_one_device_history_is_scoped_by_the_query_not_by_the_caller() {
+    let conn = database();
+    // A noisy device writes more runs than the quiet one will ever have.
+    for index in 0..RETAINED_RUNS {
+        let mut noisy = start();
+        noisy.device_serial = "noisy".into();
+        noisy.started_at = 2_000_000 + index as i64;
+        start_run(&conn, &noisy).unwrap();
+    }
+    let mut quiet = start();
+    quiet.device_serial = "quiet".into();
+    quiet.started_at = 1_000;
+    let wanted = start_run(&conn, &quiet).unwrap();
+
+    // The quiet device's single run is older than every noisy one, so a
+    // newest-first global read of its own retention limit misses it entirely.
+    let globally_newest = recent_runs(&conn, RETAINED_RUNS).unwrap();
+    assert!(
+        !globally_newest.iter().any(|run| run.id == wanted),
+        "the premise of this test: a global read does not find it"
+    );
+
+    let scoped = recent_runs_for_device(&conn, "quiet", RETAINED_RUNS).unwrap();
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].id, wanted);
+    assert!(scoped.iter().all(|run| run.device_serial == "quiet"));
+
+    let noisy_scoped = recent_runs_for_device(&conn, "noisy", RETAINED_RUNS).unwrap();
+    assert_eq!(noisy_scoped.len(), RETAINED_RUNS);
+    assert!(noisy_scoped
+        .windows(2)
+        .all(|w| w[0].started_at >= w[1].started_at));
 }

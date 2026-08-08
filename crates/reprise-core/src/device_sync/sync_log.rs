@@ -283,16 +283,43 @@ pub fn note_deviation(db: &crate::db::Db, run: i64, deviation: &Deviation) -> Re
     Ok(())
 }
 
-/// The most recent runs, newest first.
+const RUN_COLUMNS: &str = "id, device_serial, device_name, transfer_profile, started_at, \
+                           finished_at, outcome, planned, copied, skipped, deleted, failed, \
+                           bytes_copied, detail";
+
+/// The most recent runs across every device, newest first.
 pub fn recent_runs(db: &crate::db::Db, limit: usize) -> Result<Vec<RunRecord>, DbError> {
     let conn = db.conn();
-    let mut statement = conn.prepare(
-        "SELECT id, device_serial, device_name, transfer_profile, started_at, finished_at, \
-                outcome, planned, copied, skipped, deleted, failed, bytes_copied, detail \
-         FROM sync_runs ORDER BY started_at DESC, id DESC LIMIT ?1",
-    )?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT {RUN_COLUMNS} FROM sync_runs ORDER BY started_at DESC, id DESC LIMIT ?1"
+    ))?;
     let runs = statement
         .query_map(rusqlite::params![limit as i64], read_run)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(runs)
+}
+
+/// One device's most recent runs, newest first.
+///
+/// Retention is per device ([`RETAINED_RUNS`]) under a whole-table ceiling
+/// ([`GLOBAL_RETAINED_RUNS`]), so a caller after one device's history cannot
+/// take the newest N rows overall and filter: with several devices logging,
+/// the device it wants may not be in them. Reading the whole ceiling and
+/// filtering in Rust works but costs a [`deviations`] query per row it then
+/// throws away — on the GTK main thread, on every phase change. This asks the
+/// database the question the caller actually has.
+pub fn recent_runs_for_device(
+    db: &crate::db::Db,
+    device_serial: &str,
+    limit: usize,
+) -> Result<Vec<RunRecord>, DbError> {
+    let conn = db.conn();
+    let mut statement = conn.prepare(&format!(
+        "SELECT {RUN_COLUMNS} FROM sync_runs WHERE device_serial = ?1 \
+         ORDER BY started_at DESC, id DESC LIMIT ?2"
+    ))?;
+    let runs = statement
+        .query_map(rusqlite::params![device_serial, limit as i64], read_run)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(runs)
 }

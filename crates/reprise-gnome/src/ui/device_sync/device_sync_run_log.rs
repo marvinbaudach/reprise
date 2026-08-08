@@ -111,10 +111,14 @@ impl DeviceSyncRuntime {
     pub(in crate::ui) fn reload_sync_history(&self, device_id: &str) {
         let loaded = {
             let conn = &self.conn;
-            match sync_log::recent_runs(conn, sync_log::GLOBAL_RETAINED_RUNS) {
+            // Scoped in SQL, not filtered afterwards: this runs on the main
+            // thread on every phase change, and each surviving row costs a
+            // second query for its deviations. Reading the whole-table ceiling
+            // and discarding other devices paid for up to eight times as many
+            // of those as it kept.
+            match sync_log::recent_runs_for_device(conn, device_id, sync_log::RETAINED_RUNS) {
                 Ok(runs) => runs
                     .into_iter()
-                    .filter(|run| run.device_serial == device_id)
                     .map(|run| {
                         let found = sync_log::deviations(conn, run.id).unwrap_or_default();
                         (run, found)
