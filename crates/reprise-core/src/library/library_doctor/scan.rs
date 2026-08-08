@@ -98,14 +98,50 @@ impl<'connection> LibraryDoctor<'connection> {
         resolver: &mut dyn RemoteResolver,
         progress: &mut dyn FnMut(DoctorScanProgress) -> ScanControl,
     ) -> Result<DoctorScanOutcome, DoctorError> {
-        let previous_scan_id = self.last_complete_scan()?.map(|scan| scan.id);
+        let previous_scan = self.last_complete_scan()?;
+        let previous_scan_id = previous_scan.as_ref().map(|scan| scan.id);
+        let previous_tracks = previous_scan_id.map_or_else(
+            || Ok(HashMap::new()),
+            |scan_id| super::store::previous_scan_identities(self.conn, scan_id),
+        )?;
+        let current_track_ids = tracks
+            .iter()
+            .map(|track| track.track_id)
+            .collect::<Vec<_>>();
+        // A remote result belongs to the selected release for the whole album,
+        // not just to one file. Reuse it only when the complete frozen input is
+        // identical; a partial reuse could mix two release decisions again.
+        let reuse_remote_scan = request.options.remote_enabled
+            && previous_scan.as_ref().is_some_and(|scan| {
+                scan.options.remote_enabled
+                    && scan.track_ids == current_track_ids
+                    && tracks.iter().all(|track| {
+                        previous_tracks
+                            .get(&track.track_id)
+                            .is_some_and(|previous| previous.snapshot.reference == *track)
+                    })
+            });
+        let may_reuse_files = !request.options.remote_enabled || reuse_remote_scan;
         let mut read_tracks = Vec::with_capacity(tracks.len());
         let mut remote_metadata = Vec::with_capacity(tracks.len());
         let mut snapshot_tracks = Vec::with_capacity(tracks.len());
         let mut skipped_tracks = 0;
         let mut preview_summary = super::DoctorScanSummary::default();
-        let local_reads = read_tracks_parallel(tracks);
-        for (position, (track, result)) in local_reads.into_iter().enumerate() {
+        let to_read = tracks
+            .iter()
+            .filter(|track| {
+                !may_reuse_files
+                    || !previous_tracks
+                        .get(&track.track_id)
+                        .is_some_and(|previous| previous.snapshot.reference == **track)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut local_reads = read_tracks_parallel(&to_read)
+            .into_iter()
+            .map(|(track, result)| (track.track_id, result))
+            .collect::<HashMap<_, _>>();
+        for (position, track) in tracks.iter().enumerate() {
             if progress(DoctorScanProgress {
                 phase: DoctorScanPhase::ReadingTags,
                 completed_tracks: position,
@@ -115,15 +151,27 @@ impl<'connection> LibraryDoctor<'connection> {
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
+            let result = previous_tracks
+                .get(&track.track_id)
+                .filter(|previous| may_reuse_files && previous.snapshot.reference == *track)
+                .map_or_else(
+                    || local_reads.remove(&track.track_id).unwrap_or(None),
+                    |previous| {
+                        previous.snapshot.tags.clone().map(|tags| {
+                            let metadata = metadata_from_saved_tags(&tags);
+                            (tags, metadata)
+                        })
+                    },
+                );
             match result {
                 Some((tags, metadata)) => {
                     snapshot_tracks.push(DoctorTrackSnapshot {
-                        reference: track.clone(),
+                        reference: (*track).clone(),
                         tags: Some(tags.clone()),
                         stale: false,
                     });
                     let read_track = ReadTrack {
-                        reference: track.clone(),
+                        reference: (*track).clone(),
                         tags,
                     };
                     let (track_proposals, _track_groups) =
@@ -154,7 +202,7 @@ impl<'connection> LibraryDoctor<'connection> {
                     skipped_tracks += 1;
                     preview_summary.merge(super::presentation::partial_scan_summary(&[], 0, 0, 1));
                     snapshot_tracks.push(DoctorTrackSnapshot {
-                        reference: track.clone(),
+                        reference: (*track).clone(),
                         tags: None,
                         stale: false,
                     });
@@ -184,54 +232,78 @@ impl<'connection> LibraryDoctor<'connection> {
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
-            let album_groups = group_album_tracks(&read_tracks);
-            for indices in album_groups {
-                let query = album_query(&read_tracks, &indices);
-                let album_resolution = if let Some(query) = query {
-                    let mut control = || {
-                        progress(DoctorScanProgress {
-                            phase: DoctorScanPhase::CheckingRemote,
-                            completed_tracks: tracks.len().saturating_sub(1),
-                            total_tracks: tracks.len(),
-                            summary: preview_summary,
-                        })
-                    };
-                    match resolver.resolve_album(&remote::AlbumRequest { query }, &mut control) {
-                        Ok(resolution) => resolution,
-                        Err(RemoteProviderError::Cancelled) => {
-                            return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
-                        }
-                        Err(_) => remote::AlbumResolution::default(),
-                    }
-                } else {
-                    remote::AlbumResolution {
-                        attempted: true,
-                        album_match: None,
-                    }
-                };
-                for index in indices {
-                    let read_track = &read_tracks[index];
-                    let metadata = &remote_metadata[index];
-                    let published_summary = preview_summary;
-                    let mut control = || {
-                        progress(DoctorScanProgress {
-                            phase: DoctorScanPhase::CheckingRemote,
-                            completed_tracks: tracks.len().saturating_sub(1),
-                            total_tracks: tracks.len(),
-                            summary: published_summary,
-                        })
-                    };
-                    match resolver.resolve_track(
-                        metadata,
-                        &read_track.reference.path,
-                        fingerprint_backend,
-                        album_resolution.album_match.as_ref(),
-                        &mut control,
-                    ) {
-                        Ok(mut resolution) => {
-                            if album_resolution.attempted {
-                                retain_track_fields(&mut resolution);
+            if reuse_remote_scan {
+                reuse_remote_results(
+                    &read_tracks,
+                    &previous_tracks,
+                    &mut proposals,
+                    &mut unresolved_groups,
+                );
+            } else {
+                let album_groups = group_album_tracks(&read_tracks);
+                for indices in album_groups {
+                    let query = album_query(&read_tracks, &indices);
+                    let album_resolution = if let Some(query) = query {
+                        let mut control = || {
+                            progress(DoctorScanProgress {
+                                phase: DoctorScanPhase::CheckingRemote,
+                                completed_tracks: tracks.len().saturating_sub(1),
+                                total_tracks: tracks.len(),
+                                summary: preview_summary,
+                            })
+                        };
+                        match resolver.resolve_album(&remote::AlbumRequest { query }, &mut control)
+                        {
+                            Ok(resolution) => resolution,
+                            Err(RemoteProviderError::Cancelled) => {
+                                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
                             }
+                            Err(_) => remote::AlbumResolution::default(),
+                        }
+                    } else {
+                        remote::AlbumResolution {
+                            attempted: true,
+                            album_match: None,
+                        }
+                    };
+                    for index in indices {
+                        let read_track = &read_tracks[index];
+                        let metadata = &remote_metadata[index];
+                        let published_summary = preview_summary;
+                        let mut control = || {
+                            progress(DoctorScanProgress {
+                                phase: DoctorScanPhase::CheckingRemote,
+                                completed_tracks: tracks.len().saturating_sub(1),
+                                total_tracks: tracks.len(),
+                                summary: published_summary,
+                            })
+                        };
+                        match resolver.resolve_track(
+                            metadata,
+                            &read_track.reference.path,
+                            fingerprint_backend,
+                            album_resolution.album_match.as_ref(),
+                            &mut control,
+                        ) {
+                            Ok(mut resolution) => {
+                                if album_resolution.attempted {
+                                    retain_track_fields(&mut resolution);
+                                }
+                                merge_remote_resolution(
+                                    read_track.reference.track_id,
+                                    resolution,
+                                    &mut proposals,
+                                    &mut unresolved_groups,
+                                );
+                            }
+                            Err(RemoteProviderError::Cancelled) => {
+                                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+                            }
+                            Err(_) => {}
+                        }
+                        if let Some(album_match) = &album_resolution.album_match {
+                            let resolution =
+                                remote::album_resolution_for_track(metadata, album_match);
                             merge_remote_resolution(
                                 read_track.reference.track_id,
                                 resolution,
@@ -239,19 +311,6 @@ impl<'connection> LibraryDoctor<'connection> {
                                 &mut unresolved_groups,
                             );
                         }
-                        Err(RemoteProviderError::Cancelled) => {
-                            return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
-                        }
-                        Err(_) => {}
-                    }
-                    if let Some(album_match) = &album_resolution.album_match {
-                        let resolution = remote::album_resolution_for_track(metadata, album_match);
-                        merge_remote_resolution(
-                            read_track.reference.track_id,
-                            resolution,
-                            &mut proposals,
-                            &mut unresolved_groups,
-                        );
                     }
                 }
             }
@@ -345,6 +404,77 @@ fn read_tracks_parallel(
             .flat_map(|handle| handle.join().unwrap_or_default())
             .collect()
     })
+}
+
+fn metadata_from_saved_tags(
+    tags: &crate::library::tag_edit::EditableTags,
+) -> remote::RemoteTrackMetadata {
+    let present = |value: &str| (!value.trim().is_empty()).then(|| value.to_owned());
+    remote::RemoteTrackMetadata {
+        title: present(&tags.title),
+        artist: present(&tags.artist),
+        album: present(&tags.album),
+        album_artist: present(&tags.album_artist),
+        year: tags.year,
+        recording_mbid: None,
+        release_mbid: None,
+        release_group_mbid: None,
+        artist_mbid: None,
+        release_artist_mbid: None,
+        duration_ms: None,
+    }
+}
+
+fn reuse_remote_results(
+    read_tracks: &[ReadTrack],
+    previous_tracks: &HashMap<i64, super::store::PreviousTrackScan>,
+    proposals: &mut Vec<super::DoctorProposal>,
+    unresolved_groups: &mut Vec<super::DoctorUnresolvedGroup>,
+) {
+    for track in read_tracks {
+        let track_id = track.reference.track_id;
+        let Some(previous) = previous_tracks.get(&track_id) else {
+            continue;
+        };
+        let reused_proposals = previous
+            .proposals
+            .iter()
+            .filter(|proposal| proposal.source != super::ProposalSource::Local)
+            .cloned()
+            .map(|mut proposal| {
+                proposal.local_fallback = None;
+                proposal
+            })
+            .collect();
+        let reused_groups = previous
+            .unresolved_groups
+            .iter()
+            .filter(|group| {
+                group.members.first().map(|member| member.track_id) == Some(track_id)
+                    && group
+                        .candidates
+                        .iter()
+                        .any(|candidate| !candidate.evidence.is_empty())
+            })
+            .cloned()
+            .map(|mut group| {
+                group.local_fallback = None;
+                if let Some(unscoped) = group.group_key.strip_suffix(&format!(":{track_id}")) {
+                    group.group_key = unscoped.to_owned();
+                }
+                group
+            })
+            .collect();
+        merge_remote_resolution(
+            track_id,
+            remote::RemoteResolution {
+                proposals: reused_proposals,
+                groups: reused_groups,
+            },
+            proposals,
+            unresolved_groups,
+        );
+    }
 }
 
 fn retain_track_fields(resolution: &mut remote::RemoteResolution) {

@@ -21,6 +21,50 @@ pub(super) struct CompleteScanData<'a> {
     pub unresolved_groups: &'a [DoctorUnresolvedGroup],
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct PreviousTrackScan {
+    pub(super) snapshot: DoctorTrackSnapshot,
+    pub(super) proposals: Vec<DoctorProposal>,
+    pub(super) unresolved_groups: Vec<DoctorUnresolvedGroup>,
+}
+
+pub(super) fn previous_scan_identities(
+    conn: &Connection,
+    scan_id: i64,
+) -> Result<HashMap<i64, PreviousTrackScan>, DoctorError> {
+    let mut tracks = load_tracks(conn, scan_id)?
+        .into_iter()
+        .map(|snapshot| {
+            (
+                snapshot.reference.track_id,
+                PreviousTrackScan {
+                    snapshot,
+                    proposals: Vec::new(),
+                    unresolved_groups: Vec::new(),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for proposal in load_proposals(conn, scan_id)? {
+        if let Some(track) = tracks.get_mut(&proposal.track_id) {
+            track.proposals.push(proposal);
+        }
+    }
+    for group in load_groups(conn, scan_id)? {
+        for track_id in group
+            .members
+            .iter()
+            .map(|member| member.track_id)
+            .collect::<HashSet<_>>()
+        {
+            if let Some(track) = tracks.get_mut(&track_id) {
+                track.unresolved_groups.push(group.clone());
+            }
+        }
+    }
+    Ok(tracks)
+}
+
 pub(super) fn persist_complete_scan(
     data: &CompleteScanData<'_>,
 ) -> Result<DoctorScan, DoctorError> {
