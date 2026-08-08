@@ -1,184 +1,209 @@
-# Ein Track soll sofort spielen
+---
+slug: activation-latency
+worktree: /home/marvin/Projects/reprise-activation
+branch: perf/activation-latency
+phase: planned
+codex_session:
+created: 2026-08-08
+---
+# A track should play immediately
 
-Das Abspielen ist das Hauptfeature dieser Anwendung. Ein Doppelklick auf eine
-Zeile ist der direkteste Ausdruck von „ich will das jetzt hören" — er muss sich
-sofort anfühlen, nicht nur schneller als heute.
+Playback is the application's primary feature. Double-clicking a row is the
+most direct expression of "I want to hear this now". It must feel immediate,
+not merely faster than it does today.
 
-## Was gemessen wurde (2026-08-08)
+## Established measurements (2026-08-08)
 
-Release-Build, isolierte Instanz auf einer Kopie der echten Bibliothek
-(2340 Tracks, 241 MB DB), Xvfb, eigener D-Bus, eigener PulseAudio-Null-Sink.
-Klickzeitpunkt per `xdotool`, Zeitachse aus den `tracing`-Logs, Hauptthread per
-`eu-stack` gesampelt.
+Release build, isolated instance over a copy of the real library (2,340 tracks,
+241 MB database), Xvfb, private D-Bus and a private PulseAudio null sink. The
+click timestamp came from `xdotool`, the timeline from `tracing` logs and the
+main thread from `eu-stack` samples.
 
-| Messgröße | Wert |
+| Metric | Result |
 | --- | --- |
-| `activate track` → `playback started` (Doppelklick) | **Median 92 ms** (66–150), 14 Läufe |
-| Klick → `playback started` (Weiter-Knopf) | 34–65 ms, 3 Läufe |
-| ID-Abfrage der ganzen Ansicht, kalt / warm | **66 ms / 2–4 ms** |
-| Musikdatei lesen (35–50 MB FLAC), kalt / warm | 24 ms / 16 ms |
+| `activate track` to `playback started` (double-click) | **92 ms median** (66–150), 14 runs |
+| Click to `playback started` (Next button) | 34–65 ms, 3 runs |
+| Full-view ID query, cold / warm | **66 ms / 2–4 ms** |
+| Read a 35–50 MB FLAC, cold / warm | 24 ms / 16 ms |
 
-Aus dem Journal der echten Nutzersitzung, dasselbe Muster: der erste Doppelklick
-nach dem Start kostet 216 ms, danach fallend über 118, 81, 51 auf 37 ms — die
-Signatur eines Datenbank-Caches, der warmläuft.
+The real user-session journal shows the same pattern: the first double-click
+after startup costs 216 ms, then falls through 118, 81 and 51 to 37 ms. That is
+the signature of a warming database cache.
 
-**Zwei Verdächtige wurden ausgeschlossen, bevor Arbeit hineinfloss:**
+Two suspects were ruled out before work was spent on them:
 
-- *Datei-I/O.* Eine 50-MB-FLAC liest sich kalt in 24 ms, warm in 16 ms. Acht
-  Millisekunden Unterschied können keine wahrnehmbare Verzögerung erklären.
-- *Vorpuffern.* Es lag nahe, dass der Weiter-Knopf nur deshalb schneller ist,
-  weil er den gapless vorbereiteten Stream übernimmt. Tut er nicht: nur
-  `advance_gaplessly` (der automatische Übergang am Trackende) nutzt
-  `StartPlayback::No`; der manuelle Weiter-Knopf geht über `advance_playback`
-  mit `StartPlayback::Yes` und baut die Pipeline genauso neu auf. Der Vergleich
-  der beiden Wege ist damit fair.
+- **File I/O.** A 50 MB FLAC reads in 24 ms cold and 16 ms warm. An eight
+  millisecond difference cannot explain a perceptible delay.
+- **Pre-buffering.** It seemed possible that Next was faster only because it
+  took over the gaplessly prepared stream. It does not: only
+  `advance_gaplessly` (automatic end-of-track transition) uses
+  `StartPlayback::No`. Manual Next goes through `advance_playback` with
+  `StartPlayback::Yes` and rebuilds the pipeline just like direct activation.
+  The comparison is fair.
 
-## Wo die Zeit hingeht
+## Where the time goes
 
-### B1 — Der Seitenleisten-Rebuild läuft bei jedem Trackwechsel
+### B1 — The sidebar rebuild runs on every track change
 
-Das ist der Befund mit der breitesten Wirkung: er betrifft **jeden Song**, nicht
-nur den Doppelklick.
+This finding has the widest impact because it affects every song, not only a
+double-click.
 
+```text
+play_from_view                      (double-click)
+ -> queue.set_tracks(ids, start_index)
+ -> play_track_id(id)               <- "playback started" is logged here
+ -> notify_queue_changed()
+     -> queue_changed callbacks (window.rs:281)
+         -> sidebar_rebuild::rebuild             19 synchronous queries
+             -> count_releases_view
+                 -> query_complete_history_in
+                     -> artist_news_query::local_library_index
+                        <- whole-library index for one count
+     -> feed_next()
 ```
-play_from_view                      (Doppelklick)
- → queue.set_tracks(ids, start_index)
- → play_track_id(id)                ← hier wird "playback started" geloggt
- → notify_queue_changed()
-     → queue_changed-Callbacks (window.rs:281)
-         → sidebar_rebuild::rebuild             19 synchrone Abfragen
-             → count_releases_view
-                 → query_complete_history_in
-                     → artist_news_query::local_library_index
-                        ← Index über die ganze Bibliothek, für eine Zahl
-     → feed_next()
-```
 
-`advance_common` (Weiter-Knopf) und der automatische Übergang rufen
-`notify_queue_changed` ebenfalls. Alle drei Wege zahlen diesen Preis. Im
-Stack-Sampling erschien `sidebar_rebuild` → `count_releases_view` →
-`artist_news` in 2 von 25 arbeitenden Samples.
+`advance_common` (Next) and the automatic transition also call
+`notify_queue_changed`. All three routes pay this cost. Stack sampling found
+`sidebar_rebuild` -> `count_releases_view` -> `artist_news` in two of the 25
+working samples.
 
-Keiner dieser Zähler ändert sich dadurch, dass ein Track zu spielen beginnt.
+Starting a track changes none of these counts.
 
-### B2 — Die volle ID-Abfrage bei jeder Aktivierung
+### B2 — The full ID query runs on every activation
 
-`track_list_activation::queue_ids_for_activation` holt über
-`queries::query_track_ids_browsed` die vollständige, sortierte, gefilterte
-ID-Liste der Ansicht — bei **jedem** Doppelklick neu. Direkt gemessen: 66 ms
-kalt, 2–4 ms warm. Das ist der Anteil, den der Weiter-Knopf nicht hat, und er
-erklärt das Warmlauf-Muster oben.
+`track_list_activation::queue_ids_for_activation` asks
+`queries::query_track_ids_browsed` for the complete sorted and filtered ID list
+on every double-click. It was measured directly at 66 ms cold and 2–4 ms warm.
+This is the part Next does not have and explains the warm-up pattern above.
 
-Die Liste hängt nur von Quelle, Sortierung, Filter und Browse-Facetten ab. Zwei
-Doppelklicks in derselben Ansicht liefern dieselbe Liste; nur der Startindex
-unterscheidet sich.
+The list depends only on source, sort, filter and browse facets. Two activations
+in the same view return the same list; only the start index differs.
 
-### B3 — Die Reihenfolge im Klickpfad
+### B3 — Work is ordered poorly in the click path
 
-`play_from_view` setzt erst die vollständige Warteschlange, startet dann die
-Wiedergabe, und aktualisiert danach die Zähler. Der angeklickte Track ist aber
-von der ersten Zeile an bekannt. Die Warteschlange wird frühestens am Ende des
-laufenden Tracks gebraucht, die Zähler nie dringend.
+`play_from_view` sets the whole queue before starting playback, then updates
+the counters. The clicked track is already known at the first line. The queue
+is needed no earlier than the end of the current track, while the counters are
+never urgent.
 
-### Offen: die Aufteilung der 92 ms
+### Originally open: the rest of the 92 ms
 
-Bei warmem Cache kostet B2 nur 2–4 ms, die Spanne `activate → started` bleibt
-aber bei ~92 ms im Median. Der Rest ist **nicht zugeordnet** — `eu-stack`
-braucht ~290 ms pro Sample und trifft ein 92-ms-Fenster nur zufällig; über 14
-Aktivierungen fielen 2 Samples hinein.
+With a warm cache B2 costs only 2–4 ms, while `activate` to `started` remained
+around 92 ms at the median. The remainder was unattributed: `eu-stack` needs
+about 290 ms per sample and only hit the 92 ms window twice across 14
+activations.
 
-**Das ist bewusst offen gelassen und muss beim Implementieren geklärt werden.**
-Kandidaten im Pfad: `play_origin::resolve` (lädt für Playlist-/Smart-Quellen die
-Playlisten), `queue.set_tracks` (kopiert bis zu `QUEUE_LIMIT` IDs), und
-`play_track_id` selbst. Wer hier ohne Messung optimiert, optimiert womöglich die
-falsche Stelle — genau das ist bei der Löschsache beinahe passiert, wo der
-vermutete Kostenträger (die Abfrage) sich als billig erwies und der echte
-(ein X11-Roundtrip pro Tooltip) erst im Sampling auftauchte.
+Candidates were `play_origin::resolve` (which loads playlists for playlist and
+smart sources), `queue.set_tracks` (which copies up to `QUEUE_LIMIT` IDs), and
+`play_track_id` itself. Optimising any of these without measurement would risk
+optimising the wrong place.
 
-## Aufgaben
+## Tasks
 
-Nach **jeder** Aufgabe messen, mit Gegenprobe bei deaktivierter Änderung.
+Measure after every task, including a countercheck with the change disabled.
 
-### T0 — Erst die 92 ms aufteilen
+### T0 — Divide the 92 ms first
 
-Bevor irgendetwas geändert wird: den Abschnitt `activate track` →
-`playback started` instrumentieren (temporäre `tracing`-Spans oder Zeitstempel
-genügen) und die Anteile von `queue_ids_for_activation`, `play_origin::resolve`,
-`queue.set_tracks` und `play_track_id` einzeln ausweisen. Ergebnis in diesen
-Plan schreiben.
+Before changing production behavior, instrument `activate track` to
+`playback started` and report `queue_ids_for_activation`,
+`play_origin::resolve`, `queue.set_tracks` and `play_track_id` separately.
 
-Die folgenden Aufgaben sind nach heutigem Wissen priorisiert; wenn T0 ein
-anderes Bild ergibt, hat T0 recht und die Reihenfolge wird angepasst. Das
-ausdrücklich im Ergebnis vermerken, nicht stillschweigend umsortieren.
+#### T0 result (2026-08-08)
 
-### T1 — Die Zähler nicht bei jedem Trackwechsel neu berechnen
+Temporary timers were added around all four boundaries, used in an optimised
+release build, and removed before the T0 commit. Fourteen consecutive
+activations ran in one isolated Xvfb/private-D-Bus/private-XDG instance over
+2,340 generated rows and a 44.1 MB synthetic FLAC. No build or other sustained
+CPU load ran during the measurements.
 
-Ein Trackwechsel ändert keinen einzigen Seitenleisten-Zähler. Der Rebuild aus
-`notify_queue_changed` heraus ist damit reine Verschwendung — dreimal pro Song
-(Start, Wechsel, automatischer Übergang).
+| Segment | Median | Range |
+| --- | ---: | ---: |
+| `queue_ids_for_activation` | 1.078 ms | 0.513–1.359 ms |
+| `play_origin::resolve` | 0.006 ms | 0.004–0.007 ms |
+| `queue.set_tracks` | 0.006 ms | 0.003–0.009 ms |
+| `play_track_id` entry to `playback started` | 7.141 ms | 3.294–22.113 ms |
+| Entire `activate track` to `playback started` | 8.243 ms | 4.103–22.633 ms |
 
-Zu klären ist, was der Queue-Callback wirklich braucht: vermutlich nur die
-Queue-Länge, nicht die 19 Abfragen für Musik, Missing, Library Doctor,
-Playlisten, Podcasts, YouTube, Radio, Releases und Concerts.
+This controlled fixture does **not** reproduce the established 92 ms median.
+The handoff's 241 MB library-copy database is not present in this worktree,
+and the real database and music files are explicitly out of bounds. The
+synthetic result therefore cannot legitimately apportion the real run's
+remaining roughly 90 ms or overrule its directly measured 66 ms cold ID
+query. It only rules out `play_origin::resolve` and the ID-vector copy as
+meaningful costs on this data shape, while `play_track_id` dominates the much
+smaller synthetic path.
 
-**Falle, die zu prüfen ist:** die Zähler dürfen nicht veralten. Jeder Weg, der
-eine Zahl tatsächlich ändert, braucht weiterhin seinen eigenen Refresh — das ist
-dieselbe Falle wie beim Watcher-Gate im Löschplan, und dort hat sich gezeigt,
-dass die anderen Aufrufstellen ihn schon haben. Nachweisen, nicht annehmen. Ein
-Test soll es festhalten.
+The `play_track_id` row is derived per activation from the outer timestamp
+span minus the three directly timed preceding segments; its range is not a
+subtraction of aggregate medians.
 
-**Zusätzlich:** `count_releases_view` baut über `local_library_index` einen Index
-über die ganze Bibliothek auf, nur um eine Zahl zu bilden. Selbst wenn der
-Rebuild seltener wird, gehört das nicht synchron in den UI-Thread.
+**Priority decision:** T0 does not supply representative contrary evidence,
+so the planned order remains T1 then T2. T3 remains conditional on the
+post-T1/T2 countercheck. The real-run remainder stays explicitly unattributed
+rather than being extrapolated from the synthetic fixture.
 
-### T2 — Die ID-Liste der Ansicht nicht bei jedem Doppelklick neu abfragen
+### T1 — Do not recompute counters on every track change
 
-Die Liste ist eine reine Funktion aus Quelle, Sortierung, Filter und
-Browse-Facetten. Sie kann behalten werden, solange sich davon nichts ändert; ein
-zweiter Doppelklick in derselben Ansicht braucht dann nur noch den Startindex.
+A track change changes no sidebar count. The rebuild reached from
+`notify_queue_changed` is therefore pure waste on start, manual advance and
+automatic transition.
 
-**Fallen:** Die Bibliothek verändert sich unter der Ansicht (Scan, Löschen,
-Tag-Änderung, Watcher). Eine behaltene Liste, die auf gelöschte oder verschobene
-Tracks zeigt, ist schlimmer als eine langsame Abfrage — sie spielt dann das
-Falsche oder nichts. Die vorhandene `TrackListModel::generation` ist genau dafür
-da, dass etwas erkennt, wann das Modell sich geändert hat; sie ist der
-naheliegende Schlüssel. `QUEUE_LIMIT` und die Kappungswarnung müssen erhalten
-bleiben.
+Determine what the queue callback actually needs; it is expected to need the
+queue length and queue surface refresh, not the 19 queries for Music, Missing,
+Library Doctor, playlists, Podcasts, YouTube, Radio, Releases and Concerts.
 
-### T3 — Ton zuerst, Rest danach
+The counters must not become stale. Every route that actually changes a count
+must retain its own refresh; prove those routes rather than assuming they
+exist, and preserve the contract with a test.
 
-Der angeklickte Track ist sofort bekannt. Die Wiedergabe kann starten, bevor
-Warteschlange und Zähler stehen — beides wird erst später gebraucht.
+In addition, `count_releases_view` builds a whole-library index through
+`local_library_index` merely to produce a count. Even when the rebuild is
+rarer, that work does not belong synchronously on the UI thread.
 
-**Fallen:** `feed_next` (das gapless Vorbereiten des nächsten Tracks) braucht die
-fertige Warteschlange; es darf nicht auf eine halb gefüllte treffen. Ein
-Doppelklick, der schnell auf einen zweiten folgt, darf die Reihenfolge nicht
-verdrehen — der zuletzt angeklickte Track gewinnt. Und die Warteschlange muss
-stehen, bevor der laufende Track endet, sonst bricht die Wiedergabe am
-Trackende ab statt weiterzulaufen.
+### T2 — Do not query the view's ID list on every double-click
 
-Diese Aufgabe erst angehen, wenn T0 zeigt, dass sich damit noch etwas holen
-lässt — nach T1 und T2 könnte der Pfad bereits kurz genug sein.
+The list is a pure function of source, sort, filter and browse facets. Retain
+it while those inputs stay unchanged so another activation in the same view
+only needs the start index.
 
-## Verifikation
+The library can change underneath the view through scanning, deletion, tag
+changes or the watcher. A retained list that points to removed or moved tracks
+is worse than a slow query because it can play the wrong track or nothing.
+`TrackListModel::generation` already records model changes and is the natural
+cache key. Preserve `QUEUE_LIMIT` and its truncation warning.
 
-- Nur per Timer messen. Frame-Sampling liefert hier null Samples und sieht dann
-  fälschlich grün aus.
-- Zu jeder Messung die Gegenprobe mit deaktivierter Änderung.
-- Der Endpunkt, der zählt, ist der **Toneinsatz**, nicht eine Logzeile. Ein
-  PulseAudio-Null-Sink plus `parec` mit RMS in 5-ms-Blöcken misst ihn.
-  Achtung: unter Systemlast (parallele Builds) verfälscht der Audio-Stack diese
-  Messung erheblich — Lastzustand mit protokollieren.
+### T3 — Sound first, the rest afterwards
 
-Zielwerte gegen die Ausgangslage:
+The clicked track is already known. Playback could start before the queue and
+counters are ready because neither is immediately needed.
 
-- Doppelklick `activate track` → `playback started`: deutlich unter 92 ms Median
-- Der Abstand zum Weiter-Knopf (34–65 ms) soll weitgehend verschwinden
-- Kein Seitenleisten-Rebuild mehr im Trackwechsel-Pfad
-- Seitenleisten-Zähler bleiben in jedem Fall korrekt (die Falle aus T1)
-- Wiedergabe läuft am Trackende normal weiter (die Falle aus T3)
+`feed_next` needs the complete queue for gapless preparation and must never see
+a partially filled one. Rapid successive double-clicks must not reorder work;
+the latest click wins. The queue must also be complete before the playing track
+ends so playback continues normally.
 
-## Nicht Teil dieser Arbeit
+Only do this task if T0 and the post-T1/T2 measurement show meaningful time is
+still available to recover.
 
-- Datei-I/O (gemessen: 24 ms kalt, keine relevante Größe).
-- Das gapless Vorpuffern selbst — es funktioniert und ist nicht die Ursache.
+## Verification
+
+- Measure with timers. Frame sampling can return zero samples and produce a
+  false green result at this duration.
+- Countercheck every measurement with the change disabled.
+- The meaningful endpoint is audible onset, not a log line. A PulseAudio null
+  sink plus `parec`, using RMS over 5 ms blocks, measures it. Record machine
+  load because parallel builds substantially distort the audio stack.
+
+Targets against the established baseline:
+
+- Double-click `activate track` to `playback started` is clearly below the
+  92 ms median.
+- The gap to Next (34–65 ms) largely disappears.
+- No sidebar rebuild remains in the track-change path.
+- Sidebar counters remain correct on every mutation route.
+- Playback still advances normally at the end of a track.
+
+## Out of scope
+
+- File I/O, measured at 24 ms cold and not a relevant contributor.
+- Gapless pre-buffering itself; it works and is not the cause.
