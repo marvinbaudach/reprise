@@ -11,7 +11,7 @@ use crate::ui::source_add_action;
 use crate::ui::strings;
 
 use super::add_dialog::OnAdded;
-use super::add_dialog_results::clear;
+use super::add_dialog_results::{clear, search_result_markup};
 use super::add_dialog_subscription::{baseline_for_import_choice, subscribe};
 
 #[derive(Clone)]
@@ -36,6 +36,7 @@ pub(super) fn append_heading(parent: &gtk4::Box, text: &str) {
 pub(super) fn append_candidate(
     parent: &gtk4::Box,
     candidate: Candidate,
+    query: Option<&str>,
     conn: &Rc<Db>,
     on_added: &OnAdded,
     auto_download_default: bool,
@@ -43,6 +44,8 @@ pub(super) fn append_candidate(
     let row = candidate_row(
         &candidate.title,
         &candidate.subtitle,
+        candidate.author.as_deref(),
+        query,
         candidate.kind,
         candidate.image_url.as_deref(),
         images_allowed(conn),
@@ -88,6 +91,8 @@ pub(super) fn append_preview(
     let row = candidate_row(
         &preview.title,
         &subtitle,
+        None,
+        None,
         preview.kind,
         preview.image_url.as_deref(),
         images_allowed(conn),
@@ -154,6 +159,8 @@ pub(super) fn images_allowed(conn: &Db) -> bool {
 pub(super) fn candidate_row(
     title: &str,
     subtitle: &str,
+    author: Option<&str>,
+    query: Option<&str>,
     kind: PodcastKind,
     image_url: Option<&str>,
     images_allowed: bool,
@@ -172,19 +179,25 @@ pub(super) fn candidate_row(
     row.append(image.widget());
     let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     labels.set_hexpand(true);
-    let title = gtk4::Label::new(Some(title));
-    title.set_xalign(0.0);
-    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    labels.append(&title);
-    let subtitle = gtk4::Label::new(Some(subtitle));
-    subtitle.add_css_class("caption");
-    subtitle.add_css_class("reprise-text-secondary");
-    subtitle.set_xalign(0.0);
+    let title_label = gtk4::Label::new(Some(title));
+    title_label.set_xalign(0.0);
+    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    let subtitle_label = gtk4::Label::new(Some(subtitle));
+    subtitle_label.add_css_class("caption");
+    subtitle_label.add_css_class("reprise-text-secondary");
+    subtitle_label.set_xalign(0.0);
+    if query.is_some() {
+        let foreground = crate::ui::track_list::match_highlight::accent_foreground(&title_label);
+        let markup = search_result_markup(title, subtitle, author, query, foreground.as_deref());
+        title_label.set_markup(&markup.title);
+        subtitle_label.set_markup(&markup.subtitle);
+    }
+    labels.append(&title_label);
     // SRC-8: the subtitle ellipsizes for the same reason the title does — a
     // long publisher name would otherwise raise the dialog's minimum width
     // and the window would change size between two searches.
-    subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    labels.append(&subtitle);
+    subtitle_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    labels.append(&subtitle_label);
     row.append(&labels);
     row
 }

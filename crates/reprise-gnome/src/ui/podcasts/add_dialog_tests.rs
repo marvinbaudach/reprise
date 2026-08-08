@@ -242,7 +242,7 @@ fn src_18_a_result_row_states_its_freshness_after_the_author() {
     gtk4::init().unwrap();
     let subtitle =
         super::super::add_dialog_results::rss_subtitle(Some("Ada"), Some(0), 14 * 86_400);
-    let row = candidate_row("Show", &subtitle, PodcastKind::Rss, None, false);
+    let row = candidate_row("Show", &subtitle, None, None, PodcastKind::Rss, None, false);
     let labels = row
         .first_child()
         .and_then(|child| child.next_sibling())
@@ -254,6 +254,50 @@ fn src_18_a_result_row_states_its_freshness_after_the_author() {
         .expect("result subtitle");
 
     assert_eq!(rendered.text(), "Ada · New 2 weeks ago");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_21_highlighted_title_keeps_its_end_ellipsis_and_pango_attributes() {
+    gtk4::init().unwrap();
+    let row = candidate_row(
+        "A matched title long enough to require ellipsizing inside the fixed-width dialog row",
+        "Publisher · New 1 week ago",
+        Some("Publisher"),
+        Some("matched"),
+        PodcastKind::Rss,
+        None,
+        false,
+    );
+    let window = gtk4::Window::builder()
+        .default_width(280)
+        .default_height(100)
+        .child(&row)
+        .build();
+    window.present();
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || quit.quit());
+    main_loop.run();
+
+    let labels = row
+        .first_child()
+        .and_then(|child| child.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("result labels");
+    let title = labels
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("result title");
+
+    assert_eq!(title.ellipsize(), gtk4::pango::EllipsizeMode::End);
+    assert!(title.uses_markup());
+    assert!(title.layout().is_ellipsized());
+    assert!(
+        title.layout().attributes().is_some(),
+        "Pango must retain the accent-bold span while ellipsizing the title"
+    );
+    window.close();
 }
 
 /// `SRC-8`: the dialog keeps one width. Neither a long show title nor a
@@ -268,11 +312,21 @@ fn src_8_a_long_result_row_never_widens_the_dialog() {
     let long = candidate_row(
         "Ein außergewöhnlich langer Podcasttitel, der die Dialogbreite deutlich überschreitet",
         "Herausgegeben von einem Sender mit einem ebenso langen Namen · 480 Folgen",
+        None,
+        None,
         PodcastKind::Rss,
         None,
         false,
     );
-    let short = candidate_row("Show", "Publisher", PodcastKind::Rss, None, false);
+    let short = candidate_row(
+        "Show",
+        "Publisher",
+        None,
+        None,
+        PodcastKind::Rss,
+        None,
+        false,
+    );
 
     let (long_minimum, _, _, _) = long.measure(gtk4::Orientation::Horizontal, -1);
     let (short_minimum, _, _, _) = short.measure(gtk4::Orientation::Horizontal, -1);
@@ -291,7 +345,15 @@ fn src_8_a_long_result_row_never_widens_the_dialog() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_5_result_rows_use_the_source_artwork_surface() {
     gtk4::init().unwrap();
-    let row = candidate_row("Show", "Publisher", PodcastKind::Rss, None, false);
+    let row = candidate_row(
+        "Show",
+        "Publisher",
+        None,
+        None,
+        PodcastKind::Rss,
+        None,
+        false,
+    );
     let image = row
         .first_child()
         .and_downcast::<gtk4::Stack>()
@@ -332,6 +394,8 @@ fn src_11_result_row_stays_on_the_fallback_when_images_are_not_allowed() {
     let row = candidate_row(
         "Show",
         "Publisher",
+        None,
+        None,
         PodcastKind::Rss,
         Some("https://images.test/net-1a-add-dialog.jpg"),
         false,
@@ -362,6 +426,7 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
             url: "https://example.test/new-feed".into(),
             identity_guids: Vec::new(),
         },
+        None,
         &conn,
         &on_added,
         false,

@@ -370,6 +370,7 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
     match dialog_provider(context.preferred_kind) {
         PodcastKind::Rss => {
             let query = terms.clone();
+            let empty_status = strings::source_nothing_found(&query);
             let task = one_shot_task::spawn("reprise-podcast-search", move || {
                 podcasts::itunes::search_in_country(&terms, &country)
                     .map(|mut rows| {
@@ -387,8 +388,9 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 context.conn,
                 context.on_added,
                 strings::text(strings::PODCAST_APPLE_RESULTS),
+                Some(query),
                 auto_download_default,
-                strings::source_nothing_found(&query),
+                empty_status,
             );
         }
         PodcastKind::Youtube => {
@@ -403,6 +405,7 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
             let ytdlp_path = config.as_ref().and_then(|value| value.ytdlp_path.clone());
             let youtube_browser = config.and_then(|value| value.youtube_browser);
             let query = terms.clone();
+            let empty_status = strings::source_nothing_found(&query);
             let task = one_shot_task::spawn("reprise-youtube-search", move || {
                 super::metadata_ytdlp(ytdlp_path.as_deref(), youtube_browser)
                     .search_channels(&terms)
@@ -418,8 +421,9 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 context.conn,
                 context.on_added,
                 strings::text(strings::PODCAST_YOUTUBE_RESULTS),
+                Some(query),
                 auto_download_default,
-                strings::source_nothing_found(&query),
+                empty_status,
             );
         }
     }
@@ -448,6 +452,7 @@ fn load_charts(request_generation: u64, country: String, context: &SearchContext
         context.conn,
         context.on_added,
         heading,
+        None,
         auto_download_default,
         empty_status,
     );
@@ -463,6 +468,7 @@ fn attach_candidates(
     conn: &Rc<Db>,
     on_added: &OnAdded,
     heading: String,
+    query: Option<String>,
     auto_download_default: bool,
     empty_status: String,
 ) {
@@ -496,7 +502,14 @@ fn attach_candidates(
                 }
                 append_heading(&results, &heading);
                 for candidate in rows {
-                    append_candidate(&results, candidate, &conn, &on_added, auto_download_default);
+                    append_candidate(
+                        &results,
+                        candidate,
+                        query.as_deref(),
+                        &conn,
+                        &on_added,
+                        auto_download_default,
+                    );
                 }
             }
             Err(error) => status.set_text(&error),

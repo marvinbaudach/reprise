@@ -63,6 +63,47 @@ pub(super) fn partition_dormant_search_results(
     });
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct SearchResultMarkup {
+    pub(super) title: String,
+    pub(super) subtitle: String,
+}
+
+/// `SRC-21`: highlight only provider fields that can explain a search match.
+/// The generated freshness suffix is escaped separately and never becomes a
+/// target even when it happens to contain the query.
+pub(super) fn search_result_markup(
+    title: &str,
+    subtitle: &str,
+    author: Option<&str>,
+    query: Option<&str>,
+    foreground: Option<&str>,
+) -> SearchResultMarkup {
+    let title = highlighted_or_escaped(title, query, foreground);
+    let subtitle = author
+        .filter(|author| !author.is_empty())
+        .and_then(|author| subtitle.strip_prefix(author).map(|suffix| (author, suffix)))
+        .map_or_else(
+            || gtk4::glib::markup_escape_text(subtitle).to_string(),
+            |(author, suffix)| {
+                format!(
+                    "{}{}",
+                    highlighted_or_escaped(author, query, foreground),
+                    gtk4::glib::markup_escape_text(suffix)
+                )
+            },
+        );
+    SearchResultMarkup { title, subtitle }
+}
+
+fn highlighted_or_escaped(text: &str, query: Option<&str>, foreground: Option<&str>) -> String {
+    query
+        .and_then(|query| {
+            crate::ui::track_list::match_highlight::highlight_markup(text, query, foreground)
+        })
+        .unwrap_or_else(|| gtk4::glib::markup_escape_text(text).to_string())
+}
+
 pub(super) fn rss_subtitle(author: Option<&str>, last_episode: Option<i64>, now: i64) -> String {
     author
         .filter(|author| !author.is_empty())
@@ -197,6 +238,48 @@ mod tests {
             ["Fresh A", "Undated", "Fresh B", "Dormant A", "Dormant B"],
             "the partition keeps Apple's order within both groups and treats no date as fresh"
         );
+    }
+
+    #[test]
+    fn src_21_search_accents_title_and_author_but_never_freshness() {
+        let freshness_only_match = search_result_markup(
+            "Weekly <News>",
+            "Sean & Sons · New 1 week ago",
+            Some("Sean & Sons"),
+            Some("week"),
+            Some("#2ec8a6"),
+        );
+        assert_eq!(
+            freshness_only_match.title,
+            "<span foreground=\"#2ec8a6\" weight=\"bold\">Week</span>ly &lt;News&gt;"
+        );
+        assert_eq!(
+            freshness_only_match.subtitle, "Sean &amp; Sons · New 1 week ago",
+            "a query found only in freshness must never mark that segment"
+        );
+
+        let author_match = search_result_markup(
+            "Weekly <News>",
+            "Sean & Sons · New 1 week ago",
+            Some("Sean & Sons"),
+            Some("sean"),
+            Some("#2ec8a6"),
+        );
+        assert_eq!(author_match.title, "Weekly &lt;News&gt;");
+        assert_eq!(
+            author_match.subtitle,
+            "<span foreground=\"#2ec8a6\" weight=\"bold\">Sean</span> &amp; Sons · New 1 week ago"
+        );
+
+        let chart = search_result_markup(
+            "Weekly <News>",
+            "Sean & Sons · New 1 week ago",
+            Some("Sean & Sons"),
+            None,
+            Some("#2ec8a6"),
+        );
+        assert_eq!(chart.title, "Weekly &lt;News&gt;");
+        assert_eq!(chart.subtitle, "Sean &amp; Sons · New 1 week ago");
     }
 
     #[test]

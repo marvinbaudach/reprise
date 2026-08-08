@@ -4888,6 +4888,15 @@ listening statistics.
   A result with no usable date stays in the fresh group, because absence is
   not evidence that a show is dormant. This applies only to text search;
   country charts keep their chart order untouched.
+- **SRC-21** [active] [gtk] — **Add Podcast search results make their match
+  visible.** Whenever a text query produced the result list, the query is
+  accent-bold inside each matching title and author, case-insensitively and
+  mid-word, reusing `FIL-5` and `POD-25`'s Pango-escaped treatment. The RSS
+  subtitle is marked from its parts: only the author can be highlighted; the
+  separator and `SRC-18` freshness clause are escaped but never marked, even
+  when the query occurs there. A country chart has no query and therefore no
+  highlighting. The title keeps `EllipsizeMode::End`, so long provider text
+  cannot widen the dialog (`SRC-8`).
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
