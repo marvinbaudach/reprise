@@ -26,7 +26,7 @@ pub(super) struct Preview {
 }
 
 pub(super) fn append_heading(parent: &gtk4::Box, text: &str) {
-    let label = gtk4::Label::new(Some(&strings::text(text)));
+    let label = gtk4::Label::new(Some(text));
     label.add_css_class("caption");
     label.add_css_class("reprise-text-secondary");
     label.set_xalign(0.0);

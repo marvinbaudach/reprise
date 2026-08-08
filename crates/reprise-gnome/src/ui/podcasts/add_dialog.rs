@@ -16,6 +16,7 @@ use reprise_core::podcasts::{self, PodcastKind};
 use crate::ui::one_shot_task;
 use crate::ui::strings;
 
+use super::add_dialog_chips::{chip_for, dialog_country, AddDialogChip};
 use super::add_dialog_input::{
     classify_input, dialog_hint, dialog_status_hint, dialog_title, primary_action_for_connectivity,
     submit_refusal, AddInput,
@@ -56,9 +57,10 @@ struct SearchContext<'a> {
 }
 
 struct AddDialogSurface {
-    /// `SRC-15`: absent when the library has played nothing with a genre —
-    /// the row is then not built at all rather than standing empty.
-    library_chip: Option<gtk4::Button>,
+    /// `SRC-15a` / `SRC-19`: absent when the current suggestion is not useful
+    /// — no played YouTube genre, or an offline Apple dialog.
+    suggestion_chip: Option<gtk4::Button>,
+    chip_action: Option<AddDialogChip>,
     dialog: adw::Dialog,
     entry: gtk4::SearchEntry,
     status: gtk4::Label,
@@ -70,6 +72,7 @@ struct AddDialogSurface {
 fn build_surface(
     kind: PodcastKind,
     connectivity: Connectivity,
+    country: &str,
     library_genre: Option<&str>,
 ) -> AddDialogSurface {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
@@ -82,16 +85,11 @@ fn build_surface(
         .placeholder_text(strings::text(dialog_hint(kind)))
         .build();
     content.append(&entry);
-    // `SRC-15`: one suggestion from the user's own library, in the same flat
-    // pill shape the radio dialog uses, so an empty search field is not the
-    // only way in. Built only when the library has a genre to suggest — an
-    // empty chip row would be worse than none.
-    let library_chip = library_genre.map(|genre| {
-        let label = match kind {
-            PodcastKind::Rss => strings::podcast_chip_genre(genre),
-            PodcastKind::Youtube => strings::youtube_chip_genre(genre),
-        };
-        let chip = gtk4::Button::with_label(&label);
+    // `SRC-15a` / `SRC-19`: the one suggestion slot is a library-genre query
+    // for YouTube and the country chart for Apple Podcasts.
+    let chip_action = chip_for(kind, connectivity, country, library_genre);
+    let suggestion_chip = chip_action.as_ref().map(|action| {
+        let chip = gtk4::Button::with_label(&action.label());
         chip.add_css_class("pill");
         // Left-aligned and only as wide as its text, like the radio chips —
         // a full-width button would read as a second primary action.
@@ -168,7 +166,8 @@ fn build_surface(
         .build();
 
     AddDialogSurface {
-        library_chip,
+        suggestion_chip,
+        chip_action,
         dialog,
         entry,
         status,
@@ -187,20 +186,29 @@ pub(super) fn present(
 ) {
     let conn = conn.clone();
     let on_added: OnAdded = Rc::new(on_added);
-    // `SRC-15`: the same library fact the radio chip reads, so both dialogs
-    // suggest the same genre instead of each inventing a rule of its own.
-    // This dialog is rebuilt on every open, so the suggestion is always
-    // current without a refresh path.
-    let library_genre = reprise_core::library::taste::top_genre(&conn).unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read the library's top genre for the podcast chip");
-        None
-    });
+    let locale = std::env::var("LC_ALL")
+        .or_else(|_| std::env::var("LANG"))
+        .unwrap_or_else(|_| "C".into());
+    let location = reprise_core::location::app_location(&conn).ok().flatten();
+    let country = dialog_country(location.as_ref(), &locale);
+    // `SRC-15a`: YouTube keeps the same library fact the radio chip reads.
+    // Apple Podcasts spends the slot on the country chart instead.
+    let library_genre = (preferred_kind == PodcastKind::Youtube)
+        .then(|| reprise_core::library::taste::top_genre(&conn))
+        .transpose()
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read the library's top genre for the YouTube chip");
+            None
+        })
+        .flatten();
     let surface = build_surface(
         preferred_kind,
         connectivity,
+        &country,
         library_genre.as_ref().map(|genre| genre.name.as_str()),
     );
-    let library_chip = surface.library_chip;
+    let suggestion_chip = surface.suggestion_chip;
+    let chip_action = surface.chip_action;
     let dialog = surface.dialog;
     let entry = surface.entry;
     let status = surface.status;
@@ -214,6 +222,7 @@ pub(super) fn present(
         let status = status.clone();
         let generation = generation.clone();
         let on_added = on_added.clone();
+        let country = country.clone();
         move |input: String| {
             clear(&results);
             let next = generation.get().wrapping_add(1);
@@ -233,6 +242,7 @@ pub(super) fn present(
                     search(
                         next,
                         terms,
+                        country.clone(),
                         &SearchContext {
                             generation: &generation,
                             status: &status,
@@ -282,18 +292,46 @@ pub(super) fn present(
     });
     let submit_on_activate = submit.clone();
     entry.connect_activate(move |entry| submit_on_activate(entry.text().to_string()));
-    if let (Some(chip), Some(genre)) = (library_chip, library_genre) {
-        // `SRC-15`: the chip fills the field it searches with, so the run is
-        // visible, editable and repeatable — never a hidden query the user
-        // cannot see or amend.
-        let submit_on_chip = submit.clone();
-        let entry_for_chip = entry.downgrade();
-        chip.connect_clicked(move |_| {
-            if let Some(entry) = entry_for_chip.upgrade() {
-                entry.set_text(&genre.name);
+    if let (Some(chip), Some(action)) = (suggestion_chip, chip_action) {
+        match action {
+            AddDialogChip::Charts { country } => {
+                let generation = generation.clone();
+                let status = status.clone();
+                let results = results.clone();
+                let conn = conn.clone();
+                let on_added = on_added.clone();
+                chip.connect_clicked(move |_| {
+                    clear(&results);
+                    let next = generation.get().wrapping_add(1);
+                    generation.set(next);
+                    status.set_text(&strings::text(strings::PODCAST_SEARCHING));
+                    load_charts(
+                        next,
+                        country.clone(),
+                        &SearchContext {
+                            generation: &generation,
+                            status: &status,
+                            results: &results,
+                            conn: &conn,
+                            on_added: &on_added,
+                            preferred_kind,
+                        },
+                    );
+                });
             }
-            submit_on_chip(genre.name.clone());
-        });
+            AddDialogChip::LibraryGenre { genre } => {
+                // `SRC-15a`: a library chip fills the field it searches with,
+                // keeping the run visible, editable and repeatable.
+                let submit_on_chip = submit.clone();
+                let entry_for_chip = entry.downgrade();
+                chip.connect_clicked(move |_| {
+                    if let Some(entry) = entry_for_chip.upgrade() {
+                        entry.set_text(&genre);
+                    }
+                    submit_on_chip(genre.clone());
+                });
+            }
+        }
     }
     let submit_on_click = submit.clone();
     let entry_for_click = entry.downgrade();
@@ -312,12 +350,9 @@ pub(super) fn present(
     entry.grab_focus();
 }
 
-fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
+fn search(request_generation: u64, terms: String, country: String, context: &SearchContext<'_>) {
     let config = podcasts::config::load(context.conn).ok();
     let auto_download_default = configured_auto_download_default(config.as_ref());
-    let locale = std::env::var("LC_ALL")
-        .or_else(|_| std::env::var("LANG"))
-        .unwrap_or_else(|_| "C".into());
     // SRC-6: exactly one provider is queried — the one this dialog belongs to.
     let section = result_section();
     context.results.append(&section);
@@ -326,7 +361,7 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
         PodcastKind::Rss => {
             let query = terms.clone();
             let task = one_shot_task::spawn("reprise-podcast-search", move || {
-                podcasts::itunes::search(&terms, &locale)
+                podcasts::itunes::search_in_country(&terms, &country)
                     .map(|rows| rows.into_iter().map(rss_candidate).collect::<Vec<_>>())
                     .map_err(|error| preview_error(&error))
             });
@@ -338,7 +373,7 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
                 &section,
                 context.conn,
                 context.on_added,
-                strings::PODCAST_APPLE_RESULTS,
+                strings::text(strings::PODCAST_APPLE_RESULTS),
                 auto_download_default,
                 query,
             );
@@ -369,12 +404,38 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
                 &section,
                 context.conn,
                 context.on_added,
-                strings::PODCAST_YOUTUBE_RESULTS,
+                strings::text(strings::PODCAST_YOUTUBE_RESULTS),
                 auto_download_default,
                 query,
             );
         }
     }
+}
+
+fn load_charts(request_generation: u64, country: String, context: &SearchContext<'_>) {
+    let config = podcasts::config::load(context.conn).ok();
+    let auto_download_default = configured_auto_download_default(config.as_ref());
+    let section = result_section();
+    context.results.append(&section);
+    let heading = strings::podcast_charts_heading(&country);
+    let query = strings::podcast_chip_popular_in_country(&country);
+    let task = one_shot_task::spawn("reprise-podcast-charts", move || {
+        podcasts::itunes_charts::top_podcasts(&country)
+            .map(|rows| rows.into_iter().map(rss_candidate).collect::<Vec<_>>())
+            .map_err(|error| preview_error(&error))
+    });
+    attach_candidates(
+        task,
+        request_generation,
+        context.generation,
+        context.status,
+        &section,
+        context.conn,
+        context.on_added,
+        heading,
+        auto_download_default,
+        query,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -386,7 +447,7 @@ fn attach_candidates(
     results: &gtk4::Box,
     conn: &Rc<Db>,
     on_added: &OnAdded,
-    heading: &'static str,
+    heading: String,
     auto_download_default: bool,
     query: String,
 ) {
@@ -418,7 +479,7 @@ fn attach_candidates(
                     status.set_text(&strings::source_nothing_found(&query));
                     return;
                 }
-                append_heading(&results, heading);
+                append_heading(&results, &heading);
                 for candidate in rows {
                     append_candidate(&results, candidate, &conn, &on_added, auto_download_default);
                 }

@@ -19,7 +19,7 @@ fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_6_the_foreign_url_hint_appears_while_typing() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", None);
 
     surface.entry.set_text("https://www.youtube.com/@example");
     assert_eq!(
@@ -48,7 +48,7 @@ fn src_6_the_foreign_url_hint_appears_while_typing() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline, None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline, "DE", None);
 
     assert_eq!(
         surface.status.text().as_str(),
@@ -81,7 +81,7 @@ fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_8_add_dialog_results_scroll_vertically_only() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", None);
     let scroller = surface
         .dialog
         .child()
@@ -108,7 +108,7 @@ fn src_8_add_dialog_results_scroll_vertically_only() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", None);
     let cancel = strings::text(strings::PODCAST_CANCEL);
     let search = strings::text(strings::PODCAST_SEARCH);
     let preview = strings::text(strings::PODCAST_PREVIEW);
@@ -123,38 +123,85 @@ fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     assert!(surface.primary.is_sensitive());
 }
 
-/// `SRC-15`: the add dialog offers one suggestion drawn from the library —
-/// and only when the library has one. A library that has played nothing with
-/// a genre gets no chip rather than an empty pill.
+/// `SRC-15a`: the library-genre chip belongs to YouTube, where the genre is a
+/// real query. The Apple dialog spends its one chip slot on `SRC-19` instead.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_15_the_library_chip_appears_only_with_a_genre_to_suggest() {
+fn src_15a_the_library_chip_appears_only_with_a_genre_to_suggest() {
     gtk4::init().unwrap();
 
-    let without = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    let without = build_surface(PodcastKind::Youtube, Connectivity::Online, "DE", None);
     assert!(
-        without.library_chip.is_none(),
+        without.suggestion_chip.is_none(),
         "no played genre must mean no chip at all"
     );
 
-    let with = build_surface(PodcastKind::Rss, Connectivity::Online, Some("Metal"));
-    let chip = with.library_chip.expect("a played genre must offer a chip");
-    assert_eq!(
-        chip.label().as_deref(),
-        Some(strings::podcast_chip_genre("Metal").as_str())
+    let youtube = build_surface(
+        PodcastKind::Youtube,
+        Connectivity::Online,
+        "DE",
+        Some("Metal"),
     );
-    assert!(chip.has_css_class("pill"));
-
-    let youtube = build_surface(PodcastKind::Youtube, Connectivity::Online, Some("Metal"));
     assert_eq!(
         youtube
-            .library_chip
-            .expect("the YouTube page carries the same chip")
+            .suggestion_chip
+            .expect("the YouTube page carries the library chip")
             .label()
             .as_deref(),
         Some(strings::youtube_chip_genre("Metal").as_str()),
         "the YouTube page finds channels, not podcasts, and says so"
     );
+
+    let apple = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", Some("Metal"));
+    let label = apple
+        .suggestion_chip
+        .expect("the Apple page carries its charts chip")
+        .label()
+        .expect("chip label");
+    assert_eq!(label, strings::podcast_chip_popular_in_country("DE"));
+    assert_ne!(label, strings::podcast_chip_genre("Metal"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_19_the_apple_dialog_carries_the_charts_chip_and_the_entry_stays_empty() {
+    gtk4::init().unwrap();
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", Some("Metal"));
+    let chip = surface
+        .suggestion_chip
+        .expect("an online Apple dialog must carry the charts chip");
+
+    assert_eq!(
+        chip.label().as_deref(),
+        Some(strings::podcast_chip_popular_in_country("DE").as_str())
+    );
+    assert!(chip.has_css_class("pill"));
+    assert!(surface.entry.text().is_empty());
+    chip.emit_clicked();
+    assert!(
+        surface.entry.text().is_empty(),
+        "a chart is not a hidden search term"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_18_a_result_row_states_its_freshness_after_the_author() {
+    gtk4::init().unwrap();
+    let subtitle =
+        super::super::add_dialog_results::rss_subtitle(Some("Ada"), Some(0), 14 * 86_400);
+    let row = candidate_row("Show", &subtitle, PodcastKind::Rss, None, false);
+    let labels = row
+        .first_child()
+        .and_then(|child| child.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("result labels");
+    let rendered = labels
+        .last_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("result subtitle");
+
+    assert_eq!(rendered.text(), "Ada · New 2 weeks ago");
 }
 
 /// `SRC-8`: the dialog keeps one width. Neither a long show title nor a
@@ -251,7 +298,7 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let on_added: OnAdded = Rc::new(|_| {});
-    append_heading(&parent, strings::PODCAST_APPLE_RESULTS);
+    append_heading(&parent, &strings::text(strings::PODCAST_APPLE_RESULTS));
     append_candidate(
         &parent,
         Candidate {
