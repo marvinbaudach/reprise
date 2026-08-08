@@ -72,6 +72,7 @@ struct AddDialogSurface {
 fn build_surface(
     kind: PodcastKind,
     connectivity: Connectivity,
+    network_allowed: bool,
     country: &str,
     library_genre: Option<&str>,
 ) -> AddDialogSurface {
@@ -87,7 +88,7 @@ fn build_surface(
     content.append(&entry);
     // `SRC-15a` / `SRC-19`: the one suggestion slot is a library-genre query
     // for YouTube and the country chart for Apple Podcasts.
-    let chip_action = chip_for(kind, connectivity, country, library_genre);
+    let chip_action = chip_for(kind, connectivity, network_allowed, country, library_genre);
     let suggestion_chip = chip_action.as_ref().map(|action| {
         let chip = gtk4::Button::with_label(&action.label());
         chip.add_css_class("pill");
@@ -201,9 +202,16 @@ pub(super) fn present(
             None
         })
         .flatten();
+    // `SRC-19` / `NET-1a`: the chip is a network action, so it needs the same
+    // consent `submit_refusal` demands of a search — reachability alone is not
+    // permission. A failed lookup counts as "not allowed", the safe direction
+    // for a privacy promise.
+    let network_allowed =
+        podcasts::config::source_network_allowed(&conn, preferred_kind).unwrap_or(false);
     let surface = build_surface(
         preferred_kind,
         connectivity,
+        network_allowed,
         &country,
         library_genre.as_ref().map(|genre| genre.name.as_str()),
     );

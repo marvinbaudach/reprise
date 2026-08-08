@@ -32,17 +32,28 @@ pub(super) fn dialog_country(location: Option<&AppLocation>, locale: &str) -> St
         )
 }
 
+/// `network_allowed` is `podcasts::config::source_network_allowed` for this
+/// dialog's kind, read by the caller — `SRC-19`'s chip is a network action, so
+/// it needs `NET-1a`'s consent as well as `NET-3`'s reachability, and
+/// `Connectivity::Online` carries only the latter. Passing the fact in keeps
+/// this decision pure, and therefore testable without a display or a DB.
 pub(super) fn chip_for(
     kind: PodcastKind,
     connectivity: Connectivity,
+    network_allowed: bool,
     country: &str,
     library_genre: Option<&str>,
 ) -> Option<AddDialogChip> {
     match kind {
-        PodcastKind::Rss if connectivity == Connectivity::Online => Some(AddDialogChip::Charts {
-            country: country.to_owned(),
-        }),
+        PodcastKind::Rss if connectivity == Connectivity::Online && network_allowed => {
+            Some(AddDialogChip::Charts {
+                country: country.to_owned(),
+            })
+        }
         PodcastKind::Rss => None,
+        // `SRC-15a`: the library chip fills the entry and submits, so a
+        // refused source answers through `submit_refusal` — it names the
+        // reason instead of silently issuing the request the chart chip would.
         PodcastKind::Youtube => library_genre.map(|genre| AddDialogChip::LibraryGenre {
             genre: genre.to_owned(),
         }),
@@ -84,7 +95,13 @@ mod tests {
     #[test]
     fn src_19_the_apple_dialog_offers_the_charts_chip_and_the_youtube_dialog_the_genre() {
         assert_eq!(
-            chip_for(PodcastKind::Rss, Connectivity::Online, "DE", Some("Metal")),
+            chip_for(
+                PodcastKind::Rss,
+                Connectivity::Online,
+                true,
+                "DE",
+                Some("Metal")
+            ),
             Some(AddDialogChip::Charts {
                 country: "DE".to_owned()
             })
@@ -93,6 +110,7 @@ mod tests {
             chip_for(
                 PodcastKind::Youtube,
                 Connectivity::Online,
+                true,
                 "DE",
                 Some("Metal")
             ),
@@ -101,7 +119,26 @@ mod tests {
             })
         );
         assert_eq!(
-            chip_for(PodcastKind::Youtube, Connectivity::Online, "DE", None),
+            chip_for(PodcastKind::Youtube, Connectivity::Online, true, "DE", None),
+            None
+        );
+    }
+
+    /// `SRC-19` / `NET-1a`: reachability is not consent. With podcast online
+    /// sources switched off the chip must be absent for the same reason it is
+    /// absent offline — activating it would issue two requests to Apple that
+    /// the user has refused. `Connectivity::Online` says only that a network
+    /// exists; the caller supplies the consent half.
+    #[test]
+    fn src_19_the_charts_chip_is_absent_without_network_consent() {
+        assert_eq!(
+            chip_for(
+                PodcastKind::Rss,
+                Connectivity::Online,
+                false,
+                "DE",
+                Some("Metal")
+            ),
             None
         );
     }
@@ -109,13 +146,20 @@ mod tests {
     #[test]
     fn src_19_the_charts_chip_is_absent_offline() {
         assert_eq!(
-            chip_for(PodcastKind::Rss, Connectivity::Offline, "DE", Some("Metal")),
+            chip_for(
+                PodcastKind::Rss,
+                Connectivity::Offline,
+                true,
+                "DE",
+                Some("Metal")
+            ),
             None
         );
         assert_eq!(
             chip_for(
                 PodcastKind::Youtube,
                 Connectivity::Offline,
+                true,
                 "DE",
                 Some("Metal")
             ),

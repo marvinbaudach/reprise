@@ -4864,7 +4864,12 @@ listening statistics.
   feed's ids plus **one** batched lookup, restored to chart order, with ids the
   lookup drops falling out silently rather than leaving a hole. Offline the
   chip is **absent**, for the same reason search is (`NET-3` point 4): it is a
-  network action, and a pill that only reports failure is worse than none.
+  network action, and a pill that only reports failure is worse than none. It
+  is equally absent when podcast online sources are switched off (`NET-1a`) —
+  reachability is not consent, and activating it would issue the chart and
+  lookup requests a refused source is promised never to make. Both halves are
+  read once, when the dialog is built, and a failed consent lookup counts as
+  refused.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a

@@ -19,7 +19,7 @@ fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_6_the_foreign_url_hint_appears_while_typing() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, true, "DE", None);
 
     surface.entry.set_text("https://www.youtube.com/@example");
     assert_eq!(
@@ -48,7 +48,7 @@ fn src_6_the_foreign_url_hint_appears_while_typing() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline, "DE", None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline, true, "DE", None);
 
     assert_eq!(
         surface.status.text().as_str(),
@@ -81,7 +81,7 @@ fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_8_add_dialog_results_scroll_vertically_only() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, true, "DE", None);
     let scroller = surface
         .dialog
         .child()
@@ -108,7 +108,7 @@ fn src_8_add_dialog_results_scroll_vertically_only() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, true, "DE", None);
     let cancel = strings::text(strings::PODCAST_CANCEL);
     let search = strings::text(strings::PODCAST_SEARCH);
     let preview = strings::text(strings::PODCAST_PREVIEW);
@@ -130,7 +130,7 @@ fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
 fn src_15a_the_library_chip_appears_only_with_a_genre_to_suggest() {
     gtk4::init().unwrap();
 
-    let without = build_surface(PodcastKind::Youtube, Connectivity::Online, "DE", None);
+    let without = build_surface(PodcastKind::Youtube, Connectivity::Online, true, "DE", None);
     assert!(
         without.suggestion_chip.is_none(),
         "no played genre must mean no chip at all"
@@ -139,6 +139,7 @@ fn src_15a_the_library_chip_appears_only_with_a_genre_to_suggest() {
     let youtube = build_surface(
         PodcastKind::Youtube,
         Connectivity::Online,
+        true,
         "DE",
         Some("Metal"),
     );
@@ -152,7 +153,13 @@ fn src_15a_the_library_chip_appears_only_with_a_genre_to_suggest() {
         "the YouTube page finds channels, not podcasts, and says so"
     );
 
-    let apple = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", Some("Metal"));
+    let apple = build_surface(
+        PodcastKind::Rss,
+        Connectivity::Online,
+        true,
+        "DE",
+        Some("Metal"),
+    );
     let label = apple
         .suggestion_chip
         .expect("the Apple page carries its charts chip")
@@ -166,7 +173,13 @@ fn src_15a_the_library_chip_appears_only_with_a_genre_to_suggest() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_19_the_apple_dialog_carries_the_charts_chip_and_the_entry_stays_empty() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, "DE", Some("Metal"));
+    let surface = build_surface(
+        PodcastKind::Rss,
+        Connectivity::Online,
+        true,
+        "DE",
+        Some("Metal"),
+    );
     let chip = surface
         .suggestion_chip
         .expect("an online Apple dialog must carry the charts chip");
@@ -182,6 +195,30 @@ fn src_19_the_apple_dialog_carries_the_charts_chip_and_the_entry_stays_empty() {
         surface.entry.text().is_empty(),
         "a chart is not a hidden search term"
     );
+}
+
+/// `SRC-19` / `NET-1a`: the widget-level half of the consent gate. The pure
+/// decision is proven by `add_dialog_chips`'
+/// `src_19_the_charts_chip_is_absent_without_network_consent`; this one proves
+/// the surface asks — with podcast online sources off there is no pill to
+/// click, so the two Apple requests can never be issued.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_19_the_charts_chip_is_absent_when_online_sources_are_off() {
+    gtk4::init().unwrap();
+    let surface = build_surface(
+        PodcastKind::Rss,
+        Connectivity::Online,
+        false,
+        "DE",
+        Some("Metal"),
+    );
+
+    assert!(
+        surface.suggestion_chip.is_none(),
+        "a refused source must not offer a pill that issues its requests anyway"
+    );
+    assert!(surface.chip_action.is_none());
 }
 
 #[test]
