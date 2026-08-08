@@ -273,6 +273,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let nav_history = nav_history.clone();
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
+            let content_nav = content_nav.clone();
             let content_stack = content_stack.clone();
             let window_title = window_title.clone();
             let active_content_focus = active_content_focus.clone();
@@ -291,7 +292,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &place,
                     &sidebar,
                     &track_list,
-                    &content_stack,
+                    super::library_shell::ContentPages::new(&content_nav, &content_stack),
                     &window_title,
                     &active_content_focus,
                     "nav back",
@@ -309,6 +310,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let nav_history = nav_history.clone();
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
+            let content_nav = content_nav.clone();
             let content_stack = content_stack.clone();
             let window_title = window_title.clone();
             let active_content_focus = active_content_focus.clone();
@@ -327,7 +329,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &place,
                     &sidebar,
                     &track_list,
-                    &content_stack,
+                    super::library_shell::ContentPages::new(&content_nav, &content_stack),
                     &window_title,
                     &active_content_focus,
                     "nav forward",
@@ -466,6 +468,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         youtube_view,
         radio_view,
         conn,
+        content_nav,
         content_stack,
         window_title,
         show_content_if_collapsed,
@@ -605,7 +608,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         &crate::ui::nav_history::NavPlace::browser(startup_place),
         sidebar,
         track_list,
-        content_stack,
+        super::library_shell::ContentPages::new(content_nav, content_stack),
         window_title,
         &active_content_focus,
         "session restore",

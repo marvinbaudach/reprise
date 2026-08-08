@@ -317,10 +317,24 @@ pub fn build(
 
     let active_content_focus =
         super::library_shell::ActiveContentFocus::new(&content_stack, &track_list);
+    let library_shell = super::library_shell::build(
+        &window,
+        conn,
+        &sidebar,
+        &toolbar_view,
+        &track_list,
+        player.as_ref(),
+        &artist_news,
+    );
+    let sidebar_page = library_shell.sidebar_page;
+    let split_view = library_shell.split_view;
+    let content_nav = library_shell.content_nav;
+    let info_panel = library_shell.info_panel;
     let metadata_navigator = super::metadata_navigation::MetadataNavigator::new(
         nav_history.clone(),
         &sidebar,
         &track_list,
+        content_nav.clone(),
         content_stack.clone(),
         window_title.clone(),
         active_content_focus.clone(),
@@ -410,34 +424,13 @@ pub fn build(
         metadata_navigator: &metadata_navigator,
     });
 
-    let library_shell = super::library_shell::build(
-        &window,
-        conn,
-        &sidebar,
-        &toolbar_view,
-        &track_list,
-        player.as_ref(),
-        &artist_news,
+    let open_device = super::window_navigation::open_device_callback(
+        &content_nav,
+        &content_stack,
+        &window_title,
+        &device_sync,
+        &split_view,
     );
-    let sidebar_page = library_shell.sidebar_page;
-    let split_view = library_shell.split_view;
-    let content_nav = library_shell.content_nav;
-    let info_panel = library_shell.info_panel;
-    let open_device: super::device_sync_launcher::OpenDevice = Rc::new({
-        let content_stack = content_stack.clone();
-        let window_title = window_title.clone();
-        let runtime = device_sync.clone();
-        let split_view = split_view.clone();
-        move |device_id, _| {
-            if !super::device_sync_page::open(&content_stack, &window_title, &device_id, &runtime) {
-                tracing::warn!(device_id, "could not open Android sync page");
-                return;
-            }
-            if split_view.is_collapsed() {
-                split_view.set_show_sidebar(false);
-            }
-        }
-    });
     sidebar.bind_device_sync(&device_sync, open_device.clone());
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);

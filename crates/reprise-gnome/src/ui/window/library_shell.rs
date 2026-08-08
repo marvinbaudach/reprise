@@ -163,6 +163,7 @@ pub(in crate::ui) fn wire_source_routing(
     youtube_view: &Rc<crate::ui::podcasts::PodcastsView>,
     radio_view: &Rc<crate::ui::radio::RadioView>,
     conn: &Rc<Db>,
+    content_navigation: &adw::NavigationView,
     content_stack: &gtk4::Stack,
     source_title: &adw::WindowTitle,
     show_content: Rc<dyn Fn()>,
@@ -170,6 +171,7 @@ pub(in crate::ui) fn wire_source_routing(
     section_search: &Rc<super::section_search::SectionSearch>,
 ) {
     let track_list = track_list.clone();
+    let content_navigation = content_navigation.clone();
     let content_stack = content_stack.clone();
     let source_title = source_title.clone();
     let stats_view = Rc::new(stats_view);
@@ -217,26 +219,54 @@ pub(in crate::ui) fn wire_source_routing(
         // the restore land in the section it belongs to.
         section_search.activate_source(&source, &source_name);
         if matches!(source, ViewSource::MyStats) {
-            super::content_stack::show_page(&content_stack, "stats");
+            super::window_navigation::show_content_page(
+                &content_navigation,
+                &content_stack,
+                "stats",
+            );
             stats_view.prepare_entrance();
             stats_view.refresh(&conn);
         } else if matches!(source, ViewSource::Concerts) {
             concerts_view.refresh();
-            super::content_stack::show_page(&content_stack, "concerts");
+            super::window_navigation::show_content_page(
+                &content_navigation,
+                &content_stack,
+                "concerts",
+            );
         } else if matches!(source, ViewSource::Releases) {
             releases_view.refresh();
-            super::content_stack::show_page(&content_stack, "releases");
+            super::window_navigation::show_content_page(
+                &content_navigation,
+                &content_stack,
+                "releases",
+            );
         } else if matches!(source, ViewSource::Podcasts) {
             podcasts_view.refresh();
-            super::content_stack::show_page(&content_stack, "podcasts");
+            super::window_navigation::show_content_page(
+                &content_navigation,
+                &content_stack,
+                "podcasts",
+            );
         } else if matches!(source, ViewSource::Youtube) {
             youtube_view.refresh();
-            super::content_stack::show_page(&content_stack, "youtube");
+            super::window_navigation::show_content_page(
+                &content_navigation,
+                &content_stack,
+                "youtube",
+            );
         } else if matches!(source, ViewSource::Radio) {
             radio_view.refresh();
-            super::content_stack::show_page(&content_stack, "radio");
+            super::window_navigation::show_content_page(
+                &content_navigation,
+                &content_stack,
+                "radio",
+            );
         } else {
-            super::content_stack::show_page(&content_stack, "library");
+            super::window_navigation::show_content_page(
+                &content_navigation,
+                &content_stack,
+                "library",
+            );
             track_list.set_source(source.clone());
         }
         source_title.set_title(&source_name);
@@ -273,11 +303,27 @@ fn build_split_view(
 /// the now-playing jump. Row-backed sources go through the sidebar to keep
 /// highlight/title/adaptive navigation in sync. Album, Artist, and Genre scopes have
 /// no sidebar row, so they route directly into the same TrackList.
+#[derive(Clone, Copy)]
+pub(in crate::ui) struct ContentPages<'a> {
+    navigation: &'a adw::NavigationView,
+    stack: &'a gtk4::Stack,
+}
+
+impl<'a> ContentPages<'a> {
+    pub(in crate::ui) fn new(navigation: &'a adw::NavigationView, stack: &'a gtk4::Stack) -> Self {
+        Self { navigation, stack }
+    }
+
+    fn show(self, name: &str) {
+        super::window_navigation::show_content_page(self.navigation, self.stack, name);
+    }
+}
+
 pub(in crate::ui) fn route_to_place(
     place: &NavPlace,
     sidebar: &Rc<Sidebar>,
     track_list: &Rc<TrackList>,
-    content_stack: &gtk4::Stack,
+    content_pages: ContentPages<'_>,
     source_title: &adw::WindowTitle,
     active_content_focus: &ActiveContentFocus,
     reason: &str,
@@ -290,7 +336,7 @@ pub(in crate::ui) fn route_to_place(
     let source = place.view_source();
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_) => {
-            super::content_stack::show_page(content_stack, "library");
+            content_pages.show("library");
             let _ = track_list.restore_browser_place(place.browser_place());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
             source_title.set_title(&scope_title(&source));
