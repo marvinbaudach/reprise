@@ -402,8 +402,8 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         }
     }
 
-    // SEARCH-8: one query per section. Built before the routing below so the
-    // first route already lands in the right scope.
+    // SEARCH-8a: one transient query for the active view. Built before the
+    // routing below so the first route already lands in the right scope.
     let section_search =
         super::section_search::SectionSearch::new(search_entry, search_bar, search_toggle, window);
     super::section_search_wiring::install(
@@ -509,7 +509,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
 
     let search_restore_guard = super::view_session::new_search_restore_guard();
     {
-        // SEARCH-8: the track list answers to the header entry only while a
+        // SEARCH-8a: the track list answers to the header entry only while a
         // track section is the visible one. A query typed in Podcasts must
         // not silently re-filter Music behind the user's back.
         let section_search = section_search.clone();
@@ -541,7 +541,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         search_entry,
         super::shortcuts::ShortcutHooks {
             focus_active_content,
-            // SEARCH-8: Ctrl+F is a no-op where the visible section has no
+            // SEARCH-8a: Ctrl+F is a no-op where the visible section has no
             // list to filter.
             search_available: {
                 let section_search = section_search.clone();

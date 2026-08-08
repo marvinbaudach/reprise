@@ -16,7 +16,7 @@ use reprise_view::search_scope::SearchScope;
 
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 type OnChanged = Rc<dyn Fn(PodcastFilter)>;
-/// SEARCH-8: fired when the bar itself changes the query — the chip's ×, or a
+/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×, or a
 /// jump that had to relax the search to reach its episode. The shell listens
 /// so the header entry stops showing a query the view no longer applies.
 type OnQueryChanged = Rc<dyn Fn(&str)>;
@@ -143,7 +143,7 @@ impl PodcastsFilterBar {
         *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// SEARCH-8: the section's query, handed in by the shell as the user
+    /// SEARCH-8a: the view's query, handed in by the shell as the user
     /// types. A no-op for an unchanged query so a re-entry into the section
     /// does not re-render the whole list.
     pub(super) fn set_query(self: &Rc<Self>, query: &str) {
@@ -205,7 +205,7 @@ impl PodcastsFilterBar {
         self.clear_selection.set_visible(selected_count > 0);
     }
 
-    /// FIL-2 / SEARCH-8: "Clear all" drops this section's query together with
+    /// FIL-2 / SEARCH-8a: "Clear all" drops this view's query together with
     /// its facets, and nothing outside this section.
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.apply(PodcastFilter::default());
@@ -225,7 +225,7 @@ impl PodcastsFilterBar {
     /// must not be echoed, or the two would ping-pong.
     fn apply_internal(self: &Rc<Self>, filter: PodcastFilter, announce_query: bool) {
         let previous = self.filter.replace(filter.clone());
-        // SEARCH-8: only the facets are persisted, and only when they
+        // SEARCH-8a: only the facets are persisted, and only when they
         // actually changed — every keystroke in the header search comes
         // through here, and none of them is a settings write.
         //
@@ -377,13 +377,13 @@ impl PodcastsFilterBar {
 mod tests {
     use super::*;
 
-    /// UX SEARCH-8: typing in the header is not a settings write. The query
+    /// UX SEARCH-8a: typing in the header is not a settings write. The query
     /// leaves the persisted facets untouched, and — the point of the
     /// separation — applying it is not gated on a write succeeding, so a
     /// busy database can never eat a keystroke.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_8_a_query_neither_persists_nor_depends_on_persistence() {
+    fn search_8a_a_query_neither_persists_nor_depends_on_persistence() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());

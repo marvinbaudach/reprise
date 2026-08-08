@@ -16,7 +16,7 @@ use reprise_view::search_scope::SearchScope;
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 
 type OnChanged = Rc<dyn Fn(ReleasesFilter)>;
-/// SEARCH-8: fired when the bar itself changes the query — the chip's ×
+/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×
 /// or "Clear all" — so the header entry stops showing a query the view no
 /// longer applies.
 type OnQueryChanged = Rc<dyn Fn(&str)>;
@@ -71,7 +71,7 @@ pub(super) struct ReleasesFilterBar {
     result_label: gtk4::Label,
     clear_all: gtk4::Button,
     counts: Cell<(usize, usize)>,
-    /// SEARCH-8: this section's query. Deliberately *beside* `ReleasesFilter`
+    /// SEARCH-8a: this view's query. Deliberately *beside* `ReleasesFilter`
     /// rather than inside it: that type is persisted, while a query must not
     /// be restored on the next launch.
     query: RefCell<String>,
@@ -151,7 +151,7 @@ impl ReleasesFilterBar {
         self.query.borrow().clone()
     }
 
-    /// SEARCH-8: this section's query, handed in by the shell.
+    /// SEARCH-8a: this view's query, handed in by the shell.
     pub(super) fn set_query(self: &Rc<Self>, query: &str) {
         if *self.query.borrow() == query.trim() {
             return;

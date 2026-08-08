@@ -1410,15 +1410,16 @@ result.
   header-bar search (chip ⌕ "falling" in any field, own ×-click target
   ≥ 20 px; the × removes only the search, Esc per NAV-6). Applies in
   every track source (Library, Playlist, Smart, Queue, Missing). The
-  search travels along within the track sources; its chip appears
-  everywhere it actually restricts — in sources without search effect
+  search remains only while the same track list stays current; its chip
+  appears everywhere it actually restricts — in sources without search effect
   (Import Errors: own panel rows) no chip appears. Facet chips and
   "+ Add filter" stay library-only. An invisible active filter is a bug.
-  (Revised 2026-08-05: the search is no longer global across the whole
-  window. It belongs to the section it was typed in — SEARCH-8 — and
-  every other list view carries it as its own first chip, worded for the
-  fields that view actually reads — FIL-1d. Within the track sources
-  nothing changes: this is still one section.)
+  (Revision history: the 2026-08-05 text made search section-local and
+  restorable under SEARCH-8. SEARCH-8a supersedes that state: changing views,
+  including changing track sources, drops only the query; returning from a
+  detail with Back restores the same list's history-owned query. Every list
+  view still carries its active query as its first chip, worded for the fields
+  that view actually reads — FIL-1d.)
 - **FIL-1b** [planned] [gtk] — Albums/Artists mode: the global search
   already works there (grid filtering); the same chip row incl.
   counting and "Clear all" will follow there per the pattern of
@@ -1457,7 +1458,7 @@ result.
   mid-word included ("wer" matches "Antwerpen"). The chip's accessible
   remove name stays "Remove search: {query}" everywhere. The chip's ×
   and "Clear all" clear the query and the facets of the **current**
-  section only (FIL-2, SEARCH-8).
+  view only (FIL-2, SEARCH-8a).
 - **FIL-2** [active] [gtk] — Counting is state: the filter row is the
   permanent list header of every track source — it never appears or
   disappears (no layout shift by design, P-4). Idle as quiet as
@@ -2682,7 +2683,7 @@ property is set and yet nothing happens.
   remains, per SEARCH-3/5, as an active filter along with its chip and
   accent magnifier; a click on the magnifier must not accidentally reopen
   the bar that was closed by that same focus change.
-- **SEARCH-8** [active] [gtk] — The query belongs to the section it was
+- **SEARCH-8** [replaced by SEARCH-8a] — The query belongs to the section it was
   typed in, not to the window. Switching sections swaps the header
   entry's text to that section's own query; it never carries over, and a
   query typed in Podcasts leaves the Music query untouched and vice
@@ -2696,6 +2697,23 @@ property is set and yet nothing happens.
   to filter in {section}", Ctrl+F is a no-op, and the search bar cannot
   be revealed by typing either. The scoped chip each section shows for
   its own query is FIL-1d.
+- **SEARCH-8a** [active] [gtk] — A query belongs only to the view where it was
+  typed. Leaving that view drops its query and collapses the search bar; the
+  destination starts empty, because a person who changes views is looking for
+  something else. Collapsing the bar without leaving still preserves the
+  current query per SEARCH-5/SEARCH-6, and an explicitly removed query is
+  never resurrected. There are exactly two exceptions. First, Back out of a
+  detail to the same list restores that list's query from the existing
+  navigation history; search owns no parallel origin or history state.
+  Second, facet filters chosen through + Filter — including type, window,
+  hidden, unplayed and downloaded — are not search and survive untouched.
+  The query itself remains transient and is never persisted with those
+  facets. Where there is no list there is no search: in My Stats and device
+  Sync the lens is insensitive with the tooltip "Nothing to filter in
+  {section}", Ctrl+F is a no-op, and typing cannot reveal the bar. The active
+  query's scoped chip is FIL-1d. This replaces the per-section restoration
+  described by FIL-1a's 2026-08-05 revision; FIL-1a records the corrected
+  boundary.
 - **SEARCH-9** [active] [gtk] — **Searching answers at once, and clearing
   answers immediately.** Exactly one wait sits between a keystroke and the
   result — the application's own debounce of 150 ms; the entry's built-in

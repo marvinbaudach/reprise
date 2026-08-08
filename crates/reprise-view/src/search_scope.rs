@@ -1,10 +1,9 @@
-//! Which section owns a search query, and which fields that query matches.
+//! Which active view receives a search query, and which fields it matches.
 //!
-//! SEARCH-8: the header search belongs to the section it was typed in, not to
-//! the window. A section is identified by a [`SearchScope`]; the runtime keeps
-//! one query per scope and swaps the entry text when the visible section
-//! changes. FIL-1d: the scope also decides what the search chip claims to
-//! match, so a chip never promises a field its view does not read.
+//! SEARCH-8a: the header search belongs only to the active view where it was
+//! typed, not to the window or a remembered section. A view is routed through
+//! a [`SearchScope`]. FIL-1d: the scope also decides what the search chip
+//! claims to match, so a chip never promises a field its view does not read.
 
 use reprise_core::view_source::ViewSource;
 
@@ -24,13 +23,13 @@ pub enum SearchScope {
     Radio,
     Releases,
     Concerts,
-    /// A section without a list. The lens is insensitive here (SEARCH-8).
+    /// A section without a list. The lens is insensitive here (SEARCH-8a).
     Unsupported,
 }
 
-/// The scope a source belongs to. Every track source shares one scope: they
-/// are one section of the shell and the track list already resets its query
-/// when the source changes.
+/// The query sink a source belongs to. Every track source shares one sink;
+/// the shell still treats each explicit source route as a view switch and the
+/// track list resets the query before loading the destination.
 #[must_use]
 pub fn scope_for(source: &ViewSource) -> SearchScope {
     match source {
@@ -86,10 +85,10 @@ pub fn matches_any<'a>(fields: impl IntoIterator<Item = &'a str>, query: &str) -
 mod tests {
     use super::*;
 
-    // UX SEARCH-8: every section the shell can show resolves to exactly one
-    // scope, so a query can never be stored under two names or none.
+    // UX SEARCH-8a: every section the shell can show resolves to exactly one
+    // active query sink.
     #[test]
-    fn search_8_every_source_resolves_to_one_scope() {
+    fn search_8a_every_source_resolves_to_one_scope() {
         assert_eq!(scope_for(&ViewSource::Library), SearchScope::Tracks);
         assert_eq!(scope_for(&ViewSource::Queue), SearchScope::Tracks);
         assert_eq!(scope_for(&ViewSource::Playlist(3)), SearchScope::Tracks);
@@ -107,9 +106,9 @@ mod tests {
         assert_eq!(scope_for(&ViewSource::Concerts), SearchScope::Concerts);
     }
 
-    // UX SEARCH-8: where there is no list there is no search.
+    // UX SEARCH-8a: where there is no list there is no search.
     #[test]
-    fn search_8_sections_without_a_list_do_not_support_search() {
+    fn search_8a_sections_without_a_list_do_not_support_search() {
         assert_eq!(scope_for(&ViewSource::MyStats), SearchScope::Unsupported);
         assert_eq!(
             scope_for(&ViewSource::ImportErrors),

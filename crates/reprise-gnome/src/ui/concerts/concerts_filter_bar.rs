@@ -18,7 +18,7 @@ const FACET_PAGE: &str = "facets";
 const VALUE_PAGE: &str = "values";
 
 type OnChanged = Rc<dyn Fn(ConcertFilter)>;
-/// SEARCH-8: fired when the bar itself changes the query — the chip's ×
+/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×
 /// or "Clear all" — so the header entry stops showing a query the view no
 /// longer applies.
 type OnQueryChanged = Rc<dyn Fn(&str)>;
@@ -153,7 +153,7 @@ pub(super) struct ConcertsFilterBar {
     similar_enabled: Cell<bool>,
     has_similar_rows: Cell<bool>,
     counts: Cell<(usize, usize)>,
-    /// SEARCH-8: this section's query, kept beside the persisted
+    /// SEARCH-8a: this view's query, kept beside the persisted
     /// `ConcertFilter` rather than inside it — a query must not be restored
     /// on the next launch.
     query: RefCell<String>,
@@ -273,7 +273,7 @@ impl ConcertsFilterBar {
         self.query.borrow().clone()
     }
 
-    /// SEARCH-8: this section's query, handed in by the shell.
+    /// SEARCH-8a: this view's query, handed in by the shell.
     pub(super) fn set_query(self: &Rc<Self>, query: &str) {
         if *self.query.borrow() == query.trim() {
             return;

@@ -265,14 +265,14 @@ impl PodcastsView {
         view
     }
 
-    /// SEARCH-8: applies this section's query. The shell calls it as the
+    /// SEARCH-8a: applies this view's query. The shell calls it as the
     /// header entry changes and once more when the section becomes visible
     /// again, so a query typed here is exactly what is applied here.
     pub(in crate::ui) fn set_search_query(&self, query: &str) {
         self.filter_bar.set_query(query);
     }
 
-    /// SEARCH-8: the reverse direction — the bar removed the query itself
+    /// SEARCH-8a: the reverse direction — the bar removed the query itself
     /// (its × or a jump that had to relax it), so the header entry has to
     /// follow.
     pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {

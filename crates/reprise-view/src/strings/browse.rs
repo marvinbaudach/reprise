@@ -77,7 +77,7 @@ pub fn search_chip_label_in(scope: SearchScope, query: &str) -> Message {
     message_with_one_arg(id, "query", query)
 }
 
-/// SEARCH-8: the insensitive lens says why it is insensitive, naming the
+/// SEARCH-8a: the insensitive lens says why it is insensitive, naming the
 /// section the user is actually looking at.
 pub fn nothing_to_filter(section: &str) -> Message {
     message_with_one_arg(NOTHING_TO_FILTER, "section", section)

@@ -48,7 +48,7 @@ pub(in crate::ui) fn scoped_search_chip_label(scope: SearchScope, query: &str) -
     render(&messages::search_chip_label_in(scope, query))
 }
 
-/// SEARCH-8: the tooltip on the insensitive lens of a section without a list.
+/// SEARCH-8a: the tooltip on the insensitive lens of a section without a list.
 pub(in crate::ui) fn nothing_to_filter(section: &str) -> String {
     render(&messages::nothing_to_filter(section))
 }
@@ -142,9 +142,9 @@ mod tests {
         assert_eq!(remove_search_label("wer"), "Remove search: wer");
     }
 
-    // UX SEARCH-8: the lens explains itself where there is nothing to filter.
+    // UX SEARCH-8a: the lens explains itself where there is nothing to filter.
     #[test]
-    fn search_8_insensitive_lens_names_the_section() {
+    fn search_8a_insensitive_lens_names_the_section() {
         assert_eq!(
             nothing_to_filter("My Stats"),
             "Nothing to filter in My Stats"

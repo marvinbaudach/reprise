@@ -225,12 +225,12 @@ impl ReleasesView {
         }
     }
 
-    /// SEARCH-8: applies this section's query (FIL-1d: title and artist).
+    /// SEARCH-8a: applies this view's query (FIL-1d: title and artist).
     pub(in crate::ui) fn set_search_query(&self, query: &str) {
         self.shared.filter_bar.set_query(query);
     }
 
-    /// SEARCH-8: the bar removed the query itself, so the entry must follow.
+    /// SEARCH-8a: the bar removed the query itself, so the entry must follow.
     pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
         self.shared.filter_bar.set_on_query_changed(callback);
     }

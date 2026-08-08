@@ -18,7 +18,7 @@ const COUNTRY_KEY: &str = "radio.filter.country";
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 
 type FilterCallback = Rc<dyn Fn(RadioFilter)>;
-/// SEARCH-8: fired when the bar itself changes the query — the chip's ×
+/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×
 /// or "Clear all" — so the header entry stops showing a query the view no
 /// longer applies.
 type OnQueryChanged = Rc<dyn Fn(&str)>;
@@ -27,7 +27,7 @@ type OnQueryChanged = Rc<dyn Fn(&str)>;
 pub(super) struct RadioFilter {
     pub genre: Option<String>,
     pub country: Option<String>,
-    /// SEARCH-8: this section's transient query, matched against station
+    /// SEARCH-8a: this view's transient query, matched against station
     /// names alone (FIL-1d). Never persisted — `persist_filter` writes the
     /// two facets above and nothing else.
     pub query: String,
@@ -55,7 +55,7 @@ enumerated! {
     pub(super) enum RadioFilterFacet {
         Genre,
         Country,
-        /// SEARCH-8: the query relaxes like any other facet when a jump to
+        /// SEARCH-8a: the query relaxes like any other facet when a jump to
         /// the connected station would otherwise land nowhere.
         Query,
     }
@@ -162,7 +162,7 @@ fn matches_value(candidate: Option<&str>, expected: Option<&str>) -> bool {
     candidate.is_some_and(|candidate| candidate.trim().eq_ignore_ascii_case(expected.trim()))
 }
 
-/// SEARCH-8: restores the two persisted facets. A launch never starts inside
+/// SEARCH-8a: restores the two persisted facets. A launch never starts inside
 /// somebody's old query, so `query` stays empty here by construction.
 pub(super) fn load_filter(db: &Db) -> Result<RadioFilter, rusqlite::Error> {
     Ok(RadioFilter {
@@ -310,7 +310,7 @@ impl RadioFilterBar {
         *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// SEARCH-8: this section's query, handed in by the shell.
+    /// SEARCH-8a: this view's query, handed in by the shell.
     pub(super) fn set_query(self: &Rc<Self>, query: &str) {
         let current = self.filter();
         if current.query == query.trim() {
@@ -328,7 +328,7 @@ impl RadioFilterBar {
     /// into the header entry. A query arriving *from* the entry is not
     /// echoed, or the two would ping-pong.
     fn apply_internal(self: &Rc<Self>, filter: RadioFilter, announce_query: bool) {
-        // SEARCH-8: only the facets are persisted; the query is transient.
+        // SEARCH-8a: only the facets are persisted; the query is transient.
         if let Err(error) = persist_filter(&self.conn, &filter) {
             tracing::warn!(%error, "could not persist radio filters");
         }
@@ -634,10 +634,10 @@ mod tests {
         assert!(!RadioFilter::default().is_active());
     }
 
-    /// UX SEARCH-8: the query is transient — `load_filter` restores the two
+    /// UX SEARCH-8a: the query is transient — `load_filter` restores the two
     /// persisted facets and never a query.
     #[test]
-    fn search_8_radio_query_is_never_restored_from_settings() {
+    fn search_8a_radio_query_is_never_restored_from_settings() {
         let db = crate::test_db::open().unwrap();
         persist_filter(
             &db,

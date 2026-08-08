@@ -2,8 +2,10 @@
 //!
 //! Split out of `window_runtime_wiring` so neither file grows past the
 //! repository's source-size limit, and so the whole per-section contract —
-//! who applies a query, who clears its own facets, who pushes a cleared chip
-//! back into the entry — is readable in one place.
+//! who applies a query, who clears its own facets only for explicit Clear all,
+//! and who pushes a cleared chip back into the entry — is readable in one
+//! place. SEARCH-8a view switches use only the query half of each registration,
+//! so type/window/hidden/unplayed/downloaded facets survive untouched.
 
 use std::rc::Rc;
 
