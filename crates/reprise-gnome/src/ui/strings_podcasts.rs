@@ -33,6 +33,8 @@ pub const PODCAST_STATUS_RESUME_PERCENT: &str = N_!("Resume {percent} %");
 pub const PODCAST_STATUS_PLAYED: &str = N_!("Played");
 pub const PODCAST_TODAY: &str = N_!("Today");
 pub const PODCAST_YESTERDAY: &str = N_!("Yesterday");
+pub const PODCAST_LAST_EPISODE_TODAY: &str = N_!("New today");
+pub const PODCAST_LAST_EPISODE_YESTERDAY: &str = N_!("New yesterday");
 pub const PODCAST_DURATION_UNDER_MINUTE: &str = N_!("< 1 min");
 pub const PODCAST_DURATION_MINUTES: &str = N_!("{minutes} min");
 pub const PODCAST_DURATION_HOURS: &str = N_!("{hours} h {minutes}");
@@ -114,6 +116,11 @@ pub const PODCAST_PREVIEW: &str = N_!("Preview");
 pub const PODCAST_SEARCHING: &str = N_!("Searching…");
 pub const PODCAST_APPLE_RESULTS: &str = N_!("PODCASTS · APPLE PODCASTS");
 pub const PODCAST_YOUTUBE_RESULTS: &str = N_!("YOUTUBE · audio only");
+/// `SRC-22`: Apple does not identify which hidden provider field matched, so
+/// the marker explains only the mismatch the row can prove.
+pub const PODCAST_SEARCH_MATCH_NOT_SHOWN: &str = N_!(
+    "The search term is not in the title or publisher shown here, but Apple returned this podcast as a result."
+);
 pub const PODCAST_SUBSCRIBE: &str = N_!("Subscribe");
 pub const PODCAST_CANCEL: &str = N_!("Cancel");
 pub const PODCAST_RSS_DETECTED: &str = N_!("RSS feed detected");
@@ -209,6 +216,46 @@ pub fn podcast_episode_count(count: usize) -> String {
         count,
         &[("count", &count_text)],
     )
+}
+
+pub fn podcast_last_episode_days(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "New {count} day ago",
+        "New {count} days ago",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_last_episode_weeks(count: usize) -> String {
+    if count == 1 {
+        return text(N_!("New last week"));
+    }
+    let count_text = count.to_string();
+    plural(
+        "New {count} week ago",
+        "New {count} weeks ago",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_last_episode_months(count: usize) -> String {
+    if count == 1 {
+        return text(N_!("Last month"));
+    }
+    let count_text = count.to_string();
+    plural(
+        "{count} month ago",
+        "{count} months ago",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_last_episode_on(date: &str) -> String {
+    formatted(N_!("Last {date}"), &[("date", date)])
 }
 
 /// SRC-12b batch feedback. One message per batch, never one per episode, and
@@ -400,15 +447,35 @@ pub fn podcast_source_off_title(source: &str) -> String {
     formatted(PODCAST_SOURCE_OFF_TITLE, &[("source", source)])
 }
 
-/// `SRC-15`: the library chip in the add dialog. The genre is the user's
-/// own, so the sentence has to stay translatable rather than being glued
-/// together at the call site.
-pub fn podcast_chip_genre(genre: &str) -> String {
-    formatted(N_!("{genre} podcasts"), &[("genre", genre)])
+/// `SRC-19`: the Apple dialog's one chip. The country is a storefront code,
+/// not a translated country name (`SRC-19` explains why), but the sentence
+/// around it is the translator's.
+pub fn podcast_chip_popular_in_country(country: &str) -> String {
+    formatted(N_!("Popular in {country}"), &[("country", country)])
 }
 
-/// `SRC-15`: the same chip on the YouTube page, where the results are
-/// channels rather than podcasts.
+/// `SRC-19`: the chart section's own heading, in the same shape as
+/// `PODCAST_APPLE_RESULTS`, so a chart is never read as the answer to a search
+/// nobody typed.
+pub fn podcast_charts_heading(country: &str) -> String {
+    formatted(N_!("PODCASTS · TOP IN {country}"), &[("country", country)])
+}
+
+/// `SRC-19`: an empty chart is not a failed search. `SOURCE_NOTHING_FOUND`
+/// would quote the chip's label back as though the user had typed it and then
+/// advise pasting a feed URL — advice for a term that missed, not for a curated
+/// list that is empty or that this library already follows in full.
+pub fn podcast_charts_empty(country: &str) -> String {
+    formatted(
+        N_!("Nothing new in the {country} chart right now — try a search instead"),
+        &[("country", country)],
+    )
+}
+
+/// `SRC-15a`: the library chip in the add dialog, worded for the YouTube page
+/// — the only page that carries it, since the Apple dialog spends its one chip
+/// slot on `SRC-19`. The genre is the user's own, so the sentence has to stay
+/// translatable rather than being glued together at the call site.
 pub fn youtube_chip_genre(genre: &str) -> String {
     formatted(N_!("{genre} channels"), &[("genre", genre)])
 }
@@ -575,6 +642,29 @@ mod tests {
     fn episode_count_uses_singular_and_plural_copy() {
         assert_eq!(podcast_episode_count(1), "1 episode");
         assert_eq!(podcast_episode_count(23), "23 episodes");
+    }
+
+    #[test]
+    fn freshness_wording_pluralises_and_drops_new_past_five_weeks() {
+        assert_eq!(PODCAST_LAST_EPISODE_TODAY, "New today");
+        assert_eq!(PODCAST_LAST_EPISODE_YESTERDAY, "New yesterday");
+        assert_eq!(podcast_last_episode_days(4), "New 4 days ago");
+        assert_eq!(podcast_last_episode_weeks(2), "New 2 weeks ago");
+        assert_eq!(podcast_last_episode_months(3), "3 months ago");
+        assert_eq!(podcast_last_episode_on("Oct 2019"), "Last Oct 2019");
+        assert_eq!(podcast_chip_popular_in_country("DE"), "Popular in DE");
+        assert_eq!(podcast_charts_heading("DE"), "PODCASTS · TOP IN DE");
+    }
+
+    #[test]
+    fn search_match_explanation_states_only_what_apple_reveals() {
+        assert_eq!(
+            PODCAST_SEARCH_MATCH_NOT_SHOWN,
+            "The search term is not in the title or publisher shown here, but Apple returned this podcast as a result."
+        );
+        assert!(!PODCAST_SEARCH_MATCH_NOT_SHOWN.contains("description"));
+        assert!(!PODCAST_SEARCH_MATCH_NOT_SHOWN.contains("genre"));
+        assert!(!PODCAST_SEARCH_MATCH_NOT_SHOWN.contains("episode"));
     }
 
     #[test]

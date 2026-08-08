@@ -14,6 +14,10 @@
 /// is what catches it now.
 pub(in crate::ui) const DONE: &str = "object-select-symbolic";
 
+/// Quiet context for an Apple search result whose visible title and publisher
+/// do not contain the query. Present in the installed Adwaita symbolic set.
+pub(in crate::ui) const UNEXPLAINED_SEARCH_MATCH: &str = "dialog-information-symbolic";
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -88,6 +92,10 @@ mod tests {
         assert!(
             names.contains(super::DONE),
             "the scan must see the names it is meant to check: {names:?}"
+        );
+        assert!(
+            names.contains(super::UNEXPLAINED_SEARCH_MATCH),
+            "the scan must guard the podcast search marker: {names:?}"
         );
         assert!(names.len() > 40, "only {} names found", names.len());
     }
