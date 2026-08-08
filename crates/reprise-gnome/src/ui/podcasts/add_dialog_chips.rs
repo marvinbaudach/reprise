@@ -21,11 +21,17 @@ impl AddDialogChip {
     }
 }
 
+/// `SRC-19`: the country the chip names and the text search below it share.
+/// The stored code is third-party data (`O-4`: Nominatim's `addressdetails`)
+/// and reaches a URL path segment in `itunes_charts::chart_url`, so it has to
+/// clear the same storefront check `locale_country` applies to a locale
+/// territory — anything else falls through to the locale rather than being
+/// passed on uppercased.
 pub(super) fn dialog_country(location: Option<&AppLocation>, locale: &str) -> String {
     location
         .and_then(|location| location.country_code.as_deref())
         .map(str::trim)
-        .filter(|country| !country.is_empty())
+        .filter(|country| podcasts::itunes::is_country_code(country))
         .map_or_else(
             || podcasts::itunes::locale_country(locale),
             str::to_ascii_uppercase,
@@ -84,6 +90,27 @@ mod tests {
     #[test]
     fn src_19_a_location_without_a_country_falls_through_to_the_locale() {
         assert_eq!(dialog_country(Some(&location(None)), "de_DE.UTF-8"), "DE");
+    }
+
+    /// `SRC-19`: the stored code is third-party data — Nominatim's
+    /// `addressdetails` enrichment, read back out of the settings DB — and it
+    /// ends up in a URL *path* segment in `itunes_charts::chart_url`. Anything
+    /// that is not a storefront code falls back to the locale, the same way
+    /// `locale_country` falls back to `US`.
+    #[test]
+    fn src_19_a_country_code_that_is_not_a_storefront_falls_back_to_the_locale() {
+        for stored in ["Deutschland", "D", "D3", "  ", "de/podcasts", "d\u{e9}"] {
+            assert_eq!(
+                dialog_country(Some(&location(Some(stored))), "en_GB.UTF-8"),
+                "GB",
+                "{stored:?} must not reach a chart URL"
+            );
+        }
+        assert_eq!(
+            dialog_country(Some(&location(Some("  ca  "))), "en_GB.UTF-8"),
+            "CA",
+            "surrounding whitespace is still a usable storefront"
+        );
     }
 
     #[test]

@@ -35,6 +35,21 @@ struct SearchRow {
     release_date: Option<String>,
 }
 
+/// Whether a value is a storefront code Apple can be asked for: exactly two
+/// ASCII letters. Every path that reaches a request — the locale territory
+/// below, and the stored location's country code the add dialog prefers over
+/// it — passes through this one predicate, so a country cannot be strict in
+/// one place and anything-goes in another. `itunes_charts::chart_url`
+/// interpolates the value into a URL *path* segment without encoding, and the
+/// stored code originates from Nominatim.
+#[must_use]
+pub fn is_country_code(value: &str) -> bool {
+    value.len() == 2
+        && value
+            .bytes()
+            .all(|character| character.is_ascii_alphabetic())
+}
+
 #[must_use]
 pub fn locale_country(locale: &str) -> String {
     let locale = locale
@@ -50,14 +65,7 @@ pub fn locale_country(locale: &str) -> String {
         .or_else(|| locale.split_once('-'))
         .map(|(_, territory)| territory);
     match territory {
-        Some(value)
-            if value.len() == 2
-                && value
-                    .bytes()
-                    .all(|character| character.is_ascii_alphabetic()) =>
-        {
-            value.to_ascii_uppercase()
-        }
+        Some(value) if is_country_code(value) => value.to_ascii_uppercase(),
         _ => "US".to_owned(),
     }
 }
@@ -126,6 +134,18 @@ fn parse_release_date(value: Option<&str>) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_storefront_code_is_exactly_two_ascii_letters() {
+        assert!(is_country_code("DE"));
+        assert!(is_country_code("de"));
+        for rejected in ["", "D", "DEU", "D3", "d-", "Deutschland", "de/", "d é"] {
+            assert!(
+                !is_country_code(rejected),
+                "{rejected:?} is not a storefront"
+            );
+        }
+    }
 
     #[test]
     fn locale_country_uses_territory_or_us_fallback() {
