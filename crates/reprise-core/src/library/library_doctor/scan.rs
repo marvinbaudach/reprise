@@ -641,6 +641,13 @@ fn retain_track_fields(resolution: &mut remote::RemoteResolution) {
     });
 }
 
+/// Known limit: a multi-disc album whose discs are tagged with different album
+/// titles — "Album (Disc 1)" against "Album (Disc 2)" — falls into one group
+/// per disc and therefore into one release match per disc. Neither disc has
+/// the full tracklist, so both score worse than the album would as a whole,
+/// and the two matches can land on different releases. Stripping the disc
+/// suffix here would be guessing at a naming convention; how often the case
+/// occurs is unmeasured, so it is written down rather than worked around.
 fn group_album_tracks(tracks: &[ReadTrack]) -> Vec<Vec<usize>> {
     let mut positions = HashMap::<String, usize>::new();
     let mut groups = Vec::<Vec<usize>>::new();
