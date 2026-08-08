@@ -80,8 +80,9 @@ pub(super) fn persist_complete_scan(
         let mut statement = transaction.prepare(
             "INSERT INTO library_doctor_proposals \
          (scan_id, position, track_id, field, current_value, proposed_value, source, \
-              confidence, preselected, problem_class, evidence_json, local_fallback_json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+              confidence, preselected, never_preselect, problem_class, evidence_json, \
+              local_fallback_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         )?;
         for (position, proposal) in proposals.iter().enumerate() {
             statement.execute(rusqlite::params![
@@ -94,6 +95,7 @@ pub(super) fn persist_complete_scan(
                 proposal.source.as_str(),
                 proposal.confidence,
                 proposal.preselected,
+                proposal.never_preselect,
                 proposal.problem_class.as_str(),
                 serde_json::to_string(&proposal.evidence).map_err(|error| {
                     DoctorError::InvalidStoredData(format!("remote evidence: {error}"))
@@ -398,7 +400,7 @@ fn current_identity(
 fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>, DoctorError> {
     let mut statement = conn.prepare(
         "SELECT track_id, field, current_value, proposed_value, source, confidence, \
-         preselected, problem_class, evidence_json, local_fallback_json \
+         preselected, never_preselect, problem_class, evidence_json, local_fallback_json \
          FROM library_doctor_proposals \
          WHERE scan_id=?1 ORDER BY position",
     )?;
@@ -406,7 +408,7 @@ fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>
         .query_map([scan_id], |row| {
             let field_text = row.get::<_, String>(1)?;
             let source_text = row.get::<_, String>(4)?;
-            let problem_text = row.get::<_, String>(7)?;
+            let problem_text = row.get::<_, String>(8)?;
             let field = DoctorField::parse(&field_text).ok_or_else(|| {
                 rusqlite::Error::InvalidColumnType(
                     1,
@@ -436,19 +438,19 @@ fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>
                 source,
                 confidence: row.get(5)?,
                 preselected: row.get(6)?,
-                never_preselect: false,
+                never_preselect: row.get(7)?,
                 problem_class,
-                evidence: serde_json::from_str(&row.get::<_, String>(8)?).map_err(|error| {
+                evidence: serde_json::from_str(&row.get::<_, String>(9)?).map_err(|error| {
                     rusqlite::Error::FromSqlConversionFailure(
-                        8,
+                        9,
                         rusqlite::types::Type::Text,
                         Box::new(error),
                     )
                 })?,
-                local_fallback: serde_json::from_str(&row.get::<_, String>(9)?).map_err(
+                local_fallback: serde_json::from_str(&row.get::<_, String>(10)?).map_err(
                     |error| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            9,
+                            10,
                             rusqlite::types::Type::Text,
                             Box::new(error),
                         )
@@ -540,4 +542,45 @@ fn load_groups(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorUnresolvedGr
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doc_4c_never_preselect_survives_a_store_round_trip() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let proposals = vec![DoctorProposal {
+            track_id: 7,
+            field: DoctorField::Title,
+            current: DoctorValue::Text("Full title".into()),
+            proposed: DoctorValue::Text("Full".into()),
+            source: ProposalSource::MusicBrainz,
+            confidence: 49,
+            preselected: false,
+            never_preselect: true,
+            problem_class: ProblemClass::CasingWhitespace,
+            evidence: Vec::new(),
+            local_fallback: None,
+        }];
+
+        persist_complete_scan(&CompleteScanData {
+            conn: db.conn(),
+            scope_kind: "selection",
+            created_at: 1,
+            options: DoctorScanOptions {
+                remote_enabled: true,
+            },
+            checked_tracks: 0,
+            skipped_tracks: 0,
+            tracks: &[],
+            proposals: &proposals,
+            unresolved_groups: &[],
+        })
+        .unwrap();
+
+        let loaded = last_complete_scan(db.conn()).unwrap().unwrap();
+        assert!(loaded.proposals[0].never_preselect);
+    }
 }
