@@ -95,6 +95,33 @@ fn an_unrememberable_device_run_records_start_outcome_and_deviation() {
     });
 }
 
+#[test]
+fn a_live_transfer_writes_a_running_log_row_with_its_final_planned_count() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let (started, releases) = backend.gate_copies(&["a"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+        started.recv().await.unwrap();
+
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            recorded.outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Running
+        );
+        assert_eq!(recorded.planned, 1);
+
+        releases["a"].send(()).await.unwrap();
+        settle().await;
+    });
+}
+
 /// The error→outcome mapping only. It calls `record_rejected_start` directly,
 /// so it does *not* prove that any particular early return reaches it — see
 /// `start_transfer_now_closes_the_open_run_when_the_device_is_gone` for the

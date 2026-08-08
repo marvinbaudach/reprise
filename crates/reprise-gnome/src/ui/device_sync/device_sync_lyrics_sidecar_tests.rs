@@ -24,6 +24,13 @@ fn lyr_7_device_sync_copies_the_lrc_as_an_unmetered_track_attachment() {
             "/Music/Reprise".to_string(),
             "Artist/Unknown Album/00 Track 1.lrc".to_string()
         )));
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            recorded.copied, 1,
+            "the sidecar is an attachment and must not count as another copied track"
+        );
     });
 }
 
@@ -75,6 +82,10 @@ fn lyr_7_removing_a_track_removes_its_lrc_without_an_extra_log_entry() {
         assert!(deleted
             .iter()
             .any(|(_, path)| path.ends_with("Track 1.lrc")));
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(recorded.deleted, 1);
     });
 }
 
@@ -131,6 +142,10 @@ fn lyr_7_a_failed_lrc_copy_never_fails_the_track_transfer() {
 
         let device = runtime.devices().remove(0);
         assert!(device.last_sync.is_some());
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        assert_eq!(recorded.copied, 1);
         assert_eq!(
             reprise_core::device_sync::settings::load_device_files(&conn, "a")
                 .unwrap()

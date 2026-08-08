@@ -404,7 +404,7 @@ fn design_2c_up_next_legend_uses_the_rows_projected_sizes() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn unrememberable_device_disables_hero_rename_with_the_history_explanation() {
+fn unrememberable_device_disables_hero_rename_with_the_identity_explanation() {
     gtk4::init().expect("GTK test display");
     let mut device = device();
     device.rememberable = false;
