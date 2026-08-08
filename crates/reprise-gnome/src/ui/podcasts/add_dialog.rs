@@ -14,17 +14,22 @@ use reprise_core::podcasts::discovery::{
 use reprise_core::podcasts::{self, PodcastKind};
 
 use crate::ui::one_shot_task;
-use crate::ui::source_add_action;
 use crate::ui::strings;
 
+use super::add_dialog_chips::{chip_for, dialog_country, AddDialogChip};
 use super::add_dialog_input::{
     classify_input, dialog_hint, dialog_status_hint, dialog_title, primary_action_for_connectivity,
     submit_refusal, AddInput,
 };
-use super::add_dialog_results::{clear, result_section, rss_candidate, youtube_candidate};
-use super::add_dialog_subscription::{
-    baseline_for_import_choice, configured_auto_download_default, subscribe, subscribe_offline,
+use super::add_dialog_results::{
+    clear, partition_dormant_search_results, result_section, rss_candidate, youtube_candidate,
 };
+use super::add_dialog_rows::{append_candidate, append_heading, append_preview, Preview};
+#[cfg(test)]
+use super::add_dialog_rows::{candidate_row, images_allowed};
+#[cfg(test)]
+use super::add_dialog_subscription::baseline_for_import_choice;
+use super::add_dialog_subscription::{configured_auto_download_default, subscribe_offline};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AddDialogPhase {
@@ -34,17 +39,6 @@ pub(super) enum AddDialogPhase {
     Results,
     Preview,
     Error,
-}
-
-#[derive(Clone)]
-struct Preview {
-    kind: PodcastKind,
-    title: String,
-    author: Option<String>,
-    image_url: Option<String>,
-    count: usize,
-    url: String,
-    guids: Vec<String>,
 }
 
 pub(super) type OnAdded = Rc<dyn Fn(bool)>;
@@ -65,9 +59,10 @@ struct SearchContext<'a> {
 }
 
 struct AddDialogSurface {
-    /// `SRC-15`: absent when the library has played nothing with a genre —
-    /// the row is then not built at all rather than standing empty.
-    library_chip: Option<gtk4::Button>,
+    /// `SRC-15a` / `SRC-19`: absent when the current suggestion is not useful
+    /// — no played YouTube genre, or an offline Apple dialog.
+    suggestion_chip: Option<gtk4::Button>,
+    chip_action: Option<AddDialogChip>,
     dialog: adw::Dialog,
     entry: gtk4::SearchEntry,
     status: gtk4::Label,
@@ -79,6 +74,8 @@ struct AddDialogSurface {
 fn build_surface(
     kind: PodcastKind,
     connectivity: Connectivity,
+    network_allowed: bool,
+    country: &str,
     library_genre: Option<&str>,
 ) -> AddDialogSurface {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
@@ -91,16 +88,11 @@ fn build_surface(
         .placeholder_text(strings::text(dialog_hint(kind)))
         .build();
     content.append(&entry);
-    // `SRC-15`: one suggestion from the user's own library, in the same flat
-    // pill shape the radio dialog uses, so an empty search field is not the
-    // only way in. Built only when the library has a genre to suggest — an
-    // empty chip row would be worse than none.
-    let library_chip = library_genre.map(|genre| {
-        let label = match kind {
-            PodcastKind::Rss => strings::podcast_chip_genre(genre),
-            PodcastKind::Youtube => strings::youtube_chip_genre(genre),
-        };
-        let chip = gtk4::Button::with_label(&label);
+    // `SRC-15a` / `SRC-19`: the one suggestion slot is a library-genre query
+    // for YouTube and the country chart for Apple Podcasts.
+    let chip_action = chip_for(kind, connectivity, network_allowed, country, library_genre);
+    let suggestion_chip = chip_action.as_ref().map(|action| {
+        let chip = gtk4::Button::with_label(&action.label());
         chip.add_css_class("pill");
         // Left-aligned and only as wide as its text, like the radio chips —
         // a full-width button would read as a second primary action.
@@ -177,7 +169,8 @@ fn build_surface(
         .build();
 
     AddDialogSurface {
-        library_chip,
+        suggestion_chip,
+        chip_action,
         dialog,
         entry,
         status,
@@ -196,20 +189,36 @@ pub(super) fn present(
 ) {
     let conn = conn.clone();
     let on_added: OnAdded = Rc::new(on_added);
-    // `SRC-15`: the same library fact the radio chip reads, so both dialogs
-    // suggest the same genre instead of each inventing a rule of its own.
-    // This dialog is rebuilt on every open, so the suggestion is always
-    // current without a refresh path.
-    let library_genre = reprise_core::library::taste::top_genre(&conn).unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read the library's top genre for the podcast chip");
-        None
-    });
+    let locale = std::env::var("LC_ALL")
+        .or_else(|_| std::env::var("LANG"))
+        .unwrap_or_else(|_| "C".into());
+    let location = reprise_core::location::app_location(&conn).ok().flatten();
+    let country = dialog_country(location.as_ref(), &locale);
+    // `SRC-15a`: YouTube keeps the same library fact the radio chip reads.
+    // Apple Podcasts spends the slot on the country chart instead.
+    let library_genre = (preferred_kind == PodcastKind::Youtube)
+        .then(|| reprise_core::library::taste::top_genre(&conn))
+        .transpose()
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read the library's top genre for the YouTube chip");
+            None
+        })
+        .flatten();
+    // `SRC-19` / `NET-1a`: the chip is a network action, so it needs the same
+    // consent `submit_refusal` demands of a search — reachability alone is not
+    // permission. A failed lookup counts as "not allowed", the safe direction
+    // for a privacy promise.
+    let network_allowed =
+        podcasts::config::source_network_allowed(&conn, preferred_kind).unwrap_or(false);
     let surface = build_surface(
         preferred_kind,
         connectivity,
+        network_allowed,
+        &country,
         library_genre.as_ref().map(|genre| genre.name.as_str()),
     );
-    let library_chip = surface.library_chip;
+    let suggestion_chip = surface.suggestion_chip;
+    let chip_action = surface.chip_action;
     let dialog = surface.dialog;
     let entry = surface.entry;
     let status = surface.status;
@@ -223,6 +232,7 @@ pub(super) fn present(
         let status = status.clone();
         let generation = generation.clone();
         let on_added = on_added.clone();
+        let country = country.clone();
         move |input: String| {
             clear(&results);
             let next = generation.get().wrapping_add(1);
@@ -242,6 +252,7 @@ pub(super) fn present(
                     search(
                         next,
                         terms,
+                        country.clone(),
                         &SearchContext {
                             generation: &generation,
                             status: &status,
@@ -291,18 +302,46 @@ pub(super) fn present(
     });
     let submit_on_activate = submit.clone();
     entry.connect_activate(move |entry| submit_on_activate(entry.text().to_string()));
-    if let (Some(chip), Some(genre)) = (library_chip, library_genre) {
-        // `SRC-15`: the chip fills the field it searches with, so the run is
-        // visible, editable and repeatable — never a hidden query the user
-        // cannot see or amend.
-        let submit_on_chip = submit.clone();
-        let entry_for_chip = entry.downgrade();
-        chip.connect_clicked(move |_| {
-            if let Some(entry) = entry_for_chip.upgrade() {
-                entry.set_text(&genre.name);
+    if let (Some(chip), Some(action)) = (suggestion_chip, chip_action) {
+        match action {
+            AddDialogChip::Charts { country } => {
+                let generation = generation.clone();
+                let status = status.clone();
+                let results = results.clone();
+                let conn = conn.clone();
+                let on_added = on_added.clone();
+                chip.connect_clicked(move |_| {
+                    clear(&results);
+                    let next = generation.get().wrapping_add(1);
+                    generation.set(next);
+                    status.set_text(&strings::text(strings::PODCAST_SEARCHING));
+                    load_charts(
+                        next,
+                        country.clone(),
+                        &SearchContext {
+                            generation: &generation,
+                            status: &status,
+                            results: &results,
+                            conn: &conn,
+                            on_added: &on_added,
+                            preferred_kind,
+                        },
+                    );
+                });
             }
-            submit_on_chip(genre.name.clone());
-        });
+            AddDialogChip::LibraryGenre { genre } => {
+                // `SRC-15a`: a library chip fills the field it searches with,
+                // keeping the run visible, editable and repeatable.
+                let submit_on_chip = submit.clone();
+                let entry_for_chip = entry.downgrade();
+                chip.connect_clicked(move |_| {
+                    if let Some(entry) = entry_for_chip.upgrade() {
+                        entry.set_text(&genre);
+                    }
+                    submit_on_chip(genre.clone());
+                });
+            }
+        }
     }
     let submit_on_click = submit.clone();
     let entry_for_click = entry.downgrade();
@@ -321,12 +360,9 @@ pub(super) fn present(
     entry.grab_focus();
 }
 
-fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
+fn search(request_generation: u64, terms: String, country: String, context: &SearchContext<'_>) {
     let config = podcasts::config::load(context.conn).ok();
     let auto_download_default = configured_auto_download_default(config.as_ref());
-    let locale = std::env::var("LC_ALL")
-        .or_else(|_| std::env::var("LANG"))
-        .unwrap_or_else(|_| "C".into());
     // SRC-6: exactly one provider is queried — the one this dialog belongs to.
     let section = result_section();
     context.results.append(&section);
@@ -334,9 +370,13 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
     match dialog_provider(context.preferred_kind) {
         PodcastKind::Rss => {
             let query = terms.clone();
+            let empty_status = strings::source_nothing_found(&query);
             let task = one_shot_task::spawn("reprise-podcast-search", move || {
-                podcasts::itunes::search(&terms, &locale)
-                    .map(|rows| rows.into_iter().map(rss_candidate).collect::<Vec<_>>())
+                podcasts::itunes::search_in_country(&terms, &country)
+                    .map(|mut rows| {
+                        partition_dormant_search_results(&mut rows, chrono::Utc::now().timestamp());
+                        rows.into_iter().map(rss_candidate).collect::<Vec<_>>()
+                    })
                     .map_err(|error| preview_error(&error))
             });
             attach_candidates(
@@ -347,9 +387,10 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
                 &section,
                 context.conn,
                 context.on_added,
-                strings::PODCAST_APPLE_RESULTS,
+                strings::text(strings::PODCAST_APPLE_RESULTS),
+                Some(query),
                 auto_download_default,
-                query,
+                empty_status,
             );
         }
         PodcastKind::Youtube => {
@@ -364,6 +405,7 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
             let ytdlp_path = config.as_ref().and_then(|value| value.ytdlp_path.clone());
             let youtube_browser = config.and_then(|value| value.youtube_browser);
             let query = terms.clone();
+            let empty_status = strings::source_nothing_found(&query);
             let task = one_shot_task::spawn("reprise-youtube-search", move || {
                 super::metadata_ytdlp(ytdlp_path.as_deref(), youtube_browser)
                     .search_channels(&terms)
@@ -378,12 +420,42 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
                 &section,
                 context.conn,
                 context.on_added,
-                strings::PODCAST_YOUTUBE_RESULTS,
+                strings::text(strings::PODCAST_YOUTUBE_RESULTS),
+                Some(query),
                 auto_download_default,
-                query,
+                empty_status,
             );
         }
     }
+}
+
+fn load_charts(request_generation: u64, country: String, context: &SearchContext<'_>) {
+    let config = podcasts::config::load(context.conn).ok();
+    let auto_download_default = configured_auto_download_default(config.as_ref());
+    let section = result_section();
+    context.results.append(&section);
+    let heading = strings::podcast_charts_heading(&country);
+    // `SRC-19`: an empty chart is not a search that missed, and the country
+    // label is not a search term — so it never borrows `SOURCE_NOTHING_FOUND`.
+    let empty_status = strings::podcast_charts_empty(&country);
+    let task = one_shot_task::spawn("reprise-podcast-charts", move || {
+        podcasts::itunes_charts::top_podcasts(&country)
+            .map(|rows| rows.into_iter().map(rss_candidate).collect::<Vec<_>>())
+            .map_err(|error| preview_error(&error))
+    });
+    attach_candidates(
+        task,
+        request_generation,
+        context.generation,
+        context.status,
+        &section,
+        context.conn,
+        context.on_added,
+        heading,
+        None,
+        auto_download_default,
+        empty_status,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -395,9 +467,10 @@ fn attach_candidates(
     results: &gtk4::Box,
     conn: &Rc<Db>,
     on_added: &OnAdded,
-    heading: &'static str,
+    heading: String,
+    query: Option<String>,
     auto_download_default: bool,
-    query: String,
+    empty_status: String,
 ) {
     let generation = generation.clone();
     let status = status.clone();
@@ -424,12 +497,19 @@ fn attach_candidates(
                 let subscribed = active_source_keys(&conn);
                 let rows = filter_unsubscribed(rows, &subscribed);
                 if rows.is_empty() {
-                    status.set_text(&strings::source_nothing_found(&query));
+                    status.set_text(&empty_status);
                     return;
                 }
-                append_heading(&results, heading);
+                append_heading(&results, &heading);
                 for candidate in rows {
-                    append_candidate(&results, candidate, &conn, &on_added, auto_download_default);
+                    append_candidate(
+                        &results,
+                        candidate,
+                        query.as_deref(),
+                        &conn,
+                        &on_added,
+                        auto_download_default,
+                    );
                 }
             }
             Err(error) => status.set_text(&error),
@@ -581,170 +661,6 @@ fn set_status_hint(
     } else {
         status.set_text(&strings::text(hint));
     }
-}
-
-fn append_heading(parent: &gtk4::Box, text: &str) {
-    let label = gtk4::Label::new(Some(&strings::text(text)));
-    label.add_css_class("caption");
-    label.add_css_class("reprise-text-secondary");
-    label.set_xalign(0.0);
-    parent.append(&label);
-}
-
-fn append_candidate(
-    parent: &gtk4::Box,
-    candidate: Candidate,
-    conn: &Rc<Db>,
-    on_added: &OnAdded,
-    auto_download_default: bool,
-) {
-    let row = candidate_row(
-        &candidate.title,
-        &candidate.subtitle,
-        candidate.kind,
-        candidate.image_url.as_deref(),
-        images_allowed(conn),
-    );
-    // SRC-7: the same compact action every discovery row uses.
-    let title = candidate.title.clone();
-    let button = source_add_action::add_button(source_add_action::AddActionKind::Subscribe, &title);
-    let conn = conn.clone();
-    let on_added = on_added.clone();
-    button.connect_clicked(move |button| {
-        let result = subscribe(&conn, &candidate, auto_download_default, None);
-        match result {
-            Ok(_) => {
-                on_added(true);
-                // SRC-5/SRC-7: acknowledge in place; only the next submitted
-                // search drops the row.
-                source_add_action::mark_added(
-                    button,
-                    source_add_action::AddActionKind::Subscribe,
-                    &title,
-                );
-            }
-            Err(error) => {
-                tracing::warn!(%error, "could not subscribe to podcast");
-                button.set_tooltip_text(Some(&strings::text(strings::PODCAST_SUBSCRIBE_FAILED)));
-            }
-        }
-    });
-    row.append(&button);
-    parent.append(&row);
-}
-
-fn append_preview(
-    parent: &gtk4::Box,
-    preview: Preview,
-    import_count: usize,
-    auto_download_default: bool,
-    conn: &Rc<Db>,
-    on_added: &OnAdded,
-) {
-    clear(parent);
-    let subtitle = strings::podcast_episode_count(preview.count);
-    let row = candidate_row(
-        &preview.title,
-        &subtitle,
-        preview.kind,
-        preview.image_url.as_deref(),
-        images_allowed(conn),
-    );
-    parent.append(&row);
-    let import = gtk4::CheckButton::with_label(&strings::podcast_import_latest_count(import_count));
-    import.set_active(true);
-    parent.append(&import);
-    let auto_download =
-        gtk4::CheckButton::with_label(&strings::text(strings::PODCAST_AUTO_DOWNLOAD));
-    auto_download.set_active(auto_download_default);
-    parent.append(&auto_download);
-    let subscribe_button = gtk4::Button::with_label(&strings::text(strings::PODCAST_SUBSCRIBE));
-    subscribe_button.add_css_class("suggested-action");
-    let candidate = Candidate {
-        kind: preview.kind,
-        title: preview.title,
-        subtitle,
-        author: preview.author,
-        image_url: preview.image_url,
-        url: preview.url,
-        identity_guids: preview.guids.clone(),
-    };
-    let conn = conn.clone();
-    let on_added = on_added.clone();
-    let preview_guids = preview.guids;
-    let parent_weak = parent.downgrade();
-    subscribe_button.connect_clicked(move |button| {
-        let baseline = baseline_for_import_choice(import.is_active(), &preview_guids);
-        let result = subscribe(
-            &conn,
-            &candidate,
-            auto_download.is_active(),
-            baseline.as_deref(),
-        );
-        match result {
-            Ok(_) => {
-                on_added(import.is_active());
-                if let Some(parent) = parent_weak.upgrade() {
-                    clear(&parent);
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%error, "could not subscribe to podcast preview");
-                button.set_tooltip_text(Some(&strings::text(strings::PODCAST_SUBSCRIBE_FAILED)));
-            }
-        }
-    });
-    parent.append(&subscribe_button);
-}
-
-/// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
-/// &modules::SOURCE_IMAGES_MODULE)`, computed once by each caller of
-/// [`candidate_row`] — this dialog never lets the widget read settings
-/// itself.
-fn images_allowed(conn: &Db) -> bool {
-    reprise_core::online_sources::network_allowed(
-        conn,
-        &reprise_core::modules::SOURCE_IMAGES_MODULE,
-    )
-    .unwrap_or(false)
-}
-
-fn candidate_row(
-    title: &str,
-    subtitle: &str,
-    kind: PodcastKind,
-    image_url: Option<&str>,
-    images_allowed: bool,
-) -> gtk4::Box {
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-    row.add_css_class("reprise-podcast-result");
-    let image = super::source_image::SourceImage::new(
-        image_url,
-        match kind {
-            PodcastKind::Rss => "audio-input-microphone-symbolic",
-            PodcastKind::Youtube => "video-x-generic-symbolic",
-        },
-        40,
-        images_allowed,
-    );
-    row.append(image.widget());
-    let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    labels.set_hexpand(true);
-    let title = gtk4::Label::new(Some(title));
-    title.set_xalign(0.0);
-    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    labels.append(&title);
-    let subtitle = gtk4::Label::new(Some(subtitle));
-    subtitle.add_css_class("caption");
-    subtitle.add_css_class("reprise-text-secondary");
-    subtitle.set_xalign(0.0);
-    // SRC-8: the subtitle ellipsizes for the same reason the title does — a
-    // long publisher name would otherwise raise the dialog's minimum width
-    // and the window would change size between two searches.
-    subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    labels.append(&subtitle);
-    row.append(&labels);
-    row
 }
 
 #[cfg(test)]

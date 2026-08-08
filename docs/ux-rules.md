@@ -4754,7 +4754,7 @@ listening statistics.
   A range covers only rendered rows: a collapsed group, the episodes past a
   preview window and rows hidden by the filter stay out of it. Applying a
   selection never rebuilds the list, so keyboard focus survives it.
-- **SRC-15** [active] [core] [gtk] — **The add dialogs suggest from the
+- **SRC-15** [replaced by SRC-15a] [core] [gtk] — **The add dialogs suggest from the
   library, never from a hard-coded taste.** Podcasts and YouTube each carry
   one chip above the result list holding the genre this library has spent the
   most listening time on — "Metal podcasts" on the podcast page, "Metal
@@ -4766,6 +4766,20 @@ listening statistics.
   nothing carrying a genre shows **no chip at all** — an empty or invented
   suggestion is worse than none, and the dialogs remain fully usable through
   their search field.
+- **SRC-15a** [active] [core] [gtk] — **The library chip suggests from the
+  library, never from a hard-coded taste — and it belongs to the surfaces a
+  genre is a real query for.** The YouTube add dialog carries one chip above
+  the result list holding the genre this library has spent the most listening
+  time on ("Metalcore channels"), and radio carries the same fact as its first
+  chip (`RAD-5`). Both read one shared derivation
+  (`library::taste::top_genre`), so they never disagree about what this library
+  listens to. Activating a chip fills the search field with the term it
+  searched for: the run stays visible, editable and repeatable, never a hidden
+  query. A library that has played nothing carrying a genre shows **no chip at
+  all** — an empty or invented suggestion is worse than none, and both dialogs
+  remain fully usable through their search field. The Apple Podcasts dialog
+  does **not** carry this chip: a bare genre word is a weak podcast search
+  term, and that dialog's one chip slot is spent on `SRC-19` instead.
 - **SRC-16** [active] [gtk] — **Podcast and YouTube episode lists share one
   row grammar.** A fixed 64 × 40 media column hosts either 64 × 36 wide art or
   36 × 36 square art, so both source kinds start their title at the same x
@@ -4807,6 +4821,93 @@ listening statistics.
   `src_17_the_row_menu_button_is_transparent_until_hover_focus_or_selection`,
   `src_17_the_channel_page_hides_its_row_menu_until_hover_focus_or_selection`,
   and `src_17_revealing_the_row_menu_button_does_not_move_the_title`.
+- **SRC-18** [active] [core] [gtk] — **An Apple Podcasts search result says
+  when the show last published.** Every RSS result row carries the age of its
+  newest episode as the second segment of its subtitle, after the author and
+  behind the same `·` separator the YouTube rows use: `New today`,
+  `New yesterday`, `New 4 days ago`, `New last week`, `New 2 weeks ago`,
+  `Last month`, `3 months ago`, and from a year onwards the absolute
+  `Last Oct 2019`. "New" carries only while the show is fresh: 35–64 days say
+  "Last month", 65 days onwards drop to "… months ago", and a year onwards
+  becomes "Last …" — the wording itself signals decay. Counted units round
+  **down** with a plain divisor — 7 days to the week and 30 to the plural month,
+  never a calendar walk; the singular month is the explicit 35–64-day bucket.
+  Thus 20 days is "New 2 weeks ago", and rounding down never claims a show is
+  staler than it is. A feed dated in the future — a mis-set timezone, a
+  scheduled episode — reads as `New today` rather than producing a negative
+  age. A result whose feed carries no usable date **drops the segment
+  entirely** rather than printing "unknown", and a result with no author drops
+  the leading separator with it. The date is read in core
+  (`itunes::SearchResult::last_episode`) as a Unix second, and one malformed
+  date costs that row its segment and never the other eleven results. This
+  scale is deliberately **not** `podcasts_presentation::relative_date`'s: that
+  one orders episodes the listener already subscribes to, this one judges a
+  stranger. YouTube channel rows carry no freshness at all — yt-dlp's channel
+  search yields only the upload dates of whichever videos the relevance
+  ranking surfaced, so a daily channel could read "last March".
+- **SRC-19** [active] [core] [gtk] — **The Apple Podcasts dialog opens on what
+  a country listens to.** Its one chip reads `Popular in DE`, and activating it
+  loads Apple's country chart **directly into the result list** — the search
+  entry stays untouched, because a chart has no search term to fill in with.
+  The section carries its own heading (`PODCASTS · TOP IN DE`) in the same
+  style as `PODCASTS · APPLE PODCASTS`, so a chart is never mistaken for the
+  results of a search nobody typed; submitting a text search afterwards
+  replaces the section, exactly as a second search replaces the first. The
+  country is resolved **once per dialog** from the stored app-level location's
+  country code (`O-4`), falling back to the system locale — unlike `RAD-5`,
+  where a countryless location turns "Near you" into a deep link that opens the
+  location setting in Preferences, a location that carries no country falls
+  through to the locale here, because this chip has a working answer either
+  way. A stored code that is not a storefront — two ASCII letters, the same
+  check the locale territory passes — falls through with it rather than being
+  handed to Apple.
+  That same country drives the text search below it, so the chip and the
+  results it sits above can never mean two different catalogs. The label uses
+  the country **code**, matching `RAD-5`'s "Metal in DE": real country names
+  would need a translated table covering every Apple storefront. Chart rows are
+  ordinary search results — same row widget, same already-subscribed filtering
+  (`SRC-5`), same freshness segment (`SRC-18`) — assembled from the chart
+  feed's ids plus **one** batched lookup, restored to chart order, with ids the
+  lookup drops falling out silently rather than leaving a hole; an id the lookup
+  could not be asked for — anything that is not a number — is dropped before
+  the request, not after it. A chart with nothing left to show, whether Apple
+  returned nothing or `SRC-5` filtered every row away because this library
+  already follows all of it, says so **in its own sentence**: the search's
+  "Nothing found for '…' — try pasting a feed/channel URL instead" would quote
+  the chip's label back as a term the user never typed. Offline the
+  chip is **absent**, for the same reason search is (`NET-3` point 4): it is a
+  network action, and a pill that only reports failure is worse than none. It
+  is equally absent when podcast online sources are switched off (`NET-1a`) —
+  reachability is not consent, and activating it would issue the chart and
+  lookup requests a refused source is promised never to make. Both halves are
+  read once, when the dialog is built, and a failed consent lookup counts as
+  refused.
+- **SRC-20** [active] [gtk] — **Dormant Apple Podcasts search results sink
+  without losing relevance order.** Search results whose newest episode is at
+  least 365 days old move after every fresher result, using the exact boundary
+  at which `SRC-18` switches to `Last <Mon Year>`. The partition is stable:
+  fresh shows keep Apple's order among themselves, and dormant shows do too.
+  A result with no usable date stays in the fresh group, because absence is
+  not evidence that a show is dormant. This applies only to text search;
+  country charts keep their chart order untouched.
+- **SRC-21** [active] [gtk] — **Add Podcast search results make their match
+  visible.** Whenever a text query produced the result list, the query is
+  accent-bold inside each matching title and author, case-insensitively and
+  mid-word, reusing `FIL-5` and `POD-25`'s Pango-escaped treatment. The RSS
+  subtitle is marked from its parts: only the author can be highlighted; the
+  separator and `SRC-18` freshness clause are escaped but never marked, even
+  when the query occurs there. A country chart has no query and therefore no
+  highlighting. The title keeps `EllipsizeMode::End`, so long provider text
+  cannot widen the dialog (`SRC-8`).
+- **SRC-22** [active] [gtk] — **An Apple search result explains a match its row
+  cannot show.** When `SRC-21`'s exact comparison finds the text query in
+  neither the displayed title nor publisher, a quiet information marker sits
+  immediately after the title. Its tooltip and accessible description say:
+  "The search term is not in the title or publisher shown here, but Apple
+  returned this podcast as a result." Apple does not reveal which other field
+  matched, so the explanation names none. The marker keeps its space while the
+  title ellipsizes and cannot widen the dialog (`SRC-8`). Country charts have
+  no query and therefore no marker.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
