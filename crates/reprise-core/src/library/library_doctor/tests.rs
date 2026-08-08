@@ -91,6 +91,7 @@ impl RemoteResolver for CollisionRemoteResolver {
                 source: ProposalSource::MusicBrainz,
                 confidence: 100,
                 preselected: false,
+                never_preselect: false,
                 problem_class: ProblemClass::CasingWhitespace,
                 evidence: Vec::new(),
                 local_fallback: None,
@@ -170,6 +171,7 @@ impl RemoteResolver for CapturingRemoteResolver {
                 source: ProposalSource::MusicBrainz,
                 confidence: 88,
                 preselected: false,
+                never_preselect: false,
                 problem_class: ProblemClass::MissingWrongYear,
                 evidence: vec![RemoteEvidence {
                     source: RemoteEvidenceSource::MusicBrainz,

@@ -616,6 +616,7 @@ fn doc_5a_recording_mbid_uses_the_guarded_review_write_path() {
         source: ProposalSource::MusicBrainz,
         confidence: 100,
         preselected: false,
+        never_preselect: false,
         problem_class: ProblemClass::MissingRecordingMbid,
         evidence: Vec::new(),
         local_fallback: None,

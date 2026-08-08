@@ -982,3 +982,4 @@ Task listens-back-from-phone-a-review-last-played: complete (this commit, base a
 # Library Doctor guard rails
 
 Task GUARD-0: complete (this commit, base cfc22acfcf, activated DOC-1f and DOC-4c, marked DOC-4a replaced, amended DOC-8b and DOC-9b, and recorded the package ownership for this worktree)
+Task GUARD-1: complete (this commit, base f770229eb7, rejected curated and MBID-identified Various Artists placeholders before either proposals or unresolved candidates, capped title/year specificity losses at 49 with matcher-owned `never_preselect`, renamed DOC-4a coverage to DOC-4c, and mechanically initialized the new proposal field at every constructor; the named overwrite, missing-field and unresolved-candidate regressions were observed red before passing)

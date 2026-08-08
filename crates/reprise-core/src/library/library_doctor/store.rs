@@ -436,6 +436,7 @@ fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>
                 source,
                 confidence: row.get(5)?,
                 preselected: row.get(6)?,
+                never_preselect: false,
                 problem_class,
                 evidence: serde_json::from_str(&row.get::<_, String>(8)?).map_err(|error| {
                     rusqlite::Error::FromSqlConversionFailure(

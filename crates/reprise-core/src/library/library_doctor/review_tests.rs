@@ -28,6 +28,7 @@ fn proposal(track_id: i64, field: DoctorField, source: ProposalSource) -> Doctor
             91
         },
         preselected: source == ProposalSource::Local,
+        never_preselect: false,
         problem_class: ProblemClass::CasingWhitespace,
         evidence: Vec::new(),
         local_fallback: None,
