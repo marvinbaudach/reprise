@@ -257,6 +257,12 @@ exist.)
   shows a stale result (see `cover_loader.rs`).
 - Runtime-optional features are **modules** in `reprise-core::modules` (a descriptor + a
   persisted `module.<id>.enabled` flag); gate the behavior on `modules::is_enabled`.
+- **Icon names are strings GTK resolves at runtime**, so a wrong one is not a compile error —
+  it silently draws the missing-image box. `emblem-ok-symbolic` did that at seven call sites
+  (`adwaita-icon-theme 50` dropped the name). Either use a name the theme has, or pair it with
+  a fallback in code and list it in `ui::icons`'s `GUARDED`;
+  `every_icon_name_the_app_asks_for_can_be_drawn` checks every `"…-symbolic"` literal under
+  `src/ui` against the installed theme.
 
 ## Completed file ownership — episodes as queue citizens
 
