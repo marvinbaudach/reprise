@@ -3,6 +3,7 @@
 
 mod add_dialog;
 mod add_dialog_network;
+mod add_dialog_rows;
 mod css;
 mod edit_dialog;
 mod radio_add_input;

@@ -5258,6 +5258,19 @@ listening statistics.
   behind city search — never from a new reverse-geocoding call, so a
   location set via the portal path stays honestly countryless rather than
   guessed.
+- **RAD-6** [active] [gtk] — **Add Station text-search results make their
+  station-name match visible.** The free-text query is accent-bold inside
+  each matching station name, case-insensitively and mid-word, reusing
+  `SRC-21` and `FIL-5`'s shared Pango-escaped highlighter. The generated
+  details line (genre, bitrate, country and votes) is escaped plain text and
+  never highlighted, even when it contains the query. "Top voted", "Near
+  you" and the library genre chip search by tag and/or country, carry no text
+  query and therefore produce no highlighting. Radio has no `SRC-22`
+  unexplained-match marker: radio-browser searches station names, but its
+  server-side accent folding can return a visibly matching name that the
+  local comparison cannot mark (for example, "metal" and "Métal"). As in
+  `FIL-5` and `POD-25`, that listed but unaccented row is an accepted gap,
+  never a wrong row.
 
 ## AG. Runtime service (headless control)
 
