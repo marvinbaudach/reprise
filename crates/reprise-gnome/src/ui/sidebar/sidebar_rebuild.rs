@@ -366,6 +366,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         }
     }
 
+    crate::ui::startup_report::count("sidebar_rebuild");
     tracing::debug!(
         playlists = playlist_count,
         missing = missing_count,

@@ -94,6 +94,7 @@ mod source_error_details;
 mod source_reveal;
 mod source_row;
 mod spectrogram;
+pub(crate) mod startup_report;
 mod stats;
 pub mod status_bar;
 pub mod strings;

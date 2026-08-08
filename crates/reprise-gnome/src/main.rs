@@ -117,7 +117,9 @@ fn ensure_window(
 fn main() -> glib::ExitCode {
     ui::track_list::diagnostic_trail::mark_process_start();
     init_logging();
+    ui::startup_report::mark("logging initialised");
     i18n::init();
+    ui::startup_report::mark("i18n initialised");
     i18n::smoke_report();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Reprise");
 
@@ -125,6 +127,7 @@ fn main() -> glib::ExitCode {
         .application_id(APP_ID)
         .flags(application_flags())
         .build();
+    ui::startup_report::mark("adw::Application built");
 
     // Primary-vs-secondary is decided *before* the database is touched
     // (field finding, Stage 3): GApplication is single-instance, and a
@@ -146,6 +149,7 @@ fn main() -> glib::ExitCode {
         // to when `run()`'s own registration fails.
         tracing::warn!(%error, "could not register with the session bus; continuing standalone");
     }
+    ui::startup_report::mark("app.register() returned");
     if app.is_remote() {
         tracing::info!("Reprise is already running — presenting the existing window");
         // Forwards `activate` to the primary instance and returns once
@@ -157,7 +161,9 @@ fn main() -> glib::ExitCode {
     let path = db::default_path();
     tracing::info!(db_path = %path.display(), "opening database");
     let conn = db::Db::open_migrated(Some(&path)).expect("failed to open or migrate database");
+    ui::startup_report::mark("database opened");
     tracing::info!("database ready");
+    ui::startup_report::mark("database migrated");
 
     // Single-threaded UI: the database handle is shared via Rc, not Arc/Mutex.
     // Core owns the connection and exposes named operations; scans open their

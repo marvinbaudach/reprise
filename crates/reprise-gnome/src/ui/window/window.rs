@@ -30,7 +30,6 @@ use super::player_controller::PlayerController;
 use super::scan_progress::ScanProgressView;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
-use super::strings;
 use super::track_content;
 use super::track_list::{OnActivate, TrackList};
 
@@ -53,45 +52,15 @@ pub fn build(
         session_state,
         first_run_decision,
     } = super::window_bootstrap::prepare(app, conn);
+    super::startup_report::mark("window_bootstrap::prepare");
     let waveform_backend = super::window_bootstrap::waveform_backend();
-    // Headerbar title follows the currently selected `ViewSource` (Stage 3
-    // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and
-    // `Sidebar`'s own default initial source, so this is set directly here
-    // rather than through a round trip via `Sidebar::set_on_select` (not
-    // wired until after `TrackList` exists — see that method's doc comment).
-    let window_title = adw::WindowTitle::new(&strings::text(strings::SIDEBAR_MUSIC), "");
-
-    let search_entry = gtk4::SearchEntry::builder()
-        .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
-        .accessible_role(gtk4::AccessibleRole::SearchBox)
-        .build();
-    // SEARCH-9: `GtkSearchEntry` throttles `search-changed` by its own
-    // `search-delay` (150 ms by default). Reprise debounces the query itself
-    // in `view_session::wire_search`, so leaving GTK's delay on stacked two
-    // waits and put half the latency out of reach of the code that owns it.
-    search_entry.set_search_delay(0);
-    search_entry.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::SEARCH_PLACEHOLDER,
-    ))]);
-
-    // Starts hidden until `wire_sidebar_toggle` has applied both the persisted
-    // Sidebar preference and the current split-view state.
-    let sidebar_toggle = gtk4::ToggleButton::builder()
-        .icon_name("sidebar-show-symbolic")
-        .tooltip_text(strings::text(strings::SIDEBAR_TOGGLE))
-        .css_classes(["flat", "reprise-panel-toggle"])
-        .visible(false)
-        .build();
-
-    let header = adw::HeaderBar::new();
-    if let Some(badge) = build_build_kind_badge() {
-        header.pack_start(&badge);
-    }
-    header.pack_start(&sidebar_toggle);
-    header.pack_start(&super::library_chrome::build_navigation_back_button());
-    header.set_title_widget(Some(&window_title));
-    let maintenance_actions = super::library_chrome::build_maintenance_actions();
-    let scan_button = maintenance_actions.scan;
+    let super::window_header::WindowHeader {
+        window_title,
+        search_entry,
+        sidebar_toggle,
+        header,
+        scan_button,
+    } = super::window_header::build();
 
     // The player is created eagerly at window build (not lazily on first
     // activation): construction is cheap (one playbin, no I/O), the
@@ -119,10 +88,12 @@ pub fn build(
     let concerts_runtime = crate::ui::concerts::ConcertsRuntime::setup(conn);
     let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(conn);
     let artist_portrait = super::artist_portrait_worker::ArtistPortraitRuntime::setup(conn);
+    super::startup_report::mark("runtime setups");
     let media = std::env::var(crate::SMOKE_MPRIS_BUS_ENV_VAR).map_or_else(
         |_| reprise_platform_linux::mpris::start(crate::APP_ID),
         |bus_name| reprise_platform_linux::mpris::start_with_bus_name(crate::APP_ID, bus_name),
     );
+    super::startup_report::mark("MPRIS");
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
@@ -133,6 +104,7 @@ pub fn build(
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
     device_sync.bind_preparation_downloader(&podcasts_runtime);
     super::device_sync_smoke::arm(&device_sync);
+    super::startup_report::mark("device sync");
     let player = match super::player_backends::build(waveform_backend.clone(), media) {
         Ok(backends) => Some(PlayerController::new(
             conn.clone(),
@@ -147,6 +119,7 @@ pub fn build(
             None
         }
     };
+    super::startup_report::mark("player backends");
     let startup_intent = startup_intent.with_player_available(player.is_some());
     let initial_view =
         super::compact_mode_controls::initial_transition(conn, first_run_decision, startup_intent);
@@ -173,6 +146,7 @@ pub fn build(
         let queue_model = queue_model.clone();
         move || queue_model.borrow().sidebar_count()
     }));
+    super::startup_report::mark("sidebar");
 
     // Stage 3 Task 8: at most one folder watcher runs at a time. `None`
     // until either the startup check below finds a persisted `library_root`
@@ -262,6 +236,7 @@ pub fn build(
             cover_download.clone(),
         ))
     };
+    super::startup_report::mark("track list");
     super::column_layout_editor::install_header_popover(&track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
@@ -316,6 +291,7 @@ pub fn build(
     super::current_track_selection::wire(player.as_ref(), &track_list);
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
+    super::startup_report::mark("stats");
     let content_stack = super::content_stack::build();
     // Size to the visible page in both axes: dedicated content pages must not
     // inherit the library's minimum size, nor vice versa.
@@ -335,6 +311,7 @@ pub fn build(
         player.as_ref(),
         &artist_news,
     );
+    super::startup_report::mark("library_shell::build");
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
@@ -373,10 +350,12 @@ pub fn build(
         conn.clone(),
         &concerts_runtime,
     ));
+    super::startup_report::mark("concerts");
     let releases_view = Rc::new(crate::ui::releases::install(
         conn.clone(),
         db_path.to_path_buf(),
     ));
+    super::startup_report::mark("releases");
     content_stack.add_named(concerts_view.root(), Some("concerts"));
     content_stack.add_named(releases_view.root(), Some("releases"));
     let source_views = super::source_views::install(
@@ -387,6 +366,7 @@ pub fn build(
         &content_stack,
         &device_sync,
     );
+    super::startup_report::mark("source_views::install (podcasts / YouTube / radio)");
     // The toast layer is attached after the player-bar shell exists so
     // notifications render above the complete library chrome.
     let toast_overlay = adw::ToastOverlay::new();
@@ -432,6 +412,7 @@ pub fn build(
         watcher_state: &watcher_state,
         metadata_navigator: &metadata_navigator,
     });
+    super::startup_report::mark("window_action_wiring::wire");
 
     let open_device = super::window_navigation::open_device_callback(
         &content_nav,
@@ -525,6 +506,7 @@ pub fn build(
         &artist_portrait,
         &decorations,
     );
+    super::startup_report::mark("PreferencesContext::new");
     {
         let preferences = Rc::downgrade(&preferences);
         if let Some(discovery) = super::online_discovery_banner::build(conn, move || {
@@ -586,76 +568,30 @@ pub fn build(
         active_content_focus: &active_content_focus,
         metadata_navigator: &metadata_navigator,
     });
+    let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
     super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
 
     tracing::info!("main window built");
+    if startup_report_armed {
+        window.add_tick_callback(|_, frame_clock| {
+            // A tick supplies the mapped window's frame clock. The report itself
+            // waits for after-paint so serialization cannot delay this frame.
+            let handler = Rc::new(RefCell::new(None));
+            let handler_for_callback = handler.clone();
+            let id = frame_clock.connect_after_paint(move |frame_clock| {
+                super::startup_report::mark("first frame drawn");
+                super::startup_report::write_if_armed();
+                let id = handler_for_callback.borrow_mut().take();
+                if let Some(id) = id {
+                    frame_clock.disconnect(id);
+                }
+            });
+            *handler.borrow_mut() = Some(id);
+            gtk4::glib::ControlFlow::Break
+        });
+    }
     window.present();
+    super::startup_report::mark("window.present()");
     super::runtime_performance::arm(&window, &track_list);
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
-}
-
-/// What the badge should read, given what is actually different about this
-/// build. `None` means "nothing to say" — a plain release build.
-fn build_kind_label(is_debug_build: bool, scroll_diagnostic: bool) -> Option<String> {
-    let mut parts: Vec<&str> = Vec::new();
-    if is_debug_build {
-        parts.push("DEBUG");
-    }
-    if scroll_diagnostic {
-        parts.push("SCROLL-LOG");
-    }
-    if parts.is_empty() {
-        return None;
-    }
-    Some(parts.join(" \u{b7} "))
-}
-
-/// A badge naming this build, for anything that is not the shipped release.
-///
-/// A session regularly has several binaries in play at once — the installed
-/// app, a debug build from a worktree, one with a diagnostic switched on —
-/// and telling them apart by the window alone was guesswork. The badge sits
-/// in the header bar rather than in the window title because the title is
-/// rewritten on every navigation (`Music`, an album name, …) while this
-/// survives.
-///
-/// `None` for a release build with no diagnostics active: the shipped app
-/// carries no badge at all.
-fn build_build_kind_badge() -> Option<gtk4::Widget> {
-    let text = build_kind_label(
-        cfg!(debug_assertions),
-        std::env::var_os("REPRISE_DEBUG_SCROLL").is_some(),
-    )?;
-    let label = gtk4::Label::new(Some(&text));
-    label.add_css_class("reprise-build-badge");
-    label.set_tooltip_text(Some(
-        "This is not the installed release build. Diagnostics may be active.",
-    ));
-    Some(label.upcast())
-}
-
-#[cfg(test)]
-mod build_badge_tests {
-    use super::build_kind_label;
-
-    /// The shipped app must stay unmarked — a badge on the release build
-    /// would be noise in every screenshot and bug report.
-    #[test]
-    fn a_release_build_without_diagnostics_carries_no_badge() {
-        assert_eq!(build_kind_label(false, false), None);
-    }
-
-    #[test]
-    fn the_badge_names_what_is_actually_different() {
-        assert_eq!(build_kind_label(true, false).as_deref(), Some("DEBUG"));
-        assert_eq!(
-            build_kind_label(false, true).as_deref(),
-            Some("SCROLL-LOG"),
-            "a release build can still have a diagnostic switched on"
-        );
-        assert_eq!(
-            build_kind_label(true, true).as_deref(),
-            Some("DEBUG · SCROLL-LOG")
-        );
-    }
 }
