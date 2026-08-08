@@ -112,6 +112,7 @@ impl FilterBarLayout {
     }
 
     pub(in crate::ui) fn fill_facets(&self, widget: &impl IsA<gtk4::Widget>) {
+        widget.set_halign(gtk4::Align::Start);
         fill(&self.facets, widget);
     }
 
@@ -201,6 +202,12 @@ pub(in crate::ui) fn style_clear_all(button: &impl IsA<gtk4::Widget>) {
     button.add_css_class(CLEAR_ALL_CSS_CLASS);
 }
 
+pub(in crate::ui) fn facet_row() -> gtk4::Box {
+    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    row.set_visible(false);
+    row
+}
+
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{ADD_FILTER_CSS_CLASS} {{ border: 1px dashed alpha(currentColor, 0.18); \
@@ -216,6 +223,7 @@ fn slot(kind: FilterBarSlot) -> gtk4::Box {
     let slot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     slot.set_widget_name(kind.name());
     slot.set_hexpand(kind == FilterBarSlot::Spacer);
+    slot.set_visible(kind == FilterBarSlot::Spacer);
     slot
 }
 
@@ -223,12 +231,28 @@ fn fill(slot: &gtk4::Box, widget: &impl IsA<gtk4::Widget>) {
     clear(slot);
     widget.set_hexpand(false);
     slot.append(widget);
+    // An empty visible child still makes GtkBox apply spacing around its slot.
+    // Mirror the child's explicit visibility so absent slots consume nothing.
+    slot.set_visible(widget.property("visible"));
+    let weak_slot = slot.downgrade();
+    widget.connect_visible_notify(move |widget| {
+        let Some(slot) = weak_slot.upgrade() else {
+            return;
+        };
+        if widget
+            .parent()
+            .is_some_and(|parent| parent == slot.clone().upcast::<gtk4::Widget>())
+        {
+            slot.set_visible(widget.property("visible"));
+        }
+    });
 }
 
 fn clear(slot: &gtk4::Box) {
     while let Some(child) = slot.first_child() {
         slot.remove(&child);
     }
+    slot.set_visible(false);
 }
 
 #[cfg(test)]
@@ -239,18 +263,16 @@ mod tests {
 
     const NARROW_WIDTH: i32 = 800;
     const WIDE_WIDTH: i32 = 1_120;
-
-    #[derive(Clone, Copy)]
-    enum FacetContainer {
-        FlowBox,
-        Box,
-    }
+    const NORMAL_SEARCH_CHIP_GAP: f32 = 14.0;
+    const NORMAL_FACET_CHIP_GAP: f32 = 13.0;
 
     #[derive(Debug)]
     struct Geometry {
         root_width: f32,
-        add_gap: f32,
-        slot_gap: f32,
+        add_gap: Option<f32>,
+        add_leading_x: f32,
+        facet_width: f32,
+        facet_trailing_gap: Option<f32>,
         slot_widths: [f32; 8],
     }
 
@@ -279,36 +301,27 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_2a_only_the_spacer_expands_across_all_six_filter_bars() {
+    fn fil_2a_slots_are_content_sized_and_only_the_spacer_expands_across_all_six_bars() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
 
-        for (bar, container) in [
-            ("Music", FacetContainer::FlowBox),
-            ("Releases", FacetContainer::FlowBox),
-            ("Concerts", FacetContainer::FlowBox),
-            ("Podcasts", FacetContainer::Box),
-            ("YouTube", FacetContainer::Box),
-            ("Radio", FacetContainer::Box),
+        for bar in [
+            "Music", "Releases", "Concerts", "Podcasts", "YouTube", "Radio",
         ] {
-            for facets_full in [false, true] {
-                let narrow = measure_geometry(container, facets_full, NARROW_WIDTH);
-                let wide = measure_geometry(container, facets_full, WIDE_WIDTH);
-                let state = if facets_full { "full" } else { "empty" };
-
+            for (state, search_present, facets_full) in [
+                ("empty", false, false),
+                ("one search chip", true, false),
+                ("one facet chip", false, true),
+            ] {
+                let narrow = measure_geometry(search_present, facets_full, NARROW_WIDTH);
+                let wide = measure_geometry(search_present, facets_full, WIDE_WIDTH);
                 assert_close(
-                    wide.add_gap,
-                    narrow.add_gap,
+                    wide.add_gap.unwrap_or(wide.add_leading_x),
+                    narrow.add_gap.unwrap_or(narrow.add_leading_x),
                     &format!(
-                        "{bar} moved Add filter away from the preceding {state} facets; narrow={narrow:?}; wide={wide:?}"
+                        "{bar} moved Add filter away from the preceding {state}; narrow={narrow:?}; wide={wide:?}"
                     ),
                 );
-                assert_close(
-                    wide.slot_gap,
-                    narrow.slot_gap,
-                    &format!("{bar} opened a slot gap before Add filter with {state} facets"),
-                );
-
                 for (index, slot) in all_slots().into_iter().enumerate() {
                     if slot == FilterBarSlot::Spacer {
                         continue;
@@ -329,16 +342,53 @@ mod tests {
                     wide.root_width - narrow.root_width,
                     &format!("{bar}'s spacer did not absorb all growth with {state} facets"),
                 );
+
+                if facets_full {
+                    assert_close(
+                        narrow
+                            .facet_trailing_gap
+                            .expect("the full Facets slot has one chip"),
+                        0.0,
+                        &format!("{bar}'s Facets slot reserves width after its only chip"),
+                    );
+                    assert_close(
+                        narrow.add_gap.expect("the facet chip precedes Add filter"),
+                        NORMAL_FACET_CHIP_GAP,
+                        &format!("{bar} left more than normal spacing after its facet chip"),
+                    );
+                } else {
+                    assert_close(
+                        narrow.facet_width,
+                        0.0,
+                        &format!("{bar}'s empty Facets slot still reserves width"),
+                    );
+                }
+
+                if search_present {
+                    assert_close(
+                        narrow.add_gap.expect("the search chip precedes Add filter"),
+                        NORMAL_SEARCH_CHIP_GAP,
+                        &format!("{bar} left more than normal spacing after its search chip"),
+                    );
+                } else if !facets_full {
+                    assert_close(
+                        narrow.add_leading_x,
+                        layout_content_start(),
+                        &format!("{bar} left empty slots before Add filter"),
+                    );
+                }
             }
         }
     }
 
-    fn measure_geometry(container: FacetContainer, facets_full: bool, width: i32) -> Geometry {
+    fn measure_geometry(search_present: bool, facets_full: bool, width: i32) -> Geometry {
         let layout = FilterBarLayout::new();
-        let search = gtk4::Button::with_label("⌕ falling");
-        layout.fill_search(&search);
+        let search = search_present.then(|| gtk4::Button::with_label("⌕ falling"));
+        if let Some(search) = &search {
+            layout.fill_search(search);
+        }
 
-        let (facets, last_facet) = facet_container(container, facets_full);
+        let (facets, last_facet) = facet_container(facets_full);
         // The slot contract must withstand any child requesting expansion.
         facets.set_hexpand(true);
         layout.fill_facets(&facets);
@@ -357,62 +407,55 @@ mod tests {
         assert!(crate::ui::test_settle::settle_until_mapped(layout.root()));
         crate::ui::test_settle::settle_for(Duration::from_millis(20));
 
-        let preceding = last_facet.unwrap_or_else(|| search.clone().upcast());
-        let preceding_bounds = preceding
-            .compute_bounds(layout.root())
-            .expect("preceding chip has filter-bar bounds");
+        let preceding = last_facet
+            .clone()
+            .or_else(|| search.map(gtk4::glib::object::Cast::upcast));
         let add_bounds = add_filter
             .compute_bounds(layout.root())
             .expect("Add filter has filter-bar bounds");
-        let facet_slot_bounds = layout
-            .slot_widget(FilterBarSlot::Facets)
-            .compute_bounds(layout.root())
-            .expect("facet slot has filter-bar bounds");
+        let facet_slot = layout.slot_widget(FilterBarSlot::Facets);
         let add_slot_bounds = layout
             .slot_widget(FilterBarSlot::AddFilter)
             .compute_bounds(layout.root())
             .expect("Add filter slot has filter-bar bounds");
-        let slot_widths = all_slots().map(|slot| {
-            layout
-                .slot_widget(slot)
-                .compute_bounds(layout.root())
-                .expect("slot has filter-bar bounds")
-                .width()
-        });
+        let slot_widths = all_slots().map(|slot| layout.slot_widget(slot).width() as f32);
         let geometry = Geometry {
             root_width: layout.root().width() as f32,
-            add_gap: add_bounds.x() - preceding_bounds.x() - preceding_bounds.width(),
-            slot_gap: add_slot_bounds.x() - facet_slot_bounds.x() - facet_slot_bounds.width(),
+            add_gap: preceding.map(|preceding| {
+                let preceding_bounds = preceding
+                    .compute_bounds(layout.root())
+                    .expect("preceding chip has filter-bar bounds");
+                add_bounds.x() - preceding_bounds.x() - preceding_bounds.width()
+            }),
+            add_leading_x: add_slot_bounds.x(),
+            facet_width: facet_slot.width() as f32,
+            facet_trailing_gap: last_facet.as_ref().map(|facet| {
+                let slot_bounds = facet_slot
+                    .compute_bounds(layout.root())
+                    .expect("the populated Facets slot has filter-bar bounds");
+                let chip_bounds = facet
+                    .compute_bounds(layout.root())
+                    .expect("the facet chip has filter-bar bounds");
+                slot_bounds.x() + slot_bounds.width() - chip_bounds.x() - chip_bounds.width()
+            }),
             slot_widths,
         };
         window.close();
         geometry
     }
 
-    fn facet_container(
-        container: FacetContainer,
-        full: bool,
-    ) -> (gtk4::Widget, Option<gtk4::Widget>) {
+    fn layout_content_start() -> f32 {
+        0.0
+    }
+
+    fn facet_container(full: bool) -> (gtk4::Widget, Option<gtk4::Widget>) {
         let facet = full.then(|| gtk4::Button::with_label("Genre: Metal"));
-        let widget = match container {
-            FacetContainer::FlowBox => {
-                let flow = gtk4::FlowBox::builder()
-                    .selection_mode(gtk4::SelectionMode::None)
-                    .column_spacing(6)
-                    .build();
-                if let Some(facet) = &facet {
-                    flow.insert(facet, -1);
-                }
-                flow.upcast()
-            }
-            FacetContainer::Box => {
-                let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-                if let Some(facet) = &facet {
-                    row.append(facet);
-                }
-                row.upcast()
-            }
-        };
+        let row = facet_row();
+        if let Some(facet) = &facet {
+            row.append(facet);
+        }
+        row.set_visible(full);
+        let widget = row.upcast();
         (widget, facet.map(gtk4::glib::object::Cast::upcast))
     }
 

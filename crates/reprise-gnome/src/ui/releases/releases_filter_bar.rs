@@ -66,7 +66,7 @@ pub(super) struct ReleasesFilterBar {
     layout: FilterBarLayout,
     conn: Rc<Db>,
     filter: RefCell<ReleasesFilter>,
-    chips: gtk4::FlowBox,
+    chips: gtk4::Box,
     add_filter: gtk4::MenuButton,
     add_filter_box: gtk4::Box,
     result_label: gtk4::Label,
@@ -86,13 +86,7 @@ impl ReleasesFilterBar {
         let layout = FilterBarLayout::new();
         let root = layout.root().clone();
 
-        let chips = gtk4::FlowBox::builder()
-            .selection_mode(gtk4::SelectionMode::None)
-            .column_spacing(6)
-            .row_spacing(4)
-            .hexpand(false)
-            .max_children_per_line(20)
-            .build();
+        let chips = filter_bar_layout::facet_row();
         layout.fill_facets(&chips);
 
         let add_filter_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
@@ -228,7 +222,9 @@ impl ReleasesFilterBar {
     }
 
     fn rebuild(self: &Rc<Self>) {
-        self.chips.remove_all();
+        while let Some(child) = self.chips.first_child() {
+            self.chips.remove(&child);
+        }
         self.layout.clear_search();
         let filter = self.filter();
         let query = self.query();
@@ -256,6 +252,7 @@ impl ReleasesFilterBar {
         if filter.hidden {
             self.append_hidden_chip();
         }
+        self.chips.set_visible(self.chips.first_child().is_some());
         self.rebuild_add_filter(&filter);
 
         // Measured against the default, not the widest: the default view is
@@ -518,7 +515,7 @@ mod tests {
             bar.root.height_request(),
             filter_bar_layout::FILTER_BAR_MIN_HEIGHT
         );
-        assert!(bar.chips.child_at_index(0).is_some());
+        assert!(bar.chips.first_child().is_some());
     }
 
     #[test]

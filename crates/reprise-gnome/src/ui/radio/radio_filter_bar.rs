@@ -220,7 +220,7 @@ impl RadioFilterBar {
         let popover = gtk4::Popover::builder().child(&chooser).build();
         add_filter.set_popover(Some(&popover));
 
-        let chips = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        let chips = filter_bar_layout::facet_row();
         let count = gtk4::Label::new(None);
         count.add_css_class("dim-label");
         count.add_css_class("caption");
@@ -417,6 +417,7 @@ impl RadioFilterBar {
             });
             self.chips.append(&button);
         }
+        self.chips.set_visible(self.chips.first_child().is_some());
         self.clear_all.set_visible(filter.is_active());
         self.set_counts(self.visible_count.get(), self.total_count.get());
     }

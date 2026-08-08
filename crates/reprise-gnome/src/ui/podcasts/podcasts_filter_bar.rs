@@ -55,7 +55,7 @@ impl PodcastsFilterBar {
         let layout = FilterBarLayout::new();
         let root = layout.root().clone();
 
-        let chips = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        let chips = filter_bar_layout::facet_row();
         layout.fill_facets(&chips);
         let popover_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
         popover_box.set_margin_top(8);
@@ -297,6 +297,7 @@ impl PodcastsFilterBar {
             });
             self.layout.fill_search(&chip);
         }
+        self.chips.set_visible(self.chips.first_child().is_some());
         self.clear_all.set_visible(active(&filter));
         self.rebuild_popover();
     }

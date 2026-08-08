@@ -331,7 +331,7 @@ fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
         &bar.clear_all
     ));
 
-    let genre_chip = bar.chips.child_at_index(0).unwrap().child().unwrap();
+    let genre_chip = bar.chips.first_child().unwrap();
     genre_chip
         .downcast::<gtk4::Button>()
         .unwrap()

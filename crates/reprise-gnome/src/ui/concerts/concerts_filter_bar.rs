@@ -138,7 +138,7 @@ pub(super) struct ConcertsFilterBar {
     layout: FilterBarLayout,
     conn: Rc<Db>,
     filter: RefCell<ConcertFilter>,
-    chips: gtk4::FlowBox,
+    chips: gtk4::Box,
     add_filter: gtk4::MenuButton,
     popover: gtk4::Popover,
     chooser_stack: gtk4::Stack,
@@ -167,13 +167,7 @@ impl ConcertsFilterBar {
         let layout = FilterBarLayout::new();
         let root = layout.root().clone();
 
-        let chips = gtk4::FlowBox::builder()
-            .selection_mode(gtk4::SelectionMode::None)
-            .column_spacing(6)
-            .row_spacing(4)
-            .hexpand(false)
-            .max_children_per_line(20)
-            .build();
+        let chips = filter_bar_layout::facet_row();
         layout.fill_facets(&chips);
 
         let chooser_stack = gtk4::Stack::new();
@@ -333,7 +327,9 @@ impl ConcertsFilterBar {
     }
 
     fn rebuild(self: &Rc<Self>) {
-        self.chips.remove_all();
+        while let Some(child) = self.chips.first_child() {
+            self.chips.remove(&child);
+        }
         self.layout.clear_search();
         let filter = self.filter();
         let query = self.query();
@@ -373,6 +369,7 @@ impl ConcertsFilterBar {
             });
             self.chips.append(&button);
         }
+        self.chips.set_visible(self.chips.first_child().is_some());
         self.clear_all.set_visible(active);
         let (shown, total) = self.counts.get();
         // FIL-2a: the shown number is accented while a restriction is active.

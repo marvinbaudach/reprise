@@ -1,5 +1,5 @@
 //! Chip and pill construction for the unified filter bar — the pure facet
-//! helpers plus the FlowBox append, split out of `browse_bar.rs` to keep both
+//! helpers plus chip insertion, split out of `browse_bar.rs` to keep both
 //! files under the repository's source-size limit.
 
 use gtk4::prelude::*;
@@ -163,13 +163,6 @@ pub(super) fn build_place_pill(place: &str) -> gtk4::Button {
     button
 }
 
-pub(super) fn append_chip(chips: &gtk4::FlowBox, widget: &impl IsA<gtk4::Widget>) {
+pub(super) fn append_chip(chips: &gtk4::Box, widget: &impl IsA<gtk4::Widget>) {
     chips.append(widget);
-    if let Some(wrapper) = widget
-        .as_ref()
-        .parent()
-        .and_downcast::<gtk4::FlowBoxChild>()
-    {
-        wrapper.set_focusable(false);
-    }
 }

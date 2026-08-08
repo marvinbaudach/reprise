@@ -57,7 +57,7 @@ pub struct BrowseBar {
     track_source: Cell<bool>,
     is_library: Cell<bool>,
     preference_visible: Cell<bool>,
-    chips: gtk4::FlowBox,
+    chips: gtk4::Box,
     pub(super) add_filter: gtk4::MenuButton,
     chooser_stack: gtk4::Stack,
     pub(super) facet_list: gtk4::ListBox,
@@ -93,14 +93,7 @@ impl BrowseBar {
         let layout = FilterBarLayout::new();
         let root = layout.root().clone();
 
-        let chips = gtk4::FlowBox::builder()
-            .selection_mode(gtk4::SelectionMode::None)
-            .column_spacing(6)
-            .row_spacing(4)
-            .max_children_per_line(20)
-            .hexpand(true)
-            .halign(gtk4::Align::Fill)
-            .build();
+        let chips = filter_bar_layout::facet_row();
 
         let popover = gtk4::Popover::new();
         popover.add_css_class(POPOVER_CSS_CLASS);
@@ -416,7 +409,9 @@ impl BrowseBar {
     }
 
     fn rebuild_chips(self: &Rc<Self>, filter: &BrowseFilter) {
-        self.chips.remove_all();
+        while let Some(child) = self.chips.first_child() {
+            self.chips.remove(&child);
+        }
         self.layout.clear_search();
         let query = self.search.borrow().trim().to_string();
         if !query.is_empty() {
@@ -471,6 +466,7 @@ impl BrowseBar {
             });
             append_chip(&self.chips, &button);
         }
+        self.chips.set_visible(self.chips.first_child().is_some());
         self.add_filter.set_visible(self.is_library.get());
         let ai_addable = self.ai_filter_available() && !self.exclude_ai.get();
         self.add_filter
