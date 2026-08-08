@@ -30,6 +30,11 @@ install_data(
   install_dir: get_option('datadir') / 'icons/hicolor/symbolic/apps',
 )
 
+install_data(
+  'icons/hicolor/symbolic/apps/reprise-stethoscope-symbolic.svg',
+  install_dir: get_option('datadir') / 'icons/hicolor/symbolic/apps',
+)
+
 
 
 # The activatable runtime service (plan section 9.4). Binary, bus-activation

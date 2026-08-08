@@ -13,6 +13,7 @@ mod review_page;
 mod review_row;
 mod running_page;
 mod start_page;
+mod start_page_css;
 mod summary_cards;
 mod summary_model;
 mod summary_page;
@@ -64,6 +65,7 @@ pub(in crate::ui) fn css() -> String {
         // The conflicts card is the quietest thing on the page: an outline, no
         // fill, no shadow.
         ".doctor-card-dashed { border: 1px dashed alpha(@borders, 0.9); border-radius: 12px; }",
+        &start_page_css::css(),
     ]
     .join(" ")
 }

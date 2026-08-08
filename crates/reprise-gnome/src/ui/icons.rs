@@ -33,6 +33,10 @@ mod tests {
             "external-link-symbolic",
             "updates::release_row_actions::icon_with_fallback → web-browser-symbolic",
         ),
+        (
+            "reprise-stethoscope-symbolic",
+            "library_doctor::start_page::doctor_start_icon_name → system-search-symbolic",
+        ),
     ];
 
     fn ui_root() -> PathBuf {
