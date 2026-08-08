@@ -4,7 +4,9 @@ import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -18,6 +20,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
+import uniffi.reprise_android_ffi.AndroidPlaybackState
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -92,4 +97,33 @@ class MobileBottomTabsTest {
         assertEquals(listOf(firstLibraryWindow()), application.artistWindowRequests)
     }
 
+    @Test
+    fun nowPlayingLeavesTheNavigationBarVisibleAndReceivingTheDestinationTap() {
+        application.service.publish(mobileTabsPlayingSnapshot())
+        shadowOf(Looper.getMainLooper()).idle()
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-mini-player").performClick()
+        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+        compose.onNodeWithTag("library-navigation-bar").assertIsDisplayed()
+
+        compose.onNodeWithTag("library-destination-ARTISTS")
+            .performTouchInput { click() }
+
+        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
+    }
 }
+
+private fun mobileTabsPlayingSnapshot() = AndroidPlaybackSnapshot(
+    state = AndroidPlaybackState.PLAYING,
+    currentIndex = 0u,
+    currentTrackId = 1,
+    currentTrackUri = "content://provider/document/1.flac",
+    positionMs = 12_000,
+    durationMs = 120_000,
+    automaticAdvanceCount = 0u,
+    shuffled = false,
+    repeat = AndroidRepeatMode.OFF,
+    error = null,
+)

@@ -9,12 +9,16 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarDefaults
+import androidx.compose.material3.NavigationRailDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,6 +32,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -359,6 +364,25 @@ internal fun BrowseScreen(
     // in the sheet would change it. A session that stopped therefore blanks the
     // moment it stops, without waiting for anything.
     val currentTrack = answeredTrack?.takeIf { it.id == playingTrackId }?.track
+    val frameMetrics = libraryFrameMetrics(surfaceLayout)
+    val nowPlayingFrameModifier = when (surfaceLayout) {
+        SurfaceLayout.STACKED -> Modifier
+            .fillMaxSize()
+            .padding(
+                bottom = frameMetrics.navigationBarHeightDp.dp +
+                    NavigationBarDefaults.windowInsets
+                        .asPaddingValues()
+                        .calculateBottomPadding(),
+            )
+        SurfaceLayout.WIDE_SHORT -> Modifier
+            .fillMaxSize()
+            .padding(
+                start = frameMetrics.navigationRailWidthDp.dp +
+                    NavigationRailDefaults.windowInsets
+                        .asPaddingValues()
+                        .calculateStartPadding(LocalLayoutDirection.current),
+            )
+    }
     Box(modifier = Modifier.fillMaxSize()) {
         val libraryScaffold: @Composable (Modifier) -> Unit = { frameModifier ->
             Scaffold(
@@ -527,6 +551,7 @@ internal fun BrowseScreen(
         } else {
             AnimatedVisibility(
                 visible = nowPlayingExpanded && currentTrack != null,
+                modifier = nowPlayingFrameModifier,
                 enter = slideInVertically(initialOffsetY = { height -> height }) + expandVertically(
                     expandFrom = Alignment.Bottom,
                 ),
