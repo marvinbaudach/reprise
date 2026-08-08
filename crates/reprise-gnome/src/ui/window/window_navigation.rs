@@ -4,6 +4,8 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::db::Db;
 
+use super::device_sync_runtime::DeviceSyncRuntime;
+
 pub(in crate::ui) fn apply_sidebar_visibility(
     split_view: &adw::OverlaySplitView,
     sidebar_page: &adw::NavigationPage,
@@ -104,6 +106,49 @@ pub(in crate::ui) fn show_content_callback(
             }
         },
     )
+}
+
+pub(in crate::ui) fn open_device_place(
+    _content_navigation: &adw::NavigationView,
+    content_stack: &gtk4::Stack,
+    window_title: &adw::WindowTitle,
+    device_id: &str,
+    runtime: &Rc<DeviceSyncRuntime>,
+    split_view: &adw::OverlaySplitView,
+) -> bool {
+    if !super::device_sync_page::open(content_stack, window_title, device_id, runtime) {
+        return false;
+    }
+    if split_view.is_collapsed() {
+        split_view.set_show_sidebar(false);
+    }
+    true
+}
+
+pub(in crate::ui) fn open_device_callback(
+    content_navigation: &adw::NavigationView,
+    content_stack: &gtk4::Stack,
+    window_title: &adw::WindowTitle,
+    runtime: &Rc<DeviceSyncRuntime>,
+    split_view: &adw::OverlaySplitView,
+) -> super::device_sync_launcher::OpenDevice {
+    let content_navigation = content_navigation.clone();
+    let content_stack = content_stack.clone();
+    let window_title = window_title.clone();
+    let runtime = runtime.clone();
+    let split_view = split_view.clone();
+    Rc::new(move |device_id, _| {
+        if !open_device_place(
+            &content_navigation,
+            &content_stack,
+            &window_title,
+            &device_id,
+            &runtime,
+            &split_view,
+        ) {
+            tracing::warn!(device_id, "could not open Android sync page");
+        }
+    })
 }
 
 pub(in crate::ui) fn wire_sidebar_toggle(
@@ -281,6 +326,60 @@ mod tests {
         show_content_callback(&split, &navigation)();
 
         assert_eq!(navigation.visible_page().as_ref(), Some(&library));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn opening_a_device_from_a_pushed_page_shows_the_device_page() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let device_root = tempfile::tempdir().unwrap();
+        let backend = Rc::new(
+            crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(device_root.path())
+                .unwrap(),
+        );
+        let runtime = super::super::device_sync_runtime::DeviceSyncRuntime::with_backend(
+            &test_conn(),
+            backend,
+        );
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(&gtk4::Label::new(Some("Library")), Some("library"));
+        let library = adw::NavigationPage::builder()
+            .title("Library")
+            .tag(super::super::now_playing_wiring::LIBRARY_CONTENT_TAG)
+            .child(&content_stack)
+            .build();
+        let pushed = adw::NavigationPage::builder()
+            .title("Pushed page")
+            .child(&gtk4::Label::new(Some("Pushed page")))
+            .build();
+        let content_navigation = adw::NavigationView::new();
+        content_navigation.add(&library);
+        content_navigation.push(&pushed);
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&content_navigation)
+            .build();
+        let title = adw::WindowTitle::new("Library", "");
+
+        assert!(open_device_place(
+            &content_navigation,
+            &content_stack,
+            &title,
+            crate::ui::device_sync_smoke::DEVICE_ID,
+            &runtime,
+            &split,
+        ));
+
+        assert_eq!(content_navigation.visible_page().as_ref(), Some(&library));
+        assert_eq!(
+            content_stack.visible_child_name().as_deref(),
+            Some("device-sync")
+        );
     }
 
     #[test]

@@ -423,21 +423,13 @@ pub fn build(
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
-    let open_device: super::device_sync_launcher::OpenDevice = Rc::new({
-        let content_stack = content_stack.clone();
-        let window_title = window_title.clone();
-        let runtime = device_sync.clone();
-        let split_view = split_view.clone();
-        move |device_id, _| {
-            if !super::device_sync_page::open(&content_stack, &window_title, &device_id, &runtime) {
-                tracing::warn!(device_id, "could not open Android sync page");
-                return;
-            }
-            if split_view.is_collapsed() {
-                split_view.set_show_sidebar(false);
-            }
-        }
-    });
+    let open_device = super::window_navigation::open_device_callback(
+        &content_nav,
+        &content_stack,
+        &window_title,
+        &device_sync,
+        &split_view,
+    );
     sidebar.bind_device_sync(&device_sync, open_device.clone());
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
