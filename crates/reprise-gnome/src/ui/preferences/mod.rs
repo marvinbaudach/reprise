@@ -19,6 +19,7 @@ pub(in crate::ui) mod preference_window_decorations;
 pub(in crate::ui) mod preference_youtube;
 mod preferences_search;
 mod preferences_search_index;
+mod preferences_search_results;
 pub(in crate::ui) mod preferences_window;
 #[path = "preferences.rs"]
 mod surface;
