@@ -68,28 +68,39 @@ pub(in crate::ui) fn arm(
     widget.add_controller(keys);
 }
 
-pub(in crate::ui) fn present(widget: &impl IsA<gtk4::Widget>, accessible_label: &str) {
+fn set_accessible_role_if_changed(widget: &gtk4::Widget, role: gtk4::AccessibleRole) -> bool {
+    if widget.accessible_role() == role {
+        return false;
+    }
+
+    widget.set_accessible_role(role);
+    true
+}
+
+pub(in crate::ui) fn present(widget: &impl IsA<gtk4::Widget>, accessible_label: &str) -> bool {
     let widget = widget.upcast_ref::<gtk4::Widget>();
     // a11y-semantics: role=link name=target state=enabled action=activate
     widget.set_focusable(true);
     // input-parity: ACC-8 keyboard=link-enter-controller
     widget.set_cursor_from_name(Some("pointer"));
-    widget.set_accessible_role(gtk4::AccessibleRole::Link);
+    let role_changed = set_accessible_role_if_changed(widget, gtk4::AccessibleRole::Link);
     widget.add_css_class(LINK_CLASS);
     widget.update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
+    role_changed
 }
 
 pub(in crate::ui) fn unpresent(
     widget: &impl IsA<gtk4::Widget>,
     accessible_label: &str,
     fallback_role: gtk4::AccessibleRole,
-) {
+) -> bool {
     let widget = widget.upcast_ref::<gtk4::Widget>();
     widget.set_focusable(false);
     widget.set_cursor_from_name(None);
-    widget.set_accessible_role(fallback_role);
+    let role_changed = set_accessible_role_if_changed(widget, fallback_role);
     widget.remove_css_class(LINK_CLASS);
     widget.update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
+    role_changed
 }
 
 pub(in crate::ui) fn arm_slot(
@@ -164,5 +175,24 @@ mod tests {
             assert_eq!(calls.get(), expected_calls, "modifiers: {modifiers:?}");
             assert_eq!(claims.get(), expected_claims, "modifiers: {modifiers:?}");
         }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn presenting_the_same_widget_twice_assigns_the_link_role_only_once() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let widget = crate::ui::track_cover::TrackCover::new();
+
+        assert!(present(&widget, "Album"));
+        let window = gtk4::Window::new();
+        window.set_child(Some(&widget));
+        window.present();
+        while gtk4::glib::MainContext::default().pending() {
+            gtk4::glib::MainContext::default().iteration(false);
+        }
+        assert!(!present(&widget, "Album"));
+        assert_eq!(widget.accessible_role(), gtk4::AccessibleRole::Link);
+        window.close();
     }
 }
