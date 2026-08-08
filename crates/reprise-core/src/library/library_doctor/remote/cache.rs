@@ -4,6 +4,7 @@ use rusqlite::Connection;
 
 use super::album_match::AlbumQuery;
 use super::{RemoteDirectLookup, RemoteProvider, RemoteProviderResult, RemoteTrackMetadata};
+use crate::library::group_key::normalize_group_key;
 use crate::library::library_doctor::ScanControl;
 
 pub(crate) struct CachedRemoteProvider<'connection, P> {
@@ -79,7 +80,15 @@ impl<P: RemoteProvider> RemoteProvider for CachedRemoteProvider<'_, P> {
         metadata: &RemoteTrackMetadata,
         control: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult {
-        self.upstream.search_musicbrainz(metadata, control)
+        let key = recording_search_cache_key(metadata);
+        if let Some(result) = self.cached(&key) {
+            return Ok(result);
+        }
+        let result = self.upstream.search_musicbrainz(metadata, control);
+        if let Ok(identities) = &result {
+            self.store(&key, identities);
+        }
+        result
     }
 
     fn search_release(
@@ -87,7 +96,15 @@ impl<P: RemoteProvider> RemoteProvider for CachedRemoteProvider<'_, P> {
         query: &AlbumQuery,
         control: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult {
-        self.upstream.search_release(query, control)
+        let key = release_search_cache_key(query);
+        if let Some(result) = self.cached(&key) {
+            return Ok(result);
+        }
+        let result = self.upstream.search_release(query, control);
+        if let Ok(identities) = &result {
+            self.store(&key, identities);
+        }
+        result
     }
 
     fn acoustid(
@@ -125,6 +142,24 @@ fn direct_cache_key(lookup: &RemoteDirectLookup) -> String {
         RemoteDirectLookup::ReleaseArtist(id) => ("release_artist", id),
     };
     format!("musicbrainz:{kind}:{id}")
+}
+
+fn recording_search_cache_key(metadata: &RemoteTrackMetadata) -> String {
+    format!(
+        "musicbrainz:v2:recording_search:{}\u{1}{}\u{1}{}",
+        normalize_group_key(metadata.lookup_title().unwrap_or_default()),
+        normalize_group_key(metadata.lookup_artist().unwrap_or_default()),
+        normalize_group_key(metadata.lookup_album().unwrap_or_default()),
+    )
+}
+
+fn release_search_cache_key(query: &AlbumQuery) -> String {
+    format!(
+        "musicbrainz:v2:release_search:{}\u{1}{}\u{1}{}",
+        normalize_group_key(&query.album_artist),
+        normalize_group_key(&query.album),
+        query.track_count,
+    )
 }
 
 fn fingerprint_cache_key(namespace: &str, fingerprint: &str, duration_seconds: u64) -> String {
