@@ -8,6 +8,12 @@
 //!
 //! Successful copies are counted, not itemized. Only deviations get a row,
 //! so a 278-file run leaves a handful of lines instead of hundreds.
+//!
+//! For the GTK GUI this log is deliberately write-only. The synchronization
+//! runtime keeps writing it so a failed run can still be reconstructed from
+//! the database by hand. [`recent_runs`] and [`deviations`] remain the
+//! diagnostic read path for tests, manual inspection, and a future non-GUI
+//! surface; they are not a reason to restore an in-app history card.
 
 use rusqlite::Row;
 
@@ -157,7 +163,7 @@ pub struct Deviation {
     pub detail: String,
 }
 
-/// A recorded run, as shown in the device page's history.
+/// A recorded synchronization run.
 #[derive(Debug, Clone)]
 pub struct RunRecord {
     pub id: i64,
@@ -287,7 +293,7 @@ const RUN_COLUMNS: &str = "id, device_serial, device_name, transfer_profile, sta
                            finished_at, outcome, planned, copied, skipped, deleted, failed, \
                            bytes_copied, detail";
 
-/// The most recent runs across every device, newest first.
+/// Diagnostic read path for recent runs across every device, newest first.
 pub fn recent_runs(db: &crate::db::Db, limit: usize) -> Result<Vec<RunRecord>, DbError> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
@@ -299,32 +305,7 @@ pub fn recent_runs(db: &crate::db::Db, limit: usize) -> Result<Vec<RunRecord>, D
     Ok(runs)
 }
 
-/// One device's most recent runs, newest first.
-///
-/// Retention is per device ([`RETAINED_RUNS`]) under a whole-table ceiling
-/// ([`GLOBAL_RETAINED_RUNS`]), so a caller after one device's history cannot
-/// take the newest N rows overall and filter: with several devices logging,
-/// the device it wants may not be in them. Reading the whole ceiling and
-/// filtering in Rust works but costs a [`deviations`] query per row it then
-/// throws away — on the GTK main thread, on every phase change. This asks the
-/// database the question the caller actually has.
-pub fn recent_runs_for_device(
-    db: &crate::db::Db,
-    device_serial: &str,
-    limit: usize,
-) -> Result<Vec<RunRecord>, DbError> {
-    let conn = db.conn();
-    let mut statement = conn.prepare(&format!(
-        "SELECT {RUN_COLUMNS} FROM sync_runs WHERE device_serial = ?1 \
-         ORDER BY started_at DESC, id DESC LIMIT ?2"
-    ))?;
-    let runs = statement
-        .query_map(rusqlite::params![device_serial, limit as i64], read_run)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(runs)
-}
-
-/// The deviations of one run, in the order they happened.
+/// Diagnostic read path for one run's deviations, in event order.
 pub fn deviations(db: &crate::db::Db, run: i64) -> Result<Vec<Deviation>, DbError> {
     let conn = db.conn();
     let mut statement = conn.prepare(

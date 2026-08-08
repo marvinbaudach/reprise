@@ -66,8 +66,6 @@ struct DeviceState {
     /// perspective outside of the folder picker (E6, not built here).
     targets: [SyncTarget; 3],
     settings: DeviceSettings,
-    /// Recorded sync runs for this device, refreshed when one ends.
-    history: Vec<crate::ui::device_sync::device_sync_history::RunWithDeviations>,
     sync_phase: PlannedSyncPhase,
     sync_error: Option<SyncFailure>,
     planned_cancel: Option<Arc<AtomicBool>>,
@@ -140,7 +138,6 @@ impl DeviceState {
             PlannedSyncPhase::Idle
         };
         Self {
-            history: Vec::new(),
             descriptor,
             connected: true,
             session_state,
@@ -252,7 +249,6 @@ impl DeviceState {
             project_category_content_row(&self.targets[i], item_counts[i], device_bytes[i])
         });
         DeviceView {
-            history: self.history.clone(),
             id: self.descriptor.id.clone(),
             name: self.settings.device_name.clone(),
             icon: self.descriptor.icon.clone(),

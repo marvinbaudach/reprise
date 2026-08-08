@@ -238,10 +238,11 @@ fn mtp_43_cancelling_a_preparation_run_stops_further_downloads_but_keeps_the_one
             "the first episode was already in flight when cancel fired and must stay requested; \
              the second must never be requested at all once cancel wins the race"
         );
-        let history = &runtime.devices()[0].history;
-        assert_eq!(history.len(), 1);
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
         assert_eq!(
-            history[0].0.outcome,
+            recorded.outcome,
             reprise_core::device_sync::sync_log::RunOutcome::Cancelled
         );
     });

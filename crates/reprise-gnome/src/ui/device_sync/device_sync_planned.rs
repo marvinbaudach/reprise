@@ -193,7 +193,6 @@ fn removal_source_path(removal: &ManagedRemoval) -> Option<PathBuf> {
 
 pub(in crate::ui::device_sync) fn record_rejected_start(
     runtime: &DeviceSyncRuntime,
-    device_id: &str,
     log: &RunLog,
     error: &SyncStartError,
 ) {
@@ -207,7 +206,6 @@ pub(in crate::ui::device_sync) fn record_rejected_start(
         }
     };
     log.close(runtime, &outcome, now_seconds());
-    runtime.reload_sync_history(device_id);
     runtime.notify();
 }
 
@@ -312,26 +310,8 @@ fn is_current_run(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) -> bool {
         .is_some_and(|current| Rc::ptr_eq(current, &work.machine))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PhaseKind {
-    Idle,
-    ComputingDelta,
-    Syncing(SyncStep),
-    Finishing,
-}
-
-fn phase_kind(phase: &PlannedSyncPhase) -> PhaseKind {
-    match phase {
-        PlannedSyncPhase::Idle => PhaseKind::Idle,
-        PlannedSyncPhase::ComputingDelta => PhaseKind::ComputingDelta,
-        PlannedSyncPhase::Syncing { step, .. } => PhaseKind::Syncing(*step),
-        PlannedSyncPhase::Finishing => PhaseKind::Finishing,
-    }
-}
-
 fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
     let phase = work.machine.borrow().phase().clone();
-    let mut changed_kind = false;
     {
         let mut devices = runtime.device_states.borrow_mut();
         if let Some(device) = devices
@@ -343,7 +323,6 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
                 .as_ref()
                 .is_some_and(|current| Rc::ptr_eq(current, &work.machine));
             if is_current {
-                changed_kind = phase_kind(&device.sync_phase) != phase_kind(&phase);
                 // Progress arrives per track, counting from zero each time, so
                 // the rate meter needs a fresh baseline whenever a new copy
                 // starts. Without it every sample below the previous track's
@@ -361,9 +340,6 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
             }
         }
     }
-    if changed_kind {
-        runtime.reload_sync_history(&work.device_id);
-    }
     runtime.notify();
 }
 
@@ -373,7 +349,6 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
     }
     publish_phase(runtime, work);
     work.log.close(runtime, &outcome, now_seconds());
-    runtime.reload_sync_history(&work.device_id);
     let successful = matches!(outcome, SyncOutcome::Completed { .. });
     {
         let mut devices = runtime.device_states.borrow_mut();
@@ -498,7 +473,6 @@ impl DeviceSyncRuntime {
             (prepare, start)
         };
         let log = RunLog::open(self, &start);
-        self.reload_sync_history(device_id);
         if let Some(missing) = prepare {
             preparation::begin_prepared_sync(self, device_id, missing, initiator, log);
             return Ok(());
@@ -669,7 +643,7 @@ impl DeviceSyncRuntime {
             Ok(())
         })();
         if let Err(error) = &result {
-            record_rejected_start(self, device_id, &rejection_log, error);
+            record_rejected_start(self, &rejection_log, error);
         }
         result
     }
@@ -691,35 +665,3 @@ mod content_transfer;
 mod effects;
 #[path = "device_sync_run_log.rs"]
 mod run_log;
-
-#[cfg(test)]
-mod phase_kind_tests {
-    use super::*;
-
-    fn copying(done: u32) -> PlannedSyncPhase {
-        PlannedSyncPhase::Syncing {
-            step: SyncStep::Copying,
-            done,
-            total: 10,
-            current_track: "Track".into(),
-            bytes_done: u64::from(done),
-            bytes_total: 10,
-        }
-    }
-
-    #[test]
-    fn history_reload_key_ignores_progress_ticks_but_changes_with_the_step() {
-        assert_eq!(phase_kind(&copying(1)), phase_kind(&copying(9)));
-        assert_ne!(
-            phase_kind(&copying(9)),
-            phase_kind(&PlannedSyncPhase::Syncing {
-                step: SyncStep::WritingPlaylists,
-                done: 0,
-                total: 1,
-                current_track: String::new(),
-                bytes_done: 0,
-                bytes_total: 0,
-            })
-        );
-    }
-}

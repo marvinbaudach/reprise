@@ -103,39 +103,3 @@ impl RunLog {
         }
     }
 }
-
-impl DeviceSyncRuntime {
-    /// Reloads this device's recorded runs so the page can show them (MTP-20).
-    /// Best-effort: a log that cannot be read leaves the section empty rather
-    /// than breaking the page.
-    pub(in crate::ui) fn reload_sync_history(&self, device_id: &str) {
-        let loaded = {
-            let conn = &self.conn;
-            // Scoped in SQL, not filtered afterwards: this runs on the main
-            // thread on every phase change, and each surviving row costs a
-            // second query for its deviations. Reading the whole-table ceiling
-            // and discarding other devices paid for up to eight times as many
-            // of those as it kept.
-            match sync_log::recent_runs_for_device(conn, device_id, sync_log::RETAINED_RUNS) {
-                Ok(runs) => runs
-                    .into_iter()
-                    .map(|run| {
-                        let found = sync_log::deviations(conn, run.id).unwrap_or_default();
-                        (run, found)
-                    })
-                    .collect(),
-                Err(error) => {
-                    tracing::warn!(%error, "could not read the device sync log");
-                    Vec::new()
-                }
-            }
-        };
-        let mut devices = self.device_states.borrow_mut();
-        if let Some(device) = devices
-            .iter_mut()
-            .find(|device| device.descriptor.id == device_id)
-        {
-            device.history = loaded;
-        }
-    }
-}
