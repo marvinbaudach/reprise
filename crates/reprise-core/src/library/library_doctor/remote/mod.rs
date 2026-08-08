@@ -5,6 +5,7 @@
 //! policy stay below this seam.
 
 mod acoustid;
+#[allow(dead_code)] // MATCH-3 consumes the release matcher after its pure-function package lands.
 mod album_match;
 mod arbitration;
 mod cache;
@@ -16,11 +17,14 @@ mod network;
 mod orchestrator;
 
 #[cfg(test)]
+mod album_match_tests;
+#[cfg(test)]
 mod cache_tests;
 #[cfg(test)]
 mod guard_rails_tests;
 
-pub(crate) use album_match::AlbumQuery;
+#[allow(unused_imports)] // MATCH-3 consumes these staged exports.
+pub(crate) use album_match::{best_release, AlbumMatch, AlbumQuery};
 pub(crate) use cache::CachedRemoteProvider;
 pub(crate) use metadata::read_remote_metadata;
 pub use metadata::{RemoteDirectLookup, RemoteTrackMetadata};
