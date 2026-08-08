@@ -36,10 +36,15 @@ impl SearchDocument {
         &self.group
     }
 
+    #[cfg(test)]
     pub(super) fn matches(&self, query: &str) -> bool {
+        self.matches_fields(&self.title, &self.subtitle, query)
+    }
+
+    fn matches_fields(&self, title: &str, subtitle: &str, query: &str) -> bool {
         let page = self.page.title();
-        reprise_view::search_scope::matches_query(&self.title, query)
-            || reprise_view::search_scope::matches_query(&self.subtitle, query)
+        reprise_view::search_scope::matches_query(title, query)
+            || reprise_view::search_scope::matches_query(subtitle, query)
             || reprise_view::search_scope::matches_query(&page, query)
     }
 }
@@ -50,16 +55,39 @@ pub(super) struct IndexedRow {
     pub(super) row: adw::PreferencesRow,
 }
 
+impl IndexedRow {
+    pub(super) fn matches(&self, query: &str) -> bool {
+        let subtitle = row_subtitle(&self.row).unwrap_or_default();
+        self.document
+            .matches_fields(&self.row.title(), &subtitle, query)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct PageHitCounts {
     per_page: [usize; PAGE_ORDER.len()],
 }
 
 impl PageHitCounts {
+    #[cfg(test)]
     pub(super) fn matching(documents: &[SearchDocument], query: &str) -> Self {
         let mut counts = Self::default();
         for document in documents.iter().filter(|document| document.matches(query)) {
             let Some(index) = PAGE_ORDER.iter().position(|page| *page == document.page) else {
+                continue;
+            };
+            counts.per_page[index] += 1;
+        }
+        counts
+    }
+
+    pub(super) fn matching_rows(rows: &[IndexedRow], query: &str) -> Self {
+        let mut counts = Self::default();
+        for row in rows.iter().filter(|row| row.matches(query)) {
+            let Some(index) = PAGE_ORDER
+                .iter()
+                .position(|page| *page == row.document.page)
+            else {
                 continue;
             };
             counts.per_page[index] += 1;

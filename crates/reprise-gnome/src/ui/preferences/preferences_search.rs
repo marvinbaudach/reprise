@@ -292,13 +292,7 @@ impl SettingsSearch {
         }
         let counts = {
             let index = self.index.borrow();
-            let documents: Vec<_> = index
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .map(|entry| entry.document.clone())
-                .collect();
-            PageHitCounts::matching(&documents, query)
+            PageHitCounts::matching_rows(index.as_deref().unwrap_or_default(), query)
         };
         self.all_results_count.set_text(&counts.total().to_string());
         for entry in &self.page_entries {
@@ -347,7 +341,7 @@ impl SettingsSearch {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .filter(|entry| entry.document.matches(query))
+            .filter(|entry| entry.matches(query))
             .cloned()
             .collect();
         let moves: Vec<_> = matches

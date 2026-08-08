@@ -191,6 +191,88 @@ fn set_13_result_path_opens_its_page_and_closes_search() {
     parent.close();
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_13_matching_reads_the_rows_current_subtitle() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let app = adw::Application::builder()
+        .application_id("org.reprise.Reprise.SettingsSearchLiveTextTest")
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gio::Cancellable>).unwrap();
+    let parent = adw::ApplicationWindow::new(&app);
+    parent.set_default_size(900, 760);
+    parent.present();
+    crate::ui::style::install();
+
+    let target = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ActionRow>::new()));
+    let shell = preferences_window::build(live_subtitle_pages(&target), None, None);
+    shell.dialog.present(Some(&parent));
+    settle_layout();
+    shell.search.reveal();
+    shell.search.entry().set_text("connected");
+    settle_layout();
+    assert_eq!(shell.search.all_results_count().text(), "1");
+
+    shell.search.entry().set_text("");
+    settle_layout();
+    let row = target
+        .borrow()
+        .upgrade()
+        .expect("the Plugins factory must publish its live row");
+    row.set_subtitle("Connected as alice - 12 scrobbles");
+    shell.search.entry().set_text("alice");
+    settle_layout();
+    assert_eq!(shell.search.all_results_count().text(), "1");
+
+    shell.search.entry().set_text("");
+    settle_layout();
+    row.set_subtitle("Not connected");
+    shell.search.entry().set_text("alice");
+    settle_layout();
+    assert_eq!(
+        shell.search.all_results_count().text(),
+        "0",
+        "text removed from the live row must stop matching"
+    );
+
+    shell.dialog.force_close();
+    parent.close();
+}
+
+fn live_subtitle_pages(
+    target: &Rc<RefCell<gtk4::glib::WeakRef<adw::ActionRow>>>,
+) -> Rc<dyn Fn(PageId) -> adw::PreferencesPage> {
+    let target = target.clone();
+    Rc::new(move |id| {
+        let page = adw::PreferencesPage::builder()
+            .title(id.title())
+            .icon_name(id.icon_name())
+            .build();
+        let group = adw::PreferencesGroup::builder().title("Accounts").build();
+        let title = if id == PageId::Plugins {
+            "ListenBrainz".to_owned()
+        } else {
+            id.title()
+        };
+        let row = adw::ActionRow::builder()
+            .title(&title)
+            .subtitle(if id == PageId::Plugins {
+                "Not connected"
+            } else {
+                "No account"
+            })
+            .build();
+        if id == PageId::Plugins {
+            target.borrow_mut().set(Some(&row));
+        }
+        group.add(&row);
+        page.add(&group);
+        page
+    })
+}
+
 fn path_pages(
     target: &Rc<RefCell<gtk4::glib::WeakRef<adw::ActionRow>>>,
     target_expander: &Rc<RefCell<gtk4::glib::WeakRef<adw::ExpanderRow>>>,
