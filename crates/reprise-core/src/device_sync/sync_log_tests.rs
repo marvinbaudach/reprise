@@ -43,6 +43,8 @@ fn summary(copied: u32, skipped: u32, failed: u32) -> RunSummary {
         skipped,
         deleted: 0,
         failed,
+        listens_applied: 7,
+        ratings_applied: 3,
         bytes_copied: 512_000_000,
         detail: None,
     }
@@ -83,6 +85,8 @@ fn mtp_20_a_run_records_its_balance_and_every_deviation() {
     assert_eq!(runs[0].copied, 198);
     assert_eq!(runs[0].skipped, 1);
     assert_eq!(runs[0].failed, 1);
+    assert_eq!(runs[0].listens_applied, 7);
+    assert_eq!(runs[0].ratings_applied, 3);
     assert_eq!(runs[0].outcome, RunOutcome::Completed);
     assert_eq!(runs[0].transfer_profile, "opus_160");
 
@@ -294,6 +298,8 @@ fn counters() -> RunCounters {
         skipped: 1,
         deleted: 3,
         failed: 1,
+        listens_applied: 7,
+        ratings_applied: 3,
         bytes_copied: 12_345,
     }
 }
@@ -312,6 +318,8 @@ fn mtp_20_a_completed_run_summarizes_without_a_reason() {
     assert_eq!(summary.detail, None);
     assert_eq!(summary.copied, 198);
     assert_eq!(summary.deleted, 3);
+    assert_eq!(summary.listens_applied, 7);
+    assert_eq!(summary.ratings_applied, 3);
     assert_eq!(summary.bytes_copied, 12_345);
     assert_eq!(summary.finished_at, 99);
 }

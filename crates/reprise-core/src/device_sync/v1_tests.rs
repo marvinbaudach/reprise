@@ -27,7 +27,6 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
             selection: DeviceSelection::Sources(Vec::new()),
             profile: TransferProfile::default(),
             opus_bitrate: 0,
-            ratings_back: false,
             remove_deleted: true,
             sync_automatically: true,
             prepare_before_sync: true,
@@ -42,7 +41,6 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
         ]),
         opus_bitrate: 256,
         remove_deleted: false,
-        ratings_back: true,
         ..defaults
     };
     save_settings(&conn, &changed).unwrap();
@@ -51,7 +49,6 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
     assert_eq!(loaded.selection, changed.selection);
     assert_eq!(loaded.opus_bitrate, 256);
     assert!(!loaded.remove_deleted);
-    assert!(!loaded.ratings_back, "ratings-back remains disabled in V1");
 }
 
 /// `MTP-43`'s "Download missing files before syncing" switch defaults on and

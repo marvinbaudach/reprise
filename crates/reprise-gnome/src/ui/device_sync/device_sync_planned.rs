@@ -218,6 +218,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
     let Some(runtime) = weak.upgrade() else {
         return;
     };
+    effects::apply_listen_report(&runtime, &mut work).await;
     loop {
         let Some(effect) = work.pending.pop() else {
             return;

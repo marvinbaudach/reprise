@@ -72,6 +72,7 @@ pub(super) struct FakeState {
     /// by the fake transcoder has no real temporary file, so absent sources
     /// are simply not recorded here.
     pub(super) managed_copy_contents: RefCell<Vec<(String, String, Vec<u8>)>>,
+    pub(super) managed_reads: RefCell<Vec<(String, String)>>,
     pub(super) managed_deleted: RefCell<Vec<(String, String)>>,
     /// `MTP-38`/finding-1 proof: the `storage_id` each `replace_track`/
     /// `delete_track`/`replace_playlist` call actually reached this double
@@ -102,6 +103,8 @@ pub(super) struct FakeState {
     playlist_gate: RefCell<Option<PlaylistGate>>,
     inspection_gate: RefCell<Option<InspectionGate>>,
     inspection_error: RefCell<Option<String>>,
+    listen_report: RefCell<Option<Vec<u8>>>,
+    listen_report_read_error: RefCell<Option<String>>,
     delete_observer: RefCell<Option<DeleteObserver>>,
     copy_observer: RefCell<Option<CopyObserver>>,
     /// Design 7d's folder browser (`MTP-31`/`MTP-32`) double: storages this
@@ -170,6 +173,22 @@ impl FakeBackend {
     pub(super) fn with_sidecar_replace_error(self, error: &str) -> Self {
         self.state.sidecar_replace_error.replace(Some(error.into()));
         self
+    }
+
+    pub(super) fn with_listen_report(self, bytes: Vec<u8>) -> Self {
+        self.set_listen_report(bytes);
+        self
+    }
+
+    pub(super) fn set_listen_report(&self, bytes: Vec<u8>) {
+        self.state.listen_report.replace(Some(bytes));
+        self.state.listen_report_read_error.replace(None);
+    }
+
+    pub(super) fn set_listen_report_read_error(&self, error: &str) {
+        self.state
+            .listen_report_read_error
+            .replace(Some(error.into()));
     }
 
     pub(super) fn set_available_bytes(&self, available_bytes: Option<u64>) {
@@ -318,6 +337,27 @@ impl DeviceBackend for FakeBackend {
         })
     }
 
+    fn read_managed_file(
+        &self,
+        _root_uri: String,
+        target_path: String,
+        _storage_id: Option<StorageId>,
+        relative_path: String,
+    ) -> TestFuture<Option<Vec<u8>>> {
+        self.state
+            .managed_reads
+            .borrow_mut()
+            .push((target_path, relative_path));
+        let error = self.state.listen_report_read_error.borrow().clone();
+        let report = self.state.listen_report.borrow().clone();
+        Box::pin(async move {
+            match error {
+                Some(error) => Err(error),
+                None => Ok(report),
+            }
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
@@ -334,8 +374,11 @@ impl DeviceBackend for FakeBackend {
         let state = self.state.clone();
         let delay_ms = self.delay_ms;
         let source_contents = std::fs::read(source_path).ok();
-        let is_track_metadata =
-            relative_target == reprise_core::device_sync::track_metadata_list::FILE_NAME;
+        let is_generated_metadata = matches!(
+            relative_target.as_str(),
+            reprise_core::device_sync::track_metadata_list::FILE_NAME
+                | reprise_core::device_sync::listen_report::ACKNOWLEDGEMENT_FILE_NAME
+        );
         let is_playlists_target =
             state
                 .last_inspected_targets
@@ -346,7 +389,7 @@ impl DeviceBackend for FakeBackend {
                         target.kind == SyncTargetKind::Playlists && target.path == target_path
                     })
                 });
-        if !is_track_metadata {
+        if !is_generated_metadata {
             state
                 .transfer_storage_ids
                 .borrow_mut()
@@ -363,7 +406,7 @@ impl DeviceBackend for FakeBackend {
             if let Some(error) = state.replace_track_error.borrow().clone() {
                 return Err(error);
             }
-            if is_track_metadata {
+            if is_generated_metadata {
                 if let Some(contents) = source_contents {
                     state.managed_copy_contents.borrow_mut().push((
                         target_path,

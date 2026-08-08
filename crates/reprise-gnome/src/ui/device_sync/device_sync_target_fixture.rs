@@ -18,7 +18,6 @@ pub(super) fn disable_auto_start(conn: &Rc<Db>, device_id: &str) {
             selection: DeviceSelection::Sources(Vec::new()),
             profile: reprise_core::device_sync::TransferProfile::default(),
             opus_bitrate: 0,
-            ratings_back: false,
             remove_deleted: true,
             sync_automatically: false,
             prepare_before_sync: true,

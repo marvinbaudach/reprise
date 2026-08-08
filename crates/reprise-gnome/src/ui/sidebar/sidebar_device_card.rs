@@ -521,7 +521,6 @@ pub(super) mod tests {
                 selection: reprise_core::device_sync::DeviceSelection::EntireLibrary,
                 profile: reprise_core::device_sync::TransferProfile::default(),
                 opus_bitrate: 0,
-                ratings_back: false,
                 remove_deleted: true,
                 sync_automatically: true,
                 prepare_before_sync: true,

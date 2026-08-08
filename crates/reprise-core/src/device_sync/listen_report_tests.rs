@@ -171,6 +171,7 @@ fn applying_a_listen_uses_the_local_play_and_history_mutations_together() {
             ratings_applied: 0,
             ratings_ignored: 0,
             unresolved: 0,
+            unresolved_paths: Vec::new(),
             acknowledged_sequence: Some(1),
         }
     );
@@ -373,6 +374,7 @@ fn an_unresolved_path_is_counted_and_acknowledged_then_stays_applied() {
     let second = apply_listen_report(&db, "phone-a", &report).unwrap();
 
     assert_eq!(first.unresolved, 1);
+    assert_eq!(first.unresolved_paths, ["Deleted/Last Week.opus"]);
     assert_eq!(first.acknowledged_sequence, Some(11));
     assert_eq!(second.listens_applied, 0);
     assert_eq!(

@@ -30,7 +30,6 @@ fn podcast_settings(device_id: &str) -> DeviceSettings {
         selection: DeviceSelection::Sources(Vec::new()),
         profile: reprise_core::device_sync::TransferProfile::default(),
         opus_bitrate: 0,
-        ratings_back: false,
         remove_deleted: true,
         sync_automatically: false,
         // These tests seed episodes that already have a local file, so the
