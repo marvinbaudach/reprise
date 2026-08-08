@@ -93,8 +93,16 @@ impl TransientFocusGuard {
         let guard = self.clone();
         glib::idle_add_local_once(move || {
             if let (Some(row), Some(invoker)) = (guard.row.upgrade(), guard.invoker.upgrade()) {
-                if row.is_visible() && row_count(&invoker) == Some(guard.rows_at_capture) {
-                    row.grab_focus();
+                // `grab_focus` has to be part of the condition, not a
+                // statement before the `return`: a row that refuses focus
+                // (GTK takes rows out of the focus chain as a transient
+                // closes) would otherwise skip the whole rescue chain below
+                // and leave the window with no focus at all — the trap this
+                // guard exists to prevent.
+                if row.is_visible()
+                    && row_count(&invoker) == Some(guard.rows_at_capture)
+                    && row.grab_focus()
+                {
                     return;
                 }
             }
