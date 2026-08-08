@@ -4866,7 +4866,13 @@ listening statistics.
   ordinary search results — same row widget, same already-subscribed filtering
   (`SRC-5`), same freshness segment (`SRC-18`) — assembled from the chart
   feed's ids plus **one** batched lookup, restored to chart order, with ids the
-  lookup drops falling out silently rather than leaving a hole. Offline the
+  lookup drops falling out silently rather than leaving a hole; an id the lookup
+  could not be asked for — anything that is not a number — is dropped before
+  the request, not after it. A chart with nothing left to show, whether Apple
+  returned nothing or `SRC-5` filtered every row away because this library
+  already follows all of it, says so **in its own sentence**: the search's
+  "Nothing found for '…' — try pasting a feed/channel URL instead" would quote
+  the chip's label back as a term the user never typed. Offline the
   chip is **absent**, for the same reason search is (`NET-3` point 4): it is a
   network action, and a pill that only reports failure is worse than none. It
   is equally absent when podcast online sources are switched off (`NET-1a`) —

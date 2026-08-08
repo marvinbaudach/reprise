@@ -392,6 +392,23 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
     assert!(button.has_css_class("reprise-source-added"));
 }
 
+/// `SRC-19`: the chart path owns its empty sentence. Borrowing the search
+/// one would quote the chip's label back as though it were a typed term and
+/// then advise pasting a feed URL — advice for a search that missed, not for a
+/// curated list that is empty or that this library already follows in full.
+#[test]
+fn src_19_an_empty_chart_does_not_speak_the_language_of_a_failed_search() {
+    let label = strings::podcast_chip_popular_in_country("DE");
+    let empty = strings::podcast_charts_empty("DE");
+
+    assert_ne!(empty, strings::source_nothing_found(&label));
+    assert!(
+        !empty.contains(label.as_str()),
+        "the chart's country label is not a search term: {empty}"
+    );
+    assert!(empty.contains("DE"), "the chart still says which country");
+}
+
 #[test]
 fn dialogue_state_names_cover_async_lifecycle() {
     let phases = [

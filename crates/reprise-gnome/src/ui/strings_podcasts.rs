@@ -450,6 +450,17 @@ pub fn podcast_charts_heading(country: &str) -> String {
     formatted(N_!("PODCASTS · TOP IN {country}"), &[("country", country)])
 }
 
+/// `SRC-19`: an empty chart is not a failed search. `SOURCE_NOTHING_FOUND`
+/// would quote the chip's label back as though the user had typed it and then
+/// advise pasting a feed URL — advice for a term that missed, not for a curated
+/// list that is empty or that this library already follows in full.
+pub fn podcast_charts_empty(country: &str) -> String {
+    formatted(
+        N_!("Nothing new in the {country} chart right now — try a search instead"),
+        &[("country", country)],
+    )
+}
+
 /// `SRC-15a`: the library chip in the add dialog, worded for the YouTube page
 /// — the only page that carries it, since the Apple dialog spends its one chip
 /// slot on `SRC-19`. The genre is the user's own, so the sentence has to stay

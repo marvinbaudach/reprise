@@ -383,7 +383,7 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 context.on_added,
                 strings::text(strings::PODCAST_APPLE_RESULTS),
                 auto_download_default,
-                query,
+                strings::source_nothing_found(&query),
             );
         }
         PodcastKind::Youtube => {
@@ -414,7 +414,7 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 context.on_added,
                 strings::text(strings::PODCAST_YOUTUBE_RESULTS),
                 auto_download_default,
-                query,
+                strings::source_nothing_found(&query),
             );
         }
     }
@@ -426,7 +426,9 @@ fn load_charts(request_generation: u64, country: String, context: &SearchContext
     let section = result_section();
     context.results.append(&section);
     let heading = strings::podcast_charts_heading(&country);
-    let query = strings::podcast_chip_popular_in_country(&country);
+    // `SRC-19`: an empty chart is not a search that missed, and the country
+    // label is not a search term — so it never borrows `SOURCE_NOTHING_FOUND`.
+    let empty_status = strings::podcast_charts_empty(&country);
     let task = one_shot_task::spawn("reprise-podcast-charts", move || {
         podcasts::itunes_charts::top_podcasts(&country)
             .map(|rows| rows.into_iter().map(rss_candidate).collect::<Vec<_>>())
@@ -442,7 +444,7 @@ fn load_charts(request_generation: u64, country: String, context: &SearchContext
         context.on_added,
         heading,
         auto_download_default,
-        query,
+        empty_status,
     );
 }
 
@@ -457,7 +459,7 @@ fn attach_candidates(
     on_added: &OnAdded,
     heading: String,
     auto_download_default: bool,
-    query: String,
+    empty_status: String,
 ) {
     let generation = generation.clone();
     let status = status.clone();
@@ -484,7 +486,7 @@ fn attach_candidates(
                 let subscribed = active_source_keys(&conn);
                 let rows = filter_unsubscribed(rows, &subscribed);
                 if rows.is_empty() {
-                    status.set_text(&strings::source_nothing_found(&query));
+                    status.set_text(&empty_status);
                     return;
                 }
                 append_heading(&results, &heading);

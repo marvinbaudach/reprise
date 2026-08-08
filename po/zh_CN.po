@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-08 13:42+0200\n"
+"POT-Creation-Date: 2026-08-08 13:44+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Simplified Chinese\n"
@@ -3361,69 +3361,74 @@ msgstr ""
 msgid "PODCASTS · TOP IN {country}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:458
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:459
+#, rust-format
+msgid "Nothing new in the {country} chart right now — try a search instead"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:469
 #, rust-format
 msgid "{genre} channels"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:462
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:473
 #, rust-format
 msgid "Unsubscribe from “{show}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:467
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:478
 #, rust-format
 msgid "Sync downloaded episodes to “{device}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:483
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:494
 #, rust-format
 msgid "{shown} of {available} · {downloaded} downloaded · {size}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:498
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:509
 #, rust-format
 msgid "{summary} · {count} selected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:505
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:516
 #, rust-format
 msgid "Stop syncing episodes to “{device}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:511
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:522
 #, rust-format
 msgid "Removed “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:515
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:526
 #, rust-format
 msgid "Play next: “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:523
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:534
 #, rust-format
 msgid "{downloads} download kept"
 msgid_plural "{downloads} downloads kept"
 msgstr[0] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:530
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:541
 #, rust-format
 msgid "{shows} shows — {downloads} downloads kept"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:537
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:548
 #, rust-format
 msgid "Import the latest {count} episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:545
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:556
 #, rust-format
 msgid "{count} matching video · audio only"
 msgid_plural "{count} matching videos · audio only"
 msgstr[0] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:554
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:565
 #, rust-format
 msgid "Updated {minutes} min ago"
 msgstr ""
