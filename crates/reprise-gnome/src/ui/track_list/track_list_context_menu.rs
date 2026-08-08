@@ -652,6 +652,7 @@ pub(in crate::ui) fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]
         );
         return;
     }
+    let reload_state = crate::ui::delete_tracks::capture_catalog_delete_reload(shared);
     match track_actions::remove_missing_selected(&shared.conn, ids) {
         Ok(removed) => {
             tracing::info!(
@@ -663,7 +664,7 @@ pub(in crate::ui) fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]
                 shared,
                 &strings::tracks_removed_from_library_toast(removed.len()),
             );
-            crate::ui::delete_tracks::reload_after_catalog_delete(shared);
+            crate::ui::delete_tracks::reload_after_catalog_delete(shared, &removed, reload_state);
         }
         Err(error) => {
             tracing::error!(%error, "context menu: failed to remove tracks from library");

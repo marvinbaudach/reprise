@@ -68,26 +68,32 @@ pub(in crate::ui) fn arm(
     widget.add_controller(keys);
 }
 
+/// Turns `widget` into an active link.
+///
+/// **The accessible role is deliberately not set here.** GTK refuses to change
+/// a role once the widget is realized, so assigning one per bind never took
+/// effect — it only emitted a `Gtk-CRITICAL` every single time, and in a
+/// recycling `ColumnView` that is thousands of synchronous journal writes per
+/// minute on the main thread. A widget that can become a link therefore
+/// declares `AccessibleRole::Link` in its own `class_init` (see
+/// `track_list::track_cover`), and this pair only toggles the state that GTK
+/// *does* let us change at runtime: focusability, cursor, styling and label.
 pub(in crate::ui) fn present(widget: &impl IsA<gtk4::Widget>, accessible_label: &str) {
     let widget = widget.upcast_ref::<gtk4::Widget>();
     // a11y-semantics: role=link name=target state=enabled action=activate
     widget.set_focusable(true);
     // input-parity: ACC-8 keyboard=link-enter-controller
     widget.set_cursor_from_name(Some("pointer"));
-    widget.set_accessible_role(gtk4::AccessibleRole::Link);
     widget.add_css_class(LINK_CLASS);
     widget.update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
 }
 
-pub(in crate::ui) fn unpresent(
-    widget: &impl IsA<gtk4::Widget>,
-    accessible_label: &str,
-    fallback_role: gtk4::AccessibleRole,
-) {
+/// The inverse of [`present`]: the widget keeps its structural role but stops
+/// being reachable, so keyboard and screen-reader navigation skip it.
+pub(in crate::ui) fn unpresent(widget: &impl IsA<gtk4::Widget>, accessible_label: &str) {
     let widget = widget.upcast_ref::<gtk4::Widget>();
     widget.set_focusable(false);
     widget.set_cursor_from_name(None);
-    widget.set_accessible_role(fallback_role);
     widget.remove_css_class(LINK_CLASS);
     widget.update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
 }
@@ -164,5 +170,52 @@ mod tests {
             assert_eq!(calls.get(), expected_calls, "modifiers: {modifiers:?}");
             assert_eq!(claims.get(), expected_claims, "modifiers: {modifiers:?}");
         }
+    }
+
+    /// A recycled cell runs `present`/`unpresent` over and over on a widget
+    /// that is already realized. GTK refuses a role change at that point, so
+    /// any attempt to swap the role would be both ineffective and loud — one
+    /// `Gtk-CRITICAL` per bind. The role must therefore already be right from
+    /// `class_init` and stay untouched through the whole cycle.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn a_realized_link_keeps_its_role_through_the_whole_bind_cycle() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let widget = crate::ui::track_cover::TrackCover::new();
+        let window = gtk4::Window::new();
+        window.set_child(Some(&widget));
+        window.present();
+        while gtk4::glib::MainContext::default().pending() {
+            gtk4::glib::MainContext::default().iteration(false);
+        }
+        assert!(
+            widget.is_realized(),
+            "the point of this test is the realized widget"
+        );
+
+        for (step, expected_focusable) in [
+            ("initial", false),
+            ("present", true),
+            ("unpresent", false),
+            ("present again", true),
+        ] {
+            match step {
+                "present" | "present again" => present(&widget, "Album"),
+                "unpresent" => unpresent(&widget, ""),
+                _ => {}
+            }
+            assert_eq!(
+                widget.accessible_role(),
+                gtk4::AccessibleRole::Link,
+                "the role must survive {step} untouched"
+            );
+            assert_eq!(
+                widget.is_focusable(),
+                expected_focusable,
+                "reachability is what {step} is allowed to change"
+            );
+        }
+        window.close();
     }
 }

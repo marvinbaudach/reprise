@@ -71,7 +71,7 @@ const TOP_RESTORE_MAX_ATTEMPTS: u8 = 2;
 const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
 #[derive(Clone, Copy)]
-pub(super) enum ReloadViewport {
+pub(in crate::ui) enum ReloadViewport {
     PreserveAnchor,
     CenterPlayingTrack,
     /// SEARCH-9: a new result set is read from its top.
@@ -518,7 +518,7 @@ pub(in crate::ui) fn reload_with_anchor(shared: &Rc<Shared>, captured: &ReloadAn
     reload_with_anchor_and_viewport(shared, captured, ReloadViewport::PreserveAnchor, None, None);
 }
 
-pub(super) fn reload_with_anchor_and_viewport(
+pub(in crate::ui) fn reload_with_anchor_and_viewport(
     shared: &Rc<Shared>,
     captured: &ReloadAnchor,
     viewport: ReloadViewport,

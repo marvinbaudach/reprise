@@ -1,28 +1,33 @@
-//! Minimal `GListModel::items_changed` ranges for tag-save query reloads.
+//! Minimal `GListModel::items_changed` ranges for targeted query reloads.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct ModelChange {
-    pub(super) position: u32,
-    pub(super) removed: u32,
-    pub(super) added: u32,
-    pub(super) before_total: u32,
-    pub(super) after_total: u32,
+pub(in crate::ui) struct ModelChange {
+    pub(in crate::ui) position: u32,
+    pub(in crate::ui) removed: u32,
+    pub(in crate::ui) added: u32,
+    pub(in crate::ui) before_total: u32,
+    pub(in crate::ui) after_total: u32,
     /// The model generation the range was computed against — see
     /// `imp::TrackListModel::generation`.
-    pub(super) generation: u64,
+    pub(in crate::ui) generation: u64,
 }
 
-pub(super) fn changed_range(
+pub(in crate::ui) fn changed_range(
     before: &[i64],
     after: &[i64],
     changed_ids: &[i64],
     generation: u64,
 ) -> Option<ModelChange> {
+    // A set, not the caller's slice: both trims below test membership once per
+    // untouched row, so a linear scan makes this O(rows × changed_ids). Tag
+    // saves edit a handful of tracks and never noticed, but the deletion path
+    // feeds in whatever the user multi-selected — and this runs synchronously
+    // on the UI thread, in the very code meant to keep deletion responsive.
+    let changed: std::collections::HashSet<i64> = changed_ids.iter().copied().collect();
+
     let mut prefix = 0;
     while before.get(prefix) == after.get(prefix)
-        && before
-            .get(prefix)
-            .is_some_and(|id| !changed_ids.contains(id))
+        && before.get(prefix).is_some_and(|id| !changed.contains(id))
     {
         prefix += 1;
     }
@@ -32,7 +37,7 @@ pub(super) fn changed_range(
     while before_end > prefix
         && after_end > prefix
         && before[before_end - 1] == after[after_end - 1]
-        && !changed_ids.contains(&before[before_end - 1])
+        && !changed.contains(&before[before_end - 1])
     {
         before_end -= 1;
         after_end -= 1;

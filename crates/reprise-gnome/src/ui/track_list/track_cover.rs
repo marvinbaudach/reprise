@@ -32,7 +32,17 @@ mod imp {
 
         fn class_init(class: &mut Self::Class) {
             class.set_css_name("reprise-track-cover");
-            class.set_accessible_role(gtk4::AccessibleRole::Img);
+            // `Link`, fixed here rather than swapped per bind: GTK refuses to
+            // change a role once the widget is realized, so the per-row
+            // `Img` <-> `Link` swap this cell used to attempt never actually
+            // took effect — it only logged a `Gtk-CRITICAL` on every bind
+            // (thousands per minute while scrolling, each one a synchronous
+            // journal write on the main thread). The cover *is* the album
+            // link, so the link role is the honest structural answer; a row
+            // whose album cannot be resolved simply stops being focusable,
+            // which already keeps it out of the keyboard and screen-reader
+            // path. See `link_activation::present`.
+            class.set_accessible_role(gtk4::AccessibleRole::Link);
         }
     }
 
