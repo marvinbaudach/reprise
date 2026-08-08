@@ -169,6 +169,14 @@ fn src_15a_the_library_chip_appears_only_with_a_genre_to_suggest() {
     assert_ne!(label, strings::podcast_chip_genre("Metal"));
 }
 
+/// `SRC-19`: what `build_surface` alone can establish — the pill exists, reads
+/// the country chart, and starts beside an untouched entry. It deliberately
+/// does *not* click: `build_surface` attaches no handlers, `present` wires them
+/// (`AddDialogChip::Charts` into `load_charts`, `LibraryGenre` into the entry
+/// plus `submit`), so an `emit_clicked` here would pass whatever the click was
+/// wired to do. The chip's recorded action is the honest stand-in — it is the
+/// value `present` matches on, and `Charts` is the branch that never writes to
+/// the entry.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_19_the_apple_dialog_carries_the_charts_chip_and_the_entry_stays_empty() {
@@ -182,6 +190,7 @@ fn src_19_the_apple_dialog_carries_the_charts_chip_and_the_entry_stays_empty() {
     );
     let chip = surface
         .suggestion_chip
+        .as_ref()
         .expect("an online Apple dialog must carry the charts chip");
 
     assert_eq!(
@@ -190,10 +199,12 @@ fn src_19_the_apple_dialog_carries_the_charts_chip_and_the_entry_stays_empty() {
     );
     assert!(chip.has_css_class("pill"));
     assert!(surface.entry.text().is_empty());
-    chip.emit_clicked();
-    assert!(
-        surface.entry.text().is_empty(),
-        "a chart is not a hidden search term"
+    assert_eq!(
+        surface.chip_action,
+        Some(AddDialogChip::Charts {
+            country: "DE".to_owned()
+        }),
+        "a chart is not a hidden search term — it loads into the result list"
     );
 }
 
