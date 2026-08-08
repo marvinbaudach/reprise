@@ -261,10 +261,7 @@ impl<'connection> LibraryDoctor<'connection> {
                             Err(_) => remote::AlbumResolution::default(),
                         }
                     } else {
-                        remote::AlbumResolution {
-                            attempted: true,
-                            album_match: None,
-                        }
+                        remote::AlbumResolution::default()
                     };
                     for index in indices {
                         let read_track = &read_tracks[index];
@@ -286,7 +283,12 @@ impl<'connection> LibraryDoctor<'connection> {
                             &mut control,
                         ) {
                             Ok(mut resolution) => {
-                                if album_resolution.attempted {
+                                // Only a chosen release may speak for the album
+                                // fields. Without one, dropping them would throw
+                                // away what the track resolved directly — from
+                                // its embedded release MBID, say — and replace it
+                                // with nothing.
+                                if album_resolution.album_match.is_some() {
                                     retain_track_fields(&mut resolution);
                                 }
                                 merge_remote_resolution(

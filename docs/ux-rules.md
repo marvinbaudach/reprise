@@ -3628,7 +3628,11 @@ means deterministic and high-confidence, never „without review".
   `doc_1e_the_best_release_is_deterministic_for_equal_scores`,
   `doc_1e_a_single_artist_album_whose_tracks_are_on_a_compilation_produces_no_album_artist_proposal`,
   `doc_1e_an_albums_album_fields_all_carry_the_same_resolved_release_mbid`,
-  `doc_1e_the_network_is_asked_once_per_album_not_once_per_track`.
+  `doc_1e_the_network_is_asked_once_per_album_not_once_per_track`,
+  `doc_1e_an_empty_release_search_keeps_the_directly_resolved_album_fields`.
+  *Amended 2026-08-08: only a **selected** release speaks for the album fields.
+  A release search that comes back empty — no candidate, or a failed request —
+  leaves the fields the track resolved on its own untouched.*
 
 - **DOC-1g** [active] [core] — **The complete local pass runs first, followed
   by the network pass.** The two phases are reported separately. The network

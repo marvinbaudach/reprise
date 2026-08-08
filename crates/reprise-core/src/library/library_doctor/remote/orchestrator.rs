@@ -58,9 +58,11 @@ pub(crate) struct AlbumRequest {
     pub(crate) query: AlbumQuery,
 }
 
+/// The outcome of one release lookup. A search that ran and found nothing is
+/// the same answer as one that never ran: there is no release to speak for the
+/// album fields, so whatever the track resolved on its own still stands.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct AlbumResolution {
-    pub(crate) attempted: bool,
     pub(crate) album_match: Option<AlbumMatch>,
 }
 
@@ -139,7 +141,6 @@ impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
         }
         let candidates = source_result(self.provider.search_release(&request.query, control))?;
         Ok(AlbumResolution {
-            attempted: true,
             album_match: best_release(&request.query, &candidates),
         })
     }
