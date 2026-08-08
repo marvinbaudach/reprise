@@ -30,6 +30,45 @@ pub enum DoctorReviewFilter {
     NeedsReview,
 }
 
+/// What a stored proposal still is.
+///
+/// One definition, because there used to be two. The sidebar count asked
+/// `is_auto_applied_parts(…, stale: false)` while the summary and the review
+/// list asked with the track's real staleness — so one scan reported 85
+/// findings in the sidebar and 200 on its own page, and the page offered rows
+/// whose current and proposed values were already identical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoctorFindingKind {
+    /// This scan's own tag-write job already wrote it. Not a finding any more —
+    /// until an Undo reverts it, which puts the journal row back to
+    /// `reverted` and makes this a finding again.
+    Written,
+    /// Applied without asking: unambiguous, or a MusicBrainz recording ID that
+    /// changes nothing a human can see.
+    Quiet,
+    /// Shown for review. A track that changed under us since the scan read it
+    /// lands here too, marked stale, rather than being written unasked.
+    NeedsReview,
+}
+
+pub fn finding_kind(
+    field: DoctorField,
+    source: ProposalSource,
+    preselected: bool,
+    written: bool,
+    stale: bool,
+) -> DoctorFindingKind {
+    if written {
+        return DoctorFindingKind::Written;
+    }
+    if !stale
+        && (field == DoctorField::RecordingMbid || (source == ProposalSource::Local && preselected))
+    {
+        return DoctorFindingKind::Quiet;
+    }
+    DoctorFindingKind::NeedsReview
+}
+
 pub fn is_auto_applied(proposal: &DoctorProposal, stale: bool) -> bool {
     is_auto_applied_parts(proposal.field, proposal.source, proposal.preselected, stale)
 }
@@ -40,10 +79,7 @@ pub(crate) fn is_auto_applied_parts(
     preselected: bool,
     stale: bool,
 ) -> bool {
-    if stale {
-        return false;
-    }
-    field == DoctorField::RecordingMbid || (source == ProposalSource::Local && preselected)
+    finding_kind(field, source, preselected, false, stale) == DoctorFindingKind::Quiet
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

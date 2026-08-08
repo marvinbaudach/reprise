@@ -134,7 +134,7 @@ struct ImportDialogWidgets {
 
 fn build_import_dialog() -> ImportDialogWidgets {
     // === Selection state ===
-    let info_icon = gtk4::Image::from_icon_name("emblem-ok-symbolic");
+    let info_icon = gtk4::Image::from_icon_name(crate::ui::icons::DONE);
     info_icon.set_pixel_size(24);
     let info_title = gtk4::Label::new(Some(&strings::text(strings::RHYTHMBOX_LIBRARY_FOUND)));
     info_title.add_css_class("heading");
@@ -214,7 +214,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
     progress_box.append(&progress_label);
 
     // === Complete state ===
-    let complete_icon = gtk4::Image::from_icon_name("emblem-ok-symbolic");
+    let complete_icon = gtk4::Image::from_icon_name(crate::ui::icons::DONE);
     complete_icon.set_pixel_size(48);
     complete_icon.set_halign(gtk4::Align::Center);
     complete_icon.set_margin_bottom(12);
