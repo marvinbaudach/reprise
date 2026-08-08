@@ -6,6 +6,16 @@ macro_rules! N_ {
 
 use super::{formatted, plural};
 
+// `plural()` arguments are deliberately NOT wrapped in `N_!`.
+//
+// `N_!` is a no-op at runtime, but xgettext sees it first: with the wrapper it
+// extracts each form as its own singular msgid and never emits the
+// `msgid_plural` entry that `ngettext` looks up, so at runtime every plural
+// string falls back to English no matter how well the catalog is translated.
+// Measured against `po/reprise.pot`: the unwrapped `doctor_change_count` had a
+// real `msgid_plural`; the wrapped `doctor_apply_changes` next to it had two
+// dead singulars. Leave these bare.
+
 pub const LIBRARY_DOCTOR: &str = N_!("Library Doctor");
 pub const LIBRARY_DOCTOR_REMOTE: &str = N_!("MusicBrainz / AcoustID suggestions");
 pub const LIBRARY_DOCTOR_REMOTE_DESCRIPTION: &str =
@@ -19,9 +29,12 @@ pub const DOCTOR_SCOPE: &str = N_!("Scope");
 pub const DOCTOR_SCOPE_WHOLE_LIBRARY: &str = N_!("Whole Library");
 pub const DOCTOR_SCOPE_CURRENT_VIEW: &str = N_!("Current View");
 pub const DOCTOR_SCOPE_SELECTION: &str = N_!("Selection");
+/// Scan facts, one muted line under the result title: what the scan actually
+/// ran with, taken from the stored scan and never from the current controls.
+pub const DOCTOR_REMOTE_ON: &str = N_!("MusicBrainz on");
+pub const DOCTOR_REMOTE_OFF: &str = N_!("MusicBrainz off");
 pub const DOCTOR_RUN_SCAN: &str = N_!("Run Scan Now");
 pub const DOCTOR_SCANNING: &str = N_!("Checking tracks…");
-pub const DOCTOR_RESULTS_SO_FAR: &str = N_!("Results Found So Far");
 pub const DOCTOR_CASING_WHITESPACE: &str = N_!("Casing / Whitespace");
 pub const DOCTOR_MISSING_ALBUM_ARTIST: &str = N_!("Missing Album Artist");
 pub const DOCTOR_GENRE_VARIANTS: &str = N_!("Genre Variants");
@@ -125,86 +138,157 @@ pub fn doctor_last_scan_fixes(count: usize) -> String {
     )
 }
 
-pub fn doctor_fixes_applied(count: usize) -> String {
-    formatted(
-        N_!("{count} fixes already applied"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn doctor_fixes_to_apply(count: usize) -> String {
-    formatted(
-        N_!("{count} fixes to apply"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn doctor_spacing_casing_line(count: usize) -> String {
-    formatted(
-        N_!("{count} stray spaces and casing corrections"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn doctor_mbid_line(count: usize) -> String {
-    formatted(
-        N_!("{count} MusicBrainz IDs filled in — no visible change to your tags"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn doctor_mbid_line_pending(count: usize) -> String {
-    formatted(
-        N_!("{count} MusicBrainz IDs to fill in — no visible change to your tags"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn doctor_changes_need_your_eye(count: usize) -> String {
-    formatted(
-        N_!("{count} changes need your eye"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn doctor_across_albums(count: usize) -> String {
-    formatted(
-        N_!("across {count} albums"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn doctor_conflicts_headline(count: usize) -> String {
-    formatted(
-        N_!("{count} spelling conflicts, no clear winner"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn doctor_apply_changes(count: usize) -> String {
+/// Past tense: by the time this heading renders, the quiet job has run.
+pub fn doctor_already_applied(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        N_!("Apply {count} change"),
-        N_!("Apply {count} changes"),
+        "{count} fix already applied",
+        "{count} fixes already applied",
         count,
         &[("count", &count_text)],
     )
 }
 
-pub fn doctor_nothing_to_fix_body(checked: usize, skipped: usize) -> String {
-    formatted(
-        N_!("{checked} tracks checked, {skipped} skipped. Your tags are already consistent with each other."),
-        &[
-            ("checked", &checked.to_string()),
-            ("skipped", &skipped.to_string()),
-        ],
+pub fn doctor_spacing_casing_line(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} stray space and casing correction",
+        "{count} stray spaces and casing corrections",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_mbid_line(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} MusicBrainz ID filled in — no visible change to your tags",
+        "{count} MusicBrainz IDs filled in — no visible change to your tags",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_needs_review(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} change needs your eye",
+        "{count} changes need your eye",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_across_albums(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "across {count} album",
+        "across {count} albums",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_unresolved_spellings(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} spelling conflict, no clear winner",
+        "{count} spelling conflicts, no clear winner",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+/// Live counters on the running page. Deliberately future tense: the quiet
+/// write only starts once the scan completes, so mid-scan nothing has been
+/// written yet and the page may not claim otherwise.
+///
+/// The two English forms below are identical on purpose — English inflects
+/// nothing here, but German does: "1 wird still korrigiert" against
+/// "511 werden still korrigiert". The count still has to travel through
+/// ngettext or every translation is stuck with one of the two.
+pub fn doctor_will_fix_quietly(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} will be fixed quietly",
+        "{count} will be fixed quietly",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_waiting_for_you(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} waiting for you",
+        "{count} waiting for you",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_skipped_facts(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} skipped",
+        "{count} skipped",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+/// The one muted line under the result title: scope, whether the network was
+/// used, and how many tracks were skipped — the skipped clause only when there
+/// were any, because no line on this page may read `0`.
+pub fn doctor_scan_facts(scope: &str, remote: &str, skipped: Option<usize>) -> String {
+    let mut facts = format!("{scope} · {remote}");
+    if let Some(skipped) = skipped.filter(|count| *count > 0) {
+        facts.push_str(" · ");
+        facts.push_str(&doctor_skipped_facts(skipped));
+    }
+    facts
+}
+
+pub fn doctor_apply_changes(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "Apply {count} change",
+        "Apply {count} changes",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_nothing_to_fix_body(checked: usize) -> String {
+    let checked_text = checked.to_string();
+    plural(
+        "{checked} track checked. Your tags are already consistent with each other.",
+        "{checked} tracks checked. Your tags are already consistent with each other.",
+        checked,
+        &[("checked", &checked_text)],
+    )
+}
+
+/// Same sentence with the skipped clause, used only when tracks were actually
+/// skipped — otherwise the empty state would print a literal `0`.
+pub fn doctor_nothing_to_fix_body_skipped(checked: usize, skipped: usize) -> String {
+    let checked_text = checked.to_string();
+    let skipped_text = skipped.to_string();
+    plural(
+        "{checked} tracks checked, {skipped} skipped. Your tags are already consistent with each other.",
+        "{checked} tracks checked, {skipped} skipped. Your tags are already consistent with each other.",
+        skipped,
+        &[("checked", &checked_text), ("skipped", &skipped_text)],
     )
 }
 
 pub fn doctor_tracks_checked_heading(count: usize) -> String {
-    formatted(
-        N_!("{count} tracks checked"),
-        &[("count", &count.to_string())],
+    let count_text = count.to_string();
+    plural(
+        "{count} track checked",
+        "{count} tracks checked",
+        count,
+        &[("count", &count_text)],
     )
 }
 
@@ -222,8 +306,8 @@ pub fn doctor_tags_fixed(count: usize) -> String {
 pub fn doctor_all_tracks(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        N_!("All {count} track"),
-        N_!("All {count} tracks"),
+        "All {count} track",
+        "All {count} tracks",
         count,
         &[("count", &count_text)],
     )
@@ -375,16 +459,6 @@ pub fn doctor_change_count(count: usize) -> String {
     )
 }
 
-pub fn doctor_checked_counts(checked: usize, skipped: usize) -> String {
-    formatted(
-        N_!("{checked} checked · {skipped} skipped"),
-        &[
-            ("checked", &checked.to_string()),
-            ("skipped", &skipped.to_string()),
-        ],
-    )
-}
-
 pub fn doctor_review_changes(count: usize) -> String {
     let count_text = count.to_string();
     plural(
@@ -392,5 +466,14 @@ pub fn doctor_review_changes(count: usize) -> String {
         "Review {count} changes",
         count,
         &[("count", &count_text)],
+    )
+}
+
+/// One category line inside the review card: the class, then the count with a
+/// noun so ngettext has something to agree with.
+pub fn doctor_review_category(class: &str, count: usize) -> String {
+    formatted(
+        N_!("{class} · {count}"),
+        &[("class", class), ("count", &doctor_change_count(count))],
     )
 }

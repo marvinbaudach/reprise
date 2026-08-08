@@ -40,6 +40,16 @@ pub(in crate::ui) fn css() -> String {
         font-size: 10.5px;\
         opacity: 0.45;\
     }}\
+    /* The cancel control is a text link, not a chunky button: in a 240px \
+       sidebar a default-padded button starves the title of its allocation \
+       until it truncates to three characters. */\
+    .scan-card-cancel {{\
+        font-size: 11px;\
+        min-height: 0;\
+        min-width: 0;\
+        padding: 0 2px;\
+        color: @accent_color;\
+    }}\
     .scan-card progressbar trough {{\
         min-height: 3px;\
         border-radius: 1.5px;\

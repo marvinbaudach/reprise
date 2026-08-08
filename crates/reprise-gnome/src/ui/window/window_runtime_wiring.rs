@@ -206,6 +206,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     super::compact_mode_suggestion::install(window, toast_overlay, minimal_view, player.is_some());
 
     let menu_preferences = preferences.clone();
+    let findings_library_doctor = library_doctor.clone();
     let menu_library_doctor = library_doctor;
     let stop_player = player.as_ref().map(|player| {
         let player = Rc::downgrade(player);
@@ -226,6 +227,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         super::primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),
+            on_library_doctor_findings: Rc::new(move || findings_library_doctor.open_findings()),
             on_import_playlist: {
                 let sidebar = sidebar.clone();
                 Rc::new(move || sidebar.activate_import_playlist())
