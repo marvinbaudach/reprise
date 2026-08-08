@@ -279,7 +279,7 @@ open class ReprisePlaybackService : MediaSessionService() {
     }
 
     internal companion object {
-        const val LOCAL_BIND_ACTION = "de.reprise.spike.BIND_PLAYBACK"
+        const val LOCAL_BIND_ACTION = "org.reprise.BIND_PLAYBACK"
     }
 }
 
