@@ -3517,7 +3517,7 @@ msgstr "Popular en {country}"
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:450
 #, rust-format
 msgid "PODCASTS · TOP IN {country}"
-msgstr "PODCASTS · TOP EN {country}"
+msgstr "PÓDCASTS · TOP EN {country}"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:458
 #, rust-format
