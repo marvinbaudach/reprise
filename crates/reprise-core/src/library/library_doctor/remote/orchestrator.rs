@@ -1,5 +1,6 @@
 use super::{
-    arbitration, AlbumQuery, RemoteDirectLookup, RemoteEvidenceSource, RemoteTrackMetadata,
+    arbitration, best_release, AlbumMatch, AlbumQuery, RemoteDirectLookup, RemoteEvidenceSource,
+    RemoteTrackMetadata,
 };
 use crate::fingerprint::{
     FingerprintBackend, FingerprintControl, FingerprintOutcome, FingerprintProgress,
@@ -52,6 +53,17 @@ pub enum RemoteProviderError {
 
 pub type RemoteProviderResult = Result<Vec<RemoteIdentity>, RemoteProviderError>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AlbumRequest {
+    pub(crate) query: AlbumQuery,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct AlbumResolution {
+    pub(crate) attempted: bool,
+    pub(crate) album_match: Option<AlbumMatch>,
+}
+
 pub trait RemoteProvider {
     fn direct(
         &mut self,
@@ -80,11 +92,21 @@ pub trait RemoteProvider {
 }
 
 pub(crate) trait RemoteResolver {
+    fn resolve_album(
+        &mut self,
+        request: &AlbumRequest,
+        control: &mut dyn FnMut() -> ScanControl,
+    ) -> Result<AlbumResolution, RemoteProviderError> {
+        let _ = (request, control);
+        Ok(AlbumResolution::default())
+    }
+
     fn resolve_track(
         &mut self,
         metadata: &RemoteTrackMetadata,
         path: &Path,
         fingerprint_backend: Option<&dyn FingerprintBackend>,
+        album_match: Option<&AlbumMatch>,
         control: &mut dyn FnMut() -> ScanControl,
     ) -> Result<RemoteResolution, RemoteProviderError>;
 }
@@ -107,11 +129,27 @@ impl<P> ProviderRemoteResolver<P> {
 }
 
 impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
+    fn resolve_album(
+        &mut self,
+        request: &AlbumRequest,
+        control: &mut dyn FnMut() -> ScanControl,
+    ) -> Result<AlbumResolution, RemoteProviderError> {
+        if control() == ScanControl::Cancel {
+            return Err(RemoteProviderError::Cancelled);
+        }
+        let candidates = source_result(self.provider.search_release(&request.query, control))?;
+        Ok(AlbumResolution {
+            attempted: true,
+            album_match: best_release(&request.query, &candidates),
+        })
+    }
+
     fn resolve_track(
         &mut self,
         metadata: &RemoteTrackMetadata,
         path: &Path,
         fingerprint_backend: Option<&dyn FingerprintBackend>,
+        album_match: Option<&AlbumMatch>,
         control: &mut dyn FnMut() -> ScanControl,
     ) -> Result<RemoteResolution, RemoteProviderError> {
         if control() == ScanControl::Cancel {
@@ -124,7 +162,7 @@ impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
             }
             matches.extend(source_result(self.provider.direct(&lookup, control))?);
             if direct_resolution_is_complete(metadata, &matches) {
-                return Ok(arbitration::arbitrate(metadata, &matches));
+                return Ok(track_resolution(metadata, &matches, album_match));
             }
         }
         if control() == ScanControl::Cancel {
@@ -133,10 +171,10 @@ impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
         let searched = source_result(self.provider.search_musicbrainz(metadata, control))?;
         matches.extend(searched);
         if arbitration::is_complete(metadata, &matches) {
-            return Ok(arbitration::arbitrate(metadata, &matches));
+            return Ok(track_resolution(metadata, &matches, album_match));
         }
         let Some(backend) = fingerprint_backend else {
-            return Ok(arbitration::arbitrate(metadata, &matches));
+            return Ok(track_resolution(metadata, &matches, album_match));
         };
         let mut cancelled = false;
         let fingerprint = match backend.fingerprint(path, &mut |_: FingerprintProgress| {
@@ -148,7 +186,7 @@ impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
             }
         }) {
             Ok(fingerprint) => fingerprint,
-            Err(_) => return Ok(arbitration::arbitrate(metadata, &matches)),
+            Err(_) => return Ok(track_resolution(metadata, &matches, album_match)),
         };
         let FingerprintOutcome::Completed(fingerprint) = fingerprint else {
             return Err(RemoteProviderError::Cancelled);
@@ -164,8 +202,61 @@ impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
             control,
         ))?;
         matches.extend(acoustid);
-        Ok(arbitration::arbitrate(metadata, &matches))
+        Ok(track_resolution(metadata, &matches, album_match))
     }
+}
+
+fn track_resolution(
+    metadata: &RemoteTrackMetadata,
+    matches: &[RemoteIdentity],
+    album_match: Option<&AlbumMatch>,
+) -> RemoteResolution {
+    let mut resolution = arbitration::arbitrate(metadata, matches);
+    if album_match.is_some() {
+        resolution.proposals.retain(|proposal| {
+            matches!(
+                proposal.field,
+                super::super::DoctorField::Title
+                    | super::super::DoctorField::Artist
+                    | super::super::DoctorField::RecordingMbid
+            )
+        });
+        resolution.groups.retain(|group| {
+            matches!(
+                group.field,
+                super::super::DoctorField::Title | super::super::DoctorField::Artist
+            )
+        });
+    }
+    resolution
+}
+
+pub(crate) fn album_resolution_for_track(
+    metadata: &RemoteTrackMetadata,
+    album_match: &AlbumMatch,
+) -> RemoteResolution {
+    let mut resolution =
+        arbitration::arbitrate(metadata, std::slice::from_ref(&album_match.identity));
+    resolution.proposals.retain(|proposal| {
+        matches!(
+            proposal.field,
+            super::super::DoctorField::Album
+                | super::super::DoctorField::AlbumArtist
+                | super::super::DoctorField::Year
+        )
+    });
+    for proposal in &mut resolution.proposals {
+        proposal.resolved_release_mbid = album_match.identity.release_mbid.clone();
+    }
+    resolution.groups.retain(|group| {
+        matches!(
+            group.field,
+            super::super::DoctorField::Album
+                | super::super::DoctorField::AlbumArtist
+                | super::super::DoctorField::Year
+        )
+    });
+    resolution
 }
 
 fn source_result(result: RemoteProviderResult) -> Result<Vec<RemoteIdentity>, RemoteProviderError> {

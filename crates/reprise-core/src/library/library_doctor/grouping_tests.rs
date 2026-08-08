@@ -33,6 +33,7 @@ fn proposal(track_id: i64, field: DoctorField) -> DoctorProposal {
         preselected: false,
         never_preselect: false,
         problem_class: ProblemClass::CasingWhitespace,
+        resolved_release_mbid: None,
         evidence: Vec::new(),
         local_fallback: None,
     }

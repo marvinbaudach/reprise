@@ -261,6 +261,7 @@ mod tests {
             preselected: source == ProposalSource::Local,
             never_preselect: false,
             problem_class: class,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         }

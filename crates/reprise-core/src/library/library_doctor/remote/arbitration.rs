@@ -69,6 +69,7 @@ pub(crate) fn arbitrate(
                 preselected: false,
                 never_preselect,
                 problem_class: problem_class(field),
+                resolved_release_mbid: None,
                 evidence,
                 local_fallback: None,
             });

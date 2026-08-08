@@ -80,9 +80,9 @@ pub(super) fn persist_complete_scan(
         let mut statement = transaction.prepare(
             "INSERT INTO library_doctor_proposals \
          (scan_id, position, track_id, field, current_value, proposed_value, source, \
-              confidence, preselected, never_preselect, problem_class, evidence_json, \
-              local_fallback_json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+              confidence, preselected, never_preselect, problem_class, resolved_release_mbid, \
+              evidence_json, local_fallback_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         )?;
         for (position, proposal) in proposals.iter().enumerate() {
             statement.execute(rusqlite::params![
@@ -97,6 +97,7 @@ pub(super) fn persist_complete_scan(
                 proposal.preselected,
                 proposal.never_preselect,
                 proposal.problem_class.as_str(),
+                proposal.resolved_release_mbid.as_deref(),
                 serde_json::to_string(&proposal.evidence).map_err(|error| {
                     DoctorError::InvalidStoredData(format!("remote evidence: {error}"))
                 })?,
@@ -400,7 +401,8 @@ fn current_identity(
 fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>, DoctorError> {
     let mut statement = conn.prepare(
         "SELECT track_id, field, current_value, proposed_value, source, confidence, \
-         preselected, never_preselect, problem_class, evidence_json, local_fallback_json \
+         preselected, never_preselect, problem_class, resolved_release_mbid, evidence_json, \
+         local_fallback_json \
          FROM library_doctor_proposals \
          WHERE scan_id=?1 ORDER BY position",
     )?;
@@ -440,17 +442,18 @@ fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>
                 preselected: row.get(6)?,
                 never_preselect: row.get(7)?,
                 problem_class,
-                evidence: serde_json::from_str(&row.get::<_, String>(9)?).map_err(|error| {
+                resolved_release_mbid: row.get(9)?,
+                evidence: serde_json::from_str(&row.get::<_, String>(10)?).map_err(|error| {
                     rusqlite::Error::FromSqlConversionFailure(
-                        9,
+                        10,
                         rusqlite::types::Type::Text,
                         Box::new(error),
                     )
                 })?,
-                local_fallback: serde_json::from_str(&row.get::<_, String>(10)?).map_err(
+                local_fallback: serde_json::from_str(&row.get::<_, String>(11)?).map_err(
                     |error| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            10,
+                            11,
                             rusqlite::types::Type::Text,
                             Box::new(error),
                         )
@@ -561,6 +564,7 @@ mod tests {
             preselected: false,
             never_preselect: true,
             problem_class: ProblemClass::CasingWhitespace,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         }];
@@ -582,5 +586,42 @@ mod tests {
 
         let loaded = last_complete_scan(db.conn()).unwrap().unwrap();
         assert!(loaded.proposals[0].never_preselect);
+    }
+
+    #[test]
+    fn doc_1e_the_resolved_release_mbid_survives_a_store_round_trip() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let proposals = vec![DoctorProposal {
+            track_id: 7,
+            field: DoctorField::Album,
+            current: DoctorValue::Text("Local album".into()),
+            proposed: DoctorValue::Text("Matched album".into()),
+            source: ProposalSource::MusicBrainz,
+            confidence: 88,
+            preselected: false,
+            never_preselect: false,
+            problem_class: ProblemClass::CasingWhitespace,
+            resolved_release_mbid: Some("123e4567-e89b-12d3-a456-426614174001".into()),
+            evidence: Vec::new(),
+            local_fallback: None,
+        }];
+
+        persist_complete_scan(&CompleteScanData {
+            conn: db.conn(),
+            scope_kind: "selection",
+            created_at: 1,
+            options: DoctorScanOptions {
+                remote_enabled: true,
+            },
+            checked_tracks: 0,
+            skipped_tracks: 0,
+            tracks: &[],
+            proposals: &proposals,
+            unresolved_groups: &[],
+        })
+        .unwrap();
+
+        let loaded = last_complete_scan(db.conn()).unwrap().unwrap();
+        assert_eq!(loaded.proposals, proposals);
     }
 }

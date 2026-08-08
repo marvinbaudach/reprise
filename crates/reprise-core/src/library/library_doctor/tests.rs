@@ -82,6 +82,7 @@ impl RemoteResolver for CollisionRemoteResolver {
         metadata: &RemoteTrackMetadata,
         _: &Path,
         _: Option<&dyn FingerprintBackend>,
+        _: Option<&super::remote::AlbumMatch>,
         control: &mut dyn FnMut() -> ScanControl,
     ) -> Result<RemoteResolution, RemoteProviderError> {
         let _ = control();
@@ -96,6 +97,7 @@ impl RemoteResolver for CollisionRemoteResolver {
                 preselected: false,
                 never_preselect: false,
                 problem_class: ProblemClass::CasingWhitespace,
+                resolved_release_mbid: None,
                 evidence: Vec::new(),
                 local_fallback: None,
             }],
@@ -112,6 +114,7 @@ impl RemoteResolver for YearGroupResolver {
         _: &RemoteTrackMetadata,
         _: &Path,
         _: Option<&dyn FingerprintBackend>,
+        _: Option<&super::remote::AlbumMatch>,
         _: &mut dyn FnMut() -> ScanControl,
     ) -> Result<RemoteResolution, RemoteProviderError> {
         let evidence = RemoteEvidence {
@@ -162,6 +165,7 @@ impl RemoteResolver for CapturingRemoteResolver {
         metadata: &RemoteTrackMetadata,
         _: &Path,
         _: Option<&dyn FingerprintBackend>,
+        _: Option<&super::remote::AlbumMatch>,
         _: &mut dyn FnMut() -> ScanControl,
     ) -> Result<RemoteResolution, RemoteProviderError> {
         self.metadata.push(metadata.clone());
@@ -176,6 +180,7 @@ impl RemoteResolver for CapturingRemoteResolver {
                 preselected: false,
                 never_preselect: false,
                 problem_class: ProblemClass::MissingWrongYear,
+                resolved_release_mbid: None,
                 evidence: vec![RemoteEvidence {
                     source: RemoteEvidenceSource::MusicBrainz,
                     confidence: 88,
@@ -351,7 +356,7 @@ fn combined_scan_progress_is_monotonic_and_completes_after_remote_resolution() {
         .iter()
         .find(|item| item.completed_tracks == 1)
         .expect("the first completed track must be published");
-    assert_eq!(first_complete_track.summary.review_changes, 1);
+    assert_eq!(first_complete_track.summary.review_changes, 0);
     assert_eq!(first_complete_track.summary.checked_tracks, 1);
 }
 

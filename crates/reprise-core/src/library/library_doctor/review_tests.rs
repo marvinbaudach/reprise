@@ -30,6 +30,7 @@ fn proposal(track_id: i64, field: DoctorField, source: ProposalSource) -> Doctor
         preselected: source == ProposalSource::Local,
         never_preselect: false,
         problem_class: ProblemClass::CasingWhitespace,
+        resolved_release_mbid: None,
         evidence: Vec::new(),
         local_fallback: None,
     }

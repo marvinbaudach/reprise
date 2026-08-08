@@ -212,6 +212,8 @@ pub struct DoctorProposal {
     pub preselected: bool,
     pub never_preselect: bool,
     pub problem_class: ProblemClass,
+    /// The single album release that justified an album-wide remote value.
+    pub resolved_release_mbid: Option<String>,
     /// Ordered, source-native evidence. Local rows deliberately keep this empty.
     pub evidence: Vec<super::remote::RemoteEvidence>,
     /// A local result displaced by stronger remote evidence, retained so hiding

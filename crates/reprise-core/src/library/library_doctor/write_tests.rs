@@ -84,6 +84,7 @@ impl super::remote::RemoteResolver for PaddedRemoteResolver {
         metadata: &super::remote::RemoteTrackMetadata,
         _: &Path,
         _: Option<&dyn crate::fingerprint::FingerprintBackend>,
+        _: Option<&super::remote::AlbumMatch>,
         _: &mut dyn FnMut() -> ScanControl,
     ) -> Result<super::remote::RemoteResolution, super::remote::RemoteProviderError> {
         Ok(super::remote::arbitrate(
@@ -622,6 +623,7 @@ fn doc_5a_recording_mbid_uses_the_guarded_review_write_path() {
         preselected: false,
         never_preselect: false,
         problem_class: ProblemClass::MissingRecordingMbid,
+        resolved_release_mbid: None,
         evidence: Vec::new(),
         local_fallback: None,
     });

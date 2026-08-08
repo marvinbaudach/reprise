@@ -29,7 +29,10 @@ pub(crate) use cache::CachedRemoteProvider;
 pub(crate) use metadata::read_remote_metadata;
 pub use metadata::{RemoteDirectLookup, RemoteTrackMetadata};
 pub(crate) use network::{NetworkProvider, NoNetworkProvider};
-pub(crate) use orchestrator::{ProviderRemoteResolver, RemoteResolver};
+pub(crate) use orchestrator::{
+    album_resolution_for_track, AlbumRequest, AlbumResolution, ProviderRemoteResolver,
+    RemoteResolver,
+};
 pub use orchestrator::{
     ReleaseSecondaryType, RemoteIdentity, RemoteProvider, RemoteProviderError,
     RemoteProviderResult, RemoteResolution,

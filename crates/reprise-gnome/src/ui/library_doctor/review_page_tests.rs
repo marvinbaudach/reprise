@@ -48,6 +48,7 @@ fn scan() -> DoctorScan {
             preselected: false,
             never_preselect: false,
             problem_class: ProblemClass::GenreVariant,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         }],
@@ -99,6 +100,7 @@ fn album_change_scan() -> DoctorScan {
             preselected: false,
             never_preselect: false,
             problem_class: ProblemClass::MissingAlbumArtist,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         });
@@ -136,6 +138,7 @@ fn album_change_scan() -> DoctorScan {
             preselected: false,
             never_preselect: false,
             problem_class,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         });
