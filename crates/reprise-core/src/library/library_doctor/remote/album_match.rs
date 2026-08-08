@@ -40,6 +40,11 @@ pub(crate) fn best_release(
         .min_by(compare_matches)
 }
 
+pub(crate) fn joint_confidence(release_score: u8, field_agreement: u8) -> u8 {
+    let product = u16::from(release_score) * u16::from(field_agreement);
+    u8::try_from((product + 50) / 100).unwrap_or(100)
+}
+
 fn score_release(query: &AlbumQuery, identity: &RemoteIdentity) -> AlbumMatch {
     let track_count_matches = identity.release_track_count == Some(query.track_count);
     let title_overlap = title_overlap(query, identity);
@@ -136,4 +141,17 @@ fn local_tags_describe_special_release(query: &AlbumQuery) -> bool {
 fn same_group_key(left: &str, right: &str) -> bool {
     let left = normalize_group_key(left);
     !left.is_empty() && left == normalize_group_key(right)
+}
+
+#[cfg(test)]
+mod confidence_tests {
+    #[test]
+    fn joint_confidence_multiplies_release_and_field_scores() {
+        assert_eq!(super::joint_confidence(80, 75), 60);
+    }
+
+    #[test]
+    fn joint_confidence_rounds_to_the_nearest_percent() {
+        assert_eq!(super::joint_confidence(99, 100), 99);
+    }
 }

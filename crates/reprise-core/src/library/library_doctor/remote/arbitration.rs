@@ -4,12 +4,13 @@ use super::super::{
     DoctorCandidate, DoctorField, DoctorGroupMember, DoctorProposal, DoctorUnresolvedGroup,
     DoctorValue, ProblemClass, ProposalSource,
 };
+use super::album_match::joint_confidence;
 use super::guard_rails::{
     is_placeholder_artist, reduces_specificity, YearProvenance, SPECIFICITY_CONFIDENCE_CAP,
 };
 use super::{
-    RemoteEvidence, RemoteEvidenceSource, RemoteIdentity, RemoteResolution, RemoteTrackMetadata,
-    REMOTE_WRITABLE_FIELDS,
+    AlbumMatch, RemoteEvidence, RemoteEvidenceSource, RemoteIdentity, RemoteResolution,
+    RemoteTrackMetadata, REMOTE_WRITABLE_FIELDS,
 };
 
 type Ranked<'a> = Vec<(String, Vec<&'a RemoteIdentity>)>;
@@ -17,6 +18,68 @@ type Ranked<'a> = Vec<(String, Vec<&'a RemoteIdentity>)>;
 pub(crate) fn arbitrate(
     metadata: &RemoteTrackMetadata,
     identities: &[RemoteIdentity],
+) -> RemoteResolution {
+    arbitrate_with_context(metadata, identities, MatchContext::None)
+}
+
+pub(crate) fn arbitrate_album_match(
+    metadata: &RemoteTrackMetadata,
+    album_match: &AlbumMatch,
+) -> RemoteResolution {
+    arbitrate_with_context(
+        metadata,
+        std::slice::from_ref(&album_match.identity),
+        MatchContext::Album(album_match),
+    )
+}
+
+pub(crate) fn arbitrate_track_match(
+    metadata: &RemoteTrackMetadata,
+    identities: &[RemoteIdentity],
+    album_match: &AlbumMatch,
+) -> RemoteResolution {
+    arbitrate_with_context(metadata, identities, MatchContext::Track(album_match))
+}
+
+#[derive(Clone, Copy)]
+enum MatchContext<'a> {
+    None,
+    Album(&'a AlbumMatch),
+    Track(&'a AlbumMatch),
+}
+
+impl MatchContext<'_> {
+    fn confidence(
+        self,
+        field: DoctorField,
+        identities: &[&RemoteIdentity],
+        field_agreement: u8,
+    ) -> u8 {
+        let album_match = match self {
+            Self::None => return field_agreement,
+            Self::Album(album_match) => album_match,
+            Self::Track(album_match) => {
+                if field == DoctorField::RecordingMbid && field_agreement == 100 {
+                    return field_agreement;
+                }
+                let selected = album_match.identity.release_mbid.as_deref();
+                let belongs_to_selected = identities
+                    .iter()
+                    .all(|identity| identity.release_mbid.as_deref() == selected);
+                if belongs_to_selected {
+                    return field_agreement;
+                }
+                album_match
+            }
+        };
+        joint_confidence(album_match.score, field_agreement)
+    }
+}
+
+fn arbitrate_with_context(
+    metadata: &RemoteTrackMetadata,
+    identities: &[RemoteIdentity],
+    context: MatchContext<'_>,
 ) -> RemoteResolution {
     let mut resolution = RemoteResolution::default();
     for field in REMOTE_WRITABLE_FIELDS {
@@ -41,15 +104,21 @@ pub(crate) fn arbitrate(
                 // this resolver yet, so a placeholder cannot become a proposal.
                 continue;
             }
-            let evidence = identities
+            let mut evidence = identities
                 .iter()
                 .map(|identity| to_evidence(metadata, identity, field, value))
                 .collect::<Vec<_>>();
-            let mut confidence = evidence
+            let field_agreement = evidence
                 .iter()
                 .map(|item| item.confidence)
                 .min()
                 .unwrap_or_default();
+            let mut confidence = context.confidence(field, identities, field_agreement);
+            if confidence != field_agreement {
+                for item in &mut evidence {
+                    item.confidence = context.confidence(field, identities, item.confidence);
+                }
+            }
             let never_preselect = reduces_specificity(
                 &current,
                 &proposed,
@@ -85,6 +154,11 @@ pub(crate) fn arbitrate(
                         evidence: identities
                             .iter()
                             .map(|identity| to_evidence(metadata, identity, field, &value))
+                            .map(|mut evidence| {
+                                evidence.confidence =
+                                    context.confidence(field, &identities, evidence.confidence);
+                                evidence
+                            })
                             .collect(),
                     })
                     .collect(),
@@ -362,5 +436,128 @@ fn problem_class(field: DoctorField) -> ProblemClass {
         DoctorField::Year => ProblemClass::MissingWrongYear,
         DoctorField::RecordingMbid => ProblemClass::MissingRecordingMbid,
         _ => ProblemClass::CasingWhitespace,
+    }
+}
+
+#[cfg(test)]
+mod joint_score_tests {
+    use super::*;
+
+    const SELECTED_RELEASE: &str = "123e4567-e89b-12d3-a456-426614174001";
+    const OTHER_RELEASE: &str = "223e4567-e89b-12d3-a456-426614174001";
+
+    fn metadata() -> RemoteTrackMetadata {
+        RemoteTrackMetadata {
+            title: None,
+            artist: None,
+            album: None,
+            album_artist: None,
+            year: None,
+            recording_mbid: None,
+            release_mbid: None,
+            release_group_mbid: None,
+            artist_mbid: None,
+            release_artist_mbid: None,
+            duration_ms: None,
+        }
+    }
+
+    fn identity(confidence: u8, release_mbid: &str) -> RemoteIdentity {
+        RemoteIdentity {
+            source: RemoteEvidenceSource::MusicBrainz,
+            confidence,
+            recording_mbid: None,
+            release_mbid: Some(release_mbid.into()),
+            release_group_mbid: None,
+            artist_mbid: None,
+            release_artist_mbid: None,
+            title: None,
+            artist: None,
+            album: None,
+            album_artist: None,
+            release_year: None,
+            original_release_year: None,
+            duration_ms: None,
+            secondary_types: Vec::new(),
+            release_track_count: None,
+            release_track_titles: Vec::new(),
+            release_distinct_track_artists: None,
+        }
+    }
+
+    fn album_match(score: u8) -> AlbumMatch {
+        AlbumMatch {
+            identity: identity(100, SELECTED_RELEASE),
+            score,
+            exact: score == 100,
+        }
+    }
+
+    #[test]
+    fn doc_4c_a_partial_release_match_can_never_report_one_hundred() {
+        let mut metadata = metadata();
+        metadata.album = Some("Local album".into());
+        let mut matched = album_match(99);
+        matched.identity.album = Some("Matched album".into());
+
+        let resolution = arbitrate_album_match(&metadata, &matched);
+        let album = resolution
+            .proposals
+            .iter()
+            .find(|proposal| proposal.field == DoctorField::Album)
+            .unwrap();
+
+        assert_eq!(album.confidence, 99);
+    }
+
+    #[test]
+    fn doc_4c_confidence_is_release_match_times_field_agreement() {
+        let mut metadata = metadata();
+        metadata.album = Some("Local album".into());
+        let mut matched = album_match(80);
+        matched.identity.confidence = 75;
+        matched.identity.album = Some("Matched album".into());
+
+        let resolution = arbitrate_album_match(&metadata, &matched);
+        let album = resolution
+            .proposals
+            .iter()
+            .find(|proposal| proposal.field == DoctorField::Album)
+            .unwrap();
+
+        assert_eq!(album.confidence, 60);
+    }
+
+    #[test]
+    fn doc_4c_a_directly_resolved_mbid_still_reports_one_hundred() {
+        let mut remote = identity(100, OTHER_RELEASE);
+        remote.recording_mbid = Some("323e4567-e89b-12d3-a456-426614174001".into());
+
+        let resolution = arbitrate_track_match(&metadata(), &[remote], &album_match(40));
+        let recording = resolution
+            .proposals
+            .iter()
+            .find(|proposal| proposal.field == DoctorField::RecordingMbid)
+            .unwrap();
+
+        assert_eq!(recording.confidence, 100);
+    }
+
+    #[test]
+    fn doc_4c_the_specificity_cap_still_wins_over_the_joint_score() {
+        let mut metadata = metadata();
+        metadata.title = Some("The Complete Title".into());
+        let mut remote = identity(100, OTHER_RELEASE);
+        remote.title = Some("The Complete".into());
+
+        let resolution = arbitrate_track_match(&metadata, &[remote], &album_match(80));
+        let title = resolution
+            .proposals
+            .iter()
+            .find(|proposal| proposal.field == DoctorField::Title)
+            .unwrap();
+
+        assert_eq!(title.confidence, SPECIFICITY_CONFIDENCE_CAP);
+        assert!(title.never_preselect);
     }
 }

@@ -211,7 +211,11 @@ fn track_resolution(
     matches: &[RemoteIdentity],
     album_match: Option<&AlbumMatch>,
 ) -> RemoteResolution {
-    let mut resolution = arbitration::arbitrate(metadata, matches);
+    let mut resolution = if let Some(album_match) = album_match {
+        arbitration::arbitrate_track_match(metadata, matches, album_match)
+    } else {
+        arbitration::arbitrate(metadata, matches)
+    };
     if album_match.is_some() {
         resolution.proposals.retain(|proposal| {
             matches!(
@@ -235,8 +239,7 @@ pub(crate) fn album_resolution_for_track(
     metadata: &RemoteTrackMetadata,
     album_match: &AlbumMatch,
 ) -> RemoteResolution {
-    let mut resolution =
-        arbitration::arbitrate(metadata, std::slice::from_ref(&album_match.identity));
+    let mut resolution = arbitration::arbitrate_album_match(metadata, album_match);
     resolution.proposals.retain(|proposal| {
         matches!(
             proposal.field,
