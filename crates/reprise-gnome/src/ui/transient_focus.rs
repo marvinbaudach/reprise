@@ -5,14 +5,12 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::ui::adjustment_hold::AdjustmentHold;
-
-const FOCUS_SCROLL_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
-
 #[derive(Clone)]
 pub(super) struct TransientFocusGuard {
     invoker: glib::WeakRef<gtk4::Widget>,
     fallback: glib::WeakRef<gtk4::Widget>,
+    row: glib::WeakRef<gtk4::Widget>,
+    rows_at_capture: u32,
 }
 
 impl TransientFocusGuard {
@@ -21,13 +19,17 @@ impl TransientFocusGuard {
     /// row or button disappears while the transient is open.
     pub(super) fn capture<W: IsA<gtk4::Widget>>(parent: &W) -> Self {
         let fallback = parent.clone().upcast::<gtk4::Widget>();
-        let invoker = fallback
-            .root()
-            .and_then(|root| root.focus())
-            .map_or_else(|| fallback.clone(), |focused| stable_focus_target(&focused));
+        let focused = fallback.root().and_then(|root| root.focus());
+        let row = focused.as_ref().and_then(enclosing_row);
+        let invoker = focused
+            .as_ref()
+            .map_or_else(|| fallback.clone(), stable_focus_target);
+        let rows_at_capture = row.as_ref().and_then(|_| row_count(&invoker)).unwrap_or(0);
         Self {
             invoker: invoker.downgrade(),
             fallback: fallback.downgrade(),
+            row: row.map_or_else(glib::WeakRef::new, |row| row.downgrade()),
+            rows_at_capture,
         }
     }
 
@@ -90,6 +92,20 @@ impl TransientFocusGuard {
     pub(super) fn restore(&self) {
         let guard = self.clone();
         glib::idle_add_local_once(move || {
+            if let (Some(row), Some(invoker)) = (guard.row.upgrade(), guard.invoker.upgrade()) {
+                // `grab_focus` has to be part of the condition, not a
+                // statement before the `return`: a row that refuses focus
+                // (GTK takes rows out of the focus chain as a transient
+                // closes) would otherwise skip the whole rescue chain below
+                // and leave the window with no focus at all — the trap this
+                // guard exists to prevent.
+                if row.is_visible()
+                    && row_count(&invoker) == Some(guard.rows_at_capture)
+                    && row.grab_focus()
+                {
+                    return;
+                }
+            }
             let landed_on_a_row = guard
                 .invoker
                 .upgrade()
@@ -107,6 +123,29 @@ impl TransientFocusGuard {
     }
 }
 
+fn is_row_widget(widget: &gtk4::Widget) -> bool {
+    matches!(
+        widget.type_().name(),
+        "GtkColumnViewRowWidget" | "GtkListItemWidget"
+    )
+}
+
+fn enclosing_row(widget: &gtk4::Widget) -> Option<gtk4::Widget> {
+    let mut node = Some(widget.clone());
+    while let Some(current) = node {
+        if is_row_widget(&current) {
+            return Some(current);
+        }
+        node = current.parent();
+    }
+    None
+}
+
+#[cfg(test)]
+pub(in crate::ui) fn is_row_widget_for_test(widget: &gtk4::Widget) -> bool {
+    is_row_widget(widget)
+}
+
 /// The widget worth remembering across a transient's lifetime, given the one
 /// that currently has focus.
 ///
@@ -120,8 +159,10 @@ impl TransientFocusGuard {
 /// library to the top and selected whatever row the recycled widget had been
 /// handed (TAG-1: a save moves neither scroll nor view).
 ///
-/// The list itself is not recycled and keeps its own focus row, so it is the
-/// stable thing to remember. Focus lands back on the library either way.
+/// The list itself is not recycled and is therefore the stable fallback to
+/// remember. [`TransientFocusGuard`] separately retains the row only while
+/// the model's cardinality is unchanged, so a cardinality-changing re-query
+/// cannot restore a recycled widget after rebinding it to another track.
 fn stable_focus_target(focused: &gtk4::Widget) -> gtk4::Widget {
     let mut list = None;
     let mut node = Some(focused.clone());
@@ -140,15 +181,6 @@ fn stable_focus_target(focused: &gtk4::Widget) -> gtk4::Widget {
     list.unwrap_or_else(|| focused.clone())
 }
 
-/// Where `target` is scrolled to vertically — `None` when it does not
-/// scroll, which is every transient invoker that is a plain button or row.
-fn scroll_position(target: &gtk4::Widget) -> Option<(gtk4::Adjustment, f64)> {
-    let scrollable = target.dynamic_cast_ref::<gtk4::Scrollable>()?;
-    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(scrollable)?;
-    let value = adjustment.value();
-    Some((adjustment, value))
-}
-
 /// How many rows `view` holds, if it is one of the list views.
 fn row_count(view: &gtk4::Widget) -> Option<u32> {
     if let Some(view) = view.downcast_ref::<gtk4::ColumnView>() {
@@ -162,32 +194,7 @@ fn row_count(view: &gtk4::Widget) -> Option<u32> {
         .map(|model| model.n_items())
 }
 
-/// The topmost row `view` is showing *whole*, if it is showing one.
-///
-/// The row at the very top edge is usually clipped: the viewport's top edge
-/// falls somewhere inside it. Focusing that row is not free — GTK reveals a
-/// row it hands focus to, and revealing a clipped row scrolls the list up by
-/// the hidden part. [`AdjustmentHold`] then pulls the value back an idle
-/// later, so what the user sees is a twitch up and back every time a context
-/// menu or dialog closes. The first row that is fully on screen has nothing
-/// to reveal, so focusing it moves nothing.
-///
-/// `None` when no row fits the viewport whole (a viewport shorter than one
-/// row, or an empty list): there is no resting place to focus, so the caller
-/// leaves focus to its fallback rather than pick a row that scrolls.
-fn topmost_fully_visible_row(value: f64, page: f64, row_height: f64, rows: u32) -> Option<u32> {
-    if row_height <= 0.0 || !value.is_finite() || !page.is_finite() || rows == 0 {
-        return None;
-    }
-    let first_whole = (value / row_height).ceil().max(0.0);
-    let last_whole = ((value + page) / row_height).floor() - 1.0;
-    if first_whole > last_whole || first_whole >= f64::from(rows) {
-        return None;
-    }
-    Some(first_whole as u32)
-}
-
-/// Moves keyboard focus onto a row `view` is already showing in full, and
+/// Moves keyboard focus onto the row crossing `view`'s vertical middle and
 /// reports whether that worked.
 ///
 /// Plain `set_focus` on a list view is not enough, and is in fact the whole
@@ -198,45 +205,30 @@ fn topmost_fully_visible_row(value: f64, page: f64, row_height: f64, rows: u32) 
 /// moves neither scroll nor view", violated by the focus restore rather than
 /// by the save.
 ///
-/// Which row is picked matters as much as picking one at all: see
-/// [`topmost_fully_visible_row`] for why the clipped row at the top edge is
-/// the wrong answer.
+/// Walking the realized widget tree avoids estimating a row from average
+/// height, whose error grows with the scroll offset. A row crossing the
+/// viewport's middle is already fully visible, so focusing it needs neither a
+/// `scroll_to` anchor nor an adjustment hold.
 fn focus_visible_row(view: &gtk4::Widget) -> bool {
-    let Some(rows) = row_count(view).filter(|rows| *rows > 0) else {
-        return false;
-    };
-    let Some((adjustment, value)) = scroll_position(view) else {
-        return false;
-    };
-    let upper = adjustment.upper();
-    if upper <= 0.0 {
+    if row_count(view).is_none_or(|rows| rows == 0) {
         return false;
     }
-    let row_height = upper / f64::from(rows);
-    let Some(position) = topmost_fully_visible_row(value, adjustment.page_size(), row_height, rows)
-    else {
-        return false;
-    };
-    let scroll = gtk4::ScrollInfo::new();
-    scroll.set_enable_vertical(false);
-    let hold = AdjustmentHold::new(&adjustment);
-    if let Some(view) = view.downcast_ref::<gtk4::ColumnView>() {
-        view.scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, Some(scroll));
-        hold.set_target(value);
-        hold.release_after(FOCUS_SCROLL_HOLD);
-        return true;
-    }
-    if let Some(view) = view.downcast_ref::<gtk4::ListView>() {
-        view.scroll_to(position, gtk4::ListScrollFlags::FOCUS, Some(scroll));
-        hold.set_target(value);
-        hold.release_after(FOCUS_SCROLL_HOLD);
-        return true;
-    }
-    if let Some(view) = view.downcast_ref::<gtk4::GridView>() {
-        view.scroll_to(position, gtk4::ListScrollFlags::FOCUS, Some(scroll));
-        hold.set_target(value);
-        hold.release_after(FOCUS_SCROLL_HOLD);
-        return true;
+
+    let middle = view.height() as f32 / 2.0;
+    let mut pending = vec![view.clone()];
+    while let Some(widget) = pending.pop() {
+        if is_row_widget(&widget)
+            && widget.compute_bounds(view).is_some_and(|bounds| {
+                bounds.y() <= middle && bounds.y() + bounds.height() >= middle
+            })
+        {
+            return widget.grab_focus();
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            child = current.next_sibling();
+            pending.push(current);
+        }
     }
     false
 }
@@ -286,54 +278,6 @@ fn wire_close_shortcut(dialog: &adw::Dialog) {
 mod tests {
     use gtk4::prelude::*;
     use libadwaita::prelude::*;
-
-    /// 32 px rows, a 250 px viewport, scrolled so the top edge cuts row 207
-    /// four pixels in — the state the Play-next report was made from.
-    #[test]
-    fn the_clipped_row_at_the_top_edge_is_never_the_one_focus_lands_on() {
-        assert_eq!(
-            super::topmost_fully_visible_row(6_628.0, 250.0, 32.0, 300),
-            Some(208),
-            "row 207 is cut by the viewport's top edge; focusing it scrolls"
-        );
-    }
-
-    #[test]
-    fn a_row_aligned_viewport_focuses_the_row_at_its_top_edge() {
-        assert_eq!(
-            super::topmost_fully_visible_row(6_624.0, 250.0, 32.0, 300),
-            Some(207)
-        );
-        assert_eq!(
-            super::topmost_fully_visible_row(0.0, 250.0, 32.0, 300),
-            Some(0)
-        );
-    }
-
-    /// A viewport too short to hold one row whole has no still resting place:
-    /// every row it could focus is clipped, so it focuses none of them.
-    #[test]
-    fn a_viewport_shorter_than_a_row_offers_no_row_to_rest_on() {
-        assert_eq!(super::topmost_fully_visible_row(0.0, 20.0, 32.0, 300), None);
-        assert_eq!(super::topmost_fully_visible_row(0.0, 250.0, 32.0, 0), None);
-        assert_eq!(super::topmost_fully_visible_row(0.0, 250.0, 0.0, 300), None);
-    }
-
-    /// At the very bottom the first whole row must still be a real row —
-    /// running past the model would scroll instead of resting.
-    #[test]
-    fn the_last_page_stays_inside_the_model() {
-        // 300 rows of 32 px = 9600 px; a 250 px page bottoms out at 9350.
-        assert_eq!(
-            super::topmost_fully_visible_row(9_350.0, 250.0, 32.0, 300),
-            Some(293)
-        );
-        assert_eq!(
-            super::topmost_fully_visible_row(9_600.0, 250.0, 32.0, 300),
-            None,
-            "past the end there is no whole row left to focus"
-        );
-    }
 
     #[test]
     fn control_w_is_the_only_transient_close_shortcut() {
