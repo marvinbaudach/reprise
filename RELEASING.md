@@ -316,6 +316,11 @@ Do not point development hooks at the maintainer's real library.
   must retain the standard-duration motion without a hard cut or a frame where
   both dense tables are readable. Queue drop and single-remove motion is an
   allowed exception, not a release requirement.
+- Manual rescan entry points (UX NAV-15b): the header ⋮ menu offers no rescan,
+  so start a scan from Preferences → Library and again from the track list's
+  retry button in its empty or unavailable state. Each must start a real scan
+  and raise the scan card; on an already-scanned library the card must still
+  be perceivable rather than flashing past.
 - STYLE-1 "floating" check: reveal every collapsible bar (search bar, banners,
   the scan card) once. If it lays flat over the content without its own surface
   and edge, the background is missing — `ToolbarStyle::Flat` swallowed it.

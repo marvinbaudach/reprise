@@ -82,7 +82,7 @@ pub(in crate::ui) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownl
     });
 
     let batch = batch.clone();
-    scan_controls.set_on_complete(move || batch.start());
+    scan_controls.add_on_complete(move || batch.start());
 }
 
 #[cfg(test)]

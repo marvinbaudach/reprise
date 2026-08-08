@@ -79,7 +79,7 @@ fn arm_rhythmbox_import_after_library_setup(
     let presented = Rc::new(Cell::new(false));
     let conn = conn.clone();
     let present_import = present_import.clone();
-    scan_controls.set_on_complete(move || {
+    scan_controls.add_on_complete(move || {
         let library_root = match settings::get_library_root(&conn) {
             Ok(root) => root,
             Err(error) => {

@@ -20,7 +20,7 @@ fn an_idle_batch_shows_no_card_at_all() {
 /// The rule lives in `reprise_view::analysis_progress`; what matters here is
 /// that the card actually asks it instead of showing everything.
 #[test]
-fn nav_7b_an_autostarted_run_with_nothing_to_do_shows_no_card() {
+fn nav_15_an_autostarted_run_with_nothing_to_do_shows_no_card() {
     assert!(!presentation(running(0, 0)).visible);
 }
 
@@ -51,7 +51,7 @@ fn a_finished_batch_reports_what_it_achieved_and_hides_itself() {
 }
 
 #[test]
-fn nav_7b_a_stopped_run_says_so_rather_than_claiming_completion() {
+fn nav_15_a_stopped_run_says_so_rather_than_claiming_completion() {
     let presentation = presentation(SpectrogramBatchProgress {
         state: SpectrogramBatchState::Stopped,
         analyzed: 200,
