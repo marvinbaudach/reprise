@@ -23,26 +23,25 @@ impl ReviewFilterBar {
     pub(super) fn new(categories: &[ReviewCategory]) -> Self {
         let summary = gtk4::Label::builder()
             .xalign(0.0)
-            .hexpand(true)
-            .css_classes(["caption", "dim-label"])
+            .css_classes(["doctor-review-meta-summary"])
             .build();
         let hint = gtk4::Label::builder()
             .label(strings::doctor_preselected_hint())
             .xalign(0.0)
             .wrap(true)
-            .css_classes(["caption", "dim-label"])
+            .css_classes(["doctor-review-meta-hint"])
             .build();
         let slot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         let initial_toggle = build_toggle(&[], "all");
         slot.append(&initial_toggle);
-        let top = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        top.append(&slot);
-        top.append(&summary);
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        root.set_margin_start(18);
-        root.set_margin_end(18);
-        root.append(&top);
+        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
+        root.add_css_class("doctor-review-meta");
+        root.append(&summary);
         root.append(&hint);
+        let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        root.append(&spacer);
+        root.append(&slot);
         let bar = Self {
             root,
             slot,

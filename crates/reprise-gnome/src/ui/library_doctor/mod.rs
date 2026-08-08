@@ -90,6 +90,12 @@ pub(in crate::ui) fn css() -> String {
         ".doctor-card-dashed { border: 1px dashed alpha(@borders, 0.9); border-radius: 12px; }",
         &start_page_css::css(),
         ".doctor-review-header-action { font-size: 13px; padding: 5px 12px; }",
+        ".doctor-review-meta { padding: 12px 28px; background: color-mix(in srgb, var(--card-bg-color) 45%, var(--window-bg-color)); }",
+        ".doctor-review-meta-summary { font-size: 14px; }",
+        ".doctor-review-meta-hint { font-size: 13px; color: color-mix(in srgb, currentColor 45%, transparent); }",
+        ".doctor-review-footer { padding: 14px 28px; background: color-mix(in srgb, var(--card-bg-color) 55%, var(--window-bg-color)); border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent); }",
+        ".doctor-review-footer-summary { font-size: 13.5px; color: color-mix(in srgb, currentColor 62%, transparent); }",
+        ".doctor-review-apply { font-size: 14.5px; padding: 9px 18px; }",
     ]
     .join(" ")
 }

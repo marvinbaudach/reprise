@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use reprise_core::library_doctor::{
     group_review_rows, DoctorCandidate, DoctorField, DoctorReviewDisplayRow, DoctorReviewRow,
@@ -266,6 +266,19 @@ impl ReviewCategory {
             Self::Year => matches!(class, ProblemClass::MissingWrongYear),
             Self::Genre => matches!(class, ProblemClass::GenreVariant),
         }
+    }
+
+    pub(super) fn problem_classes(self) -> HashSet<ProblemClass> {
+        [
+            ProblemClass::CasingWhitespace,
+            ProblemClass::MissingAlbumArtist,
+            ProblemClass::GenreVariant,
+            ProblemClass::MissingWrongYear,
+            ProblemClass::MissingRecordingMbid,
+        ]
+        .into_iter()
+        .filter(|class| self.matches(*class))
+        .collect()
     }
 }
 

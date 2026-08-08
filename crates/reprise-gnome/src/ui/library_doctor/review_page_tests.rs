@@ -227,6 +227,21 @@ fn doc_9b_footer_counts_the_changes_that_will_be_written() {
 }
 
 #[test]
+fn doc_9d_the_footer_states_the_scope_of_the_filter() {
+    let summary = reprise_core::library_doctor::DoctorReviewSummary {
+        track_count: 20,
+        file_count: 20,
+        tag_change_count: 27,
+        total_tag_change_count: 390,
+    };
+
+    assert_eq!(
+        review_footer_summary(summary, Some(ReviewCategory::Year)),
+        "27 of 390 · filtered by Year"
+    );
+}
+
+#[test]
 fn doc_9b_the_album_pill_counts_written_changes_not_display_rows() {
     let scan = album_change_scan();
     let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);

@@ -326,6 +326,53 @@ fn doc_3a_none_clears_every_row() {
     assert!(review.rows().iter().all(|row| !row.selected));
 }
 
+fn review_with_year_filter() -> DoctorReviewSession {
+    let casing = proposal(1, DoctorField::Artist, ProposalSource::MusicBrainz);
+    let mut year = proposal(2, DoctorField::Year, ProposalSource::MusicBrainz);
+    year.problem_class = ProblemClass::MissingWrongYear;
+    let mut review =
+        DoctorReviewSession::from_scan(scan(vec![casing, year]), DoctorReviewFilter::NeedsReview);
+    review.set_category_filter(Some(std::collections::HashSet::from([
+        ProblemClass::MissingWrongYear,
+    ])));
+    review
+}
+
+#[test]
+fn doc_9d_a_filtered_apply_writes_only_the_filtered_set() {
+    let review = review_with_year_filter();
+    let plan = review.freeze_plan();
+    assert_eq!(plan.tag_change_count(), 1);
+    assert_eq!(plan.changes()[0].field, DoctorField::Year);
+}
+
+#[test]
+fn doc_9d_all_and_none_operate_on_the_filtered_set() {
+    let mut review = review_with_year_filter();
+
+    review.none();
+    assert_eq!(review.rows().iter().filter(|row| row.selected).count(), 1);
+    assert!(review
+        .rows()
+        .iter()
+        .any(|row| row.selected && row.field == DoctorField::Artist));
+    review.all();
+    assert!(review.rows().iter().all(|row| row.selected));
+}
+
+#[test]
+fn doc_9d_every_number_recomputes_from_one_selection_state() {
+    let mut review = review_with_year_filter();
+
+    review.none();
+    let summary = review.summary();
+    assert_eq!(summary.tag_change_count, 0);
+    assert_eq!(summary.total_tag_change_count, 1);
+    review.all();
+    assert_eq!(review.summary().tag_change_count, 1);
+    assert_eq!(review.summary().total_tag_change_count, 2);
+}
+
 #[test]
 fn doc_7a_review_remote_toggle_removes_selection_and_restores_local_result() {
     let mut remote = proposal(1, DoctorField::Title, ProposalSource::MusicBrainz);
@@ -589,6 +636,7 @@ fn review_summary_counts_tracks_files_and_tag_changes_once() {
             track_count: 2,
             file_count: 2,
             tag_change_count: 3,
+            total_tag_change_count: 3,
         }
     );
 }
