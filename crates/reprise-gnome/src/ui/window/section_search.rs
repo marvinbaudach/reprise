@@ -1,10 +1,10 @@
 //! SEARCH-8a: a query belongs only to the view where it is typed.
 //!
 //! The header bar owns a single `GtkSearchEntry`, but the query it holds
-//! is deliberately transient: a view switch clears the view being left,
-//! starts the destination empty, and collapses the bar. A Back navigation can
-//! still restore a track query because the existing browser history carries
-//! the complete `BrowserPlace`; this module does not keep parallel history.
+//! is deliberately transient: a sidebar destination switch clears the view
+//! being left, starts the destination empty, and collapses the bar. Metadata
+//! drills carry the query in their `BrowserPlace`, and Back restores the
+//! complete saved place; this module does not keep parallel history.
 //!
 //! Three invariants make the rest of the shell simple:
 //!
@@ -201,9 +201,10 @@ impl SectionSearch {
         Some((scope, name))
     }
 
-    /// SEARCH-8a: an explicit route starts a new search context even when two
-    /// sources share the track-list scope. Back restoration is applied later
-    /// from the history-owned `BrowserPlace`, not remembered here.
+    /// SEARCH-8a: a sidebar route starts a new search context even when two
+    /// destinations share the track-list scope. Metadata drills bypass this
+    /// clearing path, while Back restoration is applied later from the
+    /// history-owned `BrowserPlace`, not remembered here.
     pub(in crate::ui) fn activate_source(self: &Rc<Self>, source: &ViewSource, section_name: &str) {
         self.switch_view(search_scope::scope_for(source), section_name);
     }
@@ -332,8 +333,8 @@ mod tests {
 
     use libadwaita as adw;
     use libadwaita::prelude::*;
-    use reprise_core::browser::navigation::NavigationIntent;
-    use reprise_core::browser::{AlbumKey, BrowserPlace};
+    use reprise_core::browser::navigation::{NavigationIntent, SidebarTarget};
+    use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
 
     use super::*;
     use crate::ui::nav_history::{NavHistory, NavPlace};
@@ -343,6 +344,7 @@ mod tests {
         entry: gtk4::SearchEntry,
         toggle: gtk4::ToggleButton,
         search_bar: gtk4::SearchBar,
+        track_chip_host: gtk4::Box,
         applied: Rc<StdRefCell<Vec<(SearchScope, String)>>>,
         facets_cleared: Rc<StdRefCell<Vec<SearchScope>>>,
     }
@@ -354,6 +356,7 @@ mod tests {
         search_bar.connect_entry(&entry);
         let toggle = gtk4::ToggleButton::new();
         let search = SectionSearch::new(&entry, &search_bar, &toggle, &window);
+        let track_chip_host = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         let applied = Rc::new(StdRefCell::new(Vec::new()));
         let facets_cleared = Rc::new(StdRefCell::new(Vec::new()));
         for scope in [
@@ -363,9 +366,25 @@ mod tests {
         ] {
             let sink = applied.clone();
             let cleared = facets_cleared.clone();
+            let track_chip_host = track_chip_host.clone();
             search.register(
                 scope,
-                move |query| sink.borrow_mut().push((scope, query.to_owned())),
+                move |query| {
+                    sink.borrow_mut().push((scope, query.to_owned()));
+                    if scope != SearchScope::Tracks {
+                        return;
+                    }
+                    while let Some(child) = track_chip_host.first_child() {
+                        track_chip_host.remove(&child);
+                    }
+                    if !query.trim().is_empty() {
+                        track_chip_host.append(&crate::ui::browse::search_chip::build(
+                            SearchScope::Tracks,
+                            query,
+                            || {},
+                        ));
+                    }
+                },
                 move || cleared.borrow_mut().push(scope),
             );
         }
@@ -374,9 +393,20 @@ mod tests {
             entry,
             toggle,
             search_bar,
+            track_chip_host,
             applied,
             facets_cleared,
         }
+    }
+
+    fn track_chip_label(harness: &Harness) -> Option<String> {
+        harness
+            .track_chip_host
+            .first_child()?
+            .downcast::<gtk4::Button>()
+            .ok()?
+            .label()
+            .map(|label| label.to_string())
     }
 
     fn settle() {
@@ -429,8 +459,8 @@ mod tests {
         );
     }
 
-    // UX SEARCH-8a: track sources share one SearchScope, but a route from one
-    // source list to another is still a view switch and starts empty.
+    // UX SEARCH-8a: track sources share one SearchScope, but choosing another
+    // sidebar destination is still a view switch and starts empty.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn search_8a_switching_track_views_drops_the_query_despite_the_shared_scope() {
@@ -446,14 +476,109 @@ mod tests {
         harness.entry.set_text("falling");
         settle();
 
+        let history = NavHistory::default();
+        let mut library = BrowserPlace::from(ViewSource::Library);
+        library.track_state_mut().unwrap().search = "falling".into();
+        history.record_route(&NavPlace::browser(library.clone()));
+        let destination = history
+            .navigate_from(
+                NavigationIntent::Sidebar(SidebarTarget::RecentlyAdded),
+                library,
+            )
+            .expect("Recently Added must be a different sidebar destination");
         harness
             .search
-            .activate_source(&ViewSource::RecentlyAdded, "Recently Added");
+            .activate_source(&destination.view_source(), "Recently Added");
+        let destination_query = &destination
+            .browser_place()
+            .track_state()
+            .expect("Recently Added is a track view")
+            .search;
+        harness
+            .search
+            .set_query(SearchScope::Tracks, destination_query);
         settle();
 
         assert_eq!(harness.entry.text(), "");
         assert!(!harness.toggle.is_active());
         assert!(!harness.search_bar.is_search_mode());
+    }
+
+    // UX SEARCH-8a/FIL-1c: a metadata intent drills into the Library's filter
+    // context rather than choosing a new sidebar destination. Its history
+    // place carries the query into the Artist page, and Back restores the
+    // complete remembered Library state without search owning parallel
+    // origin state.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_8a_drilling_into_an_artist_place_keeps_query_and_chip_then_back_restores_them() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let harness = harness();
+        let history = NavHistory::default();
+
+        harness
+            .search
+            .activate_source(&ViewSource::Library, "Music");
+        harness.entry.set_text("falling");
+        let chip_probe = harness.track_chip_host.clone();
+        settle_until("the Library search chip appears", move || {
+            chip_probe.first_child().is_some()
+        });
+
+        let mut library = BrowserPlace::from(ViewSource::Library);
+        let library_state = library.track_state_mut().unwrap();
+        library_state.search = "falling".into();
+        library_state.browse.genre = Some("Metalcore".into());
+        history.record_route(&NavPlace::browser(library.clone()));
+        let artist = history
+            .navigate_from(
+                NavigationIntent::OpenArtist {
+                    artist: ArtistKey::new("Lorna Shore"),
+                    anchor_track_id: None,
+                },
+                library,
+            )
+            .expect("the Artist page must be a new history place");
+
+        let artist_query = &artist
+            .browser_place()
+            .track_state()
+            .expect("the Artist page is a track place")
+            .search;
+        harness.search.set_query(SearchScope::Tracks, artist_query);
+        settle();
+
+        assert_eq!(harness.entry.text(), "falling");
+        assert_eq!(
+            track_chip_label(&harness).as_deref(),
+            Some("⌕ “falling” in track, artist and album  ×")
+        );
+
+        let restored = history
+            .go_back_from(artist.browser_place().clone())
+            .expect("Back must restore the filtered Library place");
+        harness
+            .search
+            .activate_source(&restored.view_source(), "Music");
+        let restored_state = restored
+            .browser_place()
+            .track_state()
+            .expect("the restored Library is a track place");
+        harness
+            .search
+            .set_query(SearchScope::Tracks, &restored_state.search);
+        let chip_probe = harness.track_chip_host.clone();
+        settle_until("Back restores the Library search chip", move || {
+            chip_probe.first_child().is_some()
+        });
+
+        assert_eq!(harness.entry.text(), "falling");
+        assert_eq!(restored_state.browse.genre.as_deref(), Some("Metalcore"));
+        assert_eq!(
+            track_chip_label(&harness).as_deref(),
+            Some("⌕ “falling” in track, artist and album  ×")
+        );
     }
 
     // UX SEARCH-8a: while a view stays active, its query reaches that view and

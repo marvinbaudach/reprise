@@ -215,7 +215,7 @@ impl BrowserNavigation {
                 }
                 self.go_metadata_scope(BrowserPlace::tracks(
                     TrackCollection::Library(LibraryScope::Album(album)),
-                    fresh_target_state(anchor_track_id),
+                    self.metadata_target_state(anchor_track_id),
                 ))
             }
             NavigationIntent::OpenArtist {
@@ -227,7 +227,7 @@ impl BrowserNavigation {
                 }
                 self.go_metadata_scope(BrowserPlace::tracks(
                     TrackCollection::Library(LibraryScope::Artist(artist)),
-                    fresh_target_state(anchor_track_id),
+                    self.metadata_target_state(anchor_track_id),
                 ))
             }
             NavigationIntent::OpenGenre { genre } => {
@@ -237,7 +237,7 @@ impl BrowserNavigation {
                 }
                 self.go_metadata_scope(BrowserPlace::tracks(
                     TrackCollection::Library(LibraryScope::Genre(genre.to_owned())),
-                    TrackViewState::default(),
+                    self.metadata_target_state(None),
                 ))
             }
             NavigationIntent::RevealTrack { origin, track_id } => {
@@ -295,6 +295,22 @@ impl BrowserNavigation {
             SidebarTarget::Conversions => BrowserPlace::Conversions,
             SidebarTarget::Playlist(_) | SidebarTarget::Smart(_) => self.library_root.clone(),
         }
+    }
+
+    /// SEARCH-8a: metadata links drill into the current track context rather
+    /// than choosing a new sidebar destination. The destination starts with
+    /// fresh local selection, focus, sort and facets, but carries the query
+    /// that explains why the clicked row was visible. Back/Forward do not use
+    /// this constructor and therefore continue restoring their exact saved
+    /// places.
+    fn metadata_target_state(&self, track_id: Option<i64>) -> TrackViewState {
+        let mut state = fresh_target_state(track_id);
+        state.search = self
+            .current
+            .track_state()
+            .map(|current| current.search.clone())
+            .unwrap_or_default();
+        state
     }
 
     fn go_metadata_scope(&mut self, target: BrowserPlace) -> Option<NavigationTransition> {
@@ -538,8 +554,10 @@ mod tests {
     }
 
     #[test]
-    fn browse_4_metadata_intents_create_fresh_scopes_with_one_explicit_anchor() {
-        let mut navigation = BrowserNavigation::new(library());
+    fn search_8a_metadata_drills_keep_query_with_fresh_local_state_and_explicit_anchor() {
+        let mut filtered_library = library();
+        filtered_library.track_state_mut().unwrap().search = "falling".into();
+        let mut navigation = BrowserNavigation::new(filtered_library);
 
         let album = navigation
             .navigate(NavigationIntent::OpenAlbum {
@@ -548,7 +566,7 @@ mod tests {
             })
             .unwrap()
             .to;
-        assert_eq!(album.track_state().unwrap().search, "");
+        assert_eq!(album.track_state().unwrap().search, "falling");
         assert_eq!(album.track_state().unwrap().selected_ids, vec![31]);
         assert_eq!(album.track_state().unwrap().focus, TrackFocus::Track(31));
 
@@ -565,12 +583,15 @@ mod tests {
                 ArtistKey::new("Björk")
             )))
         );
-        assert_eq!(artist.track_state(), Some(&TrackViewState::default()));
+        assert_eq!(artist.track_state().unwrap().search, "falling");
+        assert!(artist.track_state().unwrap().selected_ids.is_empty());
     }
 
     #[test]
     fn fil_1c_genre_scope_uses_the_same_history_path_as_other_library_scopes() {
-        let mut navigation = BrowserNavigation::new(library());
+        let mut filtered_library = library();
+        filtered_library.track_state_mut().unwrap().search = "metal".into();
+        let mut navigation = BrowserNavigation::new(filtered_library.clone());
         let genre = navigation
             .navigate(NavigationIntent::OpenGenre {
                 genre: "  Metalcore  ".into(),
@@ -584,9 +605,10 @@ mod tests {
                 "Metalcore".into()
             )))
         );
+        assert_eq!(genre.track_state().unwrap().search, "metal");
         assert_eq!(
             navigation.navigate(NavigationIntent::Back).unwrap().to,
-            library()
+            filtered_library
         );
         assert_eq!(
             navigation.navigate(NavigationIntent::Forward).unwrap().to,
