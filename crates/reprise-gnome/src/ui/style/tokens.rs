@@ -181,4 +181,59 @@ mod tests {
     fn transition_css_uses_the_micro_motion_token() {
         assert_eq!(format!("{TRANSITION}"), "150ms ease-out");
     }
+
+    #[test]
+    fn contrast_3_hover_tints_leave_text_above_aa() {
+        use super::super::color_math::{composite, contrast_ratio, parse_hex_rgb};
+        use super::super::theme::Theme;
+
+        // A hover tint lightens the surface *under* the text, so it eats into
+        // every text level's headroom — the same text that clears 5.88:1 at
+        // rest drops toward the floor once its row lights up. Measured in a
+        // real menu, a hovered row cost about 1.15 points of ratio.
+        //
+        // Which colour the tint is made of decides how much it costs, so each
+        // is modelled with its own: the row and button tints lie over
+        // `currentColor`, i.e. the foreground itself and therefore the
+        // strongest lightening available, while HOVER_BG_ALPHA lies over
+        // `@accent_bg_color`, which is darker than the foreground and so
+        // milder. Treating them all as foreground tints once suggested a
+        // failure at 4.40:1 that the app cannot actually produce.
+        const ROW_HOVER_ALPHA: f64 = 0.04;
+        let accent =
+            parse_hex_rgb(super::super::accent::APP_ACCENT).expect("the brand accent is valid hex");
+
+        for theme in Theme::all() {
+            for (appearance, palette) in
+                [("dark", theme.palette()), ("light", theme.light_palette())]
+            {
+                let foreground = parse_hex_rgb(palette.fg).expect("palette fg is valid hex");
+                let button: f64 = BTN_HOVER_ALPHA.parse().expect("token is a fraction");
+                let flat: f64 = HOVER_BG_ALPHA.parse().expect("token is a fraction");
+
+                for surface in palette.surfaces() {
+                    let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                    for (what, tint, alpha) in [
+                        ("row hover", foreground, ROW_HOVER_ALPHA),
+                        ("button hover", foreground, button),
+                        ("flat hover", accent, flat),
+                    ] {
+                        let hovered = composite(tint, plain, alpha);
+                        for (level, name) in [
+                            (PRIMARY_TEXT_ALPHA, "primary"),
+                            (SECONDARY_TEXT_ALPHA, "secondary"),
+                        ] {
+                            let rendered = composite(foreground, hovered, level);
+                            let ratio = contrast_ratio(rendered, hovered);
+                            assert!(
+                                ratio >= 4.5,
+                                "{theme:?} {appearance}: {name} text on {surface} under \
+                                 {what} reaches only {ratio:.2}:1"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
