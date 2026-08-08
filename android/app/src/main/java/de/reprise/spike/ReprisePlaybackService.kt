@@ -1,6 +1,7 @@
 package de.reprise.spike
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Binder
 import android.os.IBinder
 import android.os.Handler
@@ -48,6 +49,10 @@ open class ReprisePlaybackService : MediaSessionService() {
                 // holding a player and a session for silence.
                 stopSelf()
             }
+        }
+
+        override fun onListenReportChanged() {
+            publishListenReport()
         }
     }
     private val mediaSessionCommands = object : CoreControlledPlayer.Commands {
@@ -99,6 +104,7 @@ open class ReprisePlaybackService : MediaSessionService() {
         // its last client, which is exactly what a rotation is.
         addSession(session)
         coreSession = openCoreSession(port)
+        publishListenReport()
     }
 
     /**
@@ -251,6 +257,21 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     private fun coreSession(): AndroidPlaybackSession = checkNotNull(coreSession) {
         "Core playback session is not ready"
+    }
+
+    private fun publishListenReport() {
+        val session = coreSession ?: return
+        val treeUri = getSharedPreferences("reprise_android", MODE_PRIVATE)
+            .getString(TREE_URI_PREFERENCE, null)
+            ?: return
+        val files = AndroidListenReportFiles(contentResolver, Uri.parse(treeUri))
+        ListenReportWriter(
+            readAcknowledgement = files::readAcknowledgement,
+            produceReport = session::prepareListenReport,
+            writeReport = files::writeReport,
+        ).publish().onFailure { error ->
+            android.util.Log.w("ReprisePlayback", "Could not publish phone listening report", error)
+        }
     }
 
     inner class LocalBinder : Binder() {

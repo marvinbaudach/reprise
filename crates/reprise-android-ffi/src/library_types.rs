@@ -24,6 +24,7 @@ pub(crate) struct LibraryState {
 pub struct MusicLibrary {
     pub(crate) state: Mutex<LibraryState>,
     pub(crate) cache_root: PathBuf,
+    pub(crate) database_path: PathBuf,
 }
 
 impl MusicLibrary {
@@ -51,6 +52,8 @@ pub enum LibraryError {
     TrackNotFound { track_id: i64 },
     #[error("invalid playback setting: {detail}")]
     InvalidPlaybackSetting { detail: String },
+    #[error("listen-report journal error: {detail}")]
+    ListenReport { detail: String },
 }
 
 /// The two measured Android artwork slots; both remain lazy per track.

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use reprise_core::library::settings::TrackTransition;
@@ -459,6 +460,7 @@ fn play_count_uses_the_tracks_high_water_position_and_records_only_once() {
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let bridge = Arc::new(Mutex::new(None));
+    let report_changes = Arc::new(AtomicUsize::new(0));
     let session = AndroidPlaybackSession::new(
         directory.path().to_str().unwrap(),
         Box::new(RecordingPort {
@@ -467,6 +469,7 @@ fn play_count_uses_the_tracks_high_water_position_and_records_only_once() {
         }),
         Box::new(RecordingListener {
             snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::clone(&report_changes),
         }),
     )
     .unwrap();
@@ -497,6 +500,7 @@ fn play_count_uses_the_tracks_high_water_position_and_records_only_once() {
     // both how the assertion becomes deterministic and the proof that a play
     // counted during teardown survives it.
     drop(session);
+    assert_eq!(report_changes.load(Ordering::Relaxed), 1);
 
     let verify = reprise_core::db::Db::open_ready(&db_path).unwrap();
     let updated = reprise_core::queries::query_library_text_search(
@@ -511,6 +515,21 @@ fn play_count_uses_the_tracks_high_water_position_and_records_only_once() {
     .rows
     .remove(0);
     assert_eq!(updated.play_count, 1);
+    let library = crate::MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+    let report = reprise_core::device_sync::listen_report::ListenReport::decode(
+        &library.prepare_listen_report(None).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(report.listens.len(), 1);
+    assert_eq!(report.listens[0].sequence, 1);
+    assert_eq!(report.listens[0].device_path, "sine.flac");
+    assert_eq!(report.listens[0].ms_played, 600);
+    assert!(report.listens[0].played_at > 0);
+    assert!(report.ratings.is_empty());
 }
 
 #[test]
@@ -556,6 +575,7 @@ fn viewing_and_applying_playback_settings_preserves_the_authored_curve_byte_for_
         }),
         Box::new(RecordingListener {
             snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
         }),
     )
     .unwrap();
@@ -652,6 +672,7 @@ fn saved_track_transition_drives_android_at_startup_and_after_reload() {
         }),
         Box::new(RecordingListener {
             snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
         }),
     )
     .unwrap();

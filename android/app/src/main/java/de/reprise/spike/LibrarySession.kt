@@ -14,7 +14,7 @@ internal interface LibrarySessionPort {
 
     fun rememberTreeUri(treeUri: String)
 
-    fun persistReadPermission(treeUri: String)
+    fun persistTreePermission(treeUri: String)
 
     fun isTreeReadable(treeUri: String): Boolean
 
@@ -85,7 +85,7 @@ internal class LibrarySession(
         treeUri: String,
         report: (LibraryScreenState.Scanning) -> Unit,
     ): LibraryScreenState {
-        port.persistReadPermission(treeUri)
+        port.persistTreePermission(treeUri)
         port.rememberTreeUri(treeUri)
         return scanTree(treeUri, report)
     }
