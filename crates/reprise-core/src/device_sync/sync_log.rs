@@ -14,8 +14,13 @@ use rusqlite::Row;
 use super::machine::SyncOutcome;
 use crate::db::DbError;
 
-/// How many runs are kept before the oldest ages out.
+/// How many runs are kept per device before that device's oldest ages out.
+///
+/// [`GLOBAL_RETAINED_RUNS`] additionally bounds the whole table.
 pub const RETAINED_RUNS: usize = 30;
+/// Whole-table ceiling for volatile device identities that can mint a new
+/// `device_serial` on every connection and therefore multiply retained groups.
+pub const GLOBAL_RETAINED_RUNS: usize = RETAINED_RUNS * 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunOutcome {
@@ -203,16 +208,26 @@ pub fn start_run(db: &crate::db::Db, start: &RunStart) -> Result<i64, DbError> {
         ],
     )?;
     let run = transaction.last_insert_rowid();
-    // Both statements share one keep-list so a run and its deviations can
+    // These three statements share one transaction: first age out this
+    // device's excess, then enforce the table ceiling, then make deviations
+    // agree with the retained run ids. A run and its deviations therefore
     // never age apart.
-    const KEEP: &str = "SELECT id FROM sync_runs ORDER BY started_at DESC, id DESC LIMIT ?1";
     transaction.execute(
-        &format!("DELETE FROM sync_events WHERE run_id NOT IN ({KEEP})"),
-        rusqlite::params![RETAINED_RUNS as i64],
+        "DELETE FROM sync_runs \
+         WHERE device_serial = ?1 \
+           AND id NOT IN (SELECT id FROM sync_runs WHERE device_serial = ?1 \
+                          ORDER BY started_at DESC, id DESC LIMIT ?2)",
+        rusqlite::params![start.device_serial, RETAINED_RUNS as i64],
     )?;
     transaction.execute(
-        &format!("DELETE FROM sync_runs WHERE id NOT IN ({KEEP})"),
-        rusqlite::params![RETAINED_RUNS as i64],
+        "DELETE FROM sync_runs \
+         WHERE id NOT IN (SELECT id FROM sync_runs \
+                          ORDER BY started_at DESC, id DESC LIMIT ?1)",
+        rusqlite::params![GLOBAL_RETAINED_RUNS as i64],
+    )?;
+    transaction.execute(
+        "DELETE FROM sync_events WHERE run_id NOT IN (SELECT id FROM sync_runs)",
+        [],
     )?;
     transaction.commit()?;
     Ok(run)

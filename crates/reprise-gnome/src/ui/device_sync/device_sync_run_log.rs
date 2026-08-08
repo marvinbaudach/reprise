@@ -111,7 +111,7 @@ impl DeviceSyncRuntime {
     pub(in crate::ui) fn reload_sync_history(&self, device_id: &str) {
         let loaded = {
             let conn = &self.conn;
-            match sync_log::recent_runs(conn, sync_log::RETAINED_RUNS) {
+            match sync_log::recent_runs(conn, sync_log::GLOBAL_RETAINED_RUNS) {
                 Ok(runs) => runs
                     .into_iter()
                     .filter(|run| run.device_serial == device_id)

@@ -1,7 +1,7 @@
 use super::sync_log::{
     close_orphaned_runs, deviations, finish_run, note_deviation, recent_runs, start_run, summarize,
     update_planned, Deviation, DeviationKind, RunCounters, RunOutcome, RunStart, RunSummary,
-    RETAINED_RUNS,
+    GLOBAL_RETAINED_RUNS, RETAINED_RUNS,
 };
 use crate::device_sync::machine::SyncOutcome;
 
@@ -200,6 +200,74 @@ fn mtp_20_only_the_most_recent_runs_are_kept() {
     assert!(
         deviations(&conn, first.unwrap()).unwrap().is_empty(),
         "an aged-out run must not leave its deviations behind"
+    );
+}
+
+#[test]
+fn mtp_20_one_noisy_device_does_not_evict_another_devices_oldest_run() {
+    let conn = database();
+    let mut quiet_start = start();
+    quiet_start.device_serial = "quiet".into();
+    quiet_start.started_at = 1;
+    let quiet = start_run(&conn, &quiet_start).unwrap();
+    finish_run(&conn, quiet, &summary(1, 0, 0)).unwrap();
+
+    for index in 0..(RETAINED_RUNS + 5) {
+        let mut noisy_start = start();
+        noisy_start.device_serial = "noisy".into();
+        noisy_start.started_at = 2 + index as i64;
+        let run = start_run(&conn, &noisy_start).unwrap();
+        finish_run(&conn, run, &summary(1, 0, 0)).unwrap();
+    }
+
+    let runs = recent_runs(&conn, GLOBAL_RETAINED_RUNS + 1).unwrap();
+    assert!(
+        runs.iter().any(|run| run.id == quiet),
+        "another device's retained run must stay available"
+    );
+    assert_eq!(
+        runs.iter()
+            .filter(|run| run.device_serial == "noisy")
+            .count(),
+        RETAINED_RUNS
+    );
+}
+
+#[test]
+fn mtp_20_volatile_device_identities_cannot_exceed_the_global_ceiling() {
+    let conn = database();
+    let mut oldest = None;
+    for index in 0..(GLOBAL_RETAINED_RUNS + 5) {
+        let mut begin = start();
+        begin.device_serial = format!("mtp://connection/{index}");
+        begin.started_at = index as i64;
+        let run = start_run(&conn, &begin).unwrap();
+        if index == 0 {
+            oldest = Some(run);
+            note_deviation(
+                &conn,
+                run,
+                &Deviation {
+                    kind: DeviationKind::Failed,
+                    track_id: None,
+                    device_path: "Music/Reprise/old.opus".into(),
+                    detail: "old connection failed".into(),
+                },
+            )
+            .unwrap();
+        }
+        finish_run(&conn, run, &summary(1, 0, 0)).unwrap();
+    }
+
+    let runs = recent_runs(&conn, GLOBAL_RETAINED_RUNS + 10).unwrap();
+    assert_eq!(runs.len(), GLOBAL_RETAINED_RUNS);
+    assert!(
+        !runs.iter().any(|run| Some(run.id) == oldest),
+        "the oldest volatile-identity run must age out"
+    );
+    assert!(
+        deviations(&conn, oldest.unwrap()).unwrap().is_empty(),
+        "the global ceiling must age deviations out with their run"
     );
 }
 
