@@ -7,7 +7,7 @@ use gtk4::prelude::*;
 
 use crate::ui::strings;
 
-const PROGRESS_HEIGHT_PX: u32 = 3;
+const PROGRESS_HEIGHT_PX: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq)]
 struct RelinkProgressState {
@@ -103,7 +103,8 @@ impl RelinkProgressView {
         cancel.add_css_class("scan-card-cancel");
         let open = gtk4::Button::with_label(&strings::text(strings::SIDEBAR_MISSING_FILES));
         open.add_css_class("flat");
-        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        open.add_css_class("scan-card-compact-action");
+        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
         header.append(&spinner);
         header.append(&title);
         header.append(&percent);
@@ -122,7 +123,8 @@ impl RelinkProgressView {
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
         detail.add_css_class("scan-card-detail");
-        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
+        container.set_height_request(crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX);
         container.add_css_class("scan-card");
         container.append(&header);
         container.append(&progress);
@@ -220,7 +222,7 @@ mod tests {
     };
 
     // UX FB-8: Relink uses the shared sidebar-bottom progress
-    // card contract with spinner, title, percent, 3px bar, detail, view
+    // card contract with spinner, title, percent, 4px bar, detail, view
     // navigation, and cancellation.
     #[test]
     fn fb_8_relink_search_uses_the_complete_sidebar_progress_card_contract() {
@@ -231,7 +233,7 @@ mod tests {
         assert_eq!(state.detail, "4 of 9 files checked · 3 tracks to relink");
         assert!((state.fraction - (4.0 / 9.0)).abs() < f64::EPSILON);
         assert!(state.spinner);
-        assert_eq!(state.progress_height_px, 3);
+        assert_eq!(state.progress_height_px, 4);
         assert_eq!(state.cancel_label, "Cancel");
 
         let activated_target = Rc::new(RefCell::new(None));
