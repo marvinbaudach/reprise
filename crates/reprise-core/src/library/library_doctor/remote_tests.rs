@@ -533,6 +533,9 @@ fn invalid_embedded_mbid_is_not_direct_identity() {
 
 #[test]
 fn production_cascade_continues_from_partial_direct_through_search_and_acoustid() {
+    let mut value = metadata();
+    value.recording_mbid = None;
+    value.release_mbid = Some("123e4567-e89b-12d3-a456-426614174001".into());
     let mut direct = identity(RemoteEvidenceSource::MusicBrainz, 100, "Canonical");
     direct.album_artist = None;
     direct.release_year = None;
@@ -551,7 +554,7 @@ fn production_cascade_continues_from_partial_direct_through_search_and_acoustid(
     let mut resolver = ProviderRemoteResolver::new(provider);
     let result = RemoteResolver::resolve_track(
         &mut resolver,
-        &metadata(),
+        &value,
         Path::new("ignored"),
         Some(&FakeFingerprint),
         None,
@@ -592,6 +595,9 @@ fn production_cascade_isolates_source_failures_and_short_circuits_only_when_comp
 
 #[test]
 fn production_cascade_isolates_each_unavailable_source() {
+    let mut value = metadata();
+    value.recording_mbid = None;
+    value.release_mbid = Some("123e4567-e89b-12d3-a456-426614174001".into());
     let mut complete = identity(RemoteEvidenceSource::AcoustId, 90, "Canonical");
     complete.release_year = Some(2024);
     let provider = FakeProvider {
@@ -603,7 +609,7 @@ fn production_cascade_isolates_each_unavailable_source() {
     let mut resolver = ProviderRemoteResolver::new(provider);
     let result = RemoteResolver::resolve_track(
         &mut resolver,
-        &metadata(),
+        &value,
         Path::new("ignored"),
         Some(&FakeFingerprint),
         None,

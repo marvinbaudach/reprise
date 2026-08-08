@@ -173,6 +173,11 @@ impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
         if arbitration::is_complete(metadata, &matches) {
             return Ok(track_resolution(metadata, &matches, album_match));
         }
+        if metadata.valid_recording_mbid().is_some()
+            || album_match.is_some_and(|album_match| album_match.exact)
+        {
+            return Ok(track_resolution(metadata, &matches, album_match));
+        }
         let Some(backend) = fingerprint_backend else {
             return Ok(track_resolution(metadata, &matches, album_match));
         };
@@ -343,4 +348,137 @@ fn identity_confirms_embedded_ids(
             .release_artist_mbid
             .as_deref()
             .is_none_or(|expected| identity.release_artist_mbid.as_deref() == Some(expected))
+}
+
+#[cfg(test)]
+mod perf_fingerprint_tests {
+    use super::*;
+    use crate::fingerprint::{FingerprintCapability, FingerprintError};
+
+    #[derive(Default)]
+    struct EmptyProvider;
+
+    impl RemoteProvider for EmptyProvider {
+        fn direct(
+            &mut self,
+            _: &RemoteDirectLookup,
+            _: &mut dyn FnMut() -> ScanControl,
+        ) -> RemoteProviderResult {
+            Ok(Vec::new())
+        }
+
+        fn search_musicbrainz(
+            &mut self,
+            _: &RemoteTrackMetadata,
+            _: &mut dyn FnMut() -> ScanControl,
+        ) -> RemoteProviderResult {
+            Ok(Vec::new())
+        }
+
+        fn search_release(
+            &mut self,
+            _: &AlbumQuery,
+            _: &mut dyn FnMut() -> ScanControl,
+        ) -> RemoteProviderResult {
+            Ok(Vec::new())
+        }
+
+        fn acoustid(
+            &mut self,
+            _: &RemoteTrackMetadata,
+            _: &str,
+            _: &str,
+            _: u64,
+            _: &mut dyn FnMut() -> ScanControl,
+        ) -> RemoteProviderResult {
+            panic!("AcoustID must not run when fingerprinting is forbidden")
+        }
+    }
+
+    struct ForbiddenFingerprint;
+
+    impl FingerprintBackend for ForbiddenFingerprint {
+        fn capability(&self) -> FingerprintCapability {
+            FingerprintCapability::Available {
+                cache_namespace: "forbidden".into(),
+            }
+        }
+
+        fn fingerprint(
+            &self,
+            _: &Path,
+            _: &mut dyn FnMut(FingerprintProgress) -> FingerprintControl,
+        ) -> Result<FingerprintOutcome, FingerprintError> {
+            panic!("fingerprinting must be skipped")
+        }
+    }
+
+    fn metadata(recording_mbid: Option<&str>) -> RemoteTrackMetadata {
+        RemoteTrackMetadata {
+            title: Some("Track".into()),
+            artist: Some("Artist".into()),
+            album: Some("Album".into()),
+            album_artist: Some("Artist".into()),
+            year: Some(2024),
+            recording_mbid: recording_mbid.map(str::to_owned),
+            release_mbid: None,
+            release_group_mbid: None,
+            artist_mbid: None,
+            release_artist_mbid: None,
+            duration_ms: Some(180_000),
+        }
+    }
+
+    fn exact_album_match() -> AlbumMatch {
+        AlbumMatch {
+            identity: RemoteIdentity {
+                source: RemoteEvidenceSource::MusicBrainz,
+                confidence: 100,
+                recording_mbid: None,
+                release_mbid: Some("123e4567-e89b-12d3-a456-426614174001".into()),
+                release_group_mbid: None,
+                artist_mbid: None,
+                release_artist_mbid: None,
+                title: None,
+                artist: None,
+                album: Some("Album".into()),
+                album_artist: Some("Artist".into()),
+                release_year: Some(2024),
+                original_release_year: Some(2024),
+                duration_ms: None,
+                secondary_types: Vec::new(),
+                release_track_count: Some(1),
+                release_track_titles: vec!["Track".into()],
+                release_distinct_track_artists: Some(1),
+            },
+            score: 100,
+            exact: true,
+        }
+    }
+
+    fn resolve(metadata: &RemoteTrackMetadata, album_match: Option<&AlbumMatch>) {
+        let mut resolver = ProviderRemoteResolver::new(EmptyProvider);
+        RemoteResolver::resolve_track(
+            &mut resolver,
+            metadata,
+            Path::new("ignored"),
+            Some(&ForbiddenFingerprint),
+            album_match,
+            &mut || ScanControl::Continue,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn doc_1g_a_track_with_a_recording_mbid_is_never_fingerprinted() {
+        resolve(
+            &metadata(Some("123e4567-e89b-12d3-a456-426614174000")),
+            None,
+        );
+    }
+
+    #[test]
+    fn doc_1g_a_confidently_matched_album_is_never_fingerprinted() {
+        resolve(&metadata(None), Some(&exact_album_match()));
+    }
 }
