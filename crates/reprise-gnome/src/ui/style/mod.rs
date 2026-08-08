@@ -14,6 +14,7 @@
 
 pub(super) mod accent;
 pub(super) mod buttons;
+pub(super) mod category_colors;
 pub(super) mod color_math;
 pub(super) mod interactions;
 pub(super) mod menus;
