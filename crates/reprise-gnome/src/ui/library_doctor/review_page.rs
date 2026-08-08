@@ -36,7 +36,6 @@ struct ReviewState {
     category: Rc<Cell<Option<ReviewCategory>>>,
     selection: gtk4::SingleSelection,
     content: gtk4::Stack,
-    conflicts: gtk4::Box,
     filter_bar: ReviewFilterBar,
     apply: gtk4::Button,
     change_summary: gtk4::Label,
@@ -64,6 +63,8 @@ impl ReviewState {
             .map(|row| glib::BoxedAnyObject::new(row).upcast::<glib::Object>())
             .collect::<Vec<_>>();
         self.store.splice(0, self.store.n_items(), &objects);
+        drop(session);
+        self.refresh_conflicts();
         self.filter.changed(gtk4::FilterChange::Different);
         let count = self.sorted.n_items();
         self.content
@@ -71,7 +72,7 @@ impl ReviewState {
         if count > 0 && selected != gtk4::INVALID_LIST_POSITION {
             self.selection.set_selected(selected.min(count - 1));
         }
-        let summary = session.summary();
+        let summary = self.session.borrow().summary();
         self.apply
             .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
         self.apply.set_sensitive(summary.tag_change_count > 0);
@@ -80,9 +81,7 @@ impl ReviewState {
                 summary.tag_change_count,
                 summary.file_count,
             ));
-        drop(session);
         self.refresh_filter_summary();
-        self.refresh_conflicts();
     }
 
     fn visible_rows(&self) -> Vec<ReviewRowModel> {
@@ -175,8 +174,8 @@ impl ReviewState {
     }
 
     fn refresh_conflicts(self: &Rc<Self>) {
-        while let Some(child) = self.conflicts.first_child() {
-            self.conflicts.remove(&child);
+        if self.session.borrow().groups().is_empty() {
+            return;
         }
         let weak = Rc::downgrade(self);
         let on_choose = Rc::new(move |group_id, value: &DoctorValue| {
@@ -202,7 +201,7 @@ impl ReviewState {
                 }
             });
         }
-        self.conflicts.append(&panel.root);
+        self.store.append(&panel.root);
     }
 
     fn skip_all_conflicts(self: &Rc<Self>) {
@@ -257,11 +256,14 @@ fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> 
 }
 
 fn compare_rows(left: &glib::Object, right: &glib::Object, section_only: bool) -> gtk4::Ordering {
-    let Some(left) = left.downcast_ref::<glib::BoxedAnyObject>() else {
-        return gtk4::Ordering::Equal;
-    };
-    let Some(right) = right.downcast_ref::<glib::BoxedAnyObject>() else {
-        return gtk4::Ordering::Equal;
+    let left = left.downcast_ref::<glib::BoxedAnyObject>();
+    let right = right.downcast_ref::<glib::BoxedAnyObject>();
+    let (Some(left), Some(right)) = (left, right) else {
+        return match (left.is_some(), right.is_some()) {
+            (true, false) => gtk4::Ordering::Smaller,
+            (false, true) => gtk4::Ordering::Larger,
+            _ => gtk4::Ordering::Equal,
+        };
     };
     let left = left.borrow::<ReviewRowModel>();
     let right = right.borrow::<ReviewRowModel>();
@@ -327,14 +329,14 @@ impl LibraryDoctorReviewPage {
         let active_category = category.clone();
         let filter = gtk4::CustomFilter::new(move |object| {
             let Some(boxed) = object.downcast_ref::<glib::BoxedAnyObject>() else {
-                return false;
+                return object.is::<gtk4::Widget>();
             };
             let model = boxed.borrow::<ReviewRowModel>();
             active_category
                 .get()
                 .is_none_or(|category| category.matches(model.row.problem_class))
         });
-        let store = gio::ListStore::new::<glib::BoxedAnyObject>();
+        let store = gio::ListStore::new::<glib::Object>();
         let filtered = gtk4::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
         let sorter = gtk4::CustomSorter::new(|left, right| compare_rows(left, right, false));
         let sorted = gtk4::SortListModel::new(Some(filtered.clone()), Some(sorter));
@@ -365,7 +367,6 @@ impl LibraryDoctorReviewPage {
         content.set_vexpand(true);
         content.add_named(&scrolled, Some("rows"));
         content.add_named(&empty, Some("empty"));
-        let conflicts = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         let apply = gtk4::Button::builder()
             .css_classes(["suggested-action", "pill"])
             .build();
@@ -392,7 +393,6 @@ impl LibraryDoctorReviewPage {
             category,
             selection,
             content,
-            conflicts,
             filter_bar,
             apply,
             change_summary,
@@ -456,7 +456,6 @@ impl LibraryDoctorReviewPage {
         page_content.append(&state.filter_bar.root);
         page_content.append(&header.root);
         page_content.append(&state.content);
-        page_content.append(&state.conflicts);
         page_content.append(&footer);
         let responsive = adw::BreakpointBin::new();
         responsive.set_child(Some(&page_content));

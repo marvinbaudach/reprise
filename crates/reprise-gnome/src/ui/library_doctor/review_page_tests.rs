@@ -243,10 +243,7 @@ fn doc_9b_the_album_pill_counts_written_changes_not_display_rows() {
 #[test]
 fn doc_9b_conflicts_sit_at_the_end_and_skip_all_clears_them() {
     let source = include_str!("review_page.rs");
-    assert!(
-        source.find("append(&state.content)").unwrap()
-            < source.find("append(&state.conflicts)").unwrap()
-    );
+    assert!(source.contains("store.append(&panel.root)"));
     let mut session =
         DoctorReviewSession::from_scan(conflict_scan(), DoctorReviewFilter::NeedsReview);
     let group = session.groups()[0].clone();
@@ -257,6 +254,83 @@ fn doc_9b_conflicts_sit_at_the_end_and_skip_all_clears_them() {
     session.clear_group_choices();
     assert!(session.rows().is_empty());
     assert!(session.groups().iter().all(|group| group.chosen.is_none()));
+}
+
+#[test]
+fn doc_9b_the_conflicts_panel_is_the_last_row_of_the_scrolled_list() {
+    let source = include_str!("review_page.rs");
+
+    assert!(source.contains("store.append(&panel.root)"));
+    assert!(!source.contains("page_content.append(&state.conflicts)"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_the_conflicts_panel_covers_no_row() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &conflict_scan(),
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    let group = page.state.session.borrow().groups()[0].clone();
+    page.state
+        .session
+        .borrow_mut()
+        .choose_candidate(group.id, &group.candidates[0].value)
+        .unwrap();
+    page.state.refresh();
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let panel = descendant_with_css_class(&page.rows.clone().upcast(), "doctor-conflicts-dashed")
+        .expect("conflicts panel must be realized inside the ListView");
+    let panel_bounds = panel
+        .compute_bounds(&page.rows)
+        .expect("conflicts panel must share the list coordinate space");
+    let panel_top = panel_bounds.y();
+    let row_bottom = descendants_with_css_class(&page.rows.clone().upcast(), "doctor-review-row")
+        .into_iter()
+        .filter_map(|widget| widget.compute_bounds(&page.rows))
+        .map(|bounds| bounds.y() + bounds.height())
+        .fold(0.0_f32, f32::max);
+
+    assert!(
+        row_bottom <= panel_top,
+        "conflicts panel starts at {panel_top}px but a review row reaches {row_bottom}px"
+    );
+}
+
+fn descendant_with_css_class(root: &gtk4::Widget, class: &str) -> Option<gtk4::Widget> {
+    descendants_with_css_class(root, class).into_iter().next()
+}
+
+fn descendants_with_css_class(root: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget> {
+    let mut matches = Vec::new();
+    let mut pending = vec![root.clone()];
+    while let Some(widget) = pending.pop() {
+        if widget.has_css_class(class) {
+            matches.push(widget.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            child = current.next_sibling();
+            pending.push(current);
+        }
+    }
+    matches
 }
 
 #[test]

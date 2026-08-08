@@ -70,7 +70,6 @@ pub(super) fn factory(
             states
                 .borrow_mut()
                 .insert(list_item_key(item), widgets.clone());
-            item.set_child(Some(&widgets.root));
         });
     }
     {
@@ -83,12 +82,18 @@ pub(super) fn factory(
             let Some(widgets) = states.borrow().get(&list_item_key(item)).cloned() else {
                 return;
             };
+            if let Some(widget) = item.item().and_downcast::<gtk4::Widget>() {
+                widgets.model.borrow_mut().take();
+                item.set_child(Some(&widget));
+                return;
+            }
             let Some(boxed) = item
                 .item()
                 .and_then(|object| object.downcast::<glib::BoxedAnyObject>().ok())
             else {
                 return;
             };
+            item.set_child(Some(&widgets.root));
             let model = boxed.borrow::<ReviewRowModel>();
             bind(&widgets, &model, layout.get());
         });
@@ -102,6 +107,7 @@ pub(super) fn factory(
             if let Some(widgets) = states.borrow().get(&list_item_key(item)) {
                 widgets.model.borrow_mut().take();
             }
+            item.set_child(gtk4::Widget::NONE);
         });
     }
     factory
@@ -174,6 +180,7 @@ fn build_row(groups: &ReviewColumnGroups) -> RowWidgets {
     root.append(&details);
     root.append(&edit);
     root.set_accessible_role(gtk4::AccessibleRole::ListItem);
+    root.add_css_class("doctor-review-row");
     RowWidgets {
         root,
         selected,

@@ -58,7 +58,14 @@ pub(in crate::ui) const DOCTOR_DONE_GLYPH: &str = crate::ui::icons::DONE;
 
 pub(in crate::ui) fn css() -> String {
     [
-        ".doctor-conflicts-dashed { border: 1px dashed @borders; border-radius: 12px; padding: 12px; }",
+        ".doctor-conflicts-dashed { border: 1px dashed color-mix(in srgb, currentColor 18%, transparent); border-radius: 12px; padding: 20px 22px; background: transparent; }",
+        ".doctor-conflicts-warning { color: color-mix(in srgb, currentColor 50%, transparent); }",
+        ".doctor-conflicts-optional { font-size: 13px; color: color-mix(in srgb, currentColor 45%, transparent); }",
+        ".doctor-conflicts-intro { font-size: 13px; color: color-mix(in srgb, currentColor 52%, transparent); }",
+        ".doctor-conflict-row { padding: 12px 0; border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent); }",
+        ".doctor-conflict-scope { font-size: 13px; color: color-mix(in srgb, currentColor 55%, transparent); }",
+        ".doctor-conflict-choice { padding: 5px 12px; border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent); }",
+        ".doctor-conflict-choice.selected { color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-bg-color); }",
         // The review card is the only one that carries emphasis: an accent
         // hairline on top of the plain `.card` surface.
         ".doctor-card-accent { box-shadow: inset 0 0 0 1px alpha(@accent_color, 0.45); }",
