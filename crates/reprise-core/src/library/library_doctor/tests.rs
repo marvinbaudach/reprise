@@ -7,6 +7,9 @@ use super::remote::{RemoteProviderError, RemoteResolution, RemoteResolver, Remot
 use super::*;
 use crate::fingerprint::FingerprintBackend;
 
+#[path = "guard_rail_scan_tests.rs"]
+mod guard_rail_scan_tests;
+
 fn migrated_connection() -> crate::db::Db {
     crate::db::Db::open_in_memory().unwrap()
 }
