@@ -30,6 +30,7 @@ use super::device_sync_content_copy::{category_result_text, category_rule_prefix
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceView};
 use super::device_sync_strings;
 use super::device_sync_verification_copy::verification_copy;
+use crate::ui::style::category_colors::category_css_class;
 
 /// A category's cap column is edited in GiB (`MTP-37`); 0 clears the cap.
 const GIB_BYTES: u64 = 1024 * 1024 * 1024;
@@ -377,20 +378,7 @@ fn build_category_row(
     actions: &ContentPanelActions,
     updating: &Rc<Cell<bool>>,
 ) -> CategoryRowWidgets {
-    let icon = gtk4::Image::from_icon_name(match kind {
-        SyncTargetKind::Playlists => "view-list-symbolic",
-        SyncTargetKind::YoutubeAudio => "video-x-generic-symbolic",
-        SyncTargetKind::PodcastEpisodes => "audio-x-generic-symbolic",
-    });
-    // The storage bar uses the widget foreground at these same three
-    // opacities, so the icon and its segment stay one visual key in either
-    // theme without hard-coded colours.
-    icon.set_opacity(match kind {
-        SyncTargetKind::Playlists => 0.82,
-        SyncTargetKind::YoutubeAudio => 0.62,
-        SyncTargetKind::PodcastEpisodes => 0.42,
-    });
-    icon.set_pixel_size(24);
+    let icon = category_icon(kind);
 
     let title = gtk4::Label::new(Some(device_sync_strings::category_name(kind)));
     title.add_css_class("heading");
@@ -552,6 +540,19 @@ fn build_category_row(
     }
 }
 
+fn category_icon(kind: SyncTargetKind) -> gtk4::Image {
+    let icon = gtk4::Image::from_icon_name(match kind {
+        SyncTargetKind::Playlists => "view-list-symbolic",
+        SyncTargetKind::YoutubeAudio => "video-x-generic-symbolic",
+        SyncTargetKind::PodcastEpisodes => "audio-x-generic-symbolic",
+    });
+    // The icon and its storage segment share one fixed category identity;
+    // symbolic icons inherit the mode-aware named color through this class.
+    icon.add_css_class(category_css_class(kind));
+    icon.set_pixel_size(24);
+    icon
+}
+
 fn labeled_switch(
     label_text: &str,
     on_change: impl Fn(bool) + 'static,
@@ -601,5 +602,46 @@ mod tests {
         assert_eq!(cap_bytes_to_gib(None), 0.0);
         assert_eq!(cap_bytes_to_gib(Some(8 * GIB_BYTES)), 8.0);
         assert_eq!(cap_bytes_to_gib(Some(4 * GIB_BYTES)), 4.0);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn design_2c_row_icons_use_category_classes_at_full_opacity() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        crate::ui::style::install();
+
+        let icons = SyncTargetKind::ALL.map(category_icon);
+        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        for (icon, kind) in icons.iter().zip(SyncTargetKind::ALL) {
+            assert!(icon.has_css_class(category_css_class(kind)));
+            assert_eq!(icon.opacity(), 1.0);
+            row.append(icon);
+        }
+        let window = gtk4::Window::builder().child(&row).build();
+        window.present();
+        assert!(crate::ui::test_settle::settle_until_mapped(&row));
+
+        for (scheme, is_dark) in [("dark", true), ("light", false)] {
+            crate::ui::style::set_color_scheme(scheme);
+            let manager = libadwaita::StyleManager::default();
+            assert!(crate::ui::test_settle::settle_until(
+                crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                || manager.is_dark() == is_dark
+            ));
+            crate::ui::style::set_theme(crate::ui::style::theme::Theme::DEFAULT);
+            crate::ui::test_settle::settle_for(std::time::Duration::from_millis(20));
+
+            for (icon, kind) in icons.iter().zip(SyncTargetKind::ALL) {
+                assert_eq!(
+                    icon.color(),
+                    gtk4::gdk::RGBA::parse(crate::ui::style::category_colors::category_color(
+                        kind, is_dark
+                    ))
+                    .unwrap()
+                );
+            }
+        }
+        window.close();
     }
 }

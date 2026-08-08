@@ -35,6 +35,36 @@ pub(in crate::ui) fn category_color(kind: SyncTargetKind, is_dark: bool) -> &'st
     }
 }
 
+pub(in crate::ui) fn category_css_class(kind: SyncTargetKind) -> &'static str {
+    match kind {
+        SyncTargetKind::Playlists => "reprise-sync-category-music",
+        SyncTargetKind::YoutubeAudio => "reprise-sync-category-youtube",
+        SyncTargetKind::PodcastEpisodes => "reprise-sync-category-podcasts",
+    }
+}
+
+pub(super) fn css() -> String {
+    format!(
+        ".{} {{ color: @reprise_sync_music_color; }}\n\
+         .{} {{ color: @reprise_sync_youtube_color; }}\n\
+         .{} {{ color: @reprise_sync_podcasts_color; }}\n",
+        category_css_class(SyncTargetKind::Playlists),
+        category_css_class(SyncTargetKind::YoutubeAudio),
+        category_css_class(SyncTargetKind::PodcastEpisodes),
+    )
+}
+
+pub(super) fn theme_definitions(is_dark: bool) -> String {
+    format!(
+        "@define-color reprise_sync_music_color {};\n\
+         @define-color reprise_sync_youtube_color {};\n\
+         @define-color reprise_sync_podcasts_color {};\n",
+        category_color(SyncTargetKind::Playlists, is_dark),
+        category_color(SyncTargetKind::YoutubeAudio, is_dark),
+        category_color(SyncTargetKind::PodcastEpisodes, is_dark),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -70,6 +100,43 @@ mod tests {
             category_color(SyncTargetKind::PodcastEpisodes, false),
             "#3355B5"
         );
+    }
+
+    #[test]
+    fn row_icon_classes_resolve_through_mode_aware_category_roles() {
+        let css = css();
+        for (kind, class, role) in [
+            (
+                SyncTargetKind::Playlists,
+                "reprise-sync-category-music",
+                "reprise_sync_music_color",
+            ),
+            (
+                SyncTargetKind::YoutubeAudio,
+                "reprise-sync-category-youtube",
+                "reprise_sync_youtube_color",
+            ),
+            (
+                SyncTargetKind::PodcastEpisodes,
+                "reprise-sync-category-podcasts",
+                "reprise_sync_podcasts_color",
+            ),
+        ] {
+            assert_eq!(category_css_class(kind), class);
+            assert!(
+                css.contains(&format!(".{class} {{ color: @{role}; }}")),
+                "missing class rule for {kind:?}"
+            );
+            for is_dark in [true, false] {
+                assert!(
+                    theme_definitions(is_dark).contains(&format!(
+                        "@define-color {role} {};",
+                        category_color(kind, is_dark)
+                    )),
+                    "missing dark={is_dark} named color for {kind:?}"
+                );
+            }
+        }
     }
 
     #[test]

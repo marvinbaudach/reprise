@@ -99,6 +99,7 @@ mod composed_css_tests {
 fn app_css() -> String {
     [
         buttons::css(),
+        category_colors::css(),
         interactions::css(),
         text_levels::css(),
         super::link_activation::css(),
