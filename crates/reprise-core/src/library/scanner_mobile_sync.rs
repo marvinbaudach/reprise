@@ -95,14 +95,16 @@ impl MobileSyncDiscovery {
             }
         };
         let mut changed = 0_u32;
+        let rated_at = crate::library::stats::now_unix();
         for entry in list.entries {
             let Some(track_path) = self.tracks_by_device_path.get(&entry.device_path) else {
                 continue;
             };
             let rows = conn.execute(
-                "UPDATE tracks SET rating = ?1, play_count = ?2 \
-                 WHERE path = ?3 AND (rating IS NOT ?1 OR play_count IS NOT ?2)",
-                rusqlite::params![entry.rating, entry.play_count, track_path],
+                "UPDATE tracks SET rating = ?1, play_count = ?2, \
+                                   rated_at = CASE WHEN rating IS NOT ?1 THEN ?3 ELSE rated_at END \
+                 WHERE path = ?4 AND (rating IS NOT ?1 OR play_count IS NOT ?2)",
+                rusqlite::params![entry.rating, entry.play_count, rated_at, track_path],
             )?;
             changed = changed.saturating_add(u32::try_from(rows).unwrap_or(u32::MAX));
         }

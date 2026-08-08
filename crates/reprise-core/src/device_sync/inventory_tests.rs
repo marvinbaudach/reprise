@@ -58,6 +58,13 @@ fn mtp_49_rekeys_legacy_uri_settings_and_target_folders_when_a_stable_key_arrive
     target.storage_id = Some(StorageId(7));
     target.path = "/Music/Anna".into();
     save_target(&db, legacy, &target).unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO device_listen_report_state (device_serial, applied_sequence)
+             VALUES (?1, ?2)",
+            rusqlite::params![legacy, 41_u64.to_le_bytes()],
+        )
+        .unwrap();
 
     assert_eq!(
         rekey_legacy_device(&db, current_uri, stable).unwrap(),
@@ -74,6 +81,18 @@ fn mtp_49_rekeys_legacy_uri_settings_and_target_folders_when_a_stable_key_arrive
             .unwrap()
             .unwrap(),
         target
+    );
+    assert_eq!(
+        db.conn()
+            .query_row(
+                "SELECT applied_sequence FROM device_listen_report_state
+                  WHERE device_serial = ?1",
+                [stable],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .unwrap(),
+        41_u64.to_le_bytes(),
+        "the replay high-water mark belongs to the stable device identity"
     );
     assert_eq!(
         db.conn()
@@ -138,6 +157,13 @@ fn mtp_50_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forg
     target.storage_id = Some(StorageId(7));
     target.path = "/Music/Anna".into();
     save_target(&db, "pixel-anna", &target).unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO device_listen_report_state (device_serial, applied_sequence)
+             VALUES ('pixel-anna', ?1)",
+            [41_u64.to_le_bytes()],
+        )
+        .unwrap();
 
     record_device_verification(&db, "pixel-anna", 1_753_612_496, 2_400_000_000).unwrap();
     rename_device(&db, "pixel-anna", " Pixel 7a (Anna) ").unwrap();
@@ -158,6 +184,18 @@ fn mtp_50_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forg
 
     forget_device(&db, "pixel-anna").unwrap();
     assert!(list_remembered_devices(&db).unwrap().is_empty());
+    assert_eq!(
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM device_listen_report_state
+                  WHERE device_serial = 'pixel-anna'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        0,
+        "forgetting a device drops its replay high-water mark"
+    );
     assert!(
         load_target(&db, "pixel-anna", SyncTargetKind::Playlists)
             .unwrap()
