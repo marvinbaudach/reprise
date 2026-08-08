@@ -36,12 +36,25 @@ impl DoctorNavigation {
         }
     }
 
+    /// Shows exactly the page it was handed.
+    ///
+    /// Every review page carries the same tag, and the view refuses a second
+    /// page with a tag it already knows. Walking back to whatever holds the tag
+    /// is only right while that is this very page; for a page from an earlier
+    /// scan it would show yesterday's findings and let Apply write yesterday's
+    /// plan. Popping the old one is what removes it — it was pushed, never
+    /// added — so the new page can take the tag.
     pub(super) fn show_review(&self, page: &adw::NavigationPage) {
         self.show_content();
-        if self.doctor_navigation.find_page(REVIEW_TAG).is_some() {
-            self.doctor_navigation.pop_to_tag(REVIEW_TAG);
-        } else {
-            self.doctor_navigation.push(page);
+        match self.doctor_navigation.find_page(REVIEW_TAG) {
+            Some(shown) if &shown == page => {
+                self.doctor_navigation.pop_to_tag(REVIEW_TAG);
+            }
+            Some(_) => {
+                self.doctor_navigation.pop_to_tag(ROOT_TAG);
+                self.doctor_navigation.push(page);
+            }
+            None => self.doctor_navigation.push(page),
         }
     }
 

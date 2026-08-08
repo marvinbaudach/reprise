@@ -201,3 +201,110 @@ fn doc_8a_done_marks_the_scan_reviewed_and_clears_the_sidebar_entry() {
     let coordinator = include_str!("mod.rs");
     assert!(coordinator.contains("Library Doctor scan acknowledged"));
 }
+
+fn review_scan(id: i64, proposed: &str) -> reprise_core::library_doctor::DoctorScan {
+    use reprise_core::library_doctor::{
+        DoctorField, DoctorProposal, DoctorScan, DoctorScanOptions, DoctorTrackRef,
+        DoctorTrackSnapshot, DoctorValue, ProblemClass, ProposalSource,
+    };
+
+    DoctorScan {
+        id,
+        scope_kind: "whole_library".into(),
+        created_at: id,
+        options: DoctorScanOptions::local_only(),
+        checked_tracks: 1,
+        skipped_tracks: 0,
+        track_ids: vec![7],
+        tracks: vec![DoctorTrackSnapshot {
+            reference: DoctorTrackRef {
+                track_id: 7,
+                path: std::path::PathBuf::from("/tmp/doctor-review.flac"),
+                file_mtime: 1,
+                file_size: 2,
+                device: None,
+                inode: None,
+            },
+            tags: Some(reprise_core::library::tag_edit::EditableTags {
+                title: "Review track".into(),
+                artist: "Artist".into(),
+                album: "Album".into(),
+                album_artist: "Artist".into(),
+                year: Some(2020),
+                track_no: Some(1),
+                genre: "Rock".into(),
+            }),
+            stale: false,
+        }],
+        proposals: vec![DoctorProposal {
+            track_id: 7,
+            field: DoctorField::Genre,
+            current: DoctorValue::Text("Rock".into()),
+            proposed: DoctorValue::Text(proposed.into()),
+            source: ProposalSource::MusicBrainz,
+            confidence: 90,
+            preselected: false,
+            never_preselect: false,
+            problem_class: ProblemClass::GenreVariant,
+            resolved_release_mbid: None,
+            evidence: Vec::new(),
+            local_fallback: None,
+        }],
+        unresolved_groups: Vec::new(),
+    }
+}
+
+/// Every review page carries the same navigation tag, so a second scan's
+/// findings must take the first one's place instead of being swallowed by it.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_7c_a_second_review_session_replaces_the_first() {
+    use std::rc::Rc;
+
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let window = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let content_navigation = adw::NavigationView::new();
+    let content_stack = gtk4::Stack::new();
+    let doctor_navigation = adw::NavigationView::new();
+    content_stack.add_named(&doctor_navigation, Some("library-doctor"));
+    let navigation = super::navigation::DoctorNavigation::new(
+        &content_navigation,
+        &content_stack,
+        &doctor_navigation,
+    );
+    let root = adw::NavigationPage::builder()
+        .title("Library Doctor")
+        .tag("library-doctor")
+        .child(&gtk4::Label::new(Some("start")))
+        .build();
+    navigation.add_root(&root);
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let page = |scan| {
+        super::review_page::LibraryDoctorReviewPage::new(
+            &conn,
+            &window,
+            &scan,
+            Rc::new(|_| {}),
+            Rc::new(|| {}),
+            &on_edit,
+        )
+    };
+
+    let first = page(review_scan(1, "Alternative"));
+    navigation.show_review(first.navigation_page());
+    let second = page(review_scan(2, "Indie"));
+    navigation.show_review(second.navigation_page());
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(
+        doctor_navigation.visible_page().as_ref(),
+        Some(second.navigation_page()),
+        "the review page on screen must be the one built for the second scan"
+    );
+}

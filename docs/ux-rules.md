@@ -3942,7 +3942,8 @@ means deterministic and high-confidence, never „without review".
   `doc_7c_opening_the_doctor_keeps_the_now_playing_pane_open`,
   `doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view`,
   `doc_7c_the_library_chrome_is_absent_while_the_doctor_is_visible`,
-  `doc_7c_the_review_page_carries_no_provider_toggle`.
+  `doc_7c_the_review_page_carries_no_provider_toggle`,
+  `doc_7c_a_second_review_session_replaces_the_first`.
 
 - **DOC-8a** [active] [gtk] — **The menu holds the verb, the sidebar holds
   the noun.** The global ⋮ menu is the only way to start a scan. While a
