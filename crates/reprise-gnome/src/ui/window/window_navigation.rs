@@ -85,6 +85,15 @@ fn show_library_content_root(content_navigation: &adw::NavigationView) {
     }
 }
 
+pub(in crate::ui) fn show_content_page(
+    content_navigation: &adw::NavigationView,
+    content_stack: &gtk4::Stack,
+    name: &str,
+) {
+    show_library_content_root(content_navigation);
+    super::content_stack::show_page(content_stack, name);
+}
+
 pub(in crate::ui) fn show_content_callback(
     split_view: &adw::OverlaySplitView,
     content_navigation: &adw::NavigationView,
@@ -382,6 +391,33 @@ mod tests {
             content_stack.visible_child_name().as_deref(),
             Some("device-sync")
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn switching_a_content_page_from_a_pushed_page_reveals_the_switch() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(&gtk4::Label::new(Some("Library")), Some("library"));
+        content_stack.add_named(&gtk4::Label::new(Some("Stats")), Some("stats"));
+        let library = adw::NavigationPage::builder()
+            .title("Library")
+            .tag(super::super::now_playing_wiring::LIBRARY_CONTENT_TAG)
+            .child(&content_stack)
+            .build();
+        let pushed = adw::NavigationPage::builder()
+            .title("Pushed page")
+            .child(&gtk4::Label::new(Some("Pushed page")))
+            .build();
+        let content_navigation = adw::NavigationView::new();
+        content_navigation.add(&library);
+        content_navigation.push(&pushed);
+
+        show_content_page(&content_navigation, &content_stack, "stats");
+
+        assert_eq!(content_navigation.visible_page().as_ref(), Some(&library));
+        assert_eq!(content_stack.visible_child_name().as_deref(), Some("stats"));
     }
 
     #[test]

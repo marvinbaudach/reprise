@@ -317,10 +317,24 @@ pub fn build(
 
     let active_content_focus =
         super::library_shell::ActiveContentFocus::new(&content_stack, &track_list);
+    let library_shell = super::library_shell::build(
+        &window,
+        conn,
+        &sidebar,
+        &toolbar_view,
+        &track_list,
+        player.as_ref(),
+        &artist_news,
+    );
+    let sidebar_page = library_shell.sidebar_page;
+    let split_view = library_shell.split_view;
+    let content_nav = library_shell.content_nav;
+    let info_panel = library_shell.info_panel;
     let metadata_navigator = super::metadata_navigation::MetadataNavigator::new(
         nav_history.clone(),
         &sidebar,
         &track_list,
+        content_nav.clone(),
         content_stack.clone(),
         window_title.clone(),
         active_content_focus.clone(),
@@ -410,19 +424,6 @@ pub fn build(
         metadata_navigator: &metadata_navigator,
     });
 
-    let library_shell = super::library_shell::build(
-        &window,
-        conn,
-        &sidebar,
-        &toolbar_view,
-        &track_list,
-        player.as_ref(),
-        &artist_news,
-    );
-    let sidebar_page = library_shell.sidebar_page;
-    let split_view = library_shell.split_view;
-    let content_nav = library_shell.content_nav;
-    let info_panel = library_shell.info_panel;
     let open_device = super::window_navigation::open_device_callback(
         &content_nav,
         &content_stack,
