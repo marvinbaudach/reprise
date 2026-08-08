@@ -19,34 +19,29 @@ use super::browse_chooser::{
     browse_popup_min_height, build_chooser, chooser_row, load_values, wire_chooser, FACET_PAGE,
     VALUE_PAGE,
 };
-use crate::ui::browse_filter_strings as filter_strings;
-use crate::ui::filter_bar_layout::{self, FilterBarLayout};
+use crate::ui::filter_bar_layout::{self, CountPresentation, FilterBarLayout};
+use crate::ui::filter_bar_strings as filter_strings;
 use crate::ui::track_list::Shared;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
 /// FIL-7: the sticky settings key for the AI-exclude filter.
 const EXCLUDE_AI_KEY: &str = "filter.exclude_ai";
-pub(in crate::ui) const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
 /// FIL-1c: the place pill's own class — outlined, so a location never reads as
 /// one of the filled filter chips beside it.
 pub(in crate::ui) const PLACE_PILL_CSS_CLASS: &str = "reprise-place-pill";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
 type OnVoid = Rc<dyn Fn()>;
-/// Chip and value-popover rules; installed app-wide by [`super::style`].
+/// Music place-pill and value-popover rules; shared chip rules live beside
+/// [`FilterBarLayout`].
 pub(in crate::ui) fn css() -> String {
-    use super::style::tokens::{CHIP_BG_ALPHA, CHIP_BG_HOVER_ALPHA};
-    let local = format!(
-        ".{CHIP_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 8px; \
-         background-color: alpha(@accent_bg_color, {CHIP_BG_ALPHA}); color: @reprise_accent_text_color; }} \
-         .{CHIP_CSS_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {CHIP_BG_HOVER_ALPHA}); }} \
-         .{PLACE_PILL_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 10px; \
+    format!(
+        ".{PLACE_PILL_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 10px; \
          border: 1px solid alpha(currentColor, 0.30); background-color: transparent; }} \
          .{PLACE_PILL_CSS_CLASS}:hover {{ background-color: alpha(currentColor, 0.08); }} \
          .{POPOVER_CSS_CLASS} contents {{ min-width: 300px; min-height: {}px; }}",
         browse_popup_min_height(0)
-    );
-    format!("{local} {}", filter_bar_layout::css())
+    )
 }
 
 pub struct BrowseBar {
@@ -112,17 +107,13 @@ impl BrowseBar {
         add_filter.update_property(&[gtk4::accessible::Property::Label(&filter_strings::text(
             filter_strings::ADD_FILTER,
         ))]);
-        let result_label = gtk4::Label::new(None);
-        result_label.add_css_class("dim-label");
-        result_label.add_css_class("caption");
+        let result_label = filter_bar_layout::count_label();
         result_label.set_visible(false);
 
-        let clear_all = gtk4::Button::with_label(&format!(
+        let clear_all = filter_bar_layout::clear_all_button(&format!(
             "{} ×",
             filter_strings::text(filter_strings::CLEAR_ALL)
         ));
-        clear_all.add_css_class("flat");
-        filter_bar_layout::style_clear_all(&clear_all);
         clear_all.set_visible(false);
 
         // FIL-1c: two zones. The place zone answers "where am I", the filter
@@ -328,12 +319,12 @@ impl BrowseBar {
     pub fn set_result_count(&self, filtered: usize, total: usize) {
         self.result_count.set(Some((filtered, total)));
         let (markup, accented) = filter_strings::result_count_markup(filtered, total);
-        self.result_label.set_markup(&markup);
-        if accented {
-            self.result_label.add_css_class("accent");
+        let presentation = if accented {
+            CountPresentation::RestrictedMarkup(&markup)
         } else {
-            self.result_label.remove_css_class("accent");
-        }
+            CountPresentation::Plain(&markup)
+        };
+        filter_bar_layout::present_count(&self.result_label, presentation);
         self.result_label.set_visible(true);
     }
 
@@ -412,13 +403,12 @@ impl BrowseBar {
         while let Some(child) = self.chips.first_child() {
             self.chips.remove(&child);
         }
-        self.layout.clear_search();
         let query = self.search.borrow().trim().to_string();
-        if !query.is_empty() {
-            // FIL-1d: the shared chip renderer names the fields this source
-            // actually searches.
-            let weak = Rc::downgrade(self);
-            let button = super::search_chip::build(self.search_scope(), &query, move || {
+        // FIL-1d: the shared chip renderer names the fields this source
+        // actually searches.
+        let weak = Rc::downgrade(self);
+        self.layout
+            .replace_scoped_search(self.search_scope(), &query, move || {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };
@@ -427,12 +417,10 @@ impl BrowseBar {
                     callback();
                 }
             });
-            self.layout.fill_search(&button);
-        }
         for chip in filter_chips(filter) {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip.label));
             button.add_css_class("flat");
-            button.add_css_class(CHIP_CSS_CLASS);
+            button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
             button.update_property(&[gtk4::accessible::Property::Label(
                 &chip.accessible_remove_label,
             )]);
@@ -454,7 +442,7 @@ impl BrowseBar {
                 crate::ui::strings::text(crate::ui::strings::FILTER_HIDE_AI)
             ));
             button.add_css_class("flat");
-            button.add_css_class(CHIP_CSS_CLASS);
+            button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
             button.update_property(&[gtk4::accessible::Property::Label(
                 &crate::ui::strings::remove_hide_ai_filter(),
             )]);

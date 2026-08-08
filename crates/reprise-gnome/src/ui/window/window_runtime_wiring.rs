@@ -422,7 +422,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     {
         let section_search = section_search.clone();
         clear_all.connect_activate(move |_, _| {
-            // FIL-2: the current section only — its query and its facets.
+            // FIL-2a: the current view only — its query and its facets.
             section_search.clear_all();
         });
     }

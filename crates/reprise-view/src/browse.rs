@@ -1,4 +1,4 @@
-//! FIL-1a/FIL-2 visibility law for the filter row — pure decisions, no GTK.
+//! FIL-1a/FIL-2a visibility law for the filter row — pure decisions, no GTK.
 //! The row is a permanent list header of every track source; the hide
 //! preference only governs the idle state, an active restriction always
 //! forces it visible (docs/ux-rules.md K).
@@ -128,7 +128,7 @@ mod tests {
     }
 
     // UX FIL-7: the AI-exclude filter is a restriction on its own — the row
-    // force-shows and the count switches to "X of Y" (FIL-2) even with an empty
+    // force-shows and the count switches to "X of Y" (FIL-2a) even with an empty
     // search and no facet.
     #[test]
     fn fil_7_exclude_ai_restricts_on_its_own() {

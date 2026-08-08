@@ -8,9 +8,7 @@ use reprise_core::concerts::config;
 use reprise_core::concerts::{ConcertFilter, DateHorizon};
 use reprise_core::db::Db;
 
-use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::filter_bar_layout::{self, FilterBarLayout};
-use crate::ui::search_chip;
 use crate::ui::strings;
 use reprise_view::search_scope::SearchScope;
 
@@ -184,8 +182,8 @@ impl ConcertsFilterBar {
         let value_box = page_box();
         let chooser_back = gtk4::Button::from_icon_name("go-previous-symbolic");
         chooser_back.add_css_class("flat");
-        chooser_back.set_tooltip_text(Some(&crate::ui::browse_filter_strings::text(
-            crate::ui::browse_filter_strings::BACK,
+        chooser_back.set_tooltip_text(Some(&crate::ui::filter_bar_strings::text(
+            crate::ui::filter_bar_strings::BACK,
         )));
         value_box.append(&chooser_back);
         value_box.append(&value_list);
@@ -200,13 +198,10 @@ impl ConcertsFilterBar {
         add_filter.set_popover(Some(&popover));
         layout.fill_add_filter(&add_filter);
 
-        let result_label = gtk4::Label::new(None);
-        result_label.add_css_class("dim-label");
-        result_label.add_css_class("caption");
+        let result_label = filter_bar_layout::count_label();
         layout.fill_count(&result_label);
-        let clear_all = gtk4::Button::with_label(&strings::text(strings::CONCERTS_CLEAR_ALL));
-        clear_all.add_css_class("flat");
-        filter_bar_layout::style_clear_all(&clear_all);
+        let clear_all =
+            filter_bar_layout::clear_all_button(&strings::text(strings::CONCERTS_CLEAR_ALL));
         layout.fill_clear_all(&clear_all);
 
         let bar = Rc::new(Self {
@@ -330,15 +325,14 @@ impl ConcertsFilterBar {
         while let Some(child) = self.chips.first_child() {
             self.chips.remove(&child);
         }
-        self.layout.clear_search();
         let filter = self.filter();
         let query = self.query();
         let facets = active_facets(&filter);
         let active = !facets.is_empty() || !query.is_empty();
         // FIL-1a/FIL-1d: the search chip is the row's first chip.
-        if !query.is_empty() {
-            let weak = Rc::downgrade(self);
-            let chip = search_chip::build(SearchScope::Concerts, &query, move || {
+        let weak = Rc::downgrade(self);
+        self.layout
+            .replace_scoped_search(SearchScope::Concerts, &query, move || {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };
@@ -349,12 +343,10 @@ impl ConcertsFilterBar {
                     callback(bar.filter());
                 }
             });
-            self.layout.fill_search(&chip);
-        }
         for facet in facets {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip_label(&filter, facet)));
             button.add_css_class("flat");
-            button.add_css_class(CHIP_CSS_CLASS);
+            button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
             button.set_size_request(-1, 20);
             if facet == FilterFacet::Radius && !self.has_location.get() {
                 button.set_sensitive(false);
@@ -373,15 +365,15 @@ impl ConcertsFilterBar {
         self.clear_all.set_visible(active);
         let (shown, total) = self.counts.get();
         // FIL-2a: the shown number is accented while a restriction is active.
-        if active {
-            self.result_label
-                .set_markup(&strings::concert_count_line_markup(shown, total));
-            self.result_label.add_css_class("accent");
+        let text;
+        let presentation = if active {
+            text = strings::concert_count_line_markup(shown, total);
+            filter_bar_layout::CountPresentation::RestrictedMarkup(&text)
         } else {
-            self.result_label.remove_css_class("accent");
-            self.result_label
-                .set_text(&strings::concert_total_line(total));
-        }
+            text = strings::concert_total_line(total);
+            filter_bar_layout::CountPresentation::Plain(&text)
+        };
+        filter_bar_layout::present_count(&self.result_label, presentation);
         self.rebuild_facets();
     }
 

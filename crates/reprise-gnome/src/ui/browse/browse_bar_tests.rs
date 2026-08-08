@@ -1,7 +1,6 @@
 //! Tests for browse_bar.rs (extracted to keep the source under the 800-line gate).
 
 use super::*;
-use crate::ui::browse::browse_bar_chips::chip_labels;
 
 #[cfg(test)]
 fn test_bar() -> Rc<BrowseBar> {
@@ -25,7 +24,7 @@ fn place_pill_is_outlined_and_carries_no_remove_cross() {
         "a place is left, not removed: {label}"
     );
     assert!(pill.has_css_class(PLACE_PILL_CSS_CLASS));
-    assert!(!pill.has_css_class(CHIP_CSS_CLASS));
+    assert!(!pill.has_css_class(filter_bar_layout::CHIP_CSS_CLASS));
     assert!(
         pill.tooltip_text()
             .is_some_and(|tooltip| tooltip.contains("Leave")),
@@ -67,40 +66,6 @@ fn sidebar_places_show_no_place_pill() {
             "{source:?} is named by its sidebar row"
         );
     }
-}
-
-// UX FIL-1a: chip order is search first, then the facet cascade.
-#[test]
-fn fil_1a_search_appears_as_chip_before_facet_chips() {
-    let browse = BrowseFilter {
-        genre: Some("Rock".into()),
-        ..BrowseFilter::default()
-    };
-    let labels = chip_labels("falling", &browse, true);
-    assert_eq!(
-        labels,
-        vec![
-            "⌕ “falling” in track, artist and album".to_string(),
-            "Genre: Rock".to_string()
-        ]
-    );
-    assert!(chip_labels("  ", &BrowseFilter::default(), true).is_empty());
-}
-
-// UX FIL-1a: facet chips and "+ Add filter" stay Library-only — a facet
-// set in Library must not render as a chip in a playlist, where the
-// reload path does not apply it.
-#[test]
-fn fil_1a_facet_chips_are_library_only() {
-    let browse = BrowseFilter {
-        genre: Some("Rock".into()),
-        ..BrowseFilter::default()
-    };
-    assert_eq!(
-        chip_labels("falling", &browse, false),
-        vec!["⌕ “falling” in track, artist and album".to_string()]
-    );
-    assert!(chip_labels("", &browse, false).is_empty());
 }
 
 fn full_filter() -> BrowseFilter {
@@ -316,12 +281,14 @@ fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
         crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
         &bar.add_filter
     ));
-    assert!(bar
-        .layout
-        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-        .and_then(|widget| widget.downcast::<gtk4::Button>().ok())
-        .and_then(|button| button.label())
-        .is_some_and(|label| label.starts_with('⌕')));
+    assert_eq!(
+        bar.layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+            .and_then(|widget| widget.downcast::<gtk4::Button>().ok())
+            .and_then(|button| button.label())
+            .as_deref(),
+        Some("⌕ “falling” in track, artist and album  ×")
+    );
     assert!(bar.layout.slot_contains(
         crate::ui::filter_bar_layout::FilterBarSlot::Count,
         &bar.result_label

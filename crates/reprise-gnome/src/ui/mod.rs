@@ -42,6 +42,7 @@ mod external_changes;
 pub(crate) mod external_link;
 pub(crate) mod file_open;
 mod filter_bar_layout;
+mod filter_bar_strings;
 pub mod first_run;
 mod help;
 mod icons;
@@ -123,7 +124,7 @@ use artist_news::artist_news_worker;
 #[allow(unused_imports)]
 pub(crate) use browse::browse_bar;
 #[allow(unused_imports)]
-use browse::{browse_filter_count, browse_filter_strings, search_chip};
+use browse::browse_filter_count;
 #[allow(unused_imports)]
 use compact::{
     compact_mode_controls, compact_mode_suggestion, compact_player, compact_player_layouts,

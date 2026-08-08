@@ -8,9 +8,7 @@ use reprise_core::podcasts::{self, PodcastKind};
 // `active` lives in `podcasts_presentation` (also read by the empty-state
 // classification), not duplicated here.
 use super::podcasts_presentation::{active, LibrarySummary, PodcastFilter};
-use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::filter_bar_layout::{self, FilterBarLayout};
-use crate::ui::search_chip;
 use crate::ui::strings;
 #[cfg(test)]
 use crate::ui::style::buttons;
@@ -71,13 +69,10 @@ impl PodcastsFilterBar {
         add_filter.add_css_class("pill");
         filter_bar_layout::style_add_filter(&add_filter);
         layout.fill_add_filter(&add_filter);
-        let result = gtk4::Label::new(None);
-        result.add_css_class("dim-label");
-        result.add_css_class("caption");
+        let result = filter_bar_layout::count_label();
         layout.fill_count(&result);
-        let clear_all = gtk4::Button::with_label(&strings::text(strings::PODCAST_CLEAR_ALL));
-        clear_all.add_css_class("flat");
-        filter_bar_layout::style_clear_all(&clear_all);
+        let clear_all =
+            filter_bar_layout::clear_all_button(&strings::text(strings::PODCAST_CLEAR_ALL));
         clear_all.set_visible(false);
         layout.fill_clear_all(&clear_all);
         let clear_selection =
@@ -195,13 +190,12 @@ impl PodcastsFilterBar {
     pub(super) fn set_selection_count(&self, selected_count: usize) {
         let text =
             strings::podcast_summary_with_selection(&self.base_result.borrow(), selected_count);
-        if self.base_is_markup.get() {
-            self.result.set_markup(&text);
-            self.result.add_css_class("accent");
+        let presentation = if self.base_is_markup.get() {
+            filter_bar_layout::CountPresentation::RestrictedMarkup(&text)
         } else {
-            self.result.remove_css_class("accent");
-            self.result.set_text(&text);
-        }
+            filter_bar_layout::CountPresentation::Plain(&text)
+        };
+        filter_bar_layout::present_count(&self.result, presentation);
         self.clear_selection.set_visible(selected_count > 0);
     }
 
@@ -266,7 +260,6 @@ impl PodcastsFilterBar {
         while let Some(child) = self.chips.first_child() {
             self.chips.remove(&child);
         }
-        self.layout.clear_search();
         let filter = self.filter();
         if filter.unplayed_only {
             self.prepend_chip(&strings::text(strings::PODCAST_FILTER_UNPLAYED), |filter| {
@@ -285,18 +278,15 @@ impl PodcastsFilterBar {
                 },
             );
         }
-        // FIL-1a/FIL-1d: prepended after the facets, so the search chip ends
-        // up first. The persistent Add filter control remains last.
-        if filter.has_query() {
-            let weak = Rc::downgrade(self);
-            let chip = search_chip::build(self.scope(), &filter.query, move || {
+        // FIL-1a/FIL-1d: the dedicated search slot keeps the search chip first.
+        let weak = Rc::downgrade(self);
+        self.layout
+            .replace_scoped_search(self.scope(), &filter.query, move || {
                 if let Some(bar) = weak.upgrade() {
                     let cleared = bar.filter().with_query("");
                     bar.apply(cleared);
                 }
             });
-            self.layout.fill_search(&chip);
-        }
         self.chips.set_visible(self.chips.first_child().is_some());
         self.clear_all.set_visible(active(&filter));
         self.rebuild_popover();
@@ -308,7 +298,7 @@ impl PodcastsFilterBar {
         remove: impl Fn(PodcastFilter) -> PodcastFilter + 'static,
     ) {
         let button = gtk4::Button::with_label(&format!("{label}  ×"));
-        button.add_css_class(CHIP_CSS_CLASS);
+        button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
         button.add_css_class("flat");
         button.set_size_request(-1, 20);
         let weak = Rc::downgrade(self);
@@ -403,7 +393,7 @@ mod tests {
     #[test]
     fn src_2_add_action_is_tinted_button_not_chip() {
         assert_eq!(buttons::ADD_ACTION_CLASS, "reprise-btn-add");
-        assert_ne!(buttons::ADD_ACTION_CLASS, CHIP_CSS_CLASS);
+        assert_ne!(buttons::ADD_ACTION_CLASS, filter_bar_layout::CHIP_CSS_CLASS);
         assert!(!buttons::ADD_ACTION_CLASS.contains("chip"));
     }
 

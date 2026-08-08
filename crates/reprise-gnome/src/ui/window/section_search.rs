@@ -25,7 +25,7 @@ use gtk4::prelude::*;
 use reprise_core::view_source::ViewSource;
 use reprise_view::search_scope::{self, SearchScope};
 
-use crate::ui::browse_filter_strings as filter_strings;
+use crate::ui::filter_bar_strings as filter_strings;
 use crate::ui::strings;
 
 /// The content-stack page names this module has to recognise by hand: the
@@ -261,7 +261,7 @@ impl SectionSearch {
         self.write_entry(query.trim());
     }
 
-    /// FIL-2: "Clear all" belongs to the view it was clicked in — it drops
+    /// FIL-2a: "Clear all" belongs to the view it was clicked in — it drops
     /// that view's query and facets, and leaves every other view's facets
     /// alone.
     pub(in crate::ui) fn clear_all(self: &Rc<Self>) {
@@ -370,7 +370,7 @@ mod tests {
         entry: gtk4::SearchEntry,
         toggle: gtk4::ToggleButton,
         search_bar: gtk4::SearchBar,
-        track_chip_host: gtk4::Box,
+        track_filter_layout: crate::ui::filter_bar_layout::FilterBarLayout,
         applied: Rc<StdRefCell<Vec<(SearchScope, String)>>>,
         facets_cleared: Rc<StdRefCell<Vec<SearchScope>>>,
     }
@@ -382,7 +382,7 @@ mod tests {
         search_bar.connect_entry(&entry);
         let toggle = gtk4::ToggleButton::new();
         let search = SectionSearch::new(&entry, &search_bar, &toggle, &window);
-        let track_chip_host = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let track_filter_layout = crate::ui::filter_bar_layout::FilterBarLayout::new();
         let applied = Rc::new(StdRefCell::new(Vec::new()));
         let facets_cleared = Rc::new(StdRefCell::new(Vec::new()));
         for scope in [
@@ -392,7 +392,7 @@ mod tests {
         ] {
             let sink = applied.clone();
             let cleared = facets_cleared.clone();
-            let track_chip_host = track_chip_host.clone();
+            let track_filter_layout = track_filter_layout.clone();
             search.register(
                 scope,
                 move |query| {
@@ -400,16 +400,7 @@ mod tests {
                     if scope != SearchScope::Tracks {
                         return;
                     }
-                    while let Some(child) = track_chip_host.first_child() {
-                        track_chip_host.remove(&child);
-                    }
-                    if !query.trim().is_empty() {
-                        track_chip_host.append(&crate::ui::browse::search_chip::build(
-                            SearchScope::Tracks,
-                            query,
-                            || {},
-                        ));
-                    }
+                    track_filter_layout.replace_scoped_search(SearchScope::Tracks, query, || {});
                 },
                 move || cleared.borrow_mut().push(scope),
             );
@@ -419,7 +410,7 @@ mod tests {
             entry,
             toggle,
             search_bar,
-            track_chip_host,
+            track_filter_layout,
             applied,
             facets_cleared,
         }
@@ -427,8 +418,8 @@ mod tests {
 
     fn track_chip_label(harness: &Harness) -> Option<String> {
         harness
-            .track_chip_host
-            .first_child()?
+            .track_filter_layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)?
             .downcast::<gtk4::Button>()
             .ok()?
             .label()
@@ -547,9 +538,11 @@ mod tests {
             .search
             .activate_source(&ViewSource::Library, "Music");
         harness.entry.set_text("falling");
-        let chip_probe = harness.track_chip_host.clone();
+        let chip_probe = harness.track_filter_layout.clone();
         settle_until("the Library search chip appears", move || {
-            chip_probe.first_child().is_some()
+            chip_probe
+                .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+                .is_some()
         });
 
         let mut library = BrowserPlace::from(ViewSource::Library);
@@ -594,9 +587,11 @@ mod tests {
         harness
             .search
             .set_query(SearchScope::Tracks, &restored_state.search);
-        let chip_probe = harness.track_chip_host.clone();
+        let chip_probe = harness.track_filter_layout.clone();
         settle_until("Back restores the Library search chip", move || {
-            chip_probe.first_child().is_some()
+            chip_probe
+                .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+                .is_some()
         });
 
         assert_eq!(harness.entry.text(), "falling");

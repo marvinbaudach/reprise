@@ -9,7 +9,6 @@ use reprise_core::artist_news::{
 use reprise_core::db::Db;
 
 use crate::ui::filter_bar_layout::{self, FilterBarLayout};
-use crate::ui::search_chip;
 use crate::ui::strings;
 use reprise_view::search_scope::SearchScope;
 
@@ -103,13 +102,10 @@ impl ReleasesFilterBar {
         filter_bar_layout::style_add_filter(&add_filter);
         layout.fill_add_filter(&add_filter);
 
-        let result_label = gtk4::Label::new(None);
-        result_label.add_css_class("dim-label");
-        result_label.add_css_class("caption");
+        let result_label = filter_bar_layout::count_label();
         layout.fill_count(&result_label);
-        let clear_all = gtk4::Button::with_label(&strings::text(strings::RELEASES_CLEAR_ALL));
-        clear_all.add_css_class("flat");
-        filter_bar_layout::style_clear_all(&clear_all);
+        let clear_all =
+            filter_bar_layout::clear_all_button(&strings::text(strings::RELEASES_CLEAR_ALL));
         layout.fill_clear_all(&clear_all);
 
         let bar = Rc::new(Self {
@@ -225,12 +221,18 @@ impl ReleasesFilterBar {
         while let Some(child) = self.chips.first_child() {
             self.chips.remove(&child);
         }
-        self.layout.clear_search();
         let filter = self.filter();
         let query = self.query();
-        if !query.is_empty() {
-            self.append_search_chip(&query);
-        }
+        let weak = Rc::downgrade(self);
+        self.layout
+            .replace_scoped_search(SearchScope::Releases, &query, move || {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                bar.clear_query();
+                bar.rebuild();
+                bar.notify_changed();
+            });
         for (chip, selected, label) in [
             (
                 TypeChip::Album,
@@ -262,28 +264,15 @@ impl ReleasesFilterBar {
         let dirty = filter != ReleasesFilter::default() || !query.is_empty();
         self.clear_all.set_visible(dirty);
         let (shown, total) = self.counts.get();
-        if dirty && shown != total {
-            self.result_label
-                .set_markup(&strings::release_count_line_markup(shown, total));
-            self.result_label.add_css_class("accent");
+        let text;
+        let presentation = if dirty && shown != total {
+            text = strings::release_count_line_markup(shown, total);
+            filter_bar_layout::CountPresentation::RestrictedMarkup(&text)
         } else {
-            self.result_label.remove_css_class("accent");
-            self.result_label
-                .set_text(&release_count_presentation(shown, total));
-        }
-    }
-
-    fn append_search_chip(self: &Rc<Self>, query: &str) {
-        let weak = Rc::downgrade(self);
-        let chip = search_chip::build(SearchScope::Releases, query, move || {
-            let Some(bar) = weak.upgrade() else {
-                return;
-            };
-            bar.clear_query();
-            bar.rebuild();
-            bar.notify_changed();
-        });
-        self.layout.fill_search(&chip);
+            text = release_count_presentation(shown, total);
+            filter_bar_layout::CountPresentation::Plain(&text)
+        };
+        filter_bar_layout::present_count(&self.result_label, presentation);
     }
 
     fn append_type_chip(self: &Rc<Self>, chip: TypeChip, label: &str) {

@@ -64,16 +64,16 @@ mod tests {
     /// number each view picks for itself. A view that wants a different media
     /// width has to change it here, where the other views see it too.
     #[test]
-    #[allow(
-        clippy::assertions_on_constants,
-        reason = "SRC-16 deliberately pins the relation between two layout constants"
-    )]
     fn src_16_the_shared_row_geometry_is_one_set_of_constants() {
-        assert_eq!(MEDIA_WIDTH, 64);
-        assert_eq!(MEDIA_HEIGHT, 40);
-        assert_eq!(ROW_MIN_HEIGHT, 56);
-        assert_eq!(SIZE_SLOT_WIDTH, 110);
-        assert_eq!(EPISODE_INDENT, MEDIA_WIDTH);
-        assert!(EPISODE_INDENT > ROW_LEADING_MARGIN);
+        let geometry = [
+            MEDIA_WIDTH,
+            MEDIA_HEIGHT,
+            ROW_MIN_HEIGHT,
+            SIZE_SLOT_WIDTH,
+            EPISODE_INDENT,
+        ];
+
+        assert_eq!(geometry, [64, 40, 56, 110, geometry[0]]);
+        assert!(geometry[4] > ROW_LEADING_MARGIN);
     }
 }

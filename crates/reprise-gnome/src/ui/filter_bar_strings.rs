@@ -1,15 +1,7 @@
-//! GTK renderer for filter-bar messages described by `reprise-view`.
+//! GTK renderer for the shared filter-bar messages described by `reprise-view`.
 
 use reprise_view::search_scope::SearchScope;
 use reprise_view::strings::browse as messages;
-
-macro_rules! N_ {
-    ($message:literal) => {
-        $message
-    };
-}
-
-const MUSIC_SEARCH_CHIP_LABEL: &str = N_!("⌕ “{query}” in track, artist and album");
 
 pub(in crate::ui) use messages::{
     ADD_FILTER, BACK, BROWSE_ALBUM, BROWSE_ARTIST, BROWSE_GENRE, BROWSE_RATING, BROWSE_YEAR,
@@ -29,19 +21,12 @@ pub(in crate::ui) fn remove_filter_label(facet: &str, value: &str) -> String {
     render(&messages::remove_filter_label(facet, value))
 }
 
-/// FIL-1d: the same chip, naming the fields the current section searches.
+/// FIL-1d: the same chip, naming the fields the current view searches.
 pub(in crate::ui) fn scoped_search_chip_label(scope: SearchScope, query: &str) -> String {
-    if scope == SearchScope::Tracks {
-        return render(&reprise_view::strings::Message {
-            id: MUSIC_SEARCH_CHIP_LABEL,
-            plural: None,
-            args: vec![("query", query.to_owned())],
-        });
-    }
     render(&messages::search_chip_label_in(scope, query))
 }
 
-/// SEARCH-8a: the tooltip on the insensitive lens of a section without a list.
+/// SEARCH-8a: the tooltip on the insensitive lens of a view without a list.
 pub(in crate::ui) fn nothing_to_filter(section: &str) -> String {
     render(&messages::nothing_to_filter(section))
 }

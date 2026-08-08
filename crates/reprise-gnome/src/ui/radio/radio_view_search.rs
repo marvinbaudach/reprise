@@ -18,7 +18,7 @@ impl RadioView {
         self.shared.filter_bar.set_on_query_changed(callback);
     }
 
-    /// FIL-2: "Clear all" for this section — its query and its facets.
+    /// FIL-2a: "Clear all" for this view — its query and its facets.
     pub(in crate::ui) fn clear_all_filters(&self) {
         self.shared.filter_bar.clear_all();
     }

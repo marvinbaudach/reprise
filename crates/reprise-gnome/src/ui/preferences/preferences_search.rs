@@ -11,7 +11,6 @@ use crate::ui::preferences_window::{PageId, PAGE_ORDER};
 
 const SIDEBAR_DIM_OPACITY: f64 = 0.42;
 const SEARCH_FIELD_WIDTH: i32 = 340;
-const SEARCH_CHIP_MIN_HIT_PX: i32 = 20;
 const PAGES_CHILD: &str = "settings-pages";
 const RESULTS_CHILD: &str = "settings-results";
 const ALL_RESULTS_ROW_NAME: &str = "settings-search-all-results";
@@ -123,9 +122,7 @@ impl SettingsSearch {
         content_toolbar.add_top_bar(&revealer);
 
         let filter_layout = crate::ui::filter_bar_layout::FilterBarLayout::new();
-        let count_label = gtk4::Label::new(None);
-        count_label.add_css_class("caption");
-        count_label.add_css_class("dim-label");
+        let count_label = crate::ui::filter_bar_layout::count_label();
         count_label.set_use_markup(true);
         count_label.set_halign(gtk4::Align::End);
         filter_layout.fill_count(&count_label);
@@ -435,22 +432,16 @@ impl SettingsSearch {
     }
 
     fn update_filter_bar(&self, query: &str, shown: usize, total: usize) {
-        let chip = gtk4::Button::with_label(&crate::ui::strings::settings_search_chip_label(
-            query.trim(),
-        ));
-        chip.add_css_class("flat");
-        chip.add_css_class(crate::ui::browse_bar::CHIP_CSS_CLASS);
-        chip.set_size_request(-1, SEARCH_CHIP_MIN_HIT_PX);
-        chip.update_property(&[gtk4::accessible::Property::Label(
-            &crate::ui::browse_filter_strings::remove_search_label(query.trim()),
-        )]);
         let weak = self.weak_self.borrow().clone();
-        chip.connect_clicked(move |_| {
-            if let Some(search) = weak.upgrade() {
-                search.entry.set_text("");
-            }
-        });
-        self.filter_layout.fill_search(&chip);
+        self.filter_layout.replace_search(
+            &crate::ui::strings::settings_search_chip_label(query.trim()),
+            &crate::ui::filter_bar_strings::remove_search_label(query.trim()),
+            move || {
+                if let Some(search) = weak.upgrade() {
+                    search.entry.set_text("");
+                }
+            },
+        );
         self.count_label
             .set_markup(&crate::ui::strings::settings_filtered_count_markup(
                 shown, total,

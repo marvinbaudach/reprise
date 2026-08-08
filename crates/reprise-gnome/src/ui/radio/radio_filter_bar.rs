@@ -6,10 +6,8 @@ use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::radio::StationRow;
 
-use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::enumerated::enumerated;
 use crate::ui::filter_bar_layout::{self, FilterBarLayout};
-use crate::ui::search_chip;
 use crate::ui::strings;
 use reprise_view::search_scope::{self, SearchScope};
 
@@ -221,13 +219,10 @@ impl RadioFilterBar {
         add_filter.set_popover(Some(&popover));
 
         let chips = filter_bar_layout::facet_row();
-        let count = gtk4::Label::new(None);
-        count.add_css_class("dim-label");
-        count.add_css_class("caption");
+        let count = filter_bar_layout::count_label();
         count.set_halign(gtk4::Align::End);
-        let clear_all = gtk4::Button::with_label(&strings::text(strings::RADIO_CLEAR_ALL));
-        clear_all.add_css_class("flat");
-        filter_bar_layout::style_clear_all(&clear_all);
+        let clear_all =
+            filter_bar_layout::clear_all_button(&strings::text(strings::RADIO_CLEAR_ALL));
         clear_all.set_visible(false);
 
         let layout = FilterBarLayout::new();
@@ -296,14 +291,15 @@ impl RadioFilterBar {
         self.total_count.set(total);
         // FIL-2a: filtered lists count "N of TOTAL stations" with the shown
         // number accented; an unfiltered one keeps its plain total.
-        if self.filter().is_active() {
-            self.count
-                .set_markup(&strings::radio_filtered_count_markup(visible, total));
-            self.count.add_css_class("accent");
+        let text;
+        let presentation = if self.filter().is_active() {
+            text = strings::radio_filtered_count_markup(visible, total);
+            filter_bar_layout::CountPresentation::RestrictedMarkup(&text)
         } else {
-            self.count.remove_css_class("accent");
-            self.count.set_text(&strings::radio_station_count(total));
-        }
+            text = strings::radio_station_count(total);
+            filter_bar_layout::CountPresentation::Plain(&text)
+        };
+        filter_bar_layout::present_count(&self.count, presentation);
     }
 
     pub(super) fn set_on_query_changed(&self, callback: impl Fn(&str) + 'static) {
@@ -385,19 +381,16 @@ impl RadioFilterBar {
         while let Some(child) = self.chips.first_child() {
             self.chips.remove(&child);
         }
-        self.layout.clear_search();
         let filter = self.filter();
         // FIL-1a/FIL-1d: the search chip comes first, ahead of the facets.
-        if filter.has_query() {
-            let weak = Rc::downgrade(self);
-            let chip = search_chip::build(SearchScope::Radio, &filter.query, move || {
+        let weak = Rc::downgrade(self);
+        self.layout
+            .replace_scoped_search(SearchScope::Radio, &filter.query, move || {
                 if let Some(bar) = weak.upgrade() {
                     let cleared = bar.filter().with_query("");
                     bar.apply(cleared);
                 }
             });
-            self.layout.fill_search(&chip);
-        }
         for (facet, value) in [
             (RadioFilterFacet::Genre, filter.genre.as_deref()),
             (RadioFilterFacet::Country, filter.country.as_deref()),
@@ -406,7 +399,7 @@ impl RadioFilterBar {
                 continue;
             };
             let button = gtk4::Button::with_label(value);
-            button.add_css_class(CHIP_CSS_CLASS);
+            button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
             button.set_icon_name("window-close-symbolic");
             let weak = Rc::downgrade(self);
             let current = filter.clone();

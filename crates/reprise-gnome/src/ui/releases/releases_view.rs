@@ -249,7 +249,7 @@ impl ReleasesView {
         self.shared.filter_bar.set_on_query_changed(callback);
     }
 
-    /// FIL-2: "Clear all" for this section — its query and its facets.
+    /// FIL-2a: "Clear all" for this view — its query and its facets.
     ///
     /// The shell reaches for this when a search found nothing here, so it has
     /// to open the catalog as wide as it goes. The filter row's own "Clear
