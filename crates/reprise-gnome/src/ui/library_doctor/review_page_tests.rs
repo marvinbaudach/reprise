@@ -292,6 +292,147 @@ fn doc_9b_review_groups_render_one_header_per_album() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_every_section_boundary_binds_a_non_empty_header() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let mut source = three_album_scan();
+    source.proposals[1].field = DoctorField::Year;
+    source.proposals[1].current = DoctorValue::Year(2020);
+    source.proposals[1].proposed = DoctorValue::Year(2021);
+    source.proposals[1].problem_class = ProblemClass::MissingWrongYear;
+    source.proposals[2].field = DoctorField::Title;
+    source.proposals[2].current = DoctorValue::Text("Track 9".into());
+    source.proposals[2].proposed = DoctorValue::Text("Track Nine".into());
+    source.proposals[2].problem_class = ProblemClass::CasingWhitespace;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &source,
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    let empty_bindings = Rc::new(RefCell::new(Vec::new()));
+    let observed_bindings = Rc::new(Cell::new(0_u32));
+    let headers = Rc::new(RefCell::new(Vec::<gtk4::ListHeader>::new()));
+    let factory = page
+        .rows
+        .header_factory()
+        .unwrap()
+        .downcast::<gtk4::SignalListItemFactory>()
+        .unwrap();
+    factory.connect_bind({
+        let empty_bindings = empty_bindings.clone();
+        let observed_bindings = observed_bindings.clone();
+        let headers = headers.clone();
+        move |_, object| {
+            let header = object.downcast_ref::<gtk4::ListHeader>().unwrap();
+            observed_bindings.set(observed_bindings.get() + 1);
+            headers.borrow_mut().push(header.clone());
+            if header.child().is_none() {
+                tracing::warn!(
+                    start = header.start(),
+                    end = header.end(),
+                    "DOC-9b section boundary bound while its model row was unavailable"
+                );
+                empty_bindings
+                    .borrow_mut()
+                    .push((header.start(), header.end()));
+            }
+        }
+    });
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_current_headers(&page, &headers.borrow());
+
+    page.state.set_category(Some(ReviewCategory::Year));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_current_headers(&page, &headers.borrow());
+    page.state.refresh();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_current_headers(&page, &headers.borrow());
+    page.state.set_category(None);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_current_headers(&page, &headers.borrow());
+
+    assert!(
+        observed_bindings.get() >= 3,
+        "expected one bound header for each of the three album sections, observed {}",
+        observed_bindings.get()
+    );
+    assert!(
+        empty_bindings.borrow().is_empty(),
+        "section boundaries bound empty at {:?}",
+        empty_bindings.borrow()
+    );
+}
+
+fn assert_current_headers(page: &LibraryDoctorReviewPage, headers: &[gtk4::ListHeader]) {
+    let mut position = 0;
+    while position < page.state.sorted.n_items() {
+        let section = page.state.sorted.section(position);
+        let row = row_at(&page.state.sorted, section.0).unwrap();
+        let header = headers
+            .iter()
+            .rev()
+            .find(|header| header.start() == section.0 && header.end() == section.1)
+            .unwrap_or_else(|| {
+                panic!(
+                    "section boundary {}..{} has no bound ListHeader",
+                    section.0, section.1
+                )
+            });
+        let child = header.child().unwrap_or_else(|| {
+            tracing::warn!(
+                start = section.0,
+                end = section.1,
+                album = row.album_title,
+                "DOC-9b current section boundary has an empty header"
+            );
+            panic!(
+                "section boundary {}..{} for {:?} has no child",
+                section.0, section.1, row.album_title
+            )
+        });
+        let labels = descendant_label_text(&child);
+        assert!(
+            labels.iter().any(|label| label == &row.album_title),
+            "section boundary {}..{} expected album {:?}, found labels {:?}",
+            section.0,
+            section.1,
+            row.album_title,
+            labels
+        );
+        position = section.1;
+    }
+}
+
+fn descendant_label_text(root: &gtk4::Widget) -> Vec<String> {
+    let mut labels = Vec::new();
+    let mut pending = vec![root.clone()];
+    while let Some(widget) = pending.pop() {
+        if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+            labels.push(label.text().to_string());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            child = current.next_sibling();
+            pending.push(current);
+        }
+    }
+    labels
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn doc_3b_review_page_virtualizes_rows_without_horizontal_scroll() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
