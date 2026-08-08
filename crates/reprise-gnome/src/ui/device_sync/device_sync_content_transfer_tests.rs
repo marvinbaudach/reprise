@@ -91,6 +91,7 @@ fn mtp_23_a_failed_content_copy_must_stop_the_later_removal_phases() {
             )
             .unwrap();
         save_settings(&conn, &podcast_settings("a")).unwrap();
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(
             FakeBackend::new(vec![descriptor("a", true)], 1)
@@ -161,6 +162,7 @@ fn mtp_23_cancelling_during_the_content_phase_is_not_reported_as_completed() {
             )
             .unwrap();
         save_settings(&conn, &podcast_settings("a")).unwrap();
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 5));
         let (started, releases) = backend.gate_copies(&["a"]);

@@ -108,6 +108,7 @@ fn mtp_43_the_switch_actually_gates_whether_a_preparation_download_starts() {
         let (_temp, conn) = fixture();
         seed_missing_wanted_episodes(&conn, "a", &[101]);
         save_settings(&conn, &settings_with_prepare_switch("a", false)).unwrap();
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
@@ -165,6 +166,7 @@ fn net_3a_device_sync_preparation_uses_injected_connectivity_without_reading_the
         let (_temp, conn) = fixture();
         seed_missing_wanted_episodes(&conn, "a", &[101]);
         save_settings(&conn, &settings_with_prepare_switch("a", true)).unwrap();
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
         settle().await;
@@ -202,6 +204,7 @@ fn mtp_43_cancelling_a_preparation_run_stops_further_downloads_but_keeps_the_one
         let (_temp, conn) = fixture();
         seed_missing_wanted_episodes(&conn, "a", &[101, 102]);
         save_settings(&conn, &settings_with_prepare_switch("a", true)).unwrap();
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);

@@ -80,6 +80,7 @@ fn mtp_51_lowering_the_podcast_cap_evicts_the_older_episode_from_the_next_plan()
         insert_episode(&conn, 301, 30, &newer);
         disable_auto_start(&conn, "a");
         reprise_core::podcasts::phone_sync::set_device_enabled(&conn, 30, "a", true).unwrap();
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
