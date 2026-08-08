@@ -263,7 +263,6 @@ async fn run_preparation_then_sync(
                     &reprise_core::device_sync::SyncOutcome::Cancelled,
                     super::planned::now_seconds(),
                 );
-                runtime.reload_sync_history(&device_id);
             }
             finish_preparation(&weak, &device_id, false);
             return;
@@ -305,7 +304,6 @@ async fn run_preparation_then_sync(
                 &reprise_core::device_sync::SyncOutcome::Cancelled,
                 super::planned::now_seconds(),
             );
-            runtime.reload_sync_history(&device_id);
         }
         finish_preparation(&weak, &device_id, false);
         return;
@@ -327,7 +325,6 @@ async fn run_preparation_then_sync(
             },
             super::planned::now_seconds(),
         );
-        runtime.reload_sync_history(&device_id);
         if let Some(device) = runtime
             .device_states
             .borrow_mut()

@@ -35,11 +35,6 @@ struct PlaylistRowWidgets {
 
 struct DeviceSyncPage {
     root: gtk4::glib::WeakRef<gtk4::Stack>,
-    /// Container for the "Recent syncs" card (MTP-20).
-    history: gtk4::Box,
-    /// Lets the history card tell a changed run set from a moved percentage,
-    /// so a progress tick does not rebuild the list under the user's cursor.
-    history_state: super::device_sync_history::HistoryState,
     device_name: gtk4::Button,
     connection: gtk4::Label,
     device_last_sync: gtk4::Label,
@@ -85,7 +80,7 @@ impl DeviceSyncPage {
         dashboard.up_next.append(content_panel.root());
         debug_assert_eq!(
             dashboard.content.last_child(),
-            Some(dashboard.history.clone().upcast()),
+            Some(dashboard.up_next.clone().upcast()),
             "the dashboard owns the complete section order"
         );
 
@@ -136,8 +131,6 @@ impl DeviceSyncPage {
 
         let surface = Rc::new(Self {
             root: root_ref,
-            history: dashboard.history,
-            history_state: super::device_sync_history::HistoryState::default(),
             device_name: dashboard.device_name,
             connection: dashboard.connection,
             device_last_sync: dashboard.device_last_sync,
@@ -179,19 +172,6 @@ impl DeviceSyncPage {
 
     fn update(&self, device: &DeviceView) {
         let progress = progress_copy(device);
-        let history_progress = progress.as_ref().map(|(title, _, _, fraction)| {
-            super::device_sync_history::RunningProgress {
-                title: title.clone(),
-                fraction: *fraction,
-            }
-        });
-        super::device_sync_history::sync(
-            &self.history,
-            &self.history_state,
-            &device.history,
-            device.rememberable,
-            history_progress.as_ref(),
-        );
         self.updating.set(true);
         self.device_name.set_label(&device.name);
         self.device_name.set_sensitive(device.rememberable);
@@ -204,13 +184,13 @@ impl DeviceSyncPage {
             self.device_name
                 .update_property(&[gtk4::accessible::Property::Label(&action)]);
         } else {
-            let (title, detail) = device_sync_strings::sync_history_connection_warning();
+            let reason = device_sync_strings::rename_requires_durable_identity();
             self.device_name
-                .set_tooltip_text(Some(&format!("{}\n{title}\n{detail}", device.name)));
+                .set_tooltip_text(Some(&format!("{}\n{reason}", device.name)));
             // A disabled button that still announces "Rename device" tells a
             // screen-reader user the state but not the reason.
             self.device_name
-                .update_property(&[gtk4::accessible::Property::Label(&title)]);
+                .update_property(&[gtk4::accessible::Property::Label(&reason)]);
         }
         self.connection.remove_css_class("success");
         self.connection.remove_css_class("warning");

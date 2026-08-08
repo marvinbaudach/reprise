@@ -140,7 +140,6 @@ impl DeviceSyncRuntime {
         }
         self.notify();
         for id in refresh {
-            self.reload_sync_history(&id);
             if let Err(error) = self.recompute_delta_silent(&id) {
                 tracing::warn!(
                     device_id = id,

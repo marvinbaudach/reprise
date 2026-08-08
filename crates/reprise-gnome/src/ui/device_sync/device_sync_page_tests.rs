@@ -103,7 +103,6 @@ fn device() -> DeviceView {
             youtube: true,
         },
         podcast_selection: Default::default(),
-        history: Vec::new(),
         preparation: reprise_core::device_sync::PreparationPhase::Absent,
         preparation_missing: Vec::new(),
         preparation_run: crate::ui::device_sync_runtime::PreparationRunState::Idle,

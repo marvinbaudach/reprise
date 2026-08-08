@@ -4,8 +4,7 @@ use std::sync::OnceLock;
 
 use gettextrs::{
     bind_textdomain_codeset, bindtextdomain, gettext as gettext_message,
-    ngettext as ngettext_message, npgettext as npgettext_message, pgettext as pgettext_message,
-    setlocale, textdomain, LocaleCategory,
+    ngettext as ngettext_message, setlocale, textdomain, LocaleCategory,
 };
 
 const DEFAULT_PACKAGE: &str = "reprise";
@@ -44,10 +43,6 @@ pub fn init() {
 
 pub fn active_gui_language() -> Option<&'static str> {
     ACTIVE_GUI_LANGUAGE.get().map(String::as_str)
-}
-
-pub fn pgettext(context: &str, message: &str) -> String {
-    pgettext_message(context, message)
 }
 
 fn preferred_gui_language(
@@ -113,10 +108,6 @@ pub fn gettext(message: &str) -> String {
 
 pub fn ngettext(singular: &str, plural: &str, count: u32) -> String {
     ngettext_message(singular, plural, count)
-}
-
-pub fn npgettext(context: &str, singular: &str, plural: &str, count: u32) -> String {
-    npgettext_message(context, singular, plural, count)
 }
 
 pub fn format_message(message: &str, values: &[(&str, &str)]) -> String {
