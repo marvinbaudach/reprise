@@ -73,6 +73,20 @@ pub(super) fn category_rule_prefix(
 /// The category's projected result after the next synchronization. Counts
 /// and bytes are derived from the same `CategoryReading` that used to own a
 /// separate row, so combining the cards does not create a second diff.
+pub(super) fn projected_category_size_bytes(
+    content: &CategoryContentRow,
+    reading: &CategoryReading,
+) -> u64 {
+    let CategoryReading::Diff(diff) = reading else {
+        return content.size_on_device_bytes;
+    };
+
+    content
+        .size_on_device_bytes
+        .saturating_add(diff.bytes_to_copy)
+        .saturating_sub(diff.bytes_freed)
+}
+
 pub(super) fn category_result_text(
     kind: SyncTargetKind,
     content: &CategoryContentRow,
@@ -89,10 +103,7 @@ pub(super) fn category_result_text(
         .item_count
         .saturating_add(diff.files_to_copy)
         .saturating_sub(diff.files_to_remove);
-    let size = content
-        .size_on_device_bytes
-        .saturating_add(diff.bytes_to_copy)
-        .saturating_sub(diff.bytes_freed);
+    let size = projected_category_size_bytes(content, reading);
     let title = device_sync_strings::category_item_count(kind, count);
     let mut detail = device_sync_strings::file_size(size);
     if kind == SyncTargetKind::YoutubeAudio && diff.files_waiting_for_download > 0 {
@@ -198,6 +209,11 @@ mod tests {
         assert_eq!(
             category_result_text(SyncTargetKind::YoutubeAudio, &content, &reading),
             ("10 episodes".into(), "3.2 GiB · 4 to download".into())
+        );
+        assert_eq!(
+            projected_category_size_bytes(&content, &reading),
+            3_489_660_928,
+            "the legend must reuse the row's projected size"
         );
     }
 }

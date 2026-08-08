@@ -15,41 +15,44 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use reprise_core::device_sync::device_view::CategorySegments;
+use reprise_core::device_sync::SyncTargetKind;
 
-/// One rectangle of the bar: a byte width, a flat fill alpha, and whether it
-/// is drawn hatched (the "Incoming this sync" segment) instead of flat.
+use crate::ui::style::category_colors::category_color;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SegmentFill {
+    Category(SyncTargetKind),
+    Foreground(f64),
+    HatchedForeground,
+}
+
+/// One rectangle of the bar: a byte width and its visual identity.
 struct Segment {
     bytes: u64,
-    alpha: f64,
-    hatched: bool,
+    fill: SegmentFill,
 }
 
 fn segments(data: &CategorySegments) -> [Segment; 5] {
     [
         Segment {
             bytes: data.music_bytes,
-            alpha: 0.82,
-            hatched: false,
+            fill: SegmentFill::Category(SyncTargetKind::Playlists),
         },
         Segment {
             bytes: data.youtube_bytes,
-            alpha: 0.62,
-            hatched: false,
+            fill: SegmentFill::Category(SyncTargetKind::YoutubeAudio),
         },
         Segment {
             bytes: data.podcast_bytes,
-            alpha: 0.42,
-            hatched: false,
+            fill: SegmentFill::Category(SyncTargetKind::PodcastEpisodes),
         },
         Segment {
             bytes: data.other_bytes,
-            alpha: 0.22,
-            hatched: false,
+            fill: SegmentFill::Foreground(0.22),
         },
         Segment {
             bytes: data.incoming_bytes,
-            alpha: 0.82,
-            hatched: true,
+            fill: SegmentFill::HatchedForeground,
         },
     ]
 }
@@ -78,6 +81,10 @@ impl CategoryStorageBar {
                 return;
             }
             let foreground = widget.color();
+            // Resolve appearance here, on every draw. A theme switch must use
+            // the matching fixed category tones rather than retaining the
+            // mode active when this widget was constructed.
+            let is_dark = libadwaita::StyleManager::default().is_dark();
             let width = f64::from(width.max(0));
             let height = f64::from(height.max(0));
 
@@ -100,17 +107,17 @@ impl CategoryStorageBar {
             let mut x = 0.0;
             for segment in segments(&data) {
                 let segment_width = width * segment.bytes as f64 / data.total_bytes as f64;
-                if segment.hatched {
-                    draw_hatched(context, x, segment_width, height, foreground);
-                } else {
-                    context.set_source_rgba(
-                        f64::from(foreground.red()),
-                        f64::from(foreground.green()),
-                        f64::from(foreground.blue()),
-                        segment.alpha,
-                    );
-                    context.rectangle(x, 0.0, segment_width, height);
-                    let _ = context.fill();
+                match flat_color(segment.fill, is_dark, foreground) {
+                    Some((color, alpha)) => {
+                        draw_flat(context, x, segment_width, height, color, alpha);
+                    }
+                    // `CategorySegments` intentionally exposes incoming bytes
+                    // as one aggregate across sources, so assigning one source
+                    // hue here would be false. The distinct hatch remains the
+                    // truthful "about to change" key.
+                    None => {
+                        draw_hatched(context, x, segment_width, height, foreground);
+                    }
                 }
                 x += segment_width;
             }
@@ -128,6 +135,40 @@ impl CategoryStorageBar {
         self.widget.set_visible(data.is_some());
         self.widget.queue_draw();
     }
+}
+
+fn flat_color(
+    fill: SegmentFill,
+    is_dark: bool,
+    foreground: gtk4::gdk::RGBA,
+) -> Option<(gtk4::gdk::RGBA, f64)> {
+    match fill {
+        SegmentFill::Category(kind) => Some((
+            gtk4::gdk::RGBA::parse(category_color(kind, is_dark))
+                .expect("category colors must be valid #RRGGBB literals"),
+            1.0,
+        )),
+        SegmentFill::Foreground(alpha) => Some((foreground, alpha)),
+        SegmentFill::HatchedForeground => None,
+    }
+}
+
+fn draw_flat(
+    context: &gtk4::cairo::Context,
+    x: f64,
+    width: f64,
+    height: f64,
+    color: gtk4::gdk::RGBA,
+    alpha: f64,
+) {
+    context.set_source_rgba(
+        f64::from(color.red()),
+        f64::from(color.green()),
+        f64::from(color.blue()),
+        alpha,
+    );
+    context.rectangle(x, 0.0, width, height);
+    let _ = context.fill();
 }
 
 /// The bar's outline: a pill, so the track reads as a container with room in
@@ -189,4 +230,32 @@ fn draw_hatched(
     }
     let _ = context.stroke();
     let _ = context.restore();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn design_2c_categories_are_full_strength_while_other_stays_neutral() {
+        let segments = segments(&CategorySegments::default());
+        let foreground = gtk4::gdk::RGBA::BLACK;
+
+        for (segment, kind) in segments[..3].iter().zip(SyncTargetKind::ALL) {
+            assert_eq!(segment.fill, SegmentFill::Category(kind));
+            for is_dark in [true, false] {
+                let (color, alpha) = flat_color(segment.fill, is_dark, foreground).unwrap();
+                assert_eq!(
+                    color,
+                    gtk4::gdk::RGBA::parse(category_color(kind, is_dark)).unwrap()
+                );
+                assert_eq!(alpha, 1.0);
+            }
+        }
+        assert_eq!(
+            flat_color(segments[3].fill, true, foreground),
+            Some((foreground, 0.22))
+        );
+        assert_eq!(flat_color(segments[4].fill, true, foreground), None);
+    }
 }

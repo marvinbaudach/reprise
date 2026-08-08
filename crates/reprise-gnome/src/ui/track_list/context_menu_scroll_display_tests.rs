@@ -153,6 +153,32 @@ fn closing_the_row_context_menu_leaves_the_library_viewport_where_it_was() {
     fixture.window.close();
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn closing_the_row_context_menu_returns_focus_to_the_row_it_came_from() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let fixture = scrolled_library();
+    let focused_before = gtk4::prelude::GtkWindowExt::focus(&fixture.window)
+        .expect("precondition: keyboard focus must be inside the table");
+    assert!(
+        crate::ui::transient_focus::is_row_widget_for_test(&focused_before),
+        "precondition: the table must focus a row widget, got {}",
+        focused_before.type_().name()
+    );
+
+    let popover = open_popover(&fixture);
+    popover.popdown();
+    crate::ui::test_settle::settle_for(SETTLE);
+
+    let focused_after = gtk4::prelude::GtkWindowExt::focus(&fixture.window)
+        .expect("closing the context menu must restore keyboard focus");
+    assert_eq!(
+        focused_after, focused_before,
+        "the context menu must restore the exact row widget it opened from"
+    );
+    fixture.window.close();
+}
+
 /// The reported gesture end to end: right-click a row, pick "Play next".
 /// The action fires while the popover is still parented (that is what
 /// `popover_lifecycle` guarantees), then the popover closes and focus comes

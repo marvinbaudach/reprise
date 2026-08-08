@@ -59,10 +59,13 @@ fn mtp_13_device_entry_points_route_to_a_non_modal_main_window_page() {
     let sidebar = ui_source("sidebar/sidebar.rs");
     let launcher = ui_source("device_sync/device_sync_launcher.rs");
     let window = ui_source("window/window.rs");
+    let navigation = ui_source("window/window_navigation.rs");
 
     assert!(!window.contains("device_sync_launcher::present"));
-    assert!(window.contains("device_sync_page::open"));
+    assert!(window.contains("window_navigation::open_device_callback"));
     assert!(window.contains("content_stack"));
+    assert!(navigation.contains("device_sync_page::open"));
+    assert!(navigation.contains("content_stack"));
     assert!(!sidebar.contains("device_sync_dialog::present"));
     assert!(!launcher.contains("device_sync_dialog::present"));
     assert!(!launcher.contains("No Android device connected"));
