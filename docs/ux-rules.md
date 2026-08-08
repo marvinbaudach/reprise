@@ -4791,16 +4791,23 @@ listening statistics.
   does **not** carry this chip: a bare genre word is a weak podcast search
   term, and that dialog's one chip slot is spent on `SRC-19` instead.
 - **SRC-16** [active] [gtk] — **Podcast and YouTube episode lists share one
-  row grammar.** A fixed 64 × 40 media column hosts either 64 × 36 wide art or
-  36 × 36 square art, so both source kinds start their title at the same x
-  position and keep the same minimum row height. The second line drops absent
-  date or duration values instead of leaving separators behind, and carries at
-  most one status chip outside that fact chain. Resume states include the
-  measured whole percentage when duration is known and fall back to Resume
-  without inventing one otherwise. The 110-pixel download-state slot stays
-  reserved on the right even when no size is known; selection occupies the
+  row grammar.** Group headers use the same skeleton as their episode rows: a
+  fixed 64 × 40 media column, one identity box and one trailing box. The
+  group's square 40 × 40 artwork is centred in that column, while episode
+  artwork remains either 64 × 36 wide or 36 × 36 square. An episode row's
+  leading edge is indented by one named media-column width, so its artwork
+  begins to the right of its group's artwork, never before it; the expander
+  caret stays in the leading space outside the media column and cannot change
+  that relation. Both source kinds therefore start their episode title at the
+  same x position and keep the same minimum row height. The second line drops
+  absent date or duration values instead of leaving separators behind, and
+  carries at most one status chip outside that fact chain. Resume states
+  include the measured whole percentage when duration is known and fall back
+  to Resume without inventing one otherwise. The 110-pixel download-state
+  slot stays reserved on the right even when no size is known; selection occupies the
   media overlay on the left. Covered by
   `src_16_the_shared_row_geometry_is_one_set_of_constants`,
+  `src_16_episode_media_starts_after_group_media_in_both_source_views`,
   `src_16_the_row_height_is_carried_by_the_shared_style`,
   `src_16_both_shapes_fit_the_same_column`,
   `src_16_the_checkbox_replaces_the_playing_marker_rather_than_covering_it`,

@@ -264,12 +264,9 @@ fn group_header(
     selected_device_ids: &[String],
     images_allowed: bool,
 ) -> gtk4::Widget {
-    let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    let skeleton = crate::ui::source_row::skeleton();
+    let header = skeleton.root.clone();
     header.set_hexpand(true);
-    header.set_margin_top(10);
-    header.set_margin_bottom(10);
-    header.set_margin_start(6);
-    header.set_margin_end(6);
 
     let artwork = super::source_image::SourceImage::new(
         group_image_url(group),
@@ -283,26 +280,25 @@ fn group_header(
     artwork
         .widget()
         .add_css_class("reprise-podcast-group-artwork");
-    header.append(artwork.widget());
+    skeleton.media.append(&crate::ui::source_row::media(
+        artwork.widget(),
+        crate::ui::source_row::MediaShape::SourceSquare,
+    ));
 
-    let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    identity.set_hexpand(true);
-    identity.set_valign(gtk4::Align::Center);
     let source = source_header(group.kind, &group.title, group.author.as_deref());
     let title = gtk4::Label::new(Some(source.title));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.add_css_class("heading");
-    identity.append(&title);
+    skeleton.identity.append(&title);
     if let Some(author) = source.subtitle {
         let author = gtk4::Label::new(Some(author));
         author.set_xalign(0.0);
         author.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         author.add_css_class("caption");
         author.add_css_class("dim-label");
-        identity.append(&author);
+        skeleton.identity.append(&author);
     }
-    header.append(&identity);
 
     let downloaded = file_size(Some(summary.downloaded_bytes));
     let facts = strings::podcast_group_facts(
@@ -314,13 +310,13 @@ fn group_header(
     let facts = gtk4::Label::new(Some(&facts));
     facts.add_css_class("caption");
     facts.add_css_class("dim-label");
-    header.append(&facts);
+    skeleton.trailing.append(&facts);
     // RSS and YouTube sources sync to their own device target folder alike
     // (`POD-12`), so the phone-sync indicator is not kind-restricted.
     if on_phone(connected_devices, selected_device_ids) {
         let sync = gtk4::Image::from_icon_name("phone-symbolic");
         sync.set_tooltip_text(Some(&strings::text(strings::PODCAST_SYNC_PHONE)));
-        header.append(&sync);
+        skeleton.trailing.append(&sync);
     }
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
@@ -332,7 +328,7 @@ fn group_header(
         .build();
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
-    header.append(&menu);
+    skeleton.trailing.append(&menu);
     podcasts_context_surface::wire_source_header(
         &header,
         group,
@@ -362,6 +358,7 @@ fn episode_row(
     let playing = context.mark.is_some_and(|mark| mark.playing);
     let skeleton = crate::ui::source_row::skeleton();
     let root = skeleton.root.clone();
+    root.set_margin_start(crate::ui::source_row::EPISODE_INDENT);
     root.add_css_class("reprise-podcast-episode-row");
     // `POD-20`: this plain Box needs the shared hover tint that ColumnView
     // rows receive from the platform stylesheet.

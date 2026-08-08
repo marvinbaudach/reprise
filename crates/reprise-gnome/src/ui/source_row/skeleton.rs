@@ -5,6 +5,9 @@ use gtk4::prelude::*;
 pub(in crate::ui) const ROW_MIN_HEIGHT: i32 = 56;
 pub(in crate::ui) const MEDIA_WIDTH: i32 = 64;
 pub(in crate::ui) const MEDIA_HEIGHT: i32 = 40;
+const ROW_LEADING_MARGIN: i32 = 12;
+/// Nested episode rows begin one complete media column after their group.
+pub(in crate::ui) const EPISODE_INDENT: i32 = MEDIA_WIDTH;
 pub(in crate::ui) const SIZE_SLOT_WIDTH: i32 = 110;
 pub(in crate::ui) const ROW_CSS_CLASS: &str = "reprise-source-row";
 
@@ -21,7 +24,7 @@ pub(in crate::ui) struct Skeleton {
 pub(in crate::ui) fn skeleton() -> Skeleton {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     root.add_css_class(ROW_CSS_CLASS);
-    root.set_margin_start(12);
+    root.set_margin_start(ROW_LEADING_MARGIN);
     root.set_margin_end(8);
     root.set_margin_top(6);
     root.set_margin_bottom(6);
@@ -61,10 +64,16 @@ mod tests {
     /// number each view picks for itself. A view that wants a different media
     /// width has to change it here, where the other views see it too.
     #[test]
+    #[allow(
+        clippy::assertions_on_constants,
+        reason = "SRC-16 deliberately pins the relation between two layout constants"
+    )]
     fn src_16_the_shared_row_geometry_is_one_set_of_constants() {
         assert_eq!(MEDIA_WIDTH, 64);
         assert_eq!(MEDIA_HEIGHT, 40);
         assert_eq!(ROW_MIN_HEIGHT, 56);
         assert_eq!(SIZE_SLOT_WIDTH, 110);
+        assert_eq!(EPISODE_INDENT, MEDIA_WIDTH);
+        assert!(EPISODE_INDENT > ROW_LEADING_MARGIN);
     }
 }
