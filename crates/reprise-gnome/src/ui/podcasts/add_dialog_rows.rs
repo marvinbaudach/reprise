@@ -189,9 +189,8 @@ pub(super) fn candidate_row(
     subtitle_label.add_css_class("reprise-text-secondary");
     subtitle_label.set_xalign(0.0);
     let unexplained_match = if query.is_some() {
-        let foreground = crate::ui::track_list::match_highlight::accent_foreground(&title_label);
-        let markup =
-            search_result_markup(kind, title, subtitle, author, query, foreground.as_deref());
+        let palette = crate::ui::search_highlight::accent_palette(&title_label);
+        let markup = search_result_markup(kind, title, subtitle, author, query, Some(&palette));
         title_label.set_markup(&markup.title);
         subtitle_label.set_markup(&markup.subtitle);
         markup.unexplained_match

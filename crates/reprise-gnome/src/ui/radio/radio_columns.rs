@@ -25,6 +25,19 @@ struct ColumnTitle<'a> {
     playback_accent: bool,
 }
 
+#[derive(Clone, Copy)]
+struct TextColumnSpec<'a> {
+    title: ColumnTitle<'a>,
+    sizing: widths::Sizing,
+    query: Option<&'a crate::ui::search_highlight::QuerySource>,
+}
+
+struct TextColumnContext<'a> {
+    live_state: &'a LiveState,
+    connectivity: &'a ConnectivitySource,
+    cells: &'a Rc<RadioLiveCells>,
+}
+
 fn apply_playing_style(widget: &gtk4::Widget, playing: bool) {
     if playing {
         widget.add_css_class("reprise-radio-playing");
@@ -37,13 +50,18 @@ fn apply_playing_style(widget: &gtk4::Widget, playing: bool) {
 /// must carry one (STYLE-9).
 fn text_column(
     view: &gtk4::ColumnView,
-    title: ColumnTitle<'_>,
-    sizing: widths::Sizing,
+    spec: TextColumnSpec<'_>,
     render: impl Fn(&StationRow, &RadioLiveState) -> String + 'static,
-    live_state: &LiveState,
-    connectivity: &ConnectivitySource,
-    cells: &Rc<RadioLiveCells>,
+    context: &TextColumnContext<'_>,
 ) {
+    let TextColumnSpec {
+        title,
+        sizing,
+        query,
+    } = spec;
+    let live_state = context.live_state.clone();
+    let connectivity = context.connectivity.clone();
+    let cells = context.cells.clone();
     let is_title = title.playback_accent;
     let factory = gtk4::SignalListItemFactory::new();
     let live_for_gesture = live_state.clone();
@@ -70,6 +88,7 @@ fn text_column(
     });
     let live_state = live_state.clone();
     let render = Rc::new(render);
+    let query = query.cloned();
     let cells_for_bind = cells.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -91,9 +110,15 @@ fn text_column(
         let apply = {
             let live_state = live_state.clone();
             let render = render.clone();
+            let query = query.clone();
             Rc::new(move || {
                 let live = live_state();
-                label.set_text(&render(&row, &live));
+                let text = render(&row, &live);
+                if let Some(query) = query.as_ref() {
+                    crate::ui::search_highlight::apply(&label, &text, &query());
+                } else {
+                    label.set_text(&text);
+                }
                 let loaded = row_is_accented(row.id, &live);
                 apply_playing_style(label.upcast_ref(), loaded);
                 if is_title {
@@ -287,71 +312,82 @@ pub(super) fn append_columns(
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
     cells: &Rc<RadioLiveCells>,
+    query: &crate::ui::search_highlight::QuerySource,
 ) {
     artwork_column(view, live_state, connectivity);
     state_column(view, live_state, connectivity, cells);
+    let context = TextColumnContext {
+        live_state,
+        connectivity,
+        cells,
+    };
     // Station is the filler: it owns whatever width the pinned columns leave.
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_STATION),
-            playback_accent: true,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_STATION),
+                playback_accent: true,
+            },
+            sizing: widths::Sizing::filler(widths::TITLE_MIN),
+            query: Some(query),
         },
-        widths::Sizing::filler(widths::TITLE_MIN),
         |row, _| row.name.clone(),
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_GENRE),
-            playback_accent: false,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_GENRE),
+                playback_accent: false,
+            },
+            sizing: widths::Sizing::pinned(widths::LABEL),
+            query: None,
         },
-        widths::Sizing::pinned(widths::LABEL),
         |row, _| format_genre(row.genre.as_deref()),
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_BITRATE),
-            playback_accent: false,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_BITRATE),
+                playback_accent: false,
+            },
+            sizing: widths::Sizing::pinned(widths::NUMERIC),
+            query: None,
         },
-        widths::Sizing::pinned(widths::NUMERIC),
         |row, _| format_bitrate(row.bitrate_kbps),
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_COUNTRY),
-            playback_accent: false,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_COUNTRY),
+                playback_accent: false,
+            },
+            sizing: widths::Sizing::pinned(widths::SHORT_LABEL),
+            query: None,
         },
-        widths::Sizing::pinned(widths::SHORT_LABEL),
         |row, _| format_country(row.country_code.as_deref()),
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
     // Now Playing carries live stream metadata — the most volatile text in
     // the table, and the reason this column must never size itself.
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_NOW_PLAYING),
-            playback_accent: false,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_NOW_PLAYING),
+                playback_accent: false,
+            },
+            sizing: widths::Sizing::pinned(widths::NAME),
+            query: None,
         },
-        widths::Sizing::pinned(widths::NAME),
         |row, live| now_playing(row.id, live),
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
 }
 
@@ -379,6 +415,75 @@ mod tests {
         }
     }
 
+    fn descendant_labels(widget: &gtk4::Widget) -> Vec<gtk4::Label> {
+        let mut labels = widget
+            .clone()
+            .downcast::<gtk4::Label>()
+            .ok()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            labels.extend(descendant_labels(&current));
+            child = current.next_sibling();
+        }
+        labels
+    }
+
+    /// UX FIL-5a: Radio highlights only the station-name field its query
+    /// searches, not metadata that happens to contain the same text.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_5a_radio_marks_station_name_but_not_metadata() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let mut row = station();
+        row.name = "Falling FM".into();
+        row.genre = Some("Fall Jazz".into());
+        let store = gtk4::gio::ListStore::new::<RadioObject>();
+        store.append(&RadioObject::new(row));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
+        let live: LiveState = Rc::new(RadioLiveState::default);
+        let connectivity: ConnectivitySource = Rc::new(|| Connectivity::Online);
+        let cells = Rc::new(RadioLiveCells::default());
+        let query_text = Rc::new(std::cell::RefCell::new("fall".to_owned()));
+        let query: crate::ui::search_highlight::QuerySource = {
+            let query_text = query_text.clone();
+            Rc::new(move || query_text.borrow().clone())
+        };
+        append_columns(&view, &live, &connectivity, &cells, &query);
+
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let labels = descendant_labels(view.upcast_ref());
+        let station = labels
+            .iter()
+            .find(|label| label.text() == "Falling FM")
+            .expect("station-name label");
+        assert!(
+            station.uses_markup(),
+            "the searched station name was not highlighted"
+        );
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.text() == "Fall Jazz" && !label.uses_markup()),
+            "the unsearched genre claimed the hit"
+        );
+
+        query_text.borrow_mut().clear();
+        cells.reapply();
+        assert!(
+            !station.uses_markup(),
+            "clearing a query that keeps the same row set left stale markup"
+        );
+    }
+
     /// The radio table carries the same ACC-1 contract as the podcast table;
     /// see `podcasts_columns`' sibling test.
     #[test]
@@ -398,11 +503,13 @@ mod tests {
         // the default Online.
         let connectivity: Rc<dyn Fn() -> reprise_core::connectivity::Connectivity> =
             Rc::new(|| reprise_core::connectivity::Connectivity::Online);
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
         append_columns(
             &view,
             &live_state,
             &connectivity,
             &Rc::new(RadioLiveCells::default()),
+            &query,
         );
 
         let window = gtk4::Window::new();
@@ -431,11 +538,13 @@ mod tests {
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
         let live_state: LiveState = Rc::new(RadioLiveState::default);
         let connectivity: ConnectivitySource = Rc::new(|| Connectivity::Online);
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
         append_columns(
             &view,
             &live_state,
             &connectivity,
             &Rc::new(RadioLiveCells::default()),
+            &query,
         );
 
         crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {

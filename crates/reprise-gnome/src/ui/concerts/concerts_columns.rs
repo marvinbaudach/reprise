@@ -73,7 +73,7 @@ fn build_artist_cell() -> ArtistCell {
     }
 }
 
-fn artist_column(view: &gtk4::ColumnView) {
+fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::QuerySource) {
     let factory = gtk4::SignalListItemFactory::new();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -82,6 +82,7 @@ fn artist_column(view: &gtk4::ColumnView) {
         let cell = build_artist_cell();
         item.set_child(Some(&cell.root));
     });
+    let query = query.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -99,7 +100,7 @@ fn artist_column(view: &gtk4::ColumnView) {
             return;
         };
         let row = object.row();
-        artist.set_text(&row.artist_name);
+        crate::ui::search_highlight::apply(&artist, &row.artist_name, &query());
         let text = similar_caption(&row);
         caption.set_text(text.as_deref().unwrap_or_default());
         caption.set_visible(text.is_some());
@@ -134,15 +135,27 @@ fn artist_column(view: &gtk4::ColumnView) {
 /// `sizing` fixes the column's width. Concerts' only filler is the artist
 /// column, so every column built here is pinned outright; see [`widths`]
 /// (STYLE-9).
-fn text_column(
-    view: &gtk4::ColumnView,
-    title: &str,
-    id: Option<&str>,
+struct TextColumnSpec<'a> {
+    title: String,
+    id: Option<&'a str>,
     sizing: widths::Sizing,
     numeric: bool,
+    query: Option<&'a crate::ui::search_highlight::QuerySource>,
+}
+
+fn text_column(
+    view: &gtk4::ColumnView,
+    spec: TextColumnSpec<'_>,
     render: impl Fn(&ConcertRow) -> String + 'static,
     tooltip: impl Fn(&ConcertRow) -> Option<String> + 'static,
 ) -> gtk4::ColumnViewColumn {
+    let TextColumnSpec {
+        title,
+        id,
+        sizing,
+        numeric,
+        query,
+    } = spec;
     let factory = gtk4::SignalListItemFactory::new();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -157,6 +170,7 @@ fn text_column(
         }
         item.set_child(Some(&label));
     });
+    let query = query.cloned();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -168,7 +182,12 @@ fn text_column(
             return;
         };
         let row = object.row();
-        label.set_text(&render(&row));
+        let text = render(&row);
+        if let Some(query) = query.as_ref() {
+            crate::ui::search_highlight::apply(&label, &text, &query());
+        } else {
+            label.set_text(&text);
+        }
         label.set_tooltip_text(tooltip(&row).as_deref());
     });
     factory.connect_unbind(move |_, object| {
@@ -183,7 +202,7 @@ fn text_column(
     });
 
     let column = gtk4::ColumnViewColumn::builder()
-        .title(title)
+        .title(&title)
         .factory(&factory)
         .resizable(true)
         .build();
@@ -278,41 +297,57 @@ pub(super) struct SortColumns {
     pub distance: gtk4::ColumnViewColumn,
 }
 
-pub(super) fn append_columns(view: &gtk4::ColumnView, on_open: &OnOpenTarget) -> SortColumns {
+pub(super) fn append_columns(
+    view: &gtk4::ColumnView,
+    on_open: &OnOpenTarget,
+    query: &crate::ui::search_highlight::QuerySource,
+) -> SortColumns {
     let date = text_column(
         view,
-        &strings::text(strings::CONCERTS_DATE),
-        Some("date"),
-        widths::Sizing::pinned(widths::DATE),
-        false,
+        TextColumnSpec {
+            title: strings::text(strings::CONCERTS_DATE),
+            id: Some("date"),
+            sizing: widths::Sizing::pinned(widths::DATE),
+            numeric: false,
+            query: None,
+        },
         |row| format_event_date(&row.date_key, Local::now().date_naive()),
         |_| None,
     );
-    artist_column(view);
+    artist_column(view, query);
     text_column(
         view,
-        &strings::text(strings::CONCERTS_CITY),
-        None,
-        widths::Sizing::pinned(widths::LABEL),
-        false,
+        TextColumnSpec {
+            title: strings::text(strings::CONCERTS_CITY),
+            id: None,
+            sizing: widths::Sizing::pinned(widths::LABEL),
+            numeric: false,
+            query: None,
+        },
         |row| row.city.clone(),
         city_tooltip,
     );
     text_column(
         view,
-        &strings::text(strings::CONCERTS_VENUE),
-        None,
-        widths::Sizing::pinned(widths::NAME),
-        false,
+        TextColumnSpec {
+            title: strings::text(strings::CONCERTS_VENUE),
+            id: None,
+            sizing: widths::Sizing::pinned(widths::NAME),
+            numeric: false,
+            query: Some(query),
+        },
         |row| row.venue.clone(),
         |_| None,
     );
     let distance = text_column(
         view,
-        &strings::text(strings::CONCERTS_DISTANCE),
-        Some("distance"),
-        widths::Sizing::pinned(widths::NUMERIC),
-        true,
+        TextColumnSpec {
+            title: strings::text(strings::CONCERTS_DISTANCE),
+            id: Some("distance"),
+            sizing: widths::Sizing::pinned(widths::NUMERIC),
+            numeric: true,
+            query: None,
+        },
         |row| format_distance_km(row.distance_km),
         |_| None,
     );
@@ -344,6 +379,63 @@ mod tests {
             is_similar: false,
             similar_to: None,
         }
+    }
+
+    fn descendant_labels(widget: &gtk4::Widget) -> Vec<gtk4::Label> {
+        let mut labels = widget
+            .clone()
+            .downcast::<gtk4::Label>()
+            .ok()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            labels.extend(descendant_labels(&current));
+            child = current.next_sibling();
+        }
+        labels
+    }
+
+    /// UX FIL-5a: Concerts marks artist and venue, and never implies that the
+    /// unsearched city contributed to the result.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_5a_concerts_mark_artist_and_venue_but_not_city() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let mut event = row(None, None);
+        event.artist_name = "Falling Leaves".into();
+        event.venue = "Fall Arena".into();
+        event.city = "Fall City".into();
+        let store = gtk4::gio::ListStore::new::<ConcertObject>();
+        store.append(&ConcertObject::new(event));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(|| "fall".into());
+        append_columns(&view, &on_open, &query);
+
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let labels = descendant_labels(view.upcast_ref());
+        for text in ["Falling Leaves", "Fall Arena"] {
+            assert!(
+                labels
+                    .iter()
+                    .any(|label| label.text() == text && label.uses_markup()),
+                "searched field {text:?} was not highlighted"
+            );
+        }
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.text() == "Fall City" && !label.uses_markup()),
+            "the unsearched city claimed the hit"
+        );
     }
 
     #[test]
@@ -402,7 +494,8 @@ mod tests {
         store.append(&ConcertObject::new(row(None, None)));
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
         let on_open: OnOpenTarget = Rc::new(|_| {});
-        append_columns(&view, &on_open);
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns(&view, &on_open, &query);
 
         crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {
             let mut long = row(Some("https://tickets.example/offer"), None);

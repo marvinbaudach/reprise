@@ -1161,6 +1161,19 @@ result.
   strictly more often than the runner-up; otherwise every row is badged.
   Panel-tab and sidebar-section badges use the accent, while all other kinds
   are neutral.
+- **SET-13** [active] [gtk] — Preferences follows the content-list search
+  grammar: its header reveals one centred "Search settings" field, `Ctrl+F`
+  reveals the same field, and `Esc` first clears a query and then closes the
+  field. Matching reads each preference row's title and subtitle plus its page
+  name. Search mode keeps the sidebar's width, order and height stable: "All
+  results" is selected above the five pages, every page shows its hit count,
+  and a page with no hits remains present at 42% opacity. The result bar uses
+  the shared search-chip/count/"Clear all" order, matches use the shared accent
+  highlight, and the shared end line reports hidden settings. A hit is the
+  actual preference control, temporarily re-parented under a dim page-and-group
+  path; its origin parent and index are recorded before any matching control
+  moves so clearing restores every control to its exact place. Activating the
+  path closes search, opens that page and focuses the restored control.
 
 ## G. Feedback vocabulary
 
@@ -1410,15 +1423,17 @@ result.
   header-bar search (chip ⌕ "falling" in any field, own ×-click target
   ≥ 20 px; the × removes only the search, Esc per NAV-6). Applies in
   every track source (Library, Playlist, Smart, Queue, Missing). The
-  search travels along within the track sources; its chip appears
-  everywhere it actually restricts — in sources without search effect
+  search remains only while the same track list stays current; its chip
+  appears everywhere it actually restricts — in sources without search effect
   (Import Errors: own panel rows) no chip appears. Facet chips and
   "+ Add filter" stay library-only. An invisible active filter is a bug.
-  (Revised 2026-08-05: the search is no longer global across the whole
-  window. It belongs to the section it was typed in — SEARCH-8 — and
-  every other list view carries it as its own first chip, worded for the
-  fields that view actually reads — FIL-1d. Within the track sources
-  nothing changes: this is still one section.)
+  (Revision history: the 2026-08-05 text made search section-local and
+  restorable under SEARCH-8. SEARCH-8a supersedes that state: choosing another
+  sidebar destination drops only the query, while drilling into an Artist,
+  Album or Genre place carries it into that narrower context; Back restores
+  the complete history-owned list state. Every list view still carries its
+  active query as its first chip, worded for the fields that view actually
+  reads — FIL-1d.)
 - **FIL-1b** [planned] [gtk] — Albums/Artists mode: the global search
   already works there (grid filtering); the same chip row incl.
   counting and "Clear all" will follow there per the pattern of
@@ -1448,7 +1463,7 @@ result.
   Podcasts, YouTube, Radio, Queue, playlists, Releases, Concerts,
   Missing files. The wording is not decoration but a promise about what
   was matched, so it names the fields that view actually reads: Music
-  and its sibling track sources keep "⌕ "{query}" in any field";
+  and its sibling track sources say "⌕ "{query}" in track, artist and album";
   Podcasts says "in episode titles", YouTube "in video titles", Radio
   "in station names", Releases "in title and artist", Concerts "in
   artist and venue", Missing files "in file paths". A view may never
@@ -1457,8 +1472,8 @@ result.
   mid-word included ("wer" matches "Antwerpen"). The chip's accessible
   remove name stays "Remove search: {query}" everywhere. The chip's ×
   and "Clear all" clear the query and the facets of the **current**
-  section only (FIL-2, SEARCH-8).
-- **FIL-2** [active] [gtk] — Counting is state: the filter row is the
+  view only (FIL-2a, SEARCH-8a).
+- **FIL-2** [replaced by FIL-2a] [gtk] — Counting is state: the filter row is the
   permanent list header of every track source — it never appears or
   disappears (no layout shift by design, P-4). Idle as quiet as
   possible: only the neutral total count on the right (dim, caption),
@@ -1480,24 +1495,59 @@ result.
   filter is active, when a place pill is due (FIL-1c), or when the
   preference asks for it. (Counting base revised 2026-07-31 together
   with FIL-1c.)
-- **FIL-3** [active] [gtk] — End-of-results row: below the last row of
-  a restricted list (≥ 1 hit) sits, centered, "End of results — 1,649
-  tracks hidden by search "falling"" + pill "Show all 1,664 tracks"
-  (= Clear all). It visually belongs to the end of the list: directly
-  below the last row when the list is shorter than the viewport; for
-  longer lists it only appears once the end of the list scrolls into
-  the viewport; it never floats over rows (not sticky). Implementation
-  as a positioned overlay — the ColumnView's virtualization stays
-  untouched; input-transparent except for the pill; position is
-  recalculated on scroll, model/filter and resize changes.
+- **FIL-2a** [active] [gtk] — One filter row grammar binds Music, Releases,
+  Concerts, Podcasts, YouTube and Radio. Its slots are normative and always
+  read left to right as: the Music-only place pill; the removable search chip;
+  active facet chips; the "+ Add filter" control where that view offers
+  extensible facets; an expanding spacer; the view's count; and "Clear all"
+  at the right edge. The spacer is the only expanding slot: every slot before
+  it stays content-sized even when its child requests expansion, so "+ Add
+  filter" remains adjacent to the preceding search or facet chip. A
+  selection-only action follows "Clear all" rather than entering the filter
+  slots. No row renders a `FILTER` caption: the chips
+  already state what restricts the list. With an active restriction, the
+  count keeps the view's own unit and accents its bold shown number (for
+  example "15 of 1,664 tracks" or "168 of 629 gaps"); "Clear all" clears the
+  current view's query and facets together. Without a restriction, the count
+  remains a neutral dim caption and "Clear all" is absent. Music retains
+  FIL-1c's place semantics and existing preference-driven idle visibility;
+  every counting base remains the current place, never the whole library.
+- **FIL-3** [replaced by FIL-3a] [gtk] — End-of-results row: below the last
+  row of a restricted track list (≥ 1 hit) sits the hidden-track count and a
+  Show all pill.
+- **FIL-3a** [active] [gtk] — The end-of-results row binds Music, Podcasts,
+  YouTube, Releases, Radio and Concerts. It appears only when at least one row
+  is shown and at least one row is hidden; zero hits remain FIL-6's empty
+  state. Centered below the final result, it names the restriction and counts
+  in that view's own unit — tracks, episodes, videos, gaps, stations or
+  concerts — for example "End of results — 41 episodes hidden by search
+  “afd”" with the pill "Show all 44 episodes". Search plus active facets is
+  named as both; facets alone are named as active filters. The pill fires the
+  same clear-all behavior as the filter row (FIL-6). The row visually belongs
+  to the end of the list: directly below the last row when the list is shorter
+  than the viewport; for longer lists it only appears once the end scrolls
+  into the viewport; it never floats over rows (not sticky). A positioned
+  overlay leaves each list's native row rendering or virtualization untouched,
+  is input-transparent except for the pill, and recalculates on scroll,
+  model/filter and resize changes.
 - **FIL-4** [replaced by SEARCH-3] [gtk] — The search field carries its
   state: as soon as the field contains text, it gets an accent border +
   tinted background — even unfocused.
-- **FIL-5** [active] [gtk] — Hit highlighting: the search term is
+- **FIL-5** [replaced by FIL-5a] [gtk] — Hit highlighting: the search term is
   highlighted in all searched, visible text columns (Title, Artist,
   Album, Genre; accent bold, Pango-escaped). If the only matching
   column is hidden, the row stays unmarked — an accepted remaining gap.
   Chip wording stays "in any field".
+- **FIL-5a** [active] [gtk] — Every visible field that participates in the
+  current view's query marks every matching occurrence with the same
+  Pango-escaped accent-bold foreground and translucent accent tint (18%
+  background alpha). The foreground is mixed toward that label's text color,
+  so the mark survives both titles and dim subtitles. This binds the fields
+  FIL-1d names in Music and every sibling track source, Podcasts, YouTube,
+  Radio, Releases (title and artist explicitly), Concerts and Missing files;
+  a visible field the view does not search stays unmarked. Title and Artist
+  are always reachable. Album is foldable, so an album-only hit can be
+  off-screen at narrow widths; "Show columns" restores it per STYLE-6.
 - **FIL-6** [active] [gtk] — Zero-hit empty state: StatusPage with
   exactly one button "Show all 1,664 tracks" (= Clear all) —
   FB-5-compliant; the one step guaranteedly leads to content, never
@@ -2672,7 +2722,7 @@ property is set and yet nothing happens.
   remains, per SEARCH-3/5, as an active filter along with its chip and
   accent magnifier; a click on the magnifier must not accidentally reopen
   the bar that was closed by that same focus change.
-- **SEARCH-8** [active] [gtk] — The query belongs to the section it was
+- **SEARCH-8** [replaced by SEARCH-8a] — The query belongs to the section it was
   typed in, not to the window. Switching sections swaps the header
   entry's text to that section's own query; it never carries over, and a
   query typed in Podcasts leaves the Music query untouched and vice
@@ -2686,6 +2736,27 @@ property is set and yet nothing happens.
   to filter in {section}", Ctrl+F is a no-op, and the search bar cannot
   be revealed by typing either. The scoped chip each section shows for
   its own query is FIL-1d.
+- **SEARCH-8a** [active] [gtk] — A query belongs only to the sidebar
+  destination where it was typed. Choosing another sidebar destination drops
+  the outgoing query, starts the destination empty and collapses the search
+  bar, because a person who switches destinations is looking for something
+  else. This binds both top-level switches such as Music ↔ Podcasts and track
+  destinations such as Library ↔ Recently added ↔ Playlist ↔ Smart ↔ Queue ↔
+  Missing. Drilling into an Artist, Album or Genre place by activating a row is
+  not a switch: it carries the current query and its chip into that narrower
+  context. Back out of such a place restores the complete remembered list
+  state, including its query and facets, from the existing navigation history;
+  search owns no parallel origin or history state. Collapsing the bar without
+  navigating still preserves the current query per SEARCH-5/SEARCH-6, and an
+  explicitly removed query is never resurrected. Facet filters chosen through
+  + Filter — including type, window, hidden, unplayed and downloaded — are not
+  search and survive sidebar switches untouched. The query itself remains
+  transient and is never persisted with those facets. Where there is no list
+  there is no search: in My Stats and device Sync the lens is insensitive with
+  the tooltip "Nothing to filter in {section}", Ctrl+F is a no-op, and typing
+  cannot reveal the bar. The active query's scoped chip is FIL-1d. This
+  replaces the per-section restoration described by FIL-1a's 2026-08-05
+  revision; FIL-1a records the corrected boundary.
 - **SEARCH-9** [active] [gtk] — **Searching answers at once, and clearing
   answers immediately.** Exactly one wait sits between a keystroke and the
   result — the application's own debounce of 150 ms; the entry's built-in
@@ -4530,9 +4601,12 @@ listening statistics.
   never rendered on the podcast side because setting its label replaced the
   icon child, and is now absent from radio too, so both buttons describe the
   behavior they actually share.
-  The shared toolbar grammar reads Add button · "Add filter" · active,
-  deletable filter pills · count on the right; filter rows keep their
-  height across state changes. On Podcasts and YouTube, the popover offers
+  The add action is the leftmost child of the source footer, outside the
+  filter row; Podcasts and YouTube retain the same footer's spinner, status
+  and right-aligned "Refresh now" action, while Radio uses its equivalent
+  footer strip. Action names stay unchanged, so every shortcut, empty state
+  and context route reaches the same dialog. The filter row follows FIL-2a
+  and keeps its height across state changes. On Podcasts and YouTube, the popover offers
   only Unplayed and Downloaded; the existing show/channel groups provide
   per-source narrowing through expansion and collapse.
 - **SRC-3** [replaced by SRC-3a] [gtk] — Each source has exactly one add dialog
@@ -4781,16 +4855,23 @@ listening statistics.
   does **not** carry this chip: a bare genre word is a weak podcast search
   term, and that dialog's one chip slot is spent on `SRC-19` instead.
 - **SRC-16** [active] [gtk] — **Podcast and YouTube episode lists share one
-  row grammar.** A fixed 64 × 40 media column hosts either 64 × 36 wide art or
-  36 × 36 square art, so both source kinds start their title at the same x
-  position and keep the same minimum row height. The second line drops absent
-  date or duration values instead of leaving separators behind, and carries at
-  most one status chip outside that fact chain. Resume states include the
-  measured whole percentage when duration is known and fall back to Resume
-  without inventing one otherwise. The 110-pixel download-state slot stays
-  reserved on the right even when no size is known; selection occupies the
+  row grammar.** Group headers use the same skeleton as their episode rows: a
+  fixed 64 × 40 media column, one identity box and one trailing box. The
+  group's square 40 × 40 artwork is centred in that column, while episode
+  artwork remains either 64 × 36 wide or 36 × 36 square. An episode row's
+  leading edge is indented by one named media-column width, so its artwork
+  begins to the right of its group's artwork, never before it; the expander
+  caret stays in the leading space outside the media column and cannot change
+  that relation. Both source kinds therefore start their episode title at the
+  same x position and keep the same minimum row height. The second line drops
+  absent date or duration values instead of leaving separators behind, and
+  carries at most one status chip outside that fact chain. Resume states
+  include the measured whole percentage when duration is known and fall back
+  to Resume without inventing one otherwise. The 110-pixel download-state
+  slot stays reserved on the right even when no size is known; selection occupies the
   media overlay on the left. Covered by
   `src_16_the_shared_row_geometry_is_one_set_of_constants`,
+  `src_16_episode_media_starts_after_group_media_in_both_source_views`,
   `src_16_the_row_height_is_carried_by_the_shared_style`,
   `src_16_both_shapes_fit_the_same_column`,
   `src_16_the_checkbox_replaces_the_playing_marker_rather_than_covering_it`,
@@ -5196,10 +5277,11 @@ listening statistics.
   facet narrows the list the status line reads "N of TOTAL episodes"
   with the shown number accented, and returns to the unfiltered summary
   ("3 shows · 13 episodes · 1 new") once nothing restricts. Inside every
-  rendered episode title the query itself is accented, the way FIL-5
-  already accents it in the track table — the same helper, so a hit reads
-  the same wherever the user finds it; a channel tail the row deliberately
-  dims (POD-15) is never accented.
+  rendered episode title the query itself is accented per FIL-5a — the same
+  helper, so a hit reads the same wherever the user finds it. A YouTube
+  channel tail the row deliberately dims (POD-15) remains part of the stored
+  and searched episode title, so a hit inside that tail is accented too while
+  the surrounding tail stays dim.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

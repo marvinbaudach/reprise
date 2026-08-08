@@ -202,10 +202,10 @@ mod tests {
         assert!(!status_visibility(true, true, false));
     }
 
-    // UX FIL-2: the status overlay always describes the whole library — the
+    // UX FIL-2a: the status overlay always describes the whole library — the
     // "X of Y" variant is gone; the filter row owns restriction state.
     #[test]
-    fn fil_2_status_line_copy_is_always_neutral() {
+    fn fil_2a_status_line_copy_is_always_neutral() {
         let text = format_status_text(1_704, 4 * 24 * 3_600_000 + 6 * 3_600_000);
         assert!(text.starts_with("1,704 tracks"));
         assert!(!text.contains(" of "));

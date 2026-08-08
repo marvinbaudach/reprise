@@ -46,6 +46,7 @@ struct Shared {
     runtime: Rc<ConcertsRuntime>,
     model: Rc<ConcertsModel>,
     filter_bar: Rc<ConcertsFilterBar>,
+    end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<ConcertRow>>,
     cached_items: Cell<usize>,
     column_view: gtk4::ColumnView,
@@ -93,13 +94,29 @@ impl ConcertsView {
         let on_open: OnOpenTarget = Rc::new(move |target| {
             external_link::launch(&target, "concert", Some(&launch_error_for_open));
         });
-        let columns = concerts_columns::append_columns(&column_view, &on_open);
+        let query_source: crate::ui::search_highlight::QuerySource = {
+            let filter_bar = filter_bar.clone();
+            Rc::new(move || filter_bar.query())
+        };
+        let columns = concerts_columns::append_columns(&column_view, &on_open, &query_source);
 
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
             .vexpand(true)
             .hexpand(true)
             .build();
+        let list_overlay = gtk4::Overlay::new();
+        list_overlay.set_child(Some(&scrolled));
+        let end_of_results = crate::ui::end_of_results::EndOfResults::install(
+            &list_overlay,
+            &scrolled,
+            &column_view,
+            crate::ui::end_of_results::ResultsUnit::Concerts,
+        );
+        {
+            let filter_bar = filter_bar.clone();
+            end_of_results.connect_recover(move || filter_bar.clear_all());
+        }
         let status = adw::StatusPage::builder().vexpand(true).build();
         let status_button = gtk4::Button::new();
         status_button.add_css_class("pill");
@@ -109,7 +126,7 @@ impl ConcertsView {
             .transition_type(gtk4::StackTransitionType::Crossfade)
             .vexpand(true)
             .build();
-        stack.add_named(&scrolled, Some(LIST_PAGE));
+        stack.add_named(&list_overlay, Some(LIST_PAGE));
         stack.add_named(&status, Some(STATUS_PAGE));
         let failure_state = SourceFailureState::new("x-office-calendar-symbolic");
         stack.add_named(failure_state.widget(), Some(FAILURE_PAGE));
@@ -128,6 +145,7 @@ impl ConcertsView {
             runtime: runtime.clone(),
             model,
             filter_bar: filter_bar.clone(),
+            end_of_results,
             rows: RefCell::new(Vec::new()),
             cached_items: Cell::new(0),
             column_view: column_view.clone(),
@@ -265,17 +283,17 @@ impl ConcertsView {
         &self.root
     }
 
-    /// SEARCH-8: applies this section's query (FIL-1d: artist and venue).
+    /// SEARCH-8a: applies this view's query (FIL-1d: artist and venue).
     pub(in crate::ui) fn set_search_query(&self, query: &str) {
         self.shared.filter_bar.set_query(query);
     }
 
-    /// SEARCH-8: the bar removed the query itself, so the entry must follow.
+    /// SEARCH-8a: the bar removed the query itself, so the entry must follow.
     pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
         self.shared.filter_bar.set_on_query_changed(callback);
     }
 
-    /// FIL-2: "Clear all" for this section — its query and its facets.
+    /// FIL-2a: "Clear all" for this view — its query and its facets.
     pub(in crate::ui) fn clear_all_filters(&self) {
         self.shared.filter_bar.clear_all();
     }
@@ -342,6 +360,9 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
         concerts::query_events(conn, &filter, location.as_ref(), today)?,
         &query,
     );
+    let facets_restrict = filter.country.is_some()
+        || filter.horizon != reprise_core::concerts::DateHorizon::AllUpcoming
+        || (location.is_some() && filter.radius_km.is_some());
     let restricted = filter != ConcertFilter::default() || !query.is_empty();
     let total = if restricted {
         concerts::count_upcoming(conn, &ConcertFilter::default(), location.as_ref(), today)?
@@ -355,6 +376,14 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
         .filter_bar
         .set_context(location.is_some(), similar_enabled, has_similar_rows);
     shared.filter_bar.set_counts(rows.len(), total);
+    shared
+        .end_of_results
+        .update(crate::ui::end_of_results::EndOfResultsInput {
+            shown: rows.len(),
+            total,
+            query,
+            facets_restrict,
+        });
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
     shared.cached_items.set(total);
@@ -659,107 +688,5 @@ fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn conc_3_concerts_view_exposes_six_columns_and_row_activation() {
-        gtk4::init().unwrap();
-        let conn = Rc::new(crate::test_db::open().unwrap());
-        let runtime = ConcertsRuntime::setup(&conn);
-        let view = ConcertsView::new(conn, &runtime);
-        let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
-        let stack = root
-            .first_child()
-            .and_then(|child| child.next_sibling())
-            .and_then(|child| child.next_sibling())
-            .and_downcast::<gtk4::Stack>()
-            .unwrap();
-        let scrolled = stack
-            .child_by_name(LIST_PAGE)
-            .and_downcast::<gtk4::ScrolledWindow>()
-            .unwrap();
-        let table = scrolled.child().and_downcast::<gtk4::ColumnView>().unwrap();
-        assert_eq!(table.columns().n_items(), 6);
-        assert!(!table.enables_rubberband());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn conc_5a_footer_keeps_fetch_progress_below_the_live_table() {
-        gtk4::init().unwrap();
-        let conn = Rc::new(crate::test_db::open().unwrap());
-        let runtime = ConcertsRuntime::setup(&conn);
-        let view = ConcertsView::new(conn, &runtime);
-        let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
-        let footer = root.last_child().and_downcast::<gtk4::Box>().unwrap();
-        let fetch_stack = footer.last_child().and_downcast::<gtk4::Stack>().unwrap();
-        assert!(fetch_stack.child_by_name(FETCH_BUTTON_PAGE).is_some());
-        assert!(fetch_stack.child_by_name(FETCH_SPINNER_PAGE).is_some());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn conc_4b_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
-        gtk4::init().unwrap();
-        let conn = Rc::new(crate::test_db::open().unwrap());
-        let runtime = ConcertsRuntime::setup(&conn);
-        let view = ConcertsView::new(conn.clone(), &runtime);
-        let refreshes = Rc::new(Cell::new(0));
-        view.set_on_refreshed({
-            let refreshes = refreshes.clone();
-            move || refreshes.set(refreshes.get() + 1)
-        });
-
-        view.refresh();
-        assert_eq!(
-            view.shared.empty_state.get(),
-            ConcertsEmptyState::NoCredentials
-        );
-        assert!(!view.shared.fetch_stack.is_visible());
-
-        reprise_core::library::settings::set_setting(
-            &conn,
-            reprise_core::concerts::config::TICKETMASTER_API_KEY,
-            "stored-key",
-        )
-        .unwrap();
-        runtime.notify_settings_changed();
-        assert_eq!(
-            view.shared.empty_state.get(),
-            ConcertsEmptyState::NeverFetched
-        );
-        assert!(view.shared.fetch_stack.is_visible());
-        assert_eq!(refreshes.get(), 1);
-
-        reprise_core::library::settings::set_setting(
-            &conn,
-            reprise_core::concerts::config::TICKETMASTER_API_KEY,
-            "",
-        )
-        .unwrap();
-        runtime.notify_settings_changed();
-        assert_eq!(
-            view.shared.empty_state.get(),
-            ConcertsEmptyState::NoCredentials
-        );
-        assert!(!view.shared.fetch_stack.is_visible());
-        assert_eq!(refreshes.get(), 2);
-    }
-
-    #[test]
-    fn conc_7_filter_changes_refresh_badge_dependents() {
-        let conn = crate::test_db::open().unwrap();
-        let runtime = ConcertsRuntime::setup(&conn);
-        let refreshes = Rc::new(Cell::new(0));
-        runtime.subscribe_settings(|| true, {
-            let refreshes = refreshes.clone();
-            move || refreshes.set(refreshes.get() + 1)
-        });
-
-        notify_filter_changed(&runtime);
-
-        assert_eq!(refreshes.get(), 1);
-    }
-}
+#[path = "concerts_view_tests.rs"]
+mod tests;

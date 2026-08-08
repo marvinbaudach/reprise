@@ -1,11 +1,11 @@
 //! Chip and pill construction for the unified filter bar — the pure facet
-//! helpers plus the FlowBox append, split out of `browse_bar.rs` to keep both
+//! helpers plus chip insertion, split out of `browse_bar.rs` to keep both
 //! files under the repository's source-size limit.
 
 use gtk4::prelude::*;
 use reprise_core::queries::{BrowseFacet, BrowseFilter};
 
-use crate::ui::browse_filter_strings as filter_strings;
+use crate::ui::filter_bar_strings as filter_strings;
 
 pub(super) const FACETS: [BrowseFacet; 5] = [
     BrowseFacet::Genre,
@@ -108,22 +108,6 @@ pub(super) fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
         .collect()
 }
 
-#[cfg(test)]
-pub(in crate::ui) fn chip_labels(
-    search: &str,
-    filter: &BrowseFilter,
-    is_library: bool,
-) -> Vec<String> {
-    let mut labels = Vec::new();
-    if !search.trim().is_empty() {
-        labels.push(filter_strings::search_chip_label(search.trim()));
-    }
-    if is_library {
-        labels.extend(filter_chips(filter).into_iter().map(|chip| chip.label));
-    }
-    labels
-}
-
 pub(super) fn available_facets(filter: &BrowseFilter) -> Vec<BrowseFacet> {
     FACETS
         .into_iter()
@@ -158,13 +142,6 @@ pub(super) fn build_place_pill(place: &str) -> gtk4::Button {
     button
 }
 
-pub(super) fn append_chip(chips: &gtk4::FlowBox, widget: &impl IsA<gtk4::Widget>) {
+pub(super) fn append_chip(chips: &gtk4::Box, widget: &impl IsA<gtk4::Widget>) {
     chips.append(widget);
-    if let Some(wrapper) = widget
-        .as_ref()
-        .parent()
-        .and_downcast::<gtk4::FlowBoxChild>()
-    {
-        wrapper.set_focusable(false);
-    }
 }

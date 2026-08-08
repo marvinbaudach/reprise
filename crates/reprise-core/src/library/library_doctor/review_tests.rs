@@ -414,11 +414,7 @@ fn doc_8b_the_tie_path_runs_the_same_selection_predicate() {
     let group = unresolved_group(
         DoctorField::Title,
         &[("An Ocean", 2), ("an ocean", 1)],
-        &[
-            (1, "An Ocean Between Us"),
-            (2, "an ocean"),
-            (3, "AN OCEAN"),
-        ],
+        &[(1, "An Ocean Between Us"), (2, "an ocean"), (3, "AN OCEAN")],
     );
     let mut source = scan_with_group(group);
     source

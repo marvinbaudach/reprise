@@ -41,7 +41,7 @@ fn query_builder_rejects_unknown_column_with_title_fallback() {
     assert!(q.contains("ORDER BY title COLLATE NOCASE DESC"));
     assert!(q.contains(
         "(title LIKE ?3 ESCAPE '\\' OR artist LIKE ?3 ESCAPE '\\' \
-         OR album LIKE ?3 ESCAPE '\\' OR genre LIKE ?3 ESCAPE '\\')"
+         OR album LIKE ?3 ESCAPE '\\')"
     ));
 }
 

@@ -76,7 +76,7 @@ pub(super) fn snapshot(track_list: &TrackList) -> TrackViewSnapshot {
     }
 }
 
-/// `applies_here` answers SEARCH-8's question: is a track section the visible
+/// `applies_here` answers SEARCH-8a's question: is a track view the visible
 /// one? A query typed in Podcasts still reaches this handler — one entry
 /// serves the whole window — and must be ignored here rather than silently
 /// re-filtering Music behind the user's back.

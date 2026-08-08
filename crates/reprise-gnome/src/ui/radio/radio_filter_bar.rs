@@ -6,19 +6,15 @@ use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::radio::StationRow;
 
-use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::enumerated::enumerated;
-use crate::ui::search_chip;
+use crate::ui::filter_bar_layout::{self, FilterBarLayout};
 use crate::ui::strings;
-use crate::ui::style::buttons;
 use reprise_view::search_scope::{self, SearchScope};
 
 const GENRE_KEY: &str = "radio.filter.genre";
 const COUNTRY_KEY: &str = "radio.filter.country";
-const FILTER_BAR_MIN_HEIGHT: i32 = 34;
-
 type FilterCallback = Rc<dyn Fn(RadioFilter)>;
-/// SEARCH-8: fired when the bar itself changes the query — the chip's ×
+/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×
 /// or "Clear all" — so the header entry stops showing a query the view no
 /// longer applies.
 type OnQueryChanged = Rc<dyn Fn(&str)>;
@@ -27,7 +23,7 @@ type OnQueryChanged = Rc<dyn Fn(&str)>;
 pub(super) struct RadioFilter {
     pub genre: Option<String>,
     pub country: Option<String>,
-    /// SEARCH-8: this section's transient query, matched against station
+    /// SEARCH-8a: this view's transient query, matched against station
     /// names alone (FIL-1d). Never persisted — `persist_filter` writes the
     /// two facets above and nothing else.
     pub query: String,
@@ -55,7 +51,7 @@ enumerated! {
     pub(super) enum RadioFilterFacet {
         Genre,
         Country,
-        /// SEARCH-8: the query relaxes like any other facet when a jump to
+        /// SEARCH-8a: the query relaxes like any other facet when a jump to
         /// the connected station would otherwise land nowhere.
         Query,
     }
@@ -162,7 +158,7 @@ fn matches_value(candidate: Option<&str>, expected: Option<&str>) -> bool {
     candidate.is_some_and(|candidate| candidate.trim().eq_ignore_ascii_case(expected.trim()))
 }
 
-/// SEARCH-8: restores the two persisted facets. A launch never starts inside
+/// SEARCH-8a: restores the two persisted facets. A launch never starts inside
 /// somebody's old query, so `query` stays empty here by construction.
 pub(super) fn load_filter(db: &Db) -> Result<RadioFilter, rusqlite::Error> {
     Ok(RadioFilter {
@@ -195,10 +191,11 @@ struct FilterChoice {
 
 pub(super) struct RadioFilterBar {
     root: gtk4::Box,
-    add: gtk4::Button,
+    layout: FilterBarLayout,
     add_filter: gtk4::MenuButton,
     chips: gtk4::Box,
     count: gtk4::Label,
+    clear_all: gtk4::Button,
     chooser: gtk4::ListBox,
     choices: RefCell<Vec<FilterChoice>>,
     conn: Rc<Db>,
@@ -211,44 +208,38 @@ pub(super) struct RadioFilterBar {
 
 impl RadioFilterBar {
     pub(super) fn new(conn: Rc<Db>) -> Rc<Self> {
-        let add = gtk4::Button::with_label(&strings::text(strings::RADIO_ADD));
-        buttons::arm(&add, buttons::ADD_ACTION_CLASS);
-
         let add_filter = gtk4::MenuButton::builder()
             .label(format!("+ {}", strings::text(strings::RADIO_ADD_FILTER)))
             .build();
         add_filter.add_css_class("pill");
+        filter_bar_layout::style_add_filter(&add_filter);
         let chooser = gtk4::ListBox::new();
         chooser.set_selection_mode(gtk4::SelectionMode::None);
         let popover = gtk4::Popover::builder().child(&chooser).build();
         add_filter.set_popover(Some(&popover));
 
-        let chips = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        let count = gtk4::Label::new(None);
-        count.add_css_class("dim-label");
-        count.add_css_class("caption");
-        count.set_hexpand(true);
+        let chips = filter_bar_layout::facet_row();
+        let count = filter_bar_layout::count_label();
         count.set_halign(gtk4::Align::End);
+        let clear_all =
+            filter_bar_layout::clear_all_button(&strings::text(strings::RADIO_CLEAR_ALL));
+        clear_all.set_visible(false);
 
-        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        root.set_margin_top(6);
-        root.set_margin_bottom(6);
-        root.set_margin_start(12);
-        root.set_margin_end(12);
-        root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
-        root.add_css_class("toolbar");
-        root.append(&add);
-        root.append(&add_filter);
-        root.append(&chips);
-        root.append(&count);
+        let layout = FilterBarLayout::new();
+        let root = layout.root().clone();
+        layout.fill_facets(&chips);
+        layout.fill_add_filter(&add_filter);
+        layout.fill_count(&count);
+        layout.fill_clear_all(&clear_all);
 
         let filter = load_filter(&conn).unwrap_or_default();
         let bar = Rc::new(Self {
             root,
-            add,
+            layout,
             add_filter,
             chips,
             count,
+            clear_all,
             chooser,
             choices: RefCell::new(Vec::new()),
             conn,
@@ -258,6 +249,14 @@ impl RadioFilterBar {
             on_changed: RefCell::new(None),
             on_query_changed: RefCell::new(None),
         });
+        {
+            let weak = Rc::downgrade(&bar);
+            bar.clear_all.connect_clicked(move |_| {
+                if let Some(bar) = weak.upgrade() {
+                    bar.clear_all();
+                }
+            });
+        }
         wire_chooser(&bar);
         bar.rebuild_chips();
         bar
@@ -265,10 +264,6 @@ impl RadioFilterBar {
 
     pub(super) fn widget(&self) -> &gtk4::Widget {
         self.root.upcast_ref()
-    }
-
-    pub(super) fn connect_add(&self, callback: impl Fn() + 'static) {
-        self.add.connect_clicked(move |_| callback());
     }
 
     pub(super) fn set_on_changed(&self, callback: impl Fn(RadioFilter) + 'static) {
@@ -294,23 +289,24 @@ impl RadioFilterBar {
     pub(super) fn set_counts(&self, visible: usize, total: usize) {
         self.visible_count.set(visible);
         self.total_count.set(total);
-        // FIL-2: filtered lists count "N of TOTAL stations" with the shown
+        // FIL-2a: filtered lists count "N of TOTAL stations" with the shown
         // number accented; an unfiltered one keeps its plain total.
-        if self.filter().is_active() {
-            self.count
-                .set_markup(&strings::radio_filtered_count_markup(visible, total));
-            self.count.add_css_class("accent");
+        let text;
+        let presentation = if self.filter().is_active() {
+            text = strings::radio_filtered_count_markup(visible, total);
+            filter_bar_layout::CountPresentation::RestrictedMarkup(&text)
         } else {
-            self.count.remove_css_class("accent");
-            self.count.set_text(&strings::radio_station_count(total));
-        }
+            text = strings::radio_station_count(total);
+            filter_bar_layout::CountPresentation::Plain(&text)
+        };
+        filter_bar_layout::present_count(&self.count, presentation);
     }
 
     pub(super) fn set_on_query_changed(&self, callback: impl Fn(&str) + 'static) {
         *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// SEARCH-8: this section's query, handed in by the shell.
+    /// SEARCH-8a: this view's query, handed in by the shell.
     pub(super) fn set_query(self: &Rc<Self>, query: &str) {
         let current = self.filter();
         if current.query == query.trim() {
@@ -328,7 +324,7 @@ impl RadioFilterBar {
     /// into the header entry. A query arriving *from* the entry is not
     /// echoed, or the two would ping-pong.
     fn apply_internal(self: &Rc<Self>, filter: RadioFilter, announce_query: bool) {
-        // SEARCH-8: only the facets are persisted; the query is transient.
+        // SEARCH-8a: only the facets are persisted; the query is transient.
         if let Err(error) = persist_filter(&self.conn, &filter) {
             tracing::warn!(%error, "could not persist radio filters");
         }
@@ -387,16 +383,14 @@ impl RadioFilterBar {
         }
         let filter = self.filter();
         // FIL-1a/FIL-1d: the search chip comes first, ahead of the facets.
-        if filter.has_query() {
-            let weak = Rc::downgrade(self);
-            let chip = search_chip::build(SearchScope::Radio, &filter.query, move || {
+        let weak = Rc::downgrade(self);
+        self.layout
+            .replace_scoped_search(SearchScope::Radio, &filter.query, move || {
                 if let Some(bar) = weak.upgrade() {
                     let cleared = bar.filter().with_query("");
                     bar.apply(cleared);
                 }
             });
-            self.chips.append(&chip);
-        }
         for (facet, value) in [
             (RadioFilterFacet::Genre, filter.genre.as_deref()),
             (RadioFilterFacet::Country, filter.country.as_deref()),
@@ -405,7 +399,7 @@ impl RadioFilterBar {
                 continue;
             };
             let button = gtk4::Button::with_label(value);
-            button.add_css_class(CHIP_CSS_CLASS);
+            button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
             button.set_icon_name("window-close-symbolic");
             let weak = Rc::downgrade(self);
             let current = filter.clone();
@@ -416,17 +410,8 @@ impl RadioFilterBar {
             });
             self.chips.append(&button);
         }
-        if filter.is_active() {
-            let clear = gtk4::Button::with_label(&strings::text(strings::RADIO_CLEAR_ALL));
-            clear.add_css_class(CHIP_CSS_CLASS);
-            let weak = Rc::downgrade(self);
-            clear.connect_clicked(move |_| {
-                if let Some(bar) = weak.upgrade() {
-                    bar.apply(RadioFilter::default());
-                }
-            });
-            self.chips.append(&clear);
-        }
+        self.chips.set_visible(self.chips.first_child().is_some());
+        self.clear_all.set_visible(filter.is_active());
         self.set_counts(self.visible_count.get(), self.total_count.get());
     }
 }
@@ -454,38 +439,6 @@ fn wire_chooser(bar: &Rc<RadioFilterBar>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn descendant_images(widget: &impl IsA<gtk4::Widget>) -> Vec<gtk4::Image> {
-        let mut found = Vec::new();
-        let mut child = widget.as_ref().first_child();
-        while let Some(current) = child {
-            if let Ok(image) = current.clone().downcast::<gtk4::Image>() {
-                found.push(image);
-            }
-            found.extend(descendant_images(&current));
-            child = current.next_sibling();
-        }
-        found
-    }
-
-    /// `SRC-2`: both library add buttons use the same label-only grammar.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn src_2_both_add_buttons_carry_a_label_and_no_icon() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let radio = RadioFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
-        let buttons = [
-            radio.add.clone(),
-            crate::ui::podcasts::podcast_add_button(reprise_core::podcasts::PodcastKind::Rss),
-        ];
-        for button in buttons {
-            assert!(button.icon_name().is_none(), "add buttons carry no icon");
-            assert!(!button.label().unwrap_or_default().is_empty());
-            assert!(button.has_css_class(buttons::ADD_ACTION_CLASS));
-            assert!(descendant_images(&button).is_empty());
-        }
-    }
 
     #[test]
     fn radio_filter_facets_are_sticky_and_each_chip_removes_one_constraint() {
@@ -572,20 +525,45 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_2_radio_toolbar_matches_the_podcast_toolbar_geometry() {
+    fn fil_2a_radio_fills_filters_count_and_clear_slots_in_order() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = RadioFilterBar::new(conn);
-        assert!(bar.add.has_css_class(buttons::ADD_ACTION_CLASS));
-        assert!(!bar.add.has_css_class(CHIP_CSS_CLASS));
-        assert_eq!(bar.root.height_request(), 34);
-        assert_eq!(bar.root.margin_top(), 6);
-        assert_eq!(bar.root.margin_bottom(), 6);
-        assert_eq!(bar.root.margin_start(), 12);
-        assert_eq!(bar.root.margin_end(), 12);
-        assert!(bar.root.has_css_class("toolbar"));
+        bar.set_query("nova");
+        bar.set_counts(3, 44);
+
+        assert_eq!(
+            bar.root.height_request(),
+            filter_bar_layout::FILTER_BAR_MIN_HEIGHT
+        );
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::Facets,
+            &bar.chips
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
+            &bar.add_filter
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::Count,
+            &bar.count
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::ClearAll,
+            &bar.clear_all
+        ));
+        let first = bar
+            .layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+            .expect("search chip");
+        assert!(first
+            .downcast::<gtk4::Button>()
+            .ok()
+            .and_then(|button| button.label())
+            .is_some_and(|label| label.starts_with('⌕')));
         assert!(bar.add_filter.has_css_class("pill"));
-        assert!(!bar.add_filter.has_css_class(CHIP_CSS_CLASS));
+        assert!(bar.clear_all.is_visible());
     }
 
     /// UX FIL-1d: the Radio query matches **station names**, case-insensitively
@@ -634,10 +612,10 @@ mod tests {
         assert!(!RadioFilter::default().is_active());
     }
 
-    /// UX SEARCH-8: the query is transient — `load_filter` restores the two
+    /// UX SEARCH-8a: the query is transient — `load_filter` restores the two
     /// persisted facets and never a query.
     #[test]
-    fn search_8_radio_query_is_never_restored_from_settings() {
+    fn search_8a_radio_query_is_never_restored_from_settings() {
         let db = crate::test_db::open().unwrap();
         persist_filter(
             &db,

@@ -317,8 +317,10 @@ impl PreferencesContext {
         let scan_controls = self.scan_controls.clone();
         foreground_scan_progress.set_on_cancel(move || scan_controls.request_cancel());
         let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&self.window);
+        let settings_search = shell.search.clone();
         shell.dialog.connect_closed(move |_| {
             let _keep_progress_alive_until_closed = &foreground_scan_progress;
+            settings_search.close();
         });
         self.preferences_dialog.borrow().set(Some(&shell.dialog));
         self.preferences_navigation

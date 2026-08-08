@@ -8,15 +8,12 @@ use reprise_core::artist_news::{
 };
 use reprise_core::db::Db;
 
-use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
-use crate::ui::search_chip;
+use crate::ui::filter_bar_layout::{self, FilterBarLayout};
 use crate::ui::strings;
 use reprise_view::search_scope::SearchScope;
 
-const FILTER_BAR_MIN_HEIGHT: i32 = 34;
-
 type OnChanged = Rc<dyn Fn(ReleasesFilter)>;
-/// SEARCH-8: fired when the bar itself changes the query — the chip's ×
+/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×
 /// or "Clear all" — so the header entry stops showing a query the view no
 /// longer applies.
 type OnQueryChanged = Rc<dyn Fn(&str)>;
@@ -65,13 +62,16 @@ fn persist_filter(db: &Db, filter: &ReleasesFilter) -> Result<(), rusqlite::Erro
 
 pub(super) struct ReleasesFilterBar {
     root: gtk4::Box,
+    layout: FilterBarLayout,
     conn: Rc<Db>,
     filter: RefCell<ReleasesFilter>,
-    chips: gtk4::FlowBox,
+    chips: gtk4::Box,
+    add_filter: gtk4::MenuButton,
+    add_filter_box: gtk4::Box,
     result_label: gtk4::Label,
     clear_all: gtk4::Button,
     counts: Cell<(usize, usize)>,
-    /// SEARCH-8: this section's query. Deliberately *beside* `ReleasesFilter`
+    /// SEARCH-8a: this view's query. Deliberately *beside* `ReleasesFilter`
     /// rather than inside it: that type is persisted, while a query must not
     /// be restored on the next launch.
     query: RefCell<String>,
@@ -82,42 +82,40 @@ pub(super) struct ReleasesFilterBar {
 impl ReleasesFilterBar {
     pub(super) fn new(conn: Rc<Db>) -> Rc<Self> {
         let filter = persisted_releases_filter(&conn).unwrap_or_default();
-        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-        root.set_margin_top(6);
-        root.set_margin_bottom(6);
-        root.set_margin_start(12);
-        root.set_margin_end(12);
-        root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
-        root.add_css_class("toolbar");
+        let layout = FilterBarLayout::new();
+        let root = layout.root().clone();
 
-        let section_label = gtk4::Label::new(Some(&strings::text(strings::RELEASES_FILTER)));
-        section_label.add_css_class("dim-label");
-        section_label.add_css_class("caption-heading");
-        root.append(&section_label);
+        let chips = filter_bar_layout::facet_row();
+        layout.fill_facets(&chips);
 
-        let chips = gtk4::FlowBox::builder()
-            .selection_mode(gtk4::SelectionMode::None)
-            .column_spacing(6)
-            .row_spacing(4)
-            .hexpand(true)
-            .max_children_per_line(20)
+        let add_filter_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        add_filter_box.set_margin_top(8);
+        add_filter_box.set_margin_bottom(8);
+        add_filter_box.set_margin_start(8);
+        add_filter_box.set_margin_end(8);
+        let add_filter_popover = gtk4::Popover::builder().child(&add_filter_box).build();
+        let add_filter = gtk4::MenuButton::builder()
+            .label(strings::text(strings::RELEASES_ADD_FILTER))
+            .popover(&add_filter_popover)
             .build();
-        root.append(&chips);
+        add_filter.add_css_class("pill");
+        filter_bar_layout::style_add_filter(&add_filter);
+        layout.fill_add_filter(&add_filter);
 
-        let result_label = gtk4::Label::new(None);
-        result_label.add_css_class("dim-label");
-        result_label.add_css_class("caption");
-        root.append(&result_label);
-        let clear_all = gtk4::Button::with_label(&strings::text(strings::RELEASES_CLEAR_ALL));
-        clear_all.add_css_class("flat");
-        clear_all.add_css_class(CHIP_CSS_CLASS);
-        root.append(&clear_all);
+        let result_label = filter_bar_layout::count_label();
+        layout.fill_count(&result_label);
+        let clear_all =
+            filter_bar_layout::clear_all_button(&strings::text(strings::RELEASES_CLEAR_ALL));
+        layout.fill_clear_all(&clear_all);
 
         let bar = Rc::new(Self {
             root,
+            layout,
             conn,
             filter: RefCell::new(filter),
             chips,
+            add_filter,
+            add_filter_box,
             result_label,
             clear_all,
             counts: Cell::new((0, 0)),
@@ -151,7 +149,7 @@ impl ReleasesFilterBar {
         self.query.borrow().clone()
     }
 
-    /// SEARCH-8: this section's query, handed in by the shell.
+    /// SEARCH-8a: this view's query, handed in by the shell.
     pub(super) fn set_query(self: &Rc<Self>, query: &str) {
         if *self.query.borrow() == query.trim() {
             return;
@@ -180,7 +178,7 @@ impl ReleasesFilterBar {
         self.rebuild();
     }
 
-    /// NR-25/FIL-2: takes the filter row back to its default and clears this
+    /// NR-25/FIL-2a: takes the filter row back to its default and clears this
     /// section's transient search query.
     ///
     /// Back to *default*, not to the widest scope: since the default is itself
@@ -220,12 +218,21 @@ impl ReleasesFilterBar {
     }
 
     fn rebuild(self: &Rc<Self>) {
-        self.chips.remove_all();
+        while let Some(child) = self.chips.first_child() {
+            self.chips.remove(&child);
+        }
         let filter = self.filter();
         let query = self.query();
-        if !query.is_empty() {
-            self.append_search_chip(&query);
-        }
+        let weak = Rc::downgrade(self);
+        self.layout
+            .replace_scoped_search(SearchScope::Releases, &query, move || {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                bar.clear_query();
+                bar.rebuild();
+                bar.notify_changed();
+            });
         for (chip, selected, label) in [
             (
                 TypeChip::Album,
@@ -239,10 +246,16 @@ impl ReleasesFilterBar {
                 strings::RELEASES_SINGLE,
             ),
         ] {
-            self.append_type_chip(chip, selected, label);
+            if selected {
+                self.append_type_chip(chip, label);
+            }
         }
         self.append_window_chip(filter.window);
-        self.append_hidden_chip(filter.hidden);
+        if filter.hidden {
+            self.append_hidden_chip();
+        }
+        self.chips.set_visible(self.chips.first_child().is_some());
+        self.rebuild_add_filter(&filter);
 
         // Measured against the default, not the widest: the default view is
         // the quiet one, so it offers no "Clear all" and no accent — while
@@ -251,34 +264,21 @@ impl ReleasesFilterBar {
         let dirty = filter != ReleasesFilter::default() || !query.is_empty();
         self.clear_all.set_visible(dirty);
         let (shown, total) = self.counts.get();
-        if dirty && shown != total {
-            self.result_label
-                .set_markup(&strings::release_count_line_markup(shown, total));
-            self.result_label.add_css_class("accent");
+        let text;
+        let presentation = if dirty && shown != total {
+            text = strings::release_count_line_markup(shown, total);
+            filter_bar_layout::CountPresentation::RestrictedMarkup(&text)
         } else {
-            self.result_label.remove_css_class("accent");
-            self.result_label
-                .set_text(&release_count_presentation(shown, total));
-        }
+            text = release_count_presentation(shown, total);
+            filter_bar_layout::CountPresentation::Plain(&text)
+        };
+        filter_bar_layout::present_count(&self.result_label, presentation);
     }
 
-    fn append_search_chip(self: &Rc<Self>, query: &str) {
-        let weak = Rc::downgrade(self);
-        let chip = search_chip::build(SearchScope::Releases, query, move || {
-            let Some(bar) = weak.upgrade() else {
-                return;
-            };
-            bar.clear_query();
-            bar.rebuild();
-            bar.notify_changed();
-        });
-        self.chips.append(&chip);
-    }
-
-    fn append_type_chip(self: &Rc<Self>, chip: TypeChip, selected: bool, label: &str) {
+    fn append_type_chip(self: &Rc<Self>, chip: TypeChip, label: &str) {
         let button = gtk4::ToggleButton::with_label(&strings::text(label));
         button.add_css_class("pill");
-        button.set_active(selected);
+        button.set_active(true);
         let weak = Rc::downgrade(self);
         button.connect_toggled(move |button| {
             let Some(bar) = weak.upgrade() else {
@@ -327,10 +327,10 @@ impl ReleasesFilterBar {
         self.chips.append(&menu);
     }
 
-    fn append_hidden_chip(self: &Rc<Self>, selected: bool) {
+    fn append_hidden_chip(self: &Rc<Self>) {
         let button = gtk4::ToggleButton::with_label(&strings::text(strings::RELEASES_HIDDEN));
         button.add_css_class("pill");
-        button.set_active(selected);
+        button.set_active(true);
         let weak = Rc::downgrade(self);
         button.connect_toggled(move |button| {
             let Some(bar) = weak.upgrade() else {
@@ -342,6 +342,66 @@ impl ReleasesFilterBar {
             });
         });
         self.chips.append(&button);
+    }
+
+    fn rebuild_add_filter(self: &Rc<Self>, filter: &ReleasesFilter) {
+        while let Some(child) = self.add_filter_box.first_child() {
+            self.add_filter_box.remove(&child);
+        }
+        let mut choices = 0_usize;
+        for (chip, selected, label) in [
+            (
+                TypeChip::Album,
+                filter.release_types.album,
+                strings::RELEASES_ALBUM,
+            ),
+            (TypeChip::Ep, filter.release_types.ep, strings::RELEASES_EP),
+            (
+                TypeChip::Single,
+                filter.release_types.single,
+                strings::RELEASES_SINGLE,
+            ),
+        ] {
+            if selected {
+                continue;
+            }
+            choices += 1;
+            let button = gtk4::Button::with_label(&strings::text(label));
+            button.add_css_class("flat");
+            button.set_halign(gtk4::Align::Fill);
+            let weak = Rc::downgrade(self);
+            button.connect_clicked(move |_| {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                let current = bar.filter();
+                bar.add_filter.popdown();
+                bar.apply_filter(ReleasesFilter {
+                    release_types: toggle_type(current.release_types, chip, true),
+                    ..current
+                });
+            });
+            self.add_filter_box.append(&button);
+        }
+        if !filter.hidden {
+            choices += 1;
+            let button = gtk4::Button::with_label(&strings::text(strings::RELEASES_HIDDEN));
+            button.add_css_class("flat");
+            button.set_halign(gtk4::Align::Fill);
+            let weak = Rc::downgrade(self);
+            button.connect_clicked(move |_| {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                bar.add_filter.popdown();
+                bar.apply_filter(ReleasesFilter {
+                    hidden: true,
+                    ..bar.filter()
+                });
+            });
+            self.add_filter_box.append(&button);
+        }
+        self.add_filter.set_sensitive(choices > 0);
     }
 }
 
@@ -440,8 +500,65 @@ mod tests {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ReleasesFilterBar::new(conn);
-        assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
-        assert!(bar.chips.child_at_index(0).is_some());
+        assert_eq!(
+            bar.root.height_request(),
+            filter_bar_layout::FILTER_BAR_MIN_HEIGHT
+        );
+        assert!(bar.chips.first_child().is_some());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_2a_releases_fill_filters_count_and_clear_slots_without_a_caption() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let bar = ReleasesFilterBar::new(conn);
+        bar.set_query("falling");
+        bar.set_counts(15, 1_664);
+
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::Facets,
+            &bar.chips
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
+            &bar.add_filter
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::Count,
+            &bar.result_label
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::ClearAll,
+            &bar.clear_all
+        ));
+        let first = bar
+            .layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+            .expect("the query produces the first chip");
+        assert!(first
+            .downcast::<gtk4::Button>()
+            .ok()
+            .and_then(|button| button.label())
+            .is_some_and(|label| label.starts_with('⌕')));
+        assert!(!descendant_labels(bar.widget())
+            .iter()
+            .any(|text| text == "FILTER"));
+        assert!(bar.clear_all.is_visible());
+    }
+
+    fn descendant_labels(widget: &impl IsA<gtk4::Widget>) -> Vec<String> {
+        let mut labels = Vec::new();
+        let mut child = widget.as_ref().first_child();
+        while let Some(current) = child {
+            if let Ok(label) = current.clone().downcast::<gtk4::Label>() {
+                labels.push(label.text().to_string());
+            }
+            labels.extend(descendant_labels(&current));
+            child = current.next_sibling();
+        }
+        labels
     }
 
     /// NR-25: the default view is the quiet one. The row still names its

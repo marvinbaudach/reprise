@@ -18,7 +18,6 @@ pub const RELEASES_BUY: &str = N_!("Buy");
 pub const RELEASES_BANDCAMP: &str = N_!("Bandcamp");
 pub const RELEASES_BUY_ON_BANDCAMP: &str = N_!("Buy on Bandcamp");
 pub const RELEASES_ADD_FILTER: &str = N_!("+ Add filter");
-pub const RELEASES_FILTER: &str = N_!("FILTER");
 pub const RELEASES_CLEAR_ALL: &str = N_!("Clear all ×");
 pub const RELEASES_HIDDEN: &str = N_!("Hidden");
 pub const RELEASES_ALBUM: &str = N_!("Album");

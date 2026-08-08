@@ -54,6 +54,7 @@ struct Shared {
     database_path: PathBuf,
     model: Rc<ReleasesModel>,
     filter_bar: Rc<ReleasesFilterBar>,
+    end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<HistoryEntry>>,
     cached_items: Cell<usize>,
     column_view: gtk4::ColumnView,
@@ -116,12 +117,25 @@ impl ReleasesView {
                 external_link::launch(&url, "Bandcamp purchase", Some(&shared.on_launch_error));
             }
         });
-        let date_column = releases_columns::append_columns(&column_view, &on_set_hidden, &on_open);
+        let date_column =
+            releases_columns::append_columns(&column_view, &on_set_hidden, &on_open, &filter_bar);
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
             .vexpand(true)
             .hexpand(true)
             .build();
+        let list_overlay = gtk4::Overlay::new();
+        list_overlay.set_child(Some(&scrolled));
+        let end_of_results = crate::ui::end_of_results::EndOfResults::install(
+            &list_overlay,
+            &scrolled,
+            &column_view,
+            crate::ui::end_of_results::ResultsUnit::Gaps,
+        );
+        {
+            let filter_bar = filter_bar.clone();
+            end_of_results.connect_recover(move || filter_bar.clear_all());
+        }
         let status = adw::StatusPage::builder().vexpand(true).build();
         let status_button = gtk4::Button::new();
         status_button.add_css_class("pill");
@@ -131,7 +145,7 @@ impl ReleasesView {
             .transition_type(gtk4::StackTransitionType::Crossfade)
             .vexpand(true)
             .build();
-        stack.add_named(&scrolled, Some(LIST_PAGE));
+        stack.add_named(&list_overlay, Some(LIST_PAGE));
         stack.add_named(&status, Some(STATUS_PAGE));
         let failure_state = SourceFailureState::new("star-new-symbolic");
         stack.add_named(failure_state.widget(), Some(FAILURE_PAGE));
@@ -151,6 +165,7 @@ impl ReleasesView {
             database_path,
             model,
             filter_bar: filter_bar.clone(),
+            end_of_results,
             rows: RefCell::new(Vec::new()),
             cached_items: Cell::new(0),
             column_view: column_view.clone(),
@@ -224,17 +239,17 @@ impl ReleasesView {
         }
     }
 
-    /// SEARCH-8: applies this section's query (FIL-1d: title and artist).
+    /// SEARCH-8a: applies this view's query (FIL-1d: title and artist).
     pub(in crate::ui) fn set_search_query(&self, query: &str) {
         self.shared.filter_bar.set_query(query);
     }
 
-    /// SEARCH-8: the bar removed the query itself, so the entry must follow.
+    /// SEARCH-8a: the bar removed the query itself, so the entry must follow.
     pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
         self.shared.filter_bar.set_on_query_changed(callback);
     }
 
-    /// FIL-2: "Clear all" for this section — its query and its facets.
+    /// FIL-2a: "Clear all" for this view — its query and its facets.
     ///
     /// The shell reaches for this when a search found nothing here, so it has
     /// to open the catalog as wide as it goes. The filter row's own "Clear
@@ -293,6 +308,14 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let total = scoped.widest_total;
     let latest = artist_news::latest_fetched_at(&shared.conn)?;
     shared.filter_bar.set_counts(rows.len(), total);
+    shared
+        .end_of_results
+        .update(crate::ui::end_of_results::EndOfResultsInput {
+            shown: rows.len(),
+            total,
+            query,
+            facets_restrict: release_facets_restrict(&filter),
+        });
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
     shared.cached_items.set(total);
@@ -306,6 +329,11 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     }
     render_current_failure(shared);
     Ok(())
+}
+
+fn release_facets_restrict(filter: &artist_news::ReleasesFilter) -> bool {
+    !(filter.release_types.is_empty() || filter.release_types.is_all())
+        || filter.window != artist_news::ReleaseWindow::All
 }
 
 fn apply_empty_state(shared: &Shared, state: ReleasesEmptyState, total: usize) {
@@ -638,160 +666,5 @@ fn wire_sorting(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn history_entry(title: &str, artist: &str) -> HistoryEntry {
-        HistoryEntry {
-            release_group_mbid: format!("mbid-{title}"),
-            artist_name: artist.to_owned(),
-            title: title.to_owned(),
-            release_type: "Album".into(),
-            first_release_date: "2026-08-05".into(),
-            first_seen: None,
-            seen_at: None,
-            hidden: false,
-            hidden_at: None,
-            presence: reprise_core::artist_news::LibraryPresence::Absent,
-            announce_url: None,
-            track_count: None,
-            local_track_count: 0,
-        }
-    }
-
-    /// UX FIL-1d: the Releases query matches **title and artist** — the two
-    /// fields its chip names — case-insensitively and mid-word.
-    #[test]
-    fn fil_1d_releases_query_matches_title_and_artist_only() {
-        let rows = vec![
-            history_entry("Pain Remains", "Lorna Shore"),
-            history_entry("Antwerpen Sessions", "Quiet Hands"),
-            history_entry("Elsewhere", "Sanguisugabogg"),
-        ];
-
-        let titles = |query: &str| {
-            releases_matching(rows.clone(), query)
-                .into_iter()
-                .map(|entry| entry.title)
-                .collect::<Vec<_>>()
-        };
-
-        assert_eq!(titles("wer"), ["Antwerpen Sessions"]);
-        assert_eq!(titles("LORNA"), ["Pain Remains"]);
-        assert_eq!(titles("remains"), ["Pain Remains"]);
-        assert_eq!(titles("").len(), 3, "an empty query withholds nothing");
-        assert!(titles("cattle").is_empty());
-    }
-
-    fn pump_until(label: &str, condition: impl Fn() -> bool) {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !condition() {
-            while gtk4::glib::MainContext::default().iteration(false) {}
-            assert!(std::time::Instant::now() < deadline, "timed out: {label}");
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
-        gtk4::init().unwrap();
-        let conn = Rc::new(crate::test_db::open().unwrap());
-        let view = ReleasesView::new(conn, PathBuf::new());
-        let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
-        assert_eq!(root.observe_children().n_items(), 4);
-        let stack = root
-            .first_child()
-            .and_then(|child| child.next_sibling())
-            .and_then(|child| child.next_sibling())
-            .and_downcast::<gtk4::Stack>()
-            .unwrap();
-        let table = stack
-            .child_by_name(LIST_PAGE)
-            .and_downcast::<gtk4::ScrolledWindow>()
-            .and_then(|scrolled| scrolled.child())
-            .and_downcast::<gtk4::ColumnView>()
-            .unwrap();
-        assert_eq!(table.columns().n_items(), 6);
-        assert_eq!(
-            table
-                .columns()
-                .item(0)
-                .and_downcast::<gtk4::ColumnViewColumn>()
-                .unwrap()
-                .id()
-                .as_deref(),
-            Some("date")
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_22_fetch_action_replaces_stale_age_with_progress_then_updates_completion_age() {
-        gtk4::init().unwrap();
-        let conn = Rc::new(crate::test_db::open().unwrap());
-        reprise_core::modules::set_enabled(
-            &conn,
-            &reprise_core::modules::NEW_RELEASES_MODULE,
-            true,
-        )
-        .unwrap();
-        reprise_core::library::settings::set_new_releases_last_completed_at(
-            &conn,
-            chrono::Utc::now().timestamp() - 360,
-        )
-        .unwrap();
-
-        let path = conn.path().unwrap();
-        let view = ReleasesView::new(conn, path);
-        view.shared
-            .fetch_override
-            .replace(Some(std::sync::Arc::new(|path, publish| {
-                publish(artist_news::RefreshProgress {
-                    checked: 0,
-                    total: 1,
-                });
-                std::thread::sleep(std::time::Duration::from_millis(250));
-                let db = Db::open_migrated(Some(path))
-                    .map_err(|error| artist_news::NewsError::Database(error.to_string()))?;
-                reprise_core::library::settings::set_new_releases_last_completed_at(
-                    &db,
-                    chrono::Utc::now().timestamp(),
-                )
-                .map_err(|error| artist_news::NewsError::Database(error.to_string()))?;
-                publish(artist_news::RefreshProgress {
-                    checked: 1,
-                    total: 1,
-                });
-                Ok(artist_news::RefreshReport {
-                    artists_queued: 1,
-                    artists_fetched: 1,
-                    ..artist_news::RefreshReport::default()
-                })
-            })));
-        view.refresh();
-        let stale_age = view.shared.updated.text();
-        assert!(stale_age.contains("6 min ago"), "{stale_age}");
-
-        view.shared.fetch_button.emit_clicked();
-        assert!(!view.shared.updated.is_visible());
-        assert_eq!(
-            view.shared.fetch_stack.visible_child_name().as_deref(),
-            Some(FETCH_SPINNER_PAGE)
-        );
-        pump_until("determinate release progress", || {
-            view.shared.progress.text().as_deref() == Some("Checked 0 of 1 artists")
-        });
-        assert!(view.shared.progress.is_visible());
-
-        pump_until("release fetch completion", || !view.shared.fetching.get());
-        assert!(!view.shared.progress.is_visible());
-        assert!(view.shared.updated.is_visible());
-        assert_eq!(view.shared.updated.text().as_str(), "Updated just now");
-        assert!(view.shared.fetch_button.is_sensitive());
-        assert_eq!(
-            view.shared.fetch_stack.visible_child_name().as_deref(),
-            Some(FETCH_ICON_PAGE)
-        );
-    }
-}
+#[path = "releases_view_tests.rs"]
+mod tests;
