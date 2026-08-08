@@ -35,6 +35,10 @@ pub const DOCTOR_REMOTE_ON: &str = N_!("MusicBrainz on");
 pub const DOCTOR_REMOTE_OFF: &str = N_!("MusicBrainz off");
 pub const DOCTOR_RUN_SCAN: &str = N_!("Run Scan Now");
 pub const DOCTOR_SCANNING: &str = N_!("Checking tracks…");
+#[allow(dead_code)] // Wired by PERF-1 after the single-writer string package lands.
+pub const DOCTOR_PHASE_LOCAL: &str = N_!("Reading tags…");
+#[allow(dead_code)] // Wired by PERF-1 after the single-writer string package lands.
+pub const DOCTOR_PHASE_REMOTE: &str = N_!("Checking against MusicBrainz…");
 pub const DOCTOR_CASING_WHITESPACE: &str = N_!("Casing / Whitespace");
 pub const DOCTOR_MISSING_ALBUM_ARTIST: &str = N_!("Missing Album Artist");
 pub const DOCTOR_GENRE_VARIANTS: &str = N_!("Genre Variants");
@@ -124,6 +128,17 @@ pub fn doctor_scan_estimate(tracks: usize, minutes: usize) -> String {
             ("tracks", &tracks.to_string()),
             ("minutes", &minutes.to_string()),
         ],
+    )
+}
+
+#[allow(dead_code)] // Wired by PERF-5 after the single-writer string package lands.
+pub fn doctor_scan_estimate_tracks_only(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} track",
+        "{count} tracks",
+        count,
+        &[("count", &count_text)],
     )
 }
 
@@ -327,6 +342,39 @@ pub fn doctor_changes_and_albums(changes: usize, albums: usize) -> String {
     )
 }
 
+#[allow(dead_code)] // Wired by REV-2 after the single-writer string package lands.
+pub fn doctor_filter_scope(shown: usize, total: usize, filter: &str) -> String {
+    formatted(
+        N_!("{shown} of {total} · filtered by {filter}"),
+        &[
+            ("shown", &shown.to_string()),
+            ("total", &total.to_string()),
+            ("filter", filter),
+        ],
+    )
+}
+
+#[allow(dead_code)] // Wired by REV-4 after the single-writer string package lands.
+pub fn doctor_change_count_none_selected(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} change · none selected",
+        "{count} changes · none selected",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+#[allow(dead_code)] // Wired by REV-3 after the single-writer string package lands.
+pub fn doctor_conflicts_intro(count: usize) -> String {
+    formatted(
+        N_!(
+            "Your library spells these {count} names more than one way. Reprise will not guess. Pick one and the matching track changes appear above."
+        ),
+        &[("count", &count.to_string())],
+    )
+}
+
 pub fn doctor_conflict_scope(field: &str, tracks: usize) -> String {
     formatted(
         N_!("{field} · {tracks} tracks"),
@@ -476,4 +524,32 @@ pub fn doctor_review_category(class: &str, count: usize) -> String {
         N_!("{class} · {count}"),
         &[("class", class), ("count", &doctor_change_count(count))],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doc_9d_the_filter_scope_line_names_shown_total_and_filter() {
+        assert_eq!(DOCTOR_PHASE_LOCAL, "Reading tags…");
+        assert_eq!(DOCTOR_PHASE_REMOTE, "Checking against MusicBrainz…");
+        assert_eq!(
+            doctor_filter_scope(27, 390, "Year"),
+            "27 of 390 · filtered by Year"
+        );
+        assert_eq!(
+            doctor_change_count_none_selected(2),
+            "2 changes · none selected"
+        );
+        assert_eq!(doctor_scan_estimate_tracks_only(390), "390 tracks");
+        assert_eq!(
+            doctor_conflicts_intro(4),
+            "Your library spells these 4 names more than one way. Reprise will not guess. Pick one and the matching track changes appear above."
+        );
+        assert!(
+            !include_str!("strings_library_doctor.rs").contains("plural(\n        N_!("),
+            "plural forms must remain bare so xgettext emits msgid_plural"
+        );
+    }
 }
