@@ -5067,14 +5067,15 @@ msgstr ""
 msgid "Running since {time}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:588
-msgid "This phone cannot be recognised — runs are not written to the history."
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:587
+msgid "This phone has no stable identifier."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:590
 msgid ""
-"The entries below come from a session where it had a stable identifier. "
-"Unlock the phone before plugging it in and the history is kept."
+"Its settings and history are tied to this connection and may not be found "
+"again after you unplug it. Unlock the phone before plugging it in to give it "
+"a durable identity."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:593

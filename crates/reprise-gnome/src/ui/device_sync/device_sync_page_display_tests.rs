@@ -466,7 +466,10 @@ fn unrememberable_device_disables_hero_rename_with_the_history_explanation() {
 
     assert!(!surface.device_name.is_sensitive());
     let tooltip = surface.device_name.tooltip_text().unwrap_or_default();
-    assert!(tooltip.contains("runs are not written to the history"));
+    assert!(tooltip.contains("no stable identifier"));
+    assert!(tooltip.contains("settings and history"));
+    assert!(tooltip.contains("tied to this connection"));
+    assert!(!tooltip.contains("not written"));
     assert!(tooltip.contains("Unlock the phone before plugging it in"));
 }
 
