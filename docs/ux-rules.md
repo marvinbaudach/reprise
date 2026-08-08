@@ -4853,8 +4853,12 @@ listening statistics.
   replaces the section, exactly as a second search replaces the first. The
   country is resolved **once per dialog** from the stored app-level location's
   country code (`O-4`), falling back to the system locale — unlike `RAD-5`,
-  a location that carries no country falls through to the locale rather than
-  offering "Set location…", because this chip has a working answer either way.
+  where a countryless location turns "Near you" into a deep link that opens the
+  location setting in Preferences, a location that carries no country falls
+  through to the locale here, because this chip has a working answer either
+  way. A stored code that is not a storefront — two ASCII letters, the same
+  check the locale territory passes — falls through with it rather than being
+  handed to Apple.
   That same country drives the text search below it, so the chip and the
   results it sits above can never mean two different catalogs. The label uses
   the country **code**, matching `RAD-5`'s "Metal in DE": real country names
