@@ -374,7 +374,7 @@ fn doc_9d_every_number_recomputes_from_one_selection_state() {
 }
 
 #[test]
-fn doc_7a_review_remote_toggle_removes_selection_and_restores_local_result() {
+fn doc_7c_review_remote_toggle_removes_selection_and_restores_local_result() {
     let mut remote = proposal(1, DoctorField::Title, ProposalSource::MusicBrainz);
     remote.local_fallback = Some(DoctorLocalFallback::Proposal {
         proposed: DoctorValue::Text("local-title".into()),

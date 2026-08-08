@@ -98,7 +98,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn doc_7a_remote_opt_in_is_versioned_persistent_and_independent() {
+    fn doc_7c_remote_opt_in_is_versioned_persistent_and_independent() {
         let conn = Db::open_in_memory().unwrap();
 
         assert_eq!(

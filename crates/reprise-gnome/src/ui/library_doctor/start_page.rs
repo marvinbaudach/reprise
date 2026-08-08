@@ -445,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_7a_acoustid_unavailable_is_visible_only_for_remote_mode() {
+    fn doc_7c_acoustid_unavailable_is_visible_only_for_remote_mode() {
         assert!(show_acoustid_unavailable(true, false));
         assert!(!show_acoustid_unavailable(false, false));
         assert!(!show_acoustid_unavailable(true, true));
