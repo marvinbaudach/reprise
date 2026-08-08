@@ -1046,6 +1046,13 @@ result.
   proof that the file is still there. A device that was never scanned, or whose
   scan failed, keeps the inventory-only guard and schedules no such recovery;
   a matching file that is present remains untouched.
+- **MTP-53** [active] [gtk] — A phone is recognized as the same phone whether
+  it was plugged in before Reprise started or after: a listed mount whose root
+  URI matches a volume's activation root belongs to that volume immediately,
+  so the volume supplies identity, name, and icon before GIO links the two
+  objects or shadows its plumbing mount. A volume with no matching listed
+  mount remains disconnected, and an unshadowed MTP mount no volume claims
+  remains usable as a fallback.
 
 ## F. Settings & modals
 
