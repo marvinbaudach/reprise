@@ -33,6 +33,8 @@ pub const PODCAST_STATUS_RESUME_PERCENT: &str = N_!("Resume {percent} %");
 pub const PODCAST_STATUS_PLAYED: &str = N_!("Played");
 pub const PODCAST_TODAY: &str = N_!("Today");
 pub const PODCAST_YESTERDAY: &str = N_!("Yesterday");
+pub const PODCAST_LAST_EPISODE_TODAY: &str = N_!("New today");
+pub const PODCAST_LAST_EPISODE_YESTERDAY: &str = N_!("New yesterday");
 pub const PODCAST_DURATION_UNDER_MINUTE: &str = N_!("< 1 min");
 pub const PODCAST_DURATION_MINUTES: &str = N_!("{minutes} min");
 pub const PODCAST_DURATION_HOURS: &str = N_!("{hours} h {minutes}");
@@ -209,6 +211,40 @@ pub fn podcast_episode_count(count: usize) -> String {
         count,
         &[("count", &count_text)],
     )
+}
+
+pub fn podcast_last_episode_days(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "New {count} day ago",
+        "New {count} days ago",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_last_episode_weeks(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "New {count} week ago",
+        "New {count} weeks ago",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_last_episode_months(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} month ago",
+        "{count} months ago",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_last_episode_on(date: &str) -> String {
+    formatted(N_!("Last {date}"), &[("date", date)])
 }
 
 /// SRC-12b batch feedback. One message per batch, never one per episode, and
@@ -407,6 +443,14 @@ pub fn podcast_chip_genre(genre: &str) -> String {
     formatted(N_!("{genre} podcasts"), &[("genre", genre)])
 }
 
+pub fn podcast_chip_popular_in_country(country: &str) -> String {
+    formatted(N_!("Popular in {country}"), &[("country", country)])
+}
+
+pub fn podcast_charts_heading(country: &str) -> String {
+    formatted(N_!("PODCASTS · TOP IN {country}"), &[("country", country)])
+}
+
 /// `SRC-15`: the same chip on the YouTube page, where the results are
 /// channels rather than podcasts.
 pub fn youtube_chip_genre(genre: &str) -> String {
@@ -575,6 +619,18 @@ mod tests {
     fn episode_count_uses_singular_and_plural_copy() {
         assert_eq!(podcast_episode_count(1), "1 episode");
         assert_eq!(podcast_episode_count(23), "23 episodes");
+    }
+
+    #[test]
+    fn freshness_wording_pluralises_and_drops_new_past_five_weeks() {
+        assert_eq!(PODCAST_LAST_EPISODE_TODAY, "New today");
+        assert_eq!(PODCAST_LAST_EPISODE_YESTERDAY, "New yesterday");
+        assert_eq!(podcast_last_episode_days(4), "New 4 days ago");
+        assert_eq!(podcast_last_episode_weeks(2), "New 2 weeks ago");
+        assert_eq!(podcast_last_episode_months(3), "3 months ago");
+        assert_eq!(podcast_last_episode_on("Oct 2019"), "Last Oct 2019");
+        assert_eq!(podcast_chip_popular_in_country("DE"), "Popular in DE");
+        assert_eq!(podcast_charts_heading("DE"), "PODCASTS · TOP IN DE");
     }
 
     #[test]
