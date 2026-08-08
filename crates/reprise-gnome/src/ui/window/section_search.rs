@@ -78,6 +78,7 @@ pub(in crate::ui) struct SectionSearch {
     toggle: gtk4::glib::WeakRef<gtk4::ToggleButton>,
     key_capture: gtk4::glib::WeakRef<gtk4::Widget>,
     active: Cell<SearchScope>,
+    active_source: RefCell<Option<ViewSource>>,
     handlers: RefCell<BTreeMap<SearchScope, SectionHandlers>>,
     shell: RefCell<Option<ShellState>>,
 }
@@ -95,6 +96,7 @@ impl SectionSearch {
             toggle: toggle.downgrade(),
             key_capture: key_capture.clone().upcast::<gtk4::Widget>().downgrade(),
             active: Cell::new(SearchScope::Tracks),
+            active_source: RefCell::new(None),
             handlers: RefCell::new(BTreeMap::new()),
             shell: RefCell::new(None),
         });
@@ -201,12 +203,27 @@ impl SectionSearch {
         Some((scope, name))
     }
 
-    /// SEARCH-8a: a sidebar route starts a new search context even when two
-    /// destinations share the track-list scope. Metadata drills bypass this
-    /// clearing path, while Back restoration is applied later from the
-    /// history-owned `BrowserPlace`, not remembered here.
+    /// SEARCH-8a: a distinct sidebar source starts a new search context even
+    /// when both sources share the track-list scope. Re-routing the exact
+    /// active source is a no-op; source identity is tracked separately because
+    /// scope equality alone cannot distinguish Library from Recently Added.
+    /// Metadata drills bypass this clearing path, while Back restoration is
+    /// applied later from the history-owned `BrowserPlace`, not remembered
+    /// here.
     pub(in crate::ui) fn activate_source(self: &Rc<Self>, source: &ViewSource, section_name: &str) {
-        self.switch_view(search_scope::scope_for(source), section_name);
+        let scope = search_scope::scope_for(source);
+        let already_active = self.active.get() == scope
+            && self
+                .active_source
+                .borrow()
+                .as_ref()
+                .is_some_and(|active| active == source);
+        if already_active {
+            self.sync_affordance(section_name);
+            return;
+        }
+        *self.active_source.borrow_mut() = Some(source.clone());
+        self.switch_view(scope, section_name);
     }
 
     pub(in crate::ui) fn activate(self: &Rc<Self>, scope: SearchScope, section_name: &str) {
