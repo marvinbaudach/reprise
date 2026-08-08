@@ -143,7 +143,7 @@ fn build_delta_row(row: ConcertDeltaPresentation, on_open_url: &OnOpenUrl) -> gt
     artist.set_xalign(0.0);
     artist.set_hexpand(true);
     let ticket = gtk4::Label::new(row.ticket_label.as_deref());
-    ticket.add_css_class("dim-label");
+    ticket.add_css_class("reprise-text-secondary");
     ticket.set_visible(row.ticket_label.is_some());
     let title = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     title.append(&artist);
@@ -151,10 +151,10 @@ fn build_delta_row(row: ConcertDeltaPresentation, on_open_url: &OnOpenUrl) -> gt
 
     let meta = gtk4::Label::new(Some(&row.meta));
     meta.set_xalign(0.0);
-    meta.add_css_class("dim-label");
+    meta.add_css_class("reprise-text-secondary");
     let distance = gtk4::Label::new(row.distance.as_deref());
     distance.set_xalign(0.0);
-    distance.add_css_class("dim-label");
+    distance.add_css_class("reprise-text-secondary");
     distance.set_visible(row.distance.is_some());
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     content.append(&title);

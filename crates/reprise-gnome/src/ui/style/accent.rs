@@ -61,6 +61,57 @@ pub(in crate::ui) fn accent_rgba() -> gtk4::gdk::RGBA {
     }
 }
 
+/// The AA threshold every accent foreground must clear (CONTRAST-5).
+pub(in crate::ui::style) const ACCENT_TEXT_MINIMUM_RATIO: f64 = 4.5;
+
+fn accent_text_rgb(accent: [u8; 3], background: [u8; 3], is_dark: bool) -> [u8; 3] {
+    use super::color_math::{ensure_contrast_by_lightness, max_contrast_monochrome};
+
+    // A sufficiently saturated accent cannot always reach the ratio by
+    // lightness alone. Legibility outranks staying on-hue, so that case drops
+    // the tint entirely rather than shipping text nobody can read.
+    ensure_contrast_by_lightness(accent, background, is_dark, ACCENT_TEXT_MINIMUM_RATIO)
+        .unwrap_or_else(|| max_contrast_monochrome(background))
+}
+
+fn rgb_hex(color: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
+}
+
+/// The accent actually in force, as RGB. Both the theme's tinted surfaces and
+/// the derived text colour need it, and they must agree on one value.
+pub(in crate::ui::style) fn effective_accent_rgb(source: AccentSource) -> [u8; 3] {
+    use super::color_math::parse_hex_rgb;
+
+    match source {
+        AccentSource::App => {
+            parse_hex_rgb(APP_ACCENT).expect("the compile-time Reprise accent is valid #RRGGBB")
+        }
+        AccentSource::System if gtk4::is_initialized_main_thread() => {
+            let rgba = libadwaita::StyleManager::default().accent_color_rgba();
+            [
+                (rgba.red() * 255.0).round() as u8,
+                (rgba.green() * 255.0).round() as u8,
+                (rgba.blue() * 255.0).round() as u8,
+            ]
+        }
+        // `theme_css` is also a headless pure-test seam. Installed theme CSS
+        // is only built after GTK initialization, where the branch above reads
+        // the actual system RGBA and tracks later change notifications.
+        AccentSource::System => {
+            parse_hex_rgb(APP_ACCENT).expect("the compile-time Reprise accent is valid #RRGGBB")
+        }
+    }
+}
+
+/// Text/glyph accent derived from the effective accent for this appearance.
+/// Unlike libadwaita's surface-oriented accent roles, this role is measured
+/// directly against the appearance's critical surface before it enters
+/// app-authored CSS.
+pub(super) fn accent_text_color(accent: [u8; 3], background: [u8; 3], is_dark: bool) -> String {
+    rgb_hex(accent_text_rgb(accent, background, is_dark))
+}
+
 pub(super) fn set_current(source: AccentSource) {
     CURRENT_SOURCE.with(|current| current.set(source));
 }
@@ -90,6 +141,29 @@ pub(super) fn css_overrides(source: AccentSource) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn luminance(rgb: [u8; 3]) -> f64 {
+        let linear = |channel: u8| {
+            let channel = f64::from(channel) / 255.0;
+            if channel <= 0.04045 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+    }
+
+    fn contrast(foreground: [u8; 3], background: [u8; 3]) -> f64 {
+        let foreground = luminance(foreground);
+        let background = luminance(background);
+        let (lighter, darker) = if foreground > background {
+            (foreground, background)
+        } else {
+            (background, foreground)
+        };
+        (lighter + 0.05) / (darker + 0.05)
+    }
 
     #[test]
     fn accent_source_ids_round_trip_and_unknown_ids_use_the_default() {
@@ -150,6 +224,72 @@ mod tests {
         let ratio = (background + 0.05) / (foreground + 0.05);
         assert!(ratio >= 4.5, "app accent contrast is only {ratio:.2}:1");
         assert!((ratio - 11.164).abs() < 0.001);
+    }
+
+    #[test]
+    fn contrast_5_derived_accent_text_meets_ratio_on_every_live_surface() {
+        use super::super::color_math::parse_hex_rgb;
+        use super::super::theme::Theme;
+
+        // Read the palettes live. An earlier version copied the hex values into
+        // this test, which would have kept passing through the very palette
+        // retune the module doc says is coming.
+        let accents = [
+            APP_ACCENT, // the brand teal
+            "#3584e4",  // GNOME blue
+            "#f8f7ff",  // a near-white system accent
+            "#101318",  // a near-black system accent
+            "#ff3bd4",  // saturated magenta: the case lightness alone cannot fix
+        ];
+
+        let chip_tint: f64 = super::super::tokens::CHIP_BG_HOVER_ALPHA
+            .parse()
+            .expect("the chip tint token is a decimal fraction");
+
+        for theme in Theme::all() {
+            for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
+                for accent in accents {
+                    let accent_rgb = parse_hex_rgb(accent).expect("test accent is valid hex");
+                    let critical = palette.critical_accent_surface(is_dark, accent_rgb);
+                    let derived = accent_text_rgb(accent_rgb, critical, is_dark);
+
+                    for surface in palette.surfaces() {
+                        let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                        // Both the bare surface and the accent-tinted chip fill
+                        // that can sit on it. The role is painted app-wide; the
+                        // critical surface is only the worst case it must
+                        // survive, so every other one has to follow from it.
+                        for background in [
+                            plain,
+                            super::super::color_math::composite(accent_rgb, plain, chip_tint),
+                        ] {
+                            let ratio = contrast(derived, background);
+                            assert!(
+                                ratio >= ACCENT_TEXT_MINIMUM_RATIO,
+                                "{theme:?} {}: {accent} derived against {critical:?} \
+                                 reaches only {ratio:.2}:1 on {background:?} (from {surface})",
+                                if is_dark { "dark" } else { "light" }
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn contrast_5_the_app_accent_survives_unchanged_where_it_already_passes() {
+        use super::super::color_math::parse_hex_rgb;
+        use super::super::theme::Theme;
+
+        let palette = Theme::PerpetualRain.palette();
+        let accent = parse_hex_rgb(APP_ACCENT).expect("the brand accent is valid hex");
+        assert_eq!(
+            accent_text_rgb(accent, palette.critical_accent_surface(true, accent), true),
+            accent,
+            "the brand teal clears every dark surface, tinted chips included, \
+             and must not be retinted"
+        );
     }
 
     #[test]

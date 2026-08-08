@@ -26,7 +26,7 @@ pub(in crate::ui) fn css() -> String {
          \
          /* --- Applied-to-all hint --- */
          .reprise-tag-hint {{ \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            font-size: 12px; }}\n\
          \
          /* --- Autocomplete popover. Its complete contents node is the only \
@@ -60,10 +60,10 @@ pub(in crate::ui) fn css() -> String {
            color: @window_fg_color; }}\n\
          .reprise-autocomplete-match, \
          .reprise-autocomplete-list row:selected .reprise-autocomplete-value {{ \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            font-weight: 650; }}\n\
          .reprise-autocomplete-enter-hint {{ \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            opacity: 0; }}\n\
          .reprise-autocomplete-list row:selected .reprise-autocomplete-enter-hint {{ \
            opacity: 1; }}\n\
@@ -103,7 +103,7 @@ pub(in crate::ui) fn css() -> String {
            color: @reprise_dim_fg_color; \
            padding: 0 4px; }}\n\
          .reprise-tag-field-annotation.accent {{ \
-           color: @accent_color; }}\n\
+           color: @reprise_accent_text_color; }}\n\
          \
          /* --- 3a layout: cover-left header row + entry grid (TAG-2/TAG-3) --- */
          .reprise-tag-field {{ \
@@ -165,7 +165,7 @@ pub(in crate::ui) fn css() -> String {
          .reprise-tag-pending-header {{ \
            font-size: 12px; \
            font-weight: 600; \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            margin-bottom: 4px; }}\n\
          .reprise-tag-pending-item {{ \
            padding: 4px 0; }}\n\
@@ -187,7 +187,7 @@ pub(in crate::ui) fn css() -> String {
          .reprise-tag-review-summary {{ \
            font-size: 12px; \
            font-weight: 600; \
-           color: @accent_color; }}\n\
+           color: @reprise_accent_text_color; }}\n\
          .reprise-tag-review expander {{ \
            font-size: 12px; \
            margin-top: 4px; }}\n\
@@ -208,7 +208,7 @@ pub(in crate::ui) fn css() -> String {
          .reprise-tag-stars button:hover {{ \
            background: alpha(@accent_bg_color, 0.15); }}\n\
          .reprise-tag-stars .star-filled {{ \
-           color: @accent_color; }}\n\
+           color: @reprise_accent_text_color; }}\n\
          .reprise-tag-stars .star-outline {{ \
            color: alpha(@window_fg_color, 0.35); }}\n\
          \

@@ -285,8 +285,8 @@ pub(in crate::ui) fn css() -> String {
          .{ROW_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
          .{HANDLE_CLASS} {{ opacity: {HANDLE_REST_OPACITY}; \
            transition: opacity {TRANSITION}, color {TRANSITION}; }}\n\
-         .{ROW_CLASS}:hover .{HANDLE_CLASS} {{ opacity: {HANDLE_ACTIVE_OPACITY}; color: @accent_color; }}\n\
-         .{ROW_CLASS}:drop(active) .{HANDLE_CLASS} {{ opacity: 1; color: @accent_color; }}\n\
+         .{ROW_CLASS}:hover .{HANDLE_CLASS} {{ opacity: {HANDLE_ACTIVE_OPACITY}; color: @reprise_accent_text_color; }}\n\
+         .{ROW_CLASS}:drop(active) .{HANDLE_CLASS} {{ opacity: 1; color: @reprise_accent_text_color; }}\n\
          .{DROP_BEFORE_CLASS}:drop(active) {{ box-shadow: inset 0 {DROP_INDICATOR_THICKNESS} @accent_color; }}\n\
          .{DROP_AFTER_CLASS}:drop(active) {{ box-shadow: inset 0 -{DROP_INDICATOR_THICKNESS} @accent_color; }}"
     )

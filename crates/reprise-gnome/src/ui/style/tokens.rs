@@ -14,10 +14,17 @@ pub(in crate::ui) const SECONDARY_TEXT_ALPHA: f64 = 0.70;
 pub(in crate::ui) const HINT_TEXT_ALPHA: f64 = 0.50;
 
 /// Resting background alpha for filter chips (over `@accent_bg_color`).
-pub(in crate::ui) const CHIP_BG_ALPHA: &str = "0.22";
+///
+/// Bounded by the chip's own label: the fill drags the surface toward the
+/// accent, and accent text on accent tint has nowhere to go. At the previous
+/// 0.22/0.32 the label measured 4.17:1 and 3.37:1 — below AA. Lightening the
+/// accent instead would need a near-white pastel that wrecks the brand colour
+/// everywhere else, so the fill yields and the accent stays itself.
+pub(in crate::ui) const CHIP_BG_ALPHA: &str = "0.14";
 
-/// Hover background alpha for filter chips.
-pub(in crate::ui) const CHIP_BG_HOVER_ALPHA: &str = "0.32";
+/// Hover background alpha for filter chips. See [`CHIP_BG_ALPHA`] for why this
+/// is capped rather than chosen freely.
+pub(in crate::ui) const CHIP_BG_HOVER_ALPHA: &str = "0.18";
 
 /// Border alpha of the Layout preference preview cards (over
 /// `@window_fg_color`).
