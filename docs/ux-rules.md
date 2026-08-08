@@ -3588,6 +3588,25 @@ means deterministic and high-confidence, never „without review".
   „AcoustID unavailable", while Local and pure MusicBrainz resolution
   keep working.
 
+- **DOC-1f** [active] [core] — **Matcher output passes two guard rails before
+  it becomes a proposal.** First, `Various Artists` is a structural
+  placeholder, not a name: it never replaces a non-empty Artist or Album
+  Artist, and it is only a valid proposal for an empty local field when the
+  matched release demonstrably contains more than one distinct track artist.
+  Without that evidence, no proposal is created. The placeholder is recognized
+  exactly through a short curated name list and through the MusicBrainz special
+  entity `89ad4ac3-39f7-470e-963a-56509c546377`; localized spellings are
+  deliberately excluded because a fuzzy list would eventually match a real
+  band. Second, a proposal that reduces specificity — a named value to a
+  placeholder, a full title to a truncated title, or a track-tag year to an
+  earlier release-group year — receives a confidence cap and never starts
+  selected. *Tests:*
+  `doc_1f_various_artists_never_overwrites_a_named_album_artist`,
+  `doc_1f_a_placeholder_needs_evidence_of_several_track_artists`,
+  `doc_1f_the_placeholder_is_recognised_by_name_and_by_mbid`,
+  `doc_1f_a_localised_placeholder_spelling_is_not_recognised`,
+  `doc_1f_a_single_artist_album_on_a_compilation_produces_no_album_artist_proposal`.
+
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
   Current View contains all matches of the current source, search,
@@ -3665,7 +3684,7 @@ means deterministic and high-confidence, never „without review".
   `doc_3b_breakpoint_changes_layout_without_changing_row_identity`,
   `doc_3b_review_page_virtualizes_rows_without_horizontal_scroll`.
 
-- **DOC-4a** [active] [core] — **Confidence never chooses for the
+- **DOC-4a** [replaced by DOC-4c] [core] — **Confidence never chooses for the
   user.** Unambiguous local fixes are preselected; remote suggestions,
   ties, stale rows, and conflicts never are. A validly, directly
   resolved MBID carries 100%, otherwise the native MusicBrainz or
@@ -3686,6 +3705,27 @@ means deterministic and high-confidence, never „without review".
   accessible help text carry the same state. Candidate details name
   source, score, artist, title, album, year, and duration deviation,
   where available.
+
+- **DOC-4c** [active] [core] — **Confidence does not select, and exactly one
+  predicate decides initial selection.** A validly and directly resolved MBID
+  carries 100%; otherwise the native MusicBrainz or AcoustID value applies.
+  Values are never averaged; when multiple sources agree, the lower value
+  applies; a lead below ten points is no lead; and anything below 50% starts
+  unreviewed. Every reviewable row in the Ready state starts selected except
+  when it reduces specificity under DOC-1f or is below 50%. This condition
+  exists exactly once in the code; a second copy is a defect.
+  `DoctorProposal.preselected` remains the tier marker for the quiet write and
+  is never set for remote proposals. An explicit user action — `All`, or a
+  selection through the agent adapter — may select any reviewable row because
+  it is not initial selection. *Tests:*
+  `doc_4c_remote_is_never_preselected`,
+  `doc_4c_a_specificity_reducing_proposal_is_capped_and_never_preselected`,
+  `doc_4c_a_truncated_title_is_a_specificity_loss`,
+  `doc_4c_an_earlier_release_group_year_on_a_track_tag_is_a_specificity_loss`,
+  `doc_4c_a_capped_proposal_does_not_start_selected`,
+  `doc_4c_a_row_below_fifty_percent_does_not_start_selected`,
+  `doc_4c_never_preselect_survives_a_store_round_trip`,
+  `doc_4c_a_capped_row_reaches_the_review_unselected`.
 
 - **DOC-5a** [active] [core] — **Every Library Doctor write goes
   through review.** Neither scan, nor 26a, nor the plugin row has a
@@ -3843,6 +3883,10 @@ means deterministic and high-confidence, never „without review".
   `doc_8b_all_preset_selects_every_ready_row_and_none_clears_them`,
   `doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary`,
   `doc_8b_a_scan_with_no_auto_rows_creates_no_job`.
+  *Amended 2026-08-08: “Everything else is shown for review, preselected” has
+  the two DOC-4c exceptions: specificity-reducing rows and rows below 50% start
+  unselected. The single predicate that decides initial selection is
+  `starts_selected`.*
 
 - **DOC-8c** [active] [gtk] — **The start page owns the run.** Scope is a
   segmented control with three always-visible options. The remote toggle
@@ -3928,6 +3972,8 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_conflicts_sit_at_the_end_and_skip_all_clears_them`,
   `doc_9b_footer_counts_the_changes_that_will_be_written`,
   `doc_9b_the_album_pill_counts_written_changes_not_display_rows`.
+  *Amended 2026-08-08: “every reviewable row starts selected” means every Ready
+  row except the two cases excluded by DOC-4c.*
 
 - **DOC-9c** [active] [gtk] — **After the write, and after a clean scan, the
   Doctor says so on its own page.** Post-apply names updated tracks, written
