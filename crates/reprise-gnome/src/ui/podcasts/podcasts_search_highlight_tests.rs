@@ -50,7 +50,7 @@ fn label_has_hit_tint(label: &gtk4::Label) -> bool {
 fn rendered_episode_title(
     kind: PodcastKind,
     title: &str,
-    parts: TitleParts,
+    parts: &TitleParts,
     query: &str,
 ) -> (gtk4::Widget, gtk4::Label) {
     let row = episode(kind, title);
@@ -61,7 +61,7 @@ fn rendered_episode_title(
     };
     let rendered = episode_row(
         &row,
-        &parts,
+        parts,
         &mut widgets,
         &EpisodeRenderContext {
             mark: None,
@@ -95,7 +95,7 @@ fn fil_5a_podcasts_marks_episode_title_but_not_details() {
     let (row, title) = rendered_episode_title(
         PodcastKind::Rss,
         "A compact episode title",
-        TitleParts {
+        &TitleParts {
             distinct: "A compact episode title".into(),
             dimmed: None,
         },
@@ -126,7 +126,7 @@ fn fil_5a_youtube_marks_a_hit_in_the_dimmed_channel_tail() {
     let (row, title) = rendered_episode_title(
         PodcastKind::Youtube,
         "A compact subject | Werkbank",
-        TitleParts {
+        &TitleParts {
             distinct: "A compact subject".into(),
             dimmed: Some(" | Werkbank".into()),
         },

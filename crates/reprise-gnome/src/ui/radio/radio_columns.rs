@@ -25,6 +25,19 @@ struct ColumnTitle<'a> {
     playback_accent: bool,
 }
 
+#[derive(Clone, Copy)]
+struct TextColumnSpec<'a> {
+    title: ColumnTitle<'a>,
+    sizing: widths::Sizing,
+    query: Option<&'a crate::ui::search_highlight::QuerySource>,
+}
+
+struct TextColumnContext<'a> {
+    live_state: &'a LiveState,
+    connectivity: &'a ConnectivitySource,
+    cells: &'a Rc<RadioLiveCells>,
+}
+
 fn apply_playing_style(widget: &gtk4::Widget, playing: bool) {
     if playing {
         widget.add_css_class("reprise-radio-playing");
@@ -37,14 +50,18 @@ fn apply_playing_style(widget: &gtk4::Widget, playing: bool) {
 /// must carry one (STYLE-9).
 fn text_column(
     view: &gtk4::ColumnView,
-    title: ColumnTitle<'_>,
-    sizing: widths::Sizing,
+    spec: TextColumnSpec<'_>,
     render: impl Fn(&StationRow, &RadioLiveState) -> String + 'static,
-    query: Option<&crate::ui::search_highlight::QuerySource>,
-    live_state: &LiveState,
-    connectivity: &ConnectivitySource,
-    cells: &Rc<RadioLiveCells>,
+    context: &TextColumnContext<'_>,
 ) {
+    let TextColumnSpec {
+        title,
+        sizing,
+        query,
+    } = spec;
+    let live_state = context.live_state.clone();
+    let connectivity = context.connectivity.clone();
+    let cells = context.cells.clone();
     let is_title = title.playback_accent;
     let factory = gtk4::SignalListItemFactory::new();
     let live_for_gesture = live_state.clone();
@@ -299,73 +316,78 @@ pub(super) fn append_columns(
 ) {
     artwork_column(view, live_state, connectivity);
     state_column(view, live_state, connectivity, cells);
+    let context = TextColumnContext {
+        live_state,
+        connectivity,
+        cells,
+    };
     // Station is the filler: it owns whatever width the pinned columns leave.
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_STATION),
-            playback_accent: true,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_STATION),
+                playback_accent: true,
+            },
+            sizing: widths::Sizing::filler(widths::TITLE_MIN),
+            query: Some(query),
         },
-        widths::Sizing::filler(widths::TITLE_MIN),
         |row, _| row.name.clone(),
-        Some(query),
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_GENRE),
-            playback_accent: false,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_GENRE),
+                playback_accent: false,
+            },
+            sizing: widths::Sizing::pinned(widths::LABEL),
+            query: None,
         },
-        widths::Sizing::pinned(widths::LABEL),
         |row, _| format_genre(row.genre.as_deref()),
-        None,
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_BITRATE),
-            playback_accent: false,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_BITRATE),
+                playback_accent: false,
+            },
+            sizing: widths::Sizing::pinned(widths::NUMERIC),
+            query: None,
         },
-        widths::Sizing::pinned(widths::NUMERIC),
         |row, _| format_bitrate(row.bitrate_kbps),
-        None,
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_COUNTRY),
-            playback_accent: false,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_COUNTRY),
+                playback_accent: false,
+            },
+            sizing: widths::Sizing::pinned(widths::SHORT_LABEL),
+            query: None,
         },
-        widths::Sizing::pinned(widths::SHORT_LABEL),
         |row, _| format_country(row.country_code.as_deref()),
-        None,
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
     // Now Playing carries live stream metadata — the most volatile text in
     // the table, and the reason this column must never size itself.
     text_column(
         view,
-        ColumnTitle {
-            text: &strings::text(strings::RADIO_NOW_PLAYING),
-            playback_accent: false,
+        TextColumnSpec {
+            title: ColumnTitle {
+                text: &strings::text(strings::RADIO_NOW_PLAYING),
+                playback_accent: false,
+            },
+            sizing: widths::Sizing::pinned(widths::NAME),
+            query: None,
         },
-        widths::Sizing::pinned(widths::NAME),
         |row, live| now_playing(row.id, live),
-        None,
-        live_state,
-        connectivity,
-        cells,
+        &context,
     );
 }
 

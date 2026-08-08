@@ -135,16 +135,27 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
 /// `sizing` fixes the column's width. Concerts' only filler is the artist
 /// column, so every column built here is pinned outright; see [`widths`]
 /// (STYLE-9).
-fn text_column(
-    view: &gtk4::ColumnView,
-    title: &str,
-    id: Option<&str>,
+struct TextColumnSpec<'a> {
+    title: String,
+    id: Option<&'a str>,
     sizing: widths::Sizing,
     numeric: bool,
-    query: Option<&crate::ui::search_highlight::QuerySource>,
+    query: Option<&'a crate::ui::search_highlight::QuerySource>,
+}
+
+fn text_column(
+    view: &gtk4::ColumnView,
+    spec: TextColumnSpec<'_>,
     render: impl Fn(&ConcertRow) -> String + 'static,
     tooltip: impl Fn(&ConcertRow) -> Option<String> + 'static,
 ) -> gtk4::ColumnViewColumn {
+    let TextColumnSpec {
+        title,
+        id,
+        sizing,
+        numeric,
+        query,
+    } = spec;
     let factory = gtk4::SignalListItemFactory::new();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -191,7 +202,7 @@ fn text_column(
     });
 
     let column = gtk4::ColumnViewColumn::builder()
-        .title(title)
+        .title(&title)
         .factory(&factory)
         .resizable(true)
         .build();
@@ -293,42 +304,50 @@ pub(super) fn append_columns(
 ) -> SortColumns {
     let date = text_column(
         view,
-        &strings::text(strings::CONCERTS_DATE),
-        Some("date"),
-        widths::Sizing::pinned(widths::DATE),
-        false,
-        None,
+        TextColumnSpec {
+            title: strings::text(strings::CONCERTS_DATE),
+            id: Some("date"),
+            sizing: widths::Sizing::pinned(widths::DATE),
+            numeric: false,
+            query: None,
+        },
         |row| format_event_date(&row.date_key, Local::now().date_naive()),
         |_| None,
     );
     artist_column(view, query);
     text_column(
         view,
-        &strings::text(strings::CONCERTS_CITY),
-        None,
-        widths::Sizing::pinned(widths::LABEL),
-        false,
-        None,
+        TextColumnSpec {
+            title: strings::text(strings::CONCERTS_CITY),
+            id: None,
+            sizing: widths::Sizing::pinned(widths::LABEL),
+            numeric: false,
+            query: None,
+        },
         |row| row.city.clone(),
         city_tooltip,
     );
     text_column(
         view,
-        &strings::text(strings::CONCERTS_VENUE),
-        None,
-        widths::Sizing::pinned(widths::NAME),
-        false,
-        Some(query),
+        TextColumnSpec {
+            title: strings::text(strings::CONCERTS_VENUE),
+            id: None,
+            sizing: widths::Sizing::pinned(widths::NAME),
+            numeric: false,
+            query: Some(query),
+        },
         |row| row.venue.clone(),
         |_| None,
     );
     let distance = text_column(
         view,
-        &strings::text(strings::CONCERTS_DISTANCE),
-        Some("distance"),
-        widths::Sizing::pinned(widths::NUMERIC),
-        true,
-        None,
+        TextColumnSpec {
+            title: strings::text(strings::CONCERTS_DISTANCE),
+            id: Some("distance"),
+            sizing: widths::Sizing::pinned(widths::NUMERIC),
+            numeric: true,
+            query: None,
+        },
         |row| format_distance_km(row.distance_km),
         |_| None,
     );
