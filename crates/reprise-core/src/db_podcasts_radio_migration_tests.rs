@@ -323,8 +323,8 @@ fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync(
     conn.execute(
         "INSERT INTO device_settings
          (device_serial, device_name, selection_json, transfer_profile,
-          ratings_back, remove_deleted)
-         VALUES ('phone', 'Phone', '[]', 'original', 0, 1)",
+          remove_deleted)
+         VALUES ('phone', 'Phone', '[]', 'original', 1)",
         [],
     )
     .unwrap();

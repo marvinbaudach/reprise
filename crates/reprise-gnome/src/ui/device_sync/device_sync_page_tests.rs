@@ -77,7 +77,6 @@ fn device() -> DeviceView {
             selection: DeviceSelection::Sources(vec![playlist.source.clone()]),
             profile: TransferProfile::Mp3(Mp3Quality::Kbps256),
             opus_bitrate: 0,
-            ratings_back: false,
             remove_deleted: false,
             sync_automatically: true,
             prepare_before_sync: true,

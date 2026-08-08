@@ -15,7 +15,6 @@ fn podcast_settings(device_id: &str, remove_deleted: bool) -> DeviceSettings {
         selection: DeviceSelection::Sources(Vec::new()),
         profile: reprise_core::device_sync::TransferProfile::default(),
         opus_bitrate: 0,
-        ratings_back: false,
         remove_deleted,
         sync_automatically: false,
         prepare_before_sync: true,

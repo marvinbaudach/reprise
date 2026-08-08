@@ -145,6 +145,7 @@ pub struct ListenReportApplySummary {
     pub ratings_applied: usize,
     pub ratings_ignored: usize,
     pub unresolved: usize,
+    pub unresolved_paths: Vec<String>,
     pub acknowledged_sequence: Option<u64>,
 }
 
@@ -170,6 +171,7 @@ pub fn apply_listen_report(
                 resolve_track(conn, device_serial, &entry.device_path)?
             else {
                 summary.unresolved += 1;
+                summary.unresolved_paths.push(entry.device_path.clone());
                 continue;
             };
             let ms_played = i64::try_from(entry.ms_played)
@@ -192,6 +194,7 @@ pub fn apply_listen_report(
             let Some((track_id, _)) = resolve_track(conn, device_serial, &entry.device_path)?
             else {
                 summary.unresolved += 1;
+                summary.unresolved_paths.push(entry.device_path.clone());
                 continue;
             };
             if crate::library::stats::set_rating_if_newer_in(

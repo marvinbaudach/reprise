@@ -110,6 +110,8 @@ pub struct RunSummary {
     pub skipped: u32,
     pub deleted: u32,
     pub failed: u32,
+    pub listens_applied: u32,
+    pub ratings_applied: u32,
     pub bytes_copied: u64,
     pub detail: Option<String>,
 }
@@ -121,6 +123,8 @@ pub struct RunCounters {
     pub skipped: u32,
     pub deleted: u32,
     pub failed: u32,
+    pub listens_applied: u32,
+    pub ratings_applied: u32,
     pub bytes_copied: u64,
 }
 
@@ -149,6 +153,8 @@ pub fn summarize(outcome: &SyncOutcome, counters: RunCounters, finished_at: i64)
         skipped: counters.skipped,
         deleted: counters.deleted,
         failed: counters.failed,
+        listens_applied: counters.listens_applied,
+        ratings_applied: counters.ratings_applied,
         bytes_copied: counters.bytes_copied,
         detail,
     }
@@ -178,6 +184,8 @@ pub struct RunRecord {
     pub skipped: u32,
     pub deleted: u32,
     pub failed: u32,
+    pub listens_applied: u32,
+    pub ratings_applied: u32,
     pub bytes_copied: u64,
     pub detail: Option<String>,
 }
@@ -245,7 +253,8 @@ pub fn finish_run(db: &crate::db::Db, run: i64, summary: &RunSummary) -> Result<
     conn.execute(
         "UPDATE sync_runs SET \
            finished_at = ?2, outcome = ?3, copied = ?4, skipped = ?5, deleted = ?6, \
-           failed = ?7, bytes_copied = ?8, detail = ?9 \
+           failed = ?7, listens_applied = ?8, ratings_applied = ?9, \
+           bytes_copied = ?10, detail = ?11 \
          WHERE id = ?1",
         rusqlite::params![
             run,
@@ -255,6 +264,8 @@ pub fn finish_run(db: &crate::db::Db, run: i64, summary: &RunSummary) -> Result<
             summary.skipped,
             summary.deleted,
             summary.failed,
+            summary.listens_applied,
+            summary.ratings_applied,
             i64::try_from(summary.bytes_copied).unwrap_or(i64::MAX),
             summary.detail,
         ],
@@ -291,7 +302,7 @@ pub fn note_deviation(db: &crate::db::Db, run: i64, deviation: &Deviation) -> Re
 
 const RUN_COLUMNS: &str = "id, device_serial, device_name, transfer_profile, started_at, \
                            finished_at, outcome, planned, copied, skipped, deleted, failed, \
-                           bytes_copied, detail";
+                           listens_applied, ratings_applied, bytes_copied, detail";
 
 /// Diagnostic read path for recent runs across every device, newest first.
 pub fn recent_runs(db: &crate::db::Db, limit: usize) -> Result<Vec<RunRecord>, DbError> {
@@ -333,9 +344,11 @@ fn read_run(row: &Row<'_>) -> Result<RunRecord, rusqlite::Error> {
         skipped: row.get(9)?,
         deleted: row.get(10)?,
         failed: row.get(11)?,
+        listens_applied: row.get(12)?,
+        ratings_applied: row.get(13)?,
         // SQLite has no unsigned integers; the column is checked >= 0.
-        bytes_copied: row.get::<_, i64>(12)?.max(0) as u64,
-        detail: row.get(13)?,
+        bytes_copied: row.get::<_, i64>(14)?.max(0) as u64,
+        detail: row.get(15)?,
     })
 }
 

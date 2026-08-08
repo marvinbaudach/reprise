@@ -97,7 +97,6 @@ fn save_sources(conn: &Rc<Db>, device_id: &str, sources: Vec<SelectionSource>) {
             selection: DeviceSelection::Sources(sources),
             profile: TransferProfile::default(),
             opus_bitrate: 0,
-            ratings_back: false,
             remove_deleted: true,
             // `MTP-30`: these tests drive `sync_now` manually and must not
             // race an automatic start on connect.
