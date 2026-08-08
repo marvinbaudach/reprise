@@ -137,7 +137,24 @@ impl<'connection> LibraryDoctor<'connection> {
             })
             .cloned()
             .collect::<Vec<_>>();
-        let mut local_reads = read_tracks_parallel(&to_read)
+        // The reading pass is the long half of a large scan, so Cancel has to
+        // reach it. It asks while it reads; the count it reports stays at zero
+        // because the sequential pass below is what walks the tracks, and
+        // progress never goes backwards.
+        let total_tracks = tracks.len();
+        let read_pass = read_tracks_parallel(&to_read, &mut || {
+            progress(DoctorScanProgress {
+                phase: DoctorScanPhase::ReadingTags,
+                completed_tracks: 0,
+                total_tracks,
+                summary: preview_summary,
+            })
+        });
+        if read_pass.cancelled {
+            return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+        }
+        let mut local_reads = read_pass
+            .reads
             .into_iter()
             .map(|(track, result)| (track.track_id, result))
             .collect::<HashMap<_, _>>();
@@ -368,43 +385,86 @@ impl<'connection> LibraryDoctor<'connection> {
     }
 }
 
-fn read_tracks_parallel(
-    tracks: &[super::DoctorTrackRef],
-) -> Vec<(
+pub(super) type ReadTrackResult = (
     super::DoctorTrackRef,
     Option<(
         crate::library::tag_edit::EditableTags,
         remote::RemoteTrackMetadata,
     )>,
-)> {
+);
+
+/// What one reading pass produced, and whether it was stopped on the way.
+#[derive(Default)]
+pub(super) struct ReadPass {
+    pub(super) reads: Vec<ReadTrackResult>,
+    pub(super) cancelled: bool,
+}
+
+/// How long the collecting thread waits for the next file before it asks the
+/// caller again. Cancel must not sit out a slow read on every worker.
+const READ_CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Reads the tag of every track in parallel, and stops when the caller says so.
+///
+/// The workers cannot call `control` — it belongs to the thread that owns the
+/// progress channel — so this thread collects their results, asks after each
+/// one and at least every `READ_CANCEL_POLL`, and raises a flag the workers
+/// read before they open the next file. Cancel therefore costs one file per
+/// worker, not the whole library.
+pub(super) fn read_tracks_parallel(
+    tracks: &[super::DoctorTrackRef],
+    control: &mut dyn FnMut() -> ScanControl,
+) -> ReadPass {
     if tracks.is_empty() {
-        return Vec::new();
+        return ReadPass::default();
+    }
+    if control() == ScanControl::Cancel {
+        return ReadPass {
+            reads: Vec::new(),
+            cancelled: true,
+        };
     }
     let worker_count = std::thread::available_parallelism()
         .map_or(1, usize::from)
         .min(tracks.len());
     let chunk_size = tracks.len().div_ceil(worker_count);
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
     std::thread::scope(|scope| {
-        let handles = tracks
-            .chunks(chunk_size)
-            .map(|chunk| {
-                scope.spawn(move || {
-                    chunk
-                        .iter()
-                        .map(|track| {
-                            (
-                                track.clone(),
-                                remote::read_remote_metadata(&track.path).ok(),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect::<Vec<_>>();
-        handles
-            .into_iter()
-            .flat_map(|handle| handle.join().unwrap_or_default())
-            .collect()
+        let (sender, receiver) = std::sync::mpsc::channel();
+        for chunk in tracks.chunks(chunk_size) {
+            let sender = sender.clone();
+            let cancelled = &cancelled;
+            scope.spawn(move || {
+                for track in chunk {
+                    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                        return;
+                    }
+                    let read = (
+                        track.clone(),
+                        remote::read_remote_metadata(&track.path).ok(),
+                    );
+                    if sender.send(read).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+        drop(sender);
+        let mut reads = Vec::with_capacity(tracks.len());
+        loop {
+            match receiver.recv_timeout(READ_CANCEL_POLL) {
+                Ok(read) => reads.push(read),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+            if control() == ScanControl::Cancel {
+                cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        ReadPass {
+            reads,
+            cancelled: cancelled.load(std::sync::atomic::Ordering::Relaxed),
+        }
     })
 }
 

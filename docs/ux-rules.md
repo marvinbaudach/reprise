@@ -3653,7 +3653,8 @@ means deterministic and high-confidence, never „without review".
   `doc_1g_a_confidently_matched_album_is_never_fingerprinted`,
   `doc_1g_a_second_scan_of_an_unchanged_library_reads_no_file`,
   `doc_1g_a_changed_file_is_read_again`,
-  `doc_1g_a_skipped_track_keeps_its_previous_proposals`.
+  `doc_1g_a_skipped_track_keeps_its_previous_proposals`,
+  `doc_1g_the_reading_pass_stops_for_a_cancelled_scan`.
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
