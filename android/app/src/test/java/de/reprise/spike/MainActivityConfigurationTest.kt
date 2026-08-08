@@ -13,6 +13,8 @@ import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -187,7 +189,13 @@ class MainActivityConfigurationTest {
 
         compose.onNodeWithText("Favourites").performClick()
         compose.onNodeWithText("Alpha Artist · First Record").assertIsDisplayed()
-        compose.onAllNodesWithTag(TRACK_HEART_TAG)[0].performClick()
+        compose.onNode(
+            hasTestTag(TRACK_HEART_TAG) and
+                hasAnyAncestor(
+                    hasTestTag("library-track-row-${FAVOURITE_TRACK_ID_BASE + 1}"),
+                ) and
+                hasAnyAncestor(hasTestTag("library-page-FAVOURITES")),
+        ).performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Alpha Artist · First Record").assertDoesNotExist()
 
@@ -288,7 +296,7 @@ class MainActivityConfigurationTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
 
-        compose.onNodeWithTag("library-top-app-bar").assertHeightIsEqualTo(64.dp)
+        compose.onNodeWithTag("library-summary-row").assertHeightIsEqualTo(48.dp)
         compose.onNodeWithTag("library-track-row-1").assertHeightIsEqualTo(72.dp)
         compose.onNodeWithTag("library-mini-player").assertHeightIsEqualTo(72.dp)
         compose.onNodeWithTag("library-mini-player").performClick()
@@ -301,7 +309,7 @@ class MainActivityConfigurationTest {
         val rail = compose.onNodeWithTag("library-navigation-rail")
         val miniPlayer = compose.onNodeWithTag("library-mini-player")
         rail.assertWidthIsEqualTo(80.dp)
-        compose.onNodeWithTag("library-top-app-bar").assertHeightIsEqualTo(52.dp)
+        compose.onNodeWithTag("library-summary-row").assertHeightIsEqualTo(48.dp)
         compose.onNodeWithTag("library-track-row-1").assertHeightIsEqualTo(64.dp)
         compose.onNodeWithTag("library-track-row-2").assertHeightIsEqualTo(64.dp)
         assertEquals(
@@ -317,7 +325,7 @@ class MainActivityConfigurationTest {
             miniPlayer.getUnclippedBoundsInRoot().left,
         )
         assertEquals(
-            compose.onNodeWithTag("library-top-app-bar").getUnclippedBoundsInRoot().right - 12.dp,
+            compose.onNodeWithTag("library-summary-row").getUnclippedBoundsInRoot().right - 12.dp,
             miniPlayer.getUnclippedBoundsInRoot().right,
         )
 

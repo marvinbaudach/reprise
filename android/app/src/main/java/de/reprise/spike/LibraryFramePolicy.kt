@@ -1,7 +1,6 @@
 package de.reprise.spike
 
 internal data class LibraryFrameMetrics(
-    val topAppBarHeightDp: Int,
     val filterChipHeightDp: Int,
     val trackRowHeightDp: Int,
     val trackCoverSizeDp: Int,
@@ -13,7 +12,6 @@ internal data class LibraryFrameMetrics(
 )
 
 internal val libraryFrameMetrics = LibraryFrameMetrics(
-    topAppBarHeightDp = 64,
     filterChipHeightDp = 32,
     trackRowHeightDp = 72,
     trackCoverSizeDp = 56,
@@ -22,7 +20,6 @@ internal val libraryFrameMetrics = LibraryFrameMetrics(
 )
 
 private val wideShortLibraryFrameMetrics = LibraryFrameMetrics(
-    topAppBarHeightDp = 52,
     filterChipHeightDp = 32,
     trackRowHeightDp = 64,
     trackCoverSizeDp = 48,
