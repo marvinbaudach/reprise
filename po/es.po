@@ -5453,6 +5453,11 @@ msgstr "Quitar filtro de {facet}: {value}"
 msgid "⌕ “{query}” in any field"
 msgstr "⌕ «{query}» en cualquier campo"
 
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:12
+#, rust-format
+msgid "⌕ “{query}” in track, artist and album"
+msgstr "⌕ «{query}» en pista, artista y álbum"
+
 #: crates/reprise-view/src/strings/browse.rs:30
 #, rust-format
 msgid "⌕ “{query}” in episode titles"

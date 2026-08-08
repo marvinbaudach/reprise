@@ -1448,7 +1448,7 @@ result.
   Podcasts, YouTube, Radio, Queue, playlists, Releases, Concerts,
   Missing files. The wording is not decoration but a promise about what
   was matched, so it names the fields that view actually reads: Music
-  and its sibling track sources keep "⌕ "{query}" in any field";
+  and its sibling track sources say "⌕ "{query}" in track, artist and album";
   Podcasts says "in episode titles", YouTube "in video titles", Radio
   "in station names", Releases "in title and artist", Concerts "in
   artist and venue", Missing files "in file paths". A view may never
@@ -1505,8 +1505,9 @@ result.
   so the mark survives both titles and dim subtitles. This binds the fields
   FIL-1d names in Music and every sibling track source, Podcasts, YouTube,
   Radio, Releases (title and artist explicitly), Concerts and Missing files;
-  a visible field the view does not search stays unmarked. A hidden matching
-  track column still leaves the row unmarked, the accepted gap from FIL-5.
+  a visible field the view does not search stays unmarked. Title and Artist
+  are always reachable. Album is foldable, so an album-only hit can be
+  off-screen at narrow widths; "Show columns" restores it per STYLE-6.
 - **FIL-6** [active] [gtk] — Zero-hit empty state: StatusPage with
   exactly one button "Show all 1,664 tracks" (= Clear all) —
   FB-5-compliant; the one step guaranteedly leads to content, never

@@ -6,10 +6,12 @@ use crate::browser::SortDirection;
 use crate::db::Db;
 use crate::models::Track;
 use crate::view_source::ViewSource;
-use rusqlite::OptionalExtension;
+use rusqlite::{types::Value, OptionalExtension};
 
-use super::clauses::{row_to_track, track_projection, PRESENT};
-use super::{query_track_count, query_track_window};
+use super::clauses::{
+    like_pattern, metadata_filter_clause, row_to_track, track_projection, PRESENT,
+};
+use super::{query_track_count, query_track_window, MAX_WINDOW_LIMIT};
 
 /// The library subset a surface wants to read through a bounded window.
 ///
@@ -138,8 +140,8 @@ pub fn query_album_tracks(
     )
 }
 
-/// Searches the present flat library with the shared literal LIKE semantics
-/// and returns a counted window of matches in title order.
+/// Searches the present flat library by title, artist, or album with the
+/// shared literal LIKE semantics and returns a counted window in title order.
 pub fn query_library_text_search(
     db: &Db,
     text: &str,
@@ -157,6 +159,50 @@ pub fn query_library_text_search(
             window,
         },
     )
+}
+
+/// Searches display metadata for non-GUI callers whose public contract names
+/// title, artist, album, and genre. The ordinary list search deliberately uses
+/// [`query_library_text_search`] and therefore never matches genre alone.
+pub fn query_library_metadata_text_search(
+    db: &Db,
+    text: &str,
+    window: WindowRange,
+) -> Result<TrackWindow, rusqlite::Error> {
+    let has_filter = !text.trim().is_empty();
+    let pattern = like_pattern(text.trim());
+    let count_sql = format!(
+        "SELECT count(*) FROM tracks WHERE {PRESENT}{}",
+        metadata_filter_clause(has_filter, 1)
+    );
+    let total = if has_filter {
+        db.conn()
+            .query_row(&count_sql, [&pattern], |row| row.get(0))?
+    } else {
+        db.conn().query_row(&count_sql, [], |row| row.get(0))?
+    };
+
+    let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let projection = track_projection("", true);
+    let window_sql = format!(
+        "SELECT {projection} FROM tracks WHERE {PRESENT}{} \
+         ORDER BY title COLLATE NOCASE ASC LIMIT ?1 OFFSET ?2",
+        metadata_filter_clause(has_filter, 3)
+    );
+    let mut params = vec![Value::Integer(limit), Value::Integer(window.offset)];
+    if has_filter {
+        params.push(Value::Text(pattern));
+    }
+    let mut statement = db.conn().prepare(&window_sql)?;
+    let rows = statement
+        .query_map(rusqlite::params_from_iter(params), row_to_track)?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(TrackWindow {
+        total,
+        has_more: has_more(total, window, rows.len()),
+        rows,
+    })
 }
 
 /// Returns one present library track by its stable row identity.
@@ -260,6 +306,35 @@ mod tests {
             .map(|track| track.id)
             .collect::<Vec<_>>();
         assert_eq!(ids, (1..=501_i64).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn metadata_text_search_keeps_the_documented_genre_match() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id,path,title,artist,album,genre,added_at) \
+                 VALUES (1,'/music/one.flac','Other title','Other artist','Other album','Needle genre',0)",
+                [],
+            )
+            .unwrap();
+
+        let window = query_library_metadata_text_search(
+            &db,
+            "needle",
+            WindowRange {
+                offset: 0,
+                limit: 10,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(window.total, 1);
+        assert_eq!(
+            window.rows.iter().map(|track| track.id).collect::<Vec<_>>(),
+            [1]
+        );
+        assert!(!window.has_more);
     }
 
     #[test]

@@ -3,6 +3,14 @@
 use reprise_view::search_scope::SearchScope;
 use reprise_view::strings::browse as messages;
 
+macro_rules! N_ {
+    ($message:literal) => {
+        $message
+    };
+}
+
+const MUSIC_SEARCH_CHIP_LABEL: &str = N_!("⌕ “{query}” in track, artist and album");
+
 pub(in crate::ui) use messages::{
     ADD_FILTER, BACK, BROWSE_ALBUM, BROWSE_ARTIST, BROWSE_GENRE, BROWSE_RATING, BROWSE_YEAR,
     CLEAR_ALL, FILTERS, NO_FILTERS_AVAILABLE, SEARCH_VALUES, UNKNOWN_ALBUM, UNKNOWN_ARTIST,
@@ -21,9 +29,8 @@ pub(in crate::ui) fn remove_filter_label(facet: &str, value: &str) -> String {
     render(&messages::remove_filter_label(facet, value))
 }
 
-/// FIL-1a's original, unscoped wording. Kept as the reference the FIL-1d
-/// tests measure Music's chip against, so a change to the scoped path that
-/// silently reworded Music would fail rather than pass quietly.
+/// Legacy unscoped renderer used only by the P2-owned synthetic chip tests.
+/// The live Music chip goes through [`scoped_search_chip_label`].
 #[cfg(test)]
 pub(in crate::ui) fn search_chip_label(query: &str) -> String {
     render(&messages::search_chip_label(query))
@@ -31,6 +38,13 @@ pub(in crate::ui) fn search_chip_label(query: &str) -> String {
 
 /// FIL-1d: the same chip, naming the fields the current section searches.
 pub(in crate::ui) fn scoped_search_chip_label(scope: SearchScope, query: &str) -> String {
+    if scope == SearchScope::Tracks {
+        return render(&reprise_view::strings::Message {
+            id: MUSIC_SEARCH_CHIP_LABEL,
+            plural: None,
+            args: vec![("query", query.to_owned())],
+        });
+    }
     render(&messages::search_chip_label_in(scope, query))
 }
 
@@ -94,19 +108,22 @@ mod tests {
         assert_eq!(leave_place_label("Lorna Shore"), "Leave Lorna Shore");
     }
 
-    // UX FIL-1a: the headerbar search renders as the first chip.
+    // UX FIL-1d: Music's chip names the three fields its free-text query reads.
     #[test]
-    fn fil_1a_search_chip_label_quotes_the_query() {
-        assert_eq!(search_chip_label("falling"), "⌕ “falling” in any field");
+    fn fil_1d_music_search_chip_label_names_all_searched_fields() {
+        assert_eq!(
+            scoped_search_chip_label(SearchScope::Tracks, "falling"),
+            "⌕ “falling” in track, artist and album"
+        );
         assert_eq!(remove_search_label("falling"), "Remove search: falling");
     }
 
-    // UX FIL-1d: the chip label names the scope per view; Library still says
-    // "in any field". The remove label stays scope-independent.
+    // UX FIL-1d: the chip label names the fields each scope actually reads.
+    // The remove label stays scope-independent.
     #[test]
     fn fil_1d_chip_label_names_the_fields_of_its_view() {
         let cases = [
-            (SearchScope::Tracks, "⌕ “wer” in any field"),
+            (SearchScope::Tracks, "⌕ “wer” in track, artist and album"),
             (SearchScope::Podcasts, "⌕ “wer” in episode titles"),
             (SearchScope::Youtube, "⌕ “wer” in video titles"),
             (SearchScope::Radio, "⌕ “wer” in station names"),
@@ -122,11 +139,6 @@ mod tests {
                 "{scope:?}"
             );
         }
-        assert_eq!(
-            scoped_search_chip_label(SearchScope::Tracks, "falling"),
-            search_chip_label("falling"),
-            "Music must keep the FIL-1a wording verbatim"
-        );
         assert_eq!(remove_search_label("wer"), "Remove search: wer");
     }
 

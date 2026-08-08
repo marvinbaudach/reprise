@@ -16,6 +16,7 @@ crates/reprise-gnome/src/ui/strings_stats.rs
 crates/reprise-gnome/src/ui/strings_autocomplete.rs
 crates/reprise-gnome/src/ui/strings_filter.rs
 crates/reprise-gnome/src/ui/strings_ai.rs
+crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs
 crates/reprise-view/src/strings/scan.rs
 crates/reprise-view/src/strings/playlists.rs
 crates/reprise-gnome/src/ui/strings_sources.rs

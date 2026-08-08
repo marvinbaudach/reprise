@@ -550,7 +550,7 @@ mod tests {
 
         assert_eq!(
             library
-                .search_tracks(" folk ".into(), full_window())
+                .search_tracks(" joni mitchell ".into(), full_window())
                 .unwrap()
                 .rows,
             vec![
@@ -584,7 +584,7 @@ mod tests {
 
         let window = library
             .search_tracks(
-                "folk".into(),
+                "joni mitchell".into(),
                 WindowRange {
                     offset: 0,
                     limit: 1,
@@ -605,7 +605,7 @@ mod tests {
 
         let first = library
             .search_tracks(
-                "folk".into(),
+                "joni mitchell".into(),
                 WindowRange {
                     offset: 0,
                     limit: 1,
@@ -614,7 +614,7 @@ mod tests {
             .unwrap();
         let second = library
             .search_tracks(
-                "folk".into(),
+                "joni mitchell".into(),
                 WindowRange {
                     offset: 1,
                     limit: 1,

@@ -11,6 +11,10 @@ fn search_matches_across_metadata() {
     let value = parse_json(&out);
     assert_eq!(value["total"], 3);
     assert_eq!(value["tracks"].as_array().unwrap().len(), 3);
+
+    let genre = parse_json(&h.run(&["--json", "search", "Rock"]));
+    assert_eq!(genre["total"], 3);
+    assert_eq!(genre["tracks"].as_array().unwrap().len(), 3);
 }
 
 #[test]
