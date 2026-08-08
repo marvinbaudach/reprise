@@ -371,7 +371,7 @@ fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
         !adjacent_title.hexpands(),
         "the title must not consume the free space between its text and the marker"
     );
-    assert!(marker.has_css_class("dim-label"));
+    assert!(marker.has_css_class("reprise-text-secondary"));
     assert_eq!(
         marker.pixel_size(),
         16,
