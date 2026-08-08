@@ -41,6 +41,11 @@ pub fn lookup_url(ids: &[String]) -> String {
     format!("{LOOKUP_ENDPOINT}?id={}&entity=podcast", ids.join(","))
 }
 
+/// The charted ids, in chart order, keeping only those the lookup can actually
+/// be asked for — an `i64`. `in_chart_order` needs the same parse to match a
+/// row back to its rank, but doing it *here* is what keeps an unusable id out
+/// of `lookup_url`'s comma-joined query rather than rejecting it after the
+/// request has already been sent.
 pub fn parse_chart_ids(json: &str) -> Result<Vec<String>, PodcastError> {
     let response: ChartResponse =
         serde_json::from_str(json).map_err(|error| PodcastError::Parse(error.to_string()))?;
@@ -49,6 +54,7 @@ pub fn parse_chart_ids(json: &str) -> Result<Vec<String>, PodcastError> {
         .results
         .into_iter()
         .map(|row| row.id)
+        .filter(|id| id.parse::<i64>().is_ok())
         .collect())
 }
 
@@ -162,6 +168,28 @@ mod tests {
                 "Show 1", "Show 2", "Show 3", "Show 4", "Show 5", "Show 7", "Show 8", "Show 9",
                 "Show 10", "Show 11", "Show 12"
             ]
+        );
+    }
+
+    /// `SRC-19`: the ids come from Apple's chart feed, and the only thing the
+    /// lookup can do with them is `i64`. Rejecting an unusable one *after* the
+    /// request has gone out — which is where `in_chart_order`'s parse sits —
+    /// would mean asking on behalf of a value we already know we cannot use,
+    /// so the boundary parser drops it instead.
+    #[test]
+    fn src_19_a_chart_id_the_lookup_cannot_use_never_reaches_the_request() {
+        let ids = parse_chart_ids(
+            r#"{"feed":{"results":[
+                {"id":"42"},{"id":"not-an-id"},{"id":"7x"},{"id":""},
+                {"id":"1,2"},{"id":" 7"},{"id":"7"}
+            ]}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(ids, ["42", "7"]);
+        assert_eq!(
+            lookup_url(&ids),
+            format!("{LOOKUP_ENDPOINT}?id=42,7&entity=podcast")
         );
     }
 
