@@ -436,23 +436,24 @@ pub fn podcast_source_off_title(source: &str) -> String {
     formatted(PODCAST_SOURCE_OFF_TITLE, &[("source", source)])
 }
 
-/// `SRC-15`: the library chip in the add dialog. The genre is the user's
-/// own, so the sentence has to stay translatable rather than being glued
-/// together at the call site.
-pub fn podcast_chip_genre(genre: &str) -> String {
-    formatted(N_!("{genre} podcasts"), &[("genre", genre)])
-}
-
+/// `SRC-19`: the Apple dialog's one chip. The country is a storefront code,
+/// not a translated country name (`SRC-19` explains why), but the sentence
+/// around it is the translator's.
 pub fn podcast_chip_popular_in_country(country: &str) -> String {
     formatted(N_!("Popular in {country}"), &[("country", country)])
 }
 
+/// `SRC-19`: the chart section's own heading, in the same shape as
+/// `PODCAST_APPLE_RESULTS`, so a chart is never read as the answer to a search
+/// nobody typed.
 pub fn podcast_charts_heading(country: &str) -> String {
     formatted(N_!("PODCASTS · TOP IN {country}"), &[("country", country)])
 }
 
-/// `SRC-15`: the same chip on the YouTube page, where the results are
-/// channels rather than podcasts.
+/// `SRC-15a`: the library chip in the add dialog, worded for the YouTube page
+/// — the only page that carries it, since the Apple dialog spends its one chip
+/// slot on `SRC-19`. The genre is the user's own, so the sentence has to stay
+/// translatable rather than being glued together at the call site.
 pub fn youtube_chip_genre(genre: &str) -> String {
     formatted(N_!("{genre} channels"), &[("genre", genre)])
 }

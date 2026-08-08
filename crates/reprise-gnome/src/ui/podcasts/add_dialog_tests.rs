@@ -166,7 +166,11 @@ fn src_15a_the_library_chip_appears_only_with_a_genre_to_suggest() {
         .label()
         .expect("chip label");
     assert_eq!(label, strings::podcast_chip_popular_in_country("DE"));
-    assert_ne!(label, strings::podcast_chip_genre("Metal"));
+    assert_ne!(
+        label,
+        strings::youtube_chip_genre("Metal"),
+        "the Apple page must not spend its one slot on the library chip"
+    );
 }
 
 /// `SRC-19`: what `build_surface` alone can establish — the pill exists, reads

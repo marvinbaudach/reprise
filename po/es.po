@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-08 10:53+0200\n"
+"POT-Creation-Date: 2026-08-08 13:42+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -3511,84 +3511,79 @@ msgstr "{visible} de {total} episodios"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:443
 #, rust-format
-msgid "{genre} podcasts"
-msgstr "Pódcasts de {genre}"
-
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:447
-#, rust-format
 msgid "Popular in {country}"
 msgstr "Popular en {country}"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:451
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:450
 #, rust-format
 msgid "PODCASTS · TOP IN {country}"
 msgstr "PODCASTS · TOP EN {country}"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:457
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:458
 #, rust-format
 msgid "{genre} channels"
 msgstr "Canales de {genre}"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:461
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:462
 #, rust-format
 msgid "Unsubscribe from “{show}”"
 msgstr "Cancelar la suscripción a «{show}»"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:466
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:467
 #, rust-format
 msgid "Sync downloaded episodes to “{device}”"
 msgstr "Sincronizar los episodios descargados con «{device}»"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:482
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:483
 #, rust-format
 msgid "{shown} of {available} · {downloaded} downloaded · {size}"
 msgstr "{shown} de {available} · {downloaded} descargados · {size}"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:497
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:498
 #, rust-format
 msgid "{summary} · {count} selected"
 msgstr "{summary} · {count} seleccionados"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:504
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:505
 #, rust-format
 msgid "Stop syncing episodes to “{device}”"
 msgstr "Dejar de sincronizar episodios con «{device}»"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:510
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:511
 #, rust-format
 msgid "Removed “{title}”"
 msgstr "Se eliminó «{title}»"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:514
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:515
 #, rust-format
 msgid "Play next: “{title}”"
 msgstr "Reproducir a continuación: «{title}»"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:522
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:523
 #, rust-format
 msgid "{downloads} download kept"
 msgid_plural "{downloads} downloads kept"
 msgstr[0] "{downloads} descarga conservada"
 msgstr[1] "{downloads} descargas conservadas"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:529
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:530
 #, rust-format
 msgid "{shows} shows — {downloads} downloads kept"
 msgstr "{shows} programas — {downloads} descargas conservadas"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:536
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:537
 #, rust-format
 msgid "Import the latest {count} episodes"
 msgstr "Importar los {count} episodios más recientes"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:544
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:545
 #, rust-format
 msgid "{count} matching video · audio only"
 msgid_plural "{count} matching videos · audio only"
 msgstr[0] "{count} vídeo coincidente · solo audio"
 msgstr[1] "{count} vídeos coincidentes · solo audio"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:553
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:554
 #, rust-format
 msgid "Updated {minutes} min ago"
 msgstr "Actualizado hace {minutes} min"
@@ -5705,6 +5700,10 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
+
+#, rust-format
+#~ msgid "{genre} podcasts"
+#~ msgstr "Pódcasts de {genre}"
 
 #~ msgid "Rescan Library"
 #~ msgstr "Volver a analizar la biblioteca"
