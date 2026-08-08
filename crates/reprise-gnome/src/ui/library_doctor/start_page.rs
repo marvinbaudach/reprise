@@ -247,10 +247,9 @@ impl DoctorStartPage {
         let track_count = queries::query_track_count(db, &ViewSource::Library, "", &[])
             .unwrap_or_default()
             .max(0) as usize;
-        self.estimate.set_label(&strings::doctor_scan_estimate(
-            track_count,
-            track_count.div_ceil(200),
-        ));
+        let rates = reprise_core::library_doctor::scan_rates(db).unwrap_or_default();
+        self.estimate
+            .set_label(&scan_estimate(track_count, rates, self.remote.is_active()));
         let cleanup = LibraryDoctor::new(db).last_cleanup().ok().flatten();
         let model = StartPageModel::from_cleanup(cleanup.as_ref());
         self.last_scan.set_visible(model.shows_last_scan());
@@ -301,6 +300,24 @@ fn format_scan_time(timestamp: i64) -> String {
 
 const fn show_acoustid_unavailable(remote_active: bool, fingerprint_available: bool) -> bool {
     remote_active && !fingerprint_available
+}
+
+fn scan_estimate(
+    track_count: usize,
+    rates: reprise_core::library_doctor::DoctorScanRates,
+    remote_enabled: bool,
+) -> String {
+    let Some(local_rate) = rates.local_tracks_per_minute else {
+        return strings::doctor_scan_estimate_tracks_only(track_count);
+    };
+    let mut minutes = track_count as f64 / local_rate;
+    if remote_enabled {
+        let Some(remote_rate) = rates.remote_tracks_per_minute else {
+            return strings::doctor_scan_estimate_tracks_only(track_count);
+        };
+        minutes += track_count as f64 / remote_rate;
+    }
+    strings::doctor_scan_estimate(track_count, minutes.ceil() as usize)
 }
 
 #[cfg(test)]
@@ -393,6 +410,31 @@ mod tests {
         assert_eq!(
             doctor_start_icon_name_for(false),
             DOCTOR_START_ICON_FALLBACK
+        );
+    }
+
+    #[test]
+    fn doc_8d_without_a_measurement_the_estimate_names_no_duration() {
+        assert_eq!(
+            scan_estimate(390, Default::default(), false),
+            strings::doctor_scan_estimate_tracks_only(390)
+        );
+    }
+
+    #[test]
+    fn doc_8d_the_estimate_accounts_for_the_remote_switch() {
+        let rates = reprise_core::library_doctor::DoctorScanRates {
+            local_tracks_per_minute: Some(390.0),
+            remote_tracks_per_minute: Some(195.0),
+        };
+
+        assert_eq!(
+            scan_estimate(390, rates, false),
+            strings::doctor_scan_estimate(390, 1)
+        );
+        assert_eq!(
+            scan_estimate(390, rates, true),
+            strings::doctor_scan_estimate(390, 3)
         );
     }
 
