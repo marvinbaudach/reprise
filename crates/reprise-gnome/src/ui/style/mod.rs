@@ -14,6 +14,7 @@
 
 pub(super) mod accent;
 pub(super) mod buttons;
+pub(super) mod category_colors;
 pub(super) mod color_math;
 pub(super) mod interactions;
 pub(super) mod menus;
@@ -98,6 +99,7 @@ mod composed_css_tests {
 fn app_css() -> String {
     [
         buttons::css(),
+        category_colors::css(),
         interactions::css(),
         text_levels::css(),
         super::link_activation::css(),

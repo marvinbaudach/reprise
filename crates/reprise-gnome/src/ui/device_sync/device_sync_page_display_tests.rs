@@ -448,6 +448,39 @@ fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn design_2c_up_next_legend_uses_the_rows_projected_sizes() {
+    gtk4::init().expect("GTK test display");
+    let mut device = device();
+    device.content_rows[0].size_on_device_bytes = 1024 * 1024 * 1024;
+    device.category_readings[0] =
+        reprise_core::device_sync::CategoryReading::Diff(reprise_core::device_sync::CategoryDiff {
+            bytes_to_copy: 128 * 1024 * 1024,
+            ..Default::default()
+        });
+    device.content_rows[1].size_on_device_bytes = 693 * 1024 * 1024;
+    device.content_rows[2].size_on_device_bytes = 217 * 1024 * 1024;
+
+    let (surface, _root) = DeviceSyncPage::new(
+        &device,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let text = surface.root_text();
+    let lines = text.lines().collect::<Vec<_>>();
+    assert!(lines.contains(&"Music 1.1 GiB"));
+    assert!(lines.contains(&"YouTube 693.0 MiB"));
+    assert!(lines.contains(&"Podcasts 217.0 MiB"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn unrememberable_device_disables_hero_rename_with_the_history_explanation() {
     gtk4::init().expect("GTK test display");
     let mut device = device();
@@ -534,6 +567,10 @@ fn mtp_46_a_switched_off_source_has_no_content_row_on_the_device_page() {
         on.contains("Podcast episodes"),
         "with Podcasts on its Content row is visible"
     );
+    assert!(
+        on.contains("YouTube 0 B") && on.contains("Podcasts 0 B"),
+        "visible sources also have entries in the storage legend"
+    );
 
     let mut youtube_off = both_on.clone();
     youtube_off.enabled_sources.youtube = false;
@@ -541,6 +578,10 @@ fn mtp_46_a_switched_off_source_has_no_content_row_on_the_device_page() {
     assert!(
         !off.contains("YouTube audio"),
         "switching YouTube off must take its Content row off the page, not leave a zero row"
+    );
+    assert!(
+        !off.contains("YouTube 0 B"),
+        "switching YouTube off must hide the same legend entry"
     );
     assert!(
         off.contains("Podcast episodes"),
@@ -557,6 +598,10 @@ fn mtp_46_a_switched_off_source_has_no_content_row_on_the_device_page() {
     assert!(
         !off.contains("Podcast episodes"),
         "switching Podcasts off must take its Content row off the page"
+    );
+    assert!(
+        !off.contains("Podcasts 0 B"),
+        "switching Podcasts off must hide the same legend entry"
     );
     assert!(
         off.contains("YouTube audio"),

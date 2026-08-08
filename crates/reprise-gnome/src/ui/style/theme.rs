@@ -166,6 +166,7 @@ pub(in crate::ui) fn theme_css(
         theme.light_palette()
     };
     let accent_css = super::accent::css_overrides(source);
+    let category_css = super::category_colors::theme_definitions(is_dark);
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -181,6 +182,7 @@ pub(in crate::ui) fn theme_css(
          @define-color popover_fg_color {fg};\n\
          @define-color dialog_bg_color {dlg};\n\
          @define-color dialog_fg_color {fg};\n\
+         {category_css}\
          {accent_css}\
          @define-color reprise_primary_fg_color alpha({fg}, {primary_alpha});\n\
          @define-color reprise_secondary_fg_color alpha({fg}, {secondary_alpha});\n\
@@ -195,6 +197,7 @@ pub(in crate::ui) fn theme_css(
         card = p.card_bg,
         pop = p.popover_bg,
         dlg = p.dialog_bg,
+        category_css = category_css,
         accent_css = accent_css,
         primary_alpha = PRIMARY_TEXT_ALPHA,
         secondary_alpha = SECONDARY_TEXT_ALPHA,
