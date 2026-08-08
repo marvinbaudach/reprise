@@ -201,7 +201,7 @@ pub(in crate::ui) fn css() -> String {
             relying on colour alone. */\n\
          .{TOGGLE_CLASS}:checked {{ \
            background-color: alpha(@accent_bg_color, {BTN_CHECKED_FILL_ALPHA}); \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            background-image: radial-gradient(circle, \
                              @accent_color 0%, @accent_color 45%, transparent 50%); \
            background-size: {BTN_DOT_SIZE} {BTN_DOT_SIZE}; \
@@ -222,7 +222,7 @@ pub(in crate::ui) fn css() -> String {
          .{ADD_ACTION_CLASS} {{ \
            border-radius: 8px; \
            background-color: alpha(@accent_bg_color, 0.16); \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            transition: background-color {TRANSITION}, transform {TRANSITION}; }}\n\
          .{ADD_ACTION_CLASS}:hover {{ \
            background-color: alpha(@accent_bg_color, 0.22); }}\n\

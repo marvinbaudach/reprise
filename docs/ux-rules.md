@@ -2765,14 +2765,21 @@ property is set and yet nothing happens.
   contrast determined.
 - **CONTRAST-3** [active] [gtk] — Status lines, column headers, sidebar
   section labels, and card meta lines reach at least 4.5:1 against their
-  respective surface. `.caption` plus secondary level counts as small type
-  here and needs the same check as hint at normal size.
+  respective table, sidebar, card, popover, or dialog surface. `.caption`
+  plus secondary level counts as small type here and needs the same check as
+  hint at normal size.
 - **CONTRAST-4** [replaced by CONTRAST-1] — Every active text and every
   active icon in the glass reaches at least 4.5:1 against the worst case
   of its zone: the tint floor composited over the lightest or darkest
   translucent content respectively. Artist, time, search field, and header
   actions are active content; only disabled or purely decorative elements
   are allowed to fall below that.
+- **CONTRAST-5** [active] [gtk] — An accent used as a text or glyph foreground
+  reaches at least 4.5:1 against the critical surface of the current light or
+  dark appearance. The foreground is derived from the effective app or system
+  accent by adjusting OKLab lightness; themes and feature CSS never type their
+  own accent foreground. Accent-colored surfaces are outside this rule and
+  continue to pair with `accent_fg_color`.
 - **NAV-10** [replaced by NAV-10a] — The running context stays visible in
   all views with a shared playback-accent marker; on first entry into a
   view it is revealed once, later switches restore NAV-5's remembered

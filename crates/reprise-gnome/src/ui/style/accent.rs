@@ -61,6 +61,51 @@ pub(in crate::ui) fn accent_rgba() -> gtk4::gdk::RGBA {
     }
 }
 
+fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
+    let hex = hex.strip_prefix('#')?;
+    if hex.len() != 6 {
+        return None;
+    }
+    Some([
+        u8::from_str_radix(&hex[0..2], 16).ok()?,
+        u8::from_str_radix(&hex[2..4], 16).ok()?,
+        u8::from_str_radix(&hex[4..6], 16).ok()?,
+    ])
+}
+
+fn accent_text_rgb(accent: &str, background: &str, is_dark: bool) -> [u8; 3] {
+    let accent = parse_hex_rgb(accent).expect("accent color must use #RRGGBB");
+    let background = parse_hex_rgb(background).expect("surface color must use #RRGGBB");
+    super::color_math::ensure_contrast_by_lightness(accent, background, is_dark, 4.5)
+}
+
+fn rgb_hex(color: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
+}
+
+/// Text/glyph accent derived from the effective accent for this appearance.
+/// Unlike libadwaita's surface-oriented accent roles, this role is measured
+/// directly against the appearance's critical surface before it enters
+/// app-authored CSS.
+pub(super) fn accent_text_color(source: AccentSource, background: &str, is_dark: bool) -> String {
+    let accent = match source {
+        AccentSource::App => APP_ACCENT.to_owned(),
+        AccentSource::System if gtk4::is_initialized_main_thread() => {
+            let rgba = libadwaita::StyleManager::default().accent_color_rgba();
+            rgb_hex([
+                (rgba.red() * 255.0).round() as u8,
+                (rgba.green() * 255.0).round() as u8,
+                (rgba.blue() * 255.0).round() as u8,
+            ])
+        }
+        // `theme_css` is also a headless pure-test seam. Installed theme CSS
+        // is only built after GTK initialization, where the branch above reads
+        // the actual system RGBA and tracks later change notifications.
+        AccentSource::System => APP_ACCENT.to_owned(),
+    };
+    rgb_hex(accent_text_rgb(&accent, background, is_dark))
+}
+
 pub(super) fn set_current(source: AccentSource) {
     CURRENT_SOURCE.with(|current| current.set(source));
 }
@@ -90,6 +135,29 @@ pub(super) fn css_overrides(source: AccentSource) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn luminance(rgb: [u8; 3]) -> f64 {
+        let linear = |channel: u8| {
+            let channel = f64::from(channel) / 255.0;
+            if channel <= 0.04045 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+    }
+
+    fn contrast(foreground: [u8; 3], background: [u8; 3]) -> f64 {
+        let foreground = luminance(foreground);
+        let background = luminance(background);
+        let (lighter, darker) = if foreground > background {
+            (foreground, background)
+        } else {
+            (background, foreground)
+        };
+        (lighter + 0.05) / (darker + 0.05)
+    }
 
     #[test]
     fn accent_source_ids_round_trip_and_unknown_ids_use_the_default() {
@@ -150,6 +218,42 @@ mod tests {
         let ratio = (background + 0.05) / (foreground + 0.05);
         assert!(ratio >= 4.5, "app accent contrast is only {ratio:.2}:1");
         assert!((ratio - 11.164).abs() < 0.001);
+    }
+
+    #[test]
+    fn contrast_5_derived_accent_text_meets_ratio_in_both_appearances() {
+        const MINIMUM_RATIO: f64 = 4.5;
+        let accents = [APP_ACCENT, "#f8f7ff", "#101318", "#ff3bd4"];
+        let surfaces = [
+            (false, "#ffffff"),
+            (false, "#e8eaed"),
+            (false, "#e4e8ef"),
+            (false, "#ede8eb"),
+            (true, "#2f353d"),
+            (true, "#2d3441"),
+            (true, "#362e37"),
+            (true, "#353b44"),
+            (true, "#333a48"),
+            (true, "#3a343c"),
+        ];
+
+        for accent in accents {
+            for (is_dark, surface) in surfaces {
+                let derived = accent_text_rgb(accent, surface, is_dark);
+                let background = parse_hex_rgb(surface).expect("test surface is valid hex");
+                let ratio = contrast(derived, background);
+                assert!(
+                    ratio >= MINIMUM_RATIO,
+                    "{accent} on {surface} derived only {ratio:.2}:1"
+                );
+            }
+        }
+
+        assert_eq!(
+            accent_text_rgb(APP_ACCENT, "#2f353d", true),
+            parse_hex_rgb(APP_ACCENT).unwrap(),
+            "the app accent already clears the dark popover and must stay unchanged"
+        );
     }
 
     #[test]

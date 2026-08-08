@@ -366,6 +366,21 @@ mod tests {
     }
 
     #[test]
+    fn contrast_5_app_css_never_uses_unverified_accent_as_foreground() {
+        let css = super::app_css();
+        let unverified_foregrounds = css
+            .split(['{', ';'])
+            .map(str::trim)
+            .filter(|declaration| *declaration == "color: @accent_color")
+            .count();
+
+        assert_eq!(
+            unverified_foregrounds, 0,
+            "app CSS contains {unverified_foregrounds} unverified accent foregrounds"
+        );
+    }
+
+    #[test]
     fn install_without_a_display_does_not_arm_the_once_guard() {
         // Plain unit-test processes have no GDK display; install() must stay
         // re-runnable so the first real (xvfb) caller still gets the CSS.

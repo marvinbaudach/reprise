@@ -20,6 +20,23 @@ pub(in crate::ui::style) fn from_linear(channel: f64) -> u8 {
     (srgb.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
+/// WCAG relative luminance for an opaque sRGB color.
+pub(in crate::ui::style) fn relative_luminance(color: [u8; 3]) -> f64 {
+    0.2126 * to_linear(color[0]) + 0.7152 * to_linear(color[1]) + 0.0722 * to_linear(color[2])
+}
+
+/// WCAG contrast ratio between two opaque sRGB colors.
+pub(in crate::ui::style) fn contrast_ratio(first: [u8; 3], second: [u8; 3]) -> f64 {
+    let first = relative_luminance(first);
+    let second = relative_luminance(second);
+    let (lighter, darker) = if first > second {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
 /// Linear RGB to OKLab `(L, a, b)`.
 pub(in crate::ui::style) fn linear_rgb_to_oklab(
     linear_red: f64,
@@ -66,6 +83,45 @@ pub(in crate::ui::style) fn oklab_to_linear_rgb(
         -1.268_437_973_0 * l + 2.609_757_401_1 * m - 0.341_319_427_9 * s,
         -0.004_196_086_3 * l - 0.703_418_614_7 * m + 1.707_614_701_0 * s,
     )
+}
+
+/// Moves only OKLab lightness until `color` reaches `minimum_ratio` against
+/// `background`. Dark appearances search toward white; light appearances
+/// search toward black. A color that already passes is returned unchanged.
+pub(in crate::ui::style) fn ensure_contrast_by_lightness(
+    color: [u8; 3],
+    background: [u8; 3],
+    lighten: bool,
+    minimum_ratio: f64,
+) -> [u8; 3] {
+    if contrast_ratio(color, background) >= minimum_ratio {
+        return color;
+    }
+
+    let (lightness, green_red, blue_yellow) = linear_rgb_to_oklab(
+        to_linear(color[0]),
+        to_linear(color[1]),
+        to_linear(color[2]),
+    );
+    let candidate = |candidate_lightness: f64| {
+        let (red, green, blue) = oklab_to_linear_rgb(candidate_lightness, green_red, blue_yellow);
+        [from_linear(red), from_linear(green), from_linear(blue)]
+    };
+
+    let (mut failing, mut passing) = if lighten {
+        (lightness, 1.0)
+    } else {
+        (lightness, 0.0)
+    };
+    for _ in 0..32 {
+        let middle = (failing + passing) / 2.0;
+        if contrast_ratio(candidate(middle), background) >= minimum_ratio {
+            passing = middle;
+        } else {
+            failing = middle;
+        }
+    }
+    candidate(passing)
 }
 
 /// Scales an sRGB color's OKLCH chroma while preserving lightness and hue.

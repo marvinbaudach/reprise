@@ -138,7 +138,7 @@ fn star_at_x(x: f64, width: f64) -> i32 {
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{STAR_CSS_CLASS} {{ min-width: 16px; min-height: 24px; padding: 0; }}\n\
-         .{FILLED_CSS_CLASS} {{ color: @accent_color; }}\n\
+         .{FILLED_CSS_CLASS} {{ color: @reprise_accent_text_color; }}\n\
          .{EMPTY_CSS_CLASS} {{ color: alpha(@window_fg_color, 0.25); }}\n\
          .{DASH_CSS_CLASS} {{ color: alpha(@window_fg_color, 0.30); }}"
     )
@@ -501,7 +501,7 @@ mod tests {
     fn css_defines_star_dash_and_fill_colours() {
         let css = css();
         assert!(css.contains(".reprise-rating-star"));
-        assert!(css.contains(".reprise-rating-filled { color: @accent_color; }"));
+        assert!(css.contains(".reprise-rating-filled { color: @reprise_accent_text_color; }"));
         assert!(css.contains(".reprise-rating-empty"));
         assert!(css.contains(".reprise-rating-dash"));
     }

@@ -37,7 +37,7 @@ pub(super) fn css() -> String {
     use crate::ui::style::tokens::SURFACE_SHADOW;
     format!(
         ".toast {{ border-radius: 9999px; box-shadow: {SURFACE_SHADOW}; }}\n\
-         .toast button.text-button {{ color: @accent_color; font-weight: bold; }}"
+         .toast button.text-button {{ color: @reprise_accent_text_color; font-weight: bold; }}"
     )
 }
 

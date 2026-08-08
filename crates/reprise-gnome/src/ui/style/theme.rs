@@ -7,7 +7,8 @@
 //!
 //! The dark palettes follow design frame 14a's surface hierarchy: the central
 //! table is darkest, side panels sit one step above it, and the header bar is
-//! another step brighter. Cards remain brighter than their panel surface.
+//! another step brighter. Cards remain brighter than their panel surface;
+//! popovers sit between cards and dialogs.
 //!
 //! The concrete color values below are extracted from the design frames and
 //! are deliberately approximate; a later pass tunes them against the exact
@@ -80,7 +81,7 @@ impl Theme {
                 card_bg: "#272d33",
                 headerbar_bg: "#262b31",
                 sidebar_bg: "#22262b",
-                popover_bg: "#404650",
+                popover_bg: "#2f353d",
                 dialog_bg: "#353b44",
                 fg: "#e7e9ec",
                 dim_fg: "#9198a0",
@@ -91,7 +92,7 @@ impl Theme {
                 card_bg: "#252b37",
                 headerbar_bg: "#242a35",
                 sidebar_bg: "#20252f",
-                popover_bg: "#3e4452",
+                popover_bg: "#2d3441",
                 dialog_bg: "#333a48",
                 fg: "#e4e7ec",
                 dim_fg: "#8b93a1",
@@ -102,7 +103,7 @@ impl Theme {
                 card_bg: "#2d252c",
                 headerbar_bg: "#2c242c",
                 sidebar_bg: "#282027",
-                popover_bg: "#463c48",
+                popover_bg: "#362e37",
                 dialog_bg: "#3a343c",
                 fg: "#ece6ea",
                 dim_fg: "#a2949c",
@@ -166,6 +167,10 @@ pub(in crate::ui) fn theme_css(
         theme.light_palette()
     };
     let accent_css = super::accent::css_overrides(source);
+    // Accent foregrounds are used app-wide. Dark text is weakest on the
+    // darkest light surface; light text is weakest on the lightest dark one.
+    let critical_accent_surface = if is_dark { p.dialog_bg } else { p.headerbar_bg };
+    let accent_text = super::accent::accent_text_color(source, critical_accent_surface, is_dark);
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -182,6 +187,7 @@ pub(in crate::ui) fn theme_css(
          @define-color dialog_bg_color {dlg};\n\
          @define-color dialog_fg_color {fg};\n\
          {accent_css}\
+         @define-color reprise_accent_text_color {accent_text};\n\
          @define-color reprise_primary_fg_color alpha({fg}, {primary_alpha});\n\
          @define-color reprise_secondary_fg_color alpha({fg}, {secondary_alpha});\n\
          @define-color reprise_hint_fg_color alpha({fg}, {hint_alpha});\n\
@@ -196,6 +202,7 @@ pub(in crate::ui) fn theme_css(
         pop = p.popover_bg,
         dlg = p.dialog_bg,
         accent_css = accent_css,
+        accent_text = accent_text,
         primary_alpha = PRIMARY_TEXT_ALPHA,
         secondary_alpha = SECONDARY_TEXT_ALPHA,
         hint_alpha = HINT_TEXT_ALPHA,
@@ -239,6 +246,7 @@ mod tests {
             format!("@define-color accent_color {APP_ACCENT};"),
             format!("@define-color accent_bg_color {APP_ACCENT};"),
             "@define-color accent_fg_color #04140f;".to_string(),
+            "@define-color reprise_accent_text_color ".to_string(),
             "@define-color reprise_player_accent @accent_color;".to_string(),
         ] {
             assert!(
@@ -257,6 +265,7 @@ mod tests {
                 "system accent must leave {name} to libadwaita"
             );
         }
+        assert!(css.contains("@define-color reprise_accent_text_color #"));
         assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
     }
 
@@ -278,6 +287,41 @@ mod tests {
             let p = theme.palette();
             assert_ne!(p.dialog_bg, p.card_bg, "{theme:?} dialog_bg == card_bg");
             assert_ne!(p.dialog_bg, p.window_bg, "{theme:?} dialog_bg == window_bg");
+        }
+    }
+
+    #[test]
+    fn dark_surface_ladder_places_popovers_between_cards_and_dialogs() {
+        fn luminance(hex: &str) -> f64 {
+            let hex = hex.strip_prefix('#').expect("palette color starts with #");
+            let linear = |offset| {
+                let channel = f64::from(
+                    u8::from_str_radix(&hex[offset..offset + 2], 16)
+                        .expect("palette color uses hexadecimal channels"),
+                ) / 255.0;
+                if channel <= 0.04045 {
+                    channel / 12.92
+                } else {
+                    ((channel + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * linear(0) + 0.7152 * linear(2) + 0.0722 * linear(4)
+        }
+
+        for theme in Theme::all() {
+            let palette = theme.palette();
+            let card = luminance(palette.card_bg);
+            let popover = luminance(palette.popover_bg);
+            let dialog = luminance(palette.dialog_bg);
+
+            assert!(
+                card < popover,
+                "{theme:?}: card must be darker than popover"
+            );
+            assert!(
+                popover < dialog,
+                "{theme:?}: popover must be darker than dialog"
+            );
         }
     }
 
@@ -391,6 +435,8 @@ mod tests {
                     ("column headers", palette.view_bg),
                     ("sidebar sections", palette.sidebar_bg),
                     ("card metadata", palette.card_bg),
+                    ("popover content", palette.popover_bg),
+                    ("dialog content", palette.dialog_bg),
                 ] {
                     let ratio = contrast(palette.fg, surface, SECONDARY_ALPHA);
                     assert!(
@@ -408,6 +454,7 @@ mod tests {
             ("status line", crate::ui::track_content::css()),
             ("column headers", crate::ui::track_list_header_style::css()),
             ("sidebar sections", crate::ui::library_chrome::css()),
+            ("updates popover", crate::ui::updates::css()),
         ] {
             assert!(
                 css.contains("@reprise_secondary_fg_color"),
