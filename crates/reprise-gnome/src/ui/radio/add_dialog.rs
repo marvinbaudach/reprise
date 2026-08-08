@@ -183,7 +183,7 @@ impl RadioAddDialog {
         let status = gtk4::Label::new(None);
         status.set_xalign(0.0);
         status.set_wrap(true);
-        status.add_css_class("dim-label");
+        status.add_css_class("reprise-text-secondary");
         let results = gtk4::ListBox::new();
         results.add_css_class("boxed-list");
         results.set_selection_mode(gtk4::SelectionMode::None);
@@ -217,7 +217,7 @@ impl RadioAddDialog {
         )));
         footnote.set_xalign(0.0);
         footnote.set_wrap(true);
-        footnote.add_css_class("dim-label");
+        footnote.add_css_class("reprise-text-secondary");
         footnote.add_css_class("caption");
 
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
@@ -659,7 +659,7 @@ impl RadioAddDialog {
                 gtk4::Label::new(Some(&radio::search::format_candidate_details(&candidate)));
             details.set_xalign(0.0);
             details.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-            details.add_css_class("dim-label");
+            details.add_css_class("reprise-text-secondary");
             details.add_css_class("caption");
             copy.append(&title);
             copy.append(&details);

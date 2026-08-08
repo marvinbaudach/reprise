@@ -259,7 +259,7 @@ mod tests {
             "border-radius: 999px",
             "alpha(@accent_bg_color, 0.13)",
             "alpha(@accent_color, 0.32)",
-            "color: @accent_color",
+            "color: @reprise_accent_text_color",
             "font-size: 11.5px",
             "font-weight: 600",
             "@keyframes scan-chip-gear-spin",

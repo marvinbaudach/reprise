@@ -1,12 +1,12 @@
 //! New Releases popover styling (D1): nocturne-toned surfaces built on the
-//! live theme accent (`@accent_bg_color`/`@accent_color`), never a hardcoded
+//! live theme accent (`@accent_bg_color`/`@reprise_accent_text_color`), never a hardcoded
 //! blurple — a theme switch must recolor this popover along with everything
 //! else. Styles exactly the `new-release-*` classes B1–C actually attach to
 //! widgets (see `release_row.rs`, `concerts_section.rs`, `popover.rs`,
 //! `badge.rs`, `release_cover.rs`).
 //!
 //! GTK CSS has no `text-transform`, so `.new-release-header` leans on
-//! letter-spacing and a dimmed opacity instead of forcing an uppercase
+//! letter-spacing and the shared secondary text level instead of forcing an uppercase
 //! rendering the parser would silently drop.
 //!
 //! Hover tints here are new, bespoke surfaces (not the shared `ICON_CLASS`/
@@ -50,11 +50,11 @@ pub(in crate::ui) fn css() -> String {
     /* Section headers ('New Releases', history group labels): GTK's CSS \
        engine has no case-transform property, so the uppercase look (if the \
        string itself is not already uppercase) is approximated with tracking \
-       and dimming instead. */\
+       and the shared secondary text level instead. */\
     .new-release-header {\
         font-size: 11px;\
         letter-spacing: 0.08em;\
-        opacity: 0.55;\
+        color: @reprise_secondary_fg_color;\
     }\
     /* Full-batch count pill: the filled accent outranks outlined row-status \
        chips without inventing a second colour. */\
@@ -83,7 +83,7 @@ pub(in crate::ui) fn css() -> String {
        fill (#4a). */\
     .new-release-chip {\
         border: 1px solid alpha(@accent_bg_color, 0.45);\
-        color: @accent_color;\
+        color: @reprise_accent_text_color;\
         background-color: alpha(@accent_bg_color, 0.08);\
         border-radius: 999px;\
         padding: 2px 8px;\
@@ -92,7 +92,7 @@ pub(in crate::ui) fn css() -> String {
     /* Released / already-in-library chip: neutral dimmed outline, no fill. */\
     .new-release-chip-neutral {\
         border: 1px solid alpha(@window_fg_color, 0.20);\
-        color: alpha(@window_fg_color, 0.55);\
+        color: @reprise_secondary_fg_color;\
         background-color: transparent;\
         border-radius: 999px;\
         padding: 2px 8px;\
@@ -104,7 +104,7 @@ pub(in crate::ui) fn css() -> String {
        claiming the album is yours. */\
     .new-release-chip-partial {\
         border: 1px solid alpha(@accent_bg_color, 0.30);\
-        color: alpha(@accent_color, 0.85);\
+        color: @reprise_accent_text_color;\
         background-color: transparent;\
         border-radius: 999px;\
         padding: 2px 8px;\
@@ -112,7 +112,7 @@ pub(in crate::ui) fn css() -> String {
     }\
     .new-release-meta {\
         font-size: 12px;\
-        opacity: 0.55;\
+        color: @reprise_secondary_fg_color;\
     }\
     /* Thin divider between the list and the history entry point, fading at \
        both ends instead of running edge to edge. */\
@@ -131,10 +131,10 @@ pub(in crate::ui) fn css() -> String {
         background-color: alpha(currentColor, 0.04);\
     }\
     .new-release-history-label {\
-        opacity: 0.70;\
+        color: @reprise_secondary_fg_color;\
     }\
     .new-release-history-count {\
-        opacity: 0.50;\
+        color: @reprise_hint_fg_color;\
     }\
     /* Row action icon buttons ('Show in library', 'Hide', history restore): \
        flat at rest, a soft tint on hover, with enough hit area for a pointer. */\
@@ -149,7 +149,7 @@ pub(in crate::ui) fn css() -> String {
     }\
     /* Header 'Fetch now' ghost button: accent text, no border, tinted hover. */\
     .new-release-ghost {\
-        color: @accent_color;\
+        color: @reprise_accent_text_color;\
         background-color: transparent;\
         border: none;\
         border-radius: 8px;\
@@ -170,6 +170,13 @@ pub(in crate::ui) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
+    fn rules_for<'a>(css: &'a str, selector: &str) -> &'a str {
+        css.split(&format!("{selector} {{"))
+            .nth(1)
+            .and_then(|rules| rules.split('}').next())
+            .unwrap_or_else(|| panic!("missing rules for {selector}"))
+    }
+
     #[test]
     fn css_covers_every_new_release_class() {
         let css = super::css();
@@ -201,7 +208,7 @@ mod tests {
     fn css_uses_the_theme_accent_not_a_hardcoded_colour() {
         let css = super::css();
         assert!(css.contains("@accent_bg_color"));
-        assert!(css.contains("@accent_color"));
+        assert!(css.contains("@reprise_accent_text_color"));
         assert!(css.contains("@accent_fg_color"));
         // Beschluss 7: no hardcoded blurple.
         assert!(!css.contains("#5e5cff"));
@@ -219,6 +226,29 @@ mod tests {
 
         assert!(tag.contains("background-color: @accent_bg_color"));
         assert!(tag.contains("color: @accent_fg_color"));
+    }
+
+    #[test]
+    fn contrast_1_text_classes_consume_roles_without_local_dimming() {
+        let css = super::css();
+        for (selector, role) in [
+            (".new-release-header", "@reprise_secondary_fg_color"),
+            (".new-release-meta", "@reprise_secondary_fg_color"),
+            (".new-release-chip-neutral", "@reprise_secondary_fg_color"),
+            (".new-release-history-label", "@reprise_secondary_fg_color"),
+            (".new-release-history-count", "@reprise_hint_fg_color"),
+        ] {
+            let rules = rules_for(&css, selector);
+            assert!(
+                rules.contains(&format!("color: {role}")),
+                "{selector} did not consume {role}"
+            );
+            assert!(!rules.contains("opacity:"), "{selector} locally dims text");
+            assert!(
+                !rules.contains("color: alpha(@window_fg_color"),
+                "{selector} locally mixes its foreground"
+            );
+        }
     }
 
     #[test]

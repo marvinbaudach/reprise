@@ -48,7 +48,7 @@ pub(in crate::ui) fn css() -> String {
         min-height: 0;\
         min-width: 0;\
         padding: 0 2px;\
-        color: @accent_color;\
+        color: @reprise_accent_text_color;\
     }}\
     .scan-card progressbar trough {{\
         min-height: 3px;\
@@ -69,7 +69,7 @@ pub(in crate::ui) fn css() -> String {
         background: alpha(@accent_bg_color, {CHIP_SURFACE_ALPHA});\
         border: 1px solid alpha(@accent_color, {CHIP_BORDER_ALPHA});\
         border-radius: 999px;\
-        color: @accent_color;\
+        color: @reprise_accent_text_color;\
     }}\
     .scan-chip.warning {{\
         background: alpha(@warning_bg_color, {CHIP_SURFACE_ALPHA});\
@@ -89,7 +89,7 @@ pub(in crate::ui) fn css() -> String {
         font-weight: 600;\
     }}\
     .scan-chip-gear {{\
-        color: @accent_color;\
+        color: @reprise_accent_text_color;\
     }}\
     .scan-chip-gear.scan-chip-gear-spinning {{\
         animation: scan-chip-gear-spin {spin_ms}ms linear infinite;\
@@ -128,9 +128,10 @@ mod tests {
     /// an explicit list so that both a typo *and* a silent removal are caught:
     /// the source test below holds it against what the stylesheet actually
     /// references, the display test resolves every entry for real.
-    const NAMED_COLOURS: [&str; 5] = [
+    const NAMED_COLOURS: [&str; 6] = [
         "accent_bg_color",
         "accent_color",
+        "reprise_accent_text_color",
         "warning_bg_color",
         "warning_color",
         "window_fg_color",

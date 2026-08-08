@@ -1,16 +1,16 @@
 //! CSS for the My Stats view, registered in the shared application stylesheet.
 //!
 //! Uses the existing design-system tokens (`.reprise-surface` for cards,
-//! `@accent_color` for the chart, `@window_fg_color` for text) so the view
-//! recolors with the active theme.
+//! `@reprise_accent_text_color` for the chart, `@window_fg_color` for text) so
+//! the view recolors with the active theme.
 
 use crate::ui::style::tokens;
 
 pub(in crate::ui) fn css() -> String {
     format!(
         // Cairo charts pick up `color` from these selectors.
-        ".stats-chart, .stats-ribbon {{ color: @accent_color; }}\n\
-         .stats-ribbon-best {{ color: shade(@accent_color, 1.25); }}\n\
+        ".stats-chart, .stats-ribbon {{ color: @reprise_accent_text_color; }}\n\
+         .stats-ribbon-best {{ color: @reprise_accent_text_color; }}\n\
          .stats-ribbon-baseline {{ color: alpha(@window_fg_color, 0.12); }}\n\
          \
          .stats-headline-hours {{ \
@@ -36,7 +36,7 @@ pub(in crate::ui) fn css() -> String {
          .stats-kpi-reference {{ \
            font-size: 11px; \
            color: alpha(@window_fg_color, 0.55); }}\n\
-         .stats-kpi-trend-icon {{ color: @accent_color; }}\n\
+         .stats-kpi-trend-icon {{ color: @reprise_accent_text_color; }}\n\
          \
          .stats-headline-subtitle {{ \
            font-size: 14px; \
@@ -48,7 +48,7 @@ pub(in crate::ui) fn css() -> String {
            padding: 4px 8px; \
            border-radius: 999px; \
            background-color: alpha(@accent_bg_color, 0.20); \
-           color: @accent_color; }}\n\
+           color: @reprise_accent_text_color; }}\n\
          \
          .stats-rank {{ \
            font-size: 13px; \
@@ -84,7 +84,7 @@ pub(in crate::ui) fn css() -> String {
            padding: 1px 6px; \
            border-radius: 4px; \
            background-color: alpha(@accent_bg_color, 0.28); \
-           color: @accent_color; }}\n\
+           color: @reprise_accent_text_color; }}\n\
          \
          .stats-cover-thumb {{ \
            border-radius: 4px; }}\n\
@@ -100,7 +100,7 @@ pub(in crate::ui) fn css() -> String {
          .stats-band-initials {{ \
            font-size: 64px; \
            font-weight: 700; \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            background-color: alpha(@accent_bg_color, 0.18); }}\n\
          .stats-band-name {{ font-size: 28px; font-weight: 800; }}\n\
          .stats-band-rank {{ padding: 2px 0; }}\n\
@@ -121,11 +121,11 @@ pub(in crate::ui) fn css() -> String {
          .stats-band-tile-initials {{ \
            font-size: 24px; \
            font-weight: 700; \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            background-image: linear-gradient(155deg, \
              alpha(@accent_bg_color, 0.22), alpha(@window_fg_color, 0.05)); }}\n\
          .stats-band-tile-body {{ padding: 0 14px 14px; }}\n\
-         .stats-band-tile-rank {{ font-size: 12px; color: @accent_color; }}\n\
+         .stats-band-tile-rank {{ font-size: 12px; color: @reprise_accent_text_color; }}\n\
          .stats-band-tile-name {{ font-size: 15px; font-weight: 700; }}\n\
          .stats-band-tile-unify {{ margin: 4px; }}\n\
          /* One hover for every activatable My Stats surface: the same alpha \
@@ -177,8 +177,8 @@ pub(in crate::ui) fn css() -> String {
          .stats-metadata-link {{ \
            color: @window_fg_color; padding: 0; text-decoration: none; }}\n\
          .stats-metadata-link:hover {{ \
-           color: @accent_color; text-decoration: underline; }}\n\
-         .stats-songs-reveal {{ color: @accent_color; }}\n\
+           color: @reprise_accent_text_color; text-decoration: underline; }}\n\
+         .stats-songs-reveal {{ color: @reprise_accent_text_color; }}\n\
          .stats-eyebrow {{ \
            font-size: 11px; \
            font-weight: 700; \
@@ -258,7 +258,7 @@ mod tests {
     fn stats_css_defines_the_ribbon_pill_and_band_classes() {
         let css = super::css();
         assert!(css.contains(".stats-ribbon"));
-        assert!(css.contains(".stats-ribbon-best { color: shade(@accent_color, 1.25); }"));
+        assert!(css.contains(".stats-ribbon-best { color: @reprise_accent_text_color; }"));
         assert!(css.contains(".stats-ribbon-baseline { color: alpha(@window_fg_color, 0.12); }"));
         assert!(css.contains(".stats-pill"));
         assert!(css.contains(".stats-band-card"));
@@ -364,7 +364,7 @@ mod tests {
         assert!(css.contains(".stats-compact-song-bar-fill { min-height: 8px;"));
         assert!(css.contains("text-decoration: none;"));
         assert!(css.contains(
-            ".stats-metadata-link:hover { color: @accent_color; text-decoration: underline; }"
+            ".stats-metadata-link:hover { color: @reprise_accent_text_color; text-decoration: underline; }"
         ));
     }
 }

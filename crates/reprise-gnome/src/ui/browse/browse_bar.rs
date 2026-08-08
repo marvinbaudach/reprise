@@ -43,7 +43,7 @@ pub(in crate::ui) fn css() -> String {
     use super::style::tokens::{CHIP_BG_ALPHA, CHIP_BG_HOVER_ALPHA};
     format!(
         ".{CHIP_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 8px; \
-         background-color: alpha(@accent_bg_color, {CHIP_BG_ALPHA}); color: @accent_color; }} \
+         background-color: alpha(@accent_bg_color, {CHIP_BG_ALPHA}); color: @reprise_accent_text_color; }} \
          .{CHIP_CSS_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {CHIP_BG_HOVER_ALPHA}); }} \
          .{PLACE_PILL_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 10px; \
          border: 1px solid alpha(currentColor, 0.30); background-color: transparent; }} \

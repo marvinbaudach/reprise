@@ -39,7 +39,7 @@ pub(super) fn css() -> String {
          .reprise-panel-toggle {{ \
            transition: color {TRANSITION}, background-color {TRANSITION}; }}\n\
          .reprise-panel-toggle:checked {{ \
-           color: @accent_color; \
+           color: @reprise_accent_text_color; \
            background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
          .reprise-panel-toggle:checked:hover {{ \
            background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA_STRONG}); }}\n\
