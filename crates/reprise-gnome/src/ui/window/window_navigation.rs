@@ -78,6 +78,13 @@ fn activate_sidebar_route(
     }
 }
 
+fn show_library_content_root(content_navigation: &adw::NavigationView) {
+    if let Some(root) = content_navigation.find_page(super::now_playing_wiring::LIBRARY_CONTENT_TAG)
+    {
+        content_navigation.pop_to_page(&root);
+    }
+}
+
 pub(in crate::ui) fn show_content_callback(
     split_view: &adw::OverlaySplitView,
     content_navigation: &adw::NavigationView,
@@ -89,13 +96,7 @@ pub(in crate::ui) fn show_content_callback(
             (Some(split_view), Some(content_navigation)) => {
                 activate_sidebar_route(
                     split_view.is_collapsed(),
-                    || {
-                        if let Some(root) = content_navigation
-                            .find_page(super::now_playing_wiring::LIBRARY_CONTENT_TAG)
-                        {
-                            content_navigation.pop_to_page(&root);
-                        }
-                    },
+                    || show_library_content_root(&content_navigation),
                     || split_view.set_show_sidebar(false),
                 );
             }
@@ -109,13 +110,14 @@ pub(in crate::ui) fn show_content_callback(
 }
 
 pub(in crate::ui) fn open_device_place(
-    _content_navigation: &adw::NavigationView,
+    content_navigation: &adw::NavigationView,
     content_stack: &gtk4::Stack,
     window_title: &adw::WindowTitle,
     device_id: &str,
     runtime: &Rc<DeviceSyncRuntime>,
     split_view: &adw::OverlaySplitView,
 ) -> bool {
+    show_library_content_root(content_navigation);
     if !super::device_sync_page::open(content_stack, window_title, device_id, runtime) {
         return false;
     }
