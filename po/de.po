@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-08 19:16+0200\n"
+"POT-Creation-Date: 2026-08-08 19:17+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -826,7 +826,7 @@ msgstr ""
 "Sie es erneut"
 
 #: crates/reprise-gnome/src/ui/strings.rs:644
-#: crates/reprise-gnome/src/ui/strings_filter.rs:19
+#: crates/reprise-gnome/src/ui/strings_filter.rs:36
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:267
 #, rust-format
 msgid "{count} track"
@@ -2968,6 +2968,7 @@ msgstr "Heruntergeladen"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:47
 #: crates/reprise-gnome/src/ui/strings_radio.rs:26
+#: crates/reprise-gnome/src/ui/strings_filter.rs:13
 #: crates/reprise-view/src/strings/browse.rs:8
 msgid "Clear all"
 msgstr "Alle löschen"
@@ -3414,7 +3415,7 @@ msgid "{count} subscribers"
 msgstr "{count} Abonnenten"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:214
-#: crates/reprise-gnome/src/ui/strings_filter.rs:21
+#: crates/reprise-gnome/src/ui/strings_filter.rs:38
 #, rust-format
 msgid "{count} episode"
 msgid_plural "{count} episodes"
@@ -3786,7 +3787,7 @@ msgid "{genre} in {country}"
 msgstr "{genre} in {country}"
 
 #: crates/reprise-gnome/src/ui/strings_radio.rs:93
-#: crates/reprise-gnome/src/ui/strings_filter.rs:26
+#: crates/reprise-gnome/src/ui/strings_filter.rs:43
 #, rust-format
 msgid "{count} station"
 msgid_plural "{count} stations"
@@ -4392,48 +4393,73 @@ msgstr "„{value}“ als neues Genre verwenden…"
 msgid "Tab"
 msgstr "Tab"
 
+#: crates/reprise-gnome/src/ui/strings_filter.rs:11
+msgid "Search settings"
+msgstr "Einstellungen durchsuchen"
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:12
+msgid "All results"
+msgstr "Alle Ergebnisse"
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:16
+#, rust-format
+msgid "⌕ “{query}” in settings  ×"
+msgstr "⌕ „{query}“ in Einstellungen  ×"
+
 #: crates/reprise-gnome/src/ui/strings_filter.rs:23
+#, rust-format
+msgid "<b>{shown}</b> of {total} settings"
+msgstr "<b>{shown}</b> von {total} Einstellungen"
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:40
 #, rust-format
 msgid "{count} video"
 msgid_plural "{count} videos"
 msgstr[0] "{count} Video"
 msgstr[1] "{count} Videos"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:24
+#: crates/reprise-gnome/src/ui/strings_filter.rs:41
 #, rust-format
 msgid "{count} gap"
 msgid_plural "{count} gaps"
 msgstr[0] "{count} Lücke"
 msgstr[1] "{count} Lücken"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:29
+#: crates/reprise-gnome/src/ui/strings_filter.rs:46
 #, rust-format
 msgid "{count} concert"
 msgid_plural "{count} concerts"
 msgstr[0] "{count} Konzert"
 msgstr[1] "{count} Konzerte"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:36
+#: crates/reprise-gnome/src/ui/strings_filter.rs:49
+#, rust-format
+msgid "{count} setting"
+msgid_plural "{count} settings"
+msgstr[0] "{count} Einstellung"
+msgstr[1] "{count} Einstellungen"
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:56
 #, rust-format
 msgid "End of results — {items} hidden by search “{query}”"
 msgstr "Ende der Ergebnisse — {items} durch die Suche „{query}“ ausgeblendet"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:43
+#: crates/reprise-gnome/src/ui/strings_filter.rs:63
 #, rust-format
 msgid "End of results — {items} hidden by active filters"
 msgstr "Ende der Ergebnisse — {items} durch aktive Filter ausgeblendet"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:50
+#: crates/reprise-gnome/src/ui/strings_filter.rs:70
 #, rust-format
 msgid "End of results — {items} hidden by search and filters"
 msgstr "Ende der Ergebnisse — {items} durch Suche und Filter ausgeblendet"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:57
+#: crates/reprise-gnome/src/ui/strings_filter.rs:77
 #, rust-format
 msgid "Show all {items}"
 msgstr "Alle {items} anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:63
+#: crates/reprise-gnome/src/ui/strings_filter.rs:83
 #, rust-format
 msgid "Show all {total} tracks"
 msgstr "Alle {total} Titel anzeigen"

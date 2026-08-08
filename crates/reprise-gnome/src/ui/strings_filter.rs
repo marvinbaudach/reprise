@@ -8,6 +8,23 @@ macro_rules! N_ {
 
 use crate::ui::end_of_results::ResultsUnit;
 
+pub const SEARCH_SETTINGS: &str = N_!("Search settings");
+pub const ALL_RESULTS: &str = N_!("All results");
+pub const SETTINGS_CLEAR_ALL: &str = N_!("Clear all");
+
+pub fn settings_search_chip_label(query: &str) -> String {
+    super::formatted(N_!("⌕ “{query}” in settings  ×"), &[("query", query)])
+}
+
+pub fn settings_filtered_count_markup(shown: usize, total: usize) -> String {
+    let shown = reprise_core::format::format_thousands(shown as i64);
+    let total = reprise_core::format::format_thousands(total as i64);
+    super::formatted(
+        N_!("<b>{shown}</b> of {total} settings"),
+        &[("shown", &shown), ("total", &total)],
+    )
+}
+
 fn formatted_count(count: usize) -> String {
     reprise_core::format::format_thousands(count as i64)
 }
@@ -27,6 +44,9 @@ fn result_count(unit: ResultsUnit, count: usize) -> String {
         }
         ResultsUnit::Concerts => {
             super::plural("{count} concert", "{count} concerts", count, &values)
+        }
+        ResultsUnit::Settings => {
+            super::plural("{count} setting", "{count} settings", count, &values)
         }
     }
 }

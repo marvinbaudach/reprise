@@ -32,6 +32,7 @@ pub(crate) enum ResultsUnit {
     Gaps,
     Stations,
     Concerts,
+    Settings,
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -1161,6 +1161,19 @@ result.
   strictly more often than the runner-up; otherwise every row is badged.
   Panel-tab and sidebar-section badges use the accent, while all other kinds
   are neutral.
+- **SET-13** [active] [gtk] — Preferences follows the content-list search
+  grammar: its header reveals one centred "Search settings" field, `Ctrl+F`
+  reveals the same field, and `Esc` first clears a query and then closes the
+  field. Matching reads each preference row's title and subtitle plus its page
+  name. Search mode keeps the sidebar's width, order and height stable: "All
+  results" is selected above the five pages, every page shows its hit count,
+  and a page with no hits remains present at 42% opacity. The result bar uses
+  the shared search-chip/count/"Clear all" order, matches use the shared accent
+  highlight, and the shared end line reports hidden settings. A hit is the
+  actual preference control, temporarily re-parented under a dim page-and-group
+  path; its origin parent and index are recorded before any matching control
+  moves so clearing restores every control to its exact place. Activating the
+  path closes search, opens that page and focuses the restored control.
 
 ## G. Feedback vocabulary
 
