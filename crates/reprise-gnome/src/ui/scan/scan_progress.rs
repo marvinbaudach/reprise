@@ -623,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn nav_7_fast_rescan_progress_remains_perceivable() {
+    fn nav_15_fast_rescan_progress_remains_perceivable() {
         assert_eq!(
             remaining_visible_time(Duration::from_millis(200)),
             Some(Duration::from_millis(500))

@@ -28,9 +28,9 @@ fn scan_completion_callback_runs_without_holding_its_refcell_borrow() {
     let calls = Rc::new(Cell::new(0));
     let calls_for_callback = calls.clone();
     let reentrant_completion = completion.clone();
-    completion.set(move || {
+    completion.add(move || {
         calls_for_callback.set(calls_for_callback.get() + 1);
-        reentrant_completion.set(|| {});
+        reentrant_completion.add(|| {});
     });
 
     completion.notify();
@@ -39,17 +39,23 @@ fn scan_completion_callback_runs_without_holding_its_refcell_borrow() {
 }
 
 #[test]
-fn scan_completion_notifies_every_registered_follow_up() {
+fn scan_completion_notifies_cover_and_rendering_follow_ups() {
     let completion = ScanCompletion::default();
-    let calls = Rc::new(Cell::new(0));
-    for _ in 0..2 {
-        let calls = calls.clone();
-        completion.set(move || calls.set(calls.get() + 1));
-    }
+    let cover_starts = Rc::new(Cell::new(0));
+    let rendering_starts = Rc::new(Cell::new(0));
+    completion.add({
+        let cover_starts = cover_starts.clone();
+        move || cover_starts.set(cover_starts.get() + 1)
+    });
+    completion.add({
+        let rendering_starts = rendering_starts.clone();
+        move || rendering_starts.set(rendering_starts.get() + 1)
+    });
 
     completion.notify();
 
-    assert_eq!(calls.get(), 2);
+    assert_eq!(cover_starts.get(), 1);
+    assert_eq!(rendering_starts.get(), 1);
 }
 
 #[test]

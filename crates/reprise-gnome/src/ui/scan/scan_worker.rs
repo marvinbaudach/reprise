@@ -218,7 +218,6 @@ pub(in crate::ui) fn publish_latest_progress(
 fn begin_scan_ui(controls: &ScanControls) {
     controls.reset_cancel();
     controls.button.set_sensitive(false);
-    controls.notify_scan_state();
     controls.button.set_label(&strings::text(strings::SCANNING));
     controls.show_progress(&ScanProgress::Discovering);
 }
@@ -226,7 +225,6 @@ fn begin_scan_ui(controls: &ScanControls) {
 fn finish_scan_ui(controls: &ScanControls) {
     controls.finish_progress();
     controls.button.set_sensitive(true);
-    controls.notify_scan_state();
     controls
         .button
         .set_label(&strings::text(strings::SCAN_FOLDER));

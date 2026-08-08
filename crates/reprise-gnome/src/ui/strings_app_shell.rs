@@ -26,12 +26,7 @@ pub const CLOSE_WINDOW: &str = N_!("Close Window");
 pub const QUIT_REPRISE: &str = N_!("Quit Reprise");
 
 // Primary menu items.
-pub const RESCAN_LIBRARY: &str = N_!("Rescan Library");
 pub const CANCEL_SCAN: &str = N_!("Cancel Scan");
-/// Starts the rendering-data backfill. Named for what the listener gets — the
-/// coloured seek bar and the visualisers — not for the spectrogram behind it.
-pub const ANALYZE_LIBRARY: &str = N_!("Analyze Library");
-pub const STOP_ANALYSIS: &str = N_!("Stop Analysis");
 pub const KEYBOARD_SHORTCUTS: &str = N_!("Keyboard Shortcuts");
 pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
 
