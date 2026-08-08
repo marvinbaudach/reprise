@@ -28,6 +28,7 @@ pub(super) fn category_rule_text(
             youtube,
             podcasts,
             keep_smart_updated,
+            true,
         )
     )
 }
@@ -39,7 +40,12 @@ pub(super) fn category_rule_prefix(
     youtube: YoutubeSelectionSummary,
     podcasts: PodcastSelectionSummary,
     keep_smart_updated: bool,
+    target_enabled: bool,
 ) -> String {
+    if !target_enabled {
+        return device_sync_strings::text(device_sync_strings::NOT_SYNCHRONIZED_WITH_PHONE);
+    }
+
     let parts = match kind {
         SyncTargetKind::Playlists => {
             let summary = summarize_playlist_selection(playlists, unique_track_count);
@@ -185,6 +191,25 @@ mod tests {
 
         assert_eq!(text, "4 channels · all episodes · no size limit");
         assert!(!text.contains("latest 0"));
+    }
+
+    #[test]
+    fn a_disabled_device_target_explains_the_opt_in_instead_of_the_selection() {
+        assert_eq!(
+            category_rule_prefix(
+                SyncTargetKind::PodcastEpisodes,
+                &[],
+                0,
+                YoutubeSelectionSummary::default(),
+                PodcastSelectionSummary {
+                    shows_selected: 1,
+                    shows_total: 3,
+                },
+                true,
+                false,
+            ),
+            "Not synchronized with this phone"
+        );
     }
 
     #[test]
