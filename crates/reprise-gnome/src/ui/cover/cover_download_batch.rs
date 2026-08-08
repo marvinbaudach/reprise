@@ -73,6 +73,20 @@ impl BatchProgress {
         self
     }
 
+    /// The run is through: every open track has been answered.
+    ///
+    /// Without this the only way out of `Running` is `checked` meeting
+    /// `total` exactly. That holds for a run that asks about every track it
+    /// counted, but not for one whose settled tracks were filtered out after
+    /// the count — and a run that can never reach its own total leaves the
+    /// card showing work that will never happen, with no way to dismiss it.
+    fn completed(mut self) -> Self {
+        if self.state == BatchState::Running {
+            self.state = BatchState::Complete;
+        }
+        self
+    }
+
     pub(in crate::ui) fn fraction(self) -> f64 {
         if self.total == 0 {
             return f64::from(self.state == BatchState::Complete);
@@ -137,8 +151,11 @@ impl CoverDownloadBatch {
         };
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
-        self.set_progress(BatchProgress::running(paths.len()));
         if paths.is_empty() {
+            // A run of nothing is a run that is already done — `running(0)`
+            // says exactly that, and the batches waiting on this one need to
+            // hear it.
+            self.set_progress(BatchProgress::running(0));
             return;
         }
 
@@ -153,20 +170,25 @@ impl CoverDownloadBatch {
             let paths = {
                 let candidates = paths.clone();
                 gtk4::gio::spawn_blocking(move || {
-                    candidates
-                        .into_iter()
-                        .filter(|path| {
-                            !reprise_core::cover::download_marked_unavailable(
-                                std::path::Path::new(path),
-                                reprise_core::cover::ThumbnailSize::List,
-                            )
-                        })
-                        .collect::<Vec<String>>()
+                    open_paths(candidates, |path| {
+                        reprise_core::cover::download_marked_unavailable(
+                            std::path::Path::new(path),
+                            reprise_core::cover::ThumbnailSize::List,
+                        )
+                    })
                 })
                 .await
                 .unwrap_or(paths)
             };
             if this.generation.get() != generation {
+                return;
+            }
+            // Only now is the run's size known. Announcing the library's size
+            // before the filter ran promised work this run will never do: on a
+            // settled library every track drops out here, and the card would
+            // sit at "0 of <library>" for the rest of the session.
+            this.set_progress(BatchProgress::running(paths.len()));
+            if paths.is_empty() {
                 return;
             }
 
@@ -218,6 +240,7 @@ impl CoverDownloadBatch {
             if this.generation.get() != generation {
                 return;
             }
+            this.set_progress(this.progress.get().completed());
             let refreshed_paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
             this.track_list.reload();
             if let Some(player) = &this.player {
@@ -226,17 +249,46 @@ impl CoverDownloadBatch {
         });
     }
 
+    /// Stops the run in flight and clears the card.
+    ///
+    /// The generation bump is the stop signal the spawned task already checks
+    /// after every await; the idle progress is what takes the card away. A
+    /// later run — a finished scan, say — is free to start again.
+    pub(in crate::ui) fn cancel(&self) {
+        self.generation.set(self.generation.get().wrapping_add(1));
+        self.set_progress(BatchProgress::idle());
+    }
+
     fn set_progress(&self, progress: BatchProgress) {
         self.progress.set(progress);
         self.progress_subscribers.notify(progress);
     }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn set_progress_for_test(&self, progress: BatchProgress) {
+        self.set_progress(progress);
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn progress_for_test(&self) -> BatchProgress {
+        self.progress.get()
+    }
+}
+
+/// The tracks this run still has to ask the download side about.
+///
+/// A track the download side has already settled is not an open item, so it
+/// is neither asked about again nor counted — the run's size is the number of
+/// open items, never the size of the library.
+fn open_paths(paths: Vec<String>, is_settled: impl Fn(&str) -> bool) -> Vec<String> {
+    paths.into_iter().filter(|path| !is_settled(path)).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::{BatchProgress, BatchState};
+    use super::{open_paths, BatchProgress, BatchState};
     use crate::ui::cover_download_worker::DownloadOutcome;
 
     #[test]
@@ -253,6 +305,66 @@ mod tests {
         assert_eq!(progress.downloaded, 1);
         assert_eq!(progress.unavailable, 1);
         assert_eq!(progress.fraction(), 1.0);
+    }
+
+    #[test]
+    fn a_run_is_sized_by_the_tracks_still_open_not_by_the_whole_library() {
+        let library = vec![
+            "/music/settled.flac".to_string(),
+            "/music/open.flac".to_string(),
+            "/music/also-settled.flac".to_string(),
+        ];
+
+        let open = open_paths(library, |path| path != "/music/open.flac");
+
+        assert_eq!(
+            open,
+            vec!["/music/open.flac".to_string()],
+            "only the tracks the download side has not settled are open items"
+        );
+    }
+
+    #[test]
+    fn a_settled_library_finishes_instead_of_running_forever() {
+        let library = vec![
+            "/music/a.flac".to_string(),
+            "/music/b.flac".to_string(),
+            "/music/c.flac".to_string(),
+        ];
+
+        let open = open_paths(library, |_| true);
+        let progress = BatchProgress::running(open.len());
+
+        assert_eq!(
+            progress.state,
+            BatchState::Complete,
+            "a run with nothing left to check is done, not stuck at 0 of the library"
+        );
+    }
+
+    #[test]
+    fn a_run_ends_when_its_open_tracks_are_through() {
+        // The filter left two of the library's tracks open. Once both have
+        // been answered the run is over — nothing else will ever arrive.
+        let progress = BatchProgress::running(2)
+            .advance(&DownloadOutcome::AlreadyCovered)
+            .advance(&DownloadOutcome::Unavailable)
+            .completed();
+
+        assert_eq!(progress.state, BatchState::Complete);
+        assert_eq!(progress.fraction(), 1.0);
+    }
+
+    #[test]
+    fn a_run_cut_short_still_ends_rather_than_hanging_at_its_last_count() {
+        // Defensive: whatever stopped the loop early, the card must not be
+        // left showing a run that can no longer move.
+        let progress = BatchProgress::running(4)
+            .advance(&DownloadOutcome::Downloaded(PathBuf::from("/cache/a.jpg")))
+            .completed();
+
+        assert_eq!(progress.state, BatchState::Complete);
+        assert_eq!(progress.downloaded, 1);
     }
 
     #[test]
