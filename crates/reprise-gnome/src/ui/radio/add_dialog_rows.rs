@@ -9,6 +9,7 @@ use reprise_core::radio::search::StationCandidate;
 
 use super::add_dialog::images_allowed;
 use super::add_dialog_network::{now_unix, station_from_candidate};
+use crate::ui::search_highlight::{self, HighlightPalette};
 use crate::ui::source_add_action;
 use crate::ui::strings;
 
@@ -18,11 +19,9 @@ use crate::ui::strings;
 pub(super) fn title_markup(
     station_name: &str,
     query: Option<&str>,
-    foreground: Option<&str>,
+    palette: Option<&HighlightPalette>,
 ) -> Option<String> {
-    query.and_then(|needle| {
-        crate::ui::track_list::match_highlight::highlight_markup(station_name, needle, foreground)
-    })
+    query.and_then(|needle| search_highlight::highlight_markup(station_name, needle, palette))
 }
 
 pub(super) fn candidate_row(
@@ -47,8 +46,8 @@ pub(super) fn candidate_row(
     // raises the dialog's minimum width, including rows outside the viewport.
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     if let Some(query) = query {
-        let foreground = crate::ui::track_list::match_highlight::accent_foreground(&title);
-        if let Some(markup) = title_markup(&candidate.name, Some(query), foreground.as_deref()) {
+        let palette = search_highlight::accent_palette(&title);
+        if let Some(markup) = title_markup(&candidate.name, Some(query), Some(&palette)) {
             title.set_markup(&markup);
         }
     }

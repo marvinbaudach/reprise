@@ -2,8 +2,10 @@
 //!
 //! Split out of `window_runtime_wiring` so neither file grows past the
 //! repository's source-size limit, and so the whole per-section contract —
-//! who applies a query, who clears its own facets, who pushes a cleared chip
-//! back into the entry — is readable in one place.
+//! who applies a query, who clears its own facets only for explicit Clear all,
+//! and who pushes a cleared chip back into the entry — is readable in one
+//! place. SEARCH-8a view switches use only the query half of each registration,
+//! so type/window/hidden/unplayed/downloaded facets survive untouched.
 
 use std::rc::Rc;
 
@@ -30,20 +32,29 @@ pub(in crate::ui) fn install(search: &Rc<SectionSearch>, views: &SectionSearchVi
     install_concerts(search, views.concerts_view);
 }
 
-/// Music and Missing files share the track list, whose own debounced search
-/// path (`view_session::wire_search`) already applies the query to the table.
-/// Music therefore registers no `apply` at all — one would run the same
-/// reload twice per keystroke.
+/// Music and Missing files share the track list. Non-empty Music queries use
+/// the track list's own debounced path (`view_session::wire_search`) so typing
+/// does not run two reloads. The scope handler still owns empty queries: view
+/// switches call it directly after changing the active scope, when the entry's
+/// signal is deliberately no longer allowed to reach the track list.
 ///
 /// Missing files is the exception: its rows are rendered by
 /// `MissingFilesView`, not by the table, and that view has to be told the
 /// query separately (FIL-1d — it matches file paths, which the table's
 /// "any field" search does not).
 fn install_tracks(search: &Rc<SectionSearch>, track_list: &Rc<TrackList>) {
+    let applying = Rc::downgrade(track_list);
     let clearing = Rc::downgrade(track_list);
     search.register(
         SearchScope::Tracks,
-        |_| {},
+        move |query| {
+            if !query.is_empty() {
+                return;
+            }
+            if let Some(track_list) = applying.upgrade() {
+                track_list.set_filter("");
+            }
+        },
         move || {
             if let Some(track_list) = clearing.upgrade() {
                 track_list.clear_all_restrictions();
@@ -174,4 +185,81 @@ fn install_concerts(search: &Rc<SectionSearch>, view: &Rc<crate::ui::concerts::C
             }
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use gtk4::prelude::*;
+    use libadwaita as adw;
+
+    use super::*;
+    use crate::ui::track_list::queue_sections::QueueViewModel;
+    use reprise_core::view_source::ViewSource;
+
+    fn settle() {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+    }
+
+    fn settle_until(condition: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !condition() {
+            settle();
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for search state"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    // UX SEARCH-8a: leaving Music clears both representations of its query.
+    // The header entry and the track list's own filter must never diverge.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_8a_leaving_and_reentering_music_clears_the_track_filter() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let entry = gtk4::SearchEntry::new();
+        entry.set_search_delay(0);
+        let search_bar = gtk4::SearchBar::new();
+        search_bar.connect_entry(&entry);
+        let toggle = gtk4::ToggleButton::new();
+        let search = SectionSearch::new(&entry, &search_bar, &toggle, &window);
+        let track_list = Rc::new(TrackList::new(
+            Rc::new(crate::test_db::open().unwrap()),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        ));
+        install_tracks(&search, &track_list);
+        search.register(SearchScope::Podcasts, |_| {}, || {});
+        let guard = crate::ui::view_session::new_search_restore_guard();
+        let search_for_scope = search.clone();
+        crate::ui::view_session::wire_search(
+            &entry,
+            track_list.clone(),
+            guard,
+            Rc::new(move || search_for_scope.is_active(SearchScope::Tracks)),
+        );
+
+        search.activate_source(&ViewSource::Library, "Music");
+        entry.set_text("falling");
+        settle_until(|| track_list.shared.filter.borrow().as_str() == "falling");
+        assert_eq!(track_list.shared.filter.borrow().as_str(), "falling");
+
+        search.activate_source(&ViewSource::Podcasts, "Podcasts");
+        search.activate_source(&ViewSource::Library, "Music");
+        settle();
+
+        assert_eq!(entry.text(), "");
+        assert_eq!(
+            track_list.shared.filter.borrow().as_str(),
+            "",
+            "the track list must not retain a query the header discarded"
+        );
+    }
 }

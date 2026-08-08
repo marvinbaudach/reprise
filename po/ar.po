@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-08 17:41+0200\n"
+"POT-Creation-Date: 2026-08-08 19:17+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Arabic\n"
@@ -813,6 +813,7 @@ msgid "Could not remove — reload the playlist and try again"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:644
+#: crates/reprise-gnome/src/ui/strings_filter.rs:36
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:267
 #, rust-format
 msgid "{count} track"
@@ -2925,6 +2926,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:47
 #: crates/reprise-gnome/src/ui/strings_radio.rs:26
+#: crates/reprise-gnome/src/ui/strings_filter.rs:13
 #: crates/reprise-view/src/strings/browse.rs:8
 msgid "Clear all"
 msgstr ""
@@ -3350,6 +3352,7 @@ msgid "{count} subscribers"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:214
+#: crates/reprise-gnome/src/ui/strings_filter.rs:38
 #, rust-format
 msgid "{count} episode"
 msgid_plural "{count} episodes"
@@ -3766,6 +3769,7 @@ msgid "{genre} in {country}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_radio.rs:93
+#: crates/reprise-gnome/src/ui/strings_filter.rs:43
 #, rust-format
 msgid "{count} station"
 msgid_plural "{count} stations"
@@ -4346,21 +4350,88 @@ msgid "Tab"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_filter.rs:11
-#, rust-format
-msgid "End of results — {hidden} tracks hidden by search “{query}”"
+msgid "Search settings"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:18
-#, rust-format
-msgid "End of results — {hidden} tracks hidden by active filters"
+#: crates/reprise-gnome/src/ui/strings_filter.rs:12
+msgid "All results"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:25
+#: crates/reprise-gnome/src/ui/strings_filter.rs:16
 #, rust-format
-msgid "End of results — {hidden} tracks hidden by search and filters"
+msgid "⌕ “{query}” in settings  ×"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:31
+#: crates/reprise-gnome/src/ui/strings_filter.rs:23
+#, rust-format
+msgid "<b>{shown}</b> of {total} settings"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:40
+#, rust-format
+msgid "{count} video"
+msgid_plural "{count} videos"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:41
+#, rust-format
+msgid "{count} gap"
+msgid_plural "{count} gaps"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:46
+#, rust-format
+msgid "{count} concert"
+msgid_plural "{count} concerts"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:49
+#, rust-format
+msgid "{count} setting"
+msgid_plural "{count} settings"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:56
+#, rust-format
+msgid "End of results — {items} hidden by search “{query}”"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:63
+#, rust-format
+msgid "End of results — {items} hidden by active filters"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:70
+#, rust-format
+msgid "End of results — {items} hidden by search and filters"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:77
+#, rust-format
+msgid "Show all {items}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:83
 #, rust-format
 msgid "Show all {total} tracks"
 msgstr ""
@@ -4375,6 +4446,11 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_ai.rs:13
 msgid "Hide AI music"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:12
+#, rust-format
+msgid "⌕ “{query}” in track, artist and album"
 msgstr ""
 
 #: crates/reprise-view/src/strings/scan.rs:13

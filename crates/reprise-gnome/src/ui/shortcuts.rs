@@ -152,7 +152,7 @@ pub fn wire(
 }
 
 /// The shell decisions the shortcuts have to ask about rather than make:
-/// where Escape hands focus and — SEARCH-8 —
+/// where Escape hands focus and — SEARCH-8a —
 /// whether the visible section has a list for Ctrl+F to filter at all.
 pub struct ShortcutHooks {
     pub focus_active_content: Rc<dyn Fn() -> bool>,
@@ -244,7 +244,7 @@ fn wire_focus_search(
     let window_weak = window.downgrade();
     let pending_focus_on_activate = pending_focus.clone();
     action.connect_activate(move |_, _| {
-        // SEARCH-8: where there is no list, Ctrl+F is a no-op — the same
+        // SEARCH-8a: where there is no list, Ctrl+F is a no-op — the same
         // truth the insensitive lens tells, said in the keyboard's language.
         if !search_available() {
             tracing::debug!("focus-search: the visible section has nothing to filter");

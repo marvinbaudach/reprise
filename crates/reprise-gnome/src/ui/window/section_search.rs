@@ -1,17 +1,18 @@
-//! SEARCH-8: one query per section, not one query per window.
+//! SEARCH-8a: a query belongs only to the view where it is typed.
 //!
 //! The header bar owns a single `GtkSearchEntry`, but the query it holds
-//! belongs to the section the user typed it in. This module is the only place
-//! that knows that: it keeps a query per [`SearchScope`], swaps the entry text
-//! when the visible section changes, and hands the current query to whichever
-//! view registered itself for that scope.
+//! is deliberately transient: a sidebar destination switch clears the view
+//! being left, starts the destination empty, and collapses the bar. Metadata
+//! drills carry the query in their `BrowserPlace`, and Back restores the
+//! complete saved place; this module does not keep parallel history.
 //!
-//! Two invariants make the rest of the shell simple:
+//! Three invariants make the rest of the shell simple:
 //!
-//! * The entry text is always the active scope's query. Every write — typed,
-//!   restored on a section switch, or pushed back by a view that cleared its
-//!   own chip — goes through here, so no participant has to guess which
-//!   section a query belongs to.
+//! * The entry text is always the active scope's query. Every write pushed
+//!   back by a view that cleared its own chip goes through here, so no
+//!   participant has to guess which section a query belongs to.
+//! * Query clearing calls only a section's `apply` handler. Its separately
+//!   stored facet filters remain untouched unless the user invokes Clear all.
 //! * A section without a list ([`SectionSearch::supports_search`] is false) can neither be
 //!   searched nor reveal the bar: the lens is insensitive with a tooltip that
 //!   names the section, Ctrl+F is a no-op, and typing cannot open the strip.
@@ -24,7 +25,7 @@ use gtk4::prelude::*;
 use reprise_core::view_source::ViewSource;
 use reprise_view::search_scope::{self, SearchScope};
 
-use crate::ui::browse_filter_strings as filter_strings;
+use crate::ui::filter_bar_strings as filter_strings;
 use crate::ui::strings;
 
 /// The content-stack page names this module has to recognise by hand: the
@@ -77,12 +78,9 @@ pub(in crate::ui) struct SectionSearch {
     toggle: gtk4::glib::WeakRef<gtk4::ToggleButton>,
     key_capture: gtk4::glib::WeakRef<gtk4::Widget>,
     active: Cell<SearchScope>,
-    queries: RefCell<BTreeMap<SearchScope, String>>,
+    active_source: RefCell<Option<ViewSource>>,
     handlers: RefCell<BTreeMap<SearchScope, SectionHandlers>>,
     shell: RefCell<Option<ShellState>>,
-    /// Set while this module writes the entry itself, so the resulting
-    /// `changed` does not re-record a value it just restored.
-    restoring: Cell<bool>,
 }
 
 impl SectionSearch {
@@ -98,23 +96,9 @@ impl SectionSearch {
             toggle: toggle.downgrade(),
             key_capture: key_capture.clone().upcast::<gtk4::Widget>().downgrade(),
             active: Cell::new(SearchScope::Tracks),
-            queries: RefCell::new(BTreeMap::new()),
+            active_source: RefCell::new(None),
             handlers: RefCell::new(BTreeMap::new()),
             shell: RefCell::new(None),
-            restoring: Cell::new(false),
-        });
-        // `changed`, not `search-changed`: the stored query has to be exact
-        // the instant the user types, because a section switch may read it
-        // back before GTK's ~150 ms debounce would have fired.
-        let weak = Rc::downgrade(&search);
-        entry.connect_changed(move |entry| {
-            let Some(search) = weak.upgrade() else {
-                return;
-            };
-            if search.restoring.get() {
-                return;
-            }
-            search.record(&entry.text());
         });
         // The debounced signal is what actually re-filters a list.
         let weak = Rc::downgrade(&search);
@@ -219,40 +203,55 @@ impl SectionSearch {
         Some((scope, name))
     }
 
-    /// SEARCH-8: the section changed. Stash the query the user leaves behind,
-    /// restore the one the section they enter already had, and re-apply it so
-    /// the incoming list is filtered the way the user last left it.
+    /// SEARCH-8a: a distinct sidebar source starts a new search context even
+    /// when both sources share the track-list scope. Re-routing the exact
+    /// active source is a no-op; source identity is tracked separately because
+    /// scope equality alone cannot distinguish Library from Recently Added.
+    /// Metadata drills bypass this clearing path, while Back restoration is
+    /// applied later from the history-owned `BrowserPlace`, not remembered
+    /// here.
     pub(in crate::ui) fn activate_source(self: &Rc<Self>, source: &ViewSource, section_name: &str) {
-        self.activate(search_scope::scope_for(source), section_name);
-    }
-
-    pub(in crate::ui) fn activate(self: &Rc<Self>, scope: SearchScope, section_name: &str) {
-        let previous = self.active.replace(scope);
-        if previous == scope {
-            // Still refresh the affordance: the section name can change
-            // without the scope changing (playlist to playlist).
+        let scope = search_scope::scope_for(source);
+        let already_active = self.active.get() == scope
+            && self
+                .active_source
+                .borrow()
+                .as_ref()
+                .is_some_and(|active| active == source);
+        if already_active {
             self.sync_affordance(section_name);
             return;
         }
-        self.record_active_from_entry(previous);
-        let restored = self
-            .queries
-            .borrow()
-            .get(&scope)
-            .cloned()
-            .unwrap_or_default();
-        self.write_entry(&restored);
+        *self.active_source.borrow_mut() = Some(source.clone());
+        self.switch_view(scope, section_name);
+    }
+
+    pub(in crate::ui) fn activate(self: &Rc<Self>, scope: SearchScope, section_name: &str) {
+        if self.active.get() == scope {
+            // Still refresh the affordance: an observer can repeat the same
+            // scope after the route already changed the visible title.
+            self.sync_affordance(section_name);
+            return;
+        }
+        self.switch_view(scope, section_name);
+    }
+
+    fn switch_view(&self, scope: SearchScope, section_name: &str) {
+        let previous = self.active.replace(scope);
+        self.apply_to_scope(previous, "");
+        let entry_changed = self.write_entry("");
+        self.collapse_bar();
         self.sync_affordance(section_name);
-        self.apply_to_active(&restored);
+        if !entry_changed {
+            // Identical text emits no signal, so reset explicitly.
+            self.apply_to_scope(scope, "");
+        }
     }
 
     /// A view removed its own query (the chip's ×, or a jump that had to
     /// relax the search to reach its row). The entry follows so the two never
     /// disagree about what is filtered.
     pub(in crate::ui) fn set_query(self: &Rc<Self>, scope: SearchScope, query: &str) {
-        self.queries
-            .borrow_mut()
-            .insert(scope, query.trim().to_owned());
         if self.active.get() != scope {
             return;
         }
@@ -262,9 +261,9 @@ impl SectionSearch {
         self.write_entry(query.trim());
     }
 
-    /// FIL-2: "Clear all" belongs to the section it was clicked in — it drops
-    /// this section's query and this section's facets, and leaves every other
-    /// section's alone.
+    /// FIL-2a: "Clear all" belongs to the view it was clicked in — it drops
+    /// that view's query and facets, and leaves every other view's facets
+    /// alone.
     pub(in crate::ui) fn clear_all(self: &Rc<Self>) {
         let scope = self.active.get();
         let clear_facets = self
@@ -275,45 +274,35 @@ impl SectionSearch {
         if let Some(clear_facets) = clear_facets {
             clear_facets();
         }
-        // Written through the same guard as every other programmatic write,
-        // then recorded and applied explicitly — one path, rather than
-        // relying on the entry's own handlers to do half of it.
+        // Apply explicitly rather than relying on the entry's signal handler
+        // to do half of an action that also clears facets.
         self.write_entry("");
-        self.record("");
         self.apply_to_active("");
     }
 
-    /// The one place this module writes the entry. The guard stops the
-    /// resulting `changed` from re-recording a value we just restored.
-    fn write_entry(&self, text: &str) {
+    /// The one place this module writes the entry.
+    fn write_entry(&self, text: &str) -> bool {
         let Some(entry) = self.entry.upgrade() else {
-            return;
+            return false;
         };
-        self.restoring.set(true);
-        entry.set_text(text);
-        self.restoring.set(false);
+        let changed = entry.text() != text;
+        if changed {
+            entry.set_text(text);
+        }
+        changed
     }
 
     fn entry_text(&self) -> String {
         self.entry
             .upgrade()
-            .map(|entry| entry.text().to_string())
-            .unwrap_or_default()
-    }
-
-    fn record(&self, query: &str) {
-        self.queries
-            .borrow_mut()
-            .insert(self.active.get(), query.trim().to_owned());
-    }
-
-    fn record_active_from_entry(&self, scope: SearchScope) {
-        let text = self.entry_text().trim().to_owned();
-        self.queries.borrow_mut().insert(scope, text);
+            .map_or_else(String::new, |entry| entry.text().to_string())
     }
 
     fn apply_to_active(&self, query: &str) {
-        let scope = self.active.get();
+        self.apply_to_scope(self.active.get(), query);
+    }
+
+    fn apply_to_scope(&self, scope: SearchScope, query: &str) {
         let apply = self
             .handlers
             .borrow()
@@ -325,7 +314,16 @@ impl SectionSearch {
         }
     }
 
-    /// SEARCH-8: where there is no list, there is nothing to filter — the
+    fn collapse_bar(&self) {
+        if let Some(toggle) = self.toggle.upgrade() {
+            toggle.set_active(false);
+        }
+        if let Some(search_bar) = self.search_bar.upgrade() {
+            search_bar.set_search_mode(false);
+        }
+    }
+
+    /// SEARCH-8a: where there is no list, there is nothing to filter — the
     /// lens says so and stops responding, and the strip cannot be revealed by
     /// typing either.
     fn sync_affordance(&self, section_name: &str) {
@@ -353,259 +351,5 @@ impl SectionSearch {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::cell::RefCell as StdRefCell;
-
-    use libadwaita as adw;
-    use libadwaita::prelude::*;
-
-    use super::*;
-
-    struct Harness {
-        search: Rc<SectionSearch>,
-        entry: gtk4::SearchEntry,
-        toggle: gtk4::ToggleButton,
-        search_bar: gtk4::SearchBar,
-        applied: Rc<StdRefCell<Vec<(SearchScope, String)>>>,
-    }
-
-    fn harness() -> Harness {
-        let window = adw::ApplicationWindow::builder().build();
-        let entry = gtk4::SearchEntry::new();
-        let search_bar = gtk4::SearchBar::new();
-        search_bar.connect_entry(&entry);
-        let toggle = gtk4::ToggleButton::new();
-        let search = SectionSearch::new(&entry, &search_bar, &toggle, &window);
-        let applied = Rc::new(StdRefCell::new(Vec::new()));
-        for scope in [
-            SearchScope::Tracks,
-            SearchScope::Podcasts,
-            SearchScope::Radio,
-        ] {
-            let sink = applied.clone();
-            search.register(
-                scope,
-                move |query| sink.borrow_mut().push((scope, query.to_owned())),
-                || {},
-            );
-        }
-        Harness {
-            search,
-            entry,
-            toggle,
-            search_bar,
-            applied,
-        }
-    }
-
-    fn settle() {
-        while gtk4::glib::MainContext::default().iteration(false) {}
-    }
-
-    /// GTK debounces `search-changed` by ~150 ms, so a typed query reaches
-    /// its section a moment after the keystroke. Pump until it does rather
-    /// than asserting into that window.
-    fn settle_until(label: &str, condition: impl Fn() -> bool) {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !condition() {
-            settle();
-            assert!(std::time::Instant::now() < deadline, "timed out: {label}");
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-    }
-
-    // UX SEARCH-8: a query typed in Podcasts leaves the Library query empty
-    // and vice versa — the two never see each other's text.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn search_8_a_query_belongs_to_the_section_it_was_typed_in() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let harness = harness();
-
-        harness.search.activate(SearchScope::Tracks, "Music");
-        harness.entry.set_text("falling");
-        settle();
-
-        harness.search.activate(SearchScope::Podcasts, "Podcasts");
-        settle();
-        assert_eq!(
-            harness.entry.text(),
-            "",
-            "the Podcasts section starts without the Library query"
-        );
-
-        harness.entry.set_text("wer");
-        settle();
-        harness.search.activate(SearchScope::Tracks, "Music");
-        settle();
-        assert_eq!(
-            harness.entry.text(),
-            "falling",
-            "Music gets its own query back, not the one typed in Podcasts"
-        );
-
-        harness.search.activate(SearchScope::Podcasts, "Podcasts");
-        settle();
-        assert_eq!(harness.entry.text(), "wer");
-    }
-
-    // UX SEARCH-8: a section switch that is immediately followed by the
-    // incoming view restoring its OWN remembered text — which is exactly
-    // what `track_list.set_source` does on its way in — must leave the
-    // outgoing section's query alone. This is the contract
-    // `library_shell::wire_source_routing` relies on when it activates the
-    // scope BEFORE routing: reverse the two and the restored text is
-    // recorded against the section the user just left.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn search_8_a_view_restoring_its_own_text_cannot_overwrite_the_previous_section() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let harness = harness();
-
-        harness.search.activate(SearchScope::Podcasts, "Podcasts");
-        harness.entry.set_text("wer");
-        settle();
-
-        // The shell switches the scope first...
-        harness.search.activate(SearchScope::Tracks, "Music");
-        settle();
-        // ...and only then does the track list push the source's own
-        // remembered search into the shared entry, unguarded.
-        harness.entry.set_text("acoustic");
-        settle();
-
-        harness.search.activate(SearchScope::Podcasts, "Podcasts");
-        settle();
-        assert_eq!(
-            harness.entry.text(),
-            "wer",
-            "the restored track search was recorded against Podcasts"
-        );
-
-        harness.search.activate(SearchScope::Tracks, "Music");
-        settle();
-        assert_eq!(
-            harness.entry.text(),
-            "acoustic",
-            "and Music kept the search its own source restored"
-        );
-    }
-
-    // UX SEARCH-8: the query reaches the section it belongs to and no other.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn search_8_a_query_is_only_applied_to_its_own_section() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let harness = harness();
-
-        harness.search.activate(SearchScope::Podcasts, "Podcasts");
-        harness.entry.set_text("wer");
-        let applied_probe = harness.applied.clone();
-        settle_until("the typed query reaches its section", move || {
-            applied_probe
-                .borrow()
-                .contains(&(SearchScope::Podcasts, "wer".to_owned()))
-        });
-
-        let applied = harness.applied.borrow().clone();
-        assert!(
-            applied
-                .iter()
-                .all(|(scope, _)| *scope == SearchScope::Podcasts),
-            "a Podcasts query must never be handed to another section: {applied:?}"
-        );
-        assert!(applied.contains(&(SearchScope::Podcasts, "wer".to_owned())));
-        assert!(harness.search.is_active(SearchScope::Podcasts));
-        assert!(!harness.search.is_active(SearchScope::Tracks));
-    }
-
-    // UX SEARCH-8: where there is no list, the lens is insensitive, says why,
-    // and the bar cannot be revealed.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn search_8_sections_without_a_list_offer_no_search() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let harness = harness();
-
-        harness.search.activate(SearchScope::Tracks, "Music");
-        assert!(harness.toggle.is_sensitive());
-
-        harness
-            .search
-            .activate(SearchScope::Unsupported, "My Stats");
-
-        assert!(!harness.toggle.is_sensitive());
-        assert_eq!(
-            harness.toggle.tooltip_text().as_deref(),
-            Some("Nothing to filter in My Stats")
-        );
-        assert!(!harness.search_bar.is_search_mode());
-        assert!(!harness.search.supports_search());
-        assert!(harness.search_bar.key_capture_widget().is_none());
-    }
-
-    // UX SEARCH-8: a view that clears its own chip pushes that back into the
-    // entry instead of leaving a query on screen that nothing applies.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn search_8_a_view_clearing_its_chip_clears_the_entry() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let harness = harness();
-
-        harness.search.activate(SearchScope::Radio, "Radio");
-        harness.entry.set_text("nova");
-        settle();
-
-        harness.search.set_query(SearchScope::Radio, "");
-        settle();
-
-        assert_eq!(harness.entry.text(), "");
-    }
-
-    // UX FIL-2: "Clear all" clears the current section only.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_2_clear_all_only_touches_the_current_section() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let harness = harness();
-        let cleared = Rc::new(Cell::new(0_u32));
-        let counter = cleared.clone();
-        harness.search.register(
-            SearchScope::Podcasts,
-            |_| {},
-            move || {
-                counter.set(counter.get() + 1);
-            },
-        );
-
-        harness.search.activate(SearchScope::Tracks, "Music");
-        harness.entry.set_text("falling");
-        settle();
-        harness.search.activate(SearchScope::Podcasts, "Podcasts");
-        harness.entry.set_text("wer");
-        settle();
-
-        harness.search.clear_all();
-        settle();
-
-        assert_eq!(harness.entry.text(), "");
-        assert_eq!(
-            cleared.get(),
-            1,
-            "only the visible section clears its facets"
-        );
-        harness.search.activate(SearchScope::Tracks, "Music");
-        settle();
-        assert_eq!(
-            harness.entry.text(),
-            "falling",
-            "Clear all in Podcasts must not touch the Music query"
-        );
-    }
-}
+#[path = "section_search/tests.rs"]
+mod tests;

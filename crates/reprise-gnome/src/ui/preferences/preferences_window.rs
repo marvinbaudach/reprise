@@ -29,7 +29,7 @@ const STATUS_CHIP_FALLBACK_END_INSET: i32 = 52;
 const STATUS_CHIP_END_GAP: i32 = 12;
 
 impl PageId {
-    fn name(self) -> &'static str {
+    pub(in crate::ui) fn name(self) -> &'static str {
         match self {
             Self::Playback => "playback",
             Self::Appearance => "appearance",
@@ -66,6 +66,7 @@ pub(in crate::ui) struct PreferencesShell {
     pub(in crate::ui) navigation: adw::NavigationView,
     pub(in crate::ui) stack: adw::ViewStack,
     pub(in crate::ui) sidebar: gtk4::ListBox,
+    pub(in crate::ui) search: std::rc::Rc<super::preferences_search::SettingsSearch>,
     #[cfg(test)]
     pub(in crate::ui) root_overlay: gtk4::Overlay,
     #[cfg(test)]
@@ -88,6 +89,7 @@ fn sidebar_row(id: PageId) -> gtk4::ListBoxRow {
     row_box.append(&icon);
     row_box.append(&label);
     let row = gtk4::ListBoxRow::new();
+    row.set_widget_name(id.name());
     // a11y-semantics: role=list-item name=page-title state=selected action=focus/navigate
     row.set_focusable(true);
     row.set_child(Some(&row_box));
@@ -195,7 +197,8 @@ pub(in crate::ui) fn build(
         let content_title = content_title.clone();
         move |_, row| {
             let Some(row) = row else { return };
-            let Some(id) = PAGE_ORDER.get(row.index() as usize).copied() else {
+            let name = row.widget_name();
+            let Some(id) = PAGE_ORDER.iter().find(|id| id.name() == name.as_str()) else {
                 return;
             };
             stack.set_visible_child_name(id.name());
@@ -222,7 +225,14 @@ pub(in crate::ui) fn build(
     content_header.set_title_widget(Some(&content_title));
     let content_toolbar = adw::ToolbarView::new();
     content_toolbar.add_top_bar(&content_header);
-    content_toolbar.set_content(Some(&stack));
+    let search = super::preferences_search::SettingsSearch::install(
+        &sidebar_list,
+        &stack,
+        &content_title,
+        &content_header,
+        &content_toolbar,
+        materialize_page.clone(),
+    );
     let content_overlay = gtk4::Overlay::new();
     content_overlay.set_child(Some(&content_toolbar));
     if let Some(status_chip) = status_chip {
@@ -239,6 +249,7 @@ pub(in crate::ui) fn build(
         .sidebar(&sidebar_page)
         .content(&content_page)
         .build();
+    search.pin_sidebar_width(&split);
 
     // Start on Appearance (the established default), highlighting its row —
     // which also drives the stack and content title through the handler.
@@ -247,7 +258,10 @@ pub(in crate::ui) fn build(
     // `visible-child` notification below fires from here, so no page needs
     // building before this point — and building `PAGE_ORDER`'s first entry
     // eagerly would build Playback, which is not the page anyone is about to
-    // see.
+    // see. SET-13 deliberately keeps that fast opening path: a populated
+    // profile measured 314 ms when all pages were eager (against 22 ms here),
+    // so settings search materializes and indexes the other pages only on the
+    // first non-empty query.
     stack.set_visible_child_name("appearance");
     sidebar_list.select_row(sidebar_list.row_at_index(appearance_index()).as_ref());
     // Belt and braces: if the stack ever opens on a page whose notification
@@ -281,6 +295,7 @@ pub(in crate::ui) fn build(
         .content_width(760)
         .content_height(680)
         .build();
+    search.bind_shortcuts(&root_overlay);
     if let Some(status_chip) = status_chip {
         place_chip_when_visible(&dialog, &content_toolbar, &content_header, status_chip);
     }
@@ -290,6 +305,7 @@ pub(in crate::ui) fn build(
         navigation,
         stack,
         sidebar: sidebar_list,
+        search,
         #[cfg(test)]
         root_overlay,
         #[cfg(test)]
@@ -393,11 +409,13 @@ fn queue_chip_placement(header: &adw::HeaderBar, chip: &gtk4::Widget) {
 }
 
 pub(in crate::ui) fn css() -> String {
-    ".reprise-preferences-page > scrolledwindow > viewport > clamp > box { \
+    format!(
+        ".reprise-preferences-page > scrolledwindow > viewport > clamp > box {{ \
      margin: 12px; \
      border-spacing: 18px; \
-     }"
-    .to_string()
+     }} {}",
+        super::preferences_search::css()
+    )
 }
 
 #[cfg(test)]

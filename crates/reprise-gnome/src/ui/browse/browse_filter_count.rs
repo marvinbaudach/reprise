@@ -83,10 +83,10 @@ mod tests {
         conn
     }
 
-    // UX FIL-2: the total pairs the filtered count with the SOURCE's own
+    // UX FIL-2a: the total pairs the filtered count with the SOURCE's own
     // unfiltered size — a playlist restricted to 1 hit reads "1 of 2".
     #[test]
-    fn fil_2_source_total_is_the_unfiltered_source_count() {
+    fn fil_2a_source_total_is_the_unfiltered_source_count() {
         let conn = seeded_conn();
         assert_eq!(
             source_total(&conn, &ViewSource::Playlist(7), true, 1, &[]).unwrap(),
@@ -98,9 +98,9 @@ mod tests {
         );
     }
 
-    // UX FIL-2: without restriction total == count (no second query).
+    // UX FIL-2a: without restriction total == count (no second query).
     #[test]
-    fn fil_2_source_total_equals_count_when_idle() {
+    fn fil_2a_source_total_equals_count_when_idle() {
         let conn = seeded_conn();
         assert_eq!(
             source_total(&conn, &ViewSource::Playlist(7), false, 2, &[]).unwrap(),
@@ -108,10 +108,10 @@ mod tests {
         );
     }
 
-    // UX FIL-2: inside a place the counter relates to that place, never to the
+    // UX FIL-2a: inside a place the counter relates to that place, never to the
     // whole library — a playlist reporting its own length is the precedent.
     #[test]
-    fn fil_2_place_counts_against_itself_not_the_library() {
+    fn fil_2a_place_counts_against_itself_not_the_library() {
         let conn = seeded_conn();
         let artist = ViewSource::Artist("Caskets".into());
 
@@ -126,7 +126,7 @@ mod tests {
     // The virtual QUE-7 context tail already supplies the authoritative
     // Queue row count; filtering does not materialize it into an id list.
     #[test]
-    fn fil_2_queue_total_counts_the_queue_snapshot() {
+    fn fil_2a_queue_total_counts_the_queue_snapshot() {
         let conn = seeded_conn();
         assert_eq!(
             source_total(&conn, &ViewSource::Queue, true, 3, &[]).unwrap(),

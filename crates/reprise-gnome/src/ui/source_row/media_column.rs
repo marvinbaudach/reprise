@@ -10,30 +10,33 @@ pub(in crate::ui) enum MediaShape {
     Wide,
     /// 1:1 — podcast artwork and station logos.
     Square,
+    /// 1:1 — source artwork in a podcast or YouTube group header.
+    SourceSquare,
 }
 
 pub(in crate::ui) fn media_size(shape: MediaShape) -> (i32, i32) {
     match shape {
         MediaShape::Wide => (MEDIA_WIDTH, 36),
         MediaShape::Square => (36, 36),
+        MediaShape::SourceSquare => (40, 40),
     }
 }
 
 /// Places artwork in the source-row media slot without adding stateful
 /// overlays. Selection belongs to the row tint and playback belongs beside
 /// the title, so neither state can cover the image.
-pub(in crate::ui) fn media(child: &impl IsA<gtk4::Widget>, shape: MediaShape) -> gtk4::Box {
+pub(in crate::ui) fn media(child: &impl IsA<gtk4::Widget>, shape: MediaShape) -> gtk4::CenterBox {
     let (width, height) = media_size(shape);
     child.as_ref().set_size_request(width, height);
     child.as_ref().set_halign(gtk4::Align::Center);
     child.as_ref().set_valign(gtk4::Align::Center);
 
-    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let root = gtk4::CenterBox::new();
     root.add_css_class("reprise-source-row-media");
     root.set_size_request(MEDIA_WIDTH, MEDIA_HEIGHT);
     root.set_halign(gtk4::Align::Center);
     root.set_valign(gtk4::Align::Center);
-    root.append(child);
+    root.set_center_widget(Some(child));
     root
 }
 
@@ -47,7 +50,12 @@ mod tests {
     fn src_16_both_shapes_fit_the_same_column() {
         assert_eq!(media_size(MediaShape::Wide), (64, 36));
         assert_eq!(media_size(MediaShape::Square), (36, 36));
-        for shape in [MediaShape::Wide, MediaShape::Square] {
+        assert_eq!(media_size(MediaShape::SourceSquare), (40, 40));
+        for shape in [
+            MediaShape::Wide,
+            MediaShape::Square,
+            MediaShape::SourceSquare,
+        ] {
             let (width, height) = media_size(shape);
             assert!(width <= MEDIA_WIDTH, "{shape:?} is wider than the column");
             assert!(
@@ -67,10 +75,8 @@ mod tests {
 
         let artwork = gtk4::Image::new();
         let slot = media(&artwork, MediaShape::Wide);
-        assert_eq!(slot.first_child().as_ref(), Some(artwork.upcast_ref()));
-        assert!(
-            artwork.next_sibling().is_none(),
-            "selection and playback state must not cover the artwork"
-        );
+        assert_eq!(slot.center_widget().as_ref(), Some(artwork.upcast_ref()));
+        assert!(slot.start_widget().is_none());
+        assert!(slot.end_widget().is_none());
     }
 }

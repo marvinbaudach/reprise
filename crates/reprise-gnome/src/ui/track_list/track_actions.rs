@@ -533,7 +533,7 @@ mod tests {
 
     /// Same divergence, driven by a live search filter instead of a column
     /// sort: filtering to "Delta" (track B's artist, and nothing else's
-    /// title/artist/album/genre) drops every other track from the view
+    /// title/artist/album) drops every other track from the view
     /// entirely, so the filtered view's row 0 (track B, true position
     /// `pt.position == 1`) no longer lines up with the view's row 0 index
     /// either. Selecting it and removing must still remove track B

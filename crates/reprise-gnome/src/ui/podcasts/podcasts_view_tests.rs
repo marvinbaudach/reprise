@@ -340,6 +340,44 @@ fn src_10_the_true_empty_state_hides_the_filter_row_and_the_footer() {
     assert_eq!(view.stack.visible_child_name().as_deref(), Some(EMPTY_PAGE));
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_2_add_action_is_the_leftmost_footer_child_and_not_in_the_filter_bar() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = crate::test_db::open().unwrap();
+    subscribe_with_one_episode(&conn);
+    let view = view(conn, PodcastKind::Rss);
+
+    assert_eq!(
+        view.footer.first_child(),
+        Some(view.footer_add.clone().upcast::<gtk4::Widget>())
+    );
+    assert_eq!(
+        view.footer_add.action_name().as_deref(),
+        Some("podcasts.open-add")
+    );
+    assert!(view
+        .footer_add
+        .has_css_class(crate::ui::style::buttons::ADD_ACTION_CLASS));
+    assert!(!descendant_buttons(view.filter_bar.widget())
+        .iter()
+        .any(|button| { button.action_name().as_deref() == Some("podcasts.open-add") }));
+}
+
+fn descendant_buttons(widget: &impl IsA<gtk4::Widget>) -> Vec<gtk4::Button> {
+    let mut buttons = Vec::new();
+    let mut child = widget.as_ref().first_child();
+    while let Some(current) = child {
+        if let Ok(button) = current.clone().downcast::<gtk4::Button>() {
+            buttons.push(button);
+        }
+        buttons.extend(descendant_buttons(&current));
+        child = current.next_sibling();
+    }
+    buttons
+}
+
 /// `SRC-10` addendum (Block B2): the filter-mismatch state is the exact
 /// opposite of the true empty state — the filter row stays visible, with a
 /// "Clear filters" action, because clearing the filter (not adding a show)

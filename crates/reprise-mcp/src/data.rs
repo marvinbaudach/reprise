@@ -119,9 +119,12 @@ pub fn search_tracks(
 
     let limit = resolve_limit(limit);
     let offset = i64::from(offset.unwrap_or(0));
-    let window =
-        queries::query_library_text_search(&db, query, queries::WindowRange { offset, limit })
-            .map_err(DataError::Db)?;
+    let window = queries::query_library_metadata_text_search(
+        &db,
+        query,
+        queries::WindowRange { offset, limit },
+    )
+    .map_err(DataError::Db)?;
     let total = window.total;
     let has_more = window.has_more;
     let dtos: Vec<TrackDto> = window.rows.iter().map(TrackDto::from).collect();

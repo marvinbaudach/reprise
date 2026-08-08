@@ -749,6 +749,8 @@ mod tests_playlist;
 #[cfg(test)]
 mod tests_queue;
 #[cfg(test)]
+mod tests_search_fields;
+#[cfg(test)]
 mod tests_smart;
 #[cfg(test)]
 mod tests_source_path_ai;

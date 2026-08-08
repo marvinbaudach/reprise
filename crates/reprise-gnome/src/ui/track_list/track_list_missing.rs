@@ -55,7 +55,7 @@ impl TrackList {
         reload(&self.shared);
     }
 
-    /// SEARCH-8 / FIL-1d: hands the Missing section's query to the view that
+    /// SEARCH-8a / FIL-1d: hands the Missing view's query to the view that
     /// renders it. The filter row's own count follows on the next reload,
     /// which the shared search path triggers anyway.
     pub(in crate::ui) fn set_missing_search_query(&self, query: &str) {

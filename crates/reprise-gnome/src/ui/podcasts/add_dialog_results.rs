@@ -9,6 +9,7 @@ use gtk4::prelude::*;
 use reprise_core::podcasts::discovery::Candidate;
 use reprise_core::podcasts::{self, PodcastKind};
 
+use crate::ui::search_highlight::{self, HighlightPalette};
 use crate::ui::strings;
 
 const SECONDS_PER_DAY: i64 = 86_400;
@@ -80,23 +81,22 @@ pub(super) fn search_result_markup(
     subtitle: &str,
     author: Option<&str>,
     query: Option<&str>,
-    foreground: Option<&str>,
+    palette: Option<&HighlightPalette>,
 ) -> SearchResultMarkup {
-    let (title, title_matches) = highlighted_or_escaped(title, query, foreground);
+    let (title, title_matches) = highlighted_or_escaped(title, query, palette);
     let (subtitle, author_matches) = author
         .filter(|author| !author.is_empty())
         .and_then(|author| subtitle.strip_prefix(author).map(|suffix| (author, suffix)))
         .map_or_else(
             || (gtk4::glib::markup_escape_text(subtitle).to_string(), false),
             |(author, suffix)| {
-                let (author, author_matches) = highlighted_or_escaped(author, query, foreground);
+                let (author, author_matches) = highlighted_or_escaped(author, query, palette);
                 let subtitle = format!("{}{}", author, gtk4::glib::markup_escape_text(suffix));
                 (subtitle, author_matches)
             },
         );
-    let has_query = query.is_some_and(|query| {
-        crate::ui::track_list::match_highlight::highlight_markup(query, query, None).is_some()
-    });
+    let has_query =
+        query.is_some_and(|query| search_highlight::highlight_markup(query, query, None).is_some());
     SearchResultMarkup {
         title,
         subtitle,
@@ -110,11 +110,10 @@ pub(super) fn search_result_markup(
 fn highlighted_or_escaped(
     text: &str,
     query: Option<&str>,
-    foreground: Option<&str>,
+    palette: Option<&HighlightPalette>,
 ) -> (String, bool) {
-    let highlighted = query.and_then(|query| {
-        crate::ui::track_list::match_highlight::highlight_markup(text, query, foreground)
-    });
+    let highlighted =
+        query.and_then(|query| search_highlight::highlight_markup(text, query, palette));
     let matches = highlighted.is_some();
     (
         highlighted.unwrap_or_else(|| gtk4::glib::markup_escape_text(text).to_string()),
@@ -178,6 +177,10 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     use super::*;
+
+    fn palette() -> HighlightPalette {
+        HighlightPalette::new("#2ec8a6", "#2ec8a6")
+    }
 
     #[test]
     fn src_18_the_freshness_scale_walks_its_boundaries() {
@@ -268,11 +271,11 @@ mod tests {
             "Sean & Sons · New 1 week ago",
             Some("Sean & Sons"),
             Some("week"),
-            Some("#2ec8a6"),
+            Some(&palette()),
         );
         assert_eq!(
             freshness_only_match.title,
-            "<span foreground=\"#2ec8a6\" weight=\"bold\">Week</span>ly &lt;News&gt;"
+            "<span foreground=\"#2ec8a6\" background=\"#2ec8a6\" bgalpha=\"18%\" weight=\"bold\">Week</span>ly &lt;News&gt;"
         );
         assert_eq!(
             freshness_only_match.subtitle, "Sean &amp; Sons · New 1 week ago",
@@ -285,12 +288,12 @@ mod tests {
             "Sean & Sons · New 1 week ago",
             Some("Sean & Sons"),
             Some("sean"),
-            Some("#2ec8a6"),
+            Some(&palette()),
         );
         assert_eq!(author_match.title, "Weekly &lt;News&gt;");
         assert_eq!(
             author_match.subtitle,
-            "<span foreground=\"#2ec8a6\" weight=\"bold\">Sean</span> &amp; Sons · New 1 week ago"
+            "<span foreground=\"#2ec8a6\" background=\"#2ec8a6\" bgalpha=\"18%\" weight=\"bold\">Sean</span> &amp; Sons · New 1 week ago"
         );
 
         let chart = search_result_markup(
@@ -299,7 +302,7 @@ mod tests {
             "Sean & Sons · New 1 week ago",
             Some("Sean & Sons"),
             None,
-            Some("#2ec8a6"),
+            Some(&palette()),
         );
         assert_eq!(chart.title, "Weekly &lt;News&gt;");
         assert_eq!(chart.subtitle, "Sean &amp; Sons · New 1 week ago");
@@ -313,7 +316,7 @@ mod tests {
             "GaS Digital Network · New last week",
             Some("GaS Digital Network"),
             Some("Metalcore"),
-            Some("#2ec8a6"),
+            Some(&palette()),
         );
         assert!(unexplained.unexplained_match);
 
@@ -328,7 +331,7 @@ mod tests {
                 author.unwrap_or_default(),
                 author,
                 query,
-                Some("#2ec8a6"),
+                Some(&palette()),
             );
             assert!(
                 !explained.unexplained_match,
@@ -342,7 +345,7 @@ mod tests {
             "4 matching videos",
             None,
             Some("Metalcore"),
-            Some("#2ec8a6"),
+            Some(&palette()),
         );
         assert!(
             !youtube.unexplained_match,

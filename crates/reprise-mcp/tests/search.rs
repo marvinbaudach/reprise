@@ -161,6 +161,9 @@ fn search_filters_by_query() {
         structured_ok(&client.call_tool("music_search_tracks", json!({ "query": "coltrane" })));
     assert_eq!(structured.get("total").and_then(Value::as_i64), Some(1));
     assert_eq!(track_titles(&structured), ["Giant Steps"]);
+
+    let genre = structured_ok(&client.call_tool("music_search_tracks", json!({ "query": "Test" })));
+    assert_eq!(genre.get("total").and_then(Value::as_i64), Some(3));
 }
 
 #[test]

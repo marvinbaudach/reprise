@@ -2,7 +2,6 @@
 
 use reprise_core::db::Db;
 use reprise_core::queries;
-use reprise_core::view_source::ViewSource;
 use serde_json::{json, Value};
 
 use crate::error::CliError;
@@ -29,10 +28,13 @@ pub fn run(
         ));
     }
 
-    let source = ViewSource::Library;
-    let total = queries::query_track_count(db, &source, query, &[])?;
-    let tracks =
-        queries::query_track_window(db, &source, "title", "asc", query, offset, limit, &[])?;
+    let window = queries::query_library_metadata_text_search(
+        db,
+        query,
+        queries::WindowRange { offset, limit },
+    )?;
+    let total = window.total;
+    let tracks = window.rows;
 
     if json_output {
         let rows: Vec<Value> = tracks.iter().map(json_models::track).collect();

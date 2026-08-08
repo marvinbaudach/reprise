@@ -166,7 +166,7 @@ impl MusicLibrary {
     ) -> Result<TrackWindow, LibraryError> {
         let text = text.into_boxed_str();
         let state = self.lock()?;
-        queries::query_library_text_search(&state.db, &text, window.into())
+        queries::query_library_metadata_text_search(&state.db, &text, window.into())
             .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -535,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_surface_searches_shared_fields_in_core_title_order() {
+    fn browse_surface_search_matches_genre_metadata_in_core_title_order() {
         let (directory, library) = browse_library();
         let case_uri = directory
             .path()
@@ -584,7 +584,7 @@ mod tests {
 
         let window = library
             .search_tracks(
-                "folk".into(),
+                "joni mitchell".into(),
                 WindowRange {
                     offset: 0,
                     limit: 1,
@@ -605,7 +605,7 @@ mod tests {
 
         let first = library
             .search_tracks(
-                "folk".into(),
+                "joni mitchell".into(),
                 WindowRange {
                     offset: 0,
                     limit: 1,
@@ -614,7 +614,7 @@ mod tests {
             .unwrap();
         let second = library
             .search_tracks(
-                "folk".into(),
+                "joni mitchell".into(),
                 WindowRange {
                     offset: 1,
                     limit: 1,

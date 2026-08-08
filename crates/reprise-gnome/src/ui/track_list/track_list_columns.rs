@@ -323,9 +323,11 @@ pub(in crate::ui) fn append_column(
             &render,
         );
         let markup = if super::match_highlight::is_searchable_column(sort_id) {
-            super::match_highlight::highlight_from_filter(&raw, &shared_for_bind.filter, || {
-                super::match_highlight::accent_foreground(&label)
-            })
+            crate::ui::search_highlight::highlight_from_filter(
+                &raw,
+                &shared_for_bind.filter,
+                || crate::ui::search_highlight::accent_palette(&label),
+            )
         } else {
             None
         };

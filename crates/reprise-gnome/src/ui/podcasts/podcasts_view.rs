@@ -35,7 +35,6 @@ use super::podcasts_removal::{
 };
 use super::podcasts_rendered_order;
 use super::podcasts_reveal::RevealRequest;
-use super::podcasts_scroller::build_episode_scroller;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
 use super::podcasts_worker::{
@@ -46,6 +45,7 @@ use super::youtube_channel_detail::YoutubeChannelDetail;
 use crate::ui::source_empty_state::{SourceEmptyState, SourceFailureState};
 use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
+use crate::ui::style::buttons;
 
 #[path = "podcasts_view_actions.rs"]
 mod actions;
@@ -53,6 +53,9 @@ mod actions;
 mod connectivity_ui;
 #[path = "podcasts_view_copy.rs"]
 mod copy;
+#[cfg(test)]
+#[path = "podcasts_end_of_results_tests.rs"]
+mod end_of_results_tests;
 #[path = "podcasts_failure_ui.rs"]
 mod failure_ui;
 #[path = "podcasts_view_marker.rs"]
@@ -82,6 +85,7 @@ pub(in crate::ui) struct PodcastsView {
     callbacks: PodcastsCallbacks,
     kind: PodcastKind,
     filter_bar: Rc<PodcastsFilterBar>,
+    end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
     youtube_detail: Rc<YoutubeChannelDetail>,
@@ -102,6 +106,7 @@ pub(in crate::ui) struct PodcastsView {
     on_open_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     on_open_youtube_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     footer: gtk4::Box,
+    footer_add: gtk4::Button,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
     groups: RefCell<Vec<SourceGroup>>,
@@ -141,13 +146,8 @@ impl PodcastsView {
         kind: PodcastKind,
     ) -> Rc<Self> {
         let filter_bar = PodcastsFilterBar::new(conn.clone(), kind);
-        let group_container = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        group_container.set_margin_top(8);
-        group_container.set_margin_bottom(8);
-        group_container.set_margin_start(12);
-        group_container.set_margin_end(12);
-        group_container.set_hexpand(true);
-        let scroller = build_episode_scroller(group_container.upcast_ref::<gtk4::Widget>());
+        let (group_container, scroller, list_overlay, end_of_results) =
+            super::podcasts_list_surface::build(kind, &filter_bar);
 
         let status = adw::StatusPage::new();
         let status_button = gtk4::Button::new();
@@ -158,7 +158,7 @@ impl PodcastsView {
         let error_banner = SourceErrorBanner::new();
         let failure_state = SourceFailureState::new(copy::empty_state_copy(kind).icon_name);
         let stack = gtk4::Stack::new();
-        stack.add_named(&scroller, Some("list"));
+        stack.add_named(&list_overlay, Some("list"));
         stack.add_named(&status, Some("status"));
         stack.add_named(empty_state.widget(), Some(EMPTY_PAGE));
         stack.add_named(module_off_state.widget(), Some(MODULE_OFF_PAGE));
@@ -174,6 +174,15 @@ impl PodcastsView {
         footer.set_margin_bottom(6);
         footer.set_margin_start(12);
         footer.set_margin_end(12);
+        let footer_add = gtk4::Button::builder()
+            .label(strings::text(match kind {
+                PodcastKind::Rss => strings::PODCAST_ADD,
+                PodcastKind::Youtube => strings::YOUTUBE_ADD,
+            }))
+            .build();
+        buttons::arm(&footer_add, buttons::ADD_ACTION_CLASS);
+        footer_add.set_action_name(Some("podcasts.open-add"));
+        footer.append(&footer_add);
         let footer_spinner = gtk4::Spinner::new();
         footer.append(&footer_spinner);
         let footer_status = gtk4::Label::new(None);
@@ -205,6 +214,7 @@ impl PodcastsView {
             callbacks,
             kind,
             filter_bar,
+            end_of_results,
             group_container,
             stack,
             youtube_detail,
@@ -218,6 +228,7 @@ impl PodcastsView {
             on_open_preferences: RefCell::new(None),
             on_open_youtube_preferences: RefCell::new(None),
             footer,
+            footer_add,
             footer_status,
             footer_spinner,
             groups: RefCell::new(Vec::new()),
@@ -265,21 +276,21 @@ impl PodcastsView {
         view
     }
 
-    /// SEARCH-8: applies this section's query. The shell calls it as the
+    /// SEARCH-8a: applies this view's query. The shell calls it as the
     /// header entry changes and once more when the section becomes visible
     /// again, so a query typed here is exactly what is applied here.
     pub(in crate::ui) fn set_search_query(&self, query: &str) {
         self.filter_bar.set_query(query);
     }
 
-    /// SEARCH-8: the reverse direction — the bar removed the query itself
+    /// SEARCH-8a: the reverse direction — the bar removed the query itself
     /// (its × or a jump that had to relax it), so the header entry has to
     /// follow.
     pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
         self.filter_bar.set_on_query_changed(callback);
     }
 
-    /// FIL-2: "Clear all" for this section — its query and its facets.
+    /// FIL-2a: "Clear all" for this section — its query and its facets.
     pub(in crate::ui) fn clear_all_filters(&self) {
         self.filter_bar.clear_all();
     }
@@ -389,6 +400,7 @@ impl PodcastsView {
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
+        super::podcasts_list_surface::update(&self.end_of_results, &filter, filtered.len(), total);
         let rendered_groups = rendered_source_groups(&groups, &filter, &download_states);
         // `NET-1a` / `C1`: computed once per render pass from the live
         // module + global-gate state, then threaded down to every source
