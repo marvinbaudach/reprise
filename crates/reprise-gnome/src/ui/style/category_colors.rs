@@ -1,7 +1,5 @@
 //! Fixed identities for the three device-sync content categories.
 
-#![cfg_attr(not(test), allow(dead_code))] // Consumed by the following bar and row tasks.
-
 use reprise_core::device_sync::SyncTargetKind;
 
 use super::accent::APP_ACCENT;
