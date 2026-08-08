@@ -13,8 +13,8 @@ const MUSIC_SEARCH_CHIP_LABEL: &str = N_!("⌕ “{query}” in track, artist an
 
 pub(in crate::ui) use messages::{
     ADD_FILTER, BACK, BROWSE_ALBUM, BROWSE_ARTIST, BROWSE_GENRE, BROWSE_RATING, BROWSE_YEAR,
-    CLEAR_ALL, FILTERS, NO_FILTERS_AVAILABLE, SEARCH_VALUES, UNKNOWN_ALBUM, UNKNOWN_ARTIST,
-    UNKNOWN_GENRE, UNKNOWN_RATING, UNKNOWN_YEAR,
+    CLEAR_ALL, NO_FILTERS_AVAILABLE, SEARCH_VALUES, UNKNOWN_ALBUM, UNKNOWN_ARTIST, UNKNOWN_GENRE,
+    UNKNOWN_RATING, UNKNOWN_YEAR,
 };
 
 pub(in crate::ui) fn text(message: &str) -> String {
@@ -27,13 +27,6 @@ pub(in crate::ui) fn chip_label(facet: &str, value: &str) -> String {
 
 pub(in crate::ui) fn remove_filter_label(facet: &str, value: &str) -> String {
     render(&messages::remove_filter_label(facet, value))
-}
-
-/// Legacy unscoped renderer used only by the P2-owned synthetic chip tests.
-/// The live Music chip goes through [`scoped_search_chip_label`].
-#[cfg(test)]
-pub(in crate::ui) fn search_chip_label(query: &str) -> String {
-    render(&messages::search_chip_label(query))
 }
 
 /// FIL-1d: the same chip, naming the fields the current section searches.
@@ -151,9 +144,9 @@ mod tests {
         );
     }
 
-    // UX FIL-2: the count is accented (bold markup) only under restriction.
+    // UX FIL-2a: the count is accented (bold markup) only under restriction.
     #[test]
-    fn fil_2_count_markup_accents_only_when_restricted() {
+    fn fil_2a_count_markup_accents_only_when_restricted() {
         assert_eq!(
             result_count_markup(15, 1664),
             ("<b>15</b> of 1,664 tracks".to_string(), true)

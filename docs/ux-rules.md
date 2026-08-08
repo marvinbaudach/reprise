@@ -1458,8 +1458,8 @@ result.
   mid-word included ("wer" matches "Antwerpen"). The chip's accessible
   remove name stays "Remove search: {query}" everywhere. The chip's ×
   and "Clear all" clear the query and the facets of the **current**
-  view only (FIL-2, SEARCH-8a).
-- **FIL-2** [active] [gtk] — Counting is state: the filter row is the
+  view only (FIL-2a, SEARCH-8a).
+- **FIL-2** [replaced by FIL-2a] [gtk] — Counting is state: the filter row is the
   permanent list header of every track source — it never appears or
   disappears (no layout shift by design, P-4). Idle as quiet as
   possible: only the neutral total count on the right (dim, caption),
@@ -1481,6 +1481,20 @@ result.
   filter is active, when a place pill is due (FIL-1c), or when the
   preference asks for it. (Counting base revised 2026-07-31 together
   with FIL-1c.)
+- **FIL-2a** [active] [gtk] — One filter row grammar binds Music, Releases,
+  Concerts, Podcasts, YouTube and Radio. Its slots are normative and always
+  read left to right as: the Music-only place pill; the removable search chip;
+  active facet chips; the "+ Add filter" control where that view offers
+  extensible facets; an expanding spacer; the view's count; and "Clear all"
+  at the right edge. A selection-only action follows "Clear all" rather than
+  entering the filter slots. No row renders a `FILTER` caption: the chips
+  already state what restricts the list. With an active restriction, the
+  count keeps the view's own unit and accents its bold shown number (for
+  example "15 of 1,664 tracks" or "168 of 629 gaps"); "Clear all" clears the
+  current view's query and facets together. Without a restriction, the count
+  remains a neutral dim caption and "Clear all" is absent. Music retains
+  FIL-1c's place semantics and existing preference-driven idle visibility;
+  every counting base remains the current place, never the whole library.
 - **FIL-3** [active] [gtk] — End-of-results row: below the last row of
   a restricted list (≥ 1 hit) sits, centered, "End of results — 1,649
   tracks hidden by search "falling"" + pill "Show all 1,664 tracks"
@@ -4558,9 +4572,12 @@ listening statistics.
   never rendered on the podcast side because setting its label replaced the
   icon child, and is now absent from radio too, so both buttons describe the
   behavior they actually share.
-  The shared toolbar grammar reads Add button · "Add filter" · active,
-  deletable filter pills · count on the right; filter rows keep their
-  height across state changes. On Podcasts and YouTube, the popover offers
+  The add action is the leftmost child of the source footer, outside the
+  filter row; Podcasts and YouTube retain the same footer's spinner, status
+  and right-aligned "Refresh now" action, while Radio uses its equivalent
+  footer strip. Action names stay unchanged, so every shortcut, empty state
+  and context route reaches the same dialog. The filter row follows FIL-2a
+  and keeps its height across state changes. On Podcasts and YouTube, the popover offers
   only Unplayed and Downloaded; the existing show/channel groups provide
   per-source narrowing through expansion and collapse.
 - **SRC-3** [replaced by SRC-3a] [gtk] — Each source has exactly one add dialog

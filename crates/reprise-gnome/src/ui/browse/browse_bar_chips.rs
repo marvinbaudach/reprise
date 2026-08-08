@@ -4,6 +4,8 @@
 
 use gtk4::prelude::*;
 use reprise_core::queries::{BrowseFacet, BrowseFilter};
+#[cfg(test)]
+use reprise_view::search_scope::SearchScope;
 
 use crate::ui::browse_filter_strings as filter_strings;
 
@@ -116,7 +118,10 @@ pub(in crate::ui) fn chip_labels(
 ) -> Vec<String> {
     let mut labels = Vec::new();
     if !search.trim().is_empty() {
-        labels.push(filter_strings::search_chip_label(search.trim()));
+        labels.push(filter_strings::scoped_search_chip_label(
+            SearchScope::Tracks,
+            search.trim(),
+        ));
     }
     if is_library {
         labels.extend(filter_chips(filter).into_iter().map(|chip| chip.label));

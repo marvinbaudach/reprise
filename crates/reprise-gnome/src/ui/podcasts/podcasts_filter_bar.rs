@@ -9,41 +9,33 @@ use reprise_core::podcasts::{self, PodcastKind};
 // classification), not duplicated here.
 use super::podcasts_presentation::{active, LibrarySummary, PodcastFilter};
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
+use crate::ui::filter_bar_layout::{self, FilterBarLayout};
 use crate::ui::search_chip;
 use crate::ui::strings;
+#[cfg(test)]
 use crate::ui::style::buttons;
 use reprise_view::search_scope::SearchScope;
 
-const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 type OnChanged = Rc<dyn Fn(PodcastFilter)>;
 /// SEARCH-8a: fired when the bar itself changes the query — the chip's ×, or a
 /// jump that had to relax the search to reach its episode. The shell listens
 /// so the header entry stops showing a query the view no longer applies.
 type OnQueryChanged = Rc<dyn Fn(&str)>;
 
-pub(in crate::ui) fn add_button(kind: PodcastKind) -> gtk4::Button {
-    let add = gtk4::Button::builder()
-        .label(strings::text(match kind {
-            PodcastKind::Rss => strings::PODCAST_ADD,
-            PodcastKind::Youtube => strings::YOUTUBE_ADD,
-        }))
-        .build();
-    buttons::arm(&add, buttons::ADD_ACTION_CLASS);
-    add.set_action_name(Some("podcasts.open-add"));
-    add
-}
-
 pub(super) struct PodcastsFilterBar {
     root: gtk4::Box,
+    layout: FilterBarLayout,
     conn: Rc<Db>,
     filter: RefCell<PodcastFilter>,
     chips: gtk4::Box,
+    add_filter: gtk4::MenuButton,
     popover_box: gtk4::Box,
     popover: gtk4::Popover,
     result: gtk4::Label,
+    clear_all: gtk4::Button,
     clear_selection: gtk4::Button,
     base_result: RefCell<String>,
-    /// Whether the summary line is markup (FIL-2's accented count) or plain
+    /// Whether the summary line is markup (FIL-2a's accented count) or plain
     /// text, so the selection suffix is appended in the same mode.
     base_is_markup: Cell<bool>,
     on_changed: RefCell<Option<OnChanged>>,
@@ -60,20 +52,11 @@ impl PodcastsFilterBar {
             source: None,
             ..stored
         });
-        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        root.set_margin_top(6);
-        root.set_margin_bottom(6);
-        root.set_margin_start(12);
-        root.set_margin_end(12);
-        root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
-        root.add_css_class("toolbar");
-
-        let add = add_button(kind);
-        root.append(&add);
+        let layout = FilterBarLayout::new();
+        let root = layout.root().clone();
 
         let chips = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        chips.set_hexpand(true);
-        root.append(&chips);
+        layout.fill_facets(&chips);
         let popover_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
         popover_box.set_margin_top(8);
         popover_box.set_margin_bottom(8);
@@ -86,26 +69,35 @@ impl PodcastsFilterBar {
             .popover(&popover)
             .build();
         add_filter.add_css_class("pill");
-        chips.append(&add_filter);
+        filter_bar_layout::style_add_filter(&add_filter);
+        layout.fill_add_filter(&add_filter);
         let result = gtk4::Label::new(None);
         result.add_css_class("dim-label");
         result.add_css_class("caption");
-        root.append(&result);
+        layout.fill_count(&result);
+        let clear_all = gtk4::Button::with_label(&strings::text(strings::PODCAST_CLEAR_ALL));
+        clear_all.add_css_class("flat");
+        filter_bar_layout::style_clear_all(&clear_all);
+        clear_all.set_visible(false);
+        layout.fill_clear_all(&clear_all);
         let clear_selection =
             gtk4::Button::with_label(&strings::text(strings::PODCAST_CLEAR_SELECTION));
         clear_selection.add_css_class("flat");
         clear_selection.set_visible(false);
         clear_selection.set_action_name(Some("podcasts.clear-selection"));
-        root.append(&clear_selection);
+        layout.fill_trailing_action(&clear_selection);
 
         let bar = Rc::new(Self {
             root,
+            layout,
             conn,
             filter: RefCell::new(filter),
             chips,
+            add_filter,
             popover_box,
             popover,
             result,
+            clear_all,
             clear_selection,
             base_result: RefCell::new(String::new()),
             base_is_markup: Cell::new(false),
@@ -113,6 +105,14 @@ impl PodcastsFilterBar {
             on_query_changed: RefCell::new(None),
             kind,
         });
+        {
+            let weak = Rc::downgrade(&bar);
+            bar.clear_all.connect_clicked(move |_| {
+                if let Some(bar) = weak.upgrade() {
+                    bar.clear_all();
+                }
+            });
+        }
         bar.rebuild();
         bar
     }
@@ -162,7 +162,7 @@ impl PodcastsFilterBar {
     ) {
         let filter = self.filter();
         let base_result = if active(&filter) {
-            // FIL-2: a filtered list counts in its own unit with the shown
+            // FIL-2a: a filtered list counts in its own unit with the shown
             // number accented.
             self.base_is_markup.set(true);
             match self.kind {
@@ -205,7 +205,7 @@ impl PodcastsFilterBar {
         self.clear_selection.set_visible(selected_count > 0);
     }
 
-    /// FIL-2 / SEARCH-8a: "Clear all" drops this view's query together with
+    /// FIL-2a / SEARCH-8a: "Clear all" drops this view's query together with
     /// its facets, and nothing outside this section.
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.apply(PodcastFilter::default());
@@ -264,11 +264,9 @@ impl PodcastsFilterBar {
 
     fn rebuild(self: &Rc<Self>) {
         while let Some(child) = self.chips.first_child() {
-            if child.is::<gtk4::MenuButton>() {
-                break;
-            }
             self.chips.remove(&child);
         }
+        self.layout.clear_search();
         let filter = self.filter();
         if filter.unplayed_only {
             self.prepend_chip(&strings::text(strings::PODCAST_FILTER_UNPLAYED), |filter| {
@@ -287,24 +285,8 @@ impl PodcastsFilterBar {
                 },
             );
         }
-        if active(&filter) {
-            let clear = gtk4::Button::with_label(&format!(
-                "{}  ×",
-                strings::text(strings::PODCAST_CLEAR_ALL)
-            ));
-            clear.add_css_class(CHIP_CSS_CLASS);
-            clear.add_css_class("flat");
-            let weak = Rc::downgrade(self);
-            clear.connect_clicked(move |_| {
-                if let Some(bar) = weak.upgrade() {
-                    bar.clear_all();
-                }
-            });
-            self.chips.prepend(&clear);
-        }
-        // FIL-1a/FIL-1d: prepended after everything else, so the search chip
-        // ends up first in the row — ahead of the facet chips and of the
-        // "Clear all" pill, the way the Library filter row already reads.
+        // FIL-1a/FIL-1d: prepended after the facets, so the search chip ends
+        // up first. The persistent Add filter control remains last.
         if filter.has_query() {
             let weak = Rc::downgrade(self);
             let chip = search_chip::build(self.scope(), &filter.query, move || {
@@ -313,8 +295,9 @@ impl PodcastsFilterBar {
                     bar.apply(cleared);
                 }
             });
-            self.chips.prepend(&chip);
+            self.layout.fill_search(&chip);
         }
+        self.clear_all.set_visible(active(&filter));
         self.rebuild_popover();
     }
 
@@ -443,5 +426,61 @@ mod tests {
             source: Some(PodcastKind::Youtube),
             ..PodcastFilter::default()
         }));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_2a_podcasts_and_youtube_fill_the_same_ordered_slots() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        for kind in [PodcastKind::Rss, PodcastKind::Youtube] {
+            let bar = PodcastsFilterBar::new(Rc::new(crate::test_db::open().unwrap()), kind);
+            assert_eq!(
+                bar.root.height_request(),
+                filter_bar_layout::FILTER_BAR_MIN_HEIGHT
+            );
+            bar.set_query("falling");
+            bar.set_context(
+                3,
+                LibrarySummary {
+                    shows: 4,
+                    episodes: 44,
+                    new: 2,
+                },
+                1,
+            );
+
+            assert!(bar.layout.slot_contains(
+                crate::ui::filter_bar_layout::FilterBarSlot::Facets,
+                &bar.chips
+            ));
+            assert!(bar.layout.slot_contains(
+                crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
+                &bar.add_filter
+            ));
+            assert!(bar.layout.slot_contains(
+                crate::ui::filter_bar_layout::FilterBarSlot::Count,
+                &bar.result
+            ));
+            assert!(bar.layout.slot_contains(
+                crate::ui::filter_bar_layout::FilterBarSlot::ClearAll,
+                &bar.clear_all
+            ));
+            assert!(bar.layout.slot_contains(
+                crate::ui::filter_bar_layout::FilterBarSlot::TrailingAction,
+                &bar.clear_selection
+            ));
+            let first = bar
+                .layout
+                .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+                .expect("search chip");
+            assert!(first
+                .downcast::<gtk4::Button>()
+                .ok()
+                .and_then(|button| button.label())
+                .is_some_and(|label| label.starts_with('⌕')));
+            assert!(bar.clear_all.is_visible());
+            assert!(bar.clear_selection.is_visible());
+        }
     }
 }

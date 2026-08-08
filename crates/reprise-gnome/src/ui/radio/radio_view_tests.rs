@@ -252,6 +252,45 @@ fn src_1_radio_empty_state_offers_add_station_without_playback() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn src_2_radio_add_action_is_the_leftmost_footer_child_not_a_filter_control() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    add_station(&conn, "Radio Nova");
+    let view = RadioView::new(conn, None);
+
+    assert_eq!(
+        view.shared.footer.first_child(),
+        Some(view.shared.footer_add.clone().upcast::<gtk4::Widget>())
+    );
+    assert_eq!(
+        view.shared.footer_add.action_name().as_deref(),
+        Some("radio.open-add")
+    );
+    assert!(view
+        .shared
+        .footer_add
+        .has_css_class(crate::ui::style::buttons::ADD_ACTION_CLASS));
+    assert!(!descendant_buttons(view.shared.filter_bar.widget())
+        .iter()
+        .any(|button| button.action_name().as_deref() == Some("radio.open-add")));
+}
+
+fn descendant_buttons(widget: &impl IsA<gtk4::Widget>) -> Vec<gtk4::Button> {
+    let mut buttons = Vec::new();
+    let mut child = widget.as_ref().first_child();
+    while let Some(current) = child {
+        if let Ok(button) = current.clone().downcast::<gtk4::Button>() {
+            buttons.push(button);
+        }
+        buttons.extend(descendant_buttons(&current));
+        child = current.next_sibling();
+    }
+    buttons
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn src_10_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());

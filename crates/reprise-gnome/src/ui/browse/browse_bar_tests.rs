@@ -36,21 +36,16 @@ fn place_pill_is_outlined_and_carries_no_remove_cross() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn filter_section_label_stays_hidden_at_an_unfiltered_place() {
+fn fil_2a_music_has_no_filter_caption_or_zone_separator() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let bar = test_bar();
     bar.set_source_context(&ViewSource::Artist("Alpha Artist".into()));
 
     assert!(bar.widget().is_visible(), "the pill forces the row visible");
-    assert!(
-        !bar.section_label_visible(),
-        "an unfiltered place must not claim FILTER"
-    );
-    assert!(
-        !bar.zone_separator_visible(),
-        "no separator without a filter zone to separate"
-    );
+    let labels = descendant_labels(bar.widget());
+    assert!(!labels.iter().any(|label| label == "FILTER"));
+    assert!(descendants::<gtk4::Separator>(bar.widget()).is_empty());
 }
 
 #[test]
@@ -85,7 +80,7 @@ fn fil_1a_search_appears_as_chip_before_facet_chips() {
     assert_eq!(
         labels,
         vec![
-            "⌕ “falling” in any field".to_string(),
+            "⌕ “falling” in track, artist and album".to_string(),
             "Genre: Rock".to_string()
         ]
     );
@@ -103,7 +98,7 @@ fn fil_1a_facet_chips_are_library_only() {
     };
     assert_eq!(
         chip_labels("falling", &browse, false),
-        vec!["⌕ “falling” in any field".to_string()]
+        vec!["⌕ “falling” in track, artist and album".to_string()]
     );
     assert!(chip_labels("", &browse, false).is_empty());
 }
@@ -289,7 +284,7 @@ fn the_single_value_search_is_case_insensitive_and_matches_substrings() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn widget_projects_removable_chips_without_a_redundant_reset_button() {
+fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
@@ -298,12 +293,43 @@ fn widget_projects_removable_chips_without_a_redundant_reset_button() {
     let bar = BrowseBar::new(conn);
 
     // QA #8: the bar keeps a constant height across empty/active states.
-    assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
+    assert_eq!(
+        bar.root.height_request(),
+        filter_bar_layout::FILTER_BAR_MIN_HEIGHT
+    );
     bar.restore_filter(&full_filter());
-    assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
-    assert_eq!(bar.chips.observe_children().n_items(), 4);
-    assert_eq!(bar.root.observe_children().n_items(), 4);
-    assert_eq!(bar.root.last_child(), Some(bar.clear_all.clone().upcast()));
+    bar.set_search("falling");
+    assert_eq!(
+        bar.root.height_request(),
+        filter_bar_layout::FILTER_BAR_MIN_HEIGHT
+    );
+    assert_eq!(bar.chips.observe_children().n_items(), 3);
+    assert!(bar.layout.slot_contains(
+        crate::ui::filter_bar_layout::FilterBarSlot::Place,
+        &bar.place_zone
+    ));
+    assert!(bar.layout.slot_contains(
+        crate::ui::filter_bar_layout::FilterBarSlot::Facets,
+        &bar.chips
+    ));
+    assert!(bar.layout.slot_contains(
+        crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
+        &bar.add_filter
+    ));
+    assert!(bar
+        .layout
+        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+        .and_then(|widget| widget.downcast::<gtk4::Button>().ok())
+        .and_then(|button| button.label())
+        .is_some_and(|label| label.starts_with('⌕')));
+    assert!(bar.layout.slot_contains(
+        crate::ui::filter_bar_layout::FilterBarSlot::Count,
+        &bar.result_label
+    ));
+    assert!(bar.layout.slot_contains(
+        crate::ui::filter_bar_layout::FilterBarSlot::ClearAll,
+        &bar.clear_all
+    ));
 
     let genre_chip = bar.chips.child_at_index(0).unwrap().child().unwrap();
     genre_chip
@@ -315,7 +341,7 @@ fn widget_projects_removable_chips_without_a_redundant_reset_button() {
         context.iteration(false);
     }
     assert_eq!(bar.filter(), BrowseFilter::default());
-    assert_eq!(bar.chips.observe_children().n_items(), 1);
+    assert_eq!(bar.chips.observe_children().n_items(), 0);
     assert!(!bar.add_filter.has_css_class("flat"));
     assert_eq!(
         bar.add_filter
@@ -324,6 +350,26 @@ fn widget_projects_removable_chips_without_a_redundant_reset_button() {
             .map(|label| label.text().to_string()),
         Some("+ Add filter".into())
     );
+}
+
+fn descendant_labels(widget: &impl IsA<gtk4::Widget>) -> Vec<String> {
+    descendants::<gtk4::Label>(widget)
+        .into_iter()
+        .map(|label| label.text().to_string())
+        .collect()
+}
+
+fn descendants<T: IsA<gtk4::Widget> + Clone + 'static>(widget: &impl IsA<gtk4::Widget>) -> Vec<T> {
+    let mut found = Vec::new();
+    let mut child = widget.as_ref().first_child();
+    while let Some(current) = child {
+        if let Ok(value) = current.clone().downcast::<T>() {
+            found.push(value);
+        }
+        found.extend(descendants::<T>(&current));
+        child = current.next_sibling();
+    }
+    found
 }
 
 // UX FIL-7: the "Hide AI music" filter state is sticky across sessions — it
@@ -364,18 +410,16 @@ fn fil_7_hide_ai_filter_state_is_sticky_across_sessions() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn rebuilding_chips_reparents_the_persistent_filter_button() {
+fn rebuilding_chips_keeps_the_persistent_filter_button_in_its_slot() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let bar = BrowseBar::new(conn);
 
     bar.refresh();
 
-    let wrapper = bar
-        .add_filter
-        .parent()
-        .and_downcast::<gtk4::FlowBoxChild>()
-        .expect("add-filter button must have a FlowBoxChild wrapper");
-    assert_eq!(wrapper.parent(), Some(bar.chips.clone().upcast()));
-    assert!(!wrapper.is_focusable());
+    assert!(bar.layout.slot_contains(
+        crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
+        &bar.add_filter
+    ));
+    assert!(!bar.add_filter.is_focusable());
 }

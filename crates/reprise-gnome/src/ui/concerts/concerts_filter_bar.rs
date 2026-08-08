@@ -9,11 +9,11 @@ use reprise_core::concerts::{ConcertFilter, DateHorizon};
 use reprise_core::db::Db;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
+use crate::ui::filter_bar_layout::{self, FilterBarLayout};
 use crate::ui::search_chip;
 use crate::ui::strings;
 use reprise_view::search_scope::SearchScope;
 
-const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 const FACET_PAGE: &str = "facets";
 const VALUE_PAGE: &str = "values";
 
@@ -135,9 +135,9 @@ fn persist_filter(db: &Db, filter: &ConcertFilter) -> Result<(), rusqlite::Error
 
 pub(super) struct ConcertsFilterBar {
     root: gtk4::Box,
+    layout: FilterBarLayout,
     conn: Rc<Db>,
     filter: RefCell<ConcertFilter>,
-    section_label: gtk4::Label,
     chips: gtk4::FlowBox,
     add_filter: gtk4::MenuButton,
     popover: gtk4::Popover,
@@ -164,27 +164,17 @@ pub(super) struct ConcertsFilterBar {
 impl ConcertsFilterBar {
     pub(super) fn new(conn: Rc<Db>) -> Rc<Self> {
         let filter = config::persisted_filter(&conn).unwrap_or_default();
-        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-        root.set_margin_top(6);
-        root.set_margin_bottom(6);
-        root.set_margin_start(12);
-        root.set_margin_end(12);
-        root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
-        root.add_css_class("toolbar");
-
-        let section_label = gtk4::Label::new(Some(&strings::text(strings::CONCERTS_FILTER)));
-        section_label.add_css_class("dim-label");
-        section_label.add_css_class("caption-heading");
-        root.append(&section_label);
+        let layout = FilterBarLayout::new();
+        let root = layout.root().clone();
 
         let chips = gtk4::FlowBox::builder()
             .selection_mode(gtk4::SelectionMode::None)
             .column_spacing(6)
             .row_spacing(4)
-            .hexpand(true)
+            .hexpand(false)
             .max_children_per_line(20)
             .build();
-        root.append(&chips);
+        layout.fill_facets(&chips);
 
         let chooser_stack = gtk4::Stack::new();
         chooser_stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
@@ -212,22 +202,24 @@ impl ConcertsFilterBar {
         let add_filter = gtk4::MenuButton::new();
         add_filter.set_label(&strings::text(strings::CONCERTS_ADD_FILTER));
         add_filter.add_css_class("pill");
+        filter_bar_layout::style_add_filter(&add_filter);
         add_filter.set_popover(Some(&popover));
+        layout.fill_add_filter(&add_filter);
 
         let result_label = gtk4::Label::new(None);
         result_label.add_css_class("dim-label");
         result_label.add_css_class("caption");
-        root.append(&result_label);
+        layout.fill_count(&result_label);
         let clear_all = gtk4::Button::with_label(&strings::text(strings::CONCERTS_CLEAR_ALL));
         clear_all.add_css_class("flat");
-        clear_all.add_css_class(CHIP_CSS_CLASS);
-        root.append(&clear_all);
+        filter_bar_layout::style_clear_all(&clear_all);
+        layout.fill_clear_all(&clear_all);
 
         let bar = Rc::new(Self {
             root,
+            layout,
             conn,
             filter: RefCell::new(filter),
-            section_label,
             chips,
             add_filter,
             popover,
@@ -320,7 +312,7 @@ impl ConcertsFilterBar {
         Ok(())
     }
 
-    /// FIL-2: "Clear all" for this section — its query and its facets.
+    /// FIL-2a: "Clear all" for this section — its query and its facets.
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.clear_query();
         self.apply_filter(ConcertFilter::default());
@@ -341,14 +333,8 @@ impl ConcertsFilterBar {
     }
 
     fn rebuild(self: &Rc<Self>) {
-        if let Some(wrapper) = self
-            .add_filter
-            .parent()
-            .and_downcast::<gtk4::FlowBoxChild>()
-        {
-            wrapper.set_child(gtk4::Widget::NONE);
-        }
         self.chips.remove_all();
+        self.layout.clear_search();
         let filter = self.filter();
         let query = self.query();
         let facets = active_facets(&filter);
@@ -367,7 +353,7 @@ impl ConcertsFilterBar {
                     callback(bar.filter());
                 }
             });
-            self.chips.append(&chip);
+            self.layout.fill_search(&chip);
         }
         for facet in facets {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip_label(&filter, facet)));
@@ -387,11 +373,9 @@ impl ConcertsFilterBar {
             });
             self.chips.append(&button);
         }
-        self.chips.append(&self.add_filter);
-        self.section_label.set_visible(active);
         self.clear_all.set_visible(active);
         let (shown, total) = self.counts.get();
-        // FIL-2: the shown number is accented while a restriction is active.
+        // FIL-2a: the shown number is accented while a restriction is active.
         if active {
             self.result_label
                 .set_markup(&strings::concert_count_line_markup(shown, total));
@@ -632,12 +616,68 @@ mod tests {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ConcertsFilterBar::new(conn);
-        assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
+        assert_eq!(
+            bar.root.height_request(),
+            filter_bar_layout::FILTER_BAR_MIN_HEIGHT
+        );
         let radius = bar.facet_list.row_at_index(0).unwrap();
         assert!(!radius.is_sensitive());
         assert_eq!(
             radius.tooltip_text().as_deref(),
             Some("Set a location in Preferences")
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_2a_concerts_fill_filters_count_and_clear_slots_in_order() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let bar = ConcertsFilterBar::new(conn);
+        bar.set_query("winterthur");
+        bar.set_counts(3, 44);
+
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::Facets,
+            &bar.chips
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
+            &bar.add_filter
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::Count,
+            &bar.result_label
+        ));
+        assert!(bar.layout.slot_contains(
+            crate::ui::filter_bar_layout::FilterBarSlot::ClearAll,
+            &bar.clear_all
+        ));
+        let first = bar
+            .layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+            .expect("query fills the search slot");
+        assert!(first
+            .downcast::<gtk4::Button>()
+            .ok()
+            .and_then(|button| button.label())
+            .is_some_and(|label| label.starts_with('⌕')));
+        assert!(!descendant_labels(bar.widget())
+            .iter()
+            .any(|text| text == "FILTER"));
+    }
+
+    fn descendant_labels(widget: &impl IsA<gtk4::Widget>) -> Vec<String> {
+        let mut labels = Vec::new();
+        let mut child = widget.as_ref().first_child();
+        while let Some(current) = child {
+            if let Ok(label) = current.clone().downcast::<gtk4::Label>() {
+                labels.push(label.text().to_string());
+            }
+            labels.extend(descendant_labels(&current));
+            child = current.next_sibling();
+        }
+        labels
     }
 }

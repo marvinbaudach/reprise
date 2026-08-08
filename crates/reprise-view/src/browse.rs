@@ -81,17 +81,17 @@ pub fn row_visible(
 mod tests {
     use super::*;
 
-    // UX FIL-2: the hide preference only governs the idle state — an active
+    // UX FIL-2a: the hide preference only governs the idle state — an active
     // restriction always forces the row visible.
     #[test]
-    fn fil_2_row_is_forced_visible_when_restricted_despite_hidden_preference() {
+    fn fil_2a_row_is_forced_visible_when_restricted_despite_hidden_preference() {
         assert!(row_visible(true, true, false, false));
         assert!(row_visible(true, true, false, true));
     }
 
-    // UX FIL-2: idle visibility follows the preference; panel sources never show.
+    // UX FIL-2a: idle visibility follows the preference; panel sources never show.
     #[test]
-    fn fil_2_row_follows_preference_when_idle() {
+    fn fil_2a_row_follows_preference_when_idle() {
         assert!(row_visible(true, false, false, true));
         assert!(!row_visible(true, false, false, false));
         assert!(!row_visible(false, true, false, true));
@@ -114,10 +114,10 @@ mod tests {
         assert!(!is_track_source(&ViewSource::MyStats));
     }
 
-    // UX FIL-2: a whitespace-only search does not restrict (mirrors the
+    // UX FIL-2a: a whitespace-only search does not restrict (mirrors the
     // trim in reload's has_filter).
     #[test]
-    fn fil_2_whitespace_search_does_not_restrict() {
+    fn fil_2a_whitespace_search_does_not_restrict() {
         assert!(!is_restricted("   ", &BrowseFilter::default(), false));
         assert!(is_restricted("falling", &BrowseFilter::default(), false));
         let browse = BrowseFilter {
@@ -199,10 +199,10 @@ mod tests {
         assert!(!is_restricted("", &browse, false));
     }
 
-    // UX FIL-2: a place pill forces the row visible on its own, even with the
+    // UX FIL-2a: a place pill forces the row visible on its own, even with the
     // hide preference set and no filter active.
     #[test]
-    fn fil_2_row_shows_for_a_place_pill_without_any_filter() {
+    fn fil_2a_row_shows_for_a_place_pill_without_any_filter() {
         assert!(row_visible(true, false, true, false));
         assert!(!row_visible(true, false, false, false));
         assert!(!row_visible(false, false, true, true));

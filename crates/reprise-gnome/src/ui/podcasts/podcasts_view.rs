@@ -46,6 +46,7 @@ use super::youtube_channel_detail::YoutubeChannelDetail;
 use crate::ui::source_empty_state::{SourceEmptyState, SourceFailureState};
 use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
+use crate::ui::style::buttons;
 
 #[path = "podcasts_view_actions.rs"]
 mod actions;
@@ -102,6 +103,7 @@ pub(in crate::ui) struct PodcastsView {
     on_open_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     on_open_youtube_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     footer: gtk4::Box,
+    footer_add: gtk4::Button,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
     groups: RefCell<Vec<SourceGroup>>,
@@ -174,6 +176,15 @@ impl PodcastsView {
         footer.set_margin_bottom(6);
         footer.set_margin_start(12);
         footer.set_margin_end(12);
+        let footer_add = gtk4::Button::builder()
+            .label(strings::text(match kind {
+                PodcastKind::Rss => strings::PODCAST_ADD,
+                PodcastKind::Youtube => strings::YOUTUBE_ADD,
+            }))
+            .build();
+        buttons::arm(&footer_add, buttons::ADD_ACTION_CLASS);
+        footer_add.set_action_name(Some("podcasts.open-add"));
+        footer.append(&footer_add);
         let footer_spinner = gtk4::Spinner::new();
         footer.append(&footer_spinner);
         let footer_status = gtk4::Label::new(None);
@@ -218,6 +229,7 @@ impl PodcastsView {
             on_open_preferences: RefCell::new(None),
             on_open_youtube_preferences: RefCell::new(None),
             footer,
+            footer_add,
             footer_status,
             footer_spinner,
             groups: RefCell::new(Vec::new()),
@@ -279,7 +291,7 @@ impl PodcastsView {
         self.filter_bar.set_on_query_changed(callback);
     }
 
-    /// FIL-2: "Clear all" for this section — its query and its facets.
+    /// FIL-2a: "Clear all" for this section — its query and its facets.
     pub(in crate::ui) fn clear_all_filters(&self) {
         self.filter_bar.clear_all();
     }

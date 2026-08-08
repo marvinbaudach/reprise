@@ -607,10 +607,10 @@ mod tests {
         assert!(!harness.search_bar.is_search_mode());
     }
 
-    // UX FIL-2: "Clear all" clears the current section only.
+    // UX FIL-2a: "Clear all" clears the current section only.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_2_clear_all_only_touches_the_current_section() {
+    fn fil_2a_clear_all_only_touches_the_current_section() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let harness = harness();

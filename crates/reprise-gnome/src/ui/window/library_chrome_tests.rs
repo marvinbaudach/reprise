@@ -119,7 +119,7 @@ fn search_3_lens_checked_when_active() {
             &reprise_core::queries::BrowseFilter::default(),
             true,
         ),
-        vec!["⌕ “falling” in any field"]
+        vec!["⌕ “falling” in track, artist and album"]
     );
 }
 
@@ -145,7 +145,7 @@ fn search_6_hidden_query_survives_as_chip() {
     assert!(!chrome.search_bar.is_search_mode());
     assert_eq!(entry.text(), "falling");
     assert!(chrome.search_toggle.is_active());
-    assert_eq!(chips, vec!["⌕ “falling” in any field"]);
+    assert_eq!(chips, vec!["⌕ “falling” in track, artist and album"]);
 }
 
 #[test]
@@ -373,7 +373,7 @@ fn search_5_collapsing_keeps_query_and_chip() {
     );
 
     assert!(search_toggle_active(false, query));
-    assert_eq!(chips, vec!["⌕ “falling” in any field"]);
+    assert_eq!(chips, vec!["⌕ “falling” in track, artist and album"]);
 }
 
 #[test]

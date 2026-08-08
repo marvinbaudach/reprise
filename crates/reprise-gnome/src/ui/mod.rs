@@ -40,6 +40,7 @@ pub(crate) mod eq_bars;
 mod external_changes;
 pub(crate) mod external_link;
 pub(crate) mod file_open;
+mod filter_bar_layout;
 pub mod first_run;
 mod help;
 mod icons;

@@ -20,6 +20,7 @@ use super::browse_chooser::{
     VALUE_PAGE,
 };
 use crate::ui::browse_filter_strings as filter_strings;
+use crate::ui::filter_bar_layout::{self, FilterBarLayout};
 use crate::ui::track_list::Shared;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
@@ -32,16 +33,10 @@ pub(in crate::ui) const PLACE_PILL_CSS_CLASS: &str = "reprise-place-pill";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
 type OnVoid = Rc<dyn Fn()>;
-/// Minimum content height (px) of the filter bar. Both the empty state (the
-/// tall "+ Add filter" pill) and the active state (compact chips) are pinned
-/// to this so toggling a filter never changes the bar's height and shifts the
-/// track table (QA #8). Sized to the taller of the two — the pill.
-const FILTER_BAR_MIN_HEIGHT: i32 = 34;
-
 /// Chip and value-popover rules; installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
     use super::style::tokens::{CHIP_BG_ALPHA, CHIP_BG_HOVER_ALPHA};
-    format!(
+    let local = format!(
         ".{CHIP_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 8px; \
          background-color: alpha(@accent_bg_color, {CHIP_BG_ALPHA}); color: @reprise_accent_text_color; }} \
          .{CHIP_CSS_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {CHIP_BG_HOVER_ALPHA}); }} \
@@ -50,17 +45,18 @@ pub(in crate::ui) fn css() -> String {
          .{PLACE_PILL_CSS_CLASS}:hover {{ background-color: alpha(currentColor, 0.08); }} \
          .{POPOVER_CSS_CLASS} contents {{ min-width: 300px; min-height: {}px; }}",
         browse_popup_min_height(0)
-    )
+    );
+    format!("{local} {}", filter_bar_layout::css())
 }
 
 pub struct BrowseBar {
     root: gtk4::Box,
+    layout: FilterBarLayout,
     search: RefCell<String>,
     source: RefCell<ViewSource>,
     track_source: Cell<bool>,
     is_library: Cell<bool>,
     preference_visible: Cell<bool>,
-    section_label: gtk4::Label,
     chips: gtk4::FlowBox,
     pub(super) add_filter: gtk4::MenuButton,
     chooser_stack: gtk4::Stack,
@@ -72,8 +68,6 @@ pub struct BrowseBar {
     clear_all: gtk4::Button,
     /// FIL-1c: the left zone holding the place pill; empty at sidebar places.
     place_zone: gtk4::Box,
-    /// Divides place zone from filter zone, shown only when both are populated.
-    zone_separator: gtk4::Separator,
     #[cfg_attr(not(test), allow(dead_code))]
     scope_button: RefCell<Option<gtk4::Button>>,
     pub(super) chooser_facets: RefCell<Vec<BrowseFacet>>,
@@ -96,20 +90,8 @@ pub struct BrowseBar {
 
 impl BrowseBar {
     pub fn new(conn: Rc<Db>) -> Rc<Self> {
-        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-        root.set_margin_top(6);
-        root.set_margin_bottom(6);
-        root.set_margin_start(12);
-        root.set_margin_end(12);
-        root.add_css_class("toolbar");
-        // Pin the bar to a constant height so switching between the empty
-        // "+ Add filter" pill and the active chip row never shifts the track
-        // table below it (QA #8). Sized to the taller state (the pill).
-        root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
-
-        let section_label = gtk4::Label::new(Some(&filter_strings::text(filter_strings::FILTERS)));
-        section_label.add_css_class("dim-label");
-        section_label.add_css_class("caption-heading");
+        let layout = FilterBarLayout::new();
+        let root = layout.root().clone();
 
         let chips = gtk4::FlowBox::builder()
             .selection_mode(gtk4::SelectionMode::None)
@@ -133,11 +115,10 @@ impl BrowseBar {
         add_filter.set_child(Some(&add_label));
         add_filter.set_popover(Some(&popover));
         add_filter.add_css_class("pill");
+        filter_bar_layout::style_add_filter(&add_filter);
         add_filter.update_property(&[gtk4::accessible::Property::Label(&filter_strings::text(
             filter_strings::ADD_FILTER,
         ))]);
-        append_chip(&chips, &add_filter);
-
         let result_label = gtk4::Label::new(None);
         result_label.add_css_class("dim-label");
         result_label.add_css_class("caption");
@@ -148,34 +129,30 @@ impl BrowseBar {
             filter_strings::text(filter_strings::CLEAR_ALL)
         ));
         clear_all.add_css_class("flat");
-        clear_all.add_css_class(CHIP_CSS_CLASS);
+        filter_bar_layout::style_clear_all(&clear_all);
         clear_all.set_visible(false);
 
         // FIL-1c: two zones. The place zone answers "where am I", the filter
         // zone "what is withheld here" — they never share a shape or a label.
         let place_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         place_zone.set_visible(false);
-        let zone_separator = gtk4::Separator::new(gtk4::Orientation::Vertical);
-        zone_separator.set_visible(false);
-
-        root.append(&place_zone);
-        root.append(&zone_separator);
-        root.append(&section_label);
-        root.append(&chips);
-        root.append(&result_label);
-        root.append(&clear_all);
+        layout.fill_place(&place_zone);
+        layout.fill_facets(&chips);
+        layout.fill_add_filter(&add_filter);
+        layout.fill_count(&result_label);
+        layout.fill_clear_all(&clear_all);
 
         let initial_exclude_ai =
             reprise_core::library::settings::get_bool(&conn, EXCLUDE_AI_KEY, false)
                 .unwrap_or(false);
         let bar = Rc::new(Self {
             root,
+            layout,
             search: RefCell::new(String::new()),
             source: RefCell::new(ViewSource::Library),
             track_source: Cell::new(true),
             is_library: Cell::new(true),
             preference_visible: Cell::new(true),
-            section_label,
             chips,
             add_filter,
             chooser_stack,
@@ -186,7 +163,6 @@ impl BrowseBar {
             result_label,
             clear_all,
             place_zone,
-            zone_separator,
             scope_button: RefCell::new(None),
             chooser_facets: RefCell::new(Vec::new()),
             chooser_facet: Cell::new(None),
@@ -235,7 +211,7 @@ impl BrowseBar {
     }
 
     /// Clears the AI-exclude state and persists it **without** triggering its
-    /// own reload — for "Clear all" (FIL-2), whose caller reloads once after
+    /// own reload — for "Clear all" (FIL-2a), whose caller reloads once after
     /// clearing search + facets + this together.
     pub(in crate::ui) fn clear_exclude_ai(&self) {
         self.exclude_ai.set(false);
@@ -347,11 +323,6 @@ impl BrowseBar {
             self.preference_visible.get(),
         );
         self.root.set_visible(visible);
-        // FIL-1c: the FILTER heading describes the filter zone only — a place
-        // is not a filter and must never be labelled as one.
-        self.section_label.set_visible(filters_restrict);
-        self.zone_separator
-            .set_visible(has_place_pill && filters_restrict);
         self.clear_all.set_visible(filters_restrict);
         tracing::info!(
             visible,
@@ -380,16 +351,6 @@ impl BrowseBar {
     #[cfg(test)]
     pub(in crate::ui) fn place_button(&self) -> Option<gtk4::Button> {
         self.scope_button.borrow().clone()
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn section_label_visible(&self) -> bool {
-        self.section_label.is_visible()
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn zone_separator_visible(&self) -> bool {
-        self.zone_separator.is_visible()
     }
 
     pub fn hide_result_count(&self) {
@@ -455,22 +416,12 @@ impl BrowseBar {
     }
 
     fn rebuild_chips(self: &Rc<Self>, filter: &BrowseFilter) {
-        // FlowBox wraps appended widgets in an implicit FlowBoxChild. Removing
-        // that wrapper does not unparent our persistent MenuButton from it, so
-        // detach the button before clearing the wrappers and appending it again.
-        if let Some(wrapper) = self
-            .add_filter
-            .parent()
-            .and_downcast::<gtk4::FlowBoxChild>()
-        {
-            wrapper.set_child(gtk4::Widget::NONE);
-        }
         self.chips.remove_all();
+        self.layout.clear_search();
         let query = self.search.borrow().trim().to_string();
         if !query.is_empty() {
-            // FIL-1d: Music and its sibling track sources keep "in any field";
-            // Missing files says "in file paths", because that is what its
-            // list is made of.
+            // FIL-1d: the shared chip renderer names the fields this source
+            // actually searches.
             let weak = Rc::downgrade(self);
             let button = super::search_chip::build(self.search_scope(), &query, move || {
                 let Some(bar) = weak.upgrade() else {
@@ -481,7 +432,7 @@ impl BrowseBar {
                     callback();
                 }
             });
-            append_chip(&self.chips, &button);
+            self.layout.fill_search(&button);
         }
         for chip in filter_chips(filter) {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip.label));
@@ -520,9 +471,7 @@ impl BrowseBar {
             });
             append_chip(&self.chips, &button);
         }
-        if self.is_library.get() {
-            append_chip(&self.chips, &self.add_filter);
-        }
+        self.add_filter.set_visible(self.is_library.get());
         let ai_addable = self.ai_filter_available() && !self.exclude_ai.get();
         self.add_filter
             .set_sensitive(!available_facets(filter).is_empty() || ai_addable);
