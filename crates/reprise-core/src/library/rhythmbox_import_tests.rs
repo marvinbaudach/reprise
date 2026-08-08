@@ -188,6 +188,12 @@ fn values(conn: &crate::db::Db) -> (i32, i64) {
         .unwrap()
 }
 
+fn rated_at(conn: &crate::db::Db) -> Option<i64> {
+    conn.conn()
+        .query_row("SELECT rated_at FROM tracks", [], |row| row.get(0))
+        .unwrap()
+}
+
 #[test]
 fn parser_keeps_only_songs_and_decodes_file_uris() {
     let dir = tempdir().unwrap();
@@ -283,6 +289,7 @@ fn merge_imports_missing_rating_and_higher_count_idempotently() {
     let (second, _) = merge_stats(&conn, &imported, choices, None).unwrap();
 
     assert_eq!(values(&conn), (4, 11));
+    assert!(rated_at(&conn).is_some());
     assert_eq!((first.ratings_imported, first.play_counts_raised), (1, 1));
     assert_eq!((second.ratings_imported, second.play_counts_raised), (0, 0));
 }

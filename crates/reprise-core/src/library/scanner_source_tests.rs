@@ -578,6 +578,18 @@ fn synced_metadata_replaces_only_the_tracks_named_by_the_desktop() {
         ],
         "the desktop replaces exact matches, while unknown and unnamed tracks stay harmless"
     );
+    let rating_timestamps = db
+        .conn()
+        .prepare("SELECT rated_at FROM tracks ORDER BY path")
+        .unwrap()
+        .query_map([], |row| row.get::<_, Option<i64>>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(rating_timestamps.len(), 3);
+    assert!(rating_timestamps[0].is_some());
+    assert!(rating_timestamps[1].is_some());
+    assert_eq!(rating_timestamps[2], None);
     let favourites = crate::queries::query_track_window_browsed(
         &db,
         &crate::view_source::ViewSource::Library,

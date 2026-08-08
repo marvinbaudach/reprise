@@ -45,6 +45,7 @@ pub struct RhythmboxImportSummary {
 pub struct RhythmboxRollbackEntry {
     pub path: String,
     pub rating: i32,
+    pub rated_at: Option<i64>,
     pub play_count: i64,
     pub added_at: i64,
     pub last_played_at: Option<i64>,
@@ -280,20 +281,27 @@ pub fn merge_stats(
         let path = track.path.to_string_lossy();
         let current = transaction
             .query_row(
-                "SELECT rating, play_count, added_at, last_played_at FROM tracks WHERE path = ?1",
+                "SELECT rating, rated_at, play_count, added_at, last_played_at \
+                 FROM tracks WHERE path = ?1",
                 [&path],
                 |row| {
                     Ok((
                         row.get::<_, i32>(0)?,
-                        row.get::<_, i64>(1)?,
+                        row.get::<_, Option<i64>>(1)?,
                         row.get::<_, i64>(2)?,
-                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((current_rating, current_play_count, current_added_at, current_last_played)) =
-            current
+        let Some((
+            current_rating,
+            current_rated_at,
+            current_play_count,
+            current_added_at,
+            current_last_played,
+        )) = current
         else {
             summary.skipped += 1;
             if let Some(cb) = on_progress {
@@ -307,6 +315,11 @@ pub fn merge_stats(
             track.rating.unwrap_or(current_rating)
         } else {
             current_rating
+        };
+        let next_rated_at = if next_rating != current_rating {
+            Some(crate::library::stats::now_unix())
+        } else {
+            current_rated_at
         };
         let next_play_count = if choices.play_counts_and_last_played {
             track.play_count.map_or(current_play_count, |imported| {
@@ -348,14 +361,17 @@ pub fn merge_stats(
             rollback.entries.push(RhythmboxRollbackEntry {
                 path: path.to_string(),
                 rating: current_rating,
+                rated_at: current_rated_at,
                 play_count: current_play_count,
                 added_at: current_added_at,
                 last_played_at: current_last_played,
             });
             transaction.execute(
-                "UPDATE tracks SET rating = ?1, play_count = ?2, added_at = ?3, last_played_at = ?4 WHERE path = ?5",
+                "UPDATE tracks SET rating = ?1, rated_at = ?2, play_count = ?3, \
+                                   added_at = ?4, last_played_at = ?5 WHERE path = ?6",
                 rusqlite::params![
                     next_rating,
+                    next_rated_at,
                     next_play_count,
                     next_added_at,
                     next_last_played,
@@ -381,9 +397,11 @@ pub fn undo_rhythmbox_import(
     let mut restored = 0usize;
     for entry in &rollback.entries {
         let affected = transaction.execute(
-            "UPDATE tracks SET rating = ?1, play_count = ?2, added_at = ?3, last_played_at = ?4 WHERE path = ?5",
+            "UPDATE tracks SET rating = ?1, rated_at = ?2, play_count = ?3, \
+                               added_at = ?4, last_played_at = ?5 WHERE path = ?6",
             rusqlite::params![
                 entry.rating,
+                entry.rated_at,
                 entry.play_count,
                 entry.added_at,
                 entry.last_played_at,
