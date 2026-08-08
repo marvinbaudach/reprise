@@ -384,6 +384,67 @@ fn doc_3a_tie_choice_materializes_only_real_diffs() {
 }
 
 #[test]
+fn doc_4c_a_tie_choice_that_reduces_specificity_is_capped_and_never_preselected() {
+    let group = unresolved_group(
+        DoctorField::Title,
+        &[("An Ocean", 2), ("an ocean", 1)],
+        &[(1, "An Ocean Between Us"), (2, "An Ocean")],
+    );
+    let mut review =
+        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::NeedsReview);
+    let group_id = review.groups()[0].id;
+
+    review
+        .choose_candidate(group_id, &DoctorValue::Text("An Ocean".into()))
+        .unwrap();
+
+    let truncated = review
+        .rows()
+        .iter()
+        .find(|row| row.track_id == 1)
+        .expect("the shortened title stays reviewable");
+    assert_eq!(truncated.state, DoctorReviewRowState::Ready);
+    assert!(truncated.never_preselect);
+    assert!(truncated.confidence <= 49);
+    assert!(!truncated.selected);
+}
+
+#[test]
+fn doc_8b_the_tie_path_runs_the_same_selection_predicate() {
+    let group = unresolved_group(
+        DoctorField::Title,
+        &[("An Ocean", 2), ("an ocean", 1)],
+        &[
+            (1, "An Ocean Between Us"),
+            (2, "an ocean"),
+            (3, "AN OCEAN"),
+        ],
+    );
+    let mut source = scan_with_group(group);
+    source
+        .tracks
+        .iter_mut()
+        .find(|track| track.reference.track_id == 3)
+        .expect("fixture track")
+        .stale = true;
+    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
+    let group_id = review.groups()[0].id;
+
+    review
+        .choose_candidate(group_id, &DoctorValue::Text("An Ocean".into()))
+        .unwrap();
+
+    let mut selected = review
+        .rows()
+        .iter()
+        .map(|row| (row.track_id, row.selected))
+        .collect::<Vec<_>>();
+    selected.sort_unstable();
+    // 1 reduces specificity, 3 is stale, 2 is the plain casing fix.
+    assert_eq!(selected, vec![(1, false), (2, true), (3, false)]);
+}
+
+#[test]
 fn candidate_switch_preserves_manual_deselections() {
     let group = unresolved_group(
         DoctorField::Artist,

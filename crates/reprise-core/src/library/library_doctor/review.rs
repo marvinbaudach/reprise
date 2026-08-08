@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use super::remote::guard_rails::{reduces_specificity, SPECIFICITY_CONFIDENCE_CAP};
 use super::{
     DoctorField, DoctorProposal, DoctorScan, DoctorTrackRef, DoctorValue, ProblemClass,
     ProposalSource,
@@ -524,12 +525,22 @@ impl DoctorReviewSession {
                 continue;
             }
             let state = template.state;
+            // A chosen spelling reaches the files through the same Apply as a
+            // matcher proposal, so it passes the same guard rail: a row that
+            // reduces specificity is capped and never starts selected.
+            let never_preselect = reduces_specificity(&template.current, candidate, template.field);
+            let confidence = if never_preselect {
+                confidence.min(SPECIFICITY_CONFIDENCE_CAP)
+            } else {
+                confidence
+            };
             let remembered_selected = self
                 .tie_selection
                 .get(&template.id)
                 .copied()
                 .unwrap_or(true);
-            let selected = starts_selected(state, false, confidence) && remembered_selected;
+            let selected =
+                starts_selected(state, never_preselect, confidence) && remembered_selected;
             self.tie_selection.entry(template.id).or_insert(selected);
             self.rows.push(DoctorReviewRow {
                 id: template.id,
@@ -542,7 +553,7 @@ impl DoctorReviewSession {
                 evidence: chosen.evidence.clone(),
                 problem_class: tie_problem_class(template.field),
                 state,
-                never_preselect: false,
+                never_preselect,
                 selected,
                 origin: DoctorReviewRowOrigin::ManualGroup(group_id),
             });
