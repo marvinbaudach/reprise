@@ -123,9 +123,15 @@ fn build_row(groups: &ReviewColumnGroups) -> RowWidgets {
     let track = value_label(true, TRACK_MAX_CHARS);
     let field = value_label(false, FIELD_MAX_CHARS);
     let current = value_label(false, VALUE_MAX_CHARS);
-    let arrow = gtk4::Label::new(Some("→"));
+    current.add_css_class("doctor-review-current");
+    let arrow = gtk4::Image::builder()
+        .icon_name("go-next-symbolic")
+        .pixel_size(15)
+        .css_classes(["doctor-review-arrow"])
+        .build();
     let proposed = value_label(false, VALUE_MAX_CHARS);
     let source = value_label(false, SOURCE_MAX_CHARS);
+    source.add_css_class("doctor-review-source");
     let warning = gtk4::Image::from_icon_name("dialog-warning-symbolic");
     warning.set_tooltip_text(Some(&strings::text(strings::DOCTOR_LOW_CONFIDENCE)));
     warning.update_property(&[gtk4::accessible::Property::Label(&strings::text(
@@ -174,8 +180,8 @@ fn build_row(groups: &ReviewColumnGroups) -> RowWidgets {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     root.set_margin_top(9);
     root.set_margin_bottom(9);
-    root.set_margin_start(12);
-    root.set_margin_end(12);
+    root.set_margin_start(28);
+    root.set_margin_end(28);
     root.append(&selected);
     root.append(&details);
     root.append(&edit);
@@ -237,8 +243,10 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
         ReviewLayout::Narrow => gtk4::Orientation::Vertical,
     });
     set_full_text(&widgets.track, &model.track);
+    apply_album_wide_style(&widgets.track, model.is_album_wide);
     set_full_text(&widgets.field, &model.field);
-    let current = narrow_prefixed(layout, ValueKind::Current, &model.current);
+    let rendered_current = visible_edge_spaces(&model.current);
+    let current = narrow_prefixed(layout, ValueKind::Current, &rendered_current);
     let proposed = narrow_prefixed(layout, ValueKind::Proposed, &model.proposed);
     set_full_text(&widgets.current, &current);
     set_full_text(&widgets.proposed, &proposed);
@@ -260,13 +268,19 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
         &widgets.source,
         &narrow_prefixed(layout, ValueKind::Source, &source),
     );
-    let attrs = gtk4::pango::AttrList::new();
-    let mut strikethrough = gtk4::pango::AttrInt::new_strikethrough(true);
-    let (start, end) = strike_range(&current, &model.current);
-    strikethrough.set_start_index(start);
-    strikethrough.set_end_index(end);
-    attrs.insert(strikethrough);
-    widgets.current.set_attributes(Some(&attrs));
+    widgets.current.remove_css_class("doctor-current-empty");
+    if model.current == strings::text(strings::DOCTOR_EMPTY_VALUE) {
+        widgets.current.set_attributes(None);
+        widgets.current.add_css_class("doctor-current-empty");
+    } else {
+        let attrs = gtk4::pango::AttrList::new();
+        let mut strikethrough = gtk4::pango::AttrInt::new_strikethrough(true);
+        let (start, end) = strike_range(&current, &rendered_current);
+        strikethrough.set_start_index(start);
+        strikethrough.set_end_index(end);
+        attrs.insert(strikethrough);
+        widgets.current.set_attributes(Some(&attrs));
+    }
     widgets.warning.set_visible(model.confidence.warning);
     for class in ["accent", "warning", "error"] {
         widgets.source.remove_css_class(class);
@@ -280,6 +294,13 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
     if let Some(tone) = tone {
         widgets.source.add_css_class(tone);
     }
+    if model.row.selected {
+        widgets
+            .root
+            .remove_css_class("doctor-review-row-deselected");
+    } else {
+        widgets.root.add_css_class("doctor-review-row-deselected");
+    }
     let description = model.accessible_description();
     widgets.root.update_property(&[
         gtk4::accessible::Property::Label(&format!("{} · {}", model.track, model.field)),
@@ -287,6 +308,38 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
     ]);
     widgets.edit.set_sensitive(!model.track_ids.is_empty());
     *widgets.model.borrow_mut() = Some(model.clone());
+}
+
+fn apply_album_wide_style(label: &gtk4::Label, album_wide: bool) {
+    if album_wide {
+        let attrs = gtk4::pango::AttrList::new();
+        attrs.insert(gtk4::pango::AttrInt::new_style(gtk4::pango::Style::Italic));
+        label.set_attributes(Some(&attrs));
+        label.add_css_class("doctor-album-wide-track");
+    } else {
+        label.set_attributes(None);
+        label.remove_css_class("doctor-album-wide-track");
+    }
+}
+
+fn visible_edge_spaces(value: &str) -> String {
+    let leading = value
+        .chars()
+        .take_while(|character| *character == ' ')
+        .count();
+    let trailing = value
+        .chars()
+        .rev()
+        .take_while(|character| *character == ' ')
+        .count();
+    if leading == 0 && trailing == 0 {
+        return value.to_owned();
+    }
+    if leading == value.len() {
+        return "␣".repeat(leading);
+    }
+    let middle = &value[leading..value.len().saturating_sub(trailing)];
+    format!("{}{}{}", "␣".repeat(leading), middle, "␣".repeat(trailing))
 }
 
 #[derive(Clone, Copy)]

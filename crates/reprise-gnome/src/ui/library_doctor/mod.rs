@@ -74,6 +74,14 @@ pub(in crate::ui) fn css() -> String {
         ".doctor-album-title { font-size: 15px; font-weight: 500; }",
         ".doctor-album-detail { font-size: 13px; color: color-mix(in srgb, currentColor 50%, transparent); }",
         ".doctor-album-caret { color: color-mix(in srgb, currentColor 40%, transparent); }",
+        ".doctor-review-row { font-size: 13.5px; }",
+        ".doctor-review-row-deselected { opacity: 0.55; }",
+        ".doctor-album-wide-track { color: color-mix(in srgb, currentColor 45%, transparent); }",
+        ".doctor-review-arrow { color: color-mix(in srgb, currentColor 32%, transparent); }",
+        ".doctor-review-current { color: color-mix(in srgb, currentColor 52%, transparent); }",
+        ".doctor-current-empty { color: color-mix(in srgb, currentColor 42%, transparent); }",
+        ".doctor-review-source { font-size: 12.5px; color: color-mix(in srgb, currentColor 55%, transparent); }",
+        ".doctor-review-source.accent { color: var(--accent-color); }",
         // The review card is the only one that carries emphasis: an accent
         // hairline on top of the plain `.card` surface.
         ".doctor-card-accent { box-shadow: inset 0 0 0 1px alpha(@accent_color, 0.45); }",
