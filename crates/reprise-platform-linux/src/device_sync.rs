@@ -15,6 +15,8 @@ pub use reprise_core::device_sync::{DeviceStorageInspection, DeviceStorageSnapsh
 mod identity;
 #[path = "device_sync_projection.rs"]
 mod projection;
+#[path = "device_sync_read.rs"]
+mod read;
 pub use identity::{
     descriptor_from_mount, is_placeholder_name, project_descriptor, usb_facts_for_address,
     usb_serial_from_sysfs, DeviceDescriptor, UsbFacts,

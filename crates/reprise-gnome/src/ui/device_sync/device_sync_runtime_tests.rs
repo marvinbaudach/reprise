@@ -754,6 +754,8 @@ mod compact_tests;
 mod content_transfer_tests;
 #[path = "device_sync_inflight_tests.rs"]
 mod inflight_tests;
+#[path = "device_sync_listen_report_tests.rs"]
+mod listen_report_tests;
 #[path = "device_sync_lyrics_sidecar_tests.rs"]
 mod lyrics_sidecar_tests;
 #[path = "device_sync_picker_tests.rs"]

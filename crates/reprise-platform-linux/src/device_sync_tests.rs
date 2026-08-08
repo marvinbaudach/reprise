@@ -139,6 +139,26 @@ fn managed_readback_keeps_byte_preserved_originals_with_unlisted_extensions() {
 }
 
 #[test]
+fn managed_report_read_distinguishes_present_bytes_from_an_absent_file() {
+    let (temp, storage) = fixture();
+    fs::create_dir_all(temp.path().join("Music/Reprise")).unwrap();
+    fs::write(
+        temp.path().join("Music/Reprise/reprise-listens-back.rpl"),
+        b"report-bytes",
+    )
+    .unwrap();
+
+    assert_eq!(
+        run(storage.read_managed(None, "/Music/Reprise", "reprise-listens-back.rpl",)).unwrap(),
+        Some(b"report-bytes".to_vec())
+    );
+    assert_eq!(
+        run(storage.read_managed(None, "/Music/Reprise", "missing.rpl")).unwrap(),
+        None
+    );
+}
+
+#[test]
 fn storage_volume_choice_prefers_internal_storage_and_otherwise_stays_deterministic() {
     let volumes = vec!["SD Card".to_string(), "Internal shared storage".to_string()];
     assert_eq!(
