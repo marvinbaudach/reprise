@@ -139,6 +139,7 @@ fn mtp_30_a_waiting_only_podcast_balance_would_still_trigger_automatic_start() {
             )
             .unwrap();
         disable_auto_start(&conn, "a");
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());

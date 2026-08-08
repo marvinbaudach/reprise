@@ -62,6 +62,7 @@ fn mtp_45_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_t
             )
             .unwrap();
         disable_auto_start(&conn, "a");
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
@@ -97,6 +98,7 @@ fn mtp_45_a_wanted_missing_episode_counts_as_waiting_and_is_never_copyable() {
             )
             .unwrap();
         disable_auto_start(&conn, "a");
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());

@@ -48,6 +48,7 @@ fn mtp_33_remove_deleted_off_keeps_an_unsubscribed_episode_on_the_device() {
             )
             .unwrap();
         save_settings(&conn, &podcast_settings("a", false)).unwrap();
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         // Already on the device from an earlier sync, but its show is no
