@@ -268,7 +268,7 @@ pub fn build(
         let track_list_weak = Rc::downgrade(&track_list);
         let refresh = Rc::new(move || {
             if let Some(sidebar) = sidebar.upgrade() {
-                sidebar.refresh("up next changed");
+                sidebar.refresh_queue_count();
             }
             if let Some(track_list) = track_list_weak.upgrade() {
                 track_list.reload_queue_if_visible();

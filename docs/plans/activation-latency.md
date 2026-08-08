@@ -160,6 +160,40 @@ In addition, `count_releases_view` builds a whole-library index through
 `local_library_index` merely to produce a count. Even when the rebuild is
 rarer, that work does not belong synchronously on the UI thread.
 
+#### T1 result (2026-08-08)
+
+The queue callback now updates the retained Queue badge label and reloads the
+Queue surface only when visible. It no longer runs `Sidebar::refresh`, changes
+row identity, or performs a database query. The Releases badge projection now
+runs on a named worker over its own database handle; a generation token makes
+overlapping refreshes latest-wins before GTK applies the result.
+
+A timer countercheck used 2,340 generated tracks and 2,340 generated release
+rows with no concurrent build. The temporary timer test was removed after the
+run. In the debug build, the median in-place Queue badge update was 557 ns over
+1,000 runs. Forcing the change off by calling the old full sidebar refresh was
+4.357 ms over 14 runs even with Releases disabled; the separately timed
+synchronous `count_releases_view` that the old refresh also performed was
+77.907 ms over 14 runs. The latter identifies a concrete large cost outside
+T0's pre-`playback started` boundaries and agrees with the earlier stack sample
+inside `local_library_index`. The absolute debug timings are not substituted
+for the established release/audio baseline; the enabled/disabled comparison
+is the evidence for this task.
+
+The call-site audit retained 29 production full-refresh or refresh-and-select
+routes for actual mutations and restoration/navigation cases, covering scans
+and watcher reconciliation, deletes and missing state, tag edits, playlist
+CRUD/import, Library Doctor, external changes, source refreshes, issue-view
+state, preferences/modules, mounts, and relinking. The regression proves that
+a queue-only update leaves Music and row identity untouched, while a library
+mutation followed by the retained full-refresh route changes the Music badge.
+
+A private PipeWire/PulseAudio server and null-sink attempt could create its
+isolated sockets but could not admit a client in this sandbox (`Host is down`
+after the PipeWire access check failed). Therefore no honest RMS tone-onset
+number is available here; the task has timer and structural evidence only.
+The private processes and worktree-local measurement assets were removed.
+
 ### T2 — Do not query the view's ID list on every double-click
 
 The list is a pure function of source, sort, filter and browse facets. Retain
