@@ -3615,8 +3615,9 @@ means deterministic and high-confidence, never „without review".
   track at a time.** There is one request per (Album Artist, Album). Candidates
   are scored for equal track count, title overlap, artist-credit similarity,
   and year proximity. Release groups whose secondary type is Compilation,
-  DJ-mix, Live, Mixtape, or Remix are demoted unless the local tags describe
-  the same kind of release. A track's Album, Album Artist, and Year proposals
+  DJ-mix, Live, Mixtape, or Remix are demoted unless the local album artist is
+  a placeholder or the local album title names that same kind of release — all
+  five kinds, not just Live and Remix. A track's Album, Album Artist, and Year proposals
   demonstrably come from the same selected release. *Tests:*
   `doc_1e_a_release_parses_its_secondary_types_and_track_count`,
   `doc_1e_a_release_without_secondary_types_is_not_marked_as_one`,
@@ -3629,7 +3630,8 @@ means deterministic and high-confidence, never „without review".
   `doc_1e_a_single_artist_album_whose_tracks_are_on_a_compilation_produces_no_album_artist_proposal`,
   `doc_1e_an_albums_album_fields_all_carry_the_same_resolved_release_mbid`,
   `doc_1e_the_network_is_asked_once_per_album_not_once_per_track`,
-  `doc_1e_an_empty_release_search_keeps_the_directly_resolved_album_fields`.
+  `doc_1e_an_empty_release_search_keeps_the_directly_resolved_album_fields`,
+  `doc_1e_every_demoted_release_kind_can_be_named_by_the_local_album_title`.
   *Amended 2026-08-08: only a **selected** release speaks for the album fields.
   A release search that comes back empty — no candidate, or a failed request —
   leaves the fields the track resolved on its own untouched.*

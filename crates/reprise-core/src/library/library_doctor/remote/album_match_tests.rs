@@ -95,6 +95,40 @@ fn doc_1e_a_locally_tagged_compilation_is_not_demoted() {
 }
 
 #[test]
+fn doc_1e_every_demoted_release_kind_can_be_named_by_the_local_album_title() {
+    for (kind, album) in [
+        (ReleaseSecondaryType::Compilation, "Greatest Hits"),
+        (ReleaseSecondaryType::DjMix, "Fabric 39 (DJ Mix)"),
+        (ReleaseSecondaryType::Live, "Live at Wacken"),
+        (ReleaseSecondaryType::Mixtape, "The Mixtape"),
+        (ReleaseSecondaryType::Remix, "Remixes"),
+    ] {
+        let query = AlbumQuery {
+            album_artist: "As I Lay Dying".into(),
+            album: album.into(),
+            track_titles: vec!["Separation".into(), "Nothing Left".into()],
+            track_count: 2,
+            year: Some(2007),
+        };
+        let mut candidate = release(
+            "00000000-0000-0000-0000-000000000008",
+            "As I Lay Dying",
+            2,
+            &["Separation", "Nothing Left"],
+            vec![kind.clone()],
+        );
+        candidate.album = Some(album.into());
+
+        let matched = best_release(&query, &[candidate]).unwrap();
+
+        assert_eq!(
+            matched.score, 100,
+            "{album} names a {kind:?} release, so the demotion must not apply"
+        );
+    }
+}
+
+#[test]
 fn doc_1e_track_count_equality_outweighs_a_single_title_hit() {
     let mut right_count = release(
         "00000000-0000-0000-0000-000000000004",

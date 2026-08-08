@@ -131,11 +131,48 @@ fn is_penalized_release(identity: &RemoteIdentity) -> bool {
     })
 }
 
+/// Words that name one of the demoted release kinds, in the order of
+/// `is_penalized_release`: compilation, DJ-mix, live, mixtape, remix.
+const SPECIAL_RELEASE_WORDS: [&str; 12] = [
+    "compilation",
+    "compilations",
+    "anthology",
+    "sampler",
+    "hits",
+    "megamix",
+    "live",
+    "unplugged",
+    "concert",
+    "mixtape",
+    "remix",
+    "remixes",
+];
+
+/// Two-word names for the same kinds. They cannot be recognised word by word:
+/// "mix" and "best" on their own say nothing.
+const SPECIAL_RELEASE_PHRASES: [&str; 4] = ["best of", "dj mix", "dj set", "mixed by"];
+
+/// The demotion covers five secondary types, so this exception has to speak
+/// about all five — a correctly tagged DJ mix must not be punished for being
+/// one.
+///
+/// Covered: a placeholder album artist, and an album title that names its own
+/// kind (`SPECIAL_RELEASE_WORDS`, `SPECIAL_RELEASE_PHRASES`).
+///
+/// Deliberately not covered: the genre. `AlbumQuery` carries the album artist,
+/// the album, its track titles, the track count and the year — there is no
+/// genre in it, and inventing one here would be a claim the data cannot back.
+/// A DJ mix, live album or compilation whose title says nothing about itself
+/// therefore stays demoted; the local tags simply do not say otherwise.
 fn local_tags_describe_special_release(query: &AlbumQuery) -> bool {
+    let album = normalize_group_key(&query.album);
     is_placeholder_artist(&query.album_artist, None)
-        || normalize_group_key(&query.album)
+        || album
             .split(|character: char| !character.is_alphanumeric())
-            .any(|word| matches!(word, "live" | "remix"))
+            .any(|word| SPECIAL_RELEASE_WORDS.contains(&word))
+        || SPECIAL_RELEASE_PHRASES
+            .iter()
+            .any(|phrase| album.contains(phrase))
 }
 
 fn same_group_key(left: &str, right: &str) -> bool {
