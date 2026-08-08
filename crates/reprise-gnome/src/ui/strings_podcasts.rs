@@ -224,6 +224,9 @@ pub fn podcast_last_episode_days(count: usize) -> String {
 }
 
 pub fn podcast_last_episode_weeks(count: usize) -> String {
+    if count == 1 {
+        return text(N_!("New last week"));
+    }
     let count_text = count.to_string();
     plural(
         "New {count} week ago",
@@ -234,6 +237,9 @@ pub fn podcast_last_episode_weeks(count: usize) -> String {
 }
 
 pub fn podcast_last_episode_months(count: usize) -> String {
+    if count == 1 {
+        return text(N_!("Last month"));
+    }
     let count_text = count.to_string();
     plural(
         "{count} month ago",

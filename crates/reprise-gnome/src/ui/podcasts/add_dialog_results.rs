@@ -41,6 +41,7 @@ pub(super) fn last_episode_segment(last_episode: Option<i64>, now: i64) -> Optio
         1 => Some(strings::text(strings::PODCAST_LAST_EPISODE_YESTERDAY)),
         2..=6 => Some(strings::podcast_last_episode_days(days)),
         7..=34 => Some(strings::podcast_last_episode_weeks(days / 7)),
+        35..=64 => Some(strings::podcast_last_episode_months(1)),
         _ => Some(strings::podcast_last_episode_months(days / 30)),
     }
 }
@@ -173,11 +174,13 @@ mod tests {
             (1, "New yesterday"),
             (2, "New 2 days ago"),
             (6, "New 6 days ago"),
-            (7, "New 1 week ago"),
-            (13, "New 1 week ago"),
+            (7, "New last week"),
+            (13, "New last week"),
             (14, "New 2 weeks ago"),
             (34, "New 4 weeks ago"),
-            (35, "1 month ago"),
+            (35, "Last month"),
+            (64, "Last month"),
+            (65, "2 months ago"),
             (364, "12 months ago"),
             (365, "Last Aug 2025"),
         ];

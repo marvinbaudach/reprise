@@ -4825,13 +4825,15 @@ listening statistics.
   when the show last published.** Every RSS result row carries the age of its
   newest episode as the second segment of its subtitle, after the author and
   behind the same `·` separator the YouTube rows use: `New today`,
-  `New yesterday`, `New 4 days ago`, `New 2 weeks ago`, `3 months ago`, and
-  from a year onwards the absolute `Last Oct 2019`. "New" carries only while
-  the show is fresh, so past five weeks the phrasing drops to "… ago" and past
-  a year to "Last …" — the wording itself signals decay. Counts round **down**
-  and the unit is a plain divisor — 7 days to the week, 30 to the month, never
-  a calendar walk: 20 days is "2 weeks ago", and rounding down never claims a
-  show is staler than it is. A feed dated in the future — a mis-set timezone, a
+  `New yesterday`, `New 4 days ago`, `New last week`, `New 2 weeks ago`,
+  `Last month`, `3 months ago`, and from a year onwards the absolute
+  `Last Oct 2019`. "New" carries only while the show is fresh: 35–64 days say
+  "Last month", 65 days onwards drop to "… months ago", and a year onwards
+  becomes "Last …" — the wording itself signals decay. Counted units round
+  **down** with a plain divisor — 7 days to the week and 30 to the plural month,
+  never a calendar walk; the singular month is the explicit 35–64-day bucket.
+  Thus 20 days is "New 2 weeks ago", and rounding down never claims a show is
+  staler than it is. A feed dated in the future — a mis-set timezone, a
   scheduled episode — reads as `New today` rather than producing a negative
   age. A result whose feed carries no usable date **drops the segment
   entirely** rather than printing "unknown", and a result with no author drops
