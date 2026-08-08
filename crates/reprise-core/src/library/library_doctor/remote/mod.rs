@@ -5,6 +5,7 @@
 //! policy stay below this seam.
 
 mod acoustid;
+mod album_match;
 mod arbitration;
 mod cache;
 #[cfg(test)]
@@ -19,13 +20,15 @@ mod cache_tests;
 #[cfg(test)]
 mod guard_rails_tests;
 
+pub(crate) use album_match::AlbumQuery;
 pub(crate) use cache::CachedRemoteProvider;
 pub(crate) use metadata::read_remote_metadata;
 pub use metadata::{RemoteDirectLookup, RemoteTrackMetadata};
 pub(crate) use network::{NetworkProvider, NoNetworkProvider};
 pub(crate) use orchestrator::{ProviderRemoteResolver, RemoteResolver};
 pub use orchestrator::{
-    RemoteIdentity, RemoteProvider, RemoteProviderError, RemoteProviderResult, RemoteResolution,
+    ReleaseSecondaryType, RemoteIdentity, RemoteProvider, RemoteProviderError,
+    RemoteProviderResult, RemoteResolution,
 };
 
 use serde::{Deserialize, Serialize};

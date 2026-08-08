@@ -2,6 +2,7 @@
 
 use rusqlite::Connection;
 
+use super::album_match::AlbumQuery;
 use super::{RemoteDirectLookup, RemoteProvider, RemoteProviderResult, RemoteTrackMetadata};
 use crate::library::library_doctor::ScanControl;
 
@@ -79,6 +80,14 @@ impl<P: RemoteProvider> RemoteProvider for CachedRemoteProvider<'_, P> {
         control: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult {
         self.upstream.search_musicbrainz(metadata, control)
+    }
+
+    fn search_release(
+        &mut self,
+        query: &AlbumQuery,
+        control: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        self.upstream.search_release(query, control)
     }
 
     fn acoustid(

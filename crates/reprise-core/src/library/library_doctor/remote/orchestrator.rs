@@ -1,10 +1,22 @@
-use super::{arbitration, RemoteDirectLookup, RemoteEvidenceSource, RemoteTrackMetadata};
+use super::{
+    arbitration, AlbumQuery, RemoteDirectLookup, RemoteEvidenceSource, RemoteTrackMetadata,
+};
 use crate::fingerprint::{
     FingerprintBackend, FingerprintControl, FingerprintOutcome, FingerprintProgress,
 };
 use crate::library::library_doctor::ScanControl;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReleaseSecondaryType {
+    Compilation,
+    DjMix,
+    Live,
+    Mixtape,
+    Remix,
+    Other(String),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteIdentity {
@@ -22,6 +34,10 @@ pub struct RemoteIdentity {
     pub release_year: Option<u32>,
     pub original_release_year: Option<u32>,
     pub duration_ms: Option<u64>,
+    pub secondary_types: Vec<ReleaseSecondaryType>,
+    pub release_track_count: Option<u32>,
+    pub release_track_titles: Vec<String>,
+    pub release_distinct_track_artists: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -45,6 +61,12 @@ pub trait RemoteProvider {
     fn search_musicbrainz(
         &mut self,
         metadata: &RemoteTrackMetadata,
+        control: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult;
+    #[allow(dead_code)] // MATCH-3 invokes the release path after album grouping lands.
+    fn search_release(
+        &mut self,
+        query: &AlbumQuery,
         control: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult;
     fn acoustid(

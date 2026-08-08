@@ -38,6 +38,10 @@ fn identity(source: RemoteEvidenceSource, confidence: u8, title: &str) -> Remote
         release_year: Some(2024),
         original_release_year: Some(2023),
         duration_ms: Some(180_500),
+        secondary_types: Vec::new(),
+        release_track_count: None,
+        release_track_titles: Vec::new(),
+        release_distinct_track_artists: None,
     }
 }
 
@@ -112,6 +116,13 @@ impl RemoteProvider for FakeProvider {
         self.search_error
             .clone()
             .map_or_else(|| Ok(self.searched.clone()), Err)
+    }
+    fn search_release(
+        &mut self,
+        _: &super::remote::AlbumQuery,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
     }
     fn acoustid(
         &mut self,

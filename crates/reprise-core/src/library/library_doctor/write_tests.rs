@@ -103,6 +103,10 @@ impl super::remote::RemoteResolver for PaddedRemoteResolver {
                 release_year: None,
                 original_release_year: None,
                 duration_ms: None,
+                secondary_types: Vec::new(),
+                release_track_count: None,
+                release_track_titles: Vec::new(),
+                release_distinct_track_artists: None,
             }],
         ))
     }

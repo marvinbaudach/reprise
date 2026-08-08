@@ -68,6 +68,10 @@ impl CompilationProvider {
             release_year: Some(2007),
             original_release_year: Some(2007),
             duration_ms: None,
+            secondary_types: Vec::new(),
+            release_track_count: None,
+            release_track_titles: Vec::new(),
+            release_distinct_track_artists: None,
         }
     }
 }
@@ -90,6 +94,14 @@ impl RemoteProvider for CompilationProvider {
             self.identity(metadata, false),
             self.identity(metadata, true),
         ])
+    }
+
+    fn search_release(
+        &mut self,
+        _: &super::super::remote::AlbumQuery,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
     }
 
     fn acoustid(

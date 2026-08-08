@@ -31,6 +31,14 @@ impl RemoteProvider for ErrorProvider {
         Err(RemoteProviderError::InvalidResponse)
     }
 
+    fn search_release(
+        &mut self,
+        _: &super::album_match::AlbumQuery,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Err(RemoteProviderError::InvalidResponse)
+    }
+
     fn acoustid(
         &mut self,
         _: &RemoteTrackMetadata,
@@ -56,6 +64,14 @@ impl RemoteProvider for DirectProvider {
     fn search_musicbrainz(
         &mut self,
         _: &RemoteTrackMetadata,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
+    }
+
+    fn search_release(
+        &mut self,
+        _: &super::album_match::AlbumQuery,
         _: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult {
         Ok(Vec::new())
@@ -90,6 +106,10 @@ fn identity() -> RemoteIdentity {
         release_year: None,
         original_release_year: None,
         duration_ms: Some(180_000),
+        secondary_types: Vec::new(),
+        release_track_count: None,
+        release_track_titles: Vec::new(),
+        release_distinct_track_artists: None,
     }
 }
 

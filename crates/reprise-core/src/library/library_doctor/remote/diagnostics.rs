@@ -58,8 +58,7 @@ fn diag_remote_identity_dump_for_a_known_bad_album() {
             )
             .unwrap_or_else(|error| panic!("load diagnostic track {title}: {error}"));
         let metadata = super::read_remote_metadata(std::path::Path::new(&path))
-            .map(|(_, metadata)| metadata)
-            .unwrap_or(database_tags);
+            .map_or(database_tags, |(_, metadata)| metadata);
         let mut provider = NetworkProvider::new();
         let mut control = || ScanControl::Continue;
         let mut lookup_dumps = Vec::new();
