@@ -26,7 +26,9 @@ use reprise_core::device_sync::device_view::project_category_segments;
 use reprise_core::device_sync::{aggregate_balance, SyncTargetKind};
 
 use super::device_sync_category_bar::CategoryStorageBar;
-use super::device_sync_content_copy::{category_result_text, category_rule_prefix};
+use super::device_sync_content_copy::{
+    category_result_text, category_rule_prefix, projected_category_size_bytes,
+};
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceView};
 use super::device_sync_strings;
 use super::device_sync_verification_copy::verification_copy;
@@ -152,6 +154,11 @@ struct CategoryRowWidgets {
     container: gtk4::Box,
 }
 
+struct CategoryLegendWidgets {
+    container: gtk4::Box,
+    text: gtk4::Label,
+}
+
 pub(super) struct ContentPanel {
     root: adw::Bin,
     header: gtk4::Box,
@@ -159,6 +166,7 @@ pub(super) struct ContentPanel {
     scan_button: gtk4::Button,
     storage_bar: CategoryStorageBar,
     free_space_line: gtk4::Label,
+    category_legend: [CategoryLegendWidgets; 3],
     category_rows: [CategoryRowWidgets; 3],
     balance_label: gtk4::Label,
     remove_deleted_switch: gtk4::Switch,
@@ -188,6 +196,15 @@ impl ContentPanel {
 
         let storage_bar = CategoryStorageBar::new();
         let free_space_line = detail("");
+
+        let legend = gtk4::Box::new(gtk4::Orientation::Horizontal, 18);
+        legend.set_halign(gtk4::Align::Start);
+        legend.add_css_class("reprise-sync-category-legend");
+        let category_legend = SyncTargetKind::ALL.map(|kind| {
+            let entry = build_category_legend_entry(kind);
+            legend.append(&entry.container);
+            entry
+        });
 
         let category_list = gtk4::ListBox::new();
         category_list.set_selection_mode(gtk4::SelectionMode::None);
@@ -243,6 +260,7 @@ impl ContentPanel {
         content.set_margin_start(18);
         content.set_margin_end(18);
         content.append(storage_bar.widget());
+        content.append(&legend);
         content.append(&category_list);
         content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         content.append(&summary);
@@ -270,6 +288,7 @@ impl ContentPanel {
             scan_button,
             storage_bar,
             free_space_line,
+            category_legend,
             category_rows,
             balance_label,
             remove_deleted_switch: remove_deleted_switch.1,
@@ -314,19 +333,28 @@ impl ContentPanel {
             },
         ));
 
-        for ((row, content_row), reading) in self
+        for (((row, legend), content_row), reading) in self
             .category_rows
             .iter()
+            .zip(&self.category_legend)
             .zip(&device.content_rows)
             .zip(&device.category_readings)
         {
             // `MTP-46`: a switched-off source is not a category with nothing
             // in it, it is not a category at all.
-            row.container.set_visible(match row.kind {
+            let visible = match row.kind {
                 SyncTargetKind::YoutubeAudio => device.enabled_sources.youtube,
                 SyncTargetKind::PodcastEpisodes => device.enabled_sources.rss,
                 SyncTargetKind::Playlists => true,
-            });
+            };
+            row.container.set_visible(visible);
+            legend.container.set_visible(visible);
+            legend
+                .text
+                .set_text(&device_sync_strings::category_legend_text(
+                    row.kind,
+                    projected_category_size_bytes(content_row, reading),
+                ));
             row.path.set_text(&device_sync_strings::target_folder(
                 &content_row.target_path,
             ));
@@ -370,6 +398,21 @@ impl ContentPanel {
 
         self.updating.set(false);
     }
+}
+
+fn build_category_legend_entry(kind: SyncTargetKind) -> CategoryLegendWidgets {
+    let swatch = gtk4::Label::new(Some("●"));
+    swatch.add_css_class("caption");
+    swatch.add_css_class(category_css_class(kind));
+
+    let text = gtk4::Label::new(None);
+    text.add_css_class("caption");
+    text.set_xalign(0.0);
+
+    let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    container.append(&swatch);
+    container.append(&text);
+    CategoryLegendWidgets { container, text }
 }
 
 fn build_category_row(
