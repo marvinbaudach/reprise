@@ -9,24 +9,22 @@ use gtk4::prelude::*;
 use reprise_core::device_sync::device_view::DeviceContentsState;
 
 use super::sidebar_device_card_text;
-use crate::ui::device_sync_runtime::{
-    DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase, SyncStep,
-};
+use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncStep};
 use crate::ui::device_sync_strings;
 
 #[path = "../device_sync/device_sync_card_menu.rs"]
-mod menu;
+pub(super) mod menu;
 
-type OpenCallback = Rc<dyn Fn(String, String)>;
+pub(super) type OpenCallback = Rc<dyn Fn(String, String)>;
 
 /// Live card widgets, keyed by device id, so a state update can refresh them
 /// in place. Rebuilding the section on every update destroyed the card
 /// between a click's press and release — during a sync `notify` fires on
 /// every progress callback, which made the card permanently unclickable —
 /// and re-cloned every widget many times a second for nothing.
-type CardRegistry = Rc<RefCell<HashMap<String, DeviceCard>>>;
+pub(super) type CardRegistry = Rc<RefCell<HashMap<String, DeviceCard>>>;
 
-struct DeviceCard {
+pub(super) struct DeviceCard {
     root: gtk4::Button,
     indicator: gtk4::Stack,
     icon: gtk4::Image,
@@ -44,73 +42,13 @@ struct DeviceCard {
     open_name: Rc<RefCell<String>>,
 }
 
-pub(super) fn bind(runtime: &Rc<DeviceSyncRuntime>, on_open: OpenCallback) -> gtk4::Box {
-    let section = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-    section.set_margin_start(10);
-    section.set_margin_end(10);
-    section.set_margin_top(8);
-    section.set_margin_bottom(8);
-    section.set_visible(false);
-    let heading = gtk4::Label::new(Some("DEVICES"));
-    heading.add_css_class("caption");
-    heading.add_css_class("dim-label");
-    heading.set_xalign(0.0);
-    heading.set_margin_start(8);
-    section.append(&heading);
-
-    let cards: CardRegistry = Rc::new(RefCell::new(HashMap::new()));
-    let subscription = runtime.subscribe(Rc::new({
-        let section = section.clone();
-        let cards = cards.clone();
-        let runtime = runtime.clone();
-        move |state| render(&section, &cards, &state, &on_open, &runtime)
-    }));
-    subscription.retain_for_widget(&section);
-    section
-}
-
-fn render(
-    section: &gtk4::Box,
-    cards: &CardRegistry,
-    state: &DeviceSyncState,
-    on_open: &OpenCallback,
-    runtime: &Rc<DeviceSyncRuntime>,
-) {
-    let devices = state.devices.iter().collect::<Vec<_>>();
-    section.set_visible(!devices.is_empty());
-
-    let mut registry = cards.borrow_mut();
-    // Drop cards for devices that went away.
-    registry.retain(|id, card| {
-        let keep = devices.iter().any(|device| &device.id == id);
-        if !keep {
-            section.remove(&card.root);
-        }
-        keep
-    });
-    // Update in place, appending only genuinely new devices.
-    for device in &devices {
-        match registry.get(&device.id) {
-            Some(card) => card.update(device),
-            None => {
-                let card = DeviceCard::new(device, on_open);
-                menu::wire(&card.root, runtime, &device.id);
-                section.append(&card.root);
-                card.update(device);
-                registry.insert(device.id.clone(), card);
-            }
-        }
-    }
-    let mut previous = section.first_child();
-    for device in devices {
-        let card = &registry[&device.id];
-        section.reorder_child_after(&card.root, previous.as_ref());
-        previous = Some(card.root.clone().upcast());
-    }
-}
-
 impl DeviceCard {
-    fn new(device: &DeviceView, on_open: &OpenCallback) -> Self {
+    /// The card's widget, so the section can place and order it.
+    pub(super) fn root(&self) -> &gtk4::Button {
+        &self.root
+    }
+
+    pub(super) fn new(device: &DeviceView, on_open: &OpenCallback) -> Self {
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
         content.set_valign(gtk4::Align::Center);
         let root = gtk4::Button::builder()
@@ -254,7 +192,7 @@ impl DeviceCard {
         }
     }
 
-    fn update(&self, device: &DeviceView) {
+    pub(super) fn update(&self, device: &DeviceView) {
         if device.session_state == reprise_core::device_sync::DeviceSessionState::Remembered {
             self.root.add_css_class("remembered-device");
         } else {
@@ -470,7 +408,12 @@ pub(in crate::ui) fn css() -> String {
      .device-card-progress trough { min-height: 3px; border-radius: 2px; \
        background-color: alpha(#ffffff, 0.12); }\n\
      .device-card-progress progress { min-height: 3px; border-radius: 2px; \
-       background-color: @accent_color; }"
+       background-color: @accent_color; }\n\
+     .device-section-heading { min-height: 0; padding: 0 8px; \
+       background: none; box-shadow: none; border: none; }\n\
+     .device-section-heading:hover { background-color: \
+       alpha(@window_fg_color, 0.05); }\n\
+     .device-section-heading:disabled { background: none; opacity: 1; }"
         .to_string()
 }
 
@@ -558,10 +501,10 @@ fn step_glyph(step: &SyncStep) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
-    pub(super) fn view(phase: PlannedSyncPhase) -> DeviceView {
+    pub(in crate::ui::sidebar) fn view(phase: PlannedSyncPhase) -> DeviceView {
         DeviceView {
             id: "pixel".into(),
             name: "Pixel 8".into(),

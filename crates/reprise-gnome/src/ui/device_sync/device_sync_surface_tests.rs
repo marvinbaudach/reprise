@@ -43,11 +43,13 @@ fn retired_device_browser_surfaces_stay_removed() {
 #[test]
 fn mtp_1_connected_devices_appear_without_automatic_navigation() {
     let feedback = ui_source("device_sync/device_sync_feedback.rs");
-    let cards = ui_source("sidebar/sidebar_device_card.rs");
+    let section = ui_source("sidebar/sidebar_device_section.rs");
 
     assert!(feedback.contains("format!(\"{} connected\", device.name)"));
-    assert!(cards.contains("let devices = state.devices.iter().collect::<Vec<_>>();"));
-    assert!(!cards.contains(".filter(|device| device.connected)"));
+    // The section sorts, it never drops: a connected device always lands in
+    // the open half, and only history goes behind the heading (`MTP-50`).
+    assert!(section.contains("devices.iter().partition(|device| device.connected)"));
+    assert!(section.contains("place(registry[&device.id].root(), &section.present);"));
     assert!(!feedback.contains("content_stack"));
 }
 
