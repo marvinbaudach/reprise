@@ -179,20 +179,38 @@ pub(super) fn candidate_row(
     row.append(image.widget());
     let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     labels.set_hexpand(true);
+    let title_line = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    title_line.set_hexpand(true);
     let title_label = gtk4::Label::new(Some(title));
+    title_label.set_hexpand(true);
     title_label.set_xalign(0.0);
     title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     let subtitle_label = gtk4::Label::new(Some(subtitle));
     subtitle_label.add_css_class("caption");
     subtitle_label.add_css_class("reprise-text-secondary");
     subtitle_label.set_xalign(0.0);
-    if query.is_some() {
+    let unexplained_match = if query.is_some() {
         let foreground = crate::ui::track_list::match_highlight::accent_foreground(&title_label);
-        let markup = search_result_markup(title, subtitle, author, query, foreground.as_deref());
+        let markup =
+            search_result_markup(kind, title, subtitle, author, query, foreground.as_deref());
         title_label.set_markup(&markup.title);
         subtitle_label.set_markup(&markup.subtitle);
+        markup.unexplained_match
+    } else {
+        false
+    };
+    title_line.append(&title_label);
+    if unexplained_match {
+        let explanation = strings::text(strings::PODCAST_SEARCH_MATCH_NOT_SHOWN);
+        let marker = gtk4::Image::from_icon_name(crate::ui::icons::UNEXPLAINED_SEARCH_MATCH);
+        marker.set_pixel_size(12);
+        marker.set_valign(gtk4::Align::Center);
+        marker.add_css_class("dim-label");
+        marker.set_tooltip_text(Some(&explanation));
+        marker.update_property(&[gtk4::accessible::Property::Description(&explanation)]);
+        title_line.append(&marker);
     }
-    labels.append(&title_label);
+    labels.append(&title_line);
     // SRC-8: the subtitle ellipsizes for the same reason the title does — a
     // long publisher name would otherwise raise the dialog's minimum width
     // and the window would change size between two searches.

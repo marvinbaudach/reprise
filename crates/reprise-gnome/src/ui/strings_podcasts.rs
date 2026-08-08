@@ -116,6 +116,11 @@ pub const PODCAST_PREVIEW: &str = N_!("Preview");
 pub const PODCAST_SEARCHING: &str = N_!("Searching…");
 pub const PODCAST_APPLE_RESULTS: &str = N_!("PODCASTS · APPLE PODCASTS");
 pub const PODCAST_YOUTUBE_RESULTS: &str = N_!("YOUTUBE · audio only");
+/// `SRC-22`: Apple does not identify which hidden provider field matched, so
+/// the marker explains only the mismatch the row can prove.
+pub const PODCAST_SEARCH_MATCH_NOT_SHOWN: &str = N_!(
+    "The search term is not in the title or publisher shown here, but Apple returned this podcast as a result."
+);
 pub const PODCAST_SUBSCRIBE: &str = N_!("Subscribe");
 pub const PODCAST_CANCEL: &str = N_!("Cancel");
 pub const PODCAST_RSS_DETECTED: &str = N_!("RSS feed detected");
@@ -649,6 +654,17 @@ mod tests {
         assert_eq!(podcast_last_episode_on("Oct 2019"), "Last Oct 2019");
         assert_eq!(podcast_chip_popular_in_country("DE"), "Popular in DE");
         assert_eq!(podcast_charts_heading("DE"), "PODCASTS · TOP IN DE");
+    }
+
+    #[test]
+    fn search_match_explanation_states_only_what_apple_reveals() {
+        assert_eq!(
+            PODCAST_SEARCH_MATCH_NOT_SHOWN,
+            "The search term is not in the title or publisher shown here, but Apple returned this podcast as a result."
+        );
+        assert!(!PODCAST_SEARCH_MATCH_NOT_SHOWN.contains("description"));
+        assert!(!PODCAST_SEARCH_MATCH_NOT_SHOWN.contains("genre"));
+        assert!(!PODCAST_SEARCH_MATCH_NOT_SHOWN.contains("episode"));
     }
 
     #[test]

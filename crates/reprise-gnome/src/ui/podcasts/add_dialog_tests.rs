@@ -285,7 +285,11 @@ fn src_21_highlighted_title_keeps_its_end_ellipsis_and_pango_attributes() {
         .and_then(|child| child.next_sibling())
         .and_downcast::<gtk4::Box>()
         .expect("result labels");
-    let title = labels
+    let title_line = labels
+        .first_child()
+        .and_downcast::<gtk4::Box>()
+        .expect("result title line");
+    let title = title_line
         .first_child()
         .and_downcast::<gtk4::Label>()
         .expect("result title");
@@ -296,6 +300,74 @@ fn src_21_highlighted_title_keeps_its_end_ellipsis_and_pango_attributes() {
     assert!(
         title.layout().attributes().is_some(),
         "Pango must retain the accent-bold span while ellipsizing the title"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
+    gtk4::init().unwrap();
+    let row = candidate_row(
+        "The Jasta Show with an exceptionally long title that must ellipsize before the marker",
+        "GaS Digital Network · New last week",
+        Some("GaS Digital Network"),
+        Some("Metalcore"),
+        PodcastKind::Rss,
+        None,
+        false,
+    );
+    let labels = row
+        .first_child()
+        .and_then(|child| child.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("result labels");
+    let title_line = labels
+        .first_child()
+        .and_downcast::<gtk4::Box>()
+        .expect("result title line");
+    let title = title_line
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("result title");
+    let marker = title_line
+        .last_child()
+        .and_downcast::<gtk4::Image>()
+        .expect("unexplained search match marker after the title");
+    let explanation = strings::text(strings::PODCAST_SEARCH_MATCH_NOT_SHOWN);
+
+    assert_eq!(
+        marker.icon_name().as_deref(),
+        Some(crate::ui::icons::UNEXPLAINED_SEARCH_MATCH)
+    );
+    assert_eq!(marker.tooltip_text().as_deref(), Some(explanation.as_str()));
+    assert!(gtk4::test_accessible_has_role(
+        &marker,
+        gtk4::AccessibleRole::Img
+    ));
+    assert!(gtk4::test_accessible_has_property(
+        &marker,
+        gtk4::AccessibleProperty::Description
+    ));
+
+    let marker_minimum = marker.measure(gtk4::Orientation::Horizontal, -1).0;
+    let window = gtk4::Window::builder()
+        .default_width(280)
+        .default_height(100)
+        .child(&row)
+        .build();
+    window.present();
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || quit.quit());
+    main_loop.run();
+
+    assert!(title.layout().is_ellipsized());
+    assert!(marker_minimum > 0);
+    assert!(
+        marker.width() >= marker_minimum,
+        "the title must yield space to the {marker_minimum}px marker, got {}px",
+        marker.width()
     );
     window.close();
 }
@@ -313,7 +385,7 @@ fn src_8_a_long_result_row_never_widens_the_dialog() {
         "Ein außergewöhnlich langer Podcasttitel, der die Dialogbreite deutlich überschreitet",
         "Herausgegeben von einem Sender mit einem ebenso langen Namen · 480 Folgen",
         None,
-        None,
+        Some("Metalcore"),
         PodcastKind::Rss,
         None,
         false,
@@ -322,7 +394,7 @@ fn src_8_a_long_result_row_never_widens_the_dialog() {
         "Show",
         "Publisher",
         None,
-        None,
+        Some("Metalcore"),
         PodcastKind::Rss,
         None,
         false,

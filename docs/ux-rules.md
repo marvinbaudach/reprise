@@ -4899,6 +4899,15 @@ listening statistics.
   when the query occurs there. A country chart has no query and therefore no
   highlighting. The title keeps `EllipsizeMode::End`, so long provider text
   cannot widen the dialog (`SRC-8`).
+- **SRC-22** [active] [gtk] — **An Apple search result explains a match its row
+  cannot show.** When `SRC-21`'s exact comparison finds the text query in
+  neither the displayed title nor publisher, a quiet information marker sits
+  immediately after the title. Its tooltip and accessible description say:
+  "The search term is not in the title or publisher shown here, but Apple
+  returned this podcast as a result." Apple does not reveal which other field
+  matched, so the explanation names none. The marker keeps its space while the
+  title ellipsizes and cannot widen the dialog (`SRC-8`). Country charts have
+  no query and therefore no marker.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a

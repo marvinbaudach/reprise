@@ -68,41 +68,58 @@ pub(super) fn partition_dormant_search_results(
 pub(super) struct SearchResultMarkup {
     pub(super) title: String,
     pub(super) subtitle: String,
+    pub(super) unexplained_match: bool,
 }
 
 /// `SRC-21`: highlight only provider fields that can explain a search match.
 /// The generated freshness suffix is escaped separately and never becomes a
 /// target even when it happens to contain the query.
 pub(super) fn search_result_markup(
+    kind: PodcastKind,
     title: &str,
     subtitle: &str,
     author: Option<&str>,
     query: Option<&str>,
     foreground: Option<&str>,
 ) -> SearchResultMarkup {
-    let title = highlighted_or_escaped(title, query, foreground);
-    let subtitle = author
+    let (title, title_matches) = highlighted_or_escaped(title, query, foreground);
+    let (subtitle, author_matches) = author
         .filter(|author| !author.is_empty())
         .and_then(|author| subtitle.strip_prefix(author).map(|suffix| (author, suffix)))
         .map_or_else(
-            || gtk4::glib::markup_escape_text(subtitle).to_string(),
+            || (gtk4::glib::markup_escape_text(subtitle).to_string(), false),
             |(author, suffix)| {
-                format!(
-                    "{}{}",
-                    highlighted_or_escaped(author, query, foreground),
-                    gtk4::glib::markup_escape_text(suffix)
-                )
+                let (author, author_matches) = highlighted_or_escaped(author, query, foreground);
+                let subtitle = format!("{}{}", author, gtk4::glib::markup_escape_text(suffix));
+                (subtitle, author_matches)
             },
         );
-    SearchResultMarkup { title, subtitle }
+    let has_query = query.is_some_and(|query| {
+        crate::ui::track_list::match_highlight::highlight_markup(query, query, None).is_some()
+    });
+    SearchResultMarkup {
+        title,
+        subtitle,
+        unexplained_match: kind == PodcastKind::Rss
+            && has_query
+            && !title_matches
+            && !author_matches,
+    }
 }
 
-fn highlighted_or_escaped(text: &str, query: Option<&str>, foreground: Option<&str>) -> String {
-    query
-        .and_then(|query| {
-            crate::ui::track_list::match_highlight::highlight_markup(text, query, foreground)
-        })
-        .unwrap_or_else(|| gtk4::glib::markup_escape_text(text).to_string())
+fn highlighted_or_escaped(
+    text: &str,
+    query: Option<&str>,
+    foreground: Option<&str>,
+) -> (String, bool) {
+    let highlighted = query.and_then(|query| {
+        crate::ui::track_list::match_highlight::highlight_markup(text, query, foreground)
+    });
+    let matches = highlighted.is_some();
+    (
+        highlighted.unwrap_or_else(|| gtk4::glib::markup_escape_text(text).to_string()),
+        matches,
+    )
 }
 
 pub(super) fn rss_subtitle(author: Option<&str>, last_episode: Option<i64>, now: i64) -> String {
@@ -246,6 +263,7 @@ mod tests {
     #[test]
     fn src_21_search_accents_title_and_author_but_never_freshness() {
         let freshness_only_match = search_result_markup(
+            PodcastKind::Rss,
             "Weekly <News>",
             "Sean & Sons · New 1 week ago",
             Some("Sean & Sons"),
@@ -262,6 +280,7 @@ mod tests {
         );
 
         let author_match = search_result_markup(
+            PodcastKind::Rss,
             "Weekly <News>",
             "Sean & Sons · New 1 week ago",
             Some("Sean & Sons"),
@@ -275,6 +294,7 @@ mod tests {
         );
 
         let chart = search_result_markup(
+            PodcastKind::Rss,
             "Weekly <News>",
             "Sean & Sons · New 1 week ago",
             Some("Sean & Sons"),
@@ -283,6 +303,51 @@ mod tests {
         );
         assert_eq!(chart.title, "Weekly &lt;News&gt;");
         assert_eq!(chart.subtitle, "Sean &amp; Sons · New 1 week ago");
+    }
+
+    #[test]
+    fn src_22_only_search_hits_without_a_visible_match_need_an_explanation() {
+        let unexplained = search_result_markup(
+            PodcastKind::Rss,
+            "The Jasta Show",
+            "GaS Digital Network · New last week",
+            Some("GaS Digital Network"),
+            Some("Metalcore"),
+            Some("#2ec8a6"),
+        );
+        assert!(unexplained.unexplained_match);
+
+        for (title, author, query) in [
+            ("MetalCore & More", Some("Publisher"), Some("metalcore")),
+            ("A Show", Some("MetalCore Network"), Some("metalcore")),
+            ("The Jasta Show", Some("GaS Digital Network"), None),
+        ] {
+            let explained = search_result_markup(
+                PodcastKind::Rss,
+                title,
+                author.unwrap_or_default(),
+                author,
+                query,
+                Some("#2ec8a6"),
+            );
+            assert!(
+                !explained.unexplained_match,
+                "title={title:?}, author={author:?}, query={query:?}"
+            );
+        }
+
+        let youtube = search_result_markup(
+            PodcastKind::Youtube,
+            "A Channel",
+            "4 matching videos",
+            None,
+            Some("Metalcore"),
+            Some("#2ec8a6"),
+        );
+        assert!(
+            !youtube.unexplained_match,
+            "an Apple-specific explanation must not leak into YouTube search"
+        );
     }
 
     #[test]
