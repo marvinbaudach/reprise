@@ -10,6 +10,33 @@ mod cava_tests;
 mod stream_generation_tests;
 
 #[test]
+fn steady_playback_reports_the_queried_duration() {
+    assert_eq!(reported_duration_ms(257_428, 157_317, false), 257_428);
+}
+
+#[test]
+fn gapless_handoff_holds_the_running_stream_duration() {
+    assert_eq!(reported_duration_ms(257_428, 157_317, true), 157_317);
+}
+
+#[test]
+fn gapless_handoff_without_a_stable_duration_reports_the_query() {
+    assert_eq!(reported_duration_ms(257_428, 0, true), 257_428);
+}
+
+#[test]
+fn gapless_handoff_keeps_the_measured_playhead_near_the_track_end() {
+    let position_ms = 155_718;
+    let duration_ms = reported_duration_ms(257_428, 157_317, true);
+
+    let fraction = position_ms as f64 / duration_ms as f64;
+    assert!(
+        fraction >= 0.98,
+        "the measured handoff tick must stay near the old track's end, got {fraction:.3}"
+    );
+}
+
+#[test]
 fn path_to_uri_encodes_special_chars() {
     let uri = path_to_uri("/home/marvin/Music/Björk/Jóga (Live).flac").unwrap();
     assert!(uri.starts_with("file:///home/marvin/Music/"));

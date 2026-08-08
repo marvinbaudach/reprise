@@ -28,6 +28,19 @@ const DEFAULT_VOLUME: f64 = 1.0;
 
 const POSITION_TICK_INTERVAL: Duration = Duration::from_millis(500);
 
+/// While a gapless hand-off is pending, `playbin3` already answers
+/// `query_duration` for the *next* stream while `query_position` still measures
+/// the current one. Reporting that pair would make the UI compute a fraction of
+/// `duration_old / duration_new` and jump the playhead backwards, so the last
+/// duration seen for the running stream is held until `StreamStart` lands.
+fn reported_duration_ms(queried_ms: i64, last_stable_ms: i64, handoff_pending: bool) -> i64 {
+    if handoff_pending && last_stable_ms > 0 {
+        last_stable_ms
+    } else {
+        queried_ms
+    }
+}
+
 pub struct Player {
     /// The live GStreamer pipeline. `Arc<Mutex<_>>`, not a plain field: the
     /// position-ticker thread (spawned in `new`) needs to read whichever
@@ -185,27 +198,39 @@ impl Player {
         // only long enough to clone the `gst::Element` handle out (a cheap
         // refcount bump) — the actual state/position queries run outside the lock.
         let ticker = engine.clone();
-        std::thread::spawn(move || loop {
-            std::thread::sleep(POSITION_TICK_INTERVAL);
-            let element = {
-                let guard = ticker
-                    .playbin
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
-                guard.clone()
-            };
-            if element.current_state() == gst::State::Playing {
-                let position_ms = element
-                    .query_position::<gst::ClockTime>()
-                    .map_or(0, |t| t.mseconds() as i64);
-                let duration_ms = element
-                    .query_duration::<gst::ClockTime>()
-                    .map_or(0, |t| t.mseconds() as i64);
-                (ticker.on_event)(PlayerEvent::Position {
-                    position_ms,
-                    duration_ms,
-                });
-                ticker.maybe_start(position_ms, duration_ms);
+        std::thread::spawn(move || {
+            let mut last_stable_duration_ms = 0;
+            loop {
+                std::thread::sleep(POSITION_TICK_INTERVAL);
+                let element = {
+                    let guard = ticker
+                        .playbin
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    guard.clone()
+                };
+                if element.current_state() == gst::State::Playing {
+                    let position_ms = element
+                        .query_position::<gst::ClockTime>()
+                        .map_or(0, |t| t.mseconds() as i64);
+                    let queried_duration_ms = element
+                        .query_duration::<gst::ClockTime>()
+                        .map_or(0, |t| t.mseconds() as i64);
+                    let handoff_pending = ticker.handoff_pending.load(Ordering::SeqCst);
+                    let duration_ms = reported_duration_ms(
+                        queried_duration_ms,
+                        last_stable_duration_ms,
+                        handoff_pending,
+                    );
+                    if !handoff_pending && queried_duration_ms > 0 {
+                        last_stable_duration_ms = queried_duration_ms;
+                    }
+                    (ticker.on_event)(PlayerEvent::Position {
+                        position_ms,
+                        duration_ms,
+                    });
+                    ticker.maybe_start(position_ms, duration_ms);
+                }
             }
         });
 
