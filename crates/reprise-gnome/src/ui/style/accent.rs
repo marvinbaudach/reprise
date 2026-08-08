@@ -61,22 +61,19 @@ pub(in crate::ui) fn accent_rgba() -> gtk4::gdk::RGBA {
     }
 }
 
-fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
-    let hex = hex.strip_prefix('#')?;
-    if hex.len() != 6 {
-        return None;
-    }
-    Some([
-        u8::from_str_radix(&hex[0..2], 16).ok()?,
-        u8::from_str_radix(&hex[2..4], 16).ok()?,
-        u8::from_str_radix(&hex[4..6], 16).ok()?,
-    ])
-}
+/// The AA threshold every accent foreground must clear (CONTRAST-5).
+pub(in crate::ui::style) const ACCENT_TEXT_MINIMUM_RATIO: f64 = 4.5;
 
 fn accent_text_rgb(accent: &str, background: &str, is_dark: bool) -> [u8; 3] {
+    use super::color_math::{ensure_contrast_by_lightness, max_contrast_monochrome, parse_hex_rgb};
+
     let accent = parse_hex_rgb(accent).expect("accent color must use #RRGGBB");
     let background = parse_hex_rgb(background).expect("surface color must use #RRGGBB");
-    super::color_math::ensure_contrast_by_lightness(accent, background, is_dark, 4.5)
+    // A sufficiently saturated accent cannot always reach the ratio by
+    // lightness alone. Legibility outranks staying on-hue, so that case drops
+    // the tint entirely rather than shipping text nobody can read.
+    ensure_contrast_by_lightness(accent, background, is_dark, ACCENT_TEXT_MINIMUM_RATIO)
+        .unwrap_or_else(|| max_contrast_monochrome(background))
 }
 
 fn rgb_hex(color: [u8; 3]) -> String {
@@ -221,38 +218,54 @@ mod tests {
     }
 
     #[test]
-    fn contrast_5_derived_accent_text_meets_ratio_in_both_appearances() {
-        const MINIMUM_RATIO: f64 = 4.5;
-        let accents = [APP_ACCENT, "#f8f7ff", "#101318", "#ff3bd4"];
-        let surfaces = [
-            (false, "#ffffff"),
-            (false, "#e8eaed"),
-            (false, "#e4e8ef"),
-            (false, "#ede8eb"),
-            (true, "#2f353d"),
-            (true, "#2d3441"),
-            (true, "#362e37"),
-            (true, "#353b44"),
-            (true, "#333a48"),
-            (true, "#3a343c"),
+    fn contrast_5_derived_accent_text_meets_ratio_on_every_live_surface() {
+        use super::super::color_math::parse_hex_rgb;
+        use super::super::theme::Theme;
+
+        // Read the palettes live. An earlier version copied the hex values into
+        // this test, which would have kept passing through the very palette
+        // retune the module doc says is coming.
+        let accents = [
+            APP_ACCENT, // the brand teal
+            "#3584e4",  // GNOME blue
+            "#f8f7ff",  // a near-white system accent
+            "#101318",  // a near-black system accent
+            "#ff3bd4",  // saturated magenta: the case lightness alone cannot fix
         ];
 
-        for accent in accents {
-            for (is_dark, surface) in surfaces {
-                let derived = accent_text_rgb(accent, surface, is_dark);
-                let background = parse_hex_rgb(surface).expect("test surface is valid hex");
-                let ratio = contrast(derived, background);
-                assert!(
-                    ratio >= MINIMUM_RATIO,
-                    "{accent} on {surface} derived only {ratio:.2}:1"
-                );
+        for theme in Theme::all() {
+            for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
+                for surface in palette.surfaces() {
+                    let background = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                    for accent in accents {
+                        // Every surface, not just the critical one: the role is
+                        // painted app-wide, and the critical surface is only the
+                        // worst case it must survive.
+                        let critical = palette.critical_accent_surface(is_dark);
+                        let derived = accent_text_rgb(accent, critical, is_dark);
+                        let ratio = contrast(derived, background);
+                        assert!(
+                            ratio >= ACCENT_TEXT_MINIMUM_RATIO,
+                            "{theme:?} {}: {accent} derived against {critical} \
+                             reaches only {ratio:.2}:1 on {surface}",
+                            if is_dark { "dark" } else { "light" }
+                        );
+                    }
+                }
             }
         }
+    }
 
+    #[test]
+    fn contrast_5_the_app_accent_survives_unchanged_where_it_already_passes() {
+        use super::super::color_math::parse_hex_rgb;
+        use super::super::theme::Theme;
+
+        let palette = Theme::PerpetualRain.palette();
         assert_eq!(
-            accent_text_rgb(APP_ACCENT, "#2f353d", true),
-            parse_hex_rgb(APP_ACCENT).unwrap(),
-            "the app accent already clears the dark popover and must stay unchanged"
+            accent_text_rgb(APP_ACCENT, palette.critical_accent_surface(true), true),
+            parse_hex_rgb(APP_ACCENT).expect("the brand accent is valid hex"),
+            "the brand teal already clears every dark surface and must not be retinted"
         );
     }
 

@@ -109,7 +109,7 @@ fn build_surface(
         chip
     });
     let status = gtk4::Label::new(None);
-    status.add_css_class("dim-label");
+    status.add_css_class("reprise-text-secondary");
     status.set_xalign(0.0);
     content.append(&status);
     let results = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
@@ -129,7 +129,7 @@ fn build_surface(
     // it vanish unexplained on the next search.
     let footnote = gtk4::Label::new(Some(&strings::text(strings::SOURCE_SUBSCRIBED_DROP_OUT)));
     footnote.add_css_class("caption");
-    footnote.add_css_class("dim-label");
+    footnote.add_css_class("reprise-text-secondary");
     footnote.set_xalign(0.0);
     footnote.set_wrap(true);
     content.append(&footnote);
@@ -586,7 +586,7 @@ fn set_status_hint(
 fn append_heading(parent: &gtk4::Box, text: &str) {
     let label = gtk4::Label::new(Some(&strings::text(text)));
     label.add_css_class("caption");
-    label.add_css_class("dim-label");
+    label.add_css_class("reprise-text-secondary");
     label.set_xalign(0.0);
     parent.append(&label);
 }
@@ -736,7 +736,7 @@ fn candidate_row(
     labels.append(&title);
     let subtitle = gtk4::Label::new(Some(subtitle));
     subtitle.add_css_class("caption");
-    subtitle.add_css_class("dim-label");
+    subtitle.add_css_class("reprise-text-secondary");
     subtitle.set_xalign(0.0);
     // SRC-8: the subtitle ellipsizes for the same reason the title does — a
     // long publisher name would otherwise raise the dialog's minimum width

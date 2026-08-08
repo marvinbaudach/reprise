@@ -1,8 +1,8 @@
 //! CSS for the My Stats view, registered in the shared application stylesheet.
 //!
 //! Uses the existing design-system tokens (`.reprise-surface` for cards,
-//! `@accent_color` for the chart, `@window_fg_color` for text) so the view
-//! recolors with the active theme.
+//! `@reprise_accent_text_color` for the chart, `@window_fg_color` for text) so
+//! the view recolors with the active theme.
 
 use crate::ui::style::tokens;
 

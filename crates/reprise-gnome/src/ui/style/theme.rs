@@ -40,6 +40,48 @@ pub(in crate::ui) struct Palette {
     pub(in crate::ui) dim_fg: &'static str,
 }
 
+impl Palette {
+    /// Every surface a widget can sit on, in no particular order.
+    pub(in crate::ui::style) fn surfaces(&self) -> [&'static str; 7] {
+        [
+            self.window_bg,
+            self.view_bg,
+            self.card_bg,
+            self.headerbar_bg,
+            self.sidebar_bg,
+            self.popover_bg,
+            self.dialog_bg,
+        ]
+    }
+
+    /// The surface an accent foreground contrasts *worst* against: the
+    /// lightest one when the text is light-on-dark, the darkest one when it is
+    /// dark-on-light. Derived by measuring the palette rather than by naming a
+    /// field, so retuning a colour cannot silently invalidate the choice.
+    pub(in crate::ui::style) fn critical_accent_surface(&self, is_dark: bool) -> &'static str {
+        let luminance = |hex: &str| {
+            super::color_math::relative_luminance(
+                super::color_math::parse_hex_rgb(hex).expect("palette colour must use #RRGGBB"),
+            )
+        };
+        self.surfaces()
+            .into_iter()
+            .reduce(|worst, surface| {
+                let take_surface = if is_dark {
+                    luminance(surface) > luminance(worst)
+                } else {
+                    luminance(surface) < luminance(worst)
+                };
+                if take_surface {
+                    surface
+                } else {
+                    worst
+                }
+            })
+            .expect("the palette always has surfaces")
+    }
+}
+
 impl Theme {
     /// The theme a fresh install starts on.
     pub(in crate::ui) const DEFAULT: Theme = Theme::PerpetualRain;
@@ -167,10 +209,10 @@ pub(in crate::ui) fn theme_css(
         theme.light_palette()
     };
     let accent_css = super::accent::css_overrides(source);
-    // Accent foregrounds are used app-wide. Dark text is weakest on the
-    // darkest light surface; light text is weakest on the lightest dark one.
-    let critical_accent_surface = if is_dark { p.dialog_bg } else { p.headerbar_bg };
-    let accent_text = super::accent::accent_text_color(source, critical_accent_surface, is_dark);
+    // Accent foregrounds are used app-wide, so the role is derived against the
+    // palette's worst-case surface rather than against any one widget's.
+    let accent_text =
+        super::accent::accent_text_color(source, p.critical_accent_surface(is_dark), is_dark);
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -450,15 +492,51 @@ mod tests {
 
     #[test]
     fn contrast_3_secondary_surfaces_use_verified_level() {
-        for (role, css) in [
-            ("status line", crate::ui::track_content::css()),
-            ("column headers", crate::ui::track_list_header_style::css()),
-            ("sidebar sections", crate::ui::library_chrome::css()),
-            ("updates popover", crate::ui::updates::css()),
+        // Per selector, not per module. Asking only whether the role appears
+        // *somewhere* in a stylesheet made this test blind: reverting
+        // `.new-release-header` to a local `opacity: 0.55` — the original
+        // 3.62:1 bug — left it green, because sibling classes in the same
+        // module still mentioned the role.
+        for (role, css, selector) in [
+            (
+                "status line",
+                crate::ui::track_content::css(),
+                ".reprise-list-status-bar",
+            ),
+            (
+                "column headers",
+                crate::ui::track_list_header_style::css(),
+                "> header label",
+            ),
+            (
+                "sidebar sections",
+                crate::ui::library_chrome::css(),
+                ".reprise-library-sidebar .caption-heading",
+            ),
+            (
+                "updates section headers",
+                crate::ui::updates::css(),
+                ".new-release-header",
+            ),
+            (
+                "updates card meta",
+                crate::ui::updates::css(),
+                ".new-release-meta",
+            ),
         ] {
+            let rules = css
+                .split(selector)
+                .nth(1)
+                .and_then(|rest| rest.split('}').next())
+                .unwrap_or_else(|| panic!("{role}: no rules for {selector}"));
+
             assert!(
-                css.contains("@reprise_secondary_fg_color"),
-                "{role} did not consume the verified secondary level"
+                rules.contains("@reprise_secondary_fg_color"),
+                "{role} ({selector}) did not consume the verified secondary level"
+            );
+            assert!(
+                !rules.contains("opacity:"),
+                "{role} ({selector}) dims text locally instead of using the level"
             );
         }
     }
