@@ -584,10 +584,10 @@ pub const NO_SYNCHRONIZATION_YET: &str = N_!("No synchronization has run yet.");
 pub const UNKNOWN_TIME: &str = N_!("unknown time");
 pub const FAILED: &str = N_!("Failed");
 const RUNNING_SINCE: &str = N_!("Running since {time}");
-const HISTORY_NOT_RECORDED: &str =
-    N_!("This phone cannot be recognised — runs are not written to the history.");
-const HISTORY_FROM_STABLE_SESSION: &str = N_!(
-    "The entries below come from a session where it had a stable identifier. Unlock the phone before plugging it in and the history is kept."
+const HISTORY_NO_STABLE_IDENTIFIER: &str = N_!("This phone has no stable identifier.");
+
+const HISTORY_TIED_TO_CONNECTION: &str = N_!(
+    "Its settings and history are tied to this connection and may not be found again after you unplug it. Unlock the phone before plugging it in to give it a durable identity."
 );
 pub(super) const NOTHING_TO_TRANSFER: &str = N_!("Nothing to transfer");
 pub(super) const SKIPPED: &str = N_!("Skipped");
@@ -704,10 +704,10 @@ pub fn sync_history_running_since(time: &str) -> String {
     formatted(RUNNING_SINCE, &[("time", time)])
 }
 
-pub fn sync_history_unrecorded_warning() -> (String, String) {
+pub fn sync_history_connection_warning() -> (String, String) {
     (
-        text(HISTORY_NOT_RECORDED),
-        text(HISTORY_FROM_STABLE_SESSION),
+        text(HISTORY_NO_STABLE_IDENTIFIER),
+        text(HISTORY_TIED_TO_CONNECTION),
     )
 }
 

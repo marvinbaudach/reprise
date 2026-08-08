@@ -590,8 +590,9 @@ result.
   and how many files were planned; it closes with the balance of what was
   copied, skipped, removed and failed, and with the reason when the run did
   not complete. A run whose session ends without closing it — the app died,
-  the cable was pulled — is marked interrupted by the next run rather than
-  left open or dropped, because "it never finished" is itself the answer.
+  the cable was pulled — is marked interrupted with an end time when Reprise
+  next starts rather than left open or dropped, because "it never finished"
+  is itself the answer.
   Successful copies are counted, not listed; every file that deviated —
   skipped, failed, removed, or kept in its original format — is recorded
   individually with its device path and reason, removals included, since the
@@ -599,7 +600,8 @@ result.
   asked. The device page shows the recorded runs newest first, one
   expandable row each with its deviations inside. Recording never blocks a
   sync: a log write that fails is dropped, not propagated. Only the most
-  recent thirty runs are kept.
+  recent thirty runs per device are kept, and the whole log is capped at 240
+  runs so volatile connection identities cannot grow it without bound.
 - **MTP-21** [active] [core] — A file counts as transferred only once it is
   proven to be on the device under its final name. Transfers publish through
   a `.part` file and rename it at the end; that rename is confirmed
@@ -1021,8 +1023,13 @@ result.
   every replug. A device with no stable key is usable but not remembered, and
   the UI says so rather than pretending. Persisted per identity: target
   folders, last verified state, size on device, local name — nothing else.
-- **MTP-50** [active] [gtk] — The sidebar lists the active device first,
-  then remembered devices dimmed as history. A remembered device shows no
+- **MTP-50** [active] [gtk] — The sidebar shows the hardware that is here:
+  connected devices stand open, the active one first. Remembered devices are
+  history and wait, dimmed, behind the section heading, which carries a
+  disclosure arrow and opens them on click — keyboard included, closed again
+  on every launch, because a phone that is not plugged in is not a place to
+  go. With no history behind it the heading is a plain label: no arrow,
+  nothing to open. A remembered device shows no
   diff — only "Not connected · synced 3 days ago" or
   "Not connected · never verified" — because a balance for an absent device
   would be a guess. Opening one shows its target folders and last verified
@@ -1046,6 +1053,13 @@ result.
   proof that the file is still there. A device that was never scanned, or whose
   scan failed, keeps the inventory-only guard and schedules no such recovery;
   a matching file that is present remains untouched.
+- **MTP-53** [active] [gtk] — A phone is recognized as the same phone whether
+  it was plugged in before Reprise started or after: a listed mount whose root
+  URI matches a volume's activation root belongs to that volume immediately,
+  so the volume supplies identity, name, and icon before GIO links the two
+  objects or shadows its plumbing mount. A volume with no matching listed
+  mount remains disconnected, and an unshadowed MTP mount no volume claims
+  remains usable as a fallback.
 
 ## F. Settings & modals
 

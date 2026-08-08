@@ -385,7 +385,7 @@ impl Sidebar {
         runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
         on_open: Rc<dyn Fn(String, String)>,
     ) {
-        let section = super::sidebar_device_card::bind(runtime, on_open);
+        let section = super::sidebar_device_section::bind(runtime, on_open);
         self.activity_slot.set_device_section(&section);
     }
 }
