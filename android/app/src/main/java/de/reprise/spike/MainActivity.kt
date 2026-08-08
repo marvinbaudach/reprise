@@ -59,10 +59,8 @@ import uniffi.reprise_android_ffi.ScanProgressUpdate
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
 private const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
-
 /** No scrim behind the system bars: the app's own ground is what shows through. */
 private const val TRANSPARENT_SYSTEM_BAR = 0
-
 class MainActivity : ComponentActivity() {
     // The core is told where to cache covers instead of assuming an XDG
     // directory that does not exist here.
@@ -184,6 +182,7 @@ class MainActivity : ComponentActivity() {
             var visualizer by remember { mutableStateOf(surface.initialVisualizer) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
+            surfaceState.initializeSelectedTab(surface.initialBrowseTab, surface.rememberBrowseTab)
             val surfaceLayout = surfaceLayoutFor(calculateWindowSizeClass(this))
             val ambientMotion = remember(surface.observeAmbientScheduling) {
                 AmbientMotionController(surface.observeAmbientScheduling)
@@ -263,38 +262,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun productionSurface() = MainActivitySurfaceDependencies(
-        initialTheme = restoreTheme(),
-        initialVisualizer = restoreVisualizer(),
-        initialState = restoreLibrary(),
-        artwork = { artwork },
-        playbackControls = playbackControls,
-        trackAnalysis = analysis,
-        chooseFolder = ::chooseTree,
-        rescan = ::rescan,
-        searchTitles = { query, range -> session.searchTitles(query, range) },
-        listAlbums = { range -> session.listAlbums(range) },
-        listArtists = { range -> session.listArtists(range) },
-        openAlbum = { album -> session.openAlbum(album) },
-        listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
-        openArtist = { artist -> session.openArtist(artist) },
-        listArtistTracks = { artist, range -> session.listArtistTracks(artist, range) },
-        listFavourites = { range -> session.listFavourites(range) },
-        loadTrack = ::loadTrack,
-        playTracks = ::playTracks,
-        loadPlaybackSettings = ::loadPlaybackSettings,
-        setEqualizerEnabled = ::setEqualizerEnabled,
-        replaceEqualizerCurve = ::replaceEqualizerCurve,
-        setGaplessEnabled = ::setGaplessEnabled,
-        selectTheme = { current, palette -> themeController.select(current, palette) },
-        // Keep native access behind the authored action, like theme selection:
-        // service-lifetime tests create and start this activity without ever
-        // composing a screen, and production should not open the library just
-        // because a callback was assembled.
-        selectVisualizer = { visualizer -> visualizerController.select(visualizer) },
-        animationsEnabled = ValueAnimator::areAnimatorsEnabled,
-        observeAmbientScheduling = {},
-    )
+    private fun productionSurface(): MainActivitySurfaceDependencies {
+        val initialBrowseTab = restoreBrowseTab()
+        return MainActivitySurfaceDependencies(
+            initialTheme = restoreTheme(),
+            initialVisualizer = restoreVisualizer(),
+            initialState = restoreLibrary(initialBrowseTab),
+            initialBrowseTab = initialBrowseTab,
+            rememberBrowseTab = ::rememberBrowseTab,
+            artwork = { artwork },
+            playbackControls = playbackControls,
+            trackAnalysis = analysis,
+            chooseFolder = ::chooseTree,
+            rescan = ::rescan,
+            searchTitles = { query, range -> session.searchTitles(query, range) },
+            listAlbums = { range -> session.listAlbums(range) },
+            listArtists = { range -> session.listArtists(range) },
+            openAlbum = { album -> session.openAlbum(album) },
+            listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
+            openArtist = { artist -> session.openArtist(artist) },
+            listArtistTracks = { artist, range -> session.listArtistTracks(artist, range) },
+            listFavourites = { range -> session.listFavourites(range) },
+            loadTrack = ::loadTrack,
+            playTracks = ::playTracks,
+            loadPlaybackSettings = ::loadPlaybackSettings,
+            setEqualizerEnabled = ::setEqualizerEnabled,
+            replaceEqualizerCurve = ::replaceEqualizerCurve,
+            setGaplessEnabled = ::setGaplessEnabled,
+            selectTheme = { current, palette -> themeController.select(current, palette) },
+            // Keep native access behind the authored action, like theme selection:
+            // service-lifetime tests create and start this activity without ever
+            // composing a screen, and production should not open the library just
+            // because a callback was assembled.
+            selectVisualizer = { visualizer -> visualizerController.select(visualizer) },
+            animationsEnabled = ValueAnimator::areAnimatorsEnabled,
+            observeAmbientScheduling = {},
+        )
+    }
+
+    private fun restoreBrowseTab(): BrowseTab = runCatching {
+        library.libraryDestinationSetting().toBrowseTab()
+    }.getOrElse { error ->
+        Log.e(TAG, "Could not load the library destination; using Titles", error)
+        BrowseTab.TITLES
+    }
+
+    private fun rememberBrowseTab(tab: BrowseTab) {
+        runCatching { library.setLibraryDestination(tab.toLibraryDestinationChoice()) }
+            .onFailure { error -> Log.e(TAG, "Could not remember the library destination", error) }
+    }
 
     private fun configureEdgeToEdge(darkPalette: Boolean) {
         val transparent = SystemBarStyle.auto(
@@ -414,8 +430,8 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun restoreLibrary(): LibraryScreenState = runCatching {
-        session.restore()
+    private fun restoreLibrary(selectedTab: BrowseTab): LibraryScreenState = runCatching {
+        session.restore(selectedTab)
     }.getOrElse { error ->
         val message = "Could not load the saved library: ${error.detail()}"
         Log.e(TAG, message, error)

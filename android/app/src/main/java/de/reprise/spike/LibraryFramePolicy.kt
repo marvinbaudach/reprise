@@ -37,14 +37,7 @@ internal fun libraryFrameMetrics(layout: SurfaceLayout): LibraryFrameMetrics = w
     SurfaceLayout.WIDE_SHORT -> wideShortLibraryFrameMetrics
 }
 
-internal enum class LibraryDestination(
-    val label: String,
-    val symbol: String,
-) {
-    LIBRARY("Library", "library_music"),
-}
-
-internal val libraryDestinations = listOf(LibraryDestination.LIBRARY)
+internal val libraryDestinations = BrowseTab.entries
 
 internal data class TrackPlaybackPresentation(
     val isCurrent: Boolean,

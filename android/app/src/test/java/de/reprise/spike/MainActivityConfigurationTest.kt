@@ -459,6 +459,9 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
         }
 
     var favouritesEmpty = false
+    var rememberedDestination = BrowseTab.TITLES
+    val rememberedDestinationWrites = mutableListOf<BrowseTab>()
+    val artistWindowRequests = mutableListOf<LibraryWindowRange>()
     var currentQueue: List<LibraryTrack> = emptyList()
         private set
     var currentQueueIndex: Int? = null
@@ -532,6 +535,7 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             albums = albums.window(firstLibraryWindow()),
             artists = artists.window(firstLibraryWindow()),
             favourites = favouriteTracks.window(firstLibraryWindow()),
+            loadedTabs = setOf(BrowseTab.TITLES),
         )
         return MainActivitySurfaceDependencies(
             initialTheme = MobileThemeSelection(
@@ -541,6 +545,11 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             ),
             initialVisualizer = selectedVisualizer,
             initialState = browse,
+            initialBrowseTab = rememberedDestination,
+            rememberBrowseTab = { tab ->
+                rememberedDestination = tab
+                rememberedDestinationWrites += tab
+            },
             artwork = { null },
             playbackControls = controls,
             trackAnalysis = trackAnalysis,
@@ -551,7 +560,10 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
                     .window(range)
             },
             listAlbums = { range -> albums.window(range) },
-            listArtists = { range -> artists.window(range) },
+            listArtists = { range ->
+                artistWindowRequests += range
+                artists.window(range)
+            },
             openAlbum = { album -> AlbumTrackList(album, albumTracks.window(firstLibraryWindow())) },
             listAlbumTracks = { _, range -> albumTracks.window(range) },
             openArtist = { artist ->

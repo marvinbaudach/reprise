@@ -117,6 +117,8 @@ internal fun LibraryBottomFrame(
     surfaceLayout: SurfaceLayout,
     currentTrack: LibraryTrack?,
     playback: PlaybackUiState,
+    selectedTab: BrowseTab,
+    selectTab: (BrowseTab) -> Unit,
     openNowPlaying: () -> Unit,
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
@@ -153,10 +155,11 @@ internal fun LibraryBottomFrame(
         ) {
             libraryDestinations.forEach { destination ->
                 NavigationBarItem(
-                    selected = true,
-                    onClick = {},
+                    selected = destination == selectedTab,
+                    onClick = { selectTab(destination) },
                     icon = { MaterialSymbol(destination.symbol, destination.label) },
                     label = { Text(destination.label) },
+                    modifier = Modifier.testTag("library-destination-${destination.name}"),
                 )
             }
         }
@@ -173,7 +176,11 @@ internal fun LibraryBottomFrame(
  * prove that a constant equals itself.
  */
 @Composable
-internal fun LibraryNavigationRail(surfaceLayout: SurfaceLayout) {
+internal fun LibraryNavigationRail(
+    surfaceLayout: SurfaceLayout,
+    selectedTab: BrowseTab,
+    selectTab: (BrowseTab) -> Unit,
+) {
     check(surfaceLayout == SurfaceLayout.WIDE_SHORT)
     val metrics = libraryFrameMetrics(surfaceLayout)
     // The same arithmetic the bottom bar needs below, on the other edge and for
@@ -197,10 +204,11 @@ internal fun LibraryNavigationRail(surfaceLayout: SurfaceLayout) {
         Spacer(Modifier.weight(1f))
         libraryDestinations.forEach { destination ->
             NavigationRailItem(
-                selected = true,
-                onClick = {},
+                selected = destination == selectedTab,
+                onClick = { selectTab(destination) },
                 icon = { MaterialSymbol(destination.symbol, destination.label) },
                 label = { Text(destination.label) },
+                modifier = Modifier.testTag("library-destination-${destination.name}"),
             )
         }
         Spacer(Modifier.weight(1f))

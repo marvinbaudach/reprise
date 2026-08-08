@@ -11,6 +11,7 @@ use crate::{LibraryError, MusicLibrary};
 
 const THEME_SETTING_KEY: &str = "ui.theme";
 const VISUALIZER_SETTING_KEY: &str = "ui.now_playing.visualizer";
+const LIBRARY_DESTINATION_SETTING_KEY: &str = "ui.mobile.library_destination";
 
 /// What the shared `ui.theme` key currently contains.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -92,6 +93,50 @@ impl AndroidVisualizerChoice {
     }
 }
 
+/// What Android's remembered library destination currently contains.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidStoredLibraryDestination {
+    Unset,
+    Titles,
+    Artists,
+    Albums,
+    Favourites,
+    Unsupported { id: String },
+}
+
+impl AndroidStoredLibraryDestination {
+    fn from_setting(value: Option<&str>) -> Self {
+        match value {
+            None => Self::Unset,
+            Some("titles") => Self::Titles,
+            Some("artists") => Self::Artists,
+            Some("albums") => Self::Albums,
+            Some("favourites") => Self::Favourites,
+            Some(id) => Self::Unsupported { id: id.to_owned() },
+        }
+    }
+}
+
+/// Library destinations Android is allowed to persist after an explicit choice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidLibraryDestinationChoice {
+    Titles,
+    Artists,
+    Albums,
+    Favourites,
+}
+
+impl AndroidLibraryDestinationChoice {
+    fn setting_id(self) -> &'static str {
+        match self {
+            Self::Titles => "titles",
+            Self::Artists => "artists",
+            Self::Albums => "albums",
+            Self::Favourites => "favourites",
+        }
+    }
+}
+
 /// The shared light/dark preference used only by a switchable palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum AndroidColorScheme {
@@ -158,6 +203,36 @@ impl MusicLibrary {
             },
         )
     }
+
+    pub fn library_destination_setting(
+        &self,
+    ) -> Result<AndroidStoredLibraryDestination, LibraryError> {
+        let state = self.lock()?;
+        let value =
+            settings::get_setting(&state.db, LIBRARY_DESTINATION_SETTING_KEY).map_err(|error| {
+                LibraryError::Database {
+                    detail: error.to_string(),
+                }
+            })?;
+        Ok(AndroidStoredLibraryDestination::from_setting(
+            value.as_deref(),
+        ))
+    }
+
+    pub fn set_library_destination(
+        &self,
+        destination: AndroidLibraryDestinationChoice,
+    ) -> Result<(), LibraryError> {
+        let state = self.lock()?;
+        settings::set_setting(
+            &state.db,
+            LIBRARY_DESTINATION_SETTING_KEY,
+            destination.setting_id(),
+        )
+        .map_err(|error| LibraryError::Database {
+            detail: error.to_string(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -165,8 +240,8 @@ mod tests {
     use reprise_core::library::settings;
 
     use super::{
-        AndroidColorScheme, AndroidStoredTheme, AndroidStoredVisualizer, AndroidThemeChoice,
-        AndroidVisualizerChoice,
+        AndroidColorScheme, AndroidLibraryDestinationChoice, AndroidStoredLibraryDestination,
+        AndroidStoredTheme, AndroidStoredVisualizer, AndroidThemeChoice, AndroidVisualizerChoice,
     };
     use crate::MusicLibrary;
 
@@ -238,6 +313,44 @@ mod tests {
         assert_eq!(
             library.visualizer_setting().unwrap(),
             AndroidStoredVisualizer::Ambient,
+        );
+    }
+
+    #[test]
+    fn library_destination_crosses_the_typed_boundary_without_stealing_unknown_values() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            library.library_destination_setting().unwrap(),
+            AndroidStoredLibraryDestination::Unset,
+        );
+        {
+            let state = library.lock().unwrap();
+            settings::set_setting(
+                &state.db,
+                super::LIBRARY_DESTINATION_SETTING_KEY,
+                "future-library-place",
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            library.library_destination_setting().unwrap(),
+            AndroidStoredLibraryDestination::Unsupported {
+                id: "future-library-place".to_owned(),
+            },
+        );
+
+        library
+            .set_library_destination(AndroidLibraryDestinationChoice::Artists)
+            .unwrap();
+        assert_eq!(
+            library.library_destination_setting().unwrap(),
+            AndroidStoredLibraryDestination::Artists,
         );
     }
 }
