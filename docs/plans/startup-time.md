@@ -2,7 +2,7 @@
 slug: startup-time
 worktree: ~/Projects/reprise-startup-perf
 branch: perf/startup-time
-phase: design
+phase: planned
 created: 2026-08-08
 base: c831350458
 ---
@@ -98,8 +98,8 @@ first** because nothing else can be proven without it.
 ## 3. Package C0 — make startup measurable from inside
 
 A permanent, env-gated startup profile, modelled on the existing
-`ui::runtime_performance` hook (`REPRISE_RUNTIME_REPORT`): setting
-`REPRISE_STARTUP_REPORT=/path.json` writes one JSON object with the wall-clock
+`ui::runtime_performance` hook (`REPRISE_PERF_RUNTIME_REPORT`): setting
+`REPRISE_PERF_STARTUP_REPORT=/path.json` writes one JSON object with the wall-clock
 offset of each startup phase, plus counters for track-list reloads and sidebar
 rebuilds.
 
@@ -140,7 +140,7 @@ reconcile. Each rebuild is a full `ListBox` teardown plus five queries.
 Coalesce the startup rebuilds into a single one at the end of the startup
 sequence, keeping the existing per-trigger refreshes for everything after.
 
-**Acceptance:** with `REPRISE_STARTUP_REPORT` (see C0) the report shows exactly
+**Acceptance:** with `REPRISE_PERF_STARTUP_REPORT` (see C0) the report shows exactly
 one `track_list_reload` and one `sidebar_rebuild` between process start and
 `main window built`.
 
@@ -181,7 +181,7 @@ is a good outcome, not a failure.
 
 ## 7. Verification
 
-- `REPRISE_STARTUP_REPORT` before/after, **interleaved**, at least 7 rounds per
+- `REPRISE_PERF_STARTUP_REPORT` before/after, **interleaved**, at least 7 rounds per
   side, reported as median plus min/max.
 - The external bench (`~/.cache/reprise-startup-bench/run.sh`) as a
   sanity check on the total, never as the primary evidence.
