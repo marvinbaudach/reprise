@@ -1,6 +1,7 @@
 use super::sync_log::{
-    deviations, finish_run, note_deviation, recent_runs, start_run, summarize, update_planned,
-    Deviation, DeviationKind, RunCounters, RunOutcome, RunStart, RunSummary, RETAINED_RUNS,
+    close_orphaned_runs, deviations, finish_run, note_deviation, recent_runs,
+    recent_runs_for_device, start_run, summarize, update_planned, Deviation, DeviationKind,
+    RunCounters, RunOutcome, RunStart, RunSummary, GLOBAL_RETAINED_RUNS, RETAINED_RUNS,
 };
 use crate::device_sync::machine::SyncOutcome;
 
@@ -104,19 +105,51 @@ fn mtp_20_a_successful_file_leaves_no_entry_behind() {
 }
 
 #[test]
-fn mtp_20_a_run_that_never_finished_stays_visible_as_interrupted() {
+fn mtp_20_starting_a_run_does_not_interrupt_another_devices_live_run() {
     let conn = database();
-    let abandoned = start_run(&conn, &start()).unwrap();
+    let mut first_start = start();
+    first_start.device_serial = "first".into();
+    let first = start_run(&conn, &first_start).unwrap();
 
-    // The app died mid-sync: no finish_run ever arrives, and the next run
-    // starts. The lost run must not linger as "running" or disappear.
-    let next = start_run(&conn, &start()).unwrap();
-    finish_run(&conn, next, &summary(200, 0, 0)).unwrap();
+    let mut second_start = start();
+    second_start.device_serial = "second".into();
+    let second = start_run(&conn, &second_start).unwrap();
 
     let runs = recent_runs(&conn, 10).unwrap();
-    let lost = runs.iter().find(|run| run.id == abandoned).unwrap();
-    assert_eq!(lost.outcome, RunOutcome::Interrupted);
-    assert!(lost.finished_at.is_none());
+    let still_live = runs.iter().find(|run| run.id == first).unwrap();
+    assert_eq!(still_live.outcome, RunOutcome::Running);
+    assert!(still_live.finished_at.is_none());
+    assert_eq!(
+        runs.iter().find(|run| run.id == second).unwrap().outcome,
+        RunOutcome::Running
+    );
+}
+
+#[test]
+fn mtp_20_startup_sweep_closes_an_orphan_with_an_end_time() {
+    let conn = database();
+    let orphan = start_run(&conn, &start()).unwrap();
+
+    assert_eq!(close_orphaned_runs(&conn).unwrap(), 1);
+
+    let runs = recent_runs(&conn, 10).unwrap();
+    let closed = runs.iter().find(|run| run.id == orphan).unwrap();
+    assert_eq!(closed.outcome, RunOutcome::Interrupted);
+    assert!(closed.finished_at.is_some());
+}
+
+#[test]
+fn mtp_20_startup_sweep_reports_zero_without_touching_a_closed_run() {
+    let conn = database();
+    let run = start_run(&conn, &start()).unwrap();
+    finish_run(&conn, run, &summary(200, 0, 0)).unwrap();
+
+    assert_eq!(close_orphaned_runs(&conn).unwrap(), 0);
+
+    let closed = recent_runs(&conn, 10).unwrap().remove(0);
+    assert_eq!(closed.id, run);
+    assert_eq!(closed.outcome, RunOutcome::Completed);
+    assert_eq!(closed.finished_at, Some(1_785_183_899));
 }
 
 #[test]
@@ -167,6 +200,74 @@ fn mtp_20_only_the_most_recent_runs_are_kept() {
     assert!(
         deviations(&conn, first.unwrap()).unwrap().is_empty(),
         "an aged-out run must not leave its deviations behind"
+    );
+}
+
+#[test]
+fn mtp_20_one_noisy_device_does_not_evict_another_devices_oldest_run() {
+    let conn = database();
+    let mut quiet_start = start();
+    quiet_start.device_serial = "quiet".into();
+    quiet_start.started_at = 1;
+    let quiet = start_run(&conn, &quiet_start).unwrap();
+    finish_run(&conn, quiet, &summary(1, 0, 0)).unwrap();
+
+    for index in 0..(RETAINED_RUNS + 5) {
+        let mut noisy_start = start();
+        noisy_start.device_serial = "noisy".into();
+        noisy_start.started_at = 2 + index as i64;
+        let run = start_run(&conn, &noisy_start).unwrap();
+        finish_run(&conn, run, &summary(1, 0, 0)).unwrap();
+    }
+
+    let runs = recent_runs(&conn, GLOBAL_RETAINED_RUNS + 1).unwrap();
+    assert!(
+        runs.iter().any(|run| run.id == quiet),
+        "another device's retained run must stay available"
+    );
+    assert_eq!(
+        runs.iter()
+            .filter(|run| run.device_serial == "noisy")
+            .count(),
+        RETAINED_RUNS
+    );
+}
+
+#[test]
+fn mtp_20_volatile_device_identities_cannot_exceed_the_global_ceiling() {
+    let conn = database();
+    let mut oldest = None;
+    for index in 0..(GLOBAL_RETAINED_RUNS + 5) {
+        let mut begin = start();
+        begin.device_serial = format!("mtp://connection/{index}");
+        begin.started_at = index as i64;
+        let run = start_run(&conn, &begin).unwrap();
+        if index == 0 {
+            oldest = Some(run);
+            note_deviation(
+                &conn,
+                run,
+                &Deviation {
+                    kind: DeviationKind::Failed,
+                    track_id: None,
+                    device_path: "Music/Reprise/old.opus".into(),
+                    detail: "old connection failed".into(),
+                },
+            )
+            .unwrap();
+        }
+        finish_run(&conn, run, &summary(1, 0, 0)).unwrap();
+    }
+
+    let runs = recent_runs(&conn, GLOBAL_RETAINED_RUNS + 10).unwrap();
+    assert_eq!(runs.len(), GLOBAL_RETAINED_RUNS);
+    assert!(
+        !runs.iter().any(|run| Some(run.id) == oldest),
+        "the oldest volatile-identity run must age out"
+    );
+    assert!(
+        deviations(&conn, oldest.unwrap()).unwrap().is_empty(),
+        "the global ceiling must age deviations out with their run"
     );
 }
 
@@ -253,4 +354,42 @@ fn mtp_20_a_run_that_only_lost_tracks_says_so_instead_of_staying_silent() {
 
     assert_eq!(summary.outcome, RunOutcome::Failed);
     assert_eq!(summary.detail.as_deref(), Some("3 tracks failed"));
+}
+
+/// The page asks for one device's history. Taking the newest N rows overall
+/// and filtering afterwards finds the wrong ones as soon as a second, busier
+/// device is logging — and pays a deviations query for every row it discards.
+#[test]
+fn mtp_20_one_device_history_is_scoped_by_the_query_not_by_the_caller() {
+    let conn = database();
+    // A noisy device writes more runs than the quiet one will ever have.
+    for index in 0..RETAINED_RUNS {
+        let mut noisy = start();
+        noisy.device_serial = "noisy".into();
+        noisy.started_at = 2_000_000 + index as i64;
+        start_run(&conn, &noisy).unwrap();
+    }
+    let mut quiet = start();
+    quiet.device_serial = "quiet".into();
+    quiet.started_at = 1_000;
+    let wanted = start_run(&conn, &quiet).unwrap();
+
+    // The quiet device's single run is older than every noisy one, so a
+    // newest-first global read of its own retention limit misses it entirely.
+    let globally_newest = recent_runs(&conn, RETAINED_RUNS).unwrap();
+    assert!(
+        !globally_newest.iter().any(|run| run.id == wanted),
+        "the premise of this test: a global read does not find it"
+    );
+
+    let scoped = recent_runs_for_device(&conn, "quiet", RETAINED_RUNS).unwrap();
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].id, wanted);
+    assert!(scoped.iter().all(|run| run.device_serial == "quiet"));
+
+    let noisy_scoped = recent_runs_for_device(&conn, "noisy", RETAINED_RUNS).unwrap();
+    assert_eq!(noisy_scoped.len(), RETAINED_RUNS);
+    assert!(noisy_scoped
+        .windows(2)
+        .all(|w| w[0].started_at >= w[1].started_at));
 }

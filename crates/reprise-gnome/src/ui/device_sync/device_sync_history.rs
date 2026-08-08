@@ -233,7 +233,7 @@ fn percent_label_from(percent: u64) -> String {
 }
 
 fn history_warning_copy(rememberable: bool) -> Option<(String, String)> {
-    (!rememberable).then(device_sync_strings::sync_history_unrecorded_warning)
+    (!rememberable).then(device_sync_strings::sync_history_connection_warning)
 }
 
 fn run_row_copy(run: &RunRecord, running_progress: Option<&RunningProgress>) -> RunRowCopy {
