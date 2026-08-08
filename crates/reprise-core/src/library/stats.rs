@@ -131,9 +131,9 @@ pub(crate) fn set_rating_if_newer_in(
     Ok(changed == 1)
 }
 
-/// Increments `track_id`'s play count and sets `last_played_at` to
-/// `now_unix` (seconds since the Unix epoch — the same unit `scanner.rs`
-/// uses for `added_at`/`occurred_at`).
+/// Increments `track_id`'s play count and advances `last_played_at` to
+/// `now_unix` when it is newer (seconds since the Unix epoch — the same unit
+/// `scanner.rs` uses for `added_at`/`occurred_at`).
 pub fn record_play(db: &Db, track_id: i64, now_unix: i64) -> Result<(), rusqlite::Error> {
     record_play_in(db.conn(), track_id, now_unix)
 }
@@ -149,7 +149,13 @@ pub(crate) fn record_play_in(
     now_unix: i64,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "UPDATE tracks SET play_count = play_count + 1, last_played_at = ?1 WHERE id = ?2",
+        "UPDATE tracks
+            SET play_count = play_count + 1,
+                last_played_at = CASE
+                    WHEN last_played_at IS NULL OR last_played_at < ?1 THEN ?1
+                    ELSE last_played_at
+                END
+          WHERE id = ?2",
         rusqlite::params![now_unix, track_id],
     )?;
     Ok(())

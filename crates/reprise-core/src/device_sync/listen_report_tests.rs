@@ -211,6 +211,76 @@ fn applying_a_listen_uses_the_local_play_and_history_mutations_together() {
 }
 
 #[test]
+fn returned_listens_keep_the_newest_last_played_at_without_losing_history() {
+    let db = seeded_database();
+    db.conn()
+        .execute("UPDATE tracks SET last_played_at = NULL WHERE id = 2", [])
+        .unwrap();
+    let older = ListenReport::new(vec![listen(1, "Artist/Album/01 One.opus", 40)], Vec::new());
+
+    apply_listen_report(&db, "phone-a", &older).unwrap();
+
+    assert_eq!(
+        db.conn()
+            .query_row(
+                "SELECT play_count, last_played_at FROM tracks WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .unwrap(),
+        (3, Some(50)),
+        "an older returned listen still counts without back-dating the track"
+    );
+    assert_eq!(
+        db.conn()
+            .query_row("SELECT track_id, played_at FROM listen_events", [], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            },)
+            .unwrap(),
+        (1, 40),
+        "the older listen must remain in the event history"
+    );
+
+    let later = ListenReport::new(
+        vec![
+            listen(2, "Artist/Album/01 One.opus", 70),
+            listen(3, "Artist/Album/01 One.opus", 60),
+            listen(4, "Artist/Album/02 Two.opus", 30),
+        ],
+        Vec::new(),
+    );
+    apply_listen_report(&db, "phone-a", &later).unwrap();
+
+    assert_eq!(
+        db.conn()
+            .prepare("SELECT id, play_count, last_played_at FROM tracks ORDER BY id")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap(),
+        vec![(1, 5, Some(70)), (2, 3, Some(30))],
+        "the newest moment wins regardless of report order, and NULL accepts a moment"
+    );
+    assert_eq!(
+        db.conn()
+            .prepare("SELECT track_id, played_at FROM listen_events ORDER BY played_at")
+            .unwrap()
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap(),
+        vec![(2, 30), (1, 40), (1, 60), (1, 70)]
+    );
+}
+
+#[test]
 fn applying_the_same_sequence_twice_is_a_no_op_even_without_a_similar_event() {
     let db = seeded_database();
     let first = ListenReport::new(
