@@ -20,7 +20,7 @@ pub(in crate::ui) struct HighlightPalette {
 
 impl HighlightPalette {
     #[cfg(test)]
-    fn new(foreground: &str, background: &str) -> Self {
+    pub(in crate::ui) fn new(foreground: &str, background: &str) -> Self {
         Self {
             foreground: foreground.to_owned(),
             background: background.to_owned(),

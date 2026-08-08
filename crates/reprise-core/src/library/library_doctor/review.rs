@@ -1,8 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use super::remote::guard_rails::{
-    reduces_specificity, YearProvenance, SPECIFICITY_CONFIDENCE_CAP,
-};
+use super::remote::guard_rails::{reduces_specificity, YearProvenance, SPECIFICITY_CONFIDENCE_CAP};
 use super::{
     DoctorField, DoctorProposal, DoctorScan, DoctorTrackRef, DoctorValue, ProblemClass,
     ProposalSource,
