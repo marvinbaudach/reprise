@@ -90,7 +90,6 @@ fn settings_with_prepare_switch(device_id: &str, prepare_before_sync: bool) -> D
         selection: DeviceSelection::Sources(Vec::new()),
         profile: reprise_core::device_sync::TransferProfile::default(),
         opus_bitrate: 0,
-        ratings_back: false,
         remove_deleted: true,
         // These tests drive `sync_now` manually and must not race an
         // automatic start on connect (`MTP-30`).

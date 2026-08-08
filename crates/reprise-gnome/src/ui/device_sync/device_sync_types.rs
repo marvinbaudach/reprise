@@ -36,6 +36,15 @@ pub trait DeviceBackend {
         root_uri: String,
         targets: [SyncTarget; 3],
     ) -> BackendFuture<DeviceStorageInspection>;
+    fn read_managed_file(
+        &self,
+        _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<StorageId>,
+        _relative_path: String,
+    ) -> BackendFuture<Option<Vec<u8>>> {
+        Box::pin(async { Err("device reads are unavailable".into()) })
+    }
     /// Copies (or overwrites) `source_path` to `relative_target` under
     /// `target_path` on `storage_id` (`None` falls back to the same
     /// "prefer internal" default used before a target was ever repointed),

@@ -17,7 +17,6 @@ fn save_profile(
             selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(playlist_id)]),
             profile,
             opus_bitrate: 0,
-            ratings_back: false,
             remove_deleted: true,
             // `MTP-30`: these tests drive `sync_now` manually and must not
             // race an automatic start on connect.

@@ -50,6 +50,21 @@ impl DeviceBackend for GioDeviceBackend {
         })
     }
 
+    fn read_managed_file(
+        &self,
+        root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
+        relative_path: String,
+    ) -> BackendFuture<Option<Vec<u8>>> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .read_managed(storage_id, &target_path, &relative_path)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,

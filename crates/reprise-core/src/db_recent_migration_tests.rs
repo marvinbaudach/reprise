@@ -156,15 +156,15 @@ fn migrate_v8_to_current_creates_device_sync_tables_and_preserves_managed_files(
     assert_eq!(remaining, 1);
 
     migrate_connection(&conn).unwrap();
-    let settings: (String, i64, i64, i64) = conn
+    let settings: (String, i64, i64) = conn
         .query_row(
-            "SELECT selection_json, opus_bitrate, ratings_back, remove_deleted \
+            "SELECT selection_json, opus_bitrate, remove_deleted \
              FROM device_settings WHERE device_serial = 'serial-1'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
-    assert_eq!(settings, ("[]".into(), 0, 0, 1));
+    assert_eq!(settings, ("[]".into(), 0, 1));
 }
 
 /// Builds a v9 database (every schema step through `SCHEMA_V9`, `user_version`

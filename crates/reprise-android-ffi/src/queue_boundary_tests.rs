@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
 use super::test_support::{PortCall, RecordingListener, RecordingPort};
@@ -68,6 +69,7 @@ fn session_with_controls(directory: &Path) -> TestSessionControls {
         }),
         Box::new(RecordingListener {
             snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
         }),
     )
     .map(|session| (session, calls, bridge))

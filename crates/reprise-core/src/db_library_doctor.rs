@@ -123,9 +123,9 @@ pub(crate) fn migrate_v58(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
-pub(crate) fn migrate_v64(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v66(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 64 {
+    if version >= 66 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
@@ -150,7 +150,7 @@ pub(crate) fn migrate_v64(conn: &Connection) -> Result<(), rusqlite::Error> {
          SET last_complete_scan_id=NULL, reviewed_scan_id=NULL",
         [],
     )?;
-    transaction.pragma_update(None, "user_version", 64)?;
+    transaction.pragma_update(None, "user_version", 66)?;
     transaction.commit()
 }
 
@@ -291,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_v63_to_v64_preserves_existing_scans_and_is_idempotent() {
+    fn migration_v65_to_v66_preserves_existing_scans_and_is_idempotent() {
         let db = crate::db::Db::open_in_memory().unwrap();
         let conn = db.conn();
         conn.execute(
@@ -307,8 +307,8 @@ mod tests {
         )
         .unwrap();
 
-        super::migrate_v64(conn).unwrap();
-        super::migrate_v64(conn).unwrap();
+        super::migrate_v66(conn).unwrap();
+        super::migrate_v66(conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -327,7 +327,7 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!((version, scans), (64, 1));
+        assert_eq!((version, scans), (66, 1));
         assert_eq!(column, ("INTEGER".into(), 1, "0".into()));
     }
 
@@ -351,7 +351,7 @@ mod tests {
         .unwrap();
         conn.pragma_update(None, "user_version", 63).unwrap();
 
-        super::migrate_v64(conn).unwrap();
+        super::migrate_v66(conn).unwrap();
 
         let pointers: (Option<i64>, Option<i64>) = conn
             .query_row(

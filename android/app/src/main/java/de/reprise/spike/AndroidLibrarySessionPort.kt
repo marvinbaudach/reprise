@@ -16,7 +16,7 @@ import uniffi.reprise_android_ffi.TrackWindow as FfiTrackWindow
 import uniffi.reprise_android_ffi.WindowRange as FfiWindowRange
 
 private const val TAG = "RepriseScan"
-private const val TREE_URI_PREFERENCE = "library_tree_uri"
+internal const val TREE_URI_PREFERENCE = "library_tree_uri"
 
 internal class AndroidLibrarySessionPort(
     private val resolver: ContentResolver,
@@ -32,10 +32,10 @@ internal class AndroidLibrarySessionPort(
         }
     }
 
-    override fun persistReadPermission(treeUri: String) {
+    override fun persistTreePermission(treeUri: String) {
         resolver.takePersistableUriPermission(
             Uri.parse(treeUri),
-            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         )
     }
 
@@ -55,6 +55,7 @@ internal class AndroidLibrarySessionPort(
     override fun configureTree(treeUri: String) {
         val uri = Uri.parse(treeUri)
         library.setTreeUri(treeUri, AndroidSafSource(resolver, uri))
+        publishListenReport(uri)
     }
 
     override fun scan(report: (LibraryScreenState.Scanning) -> Unit) {
@@ -101,6 +102,18 @@ internal class AndroidLibrarySessionPort(
 
     override fun setFavourite(trackId: Long, favourite: Boolean) {
         library.setTrackRating(trackId, if (favourite) 5 else 0)
+        rememberedTreeUri()?.let { treeUri -> publishListenReport(Uri.parse(treeUri)) }
+    }
+
+    private fun publishListenReport(treeUri: Uri) {
+        val files = AndroidListenReportFiles(resolver, treeUri)
+        ListenReportWriter(
+            readAcknowledgement = files::readAcknowledgement,
+            produceReport = library::prepareListenReport,
+            writeReport = files::writeReport,
+        ).publish().onFailure { error ->
+            Log.w(TAG, "Could not publish phone listening report", error)
+        }
     }
 }
 

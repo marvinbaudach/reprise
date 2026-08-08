@@ -729,7 +729,6 @@ fn save_road_settings(conn: &Rc<Db>, device_id: &str) {
             selection: DeviceSelection::Sources(vec![SelectionSource::Playlist(10)]),
             profile: reprise_core::device_sync::TransferProfile::default(),
             opus_bitrate: 0,
-            ratings_back: false,
             remove_deleted: true,
             // `MTP-30`: most tests using this fixture orchestrate `sync_now`
             // manually (gates, cancellation races, progress observation) and
@@ -755,6 +754,8 @@ mod compact_tests;
 mod content_transfer_tests;
 #[path = "device_sync_inflight_tests.rs"]
 mod inflight_tests;
+#[path = "device_sync_listen_report_tests.rs"]
+mod listen_report_tests;
 #[path = "device_sync_lyrics_sidecar_tests.rs"]
 mod lyrics_sidecar_tests;
 #[path = "device_sync_picker_tests.rs"]
