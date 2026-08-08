@@ -86,7 +86,13 @@ fn browse_13_track_cover_is_an_album_link_only_with_an_unambiguous_target() {
         activate,
     );
     assert!(!cover.is_focusable());
-    assert_eq!(cover.accessible_role(), gtk4::AccessibleRole::Img);
+    // The role stays `Link` in both states by design. GTK refuses a role change
+    // once the widget is realized, so the swap this test used to assert only
+    // ever passed on an unrealized test widget while the real, realized cell
+    // logged a `Gtk-CRITICAL` on every bind. Reachability — focusability,
+    // styling, cursor and the armed target — is what actually distinguishes the
+    // two states, and that is what the assertions above and below check.
+    assert_eq!(cover.accessible_role(), gtk4::AccessibleRole::Link);
     assert!(!cover.has_css_class(crate::ui::link_activation::LINK_CLASS));
     assert!(cover.cursor().is_none());
     assert!(slot.borrow().is_none());
@@ -139,7 +145,7 @@ fn recycled_cover_activation_uses_the_newly_bound_album_target() {
         slot.borrow().is_none(),
         "an unbound cell keeps no old target"
     );
-    assert_eq!(cover.accessible_role(), gtk4::AccessibleRole::Img);
+    assert_eq!(cover.accessible_role(), gtk4::AccessibleRole::Link);
     assert!(!cover.has_css_class(crate::ui::link_activation::LINK_CLASS));
 }
 

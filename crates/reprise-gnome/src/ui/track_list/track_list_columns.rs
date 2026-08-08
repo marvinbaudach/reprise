@@ -194,7 +194,7 @@ fn clear_cover_album_link(
     accessible_label: &str,
 ) {
     *slot.borrow_mut() = None;
-    crate::ui::link_activation::unpresent(cover, accessible_label, gtk4::AccessibleRole::Img);
+    crate::ui::link_activation::unpresent(cover, accessible_label);
 }
 
 fn bind_cover_album_link(
