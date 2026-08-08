@@ -123,6 +123,37 @@ pub(crate) fn migrate_v58(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v66(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 66 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    let never_preselect_column_exists = transaction.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM pragma_table_info('library_doctor_proposals')
+           WHERE name='never_preselect'
+         )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !never_preselect_column_exists {
+        transaction.execute(
+            "ALTER TABLE library_doctor_proposals
+             ADD COLUMN never_preselect INTEGER NOT NULL DEFAULT 0
+             CHECK (never_preselect IN (0, 1))",
+            [],
+        )?;
+    }
+    transaction.execute(
+        "UPDATE library_doctor_state
+         SET last_complete_scan_id=NULL, reviewed_scan_id=NULL",
+        [],
+    )?;
+    transaction.pragma_update(None, "user_version", 66)?;
+    transaction.commit()
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
@@ -257,5 +288,79 @@ mod tests {
             .last_cleanup()
             .unwrap()
             .is_some());
+    }
+
+    #[test]
+    fn migration_v65_to_v66_preserves_existing_scans_and_is_idempotent() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO library_doctor_scans
+             (scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks)
+             VALUES ('whole_library', 1, 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(
+            "ALTER TABLE library_doctor_proposals DROP COLUMN never_preselect;
+             PRAGMA user_version=63;",
+        )
+        .unwrap();
+
+        super::migrate_v66(conn).unwrap();
+        super::migrate_v66(conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        let scans: i64 = conn
+            .query_row("SELECT COUNT(*) FROM library_doctor_scans", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let column: (String, i64, String) = conn
+            .query_row(
+                "SELECT type, \"notnull\", dflt_value
+                 FROM pragma_table_info('library_doctor_proposals')
+                 WHERE name='never_preselect'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((version, scans), (66, 1));
+        assert_eq!(column, ("INTEGER".into(), 1, "0".into()));
+    }
+
+    #[test]
+    fn doc_10c_the_guard_rail_upgrade_clears_the_stored_scan_pointer() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO library_doctor_scans
+             (scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks)
+             VALUES ('selection', 1, 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+        let scan_id = conn.last_insert_rowid();
+        conn.execute(
+            "UPDATE library_doctor_state
+             SET last_complete_scan_id=?1, reviewed_scan_id=?1 WHERE singleton=1",
+            [scan_id],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 63).unwrap();
+
+        super::migrate_v66(conn).unwrap();
+
+        let pointers: (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT last_complete_scan_id, reviewed_scan_id
+                 FROM library_doctor_state WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(pointers, (None, None));
     }
 }

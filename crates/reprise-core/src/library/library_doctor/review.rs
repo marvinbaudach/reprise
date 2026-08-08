@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use super::remote::guard_rails::{
+    reduces_specificity, YearProvenance, SPECIFICITY_CONFIDENCE_CAP,
+};
 use super::{
     DoctorField, DoctorProposal, DoctorScan, DoctorTrackRef, DoctorValue, ProblemClass,
     ProposalSource,
@@ -89,6 +92,16 @@ pub enum DoctorReviewRowState {
     Conflict,
 }
 
+// The matcher caps specificity losses at 49. Keep this threshold one point
+// above that named cap so the guard and initial review state stay aligned.
+const MIN_PRESELECT_CONFIDENCE: u8 = 50;
+
+fn starts_selected(state: DoctorReviewRowState, never_preselect: bool, confidence: u8) -> bool {
+    state == DoctorReviewRowState::Ready
+        && !never_preselect
+        && confidence >= MIN_PRESELECT_CONFIDENCE
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoctorReviewRowOrigin {
     Proposal,
@@ -107,6 +120,7 @@ pub struct DoctorReviewRow {
     pub evidence: Vec<super::remote::RemoteEvidence>,
     pub problem_class: ProblemClass,
     pub state: DoctorReviewRowState,
+    pub never_preselect: bool,
     pub selected: bool,
     pub origin: DoctorReviewRowOrigin,
 }
@@ -277,7 +291,8 @@ impl DoctorReviewSession {
                 evidence: proposal.evidence,
                 problem_class: proposal.problem_class,
                 state,
-                selected: state == DoctorReviewRowState::Ready,
+                never_preselect: proposal.never_preselect,
+                selected: starts_selected(state, proposal.never_preselect, proposal.confidence),
                 origin: DoctorReviewRowOrigin::Proposal,
             });
         }
@@ -417,7 +432,8 @@ impl DoctorReviewSession {
                     && prior.3 == row.proposed
                     && prior.4 == row.source
             }) {
-                row.selected = *selected && row.state == DoctorReviewRowState::Ready;
+                row.selected =
+                    starts_selected(row.state, row.never_preselect, row.confidence) && *selected;
             }
         }
         *self = rebuilt;
@@ -511,12 +527,29 @@ impl DoctorReviewSession {
                 continue;
             }
             let state = template.state;
-            let selected = state == DoctorReviewRowState::Ready
-                && self
-                    .tie_selection
-                    .get(&template.id)
-                    .copied()
-                    .unwrap_or(true);
+            // A chosen spelling reaches the files through the same Apply as a
+            // matcher proposal, so it passes the same guard rail: a row that
+            // reduces specificity is capped and never starts selected.
+            // A chosen candidate carries no release evidence, so the year half
+            // of the guard cannot be decided here (`YearProvenance::Unknown`).
+            let never_preselect = reduces_specificity(
+                &template.current,
+                candidate,
+                template.field,
+                YearProvenance::Unknown,
+            );
+            let confidence = if never_preselect {
+                confidence.min(SPECIFICITY_CONFIDENCE_CAP)
+            } else {
+                confidence
+            };
+            let remembered_selected = self
+                .tie_selection
+                .get(&template.id)
+                .copied()
+                .unwrap_or(true);
+            let selected =
+                starts_selected(state, never_preselect, confidence) && remembered_selected;
             self.tie_selection.entry(template.id).or_insert(selected);
             self.rows.push(DoctorReviewRow {
                 id: template.id,
@@ -529,6 +562,7 @@ impl DoctorReviewSession {
                 evidence: chosen.evidence.clone(),
                 problem_class: tie_problem_class(template.field),
                 state,
+                never_preselect,
                 selected,
                 origin: DoctorReviewRowOrigin::ManualGroup(group_id),
             });

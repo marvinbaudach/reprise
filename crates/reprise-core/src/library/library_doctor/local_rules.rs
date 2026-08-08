@@ -178,6 +178,7 @@ fn local_proposal(
         source: ProposalSource::Local,
         confidence: 100,
         preselected: true,
+        never_preselect: false,
         problem_class,
         evidence: Vec::new(),
         local_fallback: None,

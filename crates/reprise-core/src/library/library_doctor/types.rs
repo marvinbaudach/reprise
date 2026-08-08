@@ -210,6 +210,7 @@ pub struct DoctorProposal {
     pub source: ProposalSource,
     pub confidence: u8,
     pub preselected: bool,
+    pub never_preselect: bool,
     pub problem_class: ProblemClass,
     /// Ordered, source-native evidence. Local rows deliberately keep this empty.
     pub evidence: Vec<super::remote::RemoteEvidence>,

@@ -169,6 +169,7 @@ fn restore_fallback(
                     source: ProposalSource::Local,
                     confidence: *confidence,
                     preselected: true,
+                    never_preselect: false,
                     problem_class: *problem_class,
                     evidence: Vec::new(),
                     local_fallback: None,
@@ -244,6 +245,7 @@ mod tests {
                     source: ProposalSource::MusicBrainz,
                     confidence: 92,
                     preselected: false,
+                    never_preselect: false,
                     problem_class: ProblemClass::CasingWhitespace,
                     evidence: Vec::new(),
                     local_fallback: Some(DoctorLocalFallback::Proposal {
@@ -260,6 +262,7 @@ mod tests {
                     source: ProposalSource::AcoustId,
                     confidence: 41,
                     preselected: false,
+                    never_preselect: false,
                     problem_class: ProblemClass::MissingRecordingMbid,
                     evidence: Vec::new(),
                     local_fallback: None,

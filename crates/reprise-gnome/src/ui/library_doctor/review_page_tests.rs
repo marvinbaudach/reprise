@@ -46,6 +46,7 @@ fn scan() -> DoctorScan {
             source: ProposalSource::MusicBrainz,
             confidence: 90,
             preselected: false,
+            never_preselect: false,
             problem_class: ProblemClass::GenreVariant,
             evidence: Vec::new(),
             local_fallback: None,
@@ -96,6 +97,7 @@ fn album_change_scan() -> DoctorScan {
             source: ProposalSource::MusicBrainz,
             confidence: 90,
             preselected: false,
+            never_preselect: false,
             problem_class: ProblemClass::MissingAlbumArtist,
             evidence: Vec::new(),
             local_fallback: None,
@@ -132,6 +134,7 @@ fn album_change_scan() -> DoctorScan {
             source: ProposalSource::MusicBrainz,
             confidence: 90,
             preselected: false,
+            never_preselect: false,
             problem_class,
             evidence: Vec::new(),
             local_fallback: None,
@@ -180,8 +183,28 @@ fn doc_9b_one_column_header_serves_the_whole_page() {
 
 #[test]
 fn doc_9b_every_reviewable_row_starts_selected() {
-    let session = DoctorReviewSession::from_scan(scan(), DoctorReviewFilter::NeedsReview);
-    assert!(session.rows().iter().all(|row| row.selected));
+    let mut source = scan();
+    let mut capped = source.proposals[0].clone();
+    capped.field = DoctorField::Title;
+    capped.confidence = 49;
+    capped.never_preselect = true;
+    source.proposals.push(capped);
+
+    let session = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
+
+    assert!(session
+        .rows()
+        .iter()
+        .filter(|row| !row.never_preselect)
+        .all(|row| row.selected));
+    assert!(
+        !session
+            .rows()
+            .iter()
+            .find(|row| row.never_preselect)
+            .unwrap()
+            .selected
+    );
 }
 
 #[test]

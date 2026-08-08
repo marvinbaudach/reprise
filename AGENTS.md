@@ -357,3 +357,20 @@ introduced deliberately: neither `shipped` (nothing is left) nor `planned`
 areas (`track_list`, `playback`, `now_playing`, `lyrics`, playlists, search,
 scan). The motion work sits *in* those areas but is finished — P1a moves it
 like any other code.
+
+## Completed file ownership — Library Doctor guard rails
+
+Branch: `feature/library-doctor-guard-rails`
+
+This ownership is COMPLETE and released. Packages ran in wave order.
+Mechanical `DoctorProposal` constructor updates required to keep GUARD-1
+buildable travelled with GUARD-1. GUARD-4's cohesive provider fixture lives in
+a sibling module because `tests.rs` was already too close to the 800-line cap.
+
+| Package | Owner | Files |
+| --- | --- | --- |
+| GUARD-0 | library-doctor-guard-rails | `docs/ux-rules.md` § Y and this ownership record |
+| GUARD-1 | library-doctor-guard-rails | `crates/reprise-core/src/library/library_doctor/remote/{guard_rails,guard_rails_tests,arbitration,mod}.rs`, `remote_tests.rs`, `types.rs`, and mechanical `DoctorProposal` constructor updates |
+| GUARD-2 | library-doctor-guard-rails | `crates/reprise-core/src/library/library_doctor/{review,review_tests}.rs`, `crates/reprise-gnome/src/ui/library_doctor/review_page_tests.rs` |
+| GUARD-3 | library-doctor-guard-rails | `crates/reprise-core/src/{db_library_doctor,db}.rs`, `crates/reprise-core/src/library/library_doctor/store.rs` |
+| GUARD-4 | library-doctor-guard-rails | `crates/reprise-core/src/library/library_doctor/{tests,guard_rail_scan_tests}.rs` |

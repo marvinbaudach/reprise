@@ -7,6 +7,9 @@ use super::remote::{RemoteProviderError, RemoteResolution, RemoteResolver, Remot
 use super::*;
 use crate::fingerprint::FingerprintBackend;
 
+#[path = "guard_rail_scan_tests.rs"]
+mod guard_rail_scan_tests;
+
 fn migrated_connection() -> crate::db::Db {
     crate::db::Db::open_in_memory().unwrap()
 }
@@ -91,6 +94,7 @@ impl RemoteResolver for CollisionRemoteResolver {
                 source: ProposalSource::MusicBrainz,
                 confidence: 100,
                 preselected: false,
+                never_preselect: false,
                 problem_class: ProblemClass::CasingWhitespace,
                 evidence: Vec::new(),
                 local_fallback: None,
@@ -170,6 +174,7 @@ impl RemoteResolver for CapturingRemoteResolver {
                 source: ProposalSource::MusicBrainz,
                 confidence: 88,
                 preselected: false,
+                never_preselect: false,
                 problem_class: ProblemClass::MissingWrongYear,
                 evidence: vec![RemoteEvidence {
                     source: RemoteEvidenceSource::MusicBrainz,

@@ -382,7 +382,7 @@ fn doc_1b_one_value_per_track_field() {
 }
 
 #[test]
-fn doc_4a_remote_is_never_preselected() {
+fn doc_4c_remote_is_never_preselected() {
     let mut value = metadata();
     value.recording_mbid = None;
     let mut provider = FakeProvider {
