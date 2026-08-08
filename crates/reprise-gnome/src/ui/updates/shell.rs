@@ -59,7 +59,7 @@ pub(super) fn build() -> UpdatesShell {
 
     let concerts_section = ConcertsSection::new();
     let nothing_new = gtk4::Label::new(Some(&strings::text(strings::UPDATES_NOTHING_NEW)));
-    nothing_new.add_css_class("dim-label");
+    nothing_new.add_css_class("reprise-text-secondary");
     nothing_new.set_halign(gtk4::Align::Center);
     nothing_new.set_margin_top(12);
     nothing_new.set_margin_bottom(12);
@@ -71,7 +71,7 @@ pub(super) fn build() -> UpdatesShell {
 
     let (updates_header, fetch_button, fetch_stack, spinner, updated) = build_header();
     let failure = gtk4::Label::new(None);
-    failure.add_css_class("dim-label");
+    failure.add_css_class("reprise-text-secondary");
     failure.set_xalign(0.0);
     failure.set_wrap(true);
     failure.set_visible(false);
@@ -149,7 +149,6 @@ fn build_header() -> (
     stack.add_named(&spinner, Some("spinner"));
     stack.set_visible_child_name("icon");
     let updated = gtk4::Label::new(None);
-    updated.add_css_class("dim-label");
     updated.set_halign(gtk4::Align::End);
     // The age label sits *inside* the fetch button rather than beside it. Left
     // outside, the trigger is a bare symbolic icon with no label — the previous
@@ -206,5 +205,8 @@ mod tests {
             Some(shell.fetch_button.clone())
         );
         assert_eq!(shell.fetch_button.parent(), Some(header));
+        assert!(shell.nothing_new.has_css_class("reprise-text-secondary"));
+        assert!(shell.failure.has_css_class("reprise-text-secondary"));
+        assert!(!shell.updated.has_css_class("dim-label"));
     }
 }

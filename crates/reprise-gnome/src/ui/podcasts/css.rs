@@ -42,7 +42,7 @@ pub(super) fn css() -> String {
 .reprise-podcast-status-resume { border: 1px solid alpha(currentColor, 0.22); }
 .reprise-podcast-status-new {
   background: alpha(@accent_bg_color, 0.16);
-  color: @accent_color;
+  color: @reprise_accent_text_color;
 }
 .reprise-podcast-status-played { opacity: 0.55; }
 .reprise-podcast-episode-row.reprise-podcast-playing {

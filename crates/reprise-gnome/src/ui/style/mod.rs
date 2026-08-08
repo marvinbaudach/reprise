@@ -367,6 +367,72 @@ mod tests {
         assert!(!super::app_css().contains("@define-color"));
     }
 
+    /// Every `color:` declaration painting text with an accent role that was
+    /// never contrast-checked. Matches on the parsed property rather than on
+    /// one spelling of the whole declaration: `color:@accent_color` and
+    /// `color: alpha(@accent_color, 0.85)` are the same violation, and the
+    /// latter is precisely what CONTRAST-5 replaced — a whole-string compare
+    /// waved both through.
+    fn unverified_accent_foregrounds(css: &str) -> Vec<String> {
+        css.split(['{', '}', ';'])
+            .filter_map(|declaration| {
+                let (property, value) = declaration.split_once(':')?;
+                let property = property.trim().rsplit([' ', '\n', '\t']).next()?;
+                let paints_text = property == "color";
+                let unverified_role =
+                    value.contains("@accent_color") || value.contains("@accent_bg_color");
+                (paints_text && unverified_role).then(|| declaration.trim().to_owned())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn contrast_5_app_css_never_uses_unverified_accent_as_foreground() {
+        let unverified = unverified_accent_foregrounds(&super::app_css());
+
+        assert!(
+            unverified.is_empty(),
+            "app CSS paints text with an unverified accent: {unverified:#?}\n\
+             use @reprise_accent_text_color instead (CONTRAST-5)"
+        );
+    }
+
+    #[test]
+    fn contrast_5_the_foreground_guard_catches_every_spelling() {
+        // This guard is the regression net for the whole sweep, so prove it
+        // actually trips — on each way the violation can be written.
+        for offender in [
+            ".x { color: @accent_color; }",
+            ".x { color:@accent_color; }",
+            ".x { color:   @accent_color; }",
+            ".x { color: alpha(@accent_color, 0.85); }",
+            ".x { color: shade(@accent_color, 1.2); }",
+            ".x { color: @accent_bg_color; }",
+            ".x {\n           color: @accent_color;\n       }",
+        ] {
+            assert_eq!(
+                unverified_accent_foregrounds(offender).len(),
+                1,
+                "guard missed {offender}"
+            );
+        }
+
+        for allowed in [
+            ".x { background-color: @accent_color; }",
+            ".x { border-color: @accent_color; }",
+            ".x { outline-color: @accent_color; }",
+            ".x { box-shadow: inset 2px 0 0 @accent_color; }",
+            ".x { color: @reprise_accent_text_color; }",
+            ".x { background-image: radial-gradient(circle, @accent_color 0%, transparent); }",
+            ".x { border: 1px solid alpha(@accent_bg_color, 0.45); }",
+        ] {
+            assert!(
+                unverified_accent_foregrounds(allowed).is_empty(),
+                "guard false-flagged {allowed}"
+            );
+        }
+    }
+
     #[test]
     fn install_without_a_display_does_not_arm_the_once_guard() {
         // Plain unit-test processes have no GDK display; install() must stay

@@ -84,10 +84,10 @@ pub(in crate::ui) fn build_equalizer_surface(
 pub(in crate::ui) fn css() -> String {
     ".reprise-equalizer scale > trough > highlight { background-color: @accent_color; }\n\
      .reprise-equalizer scale > trough > slider { background-color: @accent_color; }\n\
-     .reprise-eq-value { color: @accent_color; font-weight: bold; }\n\
+     .reprise-eq-value { color: @reprise_accent_text_color; font-weight: bold; }\n\
      .reprise-crossfade { padding: 12px 6px; }\n\
      .reprise-crossfade > box > label.title { font-weight: bold; }\n\
-     .reprise-crossfade-value { color: @accent_color; font-weight: bold; }\n\
+     .reprise-crossfade-value { color: @reprise_accent_text_color; font-weight: bold; }\n\
      .reprise-crossfade-scale { margin-top: 4px; }\n\
      .reprise-crossfade-scale > trough > highlight { background-color: @accent_color; }\n\
      .reprise-crossfade-scale > trough > slider { background-color: @accent_color; }"
