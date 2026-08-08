@@ -3598,9 +3598,9 @@ means deterministic and high-confidence, never „without review".
   entity `89ad4ac3-39f7-470e-963a-56509c546377`; localized spellings are
   deliberately excluded because a fuzzy list would eventually match a real
   band. Second, a proposal that reduces specificity — a named value to a
-  placeholder, a full title to a truncated title, or a track-tag year to an
-  earlier release-group year — receives a confidence cap and never starts
-  selected. *Tests:*
+  placeholder, a full title or album name to a truncated one, or a track-tag
+  year to an earlier release-group year — receives a confidence cap and never
+  starts selected. *Tests:*
   `doc_1f_various_artists_never_overwrites_a_named_album_artist`,
   `doc_1f_a_placeholder_needs_evidence_of_several_track_artists`,
   `doc_1f_the_placeholder_is_recognised_by_name_and_by_mbid`,
@@ -3721,7 +3721,9 @@ means deterministic and high-confidence, never „without review".
   `doc_4c_remote_is_never_preselected`,
   `doc_4c_a_specificity_reducing_proposal_is_capped_and_never_preselected`,
   `doc_4c_a_truncated_title_is_a_specificity_loss`,
+  `doc_4c_a_truncated_album_is_a_specificity_loss`,
   `doc_4c_an_earlier_release_group_year_on_a_track_tag_is_a_specificity_loss`,
+  `doc_4c_a_tie_choice_that_reduces_specificity_is_capped_and_never_preselected`,
   `doc_4c_a_capped_proposal_does_not_start_selected`,
   `doc_4c_a_row_below_fifty_percent_does_not_start_selected`,
   `doc_4c_never_preselect_survives_a_store_round_trip`,
@@ -3881,6 +3883,7 @@ means deterministic and high-confidence, never „without review".
   `doc_8b_review_tier_preselects_every_ready_row`,
   `doc_8b_recording_mbid_never_reaches_the_review_tier`,
   `doc_8b_all_preset_selects_every_ready_row_and_none_clears_them`,
+  `doc_8b_the_tie_path_runs_the_same_selection_predicate`,
   `doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary`,
   `doc_8b_a_scan_with_no_auto_rows_creates_no_job`.
   *Amended 2026-08-08: “Everything else is shown for review, preselected” has

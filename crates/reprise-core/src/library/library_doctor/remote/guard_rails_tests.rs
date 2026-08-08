@@ -69,6 +69,20 @@ fn doc_4c_a_truncated_title_is_a_specificity_loss() {
 }
 
 #[test]
+fn doc_4c_a_truncated_album_is_a_specificity_loss() {
+    assert!(reduces_specificity(
+        &DoctorValue::Text("An Ocean Between Us (Deluxe Edition)".into()),
+        &DoctorValue::Text("An Ocean Between Us".into()),
+        DoctorField::Album,
+    ));
+    assert!(!reduces_specificity(
+        &DoctorValue::Text("An Ocean Between Us".into()),
+        &DoctorValue::Text("An Ocean Between Us (Deluxe Edition)".into()),
+        DoctorField::Album,
+    ));
+}
+
+#[test]
 fn doc_4c_an_earlier_release_group_year_on_a_track_tag_is_a_specificity_loss() {
     assert!(reduces_specificity(
         &DoctorValue::Year(2024),

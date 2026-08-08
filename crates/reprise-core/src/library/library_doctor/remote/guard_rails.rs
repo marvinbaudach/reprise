@@ -22,7 +22,13 @@ pub(crate) fn reduces_specificity(
         (DoctorField::Artist | DoctorField::AlbumArtist, _, DoctorValue::Text(proposed)) => {
             is_placeholder_artist(proposed, None)
         }
-        (DoctorField::Title, DoctorValue::Text(current), DoctorValue::Text(proposed)) => {
+        // A shortened name loses information whether it names the recording or
+        // the release: "… (Deluxe Edition)" cut down to "…" is the same loss.
+        (
+            DoctorField::Title | DoctorField::Album,
+            DoctorValue::Text(current),
+            DoctorValue::Text(proposed),
+        ) => {
             let current = crate::library::group_key::normalize_group_key(current);
             let proposed = crate::library::group_key::normalize_group_key(proposed);
             !proposed.is_empty() && proposed.len() < current.len() && current.starts_with(&proposed)
