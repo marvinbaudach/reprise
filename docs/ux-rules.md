@@ -3631,7 +3631,12 @@ means deterministic and high-confidence, never „without review".
   `doc_1e_an_albums_album_fields_all_carry_the_same_resolved_release_mbid`,
   `doc_1e_the_network_is_asked_once_per_album_not_once_per_track`,
   `doc_1e_an_empty_release_search_keeps_the_directly_resolved_album_fields`,
-  `doc_1e_every_demoted_release_kind_can_be_named_by_the_local_album_title`.
+  `doc_1e_every_demoted_release_kind_can_be_named_by_the_local_album_title`,
+  `doc_1e_a_release_nobody_can_recognise_is_no_match_at_all`,
+  `doc_1e_a_matching_track_count_with_title_overlap_stays_a_match`.
+  *Amended 2026-08-08: a candidate below the minimum score is no match. Being
+  the best of a bad field does not select a release; the album fields then have
+  nothing to come from and no proposal is made.*
   *Amended 2026-08-08: only a **selected** release speaks for the album fields.
   A release search that comes back empty — no candidate, or a failed request —
   leaves the fields the track resolved on its own untouched.*

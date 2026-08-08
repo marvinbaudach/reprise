@@ -130,9 +130,11 @@ fn doc_1e_every_demoted_release_kind_can_be_named_by_the_local_album_title() {
 
 #[test]
 fn doc_1e_track_count_equality_outweighs_a_single_title_hit() {
+    // Both candidates carry the queried artist credit so that the winner is
+    // decided by the ranking rather than by `MINIMUM_RELEASE_SCORE`.
     let mut right_count = release(
         "00000000-0000-0000-0000-000000000004",
-        "Someone Else",
+        "As I Lay Dying",
         10,
         &[],
         Vec::new(),
@@ -140,7 +142,7 @@ fn doc_1e_track_count_equality_outweighs_a_single_title_hit() {
     right_count.release_year = None;
     let mut one_title = release(
         "00000000-0000-0000-0000-000000000005",
-        "Someone Else",
+        "As I Lay Dying",
         99,
         &["Separation"],
         Vec::new(),
@@ -153,6 +155,37 @@ fn doc_1e_track_count_equality_outweighs_a_single_title_hit() {
         matched.identity.release_mbid.as_deref(),
         Some("00000000-0000-0000-0000-000000000004")
     );
+}
+
+#[test]
+fn doc_1e_a_release_nobody_can_recognise_is_no_match_at_all() {
+    let mut stranger = release(
+        "00000000-0000-0000-0000-000000000009",
+        "Someone Else",
+        99,
+        &["Separation"],
+        Vec::new(),
+    );
+    stranger.release_year = None;
+
+    assert!(
+        best_release(&query(), &[stranger]).is_none(),
+        "one accidental title hit is not a release match"
+    );
+}
+
+#[test]
+fn doc_1e_a_matching_track_count_with_title_overlap_stays_a_match() {
+    let mut plausible = release(
+        "00000000-0000-0000-0000-000000000010",
+        "Someone Else",
+        10,
+        &["Separation", "Nothing Left", "The Sound of Truth"],
+        Vec::new(),
+    );
+    plausible.release_year = None;
+
+    assert!(best_release(&query(), &[plausible]).is_some());
 }
 
 #[test]

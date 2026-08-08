@@ -30,6 +30,17 @@ pub(crate) struct AlbumMatch {
     pub(crate) exact: bool,
 }
 
+/// The score a candidate must reach before it counts as the album's release.
+///
+/// The four signals are worth 40 (track count), 30 (title overlap), 20 (artist
+/// credit) and 10 (year), so the floor is set where two of them have to agree:
+/// a matching track count plus a third of the titles, or the full tracklist
+/// plus the artist credit. No single signal carries a match on its own —
+/// track counts and generic album titles collide across unrelated releases,
+/// and a search that returns only such collisions has found nothing. Being
+/// the best of a bad field is not a match.
+pub(crate) const MINIMUM_RELEASE_SCORE: u8 = 50;
+
 pub(crate) fn best_release(
     query: &AlbumQuery,
     candidates: &[RemoteIdentity],
@@ -38,6 +49,7 @@ pub(crate) fn best_release(
         .iter()
         .map(|identity| score_release(query, identity))
         .min_by(compare_matches)
+        .filter(|matched| matched.score >= MINIMUM_RELEASE_SCORE)
 }
 
 pub(crate) fn joint_confidence(release_score: u8, field_agreement: u8) -> u8 {
