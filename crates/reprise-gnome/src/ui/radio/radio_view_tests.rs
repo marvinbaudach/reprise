@@ -166,8 +166,10 @@ fn list_vadjustment(view: &RadioView) -> gtk4::Adjustment {
     view.shared
         .stack
         .child_by_name(LIST_PAGE)
+        .and_downcast::<gtk4::Overlay>()
+        .and_then(|overlay| overlay.child())
         .and_downcast::<gtk4::ScrolledWindow>()
-        .expect("the list page is a ScrolledWindow")
+        .expect("the list overlay owns a ScrolledWindow")
         .vadjustment()
 }
 
@@ -287,6 +289,64 @@ fn descendant_buttons(widget: &impl IsA<gtk4::Widget>) -> Vec<gtk4::Button> {
         child = current.next_sibling();
     }
     buttons
+}
+
+fn descendant_with_class<T: IsA<gtk4::Widget> + Clone + 'static>(
+    widget: &gtk4::Widget,
+    class: &str,
+) -> Option<T> {
+    if widget.has_css_class(class) {
+        if let Ok(found) = widget.clone().downcast::<T>() {
+            return Some(found);
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = descendant_with_class(&current, class) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fil_3a_radio_end_line_counts_stations_and_recovers_with_clear_all() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    add_station(&conn, "Afd Radio");
+    add_station(&conn, "Different Radio");
+    let view = RadioView::new(conn, None);
+    let window = gtk4::Window::new();
+    window.set_default_size(900, 600);
+    window.set_child(Some(view.root()));
+    window.present();
+
+    view.set_search_query("afd");
+    crate::ui::source_context_surface::settle_layout();
+
+    let line = descendant_with_class::<gtk4::Label>(
+        view.root(),
+        crate::ui::end_of_results::LINE_CSS_CLASS,
+    )
+    .expect("Radio owns the shared end-of-results line");
+    assert_eq!(
+        line.text(),
+        "End of results — 1 station hidden by search “afd”"
+    );
+    assert!(line.is_visible());
+    let recovery = descendant_with_class::<gtk4::Button>(
+        view.root(),
+        crate::ui::end_of_results::RECOVERY_CSS_CLASS,
+    )
+    .expect("Radio owns the shared recovery pill");
+    assert_eq!(recovery.label().as_deref(), Some("Show all 2 stations"));
+    recovery.emit_clicked();
+    crate::ui::source_context_surface::settle_layout();
+    assert_eq!(view.shared.filter_bar.filter().query, "");
+    assert!(!line.is_visible());
 }
 
 #[test]

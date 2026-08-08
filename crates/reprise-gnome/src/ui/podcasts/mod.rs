@@ -21,6 +21,7 @@ mod podcasts_episode_files;
 mod podcasts_episode_window;
 mod podcasts_filter_bar;
 mod podcasts_groups;
+mod podcasts_list_surface;
 mod podcasts_model;
 mod podcasts_playback;
 mod podcasts_presentation;

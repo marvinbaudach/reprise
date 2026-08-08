@@ -52,6 +52,7 @@ pub(super) struct Shared {
     controller: std::rc::Weak<PlayerController>,
     model: Rc<RadioModel>,
     pub(super) filter_bar: Rc<RadioFilterBar>,
+    end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<StationRow>>,
     live: Rc<RefCell<RadioLiveState>>,
     /// `NET-3b`: explicit, injectable connectivity seam (see
@@ -157,6 +158,18 @@ impl RadioView {
             .vexpand(true)
             .hexpand(true)
             .build();
+        let list_overlay = gtk4::Overlay::new();
+        list_overlay.set_child(Some(&scrolled));
+        let end_of_results = crate::ui::end_of_results::EndOfResults::install(
+            &list_overlay,
+            &scrolled,
+            &column_view,
+            crate::ui::end_of_results::ResultsUnit::Stations,
+        );
+        {
+            let filter_bar = filter_bar.clone();
+            end_of_results.connect_recover(move || filter_bar.clear_all());
+        }
         let status = adw::StatusPage::builder().vexpand(true).build();
         let status_button = gtk4::Button::new();
         status_button.set_halign(gtk4::Align::Center);
@@ -167,7 +180,7 @@ impl RadioView {
             .transition_type(gtk4::StackTransitionType::Crossfade)
             .vexpand(true)
             .build();
-        stack.add_named(&scrolled, Some(LIST_PAGE));
+        stack.add_named(&list_overlay, Some(LIST_PAGE));
         stack.add_named(&status, Some(STATUS_PAGE));
         stack.add_named(empty_page.widget(), Some(EMPTY_PAGE));
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -197,6 +210,7 @@ impl RadioView {
             controller: controller.map_or_else(std::rc::Weak::new, Rc::downgrade),
             model,
             filter_bar: filter_bar.clone(),
+            end_of_results,
             rows: RefCell::new(Vec::new()),
             live,
             connectivity,
@@ -408,9 +422,18 @@ fn refresh_shared(shared: &Rc<Shared>) {
 }
 
 fn render_rows(shared: &Rc<Shared>) {
-    let rows = filter_rows(&shared.rows.borrow(), &shared.filter_bar.filter());
+    let filter = shared.filter_bar.filter();
+    let rows = filter_rows(&shared.rows.borrow(), &filter);
     let total = shared.rows.borrow().len();
     shared.filter_bar.set_counts(rows.len(), total);
+    shared
+        .end_of_results
+        .update(crate::ui::end_of_results::EndOfResultsInput {
+            shown: rows.len(),
+            total,
+            query: filter.query.clone(),
+            facets_restrict: filter.genre.is_some() || filter.country.is_some(),
+        });
     shared.model.replace(rows.clone());
     // FIL-5a: a refined query can keep exactly the same station rows, in
     // which case the model deliberately emits no rebind signal. Reapply the
@@ -418,7 +441,7 @@ fn render_rows(shared: &Rc<Shared>) {
     shared.cells.reapply();
     apply_empty_state(
         shared,
-        radio_empty_state_for(rows.len(), shared.filter_bar.filter().is_active()),
+        radio_empty_state_for(rows.len(), filter.is_active()),
     );
 }
 

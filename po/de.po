@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-08 17:41+0200\n"
+"POT-Creation-Date: 2026-08-08 19:16+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -826,6 +826,7 @@ msgstr ""
 "Sie es erneut"
 
 #: crates/reprise-gnome/src/ui/strings.rs:644
+#: crates/reprise-gnome/src/ui/strings_filter.rs:19
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:267
 #, rust-format
 msgid "{count} track"
@@ -3413,6 +3414,7 @@ msgid "{count} subscribers"
 msgstr "{count} Abonnenten"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:214
+#: crates/reprise-gnome/src/ui/strings_filter.rs:21
 #, rust-format
 msgid "{count} episode"
 msgid_plural "{count} episodes"
@@ -3784,6 +3786,7 @@ msgid "{genre} in {country}"
 msgstr "{genre} in {country}"
 
 #: crates/reprise-gnome/src/ui/strings_radio.rs:93
+#: crates/reprise-gnome/src/ui/strings_filter.rs:26
 #, rust-format
 msgid "{count} station"
 msgid_plural "{count} stations"
@@ -4389,24 +4392,48 @@ msgstr "„{value}“ als neues Genre verwenden…"
 msgid "Tab"
 msgstr "Tab"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:11
+#: crates/reprise-gnome/src/ui/strings_filter.rs:23
 #, rust-format
-msgid "End of results — {hidden} tracks hidden by search “{query}”"
-msgstr ""
-"Ende der Ergebnisse — {hidden} Titel durch die Suche „{query}“ ausgeblendet"
+msgid "{count} video"
+msgid_plural "{count} videos"
+msgstr[0] "{count} Video"
+msgstr[1] "{count} Videos"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:18
+#: crates/reprise-gnome/src/ui/strings_filter.rs:24
 #, rust-format
-msgid "End of results — {hidden} tracks hidden by active filters"
-msgstr "Ende der Ergebnisse — {hidden} Titel durch aktive Filter ausgeblendet"
+msgid "{count} gap"
+msgid_plural "{count} gaps"
+msgstr[0] "{count} Lücke"
+msgstr[1] "{count} Lücken"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:25
+#: crates/reprise-gnome/src/ui/strings_filter.rs:29
 #, rust-format
-msgid "End of results — {hidden} tracks hidden by search and filters"
-msgstr ""
-"Ende der Ergebnisse — {hidden} Titel durch Suche und Filter ausgeblendet"
+msgid "{count} concert"
+msgid_plural "{count} concerts"
+msgstr[0] "{count} Konzert"
+msgstr[1] "{count} Konzerte"
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:31
+#: crates/reprise-gnome/src/ui/strings_filter.rs:36
+#, rust-format
+msgid "End of results — {items} hidden by search “{query}”"
+msgstr "Ende der Ergebnisse — {items} durch die Suche „{query}“ ausgeblendet"
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:43
+#, rust-format
+msgid "End of results — {items} hidden by active filters"
+msgstr "Ende der Ergebnisse — {items} durch aktive Filter ausgeblendet"
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:50
+#, rust-format
+msgid "End of results — {items} hidden by search and filters"
+msgstr "Ende der Ergebnisse — {items} durch Suche und Filter ausgeblendet"
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:57
+#, rust-format
+msgid "Show all {items}"
+msgstr "Alle {items} anzeigen"
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:63
 #, rust-format
 msgid "Show all {total} tracks"
 msgstr "Alle {total} Titel anzeigen"
@@ -4422,6 +4449,11 @@ msgstr "Instrumental · KI-bearbeitet"
 #: crates/reprise-gnome/src/ui/strings_ai.rs:13
 msgid "Hide AI music"
 msgstr "KI-Musik ausblenden"
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:12
+#, rust-format
+msgid "⌕ “{query}” in track, artist and album"
+msgstr "⌕ „{query}“ in Titel, Interpret und Album"
 
 #: crates/reprise-view/src/strings/scan.rs:13
 msgid "Library folder unavailable"
@@ -5452,11 +5484,6 @@ msgstr "Filter {facet} entfernen: {value}"
 msgid "⌕ “{query}” in any field"
 msgstr "⌕ „{query}“ in allen Feldern"
 
-#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:12
-#, rust-format
-msgid "⌕ “{query}” in track, artist and album"
-msgstr "⌕ „{query}“ in Titel, Interpret und Album"
-
 #: crates/reprise-view/src/strings/browse.rs:30
 #, rust-format
 msgid "⌕ “{query}” in episode titles"
@@ -5618,6 +5645,22 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#, rust-format
+#~ msgid "End of results — {hidden} tracks hidden by search “{query}”"
+#~ msgstr ""
+#~ "Ende der Ergebnisse — {hidden} Titel durch die Suche „{query}“ "
+#~ "ausgeblendet"
+
+#, rust-format
+#~ msgid "End of results — {hidden} tracks hidden by active filters"
+#~ msgstr ""
+#~ "Ende der Ergebnisse — {hidden} Titel durch aktive Filter ausgeblendet"
+
+#, rust-format
+#~ msgid "End of results — {hidden} tracks hidden by search and filters"
+#~ msgstr ""
+#~ "Ende der Ergebnisse — {hidden} Titel durch Suche und Filter ausgeblendet"
 
 # Device sync history
 #~ msgid "Recent syncs"

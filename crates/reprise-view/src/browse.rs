@@ -189,10 +189,10 @@ mod tests {
         assert_eq!(place_pill_label(&source), None);
     }
 
-    // UX FIL-3: a place is not a restriction, but a filter inside one is — the
+    // UX FIL-3a: a place is not a restriction, but a filter inside one is — the
     // end-of-results line has to appear there, counting against that place.
     #[test]
-    fn fil_3_a_filter_inside_a_place_still_restricts() {
+    fn fil_3a_filter_inside_a_place_still_restricts() {
         let browse = BrowseFilter::default();
 
         assert!(is_restricted("track 2", &browse, false));

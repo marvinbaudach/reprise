@@ -1496,16 +1496,24 @@ result.
   remains a neutral dim caption and "Clear all" is absent. Music retains
   FIL-1c's place semantics and existing preference-driven idle visibility;
   every counting base remains the current place, never the whole library.
-- **FIL-3** [active] [gtk] — End-of-results row: below the last row of
-  a restricted list (≥ 1 hit) sits, centered, "End of results — 1,649
-  tracks hidden by search "falling"" + pill "Show all 1,664 tracks"
-  (= Clear all). It visually belongs to the end of the list: directly
-  below the last row when the list is shorter than the viewport; for
-  longer lists it only appears once the end of the list scrolls into
-  the viewport; it never floats over rows (not sticky). Implementation
-  as a positioned overlay — the ColumnView's virtualization stays
-  untouched; input-transparent except for the pill; position is
-  recalculated on scroll, model/filter and resize changes.
+- **FIL-3** [replaced by FIL-3a] [gtk] — End-of-results row: below the last
+  row of a restricted track list (≥ 1 hit) sits the hidden-track count and a
+  Show all pill.
+- **FIL-3a** [active] [gtk] — The end-of-results row binds Music, Podcasts,
+  YouTube, Releases, Radio and Concerts. It appears only when at least one row
+  is shown and at least one row is hidden; zero hits remain FIL-6's empty
+  state. Centered below the final result, it names the restriction and counts
+  in that view's own unit — tracks, episodes, videos, gaps, stations or
+  concerts — for example "End of results — 41 episodes hidden by search
+  “afd”" with the pill "Show all 44 episodes". Search plus active facets is
+  named as both; facets alone are named as active filters. The pill fires the
+  same clear-all behavior as the filter row (FIL-6). The row visually belongs
+  to the end of the list: directly below the last row when the list is shorter
+  than the viewport; for longer lists it only appears once the end scrolls
+  into the viewport; it never floats over rows (not sticky). A positioned
+  overlay leaves each list's native row rendering or virtualization untouched,
+  is input-transparent except for the pill, and recalculates on scroll,
+  model/filter and resize changes.
 - **FIL-4** [replaced by SEARCH-3] [gtk] — The search field carries its
   state: as soon as the field contains text, it gets an accent border +
   tinted background — even unfocused.

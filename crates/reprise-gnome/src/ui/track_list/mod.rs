@@ -4,7 +4,6 @@ pub(in crate::ui) mod column_layout_editor;
 pub(in crate::ui) use reprise_view::column_widths;
 pub(in crate::ui) mod current_track_selection;
 pub(crate) mod diagnostic_trail;
-pub(in crate::ui) mod end_of_results;
 pub(in crate::ui) mod list_density;
 pub(in crate::ui) mod match_highlight;
 pub(in crate::ui) mod now_playing_marker;

@@ -35,6 +35,7 @@ pub mod delete_tracks;
 mod device_sync;
 pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
+pub(in crate::ui) mod end_of_results;
 mod enumerated;
 pub(crate) mod eq_bars;
 mod external_changes;

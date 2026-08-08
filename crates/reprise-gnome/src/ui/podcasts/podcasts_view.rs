@@ -35,7 +35,6 @@ use super::podcasts_removal::{
 };
 use super::podcasts_rendered_order;
 use super::podcasts_reveal::RevealRequest;
-use super::podcasts_scroller::build_episode_scroller;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
 use super::podcasts_worker::{
@@ -54,6 +53,9 @@ mod actions;
 mod connectivity_ui;
 #[path = "podcasts_view_copy.rs"]
 mod copy;
+#[cfg(test)]
+#[path = "podcasts_end_of_results_tests.rs"]
+mod end_of_results_tests;
 #[path = "podcasts_failure_ui.rs"]
 mod failure_ui;
 #[path = "podcasts_view_marker.rs"]
@@ -83,6 +85,7 @@ pub(in crate::ui) struct PodcastsView {
     callbacks: PodcastsCallbacks,
     kind: PodcastKind,
     filter_bar: Rc<PodcastsFilterBar>,
+    end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
     youtube_detail: Rc<YoutubeChannelDetail>,
@@ -143,13 +146,8 @@ impl PodcastsView {
         kind: PodcastKind,
     ) -> Rc<Self> {
         let filter_bar = PodcastsFilterBar::new(conn.clone(), kind);
-        let group_container = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        group_container.set_margin_top(8);
-        group_container.set_margin_bottom(8);
-        group_container.set_margin_start(12);
-        group_container.set_margin_end(12);
-        group_container.set_hexpand(true);
-        let scroller = build_episode_scroller(group_container.upcast_ref::<gtk4::Widget>());
+        let (group_container, scroller, list_overlay, end_of_results) =
+            super::podcasts_list_surface::build(kind, &filter_bar);
 
         let status = adw::StatusPage::new();
         let status_button = gtk4::Button::new();
@@ -160,7 +158,7 @@ impl PodcastsView {
         let error_banner = SourceErrorBanner::new();
         let failure_state = SourceFailureState::new(copy::empty_state_copy(kind).icon_name);
         let stack = gtk4::Stack::new();
-        stack.add_named(&scroller, Some("list"));
+        stack.add_named(&list_overlay, Some("list"));
         stack.add_named(&status, Some("status"));
         stack.add_named(empty_state.widget(), Some(EMPTY_PAGE));
         stack.add_named(module_off_state.widget(), Some(MODULE_OFF_PAGE));
@@ -216,6 +214,7 @@ impl PodcastsView {
             callbacks,
             kind,
             filter_bar,
+            end_of_results,
             group_container,
             stack,
             youtube_detail,
@@ -401,6 +400,7 @@ impl PodcastsView {
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
+        super::podcasts_list_surface::update(&self.end_of_results, &filter, filtered.len(), total);
         let rendered_groups = rendered_source_groups(&groups, &filter, &download_states);
         // `NET-1a` / `C1`: computed once per render pass from the live
         // module + global-gate state, then threaded down to every source
