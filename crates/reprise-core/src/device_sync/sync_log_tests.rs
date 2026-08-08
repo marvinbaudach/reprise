@@ -1,6 +1,7 @@
 use super::sync_log::{
-    deviations, finish_run, note_deviation, recent_runs, start_run, summarize, update_planned,
-    Deviation, DeviationKind, RunCounters, RunOutcome, RunStart, RunSummary, RETAINED_RUNS,
+    close_orphaned_runs, deviations, finish_run, note_deviation, recent_runs, start_run, summarize,
+    update_planned, Deviation, DeviationKind, RunCounters, RunOutcome, RunStart, RunSummary,
+    RETAINED_RUNS,
 };
 use crate::device_sync::machine::SyncOutcome;
 
@@ -104,19 +105,51 @@ fn mtp_20_a_successful_file_leaves_no_entry_behind() {
 }
 
 #[test]
-fn mtp_20_a_run_that_never_finished_stays_visible_as_interrupted() {
+fn mtp_20_starting_a_run_does_not_interrupt_another_devices_live_run() {
     let conn = database();
-    let abandoned = start_run(&conn, &start()).unwrap();
+    let mut first_start = start();
+    first_start.device_serial = "first".into();
+    let first = start_run(&conn, &first_start).unwrap();
 
-    // The app died mid-sync: no finish_run ever arrives, and the next run
-    // starts. The lost run must not linger as "running" or disappear.
-    let next = start_run(&conn, &start()).unwrap();
-    finish_run(&conn, next, &summary(200, 0, 0)).unwrap();
+    let mut second_start = start();
+    second_start.device_serial = "second".into();
+    let second = start_run(&conn, &second_start).unwrap();
 
     let runs = recent_runs(&conn, 10).unwrap();
-    let lost = runs.iter().find(|run| run.id == abandoned).unwrap();
-    assert_eq!(lost.outcome, RunOutcome::Interrupted);
-    assert!(lost.finished_at.is_none());
+    let still_live = runs.iter().find(|run| run.id == first).unwrap();
+    assert_eq!(still_live.outcome, RunOutcome::Running);
+    assert!(still_live.finished_at.is_none());
+    assert_eq!(
+        runs.iter().find(|run| run.id == second).unwrap().outcome,
+        RunOutcome::Running
+    );
+}
+
+#[test]
+fn mtp_20_startup_sweep_closes_an_orphan_with_an_end_time() {
+    let conn = database();
+    let orphan = start_run(&conn, &start()).unwrap();
+
+    assert_eq!(close_orphaned_runs(&conn).unwrap(), 1);
+
+    let runs = recent_runs(&conn, 10).unwrap();
+    let closed = runs.iter().find(|run| run.id == orphan).unwrap();
+    assert_eq!(closed.outcome, RunOutcome::Interrupted);
+    assert!(closed.finished_at.is_some());
+}
+
+#[test]
+fn mtp_20_startup_sweep_reports_zero_without_touching_a_closed_run() {
+    let conn = database();
+    let run = start_run(&conn, &start()).unwrap();
+    finish_run(&conn, run, &summary(200, 0, 0)).unwrap();
+
+    assert_eq!(close_orphaned_runs(&conn).unwrap(), 0);
+
+    let closed = recent_runs(&conn, 10).unwrap().remove(0);
+    assert_eq!(closed.id, run);
+    assert_eq!(closed.outcome, RunOutcome::Completed);
+    assert_eq!(closed.finished_at, Some(1_785_183_899));
 }
 
 #[test]

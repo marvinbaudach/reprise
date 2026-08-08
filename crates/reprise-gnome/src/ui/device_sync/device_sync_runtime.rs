@@ -20,6 +20,7 @@ use reprise_core::device_sync::device_view::{
 use reprise_core::device_sync::settings::{
     forget_device, mark_device_playlists_synced, record_device_verification,
 };
+use reprise_core::device_sync::sync_log;
 use reprise_core::device_sync::{
     aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
     DeviceSelection, DeviceSessionState, DeviceSettings, DeviceStorageInspection,
@@ -347,6 +348,10 @@ impl DeviceSyncRuntime {
     }
 
     pub fn with_backend(conn: &Rc<Db>, backend: Rc<dyn DeviceBackend>) -> Rc<Self> {
+        match sync_log::close_orphaned_runs(conn) {
+            Ok(count) => tracing::debug!(count, "closed orphaned device sync runs"),
+            Err(error) => tracing::warn!(%error, "could not close orphaned device sync runs"),
+        }
         let remembered = memory::load_remembered_device_memories(conn)
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "could not load remembered device history");

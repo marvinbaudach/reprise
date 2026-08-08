@@ -3,8 +3,8 @@
 //! A run is written as it happens rather than at the end: `start_run` records
 //! it as `Running`, `finish_run` closes it. A run that never gets closed —
 //! the app died, the cable was pulled — is not lost but marked `Interrupted`
-//! the next time a sync starts, because "it never finished" is exactly the
-//! answer someone is looking for afterwards.
+//! when Reprise next starts, because "it never finished" is exactly the answer
+//! someone is looking for afterwards.
 //!
 //! Successful copies are counted, not itemized. Only deviations get a row,
 //! so a 278-file run leaves a handful of lines instead of hundreds.
@@ -171,15 +171,25 @@ pub struct RunRecord {
     pub detail: Option<String>,
 }
 
-/// Opens a run. Any run still marked `Running` belongs to a session that
-/// died, so it is closed as `Interrupted` rather than left ambiguous.
+/// Closes runs left open by the previous application session.
+///
+/// This belongs at runtime startup, when no run can legitimately be live. It
+/// must not run when a new device sync starts because another device can be
+/// synchronizing at the same time.
+pub fn close_orphaned_runs(db: &crate::db::Db) -> Result<usize, DbError> {
+    Ok(db.conn().execute(
+        "UPDATE sync_runs \
+         SET outcome = 'interrupted', \
+             finished_at = CAST(strftime('%s', 'now') AS INTEGER) \
+         WHERE outcome = 'running'",
+        [],
+    )?)
+}
+
+/// Opens a run without changing any other device's live run.
 pub fn start_run(db: &crate::db::Db, start: &RunStart) -> Result<i64, DbError> {
     let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute(
-        "UPDATE sync_runs SET outcome = 'interrupted' WHERE outcome = 'running'",
-        [],
-    )?;
     transaction.execute(
         "INSERT INTO sync_runs \
            (device_serial, device_name, transfer_profile, started_at, outcome, planned) \

@@ -590,8 +590,9 @@ result.
   and how many files were planned; it closes with the balance of what was
   copied, skipped, removed and failed, and with the reason when the run did
   not complete. A run whose session ends without closing it — the app died,
-  the cable was pulled — is marked interrupted by the next run rather than
-  left open or dropped, because "it never finished" is itself the answer.
+  the cable was pulled — is marked interrupted with an end time when Reprise
+  next starts rather than left open or dropped, because "it never finished"
+  is itself the answer.
   Successful copies are counted, not listed; every file that deviated —
   skipped, failed, removed, or kept in its original format — is recorded
   individually with its device path and reason, removals included, since the
