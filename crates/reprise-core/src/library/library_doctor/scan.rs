@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
@@ -104,37 +104,37 @@ impl<'connection> LibraryDoctor<'connection> {
             || Ok(HashMap::new()),
             |scan_id| super::store::previous_scan_identities(self.conn, scan_id),
         )?;
-        let current_track_ids = tracks
+        // Identity decides per track, not per library: a library that grew by
+        // one file must not send every other file back through the reader.
+        //
+        // Reusing a stored reading also reuses the remote result behind it,
+        // because saved tags carry no MBIDs (`metadata_from_saved_tags`) and
+        // resolving a track from that would be worse than reading the file. So
+        // a scan that switches the network on after a local-only one starts
+        // over, and so does one whose previous scan never asked the network.
+        let may_reuse_readings = !request.options.remote_enabled
+            || previous_scan
+                .as_ref()
+                .is_some_and(|scan| scan.options.remote_enabled);
+        let unchanged_tracks = tracks
             .iter()
+            .filter(|track| {
+                may_reuse_readings
+                    && previous_tracks
+                        .get(&track.track_id)
+                        .is_some_and(|previous| previous.snapshot.reference == **track)
+            })
             .map(|track| track.track_id)
-            .collect::<Vec<_>>();
-        // A remote result belongs to the selected release for the whole album,
-        // not just to one file. Reuse it only when the complete frozen input is
-        // identical; a partial reuse could mix two release decisions again.
-        let reuse_remote_scan = request.options.remote_enabled
-            && previous_scan.as_ref().is_some_and(|scan| {
-                scan.options.remote_enabled
-                    && scan.track_ids == current_track_ids
-                    && tracks.iter().all(|track| {
-                        previous_tracks
-                            .get(&track.track_id)
-                            .is_some_and(|previous| previous.snapshot.reference == *track)
-                    })
-            });
-        let may_reuse_files = !request.options.remote_enabled || reuse_remote_scan;
+            .collect::<HashSet<_>>();
         let mut read_tracks = Vec::with_capacity(tracks.len());
         let mut remote_metadata = Vec::with_capacity(tracks.len());
         let mut snapshot_tracks = Vec::with_capacity(tracks.len());
+        let mut reused_readings = HashSet::new();
         let mut skipped_tracks = 0;
         let mut preview_summary = super::DoctorScanSummary::default();
         let to_read = tracks
             .iter()
-            .filter(|track| {
-                !may_reuse_files
-                    || !previous_tracks
-                        .get(&track.track_id)
-                        .is_some_and(|previous| previous.snapshot.reference == **track)
-            })
+            .filter(|track| !unchanged_tracks.contains(&track.track_id))
             .cloned()
             .collect::<Vec<_>>();
         // The reading pass is the long half of a large scan, so Cancel has to
@@ -168,20 +168,23 @@ impl<'connection> LibraryDoctor<'connection> {
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
-            let result = previous_tracks
-                .get(&track.track_id)
-                .filter(|previous| may_reuse_files && previous.snapshot.reference == *track)
-                .map_or_else(
-                    || local_reads.remove(&track.track_id).unwrap_or(None),
-                    |previous| {
-                        previous.snapshot.tags.clone().map(|tags| {
-                            let metadata = metadata_from_saved_tags(&tags);
-                            (tags, metadata)
-                        })
-                    },
-                );
+            let reused_reading = unchanged_tracks.contains(&track.track_id);
+            let result = if reused_reading {
+                previous_tracks
+                    .get(&track.track_id)
+                    .and_then(|previous| previous.snapshot.tags.clone())
+                    .map(|tags| {
+                        let metadata = metadata_from_saved_tags(&tags);
+                        (tags, metadata)
+                    })
+            } else {
+                local_reads.remove(&track.track_id).unwrap_or(None)
+            };
             match result {
                 Some((tags, metadata)) => {
+                    if reused_reading {
+                        reused_readings.insert(track.track_id);
+                    }
                     snapshot_tracks.push(DoctorTrackSnapshot {
                         reference: (*track).clone(),
                         tags: Some(tags.clone()),
@@ -249,16 +252,44 @@ impl<'connection> LibraryDoctor<'connection> {
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
-            if reuse_remote_scan {
-                reuse_remote_results(
-                    &read_tracks,
-                    &previous_tracks,
-                    &mut proposals,
-                    &mut unresolved_groups,
-                );
-            } else {
-                let album_groups = group_album_tracks(&read_tracks);
-                for indices in album_groups {
+            // A release is chosen for a whole album, so an album is reused as a
+            // whole or resolved as a whole: mixing a stored decision with a
+            // fresh one could put two releases into one album. Where a group
+            // has to be resolved again, the members whose reading was reused
+            // give it up — the release lookup deserves the same input a first
+            // scan would give it, MBIDs included.
+            let album_groups = reusable_album_groups(&read_tracks, &reused_readings);
+            let reread = album_groups
+                .iter()
+                .filter(|(_, reusable)| !*reusable)
+                .flat_map(|(indices, _)| indices.iter().copied())
+                .filter(|index| reused_readings.contains(&read_tracks[*index].reference.track_id))
+                .collect::<Vec<_>>();
+            if !refresh_reused_metadata(
+                &read_tracks,
+                &reread,
+                &mut remote_metadata,
+                &mut || {
+                    progress(DoctorScanProgress {
+                        phase: DoctorScanPhase::CheckingRemote,
+                        completed_tracks: tracks.len().saturating_sub(1),
+                        total_tracks: tracks.len(),
+                        summary: preview_summary,
+                    })
+                },
+            ) {
+                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+            }
+            for (indices, reusable) in album_groups {
+                if reusable {
+                    reuse_remote_results(
+                        &read_tracks,
+                        &indices,
+                        &previous_tracks,
+                        &mut proposals,
+                        &mut unresolved_groups,
+                    );
+                } else {
                     let query = album_query(&read_tracks, &indices);
                     let album_resolution = if let Some(query) = query {
                         let mut control = || {
@@ -487,13 +518,67 @@ fn metadata_from_saved_tags(
     }
 }
 
+/// Groups the read tracks by album and marks every group whose members all
+/// came out of the previous scan unchanged. Only such a group may keep the
+/// release decision that was made for it.
+fn reusable_album_groups(
+    read_tracks: &[ReadTrack],
+    reused_readings: &HashSet<i64>,
+) -> Vec<(Vec<usize>, bool)> {
+    group_album_tracks(read_tracks)
+        .into_iter()
+        .map(|indices| {
+            let reusable = indices
+                .iter()
+                .all(|index| reused_readings.contains(&read_tracks[*index].reference.track_id));
+            (indices, reusable)
+        })
+        .collect()
+}
+
+/// Reads the files of tracks whose reading was reused but whose album has to
+/// be resolved again after all. Saved tags carry no MBIDs, so without this the
+/// release lookup would see less than it does on a first scan.
+///
+/// Returns `false` when the scan was cancelled while reading.
+fn refresh_reused_metadata(
+    read_tracks: &[ReadTrack],
+    indices: &[usize],
+    remote_metadata: &mut [remote::RemoteTrackMetadata],
+    control: &mut dyn FnMut() -> ScanControl,
+) -> bool {
+    if indices.is_empty() {
+        return true;
+    }
+    let references = indices
+        .iter()
+        .map(|index| read_tracks[*index].reference.clone())
+        .collect::<Vec<_>>();
+    let pass = read_tracks_parallel(&references, control);
+    if pass.cancelled {
+        return false;
+    }
+    let mut metadata_by_track = pass
+        .reads
+        .into_iter()
+        .filter_map(|(track, result)| result.map(|(_, metadata)| (track.track_id, metadata)))
+        .collect::<HashMap<_, _>>();
+    for index in indices {
+        if let Some(metadata) = metadata_by_track.remove(&read_tracks[*index].reference.track_id) {
+            remote_metadata[*index] = metadata;
+        }
+    }
+    true
+}
+
 fn reuse_remote_results(
     read_tracks: &[ReadTrack],
+    indices: &[usize],
     previous_tracks: &HashMap<i64, super::store::PreviousTrackScan>,
     proposals: &mut Vec<super::DoctorProposal>,
     unresolved_groups: &mut Vec<super::DoctorUnresolvedGroup>,
 ) {
-    for track in read_tracks {
+    for track in indices.iter().map(|index| &read_tracks[*index]) {
         let track_id = track.reference.track_id;
         let Some(previous) = previous_tracks.get(&track_id) else {
             continue;

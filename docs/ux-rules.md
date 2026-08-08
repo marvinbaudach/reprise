@@ -3654,7 +3654,11 @@ means deterministic and high-confidence, never „without review".
   `doc_1g_a_second_scan_of_an_unchanged_library_reads_no_file`,
   `doc_1g_a_changed_file_is_read_again`,
   `doc_1g_a_skipped_track_keeps_its_previous_proposals`,
-  `doc_1g_the_reading_pass_stops_for_a_cancelled_scan`.
+  `doc_1g_the_reading_pass_stops_for_a_cancelled_scan`,
+  `doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader`.
+  *Amended 2026-08-08: unchanged is decided per track, so a library that grew
+  by one file keeps every other skip. The release decision stays whole: an
+  album is reused entirely or resolved entirely.*
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
