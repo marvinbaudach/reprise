@@ -536,7 +536,13 @@ fn plan_orphan_removals(
 
 fn is_removable_managed_path(path: &str) -> bool {
     let path = Path::new(path);
-    !super::track_metadata_list::is_list_path(path) && !super::lyrics_sidecar::is_sidecar_path(path)
+    // The report happens to be imported before removals today, but ordering is
+    // not a safety property: both halves of the return channel are managed
+    // files the desktop depends on and therefore are not litter.
+    path != Path::new(super::listen_report::REPORT_FILE_NAME)
+        && path != Path::new(super::listen_report::ACKNOWLEDGEMENT_FILE_NAME)
+        && !super::track_metadata_list::is_list_path(path)
+        && !super::lyrics_sidecar::is_sidecar_path(path)
 }
 
 fn plan_playlists(
