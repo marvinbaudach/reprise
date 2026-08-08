@@ -63,6 +63,31 @@ impl RunLog {
         self.counters.deleted = self.counters.deleted.saturating_add(1);
     }
 
+    pub(super) fn returned_report(
+        &mut self,
+        runtime: &DeviceSyncRuntime,
+        summary: &reprise_core::device_sync::listen_report::ListenReportApplySummary,
+    ) {
+        self.counters.listens_applied = self
+            .counters
+            .listens_applied
+            .saturating_add(u32::try_from(summary.listens_applied).unwrap_or(u32::MAX));
+        self.counters.ratings_applied = self
+            .counters
+            .ratings_applied
+            .saturating_add(u32::try_from(summary.ratings_applied).unwrap_or(u32::MAX));
+        for path in &summary.unresolved_paths {
+            self.counters.skipped = self.counters.skipped.saturating_add(1);
+            self.note(
+                runtime,
+                DeviationKind::Skipped,
+                None,
+                path,
+                "phone listen report path could not be resolved".into(),
+            );
+        }
+    }
+
     pub(super) fn note(
         &mut self,
         runtime: &DeviceSyncRuntime,

@@ -54,7 +54,6 @@ pub struct DeviceSettings {
     pub selection: DeviceSelection,
     pub profile: TransferProfile,
     pub opus_bitrate: u32,
-    pub ratings_back: bool,
     pub remove_deleted: bool,
     /// "Sync automatically when this phone connects" (design 7a). A
     /// per-device choice, not one of 7b's global sync rules — see the
@@ -80,7 +79,6 @@ impl DeviceSettings {
             selection: DeviceSelection::default(),
             profile: TransferProfile::default(),
             opus_bitrate: 0,
-            ratings_back: false,
             remove_deleted: true,
             // An unrememberable device must not silently auto-start on every
             // replug as though the app remembered a user choice.
@@ -324,7 +322,7 @@ pub fn load_or_create_settings(
     let existing = conn
         .query_row(
             "SELECT device_name, selection_json, mp3_quality, transfer_profile, opus_bitrate, \
-                    ratings_back, remove_deleted, sync_automatically, prepare_before_sync \
+                    remove_deleted, sync_automatically, prepare_before_sync \
              FROM device_settings WHERE device_serial = ?1",
             [serial],
             |row| {
@@ -337,7 +335,6 @@ pub fn load_or_create_settings(
                     row.get::<_, bool>(5)?,
                     row.get::<_, bool>(6)?,
                     row.get::<_, bool>(7)?,
-                    row.get::<_, bool>(8)?,
                 ))
             },
         )
@@ -348,7 +345,6 @@ pub fn load_or_create_settings(
         _mp3_quality,
         transfer_profile,
         bitrate,
-        _ratings_back,
         remove_deleted,
         sync_automatically,
         prepare_before_sync,
@@ -361,7 +357,6 @@ pub fn load_or_create_settings(
             selection: decode_selection(&selection)?,
             profile: TransferProfile::from_storage_value(&transfer_profile).unwrap_or_default(),
             opus_bitrate: normalized_bitrate(bitrate),
-            ratings_back: false,
             remove_deleted,
             sync_automatically,
             prepare_before_sync,
@@ -395,15 +390,14 @@ pub fn save_settings(
     conn.execute(
         "INSERT INTO device_settings \
          (device_serial, device_name, selection_json, mp3_quality, transfer_profile, \
-          opus_bitrate, ratings_back, remove_deleted, sync_automatically, prepare_before_sync) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, ?9) \
+          opus_bitrate, remove_deleted, sync_automatically, prepare_before_sync) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
          ON CONFLICT(device_serial) DO UPDATE SET \
            device_name = excluded.device_name, \
            selection_json = excluded.selection_json, \
            mp3_quality = excluded.mp3_quality, \
            transfer_profile = excluded.transfer_profile, \
            opus_bitrate = excluded.opus_bitrate, \
-           ratings_back = 0, \
            remove_deleted = excluded.remove_deleted, \
            sync_automatically = excluded.sync_automatically, \
            prepare_before_sync = excluded.prepare_before_sync",

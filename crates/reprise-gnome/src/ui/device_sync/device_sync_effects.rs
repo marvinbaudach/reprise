@@ -5,6 +5,93 @@
 
 use super::*;
 
+/// Best-effort phone-to-desktop input at the start of every transfer run.
+/// Applying the database transaction before publishing its acknowledgement
+/// is the ordering invariant that prevents a returned listen from being lost.
+pub(super) async fn apply_listen_report(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork) {
+    use reprise_core::device_sync::listen_report::{
+        apply_listen_report, ListenReport, ListenReportAcknowledgement, ACKNOWLEDGEMENT_FILE_NAME,
+        REPORT_FILE_NAME,
+    };
+
+    let bytes = match runtime
+        .backend
+        .read_managed_file(
+            work.root_uri.clone(),
+            work.playlists_path.clone(),
+            work.playlists_storage,
+            REPORT_FILE_NAME.into(),
+        )
+        .await
+    {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(device_id = work.device_id, %error, "could not read phone listen report");
+            return;
+        }
+    };
+    if !is_current_run(runtime, work) {
+        return;
+    }
+    if !work.persist_device_state {
+        tracing::warn!(
+            device_id = work.device_id,
+            "ignored phone listen report without a durable device identity"
+        );
+        return;
+    }
+    let report = match ListenReport::decode(&bytes) {
+        Ok(report) => report,
+        Err(error) => {
+            tracing::warn!(device_id = work.device_id, %error, "ignored malformed phone listen report");
+            return;
+        }
+    };
+    let summary = match apply_listen_report(&runtime.conn, &work.device_id, &report) {
+        Ok(summary) => summary,
+        Err(error) => {
+            tracing::warn!(device_id = work.device_id, %error, "could not apply phone listen report");
+            return;
+        }
+    };
+    work.log.returned_report(runtime, &summary);
+    let Some(sequence) = summary.acknowledged_sequence else {
+        return;
+    };
+    let acknowledgement = ListenReportAcknowledgement::new(sequence).encode();
+    let temporary_path = match reprise_core::device_sync::staging::stage_bytes(
+        &work.device_id,
+        0,
+        "listen-report-ack",
+        &acknowledgement,
+    ) {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!(device_id = work.device_id, %error, "could not stage phone listen acknowledgement");
+            return;
+        }
+    };
+    let result = runtime
+        .backend
+        .replace_track(
+            work.device_id.clone(),
+            work.root_uri.clone(),
+            work.playlists_path.clone(),
+            work.playlists_storage,
+            temporary_path.clone(),
+            ACKNOWLEDGEMENT_FILE_NAME.into(),
+            acknowledgement.len() as u64,
+            work.cancellable.clone(),
+            Rc::new(|_, _| {}),
+        )
+        .await;
+    reprise_core::device_sync::staging::discard(&temporary_path);
+    if let Err(error) = result {
+        tracing::warn!(device_id = work.device_id, %error, "could not write phone listen acknowledgement");
+    }
+}
+
 /// Performs one effect and returns the event that answers it.
 pub(super) async fn perform(
     runtime: &Rc<DeviceSyncRuntime>,
