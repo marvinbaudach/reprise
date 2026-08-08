@@ -13,6 +13,8 @@ pub use reprise_core::device_sync::{DeviceStorageInspection, DeviceStorageSnapsh
 
 #[path = "device_sync_identity.rs"]
 mod identity;
+#[path = "device_sync_projection.rs"]
+mod projection;
 pub use identity::{
     descriptor_from_mount, is_placeholder_name, project_descriptor, usb_facts_for_address,
     usb_serial_from_sysfs, DeviceDescriptor, UsbFacts,
@@ -120,30 +122,21 @@ impl Default for DeviceMonitor {
 /// is therefore order-dependent: depending on when the proxy monitor
 /// registers, `monitor.mounts()` can contain both entries (the shadowed one
 /// used to win and label a Pixel "mtp"), or only the shadowed daemon mount
-/// (filtering it left zero devices). The volume is the stable entity, so it
-/// is the source of identity, name, and icon; unshadowed `mtp://` mounts
-/// that no volume claims are kept as a fallback for exotic backends.
+/// (filtering it left zero devices). At startup, the volume-to-mount link and
+/// shadow flag can both arrive after the volume and mount themselves. Their
+/// matching root URIs are available immediately, so that stable relationship
+/// decides ownership. The volume remains the source of identity, name, and
+/// icon; unshadowed `mtp://` mounts with no matching volume root remain a
+/// fallback for exotic backends.
 fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
-    let mut devices = Vec::new();
-    let mut seen_roots = std::collections::HashSet::new();
+    let mut volume_projections = Vec::new();
+    let mut volume_descriptors = Vec::new();
     for volume in monitor.volumes() {
         let Some(root) = volume.activation_root() else {
             continue;
         };
         let root_uri = root.uri();
         if !root_uri.starts_with("mtp://") {
-            continue;
-        }
-        let mounted = volume.get_mount().is_some();
-        tracing::debug!(
-            name = %volume.name(),
-            root = %root_uri,
-            mounted,
-            "device sync: MTP volume observed"
-        );
-        // v1 shows only mounted devices (mount-on-demand is a follow-up);
-        // an unmounted volume simply stays hidden, as before.
-        if !mounted {
             continue;
         }
         let uuid = volume.uuid();
@@ -159,29 +152,68 @@ fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
             continue;
         };
         descriptor.icon = volume.icon();
-        seen_roots.insert(root_uri.to_string());
-        devices.push(descriptor);
+        volume_projections.push(projection::VolumeProjection {
+            name: descriptor.name.clone(),
+            root_uri: descriptor.root_uri.clone(),
+            persistent_id: descriptor.persistent_id.clone(),
+        });
+        volume_descriptors.push(descriptor);
     }
+
+    let mut mount_projections = Vec::new();
+    let mut mount_descriptors = Vec::new();
     for mount in monitor.mounts() {
-        // Shadowed mounts are the volume-owned devices' plumbing (see above);
-        // per g_mount_is_shadowed they must not be displayed.
-        if mount.is_shadowed() {
+        let root_uri = mount.root().uri().to_string();
+        if !root_uri.starts_with("mtp://") {
             continue;
         }
-        let Some(descriptor) = descriptor_from_mount(&mount) else {
-            continue;
+        let shadowed = mount.is_shadowed();
+        let descriptor = if shadowed {
+            None
+        } else {
+            descriptor_from_mount(&mount)
         };
-        if seen_roots.contains(&descriptor.root_uri) {
-            continue;
-        }
-        tracing::debug!(
-            name = %descriptor.name,
-            root = %descriptor.root_uri,
-            "device sync: unshadowed MTP mount without a volume"
-        );
-        devices.push(descriptor);
+        mount_projections.push(projection::MountProjection {
+            name: descriptor
+                .as_ref()
+                .map_or_else(|| mount.name().to_string(), |value| value.name.clone()),
+            root_uri,
+            persistent_id: descriptor
+                .as_ref()
+                .and_then(|value| value.persistent_id.clone()),
+            shadowed,
+        });
+        mount_descriptors.push(descriptor);
     }
-    devices.sort_by(|left, right| left.name.cmp(&right.name));
+
+    for volume in &volume_projections {
+        let mounted = mount_projections
+            .iter()
+            .any(|mount| mount.root_uri == volume.root_uri);
+        tracing::debug!(
+            name = %volume.name,
+            root = %volume.root_uri,
+            mounted,
+            "device sync: MTP volume observed"
+        );
+    }
+
+    let devices = projection::project_devices(&volume_projections, &mount_projections)
+        .into_iter()
+        .filter_map(|projected| match projected.source {
+            projection::ProjectionSource::Volume(index) => volume_descriptors.get(index).cloned(),
+            projection::ProjectionSource::Mount(index) => {
+                let descriptor = mount_descriptors.get(index)?.clone()?;
+                tracing::debug!(
+                    name = %projected.name,
+                    root = %projected.root_uri,
+                    persistent_id = ?projected.persistent_id,
+                    "device sync: unshadowed MTP mount without a volume"
+                );
+                Some(descriptor)
+            }
+        })
+        .collect::<Vec<_>>();
     tracing::debug!(count = devices.len(), "device sync: projected MTP devices");
     devices
 }
@@ -754,6 +786,10 @@ mod tests;
 #[cfg(test)]
 #[path = "device_sync_identity_tests.rs"]
 mod identity_tests;
+
+#[cfg(test)]
+#[path = "device_sync_projection_tests.rs"]
+mod projection_tests;
 
 #[cfg(test)]
 #[path = "device_sync_browser_tests.rs"]
