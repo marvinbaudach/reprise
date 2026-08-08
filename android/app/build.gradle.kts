@@ -21,11 +21,11 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "de.reprise.spike"
+        applicationId = "org.reprise"
         minSdk = 26
         targetSdk = 37
         versionCode = 1
-        versionName = "0.1"
+        versionName = workspacePackageValue("version")
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
         buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"All Rights Reserved\"")
