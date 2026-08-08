@@ -201,3 +201,85 @@ fn doc_8b_a_scan_with_no_auto_rows_creates_no_job() {
         0
     );
 }
+
+/// The fix that is already on disk is not a finding any more.
+///
+/// Writing a tag moves the file's mtime, and a moved mtime is exactly how the
+/// scan detects "changed under us" — so on the next load every track the quiet
+/// job touched read as stale, stale rows fall out of the quiet tier, and the
+/// result page offered the very changes it had just applied. The review list
+/// showed them with identical current and proposed values, and the sidebar
+/// count (which did exclude them) disagreed with the page.
+#[test]
+fn doc_9a_a_written_fix_does_not_come_back_as_a_finding_after_a_reload() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), "written.flac", " Artist ");
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let scan = scan_file(&db, &path);
+    assert!(
+        !scan.proposals.is_empty(),
+        "the fixture has stray spaces to fix"
+    );
+
+    let report = LibraryDoctor::new(&db)
+        .apply_auto_tier(&scan, |_| DoctorWriteControl::Continue)
+        .unwrap()
+        .unwrap();
+    assert!(report
+        .rows
+        .iter()
+        .any(|row| row.state == DoctorWriteRowState::Applied));
+
+    let reloaded = LibraryDoctor::new(&db)
+        .last_complete_scan()
+        .unwrap()
+        .expect("the scan is still the last complete one");
+    assert!(
+        reloaded.proposals.is_empty(),
+        "a written proposal is finished, not pending: {:?}",
+        reloaded.proposals
+    );
+    let summary = scan_summary(&reloaded, reloaded.options.remote_enabled);
+    assert_eq!(summary.review_changes, 0, "nothing is waiting for the user");
+    assert_eq!(summary.auto_applied_changes, 0);
+    assert_eq!(
+        crate::queries::count_pending_doctor_findings(&db).unwrap(),
+        0,
+        "the sidebar count and the page it badges have to agree"
+    );
+}
+
+/// …and it is a finding again the moment it is undone.
+#[test]
+fn doc_9a_an_undone_fix_is_a_finding_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), "undone.flac", " Artist ");
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let scan = scan_file(&db, &path);
+    let written = scan.proposals.len();
+    LibraryDoctor::new(&db)
+        .apply_auto_tier(&scan, |_| DoctorWriteControl::Continue)
+        .unwrap()
+        .unwrap();
+    assert!(LibraryDoctor::new(&db)
+        .last_complete_scan()
+        .unwrap()
+        .unwrap()
+        .proposals
+        .is_empty());
+
+    LibraryDoctor::new(&db)
+        .revert_last_cleanup(|_| DoctorWriteControl::Continue)
+        .unwrap()
+        .expect("there is a cleanup to revert");
+
+    let reloaded = LibraryDoctor::new(&db)
+        .last_complete_scan()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        reloaded.proposals.len(),
+        written,
+        "the revert put the tags back, so the proposals are open again"
+    );
+}

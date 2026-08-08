@@ -19,7 +19,7 @@ pub use presentation::*;
 pub use remote::{RemoteEvidence, RemoteEvidenceSource, RemoteTrackMetadata};
 pub use review::*;
 pub use scan::{DoctorScanCompletion, LibraryDoctor};
-pub use store::{reviewed_scan_id, set_reviewed_scan};
+pub use store::{reviewed_scan_id, set_reviewed_scan, stale_flags, written_pairs};
 pub use types::*;
 pub use write_types::*;
 
