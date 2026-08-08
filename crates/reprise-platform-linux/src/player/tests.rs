@@ -7,6 +7,7 @@ use crate::player_pipeline::{
 use reprise_core::library::settings::TrackTransition;
 
 mod cava_tests;
+mod handoff_duration_tests;
 mod stream_generation_tests;
 
 #[test]

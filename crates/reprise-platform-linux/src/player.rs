@@ -33,6 +33,16 @@ const POSITION_TICK_INTERVAL: Duration = Duration::from_millis(500);
 /// the current one. Reporting that pair would make the UI compute a fraction of
 /// `duration_old / duration_new` and jump the playhead backwards, so the last
 /// duration seen for the running stream is held until `StreamStart` lands.
+///
+/// Two pairings are deliberately left unguarded. A tick can land after the
+/// internal stream switch but before GLib dispatches `StreamStart` and clears
+/// the flag, pairing the new stream's near-zero position with the held
+/// duration — but the correct pairing puts the playhead at the very start of
+/// the track too, so there is nothing visible to gain by catching it. And
+/// `last_stable_ms` is never reset per track, so a track whose entire tenure
+/// is shorter than one 500 ms tick would still be described by an older
+/// track's duration; music files are never that short, and guarding it would
+/// cost more complexity than the case is worth.
 fn reported_duration_ms(queried_ms: i64, last_stable_ms: i64, handoff_pending: bool) -> i64 {
     if handoff_pending && last_stable_ms > 0 {
         last_stable_ms
