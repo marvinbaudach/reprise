@@ -1500,8 +1500,11 @@ result.
   read left to right as: the Music-only place pill; the removable search chip;
   active facet chips; the "+ Add filter" control where that view offers
   extensible facets; an expanding spacer; the view's count; and "Clear all"
-  at the right edge. A selection-only action follows "Clear all" rather than
-  entering the filter slots. No row renders a `FILTER` caption: the chips
+  at the right edge. The spacer is the only expanding slot: every slot before
+  it stays content-sized even when its child requests expansion, so "+ Add
+  filter" remains adjacent to the preceding search or facet chip. A
+  selection-only action follows "Clear all" rather than entering the filter
+  slots. No row renders a `FILTER` caption: the chips
   already state what restricts the list. With an active restriction, the
   count keeps the view's own unit and accents its bold shown number (for
   example "15 of 1,664 tracks" or "168 of 629 gaps"); "Clear all" clears the

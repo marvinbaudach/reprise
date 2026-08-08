@@ -69,7 +69,6 @@ impl FilterBarLayout {
         let facets = slot(FilterBarSlot::Facets);
         let add_filter = slot(FilterBarSlot::AddFilter);
         let spacer = slot(FilterBarSlot::Spacer);
-        spacer.set_hexpand(true);
         let count = slot(FilterBarSlot::Count);
         let clear_all = slot(FilterBarSlot::ClearAll);
         let trailing_action = slot(FilterBarSlot::TrailingAction);
@@ -180,6 +179,18 @@ impl FilterBarLayout {
         }
         None
     }
+
+    #[cfg(test)]
+    fn slot_widget(&self, slot: FilterBarSlot) -> gtk4::Widget {
+        let mut child = self.root.first_child();
+        while let Some(widget) = child {
+            if widget.widget_name() == slot.name() {
+                return widget;
+            }
+            child = widget.next_sibling();
+        }
+        panic!("missing filter-bar slot {slot:?}");
+    }
 }
 
 pub(in crate::ui) fn style_add_filter(button: &impl IsA<gtk4::Widget>) {
@@ -204,11 +215,13 @@ pub(in crate::ui) fn css() -> String {
 fn slot(kind: FilterBarSlot) -> gtk4::Box {
     let slot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     slot.set_widget_name(kind.name());
+    slot.set_hexpand(kind == FilterBarSlot::Spacer);
     slot
 }
 
 fn fill(slot: &gtk4::Box, widget: &impl IsA<gtk4::Widget>) {
     clear(slot);
+    widget.set_hexpand(false);
     slot.append(widget);
 }
 
@@ -220,7 +233,26 @@ fn clear(slot: &gtk4::Box) {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+
+    const NARROW_WIDTH: i32 = 800;
+    const WIDE_WIDTH: i32 = 1_120;
+
+    #[derive(Clone, Copy)]
+    enum FacetContainer {
+        FlowBox,
+        Box,
+    }
+
+    #[derive(Debug)]
+    struct Geometry {
+        root_width: f32,
+        add_gap: f32,
+        slot_gap: f32,
+        slot_widths: [f32; 8],
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
@@ -243,5 +275,164 @@ mod tests {
             ]
         );
         assert_eq!(layout.root().height_request(), FILTER_BAR_MIN_HEIGHT);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_2a_only_the_spacer_expands_across_all_six_filter_bars() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        for (bar, container) in [
+            ("Music", FacetContainer::FlowBox),
+            ("Releases", FacetContainer::FlowBox),
+            ("Concerts", FacetContainer::FlowBox),
+            ("Podcasts", FacetContainer::Box),
+            ("YouTube", FacetContainer::Box),
+            ("Radio", FacetContainer::Box),
+        ] {
+            for facets_full in [false, true] {
+                let narrow = measure_geometry(container, facets_full, NARROW_WIDTH);
+                let wide = measure_geometry(container, facets_full, WIDE_WIDTH);
+                let state = if facets_full { "full" } else { "empty" };
+
+                assert_close(
+                    wide.add_gap,
+                    narrow.add_gap,
+                    &format!(
+                        "{bar} moved Add filter away from the preceding {state} facets; narrow={narrow:?}; wide={wide:?}"
+                    ),
+                );
+                assert_close(
+                    wide.slot_gap,
+                    narrow.slot_gap,
+                    &format!("{bar} opened a slot gap before Add filter with {state} facets"),
+                );
+
+                for (index, slot) in all_slots().into_iter().enumerate() {
+                    if slot == FilterBarSlot::Spacer {
+                        continue;
+                    }
+                    assert_close(
+                        wide.slot_widths[index],
+                        narrow.slot_widths[index],
+                        &format!("{bar}'s {slot:?} slot expanded with {state} facets"),
+                    );
+                }
+
+                let spacer_index = all_slots()
+                    .iter()
+                    .position(|slot| *slot == FilterBarSlot::Spacer)
+                    .expect("the filter bar layout always contains a spacer slot");
+                assert_close(
+                    wide.slot_widths[spacer_index] - narrow.slot_widths[spacer_index],
+                    wide.root_width - narrow.root_width,
+                    &format!("{bar}'s spacer did not absorb all growth with {state} facets"),
+                );
+            }
+        }
+    }
+
+    fn measure_geometry(container: FacetContainer, facets_full: bool, width: i32) -> Geometry {
+        let layout = FilterBarLayout::new();
+        let search = gtk4::Button::with_label("⌕ falling");
+        layout.fill_search(&search);
+
+        let (facets, last_facet) = facet_container(container, facets_full);
+        // The slot contract must withstand any child requesting expansion.
+        facets.set_hexpand(true);
+        layout.fill_facets(&facets);
+
+        let add_filter = gtk4::Button::with_label("+ Add filter");
+        layout.fill_add_filter(&add_filter);
+        layout.fill_count(&gtk4::Label::new(Some("44 tracks")));
+        layout.fill_clear_all(&gtk4::Button::with_label("Clear all"));
+
+        let window = gtk4::Window::builder()
+            .default_width(width)
+            .child(layout.root())
+            .build();
+        window.set_size_request(width, -1);
+        window.present();
+        assert!(crate::ui::test_settle::settle_until_mapped(layout.root()));
+        crate::ui::test_settle::settle_for(Duration::from_millis(20));
+
+        let preceding = last_facet.unwrap_or_else(|| search.clone().upcast());
+        let preceding_bounds = preceding
+            .compute_bounds(layout.root())
+            .expect("preceding chip has filter-bar bounds");
+        let add_bounds = add_filter
+            .compute_bounds(layout.root())
+            .expect("Add filter has filter-bar bounds");
+        let facet_slot_bounds = layout
+            .slot_widget(FilterBarSlot::Facets)
+            .compute_bounds(layout.root())
+            .expect("facet slot has filter-bar bounds");
+        let add_slot_bounds = layout
+            .slot_widget(FilterBarSlot::AddFilter)
+            .compute_bounds(layout.root())
+            .expect("Add filter slot has filter-bar bounds");
+        let slot_widths = all_slots().map(|slot| {
+            layout
+                .slot_widget(slot)
+                .compute_bounds(layout.root())
+                .expect("slot has filter-bar bounds")
+                .width()
+        });
+        let geometry = Geometry {
+            root_width: layout.root().width() as f32,
+            add_gap: add_bounds.x() - preceding_bounds.x() - preceding_bounds.width(),
+            slot_gap: add_slot_bounds.x() - facet_slot_bounds.x() - facet_slot_bounds.width(),
+            slot_widths,
+        };
+        window.close();
+        geometry
+    }
+
+    fn facet_container(
+        container: FacetContainer,
+        full: bool,
+    ) -> (gtk4::Widget, Option<gtk4::Widget>) {
+        let facet = full.then(|| gtk4::Button::with_label("Genre: Metal"));
+        let widget = match container {
+            FacetContainer::FlowBox => {
+                let flow = gtk4::FlowBox::builder()
+                    .selection_mode(gtk4::SelectionMode::None)
+                    .column_spacing(6)
+                    .build();
+                if let Some(facet) = &facet {
+                    flow.insert(facet, -1);
+                }
+                flow.upcast()
+            }
+            FacetContainer::Box => {
+                let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+                if let Some(facet) = &facet {
+                    row.append(facet);
+                }
+                row.upcast()
+            }
+        };
+        (widget, facet.map(gtk4::glib::object::Cast::upcast))
+    }
+
+    fn all_slots() -> [FilterBarSlot; 8] {
+        [
+            FilterBarSlot::Place,
+            FilterBarSlot::Search,
+            FilterBarSlot::Facets,
+            FilterBarSlot::AddFilter,
+            FilterBarSlot::Spacer,
+            FilterBarSlot::Count,
+            FilterBarSlot::ClearAll,
+            FilterBarSlot::TrailingAction,
+        ]
+    }
+
+    fn assert_close(actual: f32, expected: f32, message: &str) {
+        assert!(
+            (actual - expected).abs() <= 1.0,
+            "{message}: expected {expected:.1}, got {actual:.1}"
+        );
     }
 }
