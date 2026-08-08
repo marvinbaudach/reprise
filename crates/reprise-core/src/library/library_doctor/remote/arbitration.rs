@@ -122,7 +122,7 @@ pub(super) fn is_complete(metadata: &RemoteTrackMetadata, identities: &[RemoteId
     })
 }
 
-fn ranked_candidates(identities: &[RemoteIdentity], field: DoctorField) -> Ranked<'_> {
+pub(super) fn ranked_candidates(identities: &[RemoteIdentity], field: DoctorField) -> Ranked<'_> {
     let year = (field == DoctorField::Year)
         .then(|| canonical_year(identities))
         .flatten();
@@ -212,11 +212,11 @@ fn unique_values<T: Ord>(values: impl Iterator<Item = T>) -> Vec<T> {
     values.collect::<BTreeSet<_>>().into_iter().collect()
 }
 
-fn has_clear_lead(ranked: &Ranked<'_>) -> bool {
+pub(super) fn has_clear_lead(ranked: &Ranked<'_>) -> bool {
     ranked.len() == 1 || max_score(&ranked[0].1).saturating_sub(max_score(&ranked[1].1)) >= 10
 }
 
-fn candidates_contradict(
+pub(super) fn candidates_contradict(
     metadata: &RemoteTrackMetadata,
     field: DoctorField,
     ranked: &Ranked<'_>,

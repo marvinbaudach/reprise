@@ -7,6 +7,8 @@
 mod acoustid;
 mod arbitration;
 mod cache;
+#[cfg(test)]
+mod diagnostics;
 pub(crate) mod guard_rails;
 mod metadata;
 mod network;
