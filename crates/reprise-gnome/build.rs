@@ -20,6 +20,7 @@ const ACCENT_KEY: &str = "reprise_teal";
 
 fn main() {
     println!("cargo:rerun-if-env-changed=REPRISE_GIT_SHA");
+    emit_git_rerun_paths();
 
     let sha = std::env::var("REPRISE_GIT_SHA")
         .ok()
@@ -72,8 +73,54 @@ fn is_hex_color(value: &str) -> bool {
         && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+/// Makes Cargo invalidate the embedded fallback SHA when this checkout moves.
+/// A linked worktree keeps `HEAD` in its per-worktree git directory while the
+/// symbolic branch ref lives in the shared common directory.
+fn emit_git_rerun_paths() {
+    let Some(git_dir) = git_metadata_dir("--git-dir") else {
+        return;
+    };
+    let head = git_dir.join("HEAD");
+    println!("cargo::rerun-if-changed={}", head.display());
+
+    let Ok(contents) = std::fs::read_to_string(&head) else {
+        return;
+    };
+    let Some(reference) = contents.strip_prefix("ref: ").map(str::trim) else {
+        return;
+    };
+    let Some(common_dir) = git_metadata_dir("--git-common-dir") else {
+        return;
+    };
+    println!(
+        "cargo::rerun-if-changed={}",
+        common_dir.join(reference).display()
+    );
+}
+
+fn git_metadata_dir(argument: &str) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(["rev-parse", argument])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = PathBuf::from(String::from_utf8(output.stdout).ok()?.trim());
+    if path.as_os_str().is_empty() {
+        return None;
+    }
+    Some(if path.is_absolute() {
+        path
+    } else {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
+    })
+}
+
 fn git_short_sha() -> Option<String> {
     let output = Command::new("git")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(["rev-parse", "--short", "HEAD"])
         .output()
         .ok()?;
