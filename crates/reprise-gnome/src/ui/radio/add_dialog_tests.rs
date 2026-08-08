@@ -1,5 +1,6 @@
 use super::super::add_dialog_rows::{candidate_row, title_markup};
 use super::*;
+use crate::ui::search_highlight::HighlightPalette;
 
 #[test]
 fn src_3a_radio_add_dialog_submits_search_or_url_through_one_field() {
@@ -199,15 +200,17 @@ fn rad_4_playlist_type_is_detected_without_consuming_a_live_stream() {
 /// query. Radio-browser's accent folding remains an accepted unmarked-row gap.
 #[test]
 fn rad_6_only_text_searches_supply_station_name_highlighting() {
+    let palette = HighlightPalette::new("#45d0b2", "#2ec8a6");
     assert_eq!(
-        title_markup("Metal & <More>", Some("metal"), Some("#2ec8a6")),
+        title_markup("Metal & <More>", Some("metal"), Some(&palette)),
         Some(
-            "<span foreground=\"#2ec8a6\" weight=\"bold\">Metal</span> &amp; &lt;More&gt;"
+            "<span foreground=\"#45d0b2\" background=\"#2ec8a6\" bgalpha=\"18%\" \
+             weight=\"bold\">Metal</span> &amp; &lt;More&gt;"
                 .to_owned()
         )
     );
     assert_eq!(
-        title_markup("La Grosse Radio Métal", Some("metal"), Some("#2ec8a6")),
+        title_markup("La Grosse Radio Métal", Some("metal"), Some(&palette)),
         None,
         "local ASCII comparison cannot reproduce radio-browser's accent folding"
     );
