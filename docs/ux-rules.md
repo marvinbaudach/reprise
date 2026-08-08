@@ -1021,8 +1021,13 @@ result.
   every replug. A device with no stable key is usable but not remembered, and
   the UI says so rather than pretending. Persisted per identity: target
   folders, last verified state, size on device, local name — nothing else.
-- **MTP-50** [active] [gtk] — The sidebar lists the active device first,
-  then remembered devices dimmed as history. A remembered device shows no
+- **MTP-50** [active] [gtk] — The sidebar shows the hardware that is here:
+  connected devices stand open, the active one first. Remembered devices are
+  history and wait, dimmed, behind the section heading, which carries a
+  disclosure arrow and opens them on click — keyboard included, closed again
+  on every launch, because a phone that is not plugged in is not a place to
+  go. With no history behind it the heading is a plain label: no arrow,
+  nothing to open. A remembered device shows no
   diff — only "Not connected · synced 3 days ago" or
   "Not connected · never verified" — because a balance for an absent device
   would be a guess. Opening one shows its target folders and last verified

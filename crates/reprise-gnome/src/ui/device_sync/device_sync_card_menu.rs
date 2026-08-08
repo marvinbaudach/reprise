@@ -12,7 +12,11 @@ const ACTION_GROUP: &str = "remembered-device";
 const ACTION_RENAME: &str = "rename";
 const ACTION_FORGET: &str = "forget";
 
-pub(super) fn wire(root: &gtk4::Button, runtime: &Rc<DeviceSyncRuntime>, device_id: &str) {
+pub(in crate::ui::sidebar) fn wire(
+    root: &gtk4::Button,
+    runtime: &Rc<DeviceSyncRuntime>,
+    device_id: &str,
+) {
     root.update_property(&[gtk4::accessible::Property::KeyShortcuts("Menu Shift+F10")]);
 
     // input-parity: ACC-8 keyboard=menu-shift-f10
