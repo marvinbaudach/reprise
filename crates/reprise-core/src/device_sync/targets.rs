@@ -143,16 +143,17 @@ pub struct SyncTarget {
 }
 
 impl SyncTarget {
-    /// The suggested target for a freshly seen device: the design
-    /// defaults, active immediately so a new device is usable without a
-    /// device-browser detour for the common case.
+    /// The suggested target for a freshly seen device. Playlists are the
+    /// common music-sync case and start active; YouTube audio and podcast
+    /// episodes wait until the user asks to sync that extra source to this
+    /// device. Their caps are still ready for the moment they are enabled.
     #[must_use]
     pub fn default_for(kind: SyncTargetKind) -> Self {
         Self {
             kind,
             storage_id: None,
             path: kind.default_path().to_string(),
-            enabled: true,
+            enabled: kind == SyncTargetKind::Playlists,
             cap_bytes: kind.default_cap_bytes(),
         }
     }
@@ -309,24 +310,55 @@ mod tests {
     }
 
     #[test]
-    fn mtp_38_defaults_match_the_design_docs_folders_and_caps() {
+    fn mtp_38_new_devices_enable_playlists_but_wait_for_extra_sources_to_be_requested() {
         let playlists = SyncTarget::default_for(SyncTargetKind::Playlists);
         let youtube = SyncTarget::default_for(SyncTargetKind::YoutubeAudio);
         let podcasts = SyncTarget::default_for(SyncTargetKind::PodcastEpisodes);
 
         assert_eq!(playlists.path, "/Music/Reprise");
         assert_eq!(playlists.cap_bytes, None);
+        assert!(playlists.enabled, "music playlists are the common case");
 
         assert_eq!(youtube.path, "/Music/Reprise-YouTube");
         assert_eq!(youtube.cap_bytes, Some(8 * GIB));
+        assert!(
+            !youtube.enabled,
+            "YouTube audio waits for this device's target to be switched on"
+        );
 
         assert_eq!(podcasts.path, "/Podcasts/Reprise");
         assert_eq!(podcasts.cap_bytes, Some(4 * GIB));
+        assert!(
+            !podcasts.enabled,
+            "podcast episodes wait for this device's target to be switched on"
+        );
 
         for target in [&playlists, &youtube, &podcasts] {
             assert_eq!(target.storage_id, None);
-            assert!(target.enabled);
         }
+    }
+
+    #[test]
+    fn mtp_38_a_persisted_target_is_not_replaced_by_the_new_device_default() {
+        let conn = migrated();
+        let existing = SyncTarget {
+            kind: SyncTargetKind::YoutubeAudio,
+            storage_id: Some(StorageId(7)),
+            path: "/Music/My Videos".into(),
+            enabled: true,
+            cap_bytes: Some(2 * GIB),
+        };
+        save_target(&conn, "mtp:existing", &existing).unwrap();
+
+        let loaded = load_or_create_targets(&conn, "mtp:existing").unwrap();
+
+        assert_eq!(
+            loaded
+                .into_iter()
+                .find(|target| target.kind == SyncTargetKind::YoutubeAudio),
+            Some(existing),
+            "an existing device keeps its persisted per-device target unchanged"
+        );
     }
 
     #[test]

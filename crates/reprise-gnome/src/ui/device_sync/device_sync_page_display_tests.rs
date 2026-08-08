@@ -427,11 +427,11 @@ fn unrememberable_device_disables_hero_rename_with_the_identity_explanation() {
     assert!(!tooltip.contains("history"));
 }
 
-/// `MTP-46`, the visible half: the core gate already keeps a switched-off
-/// source out of the plan, but a Content row still reading "0 of 3 channels"
-/// would tell the user their phone is set up to receive something it will
-/// never receive. Both halves run against the same page, so the only
-/// difference is the switch.
+/// `MTP-46`, the visible half: a globally available source keeps its Content
+/// row even when this phone's target is off, and explains that per-device
+/// opt-in instead of implying that a zero selection is active. Turning the
+/// global source off still removes the row entirely. Both halves run against
+/// the same page, so the only difference is that global switch.
 ///
 /// Deliberately not written against `root_text()` like its siblings: that
 /// helper walks every child regardless of visibility, so it would happily
@@ -491,6 +491,11 @@ fn mtp_46_a_switched_off_source_has_no_content_row_on_the_device_page() {
     assert!(
         on.contains("YouTube 0 B") && on.contains("Podcasts 0 B"),
         "visible sources also have entries in the storage legend"
+    );
+    assert_eq!(
+        on.matches("Not synchronized with this phone").count(),
+        2,
+        "both new extra-source targets stay discoverable and explain their per-device opt-in"
     );
 
     let mut youtube_off = both_on.clone();

@@ -32,6 +32,9 @@ mod memory_tests;
 mod presence_tests;
 #[path = "device_sync_remembered_tests.rs"]
 mod remembered_tests;
+#[path = "device_sync_target_fixture.rs"]
+mod target_fixture;
+use target_fixture::{disable_auto_start, enable_device_target};
 
 fn fixture() -> (tempfile::TempDir, Rc<Db>) {
     let temp = tempfile::tempdir().unwrap();
@@ -118,6 +121,7 @@ fn mtp_24_podcast_and_youtube_audio_are_always_copied_1_to_1_never_transcoded() 
             )
             .unwrap();
         disable_auto_start(&conn, "a");
+        enable_device_target(&conn, "a", SyncTargetKind::YoutubeAudio);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
@@ -185,6 +189,8 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
             )
             .unwrap();
         disable_auto_start(&conn, "a");
+        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
+        enable_device_target(&conn, "a", SyncTargetKind::YoutubeAudio);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         backend.state.podcast_files.replace(vec![ManagedDeviceFile {
@@ -271,6 +277,7 @@ fn mtp_46_switching_a_source_off_mid_sync_keeps_it_out_of_the_running_transfer()
             .unwrap();
         select_road_playlist(&conn, &[1]);
         save_road_settings(&conn, "a");
+        enable_device_target(&conn, "a", SyncTargetKind::YoutubeAudio);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         // Fires while the mirror phase copies the playlist track, which is
@@ -357,6 +364,7 @@ fn mtp_46_a_recompute_reloads_the_module_state_into_the_device_snapshot() {
         // `save_road_settings` also sets `remove_deleted: true`, which is
         // exactly the setting that makes the destructive reading possible.
         save_road_settings(&conn, "a");
+        enable_device_target(&conn, "a", SyncTargetKind::YoutubeAudio);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
@@ -467,6 +475,7 @@ fn mtp_36_the_persisted_latest_per_channel_actually_bounds_what_syncs() {
                 .unwrap();
         }
         disable_auto_start(&conn, "a");
+        enable_device_target(&conn, "a", SyncTargetKind::YoutubeAudio);
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
@@ -709,29 +718,6 @@ fn select_road_playlist(conn: &Rc<Db>, ids: &[i64]) {
             .unwrap();
     }
     save_road_settings(conn, "a");
-}
-
-/// `MTP-30`: seeds a device-settings row with the switch off and no
-/// playlist selection, for tests that set up their own podcast/YouTube work
-/// directly via SQL and then drive `sync_now` manually — without this, the
-/// default-on switch (`DEFAULT 1`, schema v44) would start a sync on
-/// connect before the test's own `sync_now` call runs, doubling every copy.
-fn disable_auto_start(conn: &Rc<Db>, device_id: &str) {
-    save_settings(
-        conn,
-        &DeviceSettings {
-            device_serial: device_id.into(),
-            device_name: format!("Phone {device_id}"),
-            selection: DeviceSelection::Sources(Vec::new()),
-            profile: reprise_core::device_sync::TransferProfile::default(),
-            opus_bitrate: 0,
-            ratings_back: false,
-            remove_deleted: true,
-            sync_automatically: false,
-            prepare_before_sync: true,
-        },
-    )
-    .unwrap();
 }
 
 fn save_road_settings(conn: &Rc<Db>, device_id: &str) {

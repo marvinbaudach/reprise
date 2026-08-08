@@ -365,6 +365,7 @@ impl ContentPanel {
                 device.youtube_selection,
                 device.podcast_selection,
                 device.keep_smart_playlists_updated,
+                content_row.target_enabled,
             ));
             let cap = device_sync_strings::cap_text(content_row.cap_bytes);
             row.cap_button.set_label(&cap);

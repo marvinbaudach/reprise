@@ -3,6 +3,14 @@ use chrono::TimeZone;
 use reprise_core::device_sync::PreparationPhase;
 
 #[test]
+fn source_off_uses_the_catalogued_global_source_copy() {
+    assert_eq!(
+        category_reading_text(&reprise_core::device_sync::CategoryReading::SourceOff),
+        "Source off"
+    );
+}
+
+#[test]
 fn design_2c_legend_uses_short_translatable_names_and_shared_size_formatting() {
     use reprise_core::device_sync::SyncTargetKind;
 

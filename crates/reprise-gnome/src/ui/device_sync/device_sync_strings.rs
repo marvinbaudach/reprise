@@ -110,6 +110,7 @@ pub const SMART_LISTS_FROZEN: &str = N_!("smart lists keep their current content
 pub const ALL_EPISODES: &str = N_!("all episodes");
 pub const UNPLAYED_ONLY: &str = N_!("unplayed only");
 pub const PLAYED_ARE_REMOVED: &str = N_!("played are removed");
+pub const NOT_SYNCHRONIZED_WITH_PHONE: &str = N_!("Not synchronized with this phone");
 pub const NO_SIZE_LIMIT: &str = N_!("no size limit");
 const LEGEND_MUSIC: &str = N_!("Music");
 const LEGEND_YOUTUBE: &str = N_!("YouTube");
@@ -376,7 +377,7 @@ pub fn to_download(count: usize) -> String {
 pub fn category_reading_text(reading: &reprise_core::device_sync::CategoryReading) -> String {
     use reprise_core::device_sync::CategoryReading;
     match reading {
-        CategoryReading::SourceOff => "Source off".to_string(),
+        CategoryReading::SourceOff => text(N_!("Source off")),
         CategoryReading::UnavailableKeptOnPhone => "Unavailable, kept on phone".to_string(),
         CategoryReading::Diff(diff) => detailed_balance_parts(
             diff.files_to_copy,
