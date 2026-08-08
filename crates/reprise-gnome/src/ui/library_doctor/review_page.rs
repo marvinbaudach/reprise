@@ -354,7 +354,7 @@ impl LibraryDoctorReviewPage {
         let header = ReviewHeader::new();
         let filter_bar = ReviewFilterBar::new(&categories);
         let empty = adw::StatusPage::builder()
-            .icon_name("emblem-ok-symbolic")
+            .icon_name(crate::ui::icons::DONE)
             .title(strings::text(strings::DOCTOR_NO_CHANGES))
             .description(strings::text(strings::DOCTOR_NO_CHANGES_DESCRIPTION))
             .build();

@@ -203,8 +203,15 @@ impl LibraryDoctorCoordinator {
             self.open_root_page();
         } else {
             // A finished revert put the tags back, so the applied block has
-            // nothing left to report and `Undo` nothing left to undo.
+            // nothing left to report and `Undo` nothing left to undo…
             self.page.mark_reverted();
+            // …and the findings it reverted are open again. The page is holding
+            // the projection from before the revert, in which those proposals
+            // were finished and therefore filtered out of the stored scan; only
+            // a reload sees them come back. Without this the page claims
+            // "Nothing to fix" while the tags on disk are unfixed, and says so
+            // until the next restart.
+            self.load_last_scan();
         }
         self.show_write_toasts(kind, report);
     }

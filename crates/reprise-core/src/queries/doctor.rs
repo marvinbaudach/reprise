@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::db::Db;
 use crate::library_doctor::{DoctorField, ProposalSource};
 
@@ -16,21 +14,13 @@ pub fn count_pending_doctor_findings(db: &Db) -> Result<u32, rusqlite::Error> {
         return Ok(0);
     };
 
-    let mut applied_statement = db.conn().prepare(
-        "SELECT f.track_id, v.field FROM tag_write_journal v
-         JOIN tag_write_job_files f ON v.file_id = f.id
-         JOIN tag_write_jobs j ON j.id = f.job_id
-         WHERE j.scan_id = ?1 AND j.kind = 'doctor_apply' AND v.outcome = 'applied'",
-    )?;
-    let applied = applied_statement
-        .query_map([scan_id], |row| {
-            let raw_field = row.get::<_, String>(1)?;
-            let field = DoctorField::parse(&raw_field).ok_or_else(|| {
-                rusqlite::Error::InvalidColumnType(1, raw_field, rusqlite::types::Type::Text)
-            })?;
-            Ok((row.get::<_, i64>(0)?, field))
-        })?
-        .collect::<Result<HashSet<_>, _>>()?;
+    // Both sets come from the store, which is also what `last_complete_scan`
+    // reads — so this count and the page it badges cannot disagree. They used to:
+    // this query asked the tier predicate with `stale: false` while the page
+    // asked with the track's real staleness, and one scan then reported 85 here
+    // and 200 on its own page.
+    let written = crate::library_doctor::written_pairs(db.conn(), scan_id)?;
+    let stale = crate::library_doctor::stale_flags(db.conn(), scan_id)?;
 
     let mut proposal_statement = db.conn().prepare(
         "SELECT track_id, field, source, preselected
@@ -50,9 +40,14 @@ pub fn count_pending_doctor_findings(db: &Db) -> Result<u32, rusqlite::Error> {
     let mut pending = 0u32;
     for proposal in proposals {
         let (track_id, field, source, preselected) = proposal?;
-        if !crate::library_doctor::is_auto_applied_parts(field, source, preselected, false)
-            && !applied.contains(&(track_id, field))
-        {
+        let kind = crate::library_doctor::finding_kind(
+            field,
+            source,
+            preselected,
+            written.contains(&(track_id, field)),
+            stale.get(&track_id).copied().unwrap_or(true),
+        );
+        if kind == crate::library_doctor::DoctorFindingKind::NeedsReview {
             pending = pending.saturating_add(1);
         }
     }
@@ -80,7 +75,36 @@ mod tests {
         scan_id
     }
 
+    /// A scanned track, snapshot and library row alike, with one identity.
+    ///
+    /// Without this a proposal's track has no snapshot, and "no snapshot" reads
+    /// as "changed under us" — the cautious default the review list has always
+    /// used. A scan the app can actually produce always snapshots what it read,
+    /// so the fixture has to as well or it tests a state that cannot happen.
+    fn seed_scan_track(db: &crate::db::Db, scan_id: i64, position: i64, track_id: i64) {
+        let path = format!("/fixtures/track-{track_id}.flac");
+        db.conn()
+            .execute(
+                "INSERT OR IGNORE INTO tracks \
+                 (id, path, title, added_at, file_mtime, file_size) \
+                 VALUES (?1, ?2, 'Fixture', 0, 11, 22)",
+                rusqlite::params![track_id, path],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT OR IGNORE INTO library_doctor_scan_tracks \
+                 (scan_id, position, track_id, path, file_mtime, file_size, device, inode, \
+                  read_ok, title, artist, album, album_artist, year, track_no, genre) \
+                 VALUES (?1, ?2, ?3, ?4, 11, 22, NULL, NULL, 1, \
+                         'Fixture', ' Before ', 'Album', '', NULL, NULL, 'Rock')",
+                rusqlite::params![scan_id, position, track_id, path],
+            )
+            .unwrap();
+    }
+
     fn seed_proposal(db: &crate::db::Db, scan_id: i64, position: i64, track_id: i64, source: &str) {
+        seed_scan_track(db, scan_id, position, track_id);
         db.conn()
             .execute(
                 "INSERT INTO library_doctor_proposals \

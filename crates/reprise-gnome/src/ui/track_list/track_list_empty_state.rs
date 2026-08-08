@@ -245,7 +245,9 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
         EmptyState::MissingClear => {
             shared.empty_page.add_css_class("missing-clear-state");
             shared.empty_page.set_child(gtk4::Widget::NONE);
-            shared.empty_page.set_icon_name(Some("emblem-ok-symbolic"));
+            shared
+                .empty_page
+                .set_icon_name(Some(crate::ui::icons::DONE));
             shared
                 .empty_page
                 .set_title(&strings::text(strings::MISSING_CLEAR_TITLE));

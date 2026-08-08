@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use rusqlite::{Connection, OptionalExtension};
 
 use super::{
@@ -293,6 +295,81 @@ fn load_tracks(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorTrackSnapsho
     Ok(tracks)
 }
 
+/// The `(track, field)` pairs this scan's own tag-write job has on disk.
+///
+/// The one place that SQL lives. `queries::doctor` used to carry its own copy,
+/// and the sidebar count and the result page drifted apart as a result. A
+/// revert sets these rows back to `reverted`, so an undone fix leaves this set
+/// and becomes a finding again.
+pub fn written_pairs(
+    conn: &Connection,
+    scan_id: i64,
+) -> Result<HashSet<(i64, DoctorField)>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT f.track_id, v.field FROM tag_write_journal v \
+         JOIN tag_write_job_files f ON v.file_id = f.id \
+         JOIN tag_write_jobs j ON j.id = f.job_id \
+         WHERE j.scan_id = ?1 AND j.kind = 'doctor_apply' AND v.outcome = 'applied'",
+    )?;
+    let pairs = statement
+        .query_map([scan_id], |row| {
+            let raw_field = row.get::<_, String>(1)?;
+            let field = DoctorField::parse(&raw_field).ok_or_else(|| {
+                rusqlite::Error::InvalidColumnType(1, raw_field, rusqlite::types::Type::Text)
+            })?;
+            Ok((row.get::<_, i64>(0)?, field))
+        })?
+        .collect::<Result<HashSet<_>, _>>()?;
+    Ok(pairs)
+}
+
+/// Per snapshotted track: does it still look the way the scan read it?
+///
+/// Compared with the same `DoctorTrackRef` equality `load_tracks` uses, so
+/// "changed under us" cannot mean two different things in two places. Callers
+/// read it exactly as `DoctorReviewSession` does — `get(id).unwrap_or(true)` —
+/// so a track with no snapshot at all counts as changed, which is the cautious
+/// answer and the one the review list already gave.
+pub fn stale_flags(conn: &Connection, scan_id: i64) -> Result<HashMap<i64, bool>, rusqlite::Error> {
+    let mut statement = conn.prepare(&format!(
+        "SELECT s.track_id, s.path, s.file_mtime, s.file_size, s.device, s.inode, \
+                t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode \
+         FROM library_doctor_scan_tracks s \
+         LEFT JOIN tracks t ON t.id = s.track_id AND {} \
+         WHERE s.scan_id = ?1",
+        crate::queries::PRESENT
+    ))?;
+    let rows = statement.query_map([scan_id], |row| {
+        let snapshot = DoctorTrackRef {
+            track_id: row.get(0)?,
+            path: std::path::PathBuf::from(row.get::<_, String>(1)?),
+            file_mtime: row.get(2)?,
+            file_size: row.get(3)?,
+            device: row.get(4)?,
+            inode: row.get(5)?,
+        };
+        let current = match row.get::<_, Option<i64>>(6)? {
+            Some(track_id) => Some(DoctorTrackRef {
+                track_id,
+                path: std::path::PathBuf::from(row.get::<_, String>(7)?),
+                file_mtime: row.get(8)?,
+                file_size: row.get(9)?,
+                device: row.get(10)?,
+                inode: row.get(11)?,
+            }),
+            None => None,
+        };
+        Ok((snapshot, current))
+    })?;
+    let mut stale = HashMap::new();
+    for row in rows {
+        let (snapshot, current) = row?;
+        let changed = current.is_none_or(|current| current != snapshot);
+        stale.insert(snapshot.track_id, changed);
+    }
+    Ok(stale)
+}
+
 fn current_identity(
     conn: &Connection,
     track_id: i64,
@@ -380,7 +457,18 @@ fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>
         })?
         .collect::<Result<Vec<_>, _>>()
         .map_err(DoctorError::from)?;
-    Ok(proposals)
+    // A proposal this scan's own job already wrote is finished, and a finished
+    // proposal is not a finding. Dropping it here is what keeps every surface
+    // agreeing: the summary, the review list and the sidebar count all read the
+    // scan, so none of them can offer a change that is already on disk — which
+    // is what happened after a restart, because our own write moves the file's
+    // mtime and a moved mtime reads as "changed under us", i.e. as stale, and
+    // stale rows fall out of the quiet tier into review.
+    let written = written_pairs(conn, scan_id)?;
+    Ok(proposals
+        .into_iter()
+        .filter(|proposal| !written.contains(&(proposal.track_id, proposal.field)))
+        .collect())
 }
 
 fn load_groups(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorUnresolvedGroup>, DoctorError> {

@@ -3781,7 +3781,19 @@ means deterministic and high-confidence, never „without review".
   even if not every row was applied. A finished scan never interrupts: on the
   Doctor page it resolves in place, elsewhere it is that sidebar row. Exactly
   one toast fires, "N tags fixed" with Undo, and only for the set that was
-  applied without asking. Findings that need review never toast. *Tests:*
+  applied without asking. Findings that need review never toast.
+  **A change that is already on disk is not a finding.** What the scan's own
+  tag-write job wrote leaves the finding set — until an Undo puts the journal
+  row back to `reverted`, which makes it a finding again. There is exactly one
+  predicate for this (`library_doctor::finding_kind`), asked with the track's
+  real staleness, and the sidebar count and the result page both read it. They
+  used to disagree: the count asked with `stale: false` while the pages asked
+  with the real value, so a restart turned every fix the quiet job had just
+  written into a review row — our own write moves the file's mtime, a moved
+  mtime reads as "changed under us", and a stale row falls out of the quiet
+  tier. One scan then reported 85 findings in the sidebar and 200 on its own
+  page, and offered rows whose current and proposed values were identical.
+  *Tests:*
   `doc_8a_the_menu_carries_exactly_one_library_doctor_item_and_no_sync_device`,
   `doc_8a_the_issues_entry_appears_only_with_unreviewed_findings`,
   `doc_8a_quiet_fixes_produce_one_undo_toast_and_review_findings_produce_none`,
@@ -3863,14 +3875,15 @@ means deterministic and high-confidence, never „without review".
   `doc_9a_the_result_column_is_flush_left_and_capped`,
   `doc_9a_a_clean_library_gets_the_empty_state_not_three_empty_blocks`,
   `doc_9a_undo_is_dead_until_there_is_something_to_undo`,
-  `doc_9a_the_conflict_count_is_a_property_of_the_scanned_scope`.
+  `doc_9a_the_conflict_count_is_a_property_of_the_scanned_scope`,
+  `doc_9a_a_written_fix_does_not_come_back_as_a_finding_after_a_reload`,
+  `doc_9a_an_undone_fix_is_a_finding_again`.
   Two defects this rule's own screenshot pass caught, both older than it:
   `emblem-ok-symbolic` is not in the installed Adwaita symbolic set and drew the
-  missing-image box, so the Doctor's "done" glyph is `object-select-symbolic`
-  now (six other call sites in the app still use the missing name); and the
-  `ISSUES` action row only answered the keyboard, because
-  `GtkListBoxRow::activate` does not fire for a single click on a row the list
-  box has no source for — it carries a click gesture as well now.
+  missing-image box — every call site now reads `ui::icons::DONE`, which is one
+  name in one place; and the `ISSUES` action row only answered the keyboard,
+  because `GtkListBoxRow::activate` does not fire for a single click on a row the
+  list box has no source for — it carries a click gesture as well now.
 
 - **DOC-9b** [active] [gtk] — **The review list is grouped by album.** Rows
   appear in scope order under one header per album carrying a group checkbox,

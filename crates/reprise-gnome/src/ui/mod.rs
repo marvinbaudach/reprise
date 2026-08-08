@@ -42,6 +42,7 @@ pub(crate) mod external_link;
 pub(crate) mod file_open;
 pub mod first_run;
 mod help;
+mod icons;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
 mod issues;
