@@ -22,7 +22,6 @@ use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
     ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
 };
-use crate::ui::library_doctor::remote_toggle;
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -308,7 +307,6 @@ const fn outcome_transition(state: DoctorWriteRowState) -> OutcomeTransition {
 pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
     state: Rc<ReviewState>,
-    remote: adw::SwitchRow,
     rows: gtk4::ListView,
     all: gtk4::Button,
     none: gtk4::Button,
@@ -317,9 +315,9 @@ pub(super) struct LibraryDoctorReviewPage {
 impl LibraryDoctorReviewPage {
     pub(super) fn new(
         conn: &Rc<Db>,
-        parent: &adw::ApplicationWindow,
+        _parent: &adw::ApplicationWindow,
         scan: &DoctorScan,
-        on_remote_changed: Rc<dyn Fn(bool)>,
+        _on_remote_changed: Rc<dyn Fn(bool)>,
         on_reviewed: Rc<dyn Fn()>,
         on_edit: &OnEdit,
     ) -> Rc<Self> {
@@ -449,25 +447,8 @@ impl LibraryDoctorReviewPage {
         let top_bar = adw::HeaderBar::new();
         top_bar.pack_end(&presets);
 
-        let state_for_remote = state.clone();
-        let remote = remote_toggle::remote_suggestions_row_for(
-            conn,
-            parent,
-            Rc::new(move |visible| {
-                state_for_remote.set_remote_visible(visible);
-                on_remote_changed(visible);
-            }),
-        );
-        state.set_remote_visible(remote.is_active());
-        let options = adw::PreferencesGroup::new();
-        options.add(&remote);
-        let options_clamp = adw::Clamp::builder()
-            .maximum_size(760)
-            .child(&options)
-            .build();
         let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
         page_content.set_margin_top(12);
-        page_content.append(&options_clamp);
         page_content.append(&state.filter_bar.root);
         page_content.append(&header.root);
         page_content.append(&state.content);
@@ -506,7 +487,6 @@ impl LibraryDoctorReviewPage {
         let page = Rc::new(Self {
             navigation_page,
             state,
-            remote,
             rows,
             all,
             none,
@@ -524,11 +504,7 @@ impl LibraryDoctorReviewPage {
     }
 
     pub(super) fn set_remote_active(&self, active: bool) {
-        if self.remote.is_active() != active {
-            self.remote.set_active(active);
-        } else {
-            self.state.set_remote_visible(active);
-        }
+        self.state.set_remote_visible(active);
     }
 
     pub(super) fn connect_apply(&self, callback: impl Fn(DoctorApplyPlan) + 'static) {
@@ -542,7 +518,6 @@ impl LibraryDoctorReviewPage {
     }
 
     pub(super) fn set_running(&self, running: bool) {
-        self.remote.set_sensitive(!running);
         self.rows.set_sensitive(!running);
         self.all.set_sensitive(!running);
         self.none.set_sensitive(!running);

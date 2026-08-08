@@ -182,6 +182,15 @@ fn doc_9b_one_column_header_serves_the_whole_page() {
 }
 
 #[test]
+fn doc_7c_the_review_page_carries_no_provider_toggle() {
+    let source = include_str!("review_page.rs");
+
+    assert!(!source.contains("remote_suggestions_row_for"));
+    assert!(!source.contains("PreferencesGroup"));
+    assert!(!source.contains("options_clamp"));
+}
+
+#[test]
 fn doc_9b_every_reviewable_row_starts_selected() {
     let mut source = scan();
     let mut capped = source.proposals[0].clone();
