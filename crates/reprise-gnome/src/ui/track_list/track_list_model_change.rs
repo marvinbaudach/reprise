@@ -18,11 +18,16 @@ pub(in crate::ui) fn changed_range(
     changed_ids: &[i64],
     generation: u64,
 ) -> Option<ModelChange> {
+    // A set, not the caller's slice: both trims below test membership once per
+    // untouched row, so a linear scan makes this O(rows × changed_ids). Tag
+    // saves edit a handful of tracks and never noticed, but the deletion path
+    // feeds in whatever the user multi-selected — and this runs synchronously
+    // on the UI thread, in the very code meant to keep deletion responsive.
+    let changed: std::collections::HashSet<i64> = changed_ids.iter().copied().collect();
+
     let mut prefix = 0;
     while before.get(prefix) == after.get(prefix)
-        && before
-            .get(prefix)
-            .is_some_and(|id| !changed_ids.contains(id))
+        && before.get(prefix).is_some_and(|id| !changed.contains(id))
     {
         prefix += 1;
     }
@@ -32,7 +37,7 @@ pub(in crate::ui) fn changed_range(
     while before_end > prefix
         && after_end > prefix
         && before[before_end - 1] == after[after_end - 1]
-        && !changed_ids.contains(&before[before_end - 1])
+        && !changed.contains(&before[before_end - 1])
     {
         before_end -= 1;
         after_end -= 1;
