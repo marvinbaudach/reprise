@@ -171,7 +171,6 @@ for pattern in \
   'Enable Library Doctor' \
   'safe_change_count' \
   'browse-3-sidebar-escapes-doctor' \
-  'nav-7-rescan-progress' \
   'Revert Last Cleanup'
 do
   if ! rg --quiet -- "$pattern" "$runner" "$session_library"; then

@@ -205,15 +205,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     );
     super::compact_mode_suggestion::install(window, toast_overlay, minimal_view, player.is_some());
 
-    let rescan_conn = conn.clone();
-    let rescan_scan_controls = scan_controls.clone();
-    let rescan_toast_overlay = toast_overlay.clone();
-    let rescan_db_path = db_path.to_path_buf();
-    let rescan_track_list = track_list.clone();
-    let rescan_sidebar = sidebar.clone();
-    let rescan_watcher_state = watcher_state.clone();
     let menu_preferences = preferences.clone();
-    let cancel_scan_controls = scan_controls.clone();
     let findings_library_doctor = library_doctor.clone();
     let menu_library_doctor = library_doctor;
     let stop_player = player.as_ref().map(|player| {
@@ -228,28 +220,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // backend above is: this is where the window layer may name a platform
     // concrete, and the composition root is held below 600 lines.
     let spectrogram_batch = super::spectrogram_backend::build(db_path.to_path_buf());
-    let library_menu = super::primary_menu::install(
+    super::primary_menu::install(
         header,
         window,
         track_list,
         super::primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
-            on_rescan_library: Rc::new(move || {
-                super::scan_flow::trigger_rescan_of_library_root(
-                    &rescan_conn,
-                    &rescan_scan_controls,
-                    &rescan_toast_overlay,
-                    rescan_db_path.clone(),
-                    rescan_track_list.clone(),
-                    rescan_sidebar.clone(),
-                    &rescan_watcher_state,
-                );
-            }),
-            on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
-            on_analyze_library: Rc::new({
-                let batch = spectrogram_batch.clone();
-                move || batch.toggle()
-            }),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),
             on_library_doctor_findings: Rc::new(move || findings_library_doctor.open_findings()),
             on_import_playlist: {
@@ -259,40 +235,20 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             on_stop_playback: stop_player,
             on_preferences: Rc::new(move || menu_preferences.present()),
         },
-        scan_controls,
     );
     app.set_accels_for_action("win.open-primary-menu", &["F10"]);
-    // One refresh for both jobs: the section's two labels are rebuilt together,
-    // so a scan starting can never leave the analysis item showing the label of
-    // the other state.
-    let refresh_library_menu = {
-        let library_menu = library_menu.clone();
-        let scan_controls = scan_controls.clone();
-        let batch = Rc::downgrade(&spectrogram_batch);
-        Rc::new(move || {
-            super::primary_menu::update_library_section(
-                &library_menu,
-                super::primary_menu::LibraryMenuState {
-                    is_scanning: scan_controls.is_scanning(),
-                    is_analyzing: batch.upgrade().is_some_and(|batch| batch.is_running()),
-                },
-            );
-        })
-    };
-    scan_controls.set_on_scan_state_changed({
-        let refresh = refresh_library_menu.clone();
-        move |_| refresh()
-    });
-    spectrogram_batch.subscribe_progress(|| true, {
-        let refresh = refresh_library_menu.clone();
-        move |_| refresh()
-    });
     super::spectrogram_batch_progress::install(scan_controls, &spectrogram_batch);
+    {
+        // The menu action used to own the batch for the window lifetime.
+        // Completion now owns it instead, so the idle start and later scans
+        // still reach the same resumable batch after that action is gone.
+        let batch = spectrogram_batch.clone();
+        scan_controls.add_on_complete(move || batch.start());
+    }
     // The colour of the seek bar arrives the way its shape already does: by
     // itself. The run is resumable, so a library that is already analyzed ends
-    // it immediately and shows nothing; the menu item is the way to stop one
-    // that is under way. Deferred to idle so it never competes with the first
-    // frame.
+    // it immediately and shows nothing; the scan card cancels a visible run.
+    // Deferred to idle so it never competes with the first frame.
     {
         let batch = spectrogram_batch.clone();
         gtk4::glib::idle_add_local_once(move || batch.start());

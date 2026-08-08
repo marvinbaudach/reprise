@@ -1,4 +1,4 @@
-//! Shared scan cancellation, progress fan-out, and trigger state.
+//! Shared scan cancellation, completion, and progress fan-out.
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -16,7 +16,6 @@ use super::strings;
 
 type OnScanComplete = Rc<dyn Fn()>;
 type OnCancelRequested = Rc<dyn Fn()>;
-type OnScanStateChanged = Rc<dyn Fn(bool)>;
 type OnPresentationChanged = dyn Fn(Option<String>);
 
 pub(in crate::ui) struct ScanPresentationSubscription {
@@ -171,7 +170,7 @@ fn cloned_slot<T: Clone>(slot: &RefCell<Option<T>>) -> Option<T> {
 pub(in crate::ui) struct ScanCompletion(Rc<RefCell<Vec<OnScanComplete>>>);
 
 impl ScanCompletion {
-    pub(in crate::ui) fn set(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn add(&self, callback: impl Fn() + 'static) {
         self.0.borrow_mut().push(Rc::new(callback));
     }
 
@@ -210,7 +209,6 @@ pub(in crate::ui) struct ScanControls {
     completion: ScanCompletion,
     cancellation: ScanCancellation,
     on_cancel_requested: Rc<RefCell<Vec<OnCancelRequested>>>,
-    on_scan_state_changed: Rc<RefCell<Option<OnScanStateChanged>>>,
     empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
     sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
     library_root_unavailable: Rc<Cell<bool>>,
@@ -227,7 +225,6 @@ impl ScanControls {
             completion: ScanCompletion::default(),
             cancellation: ScanCancellation::default(),
             on_cancel_requested: Rc::new(RefCell::new(Vec::new())),
-            on_scan_state_changed: Rc::new(RefCell::new(None)),
             empty_indicator: Rc::new(RefCell::new(None)),
             sidebar_toggle: Rc::new(RefCell::new(None)),
             library_root_unavailable: Rc::new(Cell::new(false)),
@@ -280,17 +277,6 @@ impl ScanControls {
 
     pub(in crate::ui) fn is_cancel_requested(&self) -> bool {
         self.cancellation.is_requested()
-    }
-
-    pub(in crate::ui) fn set_on_scan_state_changed(&self, callback: impl Fn(bool) + 'static) {
-        *self.on_scan_state_changed.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn notify_scan_state(&self) {
-        let callback = self.on_scan_state_changed.borrow().clone();
-        if let Some(callback) = callback {
-            callback(self.is_scanning());
-        }
     }
 
     pub(in crate::ui) fn attach_chrome_view(&self, progress: &ScanChromeView) {
@@ -428,8 +414,8 @@ impl ScanControls {
         }
     }
 
-    pub(in crate::ui) fn set_on_complete(&self, callback: impl Fn() + 'static) {
-        self.completion.set(callback);
+    pub(in crate::ui) fn add_on_complete(&self, callback: impl Fn() + 'static) {
+        self.completion.add(callback);
     }
 
     pub(in crate::ui) fn notify_complete(&self) {

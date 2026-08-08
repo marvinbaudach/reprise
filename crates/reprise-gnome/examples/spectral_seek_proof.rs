@@ -1,6 +1,6 @@
-//! Proof that the menu item's worker produces a coloured seek bar.
+//! Proof that the rendering-data worker produces a coloured seek bar.
 //!
-//! Runs the same backfill the "Analyze Library" item starts, against a copy of
+//! Runs the same automatic backfill as the app, against a copy of
 //! a real database, and then asks the same question the seek bar asks: what
 //! colour does this track's curve give at a few positions? Without a stored
 //! spectrogram every position answers with the same fallback, which is exactly

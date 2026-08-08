@@ -73,18 +73,6 @@ impl SpectrogramBatch {
             .subscribe(self.progress.get(), is_alive, callback);
     }
 
-    /// Starts a run, or stops the running one. This is the whole of what the
-    /// menu item does, so that the item's two labels cannot drift from the
-    /// two behaviours. The item is the stop, not the permission: the window
-    /// starts a run on launch without going through here.
-    pub(in crate::ui) fn toggle(self: &Rc<Self>) {
-        if self.is_running() {
-            self.cancel();
-        } else {
-            self.start();
-        }
-    }
-
     pub(in crate::ui) fn start(self: &Rc<Self>) {
         if self.is_running() {
             return;

@@ -232,7 +232,7 @@ run_fresh_install_scenario() {
 
 run_populated_library_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/fixture-music"
-  local initial_path missing_path progress_path results_path
+  local initial_path missing_path results_path
 
   echo "[cua-e2e] populated library: fixture scan -> semantic search"
   mkdir -p "$fixture_dir"
@@ -251,16 +251,6 @@ run_populated_library_scenario() {
   assert_snapshot_absent "$initial_path" "Tracks"
   assert_snapshot_absent "$initial_path" "Albums"
   assert_snapshot_absent "$initial_path" "Artists"
-
-  echo "[cua-e2e] nav-7-rescan-progress: menu rescan keeps content and exposes progress"
-  cua_activate_main_menu_item \
-    "$APP_PID" "$WINDOW_ID" "Rescan Library" nav-7-rescan-progress
-  progress_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Scanning library" nav-7-rescan-progress-visible)
-  assert_snapshot_contains "$progress_path" "Search all fields"
-  wait_for_label_absent \
-    "$APP_PID" "$WINDOW_ID" "Scanning library" nav-7-rescan-progress-finished \
-    >/dev/null
 
   # This is an isolated copy below the run's mktemp root, never user music.
   # Removing it exercises the real watcher and makes the Issues surface part
