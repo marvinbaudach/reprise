@@ -61,8 +61,18 @@ pub fn set_rating(db: &Db, track_id: i64, rating: i32) -> Result<(), rusqlite::E
 /// the row behind them has since been removed. [`set_rating`] keeps the silent
 /// zero-row behaviour its desktop call sites were written against.
 pub fn set_rating_if_present(db: &Db, track_id: i64, rating: i32) -> Result<bool, rusqlite::Error> {
+    set_rating_at_if_present(db, track_id, rating, now_unix())
+}
+
+/// Timestamped form used when a frontend must persist the same moment in an
+/// outward event journal after the database write succeeds.
+pub fn set_rating_at_if_present(
+    db: &Db,
+    track_id: i64,
+    rating: i32,
+    rated_at: i64,
+) -> Result<bool, rusqlite::Error> {
     let clamped = rating.clamp(RATING_MIN, RATING_MAX);
-    let rated_at = now_unix();
     let changed = db.conn().execute(
         "UPDATE tracks SET rating = ?1, rated_at = ?2 \
          WHERE id = ?3 AND removed_at IS NULL",

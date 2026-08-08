@@ -22,7 +22,7 @@ use std::sync::Mutex;
 /// upsert, the import-error path — through a source the scanner has never seen,
 /// rather than through `UnixLibrarySource` in disguise. It deliberately has no
 /// mount grouping boundary even when a test gives it filesystem-backed paths.
-struct ScriptedSource {
+pub(super) struct ScriptedSource {
     items: Vec<super::source::LibraryWalkItem>,
     contents: HashMap<std::path::PathBuf, Vec<u8>>,
     display_names: HashMap<std::path::PathBuf, String>,
@@ -32,7 +32,7 @@ struct ScriptedSource {
 }
 
 impl ScriptedSource {
-    fn new(items: Vec<super::source::LibraryWalkItem>) -> Self {
+    pub(super) fn new(items: Vec<super::source::LibraryWalkItem>) -> Self {
         Self {
             items,
             contents: HashMap::new(),
@@ -43,12 +43,12 @@ impl ScriptedSource {
         }
     }
 
-    fn with_content(mut self, path: std::path::PathBuf, bytes: Vec<u8>) -> Self {
+    pub(super) fn with_content(mut self, path: std::path::PathBuf, bytes: Vec<u8>) -> Self {
         self.contents.insert(path, bytes);
         self
     }
 
-    fn with_display_name(mut self, path: std::path::PathBuf, name: &str) -> Self {
+    pub(super) fn with_display_name(mut self, path: std::path::PathBuf, name: &str) -> Self {
         self.display_names.insert(path, name.to_owned());
         self
     }
@@ -192,7 +192,10 @@ fn scripted_file_with_metadata(path: &std::path::Path) -> super::source::Library
     })
 }
 
-fn scripted_virtual_file(path: &std::path::Path, size: u64) -> super::source::LibraryWalkItem {
+pub(super) fn scripted_virtual_file(
+    path: &std::path::Path,
+    size: u64,
+) -> super::source::LibraryWalkItem {
     super::source::LibraryWalkItem::Entry(super::source::LibraryEntry {
         path: path.to_path_buf(),
         is_file: true,
@@ -613,51 +616,6 @@ fn synced_metadata_replaces_only_the_tracks_named_by_the_desktop() {
         [second.to_string_lossy().as_ref()],
         "a desktop four stays four and therefore is not a phone favourite"
     );
-}
-
-#[test]
-fn synced_metadata_uses_the_source_relative_name_not_an_opaque_handle() {
-    use crate::device_sync::track_metadata_list::{
-        TrackMetadataEntry, TrackMetadataList, FILE_NAME,
-    };
-
-    let tmp = tempfile::tempdir().unwrap();
-    let staging = fixture_copy(tmp.path(), "staging.flac");
-    let bytes = std::fs::read(&staging).unwrap();
-    std::fs::remove_file(staging).unwrap();
-    let track_handle = tmp.path().join("document-731.flac");
-    let list_handle = tmp.path().join("document-941.rpl");
-    let list = TrackMetadataList::new(vec![TrackMetadataEntry {
-        device_path: "Phone Song.flac".into(),
-        rating: 5,
-        play_count: 41,
-    }])
-    .encode()
-    .unwrap();
-    let source = ScriptedSource::new(vec![
-        scripted_virtual_file(&track_handle, bytes.len() as u64),
-        scripted_virtual_file(&list_handle, list.len() as u64),
-    ])
-    .with_content(track_handle.clone(), bytes)
-    .with_content(list_handle.clone(), list)
-    .with_display_name(track_handle.clone(), "Phone Song.flac")
-    .with_display_name(list_handle, FILE_NAME);
-    let db = crate::db::Db::open_in_memory().unwrap();
-
-    completed(scan_folder_with_source(&source, &db, tmp.path()).unwrap());
-
-    let track = crate::queries::query_library_text_search(
-        &db,
-        "",
-        crate::queries::WindowRange {
-            offset: 0,
-            limit: 10,
-        },
-    )
-    .unwrap()
-    .rows
-    .remove(0);
-    assert_eq!((track.rating, track.play_count), (5, 41));
 }
 
 #[test]

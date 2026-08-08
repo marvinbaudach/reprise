@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::playback::{
@@ -124,11 +125,16 @@ impl RecordingPort {
 
 pub(super) struct RecordingListener {
     pub(super) snapshots: Arc<Mutex<Vec<AndroidPlaybackSnapshot>>>,
+    pub(super) report_changes: Arc<AtomicUsize>,
 }
 
 impl AndroidPlaybackListener for RecordingListener {
     fn on_playback_changed(&self, snapshot: AndroidPlaybackSnapshot) {
         self.snapshots.lock().unwrap().push(snapshot);
+    }
+
+    fn on_listen_report_changed(&self) {
+        self.report_changes.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -144,6 +150,7 @@ pub(super) fn recording_session() -> SessionFixture {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let bridge = Arc::new(Mutex::new(None));
     let snapshots = Arc::new(Mutex::new(Vec::new()));
+    let report_changes = Arc::new(AtomicUsize::new(0));
     let directory = tempfile::tempdir().unwrap();
     let session = AndroidPlaybackSession::new(
         directory.path().to_str().unwrap(),
@@ -153,6 +160,7 @@ pub(super) fn recording_session() -> SessionFixture {
         }),
         Box::new(RecordingListener {
             snapshots: Arc::clone(&snapshots),
+            report_changes,
         }),
     )
     .unwrap();

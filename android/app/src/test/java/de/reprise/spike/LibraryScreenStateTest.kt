@@ -302,7 +302,7 @@ private class RecordingLibrarySessionPort(
         remembered = treeUri
     }
 
-    override fun persistReadPermission(treeUri: String) {
+    override fun persistTreePermission(treeUri: String) {
         operations += "persist:$treeUri"
     }
 

@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use reprise_core::playback::{PlaybackBackend, PlayerEvent, StreamEvent, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 
+use crate::listen_export_recorder::{ListenExportRecorder, RecordedListen};
 use crate::play_recorder::{PlayRecorder, RecordedPlay};
 use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
@@ -52,6 +53,7 @@ pub struct AndroidPlaybackSnapshot {
 #[uniffi::export(callback_interface)]
 pub trait AndroidPlaybackListener: Send + Sync {
     fn on_playback_changed(&self, snapshot: AndroidPlaybackSnapshot);
+    fn on_listen_report_changed(&self);
 }
 
 struct SessionState {
@@ -218,7 +220,7 @@ impl SessionState {
         snapshot
     }
 
-    fn play_to_record(&mut self, completed: bool) -> Option<i64> {
+    fn play_to_record(&mut self, completed: bool) -> Option<(i64, u64)> {
         if completed {
             self.max_position_ms = self.max_position_ms.max(self.snapshot.duration_ms);
         }
@@ -232,7 +234,10 @@ impl SessionState {
         }
         let track_id = self.current_track_id()?;
         self.play_recorded = true;
-        Some(track_id)
+        Some((
+            track_id,
+            u64::try_from(self.max_position_ms.max(0)).unwrap_or(u64::MAX),
+        ))
     }
 }
 
@@ -248,8 +253,9 @@ struct SessionInner {
     state: Mutex<SessionState>,
     database: Mutex<reprise_core::db::Db>,
     backend: OnceLock<AndroidPlaybackBackend>,
-    listener: Box<dyn AndroidPlaybackListener>,
+    listener: Arc<dyn AndroidPlaybackListener>,
     plays: PlayRecorder,
+    listen_exports: ListenExportRecorder,
     database_path: PathBuf,
 }
 
@@ -411,8 +417,14 @@ impl SessionInner {
         // Queued, not written: this runs on Media3's application thread, and
         // `FollowUp::Start` below is the gapless transition into the next
         // track. See `play_recorder`.
-        if let Some(track_id) = play_to_record {
-            self.plays.record(RecordedPlay::now(track_id));
+        if let Some((track_id, ms_played)) = play_to_record {
+            let play = RecordedPlay::now(track_id);
+            self.plays.record(play);
+            self.listen_exports.record(RecordedListen {
+                track_id,
+                at_unix: play.at_unix,
+                ms_played,
+            });
         }
 
         match follow_up {
@@ -471,12 +483,18 @@ impl AndroidPlaybackSession {
                     detail: format!("could not read playback statistics journal state: {error}"),
                 }
             })?;
+        let listener: Arc<dyn AndroidPlaybackListener> = Arc::from(listener);
+        let report_listener = Arc::clone(&listener);
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::from_restored(restored)),
             database: Mutex::new(database),
             backend: OnceLock::new(),
             listener,
             plays: PlayRecorder::spawn(database_path.clone(), applied_play_sequence),
+            listen_exports: ListenExportRecorder::spawn(
+                database_path.clone(),
+                Arc::new(move || report_listener.on_listen_report_changed()),
+            ),
             database_path,
         });
         let weak = Arc::downgrade(&inner);
@@ -579,6 +597,21 @@ impl AndroidPlaybackSession {
             .map_err(|error| AndroidPlaybackError::Backend {
                 detail: error.to_string(),
             })
+    }
+
+    // UniFFI transfers optional byte buffers by value across the ABI.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn prepare_listen_report(
+        &self,
+        acknowledgement: Option<Vec<u8>>,
+    ) -> Result<Vec<u8>, AndroidPlaybackError> {
+        crate::listen_export_journal::prepare_report(
+            &self.inner.database_path,
+            acknowledgement.as_deref(),
+        )
+        .map_err(|error| AndroidPlaybackError::Backend {
+            detail: format!("could not prepare listen report: {error}"),
+        })
     }
 
     pub fn set_shuffle(&self, enabled: bool) -> Result<(), AndroidPlaybackError> {
