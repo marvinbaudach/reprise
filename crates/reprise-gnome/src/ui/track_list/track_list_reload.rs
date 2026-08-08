@@ -534,6 +534,10 @@ pub(super) fn reload_with_anchor_and_viewport(
     .then(|| gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view))
     .flatten()
     .filter(|_| captured.anchor.is_some() || shared.pre_search_anchor.get().is_some())
+    // A zero in a view the reload is about to leave is not a position worth
+    // protecting: the hold would pin the list to the top while anchor restore
+    // writes the meaningful destination.
+    .filter(|adjustment| adjustment.value() > 0.0)
     .map(|adjustment| AdjustmentHold::new(&adjustment));
     run_query(shared, model_change);
     restore_reload_anchor(shared, captured, viewport, hold.clone(), current_ids);
