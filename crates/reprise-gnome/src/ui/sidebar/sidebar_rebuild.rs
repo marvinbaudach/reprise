@@ -370,7 +370,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
                 &strings::text(strings::LIBRARY_DOCTOR),
                 pending_doctor_count,
                 NavIcon::LibraryDoctor,
-                "win.library-doctor",
+                "win.library-doctor-findings",
             );
         }
     }
@@ -503,11 +503,32 @@ fn add_issue_action_row(
     row.set_selectable(false);
     // a11y-semantics: role=list-item name=library-doctor state=focusable action=activate
     row.set_focusable(true);
-    row.connect_activate(move |row| {
-        if let Err(error) = row.activate_action(action, None) {
-            tracing::error!(%error, action, "failed to activate sidebar issue action");
+    // input-parity: ACC-8 keyboard=issue-action-row-enter
+    row.connect_activate(move |row| activate_issue_action(row, action));
+    // …and once more for the pointer. `GtkListBoxRow::activate` fires for
+    // keyboard activation; a single click makes the *list box* emit
+    // `row-activated` instead, and this row has no `ViewSource` for the box's
+    // own handler to act on. Measured on 2026-08-07: clicking the Library
+    // Doctor entry only focused it while Enter opened the review, and a click
+    // on a neighbouring row navigated fine — so the row, not the click, was
+    // the problem.
+    // input-parity: ACC-8 keyboard=issue-action-row-enter
+    let click = gtk4::GestureClick::new();
+    click.connect_released(move |gesture, _, _, _| {
+        if gesture.current_button() != 1 {
+            return;
+        }
+        if let Some(row) = gesture.widget().and_downcast::<gtk4::ListBoxRow>() {
+            activate_issue_action(&row, action);
         }
     });
+    row.add_controller(click);
     shared.issues_listbox.append(&row);
     remember_issue_focus_entry(&shared.issues_listbox, &row);
+}
+
+fn activate_issue_action(row: &gtk4::ListBoxRow, action: &'static str) {
+    if let Err(error) = row.activate_action(action, None) {
+        tracing::error!(%error, action, "failed to activate sidebar issue action");
+    }
 }

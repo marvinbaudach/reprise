@@ -15,6 +15,11 @@ use crate::ui::track_list::TrackList;
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 pub(super) const ACTION_LIBRARY_DOCTOR: &str = "library-doctor";
+/// The sidebar's `ISSUES` entry, which exists only because a completed scan
+/// has findings nobody has looked at yet. The menu holds the verb ("run a
+/// scan") and lands on the Doctor's own page; this action holds the noun and
+/// goes straight to the findings.
+pub(super) const ACTION_LIBRARY_DOCTOR_FINDINGS: &str = "library-doctor-findings";
 pub(super) const ACTION_IMPORT_PLAYLIST: &str = "import-playlist";
 pub(super) const ACTION_STOP_PLAYBACK: &str = "stop-playback";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
@@ -27,6 +32,7 @@ const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
     pub(super) on_library_doctor: Rc<dyn Fn()>,
+    pub(super) on_library_doctor_findings: Rc<dyn Fn()>,
     pub(super) on_import_playlist: Rc<dyn Fn()>,
     pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
     pub(super) on_preferences: Rc<dyn Fn()>,
@@ -154,6 +160,13 @@ pub(super) fn install(
         library_doctor.connect_activate(move |_, _| cb());
     }
     window.add_action(&library_doctor);
+
+    let library_doctor_findings = gio::SimpleAction::new(ACTION_LIBRARY_DOCTOR_FINDINGS, None);
+    {
+        let cb = callbacks.on_library_doctor_findings.clone();
+        library_doctor_findings.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&library_doctor_findings);
 
     let import_playlist = gio::SimpleAction::new(ACTION_IMPORT_PLAYLIST, None);
     {

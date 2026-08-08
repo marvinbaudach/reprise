@@ -9,6 +9,10 @@ use reprise_core::library::scanner::ScanProgress;
 
 use super::strings;
 
+/// A legible floor for the card's title, in characters. Ellipsizing alone lets
+/// the row's other children shrink the label to nothing.
+const TITLE_MIN_CHARS: i32 = 16;
+
 pub(super) const PULSE_INTERVAL: Duration = Duration::from_millis(100);
 pub(super) const PULSE_STEP: f64 = 0.08;
 pub(super) const MIN_VISIBLE_TIME: Duration = Duration::from_millis(700);
@@ -171,6 +175,12 @@ impl ScanProgressView {
             .halign(gtk4::Align::Start)
             .hexpand(true)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
+            // …but ellipsize with no floor lets the row's other children shrink
+            // this label to a few characters, which is how two different job
+            // cards both ended up reading "Che…" and looked like duplicates of
+            // each other. Keep a legible minimum; the detail line absorbs the
+            // shortfall, which is what its own ellipsis is for.
+            .width_chars(TITLE_MIN_CHARS)
             .build();
         title.add_css_class("scan-card-title");
 
@@ -182,6 +192,7 @@ impl ScanProgressView {
 
         let cancel = gtk4::Button::with_label(&strings::text(strings::CANCEL_SCAN));
         cancel.add_css_class("flat");
+        cancel.add_css_class("scan-card-cancel");
         cancel.set_visible(false);
 
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
