@@ -3,6 +3,8 @@
 //! Extracted as one cohesive cell factory to keep the shared column module
 //! below the project's 800-line code-file cap.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk4::glib;
@@ -25,11 +27,16 @@ pub(in crate::ui) fn append_title_column(
     shared: &Rc<Shared>,
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
+    let tooltip_states = Rc::new(RefCell::new(HashMap::<
+        usize,
+        crate::ui::lazy_tooltip::LazyTooltip,
+    >::new()));
 
     let shared_for_bind = shared.clone();
     let shared_for_unbind = shared.clone();
     let shared = shared.clone();
     let column_view_for_setup = column_view.clone();
+    let tooltip_states_for_setup = tooltip_states.clone();
     factory.connect_setup(move |_, obj| {
         let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
             tracing::warn!("title column setup: object is not a ListItem");
@@ -43,11 +50,15 @@ pub(in crate::ui) fn append_title_column(
         label.set_xalign(0.0);
         label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         label.set_hexpand(true);
+        let missing_tooltip = crate::ui::lazy_tooltip::LazyTooltip::install(&label);
+        tooltip_states_for_setup
+            .borrow_mut()
+            .insert(item.as_ptr() as usize, missing_tooltip);
         row.append(&eq);
         row.append(&label);
         let ai_badge = gtk4::Label::new(Some(&strings::text(strings::AI_BADGE_LABEL)));
         ai_badge.add_css_class("stats-badge");
-        ai_badge.set_tooltip_text(Some(&strings::text(strings::AI_BADGE_TOOLTIP)));
+        crate::ui::lazy_tooltip::install(&ai_badge, strings::text(strings::AI_BADGE_TOOLTIP));
         ai_badge.set_visible(false);
         row.append(&ai_badge);
         track_list_context_menu::wire_context_menu_gesture(
@@ -61,6 +72,7 @@ pub(in crate::ui) fn append_title_column(
         list_density::inherit(&column_view_for_setup, &row);
     });
 
+    let tooltip_states_for_bind = tooltip_states.clone();
     factory.connect_bind(move |_, obj| {
         let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
             tracing::warn!("title column bind: object is not a ListItem");
@@ -84,6 +96,12 @@ pub(in crate::ui) fn append_title_column(
             tracing::warn!("title column bind: title cell has no label child");
             return;
         };
+        let key = item.as_ptr() as usize;
+        let missing_tooltip = tooltip_states_for_bind.borrow().get(&key).cloned();
+        let Some(missing_tooltip) = missing_tooltip else {
+            tracing::warn!("title column bind: missing tooltip state");
+            return;
+        };
         let Some(boxed) = item
             .item()
             .and_then(|object| object.downcast::<glib::BoxedAnyObject>().ok())
@@ -96,9 +114,9 @@ pub(in crate::ui) fn append_title_column(
         if track.is_some_and(Track::is_missing) {
             let track = track.expect("checked above");
             label.set_text(&track.title);
-            apply_missing_title(&label, track);
+            apply_missing_title(&label, &missing_tooltip, track);
         } else if let Some(track) = track {
-            apply_missing_title(&label, track);
+            apply_missing_title(&label, &missing_tooltip, track);
             match match_highlight::highlight_from_filter(&track.title, &shared_for_bind.filter, {
                 let label = label.clone();
                 move || match_highlight::accent_foreground(&label)
@@ -107,7 +125,7 @@ pub(in crate::ui) fn append_title_column(
                 None => label.set_text(&track.title),
             }
         } else {
-            clear_missing_title(&label);
+            clear_missing_title(&label, &missing_tooltip);
             label.set_text(queue_item_presentation::title(&metadata));
         }
         let playing = apply_now_playing_item(&row, &metadata, &shared_for_bind, false);
@@ -134,6 +152,14 @@ pub(in crate::ui) fn append_title_column(
     factory.connect_unbind(move |_, obj| {
         if let Some(item) = obj.downcast_ref::<gtk4::ListItem>() {
             now_playing_marker::unregister_cell(&shared_for_unbind, item);
+        }
+    });
+
+    factory.connect_teardown(move |_, obj| {
+        if let Some(item) = obj.downcast_ref::<gtk4::ListItem>() {
+            tooltip_states
+                .borrow_mut()
+                .remove(&(item.as_ptr() as usize));
         }
     });
 
