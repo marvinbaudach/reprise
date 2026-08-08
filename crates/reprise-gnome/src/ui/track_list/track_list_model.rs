@@ -304,6 +304,16 @@ impl TrackListModel {
             state.cache.clear();
             (change, sections_changed)
         };
+        // Callers read `generation()` as "has anything reshaped this model since
+        // I looked?" — `delete_tracks` captures it before its confirmation
+        // dialog opens and trusts it afterwards. A queue snapshot reshapes the
+        // model just as a re-query does (an automatic advance while the dialog
+        // is open is the live case), so it has to move the counter too.
+        // Otherwise the guard reports "unchanged" and the deletion restores
+        // focus and scroll from a stale row map.
+        self.imp()
+            .generation
+            .set(self.imp().generation.get().wrapping_add(1));
         let (items, sections) = queue_snapshot_emissions(change, sections_changed, new_total);
         if let Some((position, removed, added)) = items {
             super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
