@@ -590,8 +590,9 @@ result.
   and how many files were planned; it closes with the balance of what was
   copied, skipped, removed and failed, and with the reason when the run did
   not complete. A run whose session ends without closing it — the app died,
-  the cable was pulled — is marked interrupted by the next run rather than
-  left open or dropped, because "it never finished" is itself the answer.
+  the cable was pulled — is marked interrupted with an end time when Reprise
+  next starts rather than left open or dropped, because "it never finished"
+  is itself the answer.
   Successful copies are counted, not listed; every file that deviated —
   skipped, failed, removed, or kept in its original format — is recorded
   individually with its device path and reason, removals included, since the
@@ -599,7 +600,8 @@ result.
   asked. The device page shows the recorded runs newest first, one
   expandable row each with its deviations inside. Recording never blocks a
   sync: a log write that fails is dropped, not propagated. Only the most
-  recent thirty runs are kept.
+  recent thirty runs per device are kept, and the whole log is capped at 240
+  runs so volatile connection identities cannot grow it without bound.
 - **MTP-21** [active] [core] — A file counts as transferred only once it is
   proven to be on the device under its final name. Transfers publish through
   a `.part` file and rename it at the end; that rename is confirmed

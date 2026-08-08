@@ -20,6 +20,24 @@ fn unremembered_start(started_at: i64) -> reprise_core::device_sync::sync_log::R
 }
 
 #[test]
+fn runtime_startup_closes_a_run_orphaned_by_the_previous_session() {
+    let (_temp, conn) = fixture();
+    let orphan =
+        reprise_core::device_sync::sync_log::start_run(&conn, &unremembered_start(4_000)).unwrap();
+    let backend = Rc::new(FakeBackend::new(Vec::new(), 1));
+
+    let _runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+
+    let runs = reprise_core::device_sync::sync_log::recent_runs(&conn, 10).unwrap();
+    let closed = runs.iter().find(|run| run.id == orphan).unwrap();
+    assert_eq!(
+        closed.outcome,
+        reprise_core::device_sync::sync_log::RunOutcome::Interrupted
+    );
+    assert!(closed.finished_at.is_some());
+}
+
+#[test]
 fn an_unrememberable_device_run_records_start_outcome_and_deviation() {
     run(async {
         let (_temp, conn) = fixture();

@@ -30,8 +30,15 @@ fn mtp_20_a_run_headline_names_when_it_ran_and_how_it_ended() {
 }
 
 #[test]
-fn an_unrememberable_phone_alone_reveals_the_stale_history_warning() {
-    assert!(history_warning_copy(false).is_some());
+fn an_unrememberable_phone_explains_what_is_tied_to_the_connection() {
+    let (title, detail) = history_warning_copy(false).expect("warning copy");
+
+    assert!(title.contains("no stable identifier"), "{title}");
+    assert!(detail.contains("settings and history"), "{detail}");
+    assert!(detail.contains("tied to this connection"), "{detail}");
+    assert!(detail.contains("may not be found again"), "{detail}");
+    assert!(!title.contains("not written"), "{title}");
+    assert!(!detail.contains("stable session"), "{detail}");
     assert!(history_warning_copy(true).is_none());
 }
 

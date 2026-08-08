@@ -3,8 +3,8 @@
 //! A run is written as it happens rather than at the end: `start_run` records
 //! it as `Running`, `finish_run` closes it. A run that never gets closed —
 //! the app died, the cable was pulled — is not lost but marked `Interrupted`
-//! the next time a sync starts, because "it never finished" is exactly the
-//! answer someone is looking for afterwards.
+//! when Reprise next starts, because "it never finished" is exactly the answer
+//! someone is looking for afterwards.
 //!
 //! Successful copies are counted, not itemized. Only deviations get a row,
 //! so a 278-file run leaves a handful of lines instead of hundreds.
@@ -14,8 +14,13 @@ use rusqlite::Row;
 use super::machine::SyncOutcome;
 use crate::db::DbError;
 
-/// How many runs are kept before the oldest ages out.
+/// How many runs are kept per device before that device's oldest ages out.
+///
+/// [`GLOBAL_RETAINED_RUNS`] additionally bounds the whole table.
 pub const RETAINED_RUNS: usize = 30;
+/// Whole-table ceiling for volatile device identities that can mint a new
+/// `device_serial` on every connection and therefore multiply retained groups.
+pub const GLOBAL_RETAINED_RUNS: usize = RETAINED_RUNS * 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunOutcome {
@@ -171,15 +176,25 @@ pub struct RunRecord {
     pub detail: Option<String>,
 }
 
-/// Opens a run. Any run still marked `Running` belongs to a session that
-/// died, so it is closed as `Interrupted` rather than left ambiguous.
+/// Closes runs left open by the previous application session.
+///
+/// This belongs at runtime startup, when no run can legitimately be live. It
+/// must not run when a new device sync starts because another device can be
+/// synchronizing at the same time.
+pub fn close_orphaned_runs(db: &crate::db::Db) -> Result<usize, DbError> {
+    Ok(db.conn().execute(
+        "UPDATE sync_runs \
+         SET outcome = 'interrupted', \
+             finished_at = CAST(strftime('%s', 'now') AS INTEGER) \
+         WHERE outcome = 'running'",
+        [],
+    )?)
+}
+
+/// Opens a run without changing any other device's live run.
 pub fn start_run(db: &crate::db::Db, start: &RunStart) -> Result<i64, DbError> {
     let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute(
-        "UPDATE sync_runs SET outcome = 'interrupted' WHERE outcome = 'running'",
-        [],
-    )?;
     transaction.execute(
         "INSERT INTO sync_runs \
            (device_serial, device_name, transfer_profile, started_at, outcome, planned) \
@@ -193,16 +208,26 @@ pub fn start_run(db: &crate::db::Db, start: &RunStart) -> Result<i64, DbError> {
         ],
     )?;
     let run = transaction.last_insert_rowid();
-    // Both statements share one keep-list so a run and its deviations can
+    // These three statements share one transaction: first age out this
+    // device's excess, then enforce the table ceiling, then make deviations
+    // agree with the retained run ids. A run and its deviations therefore
     // never age apart.
-    const KEEP: &str = "SELECT id FROM sync_runs ORDER BY started_at DESC, id DESC LIMIT ?1";
     transaction.execute(
-        &format!("DELETE FROM sync_events WHERE run_id NOT IN ({KEEP})"),
-        rusqlite::params![RETAINED_RUNS as i64],
+        "DELETE FROM sync_runs \
+         WHERE device_serial = ?1 \
+           AND id NOT IN (SELECT id FROM sync_runs WHERE device_serial = ?1 \
+                          ORDER BY started_at DESC, id DESC LIMIT ?2)",
+        rusqlite::params![start.device_serial, RETAINED_RUNS as i64],
     )?;
     transaction.execute(
-        &format!("DELETE FROM sync_runs WHERE id NOT IN ({KEEP})"),
-        rusqlite::params![RETAINED_RUNS as i64],
+        "DELETE FROM sync_runs \
+         WHERE id NOT IN (SELECT id FROM sync_runs \
+                          ORDER BY started_at DESC, id DESC LIMIT ?1)",
+        rusqlite::params![GLOBAL_RETAINED_RUNS as i64],
+    )?;
+    transaction.execute(
+        "DELETE FROM sync_events WHERE run_id NOT IN (SELECT id FROM sync_runs)",
+        [],
     )?;
     transaction.commit()?;
     Ok(run)
@@ -258,16 +283,43 @@ pub fn note_deviation(db: &crate::db::Db, run: i64, deviation: &Deviation) -> Re
     Ok(())
 }
 
-/// The most recent runs, newest first.
+const RUN_COLUMNS: &str = "id, device_serial, device_name, transfer_profile, started_at, \
+                           finished_at, outcome, planned, copied, skipped, deleted, failed, \
+                           bytes_copied, detail";
+
+/// The most recent runs across every device, newest first.
 pub fn recent_runs(db: &crate::db::Db, limit: usize) -> Result<Vec<RunRecord>, DbError> {
     let conn = db.conn();
-    let mut statement = conn.prepare(
-        "SELECT id, device_serial, device_name, transfer_profile, started_at, finished_at, \
-                outcome, planned, copied, skipped, deleted, failed, bytes_copied, detail \
-         FROM sync_runs ORDER BY started_at DESC, id DESC LIMIT ?1",
-    )?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT {RUN_COLUMNS} FROM sync_runs ORDER BY started_at DESC, id DESC LIMIT ?1"
+    ))?;
     let runs = statement
         .query_map(rusqlite::params![limit as i64], read_run)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(runs)
+}
+
+/// One device's most recent runs, newest first.
+///
+/// Retention is per device ([`RETAINED_RUNS`]) under a whole-table ceiling
+/// ([`GLOBAL_RETAINED_RUNS`]), so a caller after one device's history cannot
+/// take the newest N rows overall and filter: with several devices logging,
+/// the device it wants may not be in them. Reading the whole ceiling and
+/// filtering in Rust works but costs a [`deviations`] query per row it then
+/// throws away — on the GTK main thread, on every phase change. This asks the
+/// database the question the caller actually has.
+pub fn recent_runs_for_device(
+    db: &crate::db::Db,
+    device_serial: &str,
+    limit: usize,
+) -> Result<Vec<RunRecord>, DbError> {
+    let conn = db.conn();
+    let mut statement = conn.prepare(&format!(
+        "SELECT {RUN_COLUMNS} FROM sync_runs WHERE device_serial = ?1 \
+         ORDER BY started_at DESC, id DESC LIMIT ?2"
+    ))?;
+    let runs = statement
+        .query_map(rusqlite::params![device_serial, limit as i64], read_run)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(runs)
 }

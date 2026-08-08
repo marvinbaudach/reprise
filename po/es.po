@@ -5249,19 +5249,19 @@ msgstr "hora desconocida"
 msgid "Running since {time}"
 msgstr "En curso desde las {time}"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:588
-msgid "This phone cannot be recognised — runs are not written to the history."
-msgstr ""
-"Este teléfono no se puede reconocer: las ejecuciones no se guardan en el "
-"historial."
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:587
+msgid "This phone has no stable identifier."
+msgstr "Este teléfono no tiene un identificador estable."
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:590
 msgid ""
-"The entries below come from a session where it had a stable identifier. "
-"Unlock the phone before plugging it in and the history is kept."
+"Its settings and history are tied to this connection and may not be found "
+"again after you unplug it. Unlock the phone before plugging it in to give it "
+"a durable identity."
 msgstr ""
-"Las entradas de abajo provienen de una sesión con un identificador estable. "
-"Desbloquea el teléfono antes de conectarlo y se conservará el historial."
+"Sus ajustes y su historial están vinculados a esta conexión y puede que no "
+"vuelvan a encontrarse después de desconectarlo. Desbloquea el teléfono antes "
+"de conectarlo para que tenga una identidad duradera."
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:593
 msgid "Skipped"

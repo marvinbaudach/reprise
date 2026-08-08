@@ -204,7 +204,7 @@ impl DeviceSyncPage {
             self.device_name
                 .update_property(&[gtk4::accessible::Property::Label(&action)]);
         } else {
-            let (title, detail) = device_sync_strings::sync_history_unrecorded_warning();
+            let (title, detail) = device_sync_strings::sync_history_connection_warning();
             self.device_name
                 .set_tooltip_text(Some(&format!("{}\n{title}\n{detail}", device.name)));
             // A disabled button that still announces "Rename device" tells a
