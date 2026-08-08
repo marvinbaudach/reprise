@@ -1,6 +1,8 @@
 use super::super::{DoctorField, DoctorValue};
 use super::arbitration::arbitrate;
-use super::guard_rails::{is_placeholder_artist, reduces_specificity, VARIOUS_ARTISTS_MBID};
+use super::guard_rails::{
+    is_placeholder_artist, reduces_specificity, YearProvenance, VARIOUS_ARTISTS_MBID,
+};
 use super::{RemoteEvidenceSource, RemoteIdentity, RemoteTrackMetadata};
 
 fn metadata() -> RemoteTrackMetadata {
@@ -60,11 +62,13 @@ fn doc_4c_a_truncated_title_is_a_specificity_loss() {
         &DoctorValue::Text("An Ocean Between Us".into()),
         &DoctorValue::Text("An Ocean".into()),
         DoctorField::Title,
+        YearProvenance::Unknown,
     ));
     assert!(!reduces_specificity(
         &DoctorValue::Text("An Ocean".into()),
         &DoctorValue::Text("An Ocean Between Us".into()),
         DoctorField::Title,
+        YearProvenance::Unknown,
     ));
 }
 
@@ -74,11 +78,13 @@ fn doc_4c_a_truncated_album_is_a_specificity_loss() {
         &DoctorValue::Text("An Ocean Between Us (Deluxe Edition)".into()),
         &DoctorValue::Text("An Ocean Between Us".into()),
         DoctorField::Album,
+        YearProvenance::Unknown,
     ));
     assert!(!reduces_specificity(
         &DoctorValue::Text("An Ocean Between Us".into()),
         &DoctorValue::Text("An Ocean Between Us (Deluxe Edition)".into()),
         DoctorField::Album,
+        YearProvenance::Unknown,
     ));
 }
 
@@ -88,12 +94,70 @@ fn doc_4c_an_earlier_release_group_year_on_a_track_tag_is_a_specificity_loss() {
         &DoctorValue::Year(2024),
         &DoctorValue::Year(2007),
         DoctorField::Year,
+        YearProvenance::ReleaseGroupFallback,
     ));
     assert!(!reduces_specificity(
         &DoctorValue::Year(2024),
         &DoctorValue::Year(2025),
         DoctorField::Year,
+        YearProvenance::ReleaseGroupFallback,
     ));
+    // The same earlier year, but a matched release carries it: a correction.
+    assert!(!reduces_specificity(
+        &DoctorValue::Year(2024),
+        &DoctorValue::Year(2007),
+        DoctorField::Year,
+        YearProvenance::Release,
+    ));
+    assert!(!reduces_specificity(
+        &DoctorValue::Year(2024),
+        &DoctorValue::Year(2007),
+        DoctorField::Year,
+        YearProvenance::Unknown,
+    ));
+}
+
+#[test]
+fn doc_4c_an_earlier_year_of_the_matched_release_is_a_correction() {
+    let mut value = metadata();
+    value.year = Some(2011);
+    let mut candidate = identity("Real title");
+    candidate.release_year = Some(2006);
+    candidate.original_release_year = Some(2006);
+
+    let result = arbitrate(&value, &[candidate]);
+    let year = result
+        .proposals
+        .iter()
+        .find(|proposal| proposal.field == DoctorField::Year)
+        .expect("the earlier release year is proposed");
+
+    assert_eq!(year.proposed, DoctorValue::Year(2006));
+    assert!(!year.never_preselect);
+    assert_eq!(year.confidence, 100);
+}
+
+#[test]
+fn doc_4c_a_release_group_year_against_a_track_tag_is_capped() {
+    let mut value = metadata();
+    value.year = Some(2011);
+    let mut owned = identity("Real title");
+    owned.release_year = Some(2011);
+    owned.original_release_year = Some(2006);
+    let mut reissue = owned.clone();
+    reissue.release_mbid = Some("123e4567-e89b-12d3-a456-42661417400a".into());
+    reissue.release_year = Some(2019);
+
+    let result = arbitrate(&value, &[owned, reissue]);
+    let year = result
+        .proposals
+        .iter()
+        .find(|proposal| proposal.field == DoctorField::Year)
+        .expect("the release-group year stays reviewable");
+
+    assert_eq!(year.proposed, DoctorValue::Year(2006));
+    assert!(year.never_preselect);
+    assert!(year.confidence <= 49);
 }
 
 #[test]

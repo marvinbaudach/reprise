@@ -3723,6 +3723,8 @@ means deterministic and high-confidence, never „without review".
   `doc_4c_a_truncated_title_is_a_specificity_loss`,
   `doc_4c_a_truncated_album_is_a_specificity_loss`,
   `doc_4c_an_earlier_release_group_year_on_a_track_tag_is_a_specificity_loss`,
+  `doc_4c_an_earlier_year_of_the_matched_release_is_a_correction`,
+  `doc_4c_a_release_group_year_against_a_track_tag_is_capped`,
   `doc_4c_a_tie_choice_that_reduces_specificity_is_capped_and_never_preselected`,
   `doc_4c_a_capped_proposal_does_not_start_selected`,
   `doc_4c_a_row_below_fifty_percent_does_not_start_selected`,

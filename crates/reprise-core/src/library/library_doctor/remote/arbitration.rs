@@ -4,7 +4,9 @@ use super::super::{
     DoctorCandidate, DoctorField, DoctorGroupMember, DoctorProposal, DoctorUnresolvedGroup,
     DoctorValue, ProblemClass, ProposalSource,
 };
-use super::guard_rails::{is_placeholder_artist, reduces_specificity, SPECIFICITY_CONFIDENCE_CAP};
+use super::guard_rails::{
+    is_placeholder_artist, reduces_specificity, YearProvenance, SPECIFICITY_CONFIDENCE_CAP,
+};
 use super::{
     RemoteEvidence, RemoteEvidenceSource, RemoteIdentity, RemoteResolution, RemoteTrackMetadata,
     REMOTE_WRITABLE_FIELDS,
@@ -48,7 +50,12 @@ pub(crate) fn arbitrate(
                 .map(|item| item.confidence)
                 .min()
                 .unwrap_or_default();
-            let never_preselect = reduces_specificity(&current, &proposed, field);
+            let never_preselect = reduces_specificity(
+                &current,
+                &proposed,
+                field,
+                year_provenance(&proposed, identities),
+            );
             if never_preselect {
                 confidence = confidence.min(SPECIFICITY_CONFIDENCE_CAP);
             }
@@ -181,6 +188,24 @@ fn canonical_year(identities: &[RemoteIdentity]) -> Option<u32> {
             .filter_map(|item| item.original_release_year.as_ref()),
     );
     (years.len() == 1).then(|| *years[0])
+}
+
+/// Reads back which half of `canonical_year` produced the winning value.
+///
+/// A year that one of the matched releases actually carries is a release year,
+/// however early it is. Only a year no matched release claims can have come
+/// from the release-group fallback.
+fn year_provenance(proposed: &DoctorValue, identities: &[&RemoteIdentity]) -> YearProvenance {
+    let DoctorValue::Year(year) = proposed else {
+        return YearProvenance::Unknown;
+    };
+    if identities
+        .iter()
+        .any(|identity| identity.release_year == Some(*year))
+    {
+        return YearProvenance::Release;
+    }
+    YearProvenance::ReleaseGroupFallback
 }
 
 fn unique_values<T: Ord>(values: impl Iterator<Item = T>) -> Vec<T> {

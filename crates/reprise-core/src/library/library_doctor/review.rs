@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use super::remote::guard_rails::{reduces_specificity, SPECIFICITY_CONFIDENCE_CAP};
+use super::remote::guard_rails::{
+    reduces_specificity, YearProvenance, SPECIFICITY_CONFIDENCE_CAP,
+};
 use super::{
     DoctorField, DoctorProposal, DoctorScan, DoctorTrackRef, DoctorValue, ProblemClass,
     ProposalSource,
@@ -528,7 +530,14 @@ impl DoctorReviewSession {
             // A chosen spelling reaches the files through the same Apply as a
             // matcher proposal, so it passes the same guard rail: a row that
             // reduces specificity is capped and never starts selected.
-            let never_preselect = reduces_specificity(&template.current, candidate, template.field);
+            // A chosen candidate carries no release evidence, so the year half
+            // of the guard cannot be decided here (`YearProvenance::Unknown`).
+            let never_preselect = reduces_specificity(
+                &template.current,
+                candidate,
+                template.field,
+                YearProvenance::Unknown,
+            );
             let confidence = if never_preselect {
                 confidence.min(SPECIFICITY_CONFIDENCE_CAP)
             } else {
