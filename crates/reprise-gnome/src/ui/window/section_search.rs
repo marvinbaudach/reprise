@@ -239,10 +239,13 @@ impl SectionSearch {
     fn switch_view(&self, scope: SearchScope, section_name: &str) {
         let previous = self.active.replace(scope);
         self.apply_to_scope(previous, "");
-        self.write_entry("");
+        let entry_changed = self.write_entry("");
         self.collapse_bar();
         self.sync_affordance(section_name);
-        self.apply_to_scope(scope, "");
+        if !entry_changed {
+            // Identical text emits no signal, so reset explicitly.
+            self.apply_to_scope(scope, "");
+        }
     }
 
     /// A view removed its own query (the chip's ×, or a jump that had to
@@ -278,18 +281,21 @@ impl SectionSearch {
     }
 
     /// The one place this module writes the entry.
-    fn write_entry(&self, text: &str) {
+    fn write_entry(&self, text: &str) -> bool {
         let Some(entry) = self.entry.upgrade() else {
-            return;
+            return false;
         };
-        entry.set_text(text);
+        let changed = entry.text() != text;
+        if changed {
+            entry.set_text(text);
+        }
+        changed
     }
 
     fn entry_text(&self) -> String {
         self.entry
             .upgrade()
-            .map(|entry| entry.text().to_string())
-            .unwrap_or_default()
+            .map_or_else(String::new, |entry| entry.text().to_string())
     }
 
     fn apply_to_active(&self, query: &str) {
@@ -355,6 +361,9 @@ mod tests {
 
     use super::*;
     use crate::ui::nav_history::{NavHistory, NavPlace};
+
+    #[path = "section_search_unsupported_tests.rs"]
+    mod unsupported_tests;
 
     struct Harness {
         search: Rc<SectionSearch>,
@@ -627,32 +636,6 @@ mod tests {
         assert!(applied.contains(&(SearchScope::Podcasts, "wer".to_owned())));
         assert!(harness.search.is_active(SearchScope::Podcasts));
         assert!(!harness.search.is_active(SearchScope::Tracks));
-    }
-
-    // UX SEARCH-8a: where there is no list, the lens is insensitive, says why,
-    // and the bar cannot be revealed.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn search_8a_sections_without_a_list_offer_no_search() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let harness = harness();
-
-        harness.search.activate(SearchScope::Tracks, "Music");
-        assert!(harness.toggle.is_sensitive());
-
-        harness
-            .search
-            .activate(SearchScope::Unsupported, "My Stats");
-
-        assert!(!harness.toggle.is_sensitive());
-        assert_eq!(
-            harness.toggle.tooltip_text().as_deref(),
-            Some("Nothing to filter in My Stats")
-        );
-        assert!(!harness.search_bar.is_search_mode());
-        assert!(!harness.search.supports_search());
-        assert!(harness.search_bar.key_capture_widget().is_none());
     }
 
     // UX SEARCH-8a: a view that clears its own chip pushes that back into the
