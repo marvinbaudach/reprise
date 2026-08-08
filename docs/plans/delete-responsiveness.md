@@ -1,3 +1,11 @@
+---
+slug: delete-responsiveness
+worktree: /home/marvin/Projects/reprise-delete-perf
+branch: perf/delete-responsiveness
+phase: refactored
+codex_session:
+created: 2026-08-08
+---
 # Löschen soll sich sofort anfühlen
 
 ## Das Problem, wie der Nutzer es erlebt
