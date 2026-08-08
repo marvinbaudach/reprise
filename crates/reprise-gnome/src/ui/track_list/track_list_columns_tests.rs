@@ -183,6 +183,20 @@ fn missing_title_css_uses_half_opacity() {
     assert!(css.contains("opacity: 0.5"));
 }
 
+#[test]
+fn row_cell_construction_never_uses_eager_tooltip_text() {
+    for source in [
+        include_str!("rating.rs"),
+        include_str!("track_list_columns.rs"),
+        include_str!("track_list_title_column.rs"),
+    ] {
+        assert!(
+            !source.contains(".set_tooltip_text"),
+            "row setup and bind paths must use demand-driven query-tooltip handlers"
+        );
+    }
+}
+
 // UX INST-10: the AI badge renders for AI-manipulated tracks and never on a
 // plain one. The provenance flag is the only input — no gate sits in front
 // of it, so a track the CLI/MCP frontends produced is always marked.

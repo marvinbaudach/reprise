@@ -46,6 +46,7 @@ mod icons;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
 mod issues;
+pub(crate) mod lazy_tooltip;
 mod library_doctor;
 mod library_views;
 pub(crate) mod link_activation;

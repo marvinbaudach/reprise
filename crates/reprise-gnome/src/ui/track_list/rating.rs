@@ -197,7 +197,7 @@ impl RatingWidget {
 
     fn build_ui(&self) {
         self.set_orientation(gtk4::Orientation::Horizontal);
-        self.set_tooltip_text(Some(&strings::text(strings::RATING)));
+        crate::ui::lazy_tooltip::install(self, strings::text(strings::RATING));
 
         // Dash summary for the unrated, at-rest state.
         let dash = gtk4::Label::new(Some(DASH_GLYPH));
@@ -274,7 +274,7 @@ impl RatingWidget {
         // available from that row's keyboard context menu via Edit Tags.
         button.set_focusable(false);
         button.set_valign(gtk4::Align::Center);
-        button.set_tooltip_text(Some(&strings::rate_n_stars(star)));
+        crate::ui::lazy_tooltip::install(&button, strings::rate_n_stars(star));
 
         let widget = self.downgrade();
         button.connect_clicked(move |_| {
