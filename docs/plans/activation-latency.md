@@ -2,7 +2,7 @@
 slug: activation-latency
 worktree: /home/marvin/Projects/reprise-activation
 branch: perf/activation-latency
-phase: planned
+phase: complete
 codex_session:
 created: 2026-08-08
 ---
@@ -206,6 +206,37 @@ is worse than a slow query because it can play the wrong track or nothing.
 `TrackListModel::generation` already records model changes and is the natural
 cache key. Preserve `QUEUE_LIMIT` and its truncation warning.
 
+#### T2 result (2026-08-08)
+
+The activation path now retains the bounded, ordered ID projection under the
+current `TrackListModel::generation`. A later activation in the same rendered
+generation clones that projection and changes only the start index. Queue-view
+activation remains deliberately uncached because its projection is live. A
+query failure is not cached, and the existing `QUEUE_LIMIT` query bound and
+truncation warning remain on every cache miss.
+
+The display regression was observed failing before implementation: after two
+rows were rendered, a direct database insertion made the second activation
+return the new ID even though the model generation had not changed. It now
+proves the same generation reuses the original `[1, 2]` projection, then an
+explicit `TrackList::reload()` advances the generation and returns the updated
+`[1, 3, 2]` order. That is the same reload seam used after scans, deletion,
+tag changes and watcher reconciliation; source, sort, filter and browse-facet
+changes also repopulate the model and advance this generation.
+
+A temporary release timer harness used 2,340 generated tracks on an idle host
+and was removed after the run. A cache hit took 169 ns at the median over 1,000
+runs. The disabled-change counterprobe cleared the cache before every call and
+therefore executed the original full-ID query; its median was 372.969 us over
+14 runs. This warm synthetic query is much cheaper than the established 2–4 ms
+warm and 66 ms cold representative-library query, so its absolute value does
+not replace that baseline. It does demonstrate that repeat activation no
+longer pays the query at all.
+
+The T1 audio-endpoint blocker remains: this sandbox's private PipeWire server
+could create sockets but rejected PulseAudio client admission with `Host is
+down`. No RMS tone-onset result is claimed for T2.
+
 ### T3 — Sound first, the rest afterwards
 
 The clicked track is already known. Playback could start before the queue and
@@ -218,6 +249,24 @@ ends so playback continues normally.
 
 Only do this task if T0 and the post-T1/T2 measurement show meaningful time is
 still available to recover.
+
+#### T3 decision (2026-08-08)
+
+The condition for T3 is false, so no asynchronous queue reordering was added.
+After T1, a queue notification performs the sub-microsecond retained-badge
+update instead of the measured 4.357 ms full refresh plus its 77.907 ms
+synchronous Releases projection. After T2, repeat activation uses the 169 ns
+ID projection above. T0 measured the only work T3 could move ahead of playback
+— `play_origin::resolve` and `queue.set_tracks` — at 6 us each, while the
+remaining 7.141 ms synthetic pre-log segment was `play_track_id` itself and
+cannot be bypassed by T3. Twelve microseconds is not meaningful recovery
+against the complexity and ordering risks named by this task.
+
+This decision does not pretend to apportion the established real-library
+92 ms median: its roughly 90 ms remainder remains explicitly unattributed for
+the reasons recorded under T0. It says only that the measured work T3 could
+reorder is too small after T1 and T2; introducing a half-built queue would add
+risk without measurement evidence for a user-visible gain.
 
 ## Verification
 
