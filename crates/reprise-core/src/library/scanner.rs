@@ -637,6 +637,7 @@ fn scan_folder_inner(
         .updated
         .saturating_add(mobile_sync.apply_metadata(source, &tx)?);
     mobile_sync.register_analysis_sidecars(&tx)?;
+    mobile_sync.register_device_paths(&tx)?;
 
     // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
     // outcome. The guard's own evidence, `guard_evidence` (the wider
@@ -752,6 +753,10 @@ mod tests;
 #[cfg(test)]
 #[path = "scanner_source_tests.rs"]
 mod source_tests;
+
+#[cfg(test)]
+#[path = "scanner_mobile_sync_path_tests.rs"]
+mod mobile_sync_path_tests;
 
 #[cfg(test)]
 #[path = "scanner_metadata_persistence_tests.rs"]

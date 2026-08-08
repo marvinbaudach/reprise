@@ -521,7 +521,7 @@ private class RecordingBrowsePort(
         rememberedTreeUri = treeUri
     }
 
-    override fun persistReadPermission(treeUri: String) = Unit
+    override fun persistTreePermission(treeUri: String) = Unit
 
     override fun isTreeReadable(treeUri: String): Boolean {
         operations += "readable:$treeUri"

@@ -26,6 +26,12 @@ pub fn analysis_sidecar_path_for_track(db: &Db, track_id: i64) -> Result<Option<
     Ok(crate::db_mobile_sync::analysis_sidecar_state(db, track_id)?.map(|state| state.path))
 }
 
+/// Returns the desktop-defined, device-relative identity retained by the
+/// phone's last synchronized scan.
+pub fn device_path_for_track(db: &Db, track_id: i64) -> Result<Option<String>, DbError> {
+    crate::db_mobile_sync::device_path_for_track(db, track_id)
+}
+
 /// Reads one sidecar through its owning library source.
 ///
 /// Missing and failed reads are ordinary no-data answers, matching playback's

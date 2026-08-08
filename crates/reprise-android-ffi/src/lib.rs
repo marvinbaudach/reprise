@@ -14,7 +14,12 @@ mod appearance;
 mod artwork_tests;
 mod browse;
 mod filtered_browse;
+mod library_listen_report;
 mod library_types;
+mod listen_export_journal;
+#[cfg(test)]
+mod listen_export_journal_tests;
+mod listen_export_recorder;
 #[cfg(test)]
 mod log_capture;
 mod logging;
@@ -59,6 +64,7 @@ impl MusicLibrary {
         Ok(Self {
             state: Mutex::new(LibraryState { db, tree: None }),
             cache_root: PathBuf::from(app_cache_directory),
+            database_path: db_path,
         })
     }
 
@@ -167,21 +173,6 @@ impl MusicLibrary {
             })
     }
 
-    /// Persists one row's rating and refuses to report success if the row was
-    /// removed after it crossed the boundary.
-    pub fn set_track_rating(&self, track_id: i64, rating: i32) -> Result<(), LibraryError> {
-        let state = self.lock()?;
-        let changed =
-            reprise_core::library::stats::set_rating_if_present(&state.db, track_id, rating)
-                .map_err(|error| LibraryError::Database {
-                    detail: error.to_string(),
-                })?;
-        if !changed {
-            return Err(LibraryError::TrackNotFound { track_id });
-        }
-        Ok(())
-    }
-
     /// Resolves local artwork lazily for one track and returns its cached
     /// measured-size thumbnail path.
     ///
@@ -256,6 +247,7 @@ mod tests {
         WindowRange,
     };
     use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
+    use reprise_core::device_sync::listen_report::ListenReport;
 
     const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
     const TRACK_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsine.flac";
@@ -657,6 +649,13 @@ mod tests {
             .remove(0);
         assert_eq!(updated.id, track.id);
         assert_eq!(updated.rating, 5);
+        let report = ListenReport::decode(&library.prepare_listen_report(None).unwrap()).unwrap();
+        assert!(report.listens.is_empty());
+        assert_eq!(report.ratings.len(), 1);
+        assert_eq!(report.ratings[0].sequence, 1);
+        assert_eq!(report.ratings[0].device_path, "blue-2.flac");
+        assert_eq!(report.ratings[0].rating, 5);
+        assert!(report.ratings[0].rated_at > 0);
 
         assert!(matches!(
             library.set_track_rating(i64::MAX, 4),
