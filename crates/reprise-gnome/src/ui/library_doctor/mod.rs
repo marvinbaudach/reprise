@@ -66,6 +66,14 @@ pub(in crate::ui) fn css() -> String {
         ".doctor-conflict-scope { font-size: 13px; color: color-mix(in srgb, currentColor 55%, transparent); }",
         ".doctor-conflict-choice { padding: 5px 12px; border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent); }",
         ".doctor-conflict-choice.selected { color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-bg-color); }",
+        ".doctor-album-header-later { border-top: 1px solid color-mix(in srgb, currentColor 7%, transparent); padding-top: 20px; }",
+        ".doctor-album-check { min-width: 16px; min-height: 16px; border-radius: 4px; }",
+        ".doctor-album-check:checked { background: var(--accent-bg-color); color: var(--window-bg-color); }",
+        ".doctor-album-check:not(:checked) { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, currentColor 30%, transparent); }",
+        ".doctor-album-cover { background: color-mix(in srgb, currentColor 8%, transparent); border-radius: 5px; -gtk-icon-size: 16px; }",
+        ".doctor-album-title { font-size: 15px; font-weight: 500; }",
+        ".doctor-album-detail { font-size: 13px; color: color-mix(in srgb, currentColor 50%, transparent); }",
+        ".doctor-album-caret { color: color-mix(in srgb, currentColor 40%, transparent); }",
         // The review card is the only one that carries emphasis: an accent
         // hairline on top of the plain `.card` surface.
         ".doctor-card-accent { box-shadow: inset 0 0 0 1px alpha(@accent_color, 0.45); }",

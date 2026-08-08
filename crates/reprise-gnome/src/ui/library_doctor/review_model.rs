@@ -94,6 +94,8 @@ pub(super) struct ReviewRowModel {
     pub(super) album_artist: String,
     pub(super) album_track_count: usize,
     pub(super) selected_change_count: usize,
+    #[allow(dead_code)] // Consumed by REV-5 in the immediately following package.
+    pub(super) is_album_wide: bool,
     pub(super) track: String,
     pub(super) field: String,
     pub(super) current: String,
@@ -161,7 +163,7 @@ pub(super) fn grouped_rows_for(
                 .into_iter()
                 .enumerate()
                 .filter_map(move |(row_position, display)| {
-                    let (row_ids, track_ids, track) = match display {
+                    let (row_ids, track_ids, track, is_album_wide) = match display {
                         DoctorReviewDisplayRow::Track { row_id, track_id } => (
                             vec![row_id],
                             vec![track_id],
@@ -169,6 +171,7 @@ pub(super) fn grouped_rows_for(
                                 .get(&track_id)
                                 .cloned()
                                 .unwrap_or_else(|| strings::text(strings::DOCTOR_UNKNOWN_TRACK)),
+                            false,
                         ),
                         DoctorReviewDisplayRow::AllTracks {
                             row_ids,
@@ -178,7 +181,12 @@ pub(super) fn grouped_rows_for(
                                 .iter()
                                 .filter_map(|id| rows_by_id.get(id).map(|row| row.track_id))
                                 .collect();
-                            (row_ids, track_ids, strings::doctor_all_tracks(track_count))
+                            (
+                                row_ids,
+                                track_ids,
+                                strings::doctor_all_tracks(track_count),
+                                true,
+                            )
                         }
                     };
                     let first = rows_by_id.get(row_ids.first()?)?;
@@ -216,6 +224,7 @@ pub(super) fn grouped_rows_for(
                         album_artist: album_artist.clone(),
                         album_track_count,
                         selected_change_count,
+                        is_album_wide,
                         track,
                     })
                 })

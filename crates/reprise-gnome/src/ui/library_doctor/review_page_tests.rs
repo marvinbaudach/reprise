@@ -378,6 +378,41 @@ fn doc_9b_review_groups_render_one_header_per_album() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_the_first_row_carries_its_album_header() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &three_album_scan(),
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let header =
+        descendant_with_css_class(&page.rows.clone().upcast(), "doctor-album-header-first")
+            .expect("the first realized review row must be preceded by its album header");
+    assert!(
+        descendant_label_text(&header)
+            .iter()
+            .any(|label| label == "Album"),
+        "the first header must name the first album"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn doc_9b_every_section_boundary_binds_a_non_empty_header() {
     if gtk4::init().is_err() {
         return;
