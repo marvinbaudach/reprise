@@ -308,6 +308,32 @@ fn src_21_highlighted_title_keeps_its_end_ellipsis_and_pango_attributes() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
     gtk4::init().unwrap();
+    let adjacent_row = candidate_row(
+        "The Jasta Show",
+        "GaS Digital Network · New last week",
+        Some("GaS Digital Network"),
+        Some("Metalcore"),
+        PodcastKind::Rss,
+        None,
+        false,
+    );
+    let adjacent_labels = adjacent_row
+        .first_child()
+        .and_then(|child| child.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("result labels");
+    let adjacent_title_line = adjacent_labels
+        .first_child()
+        .and_downcast::<gtk4::Box>()
+        .expect("result title line");
+    let adjacent_title = adjacent_title_line
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("result title");
+    let adjacent_marker = adjacent_title_line
+        .last_child()
+        .and_downcast::<gtk4::Image>()
+        .expect("unexplained search match marker after the title");
     let row = candidate_row(
         "The Jasta Show with an exceptionally long title that must ellipsize before the marker",
         "GaS Digital Network · New last week",
@@ -341,6 +367,16 @@ fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
         Some(crate::ui::icons::UNEXPLAINED_SEARCH_MATCH)
     );
     assert_eq!(marker.tooltip_text().as_deref(), Some(explanation.as_str()));
+    assert!(
+        !adjacent_title.hexpands(),
+        "the title must not consume the free space between its text and the marker"
+    );
+    assert!(marker.has_css_class("dim-label"));
+    assert_eq!(
+        marker.pixel_size(),
+        16,
+        "the quiet marker must remain legible at the subtitle's visual weight"
+    );
     assert!(gtk4::test_accessible_has_role(
         &marker,
         gtk4::AccessibleRole::Img
@@ -351,10 +387,13 @@ fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
     ));
 
     let marker_minimum = marker.measure(gtk4::Orientation::Horizontal, -1).0;
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    content.append(&adjacent_row);
+    content.append(&row);
     let window = gtk4::Window::builder()
         .default_width(280)
-        .default_height(100)
-        .child(&row)
+        .default_height(160)
+        .child(&content)
         .build();
     window.present();
     let main_loop = gtk4::glib::MainLoop::new(None, false);
@@ -362,6 +401,25 @@ fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
     gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || quit.quit());
     main_loop.run();
 
+    let adjacent_title_natural = adjacent_title.measure(gtk4::Orientation::Horizontal, -1).1;
+    assert_eq!(
+        adjacent_title.width(),
+        adjacent_title_natural,
+        "a short title must keep only its text width so the marker travels with it"
+    );
+    let adjacent_title_origin = adjacent_title
+        .compute_point(&adjacent_title_line, &gtk4::graphene::Point::new(0.0, 0.0))
+        .expect("title position inside its line");
+    let adjacent_marker_origin = adjacent_marker
+        .compute_point(&adjacent_title_line, &gtk4::graphene::Point::new(0.0, 0.0))
+        .expect("marker position inside its line");
+    assert_eq!(
+        adjacent_marker_origin.x(),
+        adjacent_title_origin.x()
+            + adjacent_title.width() as f32
+            + adjacent_title_line.spacing() as f32,
+        "the marker must sit immediately after the title"
+    );
     assert!(title.layout().is_ellipsized());
     assert!(marker_minimum > 0);
     assert!(

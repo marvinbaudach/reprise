@@ -182,7 +182,6 @@ pub(super) fn candidate_row(
     let title_line = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     title_line.set_hexpand(true);
     let title_label = gtk4::Label::new(Some(title));
-    title_label.set_hexpand(true);
     title_label.set_xalign(0.0);
     title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     let subtitle_label = gtk4::Label::new(Some(subtitle));
@@ -203,7 +202,7 @@ pub(super) fn candidate_row(
     if unexplained_match {
         let explanation = strings::text(strings::PODCAST_SEARCH_MATCH_NOT_SHOWN);
         let marker = gtk4::Image::from_icon_name(crate::ui::icons::UNEXPLAINED_SEARCH_MATCH);
-        marker.set_pixel_size(12);
+        marker.set_pixel_size(16);
         marker.set_valign(gtk4::Align::Center);
         marker.add_css_class("dim-label");
         marker.set_tooltip_text(Some(&explanation));
