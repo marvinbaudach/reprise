@@ -233,6 +233,17 @@ fn queue_snapshot_emissions(
     (items, sections)
 }
 
+/// A narrowed query delta only makes GTK reconsider sections intersecting its
+/// item range. Every non-Queue query is one whole-model section, so a partial
+/// cardinality change must explicitly invalidate that surviving section's new
+/// end boundary. Full-range item invalidations already cover it.
+fn query_section_change(change: ModelChange) -> Option<(u32, u32)> {
+    let total_changed = change.before_total != change.after_total;
+    let covers_every_survivor = change.position == 0 && change.added >= change.after_total;
+    (total_changed && change.after_total > 0 && !covers_every_survivor)
+        .then_some((0, change.after_total))
+}
+
 impl TrackListModel {
     /// Builds an empty model (`n_items() == 0`) bound to `conn`. Call
     /// `set_query` to load the initial sort/filter — the model does not
@@ -530,6 +541,15 @@ impl TrackListModel {
             added: change.added,
         });
         self.items_changed(change.position, change.removed, change.added);
+        #[cfg(not(test))]
+        if let Some((position, n_items)) = query_section_change(change) {
+            use gtk4::prelude::SectionModelExt;
+            super::diagnostic_trail::record(super::diagnostic_trail::Event::SectionsChanged {
+                position,
+                n_items,
+            });
+            self.sections_changed(position, n_items);
+        }
     }
 
     /// How often the model has been repopulated. See `imp::TrackListModel::

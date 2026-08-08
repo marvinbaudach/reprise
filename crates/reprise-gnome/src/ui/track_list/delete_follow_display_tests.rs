@@ -133,12 +133,18 @@ fn nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one() {
     track_list.shared.last_scroll_activity.set(None);
 
     // `delete_tracks::finish`, in its own order: the player advances past the
-    // deleted track, then the catalog reload runs.
+    // deleted track, then the generation-guarded catalog delta runs from the
+    // state captured before the dialog/worker.
+    let reload_state = crate::ui::delete_tracks::capture_catalog_delete_reload(&track_list.shared);
     crate::test_db::connection(&track_list.shared.conn)
         .execute("DELETE FROM tracks WHERE id = ?1", [playing_id])
         .unwrap();
     track_list.update_current_track(next_id, None, CurrentTrackChange::AutomaticAdvance);
-    crate::ui::track_list::reload(&track_list.shared);
+    crate::ui::delete_tracks::reload_after_catalog_delete(
+        &track_list.shared,
+        &[playing_id],
+        reload_state,
+    );
     // Waiting on the destination rather than on a stopwatch: under load the
     // reveal's idle and its glide can take longer than any fixed delay, and a
     // viewport that arrives late still arrived. What must not happen is

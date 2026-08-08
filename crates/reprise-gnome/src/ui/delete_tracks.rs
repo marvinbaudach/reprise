@@ -14,7 +14,12 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::path_guard;
 
-use crate::ui::track_list::{reload, show_toast, Shared};
+use crate::ui::track_list::reload_restore::ReloadAnchor;
+use crate::ui::track_list::track_list_model_change::{changed_range, ModelChange};
+use crate::ui::track_list::track_list_reload::{
+    capture_reload_anchor, reload_with_anchor_and_viewport, ReloadViewport,
+};
+use crate::ui::track_list::{show_toast, Shared};
 use crate::ui::track_list_context_menu::current_selection_positions;
 use crate::ui::{one_shot_task, strings};
 
@@ -35,6 +40,24 @@ enum DeleteMode {
 struct DeleteReport {
     removed_ids: Vec<i64>,
     failures: usize,
+}
+
+pub(in crate::ui) struct CatalogDeleteReloadState {
+    anchor: ReloadAnchor,
+    view_ids: Vec<i64>,
+    selected_positions: Vec<u32>,
+    generation: u64,
+}
+
+pub(in crate::ui) fn capture_catalog_delete_reload(
+    shared: &Rc<Shared>,
+) -> CatalogDeleteReloadState {
+    CatalogDeleteReloadState {
+        anchor: capture_reload_anchor(shared),
+        view_ids: shared.current_view_ids(),
+        selected_positions: current_selection_positions(shared),
+        generation: shared.model.generation(),
+    }
 }
 
 pub(super) fn add_actions(
@@ -87,6 +110,7 @@ fn confirm(shared: &Rc<Shared>, mode: DeleteMode) {
     let Some(window) = shared.window.upgrade() else {
         return;
     };
+    let reload_state = capture_catalog_delete_reload(shared);
     let (heading, body, label, response) = match mode {
         DeleteMode::Remove => (
             &strings::text(strings::REMOVE_FROM_LIBRARY),
@@ -117,7 +141,7 @@ fn confirm(shared: &Rc<Shared>, mode: DeleteMode) {
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |chosen| {
         focus_guard.restore();
         if chosen.as_str() == response {
-            start_worker(&shared, tracks, mode);
+            start_worker(&shared, tracks, mode, reload_state);
         }
     });
 }
@@ -129,6 +153,7 @@ fn choose(shared: &Rc<Shared>) {
     let Some(window) = shared.window.upgrade() else {
         return;
     };
+    let reload_state = capture_catalog_delete_reload(shared);
     let dialog = adw::AlertDialog::builder()
         .heading(strings::text(strings::DELETE_TRACKS_HEADING))
         .body(strings::text(strings::DELETE_TRACKS_CHOICE))
@@ -154,11 +179,16 @@ fn choose(shared: &Rc<Shared>) {
             RESPONSE_TRASH => DeleteMode::Trash,
             _ => return,
         };
-        start_worker(&shared, tracks, mode);
+        start_worker(&shared, tracks, mode, reload_state);
     });
 }
 
-fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMode) {
+fn start_worker(
+    shared: &Rc<Shared>,
+    tracks: Vec<(i64, PathBuf)>,
+    mode: DeleteMode,
+    reload_state: CatalogDeleteReloadState,
+) {
     let db_path = shared.conn.path();
     let Some(db_path) = db_path else {
         show_toast(shared, &strings::text(strings::DELETE_DATABASE_UNAVAILABLE));
@@ -185,7 +215,7 @@ fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMo
             return;
         };
         match result {
-            Ok(report) => finish(&shared, &report, mode),
+            Ok(report) => finish(&shared, &report, mode, reload_state),
             Err(error) => {
                 tracing::warn!(%error, "removal worker could not open database");
                 show_toast(
@@ -255,16 +285,77 @@ fn deletion_focus_position(
     })
 }
 
-pub(in crate::ui) fn reload_after_catalog_delete(shared: &Rc<Shared>) {
-    let selected_before = current_selection_positions(shared);
-    reload(shared);
-    if selected_before.is_empty() {
+fn deletion_model_change(
+    before_ids: &[i64],
+    after_ids: &[i64],
+    removed_ids: &[i64],
+    generation: u64,
+) -> Option<ModelChange> {
+    changed_range(before_ids, after_ids, removed_ids, generation)
+}
+
+fn surviving_delete_anchor(
+    mut anchor: ReloadAnchor,
+    before_ids: &[i64],
+    after_ids: &[i64],
+) -> ReloadAnchor {
+    let Some((anchor_id, offset)) = anchor.anchor else {
+        return anchor;
+    };
+    if after_ids.contains(&anchor_id) {
+        return anchor;
+    }
+    anchor.anchor = before_ids
+        .iter()
+        .position(|id| *id == anchor_id)
+        .and_then(|position| after_ids.get(position.min(after_ids.len().saturating_sub(1))))
+        .map(|id| (*id, offset));
+    anchor
+}
+
+pub(in crate::ui) fn reload_after_catalog_delete(
+    shared: &Rc<Shared>,
+    removed_ids: &[i64],
+    reload_state: CatalogDeleteReloadState,
+) {
+    let after_ids = shared.current_view_ids();
+    let model_change = deletion_model_change(
+        &reload_state.view_ids,
+        &after_ids,
+        removed_ids,
+        reload_state.generation,
+    );
+    let mut anchor = if shared.model.generation() == reload_state.generation {
+        surviving_delete_anchor(reload_state.anchor, &reload_state.view_ids, &after_ids)
+    } else {
+        // The model changed while the dialog or worker was alive. The stale
+        // ModelChange will deliberately fall back to a full invalidation; its
+        // equally stale viewport must not overwrite the newer live view.
+        capture_reload_anchor(shared)
+    };
+    // BROWSE-11/NAV-10b: deleting the loaded track requests an automatic
+    // reveal before this reload. Its destination is newer than the dialog's
+    // frozen viewport, so let it replace only the scroll anchor; the frozen
+    // selected IDs still decide the post-delete selection and focus.
+    if shared.track_reveal_pending.get() || shared.scroll_glide.destination().is_some() {
+        anchor.anchor = capture_reload_anchor(shared).anchor;
+    }
+    reload_with_anchor_and_viewport(
+        shared,
+        &anchor,
+        ReloadViewport::PreserveAnchor,
+        model_change,
+        Some(after_ids),
+    );
+    if reload_state.selected_positions.is_empty() {
         return;
     }
     let selected_after = current_selection_positions(shared);
-    if let Some(position) =
-        deletion_focus_position(&selected_before, &selected_after, shared.model.n_items())
-    {
+    if let Some(position) = deletion_focus_position(
+        &reload_state.selected_positions,
+        &selected_after,
+        shared.model.n_items(),
+    ) {
         if selected_after.is_empty() {
             shared.selection.select_item(position, true);
         }
@@ -272,7 +363,12 @@ pub(in crate::ui) fn reload_after_catalog_delete(shared: &Rc<Shared>) {
     shared.column_view.grab_focus();
 }
 
-fn finish(shared: &Rc<Shared>, report: &DeleteReport, mode: DeleteMode) {
+fn finish(
+    shared: &Rc<Shared>,
+    report: &DeleteReport,
+    mode: DeleteMode,
+    reload_state: CatalogDeleteReloadState,
+) {
     let removed = report.removed_ids.len();
     let callback = shared.on_library_mutated.borrow().clone();
     if let Some(callback) = callback {
@@ -283,7 +379,7 @@ fn finish(shared: &Rc<Shared>, report: &DeleteReport, mode: DeleteMode) {
         player.advance_after_user_catalog_delete(&report.removed_ids);
     }
     shared.browse_bar.refresh();
-    reload_after_catalog_delete(shared);
+    reload_after_catalog_delete(shared, &report.removed_ids, reload_state);
     tracing::info!(
         removed,
         failed = report.failures,
@@ -325,7 +421,8 @@ pub(super) fn arm_smoke(shared: &Rc<Shared>) {
             );
             return;
         }
-        start_worker(&shared, tracks, mode);
+        let reload_state = capture_catalog_delete_reload(&shared);
+        start_worker(&shared, tracks, mode, reload_state);
     });
 }
 
@@ -450,4 +547,33 @@ mod tests {
         assert_eq!(deletion_focus_position(&[6, 7], &[], 6), Some(5));
         assert_eq!(deletion_focus_position(&[0], &[], 0), None);
     }
+
+    #[test]
+    fn catalog_delete_delta_removes_only_the_changed_middle_span() {
+        let change = deletion_model_change(&[1, 2, 3, 4, 5], &[1, 4, 5], &[2, 3], 7)
+            .expect("two deleted rows must produce a model delta");
+
+        assert_eq!(change.position, 1);
+        assert_eq!(change.removed, 2);
+        assert_eq!(change.added, 0);
+        assert_eq!(change.before_total, 5);
+        assert_eq!(change.after_total, 3);
+        assert_eq!(change.generation, 7);
+    }
+
+    #[test]
+    fn a_deleted_scroll_anchor_moves_to_the_row_that_took_its_place() {
+        let anchor = crate::ui::track_list::reload_restore::ReloadAnchor {
+            selected_ids: vec![3],
+            anchor: Some((3, 7.5)),
+        };
+
+        let restored = surviving_delete_anchor(anchor, &[1, 2, 3, 4, 5], &[1, 2, 4, 5]);
+
+        assert_eq!(restored.anchor, Some((4, 7.5)));
+    }
 }
+
+#[cfg(test)]
+#[path = "delete_tracks_display_tests.rs"]
+mod display_tests;

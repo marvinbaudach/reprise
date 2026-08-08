@@ -214,6 +214,20 @@ fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
 }
 
 #[test]
+fn partial_deletion_resections_the_surviving_whole_model_section() {
+    let change = super::super::track_list_model_change::ModelChange {
+        position: 10,
+        removed: 2,
+        added: 0,
+        before_total: 40,
+        after_total: 38,
+        generation: 7,
+    };
+
+    assert_eq!(super::query_section_change(change), Some((0, 38)));
+}
+
+#[test]
 fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
     let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
 
