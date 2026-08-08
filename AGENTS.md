@@ -374,3 +374,39 @@ a sibling module because `tests.rs` was already too close to the 800-line cap.
 | GUARD-2 | library-doctor-guard-rails | `crates/reprise-core/src/library/library_doctor/{review,review_tests}.rs`, `crates/reprise-gnome/src/ui/library_doctor/review_page_tests.rs` |
 | GUARD-3 | library-doctor-guard-rails | `crates/reprise-core/src/{db_library_doctor,db}.rs`, `crates/reprise-core/src/library/library_doctor/store.rs` |
 | GUARD-4 | library-doctor-guard-rails | `crates/reprise-core/src/library/library_doctor/{tests,guard_rail_scan_tests}.rs` |
+
+## Active file ownership — Library Doctor fix round 3
+
+Branch: `feature/library-doctor-fix-round-3`
+
+This ownership is ACTIVE until the stage is complete. Packages run in the wave
+order recorded here. `MATCH-3`, `PERF-1`, and `PERF-3` are the only writers of
+`scan.rs` and run strictly in that sequence. The string catalog and UX rules
+reach their final stage shape in Wave 0 and are read-only for every later
+package.
+
+| Wave | Package | Owned files |
+| --- | --- | --- |
+| 0 | DIAG-1 | `crates/reprise-core/src/library/library_doctor/remote/{diagnostics,mod}.rs` and the minimum test-only arbitration visibility needed by the diagnostic |
+| 0 | DIAG-2 | `crates/reprise-gnome/src/ui/library_doctor/review_page_tests.rs` |
+| 0 | DIAG-3 | `crates/reprise-gnome/src/ui/sidebar/sidebar_layout_tests.rs` |
+| 0 | STR-1 | `crates/reprise-gnome/src/ui/strings_library_doctor.rs` |
+| 0 | RULES-1 | `docs/ux-rules.md` section Y and this ownership record |
+| 1 | MATCH-1 | `crates/reprise-core/src/library/library_doctor/remote/{orchestrator,network,acoustid,network_tests,mod,diagnostics}.rs` |
+| 1 | MATCH-2 | `crates/reprise-core/src/library/library_doctor/remote/{album_match,album_match_tests}.rs` |
+| 1 | NAV-1 | `crates/reprise-gnome/src/ui/library_doctor/mod.rs`, `crates/reprise-gnome/src/ui/window/{window,window_runtime_wiring,library_shell,content_stack,library_chrome}.rs` |
+| 1 | CARD-1 | `crates/reprise-gnome/src/ui/library_doctor/progress_card.rs`, `crates/reprise-gnome/src/ui/sidebar/{sidebar_activity_slot,sidebar_issues_section}.rs`, `crates/reprise-gnome/src/ui/issues/missing_progress.rs`, and the existing `scan-card*` stylesheet rules |
+| 1 | REV-1 | `crates/reprise-gnome/src/ui/library_doctor/review_page.rs` |
+| 1 | START-1 | `crates/reprise-gnome/src/ui/library_doctor/start_page.rs` and the stethoscope SVG in `assets/icons/**` |
+| 2 | MATCH-3 | `crates/reprise-core/src/library/library_doctor/{scan,store}.rs`, `crates/reprise-core/src/library/library_doctor/remote/orchestrator.rs`, `crates/reprise-core/src/{db_library_doctor,db}.rs` |
+| 2 | MATCH-5 | `crates/reprise-core/src/library/library_doctor/remote/{arbitration,album_match}.rs` |
+| 2 | PERF-2 | `crates/reprise-core/src/library/library_doctor/remote/{cache,cache_tests}.rs` |
+| 2 | REV-3 | `crates/reprise-gnome/src/ui/library_doctor/{review_page,review_conflicts,review_row}.rs` |
+| 2 | REV-4 | `crates/reprise-gnome/src/ui/library_doctor/{review_header,review_model}.rs` |
+| 2 | REV-5 | `crates/reprise-gnome/src/ui/library_doctor/review_row.rs` |
+| 2 | CARD-2 | `crates/reprise-gnome/src/ui/issues/missing_view.rs`, `crates/reprise-gnome/src/ui/window/window.rs` |
+| 3 | PERF-1 | `crates/reprise-core/src/library/library_doctor/{scan,types}.rs`, `crates/reprise-gnome/src/ui/library_doctor/running_page.rs` |
+| 3 | PERF-4 | `crates/reprise-core/src/library/library_doctor/remote/orchestrator.rs` |
+| 3 | PERF-5 | `crates/reprise-core/src/library/library_doctor/preferences.rs`, `crates/reprise-gnome/src/ui/library_doctor/start_page.rs` |
+| 3 | REV-2 | `crates/reprise-core/src/library/library_doctor/{review,review_tests}.rs`, `crates/reprise-gnome/src/ui/library_doctor/{review_page,review_filter_bar}.rs`, `crates/reprise-mcp/src/{doctor_dto,doctor_actions}.rs` |
+| 4 | PERF-3 | `crates/reprise-core/src/library/library_doctor/{store,scan}.rs` |
