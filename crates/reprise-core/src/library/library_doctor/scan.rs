@@ -10,8 +10,9 @@ use super::local_rules::{self, ReadTrack};
 use super::remote::{self, RemoteProviderError, RemoteResolver};
 use super::scope;
 use super::{
-    DoctorError, DoctorScanOptions, DoctorScanOutcome, DoctorScanProgress, DoctorScanRequest,
-    DoctorScopeRequest, DoctorTrackSnapshot, FrozenScope, LocalScanRequest, ScanControl,
+    DoctorError, DoctorScanOptions, DoctorScanOutcome, DoctorScanPhase, DoctorScanProgress,
+    DoctorScanRequest, DoctorScopeRequest, DoctorTrackSnapshot, FrozenScope, LocalScanRequest,
+    ScanControl,
 };
 use crate::fingerprint::FingerprintBackend;
 
@@ -103,8 +104,10 @@ impl<'connection> LibraryDoctor<'connection> {
         let mut snapshot_tracks = Vec::with_capacity(tracks.len());
         let mut skipped_tracks = 0;
         let mut preview_summary = super::DoctorScanSummary::default();
-        for (position, track) in tracks.iter().enumerate() {
+        let local_reads = read_tracks_parallel(tracks);
+        for (position, (track, result)) in local_reads.into_iter().enumerate() {
             if progress(DoctorScanProgress {
+                phase: DoctorScanPhase::ReadingTags,
                 completed_tracks: position,
                 total_tracks: tracks.len(),
                 summary: preview_summary,
@@ -112,8 +115,8 @@ impl<'connection> LibraryDoctor<'connection> {
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
-            match remote::read_remote_metadata(&track.path) {
-                Ok((tags, metadata)) => {
+            match result {
+                Some((tags, metadata)) => {
                     snapshot_tracks.push(DoctorTrackSnapshot {
                         reference: track.clone(),
                         tags: Some(tags.clone()),
@@ -147,7 +150,7 @@ impl<'connection> LibraryDoctor<'connection> {
                     read_tracks.push(read_track);
                     remote_metadata.push(metadata);
                 }
-                Err(_) => {
+                None => {
                     skipped_tracks += 1;
                     preview_summary.merge(super::presentation::partial_scan_summary(&[], 0, 0, 1));
                     snapshot_tracks.push(DoctorTrackSnapshot {
@@ -157,10 +160,11 @@ impl<'connection> LibraryDoctor<'connection> {
                     });
                 }
             }
-            let remote_phase_will_publish_completion =
+            let last_local_remote_track =
                 request.options.remote_enabled && position + 1 == tracks.len();
-            if !remote_phase_will_publish_completion
+            if !last_local_remote_track
                 && progress(DoctorScanProgress {
+                    phase: DoctorScanPhase::ReadingTags,
                     completed_tracks: position + 1,
                     total_tracks: tracks.len(),
                     summary: preview_summary,
@@ -171,13 +175,23 @@ impl<'connection> LibraryDoctor<'connection> {
         }
         let (mut proposals, mut unresolved_groups) = local_rules::proposals_for(&read_tracks);
         if request.options.remote_enabled {
+            if progress(DoctorScanProgress {
+                phase: DoctorScanPhase::CheckingRemote,
+                completed_tracks: tracks.len().saturating_sub(1),
+                total_tracks: tracks.len(),
+                summary: preview_summary,
+            }) == ScanControl::Cancel
+            {
+                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+            }
             let album_groups = group_album_tracks(&read_tracks);
             for indices in album_groups {
                 let query = album_query(&read_tracks, &indices);
                 let album_resolution = if let Some(query) = query {
                     let mut control = || {
                         progress(DoctorScanProgress {
-                            completed_tracks: read_tracks.len().saturating_sub(1),
+                            phase: DoctorScanPhase::CheckingRemote,
+                            completed_tracks: tracks.len().saturating_sub(1),
                             total_tracks: tracks.len(),
                             summary: preview_summary,
                         })
@@ -201,7 +215,8 @@ impl<'connection> LibraryDoctor<'connection> {
                     let published_summary = preview_summary;
                     let mut control = || {
                         progress(DoctorScanProgress {
-                            completed_tracks: read_tracks.len().saturating_sub(1),
+                            phase: DoctorScanPhase::CheckingRemote,
+                            completed_tracks: tracks.len().saturating_sub(1),
                             total_tracks: tracks.len(),
                             summary: published_summary,
                         })
@@ -247,7 +262,8 @@ impl<'connection> LibraryDoctor<'connection> {
                 skipped_tracks,
             );
             if progress(DoctorScanProgress {
-                completed_tracks: read_tracks.len(),
+                phase: DoctorScanPhase::CheckingRemote,
+                completed_tracks: tracks.len(),
                 total_tracks: tracks.len(),
                 summary: preview_summary,
             }) == ScanControl::Cancel
@@ -289,6 +305,46 @@ impl<'connection> LibraryDoctor<'connection> {
         }
         self.apply_review_plan(&plan, progress).map(Some)
     }
+}
+
+fn read_tracks_parallel(
+    tracks: &[super::DoctorTrackRef],
+) -> Vec<(
+    super::DoctorTrackRef,
+    Option<(
+        crate::library::tag_edit::EditableTags,
+        remote::RemoteTrackMetadata,
+    )>,
+)> {
+    if tracks.is_empty() {
+        return Vec::new();
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(tracks.len());
+    let chunk_size = tracks.len().div_ceil(worker_count);
+    std::thread::scope(|scope| {
+        let handles = tracks
+            .chunks(chunk_size)
+            .map(|chunk| {
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .map(|track| {
+                            (
+                                track.clone(),
+                                remote::read_remote_metadata(&track.path).ok(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap_or_default())
+            .collect()
+    })
 }
 
 fn retain_track_fields(resolution: &mut remote::RemoteResolution) {

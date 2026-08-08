@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::library_doctor::DoctorScanPhase;
 
 use super::progress_card::DoctorJobKind;
 use super::summary_model::LiveCounters;
@@ -102,17 +103,31 @@ impl DoctorRunningPanel {
         total: usize,
         counters: LiveCounters,
     ) {
-        self.heading.set_label(&strings::text(match kind {
-            DoctorJobKind::Scan => strings::DOCTOR_SCANNING,
-            DoctorJobKind::Apply => strings::DOCTOR_UPDATING_TAGS,
-            DoctorJobKind::Revert => strings::DOCTOR_REVERTING_TAGS,
-        }));
+        self.render_with_phase(kind, None, completed, total, counters);
+    }
+
+    pub(super) fn render_scan(
+        &self,
+        phase: DoctorScanPhase,
+        completed: usize,
+        total: usize,
+        counters: LiveCounters,
+    ) {
+        self.render_with_phase(DoctorJobKind::Scan, Some(phase), completed, total, counters);
+    }
+
+    fn render_with_phase(
+        &self,
+        kind: DoctorJobKind,
+        phase: Option<DoctorScanPhase>,
+        completed: usize,
+        total: usize,
+        counters: LiveCounters,
+    ) {
+        self.heading.set_label(&running_heading(kind, phase));
         self.tracks
             .set_label(&strings::doctor_track_progress(completed, total));
         self.progress.set_fraction(fraction(completed, total));
-        // The forecast only means something while the scan is still finding
-        // things. Once the quiet write is running there is nothing left to
-        // forecast, and while a revert runs the numbers would be backwards.
         let counters = (kind == DoctorJobKind::Scan).then_some(counters);
         set_counter(
             &self.will_fix,
@@ -126,13 +141,21 @@ impl DoctorRunningPanel {
         );
     }
 
-    /// Cancelling a revert mid-write is a different promise from cancelling a
-    /// scan, so the button only offers itself where the coordinator can honour
-    /// it — which is every job it started with a cancellation flag, i.e. all
-    /// three. Kept as a hook so a future job kind cannot silently inherit it.
     pub(super) fn set_cancellable(&self, cancellable: bool) {
         self.cancel.set_visible(cancellable);
     }
+}
+
+fn running_heading(kind: DoctorJobKind, phase: Option<DoctorScanPhase>) -> String {
+    strings::text(match (kind, phase) {
+        (DoctorJobKind::Scan, Some(DoctorScanPhase::ReadingTags)) => strings::DOCTOR_PHASE_LOCAL,
+        (DoctorJobKind::Scan, Some(DoctorScanPhase::CheckingRemote)) => {
+            strings::DOCTOR_PHASE_REMOTE
+        }
+        (DoctorJobKind::Scan, None) => strings::DOCTOR_SCANNING,
+        (DoctorJobKind::Apply, _) => strings::DOCTOR_UPDATING_TAGS,
+        (DoctorJobKind::Revert, _) => strings::DOCTOR_REVERTING_TAGS,
+    })
 }
 
 fn counter_label() -> gtk4::Label {
@@ -173,6 +196,18 @@ mod tests {
         assert!((fraction(0, 0) - 0.0).abs() < f64::EPSILON);
         assert!((fraction(742, 1648) - 0.450_242_718_446_601_9).abs() < 1e-9);
         assert!((fraction(9, 4) - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn doc_2c_the_running_page_names_the_two_phases() {
+        assert_eq!(
+            running_heading(DoctorJobKind::Scan, Some(DoctorScanPhase::ReadingTags)),
+            "Reading tags…"
+        );
+        assert_eq!(
+            running_heading(DoctorJobKind::Scan, Some(DoctorScanPhase::CheckingRemote)),
+            "Checking against MusicBrainz…"
+        );
     }
 
     #[test]

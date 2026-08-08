@@ -381,7 +381,11 @@ impl LibraryDoctorCoordinator {
         self.job_kind.set(Some(DoctorJobKind::Scan));
         self.page.set_controls_locked(true);
         self.page.begin_job(DoctorJobKind::Scan, 0);
-        self.progress.show(DoctorJobKind::Scan, 0, 0);
+        self.progress.show_scan(
+            reprise_core::library_doctor::DoctorScanPhase::ReadingTags,
+            0,
+            0,
+        );
         self.scan_controls.button.set_sensitive(false);
         let db_path = self.db_path.clone();
         let fingerprint = self.fingerprint.clone();
@@ -419,13 +423,13 @@ impl LibraryDoctorCoordinator {
                         break;
                     }
                     coordinator.page.set_live_summary(progress.summary);
-                    coordinator.page.update_job(
-                        DoctorJobKind::Scan,
+                    coordinator.page.update_scan_job(
+                        progress.phase,
                         progress.completed_tracks,
                         progress.total_tracks,
                     );
-                    coordinator.progress.show(
-                        DoctorJobKind::Scan,
+                    coordinator.progress.show_scan(
+                        progress.phase,
                         progress.completed_tracks,
                         progress.total_tracks,
                     );

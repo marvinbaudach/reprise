@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
+use reprise_core::library_doctor::DoctorScanPhase;
 
 use crate::ui::strings;
 
@@ -39,6 +40,19 @@ fn progress_presentation(
         detail: strings::doctor_track_progress(completed, total),
         percent: (fraction * 100.0).round() as u32,
     }
+}
+
+fn scan_progress_presentation(
+    phase: DoctorScanPhase,
+    completed: usize,
+    total: usize,
+) -> ProgressPresentation {
+    let mut presentation = progress_presentation(DoctorJobKind::Scan, completed, total);
+    presentation.title = strings::text(match phase {
+        DoctorScanPhase::ReadingTags => strings::DOCTOR_PHASE_LOCAL,
+        DoctorScanPhase::CheckingRemote => strings::DOCTOR_PHASE_REMOTE,
+    });
+    presentation
 }
 
 type Callback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
@@ -192,6 +206,14 @@ impl DoctorProgressCard {
 
     pub(super) fn show(&self, kind: DoctorJobKind, completed: usize, total: usize) {
         let presentation = progress_presentation(kind, completed, total);
+        self.show_presentation(&presentation);
+    }
+
+    pub(super) fn show_scan(&self, phase: DoctorScanPhase, completed: usize, total: usize) {
+        self.show_presentation(&scan_progress_presentation(phase, completed, total));
+    }
+
+    fn show_presentation(&self, presentation: &ProgressPresentation) {
         self.title.set_label(&presentation.title);
         self.detail.set_label(&presentation.detail);
         self.percent
@@ -226,7 +248,11 @@ fn card_body_activates(cancel_bounds: Option<&gtk4::graphene::Rect>, x: f64, y: 
 mod tests {
     use gtk4::prelude::*;
 
-    use super::{card_body_activates, progress_presentation, DoctorJobKind, DoctorProgressCard};
+    use super::{
+        card_body_activates, progress_presentation, scan_progress_presentation, DoctorJobKind,
+        DoctorProgressCard,
+    };
+    use reprise_core::library_doctor::DoctorScanPhase;
 
     /// NPP-1: the sidebar is 240px, and the card is a passenger in it.
     const SIDEBAR_WIDTH: i32 = 240;
@@ -277,6 +303,18 @@ mod tests {
         assert_eq!(revert.title, "Reverting tags…");
         assert_eq!(revert.detail, "3/4 tracks");
         assert_eq!(revert.percent, 75);
+    }
+
+    #[test]
+    fn doc_2c_the_sidebar_card_names_the_two_scan_phases() {
+        assert_eq!(
+            scan_progress_presentation(DoctorScanPhase::ReadingTags, 1, 2).title,
+            "Reading tags…"
+        );
+        assert_eq!(
+            scan_progress_presentation(DoctorScanPhase::CheckingRemote, 1, 2).title,
+            "Checking against MusicBrainz…"
+        );
     }
 
     #[test]

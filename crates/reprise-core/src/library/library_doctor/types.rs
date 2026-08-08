@@ -300,7 +300,14 @@ pub enum ScanControl {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoctorScanPhase {
+    ReadingTags,
+    CheckingRemote,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DoctorScanProgress {
+    pub phase: DoctorScanPhase,
     pub completed_tracks: usize,
     pub total_tracks: usize,
     pub summary: super::DoctorScanSummary,
