@@ -91,10 +91,13 @@ impl DoctorProgressCard {
             .xalign(1.0)
             .css_classes(["scan-card-percent"])
             .build();
+        let cancel_label = strings::text(strings::CANCEL);
         let cancel = gtk4::Button::builder()
-            .label(strings::text(strings::CANCEL))
+            .icon_name("window-close-symbolic")
+            .tooltip_text(&cancel_label)
             .css_classes(["flat", "scan-card-cancel"])
             .build();
+        cancel.update_property(&[gtk4::accessible::Property::Label(&cancel_label)]);
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
         header.append(&spinner);
         header.append(&title);
@@ -278,6 +281,11 @@ mod tests {
         while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert_eq!(card.title.label(), "Checking tracks…");
+        assert_eq!(
+            card.cancel.icon_name().as_deref(),
+            Some("window-close-symbolic")
+        );
+        assert_eq!(card.cancel.tooltip_text().as_deref(), Some("Cancel"));
         assert!(
             !card.title.layout().is_ellipsized(),
             "the job label must be readable, not truncated to a few characters"

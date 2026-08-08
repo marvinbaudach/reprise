@@ -99,9 +99,13 @@ impl RelinkProgressView {
         title.add_css_class("scan-card-title");
         let percent = gtk4::Label::builder().halign(gtk4::Align::End).build();
         percent.add_css_class("scan-card-percent");
-        let cancel = gtk4::Button::with_label(&strings::issue_text(strings::CANCEL));
-        cancel.add_css_class("flat");
-        cancel.add_css_class("scan-card-cancel");
+        let cancel_label = strings::issue_text(strings::CANCEL);
+        let cancel = gtk4::Button::builder()
+            .icon_name("window-close-symbolic")
+            .tooltip_text(&cancel_label)
+            .css_classes(["flat", "scan-card-cancel"])
+            .build();
+        cancel.update_property(&[gtk4::accessible::Property::Label(&cancel_label)]);
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
         header.append(&spinner);
         header.append(&title);
@@ -229,7 +233,12 @@ impl RelinkProgressView {
         self.inner.detail.set_label(&state.detail);
         self.inner.progress.set_fraction(state.fraction);
         self.inner.spinner.set_spinning(state.spinner);
-        self.inner.cancel.set_label(&state.cancel_label);
+        self.inner
+            .cancel
+            .set_tooltip_text(Some(&state.cancel_label));
+        self.inner
+            .cancel
+            .update_property(&[gtk4::accessible::Property::Label(&state.cancel_label)]);
     }
 
     pub(super) fn finish(&self) {
@@ -351,6 +360,11 @@ mod tests {
         while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert_eq!(view.inner.title.label(), "Searching for missing tracks");
+        assert_eq!(
+            view.inner.cancel.icon_name().as_deref(),
+            Some("window-close-symbolic")
+        );
+        assert_eq!(view.inner.cancel.tooltip_text().as_deref(), Some("Cancel"));
         assert!(!view.inner.title.layout().is_ellipsized());
         assert_eq!(view.inner.title.width_chars(), 16);
         assert!(view.inner.container.is_focusable());
