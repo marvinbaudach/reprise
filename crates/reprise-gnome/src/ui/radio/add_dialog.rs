@@ -10,11 +10,12 @@ use reprise_core::radio::playlist::PlaylistKind;
 use reprise_core::radio::search::{SearchCriteria, SearchOrder, StationCandidate};
 use reprise_core::radio::{self, RadioError};
 
-use super::add_dialog_network::{now_unix, preview_url, station_from_candidate};
+use super::add_dialog_network::{now_unix, preview_url};
+use super::add_dialog_rows;
 use super::radio_add_input::{classify_input, AddInput};
 use super::radio_chips::{self, NearYouAction};
 use super::station_preview::StationPreview;
-use crate::ui::{one_shot_task, source_add_action, strings};
+use crate::ui::{one_shot_task, strings};
 
 type AddedCallback = Rc<dyn Fn()>;
 type LocationSettingsCallback = Rc<dyn Fn()>;
@@ -57,6 +58,7 @@ pub(super) struct AddDialogState {
     pub phase: AddDialogPhase,
     generation: u64,
     query: Option<String>,
+    result_label: Option<String>,
 }
 
 impl Default for AddDialogState {
@@ -65,6 +67,7 @@ impl Default for AddDialogState {
             phase: AddDialogPhase::Idle,
             generation: 0,
             query: None,
+            result_label: None,
         }
     }
 }
@@ -79,10 +82,11 @@ pub(super) enum AddResult {
 impl AddDialogState {
     pub(super) fn begin(mut self, input: &AddInput) -> (Self, u64) {
         self.generation = self.generation.wrapping_add(1);
-        self.query = match input {
+        self.result_label = match input {
             AddInput::Search(query) => Some(query.clone()),
             AddInput::Empty | AddInput::Url(_) => None,
         };
+        self.query.clone_from(&self.result_label);
         self.phase = match input {
             AddInput::Empty => AddDialogPhase::Idle,
             AddInput::Search(_) => AddDialogPhase::Searching,
@@ -107,6 +111,17 @@ impl AddDialogState {
             AddResult::Error => AddDialogPhase::Error(failure),
         };
         self
+    }
+
+    /// `RAD-6`: shortcut chips search by tag and/or country, never by the
+    /// visible chip label. Their result rows therefore carry no text query.
+    pub(super) fn begin_chip_search(mut self, result_label: String) -> (Self, u64) {
+        self.generation = self.generation.wrapping_add(1);
+        self.query = None;
+        self.result_label = Some(result_label);
+        self.phase = AddDialogPhase::Searching;
+        let generation = self.generation;
+        (self, generation)
     }
 
     pub(super) fn can_confirm(&self) -> bool {
@@ -468,7 +483,7 @@ impl RadioAddDialog {
             .state
             .borrow()
             .clone()
-            .begin(&AddInput::Search(entry_text.to_owned()));
+            .begin_chip_search(entry_text.to_owned());
         self.render(state);
         // `RAD-5`: chips always order by votes — "Top voted" would
         // otherwise silently follow whatever order the user last picked
@@ -610,6 +625,7 @@ impl RadioAddDialog {
     }
 
     fn render_results(self: &Rc<Self>, rows: Vec<StationCandidate>) {
+        let query = self.state.borrow().query.clone();
         let favorites = radio::station::list(&self.conn).map_or_else(
             |error| {
                 tracing::warn!(%error, "could not load radio favorites for search filtering");
@@ -624,10 +640,10 @@ impl RadioAddDialog {
         let rows = radio::search::filter_new_stations(rows, &favorites);
         self.widgets.status.remove_css_class("error");
         if rows.is_empty() {
-            let query = self.state.borrow().query.clone().unwrap_or_default();
+            let result_label = self.state.borrow().result_label.clone().unwrap_or_default();
             self.widgets
                 .status
-                .set_text(&strings::source_nothing_found(&query));
+                .set_text(&strings::source_nothing_found(&result_label));
             self.widgets.status.set_visible(true);
             return;
         }
@@ -638,64 +654,12 @@ impl RadioAddDialog {
         ));
         self.widgets.status.set_visible(true);
         for candidate in rows {
-            let row = gtk4::ListBoxRow::new();
-            let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-            let tile = crate::ui::podcasts::source_image::SourceImage::new(
-                candidate.favicon_url.as_deref(),
-                "network-wireless-symbolic",
-                40,
-                images_allowed(&self.conn),
+            let row = add_dialog_rows::candidate_row(
+                candidate,
+                query.as_deref(),
+                &self.conn,
+                &self.on_added,
             );
-            let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-            copy.set_hexpand(true);
-            let title = gtk4::Label::new(Some(&candidate.name));
-            title.set_xalign(0.0);
-            // SRC-8: both lines ellipsize. A label that keeps its full text
-            // width raises the dialog's *minimum* width past `CONTENT_WIDTH`
-            // — including rows scrolled out of sight — so the dialog would
-            // change size from one search to the next.
-            title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-            let details =
-                gtk4::Label::new(Some(&radio::search::format_candidate_details(&candidate)));
-            details.set_xalign(0.0);
-            details.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-            details.add_css_class("reprise-text-secondary");
-            details.add_css_class("caption");
-            copy.append(&title);
-            copy.append(&details);
-            // SRC-7: the same compact action the podcast and channel dialogs use.
-            let station_name = candidate.name.clone();
-            let add =
-                source_add_action::add_button(source_add_action::AddActionKind::Add, &station_name);
-            let conn = self.conn.clone();
-            let on_added = self.on_added.clone();
-            add.connect_clicked(move |button| {
-                let station = station_from_candidate(candidate.clone());
-                let result = {
-                    let conn = &conn;
-                    radio::station::add_or_restore(conn, &station, now_unix())
-                };
-                match result {
-                    Ok(_) => {
-                        on_added();
-                        // SRC-7: acknowledge in place instead of removing the
-                        // row, so the add stays visible.
-                        source_add_action::mark_added(
-                            button,
-                            source_add_action::AddActionKind::Add,
-                            &station_name,
-                        );
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, "could not add radio search result");
-                        button.set_tooltip_text(Some(&strings::text(strings::RADIO_ADD_FAILED)));
-                    }
-                }
-            });
-            content.append(tile.widget());
-            content.append(&copy);
-            content.append(&add);
-            row.set_child(Some(&content));
             self.widgets.results.append(&row);
         }
     }
