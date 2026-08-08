@@ -81,9 +81,9 @@ impl PageHitCounts {
         counts
     }
 
-    pub(super) fn matching_rows(rows: &[IndexedRow], query: &str) -> Self {
+    pub(super) fn from_rows<'a>(rows: impl IntoIterator<Item = &'a IndexedRow>) -> Self {
         let mut counts = Self::default();
-        for row in rows.iter().filter(|row| row.matches(query)) {
+        for row in rows {
             let Some(index) = PAGE_ORDER
                 .iter()
                 .position(|page| *page == row.document.page)

@@ -241,6 +241,85 @@ fn set_13_matching_reads_the_rows_current_subtitle() {
     parent.close();
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_13_sidebar_counts_only_results_that_can_be_rendered() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let app = adw::Application::builder()
+        .application_id("org.reprise.Reprise.SettingsSearchRenderableCountTest")
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gio::Cancellable>).unwrap();
+    let parent = adw::ApplicationWindow::new(&app);
+    parent.set_default_size(900, 760);
+    parent.present();
+    crate::ui::style::install();
+
+    let live = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ActionRow>::new()));
+    let detached = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ActionRow>::new()));
+    let shell = preferences_window::build(renderable_count_pages(&live, &detached), None, None);
+    shell.dialog.present(Some(&parent));
+    settle_layout();
+    shell.search.reveal();
+    shell.search.entry().set_text("build-index-without-a-hit");
+    settle_layout();
+    shell.search.entry().set_text("");
+    settle_layout();
+
+    let detached = detached
+        .borrow()
+        .upgrade()
+        .expect("the Plugins factory must publish its detachable row");
+    let origin = detached
+        .parent()
+        .and_downcast::<gtk4::ListBox>()
+        .expect("the indexed row must begin in a preferences list");
+    origin.remove(&detached);
+    shell.search.entry().set_text("provider");
+    settle_layout();
+
+    let live = live
+        .borrow()
+        .upgrade()
+        .expect("the Plugins factory must publish its renderable row");
+    let _rendered_origin = shell.search.origin_for(live.upcast_ref());
+    assert_eq!(shell.search.all_results_count().text(), "1");
+    assert_eq!(shell.search.page_count(PageId::Plugins).text(), "1");
+
+    shell.dialog.force_close();
+    parent.close();
+}
+
+fn renderable_count_pages(
+    live: &Rc<RefCell<gtk4::glib::WeakRef<adw::ActionRow>>>,
+    detached: &Rc<RefCell<gtk4::glib::WeakRef<adw::ActionRow>>>,
+) -> Rc<dyn Fn(PageId) -> adw::PreferencesPage> {
+    let live = live.clone();
+    let detached = detached.clone();
+    Rc::new(move |id| {
+        let page = adw::PreferencesPage::builder()
+            .title(id.title())
+            .icon_name(id.icon_name())
+            .build();
+        let group = adw::PreferencesGroup::builder().title("Providers").build();
+        if id == PageId::Plugins {
+            let live_row = adw::ActionRow::builder().title("Provider account").build();
+            let detached_row = adw::ActionRow::builder()
+                .title("Provider diagnostics")
+                .build();
+            live.borrow_mut().set(Some(&live_row));
+            detached.borrow_mut().set(Some(&detached_row));
+            group.add(&live_row);
+            group.add(&detached_row);
+        } else {
+            group.add(&adw::ActionRow::builder().title(id.title()).build());
+        }
+        page.add(&group);
+        page
+    })
+}
+
 fn live_subtitle_pages(
     target: &Rc<RefCell<gtk4::glib::WeakRef<adw::ActionRow>>>,
 ) -> Rc<dyn Fn(PageId) -> adw::PreferencesPage> {

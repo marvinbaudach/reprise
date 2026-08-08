@@ -290,10 +290,7 @@ impl SettingsSearch {
             self.previous_page.set(self.visible_page());
             self.sidebar.prepend(&self.all_results_row);
         }
-        let counts = {
-            let index = self.index.borrow();
-            PageHitCounts::matching_rows(index.as_deref().unwrap_or_default(), query)
-        };
+        let counts = self.show_results(query);
         self.all_results_count.set_text(&counts.total().to_string());
         for entry in &self.page_entries {
             let count = counts.for_page(entry.page);
@@ -303,7 +300,6 @@ impl SettingsSearch {
                 .row
                 .set_opacity(if count == 0 { SIDEBAR_DIM_OPACITY } else { 1.0 });
         }
-        self.show_results(query);
         self.content_stack.set_visible_child_name(RESULTS_CHILD);
         self.content_title
             .set_title(&crate::ui::strings::text(crate::ui::strings::ALL_RESULTS));
@@ -333,9 +329,9 @@ impl SettingsSearch {
             .select_row(self.sidebar.row_at_index(index).as_ref());
     }
 
-    fn show_results(&self, query: &str) {
+    fn show_results(&self, query: &str) -> PageHitCounts {
         self.restore_results();
-        let matches: Vec<_> = self
+        let moves: Vec<_> = self
             .index
             .borrow()
             .as_deref()
@@ -343,9 +339,6 @@ impl SettingsSearch {
             .iter()
             .filter(|entry| entry.matches(query))
             .cloned()
-            .collect();
-        let moves: Vec<_> = matches
-            .into_iter()
             .filter_map(|indexed| {
                 let Some(origin) = capture_origin(&indexed.row) else {
                     tracing::warn!(title = %indexed.document.title, "settings search row has no list origin");
@@ -354,6 +347,7 @@ impl SettingsSearch {
                 Some((indexed, origin))
             })
             .collect();
+        let counts = PageHitCounts::from_rows(moves.iter().map(|(indexed, _)| indexed));
         for (indexed, origin) in moves {
             self.move_result(indexed, origin, query);
         }
@@ -367,6 +361,7 @@ impl SettingsSearch {
                 query: query.to_owned(),
                 facets_restrict: false,
             });
+        counts
     }
 
     fn move_result(&self, indexed: IndexedRow, origin: RowOrigin, query: &str) {
