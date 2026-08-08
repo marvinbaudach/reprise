@@ -204,7 +204,7 @@ pub(super) fn candidate_row(
         let marker = gtk4::Image::from_icon_name(crate::ui::icons::UNEXPLAINED_SEARCH_MATCH);
         marker.set_pixel_size(16);
         marker.set_valign(gtk4::Align::Center);
-        marker.add_css_class("dim-label");
+        marker.add_css_class("reprise-text-secondary");
         marker.set_tooltip_text(Some(&explanation));
         marker.update_property(&[gtk4::accessible::Property::Description(&explanation)]);
         title_line.append(&marker);
