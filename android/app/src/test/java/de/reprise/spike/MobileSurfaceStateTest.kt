@@ -25,7 +25,6 @@ class MobileSurfaceStateTest {
     fun theMeasuredPortraitMetricsStaySeparateFromLandscape() {
         assertEquals(
             LibraryFrameMetrics(
-                topAppBarHeightDp = 64,
                 filterChipHeightDp = 32,
                 trackRowHeightDp = 72,
                 trackCoverSizeDp = 56,
@@ -37,7 +36,6 @@ class MobileSurfaceStateTest {
             ),
             libraryFrameMetrics(SurfaceLayout.STACKED),
         )
-        assertEquals(52, libraryFrameMetrics(SurfaceLayout.WIDE_SHORT).topAppBarHeightDp)
         assertEquals(64, libraryFrameMetrics(SurfaceLayout.WIDE_SHORT).trackRowHeightDp)
         assertEquals(2, libraryFrameMetrics(SurfaceLayout.WIDE_SHORT).listColumns)
         assertEquals(16, libraryFrameMetrics(SurfaceLayout.WIDE_SHORT).listColumnGapDp)

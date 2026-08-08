@@ -3,9 +3,11 @@ package de.reprise.spike
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -51,16 +53,16 @@ class MainActivityRatingTest {
         assertEquals(emptyList<LibraryTrack>(), application.currentQueue)
 
         compose.onNodeWithText("Favourites").performClick()
-        compose.onNodeWithText("Rotation Song 1").assertIsDisplayed()
+        favouriteTrack().assertIsDisplayed()
         libraryHeart("Remove from favourites").performClick()
         compose.waitForIdle()
 
         assertEquals(listOf(1L to 5, 1L to 0), application.controls.ratingRequests)
         assertEquals(0, application.trackRatings[1L])
-        compose.onNodeWithText("Rotation Song 1").assertDoesNotExist()
+        favouriteTrack().assertDoesNotExist()
 
         recreate()
-        compose.onNodeWithText("Rotation Song 1").assertDoesNotExist()
+        favouriteTrack().assertDoesNotExist()
     }
 
     @Test
@@ -98,8 +100,20 @@ class MainActivityRatingTest {
     }
 
     private fun libraryHeart(description: String) =
-        compose.onAllNodesWithTag(TRACK_HEART_TAG)[0]
+        compose.onNode(
+            hasTestTag(TRACK_HEART_TAG) and
+                hasContentDescription(description) and
+                hasAnyAncestor(hasTestTag("library-track-row-1")) and
+                hasAnyAncestor(
+                    hasTestTag("library-page-${application.rememberedDestination.name}"),
+                ),
+        )
             .assertContentDescriptionEquals(description)
+
+    private fun favouriteTrack() = compose.onNode(
+        hasTestTag("library-track-row-1") and
+            hasAnyAncestor(hasTestTag("library-page-FAVOURITES")),
+    )
 
     private fun publishTrack(trackId: Long) {
         application.service.publish(m9bSnapshot(trackId))

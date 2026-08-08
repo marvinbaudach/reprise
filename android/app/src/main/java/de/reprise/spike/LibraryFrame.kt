@@ -55,36 +55,46 @@ import de.reprise.spike.ui.theme.MaterialSymbolsRounded
 import de.reprise.spike.ui.theme.MaterialSymbolsRoundedFilled
 
 @Composable
-internal fun LibraryTopAppBar(
-    surfaceLayout: SurfaceLayout,
+internal fun LibrarySummaryActions(
+    summary: String,
     searching: Boolean,
     toggleSearch: () -> Unit,
     rescan: () -> Unit,
     openSettings: () -> Unit,
 ) {
-    val metrics = libraryFrameMetrics(surfaceLayout)
     var menuExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(metrics.topAppBarHeightDp.dp)
-            .testTag("library-top-app-bar")
+            .height(48.dp)
+            .testTag("library-summary-row")
             .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "Library",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.weight(1f),
+            text = summary,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .testTag("library-summary-text"),
         )
-        IconButton(onClick = toggleSearch, modifier = Modifier.size(48.dp)) {
+        IconButton(
+            onClick = toggleSearch,
+            modifier = Modifier.size(48.dp).testTag("library-summary-search"),
+        ) {
             MaterialSymbol(
                 name = if (searching) "close" else "search",
                 contentDescription = if (searching) "Close search" else "Search library",
             )
         }
         Box {
-            IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(48.dp)) {
+            IconButton(
+                onClick = { menuExpanded = true },
+                modifier = Modifier.size(48.dp).testTag("library-summary-overflow"),
+            ) {
                 MaterialSymbol("more_vert", "Library actions")
             }
             DropdownMenu(
