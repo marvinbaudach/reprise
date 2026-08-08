@@ -104,6 +104,9 @@ pub const ALL_EPISODES: &str = N_!("all episodes");
 pub const UNPLAYED_ONLY: &str = N_!("unplayed only");
 pub const PLAYED_ARE_REMOVED: &str = N_!("played are removed");
 pub const NO_SIZE_LIMIT: &str = N_!("no size limit");
+const LEGEND_MUSIC: &str = N_!("Music");
+const LEGEND_YOUTUBE: &str = N_!("YouTube");
+const LEGEND_PODCASTS: &str = N_!("Podcasts");
 
 pub fn available_space(bytes: Option<u64>) -> String {
     bytes.map_or_else(
@@ -279,6 +282,19 @@ pub fn category_name(kind: reprise_core::device_sync::SyncTargetKind) -> &'stati
         SyncTargetKind::YoutubeAudio => "YouTube audio",
         SyncTargetKind::PodcastEpisodes => "Podcast episodes",
     }
+}
+
+/// Design 2c's compact storage legend uses source identities rather than the
+/// longer content-row headings. These messages already exist elsewhere in the
+/// catalog and remain independently translated in required-complete locales.
+pub fn category_legend_text(kind: reprise_core::device_sync::SyncTargetKind, bytes: u64) -> String {
+    use reprise_core::device_sync::SyncTargetKind;
+    let name = text(match kind {
+        SyncTargetKind::Playlists => LEGEND_MUSIC,
+        SyncTargetKind::YoutubeAudio => LEGEND_YOUTUBE,
+        SyncTargetKind::PodcastEpisodes => LEGEND_PODCASTS,
+    });
+    format!("{name} {}", file_size(bytes))
 }
 
 /// The category rule's size phrase: "max 8.0 GiB" or "no size limit".
