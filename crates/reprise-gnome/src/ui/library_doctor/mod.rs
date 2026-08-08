@@ -2,6 +2,7 @@ mod auto_apply;
 mod jobs;
 #[cfg(test)]
 mod jobs_tests;
+mod navigation;
 mod progress_card;
 pub(in crate::ui) mod remote_toggle;
 mod result_pages;
@@ -22,13 +23,6 @@ mod summary_page_tests;
 #[cfg(test)]
 mod tests;
 mod write_jobs;
-
-use std::cell::{Cell, RefCell};
-use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-
 use gtk4::glib;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -38,11 +32,17 @@ use reprise_core::library_doctor::{
     DoctorScanOutcome, DoctorScanRequest, DoctorScopeRequest, DoctorViewSnapshot, LibraryDoctor,
 };
 use reprise_core::view_source::ViewSource;
+use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::track_list::TrackList;
 use jobs::run_scan;
+use navigation::DoctorNavigation;
 use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
@@ -66,6 +66,7 @@ pub(in crate::ui) fn css() -> String {
         // fill, no shadow.
         ".doctor-card-dashed { border: 1px dashed alpha(@borders, 0.9); border-radius: 12px; }",
         &start_page_css::css(),
+        ".doctor-review-header-action { font-size: 13px; padding: 5px 12px; }",
     ]
     .join(" ")
 }
@@ -73,7 +74,7 @@ pub(in crate::ui) fn css() -> String {
 pub(in crate::ui) struct LibraryDoctorCoordinator {
     conn: Rc<Db>,
     db_path: PathBuf,
-    navigation: adw::NavigationView,
+    navigation: DoctorNavigation,
     window: adw::ApplicationWindow,
     page: Rc<LibraryDoctorPage>,
     track_list: Rc<TrackList>,
@@ -95,7 +96,9 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
 pub(in crate::ui) struct LibraryDoctorContext<'a> {
     pub(in crate::ui) conn: &'a Rc<Db>,
     pub(in crate::ui) db_path: &'a Path,
-    pub(in crate::ui) navigation: &'a adw::NavigationView,
+    pub(in crate::ui) content_navigation: &'a adw::NavigationView,
+    pub(in crate::ui) content_stack: &'a gtk4::Stack,
+    pub(in crate::ui) doctor_navigation: &'a adw::NavigationView,
     pub(in crate::ui) window: &'a adw::ApplicationWindow,
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
     pub(in crate::ui) scan_controls: &'a ScanControls,
@@ -110,7 +113,9 @@ impl LibraryDoctorCoordinator {
         let LibraryDoctorContext {
             conn,
             db_path,
-            navigation,
+            content_navigation,
+            content_stack,
+            doctor_navigation,
             window,
             track_list,
             scan_controls,
@@ -119,6 +124,8 @@ impl LibraryDoctorCoordinator {
             toast_overlay,
             refresh_views,
         } = context;
+        let navigation =
+            DoctorNavigation::new(content_navigation, content_stack, doctor_navigation);
         let coordinator = Rc::new_cyclic(|weak: &std::rc::Weak<Self>| {
             let refresh = {
                 let weak = weak.clone();
@@ -242,6 +249,9 @@ impl LibraryDoctorCoordinator {
                 }
             });
         }
+        coordinator
+            .navigation
+            .add_root(coordinator.page.navigation_page());
         coordinator.install_tag_edit_observer();
         coordinator
     }
@@ -288,11 +298,7 @@ impl LibraryDoctorCoordinator {
     }
 
     fn open_root_page(&self) {
-        if let Some(page) = self.navigation.find_page("library-doctor") {
-            self.navigation.pop_to_page(&page);
-        } else {
-            self.navigation.push(self.page.navigation_page());
-        }
+        self.navigation.show_root();
     }
 
     pub(super) fn load_last_scan(&self) {
@@ -535,15 +541,8 @@ impl LibraryDoctorCoordinator {
     }
 
     fn open_review_page(&self) {
-        let Some(review) = self.review.borrow().as_ref().cloned() else {
-            self.open_root_page();
-            return;
-        };
-        if self.navigation.find_page("library-doctor-review").is_some() {
-            self.navigation.pop_to_tag("library-doctor-review");
-        } else {
-            self.navigation.push(review.navigation_page());
-        }
+        let review = self.review.borrow().as_ref().cloned();
+        self.navigation.show_review_or_root(review);
     }
 }
 

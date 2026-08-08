@@ -65,6 +65,18 @@ pub(in crate::ui) fn build(
     }
 }
 
+pub(in crate::ui) fn wire_content_stack(root: &adw::ToolbarView, stack: &gtk4::Stack) {
+    sync_content_chrome(root, stack.visible_child_name().as_deref());
+    let root = root.clone();
+    stack.connect_visible_child_name_notify(move |stack| {
+        sync_content_chrome(&root, stack.visible_child_name().as_deref());
+    });
+}
+
+fn sync_content_chrome(root: &adw::ToolbarView, visible_child: Option<&str>) {
+    root.set_reveal_top_bars(visible_child != Some("library-doctor"));
+}
+
 pub(in crate::ui) fn build_navigation_back_button() -> gtk4::Button {
     let label = strings::text(strings::NAVIGATE_BACK);
     let button = gtk4::Button::builder()

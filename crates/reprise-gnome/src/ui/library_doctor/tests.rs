@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use gtk4::prelude::*;
+use libadwaita as adw;
 use reprise_core::fingerprint::{
     FingerprintBackend, FingerprintCapability, FingerprintControl, FingerprintError,
     FingerprintOutcome, FingerprintProgress,
@@ -67,6 +69,66 @@ fn doc_7b_entry_scope_defaults_to_library_and_suggests_filtered_view() {
     let mut browsed = snapshot();
     browsed.browse.genre = Some("Jazz".into());
     assert_eq!(super::suggested_scope(&browsed), 1);
+}
+
+#[test]
+fn doc_7c_the_doctor_is_a_content_stack_child_not_a_content_nav_push() {
+    let coordinator = include_str!("mod.rs");
+    let navigation = include_str!("navigation.rs");
+    let window = include_str!("../window/window.rs");
+
+    assert!(window.contains("Some(\"library-doctor\")"));
+    assert!(navigation.contains("content_stack::show_page"));
+    assert!(coordinator.contains("self.navigation.show_root()"));
+    assert!(!navigation.contains("content_navigation.push"));
+}
+
+#[test]
+fn doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view() {
+    let coordinator = include_str!("mod.rs");
+    let navigation = include_str!("navigation.rs");
+    let review = include_str!("review_page.rs");
+
+    assert!(coordinator.contains("self.navigation.show_review_or_root(review)"));
+    assert!(navigation.contains("self.show_review(review.navigation_page())"));
+    assert!(navigation.contains("self.doctor_navigation.push(page)"));
+    assert!(review.contains("adw::WindowTitle::new"));
+    assert!(review.contains("doctor-review-header-action"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_7c_opening_the_doctor_keeps_the_now_playing_pane_open() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let stack = gtk4::Stack::new();
+    stack.add_named(&gtk4::Label::new(Some("Library")), Some("library"));
+    stack.add_named(&adw::NavigationView::new(), Some("library-doctor"));
+    stack.set_visible_child_name("library");
+    let info_panel = gtk4::Label::new(Some("Now Playing"));
+    let split = adw::OverlaySplitView::builder()
+        .content(&stack)
+        .sidebar(&info_panel)
+        .show_sidebar(true)
+        .collapsed(false)
+        .build();
+    let window = adw::ApplicationWindow::builder()
+        .default_width(1_000)
+        .default_height(700)
+        .content(&split)
+        .build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    crate::ui::window::content_stack::show_page(&stack, "library-doctor");
+
+    assert!(split.shows_sidebar());
+    assert_eq!(
+        stack.visible_child_name().as_deref(),
+        Some("library-doctor")
+    );
+    window.close();
 }
 
 #[test]

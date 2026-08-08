@@ -151,9 +151,7 @@ impl LibraryDoctorCoordinator {
     }
 
     fn doctor_page_visible(&self) -> bool {
-        self.navigation
-            .visible_page_tag()
-            .is_some_and(|tag| tag.starts_with("library-doctor"))
+        self.navigation.is_visible()
     }
 }
 

@@ -427,6 +427,8 @@ impl LibraryDoctorReviewPage {
 
         let all = gtk4::Button::with_label(&strings::text(strings::DOCTOR_ALL));
         let none = gtk4::Button::with_label(&strings::text(strings::DOCTOR_NONE));
+        all.add_css_class("doctor-review-header-action");
+        none.add_css_class("doctor-review-header-action");
         {
             let state = state.clone();
             all.connect_clicked(move |_| {
@@ -445,6 +447,8 @@ impl LibraryDoctorReviewPage {
         presets.append(&all);
         presets.append(&none);
         let top_bar = adw::HeaderBar::new();
+        let title = adw::WindowTitle::new(&strings::text(strings::DOCTOR_REVIEW_TITLE), "");
+        top_bar.set_title_widget(Some(&title));
         top_bar.pack_end(&presets);
 
         let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
