@@ -415,6 +415,17 @@ impl ExternalPlaybackState {
         self.preview_path = None;
     }
 
+    /// Whether there is any external mode to leave — an episode or stream, a
+    /// preview, or a pending play-next offer.
+    ///
+    /// Ordinary queue playback calls `leave_external_for_queue` on every track
+    /// start, and almost always the answer here is `false`. Clearing and
+    /// announcing regardless is what made a track start pay for a full Up Next
+    /// rebuild; see that function's doc comment for the measurement.
+    pub(in crate::ui) fn has_external_mode(&self) -> bool {
+        self.session.is_some() || self.preview_path.is_some() || self.play_next.is_some()
+    }
+
     pub(super) fn begin_session(&mut self, session: ExternalSession) -> u64 {
         self.preview_path = None;
         self.session = Some(session);

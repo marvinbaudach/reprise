@@ -332,3 +332,58 @@ fn radio_state() -> ExternalPlaybackState {
         ..ExternalPlaybackState::default()
     }
 }
+
+/// Ordinary queue playback leaves external mode on every single track start,
+/// and the announcement that follows is expensive: one listener rebuilds the
+/// Now Playing panel's Up Next list from the whole queue, measured at 52–73 ms
+/// on a 2,340-track library — which sat between the click and the first sound
+/// while starting the pipeline itself took 3.7 ms.
+///
+/// So the question this predicate answers has to stay exact in both
+/// directions. Answering `true` too eagerly brings the cost back; answering
+/// `false` when an episode, stream or preview really was playing would leave
+/// the interface showing it after a library track has taken over.
+#[test]
+fn only_a_real_external_mode_counts_as_one_to_leave() {
+    let mut state = ExternalPlaybackState::default();
+    assert!(
+        !state.has_external_mode(),
+        "plain queue playback has no external mode to leave"
+    );
+
+    state.session = Some(ExternalSession::Podcast(podcast_session(None, None)));
+    assert!(state.has_external_mode(), "a playing episode must be left");
+    state.clear_session();
+    assert!(!state.has_external_mode());
+
+    state.preview_path = Some("/tmp/preview.flac".into());
+    assert!(state.has_external_mode(), "a preview must be left");
+    state.clear_preview();
+    assert!(!state.has_external_mode());
+
+    state.play_next = Some(EpisodeRow {
+        id: 7,
+        subscription_id: 1,
+        guid: "episode-7".into(),
+        title: "Episode 7".into(),
+        show: "Show".into(),
+        show_image_url: None,
+        image_url: None,
+        kind: reprise_core::podcasts::PodcastKind::Rss,
+        audio_url: "https://example.test/7.mp3".into(),
+        page_url: None,
+        published_at: None,
+        duration_secs: None,
+        downloaded_path: None,
+        downloaded_bytes: None,
+        played_at: None,
+        position_ms: 0,
+        first_seen_at: 1,
+        is_new: false,
+        media_category: None,
+    });
+    assert!(
+        state.has_external_mode(),
+        "a pending play-next offer must be cleared and announced"
+    );
+}
