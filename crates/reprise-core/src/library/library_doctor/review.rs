@@ -89,6 +89,16 @@ pub enum DoctorReviewRowState {
     Conflict,
 }
 
+// The matcher caps specificity losses at 49. Keep this threshold one point
+// above that named cap so the guard and initial review state stay aligned.
+const MIN_PRESELECT_CONFIDENCE: u8 = 50;
+
+fn starts_selected(state: DoctorReviewRowState, never_preselect: bool, confidence: u8) -> bool {
+    state == DoctorReviewRowState::Ready
+        && !never_preselect
+        && confidence >= MIN_PRESELECT_CONFIDENCE
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoctorReviewRowOrigin {
     Proposal,
@@ -107,6 +117,7 @@ pub struct DoctorReviewRow {
     pub evidence: Vec<super::remote::RemoteEvidence>,
     pub problem_class: ProblemClass,
     pub state: DoctorReviewRowState,
+    pub never_preselect: bool,
     pub selected: bool,
     pub origin: DoctorReviewRowOrigin,
 }
@@ -277,7 +288,8 @@ impl DoctorReviewSession {
                 evidence: proposal.evidence,
                 problem_class: proposal.problem_class,
                 state,
-                selected: state == DoctorReviewRowState::Ready,
+                never_preselect: proposal.never_preselect,
+                selected: starts_selected(state, proposal.never_preselect, proposal.confidence),
                 origin: DoctorReviewRowOrigin::Proposal,
             });
         }
@@ -417,7 +429,8 @@ impl DoctorReviewSession {
                     && prior.3 == row.proposed
                     && prior.4 == row.source
             }) {
-                row.selected = *selected && row.state == DoctorReviewRowState::Ready;
+                row.selected =
+                    starts_selected(row.state, row.never_preselect, row.confidence) && *selected;
             }
         }
         *self = rebuilt;
@@ -511,12 +524,12 @@ impl DoctorReviewSession {
                 continue;
             }
             let state = template.state;
-            let selected = state == DoctorReviewRowState::Ready
-                && self
-                    .tie_selection
-                    .get(&template.id)
-                    .copied()
-                    .unwrap_or(true);
+            let remembered_selected = self
+                .tie_selection
+                .get(&template.id)
+                .copied()
+                .unwrap_or(true);
+            let selected = starts_selected(state, false, confidence) && remembered_selected;
             self.tie_selection.entry(template.id).or_insert(selected);
             self.rows.push(DoctorReviewRow {
                 id: template.id,
@@ -529,6 +542,7 @@ impl DoctorReviewSession {
                 evidence: chosen.evidence.clone(),
                 problem_class: tie_problem_class(template.field),
                 state,
+                never_preselect: false,
                 selected,
                 origin: DoctorReviewRowOrigin::ManualGroup(group_id),
             });

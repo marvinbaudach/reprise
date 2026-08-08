@@ -138,16 +138,80 @@ fn doc_8b_stale_rows_are_never_auto_applied() {
 
 #[test]
 fn doc_8b_review_tier_preselects_every_ready_row() {
+    let mut capped = proposal(3, DoctorField::Title, ProposalSource::MusicBrainz);
+    capped.confidence = 49;
+    capped.never_preselect = true;
     let review = DoctorReviewSession::from_scan(
         scan(vec![
             proposal(1, DoctorField::Artist, ProposalSource::MusicBrainz),
             proposal(2, DoctorField::Genre, ProposalSource::AcoustId),
+            capped,
         ]),
         DoctorReviewFilter::NeedsReview,
     );
 
-    assert_eq!(review.rows().len(), 2);
-    assert!(review.rows().iter().all(|row| row.selected));
+    assert_eq!(review.rows().len(), 3);
+    assert!(review
+        .rows()
+        .iter()
+        .filter(|row| !row.never_preselect)
+        .all(|row| row.selected));
+    assert!(
+        !review
+            .rows()
+            .iter()
+            .find(|row| row.never_preselect)
+            .unwrap()
+            .selected
+    );
+}
+
+#[test]
+fn doc_4c_a_capped_proposal_does_not_start_selected() {
+    let mut capped = proposal(1, DoctorField::Title, ProposalSource::MusicBrainz);
+    capped.confidence = 49;
+    capped.never_preselect = true;
+
+    let review =
+        DoctorReviewSession::from_scan(scan(vec![capped]), DoctorReviewFilter::NeedsReview);
+
+    assert_eq!(review.rows()[0].state, DoctorReviewRowState::Ready);
+    assert!(!review.rows()[0].selected);
+}
+
+#[test]
+fn doc_4c_a_row_below_fifty_percent_does_not_start_selected() {
+    let mut low_confidence = proposal(1, DoctorField::Title, ProposalSource::AcoustId);
+    low_confidence.confidence = 49;
+
+    let review =
+        DoctorReviewSession::from_scan(scan(vec![low_confidence]), DoctorReviewFilter::NeedsReview);
+
+    assert_eq!(review.rows()[0].state, DoctorReviewRowState::Ready);
+    assert!(!review.rows()[0].selected);
+}
+
+#[test]
+fn doc_8b_one_predicate_decides_the_initial_selection() {
+    let source = include_str!("review.rs");
+    let normalized = source.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    assert_eq!(source.matches("fn starts_selected(").count(), 1);
+    assert_eq!(source.matches("starts_selected(").count(), 4);
+    assert_eq!(normalized.matches("selected: starts_selected(").count(), 1);
+    assert_eq!(
+        normalized
+            .matches("row.selected = starts_selected(")
+            .count(),
+        1
+    );
+    assert_eq!(
+        normalized
+            .matches("let selected = starts_selected(")
+            .count(),
+        1
+    );
+    assert!(!source.contains("selected: state == DoctorReviewRowState::Ready"));
 }
 
 #[test]
@@ -202,9 +266,13 @@ fn doc_3a_review_selects_each_track_field_independently() {
 
 #[test]
 fn doc_8b_all_preset_selects_every_ready_row_and_none_clears_them() {
+    let mut capped = proposal(3, DoctorField::Title, ProposalSource::MusicBrainz);
+    capped.confidence = 49;
+    capped.never_preselect = true;
     let source = scan(vec![
         proposal(1, DoctorField::Artist, ProposalSource::AcoustId),
         proposal(2, DoctorField::Album, ProposalSource::MusicBrainz),
+        capped,
     ]);
     let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
     let ready = review.rows()[0].id;
@@ -216,14 +284,11 @@ fn doc_8b_all_preset_selects_every_ready_row_and_none_clears_them() {
 
     review.all();
 
-    assert!(
-        review
-            .rows()
-            .iter()
-            .find(|row| row.id == ready)
-            .unwrap()
-            .selected
-    );
+    assert!(review
+        .rows()
+        .iter()
+        .filter(|row| row.state == DoctorReviewRowState::Ready)
+        .all(|row| row.selected));
     assert!(
         !review
             .rows()
