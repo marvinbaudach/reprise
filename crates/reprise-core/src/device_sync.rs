@@ -20,6 +20,7 @@ pub mod category_diff;
 pub mod delta;
 pub mod device_presence;
 pub mod device_view;
+pub mod listen_report;
 pub mod lyrics_sidecar;
 pub mod m3u;
 pub mod machine;

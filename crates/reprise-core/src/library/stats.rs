@@ -62,9 +62,11 @@ pub fn set_rating(db: &Db, track_id: i64, rating: i32) -> Result<(), rusqlite::E
 /// zero-row behaviour its desktop call sites were written against.
 pub fn set_rating_if_present(db: &Db, track_id: i64, rating: i32) -> Result<bool, rusqlite::Error> {
     let clamped = rating.clamp(RATING_MIN, RATING_MAX);
+    let rated_at = now_unix();
     let changed = db.conn().execute(
-        "UPDATE tracks SET rating = ?1 WHERE id = ?2 AND removed_at IS NULL",
-        rusqlite::params![clamped, track_id],
+        "UPDATE tracks SET rating = ?1, rated_at = ?2 \
+         WHERE id = ?3 AND removed_at IS NULL",
+        rusqlite::params![clamped, rated_at, track_id],
     )?;
     Ok(changed == 1)
 }
@@ -80,9 +82,10 @@ pub(crate) fn set_rating_in(
     rating: i32,
 ) -> Result<(), rusqlite::Error> {
     let clamped = rating.clamp(RATING_MIN, RATING_MAX);
+    let rated_at = now_unix();
     conn.execute(
-        "UPDATE tracks SET rating = ?1 WHERE id = ?2",
-        rusqlite::params![clamped, track_id],
+        "UPDATE tracks SET rating = ?1, rated_at = ?2 WHERE id = ?3",
+        rusqlite::params![clamped, rated_at, track_id],
     )?;
     Ok(())
 }
@@ -100,17 +103,37 @@ pub(crate) fn set_rating_for_registered_track(
     rating: i32,
 ) -> Result<bool, rusqlite::Error> {
     let clamped = rating.clamp(RATING_MIN, RATING_MAX);
+    let rated_at = now_unix();
     let changed = conn.execute(
-        "UPDATE tracks SET rating=?1 \
-         WHERE id=?2 AND path=?3 AND removed_at IS NULL",
-        rusqlite::params![clamped, track_id, path.to_string_lossy()],
+        "UPDATE tracks SET rating=?1, rated_at=?2 \
+         WHERE id=?3 AND path=?4 AND removed_at IS NULL",
+        rusqlite::params![clamped, rated_at, track_id, path.to_string_lossy()],
     )?;
     Ok(changed == 1)
 }
 
-/// Increments `track_id`'s play count and sets `last_played_at` to
-/// `now_unix` (seconds since the Unix epoch — the same unit `scanner.rs`
-/// uses for `added_at`/`occurred_at`).
+/// Applies a timestamped rating only when it is strictly newer than the row.
+///
+/// A missing timestamp is older than every timestamp the phone can report;
+/// equality deliberately keeps the desktop value.
+pub(crate) fn set_rating_if_newer_in(
+    conn: &Connection,
+    track_id: i64,
+    rating: i32,
+    rated_at: i64,
+) -> Result<bool, rusqlite::Error> {
+    let clamped = rating.clamp(RATING_MIN, RATING_MAX);
+    let changed = conn.execute(
+        "UPDATE tracks SET rating = ?1, rated_at = ?2
+          WHERE id = ?3 AND (rated_at IS NULL OR rated_at < ?2)",
+        rusqlite::params![clamped, rated_at, track_id],
+    )?;
+    Ok(changed == 1)
+}
+
+/// Increments `track_id`'s play count and advances `last_played_at` to
+/// `now_unix` when it is newer (seconds since the Unix epoch — the same unit
+/// `scanner.rs` uses for `added_at`/`occurred_at`).
 pub fn record_play(db: &Db, track_id: i64, now_unix: i64) -> Result<(), rusqlite::Error> {
     record_play_in(db.conn(), track_id, now_unix)
 }
@@ -126,7 +149,13 @@ pub(crate) fn record_play_in(
     now_unix: i64,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "UPDATE tracks SET play_count = play_count + 1, last_played_at = ?1 WHERE id = ?2",
+        "UPDATE tracks
+            SET play_count = play_count + 1,
+                last_played_at = CASE
+                    WHEN last_played_at IS NULL OR last_played_at < ?1 THEN ?1
+                    ELSE last_played_at
+                END
+          WHERE id = ?2",
         rusqlite::params![now_unix, track_id],
     )?;
     Ok(())
@@ -206,6 +235,12 @@ pub fn should_count_play(max_position_ms: i64, duration_ms: i64) -> bool {
     duration_ms > 0 && max_position_ms * 2 >= duration_ms
 }
 
+pub(crate) fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs() as i64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,6 +278,16 @@ mod tests {
             .unwrap()
     }
 
+    fn rated_at_of(db: &Db, track_id: i64) -> Option<i64> {
+        db.conn()
+            .query_row(
+                "SELECT rated_at FROM tracks WHERE id = ?1",
+                [track_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
     #[test]
     fn should_count_play_false_at_zero_position() {
         assert!(!should_count_play(0, 1000));
@@ -272,6 +317,7 @@ mod tests {
             .query_row("SELECT rating FROM tracks WHERE id = 1", [], |r| r.get(0))
             .unwrap();
         assert_eq!(rating, 3);
+        assert!(rated_at_of(&conn, 1).is_some());
     }
 
     #[test]
@@ -316,7 +362,20 @@ mod tests {
 
         assert!(set_rating_if_present(&conn, 1, 4).unwrap());
         assert_eq!(rating_of(&conn, 1), 4);
+        assert!(rated_at_of(&conn, 1).is_some());
         assert!(!set_rating_if_present(&conn, 404, 4).unwrap());
+    }
+
+    #[test]
+    fn registered_track_rating_write_records_when_it_was_rated() {
+        let conn = seeded_conn();
+
+        assert!(
+            set_rating_for_registered_track(conn.conn(), 1, Path::new("/x/a.flac"), 5,).unwrap()
+        );
+
+        assert_eq!(rating_of(&conn, 1), 5);
+        assert!(rated_at_of(&conn, 1).is_some());
     }
 
     #[test]

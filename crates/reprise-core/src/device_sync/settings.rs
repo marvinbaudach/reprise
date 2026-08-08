@@ -232,6 +232,7 @@ pub fn forget_device(db: &crate::db::Db, stable_id: &str) -> Result<(), DeviceSe
     )?;
     for (table, column) in [
         ("device_files", "device_serial"),
+        ("device_listen_report_state", "device_serial"),
         ("device_playlists", "device_serial"),
         ("device_sync_targets", "device_serial"),
         ("sync_runs", "device_serial"),
@@ -297,6 +298,7 @@ pub fn rekey_legacy_device(
     let transaction = conn.unchecked_transaction()?;
     for (table, column) in [
         ("device_files", "device_serial"),
+        ("device_listen_report_state", "device_serial"),
         ("device_playlists", "device_serial"),
         ("device_sync_targets", "device_serial"),
         ("sync_runs", "device_serial"),

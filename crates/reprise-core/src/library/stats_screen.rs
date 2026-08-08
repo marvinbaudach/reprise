@@ -151,7 +151,20 @@ pub fn record_listen_event(
     ms_played: i64,
     snapshot: &ListenEventSnapshot,
 ) -> Result<(), rusqlite::Error> {
-    let conn = db.conn();
+    record_listen_event_in(db.conn(), track_id, played_at, ms_played, snapshot)
+}
+
+/// The listen-history insert on a caller-owned connection or transaction.
+///
+/// Local playback and phone-report application deliberately share this exact
+/// mutation so a completed play has one historical definition.
+pub(crate) fn record_listen_event_in(
+    conn: &Connection,
+    track_id: i64,
+    played_at: i64,
+    ms_played: i64,
+    snapshot: &ListenEventSnapshot,
+) -> Result<(), rusqlite::Error> {
     conn.execute(
         "INSERT INTO listen_events
          (track_id, played_at, ms_played, title, artist, album, album_artist,
