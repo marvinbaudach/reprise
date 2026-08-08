@@ -87,6 +87,7 @@ pub(in crate::ui) fn build(
     let cover_loader = CoverLoader::new(cover_download);
     let shared = Rc::new(Shared {
         model,
+        activation_queue_cache: RefCell::new(None),
         diagnostic_trail: super::diagnostic_trail::handle(),
         selection: selection.clone(),
         column_view: column_view.clone(),

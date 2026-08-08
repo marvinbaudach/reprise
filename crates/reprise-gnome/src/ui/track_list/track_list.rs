@@ -95,6 +95,11 @@ pub(in crate::ui) use super::track_list_toast::show_toast;
 /// individually below; everything else stays private to this file.
 pub(in crate::ui) struct Shared {
     pub(in crate::ui) model: TrackListModel,
+    /// The bounded, ordered id projection used when an activation turns the
+    /// rendered view into a playback queue. Its model generation key makes a
+    /// reload invalidate it without a second invalidation mechanism.
+    pub(in crate::ui) activation_queue_cache:
+        RefCell<Option<super::track_list_activation::ActivationQueueCacheEntry>>,
     /// Process-thread trail shared with `TrackListModel`, which is created
     /// before this aggregate exists and therefore reaches it through the
     /// narrow thread-local handle in `diagnostic_trail`.

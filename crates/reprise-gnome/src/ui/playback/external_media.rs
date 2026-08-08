@@ -56,6 +56,30 @@ impl PlayerController {
             .push(Rc::new(callback));
     }
 
+    /// Registers a listener for "an episode was marked played".
+    ///
+    /// This is deliberately separate from `add_on_queue_changed`: a queue
+    /// change is playback state and moves no database-backed count, which is
+    /// what lets that path patch a single badge instead of rebuilding. Marking
+    /// an episode played *does* move one — the unplayed counts behind the
+    /// Podcasts and YouTube rows — so it needs a signal of its own.
+    pub(in crate::ui) fn add_on_episode_played(&self, callback: impl Fn() + 'static) {
+        self.external
+            .borrow_mut()
+            .episode_played_callbacks
+            .push(Rc::new(callback));
+    }
+
+    /// Announces a completed episode. Callbacks are cloned out first so no
+    /// borrow on `external` is live while they run — they reach back into the
+    /// sidebar and must be free to touch player state.
+    pub(in crate::ui) fn notify_episode_played(&self) {
+        let callbacks = self.external.borrow().episode_played_callbacks.clone();
+        for callback in callbacks {
+            callback();
+        }
+    }
+
     pub(in crate::ui) fn pending_play_next(&self) -> Option<EpisodeRow> {
         self.external.borrow().play_next.clone()
     }
