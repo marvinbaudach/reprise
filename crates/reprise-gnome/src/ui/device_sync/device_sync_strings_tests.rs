@@ -3,6 +3,24 @@ use chrono::TimeZone;
 use reprise_core::device_sync::PreparationPhase;
 
 #[test]
+fn design_2c_legend_uses_short_translatable_names_and_shared_size_formatting() {
+    use reprise_core::device_sync::SyncTargetKind;
+
+    assert_eq!(
+        category_legend_text(SyncTargetKind::Playlists, 1152 * 1024 * 1024),
+        "Music 1.1 GiB"
+    );
+    assert_eq!(
+        category_legend_text(SyncTargetKind::YoutubeAudio, 693 * 1024 * 1024),
+        "YouTube 693.0 MiB"
+    );
+    assert_eq!(
+        category_legend_text(SyncTargetKind::PodcastEpisodes, 217 * 1024 * 1024),
+        "Podcasts 217.0 MiB"
+    );
+}
+
+#[test]
 fn mtp_43_preparation_overview_is_absent_for_absent_and_nothing_missing() {
     assert_eq!(preparation_overview(&PreparationPhase::Absent), None);
     assert_eq!(
