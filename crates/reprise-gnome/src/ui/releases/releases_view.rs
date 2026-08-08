@@ -326,7 +326,7 @@ fn apply_empty_state(shared: &Shared, state: ReleasesEmptyState, total: usize) {
             strings::show_all_releases(total),
         ),
         ReleasesEmptyState::Empty => (
-            "emblem-ok-symbolic",
+            crate::ui::icons::DONE,
             strings::text(strings::RELEASES_EMPTY_TITLE),
             strings::text(strings::FETCH_NOW),
         ),

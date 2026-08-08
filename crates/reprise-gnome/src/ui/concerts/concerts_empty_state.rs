@@ -60,7 +60,7 @@ pub(super) fn concerts_empty_state_presentation(
             Some(strings::show_all_concerts(total)),
         ),
         ConcertsEmptyState::Empty => (
-            "emblem-ok-symbolic",
+            crate::ui::icons::DONE,
             strings::text(strings::CONCERTS_NO_UPCOMING_TITLE),
             String::new(),
             Some(strings::text(strings::FETCH_NOW)),
