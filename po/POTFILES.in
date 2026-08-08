@@ -24,7 +24,6 @@ crates/reprise-gnome/src/ui/strings_seek.rs
 crates/reprise-gnome/src/ui/strings_tag_edit.rs
 crates/reprise-gnome/src/ui/strings_track_menu.rs
 crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
-crates/reprise-gnome/src/ui/device_sync/device_sync_history_balance_copy.rs
 crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs
 crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs
 crates/reprise-view/src/strings/browse.rs

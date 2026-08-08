@@ -96,7 +96,7 @@ fn an_unrememberable_device_run_records_start_outcome_and_deviation() {
 }
 
 #[test]
-fn a_live_transfer_is_the_first_history_row_with_its_final_planned_count() {
+fn a_live_transfer_writes_a_running_log_row_with_its_final_planned_count() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
@@ -108,13 +108,14 @@ fn a_live_transfer_is_the_first_history_row_with_its_final_planned_count() {
         runtime.sync_now("a").unwrap();
         started.recv().await.unwrap();
 
-        let device = runtime.devices().remove(0);
-        assert_eq!(device.history.len(), 1);
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
         assert_eq!(
-            device.history[0].0.outcome,
+            recorded.outcome,
             reprise_core::device_sync::sync_log::RunOutcome::Running
         );
-        assert_eq!(device.history[0].0.planned, 1);
+        assert_eq!(recorded.planned, 1);
 
         releases["a"].send(()).await.unwrap();
         settle().await;
@@ -165,7 +166,7 @@ fn rejecting_a_start_maps_every_error_to_a_closed_run() {
                     planned: 0,
                 },
             );
-            record_rejected_start(&runtime, "a", &log, &error);
+            record_rejected_start(&runtime, &log, &error);
             let latest = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
                 .unwrap()
                 .remove(0);

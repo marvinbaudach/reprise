@@ -17,6 +17,9 @@ pub const INERT_DEVICE_STATUS: &str = N_!("Plugged in · disconnect {other} to u
 pub const UNREMEMBERABLE_DEVICE_STATUS: &str =
     N_!("This device can be used now but cannot be remembered");
 pub const RENAME_DEVICE: &str = N_!("Rename device");
+const RENAME_REQUIRES_DURABLE_IDENTITY: &str = N_!(
+    "Renaming is unavailable because this phone has no durable identity, so its per-device settings cannot be kept between connections."
+);
 pub const LOCAL_DEVICE_NAME: &str = N_!("Local device name");
 pub const RENAME: &str = N_!("Rename");
 pub const FORGET_DEVICE: &str = N_!("Forget device");
@@ -48,6 +51,10 @@ pub fn inert_device_status(other: &str) -> String {
 
 pub fn unrememberable_device_status() -> String {
     text(UNREMEMBERABLE_DEVICE_STATUS)
+}
+
+pub fn rename_requires_durable_identity() -> String {
+    text(RENAME_REQUIRES_DURABLE_IDENTITY)
 }
 
 /// TIP-2a: a disabled eject keeps its tooltip and appends the reason.
@@ -594,102 +601,6 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-pub const RECENT_SYNCS: &str = N_!("Recent syncs");
-const LAST_RUNS: &str = N_!("last {count} runs");
-pub const NO_SYNCHRONIZATION_YET: &str = N_!("No synchronization has run yet.");
-pub const UNKNOWN_TIME: &str = N_!("unknown time");
-pub const FAILED: &str = N_!("Failed");
-const RUNNING_SINCE: &str = N_!("Running since {time}");
-const HISTORY_NO_STABLE_IDENTIFIER: &str = N_!("This phone has no stable identifier.");
-
-const HISTORY_TIED_TO_CONNECTION: &str = N_!(
-    "Its settings and history are tied to this connection and may not be found again after you unplug it. Unlock the phone before plugging it in to give it a durable identity."
-);
-pub(super) const NOTHING_TO_TRANSFER: &str = N_!("Nothing to transfer");
-pub(super) const SKIPPED: &str = N_!("Skipped");
-pub(super) const REMOVED: &str = N_!("Removed");
-pub(super) const KEPT_ORIGINAL: &str = N_!("Kept original");
-pub(super) const PLAYLIST_FAILED: &str = N_!("Playlist failed");
-
-pub fn sync_history_heading() -> String {
-    text(RECENT_SYNCS)
-}
-
-pub fn sync_history_caption(count: usize) -> String {
-    formatted(LAST_RUNS, &[("count", &count.to_string())])
-}
-
-pub fn sync_history_empty_state() -> String {
-    text(NO_SYNCHRONIZATION_YET)
-}
-
-pub fn sync_history_unknown_time() -> String {
-    text(UNKNOWN_TIME)
-}
-
-pub fn sync_history_headline(
-    when: &str,
-    outcome: reprise_core::device_sync::sync_log::RunOutcome,
-) -> String {
-    let outcome = sync_history_outcome(outcome);
-    formatted(
-        N_!("{when} · {outcome}"),
-        &[("when", when), ("outcome", &outcome)],
-    )
-}
-
-fn sync_history_outcome(outcome: reprise_core::device_sync::sync_log::RunOutcome) -> String {
-    sync_history_state(outcome).word
-}
-
-pub(super) struct SyncHistoryState {
-    word: String,
-    pub(super) icon: &'static str,
-    pub(super) colour: &'static str,
-}
-
-pub(super) fn sync_history_state(
-    outcome: reprise_core::device_sync::sync_log::RunOutcome,
-) -> SyncHistoryState {
-    use reprise_core::device_sync::sync_log::RunOutcome;
-    match outcome {
-        RunOutcome::Running => SyncHistoryState {
-            word: history_outcome("device sync history outcome", "Running"),
-            icon: "content-loading-symbolic",
-            colour: "accent",
-        },
-        RunOutcome::Completed => SyncHistoryState {
-            word: history_outcome("device sync history outcome", "Completed"),
-            icon: "object-select-symbolic",
-            colour: "success",
-        },
-        RunOutcome::Cancelled | RunOutcome::Failed | RunOutcome::Interrupted => SyncHistoryState {
-            word: match outcome {
-                RunOutcome::Cancelled => {
-                    history_outcome("device sync history outcome", "Cancelled")
-                }
-                RunOutcome::Failed => history_outcome("device sync history outcome", "Failed"),
-                RunOutcome::Interrupted => {
-                    history_outcome("device sync history outcome", "Interrupted")
-                }
-                _ => unreachable!(),
-            },
-            icon: "dialog-warning-symbolic",
-            colour: "warning",
-        },
-    }
-}
-
-/// The running row's subtitle when no live progress snapshot exists yet.
-///
-/// Deliberately *not* `sync_history_outcome(Running)`: that word follows a date
-/// inside "{when} · {outcome}" and is lowercase in languages that want it so
-/// ("läuft"). Here it stands alone on its own line, where a lowercase fragment
-/// reads as a typo — so it gets its own message with its own context.
-pub fn sync_history_running() -> String {
-    history_outcome("device sync history standalone", "Running")
-}
-
 pub const CHANGE_CATEGORY: &str = N_!("Change {category}");
 pub const CHANGE_CATEGORY_CAP: &str = N_!("{category} size limit");
 
@@ -715,25 +626,6 @@ pub const CONTENTS_VERIFYING_DETAIL: &str =
     N_!("Reading storage over MTP — this can take a moment.");
 pub const CONTENTS_VERIFIED: &str = N_!("Device contents verified");
 pub const CONTENTS_NOT_VERIFIABLE: &str = N_!("Could not verify device contents");
-
-pub fn sync_history_running_since(time: &str) -> String {
-    formatted(RUNNING_SINCE, &[("time", time)])
-}
-
-pub fn sync_history_connection_warning() -> (String, String) {
-    (
-        text(HISTORY_NO_STABLE_IDENTIFIER),
-        text(HISTORY_TIED_TO_CONNECTION),
-    )
-}
-
-pub use super::device_sync_history_balance_copy::{
-    sync_history_balance, sync_history_deviation_line,
-};
-
-fn history_outcome(context: &str, message: &str) -> String {
-    crate::i18n::pgettext(context, message)
-}
 
 #[cfg(test)]
 #[path = "device_sync_strings_tests.rs"]

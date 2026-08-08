@@ -179,8 +179,11 @@ fn mtp_23_cancelling_during_the_content_phase_is_not_reported_as_completed() {
             "cancelling mid content-phase must not be recorded as a verified, completed \
              sync — reconnect resumability depends on this staying unset"
         );
+        let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
         assert_eq!(
-            device.history[0].0.outcome,
+            recorded.outcome,
             reprise_core::device_sync::sync_log::RunOutcome::Cancelled,
             "the run log must close this run as cancelled, not as the mirror's original \
              completed outcome, or the remaining episode is silently forgotten"

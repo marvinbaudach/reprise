@@ -21,7 +21,7 @@ pub(super) const CONTENT_MAX_WIDTH: i32 = 1_120;
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::ScrolledWindow,
     /// The complete vertical page column. Its direct children are owned here:
-    /// hero, playlist/overview body, [`Self::up_next`] and [`Self::history`].
+    /// hero, playlist/overview body, and [`Self::up_next`].
     /// The caller only fills the two section containers.
     pub(super) content: gtk4::Box,
     /// The heading row that accepts the Content panel's verification controls.
@@ -53,8 +53,6 @@ pub(super) struct DeviceDashboard {
     pub(super) progress_bar: gtk4::ProgressBar,
     pub(super) primary: gtk4::Button,
     pub(super) eject: gtk4::Button,
-    /// Holds the "Recent syncs" heading, warning, and card (MTP-20).
-    pub(super) history: gtk4::Box,
 }
 
 pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashboard {
@@ -242,11 +240,9 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     content.set_margin_bottom(28);
     content.set_margin_start(32);
     content.set_margin_end(32);
-    let history = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.append(&hero);
     content.append(&body);
     content.append(&up_next);
-    content.append(&history);
 
     let clamp = adw::Clamp::builder()
         .maximum_size(CONTENT_MAX_WIDTH)
@@ -286,7 +282,6 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
         progress_bar,
         primary,
         eject,
-        history,
     }
 }
 
