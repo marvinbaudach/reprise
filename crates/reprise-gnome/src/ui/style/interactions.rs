@@ -27,6 +27,15 @@ pub(super) fn css() -> String {
            border-radius: {RADIUS_SURFACE}; \
            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
            box-shadow: {SURFACE_SHADOW}; }}\n\
+         .reprise-build-badge {{ \
+           font-size: 0.75em; \
+           font-weight: bold; \
+           letter-spacing: 0.08em; \
+           padding: 2px 8px; \
+           margin-right: 6px; \
+           border-radius: 6px; \
+           color: #ffffff; \
+           background-color: #b5432f; }}\n\
          .reprise-panel-toggle {{ \
            transition: color {TRANSITION}, background-color {TRANSITION}; }}\n\
          .reprise-panel-toggle:checked {{ \
