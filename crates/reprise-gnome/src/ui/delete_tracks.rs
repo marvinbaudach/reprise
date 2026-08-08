@@ -325,7 +325,12 @@ pub(in crate::ui) fn reload_after_catalog_delete(
         removed_ids,
         reload_state.generation,
     );
-    let mut anchor = if shared.model.generation() == reload_state.generation {
+    // One question, asked once, before the reload below bumps the counter
+    // itself: is everything captured before the dialog still describing this
+    // model? Both the viewport and the focus fallback further down are frozen
+    // pre-dialog state and go stale together.
+    let captured_state_still_applies = shared.model.generation() == reload_state.generation;
+    let mut anchor = if captured_state_still_applies {
         surviving_delete_anchor(reload_state.anchor, &reload_state.view_ids, &after_ids)
     } else {
         // The model changed while the dialog or worker was alive. The stale
@@ -347,7 +352,14 @@ pub(in crate::ui) fn reload_after_catalog_delete(
         model_change,
         Some(after_ids),
     );
-    if reload_state.selected_positions.is_empty() {
+    // Selection restore itself is keyed on track ids and is immune to row
+    // shift, but this fallback is positional: it places focus where the first
+    // deleted row used to sit. Against a model that something else reshaped
+    // while the dialog was open, that position means nothing, and following it
+    // would throw focus onto an unrelated track. Leaving focus where GTK put it
+    // is the lesser evil.
+    if reload_state.selected_positions.is_empty() || !captured_state_still_applies {
+        shared.column_view.grab_focus();
         return;
     }
     let selected_after = current_selection_positions(shared);
