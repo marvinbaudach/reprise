@@ -259,6 +259,7 @@ mod tests {
             source,
             confidence: 91,
             preselected: source == ProposalSource::Local,
+            never_preselect: false,
             problem_class: class,
             evidence: Vec::new(),
             local_fallback: None,

@@ -7,12 +7,15 @@
 mod acoustid;
 mod arbitration;
 mod cache;
+pub(crate) mod guard_rails;
 mod metadata;
 mod network;
 mod orchestrator;
 
 #[cfg(test)]
 mod cache_tests;
+#[cfg(test)]
+mod guard_rails_tests;
 
 pub(crate) use cache::CachedRemoteProvider;
 pub(crate) use metadata::read_remote_metadata;

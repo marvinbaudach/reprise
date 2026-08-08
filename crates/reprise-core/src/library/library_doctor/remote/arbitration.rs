@@ -4,6 +4,9 @@ use super::super::{
     DoctorCandidate, DoctorField, DoctorGroupMember, DoctorProposal, DoctorUnresolvedGroup,
     DoctorValue, ProblemClass, ProposalSource,
 };
+use super::guard_rails::{
+    is_placeholder_artist, reduces_specificity, YearProvenance, SPECIFICITY_CONFIDENCE_CAP,
+};
 use super::{
     RemoteEvidence, RemoteEvidenceSource, RemoteIdentity, RemoteResolution, RemoteTrackMetadata,
     REMOTE_WRITABLE_FIELDS,
@@ -30,15 +33,32 @@ pub(crate) fn arbitrate(
             if proposed == current {
                 continue;
             }
+            if matches!(field, DoctorField::Artist | DoctorField::AlbumArtist)
+                && is_placeholder_candidate(value, field, identities)
+            {
+                // DOC-1f requires evidence that the matched release contains
+                // several distinct track artists. That evidence is not part of
+                // this resolver yet, so a placeholder cannot become a proposal.
+                continue;
+            }
             let evidence = identities
                 .iter()
                 .map(|identity| to_evidence(metadata, identity, field, value))
                 .collect::<Vec<_>>();
-            let confidence = evidence
+            let mut confidence = evidence
                 .iter()
                 .map(|item| item.confidence)
                 .min()
                 .unwrap_or_default();
+            let never_preselect = reduces_specificity(
+                &current,
+                &proposed,
+                field,
+                year_provenance(&proposed, identities),
+            );
+            if never_preselect {
+                confidence = confidence.min(SPECIFICITY_CONFIDENCE_CAP);
+            }
             resolution.proposals.push(DoctorProposal {
                 track_id: 0,
                 field,
@@ -47,6 +67,7 @@ pub(crate) fn arbitrate(
                 source: source_for(&evidence),
                 confidence,
                 preselected: false,
+                never_preselect,
                 problem_class: problem_class(field),
                 evidence,
                 local_fallback: None,
@@ -77,6 +98,21 @@ pub(crate) fn arbitrate(
     resolution
 }
 
+fn is_placeholder_candidate(
+    value: &str,
+    field: DoctorField,
+    identities: &[&RemoteIdentity],
+) -> bool {
+    identities.iter().any(|identity| {
+        let artist_mbid = match field {
+            DoctorField::Artist => identity.artist_mbid.as_deref(),
+            DoctorField::AlbumArtist => identity.release_artist_mbid.as_deref(),
+            _ => None,
+        };
+        is_placeholder_artist(value, artist_mbid)
+    })
+}
+
 pub(super) fn is_complete(metadata: &RemoteTrackMetadata, identities: &[RemoteIdentity]) -> bool {
     REMOTE_WRITABLE_FIELDS.into_iter().all(|field| {
         let ranked = ranked_candidates(identities, field);
@@ -102,6 +138,11 @@ fn ranked_candidates(identities: &[RemoteIdentity], field: DoctorField) -> Ranke
             DoctorField::Genre => None,
         };
         if let Some(value) = value {
+            if matches!(field, DoctorField::Artist | DoctorField::AlbumArtist)
+                && is_placeholder_candidate(&value, field, std::slice::from_ref(&identity))
+            {
+                continue;
+            }
             by_value.entry(value).or_default().push(identity);
         }
     }
@@ -147,6 +188,24 @@ fn canonical_year(identities: &[RemoteIdentity]) -> Option<u32> {
             .filter_map(|item| item.original_release_year.as_ref()),
     );
     (years.len() == 1).then(|| *years[0])
+}
+
+/// Reads back which half of `canonical_year` produced the winning value.
+///
+/// A year that one of the matched releases actually carries is a release year,
+/// however early it is. Only a year no matched release claims can have come
+/// from the release-group fallback.
+fn year_provenance(proposed: &DoctorValue, identities: &[&RemoteIdentity]) -> YearProvenance {
+    let DoctorValue::Year(year) = proposed else {
+        return YearProvenance::Unknown;
+    };
+    if identities
+        .iter()
+        .any(|identity| identity.release_year == Some(*year))
+    {
+        return YearProvenance::Release;
+    }
+    YearProvenance::ReleaseGroupFallback
 }
 
 fn unique_values<T: Ord>(values: impl Iterator<Item = T>) -> Vec<T> {

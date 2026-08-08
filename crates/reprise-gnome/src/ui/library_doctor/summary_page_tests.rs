@@ -66,6 +66,7 @@ fn proposal(
         source,
         confidence: 92,
         preselected,
+        never_preselect: false,
         problem_class: class,
         evidence: Vec::new(),
         local_fallback: None,
