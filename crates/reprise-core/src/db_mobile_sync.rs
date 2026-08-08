@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS track_analysis_sidecars (
 );
 "#;
 
+const SCHEMA_V64: &str = r#"
+CREATE TABLE IF NOT EXISTS track_mobile_sync_paths (
+  track_id     INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  device_path TEXT NOT NULL
+);
+"#;
+
 pub(crate) fn migrate_v61(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 61 {
@@ -32,6 +39,42 @@ pub(crate) fn migrate_v61(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.execute_batch(SCHEMA_V61)?;
     transaction.pragma_update(None, "user_version", 61)?;
     transaction.commit()
+}
+
+pub(crate) fn migrate_v64(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 64 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(SCHEMA_V64)?;
+    transaction.pragma_update(None, "user_version", 64)?;
+    transaction.commit()
+}
+
+pub(crate) fn register_device_path(
+    conn: &Connection,
+    track_path: &str,
+    device_path: &str,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO track_mobile_sync_paths (track_id, device_path) \
+         SELECT id, ?2 FROM tracks WHERE path = ?1 \
+         ON CONFLICT(track_id) DO UPDATE SET device_path = excluded.device_path",
+        rusqlite::params![track_path, device_path],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn device_path_for_track(db: &Db, track_id: i64) -> Result<Option<String>, DbError> {
+    Ok(db
+        .conn()
+        .query_row(
+            "SELECT device_path FROM track_mobile_sync_paths WHERE track_id = ?1",
+            [track_id],
+            |row| row.get(0),
+        )
+        .optional()?)
 }
 
 pub(crate) fn register_sidecar(

@@ -66,6 +66,13 @@ impl MobileSyncDiscovery {
         Ok(())
     }
 
+    pub(super) fn register_device_paths(&self, conn: &Connection) -> Result<(), rusqlite::Error> {
+        for (device_path, track_path) in &self.tracks_by_device_path {
+            crate::db_mobile_sync::register_device_path(conn, track_path, device_path)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn apply_metadata(
         &self,
         source: &dyn LibrarySource,
