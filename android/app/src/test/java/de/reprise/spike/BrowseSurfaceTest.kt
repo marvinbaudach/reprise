@@ -331,7 +331,6 @@ fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
 fun libraryFrameUsesTheExactTwoAMetricsAndAllFourBrowseDestinations() {
     assertEquals(
         LibraryFrameMetrics(
-            topAppBarHeightDp = 64,
             filterChipHeightDp = 32,
             trackRowHeightDp = 72,
             trackCoverSizeDp = 56,

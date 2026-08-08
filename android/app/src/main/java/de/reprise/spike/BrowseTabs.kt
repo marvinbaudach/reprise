@@ -31,33 +31,13 @@ internal fun TitlesTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
     tracks: LibraryWindow<LibraryTrack>,
-    searchVisible: Boolean,
     searchText: String,
-    search: (String) -> Unit,
     playback: PlaybackUiState,
     lastRequestedOffset: Long?,
     play: (Int) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        if (searchVisible) {
-            OutlinedTextField(
-                value = searchText,
-                onValueChange = search,
-                label = { Text("Search titles") },
-                leadingIcon = { MaterialSymbol("search", "") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-        }
-        Text(
-            text = tracks.visibleCountLabel("title", "titles"),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
         if (tracks.rows.isEmpty()) {
             Text(
                 text = if (searchText.isEmpty()) "No tracks found in this folder." else "No matches.",
@@ -76,6 +56,20 @@ internal fun TitlesTab(
             )
         }
     }
+}
+
+@Composable
+internal fun TitleSearchField(searchText: String, search: (String) -> Unit) {
+    OutlinedTextField(
+        value = searchText,
+        onValueChange = search,
+        label = { Text("Search titles") },
+        leadingIcon = { MaterialSymbol("search", "") },
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    )
 }
 
 @Composable
@@ -110,11 +104,6 @@ internal fun AlbumsTab(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
-            Text(
-                selectedAlbum.tracks.visibleCountLabel("track", "tracks"),
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
             if (selectedAlbum.tracks.rows.isEmpty()) {
                 Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
             } else {
@@ -142,11 +131,6 @@ internal fun AlbumsTab(
         return
     }
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            albums.visibleCountLabel("album", "albums"),
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
         AlbumRows(
             surfaceLayout = surfaceLayout,
             surfaceState = surfaceState,
@@ -185,11 +169,6 @@ internal fun ArtistsTab(
                 MaterialSymbol("arrow_back", "Back to artists")
                 Text(selectedArtist.artist.name, style = MaterialTheme.typography.titleLarge)
             }
-            Text(
-                selectedArtist.tracks.visibleCountLabel("track", "tracks"),
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
             if (selectedArtist.tracks.rows.isEmpty()) {
                 Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
             } else {
@@ -218,11 +197,6 @@ internal fun ArtistsTab(
         return
     }
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            artists.visibleCountLabel("artist", "artists"),
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
         ArtistRows(
             surfaceLayout = surfaceLayout,
             surfaceState = surfaceState,
@@ -246,11 +220,6 @@ internal fun FavouritesTab(
     removeFavourite: (LibraryTrack) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            tracks.visibleCountLabel("favourite", "favourites"),
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
         if (tracks.rows.isEmpty()) {
             Text("No favourites yet.", modifier = Modifier.padding(16.dp))
         } else {

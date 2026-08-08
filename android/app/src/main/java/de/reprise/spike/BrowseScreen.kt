@@ -216,6 +216,15 @@ internal fun BrowseScreen(
             .onFailure { error -> browseError = error.browseDetail("search") }
     }
 
+    fun toggleSearch() {
+        if (searchVisible) {
+            surfaceState.closeSearch()
+            if (searchText.isNotEmpty()) search("")
+        } else {
+            surfaceState.openSearch()
+        }
+    }
+
     // What is on screen is what a replacement activity has to be able to put
     // back. Handed over from the composition itself rather than from each of
     // the five places that change a window, so the two cannot drift apart.
@@ -364,6 +373,16 @@ internal fun BrowseScreen(
     // in the sheet would change it. A session that stopped therefore blanks the
     // moment it stops, without waiting for anything.
     val currentTrack = answeredTrack?.takeIf { it.id == playingTrackId }?.track
+    val summary = when (selectedTab) {
+        BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
+        BrowseTab.ARTISTS -> selectedArtist?.tracks
+            ?.visibleCountLabel("track", "tracks")
+            ?: visibleArtists.visibleCountLabel("artist", "artists")
+        BrowseTab.ALBUMS -> selectedAlbum?.tracks
+            ?.visibleCountLabel("track", "tracks")
+            ?: visibleAlbums.visibleCountLabel("album", "albums")
+        BrowseTab.FAVOURITES -> visibleFavourites.visibleCountLabel("favourite", "favourites")
+    }
     val frameMetrics = libraryFrameMetrics(surfaceLayout)
     val nowPlayingFrameModifier = when (surfaceLayout) {
         SurfaceLayout.STACKED -> Modifier
@@ -388,22 +407,6 @@ internal fun BrowseScreen(
             Scaffold(
                 modifier = frameModifier,
                 containerColor = MaterialTheme.colorScheme.background,
-                topBar = {
-                    LibraryTopAppBar(
-                        surfaceLayout = surfaceLayout,
-                        searching = searchVisible,
-                        toggleSearch = {
-                            if (searchVisible) {
-                                surfaceState.closeSearch()
-                                if (searchText.isNotEmpty()) search("")
-                            } else {
-                                surfaceState.openSearch()
-                            }
-                        },
-                        rescan = rescan,
-                        openSettings = ::openSettings,
-                    )
-                },
                 bottomBar = {
                     LibraryBottomFrame(
                         surfaceLayout = surfaceLayout,
@@ -420,6 +423,16 @@ internal fun BrowseScreen(
                         .fillMaxSize()
                         .padding(contentPadding),
                 ) {
+                    if (searchVisible) {
+                        TitleSearchField(searchText = searchText, search = ::search)
+                    }
+                    LibrarySummaryActions(
+                        summary = summary,
+                        searching = searchVisible,
+                        toggleSearch = ::toggleSearch,
+                        rescan = rescan,
+                        openSettings = ::openSettings,
+                    )
                     // Both of these are state rather than acknowledgements, so both
                     // stand until something supersedes them — see TransientMessage
                     // for the distinction and for the third kind.
@@ -443,9 +456,7 @@ internal fun BrowseScreen(
                                     surfaceLayout = surfaceLayout,
                                     surfaceState = surfaceState,
                                     tracks = visibleTitles,
-                                    searchVisible = searchVisible,
                                     searchText = searchText,
-                                    search = ::search,
                                     playback = playback,
                                     lastRequestedOffset = titlesRequestedOffset,
                                     play = { index ->
