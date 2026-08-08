@@ -2,6 +2,7 @@ package de.reprise.spike
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.Bundle
 import android.provider.DocumentsContract
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -39,17 +40,22 @@ internal class AndroidListenReportFiles(
     }
 
     fun writeReport(bytes: ByteArray) {
-        val document = child(LISTEN_REPORT_FILE_NAME) ?: createReport()
-        resolver.openOutputStream(document, "wt")?.use { output ->
-            output.write(bytes)
-            output.flush()
-        } ?: throw IOException("The provider returned no report stream")
+        synchronized(REPORT_WRITE_LOCK) {
+            // Library configuration and the playback service can publish at
+            // the same time. Keep lookup, optional creation and truncation one
+            // transaction so both cannot observe the canonical name missing.
+            val document = child(LISTEN_REPORT_FILE_NAME) ?: createReport()
+            resolver.openOutputStream(document, "wt")?.use { output ->
+                output.write(bytes)
+                output.flush()
+            } ?: throw IOException("The provider returned no report stream")
+        }
     }
 
     private fun child(displayName: String): Uri? {
         val rootId = DocumentsContract.getTreeDocumentId(treeUri)
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
-        return resolver.query(children, CHILD_PROJECTION, null, null, null)?.use { cursor ->
+        return resolver.query(children, CHILD_PROJECTION, Bundle.EMPTY, null)?.use { cursor ->
             val idColumn = cursor.getColumnIndexOrThrow(
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             )
@@ -82,6 +88,7 @@ internal class AndroidListenReportFiles(
     }
 
     private companion object {
+        val REPORT_WRITE_LOCK = Any()
         val CHILD_PROJECTION = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
