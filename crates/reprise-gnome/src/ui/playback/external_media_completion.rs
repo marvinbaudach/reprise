@@ -61,6 +61,10 @@ impl PlayerController {
         if let Err(error) = reprise_core::podcasts::store::mark_played(&self.conn, episode_id, now)
         {
             tracing::error!(%error, episode_id, "could not mark podcast played");
+        } else {
+            // Same reason as in `finish_queued_episode`: a database-backed
+            // sidebar count moved, and no other path here recomputes it.
+            self.notify_episode_played();
         }
         let automatic_target = {
             let mut external = self.external.borrow_mut();
@@ -111,6 +115,12 @@ impl PlayerController {
         if let Err(error) = reprise_core::podcasts::store::mark_played(&self.conn, episode_id, now)
         {
             tracing::error!(%error, episode_id, "could not mark queued podcast played");
+        } else {
+            // The unplayed counts behind the Podcasts and YouTube rows just
+            // dropped. The queue-changed path below only patches the Queue
+            // badge, so without this the sidebar would keep showing the old
+            // number until some unrelated rebuild happened to fire.
+            self.notify_episode_played();
         }
         self.external.borrow_mut().clear_session();
         self.notify_external_changed();
@@ -181,5 +191,33 @@ mod tests {
         let mut final_youtube = direct_session(PodcastKind::Youtube);
         final_youtube.neighbours = NeighbourContext::for_episode(&[7], 7);
         assert!(super::automatic_completion_target(&final_youtube).is_none());
+    }
+
+    /// Marking an episode played lowers the unplayed counts behind the
+    /// Podcasts and YouTube sidebar rows. Those counts are only recomputed by a
+    /// full sidebar rebuild, and the queue-changed path deliberately no longer
+    /// triggers one — it patches a single badge instead, which is what keeps a
+    /// track change off the database. So every `mark_played` here has to
+    /// announce itself, or the badge silently keeps the old number until some
+    /// unrelated rebuild happens to fire.
+    ///
+    /// Checked against the source because the alternative needs a live
+    /// `PlayerController` with a GTK window; the coupling this guards is
+    /// exactly "these two calls stay together".
+    #[test]
+    fn every_mark_played_announces_the_changed_sidebar_count() {
+        let source = include_str!("external_media_completion.rs");
+        let played = source.matches("store::mark_played(").count();
+        let announced = source.matches("self.notify_episode_played();").count();
+
+        assert!(
+            played > 0,
+            "the completion paths must still mark episodes played"
+        );
+        assert_eq!(
+            played, announced,
+            "each of the {played} mark_played call(s) needs its own \
+             notify_episode_played, found {announced}"
+        );
     }
 }
