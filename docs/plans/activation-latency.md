@@ -2,7 +2,7 @@
 slug: activation-latency
 worktree: /home/marvin/Projects/reprise-activation
 branch: perf/activation-latency
-phase: coded
+phase: refactored
 codex_session:
 created: 2026-08-08
 ---
