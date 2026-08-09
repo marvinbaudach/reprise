@@ -436,7 +436,13 @@ fn refresh_parts(
     let now_unix = now_unix();
     let result = {
         let conn = &conn;
-        stats_snapshot::compute(conn, period, now_unix, &chrono::Local)
+        stats_snapshot::compute_with_pattern(
+            conn,
+            period,
+            now_unix,
+            &chrono::Local,
+            &crate::ui::date_format::current().date,
+        )
     };
     match result {
         Ok(snapshot) => {
