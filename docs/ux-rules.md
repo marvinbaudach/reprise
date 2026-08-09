@@ -2871,7 +2871,7 @@ property is set and yet nothing happens.
   column from the view. **Test rule:** one rule-named display test per table,
   plus a measured filler test. Design:
   `docs/superpowers/specs/2026-08-09-table-columns-and-system-dates-design.md`.
-- **STYLE-11** [planned] [core] [gtk] — **A date looks the same everywhere.**
+- **STYLE-11** [active] [core] [gtk] — **A date looks the same everywhere.**
   Every displayed calendar date follows the system locale's date pattern, with
   a numeric month and an always four-digit year; a locale pattern the app
   cannot render numerically falls back to ISO. Incomplete dates shorten within
@@ -4408,8 +4408,8 @@ means deterministic and high-confidence, never „without review".
 
 - **BROWSE-9** [active] [gtk] — **The date added is a normal library
   column.** "Added" is selectable in the column editor, movable,
-  width-persistable, and sortable by `added_at`. The ISO-formatted time
-  is hidden by default; existing layouts also receive the new column
+  width-persistable, and sortable by `added_at`. The time is rendered per
+  STYLE-11 and the column is hidden by default; existing layouts also receive the new column
   hidden when normalized, without losing their stored order or
   visibility.
 
