@@ -11,6 +11,7 @@ use crate::ui::nav_history::{NavHistory, NavPlace};
 mod unsupported_tests;
 
 struct Harness {
+    window: gtk4::Window,
     search: Rc<SectionSearch>,
     entry: gtk4::SearchEntry,
     toggle: gtk4::ToggleButton,
@@ -21,6 +22,7 @@ struct Harness {
 }
 
 fn harness() -> Harness {
+    let window = gtk4::Window::new();
     let entry = gtk4::SearchEntry::new();
     let toggle = gtk4::ToggleButton::new();
     let popover = SearchPopover::new(&toggle, &entry);
@@ -50,7 +52,14 @@ fn harness() -> Harness {
             move || cleared.borrow_mut().push(scope),
         );
     }
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.append(&toggle);
+    root.append(track_filter_layout.root());
+    window.set_child(Some(&root));
+    window.present();
+    settle();
     Harness {
+        window,
         search,
         entry,
         toggle,
@@ -58,6 +67,12 @@ fn harness() -> Harness {
         track_filter_layout,
         applied,
         facets_cleared,
+    }
+}
+
+impl Drop for Harness {
+    fn drop(&mut self) {
+        self.window.close();
     }
 }
 

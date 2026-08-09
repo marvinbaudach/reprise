@@ -54,13 +54,13 @@ fn search_1a_idle_is_icon_not_field() {
 
     let chrome = build(&header, &test_content(), &entry, &window);
 
-    assert!(!entry.is_ancestor(&header));
     assert!(chrome.search_toggle.is_ancestor(&header));
     assert_eq!(
         chrome.search_toggle.icon_name().as_deref(),
         Some("system-search-symbolic")
     );
     assert!(!chrome.search.is_open());
+    assert!(!entry.is_visible());
     assert!(entry.is_ancestor(chrome.search.widget()));
     assert_eq!(
         chrome.search.widget().parent().as_ref(),
@@ -210,6 +210,8 @@ fn search_toggle_projects_open_mode_or_non_empty_query() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn search_4a_the_entrys_clear_icon_discards_the_query() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
     let entry = gtk4::SearchEntry::new();
     entry.set_text("nomatch");
     entry.set_text("");

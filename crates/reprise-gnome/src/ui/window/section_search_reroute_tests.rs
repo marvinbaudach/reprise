@@ -18,6 +18,10 @@ fn search_8a_rerouting_the_active_source_preserves_its_query() {
     let toggle = gtk4::ToggleButton::new();
     let popover = super::search_popover::SearchPopover::new(&toggle, &entry);
     let search = SectionSearch::new(&entry, &popover, &toggle);
+    let window = gtk4::Window::new();
+    window.set_child(Some(&toggle));
+    window.present();
+    wait_for_search_signal();
 
     search.activate_source(&ViewSource::Library, "Music");
     popover.open();
@@ -27,6 +31,7 @@ fn search_8a_rerouting_the_active_source_preserves_its_query() {
 
     assert_eq!(entry.text(), "falling");
     assert!(popover.is_open());
+    window.close();
 }
 
 #[test]
