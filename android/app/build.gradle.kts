@@ -89,6 +89,12 @@ dependencies {
     // UniFFI's Kotlin bindings call into the .so through JNA.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     testImplementation("junit:junit:4.13.2")
+    // The @aar above ships JNA's dispatch stub as an Android jniLib, which the
+    // packaged app needs and a JVM unit test cannot find: Robolectric runs on
+    // the desktop JVM, where JNA looks for the stub as a classpath resource
+    // under com/sun/jna/<os>-<arch>/. The plain jar carries that layout, so the
+    // test classpath gets one it can actually load.
+    testImplementation("net.java.dev.jna:jna:5.19.1")
     testImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("org.robolectric:robolectric:4.16.1")

@@ -97,7 +97,7 @@ class MainActivity : ComponentActivity() {
             readBars = { trackId, count ->
                 library.trackRenderBars(trackId, count.toUInt())?.map { it.toSpectralBar() }
             },
-            readSpectrogram = library::trackSpectrogram,
+            readSpectrogram = { trackId -> library.trackSpectrogram(trackId) },
             onMainThread = { work -> runOnUiThread { work() } },
         )
     }
@@ -170,10 +170,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
-        val activeNowPlayingViewSettings = if (surfaceProvider == null) {
-            nowPlayingViewSettings
-        } else {
-            injectedNowPlayingViewSettings
+        // Deferred for the same reason as [tracks] and [analysisDelegate]: reading
+        // it opens the library, and onCreate must survive a core that will not
+        // load so that restoreLibrary can show the failure instead of crashing.
+        // The scene asks for it during composition, which is late enough.
+        val activeNowPlayingViewSettings by lazy {
+            if (surfaceProvider == null) {
+                nowPlayingViewSettings
+            } else {
+                injectedNowPlayingViewSettings
+            }
         }
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
