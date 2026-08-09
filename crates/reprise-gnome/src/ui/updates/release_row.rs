@@ -5,7 +5,7 @@
 //! owning nothing (`Absent`) or the whole thing (`Complete`). The primary
 //! action reflects that split: only a released, `Complete` match navigates
 //! to and focuses the album (never a play path — this branch is currently
-//! unreachable in the popover, since `delta_candidates`/NR-9c already
+//! unreachable in the popover, since `delta_candidates`/NR-29 already
 //! excludes owned releases before a row is ever built; kept for the
 //! `primary_action`/`chip_presentation` pure functions' completeness).
 //! Both `Absent` and `Partial` open the release's announcement externally
