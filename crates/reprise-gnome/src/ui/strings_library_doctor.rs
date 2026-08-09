@@ -534,14 +534,10 @@ pub fn doctor_track_progress(completed: usize, total: usize) -> String {
     )
 }
 
+/// A finished write says the same thing here as in the tag editor's own
+/// toast, so it is the same sentence — kept in one place, not copied.
 pub fn doctor_tags_updated(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "Tags updated · {count} track",
-        "Tags updated · {count} tracks",
-        count,
-        &[("count", &count_text)],
-    )
+    super::tag_save_result_toast(count)
 }
 
 pub fn doctor_tags_reverted(count: usize) -> String {
@@ -663,6 +659,8 @@ mod tests {
     }
 
     /// The result cards after a write, and the empty state that replaces them.
+    /// `doctor_tags_updated` is the tag editor's own toast sentence, so this
+    /// pins the wording for both callers.
     #[test]
     fn doc_9a_every_count_on_the_result_cards_inflects() {
         assert_eq!(doctor_tags_updated(1), "Tags updated · 1 track");

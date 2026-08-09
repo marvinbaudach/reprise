@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-09 10:30+0200\n"
+"POT-Creation-Date: 2026-08-09 10:41+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -518,7 +518,7 @@ msgstr " · "
 
 #: crates/reprise-gnome/src/ui/strings.rs:377
 #: crates/reprise-gnome/src/ui/strings_releases.rs:13
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:161
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:165
 msgid "Title"
 msgstr "Titel"
 
@@ -529,14 +529,14 @@ msgstr "Cover"
 #: crates/reprise-gnome/src/ui/strings.rs:379
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:15
 #: crates/reprise-gnome/src/ui/strings_releases.rs:14
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:162
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
 #: crates/reprise-view/src/strings/browse.rs:13
 msgid "Artist"
 msgstr "Interpret"
 
 #: crates/reprise-gnome/src/ui/strings.rs:380
 #: crates/reprise-gnome/src/ui/strings_releases.rs:23
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:163
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:167
 #: crates/reprise-view/src/strings/browse.rs:14
 msgid "Album"
 msgstr "Album"
@@ -550,14 +550,14 @@ msgstr "Nr."
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:110
 #: crates/reprise-gnome/src/ui/strings_radio.rs:17
 #: crates/reprise-gnome/src/ui/strings_radio.rs:24
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:167
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:171
 #: crates/reprise-view/src/strings/browse.rs:12
 msgid "Genre"
 msgstr "Genre"
 
 #: crates/reprise-gnome/src/ui/strings.rs:383
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:109
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:165
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:169
 #: crates/reprise-view/src/strings/browse.rs:15
 msgid "Year"
 msgstr "Jahr"
@@ -828,7 +828,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings.rs:644
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:155
 #: crates/reprise-gnome/src/ui/strings_filter.rs:36
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:267
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:271
 #, rust-format
 msgid "{count} track"
 msgid_plural "{count} tracks"
@@ -1427,7 +1427,7 @@ msgstr "{count} fehlgeschlagen"
 #: crates/reprise-gnome/src/ui/strings_issues.rs:201
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:80
 #: crates/reprise-gnome/src/ui/strings_sources.rs:17
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:150
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:154
 msgid "Details"
 msgstr "Details"
 
@@ -2023,48 +2023,40 @@ msgid_plural "{completed}/{total} tracks"
 msgstr[0] "{completed}/{total} Titel"
 msgstr[1] "{completed}/{total} Titel"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:540
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:116
-#, rust-format
-msgid "Tags updated · {count} track"
-msgid_plural "Tags updated · {count} tracks"
-msgstr[0] "Metadaten aktualisiert · {count} Titel"
-msgstr[1] "Metadaten aktualisiert · {count} Titel"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:550
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:546
 #, rust-format
 msgid "Tags reverted · {count} track"
 msgid_plural "Tags reverted · {count} tracks"
 msgstr[0] "Tags zurückgesetzt · {count} Titel"
 msgstr[1] "Tags zurückgesetzt · {count} Titel"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:563
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:559
 #, rust-format
 msgid "{updated} track updated · {cancelled} cancelled"
 msgid_plural "{updated} tracks updated · {cancelled} cancelled"
 msgstr[0] "{updated} Titel aktualisiert · {cancelled} abgebrochen"
 msgstr[1] "{updated} Titel aktualisiert · {cancelled} abgebrochen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:572
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:568
 #, rust-format
 msgid "{updated} updated, {failed} failed"
 msgstr "{updated} aktualisiert, {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:583
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:579
 #, rust-format
 msgid "{count} change"
 msgid_plural "{count} changes"
 msgstr[0] "{count} Änderung"
 msgstr[1] "{count} Änderungen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:593
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:589
 #, rust-format
 msgid "Review {count} change"
 msgid_plural "Review {count} changes"
 msgstr[0] "{count} Änderung prüfen"
 msgstr[1] "{count} Änderungen prüfen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:604
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:600
 #, rust-format
 msgid "{class} · {count}"
 msgstr "{class} · {count}"
@@ -4862,157 +4854,159 @@ msgstr "Speichern · {count} Titel"
 msgid "Saving… {done}/{total}"
 msgstr "Wird gespeichert… {done}/{total}"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:117
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:128
 #, rust-format
-msgid "Tags updated · {count} tracks"
-msgstr "Tags aktualisiert · {count} Titel"
+msgid "Tags updated · {count} track"
+msgid_plural "Tags updated · {count} tracks"
+msgstr[0] "Metadaten aktualisiert · {count} Titel"
+msgstr[1] "Metadaten aktualisiert · {count} Titel"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:132
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:136
 #, rust-format
 msgid "Tags updated · {updated} track · {failed} failed"
 msgstr "Metadaten aktualisiert · {updated} Titel · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:134
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:138
 #, rust-format
 msgid "Tags updated · {updated} tracks · {failed} failed"
 msgstr "Metadaten aktualisiert · {updated} Titel · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:151
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:155
 msgid "Some tracks could not be updated"
 msgstr "Einige Titel konnten nicht aktualisiert werden"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:152
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:156
 msgid "Edit failed tracks…"
 msgstr "Fehlgeschlagene Titel bearbeiten…"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:160
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:164
 msgid "(multiple values)"
 msgstr "(mehrere Werte)"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:164
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:168
 msgid "Album artist"
 msgstr "Albuminterpret"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:170
 msgid "Track number"
 msgstr "Titelnummer"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:168
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:172
 msgid "Year and track number must be positive whole numbers"
 msgstr "Jahr und Titelnummer müssen positive ganze Zahlen sein"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:170
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:174
 msgid "Could not open the library database for tag editing"
 msgstr ""
 "Die Datenbank konnte nicht zum Bearbeiten der Metadaten geöffnet werden"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:171
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:175
 msgid "Could not start the tag-edit worker"
 msgstr "Der Metadaten-Bearbeitungsprozess konnte nicht gestartet werden"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:172
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:176
 msgid "same on all"
 msgstr "bei allen gleich"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:176
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
 msgid "Edit Tags"
 msgstr "Metadaten bearbeiten"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:177
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:181
 #, rust-format
 msgid "Edit {count} Tracks"
 msgstr "{count} Titel bearbeiten"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:178
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:182
 msgid "per track"
 msgstr "pro Titel"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:179
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:183
 #, rust-format
 msgid "will be applied to all {count}"
 msgstr "wird auf alle {count} angewendet"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:198
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:184
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:202
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:84
 msgid "Save"
 msgstr "Speichern"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:181
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:185
 #, rust-format
 msgid "Save {count}"
 msgstr "{count} speichern"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:186
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:190
 #, rust-format
 msgid "{count} change pending"
 msgstr "{count} ausstehende Änderung"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:188
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:192
 #, rust-format
 msgid "{count} changes pending"
 msgstr "{count} ausstehende Änderungen"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:189
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:193
 msgid "Revert"
 msgstr "Zurücksetzen"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:196
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:200
 msgid "Save changes?"
 msgstr "Änderungen speichern?"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:199
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:203
 msgid "Discard"
 msgstr "Verwerfen"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:201
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:205
 #, rust-format
 msgid "Discard changes to {count} track?"
 msgstr "Änderungen an {count} Titel verwerfen?"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:202
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:206
 #, rust-format
 msgid "Discard changes to {count} tracks?"
 msgstr "Änderungen an {count} Titeln verwerfen?"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:218
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:222
 msgid "Keep editing"
 msgstr "Weiter bearbeiten"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:226
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:230
 msgid "Save Tags"
 msgstr "Metadaten speichern"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:230
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:234
 msgid "Change cover…"
 msgstr "Cover ändern…"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:234
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:238
 msgid "Only changed fields will be written to all selected tracks"
 msgstr "Nur geänderte Felder werden auf alle ausgewählten Titel angewendet"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:235
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:239
 msgid "Per-track field — edit tracks individually"
 msgstr "Feld pro Titel — Titel einzeln bearbeiten"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:277
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:281
 #, rust-format
 msgid "{count} cover"
 msgid_plural "{count} covers"
 msgstr[0] "{count} Cover"
 msgstr[1] "{count} Cover"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:286
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:290
 #, rust-format
 msgid "Track {position} of {total}"
 msgstr "Titel {position} von {total}"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:302
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:306
 #, rust-format
 msgid "{count} value"
 msgstr "{count} Wert"
 
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:303
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:307
 #, rust-format
 msgid "{count} values"
 msgstr "{count} Werte"
@@ -5737,6 +5731,10 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#, rust-format
+#~ msgid "Tags updated · {count} tracks"
+#~ msgstr "Tags aktualisiert · {count} Titel"
 
 #, rust-format
 #~ msgid "{tracks} tracks · about {minutes} minutes"
