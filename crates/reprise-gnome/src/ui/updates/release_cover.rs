@@ -122,6 +122,14 @@ impl LazyReleaseCover {
             self.picture.set_filename(Some(path));
             self.picture.set_visible(true);
             self.started.set_text(release_group_mbid);
+            return;
+        }
+        // Updates rows bind once before their first map, while ColumnView
+        // cells can be rebound without an intervening unmap/map cycle.
+        // Starting here only for an already-mapped widget serves the latter;
+        // the map handler below remains the former's explicit trigger.
+        if self.root.is_mapped() {
+            start_fetch(&self.picture, &self.mbid, &self.started);
         }
     }
 
@@ -175,38 +183,85 @@ fn wire_lazy_fetch(
     let mbid = mbid.clone();
     let started = started.clone();
     root.connect_map(move |_| {
-        let release_group_mbid = mbid.text().to_string();
-        if release_group_mbid.is_empty() || started.text() == release_group_mbid {
-            return;
-        }
-        started.set_text(&release_group_mbid);
-        let fetch_mbid = release_group_mbid.clone();
-        let Ok(receiver) = one_shot_task::spawn("reprise-release-cover", move || {
-            reprise_core::cover_download::fetch_release_group_cover(&fetch_mbid)
-        }) else {
-            return;
-        };
-        let picture = picture.clone();
-        let mbid = mbid.clone();
-        gtk4::glib::spawn_future_local(async move {
-            if let Ok(reprise_core::cover_download::ReleaseGroupCover::Image(path)) =
-                receiver.recv().await
-            {
-                // A recycled cell may have been rebound while this fetch was
-                // in flight. Only the generation still naming this MBID may
-                // update the picture.
-                if mbid.text() == release_group_mbid {
-                    picture.set_filename(Some(path));
-                    picture.set_visible(true);
-                }
-            }
-        });
+        start_fetch(&picture, &mbid, &started);
     });
+}
+
+fn start_fetch(picture: &gtk4::Picture, mbid: &gtk4::Label, started: &gtk4::Label) {
+    let release_group_mbid = mbid.text().to_string();
+    if release_group_mbid.is_empty() || started.text() == release_group_mbid {
+        return;
+    }
+    started.set_text(&release_group_mbid);
+    if notify_test_fetch(&release_group_mbid) {
+        return;
+    }
+    let fetch_mbid = release_group_mbid.clone();
+    let Ok(receiver) = one_shot_task::spawn("reprise-release-cover", move || {
+        reprise_core::cover_download::fetch_release_group_cover(&fetch_mbid)
+    }) else {
+        return;
+    };
+    let picture = picture.clone();
+    let mbid = mbid.clone();
+    gtk4::glib::spawn_future_local(async move {
+        if let Ok(reprise_core::cover_download::ReleaseGroupCover::Image(path)) =
+            receiver.recv().await
+        {
+            // A recycled cell may have been rebound while this fetch was in
+            // flight. Only the generation still naming this MBID may update
+            // the picture.
+            if mbid.text() == release_group_mbid {
+                picture.set_filename(Some(path));
+                picture.set_visible(true);
+            }
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn notify_test_fetch(_release_group_mbid: &str) -> bool {
+    false
+}
+
+#[cfg(test)]
+type TestFetchObserver = std::rc::Rc<dyn Fn(&str)>;
+
+#[cfg(test)]
+thread_local! {
+    static TEST_FETCH_OBSERVER: std::cell::RefCell<Option<TestFetchObserver>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+fn notify_test_fetch(release_group_mbid: &str) -> bool {
+    TEST_FETCH_OBSERVER.with(|slot| {
+        let observer = slot.borrow().clone();
+        if let Some(observer) = observer {
+            observer(release_group_mbid);
+            true
+        } else {
+            false
+        }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FetchObserverGuard;
+
+    impl Drop for FetchObserverGuard {
+        fn drop(&mut self) {
+            TEST_FETCH_OBSERVER.with(|slot| slot.replace(None));
+        }
+    }
+
+    fn observe_fetches(observer: impl Fn(&str) + 'static) -> FetchObserverGuard {
+        TEST_FETCH_OBSERVER.with(|slot| slot.replace(Some(std::rc::Rc::new(observer))));
+        FetchObserverGuard
+    }
 
     /// STYLE-10: `ColumnView` recycles row widgets, so a cover cell is bound
     /// to a second release without ever being constructed again.
@@ -224,5 +279,42 @@ mod tests {
             !cover.shows_image(),
             "a rebound cell must clear its picture"
         );
+    }
+
+    /// STYLE-10: `unbind`/`bind` can recycle one mapped cell for a different
+    /// release without an intervening `unmap`/`map`. Bind time must therefore
+    /// start the second release's fetch instead of waiting for a map that will
+    /// never happen.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_10_releases_cover_fetches_again_when_rebound_without_unmap() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let fetches = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let recorded = fetches.clone();
+        let _observer = observe_fetches(move |mbid| {
+            recorded.borrow_mut().push(mbid.to_owned());
+        });
+        let cover = LazyReleaseCover::new_unbound(40);
+        let first = "11111111-1111-1111-1111-111111111111";
+        let second = "22222222-2222-2222-2222-222222222222";
+        cover.set_release(first, "Falling Leaves");
+        let window = gtk4::Window::new();
+        window.set_child(Some(cover.widget()));
+        window.present();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while fetches.borrow().is_empty() {
+            while gtk4::glib::MainContext::default().iteration(false) {}
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the first map never started its fetch"
+            );
+        }
+        cover.set_release(second, "Air");
+
+        assert_eq!(fetches.borrow().as_slice(), [first, second]);
+        assert!(cover.widget().is_mapped(), "the cell was never unmapped");
+        window.close();
     }
 }
