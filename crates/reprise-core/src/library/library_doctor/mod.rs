@@ -1,3 +1,4 @@
+mod album_grouping;
 mod cleanup;
 mod grouping;
 mod local_rules;

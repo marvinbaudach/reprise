@@ -6,6 +6,7 @@ use rusqlite::Connection;
 use crate::db::Db;
 use crate::library::group_key::normalize_group_key;
 
+use super::album_grouping;
 use super::local_rules::{self, ReadTrack};
 use super::remote::{self, RemoteProviderError, RemoteResolver};
 use super::scope;
@@ -641,22 +642,15 @@ fn retain_track_fields(resolution: &mut remote::RemoteResolution) {
     });
 }
 
-/// Known limit: a multi-disc album whose discs are tagged with different album
-/// titles — "Album (Disc 1)" against "Album (Disc 2)" — falls into one group
-/// per disc and therefore into one release match per disc. Neither disc has
-/// the full tracklist, so both score worse than the album would as a whole,
-/// and the two matches can land on different releases. Stripping the disc
-/// suffix here would be guessing at a naming convention; how often the case
-/// occurs is unmeasured, so it is written down rather than worked around.
+/// Groups by album artist and album title, with a trailing disc marker
+/// dropped from the title: the discs of one set belong to one release, so
+/// they belong to one lookup. See [`album_grouping`] for how narrow that
+/// dropping is.
 fn group_album_tracks(tracks: &[ReadTrack]) -> Vec<Vec<usize>> {
     let mut positions = HashMap::<String, usize>::new();
     let mut groups = Vec::<Vec<usize>>::new();
     for (index, track) in tracks.iter().enumerate() {
-        let key = format!(
-            "{}\u{1}{}",
-            normalize_group_key(&track.tags.album_artist),
-            normalize_group_key(&track.tags.album)
-        );
+        let key = album_grouping::album_group_key(&track.tags.album_artist, &track.tags.album);
         let position = *positions.entry(key).or_insert_with(|| {
             groups.push(Vec::new());
             groups.len() - 1
@@ -666,16 +660,27 @@ fn group_album_tracks(tracks: &[ReadTrack]) -> Vec<Vec<usize>> {
     groups
 }
 
+/// The search speaks for the whole group, so it asks after the album rather
+/// than after whichever disc happens to be first: a title with the disc marker
+/// still on it would search for a release that is only part of the set, and
+/// the track count below is the set's.
+///
+/// That count is the right one to compare: MusicBrainz reports a release's
+/// track count as the sum over its media (`release_track_count`), and its
+/// tracklist likewise spans every disc — so a merged group of 24 tracks now
+/// meets the 24 the two-disc release declares, where each disc on its own met
+/// neither.
 fn album_query(tracks: &[ReadTrack], indices: &[usize]) -> Option<remote::AlbumQuery> {
     let first = tracks.get(*indices.first()?)?;
+    let album = album_grouping::album_title_without_disc(&first.tags.album);
     if normalize_group_key(&first.tags.album_artist).is_empty()
-        || normalize_group_key(&first.tags.album).is_empty()
+        || normalize_group_key(album).is_empty()
     {
         return None;
     }
     Some(remote::AlbumQuery {
         album_artist: first.tags.album_artist.clone(),
-        album: first.tags.album.clone(),
+        album: album.to_owned(),
         track_titles: indices
             .iter()
             .map(|index| tracks[*index].tags.title.clone())

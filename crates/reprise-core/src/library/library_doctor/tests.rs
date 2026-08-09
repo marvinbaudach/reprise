@@ -7,6 +7,8 @@ use super::remote::{RemoteProviderError, RemoteResolution, RemoteResolver, Remot
 use super::*;
 use crate::fingerprint::FingerprintBackend;
 
+#[path = "album_grouping_tests.rs"]
+mod album_grouping_tests;
 #[path = "guard_rail_scan_tests.rs"]
 mod guard_rail_scan_tests;
 #[path = "phase_scan_tests.rs"]

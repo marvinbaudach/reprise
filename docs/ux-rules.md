@@ -3726,10 +3726,18 @@ means deterministic and high-confidence, never „without review".
   `doc_1g_a_changed_file_is_read_again`,
   `doc_1g_a_skipped_track_keeps_its_previous_proposals`,
   `doc_1g_the_reading_pass_stops_for_a_cancelled_scan`,
-  `doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader`.
+  `doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader`,
+  `doc_1g_a_multi_disc_album_is_one_release_lookup`,
+  `doc_1g_a_title_that_only_looks_like_a_disc_marker_is_left_alone`.
   *Amended 2026-08-08: unchanged is decided per track, so a library that grew
   by one file keeps every other skip. The release decision stays whole: an
   album is reused entirely or resolved entirely.*
+  *Amended 2026-08-09: one request per release includes a multi-disc set whose
+  discs are tagged with different album titles — a trailing disc marker
+  („Album (Disc 1)", „Album [CD2]", „Album, Disc 3") is dropped from the
+  grouping key and from the search, so the set is looked up once and compared
+  whole. The marker is dropped only at the end of the title, only with a
+  number, and never down to an empty title.*
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
