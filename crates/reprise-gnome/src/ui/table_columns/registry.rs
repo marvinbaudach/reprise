@@ -350,6 +350,20 @@ fn sort_fallback<K: ColumnKey>(
         .map_or(SortFallback::Clear, SortFallback::Use)
 }
 
+fn parse_editor_key<K: ColumnKey>(id: &str, operation: &str, role: &str) -> Option<K> {
+    let key = K::parse(id);
+    if key.is_none() {
+        tracing::warn!(
+            operation,
+            role,
+            column_id = id,
+            column_type = std::any::type_name::<K>(),
+            "unknown column id"
+        );
+    }
+    key
+}
+
 impl<K: ColumnKey> EditorModel for ColumnRegistry<K> {
     fn title(&self) -> String {
         crate::ui::strings::text(crate::ui::strings::EDIT_COLUMN_LAYOUT)
@@ -376,7 +390,7 @@ impl<K: ColumnKey> EditorModel for ColumnRegistry<K> {
     }
 
     fn set_visible(&self, id: &str, visible: bool) {
-        let Some(key) = K::parse(id) else {
+        let Some(key) = parse_editor_key::<K>(id, "set_visible", "column") else {
             return;
         };
         let next = layout::set_visible(&self.layout(), key, visible);
@@ -385,7 +399,10 @@ impl<K: ColumnKey> EditorModel for ColumnRegistry<K> {
     }
 
     fn move_column(&self, id: &str, target: &str, after: bool) {
-        let (Some(key), Some(target)) = (K::parse(id), K::parse(target)) else {
+        let Some(key) = parse_editor_key::<K>(id, "move_column", "column") else {
+            return;
+        };
+        let Some(target) = parse_editor_key::<K>(target, "move_column", "target") else {
             return;
         };
         let current = self.layout();
@@ -421,6 +438,68 @@ mod tests {
     use super::*;
     use gtk4::prelude::*;
     use reprise_view::columns::{ColumnId, ReleaseColumn};
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct CapturedWarnings(Arc<Mutex<Vec<u8>>>);
+
+    struct WarningWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl<'a> MakeWriter<'a> for CapturedWarnings {
+        type Writer = WarningWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            WarningWriter(Arc::clone(&self.0))
+        }
+    }
+
+    impl Write for WarningWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture_warnings(operation: impl FnOnce()) -> String {
+        let output = CapturedWarnings::default();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(output.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, operation);
+        let bytes = output.0.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[test]
+    fn invalid_editor_column_ids_are_logged_with_the_rejected_role() {
+        let logs = capture_warnings(|| {
+            assert_eq!(
+                parse_editor_key::<ReleaseColumn>("missing", "set_visible", "column"),
+                None
+            );
+            assert_eq!(
+                parse_editor_key::<ReleaseColumn>("also-missing", "move_column", "target"),
+                None
+            );
+        });
+
+        assert!(logs.contains("unknown column id"), "{logs}");
+        assert!(logs.contains("operation=\"set_visible\""), "{logs}");
+        assert!(logs.contains("column_id=\"missing\""), "{logs}");
+        assert!(logs.contains("operation=\"move_column\""), "{logs}");
+        assert!(logs.contains("role=\"target\""), "{logs}");
+        assert!(logs.contains("column_id=\"also-missing\""), "{logs}");
+    }
 
     #[test]
     fn column_bindings_follow_widget_ids_instead_of_enum_positions() {
