@@ -33,6 +33,13 @@ Medians over six interleaved runs against a copy of the real 242 MB library:
   spectrogram and cover passes are skipped when the library signature is
   unchanged. Every skip is logged with its reason.
 - **Composition root** back under its 600-line limit (`window.rs` 592).
+- **Filesystem-dependent work is time-windowed, not signature-gated**
+  (`88430e75d0`). The register has two classes now: `SignatureTask`
+  (spectrogram, cover) keeps comparing library revisions, `TimeWindowTask`
+  (library scan, **lyrics**) asks how long ago the previous process exited
+  cleanly. A library signature cannot reveal a removed sidecar or a deleted
+  file, so anything that reads the filesystem belongs in the second class.
+  Verified on a real build, not just by tests — see below.
 
 ## Verified by hand, not just by tests
 
@@ -44,34 +51,34 @@ Medians over six interleaved runs against a copy of the real 242 MB library:
 - Screenshots: track list restores selection, sort, covers and playing marker;
   podcast page shows all three artworks; zero queue overflows, zero decode
   errors.
+- `88430e75d0` run on a release build (2026-08-09, binary built from the commit,
+  bench against a copy of the real library):
+
+  | launch | clean-exit marker | library scan | lyrics | spectrogram/cover |
+  | --- | --- | --- | --- | --- |
+  | 1 — fresh config | absent | **ran** | **ran** | ran, recorded signature |
+  | 2 — 3 s after a clean exit | present | skipped (`age_seconds=3`) | skipped (`age_seconds=4`) | skipped (signature unchanged) |
+  | 3 — after `kill -9` | **absent** | **ran** | **ran** | skipped (signature unchanged) |
+
+  Row 3 is the point: the hard kill brings the filesystem-dependent work back
+  while the signature-bound work stays correctly skipped, because the library
+  really did not change. `startup_tasks.completed.lyrics` no longer exists in
+  the database — the lyrics record left the signature register entirely.
 
 ## Open
 
-1. **Needs verification — the only thing between here and a merge.** Codex
-   committed the missing-files change as `88430e75d0` ("perf: time-window
-   filesystem-dependent startup checks"). Nobody has built or run it yet. Do:
-
-   ```
-   cargo build --release -p reprise-gnome
-   cp target/release/reprise ~/.cache/reprise-startup-bench/reprise-miss
-   cd ~/.cache/reprise-startup-bench
-   REPRISE_BIN=$PWD/reprise-miss ./two_launches.sh   # 2nd launch: no check, logged reason
-   REPRISE_BIN=$PWD/reprise-miss ./kill_test.sh      # after hard kill: check runs
-   ```
-
-   The point to confirm: it uses the **time-window** rule, not the library
-   signature. "Does this file still exist" changes without the database
-   changing, so a signature-based skip would hide deleted files forever. If the
-   diff keys the missing-files check off the signature, that is a bug, not a
-   nuance.
-2. `cargo fmt --check` is red on `origin/dev` itself in
-   `crates/reprise-core/src/library/library_doctor/album_grouping_tests.rs`
-   (from `ed2ab6ccba`, #382 branch) — not ours, deliberately untouched.
+1. `cargo fmt --all --check` is green again — the `origin/dev` drift in the
+   Library Doctor files was fixed upstream and is in our merge. Nothing to
+   carry.
+2. Cosmetic, not a blocker: the lyrics due-check now runs *before* the
+   module-enabled guard, so a launch with online lyrics turned off still logs
+   "lyrics batch skipped: last clean exit was N minutes ago" — a true statement
+   about a batch that had no work to do anyway.
 3. Not pursued: `app.register()` costs ~320 ms of D-Bus wait before the
    database is opened, `PreferencesContext::new` ~140 ms, and ~280 ms goes to
    dynamic-linker symbol relocation across 136 shared libraries before the first
    line of our code runs.
-4. 17 commits, ~2200 inserted lines — worth a written PR summary.
+4. 18 commits, ~2200 inserted lines — worth a written PR summary.
 
 ## The bench
 
