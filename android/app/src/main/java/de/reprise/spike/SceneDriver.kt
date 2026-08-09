@@ -40,16 +40,34 @@ internal class SceneDriver(
 ) {
     var lastDrivenFrameIndex: Int? = null
         private set
+    private var framesWithheld = false
 
     fun tick(transitionRunning: Boolean = false): Boolean {
-        if (!framesAllowed()) return false
+        if (!framesAllowed()) {
+            noteFramesWithheld()
+            return false
+        }
         val sample = positionSource.current()
         val positionMs = estimatedPositionMs(sample, clock.nowNanos())
         val frameIndex = frames.frameIndexFor(positionMs)
         val before = state.revision
-        state.advanceTo(frameIndex)
+        state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
+        framesWithheld = false
         lastDrivenFrameIndex = frameIndex
         return state.revision != before || transitionRunning
+    }
+
+    /**
+     * Records that the power gate withheld frames while playback carried on.
+     *
+     * The driver notices this itself whenever [tick] is called through a closed
+     * gate, but the frame loop is usually torn down instead of ticked, so the
+     * caller that stops looping has to say so. Either way the next tick knows
+     * its jump is a gap rather than a seek — the one thing an index delta
+     * cannot tell on its own.
+     */
+    fun noteFramesWithheld() {
+        framesWithheld = true
     }
 
     private fun estimatedPositionMs(sample: ScenePositionSample, nowNanos: Long): Long {
@@ -126,7 +144,10 @@ internal fun DriveScene(
         playback.positionMs,
         transitionRunning,
     ) {
-        if (!runtimeActive) return@LaunchedEffect
+        if (!runtimeActive) {
+            driver.noteFramesWithheld()
+            return@LaunchedEffect
+        }
         do {
             withFrameNanos {
                 if (driver.tick(transitionRunning)) drawRevision += 1

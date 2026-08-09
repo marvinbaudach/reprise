@@ -13,6 +13,9 @@ class SpectrogramFrames(
     init {
         require(bandCount > 0) { "bandCount must be positive" }
         require(frameRateHz > 0) { "frameRateHz must be positive" }
+        require(cells.size % bandCount == 0) {
+            "cells must be whole frames: ${cells.size} cells over $bandCount bands"
+        }
     }
 
     val frameCount: Int = cells.size / bandCount

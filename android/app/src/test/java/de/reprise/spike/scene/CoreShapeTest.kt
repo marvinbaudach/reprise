@@ -1,5 +1,6 @@
 package de.reprise.spike.scene
 
+import kotlin.math.sin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
@@ -23,5 +24,19 @@ class CoreShapeTest {
         state.advanceTo(12)
         assertSame(first, state.coreShape)
         assertEquals(first.coefficients, state.coreShape.coefficients)
+    }
+
+    @Test
+    fun the_radius_is_the_sum_over_exactly_the_published_coefficients() {
+        val shape = CoreShape("Glass City", "Reprise")
+
+        listOf(-2.5f, 0f, 0.75f, 1.25f, 4f).forEach { theta ->
+            val irregularity = shape.coefficients.sumOf { component ->
+                component.amplitude.toDouble() *
+                    sin(component.harmonic * theta.toDouble() + component.phaseRadians)
+            }.toFloat()
+
+            assertEquals(78f * (1f + irregularity), shape.radiusAt(theta, 78f, 0f), 0f)
+        }
     }
 }

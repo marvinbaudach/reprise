@@ -13,11 +13,20 @@ data class CoreShapeComponent(
 class CoreShape(title: String, artist: String) {
     val coefficients: List<CoreShapeComponent> = components(stableHash("$title\u0000$artist"))
 
+    // The core polygon asks for 168 radii per draw and twice that once the
+    // bloom pass is counted, so the sum reads flat arrays rather than walking
+    // the list and allocating an iterator per radius.
+    private val harmonics = DoubleArray(coefficients.size) { coefficients[it].harmonic.toDouble() }
+    private val phases = DoubleArray(coefficients.size) { coefficients[it].phaseRadians.toDouble() }
+    private val amplitudes = DoubleArray(coefficients.size) { coefficients[it].amplitude.toDouble() }
+
     fun radiusAt(thetaRadians: Float, baseRadius: Float, bass: Float): Float {
-        val irregularity = coefficients.sumOf { component ->
-            component.amplitude.toDouble() *
-                sin(component.harmonic * thetaRadians.toDouble() + component.phaseRadians)
-        }.toFloat()
+        val theta = thetaRadians.toDouble()
+        var sum = 0.0
+        for (index in amplitudes.indices) {
+            sum += amplitudes[index] * sin(harmonics[index] * theta + phases[index])
+        }
+        val irregularity = sum.toFloat()
         val breathing = bass.coerceIn(0f, 1f) * BASS_BREATH
         return baseRadius * (1f + irregularity + breathing)
     }

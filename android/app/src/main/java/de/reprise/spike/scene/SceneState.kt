@@ -16,8 +16,20 @@ class SceneState(
     private val targets = FloatArray(frames.bandCount)
     private var lastFrameIndex: Int? = null
 
+    /**
+     * The live follower array, handed out by reference on purpose.
+     *
+     * The burst reads its band arrays once per corona stroke — 168 times per
+     * scene pass, twice that once the bloom pass is counted — so a defensive
+     * copy per read would allocate some 340 arrays per frame on the very path
+     * this class exists to feed. The contract instead: the scene is stepped and
+     * read on the main thread only, and callers treat the array as read-only.
+     * Anything that must outlive the next [advanceTo] takes its own `copyOf()`.
+     */
     val fogBands: FloatArray
         get() = fogEnvelopes.values
+
+    /** The live burst follower array. See [fogBands] for the read-only contract. */
     val burstBands: FloatArray
         get() = burstEnvelopes.values
     var level: Float = 0f
@@ -33,7 +45,17 @@ class SceneState(
     var revision: Int = 0
         private set
 
-    fun advanceTo(frameIndex: Int) {
+    /**
+     * Steps every frame between the last processed one and [frameIndex].
+     *
+     * A forward jump wider than [SEEK_FRAMES] is a seek and snaps — unless the
+     * caller reports with [afterMissedFrames] that it was kept from ticking
+     * across those frames (screen off, app backgrounded) while playback ran on.
+     * That gap is continued playback, not a seek, so it is replayed in order up
+     * to [CATCH_UP_FRAMES] and only snaps beyond it. A backwards jump is always
+     * a seek, gap or no gap.
+     */
+    fun advanceTo(frameIndex: Int, afterMissedFrames: Boolean = false) {
         if (frames.frameCount == 0) return
         val targetIndex = frames.clampFrameIndex(frameIndex)
         val previous = lastFrameIndex
@@ -42,7 +64,8 @@ class SceneState(
             resetTo(targetIndex)
             return
         }
-        if (previous != null && (targetIndex < previous || targetIndex - previous > SEEK_FRAMES)) {
+        val forwardLimit = if (afterMissedFrames) CATCH_UP_FRAMES else SEEK_FRAMES
+        if (previous != null && (targetIndex < previous || targetIndex - previous > forwardLimit)) {
             resetTo(targetIndex)
             return
         }
@@ -130,7 +153,20 @@ class SceneState(
 
     private fun Float.changedFrom(previous: Float): Boolean = toRawBits() != previous.toRawBits()
 
-    private companion object {
+    internal companion object {
+        /**
+         * How much of a gap a resume may replay: one minute of analysis at the
+         * 20 Hz frame rate.
+         *
+         * One step is ~200 float operations over 24 bands, so the whole minute
+         * costs well under a millisecond — a fraction of the frame that draws
+         * it — while the glance at a notification, the pocketed phone and the
+         * short lock all stay inside it and keep their deterministic trace. A
+         * lock long enough to exceed a minute of music has nothing worth
+         * replaying, and snapping there keeps the resume from ever visibly
+         * paying for it.
+         */
+        const val CATCH_UP_FRAMES = 1_200
         const val SEEK_FRAMES = 20
         const val BASS_BAND_COUNT = 4
         const val TRANSIENT_THRESHOLD = 0.18f
