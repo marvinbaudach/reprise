@@ -7,7 +7,7 @@
 //! the GTK-owned `DeviceView`, formats local time, and renders
 //! [`reprise_view::strings::Message`] values through gettext.
 
-use chrono::TimeZone;
+use chrono::{Datelike, TimeZone, Timelike};
 use reprise_core::device_sync::{
     MirrorBlocker, PrimaryAction, SyncChangeSummary, SyncPageControls, SyncPageWarning,
     SyncPlaylistRow, TransferProfile,
@@ -53,9 +53,7 @@ pub(super) fn playlist_subtitle(row: &SyncPlaylistRow) -> String {
             .timestamp_opt(last_synced_at, 0)
             .single()
             .map_or(projection::VerifiedSyncTime::Unavailable, |timestamp| {
-                projection::VerifiedSyncTime::Formatted(
-                    timestamp.format("%b %-d, %Y at %H:%M").to_string(),
-                )
+                projection::VerifiedSyncTime::Formatted(format_local_date_time(&timestamp))
             }),
     };
     render_joined(&projection::playlist_subtitle(row, last_sync))
@@ -65,12 +63,9 @@ pub(super) fn device_last_sync_copy(device: &DeviceView) -> String {
     if device.sync_phase == PlannedSyncPhase::Finishing {
         return verification_summary(device);
     }
-    let last_sync = device.last_sync.map(|timestamp| {
-        timestamp
-            .with_timezone(&chrono::Local)
-            .format("%b %-d, %Y at %H:%M")
-            .to_string()
-    });
+    let last_sync = device
+        .last_sync
+        .map(|timestamp| format_local_date_time(&timestamp.with_timezone(&chrono::Local)));
     render_joined(&projection::device_last_sync_copy(
         &device.sync_phase,
         last_sync,
@@ -78,6 +73,19 @@ pub(super) fn device_last_sync_copy(device: &DeviceView) -> String {
         device.size_on_device_bytes,
         device.verified_managed_track_count,
     ))
+}
+
+pub(super) fn format_local_date_time(timestamp: &chrono::DateTime<chrono::Local>) -> String {
+    let format = crate::ui::date_format::current();
+    let date = format.date.render(
+        Some(timestamp.year()),
+        Some(timestamp.month()),
+        Some(timestamp.day()),
+    );
+    let time = format
+        .clock
+        .render(i64::from(timestamp.hour()), i64::from(timestamp.minute()));
+    format!("{date} at {time}")
 }
 
 pub(super) fn change_summary(changes: &SyncChangeSummary) -> String {

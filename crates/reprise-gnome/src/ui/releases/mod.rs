@@ -6,12 +6,13 @@ use std::rc::Rc;
 use reprise_core::db::Db;
 
 pub(super) mod css;
+mod releases_column_layout;
 mod releases_columns;
 mod releases_empty_state;
 mod releases_failure_ui;
 mod releases_filter_bar;
 mod releases_model;
-mod releases_presentation;
+pub(in crate::ui) mod releases_presentation;
 mod releases_view;
 
 pub(in crate::ui) use releases_view::ReleasesView;

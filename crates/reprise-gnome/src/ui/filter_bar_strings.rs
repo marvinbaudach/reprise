@@ -23,7 +23,19 @@ pub(in crate::ui) fn remove_filter_label(facet: &str, value: &str) -> String {
 
 /// FIL-1d: the same chip, naming the fields the current view searches.
 pub(in crate::ui) fn scoped_search_chip_label(scope: SearchScope, query: &str) -> String {
-    render(&messages::search_chip_label_in(scope, query))
+    render_search_scope_message(messages::search_chip_label_in(scope, query))
+}
+
+/// SEARCH-2c: the popover names the fields the current view searches.
+pub(in crate::ui) fn searches_scope(scope: SearchScope) -> String {
+    render_search_scope_message(messages::searches_scope(scope))
+}
+
+fn render_search_scope_message(mut message: reprise_view::strings::Message) -> String {
+    if let Some((_, fields)) = message.args.iter_mut().find(|(name, _)| *name == "scope") {
+        *fields = crate::i18n::gettext(fields);
+    }
+    render(&message)
 }
 
 /// SEARCH-8a: the tooltip on the insensitive lens of a view without a list.
@@ -118,6 +130,25 @@ mod tests {
             );
         }
         assert_eq!(remove_search_label("wer"), "Remove search: wer");
+    }
+
+    // UX SEARCH-2c: the caption names the same fields for every search scope.
+    #[test]
+    fn search_2c_caption_names_the_fields_of_its_view() {
+        let cases = [
+            (SearchScope::Tracks, "Searches track, artist and album"),
+            (SearchScope::Podcasts, "Searches episode titles"),
+            (SearchScope::Youtube, "Searches video titles"),
+            (SearchScope::Radio, "Searches station names"),
+            (SearchScope::Releases, "Searches title and artist"),
+            (SearchScope::Concerts, "Searches artist and venue"),
+            (SearchScope::Missing, "Searches file paths"),
+            (SearchScope::Unsupported, "Searches any field"),
+        ];
+
+        for (scope, expected) in cases {
+            assert_eq!(searches_scope(scope), expected, "{scope:?}");
+        }
     }
 
     // UX SEARCH-8a: the lens explains itself where there is nothing to filter.

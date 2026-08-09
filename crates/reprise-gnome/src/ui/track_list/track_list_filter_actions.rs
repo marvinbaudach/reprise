@@ -6,6 +6,10 @@ use super::surface::TrackList;
 use super::track_list_reload::reload_centering_playing_track;
 
 impl TrackList {
+    pub(in crate::ui) fn set_committed_search_query(&self, query: &str) {
+        self.shared.browse_bar.set_committed_query(query);
+    }
+
     /// FIL-1a/FIL-6: one action resets search and browse facets in a single
     /// reload. The caller additionally clears the headerbar entry text; the
     /// debounced search handler then early-returns because the filter is empty.

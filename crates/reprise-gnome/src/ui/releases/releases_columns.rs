@@ -7,11 +7,12 @@ use chrono::Local;
 use gtk4::prelude::*;
 use reprise_core::artist_news::{release_status, ReleaseStatus};
 use reprise_core::artist_news_history::HistoryEntry;
+use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::ReleaseObject;
 use super::releases_presentation::{
-    bandcamp_purchase_target, format_release_date, release_status_label, release_type_label,
+    bandcamp_purchase_target, format_partial_date, release_status_label, release_type_label,
 };
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
@@ -24,6 +25,7 @@ pub(super) type OnOpenTarget = Rc<dyn Fn(String)>;
 
 pub(super) fn column_contract() -> Vec<String> {
     [
+        strings::COLUMN_COVER,
         strings::RELEASES_DATE,
         strings::RELEASES_TITLE,
         strings::RELEASES_ARTIST,
@@ -34,6 +36,53 @@ pub(super) fn column_contract() -> Vec<String> {
     .into_iter()
     .map(strings::text)
     .collect()
+}
+
+fn cover_column(view: &gtk4::ColumnView) {
+    let factory = gtk4::SignalListItemFactory::new();
+    factory.connect_setup(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let cover = crate::ui::updates::release_cover::LazyReleaseCover::new_unbound(widths::COVER);
+        item.set_child(Some(cover.widget()));
+    });
+    factory.connect_bind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let Some(root) = item.child().and_downcast::<gtk4::Overlay>() else {
+            return;
+        };
+        let Some(cover) = crate::ui::updates::release_cover::LazyReleaseCover::from_widget(&root)
+        else {
+            return;
+        };
+        let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
+            return;
+        };
+        let entry = object.entry();
+        cover.set_release(&entry.release_group_mbid, &entry.artist_name);
+    });
+    factory.connect_unbind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let Some(root) = item.child().and_downcast::<gtk4::Overlay>() else {
+            return;
+        };
+        if let Some(cover) = crate::ui::updates::release_cover::LazyReleaseCover::from_widget(&root)
+        {
+            cover.set_release("", "");
+        }
+    });
+    let column = gtk4::ColumnViewColumn::builder()
+        .title(strings::text(strings::COLUMN_COVER))
+        .factory(&factory)
+        .resizable(false)
+        .build();
+    widths::pin(&column, widths::COVER);
+    view.append_column(&column);
 }
 
 /// `sizing` fixes the column's width; see [`widths`] for why every column
@@ -343,35 +392,41 @@ fn append_columns_with_query(
     query: &crate::ui::search_highlight::QuerySource,
 ) -> gtk4::ColumnViewColumn {
     let titles = column_contract();
+    cover_column(view);
     let date = text_column(
         view,
-        &titles[0],
-        Some("date"),
+        &titles[1],
+        Some(ReleaseColumn::Date.as_str()),
         widths::Sizing::pinned(widths::DATE),
         None,
-        |entry| format_release_date(&entry.first_release_date, Local::now().date_naive()),
+        |entry| {
+            format_partial_date(
+                &entry.first_release_date,
+                &crate::ui::date_format::current().date,
+            )
+        },
     );
     // Title is the filler: it owns whatever width the pinned columns leave.
     text_column(
         view,
-        &titles[1],
-        None,
+        &titles[2],
+        Some(ReleaseColumn::Title.as_str()),
         widths::Sizing::filler(widths::TITLE_MIN),
         Some(query),
         |entry| entry.title.clone(),
     );
     text_column(
         view,
-        &titles[2],
-        None,
+        &titles[3],
+        Some(ReleaseColumn::Artist.as_str()),
         widths::Sizing::pinned(widths::NAME),
         Some(query),
         |entry| entry.artist_name.clone(),
     );
     text_column(
         view,
-        &titles[3],
-        None,
+        &titles[4],
+        Some(ReleaseColumn::Type.as_str()),
         widths::Sizing::pinned(widths::SHORT_LABEL),
         None,
         |entry| release_type_label(&entry.release_type),
@@ -507,17 +562,150 @@ mod tests {
         });
     }
 
+    /// STYLE-11: the column that started this — it wrote `29 May 26` for a
+    /// full date and `May 2026` for a month-precision one, two- and four-digit
+    /// years in the same column. Measured on the rendered cell rather than on
+    /// the formatter, because that is where the drift lived.
+    ///
+    /// This proves the releases table here rather than through
+    /// `date_format_display_tests`: the full releases view stays on its
+    /// "No discography data yet" empty state until a fetch pipeline has run,
+    /// so a view-level fixture asserts against an empty table and passes for
+    /// the wrong reason.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_11_the_releases_date_column_renders_the_pinned_pattern() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        std::env::set_var(crate::ui::date_format::PATTERN_ENV, "%d.%m.%Y");
+        gtk4::init().unwrap();
+
+        // The process resolves its date format once, so this test must be the
+        // first read — which is why display tests run one per process
+        // (`--exact`). Asserted rather than assumed: on a machine whose own
+        // locale is already day-first, a batch run would pass for the wrong
+        // reason.
+        assert_eq!(
+            crate::ui::date_format::current().date,
+            reprise_core::format::DatePattern::from_platform("%d.%m.%Y"),
+            "another test resolved the date format first; run this one with --exact"
+        );
+
+        let store = gtk4::gio::ListStore::new::<ReleaseObject>();
+        store.append(&ReleaseObject::new(entry(
+            "Artist",
+            "Full",
+            "Album",
+            "2026-05-29",
+        )));
+        store.append(&ReleaseObject::new(entry(
+            "Artist", "Month", "Album", "2026-05",
+        )));
+        store.append(&ReleaseObject::new(entry(
+            "Artist", "Year", "Album", "2026",
+        )));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
+        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let texts = descendant_labels(view.upcast_ref())
+            .iter()
+            .map(|label| label.text().to_string())
+            .collect::<Vec<_>>();
+        for expected in ["29.05.2026", "05.2026", "2026"] {
+            assert!(
+                texts.iter().any(|text| text == expected),
+                "no cell rendered {expected:?}; rendered labels were {texts:?}"
+            );
+        }
+    }
+
     #[test]
     fn nr_25_table_has_the_five_named_columns() {
         let columns = column_contract();
-        assert_eq!(&columns[..5], ["Date", "Title", "Artist", "Type", "Status"]);
+        assert_eq!(
+            &columns[1..6],
+            ["Date", "Title", "Artist", "Type", "Status"]
+        );
     }
 
     #[test]
     fn nr_20_table_adds_a_bandcamp_purchase_column() {
         assert_eq!(
             column_contract(),
-            ["Date", "Title", "Artist", "Type", "Status", "Buy"]
+            ["Cover", "Date", "Title", "Artist", "Type", "Status", "Buy"]
         );
+    }
+
+    /// STYLE-10: the Releases header exposes the shared editor, and editing a
+    /// free column cannot hide its fixed cover or action columns.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_10_releases_header_right_click_edits_the_table() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+        let registry = super::super::releases_column_layout::registry(
+            &view,
+            Rc::new(crate::test_db::open().unwrap()),
+        );
+        let model = super::super::releases_column_layout::model(&registry);
+        crate::ui::table_columns::header_popover::install_header_popover(&view, &model);
+
+        // Present it: without a realised header the gesture cannot tell a
+        // header click from a row click, and the popover has nothing to point
+        // at. A test that skips this asserts against a zero-height table.
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let controllers = view.observe_controllers();
+        let gesture = (0..controllers.n_items())
+            .filter_map(|index| controllers.item(index).and_downcast::<gtk4::GestureClick>())
+            .find(|gesture| gesture.button() == gtk4::gdk::BUTTON_SECONDARY)
+            .expect("no secondary-button gesture was installed on the header");
+
+        // Drive the handler the way the rest of this codebase drives gestures
+        // in tests. This does not reproduce GTK's own claim race — only a real
+        // pointer does — but it does prove the part we wrote: the click lands
+        // in the header band and a popover is realised on the view.
+        gesture.emit_by_name::<()>("pressed", &[&1i32, &40.0f64, &4.0f64]);
+        crate::ui::source_context_surface::settle_layout();
+
+        let mut child = view.first_child();
+        let mut popovers = 0;
+        while let Some(current) = child {
+            if current
+                .downcast_ref::<gtk4::Popover>()
+                .is_some_and(|popover| popover.has_css_class("reprise-column-header-popover"))
+            {
+                popovers += 1;
+            }
+            child = current.next_sibling();
+        }
+        assert_eq!(
+            popovers, 1,
+            "a right-click on the header band did not open the column editor"
+        );
+
+        model.set_visible("type", false);
+        use reprise_view::columns::ReleaseColumn;
+        assert!(!registry.is_visible(ReleaseColumn::Type));
+        assert!(registry.is_visible(ReleaseColumn::Cover));
+        assert!(registry.is_visible(ReleaseColumn::Status));
+        assert!(registry.is_visible(ReleaseColumn::Buy));
     }
 }

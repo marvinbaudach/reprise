@@ -410,3 +410,4 @@ package.
 | 3 | PERF-5 | `crates/reprise-core/src/library/library_doctor/preferences.rs`, `crates/reprise-gnome/src/ui/library_doctor/start_page.rs` |
 | 3 | REV-2 | `crates/reprise-core/src/library/library_doctor/{review,review_tests}.rs`, `crates/reprise-gnome/src/ui/library_doctor/{review_page,review_filter_bar}.rs`, `crates/reprise-mcp/src/{doctor_dto,doctor_actions}.rs` |
 | 4 | PERF-3 | `crates/reprise-core/src/library/library_doctor/{store,scan}.rs` |
+

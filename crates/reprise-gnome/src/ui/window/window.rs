@@ -198,7 +198,7 @@ pub fn build(
         track_list
     };
     super::startup_report::mark("track list");
-    super::column_layout_editor::install_header_popover(&track_list);
+    super::table_columns::install(&track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let sidebar_for_played = sidebar.clone();
@@ -496,7 +496,7 @@ pub fn build(
         db_path,
         header: &header,
         search_entry: &search_entry,
-        search_bar: &library_chrome.search_bar,
+        search: &library_chrome.search,
         search_toggle: &library_chrome.search_toggle,
         sidebar_toggle: &sidebar_toggle,
         sidebar_page: &sidebar_page,

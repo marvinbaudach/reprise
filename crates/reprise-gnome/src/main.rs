@@ -120,6 +120,7 @@ fn main() -> glib::ExitCode {
     ui::startup_report::mark("logging initialised");
     i18n::init();
     ui::startup_report::mark("i18n initialised");
+    crate::ui::date_format::init();
     i18n::smoke_report();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Reprise");
 

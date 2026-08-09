@@ -31,6 +31,8 @@ use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
 
+#[path = "window_external_changes_wiring.rs"]
+mod external_changes_wiring;
 #[path = "window_playing_source_wiring.rs"]
 mod playing_source_wiring;
 
@@ -41,7 +43,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) header: &'a adw::HeaderBar,
     pub(in crate::ui) search_entry: &'a gtk4::SearchEntry,
-    pub(in crate::ui) search_bar: &'a gtk4::SearchBar,
+    pub(in crate::ui) search: &'a super::search_popover::SearchPopover,
     pub(in crate::ui) search_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_page: &'a adw::NavigationPage,
@@ -87,7 +89,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         db_path,
         header,
         search_entry,
-        search_bar,
+        search,
         search_toggle,
         sidebar_toggle,
         sidebar_page,
@@ -228,10 +230,19 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // concrete, and the composition root is held below 600 lines.
     let spectrogram_batch = super::spectrogram_backend::build(conn.clone(), db_path.to_path_buf());
     super::startup_report::mark("spectrogram_backend::build");
+    let active_table = super::table_columns::active_table(
+        window,
+        content_stack,
+        content_nav,
+        track_list,
+        concerts_view,
+        releases_view,
+        radio_view,
+    );
     super::primary_menu::install(
         header,
         window,
-        track_list,
+        &active_table,
         super::primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),
@@ -417,7 +428,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // SEARCH-8a: one transient query for the active view. Built before the
     // routing below so the first route already lands in the right scope.
     let section_search =
-        super::section_search::SectionSearch::new(search_entry, search_bar, search_toggle, window);
+        super::section_search::SectionSearch::new(search_entry, search, search_toggle);
     super::section_search_wiring::install(
         &section_search,
         &super::section_search_wiring::SectionSearchViews {
@@ -565,8 +576,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     super::shortcuts::wire(
         app,
         window,
-        search_bar,
-        search_entry,
+        search,
         super::shortcuts::ShortcutHooks {
             focus_active_content,
             // SEARCH-8a: Ctrl+F is a no-op where the visible section has no
@@ -606,7 +616,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         watcher_state,
     );
     super::startup_report::mark("start_persisted_watcher");
-    start_external_changes_refresh(db_path, track_list, sidebar);
+    external_changes_wiring::start_external_changes_refresh(db_path, track_list, sidebar);
     super::startup_report::mark("start_external_changes_refresh");
     wire_queue_episode_marker(track_list, player.as_ref());
     super::mounts::install(&super::mounts::MountWiring {
@@ -735,13 +745,6 @@ fn start_persisted_watcher(
     }
 }
 
-/// Wires the external-changes live refresh (multi-frontend-core package C):
-/// mutations written to the same database by another process (CLI/MCP) reach
-/// the running app through the change log and `events::Notifier`. The app's own
-/// writes are filtered by its process writer token — it already refreshes
-/// itself — so only foreign writes drive a coarse, silent refresh of the
-/// sidebar and the current track list (UX rules EXT-1a..EXT-4). A notifier that
-/// cannot start just means no live updates; it is never fatal.
 /// Keeps the Queue surfaces' now-playing marker in step with a queued episode.
 ///
 /// The track-side marker is driven by `playing_track_id`, written when a track
@@ -762,37 +765,4 @@ fn wire_queue_episode_marker(track_list: &Rc<TrackList>, player: Option<&Rc<Play
         let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
         track_list.set_playing_episode(episode_mark);
     });
-}
-
-fn start_external_changes_refresh(
-    db_path: &Path,
-    track_list: &Rc<TrackList>,
-    sidebar: &Rc<Sidebar>,
-) {
-    let sidebar = Rc::downgrade(sidebar);
-    let track_list = Rc::downgrade(track_list);
-    crate::ui::external_changes::start(
-        db_path,
-        Some(reprise_core::events::writer_token()),
-        Rc::new(move |plan: crate::ui::external_changes::RefreshPlan| {
-            if plan.sidebar {
-                match sidebar.upgrade() {
-                    Some(sidebar) => sidebar.refresh("external change"),
-                    None => {
-                        tracing::warn!("external change: sidebar refresh skipped: sidebar is gone");
-                    }
-                }
-            }
-            if plan.track_list {
-                match track_list.upgrade() {
-                    Some(track_list) => track_list.reload(),
-                    None => {
-                        tracing::warn!(
-                            "external change: track list reload skipped: track list is gone"
-                        );
-                    }
-                }
-            }
-        }),
-    );
 }

@@ -14,13 +14,14 @@
 
 use std::rc::Rc;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use gtk4::prelude::*;
 
 use reprise_core::artist_news::{LibraryPresence, StoredRelease};
 
 use super::release_cover::LazyReleaseCover;
 use super::release_row_actions;
+use crate::ui::releases::releases_presentation::format_partial_date;
 use crate::ui::strings;
 
 /// Compact cover edge shared by every row (NR-9 layout; the old hero/row
@@ -62,37 +63,11 @@ pub(in crate::ui) fn parse_release_date(value: &str) -> Option<NaiveDate> {
     }
 }
 
-/// `first_release_date` precision lengths MusicBrainz sends, mirrored from
-/// `parse_release_date`'s own fallback chain (full date / year-month / year).
-const RELEASE_DATE_FULL_LEN: usize = 10;
-const RELEASE_DATE_MONTH_LEN: usize = 7;
-const RELEASE_DATE_YEAR_LEN: usize = 4;
-
 /// The meta line's character budget at the popover's ~336px width / 12px
 /// type: tuned so `"{artist} · {type} · {date}"` fits the ~260px meta
 /// column before the type is dropped in favor of `"{artist} · {date}"`
 /// (#1 — the meta line must never ellipsize).
 const META_LINE_CHAR_BUDGET: usize = 34;
-
-/// Lokalisiertes Kurzdatum for the meta line (#1). Precision follows the raw
-/// string's length, same as `parse_release_date`'s own fallback: a full date
-/// renders as "15. Aug", a year-month as "Aug", and a bare year as-is. The
-/// year is appended (two digits) only when it differs from `today`'s, so a
-/// release from the current year stays as short as possible.
-fn format_release_date(raw: &str, today: NaiveDate) -> String {
-    let Some(date) = parse_release_date(raw) else {
-        return raw.to_string();
-    };
-    let show_year = date.year() != today.year();
-    match raw.len() {
-        RELEASE_DATE_FULL_LEN if show_year => date.format("%-d. %b %y").to_string(),
-        RELEASE_DATE_FULL_LEN => date.format("%-d. %b").to_string(),
-        RELEASE_DATE_MONTH_LEN if show_year => date.format("%b %y").to_string(),
-        RELEASE_DATE_MONTH_LEN => date.format("%b").to_string(),
-        RELEASE_DATE_YEAR_LEN => date.format("%Y").to_string(),
-        _ => raw.to_string(),
-    }
-}
 
 /// "Artist · Type · Date", dropping the type when the full line would
 /// overrun the meta line's character budget (#1) — "Artist · Date" instead
@@ -164,7 +139,10 @@ pub(in crate::ui) fn build(
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.add_css_class("new-release-title");
 
-    let formatted_date = format_release_date(&release.first_release_date, today);
+    let formatted_date = format_partial_date(
+        &release.first_release_date,
+        &crate::ui::date_format::current().date,
+    );
     let meta_text = meta_line(&release.artist_name, &release.release_type, &formatted_date);
     let meta = gtk4::Label::new(Some(&meta_text));
     meta.set_xalign(0.0);
@@ -226,6 +204,7 @@ pub(in crate::ui) fn build(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::format::DatePattern;
     use std::cell::Cell;
 
     fn release_with_date(date: &str) -> StoredRelease {
@@ -250,35 +229,17 @@ mod tests {
         NaiveDate::from_ymd_opt(2026, 7, 21).unwrap()
     }
 
+    /// STYLE-11: the popover used to drop the year inside the current year
+    /// and write it two-digit otherwise. Both are gone; it renders exactly
+    /// what the table renders.
     #[test]
-    fn format_release_date_full_date_same_year_omits_the_year() {
-        assert_eq!(format_release_date("2026-08-15", today()), "15. Aug");
-    }
-
-    #[test]
-    fn format_release_date_full_date_other_year_appends_two_digit_year() {
-        assert_eq!(format_release_date("2025-08-15", today()), "15. Aug 25");
-    }
-
-    #[test]
-    fn format_release_date_year_month_same_year_is_month_only() {
-        assert_eq!(format_release_date("2026-08", today()), "Aug");
-    }
-
-    #[test]
-    fn format_release_date_year_month_other_year_appends_two_digit_year() {
-        assert_eq!(format_release_date("2024-08", today()), "Aug 24");
-    }
-
-    #[test]
-    fn format_release_date_year_only_renders_the_bare_year() {
-        assert_eq!(format_release_date("2026", today()), "2026");
-    }
-
-    #[test]
-    fn format_release_date_unparsable_falls_back_to_the_raw_value() {
-        assert_eq!(format_release_date("tba", today()), "tba");
-        assert_eq!(format_release_date("2026-13-40", today()), "2026-13-40");
+    fn style_11_popover_release_date_matches_the_table() {
+        let pattern = DatePattern::from_platform("%d.%m.%Y");
+        assert_eq!(format_partial_date("2026-08-15", &pattern), "15.08.2026");
+        assert_eq!(format_partial_date("2025-08-15", &pattern), "15.08.2025");
+        assert_eq!(format_partial_date("2026-08", &pattern), "08.2026");
+        assert_eq!(format_partial_date("2026", &pattern), "2026");
+        assert_eq!(format_partial_date("tba", &pattern), "tba");
     }
 
     #[test]

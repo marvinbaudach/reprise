@@ -4,12 +4,13 @@ use std::rc::Rc;
 
 use reprise_core::db::Db;
 
+mod concerts_column_layout;
 mod concerts_columns;
 mod concerts_empty_state;
 mod concerts_failure_ui;
 mod concerts_filter_bar;
 mod concerts_model;
-mod concerts_presentation;
+pub(in crate::ui) mod concerts_presentation;
 mod concerts_search;
 mod concerts_view;
 mod concerts_worker;

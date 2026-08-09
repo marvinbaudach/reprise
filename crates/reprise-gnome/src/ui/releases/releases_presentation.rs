@@ -3,6 +3,7 @@
 use chrono::NaiveDate;
 use reprise_core::artist_news::{release_status, RefreshProgress, ReleaseStatus};
 use reprise_core::artist_news_history::HistoryEntry;
+use reprise_core::format::DatePattern;
 
 use crate::ui::strings;
 
@@ -65,18 +66,38 @@ pub(super) fn releases_footer_presentation(
     }
 }
 
-pub(super) fn format_release_date(raw: &str, _today: NaiveDate) -> String {
-    match raw.len() {
-        10 => NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_or_else(
-            |_| raw.to_string(),
-            |date| date.format("%-d %b %y").to_string(),
-        ),
-        7 => NaiveDate::parse_from_str(&format!("{raw}-01"), "%Y-%m-%d")
-            .map_or_else(|_| raw.to_string(), |date| date.format("%b %Y").to_string()),
-        4 => NaiveDate::parse_from_str(&format!("{raw}-01-01"), "%Y-%m-%d")
-            .map_or_else(|_| raw.to_string(), |date| date.format("%Y").to_string()),
-        _ => raw.to_string(),
+/// Renders a MusicBrainz date string at whatever precision it carries, in the
+/// system pattern. MusicBrainz supplies `YYYY-MM-DD`, `YYYY-MM` or `YYYY`;
+/// anything else is passed through untouched rather than guessed at.
+pub(in crate::ui) fn format_partial_date(raw: &str, pattern: &DatePattern) -> String {
+    let mut parts = raw.split('-');
+    let Some(year) = parts.next().and_then(|value| value.parse::<i32>().ok()) else {
+        return raw.to_owned();
+    };
+    if raw.len() == 4 {
+        return pattern.render(Some(year), None, None);
     }
+    let month = parts
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|month| (1..=12).contains(month));
+    let Some(month) = month else {
+        return raw.to_owned();
+    };
+    if raw.len() == 7 {
+        return pattern.render(Some(year), Some(month), None);
+    }
+    let day = parts
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|day| (1..=31).contains(day));
+    let Some(day) = day else {
+        return raw.to_owned();
+    };
+    if parts.next().is_some() {
+        return raw.to_owned();
+    }
+    pattern.render(Some(year), Some(month), Some(day))
 }
 
 pub(super) fn release_type_label(raw: &str) -> String {
@@ -119,6 +140,7 @@ pub(super) fn releases_row_action(entry: &HistoryEntry, _today: NaiveDate) -> Re
 mod tests {
     use super::*;
     use reprise_core::artist_news::LibraryPresence;
+    use reprise_core::format::DatePattern;
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 7, 25).unwrap()
@@ -184,12 +206,17 @@ mod tests {
         assert!(complete.progress.is_none());
     }
 
+    /// STYLE-11: one pattern, all three MusicBrainz precisions, four-digit
+    /// year throughout — the reported case where this very column wrote both
+    /// `26` and `2026`.
     #[test]
-    fn format_release_date_preserves_musicbrainz_precision() {
-        assert_eq!(format_release_date("2026-05-29", today()), "29 May 26");
-        assert_eq!(format_release_date("2026-05", today()), "May 2026");
-        assert_eq!(format_release_date("2026", today()), "2026");
-        assert_eq!(format_release_date("unknown", today()), "unknown");
+    fn style_11_release_date_keeps_precision_within_one_pattern() {
+        let pattern = DatePattern::from_platform("%d.%m.%Y");
+        assert_eq!(format_partial_date("2026-05-29", &pattern), "29.05.2026");
+        assert_eq!(format_partial_date("2026-05", &pattern), "05.2026");
+        assert_eq!(format_partial_date("2026", &pattern), "2026");
+        assert_eq!(format_partial_date("unknown", &pattern), "unknown");
+        assert_eq!(format_partial_date("2026-13-40", &pattern), "2026-13-40");
     }
 
     #[test]

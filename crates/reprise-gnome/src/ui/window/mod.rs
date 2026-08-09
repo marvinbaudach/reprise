@@ -7,6 +7,7 @@ pub(in crate::ui) mod metadata_navigation;
 mod player_backends;
 pub(in crate::ui) mod podcast_refresh_scheduler;
 pub(in crate::ui) mod responsive_side_panels;
+pub(in crate::ui) mod search_popover;
 pub(in crate::ui) mod section_search;
 #[cfg(test)]
 mod section_search_reroute_tests;
@@ -17,6 +18,7 @@ mod source_views_smoke;
 mod spectrogram_backend;
 #[path = "window.rs"]
 mod surface;
+mod table_columns;
 pub(in crate::ui) mod window_action_wiring;
 mod window_bootstrap;
 mod window_build_badge;

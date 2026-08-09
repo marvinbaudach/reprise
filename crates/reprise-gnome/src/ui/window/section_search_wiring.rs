@@ -44,6 +44,7 @@ pub(in crate::ui) fn install(search: &Rc<SectionSearch>, views: &SectionSearchVi
 /// "any field" search does not).
 fn install_tracks(search: &Rc<SectionSearch>, track_list: &Rc<TrackList>) {
     let applying = Rc::downgrade(track_list);
+    let committing = Rc::downgrade(track_list);
     let clearing = Rc::downgrade(track_list);
     search.register(
         SearchScope::Tracks,
@@ -55,6 +56,11 @@ fn install_tracks(search: &Rc<SectionSearch>, track_list: &Rc<TrackList>) {
                 track_list.set_filter("");
             }
         },
+        move |query| {
+            if let Some(track_list) = committing.upgrade() {
+                track_list.set_committed_search_query(query);
+            }
+        },
         move || {
             if let Some(track_list) = clearing.upgrade() {
                 track_list.clear_all_restrictions();
@@ -62,12 +68,18 @@ fn install_tracks(search: &Rc<SectionSearch>, track_list: &Rc<TrackList>) {
         },
     );
     let applying = Rc::downgrade(track_list);
+    let committing = Rc::downgrade(track_list);
     let clearing = Rc::downgrade(track_list);
     search.register(
         SearchScope::Missing,
         move |query| {
             if let Some(track_list) = applying.upgrade() {
                 track_list.set_missing_search_query(query);
+            }
+        },
+        move |query| {
+            if let Some(track_list) = committing.upgrade() {
+                track_list.set_committed_search_query(query);
             }
         },
         move || {
@@ -93,12 +105,18 @@ fn install_podcasts(
         });
     }
     let apply_view = Rc::downgrade(view);
+    let commit_view = Rc::downgrade(view);
     let clear_view = Rc::downgrade(view);
     search.register(
         scope,
         move |query| {
             if let Some(view) = apply_view.upgrade() {
                 view.set_search_query(query);
+            }
+        },
+        move |query| {
+            if let Some(view) = commit_view.upgrade() {
+                view.set_committed_search_query(query);
             }
         },
         move || {
@@ -119,12 +137,18 @@ fn install_radio(search: &Rc<SectionSearch>, view: &Rc<crate::ui::radio::RadioVi
         });
     }
     let apply_view = Rc::downgrade(view);
+    let commit_view = Rc::downgrade(view);
     let clear_view = Rc::downgrade(view);
     search.register(
         SearchScope::Radio,
         move |query| {
             if let Some(view) = apply_view.upgrade() {
                 view.set_search_query(query);
+            }
+        },
+        move |query| {
+            if let Some(view) = commit_view.upgrade() {
+                view.set_committed_search_query(query);
             }
         },
         move || {
@@ -145,12 +169,18 @@ fn install_releases(search: &Rc<SectionSearch>, view: &Rc<crate::ui::releases::R
         });
     }
     let apply_view = Rc::downgrade(view);
+    let commit_view = Rc::downgrade(view);
     let clear_view = Rc::downgrade(view);
     search.register(
         SearchScope::Releases,
         move |query| {
             if let Some(view) = apply_view.upgrade() {
                 view.set_search_query(query);
+            }
+        },
+        move |query| {
+            if let Some(view) = commit_view.upgrade() {
+                view.set_committed_search_query(query);
             }
         },
         move || {
@@ -171,12 +201,18 @@ fn install_concerts(search: &Rc<SectionSearch>, view: &Rc<crate::ui::concerts::C
         });
     }
     let apply_view = Rc::downgrade(view);
+    let commit_view = Rc::downgrade(view);
     let clear_view = Rc::downgrade(view);
     search.register(
         SearchScope::Concerts,
         move |query| {
             if let Some(view) = apply_view.upgrade() {
                 view.set_search_query(query);
+            }
+        },
+        move |query| {
+            if let Some(view) = commit_view.upgrade() {
+                view.set_committed_search_query(query);
             }
         },
         move || {
@@ -191,11 +227,9 @@ fn install_concerts(search: &Rc<SectionSearch>, view: &Rc<crate::ui::concerts::C
 mod tests {
     use std::rc::Rc;
 
-    use gtk4::prelude::*;
-    use libadwaita as adw;
-
     use super::*;
     use crate::ui::track_list::queue_sections::QueueViewModel;
+    use gtk4::prelude::*;
     use reprise_core::view_source::ViewSource;
 
     fn settle() {
@@ -221,13 +255,11 @@ mod tests {
     fn search_8a_leaving_and_reentering_music_clears_the_track_filter() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let window = adw::ApplicationWindow::builder().build();
         let entry = gtk4::SearchEntry::new();
         entry.set_search_delay(0);
-        let search_bar = gtk4::SearchBar::new();
-        search_bar.connect_entry(&entry);
         let toggle = gtk4::ToggleButton::new();
-        let search = SectionSearch::new(&entry, &search_bar, &toggle, &window);
+        let popover = super::super::search_popover::SearchPopover::new(&toggle, &entry);
+        let search = SectionSearch::new(&entry, &popover, &toggle);
         let track_list = Rc::new(TrackList::new(
             Rc::new(crate::test_db::open().unwrap()),
             Box::new(|_, _, _, _| {}),
@@ -236,7 +268,7 @@ mod tests {
             crate::ui::cover_download_worker::setup_for_test(),
         ));
         install_tracks(&search, &track_list);
-        search.register(SearchScope::Podcasts, |_| {}, || {});
+        search.register(SearchScope::Podcasts, |_| {}, |_| {}, || {});
         let guard = crate::ui::view_session::new_search_restore_guard();
         let search_for_scope = search.clone();
         crate::ui::view_session::wire_search(

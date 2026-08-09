@@ -4,7 +4,7 @@
 //! result says* from *how the dialog behaves*, and keeps both files inside the
 //! file-size gate.
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Datelike, Local, Utc};
 use gtk4::prelude::*;
 use reprise_core::podcasts::discovery::Candidate;
 use reprise_core::podcasts::{self, PodcastKind};
@@ -33,9 +33,13 @@ pub(super) fn last_episode_segment(last_episode: Option<i64>, now: i64) -> Optio
     let days = last_episode_age_days(last_episode, now);
     if days >= LAST_EPISODE_ABSOLUTE_AFTER_DAYS {
         let date = DateTime::<Utc>::from_timestamp(last_episode, 0)?;
-        return Some(strings::podcast_last_episode_on(
-            &date.with_timezone(&Local).format("%b %Y").to_string(),
-        ));
+        let date = date.with_timezone(&Local).date_naive();
+        let date = crate::ui::date_format::current().date.render(
+            Some(date.year()),
+            Some(date.month()),
+            None,
+        );
+        return Some(strings::podcast_last_episode_on(&date));
     }
     match days {
         0 => Some(strings::text(strings::PODCAST_LAST_EPISODE_TODAY)),
@@ -202,7 +206,6 @@ mod tests {
             (64, "Last month"),
             (65, "2 months ago"),
             (364, "12 months ago"),
-            (365, "Last Aug 2025"),
         ];
 
         for (days, expected) in cases {
@@ -213,6 +216,20 @@ mod tests {
                 "age {days} days"
             );
         }
+        let published_at = now - 365 * 86_400;
+        let date = DateTime::<Utc>::from_timestamp(published_at, 0)
+            .unwrap()
+            .with_timezone(&Local)
+            .date_naive();
+        let date = crate::ui::date_format::current().date.render(
+            Some(date.year()),
+            Some(date.month()),
+            None,
+        );
+        assert_eq!(
+            last_episode_segment(Some(published_at), now),
+            Some(strings::podcast_last_episode_on(&date))
+        );
     }
 
     #[test]
