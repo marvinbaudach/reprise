@@ -73,6 +73,29 @@ fn a_recent_clean_restart_skips_the_automatic_batch_without_showing_progress() {
 }
 
 #[test]
+fn a_switched_off_module_never_reaches_the_due_check() {
+    let consulted = std::cell::Cell::new(false);
+
+    let starts = automatic_start_decision(false, || {
+        consulted.set(true);
+        true
+    });
+
+    assert!(!starts);
+    assert!(
+        !consulted.get(),
+        "the due-check logs the reason it skipped; a module that is off must not \
+         produce a clean-exit reason for work it would never have done"
+    );
+}
+
+#[test]
+fn an_enabled_module_still_obeys_the_due_check() {
+    assert!(automatic_start_decision(true, || true));
+    assert!(!automatic_start_decision(true, || false));
+}
+
+#[test]
 fn a_hard_kill_keeps_the_automatic_batch_due() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
