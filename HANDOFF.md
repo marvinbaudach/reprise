@@ -65,20 +65,20 @@ Medians over six interleaved runs against a copy of the real 242 MB library:
   really did not change. `startup_tasks.completed.lyrics` no longer exists in
   the database — the lyrics record left the signature register entirely.
 
+All of this landed on `dev` as `ec58514bf9` (PR #387).
+
 ## Open
 
-1. `cargo fmt --all --check` is green again — the `origin/dev` drift in the
-   Library Doctor files was fixed upstream and is in our merge. Nothing to
-   carry.
-2. Cosmetic, not a blocker: the lyrics due-check now runs *before* the
-   module-enabled guard, so a launch with online lyrics turned off still logs
-   "lyrics batch skipped: last clean exit was N minutes ago" — a true statement
-   about a batch that had no work to do anyway.
-3. Not pursued: `app.register()` costs ~320 ms of D-Bus wait before the
-   database is opened, `PreferencesContext::new` ~140 ms, and ~280 ms goes to
-   dynamic-linker symbol relocation across 136 shared libraries before the first
-   line of our code runs.
-4. 18 commits, ~2200 inserted lines — worth a written PR summary.
+Three costs were measured and deliberately left alone, in descending order of
+what they would buy:
+
+1. `app.register()` waits ~320 ms on D-Bus before the database is even opened.
+2. ~280 ms goes to dynamic-linker symbol relocation across 136 shared libraries
+   before the first line of our own code runs.
+3. `PreferencesContext::new` takes ~140 ms.
+
+None of them is a bug; each needs its own design decision, and none was in this
+work's scope.
 
 ## The bench
 
