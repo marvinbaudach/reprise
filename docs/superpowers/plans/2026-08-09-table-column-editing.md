@@ -1,3 +1,11 @@
+---
+slug: table-column-editing
+worktree: /home/marvin/Projects/reprise-table-column-editing
+branch: feature/table-column-editing
+phase: planned
+codex_session:
+created: 2026-08-09
+---
 # App-Wide Table Column Editing Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

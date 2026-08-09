@@ -1,3 +1,11 @@
+---
+slug: system-date-format
+worktree: /home/marvin/Projects/reprise-system-date-format
+branch: feature/system-date-format
+phase: planned
+codex_session:
+created: 2026-08-09
+---
 # One System Date Format Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
