@@ -88,15 +88,20 @@ fn record_phase(
     report.phases.push(Phase { phase, offset_ms });
 }
 
-pub(crate) fn count(counter: &'static str) {
+pub(crate) fn event(name: &'static str) {
     if !is_armed() {
         return;
     }
     REPORT.with_borrow_mut(|report| {
-        if let Some(value) = report.counters.get_mut(counter) {
+        record_phase(
+            report,
+            name,
+            super::track_list::diagnostic_trail::process_start(),
+        );
+        if let Some(value) = report.counters.get_mut(name) {
             *value = value.saturating_add(1);
         } else {
-            report.counters.insert(counter.to_owned(), 1);
+            report.counters.insert(name.to_owned(), 1);
         }
     });
 }
@@ -146,8 +151,8 @@ mod tests {
         crate::ui::track_list::diagnostic_trail::mark_process_start();
 
         mark("first");
-        count("track_list_reload");
-        count("track_list_reload");
+        event("track_list_reload");
+        event("track_list_reload");
         mark("second");
         write_if_armed();
 
@@ -155,10 +160,12 @@ mod tests {
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(report["schema_version"], 1);
         assert_eq!(report["phases"][0]["phase"], "first");
-        assert_eq!(report["phases"][1]["phase"], "second");
+        assert_eq!(report["phases"][1]["phase"], "track_list_reload");
+        assert_eq!(report["phases"][2]["phase"], "track_list_reload");
+        assert_eq!(report["phases"][3]["phase"], "second");
         assert!(
             report["phases"][0]["offset_ms"].as_u64().unwrap()
-                <= report["phases"][1]["offset_ms"].as_u64().unwrap()
+                <= report["phases"][3]["offset_ms"].as_u64().unwrap()
         );
         assert_eq!(report["counters"]["track_list_reload"], 2);
     }
@@ -170,7 +177,7 @@ mod tests {
         arm(None);
 
         mark("ignored");
-        count("track_list_reload");
+        event("track_list_reload");
         write_if_armed();
 
         assert!(!path.exists());
@@ -188,7 +195,7 @@ mod tests {
         crate::ui::track_list::diagnostic_trail::mark_process_start();
 
         mark("first");
-        count("sidebar_rebuild");
+        event("sidebar_rebuild");
         write_if_armed();
 
         assert!(!path.exists());

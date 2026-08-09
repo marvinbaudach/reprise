@@ -667,7 +667,7 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
                 .map_or_else(|| "none".into(), |page| page.to_string()),
         });
 
-    crate::ui::startup_report::count("track_list_reload");
+    crate::ui::startup_report::event("track_list_reload");
     tracing::info!(
         count,
         field = %sort.field,

@@ -12,7 +12,7 @@
 //! toggle controls `show-sidebar`; responsive collapse never overwrites the
 //! user's explicit hidden preference.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -205,7 +205,8 @@ pub fn build(
         // comment for the trigger inventory, and `spawn_scan`'s success arm /
         // the `player.set_track_list_reload` closure just below for two of
         // the three call sites.
-        Rc::new(TrackList::new(
+        super::startup_report::mark("initial track-list model build start");
+        let track_list = Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
             move |source, _count, filter, browse| {
@@ -234,7 +235,9 @@ pub fn build(
             },
             queue_ids_provider,
             cover_download.clone(),
-        ))
+        ));
+        super::startup_report::mark("initial track-list model build end");
+        track_list
     };
     super::startup_report::mark("track list");
     super::column_layout_editor::install_header_popover(&track_list);
@@ -572,15 +575,32 @@ pub fn build(
     super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
 
     tracing::info!("main window built");
-    if startup_report_armed {
-        window.add_tick_callback(|_, frame_clock| {
+    let startup_completion = if startup_report_armed {
+        let mapped = Rc::new(Cell::new(false));
+        window.connect_map(move |_| {
+            if !mapped.replace(true) {
+                super::startup_report::mark("window mapped");
+            }
+        });
+
+        let first_frame_drawn = Rc::new(Cell::new(false));
+        let first_idle_seen = Rc::new(Cell::new(false));
+        let first_frame_for_tick = first_frame_drawn.clone();
+        let first_idle_for_tick = first_idle_seen.clone();
+        window.add_tick_callback(move |_, frame_clock| {
             // A tick supplies the mapped window's frame clock. The report itself
-            // waits for after-paint so serialization cannot delay this frame.
+            // waits until after paint and the first low-priority idle so
+            // serialization cannot delay either milestone.
             let handler = Rc::new(RefCell::new(None));
             let handler_for_callback = handler.clone();
+            let first_frame_drawn = first_frame_for_tick.clone();
+            let first_idle_seen = first_idle_for_tick.clone();
             let id = frame_clock.connect_after_paint(move |frame_clock| {
                 super::startup_report::mark("first frame drawn");
-                super::startup_report::write_if_armed();
+                first_frame_drawn.set(true);
+                if first_idle_seen.get() {
+                    super::startup_report::write_if_armed();
+                }
                 let id = handler_for_callback.borrow_mut().take();
                 if let Some(id) = id {
                     frame_clock.disconnect(id);
@@ -589,9 +609,22 @@ pub fn build(
             *handler.borrow_mut() = Some(id);
             gtk4::glib::ControlFlow::Break
         });
-    }
+        Some((first_frame_drawn, first_idle_seen))
+    } else {
+        None
+    };
     window.present();
     super::startup_report::mark("window.present()");
+    if let Some((first_frame_drawn, first_idle_seen)) = startup_completion {
+        gtk4::glib::idle_add_local_full(gtk4::glib::Priority::LOW, move || {
+            super::startup_report::mark("main loop first idle");
+            first_idle_seen.set(true);
+            if first_frame_drawn.get() {
+                super::startup_report::write_if_armed();
+            }
+            gtk4::glib::ControlFlow::Break
+        });
+    }
     super::runtime_performance::arm(&window, &track_list);
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
 }
