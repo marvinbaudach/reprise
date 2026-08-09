@@ -2,29 +2,16 @@
 
 use std::rc::Rc;
 
-use gtk4::gio::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library::settings::{CONCERTS_COLUMN_LAYOUT_KEY, CONCERTS_COLUMN_WIDTHS_KEY};
-use reprise_view::columns::{ColumnKey, ConcertColumn};
+use reprise_view::columns::ConcertColumn;
 
 use crate::ui::table_column_widths as widths;
-use crate::ui::table_columns::registry::{ColumnRegistry, TableKeys};
+use crate::ui::table_columns::registry::{bind_columns_by_id, ColumnRegistry, TableKeys};
 use crate::ui::table_columns::{width_persistence, EditorModel};
 
 pub(super) fn registry(view: &gtk4::ColumnView, conn: Rc<Db>) -> Rc<ColumnRegistry<ConcertColumn>> {
-    let model = view.columns();
-    let columns = ConcertColumn::all()
-        .iter()
-        .copied()
-        .enumerate()
-        .filter_map(|(index, key)| {
-            let column = model
-                .item(index as u32)?
-                .downcast::<gtk4::ColumnViewColumn>()
-                .ok()?;
-            Some((key, column))
-        })
-        .collect();
+    let columns = bind_columns_by_id::<ConcertColumn>(view);
     let registry = ColumnRegistry::new(
         view,
         conn,

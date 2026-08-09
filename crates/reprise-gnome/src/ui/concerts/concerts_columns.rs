@@ -5,6 +5,7 @@ use std::rc::Rc;
 use chrono::Local;
 use gtk4::prelude::*;
 use reprise_core::concerts::ConcertRow;
+use reprise_view::columns::{ColumnKey, ConcertColumn};
 
 use super::concerts_model::ConcertObject;
 use super::concerts_presentation::{format_distance_km, format_event_date, ticket_button_label};
@@ -123,6 +124,7 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
         caption.set_visible(false);
     });
     let column = gtk4::ColumnViewColumn::builder()
+        .id(ConcertColumn::Artist.as_str())
         .title(strings::text(strings::CONCERTS_ARTIST))
         .factory(&factory)
         .resizable(true)
@@ -306,7 +308,7 @@ pub(super) fn append_columns(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_DATE),
-            id: Some("date"),
+            id: Some(ConcertColumn::Date.as_str()),
             sizing: widths::Sizing::pinned(widths::DATE),
             numeric: false,
             query: None,
@@ -319,7 +321,7 @@ pub(super) fn append_columns(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_CITY),
-            id: None,
+            id: Some(ConcertColumn::City.as_str()),
             sizing: widths::Sizing::pinned(widths::LABEL),
             numeric: false,
             query: None,
@@ -331,7 +333,7 @@ pub(super) fn append_columns(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_VENUE),
-            id: None,
+            id: Some(ConcertColumn::Venue.as_str()),
             sizing: widths::Sizing::pinned(widths::NAME),
             numeric: false,
             query: Some(query),
@@ -343,7 +345,7 @@ pub(super) fn append_columns(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_DISTANCE),
-            id: Some("distance"),
+            id: Some(ConcertColumn::Distance.as_str()),
             sizing: widths::Sizing::pinned(widths::NUMERIC),
             numeric: true,
             query: None,

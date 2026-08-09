@@ -7,7 +7,7 @@ use std::rc::Rc;
 use gtk4::gio::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
-use reprise_view::columns::{layout, ColumnKey, Layout};
+use reprise_view::columns::{layout, ColumnKey, Layout, Pin};
 
 use super::{ColumnDescriptor, EditorModel};
 
@@ -19,6 +19,98 @@ pub(in crate::ui) struct TableKeys {
 
 type Labeler<K> = Rc<dyn Fn(K) -> String>;
 type WidthPolicy<K> = Rc<dyn Fn(K) -> i32>;
+
+pub(in crate::ui) fn bind_columns_by_id<K: ColumnKey>(
+    view: &gtk4::ColumnView,
+) -> Vec<(K, gtk4::ColumnViewColumn)> {
+    let model = view.columns();
+    let columns = (0..model.n_items())
+        .map(|index| {
+            model
+                .item(index)
+                .and_downcast::<gtk4::ColumnViewColumn>()
+                .unwrap_or_else(|| panic!("column view item {index} is not a ColumnViewColumn"))
+        })
+        .collect::<Vec<_>>();
+    let ids = columns
+        .iter()
+        .map(|column| column.id().map(|id| id.to_string()))
+        .collect::<Vec<_>>();
+    let id_refs = ids.iter().map(Option::as_deref).collect::<Vec<_>>();
+    let keys = bind_view_column_keys::<K>(&id_refs).unwrap_or_else(|error| {
+        panic!(
+            "invalid {} column binding: {error}",
+            std::any::type_name::<K>()
+        )
+    });
+    keys.into_iter().zip(columns).collect()
+}
+
+fn bind_view_column_keys<K: ColumnKey>(ids: &[Option<&str>]) -> Result<Vec<K>, String> {
+    let leading = K::all()
+        .iter()
+        .copied()
+        .filter(|key| key.pin() == Some(Pin::Leading))
+        .collect::<Vec<_>>();
+    let trailing = K::all()
+        .iter()
+        .copied()
+        .filter(|key| key.pin() == Some(Pin::Trailing))
+        .collect::<Vec<_>>();
+    let first_named = ids.iter().position(Option::is_some).unwrap_or(ids.len());
+    let after_last_named = ids
+        .iter()
+        .rposition(Option::is_some)
+        .map_or(first_named, |index| index + 1);
+    let mut keys = Vec::with_capacity(ids.len());
+    let mut leading_index = 0;
+    let mut trailing_index = 0;
+
+    for (index, id) in ids.iter().enumerate() {
+        let key = match id {
+            Some(id) => {
+                let key = K::parse(id)
+                    .ok_or_else(|| format!("widget id `{id}` is not a declared column key"))?;
+                if key.pin().is_some() {
+                    return Err(format!(
+                        "pinned column `{id}` must not expose an editable id"
+                    ));
+                }
+                key
+            }
+            None if index < first_named => {
+                let key = leading.get(leading_index).copied().ok_or_else(|| {
+                    format!("unexpected unnamed leading column at physical index {index}")
+                })?;
+                leading_index += 1;
+                key
+            }
+            None if index >= after_last_named => {
+                let key = trailing.get(trailing_index).copied().ok_or_else(|| {
+                    format!("unexpected unnamed trailing column at physical index {index}")
+                })?;
+                trailing_index += 1;
+                key
+            }
+            None => {
+                return Err(format!(
+                    "non-pinned column at physical index {index} has no widget id"
+                ));
+            }
+        };
+        if keys.contains(&key) {
+            return Err(format!("column `{}` is bound more than once", key.as_str()));
+        }
+        keys.push(key);
+    }
+
+    for key in K::all() {
+        if !keys.contains(key) {
+            return Err(format!("column `{}` has no widget binding", key.as_str()));
+        }
+    }
+    Ok(keys)
+}
 
 pub(in crate::ui) struct ColumnRegistry<K: ColumnKey> {
     pub(super) view: gtk4::ColumnView,
@@ -329,6 +421,49 @@ mod tests {
     use super::*;
     use gtk4::prelude::*;
     use reprise_view::columns::{ColumnId, ReleaseColumn};
+
+    #[test]
+    fn column_bindings_follow_widget_ids_instead_of_enum_positions() {
+        let keys = bind_view_column_keys::<ReleaseColumn>(&[
+            None,
+            Some("type"),
+            Some("date"),
+            Some("title"),
+            Some("artist"),
+            None,
+            None,
+        ])
+        .expect("complete release binding");
+
+        assert_eq!(
+            keys,
+            vec![
+                ReleaseColumn::Cover,
+                ReleaseColumn::Type,
+                ReleaseColumn::Date,
+                ReleaseColumn::Title,
+                ReleaseColumn::Artist,
+                ReleaseColumn::Status,
+                ReleaseColumn::Buy,
+            ]
+        );
+    }
+
+    #[test]
+    fn column_bindings_reject_an_unidentified_free_column() {
+        let error = bind_view_column_keys::<ReleaseColumn>(&[
+            None,
+            Some("date"),
+            None,
+            Some("artist"),
+            Some("type"),
+            None,
+            None,
+        ])
+        .expect_err("Title has no widget id");
+
+        assert!(error.contains("non-pinned column"), "{error}");
+    }
 
     #[test]
     fn hiding_primary_sort_chooses_first_visible_sortable_free_column() {

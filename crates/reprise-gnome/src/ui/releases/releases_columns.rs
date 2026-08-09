@@ -7,6 +7,7 @@ use chrono::Local;
 use gtk4::prelude::*;
 use reprise_core::artist_news::{release_status, ReleaseStatus};
 use reprise_core::artist_news_history::HistoryEntry;
+use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::ReleaseObject;
@@ -395,7 +396,7 @@ fn append_columns_with_query(
     let date = text_column(
         view,
         &titles[1],
-        Some("date"),
+        Some(ReleaseColumn::Date.as_str()),
         widths::Sizing::pinned(widths::DATE),
         None,
         |entry| format_release_date(&entry.first_release_date, Local::now().date_naive()),
@@ -404,7 +405,7 @@ fn append_columns_with_query(
     text_column(
         view,
         &titles[2],
-        None,
+        Some(ReleaseColumn::Title.as_str()),
         widths::Sizing::filler(widths::TITLE_MIN),
         Some(query),
         |entry| entry.title.clone(),
@@ -412,7 +413,7 @@ fn append_columns_with_query(
     text_column(
         view,
         &titles[3],
-        None,
+        Some(ReleaseColumn::Artist.as_str()),
         widths::Sizing::pinned(widths::NAME),
         Some(query),
         |entry| entry.artist_name.clone(),
@@ -420,7 +421,7 @@ fn append_columns_with_query(
     text_column(
         view,
         &titles[4],
-        None,
+        Some(ReleaseColumn::Type.as_str()),
         widths::Sizing::pinned(widths::SHORT_LABEL),
         None,
         |entry| release_type_label(&entry.release_type),
