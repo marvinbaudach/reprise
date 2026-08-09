@@ -45,6 +45,9 @@ use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
     apply_empty_state, empty_state_for_availability,
 };
+use crate::ui::track_list::track_list_geometry::{
+    remember_row_height, restore_geometry_is_ready, row_height_for_restore,
+};
 use crate::ui::track_list::track_list_model_change::ModelChange;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::resolve_sort_on_switch;
@@ -174,7 +177,7 @@ pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
 /// restore on idle, since a freshly rebuilt list needs at least one
 /// allocation pass before its adjustment reports usable geometry.
 fn restore_reload_anchor(
-    shared: &Shared,
+    shared: &Rc<Shared>,
     captured: &ReloadAnchor,
     viewport: ReloadViewport,
     hold: Option<AdjustmentHold>,
@@ -218,7 +221,7 @@ fn restore_reload_anchor(
     if matches!(viewport, ReloadViewport::RestorePreSearch) {
         let anchor = shared.pre_search_anchor.take();
         schedule_scroll_restore(
-            shared.column_view.clone(),
+            shared.clone(),
             anchor,
             current_ids,
             SCROLL_RESTORE_MAX_ATTEMPTS,
@@ -234,7 +237,7 @@ fn restore_reload_anchor(
     }
 
     schedule_scroll_restore(
-        shared.column_view.clone(),
+        shared.clone(),
         captured.anchor,
         current_ids,
         SCROLL_RESTORE_MAX_ATTEMPTS,
@@ -364,7 +367,7 @@ pub(in crate::ui) fn center_loaded_track(shared: &Shared) {
 }
 
 fn schedule_scroll_restore(
-    column_view: gtk4::ColumnView,
+    shared: Rc<Shared>,
     anchor: Option<(i64, f64)>,
     current_ids: Vec<i64>,
     attempts: u8,
@@ -379,40 +382,71 @@ fn schedule_scroll_restore(
     // to the main loop. `scroll_to` alone is asynchronous and can otherwise
     // leave position zero visible for a frame on a busy renderer. The idle
     // retry below refines the result against the rebuilt allocation.
-    apply_scroll_anchor_if_allocated(&column_view, anchor, &current_ids, hold.as_ref());
+    apply_scroll_anchor_if_allocated(&shared, anchor, &current_ids, hold.as_ref());
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
-    column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
+    shared
+        .column_view
+        .scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
+    apply_scroll_anchor_if_allocated(&shared, anchor, &current_ids, hold.as_ref());
     gtk4::glib::idle_add_local_once(move || {
-        if apply_scroll_anchor_if_allocated(&column_view, anchor, &current_ids, hold.as_ref()) {
+        if apply_scroll_anchor_if_allocated(&shared, anchor, &current_ids, hold.as_ref()) {
             return;
         }
         if attempts > 0 {
-            schedule_scroll_restore(column_view, anchor, current_ids, attempts - 1, hold);
+            schedule_scroll_restore(shared, anchor, current_ids, attempts - 1, hold);
         }
     });
 }
 
 fn apply_scroll_anchor_if_allocated(
-    column_view: &gtk4::ColumnView,
+    shared: &Shared,
     anchor: Option<(i64, f64)>,
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
 ) -> bool {
-    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(column_view) else {
+    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) else {
         return false;
     };
     let (upper, page) = (adjustment.upper(), adjustment.page_size());
     if upper <= page || current_ids.is_empty() {
         return false;
     }
-    let height = upper / current_ids.len() as f64;
+    let Some(height) = row_height_for_restore(&shared.last_row_height, upper, current_ids.len())
+    else {
+        return false;
+    };
     let Some(target) = reload_restore::scroll_target(anchor, current_ids, height, page) else {
         return false;
     };
+    // Teach the existing handover hold the final target while the old bounds
+    // still clamp it. Its bounds-change callback can then apply the target as
+    // soon as GTK installs the new allocation, before the next paint.
     if let Some(hold) = hold {
         hold.set_target(target);
     }
+    let model_matches_ids =
+        usize::try_from(shared.model.n_items()).is_ok_and(|n_items| n_items == current_ids.len());
+    let has_no_section_headers = shared.queue_sections.borrow().is_empty();
+    if !restore_geometry_is_ready(upper, current_ids.len(), height)
+        && hold.is_some()
+        && model_matches_ids
+        && has_no_section_headers
+    {
+        // The model is already exact, but GTK has not allocated it yet. Seed
+        // the uniform-list bound so the cached anchor can be painted in the
+        // first frame. The parity guard deliberately fails closed when the id
+        // projection is truncated or otherwise differs from the model.
+        adjustment.set_upper(current_ids.len() as f64 * height);
+    }
+    if !restore_geometry_is_ready(adjustment.upper(), current_ids.len(), height) {
+        return false;
+    }
+    remember_row_height(
+        &shared.column_view,
+        current_ids.len() as u32,
+        &shared.last_row_height,
+    );
     adjustment.set_value(target);
     true
 }
@@ -563,6 +597,11 @@ fn run_query_if_requested(shared: &Rc<Shared>, model_change: Option<ModelChange>
 /// handling of its own — see `reload`'s and `set_source_and_reload`'s doc
 /// comments for who wraps this and why.
 fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
+    remember_row_height(
+        &shared.column_view,
+        shared.model.n_items(),
+        &shared.last_row_height,
+    );
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();

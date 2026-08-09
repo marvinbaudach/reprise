@@ -9,6 +9,9 @@ use reprise_core::browser::TrackFocus;
 use reprise_core::browser::{SortDirection, TrackAnchor, TrackSort, TrackViewState};
 use reprise_core::queries::BrowseFilter;
 
+use crate::ui::track_list::track_list_geometry::{
+    remember_row_height, restore_geometry_is_ready, row_height_for_restore,
+};
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::SortState;
 
@@ -163,14 +166,18 @@ fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
 /// Restores a captured view state after `reload` rebuilt the model for the
 /// re-attached source: selection synchronously (the model rows exist), the
 /// scroll offset via idle retries once the rebuilt list has geometry.
-pub(in crate::ui) fn restore(shared: &Shared, saved: &SavedViewState, current_ids: &[i64]) {
+pub(in crate::ui) fn restore(
+    shared: &std::rc::Rc<Shared>,
+    saved: &SavedViewState,
+    current_ids: &[i64],
+) {
     let positions = positions_to_select(saved, current_ids);
     shared.selection.unselect_all();
     for position in positions {
         shared.selection.select_item(position, false);
     }
     restore_scroll_when_ready(
-        shared.column_view.clone(),
+        shared.clone(),
         saved.anchor,
         current_ids.to_vec(),
         SCROLL_RESTORE_MAX_ATTEMPTS,
@@ -184,7 +191,7 @@ pub(in crate::ui) fn restore(shared: &Shared, saved: &SavedViewState, current_id
 /// usable geometry, retrying over at most `attempts` idle rounds. A list
 /// that fits its viewport entirely (upper <= page) needs no scroll at all.
 fn restore_scroll_when_ready(
-    column_view: gtk4::ColumnView,
+    shared: std::rc::Rc<Shared>,
     anchor: Option<(i64, f64)>,
     current_ids: Vec<i64>,
     attempts: u8,
@@ -193,19 +200,32 @@ fn restore_scroll_when_ready(
         return;
     }
     gtk4::glib::idle_add_local_once(move || {
-        let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) else {
+        let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
+        else {
             return;
         };
         let (upper, page) = (adjustment.upper(), adjustment.page_size());
         if upper > page {
-            let height = upper / current_ids.len() as f64;
-            if let Some(target) =
-                super::reload_restore::scroll_target(anchor, &current_ids, height, page)
+            if let Some(height) =
+                row_height_for_restore(&shared.last_row_height, upper, current_ids.len())
             {
-                adjustment.set_value(target);
+                if restore_geometry_is_ready(upper, current_ids.len(), height) {
+                    remember_row_height(
+                        &shared.column_view,
+                        current_ids.len() as u32,
+                        &shared.last_row_height,
+                    );
+                    if let Some(target) =
+                        super::reload_restore::scroll_target(anchor, &current_ids, height, page)
+                    {
+                        adjustment.set_value(target);
+                    }
+                    return;
+                }
             }
-        } else if attempts > 0 {
-            restore_scroll_when_ready(column_view, anchor, current_ids, attempts - 1);
+        }
+        if attempts > 0 {
+            restore_scroll_when_ready(shared, anchor, current_ids, attempts - 1);
         }
     });
 }
