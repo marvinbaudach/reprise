@@ -14,7 +14,8 @@ not, so a behaviour learned in one place stops working in the next. A user
 does not experience that as a missing feature in Releases — they experience
 it as the app forgetting what it taught them.
 
-**Two.** Dates are written ten different ways. The Releases table renders a
+**Two.** Dates are written fourteen different ways across twelve files. The
+Releases table renders a
 full date as `29 May 26` and a month-precision date as `May 2026` — two- and
 four-digit years in the same column. The Concerts table writes `Sat, Oct 17`
 while the Updates panel writes `Sat, 17 Oct` for the same event: the day and
@@ -187,7 +188,8 @@ and are updated with it.
 
 `i18n.rs` calls `setlocale(LC_ALL, "")` at startup, so `LC_TIME` is set and
 nobody reads it. `chrono` cannot help: its `%x` is locale-blind and always
-formats in English. That is precisely why ten hand-written formats exist.
+formats in English. That is precisely why fourteen hand-written formats
+exist.
 
 ### B.2 Split: rendering in core, detection per platform
 
@@ -234,29 +236,59 @@ dropped regardless — a table cell is not a log line.
 
 ### B.4 Call sites replaced
 
-All ten formats collapse into the shared renderer:
+All fourteen formats collapse into the shared renderer:
 
 | File | Today |
 |---|---|
 | `releases/releases_presentation.rs` | `%-d %b %y`, `%b %Y`, `%Y` |
 | `concerts/concerts_presentation.rs` | `%a, %b %-d`, `%a, %b %-d, %Y` |
 | `updates/concerts_section.rs` | `%a, %-d %b`, `%a, %-d %b %Y` |
-| `updates/release_row.rs` | `%b %y`, `%b`, `%Y` |
+| `updates/release_row.rs` (Updates popover) | `%-d. %b`, `%-d. %b %y`, `%b`, `%b %y`, `%Y` |
 | `podcasts/add_dialog_results.rs` | `%b %Y` |
+| `podcasts/podcasts_presentation.rs` (episode date) | `%-d. %b`, `%-d. %b %Y` |
+| `library_doctor/start_page.rs` | `%Y-%m-%d %H:%M` |
 | `issues/missing_view.rs` | `%b %-d` |
 | `device_sync/device_sync_page_copy.rs` | `%b %-d, %Y at %H:%M` |
+| `core/library/stats_period.rs` (axis) | `%b %-d`, `Week of %b %-d`, `%b` |
 | `track_list/column_layout.rs` (Added) | `%Y-%m-%d %H:%M` |
 
-Machine-readable output (CLI, MCP, stored keys, `%Y-%m-%d` parsing of API
-payloads) is untouched — this is a presentation change only.
+Podcast episodes carry the same current-year year-omission as the Updates
+popover, and lose it for the same reason.
 
-**One deliberate exception: chart bucket labels.**
-`core/library/stats_period.rs` renders `%b %-d`, `Week of %b %-d` and `%b`.
-Those are not dates presented as dates; they are the names of time buckets on
-a My Stats axis, where a run of `01 02 03` would read as an index rather than
-as months. They keep their month names and stay outside STYLE-11. This is the
-one place where the "always the system format" instruction is knowingly not
-applied, and it is called out here rather than left to be discovered.
+**Deliberately not touched**, verified by sweeping every `.format("…")` in
+the three crates: `lastfm_stats.rs` and `listenbrainz.rs` (`%Y-%m` API query
+keys), `concerts_view.rs` (`to_rfc3339` stored failure stamp),
+`row_loss_watchdog.rs` (`%Y%m%d-%H%M%S` debug-dump filename), and every
+`%Y-%m-%d` that parses an API payload. Those are machine strings, not
+displayed dates. Relative phrasings that name an interval rather than a day —
+`new_releases_updated_ago`, `concerts_updated_ago` — also stay.
+
+**The Updates popover loses its year-omission rule.** `release_row.rs`
+carries a second `format_release_date` — same name as the table's, different
+behaviour: it drops the year entirely inside the current year (`15. Aug`),
+writes it two-digit otherwise (`15. Aug 25`), and punctuates the day with a
+period inside an otherwise English string. Under STYLE-11 all of that
+collapses to the one system pattern with a four-digit year, so a release from
+this year now reads `15.08.2026` in the popover as well. That is longer than
+before in a deliberately compact surface — the accepted price of the rule,
+recorded here so it is not rediscovered as a regression. The five
+`format_release_date_*` unit tests in that file are rewritten with it, and
+the duplicate function disappears.
+
+**Chart bucket labels follow the rule too.**
+`core/library/stats_period.rs` renders `%b %-d`, `Week of %b %-d` and `%b`
+for the My Stats axis. They move to the same pattern, at the precision of the
+bucket they name: a day bucket renders day and month, a week bucket the same
+behind the translated "Week of", a month bucket month and year. The
+surrounding period selector already states which span is on screen, so the
+year may be omitted on a day bucket without becoming ambiguous — the axis
+would otherwise repeat the same four digits thirty times.
+
+This makes the year optional in the renderer:
+`render(y: Option<i32>, m: Option<u32>, d: Option<u32>)`, with the same
+suffix-dropping rule. Omitting the year is allowed only where the surface
+itself names the period; every other caller passes it. Under `%d.%m.%Y` a day
+bucket therefore reads `15.08.`, a month bucket `08.2026`.
 
 Concerts loses its weekday prefix by decision 8.
 
@@ -284,10 +316,10 @@ a numeric month and an always four-digit year; a pattern the app cannot
 render numerically falls back to ISO. Incomplete dates shorten within that
 same pattern instead of switching to a different one. Times show minutes and
 never seconds, in the system's 12- or 24-hour convention. No call site
-formats dates itself. The rule governs a date presented *as a date* — in a
-cell, a row, a status line; the bucket labels on a My Stats axis name a
-period rather than a day and keep their month names. **Test rule:** the
-pattern renderer is unit-tested
+formats dates itself, and no surface keeps a month name. A label may show
+fewer fields than the pattern holds — a chart axis whose period is already
+named on screen omits the year — but never a different pattern. **Test
+rule:** the pattern renderer is unit-tested
 against the day-first, month-first, year-first and suffixed conventions; one
 display test renders the four tables under a set `LC_TIME`.
 
@@ -301,7 +333,8 @@ columns unchanged.
 
 **Core, no display:**
 - Pattern normalization: `%y` upgrade, non-numeric rejection, empty input.
-- Partial rendering: the four conventions in the table above.
+- Partial rendering: the four conventions in the table above, plus the
+  year-omitted forms the My Stats axis uses.
 - Layout normalization per table: leading and trailing pins placed and forced
   visible, missing columns appended, serialize/parse round-trip.
 - Width serialization per table.
