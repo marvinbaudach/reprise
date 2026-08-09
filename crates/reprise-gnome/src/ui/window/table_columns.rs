@@ -150,7 +150,13 @@ mod tests {
         for page in ["library", "concerts", "releases", "radio"] {
             assert!(model_for_page(page, &model, &model, &model, &model).is_some());
         }
-        for page in ["stats", "podcasts", "youtube", "library-doctor", "device"] {
+        for page in [
+            "stats",
+            "podcasts",
+            "youtube",
+            "library-doctor",
+            "device-sync",
+        ] {
             assert!(model_for_page(page, &model, &model, &model, &model).is_none());
         }
         assert!(model_for_state("library", false, &model, &model, &model, &model).is_none());
