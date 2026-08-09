@@ -148,6 +148,10 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     selection_override: RefCell<Option<Vec<i64>>>,
 }
 
+pub(in crate::ui) struct LibraryDoctorLauncher {
+    coordinator: Rc<crate::ui::startup_quiet::Deferred<LibraryDoctorCoordinator>>,
+}
+
 pub(in crate::ui) struct LibraryDoctorContext<'a> {
     pub(in crate::ui) conn: &'a Rc<Db>,
     pub(in crate::ui) db_path: &'a Path,
@@ -163,9 +167,70 @@ pub(in crate::ui) struct LibraryDoctorContext<'a> {
     pub(in crate::ui) refresh_views: Rc<dyn Fn()>,
 }
 
-impl LibraryDoctorCoordinator {
+struct OwnedLibraryDoctorContext {
+    conn: Rc<Db>,
+    db_path: PathBuf,
+    content_navigation: adw::NavigationView,
+    content_stack: gtk4::Stack,
+    doctor_navigation: adw::NavigationView,
+    window: adw::ApplicationWindow,
+    track_list: Rc<TrackList>,
+    scan_controls: ScanControls,
+    fingerprint: Arc<dyn FingerprintBackend>,
+    sidebar: Rc<Sidebar>,
+    toast_overlay: adw::ToastOverlay,
+    refresh_views: Rc<dyn Fn()>,
+}
+
+impl LibraryDoctorContext<'_> {
+    fn into_owned(self) -> OwnedLibraryDoctorContext {
+        OwnedLibraryDoctorContext {
+            conn: self.conn.clone(),
+            db_path: self.db_path.to_path_buf(),
+            content_navigation: self.content_navigation.clone(),
+            content_stack: self.content_stack.clone(),
+            doctor_navigation: self.doctor_navigation.clone(),
+            window: self.window.clone(),
+            track_list: self.track_list.clone(),
+            scan_controls: self.scan_controls.clone(),
+            fingerprint: self.fingerprint,
+            sidebar: self.sidebar.clone(),
+            toast_overlay: self.toast_overlay.clone(),
+            refresh_views: self.refresh_views,
+        }
+    }
+}
+
+impl LibraryDoctorLauncher {
     pub(in crate::ui) fn new(context: LibraryDoctorContext<'_>) -> Rc<Self> {
-        let LibraryDoctorContext {
+        let context = context.into_owned();
+        let progress = DoctorProgressCard::new();
+        context.sidebar.append_doctor_card(progress.widget());
+        let coordinator = crate::ui::startup_quiet::deferred_after_quiet(move || {
+            super::startup_report::mark("LibraryDoctorCoordinator::new begin");
+            let coordinator = LibraryDoctorCoordinator::new(context, &progress);
+            super::startup_report::mark("LibraryDoctorCoordinator::new end");
+            coordinator
+        });
+        Rc::new(Self { coordinator })
+    }
+
+    pub(in crate::ui) fn open(&self) {
+        self.coordinator.get().open();
+    }
+
+    pub(in crate::ui) fn open_findings(&self) {
+        self.coordinator.get().open_findings();
+    }
+
+    pub(in crate::ui) fn open_for_selection(&self, ids: Vec<i64>) {
+        self.coordinator.get().open_for_selection(ids);
+    }
+}
+
+impl LibraryDoctorCoordinator {
+    fn new(context: OwnedLibraryDoctorContext, progress: &DoctorProgressCard) -> Rc<Self> {
+        let OwnedLibraryDoctorContext {
             conn,
             db_path,
             content_navigation,
@@ -180,7 +245,7 @@ impl LibraryDoctorCoordinator {
             refresh_views,
         } = context;
         let navigation =
-            DoctorNavigation::new(content_navigation, content_stack, doctor_navigation);
+            DoctorNavigation::new(&content_navigation, &content_stack, &doctor_navigation);
         let coordinator = Rc::new_cyclic(|weak: &std::rc::Weak<Self>| {
             let refresh = {
                 let weak = weak.clone();
@@ -201,12 +266,11 @@ impl LibraryDoctorCoordinator {
             );
             super::startup_report::mark("LibraryDoctorCoordinator::fingerprint.capability end");
             super::startup_report::mark("LibraryDoctorPage::new begin");
-            let page = LibraryDoctorPage::new(conn, window, fingerprint_available, refresh);
+            let page = LibraryDoctorPage::new(&conn, &window, fingerprint_available, refresh);
             super::startup_report::mark("LibraryDoctorPage::new end");
-            let progress = DoctorProgressCard::new();
             Self {
                 conn: conn.clone(),
-                db_path: db_path.to_path_buf(),
+                db_path: db_path.clone(),
                 navigation: navigation.clone(),
                 window: window.clone(),
                 page,
@@ -218,7 +282,7 @@ impl LibraryDoctorCoordinator {
                 scan_generation: Cell::new(0),
                 review: RefCell::new(None),
                 job_kind: Cell::new(None),
-                progress,
+                progress: progress.clone(),
                 toast_overlay: toast_overlay.clone(),
                 tag_write_gate: track_list.tag_write_gate(),
                 refresh_views,
@@ -226,7 +290,6 @@ impl LibraryDoctorCoordinator {
                 selection_override: RefCell::new(None),
             }
         });
-        sidebar.append_doctor_card(coordinator.progress.widget());
         super::startup_report::mark("LibraryDoctorCoordinator::load_last_scan begin");
         coordinator.load_last_scan();
         super::startup_report::mark("LibraryDoctorCoordinator::load_last_scan end");
@@ -386,12 +449,11 @@ impl LibraryDoctorCoordinator {
     fn revert_available(&self) -> bool {
         let conn = &self.conn;
         LibraryDoctor::new(conn)
-            .last_cleanup()
+            .cleanup_available()
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "could not read the last Library Doctor cleanup");
-                None
+                false
             })
-            .is_some_and(|cleanup| cleanup.track_count > 0)
     }
 
     fn start_scan(self: &Rc<Self>) {

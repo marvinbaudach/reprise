@@ -143,7 +143,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             stats.refresh(&conn);
         }) as Rc<dyn Fn()>
     };
-    let library_doctor = super::library_doctor::LibraryDoctorCoordinator::new(
+    let library_doctor = super::library_doctor::LibraryDoctorLauncher::new(
         super::library_doctor::LibraryDoctorContext {
             conn,
             db_path,
@@ -159,7 +159,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             refresh_views: refresh_doctor_views,
         },
     );
-    super::startup_report::mark("LibraryDoctorCoordinator::new");
+    super::startup_report::mark("LibraryDoctorLauncher::new");
     {
         let library_doctor = Rc::downgrade(&library_doctor);
         stats_view.set_on_unify_spellings(move |ids| {

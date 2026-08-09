@@ -14,6 +14,32 @@ use gtk4::prelude::*;
 const QUIET_INTERVAL: Duration = Duration::from_millis(100);
 
 type Callback = Box<dyn FnOnce()>;
+type Initializer<T> = Box<dyn FnOnce() -> Rc<T>>;
+
+/// One value whose automatic construction waits for the startup quiet point.
+/// An explicit caller can demand the same value sooner through [`Self::get`].
+pub(crate) struct Deferred<T> {
+    value: RefCell<Option<Rc<T>>>,
+    initializer: RefCell<Option<Initializer<T>>>,
+}
+
+impl<T> Deferred<T> {
+    /// Returns the shared value, constructing it synchronously when startup's
+    /// automatic quiet-point callback has not done so yet.
+    pub(crate) fn get(&self) -> Rc<T> {
+        if let Some(value) = self.value.borrow().clone() {
+            return value;
+        }
+        let initializer = self
+            .initializer
+            .borrow_mut()
+            .take()
+            .expect("deferred startup value is already being initialized");
+        let value = initializer();
+        self.value.borrow_mut().replace(value.clone());
+        value
+    }
+}
 
 #[derive(Default)]
 struct Gate {
@@ -43,6 +69,22 @@ pub(crate) fn run_after_quiet(work: impl FnOnce() + 'static) {
     if let Some(work) = work {
         work();
     }
+}
+
+/// Defers automatic construction until startup is quiet while preserving an
+/// immediate path for explicit user work.
+pub(crate) fn deferred_after_quiet<T: 'static>(
+    initialize: impl FnOnce() -> Rc<T> + 'static,
+) -> Rc<Deferred<T>> {
+    let deferred = Rc::new(Deferred {
+        value: RefCell::new(None),
+        initializer: RefCell::new(Some(Box::new(initialize))),
+    });
+    let after_quiet = deferred.clone();
+    run_after_quiet(move || {
+        after_quiet.get();
+    });
+    deferred
 }
 
 /// Arms the one shared first-frame observer for this application lifetime.
@@ -97,7 +139,7 @@ fn reset_for_test() {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     #[test]
@@ -123,5 +165,37 @@ mod tests {
         let calls_after_startup = calls.clone();
         super::run_after_quiet(move || calls_after_startup.borrow_mut().push("explicit"));
         assert_eq!(calls.borrow().last(), Some(&"explicit"));
+    }
+
+    #[test]
+    fn deferred_work_builds_once_on_automatic_or_explicit_demand() {
+        super::reset_for_test();
+        let explicit_builds = Rc::new(Cell::new(0));
+        let builds = explicit_builds.clone();
+        let explicit = super::deferred_after_quiet(move || {
+            builds.set(builds.get() + 1);
+            Rc::new("doctor")
+        });
+
+        assert_eq!(explicit_builds.get(), 0);
+        let first = explicit.get();
+        assert_eq!(explicit_builds.get(), 1);
+        super::release();
+        assert_eq!(explicit_builds.get(), 1);
+        assert!(Rc::ptr_eq(&first, &explicit.get()));
+
+        super::reset_for_test();
+        let automatic_builds = Rc::new(Cell::new(0));
+        let builds = automatic_builds.clone();
+        let automatic = super::deferred_after_quiet(move || {
+            builds.set(builds.get() + 1);
+            Rc::new("doctor")
+        });
+
+        assert_eq!(automatic_builds.get(), 0);
+        super::release();
+        assert_eq!(automatic_builds.get(), 1);
+        assert_eq!(*automatic.get(), "doctor");
+        assert_eq!(automatic_builds.get(), 1);
     }
 }
