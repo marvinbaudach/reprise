@@ -1509,15 +1509,15 @@ msgstr "Comprobando pistas…"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:39
 msgid "Reading tags…"
-msgstr ""
+msgstr "Leyendo etiquetas…"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:41
 msgid "Checking against MusicBrainz…"
-msgstr ""
+msgstr "Comprobando con MusicBrainz…"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:46
 msgid "Fingerprinting audio…"
-msgstr ""
+msgstr "Creando la huella del audio…"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:47
 msgid "Casing / Whitespace"
@@ -1775,14 +1775,14 @@ msgstr "De: {value}"
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:134
 #, rust-format
 msgid "{tracks} · about {minutes}"
-msgstr ""
+msgstr "{tracks} · aproximadamente {minutes}"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:145
 #, rust-format
 msgid "{count} minute"
 msgid_plural "{count} minutes"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} minuto"
+msgstr[1] "{count} minutos"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:163
 #, rust-format
@@ -1793,8 +1793,8 @@ msgstr "Último análisis · {when}"
 #, rust-format
 msgid "{count} fix applied · still reversible"
 msgid_plural "{count} fixes applied · still reversible"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} corrección aplicada · aún reversible"
+msgstr[1] "{count} correcciones aplicadas · aún reversibles"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:180
 #, rust-format
@@ -1884,7 +1884,7 @@ msgstr[1] ""
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:313
 #, rust-format
 msgid "{checked}, {skipped}. Your tags are already consistent with each other."
-msgstr ""
+msgstr "{checked}, {skipped}. Tus etiquetas ya son coherentes entre sí."
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:324
 #, rust-format
@@ -1898,14 +1898,18 @@ msgstr[1] "{count} pistas revisadas"
 msgid "Includes the {count} quiet fix. Available until the next scan."
 msgid_plural "Includes the {count} quiet fixes. Available until the next scan."
 msgstr[0] ""
+"Incluye la {count} corrección silenciosa. Disponible hasta el próximo "
+"análisis."
 msgstr[1] ""
+"Incluye las {count} correcciones silenciosas. Disponible hasta el próximo "
+"análisis."
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:344
 #, rust-format
 msgid "{count} tag fixed"
 msgid_plural "{count} tags fixed"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} etiqueta corregida"
+msgstr[1] "{count} etiquetas corregidas"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:354
 #, rust-format
@@ -1922,20 +1926,20 @@ msgstr "Todo está preseleccionado. Desmarca lo que no te parezca correcto."
 #, rust-format
 msgid "{count} album"
 msgid_plural "{count} albums"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} álbum"
+msgstr[1] "{count} álbumes"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:390
 #, rust-format
 msgid "{shown} of {total} · filtered by {filter}"
-msgstr ""
+msgstr "{shown} de {total} · filtrado por {filter}"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:403
 #, rust-format
 msgid "{count} change · none selected"
 msgid_plural "{count} changes · none selected"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} cambio · ninguno seleccionado"
+msgstr[1] "{count} cambios · ninguno seleccionado"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:414
 #, rust-format
@@ -1946,14 +1950,19 @@ msgid_plural ""
 "Your library spells these {count} names more than one way. Reprise will not "
 "guess. Pick one and the matching track changes appear above."
 msgstr[0] ""
+"Tu biblioteca escribe este {count} nombre de más de una forma. Reprise no lo "
+"adivina. Elige una y los cambios de pista correspondientes aparecen arriba."
 msgstr[1] ""
+"Tu biblioteca escribe estos {count} nombres de más de una forma. Reprise no "
+"lo adivina. Elige una y los cambios de pista correspondientes aparecen "
+"arriba."
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:424
 #, rust-format
 msgid "{field} · {tracks} track"
 msgid_plural "{field} · {tracks} tracks"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{field} · {tracks} pista"
+msgstr[1] "{field} · {tracks} pistas"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:433
 #, rust-format
@@ -1975,21 +1984,21 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:468
 #, rust-format
 msgid "{changes} · {files} · undo available after"
-msgstr ""
+msgstr "{changes} · {files} · se podrá deshacer después"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:479
 #, rust-format
 msgid "{count} tag change"
 msgid_plural "{count} tag changes"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} cambio de etiqueta"
+msgstr[1] "{count} cambios de etiquetas"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:489
 #, rust-format
 msgid "{count} file"
 msgid_plural "{count} files"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} archivo"
+msgstr[1] "{count} archivos"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:498
 #, rust-format
@@ -2015,22 +2024,22 @@ msgstr "Diferencia de duración: {delta} ms"
 #, rust-format
 msgid "{completed}/{total} track"
 msgid_plural "{completed}/{total} tracks"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{completed}/{total} pista"
+msgstr[1] "{completed}/{total} pistas"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:546
 #, rust-format
 msgid "Tags reverted · {count} track"
 msgid_plural "Tags reverted · {count} tracks"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "Etiquetas revertidas · {count} pista"
+msgstr[1] "Etiquetas revertidas · {count} pistas"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:559
 #, rust-format
 msgid "{updated} track updated · {cancelled} cancelled"
 msgid_plural "{updated} tracks updated · {cancelled} cancelled"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{updated} pista actualizada · {cancelled} sin actualizar"
+msgstr[1] "{updated} pistas actualizadas · {cancelled} sin actualizar"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:568
 #, rust-format
@@ -4844,11 +4853,11 @@ msgid "Saving… {done}/{total}"
 msgstr "Guardando… {done}/{total}"
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:128
-#, fuzzy, rust-format
+#, rust-format
 msgid "Tags updated · {count} track"
 msgid_plural "Tags updated · {count} tracks"
 msgstr[0] "Etiquetas actualizadas · {count} pista"
-msgstr[1] "Etiquetas actualizadas · {count} pista"
+msgstr[1] "Etiquetas actualizadas · {count} pistas"
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:136
 #, rust-format
