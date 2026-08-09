@@ -279,19 +279,14 @@ impl<'connection> LibraryDoctor<'connection> {
                 .flat_map(|(indices, _)| indices.iter().copied())
                 .filter(|index| reused_readings.contains(&read_tracks[*index].reference.track_id))
                 .collect::<Vec<_>>();
-            if !refresh_reused_metadata(
-                &read_tracks,
-                &reread,
-                &mut remote_metadata,
-                &mut || {
-                    progress(DoctorScanProgress {
-                        phase: DoctorScanPhase::CheckingRemote,
-                        completed_tracks: tracks.len().saturating_sub(1),
-                        total_tracks: tracks.len(),
-                        summary: preview_summary,
-                    })
-                },
-            ) {
+            if !refresh_reused_metadata(&read_tracks, &reread, &mut remote_metadata, &mut || {
+                progress(DoctorScanProgress {
+                    phase: DoctorScanPhase::CheckingRemote,
+                    completed_tracks: tracks.len().saturating_sub(1),
+                    total_tracks: tracks.len(),
+                    summary: preview_summary,
+                })
+            }) {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
             for (indices, reusable) in album_groups {

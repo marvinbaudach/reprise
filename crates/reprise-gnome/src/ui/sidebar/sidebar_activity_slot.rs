@@ -179,7 +179,7 @@ mod tests {
         detail.add_css_class("scan-card-detail");
         body.append(&detail);
         gtk4::Revealer::builder()
-            .transition_duration(0)
+            .transition_type(gtk4::RevealerTransitionType::None)
             .child(&body)
             .build()
     }

@@ -77,7 +77,6 @@ pub trait RemoteProvider {
         metadata: &RemoteTrackMetadata,
         control: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult;
-    #[allow(dead_code)] // MATCH-3 invokes the release path after album grouping lands.
     fn search_release(
         &mut self,
         query: &AlbumQuery,

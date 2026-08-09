@@ -167,7 +167,7 @@ fn diagnostic_job_card(title: &str, carries_open_action: bool) -> gtk4::Revealer
     body.append(&progress);
     body.append(&detail);
     gtk4::Revealer::builder()
-        .transition_duration(0)
+        .transition_type(gtk4::RevealerTransitionType::None)
         .child(&body)
         .build()
 }

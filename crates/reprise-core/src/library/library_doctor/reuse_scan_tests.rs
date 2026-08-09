@@ -96,7 +96,14 @@ fn doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader() {
     let paths = (1..=4)
         .map(|id| {
             let path = fixture_copy(dir.path(), &format!("growing-{id}.flac"));
-            write_tags(&path, "Track", "Artist", &format!("Album {id}"), "Artist", "Rock");
+            write_tags(
+                &path,
+                "Track",
+                "Artist",
+                &format!("Album {id}"),
+                "Artist",
+                "Rock",
+            );
             insert_track(&db, id, &path, "Artist");
             path
         })
