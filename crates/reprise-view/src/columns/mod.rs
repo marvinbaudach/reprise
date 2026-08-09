@@ -7,7 +7,12 @@
 //! drift.
 
 pub mod key;
+pub mod layout;
 pub mod track;
 
+#[cfg(test)]
+pub(crate) mod probe;
+
 pub use key::{ColumnKey, Pin};
+pub use layout::Layout;
 pub use track::ColumnId;
