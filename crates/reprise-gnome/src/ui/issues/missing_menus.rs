@@ -15,6 +15,7 @@ pub(super) fn install_row_context_menu(
     listbox: &gtk4::ListBox,
     row: &gtk4::ListBoxRow,
     target: RelinkTarget,
+    kind: MissingGroupKind,
     removable: bool,
     locatable: bool,
 ) {
@@ -25,6 +26,7 @@ pub(super) fn install_row_context_menu(
     let listbox_for_pointer = listbox.clone();
     let row_for_menu = row.clone();
     let target_for_pointer = target.clone();
+    let kind_for_pointer = kind.clone();
     gesture.connect_pressed(move |gesture, _, x, y| {
         gesture.set_state(gtk4::EventSequenceState::Claimed);
         show_row_menu(
@@ -32,6 +34,7 @@ pub(super) fn install_row_context_menu(
             &listbox_for_pointer,
             &row_for_menu,
             &target_for_pointer,
+            &kind_for_pointer,
             removable,
             locatable,
             x,
@@ -54,6 +57,7 @@ pub(super) fn install_row_context_menu(
             &listbox,
             &row_for_keys,
             &target,
+            &kind,
             removable,
             locatable,
             f64::from(row_for_keys.width()) / 2.0,
@@ -70,6 +74,7 @@ fn show_row_menu(
     listbox: &gtk4::ListBox,
     row: &gtk4::ListBoxRow,
     target: &RelinkTarget,
+    kind: &MissingGroupKind,
     removable: bool,
     locatable: bool,
     x: f64,
@@ -84,7 +89,10 @@ fn show_row_menu(
         let action = gio::SimpleAction::new("remove", None);
         let shared = shared.clone();
         let listbox = listbox.clone();
-        action.connect_activate(move |_, _| confirm_remove(&shared, selected_ids(&listbox)));
+        let kind = kind.clone();
+        action.connect_activate(move |_, _| {
+            confirm_remove(&shared, kind.clone(), selected_ids(&listbox));
+        });
         action_group.add_action(&action);
     }
     if locatable {

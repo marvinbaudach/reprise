@@ -27,9 +27,9 @@
 //!   being able to locate individual files.
 //! - `deleted` rows — confirmed gone from a reachable filesystem — are the
 //!   ONLY rows in `MissingGroupKind::Deleted`. This distinction is load-
-//!   bearing: the Deleted card's bulk action hard-deletes library rows
-//!   (ratings, play history, playlist membership — all gone via `ON DELETE
-//!   CASCADE`). `Unlocatable` being removable does not make it deletion
+//!   bearing: the Deleted card's bulk action removes library rows and their
+//!   attached ratings, playlist membership, and device-sync state after the
+//!   undo window. `Unlocatable` being removable does not make it deletion
 //!   evidence: its count, row query, confirmation copy, and guarded cleanup
 //!   remain separate from `Deleted`, which continues to filter on the exact
 //!   deleted reason rather than a catch-all.
@@ -476,16 +476,6 @@ fn tombstone_still_missing_in(
     }
     tx.commit()?;
     Ok(tombstoned)
-}
-
-/// Transitional compatibility for the GNOME caller, removed when that
-/// caller starts supplying its actionable group explicitly.
-pub fn tombstone_still_deleted(
-    db: &Db,
-    requested_ids: &[i64],
-    now: i64,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    tombstone_still_missing(db, &MissingGroupKind::Deleted, requested_ids, now)
 }
 
 // -- Auto-clean (Task 2.3) --------------------------------------------------
