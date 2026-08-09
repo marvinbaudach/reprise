@@ -32,6 +32,9 @@ use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::remote_image::ImageOutcome;
 
+#[path = "source_artwork_queue.rs"]
+mod source_artwork_queue;
+
 const CACHE_LIMIT: usize = 128;
 const ARTWORK_QUEUE_LIMIT: usize = 64;
 const ARTWORK_WORKERS: usize = 4;
@@ -51,13 +54,16 @@ thread_local! {
 /// natural connection lifetime); polling settings from a background thread is
 /// the wrong shape here. Instead, every caller of `SourceImage::new`/
 /// `set_url` already recomputes `images_allowed` fresh from its own live
-/// connection on every render pass (`SRC-11`: "Jeder Aufrufer berechnet den
-/// Riegel selbst an seiner eigenen Verbindung") — that is already the
-/// freshest signal the app has. `queue_artwork` publishes each such value
+/// connection on every render pass, as required by `SRC-11` — that is already
+/// the freshest signal the app has. `load_texture` publishes each such value
 /// into this atomic, and the worker reads it again immediately before
 /// calling `remote_image::resolve`, instead of trusting whatever value a
 /// task happened to capture when it was built. A task queued while the gate
 /// was open therefore still gets refused if the gate has since closed.
+///
+/// The worker queue stays bounded. If it is full, the GTK thread keeps the
+/// request in an asynchronous send until capacity frees instead of blocking
+/// or discarding the visible row's only attempt.
 ///
 /// Starts `false` so a failed/unknown gate state (nothing has published a
 /// value yet) counts as not-allowed, per `NET-1a`.
@@ -322,7 +328,7 @@ fn load_texture(
             return;
         }
         let Some(receiver) = queue_artwork(url.clone(), width, height) else {
-            tracing::debug!(%url, "source artwork queue is full");
+            tracing::warn!(%url, "source artwork worker queue is unavailable");
             return;
         };
         gtk4::glib::spawn_future_local(async move {
@@ -457,14 +463,17 @@ fn queue_artwork(
         sender
     });
     let (response, receiver) = async_channel::bounded(1);
-    queue
-        .try_send(ArtworkTask {
-            url,
+    source_artwork_queue::submit(
+        queue.clone(),
+        ArtworkTask {
+            url: url.clone(),
             width,
             height,
             response,
-        })
-        .ok()?;
+        },
+        url,
+    )
+    .then_some(())?;
     Some(receiver)
 }
 
