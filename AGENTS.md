@@ -323,14 +323,14 @@ Branch: `feature/multi-surface-frontends`
 This ownership is ACTIVE. A sibling branch that edits an owned path must
 rebase onto this branch first, not merge past it.
 
-## Active file ownership — Android Now Playing scene
+## Completed file ownership — Android Now Playing scene
 
 Plan: `docs/plans/now-playing-scene.md`
 Branch: `feature/now-playing-scene`
 
-This ownership is ACTIVE until packages P1 through P7 and the Wave D
-verification record are complete. Packages in the same wave own disjoint
-paths; waves run in the order recorded by the plan.
+This ownership is COMPLETE and released. Packages P1 through P7 and the Wave D
+verification record are committed. The table remains as the historical package
+boundary.
 
 | Wave | Package | Owned files |
 | --- | --- | --- |
