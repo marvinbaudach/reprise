@@ -94,7 +94,6 @@ pub(super) struct ReviewRowModel {
     pub(super) album_artist: String,
     pub(super) album_track_count: usize,
     pub(super) selected_change_count: usize,
-    #[allow(dead_code)] // Consumed by REV-5 in the immediately following package.
     pub(super) is_album_wide: bool,
     pub(super) track: String,
     pub(super) field: String,
