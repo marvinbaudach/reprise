@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
@@ -375,6 +376,11 @@ private const val QUEUE_REMOVE_FRACTION = 0.75f
 @Composable
 private fun PlayCountBadge(playCount: Long) {
     val normalizedPlayCount = playCount.coerceAtLeast(0)
+    val description = pluralStringResource(
+        R.plurals.play_count_description,
+        normalizedPlayCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        normalizedPlayCount,
+    )
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -384,7 +390,7 @@ private fun PlayCountBadge(playCount: Long) {
             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MaterialSymbol("play_arrow", "$normalizedPlayCount plays", sizeSp = 12)
+            MaterialSymbol("play_arrow", description, sizeSp = 12)
             Text(normalizedPlayCount.toString(), style = MaterialTheme.typography.labelSmall)
         }
     }
