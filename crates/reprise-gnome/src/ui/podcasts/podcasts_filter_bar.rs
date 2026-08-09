@@ -25,6 +25,7 @@ pub(super) struct PodcastsFilterBar {
     layout: FilterBarLayout,
     conn: Rc<Db>,
     filter: RefCell<PodcastFilter>,
+    committed_query: RefCell<String>,
     chips: gtk4::Box,
     add_filter: gtk4::MenuButton,
     popover_box: gtk4::Box,
@@ -87,6 +88,7 @@ impl PodcastsFilterBar {
             layout,
             conn,
             filter: RefCell::new(filter),
+            committed_query: RefCell::new(String::new()),
             chips,
             add_filter,
             popover_box,
@@ -147,6 +149,18 @@ impl PodcastsFilterBar {
             return;
         }
         self.apply_internal(current.with_query(query), false);
+    }
+
+    pub(super) fn set_committed_query(self: &Rc<Self>, query: &str) {
+        if *self.committed_query.borrow() == query {
+            return;
+        }
+        self.committed_query.replace(query.to_owned());
+        self.rebuild();
+    }
+
+    fn committed_query(&self) -> String {
+        self.committed_query.borrow().clone()
     }
 
     pub(super) fn set_context(
@@ -261,6 +275,7 @@ impl PodcastsFilterBar {
             self.chips.remove(&child);
         }
         let filter = self.filter();
+        let committed_query = self.committed_query();
         if filter.unplayed_only {
             self.prepend_chip(&strings::text(strings::PODCAST_FILTER_UNPLAYED), |filter| {
                 PodcastFilter {
@@ -281,7 +296,7 @@ impl PodcastsFilterBar {
         // FIL-1a/FIL-1d: the dedicated search slot keeps the search chip first.
         let weak = Rc::downgrade(self);
         self.layout
-            .replace_scoped_search(self.scope(), &filter.query, move || {
+            .replace_scoped_search(self.scope(), &committed_query, move || {
                 if let Some(bar) = weak.upgrade() {
                     let cleared = bar.filter().with_query("");
                     bar.apply(cleared);

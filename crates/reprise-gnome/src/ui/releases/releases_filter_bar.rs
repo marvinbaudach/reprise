@@ -75,6 +75,7 @@ pub(super) struct ReleasesFilterBar {
     /// rather than inside it: that type is persisted, while a query must not
     /// be restored on the next launch.
     query: RefCell<String>,
+    committed_query: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
     on_query_changed: RefCell<Option<OnQueryChanged>>,
 }
@@ -120,6 +121,7 @@ impl ReleasesFilterBar {
             clear_all,
             counts: Cell::new((0, 0)),
             query: RefCell::new(String::new()),
+            committed_query: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
             on_query_changed: RefCell::new(None),
         });
@@ -157,6 +159,18 @@ impl ReleasesFilterBar {
         self.query.replace(query.trim().to_owned());
         self.rebuild();
         self.notify_changed();
+    }
+
+    pub(super) fn set_committed_query(self: &Rc<Self>, query: &str) {
+        if *self.committed_query.borrow() == query {
+            return;
+        }
+        self.committed_query.replace(query.to_owned());
+        self.rebuild();
+    }
+
+    fn committed_query(&self) -> String {
+        self.committed_query.borrow().clone()
     }
 
     fn clear_query(self: &Rc<Self>) {
@@ -223,9 +237,10 @@ impl ReleasesFilterBar {
         }
         let filter = self.filter();
         let query = self.query();
+        let committed_query = self.committed_query();
         let weak = Rc::downgrade(self);
         self.layout
-            .replace_scoped_search(SearchScope::Releases, &query, move || {
+            .replace_scoped_search(SearchScope::Releases, &committed_query, move || {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };

@@ -116,8 +116,8 @@ impl FilterBarLayout {
         clear(&self.search);
     }
 
-    /// Replaces the search slot with the canonical chip for this view, or
-    /// empties it when the query is blank.
+    /// Replaces the search slot with the canonical chip for this view. The
+    /// query is the committed query; blank means there is no chip.
     pub(in crate::ui) fn replace_scoped_search(
         &self,
         scope: SearchScope,

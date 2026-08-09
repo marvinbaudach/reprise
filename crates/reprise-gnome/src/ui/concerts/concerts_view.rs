@@ -288,6 +288,10 @@ impl ConcertsView {
         self.shared.filter_bar.set_query(query);
     }
 
+    pub(in crate::ui) fn set_committed_search_query(&self, query: &str) {
+        self.shared.filter_bar.set_committed_query(query);
+    }
+
     /// SEARCH-8a: the bar removed the query itself, so the entry must follow.
     pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
         self.shared.filter_bar.set_on_query_changed(callback);

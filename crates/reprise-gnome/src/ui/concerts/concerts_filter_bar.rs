@@ -155,6 +155,7 @@ pub(super) struct ConcertsFilterBar {
     /// `ConcertFilter` rather than inside it — a query must not be restored
     /// on the next launch.
     query: RefCell<String>,
+    committed_query: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
     on_query_changed: RefCell<Option<OnQueryChanged>>,
 }
@@ -225,6 +226,7 @@ impl ConcertsFilterBar {
             has_similar_rows: Cell::new(false),
             counts: Cell::new((0, 0)),
             query: RefCell::new(String::new()),
+            committed_query: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
             on_query_changed: RefCell::new(None),
         });
@@ -265,6 +267,18 @@ impl ConcertsFilterBar {
         if let Some(callback) = callback {
             callback(self.filter());
         }
+    }
+
+    pub(super) fn set_committed_query(self: &Rc<Self>, query: &str) {
+        if *self.committed_query.borrow() == query {
+            return;
+        }
+        self.committed_query.replace(query.to_owned());
+        self.rebuild();
+    }
+
+    fn committed_query(&self) -> String {
+        self.committed_query.borrow().clone()
     }
 
     fn clear_query(self: &Rc<Self>) {
@@ -327,12 +341,13 @@ impl ConcertsFilterBar {
         }
         let filter = self.filter();
         let query = self.query();
+        let committed_query = self.committed_query();
         let facets = active_facets(&filter);
         let active = !facets.is_empty() || !query.is_empty();
         // FIL-1a/FIL-1d: the search chip is the row's first chip.
         let weak = Rc::downgrade(self);
         self.layout
-            .replace_scoped_search(SearchScope::Concerts, &query, move || {
+            .replace_scoped_search(SearchScope::Concerts, &committed_query, move || {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };
