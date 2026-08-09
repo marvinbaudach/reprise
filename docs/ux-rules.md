@@ -3723,7 +3723,10 @@ means deterministic and high-confidence, never „without review".
   leaves the fields the track resolved on its own untouched.*
 
 - **DOC-1g** [active] [core] — **The complete local pass runs first, followed
-  by the network pass.** The two phases are reported separately. The network
+  by the network pass.** The phases are reported separately, and a track being
+  fingerprinted says so while it runs — that step decodes the audio and can
+  hold one track for a minute, which under the remote phase's own wording
+  reads as a stall. The network
   makes one request per release rather than per track, caches searches, and
   skips unchanged files. A fingerprint is created only for a track without a
   Recording MBID and without a confidently matched release. *Tests:*
@@ -3736,10 +3739,20 @@ means deterministic and high-confidence, never „without review".
   `doc_1g_a_changed_file_is_read_again`,
   `doc_1g_a_skipped_track_keeps_its_previous_proposals`,
   `doc_1g_the_reading_pass_stops_for_a_cancelled_scan`,
-  `doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader`.
+  `doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader`,
+  `doc_1g_a_multi_disc_album_is_one_release_lookup`,
+  `doc_1g_a_title_that_only_looks_like_a_disc_marker_is_left_alone`,
+  `doc_1g_a_fingerprinted_track_says_so_while_it_runs`,
+  `doc_1g_the_flag_stands_only_for_the_duration_of_the_fingerprint`.
   *Amended 2026-08-08: unchanged is decided per track, so a library that grew
   by one file keeps every other skip. The release decision stays whole: an
   album is reused entirely or resolved entirely.*
+  *Amended 2026-08-09: one request per release includes a multi-disc set whose
+  discs are tagged with different album titles — a trailing disc marker
+  („Album (Disc 1)", „Album [CD2]", „Album, Disc 3") is dropped from the
+  grouping key and from the search, so the set is looked up once and compared
+  whole. The marker is dropped only at the end of the title, only with a
+  number, and never down to an empty title.*
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
@@ -3791,7 +3804,8 @@ means deterministic and high-confidence, never „without review".
   `doc_2c_a_running_scan_shows_progress_and_no_result_vocabulary`,
   `doc_2c_the_running_page_counters_are_forecasts_from_the_live_summary`,
   `doc_2c_progress_fraction_survives_an_unknown_total`,
-  `doc_2c_the_running_page_names_the_two_phases`.
+  `doc_2c_the_running_page_names_every_scan_phase`,
+  `doc_2c_the_sidebar_card_names_every_scan_phase`.
 
 - **DOC-3a** [active] [core] — **Review decides per field, and everything
   reviewable starts selected.** Every concrete track/field change has its own

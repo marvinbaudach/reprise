@@ -113,16 +113,20 @@ pub fn tag_saving_progress(done: usize, total: usize) -> String {
 
 // --- FB-3: failure toast + details dialog ---
 
-const TAG_SAVE_RESULT: &str = N_!("Tags updated \u{b7} {count} track");
-const TAG_SAVE_RESULT_PLURAL: &str = N_!("Tags updated \u{b7} {count} tracks");
-
 /// The no-failures toast text (FB-1: action-less, 4 s, replaceable) — same
-/// "tracks" currency as the summary/progress/save label.
+/// "tracks" currency as the summary/progress/save label. The Library Doctor
+/// reports its own writes with this exact sentence, so `doctor_tags_updated`
+/// calls in here instead of repeating it: xgettext refuses a msgid that
+/// appears once without and once with a plural.
+///
+/// The forms are bare literals rather than `N_!` constants for the reason
+/// spelled out in `strings_library_doctor.rs`: `N_!` makes xgettext emit two
+/// dead singulars instead of the `msgid_plural` entry `ngettext` looks up.
 pub fn tag_save_result_toast(updated: usize) -> String {
     let count_text = updated.to_string();
     plural(
-        TAG_SAVE_RESULT,
-        TAG_SAVE_RESULT_PLURAL,
+        "Tags updated \u{b7} {count} track",
+        "Tags updated \u{b7} {count} tracks",
         updated,
         &[("count", &count_text)],
     )

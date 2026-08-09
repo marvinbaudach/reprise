@@ -52,14 +52,19 @@ use summary_page::LibraryDoctorPage;
 /// `data/icons/hicolor/symbolic/apps/reprise-stethoscope-symbolic.svg`, drawn
 /// by `scripts/build-brand-assets.sh`.
 ///
-/// Resolved here rather than at each call site, so the start page and the
-/// result card cannot end up asking for different things — they did, and the
-/// card kept drawing the magnifier the stethoscope replaced. A theme without
-/// the app's icon directory in reach falls back to that magnifier, which is
-/// also what the sidebar's `NavIcon::LibraryDoctor` draws; without the guard
-/// GTK would render the missing-image box instead.
-const DOCTOR_GLYPH: &str = "reprise-stethoscope-symbolic";
-const DOCTOR_GLYPH_FALLBACK: &str = "system-search-symbolic";
+/// Resolved here rather than at each call site, so the start page, the result
+/// card and the sidebar entry cannot end up asking for different things — they
+/// did, and both the card and the sidebar kept drawing the magnifier the
+/// stethoscope replaced. A theme without the app's icon directory in reach
+/// falls back to that magnifier; without the guard GTK would render the
+/// missing-image box instead.
+///
+/// The sidebar reaches the same answer through the same two names rather than
+/// through `doctor_glyph`: `NavIcon` already owns a name/fallback pair and
+/// `nav_icon` already performs this theme check, so the row joins that
+/// mechanism instead of adding a second one.
+pub(in crate::ui) const DOCTOR_GLYPH: &str = "reprise-stethoscope-symbolic";
+pub(in crate::ui) const DOCTOR_GLYPH_FALLBACK: &str = "system-search-symbolic";
 
 pub(in crate::ui) fn doctor_glyph() -> &'static str {
     gtk4::gdk::Display::default().map_or(DOCTOR_GLYPH_FALLBACK, |display| {
@@ -67,7 +72,7 @@ pub(in crate::ui) fn doctor_glyph() -> &'static str {
     })
 }
 
-const fn doctor_glyph_for(theme_has_stethoscope: bool) -> &'static str {
+pub(in crate::ui) const fn doctor_glyph_for(theme_has_stethoscope: bool) -> &'static str {
     if theme_has_stethoscope {
         DOCTOR_GLYPH
     } else {
