@@ -48,6 +48,7 @@ fn scan() -> DoctorScan {
             preselected: false,
             never_preselect: false,
             problem_class: ProblemClass::GenreVariant,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         }],
@@ -99,6 +100,7 @@ fn album_change_scan() -> DoctorScan {
             preselected: false,
             never_preselect: false,
             problem_class: ProblemClass::MissingAlbumArtist,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         });
@@ -136,6 +138,7 @@ fn album_change_scan() -> DoctorScan {
             preselected: false,
             never_preselect: false,
             problem_class,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         });
@@ -182,6 +185,15 @@ fn doc_9b_one_column_header_serves_the_whole_page() {
 }
 
 #[test]
+fn doc_7c_the_review_page_carries_no_provider_toggle() {
+    let source = include_str!("review_page.rs");
+
+    assert!(!source.contains("remote_suggestions_row_for"));
+    assert!(!source.contains("PreferencesGroup"));
+    assert!(!source.contains("options_clamp"));
+}
+
+#[test]
 fn doc_9b_every_reviewable_row_starts_selected() {
     let mut source = scan();
     let mut capped = source.proposals[0].clone();
@@ -215,6 +227,63 @@ fn doc_9b_footer_counts_the_changes_that_will_be_written() {
 }
 
 #[test]
+fn doc_9d_the_footer_states_the_scope_of_the_filter() {
+    let summary = reprise_core::library_doctor::DoctorReviewSummary {
+        track_count: 20,
+        file_count: 20,
+        tag_change_count: 27,
+        total_tag_change_count: 390,
+    };
+
+    assert_eq!(
+        review_footer_summary(summary, Some(ReviewCategory::Year)),
+        "27 of 390 · filtered by Year"
+    );
+}
+
+/// The header describes the page, the footer describes the decision. With
+/// everything selected the two agree; unchecking a row moves the footer and
+/// the Apply button down and leaves the header where it is, because the row
+/// is still on screen.
+#[test]
+fn doc_9d_the_header_counts_the_inventory_while_the_footer_counts_the_selection() {
+    let scan = album_change_scan();
+    let mut session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+
+    let rows = grouped_rows_for(&scan, &session, &HashMap::new());
+    assert_eq!(review_header_counts(&rows), (14, 1));
+    assert_eq!(session.summary().tag_change_count, 14);
+
+    session.none();
+    let rows = grouped_rows_for(&scan, &session, &HashMap::new());
+    assert_eq!(
+        review_header_counts(&rows),
+        (14, 1),
+        "unchecking rows removes nothing from the page"
+    );
+    assert_eq!(session.summary().tag_change_count, 0);
+}
+
+/// A filter does change what is on screen, so the header follows it — and
+/// with everything inside the filter selected, header, footer and button all
+/// name the same number.
+#[test]
+fn doc_9d_a_filtered_header_counts_only_the_filtered_rows() {
+    let scan = album_change_scan();
+    let mut session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+    session.set_category_filter(Some(ReviewCategory::Year.problem_classes()));
+
+    let rows = grouped_rows_for(&scan, &session, &HashMap::new())
+        .into_iter()
+        .filter(|row| session.category_filter_matches(row.row.problem_class))
+        .collect::<Vec<_>>();
+
+    assert_eq!(review_header_counts(&rows), (1, 1));
+    assert_eq!(session.summary().tag_change_count, 1);
+    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 change");
+}
+
+#[test]
 fn doc_9b_the_album_pill_counts_written_changes_not_display_rows() {
     let scan = album_change_scan();
     let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
@@ -231,10 +300,7 @@ fn doc_9b_the_album_pill_counts_written_changes_not_display_rows() {
 #[test]
 fn doc_9b_conflicts_sit_at_the_end_and_skip_all_clears_them() {
     let source = include_str!("review_page.rs");
-    assert!(
-        source.find("append(&state.content)").unwrap()
-            < source.find("append(&state.conflicts)").unwrap()
-    );
+    assert!(source.contains("store.append(&panel.root)"));
     let mut session =
         DoctorReviewSession::from_scan(conflict_scan(), DoctorReviewFilter::NeedsReview);
     let group = session.groups()[0].clone();
@@ -245,6 +311,83 @@ fn doc_9b_conflicts_sit_at_the_end_and_skip_all_clears_them() {
     session.clear_group_choices();
     assert!(session.rows().is_empty());
     assert!(session.groups().iter().all(|group| group.chosen.is_none()));
+}
+
+#[test]
+fn doc_9b_the_conflicts_panel_is_the_last_row_of_the_scrolled_list() {
+    let source = include_str!("review_page.rs");
+
+    assert!(source.contains("store.append(&panel.root)"));
+    assert!(!source.contains("page_content.append(&state.conflicts)"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_the_conflicts_panel_covers_no_row() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &conflict_scan(),
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    let group = page.state.session.borrow().groups()[0].clone();
+    page.state
+        .session
+        .borrow_mut()
+        .choose_candidate(group.id, &group.candidates[0].value)
+        .unwrap();
+    page.state.refresh();
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let panel = descendant_with_css_class(&page.rows.clone().upcast(), "doctor-conflicts-dashed")
+        .expect("conflicts panel must be realized inside the ListView");
+    let panel_bounds = panel
+        .compute_bounds(&page.rows)
+        .expect("conflicts panel must share the list coordinate space");
+    let panel_top = panel_bounds.y();
+    let row_bottom = descendants_with_css_class(&page.rows.clone().upcast(), "doctor-review-row")
+        .into_iter()
+        .filter_map(|widget| widget.compute_bounds(&page.rows))
+        .map(|bounds| bounds.y() + bounds.height())
+        .fold(0.0_f32, f32::max);
+
+    assert!(
+        row_bottom <= panel_top,
+        "conflicts panel starts at {panel_top}px but a review row reaches {row_bottom}px"
+    );
+}
+
+fn descendant_with_css_class(root: &gtk4::Widget, class: &str) -> Option<gtk4::Widget> {
+    descendants_with_css_class(root, class).into_iter().next()
+}
+
+fn descendants_with_css_class(root: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget> {
+    let mut matches = Vec::new();
+    let mut pending = vec![root.clone()];
+    while let Some(widget) = pending.pop() {
+        if widget.has_css_class(class) {
+            matches.push(widget.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            child = current.next_sibling();
+            pending.push(current);
+        }
+    }
+    matches
 }
 
 #[test]
@@ -288,6 +431,182 @@ fn doc_9b_review_groups_render_one_header_per_album() {
     assert_eq!(page.state.sorted.section(1), (1, 2));
     assert_eq!(page.state.sorted.section(2), (2, 3));
     assert!(page.rows.header_factory().is_some());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_the_first_row_carries_its_album_header() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &three_album_scan(),
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let header =
+        descendant_with_css_class(&page.rows.clone().upcast(), "doctor-album-header-first")
+            .expect("the first realized review row must be preceded by its album header");
+    assert!(
+        descendant_label_text(&header)
+            .iter()
+            .any(|label| label == "Album"),
+        "the first header must name the first album"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_every_section_boundary_binds_a_non_empty_header() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let mut source = three_album_scan();
+    source.proposals[1].field = DoctorField::Year;
+    source.proposals[1].current = DoctorValue::Year(2020);
+    source.proposals[1].proposed = DoctorValue::Year(2021);
+    source.proposals[1].problem_class = ProblemClass::MissingWrongYear;
+    source.proposals[2].field = DoctorField::Title;
+    source.proposals[2].current = DoctorValue::Text("Track 9".into());
+    source.proposals[2].proposed = DoctorValue::Text("Track Nine".into());
+    source.proposals[2].problem_class = ProblemClass::CasingWhitespace;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &source,
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    let empty_bindings = Rc::new(RefCell::new(Vec::new()));
+    let observed_bindings = Rc::new(Cell::new(0_u32));
+    let headers = Rc::new(RefCell::new(Vec::<gtk4::ListHeader>::new()));
+    let factory = page
+        .rows
+        .header_factory()
+        .unwrap()
+        .downcast::<gtk4::SignalListItemFactory>()
+        .unwrap();
+    factory.connect_bind({
+        let empty_bindings = empty_bindings.clone();
+        let observed_bindings = observed_bindings.clone();
+        let headers = headers.clone();
+        move |_, object| {
+            let header = object.downcast_ref::<gtk4::ListHeader>().unwrap();
+            observed_bindings.set(observed_bindings.get() + 1);
+            headers.borrow_mut().push(header.clone());
+            if header.child().is_none() {
+                tracing::warn!(
+                    start = header.start(),
+                    end = header.end(),
+                    "DOC-9b section boundary bound while its model row was unavailable"
+                );
+                empty_bindings
+                    .borrow_mut()
+                    .push((header.start(), header.end()));
+            }
+        }
+    });
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_current_headers(&page, &headers.borrow());
+
+    page.state.set_category(Some(ReviewCategory::Year));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_current_headers(&page, &headers.borrow());
+    page.state.refresh();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_current_headers(&page, &headers.borrow());
+    page.state.set_category(None);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_current_headers(&page, &headers.borrow());
+
+    assert!(
+        observed_bindings.get() >= 3,
+        "expected one bound header for each of the three album sections, observed {}",
+        observed_bindings.get()
+    );
+    assert!(
+        empty_bindings.borrow().is_empty(),
+        "section boundaries bound empty at {:?}",
+        empty_bindings.borrow()
+    );
+}
+
+fn assert_current_headers(page: &LibraryDoctorReviewPage, headers: &[gtk4::ListHeader]) {
+    let mut position = 0;
+    while position < page.state.sorted.n_items() {
+        let section = page.state.sorted.section(position);
+        let row = row_at(&page.state.sorted, section.0).unwrap();
+        let header = headers
+            .iter()
+            .rev()
+            .find(|header| header.start() == section.0 && header.end() == section.1)
+            .unwrap_or_else(|| {
+                panic!(
+                    "section boundary {}..{} has no bound ListHeader",
+                    section.0, section.1
+                )
+            });
+        let child = header.child().unwrap_or_else(|| {
+            tracing::warn!(
+                start = section.0,
+                end = section.1,
+                album = row.album_title,
+                "DOC-9b current section boundary has an empty header"
+            );
+            panic!(
+                "section boundary {}..{} for {:?} has no child",
+                section.0, section.1, row.album_title
+            )
+        });
+        let labels = descendant_label_text(&child);
+        assert!(
+            labels.iter().any(|label| label == &row.album_title),
+            "section boundary {}..{} expected album {:?}, found labels {:?}",
+            section.0,
+            section.1,
+            row.album_title,
+            labels
+        );
+        position = section.1;
+    }
+}
+
+fn descendant_label_text(root: &gtk4::Widget) -> Vec<String> {
+    let mut labels = Vec::new();
+    let mut pending = vec![root.clone()];
+    while let Some(widget) = pending.pop() {
+        if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+            labels.push(label.text().to_string());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            child = current.next_sibling();
+            pending.push(current);
+        }
+    }
+    labels
 }
 
 #[test]

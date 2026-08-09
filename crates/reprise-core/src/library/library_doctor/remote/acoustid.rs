@@ -181,6 +181,10 @@ fn identity(
         release_year: release.and_then(|item| item.date.as_deref().and_then(year)),
         original_release_year,
         duration_ms,
+        secondary_types: Vec::new(),
+        release_track_count: None,
+        release_track_titles: Vec::new(),
+        release_distinct_track_artists: None,
     }
 }
 

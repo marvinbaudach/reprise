@@ -22,7 +22,6 @@ use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
     ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
 };
-use crate::ui::library_doctor::remote_toggle;
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -30,14 +29,13 @@ type OnEdit = Rc<dyn Fn(&[i64])>;
 struct ReviewState {
     conn: Rc<Db>,
     scan: DoctorScan,
-    session: RefCell<DoctorReviewSession>,
+    session: Rc<RefCell<DoctorReviewSession>>,
     store: gio::ListStore,
     filter: gtk4::CustomFilter,
     sorted: gtk4::SortListModel,
     category: Rc<Cell<Option<ReviewCategory>>>,
     selection: gtk4::SingleSelection,
     content: gtk4::Stack,
-    conflicts: gtk4::Box,
     filter_bar: ReviewFilterBar,
     apply: gtk4::Button,
     change_summary: gtk4::Label,
@@ -50,7 +48,7 @@ struct ReviewState {
 impl ReviewState {
     fn refresh(self: &Rc<Self>) {
         let selected = self.selection.selected();
-        let session = self.session.borrow();
+        let mut session = self.session.borrow_mut();
         let categories = available_categories(&session);
         if self
             .category
@@ -58,13 +56,16 @@ impl ReviewState {
             .is_some_and(|active| !categories.contains(&active))
         {
             self.category.set(None);
+            session.set_category_filter(None);
         }
         self.filter_bar.set_categories(&categories);
         let objects = grouped_rows_for(&self.scan, &session, &self.outcomes.borrow())
             .into_iter()
             .map(|row| glib::BoxedAnyObject::new(row).upcast::<glib::Object>())
             .collect::<Vec<_>>();
+        drop(session);
         self.store.splice(0, self.store.n_items(), &objects);
+        self.refresh_conflicts();
         self.filter.changed(gtk4::FilterChange::Different);
         let count = self.sorted.n_items();
         self.content
@@ -72,18 +73,13 @@ impl ReviewState {
         if count > 0 && selected != gtk4::INVALID_LIST_POSITION {
             self.selection.set_selected(selected.min(count - 1));
         }
-        let summary = session.summary();
+        let summary = self.session.borrow().summary();
         self.apply
             .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
         self.apply.set_sensitive(summary.tag_change_count > 0);
         self.change_summary
-            .set_label(&strings::doctor_apply_summary(
-                summary.tag_change_count,
-                summary.file_count,
-            ));
-        drop(session);
+            .set_label(&review_footer_summary(summary, self.category.get()));
         self.refresh_filter_summary();
-        self.refresh_conflicts();
     }
 
     fn visible_rows(&self) -> Vec<ReviewRowModel> {
@@ -93,13 +89,7 @@ impl ReviewState {
     }
 
     fn refresh_filter_summary(&self) {
-        let rows = self.visible_rows();
-        let changes = rows.iter().map(|row| row.selected_change_count).sum();
-        let albums = rows
-            .iter()
-            .map(|row| row.album_key.as_str())
-            .collect::<HashSet<_>>()
-            .len();
+        let (changes, albums) = review_header_counts(&self.visible_rows());
         self.filter_bar.set_summary(changes, albums);
     }
 
@@ -126,16 +116,12 @@ impl ReviewState {
         self.set_selected(&model.row_ids, !model.row.selected);
     }
 
-    fn set_category(&self, category: Option<ReviewCategory>) {
+    fn set_category(self: &Rc<Self>, category: Option<ReviewCategory>) {
         self.category.set(category);
-        self.filter.changed(gtk4::FilterChange::Different);
-        self.content
-            .set_visible_child_name(if self.sorted.n_items() == 0 {
-                "empty"
-            } else {
-                "rows"
-            });
-        self.refresh_filter_summary();
+        self.session
+            .borrow_mut()
+            .set_category_filter(category.map(ReviewCategory::problem_classes));
+        self.refresh();
     }
 
     fn set_remote_visible(self: &Rc<Self>, visible: bool) {
@@ -176,8 +162,17 @@ impl ReviewState {
     }
 
     fn refresh_conflicts(self: &Rc<Self>) {
-        while let Some(child) = self.conflicts.first_child() {
-            self.conflicts.remove(&child);
+        let groups = {
+            let session = self.session.borrow();
+            session
+                .groups()
+                .iter()
+                .filter(|group| session.group_matches_category_filter(group))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        if groups.is_empty() {
+            return;
         }
         let weak = Rc::downgrade(self);
         let on_choose = Rc::new(move |group_id, value: &DoctorValue| {
@@ -190,11 +185,7 @@ impl ReviewState {
             }
             state.refresh();
         }) as Rc<dyn Fn(DoctorReviewGroupId, &DoctorValue)>;
-        let panel = ReviewConflicts::new(
-            self.session.borrow().groups(),
-            &self.scan.unresolved_groups,
-            &on_choose,
-        );
+        let panel = ReviewConflicts::new(&groups, &self.scan.unresolved_groups, &on_choose);
         {
             let weak = Rc::downgrade(self);
             panel.skip.connect_clicked(move |_| {
@@ -203,7 +194,7 @@ impl ReviewState {
                 }
             });
         }
-        self.conflicts.append(&panel.root);
+        self.store.append(&panel.root);
     }
 
     fn skip_all_conflicts(self: &Rc<Self>) {
@@ -257,12 +248,49 @@ fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> 
     Some(row)
 }
 
+/// What the header states: the changes on screen and the albums they sit in.
+///
+/// This is the inventory, not the selection — the (possibly filtered) rows the
+/// page is showing. Unchecking a row leaves it standing, which is the whole
+/// point of the split: the header answers "what is here", the footer and the
+/// Apply button answer "what will be written". Mixing the two produced
+/// "1 changes · 2 albums", where the first number followed the checkbox and the
+/// second did not.
+fn review_header_counts(rows: &[ReviewRowModel]) -> (usize, usize) {
+    let changes = rows.iter().map(|row| row.selectable_row_ids.len()).sum();
+    let albums = rows
+        .iter()
+        .map(|row| row.album_key.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    (changes, albums)
+}
+
+fn review_footer_summary(
+    summary: reprise_core::library_doctor::DoctorReviewSummary,
+    category: Option<ReviewCategory>,
+) -> String {
+    category.map_or_else(
+        || strings::doctor_apply_summary(summary.tag_change_count, summary.file_count),
+        |category| {
+            strings::doctor_filter_scope(
+                summary.tag_change_count,
+                summary.total_tag_change_count,
+                &strings::text(category.label()),
+            )
+        },
+    )
+}
+
 fn compare_rows(left: &glib::Object, right: &glib::Object, section_only: bool) -> gtk4::Ordering {
-    let Some(left) = left.downcast_ref::<glib::BoxedAnyObject>() else {
-        return gtk4::Ordering::Equal;
-    };
-    let Some(right) = right.downcast_ref::<glib::BoxedAnyObject>() else {
-        return gtk4::Ordering::Equal;
+    let left = left.downcast_ref::<glib::BoxedAnyObject>();
+    let right = right.downcast_ref::<glib::BoxedAnyObject>();
+    let (Some(left), Some(right)) = (left, right) else {
+        return match (left.is_some(), right.is_some()) {
+            (true, false) => gtk4::Ordering::Smaller,
+            (false, true) => gtk4::Ordering::Larger,
+            _ => gtk4::Ordering::Equal,
+        };
     };
     let left = left.borrow::<ReviewRowModel>();
     let right = right.borrow::<ReviewRowModel>();
@@ -308,7 +336,6 @@ const fn outcome_transition(state: DoctorWriteRowState) -> OutcomeTransition {
 pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
     state: Rc<ReviewState>,
-    remote: adw::SwitchRow,
     rows: gtk4::ListView,
     all: gtk4::Button,
     none: gtk4::Button,
@@ -317,26 +344,29 @@ pub(super) struct LibraryDoctorReviewPage {
 impl LibraryDoctorReviewPage {
     pub(super) fn new(
         conn: &Rc<Db>,
-        parent: &adw::ApplicationWindow,
+        _parent: &adw::ApplicationWindow,
         scan: &DoctorScan,
-        on_remote_changed: Rc<dyn Fn(bool)>,
+        _on_remote_changed: Rc<dyn Fn(bool)>,
         on_reviewed: Rc<dyn Fn()>,
         on_edit: &OnEdit,
     ) -> Rc<Self> {
-        let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
-        let categories = available_categories(&session);
+        let session = Rc::new(RefCell::new(DoctorReviewSession::from_scan(
+            scan.clone(),
+            DoctorReviewFilter::NeedsReview,
+        )));
+        let categories = available_categories(&session.borrow());
         let category = Rc::new(Cell::new(None::<ReviewCategory>));
-        let active_category = category.clone();
+        let filter_session = session.clone();
         let filter = gtk4::CustomFilter::new(move |object| {
             let Some(boxed) = object.downcast_ref::<glib::BoxedAnyObject>() else {
-                return false;
+                return object.is::<gtk4::Widget>();
             };
             let model = boxed.borrow::<ReviewRowModel>();
-            active_category
-                .get()
-                .is_none_or(|category| category.matches(model.row.problem_class))
+            filter_session
+                .borrow()
+                .category_filter_matches(model.row.problem_class)
         });
-        let store = gio::ListStore::new::<glib::BoxedAnyObject>();
+        let store = gio::ListStore::new::<glib::Object>();
         let filtered = gtk4::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
         let sorter = gtk4::CustomSorter::new(|left, right| compare_rows(left, right, false));
         let sorted = gtk4::SortListModel::new(Some(filtered.clone()), Some(sorter));
@@ -367,19 +397,16 @@ impl LibraryDoctorReviewPage {
         content.set_vexpand(true);
         content.add_named(&scrolled, Some("rows"));
         content.add_named(&empty, Some("empty"));
-        let conflicts = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         let apply = gtk4::Button::builder()
             .css_classes(["suggested-action", "pill"])
             .build();
         let change_summary = gtk4::Label::builder()
             .xalign(0.0)
-            .css_classes(["caption", "dim-label"])
+            .css_classes(["doctor-review-footer-summary"])
             .build();
         let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        footer.set_margin_top(12);
-        footer.set_margin_bottom(12);
-        footer.set_margin_start(18);
-        footer.set_margin_end(18);
+        footer.add_css_class("doctor-review-footer");
+        apply.add_css_class("doctor-review-apply");
         change_summary.set_hexpand(true);
         footer.append(&change_summary);
         footer.append(&apply);
@@ -387,14 +414,13 @@ impl LibraryDoctorReviewPage {
         let state = Rc::new(ReviewState {
             conn: conn.clone(),
             scan: scan.clone(),
-            session: RefCell::new(session),
+            session,
             store,
             filter,
             sorted,
             category,
             selection,
             content,
-            conflicts,
             filter_bar,
             apply,
             change_summary,
@@ -429,6 +455,8 @@ impl LibraryDoctorReviewPage {
 
         let all = gtk4::Button::with_label(&strings::text(strings::DOCTOR_ALL));
         let none = gtk4::Button::with_label(&strings::text(strings::DOCTOR_NONE));
+        all.add_css_class("doctor-review-header-action");
+        none.add_css_class("doctor-review-header-action");
         {
             let state = state.clone();
             all.connect_clicked(move |_| {
@@ -447,31 +475,14 @@ impl LibraryDoctorReviewPage {
         presets.append(&all);
         presets.append(&none);
         let top_bar = adw::HeaderBar::new();
+        let title = adw::WindowTitle::new(&strings::text(strings::DOCTOR_REVIEW_TITLE), "");
+        top_bar.set_title_widget(Some(&title));
         top_bar.pack_end(&presets);
 
-        let state_for_remote = state.clone();
-        let remote = remote_toggle::remote_suggestions_row_for(
-            conn,
-            parent,
-            Rc::new(move |visible| {
-                state_for_remote.set_remote_visible(visible);
-                on_remote_changed(visible);
-            }),
-        );
-        state.set_remote_visible(remote.is_active());
-        let options = adw::PreferencesGroup::new();
-        options.add(&remote);
-        let options_clamp = adw::Clamp::builder()
-            .maximum_size(760)
-            .child(&options)
-            .build();
-        let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
-        page_content.set_margin_top(12);
-        page_content.append(&options_clamp);
+        let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         page_content.append(&state.filter_bar.root);
         page_content.append(&header.root);
         page_content.append(&state.content);
-        page_content.append(&state.conflicts);
         page_content.append(&footer);
         let responsive = adw::BreakpointBin::new();
         responsive.set_child(Some(&page_content));
@@ -506,7 +517,6 @@ impl LibraryDoctorReviewPage {
         let page = Rc::new(Self {
             navigation_page,
             state,
-            remote,
             rows,
             all,
             none,
@@ -524,11 +534,7 @@ impl LibraryDoctorReviewPage {
     }
 
     pub(super) fn set_remote_active(&self, active: bool) {
-        if self.remote.is_active() != active {
-            self.remote.set_active(active);
-        } else {
-            self.state.set_remote_visible(active);
-        }
+        self.state.set_remote_visible(active);
     }
 
     pub(super) fn connect_apply(&self, callback: impl Fn(DoctorApplyPlan) + 'static) {
@@ -542,7 +548,6 @@ impl LibraryDoctorReviewPage {
     }
 
     pub(super) fn set_running(&self, running: bool) {
-        self.remote.set_sensitive(!running);
         self.rows.set_sensitive(!running);
         self.all.set_sensitive(!running);
         self.none.set_sensitive(!running);

@@ -3677,6 +3677,59 @@ means deterministic and high-confidence, never „without review".
   `doc_1f_the_placeholder_is_recognised_by_name_and_by_mbid`,
   `doc_1f_a_localised_placeholder_spelling_is_not_recognised`,
   `doc_1f_a_single_artist_album_on_a_compilation_produces_no_album_artist_proposal`.
+  *Amended 2026-08-08: from DOC-1e onward, evidence that the matched release
+  carries several distinct track artists is available; with that evidence the
+  placeholder may be proposed for an **empty** field. Without the evidence it
+  remains forbidden.*
+
+- **DOC-1e** [active] [core] — **An album is matched as a release, not one
+  track at a time.** There is one request per (Album Artist, Album). Candidates
+  are scored for equal track count, title overlap, artist-credit similarity,
+  and year proximity. Release groups whose secondary type is Compilation,
+  DJ-mix, Live, Mixtape, or Remix are demoted unless the local album artist is
+  a placeholder or the local album title names that same kind of release — all
+  five kinds, not just Live and Remix. A track's Album, Album Artist, and Year proposals
+  demonstrably come from the same selected release. *Tests:*
+  `doc_1e_a_release_parses_its_secondary_types_and_track_count`,
+  `doc_1e_a_release_without_secondary_types_is_not_marked_as_one`,
+  `doc_1e_a_release_reports_its_distinct_track_artists`,
+  `doc_1e_the_release_search_sends_artist_album_and_track_count`,
+  `doc_1e_a_single_artist_release_beats_a_compilation_containing_one_track`,
+  `doc_1e_a_locally_tagged_compilation_is_not_demoted`,
+  `doc_1e_track_count_equality_outweighs_a_single_title_hit`,
+  `doc_1e_the_best_release_is_deterministic_for_equal_scores`,
+  `doc_1e_a_single_artist_album_whose_tracks_are_on_a_compilation_produces_no_album_artist_proposal`,
+  `doc_1e_an_albums_album_fields_all_carry_the_same_resolved_release_mbid`,
+  `doc_1e_the_network_is_asked_once_per_album_not_once_per_track`,
+  `doc_1e_an_empty_release_search_keeps_the_directly_resolved_album_fields`,
+  `doc_1e_every_demoted_release_kind_can_be_named_by_the_local_album_title`,
+  `doc_1e_a_release_nobody_can_recognise_is_no_match_at_all`,
+  `doc_1e_a_matching_track_count_with_title_overlap_stays_a_match`.
+  *Amended 2026-08-08: a candidate below the minimum score is no match. Being
+  the best of a bad field does not select a release; the album fields then have
+  nothing to come from and no proposal is made.*
+  *Amended 2026-08-08: only a **selected** release speaks for the album fields.
+  A release search that comes back empty — no candidate, or a failed request —
+  leaves the fields the track resolved on its own untouched.*
+
+- **DOC-1g** [active] [core] — **The complete local pass runs first, followed
+  by the network pass.** The two phases are reported separately. The network
+  makes one request per release rather than per track, caches searches, and
+  skips unchanged files. A fingerprint is created only for a track without a
+  Recording MBID and without a confidently matched release. *Tests:*
+  `doc_1g_the_local_pass_completes_before_the_first_network_request`,
+  `doc_1g_a_cached_album_search_makes_no_request_on_the_second_scan`,
+  `doc_1g_the_album_search_is_cached_by_normalised_artist_album_and_track_count`,
+  `doc_1g_a_track_with_a_recording_mbid_is_never_fingerprinted`,
+  `doc_1g_a_confidently_matched_album_is_never_fingerprinted`,
+  `doc_1g_a_second_scan_of_an_unchanged_library_reads_no_file`,
+  `doc_1g_a_changed_file_is_read_again`,
+  `doc_1g_a_skipped_track_keeps_its_previous_proposals`,
+  `doc_1g_the_reading_pass_stops_for_a_cancelled_scan`,
+  `doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader`.
+  *Amended 2026-08-08: unchanged is decided per track, so a library that grew
+  by one file keeps every other skip. The release decision stays whole: an
+  album is reused entirely or resolved entirely.*
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
@@ -3727,7 +3780,8 @@ means deterministic and high-confidence, never „without review".
   `doc_2c_the_quiet_write_forecasts_nothing`,
   `doc_2c_a_running_scan_shows_progress_and_no_result_vocabulary`,
   `doc_2c_the_running_page_counters_are_forecasts_from_the_live_summary`,
-  `doc_2c_progress_fraction_survives_an_unknown_total`.
+  `doc_2c_progress_fraction_survives_an_unknown_total`,
+  `doc_2c_the_running_page_names_the_two_phases`.
 
 - **DOC-3a** [active] [core] — **Review decides per field, and everything
   reviewable starts selected.** Every concrete track/field change has its own
@@ -3740,6 +3794,8 @@ means deterministic and high-confidence, never „without review".
   affected. Review order stays stable during the session, in scope order and
   the fixed field sequence Title, Artist, Album, Album Artist, Year, Genre.
   Apply receives an immutable plan of exactly the current selection.
+  *Amended 2026-08-08: `All`, `None`, and the immutable Apply plan operate on
+  the filtered set described by DOC-9d.*
 
 - **DOC-3b** [active] [gtk] — **One column header serves the whole page,
   wide and narrow.** The review page carries exactly one header row — Track,
@@ -3800,7 +3856,15 @@ means deterministic and high-confidence, never „without review".
   `doc_4c_a_capped_proposal_does_not_start_selected`,
   `doc_4c_a_row_below_fifty_percent_does_not_start_selected`,
   `doc_4c_never_preselect_survives_a_store_round_trip`,
-  `doc_4c_a_capped_row_reaches_the_review_unselected`.
+  `doc_4c_a_capped_row_reaches_the_review_unselected`,
+  `doc_4c_confidence_is_release_match_times_field_agreement`,
+  `doc_4c_a_partial_release_match_can_never_report_one_hundred`,
+  `doc_4c_a_directly_resolved_mbid_still_reports_one_hundred`,
+  `doc_4c_the_specificity_cap_still_wins_over_the_joint_score`.
+  *Amended 2026-08-08: confidence is additionally a **joint value**: release
+  match score multiplied by field agreement. A field from a partially
+  matching release can never report 100%. Directly resolved MBIDs remain at
+  100%.*
 
 - **DOC-5a** [active] [core] — **Every Library Doctor write goes
   through review.** Neither scan, nor 26a, nor the plugin row has a
@@ -3842,7 +3906,8 @@ means deterministic and high-confidence, never „without review".
   the title truncating to a few characters and making two different jobs look
   like duplicates of each other. *Tests:*
   `doc_5c_the_card_label_stays_whole_at_sidebar_width`,
-  `doc_5c_progress_uses_tracks_as_the_primary_currency`.
+  `doc_5c_progress_uses_tracks_as_the_primary_currency`,
+  `doc_5c_every_count_on_the_write_progress_inflects`.
 
 - **DOC-5d** [active] [gtk] — **Result and app stay honestly current
   after writes.** After Apply or Revert, track list, Browse Bar,
@@ -3855,6 +3920,18 @@ means deterministic and high-confidence, never „without review".
   remaining". Reverted rows can be reviewed again; a new full scan
   replaces the scan result independent of the still-valid undo
   journal.
+
+- **DOC-5e** [active] [gtk] — **Every job card uses one dock at the bottom of
+  the sidebar.** The dock is outside the scrolling list and gives every job
+  type the same height and position; it never overlaps a navigation row. The
+  flat card body is one button leading to that job's page. `Cancel` is inside
+  the body but never activates navigation. The title receives the remaining
+  width, while the detail line owns any ellipsis. *Tests:*
+  `doc_5c_a_visible_job_card_never_overlaps_a_navigation_row`,
+  `doc_5e_every_job_card_docks_at_the_same_place_and_height`,
+  `doc_5e_the_card_body_activates_and_cancel_does_not`,
+  `doc_5e_each_job_card_opens_its_own_job_page`,
+  `doc_5e_the_relink_card_label_stays_whole_at_sidebar_width`.
 
 - **DOC-6a** [replaced by DOC-7b] [gtk] — **Library Doctor is a
   main-window navigation.** 26a lives as a root page in the existing
@@ -3884,7 +3961,7 @@ means deterministic and high-confidence, never „without review".
   action are locked during the job and explain the running job; Cancel
   lives exclusively on its progress surface.
 
-- **DOC-7a** [active] [gtk] — **Local checks are an available tool;
+- **DOC-7a** [replaced by DOC-7c] [gtk] — **Local checks are an available tool;
   network stays opt-in.** Library Doctor has no main switch and its
   local, purely read-only checks can be started manually at any time.
   This is not a network release. The separate switch „MusicBrainz/
@@ -3898,8 +3975,8 @@ means deterministic and high-confidence, never „without review".
   unavailable", while Local and pure MusicBrainz resolution keep
   working.
 
-- **DOC-7b** [active] [gtk] — **The Library Doctor has exactly one entry
-  point.** The global ⋮ menu carries one flat "Library Doctor" item with no
+- **DOC-7b** [replaced by DOC-7c] [gtk] — **The Library Doctor has exactly one
+  entry point.** The global ⋮ menu carries one flat "Library Doctor" item with no
   badge or submenu; there is no Preferences surface. Its start page owns
   scope, the remote switch, "Run Scan Now" and the only "Revert Last Cleanup"
   in the app. The summary is a root page in `content_nav`, review is pushed
@@ -3907,6 +3984,38 @@ means deterministic and high-confidence, never „without review".
   dialog or Apply confirmation. Scope is not persistent: Whole Library by
   default, Current View suggested from a filtered view, Selection from a
   selection context.
+
+- **DOC-7c** [active] [gtk] — **The Library Doctor opens in the content slot,
+  not as a push over `content_nav`.** The right Now Playing pane stays open if
+  it was open. The Doctor stack child owns an `adw::NavigationView`: Start or
+  Result is its root and Review is pushed inside it, preserving the back
+  gesture, title animation, and in-session selection. The child also owns its
+  header; Library chrome never appears above a page it does not control. The
+  provider switch exists only on Start, never on Review.
+
+  Library Doctor has no main switch and its local, purely read-only checks can
+  be started manually at any time. This is not a network release. The separate
+  switch „MusicBrainz/AcoustID suggestions", off by default, shows a short,
+  versioned confirmation with the data allowlist from DOC-1c on first
+  activation; Cancel leaves it off. The plugin row and the results view bind
+  the same persistent switch. Switching off stops future remote requests,
+  hides remote rows, and removes their selection; switching on again shows
+  existing or newly loaded remote suggestions unreviewed. A missing fingerprint
+  capability is visibly explained as „AcoustID unavailable", while Local and
+  pure MusicBrainz resolution keep working.
+
+  The global ⋮ menu carries one flat "Library Doctor" item with no badge or
+  submenu; there is no Preferences surface. Its start page owns scope, the
+  remote switch, "Run Scan Now" and the only "Revert Last Cleanup" in the app.
+  There is no Doctor dialog or Apply confirmation. Scope is not persistent:
+  Whole Library by default, Current View suggested from a filtered view,
+  Selection from a selection context. *Tests:*
+  `doc_7c_the_doctor_is_a_content_stack_child_not_a_content_nav_push`,
+  `doc_7c_opening_the_doctor_keeps_the_now_playing_pane_open`,
+  `doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view`,
+  `doc_7c_the_library_chrome_is_absent_while_the_doctor_is_visible`,
+  `doc_7c_the_review_page_carries_no_provider_toggle`,
+  `doc_7c_a_second_review_session_replaces_the_first`.
 
 - **DOC-8a** [active] [gtk] — **The menu holds the verb, the sidebar holds
   the noun.** The global ⋮ menu is the only way to start a scan. While a
@@ -3971,7 +4080,19 @@ means deterministic and high-confidence, never „without review".
   rough duration beside it. Below a separator, and only while a revertible
   cleanup exists, are the last-scan line and the only "Revert Last Cleanup"
   action. *Tests:* `doc_8c_start_page_carries_scope_remote_run_and_the_only_revert`,
-  `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`.
+  `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`,
+  `doc_8c_every_count_on_the_start_page_inflects`.
+
+- **DOC-8d** [active] [gtk] — **The start page is flush left, capped at 620
+  pixels, and weighted toward the top.** A small accent icon begins the block;
+  nothing is centered. The duration estimate comes from the measured rate of
+  the last scan. Before any measurement exists, the estimate names the track
+  count and no duration. *Tests:*
+  `doc_8d_the_start_column_is_flush_left_and_capped`,
+  `doc_8d_the_start_page_icon_falls_back_when_the_theme_lacks_it`,
+  `doc_8d_the_estimate_comes_from_the_last_measured_rate`,
+  `doc_8d_without_a_measurement_the_estimate_names_no_duration`,
+  `doc_8d_the_estimate_accounts_for_the_remote_switch`.
 
 - **DOC-9a** [active] [gtk] — **Three cards, no zero anywhere, and a
   fixed order of emphasis.** The applied, review, and conflict blocks follow
@@ -4009,6 +4130,8 @@ means deterministic and high-confidence, never „without review".
   `doc_9a_scan_facts_describe_the_scan_not_the_controls`,
   `doc_9a_scan_facts_stay_silent_about_zero_skipped_tracks`,
   `doc_9a_singular_forms_go_through_ngettext`,
+  `doc_9a_every_count_on_the_result_cards_inflects`,
+  `doc_9a_the_review_card_leads_with_the_doctors_own_glyph`,
   `doc_9a_the_action_sits_inline_at_the_trailing_edge_top_aligned`,
   `doc_9a_the_conflicts_card_is_the_quietest_and_carries_no_button`,
   `doc_9a_only_the_review_card_carries_the_accent_emphasis`,
@@ -4047,9 +4170,43 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_the_filter_bar_offers_only_categories_present_in_the_scan`,
   `doc_9b_conflicts_sit_at_the_end_and_skip_all_clears_them`,
   `doc_9b_footer_counts_the_changes_that_will_be_written`,
-  `doc_9b_the_album_pill_counts_written_changes_not_display_rows`.
+  `doc_9b_the_album_pill_counts_written_changes_not_display_rows`,
+  `doc_9b_the_conflicts_panel_is_the_last_row_of_the_scrolled_list`,
+  `doc_9b_the_conflicts_panel_covers_no_row`,
+  `doc_9b_the_first_row_carries_its_album_header`,
+  `doc_9b_a_fully_deselected_album_says_none_selected`,
+  `doc_9b_every_section_boundary_binds_a_non_empty_header`,
+  `doc_9b_an_album_wide_change_renders_all_n_tracks_italic_and_muted`,
+  `doc_9b_a_recycled_row_loses_the_italic_style_again`,
+  `doc_9b_every_count_on_the_review_page_inflects`.
   *Amended 2026-08-08: “every reviewable row starts selected” means every Ready
   row except the two cases excluded by DOC-4c.*
+  *Amended 2026-08-08: the conflict panel is the final element **inside** the
+  scrolling list, not a block above it; an album-wide change renders "All N
+  tracks" in italic muted text; and every row, including the first, appears
+  beneath an album header.*
+
+- **DOC-9d** [active] [gtk] — **An active filter limits everything.** Apply
+  writes only the filtered set and counts that set in its label. `All` and
+  `None` operate only on that set. The footer states the scope, for example
+  "27 of 390 · filtered by Year".
+  **Two references, split cleanly:** the header states what is on screen — the
+  filtered inventory and the albums it covers — and does not move when a row is
+  unchecked; the footer and the Apply button state the selection inside that
+  inventory, and both come out of one selection state, so they can never
+  disagree with each other. Filtered and everything selected, all three name the
+  same number; unchecking makes the footer and the button fall below the header,
+  which is what unchecking means. *Tests:*
+  `doc_9d_the_filter_scope_line_names_shown_total_and_filter`,
+  `doc_9d_a_filtered_apply_writes_only_the_filtered_set`,
+  `doc_9d_all_and_none_operate_on_the_filtered_set`,
+  `doc_9d_the_footer_states_the_scope_of_the_filter`,
+  `doc_9d_the_header_counts_the_inventory_while_the_footer_counts_the_selection`,
+  `doc_9d_a_filtered_header_counts_only_the_filtered_rows`,
+  `doc_9d_the_selection_counts_recompute_from_one_selection_state`.
+  *Amended 2026-08-09: the header used to be described as one more number off
+  the selection state, and rendered as one — "1 changes · 2 albums" after
+  unchecking, where the changes followed the checkbox and the albums did not.*
 
 - **DOC-9c** [active] [gtk] — **After the write, and after a clean scan, the
   Doctor says so on its own page.** Post-apply names updated tracks, written

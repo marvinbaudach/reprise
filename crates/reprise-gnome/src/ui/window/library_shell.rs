@@ -37,6 +37,7 @@ pub(in crate::ui) enum ActiveContentTarget {
     Podcasts,
     Youtube,
     Radio,
+    LibraryDoctor,
 }
 
 fn active_content_target(content_name: Option<&str>) -> Option<ActiveContentTarget> {
@@ -47,6 +48,7 @@ fn active_content_target(content_name: Option<&str>) -> Option<ActiveContentTarg
         Some("podcasts") => Some(ActiveContentTarget::Podcasts),
         Some("youtube") => Some(ActiveContentTarget::Youtube),
         Some("radio") => Some(ActiveContentTarget::Radio),
+        Some("library-doctor") => Some(ActiveContentTarget::LibraryDoctor),
         Some("library") => Some(ActiveContentTarget::Tracks),
         _ => None,
     }
@@ -89,7 +91,8 @@ impl ActiveContentFocus {
                 | ActiveContentTarget::Releases
                 | ActiveContentTarget::Podcasts
                 | ActiveContentTarget::Youtube
-                | ActiveContentTarget::Radio,
+                | ActiveContentTarget::Radio
+                | ActiveContentTarget::LibraryDoctor,
             ) => content_stack
                 .visible_child()
                 .is_some_and(|child| focus_widget_or_descendant(&child)),
@@ -455,6 +458,10 @@ mod tests {
         assert_eq!(
             active_content_target(Some("radio")),
             Some(ActiveContentTarget::Radio)
+        );
+        assert_eq!(
+            active_content_target(Some("library-doctor")),
+            Some(ActiveContentTarget::LibraryDoctor)
         );
         assert_eq!(active_content_target(Some("unknown")), None);
     }

@@ -269,7 +269,7 @@ fn set_11_online_content_header_owns_the_master_switch() {
 }
 
 #[test]
-fn doc_7b_library_doctor_has_no_preferences_surface() {
+fn doc_7c_library_doctor_has_no_preferences_surface() {
     assert!(!LOCAL_PLUGIN_IDS.contains(&"library_doctor"));
     assert!(!plugin_uses_expander("library_doctor"));
 }

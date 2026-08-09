@@ -13,6 +13,49 @@ struct ErrorProvider {
     calls: Rc<Cell<usize>>,
 }
 
+struct ReleaseSearchProvider {
+    calls: Rc<Cell<usize>>,
+    result: Vec<RemoteIdentity>,
+}
+
+impl RemoteProvider for ReleaseSearchProvider {
+    fn direct(
+        &mut self,
+        _: &RemoteDirectLookup,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
+    }
+
+    fn search_musicbrainz(
+        &mut self,
+        _: &RemoteTrackMetadata,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
+    }
+
+    fn search_release(
+        &mut self,
+        _: &super::album_match::AlbumQuery,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        self.calls.set(self.calls.get() + 1);
+        Ok(self.result.clone())
+    }
+
+    fn acoustid(
+        &mut self,
+        _: &RemoteTrackMetadata,
+        _: &str,
+        _: &str,
+        _: u64,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
+    }
+}
+
 impl RemoteProvider for ErrorProvider {
     fn direct(
         &mut self,
@@ -26,6 +69,14 @@ impl RemoteProvider for ErrorProvider {
     fn search_musicbrainz(
         &mut self,
         _: &RemoteTrackMetadata,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Err(RemoteProviderError::InvalidResponse)
+    }
+
+    fn search_release(
+        &mut self,
+        _: &super::album_match::AlbumQuery,
         _: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult {
         Err(RemoteProviderError::InvalidResponse)
@@ -61,6 +112,14 @@ impl RemoteProvider for DirectProvider {
         Ok(Vec::new())
     }
 
+    fn search_release(
+        &mut self,
+        _: &super::album_match::AlbumQuery,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
+    }
+
     fn acoustid(
         &mut self,
         _: &RemoteTrackMetadata,
@@ -90,7 +149,103 @@ fn identity() -> RemoteIdentity {
         release_year: None,
         original_release_year: None,
         duration_ms: Some(180_000),
+        secondary_types: Vec::new(),
+        release_track_count: None,
+        release_track_titles: Vec::new(),
+        release_distinct_track_artists: None,
     }
+}
+
+fn album_query(
+    album_artist: &str,
+    album: &str,
+    track_count: u32,
+) -> super::album_match::AlbumQuery {
+    super::album_match::AlbumQuery {
+        album_artist: album_artist.into(),
+        album: album.into(),
+        track_titles: vec!["Track one".into()],
+        track_count,
+        year: Some(2007),
+    }
+}
+
+#[test]
+fn doc_1g_a_cached_album_search_makes_no_request_on_the_second_scan() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let query = album_query("As I Lay Dying", "An Ocean Between Us", 10);
+    let expected = vec![identity()];
+    let mut control = || ScanControl::Continue;
+
+    let mut first = CachedRemoteProvider::new(
+        ReleaseSearchProvider {
+            calls: calls.clone(),
+            result: expected.clone(),
+        },
+        &conn,
+        1_000,
+    );
+    assert_eq!(
+        first.search_release(&query, &mut control).unwrap(),
+        expected
+    );
+
+    let mut second = CachedRemoteProvider::new(
+        ReleaseSearchProvider {
+            calls: calls.clone(),
+            result: Vec::new(),
+        },
+        &conn,
+        1_001,
+    );
+    assert_eq!(
+        second.search_release(&query, &mut control).unwrap(),
+        expected
+    );
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn doc_1g_the_album_search_is_cached_by_normalised_artist_album_and_track_count() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let expected = vec![identity()];
+    let mut control = || ScanControl::Continue;
+    let mut provider = CachedRemoteProvider::new(
+        ReleaseSearchProvider {
+            calls: calls.clone(),
+            result: expected.clone(),
+        },
+        &conn,
+        1_000,
+    );
+
+    provider
+        .search_release(
+            &album_query("  AS I LAY DYING ", "An  Ocean Between Us", 10),
+            &mut control,
+        )
+        .unwrap();
+    assert_eq!(
+        provider
+            .search_release(
+                &album_query("as i lay dying", "an ocean between us", 10),
+                &mut control,
+            )
+            .unwrap(),
+        expected
+    );
+    provider
+        .search_release(
+            &album_query("as i lay dying", "an ocean between us", 11),
+            &mut control,
+        )
+        .unwrap();
+
+    assert_eq!(calls.get(), 2);
 }
 
 #[test]

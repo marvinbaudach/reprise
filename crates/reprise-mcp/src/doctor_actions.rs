@@ -317,11 +317,12 @@ pub fn review_tags(path: &Path, params: &ReviewTagsParams) -> Result<ReviewTagsR
         .last_complete_scan()
         .map_err(map_doctor_error)?
         .ok_or_else(|| DataError::InvalidInput("no completed Library Doctor scan".to_owned()))?;
-    let scan = filtered_scan(scan, params.category);
-    let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+    let mut session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+    session.set_category_filter(params.category.map(category_problem_classes));
     let conflicts = session
         .groups()
         .iter()
+        .filter(|group| session.group_matches_category_filter(group))
         .map(|group| {
             let track_ids = scan
                 .unresolved_groups
@@ -377,34 +378,17 @@ pub fn review_tags(path: &Path, params: &ReviewTagsParams) -> Result<ReviewTagsR
     })
 }
 
-fn filtered_scan(mut scan: DoctorScan, category: Option<DoctorCategoryArg>) -> DoctorScan {
-    let Some(category) = category else {
-        return scan;
-    };
-    scan.proposals
-        .retain(|proposal| category_matches(category, proposal.problem_class));
-    scan.unresolved_groups.retain(|group| {
-        category_matches(
-            category,
-            match group.field {
-                reprise_core::library_doctor::DoctorField::Year => ProblemClass::MissingWrongYear,
-                reprise_core::library_doctor::DoctorField::Genre => ProblemClass::GenreVariant,
-                _ => ProblemClass::CasingWhitespace,
-            },
-        )
-    });
-    scan
-}
-
-const fn category_matches(category: DoctorCategoryArg, class: ProblemClass) -> bool {
-    match category {
-        DoctorCategoryArg::Casing => matches!(
-            class,
-            ProblemClass::CasingWhitespace | ProblemClass::MissingAlbumArtist
-        ),
-        DoctorCategoryArg::Year => matches!(class, ProblemClass::MissingWrongYear),
-        DoctorCategoryArg::Genre => matches!(class, ProblemClass::GenreVariant),
-    }
+fn category_problem_classes(category: DoctorCategoryArg) -> HashSet<ProblemClass> {
+    [
+        ProblemClass::CasingWhitespace,
+        ProblemClass::MissingAlbumArtist,
+        ProblemClass::GenreVariant,
+        ProblemClass::MissingWrongYear,
+        ProblemClass::MissingRecordingMbid,
+    ]
+    .into_iter()
+    .filter(|class| category.matches(*class))
+    .collect()
 }
 
 fn album_dto(

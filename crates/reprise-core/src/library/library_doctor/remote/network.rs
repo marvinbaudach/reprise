@@ -7,10 +7,11 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::acoustid::parse_acoustid;
+use super::album_match::AlbumQuery;
 use super::metadata::canonical_uuid;
 use super::{
-    RemoteDirectLookup, RemoteEvidenceSource, RemoteIdentity, RemoteProvider, RemoteProviderError,
-    RemoteProviderResult, RemoteTrackMetadata,
+    ReleaseSecondaryType, RemoteDirectLookup, RemoteEvidenceSource, RemoteIdentity, RemoteProvider,
+    RemoteProviderError, RemoteProviderResult, RemoteTrackMetadata,
 };
 use crate::library::library_doctor::ScanControl;
 
@@ -42,6 +43,14 @@ impl RemoteProvider for NoNetworkProvider {
     fn search_musicbrainz(
         &mut self,
         _: &RemoteTrackMetadata,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
+    }
+
+    fn search_release(
+        &mut self,
+        _: &AlbumQuery,
         _: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult {
         Ok(Vec::new())
@@ -170,12 +179,12 @@ impl RemoteProvider for NetworkProvider {
             match lookup {
                 RemoteDirectLookup::Recording(id) => (
                     "recording",
-                    format!("recording/{id}?inc=artists+releases+release-groups&fmt=json"),
+                    format!("recording/{id}?inc=artists+releases+release-groups+media&fmt=json"),
                     parse_musicbrainz as fn(&str) -> RemoteProviderResult,
                 ),
                 RemoteDirectLookup::Release(id) => (
                     "release",
-                    format!("release/{id}?inc=recordings+artists+release-groups&fmt=json"),
+                    format!("release/{id}?inc=recordings+artists+release-groups+media&fmt=json"),
                     parse_release,
                 ),
                 RemoteDirectLookup::ReleaseGroup(id) => (
@@ -219,6 +228,17 @@ impl RemoteProvider for NetworkProvider {
             parse_musicbrainz,
             control,
         )
+    }
+
+    fn search_release(
+        &mut self,
+        query: &AlbumQuery,
+        control: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        let Some(url) = release_search_url(query) else {
+            return Ok(Vec::new());
+        };
+        self.musicbrainz("release_search", &url, parse_release_search, control)
     }
 
     fn acoustid(
@@ -392,6 +412,26 @@ fn push_term(terms: &mut Vec<String>, field: &str, value: Option<&str>) {
     }
 }
 
+#[allow(dead_code)] // Called by the staged search_release method; MATCH-3 activates it.
+fn release_search_url(query: &AlbumQuery) -> Option<String> {
+    if query.album.trim().is_empty() || query.album_artist.trim().is_empty() {
+        return None;
+    }
+    let mut terms = Vec::new();
+    push_term(&mut terms, "release", Some(&query.album));
+    push_term(&mut terms, "artist", Some(&query.album_artist));
+    if query.track_count > 0 {
+        terms.push(format!("tracks:{}", query.track_count));
+    }
+    if terms.is_empty() {
+        return None;
+    }
+    let encoded = crate::musicbrainz::urlencode(&terms.join(" AND "));
+    Some(format!(
+        "https://musicbrainz.org/ws/2/release?query={encoded}&fmt=json&limit=25"
+    ))
+}
+
 fn parse_musicbrainz(body: &str) -> RemoteProviderResult {
     let root: Value =
         serde_json::from_str(body).map_err(|_| RemoteProviderError::InvalidResponse)?;
@@ -408,10 +448,28 @@ fn parse_musicbrainz(body: &str) -> RemoteProviderResult {
 fn parse_release(body: &str) -> RemoteProviderResult {
     let root: Value =
         serde_json::from_str(body).map_err(|_| RemoteProviderError::InvalidResponse)?;
+    parse_release_value(&root).map(|identity| vec![identity])
+}
+
+#[allow(dead_code)] // Called by the staged search_release method; MATCH-3 activates it.
+fn parse_release_search(body: &str) -> RemoteProviderResult {
+    let root: Value =
+        serde_json::from_str(body).map_err(|_| RemoteProviderError::InvalidResponse)?;
+    let releases = root
+        .get("releases")
+        .and_then(Value::as_array)
+        .ok_or(RemoteProviderError::InvalidResponse)?;
+    Ok(releases
+        .iter()
+        .filter_map(|release| parse_release_value(release).ok())
+        .collect())
+}
+
+fn parse_release_value(root: &Value) -> Result<RemoteIdentity, RemoteProviderError> {
     let release_mbid = canonical_uuid(root.get("id").and_then(Value::as_str))
         .ok_or(RemoteProviderError::InvalidResponse)?;
     let release_group = root.get("release-group");
-    Ok(vec![RemoteIdentity {
+    Ok(RemoteIdentity {
         source: RemoteEvidenceSource::MusicBrainz,
         confidence: 100,
         recording_mbid: None,
@@ -419,19 +477,23 @@ fn parse_release(body: &str) -> RemoteProviderResult {
         release_group_mbid: release_group
             .and_then(|value| canonical_uuid(value.get("id")?.as_str())),
         artist_mbid: None,
-        release_artist_mbid: credit(&root)
+        release_artist_mbid: credit(root)
             .and_then(|item| canonical_uuid(item.get("artist")?.get("id")?.as_str())),
         title: None,
         artist: None,
-        album: text(&root, "title"),
-        album_artist: credit(&root).and_then(|item| text(item, "name")),
+        album: text(root, "title"),
+        album_artist: credit(root).and_then(|item| text(item, "name")),
         release_year: root.get("date").and_then(Value::as_str).and_then(year),
         original_release_year: release_group
             .and_then(|group| group.get("first-release-date"))
             .and_then(Value::as_str)
             .and_then(year),
         duration_ms: None,
-    }])
+        secondary_types: secondary_types(release_group),
+        release_track_count: release_track_count(root),
+        release_track_titles: release_track_titles(root),
+        release_distinct_track_artists: distinct_track_artists(root),
+    })
 }
 
 fn parse_release_group(body: &str) -> RemoteProviderResult {
@@ -458,6 +520,10 @@ fn parse_release_group(body: &str) -> RemoteProviderResult {
             .and_then(Value::as_str)
             .and_then(year),
         duration_ms: None,
+        secondary_types: secondary_types(Some(&root)),
+        release_track_count: release_track_count(&root),
+        release_track_titles: release_track_titles(&root),
+        release_distinct_track_artists: distinct_track_artists(&root),
     }])
 }
 
@@ -489,6 +555,10 @@ fn parse_artist_identity(body: &str, release_artist: bool) -> RemoteProviderResu
         release_year: None,
         original_release_year: None,
         duration_ms: None,
+        secondary_types: Vec::new(),
+        release_track_count: None,
+        release_track_titles: Vec::new(),
+        release_distinct_track_artists: None,
     }])
 }
 
@@ -574,7 +644,83 @@ fn parse_identity_with_release(
             )
         }),
         duration_ms: value.get("length").and_then(Value::as_u64),
+        secondary_types: secondary_types(release.and_then(|item| item.get("release-group"))),
+        release_track_count: release.and_then(release_track_count),
+        release_track_titles: release.map(release_track_titles).unwrap_or_default(),
+        release_distinct_track_artists: release.and_then(distinct_track_artists),
     })
+}
+
+fn secondary_types(group: Option<&Value>) -> Vec<ReleaseSecondaryType> {
+    group
+        .and_then(|group| group.get("secondary-types"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|value| match value {
+            "Compilation" => ReleaseSecondaryType::Compilation,
+            "DJ-mix" => ReleaseSecondaryType::DjMix,
+            "Live" => ReleaseSecondaryType::Live,
+            "Mixtape/Street" | "Mixtape" => ReleaseSecondaryType::Mixtape,
+            "Remix" => ReleaseSecondaryType::Remix,
+            other => ReleaseSecondaryType::Other(other.to_owned()),
+        })
+        .collect()
+}
+
+fn release_track_count(release: &Value) -> Option<u32> {
+    let media = release.get("media").and_then(Value::as_array);
+    let media_count = media.map(|media| {
+        media
+            .iter()
+            .filter_map(|medium| medium.get("track-count").and_then(Value::as_u64))
+            .filter_map(|count| u32::try_from(count).ok())
+            .sum::<u32>()
+    });
+    media_count.filter(|count| *count > 0).or_else(|| {
+        release
+            .get("track-count")
+            .and_then(Value::as_u64)
+            .and_then(|count| u32::try_from(count).ok())
+    })
+}
+
+fn release_track_titles(release: &Value) -> Vec<String> {
+    release
+        .get("media")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|medium| medium.get("tracks").and_then(Value::as_array))
+        .flatten()
+        .filter_map(|track| text(track, "title"))
+        .collect()
+}
+
+fn distinct_track_artists(release: &Value) -> Option<u32> {
+    let artists = release
+        .get("media")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|medium| medium.get("tracks").and_then(Value::as_array))
+        .flatten()
+        .filter_map(track_artist_credit)
+        .collect::<std::collections::BTreeSet<_>>();
+    (!artists.is_empty()).then(|| u32::try_from(artists.len()).unwrap_or(u32::MAX))
+}
+
+fn track_artist_credit(track: &Value) -> Option<String> {
+    let names = track
+        .get("artist-credit")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(|credit| credit.get("name").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>();
+    (!names.is_empty()).then(|| names.join("\u{1}"))
 }
 
 fn year(value: &str) -> Option<u32> {

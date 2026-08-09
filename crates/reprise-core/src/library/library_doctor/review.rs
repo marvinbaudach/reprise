@@ -137,6 +137,7 @@ pub struct DoctorReviewSummary {
     pub track_count: usize,
     pub file_count: usize,
     pub tag_change_count: usize,
+    pub total_tag_change_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +206,7 @@ pub struct DoctorReviewSession {
     source_scan: DoctorScan,
     filter: DoctorReviewFilter,
     remote_visible: bool,
+    category_filter: Option<HashSet<ProblemClass>>,
     tracks: HashMap<i64, DoctorTrackRef>,
     rows: Vec<DoctorReviewRow>,
     groups: Vec<DoctorReviewGroup>,
@@ -361,6 +363,7 @@ impl DoctorReviewSession {
             source_scan,
             filter,
             remote_visible,
+            category_filter: None,
             tracks,
             rows,
             groups,
@@ -380,6 +383,20 @@ impl DoctorReviewSession {
 
     pub const fn remote_visible(&self) -> bool {
         self.remote_visible
+    }
+
+    pub fn set_category_filter(&mut self, filter: Option<HashSet<ProblemClass>>) {
+        self.category_filter = filter;
+    }
+
+    pub fn category_filter_matches(&self, class: ProblemClass) -> bool {
+        self.category_filter
+            .as_ref()
+            .is_none_or(|filter| filter.contains(&class))
+    }
+
+    pub fn group_matches_category_filter(&self, group: &DoctorReviewGroup) -> bool {
+        self.category_filter_matches(tie_problem_class(group.field))
     }
 
     pub fn set_remote_visible(&mut self, visible: bool) {
@@ -412,6 +429,7 @@ impl DoctorReviewSession {
             .collect::<Vec<_>>();
         let projected = super::project_scan(&self.source_scan, visible);
         let mut rebuilt = Self::build(projected, self.filter, self.source_scan.clone(), visible);
+        rebuilt.category_filter = self.category_filter.clone();
         for (field, group_key, chosen) in prior_groups {
             let group_id = rebuilt
                 .groups
@@ -458,25 +476,39 @@ impl DoctorReviewSession {
     }
 
     pub fn all(&mut self) {
+        let category_filter = self.category_filter.as_ref();
         for templates in self.tie_templates.values() {
             for template in templates {
-                self.tie_selection
-                    .insert(template.id, template.state == DoctorReviewRowState::Ready);
+                if category_filter
+                    .is_none_or(|filter| filter.contains(&tie_problem_class(template.field)))
+                {
+                    self.tie_selection
+                        .insert(template.id, template.state == DoctorReviewRowState::Ready);
+                }
             }
         }
         for row in &mut self.rows {
-            row.selected = row.state == DoctorReviewRowState::Ready;
+            if category_filter.is_none_or(|filter| filter.contains(&row.problem_class)) {
+                row.selected = row.state == DoctorReviewRowState::Ready;
+            }
         }
     }
 
     pub fn none(&mut self) {
+        let category_filter = self.category_filter.as_ref();
         for templates in self.tie_templates.values() {
             for template in templates {
-                self.tie_selection.insert(template.id, false);
+                if category_filter
+                    .is_none_or(|filter| filter.contains(&tie_problem_class(template.field)))
+                {
+                    self.tie_selection.insert(template.id, false);
+                }
             }
         }
         for row in &mut self.rows {
-            row.selected = false;
+            if category_filter.is_none_or(|filter| filter.contains(&row.problem_class)) {
+                row.selected = false;
+            }
         }
     }
 
@@ -615,6 +647,11 @@ impl DoctorReviewSession {
             track_count: plan.track_count(),
             file_count: plan.file_count(),
             tag_change_count: plan.tag_change_count(),
+            total_tag_change_count: self
+                .rows
+                .iter()
+                .filter(|row| row.selected && row.state == DoctorReviewRowState::Ready)
+                .count(),
         }
     }
 
@@ -623,6 +660,7 @@ impl DoctorReviewSession {
             .rows
             .iter()
             .filter(|row| row.selected && row.state == DoctorReviewRowState::Ready)
+            .filter(|row| self.category_filter_matches(row.problem_class))
             .filter_map(|row| {
                 self.tracks
                     .get(&row.track_id)

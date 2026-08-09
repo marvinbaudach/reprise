@@ -1,6 +1,99 @@
 use super::*;
 
 #[test]
+fn doc_1e_a_release_parses_its_secondary_types_and_track_count() {
+    let body = r#"{
+      "id":"123e4567-e89b-12d3-a456-426614174001",
+      "title":"Canonical album",
+      "release-group":{
+        "id":"123e4567-e89b-12d3-a456-426614174002",
+        "secondary-types":["Compilation"]
+      },
+      "media":[
+        {"track-count":6,"tracks":[{"title":"First"}]},
+        {"track-count":4,"tracks":[{"title":"Last"}]}
+      ]
+    }"#;
+
+    let identities = parse_release(body).unwrap();
+    assert_eq!(
+        identities[0].secondary_types,
+        [ReleaseSecondaryType::Compilation]
+    );
+    assert_eq!(identities[0].release_track_count, Some(10));
+}
+
+#[test]
+fn doc_1e_a_release_without_secondary_types_is_not_marked_as_one() {
+    let body = r#"{
+      "id":"123e4567-e89b-12d3-a456-426614174001",
+      "title":"Canonical album",
+      "release-group":{"id":"123e4567-e89b-12d3-a456-426614174002"},
+      "track-count":10
+    }"#;
+
+    let identities = parse_release(body).unwrap();
+    assert!(identities[0].secondary_types.is_empty());
+    assert_eq!(identities[0].release_track_count, Some(10));
+}
+
+#[test]
+fn doc_1e_a_release_reports_its_distinct_track_artists() {
+    let body = r#"{
+      "id":"123e4567-e89b-12d3-a456-426614174001",
+      "title":"Compilation",
+      "media":[{"track-count":3,"tracks":[
+        {"title":"First","artist-credit":[{"name":"Artist One"}]},
+        {"title":"Second","artist-credit":[{"name":"Artist Two"}]},
+        {"title":"Third","artist-credit":[{"name":"Artist One"}]}
+      ]}]
+    }"#;
+
+    let identity = parse_release(body).unwrap().remove(0);
+    assert_eq!(identity.release_distinct_track_artists, Some(2));
+    assert_eq!(identity.release_track_titles, ["First", "Second", "Third"]);
+}
+
+#[test]
+fn doc_1e_the_release_search_sends_artist_album_and_track_count() {
+    let query = AlbumQuery {
+        album_artist: "As I Lay Dying".into(),
+        album: "An Ocean Between Us".into(),
+        track_titles: vec!["Separation".into(), "Nothing Left".into()],
+        track_count: 10,
+        year: Some(2007),
+    };
+
+    let url = url::Url::parse(&release_search_url(&query).unwrap()).unwrap();
+    let query_text = url
+        .query_pairs()
+        .find_map(|(key, value)| (key == "query").then(|| value.into_owned()))
+        .unwrap();
+    assert_eq!(
+        query_text,
+        "release:\"An Ocean Between Us\" AND artist:\"As I Lay Dying\" AND tracks:10"
+    );
+    assert_eq!(
+        url.query_pairs()
+            .find_map(|(key, value)| (key == "limit").then(|| value.into_owned())),
+        Some("25".into())
+    );
+}
+
+#[test]
+fn doc_1e_the_release_search_requires_artist_and_album() {
+    let query = AlbumQuery {
+        album_artist: "".into(),
+        album: "".into(),
+        track_titles: Vec::new(),
+        track_count: 10,
+        year: None,
+    };
+
+    assert_eq!(release_search_url(&query), None);
+}
+
+#[test]
 fn acoustid_post_body_has_exact_privacy_allowlist() {
     let form = acoustid_form("secret-client", "secret-fingerprint", 181);
     let keys = form.iter().map(|(key, _)| key.as_str()).collect::<Vec<_>>();

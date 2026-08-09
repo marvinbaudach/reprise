@@ -171,6 +171,7 @@ fn restore_fallback(
                     preselected: true,
                     never_preselect: false,
                     problem_class: *problem_class,
+                    resolved_release_mbid: None,
                     evidence: Vec::new(),
                     local_fallback: None,
                 });
@@ -247,6 +248,7 @@ mod tests {
                     preselected: false,
                     never_preselect: false,
                     problem_class: ProblemClass::CasingWhitespace,
+                    resolved_release_mbid: None,
                     evidence: Vec::new(),
                     local_fallback: Some(DoctorLocalFallback::Proposal {
                         proposed: DoctorValue::Text("old".into()),
@@ -264,6 +266,7 @@ mod tests {
                     preselected: false,
                     never_preselect: false,
                     problem_class: ProblemClass::MissingRecordingMbid,
+                    resolved_release_mbid: None,
                     evidence: Vec::new(),
                     local_fallback: None,
                 },
@@ -273,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_7a_hiding_remote_restores_local_fallback_and_removes_remote_rows() {
+    fn doc_7c_hiding_remote_restores_local_fallback_and_removes_remote_rows() {
         let scan = remote_scan();
 
         let projected = project_scan(&scan, false);

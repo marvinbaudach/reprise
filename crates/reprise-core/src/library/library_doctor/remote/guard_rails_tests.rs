@@ -37,6 +37,10 @@ fn identity(title: &str) -> RemoteIdentity {
         release_year: Some(2024),
         original_release_year: Some(2023),
         duration_ms: Some(180_500),
+        secondary_types: Vec::new(),
+        release_track_count: None,
+        release_track_titles: Vec::new(),
+        release_distinct_track_artists: None,
     }
 }
 
