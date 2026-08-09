@@ -456,7 +456,8 @@ mod tests {
     fn search_14_the_receipt_goes_with_the_click_not_a_turn_later() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let bar = PodcastsFilterBar::new(Rc::new(crate::test_db::open().unwrap()), PodcastKind::Rss);
+        let bar =
+            PodcastsFilterBar::new(Rc::new(crate::test_db::open().unwrap()), PodcastKind::Rss);
         bar.set_query("falling");
         bar.set_committed_query("falling");
         assert!(

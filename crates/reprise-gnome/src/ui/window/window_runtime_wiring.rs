@@ -224,10 +224,19 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // backend above is: this is where the window layer may name a platform
     // concrete, and the composition root is held below 600 lines.
     let spectrogram_batch = super::spectrogram_backend::build(db_path.to_path_buf());
+    let active_table = super::table_columns::active_table(
+        window,
+        content_stack,
+        content_nav,
+        track_list,
+        concerts_view,
+        releases_view,
+        radio_view,
+    );
     super::primary_menu::install(
         header,
         window,
-        track_list,
+        &active_table,
         super::primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),

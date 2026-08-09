@@ -12,6 +12,9 @@ use rusqlite::{Connection, OptionalExtension};
 #[path = "settings_api.rs"]
 mod api;
 pub use api::*;
+#[path = "settings_column_keys.rs"]
+mod column_keys;
+pub use column_keys::*;
 /// The settings key `ui::window`'s scan flow writes the scanned folder under,
 /// and `main.rs`/`ui::window` read at startup/after-scan to (re)start the
 /// watcher. `pub` so both call sites share the exact same literal rather than
@@ -191,10 +194,6 @@ fn set_new_releases_last_completed_at_in(
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
-pub const COLUMN_LAYOUT_KEY: &str = "ui.column_layout";
-/// User-adjusted per-column widths (`id:width` pairs), kept separate from the
-/// order/visibility layout so the layout reducers and their tests stay untouched.
-pub const COLUMN_WIDTHS_KEY: &str = "ui.column_widths";
 
 /// Where the player bar docks. `Bottom` is the default and the fallback for any
 /// unknown/hand-edited value (same tolerance posture as `get_bool`).
@@ -786,11 +785,9 @@ fn get_last_viewed_import_errors_in(conn: &Connection) -> Result<i64, rusqlite::
 fn set_last_viewed_import_errors_in(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
     set_setting_in(conn, LAST_VIEWED_IMPORT_ERRORS_KEY, &now.to_string())
 }
-
 #[path = "settings_seek.rs"]
 mod seek;
 pub use seek::*;
-
 #[cfg(test)]
 #[path = "settings_compact_tests.rs"]
 mod compact_tests;

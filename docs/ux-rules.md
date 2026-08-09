@@ -2341,7 +2341,10 @@ the panel).
   time-based cache retention.
 - **NR-25** [active] [gtk] — The gap view remains the table `Date ·
   Title · Artist · Type · Status`, sorted by date descending by
-  default. Its permanent filter row carries independent Album, EP,
+  default. A fixed cover column leads them, and the `Buy` column of NR-20
+  trails them; both follow STYLE-10's fixed-column rule. The named text
+  columns are otherwise unchanged in name and order. Its permanent filter
+  row carries independent Album, EP,
   and Single toggles — album and EP on by default, single off — a
   persistent window `1 year · 5 years · 10 years · All` defaulting to
   five years, and the Hidden chip. An empty type selection shows every
@@ -2890,8 +2893,10 @@ property is set and yet nothing happens.
   immediately without restarting the app.
 - **STYLE-9** [active] [gtk] — **A column never takes its width from the
   rows that happen to be on screen.** Every column of every table carries an
-  explicitly set width; exactly one column per table additionally expands and
-  absorbs the leftover width. A column left at the framework default
+  explicitly set width; exactly one visible free column per table additionally
+  expands and absorbs the leftover width. Hiding that column transfers the
+  filler role to the first visible free column in the user's order. A column
+  left at the framework default
   (`fixed-width = -1`) measures itself against the cells realized at that
   moment, and `GtkColumnView` recycles its row widgets while scrolling — so
   the whole table shifts sideways as the user scrolls, and the column that
@@ -2902,24 +2907,26 @@ property is set and yet nothing happens.
   squeezing its columns (STYLE-6). **Test rule:** measured, not asserted —
   the rule-named test exchanges the rows on screen for markedly wider ones
   and compares the columns' realized widths.
-- **STYLE-10** [planned] [gtk] — **Columns belong to the user, in every
+- **STYLE-10** [active] [gtk] — **Columns belong to the user, in every
   table.** A right-click anywhere on a table's header band opens the column
-  editor popover: toggle visibility, drag to reorder, reset. Behaviour learned
-  in the music library is the same behaviour in Releases, Concerts and Radio —
-  a user does not experience a missing editor there as an absent feature but
-  as the app forgetting what it taught them. The same editor is reachable
-  without a pointer through the primary menu's "Edit column layout…", which
-  addresses the table of the active view and is insensitive where no table is
-  shown. Order, visibility and header-dragged widths are stored per table and
-  survive a restart. A table may declare fixed columns — a leading artwork
-  column, a trailing action column on a surface without a row context menu —
-  which stay visible, keep their position and never appear in the editor;
-  every other column belongs to the user. Exactly one visible column is the
-  filler (STYLE-9); when the user hides it, the filler role moves to the first
-  visible free column in the table's order. Hiding the sorting column does not
-  change the sort, because hiding is a visibility flip and never removes the
-  column from the view. **Test rule:** one rule-named display test per table,
-  plus a measured filler test. Design:
+  editor popover: toggle visibility, drag to reorder, reset. Behaviour
+  learned in the music library is the same behaviour in Releases, Concerts
+  and Radio — a user does not experience a missing editor there as an absent
+  feature but as the app forgetting what it taught them. The same editor is
+  reachable without a pointer through the primary menu's "Edit column
+  layout…", which addresses the table of the active view and is insensitive
+  where no table is shown. Order, visibility and header-dragged widths are
+  stored per table and survive a restart. A table may declare fixed columns
+  — a leading artwork column, a trailing action column on a surface without
+  a row context menu — which stay visible, keep their position and never
+  appear in the editor; every other column belongs to the user. Exactly one
+  visible column is the filler (STYLE-9); when the user hides it, the filler
+  role moves to the first visible free column in the table's order. Hiding
+  the sorting column changes the sort to the first visible sortable free
+  column, ascending, or clears sorting when no such column remains, so an
+  active sort and its header indicator never become invisible. **Test
+  rule:** one rule-named display test per table, plus a measured filler
+  test. Design:
   `docs/superpowers/specs/2026-08-09-table-columns-and-system-dates-design.md`.
 - **STYLE-11** [active] [core] [gtk] — **A date looks the same everywhere.**
   Every displayed calendar date follows the system locale's date pattern, with

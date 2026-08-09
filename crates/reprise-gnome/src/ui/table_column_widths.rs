@@ -23,6 +23,8 @@
 #[cfg(test)]
 use gtk4::prelude::*;
 
+/// A compact square release-artwork cell.
+pub(in crate::ui) const COVER: i32 = 40;
 /// A date cell — mirrors the library's Added column.
 pub(in crate::ui) const DATE: i32 = 160;
 /// Lower bound for the filler column — mirrors the library's Title column,
