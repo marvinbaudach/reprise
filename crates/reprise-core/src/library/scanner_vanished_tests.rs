@@ -161,6 +161,125 @@ fn scan_folder_does_not_recount_an_already_missing_track() {
     assert!(is_missing(conn.conn(), id));
 }
 
+#[test]
+fn scan_reclassifies_reachable_missing_track_without_retroactive_auto_clean() {
+    let tmp = tempfile::tempdir().unwrap();
+    fixture_copy(tmp.path(), "still-here.flac");
+    let path = tmp.path().join("gone.flac");
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    insert_raw_track_with_device(conn.conn(), &path, dev_of(tmp.path()) + 99_999);
+    let (id, ..) = row_by_path(conn.conn(), &path);
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET missing_since = 1, missing_reason = 'unmounted', \
+             mount_point = NULL WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+    crate::library::settings::set_missing_auto_clean(
+        &conn,
+        crate::library::settings::AutoCleanSetting::Days(30),
+    )
+    .unwrap();
+    crate::library::settings::set_auto_clean_armed_at(&conn, 0).unwrap();
+
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
+
+    let (missing_since, reason, mount_point): (i64, String, Option<String>) = conn
+        .conn()
+        .query_row(
+            "SELECT missing_since, missing_reason, mount_point FROM tracks WHERE id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(report.vanished, 0, "reclassification is not a new vanish");
+    assert_eq!(
+        missing_since, 1,
+        "display age must retain the first absence"
+    );
+    assert_eq!(reason, "deleted");
+    assert_eq!(
+        mount_point,
+        UnixLibrarySource
+            .mount_point(&path)
+            .map(|mount| mount.to_string_lossy().into_owned())
+    );
+    assert!(
+        crate::queries::auto_clean_eligible(&conn, now_unix())
+            .unwrap()
+            .is_empty(),
+        "a newly corrected row must receive a fresh auto-clean grace period"
+    );
+    assert!(
+        crate::library::settings::get_auto_clean_armed_at(&conn)
+            .unwrap()
+            .is_some_and(|armed_at| armed_at > 0),
+        "an already armed grace period must restart at reclassification"
+    );
+}
+
+#[test]
+fn scan_keeps_proven_unmount_and_does_not_restart_auto_clean() {
+    let tmp = tempfile::tempdir().unwrap();
+    fixture_copy(tmp.path(), "still-here.flac");
+    let path = tmp.path().join("gone-album/gone.flac");
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    insert_raw_track_with_device(conn.conn(), &path, dev_of(tmp.path()) + 99_999);
+    let (id, ..) = row_by_path(conn.conn(), &path);
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET missing_since = 1, missing_reason = 'unmounted' WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+    crate::library::settings::set_auto_clean_armed_at(&conn, 7).unwrap();
+
+    completed(scan_folder(&conn, tmp.path()).unwrap());
+
+    assert_eq!(
+        missing_reason(conn.conn(), id).as_deref(),
+        Some("unmounted")
+    );
+    assert_eq!(
+        crate::library::settings::get_auto_clean_armed_at(&conn).unwrap(),
+        Some(7),
+        "a scan that proves no correction must not delay unrelated rows"
+    );
+}
+
+#[test]
+fn reclassification_does_not_arm_an_unarmed_auto_clean_setting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("gone.flac");
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    insert_raw_track_with_device(conn.conn(), &path, dev_of(tmp.path()));
+    let (id, ..) = row_by_path(conn.conn(), &path);
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+    crate::library::settings::set_missing_auto_clean(
+        &conn,
+        crate::library::settings::AutoCleanSetting::Days(30),
+    )
+    .unwrap();
+
+    completed(scan_folder(&conn, tmp.path()).unwrap());
+
+    assert_eq!(missing_reason(conn.conn(), id).as_deref(), Some("deleted"));
+    assert_eq!(
+        crate::library::settings::get_auto_clean_armed_at(&conn).unwrap(),
+        None,
+        "correction must preserve the fail-safe unarmed state"
+    );
+    assert!(crate::queries::auto_clean_eligible(&conn, i64::MAX)
+        .unwrap()
+        .is_empty());
+}
+
 /// A reconcile of `<base>/music` must not touch a row under the sibling root
 /// `<base>/music2`, which shares a bare *string* prefix but not a path
 /// *component* prefix. Regression net for the SQL prefilter: its pattern is

@@ -106,6 +106,22 @@ pub(super) fn guard_evidence_under_root(
     candidates_under_root(tx, root, "removed_at IS NULL")
 }
 
+/// Already-missing rows whose stored reason is not yet the proven `deleted`
+/// state. The scan walk has already healed any file that reappeared, so this
+/// list contains only unresolved state that is safe to re-probe after the root
+/// guard confirms the scan location itself is reachable.
+fn reclassification_candidates_under_root(
+    tx: &rusqlite::Transaction,
+    root: &Path,
+) -> Result<Vec<(i64, String, Option<i64>)>, ScanError> {
+    candidates_under_root(
+        tx,
+        root,
+        "missing_since IS NOT NULL AND removed_at IS NULL AND \
+         (missing_reason IS NULL OR missing_reason <> 'deleted')",
+    )
+}
+
 /// The root guard's evidence check: does ANY guard-evidence candidate's
 /// recorded residence token match the token `root` currently resolves to?
 /// Always called with [`guard_evidence_under_root`]'s wider list, never
@@ -181,6 +197,61 @@ pub(super) fn mark_vanished_with(
         }
     }
     Ok(marked)
+}
+
+/// Corrects stale `unmounted`/`unknown` reasons only when current source
+/// evidence positively resolves the still-absent item as [`MissingReason::Deleted`].
+/// `missing_since` is deliberately left untouched because it is the user-facing
+/// first-absence time. If auto-clean was already armed, its global lower-bound
+/// clock is advanced to `now`, giving every corrected row the full configured
+/// grace period without changing that display timestamp.
+pub(super) fn reclassify_missing_with(
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    root: &Path,
+    now: i64,
+) -> Result<u32, ScanError> {
+    let candidates = reclassification_candidates_under_root(tx, root)?;
+    let mut corrected = 0u32;
+    for (id, path_str, device) in candidates {
+        let path = Path::new(&path_str);
+        if source.probe(path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
+            continue;
+        }
+        if source.reachability(path, device) != MissingReason::Deleted {
+            continue;
+        }
+        let mount_point = source
+            .mount_point(path)
+            .map(|mount| mount.to_string_lossy().into_owned());
+        let changed = tx.execute(
+            "UPDATE tracks SET missing_reason = 'deleted', mount_point = ?2 \
+             WHERE id = ?1 AND missing_since IS NOT NULL AND removed_at IS NULL AND \
+             (missing_reason IS NULL OR missing_reason <> 'deleted')",
+            rusqlite::params![id, mount_point],
+        )?;
+        corrected = corrected.saturating_add(changed as u32);
+    }
+
+    if corrected > 0 {
+        rearm_auto_clean_if_armed(tx, now)?;
+    }
+    Ok(corrected)
+}
+
+fn rearm_auto_clean_if_armed(tx: &rusqlite::Transaction, now: i64) -> Result<(), rusqlite::Error> {
+    let Some(armed_at) = crate::library::settings::get_setting_in(
+        tx,
+        crate::library::settings::AUTO_CLEAN_ARMED_AT_KEY,
+    )?
+    .and_then(|stored| stored.parse::<i64>().ok()) else {
+        return Ok(());
+    };
+    crate::library::settings::set_setting_in(
+        tx,
+        crate::library::settings::AUTO_CLEAN_ARMED_AT_KEY,
+        &armed_at.max(now).to_string(),
+    )
 }
 
 #[cfg(test)]
