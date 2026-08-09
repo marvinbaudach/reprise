@@ -15,6 +15,7 @@ pub(super) fn install_row_context_menu(
     listbox: &gtk4::ListBox,
     row: &gtk4::ListBoxRow,
     target: RelinkTarget,
+    kind: MissingGroupKind,
     removable: bool,
     locatable: bool,
 ) {
@@ -25,6 +26,7 @@ pub(super) fn install_row_context_menu(
     let listbox_for_pointer = listbox.clone();
     let row_for_menu = row.clone();
     let target_for_pointer = target.clone();
+    let kind_for_pointer = kind.clone();
     gesture.connect_pressed(move |gesture, _, x, y| {
         gesture.set_state(gtk4::EventSequenceState::Claimed);
         show_row_menu(
@@ -32,6 +34,7 @@ pub(super) fn install_row_context_menu(
             &listbox_for_pointer,
             &row_for_menu,
             &target_for_pointer,
+            &kind_for_pointer,
             removable,
             locatable,
             x,
@@ -54,6 +57,7 @@ pub(super) fn install_row_context_menu(
             &listbox,
             &row_for_keys,
             &target,
+            &kind,
             removable,
             locatable,
             f64::from(row_for_keys.width()) / 2.0,
@@ -70,6 +74,7 @@ fn show_row_menu(
     listbox: &gtk4::ListBox,
     row: &gtk4::ListBoxRow,
     target: &RelinkTarget,
+    kind: &MissingGroupKind,
     removable: bool,
     locatable: bool,
     x: f64,
@@ -84,7 +89,10 @@ fn show_row_menu(
         let action = gio::SimpleAction::new("remove", None);
         let shared = shared.clone();
         let listbox = listbox.clone();
-        action.connect_activate(move |_, _| confirm_remove(&shared, selected_ids(&listbox)));
+        let kind = kind.clone();
+        action.connect_activate(move |_, _| {
+            confirm_remove(&shared, kind.clone(), selected_ids(&listbox));
+        });
         action_group.add_action(&action);
     }
     if locatable {
@@ -113,7 +121,12 @@ fn show_row_menu(
     show_menu(row.upcast_ref(), &menu, x, y);
 }
 
-pub(super) fn install_card_context_menu(shared: &Rc<Shared>, card: &gtk4::Box, label: &str) {
+pub(super) fn install_card_context_menu(
+    shared: &Rc<Shared>,
+    card: &gtk4::Box,
+    label: &str,
+    kind: MissingGroupKind,
+) {
     // a11y-semantics: role=group name=missing-group state=menu action=shift-f10
     card.set_focusable(true);
     card.set_accessible_role(gtk4::AccessibleRole::Group);
@@ -127,9 +140,10 @@ pub(super) fn install_card_context_menu(shared: &Rc<Shared>, card: &gtk4::Box, l
     gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
     let shared_for_pointer = shared.clone();
     let card_for_menu = card.clone();
+    let kind_for_pointer = kind.clone();
     gesture.connect_pressed(move |gesture, _, x, y| {
         gesture.set_state(gtk4::EventSequenceState::Claimed);
-        show_card_menu(&shared_for_pointer, &card_for_menu, x, y);
+        show_card_menu(&shared_for_pointer, &card_for_menu, x, y, &kind_for_pointer);
     });
     card.add_controller(gesture);
 
@@ -146,18 +160,25 @@ pub(super) fn install_card_context_menu(shared: &Rc<Shared>, card: &gtk4::Box, l
             &card_for_keys,
             f64::from(card_for_keys.width()) / 2.0,
             f64::from(card_for_keys.height()) / 2.0,
+            &kind,
         );
         gtk4::glib::Propagation::Stop
     });
     card.add_controller(keys);
 }
 
-fn show_card_menu(shared: &Rc<Shared>, card: &gtk4::Box, x: f64, y: f64) {
+/// `kind` is the card's own group, not a fixed one: the folder search must
+/// collect the targets of the card it was opened on. Only `Deleted` cards
+/// install this menu today (`locate_actions` is the gate), so a hardcoded
+/// kind would be invisible until someone gives another group a folder to
+/// search — and would then silently search the wrong group's tracks.
+fn show_card_menu(shared: &Rc<Shared>, card: &gtk4::Box, x: f64, y: f64, kind: &MissingGroupKind) {
     let action_group = gio::SimpleActionGroup::new();
     let action = gio::SimpleAction::new("search-folder", None);
     let shared_for_action = shared.clone();
+    let kind_for_action = kind.clone();
     action.connect_activate(move |_, _| {
-        let targets = collect_group_targets(&shared_for_action, &MissingGroupKind::Deleted);
+        let targets = collect_group_targets(&shared_for_action, &kind_for_action);
         super::missing_dialogs::search_folder(locate_context(&shared_for_action), targets);
     });
     action_group.add_action(&action);

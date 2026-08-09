@@ -10,6 +10,7 @@
 
 use super::clauses::like_pattern;
 use super::*;
+use crate::library::source::LibrarySource;
 use std::path::Path;
 
 fn seeded_titled_conn() -> crate::db::Db {
@@ -378,29 +379,36 @@ fn mark_track_missing_classifies_deleted_when_device_matches() {
 
     assert!(mark_track_missing_if_current(&db, id, &path).unwrap());
 
-    let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
+    let expected_mount_point = crate::library::source::UnixLibrarySource
+        .mount_point(&path)
+        .map(|mount| mount.to_string_lossy().into_owned());
+    let (missing_since, missing_reason, mount_point): (
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+    ) = conn
         .query_row(
-            "SELECT missing_since, missing_reason FROM tracks WHERE id = ?1",
+            "SELECT missing_since, missing_reason, mount_point FROM tracks WHERE id = ?1",
             rusqlite::params![id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .unwrap();
     assert!(missing_since.is_some());
     assert_eq!(missing_reason.as_deref(), Some("deleted"));
+    assert_eq!(mount_point, expected_mount_point);
 }
 
-/// The classifier's `Unmounted` branch, same shape as the `Deleted` test
-/// above but with a fabricated non-matching device (`real_dev + 99_999`,
-/// mirroring `mounts.rs`'s own test convention for a guaranteed
-/// non-collision) — pure arithmetic, no loopback device or real unmount
-/// needed to prove the branch.
+/// The classifier's `Unmounted` branch: both the track and its parent directory
+/// are absent, while a fabricated non-matching device (`real_dev + 99_999`)
+/// represents the source that used to live below the still-nameable mount
+/// boundary. Pure arithmetic keeps this deterministic without a real unmount.
 #[test]
 fn mark_track_missing_classifies_unmounted_when_device_differs() {
     use std::os::unix::fs::MetadataExt;
 
     let dir = tempfile::tempdir().unwrap();
     let real_dev = std::fs::symlink_metadata(dir.path()).unwrap().dev() as i64;
-    let path = dir.path().join("gone.flac");
+    let path = dir.path().join("gone-album/gone.flac");
 
     let db = crate::db::Db::open_in_memory().unwrap();
     let conn = db.conn();
