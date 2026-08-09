@@ -91,6 +91,24 @@ pub(super) fn prepare_report(
     if let Some(bytes) = acknowledgement {
         match ListenReportAcknowledgement::decode(bytes) {
             Ok(acknowledgement)
+                if acknowledgement.applied_sequence < u64::MAX
+                    && state.next_sequence == 1
+                    && state.acknowledged_sequence.is_none()
+                    && state.report.listens.is_empty()
+                    && state.report.ratings.is_empty() =>
+            {
+                // The selected sync folder survives an Android reinstall while
+                // this app-private journal does not. Adopt the desktop's last
+                // sequence before issuing a new one, or the fresh journal would
+                // reuse an already acknowledged identity and erase the event.
+                state.next_sequence = acknowledgement
+                    .applied_sequence
+                    .checked_add(1)
+                    .ok_or_else(|| io::Error::other("Android export-journal sequence exhausted"))?;
+                state.acknowledged_sequence = Some(acknowledgement.applied_sequence);
+                changed = true;
+            }
+            Ok(acknowledgement)
                 if acknowledgement.applied_sequence < state.next_sequence
                     && state
                         .acknowledged_sequence
