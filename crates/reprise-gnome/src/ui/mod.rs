@@ -100,6 +100,7 @@ pub mod strings;
 mod style;
 mod swell;
 pub(crate) mod table_column_widths;
+mod table_columns;
 mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]
