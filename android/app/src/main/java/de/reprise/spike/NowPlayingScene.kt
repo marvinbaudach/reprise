@@ -77,6 +77,10 @@ import kotlin.math.roundToInt
 private const val TRANSITION_MS = 320
 private const val CONTROL_IDLE_MS = 4_000L
 private const val CONTROL_FADE_MS = 300
+
+/** Below this opacity a control is off the screen, so it must be off the touch map too. */
+private const val CONTROL_HIT_EPSILON = 0.01f
+
 private const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
 private const val PLAYED_CENTRE_FRACTION = 0.34f
@@ -202,10 +206,14 @@ internal fun NowPlayingScene(
         label = "now-playing-control-fade",
     )
 
-    fun choose(next: NowPlayingView) {
-        view = next
+    fun wakeControls() {
         controlsVisible = true
         touchRevision += 1
+    }
+
+    fun choose(next: NowPlayingView) {
+        view = next
+        wakeControls()
         runCatching { settings.set(next) }
             .onFailure { error -> Log.e(NOW_PLAYING_TAG, "Could not remember Now Playing view", error) }
     }
@@ -224,12 +232,11 @@ internal fun NowPlayingScene(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) {
-                    controlsVisible = true
-                    touchRevision += 1
-                },
+                ) { wakeControls() },
         ) {
-            if (drawRevision == Int.MIN_VALUE) return@Canvas
+            // Capturing the frame counter is what makes Compose re-run this lambda once
+            // per scene frame; the value itself has nothing to contribute to the drawing.
+            observeSceneFrame(drawRevision)
             drawRect(Color.Black)
             val playedCenter = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION)
             drawNowPlayingFog(
@@ -270,14 +277,17 @@ internal fun NowPlayingScene(
             )
         }
 
-        if (transition < 1f) {
+        // The header leaves the composition as soon as the transition has faded it out
+        // of sight: a close or fullscreen button one cannot see must not answer a tap.
+        val headerOpacity = 1f - transition
+        if (headerOpacity > CONTROL_HIT_EPSILON) {
             PlayedHeader(
                 track = track,
                 playback = playback,
                 surfaceState = surfaceState,
                 close = close,
                 enterFullscreen = { choose(NowPlayingView.VISUALIZER) },
-                opacity = 1f - transition,
+                opacity = headerOpacity,
             )
         }
 
@@ -310,6 +320,7 @@ internal fun NowPlayingScene(
             transition = transition,
             opacity = controlAlpha,
             leaveFullscreen = { choose(NowPlayingView.PLAYER) },
+            wake = { wakeControls() },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 18.dp, vertical = 18.dp)
@@ -434,10 +445,18 @@ private fun SceneProgress(
     modifier: Modifier,
 ) {
     Box(modifier.padding(horizontal = 24.dp)) {
-        if (transition < 0.5f) {
-            SpectralSeekSlider(track.id, playback, surfaceState)
-        } else {
-            FullscreenProgress(track.id, playback, surfaceState, controlAlpha)
+        // Both renderers draw for the whole transition and cross-fade into each other,
+        // the way the cover and the burst do. Swapping them at the midpoint would pop,
+        // and both are wired to the same scrub state, so either one answers a drag.
+        if (transition < 1f) {
+            Box(Modifier.graphicsLayer { alpha = 1f - transition }) {
+                SpectralSeekSlider(track.id, playback, surfaceState)
+            }
+        }
+        if (transition > 0f) {
+            Box(Modifier.graphicsLayer { alpha = transition }) {
+                FullscreenProgress(track.id, playback, surfaceState, controlAlpha)
+            }
         }
     }
 }
@@ -506,10 +525,12 @@ private fun SceneTransport(
     transition: Float,
     opacity: Float,
     leaveFullscreen: () -> Unit,
+    wake: () -> Unit,
     modifier: Modifier,
 ) {
     val controls = LocalPlaybackControls.current
     val fullscreenControls = transition >= 0.5f
+    val reachable = opacity > CONTROL_HIT_EPSILON
     Box(modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -522,7 +543,7 @@ private fun SceneTransport(
             FlatSceneButton(
                 symbol = if (fullscreenControls) "queue_music" else "shuffle",
                 description = if (fullscreenControls) "Show queue" else "Toggle shuffle",
-                enabled = opacity > 0.01f,
+                enabled = reachable,
                 onClick = if (fullscreenControls) {
                     { surfaceState.showNowPlayingQueue(!surfaceState.nowPlayingQueueVisible) }
                 } else {
@@ -532,14 +553,14 @@ private fun SceneTransport(
             FlatSceneButton(
                 symbol = if (fullscreenControls) "shuffle" else "skip_previous",
                 description = if (fullscreenControls) "Toggle shuffle" else "Previous track",
-                enabled = opacity > 0.01f,
+                enabled = reachable,
                 onClick = if (fullscreenControls) {
                     { controls.setShuffle(!playback.shuffled) }
                 } else {
                     controls::previous
                 },
             )
-            ScenePauseButton(playback, transition, opacity > 0.01f, controls::togglePause)
+            ScenePauseButton(playback, transition, reachable, controls::togglePause)
             FlatSceneButton(
                 symbol = if (fullscreenControls && playback.repeat == AndroidRepeatMode.ONE) {
                     "repeat_one"
@@ -549,7 +570,7 @@ private fun SceneTransport(
                     "skip_next"
                 },
                 description = if (fullscreenControls) "Change repeat" else "Next track",
-                enabled = opacity > 0.01f,
+                enabled = reachable,
                 onClick = if (fullscreenControls) {
                     { controls.setRepeat(cycleRepeatMode(playback.repeat)) }
                 } else {
@@ -561,12 +582,28 @@ private fun SceneTransport(
                     if (playback.repeat == AndroidRepeatMode.ONE) "repeat_one" else "repeat"
                 },
                 description = if (fullscreenControls) "Return to player" else "Change repeat",
-                enabled = opacity > 0.01f,
+                enabled = reachable,
                 onClick = if (fullscreenControls) {
                     leaveFullscreen
                 } else {
                     { controls.setRepeat(cycleRepeatMode(playback.repeat)) }
                 },
+            )
+        }
+        if (!reachable) {
+            // The faded buttons stay mounted, and a disabled `clickable` still wins the
+            // hit test instead of letting the touch through to the scene below. Without
+            // this catcher the transport row would be the one part of the screen whose
+            // tap cannot bring the controls back — and it is the likeliest place to tap.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .testTag("now-playing-controls-wake")
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = wake,
+                    ),
             )
         }
     }
@@ -655,3 +692,6 @@ private fun DrawScope.drawPlayedCover(
 
 private fun lerp(start: Float, end: Float, fraction: Float): Float =
     start + (end - start) * fraction.coerceIn(0f, 1f)
+
+/** Keeps the frame counter captured by the scene's draw lambda; the value is not drawn. */
+private fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit
