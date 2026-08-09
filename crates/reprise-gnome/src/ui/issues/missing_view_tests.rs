@@ -7,7 +7,10 @@ use super::*;
 #[test]
 fn unlocatable_group_copy_is_actionable_without_claiming_the_files_are_gone() {
     let copy = group_copy(&MissingGroupKind::Unlocatable, 3);
-    assert_eq!(copy.icon, "?");
+    // U+2753, not an ASCII "?" — see the constant's own comment: a text-
+    // presentation glyph next to the ⏏ and 🗑 cards reads as a rendering
+    // failure rather than as this card's icon.
+    assert_eq!(copy.icon, "❓");
     assert_eq!(copy.title, "Location unknown");
     assert_eq!(copy.meta, "files may still exist · 3 tracks");
     assert!(copy.note.is_empty());

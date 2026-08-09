@@ -28,7 +28,10 @@ pub const MISSING_UNAVAILABLE_TITLE: &str = N_!("On unavailable drive");
 pub const MISSING_NOT_MOUNTED: &str = N_!("not mounted");
 pub const MISSING_RETURNS_WHEN_MOUNTED: &str =
     N_!("return automatically when the drive is mounted");
-pub const MISSING_UNLOCATABLE_ICON: &str = "?";
+// U+2753, not a plain "?": the sibling cards use ⏏ and 🗑, which render with
+// emoji presentation. An ASCII question mark renders as a small text glyph
+// next to them and reads as "this failed to render" rather than as an icon.
+pub const MISSING_UNLOCATABLE_ICON: &str = "❓";
 pub const MISSING_UNLOCATABLE_TITLE: &str = N_!("Location unknown");
 pub const MISSING_UNLOCATABLE_META: &str = N_!("files may still exist");
 pub const MISSING_DELETED_ICON: &str = "🗑";

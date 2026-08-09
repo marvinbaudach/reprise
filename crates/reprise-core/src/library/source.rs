@@ -518,6 +518,35 @@ mod tests {
         );
     }
 
+    /// The token comparison is not dead weight behind the parent check: when
+    /// a whole album folder is deleted, the file's immediate parent is gone
+    /// too, so the parent-reachable shortcut does NOT apply and the verdict
+    /// falls through to the stored token. A matching token then means the
+    /// filesystem the track lived on is still the one mounted here — the
+    /// folder was deleted, not unmounted.
+    ///
+    /// Every other `Deleted` case in this module keeps the immediate parent
+    /// alive and therefore never reaches this arm; without this test the
+    /// fall-through path has no coverage at all.
+    #[test]
+    fn unix_source_reports_deleted_when_the_whole_folder_is_gone_but_the_device_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_dev = dev_of(dir.path());
+        // `gone-album` is never created: the track's parent is absent, its
+        // grandparent (the temp dir) is present and on `real_dev`.
+        let gone_path = dir.path().join("gone-album/gone.flac");
+        assert!(
+            !gone_path.parent().unwrap().exists(),
+            "the parent must be absent, otherwise this test silently \
+             re-tests the parent-reachable shortcut instead"
+        );
+
+        assert_eq!(
+            UnixLibrarySource.reachability(&gone_path, Some(real_dev as i64)),
+            MissingReason::Deleted
+        );
+    }
+
     /// A btrfs subvolume can receive a different anonymous device number after
     /// a reboot. The still-existing parent is stronger evidence than that stale
     /// token: the source is reachable and only the track itself is gone.

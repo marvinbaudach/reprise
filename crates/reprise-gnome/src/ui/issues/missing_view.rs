@@ -257,7 +257,7 @@ impl MissingFilesView {
     }
 
     pub(in crate::ui) fn remove_with_undo(&self, ids: &[i64]) {
-        tombstone_with_undo(&self.shared, &MissingGroupKind::Deleted, ids);
+        tombstone_with_undo(&self.shared, &bulk_cleanup_kind(), ids);
     }
 
     pub(in crate::ui) fn set_db_path(&self, db_path: PathBuf) {
@@ -303,6 +303,18 @@ fn refresh(shared: &Rc<Shared>) -> usize {
     count
 }
 
+/// The one category the sidebar's bulk "remove all missing" acts on.
+///
+/// Two places have to agree on it: `sidebar_issue_cleanup::missing_ids_for_
+/// cleanup` selects the ids, `MissingFilesView::remove_with_undo` tombstones
+/// them under a state guard keyed by kind. When those two were written out
+/// separately, widening the selection without touching the guard would have
+/// let the extra ids fall silently out of the tombstone — the same shape of
+/// bug the per-card Remove-all button already had. Both now read this.
+pub(in crate::ui) fn bulk_cleanup_kind() -> MissingGroupKind {
+    MissingGroupKind::Deleted
+}
+
 fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
     let copy = group_copy(&group.kind, group.track_count);
     let locate = locate_actions(&group.kind);
@@ -328,7 +340,12 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
     };
     let card = IssueCard::new(&copy.icon, &copy.title, &copy.meta, action);
     if locate.folder {
-        super::missing_menus::install_card_context_menu(shared, card.header_widget(), &copy.title);
+        super::missing_menus::install_card_context_menu(
+            shared,
+            card.header_widget(),
+            &copy.title,
+            group.kind.clone(),
+        );
     }
     let kind = group.kind.clone();
     let actionable = copy.actionable;

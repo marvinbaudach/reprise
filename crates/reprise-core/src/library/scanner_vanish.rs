@@ -172,16 +172,22 @@ pub(super) fn mark_vanished_with(
             continue;
         }
         let reason = source.reachability(path, device);
-        let mount_point = source
-            .mount_point(path)
-            .map(|mount| mount.to_string_lossy().into_owned());
-        tx.execute(
-            "UPDATE tracks SET missing_since = ?2, missing_reason = ?3, mount_point = ?4 \
-             WHERE id = ?1",
-            rusqlite::params![id, now_unix(), reason.as_str(), mount_point],
-        )?;
-        marked += 1;
+        // `mount_point` is only ever read back for `unmounted` rows (see
+        // `queries::issues`' `query_unavailable_groups`, which binds the
+        // reason). Resolving it costs `mounts::mount_point_of` its own
+        // ancestor walk, on top of the one `reachability` just did, so it is
+        // resolved for the one reason that consumes it and left as-is
+        // otherwise — a `deleted` row keeps whatever the last successful
+        // scan recorded, which no query looks at.
         if reason == MissingReason::Unmounted {
+            let mount_point = source
+                .mount_point(path)
+                .map(|mount| mount.to_string_lossy().into_owned());
+            tx.execute(
+                "UPDATE tracks SET missing_since = ?2, missing_reason = ?3, mount_point = ?4 \
+                 WHERE id = ?1",
+                rusqlite::params![id, now_unix(), reason.as_str(), mount_point],
+            )?;
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
@@ -189,12 +195,17 @@ pub(super) fn mark_vanished_with(
                 "scan: marked vanished track missing (mount currently absent)"
             );
         } else {
+            tx.execute(
+                "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
+                rusqlite::params![id, now_unix(), reason.as_str()],
+            )?;
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
                 "scan: marked vanished track missing"
             );
         }
+        marked += 1;
     }
     Ok(marked)
 }
@@ -205,6 +216,11 @@ pub(super) fn mark_vanished_with(
 /// first-absence time. If auto-clean was already armed, its global lower-bound
 /// clock is advanced to `now`, giving every corrected row the full configured
 /// grace period without changing that display timestamp.
+///
+/// That advance is what makes this function a *frequent* writer of
+/// `auto_clean_armed_at`, where before it moved only on a rare user action.
+/// `maintenance::remove_auto_clean_eligible_tracks` re-checks the deadline at
+/// delete time for exactly that reason — see its guard.
 pub(super) fn reclassify_missing_with(
     source: &dyn LibrarySource,
     tx: &rusqlite::Transaction,
@@ -221,14 +237,15 @@ pub(super) fn reclassify_missing_with(
         if source.reachability(path, device) != MissingReason::Deleted {
             continue;
         }
-        let mount_point = source
-            .mount_point(path)
-            .map(|mount| mount.to_string_lossy().into_owned());
+        // No `mount_point` write here: this path only ever lands on
+        // `deleted`, and that column is read back exclusively for
+        // `unmounted` rows. Resolving it would buy a second ancestor walk
+        // per corrected row for a value nothing queries.
         let changed = tx.execute(
-            "UPDATE tracks SET missing_reason = 'deleted', mount_point = ?2 \
+            "UPDATE tracks SET missing_reason = 'deleted' \
              WHERE id = ?1 AND missing_since IS NOT NULL AND removed_at IS NULL AND \
              (missing_reason IS NULL OR missing_reason <> 'deleted')",
-            rusqlite::params![id, mount_point],
+            rusqlite::params![id],
         )?;
         corrected = corrected.saturating_add(changed as u32);
     }
@@ -240,18 +257,15 @@ pub(super) fn reclassify_missing_with(
 }
 
 fn rearm_auto_clean_if_armed(tx: &rusqlite::Transaction, now: i64) -> Result<(), rusqlite::Error> {
-    let Some(armed_at) = crate::library::settings::get_setting_in(
-        tx,
-        crate::library::settings::AUTO_CLEAN_ARMED_AT_KEY,
-    )?
-    .and_then(|stored| stored.parse::<i64>().ok()) else {
+    // Goes through `settings`' own accessors rather than re-deriving "read
+    // the key, parse it as i64" from the raw primitives: the parse fallback
+    // is a decision (a corrupt value means "inert", not "armed at 0"), and
+    // it belongs in one place. `&Transaction` derefs to `&Connection`, so
+    // the `_in` variants take this transaction directly.
+    let Some(armed_at) = crate::library::settings::get_auto_clean_armed_at_in(tx)? else {
         return Ok(());
     };
-    crate::library::settings::set_setting_in(
-        tx,
-        crate::library::settings::AUTO_CLEAN_ARMED_AT_KEY,
-        &armed_at.max(now).to_string(),
-    )
+    crate::library::settings::set_auto_clean_armed_at_in(tx, armed_at.max(now))
 }
 
 #[cfg(test)]

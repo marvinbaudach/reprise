@@ -541,6 +541,18 @@ pub fn auto_clean_eligible(db: &Db, now: i64) -> Result<Vec<i64>, rusqlite::Erro
     )
 }
 
+/// The one statement of "this row's grace period has elapsed", built for
+/// whatever parameter indices the calling query needs.
+///
+/// Two queries ask it: [`auto_clean_eligible_in`], which selects the ids, and
+/// `maintenance`'s `RemoveGuard::AutoCleanEligible`, which re-checks each id
+/// at delete time. Those two must not be able to disagree — a selection rule
+/// that is stricter than the delete rule silently widens what auto-clean
+/// removes.
+pub(super) fn auto_clean_deadline_clause(armed: usize, grace: usize, now: usize) -> String {
+    format!("max(missing_since, ?{armed}) + ?{grace} <= ?{now}")
+}
+
 fn auto_clean_eligible_in(
     conn: &Connection,
     setting: AutoCleanSetting,
@@ -554,9 +566,10 @@ fn auto_clean_eligible_in(
         return Ok(Vec::new());
     };
     let grace_period_seconds = i64::from(days) * SECONDS_PER_DAY;
+    let deadline = auto_clean_deadline_clause(2, 3, 4);
     let mut statement = conn.prepare(&format!(
         "SELECT id FROM tracks WHERE {MISSING} AND missing_reason = ?1 \
-         AND max(missing_since, ?2) + ?3 <= ?4 ORDER BY id"
+         AND {deadline} ORDER BY id"
     ))?;
     let ids = statement
         .query_map(
@@ -593,11 +606,12 @@ fn auto_clean_eligible_in(
 /// 'deleted'`) at delete time instead of trusting this snapshot, so a
 /// resurrected row survives with its rating, playlist membership and
 /// listening history intact rather than being hard-deleted out from under a
-/// track the scanner just proved is live again. The guard does NOT re-run
-/// the `days`/`armed_at` deadline arithmetic — time only moves forward, so
-/// an id already past its deadline at selection time is still past it at
-/// delete time; only the missing state and reason can realistically change
-/// under the race, so only those are re-checked (see `maintenance::
+/// track the scanner just proved is live again. The guard re-runs the
+/// `days`/`armed_at` deadline arithmetic too: that used to be skipped as
+/// redundant ("time only moves forward"), which held while `armed_at` moved
+/// only on a rare user action, but scan-time reclassification now advances
+/// it whenever it corrects a row, so a deadline can legitimately move out
+/// from under this selection (see `maintenance::
 /// remove_auto_clean_eligible_tracks`'s doc comment). See `tests_auto_
 /// clean.rs`'s `run_auto_clean_survives_a_resurrection_racing_the_delete_
 /// itself` for the regression test this guards against.
@@ -615,13 +629,23 @@ fn auto_clean_eligible_in(
 /// run — the whole point of a hard delete, made deliberately.
 pub fn run_auto_clean(db: &Db, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
-    let ids = auto_clean_eligible_in(
+    let setting = settings::get_missing_auto_clean(db);
+    let armed_at = settings::get_auto_clean_armed_at(db)?;
+    let ids = auto_clean_eligible_in(conn, setting, armed_at, now)?;
+    // The duration is necessarily set once any id came back — `auto_clean_
+    // eligible_in` returns empty otherwise — but the delete needs the value
+    // itself, not just the ids, so it can re-derive the deadline. It re-reads
+    // `armed_at` on its own inside its transaction rather than taking the
+    // copy read above, which is precisely the value that may have moved.
+    let AutoCleanSetting::Days(days) = setting else {
+        return Ok(Vec::new());
+    };
+    super::maintenance::remove_auto_clean_eligible_tracks(
         conn,
-        settings::get_missing_auto_clean(db),
-        settings::get_auto_clean_armed_at(db)?,
+        &ids,
+        i64::from(days) * SECONDS_PER_DAY,
         now,
-    )?;
-    super::maintenance::remove_auto_clean_eligible_tracks(conn, &ids)
+    )
 }
 
 // -- Badge counts (Task 2.5) -------------------------------------------------

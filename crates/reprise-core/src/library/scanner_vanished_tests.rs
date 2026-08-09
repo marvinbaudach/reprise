@@ -200,10 +200,10 @@ fn scan_reclassifies_reachable_missing_track_without_retroactive_auto_clean() {
     );
     assert_eq!(reason, "deleted");
     assert_eq!(
-        mount_point,
-        UnixLibrarySource
-            .mount_point(&path)
-            .map(|mount| mount.to_string_lossy().into_owned())
+        mount_point, None,
+        "reclassification resolves to `deleted`, and `mount_point` is read \
+         back only for `unmounted` rows — resolving it here would cost a \
+         second ancestor walk per corrected row for a value no query reads"
     );
     assert!(
         crate::queries::auto_clean_eligible(&conn, now_unix())
@@ -400,9 +400,6 @@ fn scan_folder_folds_a_deleted_file_into_the_same_scan() {
     assert_eq!(report.vanished, 1);
     assert!(is_missing(conn.conn(), id));
     assert_eq!(missing_reason(conn.conn(), id).as_deref(), Some("deleted"));
-    let expected_mount_point = UnixLibrarySource
-        .mount_point(&path)
-        .map(|mount| mount.to_string_lossy().into_owned());
     let mount_point: Option<String> = conn
         .conn()
         .query_row(
@@ -411,7 +408,64 @@ fn scan_folder_folds_a_deleted_file_into_the_same_scan() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(mount_point, expected_mount_point);
+    assert_eq!(
+        mount_point, None,
+        "a `deleted` verdict leaves the column alone: it is read back only \
+         for `unmounted` rows, and resolving it costs its own ancestor walk. \
+         The case that does need it is covered by \
+         `scan_records_the_mount_point_when_it_marks_a_track_unmounted`"
+    );
+}
+
+/// The half of "persist the mount point" that has a reader: an `unmounted`
+/// row is exactly what the Missing-files view groups by mount, and a row
+/// marked `unmounted` without one is what produced the nameless "unknown
+/// location" cards this work started from.
+///
+/// Reaching `Unmounted` takes both halves of the evidence order: the
+/// immediate parent must be absent (otherwise a reachable parent proves
+/// deletion and short-circuits), and the stored device token must differ
+/// from what the surviving ancestor reports.
+#[test]
+fn scan_records_the_mount_point_when_it_marks_a_track_unmounted() {
+    let tmp = tempfile::tempdir().unwrap();
+    fixture_copy(tmp.path(), "still-here.flac");
+    // `gone-album` is never created — the track's parent is absent, so the
+    // verdict falls through to the (deliberately stale) device token.
+    let path = tmp.path().join("gone-album/gone.flac");
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    insert_raw_track_with_device(conn.conn(), &path, dev_of(tmp.path()) + 99_999);
+    let (id, ..) = row_by_path(conn.conn(), &path);
+    conn.conn()
+        .execute("UPDATE tracks SET mount_point = NULL WHERE id = ?1", [id])
+        .unwrap();
+
+    completed(scan_folder(&conn, tmp.path()).unwrap());
+
+    assert_eq!(
+        missing_reason(conn.conn(), id).as_deref(),
+        Some("unmounted"),
+        "absent parent plus a mismatched token is the unmount case"
+    );
+    let mount_point: Option<String> = conn
+        .conn()
+        .query_row(
+            "SELECT mount_point FROM tracks WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        mount_point,
+        UnixLibrarySource
+            .mount_point(&path)
+            .map(|mount| mount.to_string_lossy().into_owned()),
+        "an `unmounted` row must carry the mount it is waiting on"
+    );
+    assert!(
+        mount_point.is_some(),
+        "a nameless `unmounted` row is the exact defect this guards against"
+    );
 }
 
 /// Brief case 2 (atomicity/ordering): a move and an unrelated deletion

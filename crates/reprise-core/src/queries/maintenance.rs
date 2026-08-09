@@ -436,7 +436,20 @@ pub(crate) enum RemoveGuard {
     Any,
     MissingOnly,
     TombstonedOnly,
-    AutoCleanEligible,
+    /// Carries the deadline inputs so the delete can re-derive eligibility
+    /// itself instead of trusting the caller's `SELECT` — see
+    /// [`remove_auto_clean_eligible_tracks`] for why that snapshot is no
+    /// longer safe to trust.
+    ///
+    /// `armed_at` is deliberately NOT among them: it is re-read inside the
+    /// delete's own transaction, because the whole point of the re-check is
+    /// to notice an arming clock that moved after the caller's `SELECT`.
+    /// Passing the caller's stale copy down would re-check against exactly
+    /// the value that is suspect.
+    AutoCleanEligible {
+        grace_period_seconds: i64,
+        now: i64,
+    },
 }
 
 pub(crate) fn remove_tracks_impl(
@@ -496,10 +509,39 @@ fn remove_track_requests_impl<'a>(
                 "DELETE FROM tracks WHERE id = ?1 AND removed_at IS NOT NULL",
                 rusqlite::params![id],
             )?,
-            (RemoveGuard::AutoCleanEligible, None) => tx.execute(
-                &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING} AND missing_reason = ?2"),
-                rusqlite::params![id, MissingReason::Deleted.as_str()],
-            )?,
+            (
+                RemoveGuard::AutoCleanEligible {
+                    grace_period_seconds,
+                    now,
+                },
+                None,
+            ) => {
+                // Read inside this transaction, not handed down from the
+                // caller: a scan that advanced the clock between the
+                // caller's SELECT and here is exactly what this re-check
+                // exists to catch.
+                let Some(armed_at) = crate::library::settings::get_auto_clean_armed_at_in(&tx)?
+                else {
+                    // Disarmed under us. An unarmed clock makes the feature
+                    // inert everywhere else (`auto_clean_eligible` returns
+                    // nothing), so it must not delete here either.
+                    continue;
+                };
+                let deadline = super::issues::auto_clean_deadline_clause(3, 4, 5);
+                tx.execute(
+                    &format!(
+                        "DELETE FROM tracks WHERE id = ?1 AND {MISSING} \
+                         AND missing_reason = ?2 AND {deadline}"
+                    ),
+                    rusqlite::params![
+                        id,
+                        MissingReason::Deleted.as_str(),
+                        armed_at,
+                        grace_period_seconds,
+                        now
+                    ],
+                )?
+            }
             (_, Some(_)) => unreachable!("path identity is only valid with RemoveGuard::Any"),
         };
         if deleted == 0 {
@@ -532,18 +574,37 @@ fn remove_track_requests_impl<'a>(
 /// completely unattended, so there is nobody watching to notice and nothing
 /// left to restore.
 ///
-/// The guard only re-checks what can realistically change under it: the
-/// row's missing state and reason. It deliberately does NOT re-run the
-/// `days`/`armed_at` deadline arithmetic — time only moves forward, so an id
-/// that was already past its deadline at `auto_clean_eligible`'s `SELECT` is
-/// still past it by the time this `DELETE` runs; re-deriving the same
-/// monotonic fact here would be redundant, not safer, so do not "fix" this
-/// by adding it back.
+/// The guard re-checks the row's missing state, its reason, AND the
+/// `days`/`armed_at` deadline.
+///
+/// The deadline used to be left out on purpose, reasoning that time only
+/// moves forward: an id past its deadline at `auto_clean_eligible`'s
+/// `SELECT` is still past it when this `DELETE` runs. That held while
+/// `armed_at` moved only when the user changed the setting. It stopped
+/// holding when scan-time reclassification became a writer of it
+/// (`library::scanner_vanish::reclassify_missing_with` advances the clock
+/// whenever it corrects a row, so every corrected row gets a full grace
+/// period). A scan committing that advance while this function is midway
+/// through its id list would otherwise delete rows whose grace period had
+/// just been extended — the extension exists precisely to stop that.
+///
+/// The deadline expression itself comes from `issues::auto_clean_deadline_
+/// clause`, shared with the `SELECT`, so selection and deletion cannot drift
+/// into disagreeing about what "elapsed" means.
 pub(crate) fn remove_auto_clean_eligible_tracks(
     conn: &Connection,
     ids: &[i64],
+    grace_period_seconds: i64,
+    now: i64,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_tracks_impl(conn, ids, RemoveGuard::AutoCleanEligible)
+    remove_tracks_impl(
+        conn,
+        ids,
+        RemoveGuard::AutoCleanEligible {
+            grace_period_seconds,
+            now,
+        },
+    )
 }
 
 // -- Tombstone operations (Task 2.2, 10-second undo) ---------------------
