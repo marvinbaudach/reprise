@@ -6,13 +6,19 @@
 //! surfaces read the same stored value, and two implementations of one format
 //! drift.
 
+pub mod concert;
 pub mod key;
 pub mod layout;
+pub mod radio;
+pub mod release;
 pub mod track;
 
 #[cfg(test)]
 pub(crate) mod probe;
 
+pub use concert::ConcertColumn;
 pub use key::{ColumnKey, Pin};
 pub use layout::Layout;
+pub use radio::RadioColumn;
+pub use release::ReleaseColumn;
 pub use track::ColumnId;
