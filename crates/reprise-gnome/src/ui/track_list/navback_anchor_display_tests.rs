@@ -114,7 +114,11 @@ fn top_row_track_id(track_list: &TrackList) -> Option<i64> {
     }
     let height = adjustment.upper() / f64::from(total);
     let index = (adjustment.value() / height).floor().max(0.0) as u32;
-    track_list.shared.model.track_at(index).map(|track| track.id)
+    track_list
+        .shared
+        .model
+        .track_at(index)
+        .map(|track| track.id)
 }
 
 /// Library → artist link → play → Back, routed the way
@@ -123,7 +127,11 @@ fn top_row_track_id(track_list: &TrackList) -> Option<i64> {
 /// viewport), and only then does the router restore the saved place.
 fn run_journey(track_list: &TrackList, journey: Journey) -> Outcome {
     // The library the user is browsing.
-    let library_sort = if journey.sort_differs { "album" } else { "title" };
+    let library_sort = if journey.sort_differs {
+        "album"
+    } else {
+        "title"
+    };
     assert!(track_list.restore_browser_place(&BrowserPlace::tracks(
         TrackCollection::Library(LibraryScope::All),
         sorted_state(library_sort),

@@ -1,3 +1,11 @@
+---
+slug: navback-scroll-jump-to-top
+worktree: /home/marvin/Projects/reprise-navback
+branch: fix/navback-anchor
+phase: planned
+codex_session:
+created: 2026-08-09
+---
 # Zurück aus einer gefilterten Ansicht springt kurz an die Spitze
 
 ## Symptom
