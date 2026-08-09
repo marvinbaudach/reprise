@@ -173,10 +173,15 @@ fn missing_track_explanation_distinguishes_unavailable_drive_from_missing_file()
         missing_track_explanation(Some(1_000_000_000), Some(MissingReason::Unmounted)),
         Some("On unavailable drive — returns when mounted".into())
     );
+    let formatted = reprise_core::format::format_unix_timestamp(
+        1_000_000_000,
+        crate::ui::date_format::current(),
+    );
+    let missing = crate::ui::strings::missing_row_file_since(&formatted);
     for reason in [MissingReason::Deleted, MissingReason::Unknown] {
         assert_eq!(
             missing_track_explanation(Some(1_000_000_000), Some(reason)),
-            Some("File missing since 2001-09-09 01:46".into())
+            Some(missing.clone())
         );
     }
     assert_eq!(missing_track_explanation(None, None), None);

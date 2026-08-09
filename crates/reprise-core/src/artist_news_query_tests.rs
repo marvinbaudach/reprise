@@ -93,7 +93,7 @@ fn popover_candidates_and_badge_exclude_complete_albums_from_the_same_set() {
 }
 
 #[test]
-fn nr_9c_owned_release_does_not_enter_the_popover() {
+fn nr_29_owned_release_does_not_enter_the_popover() {
     let db = migrated_conn();
     db.conn()
         .execute(
@@ -125,7 +125,7 @@ fn nr_9c_owned_release_does_not_enter_the_popover() {
 }
 
 #[test]
-fn nr_9c_single_badges_only_when_its_chip_is_on() {
+fn nr_29_single_badges_only_when_its_chip_is_on() {
     let db = migrated_conn();
     db.conn()
         .execute(
@@ -148,7 +148,7 @@ fn nr_9c_single_badges_only_when_its_chip_is_on() {
 }
 
 #[test]
-fn nr_9c_ancient_discovery_does_not_badge() {
+fn nr_29_ancient_discovery_does_not_badge() {
     let db = migrated_conn();
     db.conn()
         .execute(
@@ -192,7 +192,7 @@ fn nr_3a_opening_marks_seen_clears_badge() {
 }
 
 #[test]
-fn updates_query_keeps_catalog_out_of_the_legacy_news_list() {
+fn nr_29_updates_popover_keeps_catalog_history_out_when_the_full_view_shows_all() {
     let conn = migrated_conn();
     for (id, title, first_release_date) in [
         ("catalog-album", "Older Album", "2024-10-18"),
@@ -218,10 +218,89 @@ fn updates_query_keeps_catalog_out_of_the_legacy_news_list() {
         ["recent-album"]
     );
     assert_eq!(
-        unseen_release_count(&conn, date()).unwrap(),
-        2,
-        "the persisted five-year catalog scope includes the historical gap"
+        delta_candidates(&conn, date())
+            .unwrap()
+            .into_iter()
+            .map(|release| release.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["recent-album"],
+        "the default five-year catalog window must not widen announcements"
     );
+    assert_eq!(unseen_release_count(&conn, date()).unwrap(), 1);
+
+    set_setting(&conn, "releases.filter.window", "all").unwrap();
+    assert_eq!(
+        delta_candidates(&conn, date())
+            .unwrap()
+            .into_iter()
+            .map(|release| release.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["recent-album"],
+        "the catalog window must not turn historical gaps into announcements"
+    );
+    assert_eq!(unseen_release_count(&conn, date()).unwrap(), 1);
+}
+
+#[test]
+fn nr_29_announcement_window_includes_day_ninety_and_excludes_day_ninety_one() {
+    let db = migrated_conn();
+    for (id, title, first_release_date) in [
+        ("future", "Future Album", "2027-01-01"),
+        ("day-90", "Boundary Album", "2026-04-14"),
+        ("day-91", "Older Album", "2026-04-13"),
+        ("undated", "Undated Album", "unknown"),
+    ] {
+        db.conn()
+            .execute(
+                "INSERT INTO new_releases (
+                   release_group_mbid, artist_name, artist_mbid, title, release_type,
+                   first_release_date, fetched_at, first_seen
+                 ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', ?3, 1, 1)",
+                rusqlite::params![id, title, first_release_date],
+            )
+            .unwrap();
+    }
+    set_setting(&db, "releases.filter.window", "all").unwrap();
+
+    assert_eq!(
+        delta_candidates(&db, date())
+            .unwrap()
+            .into_iter()
+            .map(|release| release.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["future", "day-90"]
+    );
+    assert_eq!(unseen_release_count(&db, date()).unwrap(), 2);
+}
+
+#[test]
+fn nr_29_future_single_requires_an_exact_date_in_the_delta() {
+    let db = migrated_conn();
+    for (id, title, first_release_date) in [
+        ("exact-single", "Exact Single", "2026-08-01"),
+        ("month-only-single", "Month-only Single", "2026-08"),
+    ] {
+        db.conn()
+            .execute(
+                "INSERT INTO new_releases (
+                   release_group_mbid, artist_name, artist_mbid, title, release_type,
+                   first_release_date, fetched_at, first_seen
+                 ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Single', ?3, 1, 1)",
+                rusqlite::params![id, title, first_release_date],
+            )
+            .unwrap();
+    }
+    set_setting(&db, "releases.filter.type", "single").unwrap();
+
+    assert_eq!(
+        delta_candidates(&db, date())
+            .unwrap()
+            .into_iter()
+            .map(|release| release.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["exact-single"]
+    );
+    assert_eq!(unseen_release_count(&db, date()).unwrap(), 1);
 }
 
 #[test]

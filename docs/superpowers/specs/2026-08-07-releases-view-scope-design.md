@@ -40,6 +40,7 @@ Three further defects sharpen the same complaint:
 | 2 | Ownership | A row disappears once local tracks cover **more than 50 %** of the official track count. `LibraryPresence::Complete` keeps its strict meaning. |
 | 3 | Types | Three independent toggles `Album · EP · Single`. Album and EP on by default, **Single off by default** — singles do enter the catalog, so everyone can decide for themselves. |
 | 4 | Duplicates | Same artist + same normalized title + same release date collapse to one row: **Album before EP before Single**. |
+| 5 | Updates scope | The popover and its badge use future plus 90-day announcements, independent of the catalog age window. The persisted type selection still applies. |
 
 ### Non-goals
 
@@ -49,9 +50,10 @@ Three further defects sharpen the same complaint:
 - No deletion by the window. It is a filter, not retention; `All` must
   always be able to show what the cache holds, and the fetch-window
   protection in `artist_news_history.rs` stays untouched.
-- `NEWS_WINDOW_DAYS` and the per-artist news cap from `NR-1a` (now `NR-27`) stay as they
-  are. The delta popover's candidate scope follows the persisted Releases
-  filters, while its visit-batch and stamping semantics remain unchanged.
+- `NEWS_WINDOW_DAYS` and the per-artist news cap from `NR-1a` (now `NR-27`)
+  stay as they are. The delta popover follows the persisted type selection,
+  while its own 90-day announcement window, visit batch, and stamping
+  semantics remain independent of the catalog age window.
 
 ## Design
 
@@ -243,13 +245,15 @@ New user-visible strings go to `strings_releases.rs`; regenerating the
 ### GTK: popover and badge
 
 The delta popover (`updates/feed_snapshot.rs`) switches from strict complete
-presence to `counts_as_owned`, applies the persisted type selection and
-window, excludes hidden rows, and uses the same duplicate collapsing as the
-table. `unseen_release_count` counts the unseen portion of that exact
-candidate set, so the popover and its badge cannot disagree. A 1975 album
-discovered today enters the durable catalog but remains quiet under the
-default five-year window. A single announces itself exactly when the Single
-chip is active.
+presence to `counts_as_owned`, applies the persisted type selection, excludes
+hidden rows, and uses the same duplicate collapsing as the table. Its date
+scope is independent: only parsable future dates and dates no more than 90
+days old are announcements. `unseen_release_count` counts the unseen portion
+of that exact candidate set, so the popover and its badge cannot disagree. A
+historical album discovered today enters the durable catalog but remains
+quiet even when the full view is set to `All`. A recent single announces
+itself exactly when the Single chip is active; an upcoming single still needs
+an exact date.
 
 The sidebar badge needs no code change — `count_releases_view` calls
 `query_releases_view_in` with the persisted filter and follows
@@ -267,7 +271,8 @@ filters explicitly.
 | Single whose song sits on a library album | Owned, via the track-title map. |
 | Album hidden, EP visible, same work | Each view collapses its own set; the hidden view shows the EP. |
 | Window `All` | No date comparison runs at all. |
-| Single chip off/on | Singles are absent/present in both the catalog and delta; there is no second preference. |
+| Single chip off/on | Singles are absent/present in the catalog; eligible future or recent singles are absent/present in the delta. There is no second preference. |
+| Full-view window `All` with a newly fetched historical gap | The gap stays in the catalog and out of Updates. |
 
 ## Rule changes (`docs/ux-rules.md`, section R)
 
@@ -300,11 +305,11 @@ Append-only, per `AGENTS.md`. All four land `[planned]` and flip to
   the `new_releases` module active. Its badge equals exactly the number of
   discography gaps visible under the persistent type, window, and hidden
   filters; 0 renders no badge.
-- **NR-9c** `[active]` `[core]` `[gtk]` — replaces `NR-9b`. Unchanged in
-  its batch and stamping semantics; releases owned under NR-24, excluded by
-  the persisted type or window scope, or hidden do not enter the popover.
-  Duplicates collapse there the same way. Singles announce themselves
-  exactly when their chip is on; there is no separate preference.
+- **NR-29** `[active]` `[core]` `[gtk]` — replaces `NR-9c`. The popover and
+  badge admit only parsable future releases and releases no more than 90 days
+  old, independently of the full view's age window. Persisted type selection,
+  ownership, hidden state, duplicate collapsing, batch, cap, stamping, and
+  badge consistency remain unchanged.
 
 ## Testing
 
@@ -332,9 +337,12 @@ Rule-named tests, per the repo's gate convention:
 - `nr_25_gaps_beyond_the_window_offer_show_all` — empty default view with
   older gaps reaches `NoResults`, not `Empty`.
 - `nr_26_badge_follows_the_window_filter`
-- `nr_9c_owned_release_does_not_enter_the_popover`
-- `nr_9c_single_badges_only_when_its_chip_is_on`
-- `nr_9c_ancient_discovery_does_not_badge`
+- `nr_29_owned_release_does_not_enter_the_popover`
+- `nr_29_single_badges_only_when_its_chip_is_on`
+- `nr_29_ancient_discovery_does_not_badge`
+- `nr_29_updates_popover_keeps_catalog_history_out_when_the_full_view_shows_all`
+- `nr_29_announcement_window_includes_day_ninety_and_excludes_day_ninety_one`
+- `nr_29_future_single_requires_an_exact_date_in_the_delta`
 - migration test: v62 resets the fetch ledger, preserves `artist_mbid`,
   removes the dead setting, and is idempotent.
 

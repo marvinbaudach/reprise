@@ -232,6 +232,17 @@ result.
   once. Checked by hand because no automated level drives either entry
   point end to end: the cua-e2e scenario that once proved this path drove
   the header item and retired with NAV-7.
+- **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
+  switch.** A secondary click, Menu, or Shift+F10 on Podcasts, YouTube,
+  Radio, Releases, or Concerts opens one action, "Turn Off {name}". It
+  changes the same module setting as the Plugins switch, applies the same
+  runtime refresh immediately, and keeps subscriptions, favorites, caches,
+  and source data. If the place being turned off is open, Music becomes the
+  selected place; otherwise the current place does not change. Music, Queue,
+  playlists, smart lists, and My Stats never offer this action. *Tests:*
+  `nav_16_only_optional_module_rows_offer_turn_off`,
+  `nav_16_turn_off_dispatches_the_clicked_module_once`,
+  `nav_16_secondary_click_turns_off_the_row_and_falls_back_to_music`.
 
 ## C. Playback, queue, shuffle, filter
 
@@ -2302,7 +2313,7 @@ the panel).
   `new_releases` module active. Its badge equals the number of gaps
   visible under the persistent type, window, and hidden filters; 0
   renders no badge.
-- **NR-9c** [active] [core] [gtk] — NR-9b's batch and stamping
+- **NR-9c** [replaced by NR-29] [core] [gtk] — NR-9b's batch and stamping
   semantics remain unchanged. The delta popover and its badge draw
   from the same persisted filter as the full view. Releases owned
   under NR-24, filtered out by type or window, or already hidden do
@@ -2329,12 +2340,22 @@ the panel).
   a release that counts as owned under NR-24, so it carries no
   „Show in library" action and never renders an `In library` status: a
   row that could offer it is a row the filter has already removed. The
-  Updates popover's own row actions are unaffected and stay with NR-9c.
+  Updates popover's own row actions are unaffected and stay with NR-29.
   *Reason:* NR-13 promised an action the overview has not had since
   NR-16 excluded complete releases. The status value stays in the model
   because the presence it names is real, and a test pins that the
   filtered view never yields it — a filter change that let owned rows
   through would otherwise reintroduce the dead branch silently.
+- **NR-29** [active] [core] [gtk] — The Updates popover and its badge show
+  announcements, not the full discography-gap catalog: eligible releases
+  have a parsable date in the future or no more than 90 days in the past.
+  The full view's persistent age window never widens this announcement
+  scope. Its type selection still applies, hidden and NR-24-owned releases
+  stay out, and duplicates still collapse. An upcoming single requires an
+  exact date; a recent single announces itself only while the Single chip is
+  on. NR-9c's visit-batch, cap, stamping, and badge-consistency semantics
+  remain unchanged. Consequently, "new" means newly discovered within this
+  bounded announcement scope, never merely a newly fetched historical gap.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
@@ -2838,21 +2859,26 @@ property is set and yet nothing happens.
   and compares the columns' realized widths.
 - **STYLE-10** [active] [gtk] — **Columns belong to the user, in every
   table.** A right-click anywhere on a table's header band opens the column
-  editor popover: toggle visibility, drag to reorder, reset. The same editor
-  is reachable without a pointer through the primary menu's "Edit column
+  editor popover: toggle visibility, drag to reorder, reset. Behaviour
+  learned in the music library is the same behaviour in Releases, Concerts
+  and Radio — a user does not experience a missing editor there as an absent
+  feature but as the app forgetting what it taught them. The same editor is
+  reachable without a pointer through the primary menu's "Edit column
   layout…", which addresses the table of the active view and is insensitive
   where no table is shown. Order, visibility and header-dragged widths are
-  stored per table and survive a restart. A table may declare fixed columns —
-  a leading artwork column, a trailing action column on a surface without a
-  row context menu — which stay visible, keep their position and never appear
-  in the editor; every other column belongs to the user. Exactly one visible
-  column is the filler (STYLE-9); when the user hides it, the filler role
-  moves to the first visible free column in the table's order. Hiding the
-  sorting column changes the sort to the first visible sortable free column,
-  ascending, or clears sorting when no such column remains, so an active sort
-  and its header indicator never become invisible. **Test rule:** one
-  rule-named display test per table, plus a measured filler test.
-- **STYLE-11** [planned] [core] [gtk] — **A date looks the same everywhere.**
+  stored per table and survive a restart. A table may declare fixed columns
+  — a leading artwork column, a trailing action column on a surface without
+  a row context menu — which stay visible, keep their position and never
+  appear in the editor; every other column belongs to the user. Exactly one
+  visible column is the filler (STYLE-9); when the user hides it, the filler
+  role moves to the first visible free column in the table's order. Hiding
+  the sorting column changes the sort to the first visible sortable free
+  column, ascending, or clears sorting when no such column remains, so an
+  active sort and its header indicator never become invisible. **Test
+  rule:** one rule-named display test per table, plus a measured filler
+  test. Design:
+  `docs/superpowers/specs/2026-08-09-table-columns-and-system-dates-design.md`.
+- **STYLE-11** [active] [core] [gtk] — **A date looks the same everywhere.**
   Every displayed calendar date follows the system locale's date pattern, with
   a numeric month and an always four-digit year; a locale pattern the app
   cannot render numerically falls back to ISO. Incomplete dates shorten within
@@ -3750,7 +3776,10 @@ means deterministic and high-confidence, never „without review".
   leaves the fields the track resolved on its own untouched.*
 
 - **DOC-1g** [active] [core] — **The complete local pass runs first, followed
-  by the network pass.** The two phases are reported separately. The network
+  by the network pass.** The phases are reported separately, and a track being
+  fingerprinted says so while it runs — that step decodes the audio and can
+  hold one track for a minute, which under the remote phase's own wording
+  reads as a stall. The network
   makes one request per release rather than per track, caches searches, and
   skips unchanged files. A fingerprint is created only for a track without a
   Recording MBID and without a confidently matched release. *Tests:*
@@ -3763,10 +3792,20 @@ means deterministic and high-confidence, never „without review".
   `doc_1g_a_changed_file_is_read_again`,
   `doc_1g_a_skipped_track_keeps_its_previous_proposals`,
   `doc_1g_the_reading_pass_stops_for_a_cancelled_scan`,
-  `doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader`.
+  `doc_1g_a_new_track_does_not_send_the_unchanged_ones_back_to_the_reader`,
+  `doc_1g_a_multi_disc_album_is_one_release_lookup`,
+  `doc_1g_a_title_that_only_looks_like_a_disc_marker_is_left_alone`,
+  `doc_1g_a_fingerprinted_track_says_so_while_it_runs`,
+  `doc_1g_the_flag_stands_only_for_the_duration_of_the_fingerprint`.
   *Amended 2026-08-08: unchanged is decided per track, so a library that grew
   by one file keeps every other skip. The release decision stays whole: an
   album is reused entirely or resolved entirely.*
+  *Amended 2026-08-09: one request per release includes a multi-disc set whose
+  discs are tagged with different album titles — a trailing disc marker
+  („Album (Disc 1)", „Album [CD2]", „Album, Disc 3") is dropped from the
+  grouping key and from the search, so the set is looked up once and compared
+  whole. The marker is dropped only at the end of the title, only with a
+  number, and never down to an empty title.*
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
@@ -3818,7 +3857,8 @@ means deterministic and high-confidence, never „without review".
   `doc_2c_a_running_scan_shows_progress_and_no_result_vocabulary`,
   `doc_2c_the_running_page_counters_are_forecasts_from_the_live_summary`,
   `doc_2c_progress_fraction_survives_an_unknown_total`,
-  `doc_2c_the_running_page_names_the_two_phases`.
+  `doc_2c_the_running_page_names_every_scan_phase`,
+  `doc_2c_the_sidebar_card_names_every_scan_phase`.
 
 - **DOC-3a** [active] [core] — **Review decides per field, and everything
   reviewable starts selected.** Every concrete track/field change has its own
@@ -4375,8 +4415,8 @@ means deterministic and high-confidence, never „without review".
 
 - **BROWSE-9** [active] [gtk] — **The date added is a normal library
   column.** "Added" is selectable in the column editor, movable,
-  width-persistable, and sortable by `added_at`. The ISO-formatted time
-  is hidden by default; existing layouts also receive the new column
+  width-persistable, and sortable by `added_at`. The time is rendered per
+  STYLE-11 and the column is hidden by default; existing layouts also receive the new column
   hidden when normalized, without losing their stored order or
   visibility.
 

@@ -12,7 +12,7 @@ use reprise_view::columns::{ColumnKey, ReleaseColumn};
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::ReleaseObject;
 use super::releases_presentation::{
-    bandcamp_purchase_target, format_release_date, release_status_label, release_type_label,
+    bandcamp_purchase_target, format_partial_date, release_status_label, release_type_label,
 };
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
@@ -399,7 +399,12 @@ fn append_columns_with_query(
         Some(ReleaseColumn::Date.as_str()),
         widths::Sizing::pinned(widths::DATE),
         None,
-        |entry| format_release_date(&entry.first_release_date, Local::now().date_naive()),
+        |entry| {
+            format_partial_date(
+                &entry.first_release_date,
+                &crate::ui::date_format::current().date,
+            )
+        },
     );
     // Title is the filler: it owns whatever width the pinned columns leave.
     text_column(
@@ -555,6 +560,68 @@ mod tests {
                 ))],
             );
         });
+    }
+
+    /// STYLE-11: the column that started this — it wrote `29 May 26` for a
+    /// full date and `May 2026` for a month-precision one, two- and four-digit
+    /// years in the same column. Measured on the rendered cell rather than on
+    /// the formatter, because that is where the drift lived.
+    ///
+    /// This proves the releases table here rather than through
+    /// `date_format_display_tests`: the full releases view stays on its
+    /// "No discography data yet" empty state until a fetch pipeline has run,
+    /// so a view-level fixture asserts against an empty table and passes for
+    /// the wrong reason.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_11_the_releases_date_column_renders_the_pinned_pattern() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        std::env::set_var(crate::ui::date_format::PATTERN_ENV, "%d.%m.%Y");
+        gtk4::init().unwrap();
+
+        // The process resolves its date format once, so this test must be the
+        // first read — which is why display tests run one per process
+        // (`--exact`). Asserted rather than assumed: on a machine whose own
+        // locale is already day-first, a batch run would pass for the wrong
+        // reason.
+        assert_eq!(
+            crate::ui::date_format::current().date,
+            reprise_core::format::DatePattern::from_platform("%d.%m.%Y"),
+            "another test resolved the date format first; run this one with --exact"
+        );
+
+        let store = gtk4::gio::ListStore::new::<ReleaseObject>();
+        store.append(&ReleaseObject::new(entry(
+            "Artist", "Full", "Album", "2026-05-29",
+        )));
+        store.append(&ReleaseObject::new(entry(
+            "Artist", "Month", "Album", "2026-05",
+        )));
+        store.append(&ReleaseObject::new(entry(
+            "Artist", "Year", "Album", "2026",
+        )));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
+        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let texts = descendant_labels(view.upcast_ref())
+            .iter()
+            .map(|label| label.text().to_string())
+            .collect::<Vec<_>>();
+        for expected in ["29.05.2026", "05.2026", "2026"] {
+            assert!(
+                texts.iter().any(|text| text == expected),
+                "no cell rendered {expected:?}; rendered labels were {texts:?}"
+            );
+        }
     }
 
     #[test]

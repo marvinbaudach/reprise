@@ -99,13 +99,13 @@ fn two_unmounted_drives_produce_two_unavailable_groups_sorted_by_mount() {
         vec![
             MissingGroup {
                 kind: MissingGroupKind::Unavailable {
-                    mount_point: Some("/media/usb-a".to_string())
+                    mount_point: "/media/usb-a".to_string()
                 },
                 track_count: 2,
             },
             MissingGroup {
                 kind: MissingGroupKind::Unavailable {
-                    mount_point: Some("/media/usb-b".to_string())
+                    mount_point: "/media/usb-b".to_string()
                 },
                 track_count: 1,
             },
@@ -115,10 +115,10 @@ fn two_unmounted_drives_produce_two_unavailable_groups_sorted_by_mount() {
 
 /// Bullet 2: `unknown` rows must never be silently folded into an
 /// `unmounted` mount group or into `Deleted` — they form their own
-/// `Unavailable { mount_point: None }` group, ordered after every per-mount
-/// group (18a card order: per-mount, then unknown, then deleted).
+/// `Unlocatable` group, ordered after every per-mount group (18a card order:
+/// per-mount, then unlocatable, then deleted).
 #[test]
-fn unknown_reason_forms_its_own_actionless_group_after_unavailable_groups() {
+fn unknown_reason_forms_its_own_unlocatable_group_after_unavailable_groups() {
     let db = crate::db::Db::open_in_memory().unwrap();
     let conn = db.conn();
     seed_missing_track(
@@ -140,12 +140,12 @@ fn unknown_reason_forms_its_own_actionless_group_after_unavailable_groups() {
         vec![
             MissingGroup {
                 kind: MissingGroupKind::Unavailable {
-                    mount_point: Some("/media/usb".to_string())
+                    mount_point: "/media/usb".to_string()
                 },
                 track_count: 1,
             },
             MissingGroup {
-                kind: MissingGroupKind::Unavailable { mount_point: None },
+                kind: MissingGroupKind::Unlocatable,
                 track_count: 2,
             },
         ]
@@ -171,7 +171,7 @@ fn deleted_group_count_never_includes_unknown_reason_rows() {
         groups,
         vec![
             MissingGroup {
-                kind: MissingGroupKind::Unavailable { mount_point: None },
+                kind: MissingGroupKind::Unlocatable,
                 track_count: 2,
             },
             MissingGroup {
@@ -306,7 +306,7 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
     let mount_a_rows = query_missing_rows(
         &db,
         &MissingGroupKind::Unavailable {
-            mount_point: Some("/media/nas-a".into()),
+            mount_point: "/media/nas-a".into(),
         },
         0,
         100,
@@ -321,7 +321,7 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
     let mount_b_rows = query_missing_rows(
         &db,
         &MissingGroupKind::Unavailable {
-            mount_point: Some("/media/nas-b".into()),
+            mount_point: "/media/nas-b".into(),
         },
         0,
         100,

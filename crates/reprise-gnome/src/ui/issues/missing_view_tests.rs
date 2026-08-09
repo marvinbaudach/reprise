@@ -5,12 +5,16 @@ use reprise_core::queries::MissingGroupKind;
 use super::*;
 
 #[test]
-fn missing_group_copy_keeps_unknown_actionless_and_honest() {
-    let copy = group_copy(&MissingGroupKind::Unavailable { mount_point: None }, 3);
-    assert_eq!(copy.title, "On unavailable drive");
-    assert_eq!(copy.meta, "unknown location — 3 tracks");
-    assert_eq!(copy.note, "will be verified on next scan");
-    assert!(!copy.actionable);
+fn unlocatable_group_copy_is_actionable_without_claiming_the_files_are_gone() {
+    let copy = group_copy(&MissingGroupKind::Unlocatable, 3);
+    // U+2753, not an ASCII "?" — see the constant's own comment: a text-
+    // presentation glyph next to the ⏏ and 🗑 cards reads as a rendering
+    // failure rather than as this card's icon.
+    assert_eq!(copy.icon, "❓");
+    assert_eq!(copy.title, "Location unknown");
+    assert_eq!(copy.meta, "files may still exist · 3 tracks");
+    assert!(copy.note.is_empty());
+    assert!(copy.actionable);
 }
 
 // UX BROWSE-6: enabling destructive auto-clean applies immediately but an
@@ -51,15 +55,25 @@ fn set_4_auto_clean_activation_names_cascade_and_can_start_today() {
 }
 
 #[test]
-fn deleted_card_is_the_only_actionable_missing_group() {
+fn actionable_missing_groups_have_state_specific_confirmation_copy() {
     let deleted = group_copy(&MissingGroupKind::Deleted, 2);
     assert!(deleted.actionable);
-    let body = remove_confirmation_body(2);
-    assert!(body.contains("ratings, playlist entries, and device sync state"));
-    assert!(body.contains("Listening history stays in My Stats"));
+    let deleted_body = remove_confirmation_body(&MissingGroupKind::Deleted, 2);
+    assert!(deleted_body.contains("ratings, playlist entries, and device sync state"));
+    assert!(deleted_body.contains("Listening history stays in My Stats"));
+    assert!(!deleted_body.contains("may still exist"));
+
+    let unlocatable = group_copy(&MissingGroupKind::Unlocatable, 2);
+    assert!(unlocatable.actionable);
+    let unlocatable_body = remove_confirmation_body(&MissingGroupKind::Unlocatable, 2);
+    assert!(unlocatable_body.contains("These files may still exist"));
+    assert!(unlocatable_body.contains("Reprise no longer knows where they are"));
+    assert!(unlocatable_body.contains("ratings, playlist entries, and device sync state"));
+    assert!(unlocatable_body.contains("Files are never touched"));
+
     let unavailable = group_copy(
         &MissingGroupKind::Unavailable {
-            mount_point: Some("/media/NAS".into()),
+            mount_point: "/media/NAS".into(),
         },
         2,
     );
@@ -76,7 +90,7 @@ fn locate_actions_cover_deleted_and_unknown_but_never_unmounted_tracks() {
         }
     );
     assert_eq!(
-        locate_actions(&MissingGroupKind::Unavailable { mount_point: None }),
+        locate_actions(&MissingGroupKind::Unlocatable),
         LocateActions {
             row: true,
             folder: false,
@@ -84,7 +98,7 @@ fn locate_actions_cover_deleted_and_unknown_but_never_unmounted_tracks() {
     );
     assert_eq!(
         locate_actions(&MissingGroupKind::Unavailable {
-            mount_point: Some("/media/NAS".into()),
+            mount_point: "/media/NAS".into(),
         }),
         LocateActions {
             row: false,
@@ -95,7 +109,13 @@ fn locate_actions_cover_deleted_and_unknown_but_never_unmounted_tracks() {
 
 #[test]
 fn missing_since_copy_uses_a_short_calendar_date() {
-    assert_eq!(missing_since_label(1_752_278_400), "since Jul 12");
+    let date = crate::ui::date_format::current()
+        .date
+        .render(Some(2025), Some(7), Some(12));
+    assert_eq!(
+        missing_since_label(1_752_278_400),
+        strings::missing_since(&date)
+    );
     assert_eq!(MissingReason::Deleted.as_str(), "deleted");
 }
 
@@ -141,7 +161,13 @@ fn stale_tombstone_request_skips_track_resurrected_while_dialog_was_open() {
         .unwrap();
 
     assert_eq!(
-        reprise_core::queries::tombstone_still_deleted(&conn, &stale_ids, 100).unwrap(),
+        reprise_core::queries::tombstone_still_missing(
+            &conn,
+            &MissingGroupKind::Deleted,
+            &stale_ids,
+            100,
+        )
+        .unwrap(),
         vec![2]
     );
 

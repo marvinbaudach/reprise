@@ -24,6 +24,11 @@ cd "$repo_root"
 
 frontend=crates/reprise-gnome/src
 shared_view=crates/reprise-view/src
+# PR #370 removed the obsolete FILTERS label and unscoped
+# search_chip_label API, dropping the honest baseline to 1780. The
+# app-wide column editing work then moved layout, key and width code
+# out of reprise-gnome into reprise-view, which is the growth this
+# floor now records; future migration waves raise it further.
 view_floor=2148
 
 echo "== Frontend thinness =="

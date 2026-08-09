@@ -722,7 +722,9 @@ fn set_missing_auto_clean_in(
 /// never run without an explicit arming date) — including when the stored
 /// value fails to parse as an integer, the same fallback direction
 /// `get_missing_auto_clean` takes for a corrupt duration.
-fn get_auto_clean_armed_at_in(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
+pub(crate) fn get_auto_clean_armed_at_in(
+    conn: &Connection,
+) -> Result<Option<i64>, rusqlite::Error> {
     let stored = get_setting_in(conn, AUTO_CLEAN_ARMED_AT_KEY)?;
     Ok(stored.and_then(|value| value.parse::<i64>().ok()))
 }
@@ -734,7 +736,10 @@ fn get_auto_clean_armed_at_in(conn: &Connection) -> Result<Option<i64>, rusqlite
 /// `queries::auto_clean_eligible`'s `max(missing_since, armed_at)` picks
 /// whichever is later, never retroactively sweeping a backlog the instant
 /// the setting is enabled.
-fn set_auto_clean_armed_at_in(conn: &Connection, armed_at: i64) -> Result<(), rusqlite::Error> {
+pub(crate) fn set_auto_clean_armed_at_in(
+    conn: &Connection,
+    armed_at: i64,
+) -> Result<(), rusqlite::Error> {
     set_setting_in(conn, AUTO_CLEAN_ARMED_AT_KEY, &armed_at.to_string())
 }
 

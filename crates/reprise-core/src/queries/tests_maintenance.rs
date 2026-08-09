@@ -540,9 +540,13 @@ fn unknown_probe_does_not_mark_playback_fault_track_missing() {
     )
     .unwrap();
 
-    let changed =
-        super::maintenance::mark_track_missing_if_current_with(&UnknownProbeSource, &db, 1, path)
-            .unwrap();
+    let changed = super::maintenance_missing::mark_track_missing_if_current_with(
+        &UnknownProbeSource,
+        &db,
+        1,
+        path,
+    )
+    .unwrap();
     let missing: (Option<i64>, Option<String>) = conn
         .query_row(
             "SELECT missing_since, missing_reason FROM tracks WHERE id = 1",

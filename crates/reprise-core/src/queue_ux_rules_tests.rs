@@ -153,6 +153,8 @@ fn play_5a_deleted_tracks_leave_queue_silently() {
 // unmounted tracks and the playing track remain untouched.
 #[test]
 fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_tracks() {
+    use std::os::unix::fs::MetadataExt;
+
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("library");
     std::fs::create_dir(&root).unwrap();
@@ -175,19 +177,26 @@ fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_track
         .unwrap();
     let unmounted_id = deleted_id + 1;
     let playing_id = deleted_id + 2;
-    for (id, path, missing_reason) in [
-        (unmounted_id, root.join("unmounted.flac"), Some("unmounted")),
-        (playing_id, temp.path().join("playing.flac"), None),
+    let root_device = std::fs::symlink_metadata(&root).unwrap().dev() as i64;
+    for (id, path, device, missing_reason) in [
+        (
+            unmounted_id,
+            root.join("offline-drive/unmounted.flac"),
+            Some(root_device + 99_999),
+            Some("unmounted"),
+        ),
+        (playing_id, temp.path().join("playing.flac"), None, None),
     ] {
         conn.execute(
             "INSERT INTO tracks \
-             (id, path, title, artist, added_at, missing_since, missing_reason) \
-             VALUES (?1, ?2, ?3, 'Artist', 0, \
-                     CASE WHEN ?4 IS NULL THEN NULL ELSE 1 END, ?4)",
+             (id, path, title, artist, added_at, device, missing_since, missing_reason) \
+             VALUES (?1, ?2, ?3, 'Artist', 0, ?4, \
+                     CASE WHEN ?5 IS NULL THEN NULL ELSE 1 END, ?5)",
             rusqlite::params![
                 id,
                 path.to_string_lossy(),
                 format!("Track {id}"),
+                device,
                 missing_reason
             ],
         )

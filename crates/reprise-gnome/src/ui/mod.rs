@@ -31,6 +31,9 @@ mod concerts;
 mod cover;
 mod cover_glow;
 mod cover_lift;
+pub(crate) mod date_format;
+#[cfg(test)]
+mod date_format_display_tests;
 pub mod delete_tracks;
 mod device_sync;
 pub mod dialogs;

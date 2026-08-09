@@ -303,6 +303,10 @@ pub enum ScanControl {
 pub enum DoctorScanPhase {
     ReadingTags,
     CheckingRemote,
+    /// Part of the network pass, and the one step of it that decodes audio.
+    /// A single track can hold the counter for a minute, so it is reported on
+    /// its own rather than looking like a stalled remote lookup.
+    Fingerprinting,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

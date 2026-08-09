@@ -256,46 +256,6 @@ fn register_plugin_row(
         .insert(descriptor.id, target);
 }
 
-fn persist_module_state(
-    context: &PreferencesContext,
-    descriptor: &'static ModuleDescriptor,
-    active: bool,
-) -> Result<(), String> {
-    if descriptor.id == "song_visuals" {
-        if let Some(player) = &context.player {
-            player
-                .set_song_visuals_enabled(active)
-                .map_err(|error| error.to_string())?;
-        }
-        return match reprise_core::modules::set_enabled(&context.conn, descriptor, active) {
-            Ok(()) => {
-                context.info_panel.set_song_visuals_enabled(active);
-                Ok(())
-            }
-            Err(error) => {
-                if let Some(player) = &context.player {
-                    let _ = player.set_song_visuals_enabled(!active);
-                }
-                Err(error.to_string())
-            }
-        };
-    }
-    let result = match descriptor.id {
-        "youtube" => context.podcasts.set_youtube_enabled(&context.conn, active),
-        "podcasts" => context.podcasts.set_podcasts_enabled(&context.conn, active),
-        "new_releases" => context.artist_news.set_enabled(&context.conn, active),
-        "concerts" => context.concerts.set_enabled(&context.conn, active),
-        "cover_download" => context.cover_download.set_enabled(&context.conn, active),
-        "artist_portraits" => context.artist_portrait.set_enabled(&context.conn, active),
-        "online_lyrics" => match &context.player {
-            Some(player) => player.set_online_lyrics_enabled(active),
-            None => reprise_core::modules::set_enabled(&context.conn, descriptor, active),
-        },
-        _ => reprise_core::modules::set_enabled(&context.conn, descriptor, active),
-    };
-    result.map_err(|error| error.to_string())
-}
-
 fn wire_switch(
     context: &Rc<PreferencesContext>,
     descriptor: &'static ModuleDescriptor,
@@ -312,14 +272,12 @@ fn wire_switch(
             return;
         }
         let active = row.is_active();
-        if let Err(error) = persist_module_state(&context, descriptor, active) {
+        if let Err(error) = context.set_module_enabled(descriptor, active, "plugin toggled") {
             tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
             syncing_notify.set(true);
             row.set_active(!active);
             syncing_notify.set(false);
-            return;
         }
-        context.refresh_online_module_state("plugin toggled");
     });
 }
 
@@ -340,7 +298,7 @@ fn wire_expander(
             return;
         }
         let active = row.enables_expansion();
-        if let Err(error) = persist_module_state(&context, descriptor, active) {
+        if let Err(error) = context.set_module_enabled(descriptor, active, "plugin toggled") {
             tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
             syncing_notify.set(true);
             row.set_enable_expansion(!active);
@@ -348,7 +306,6 @@ fn wire_expander(
             return;
         }
         set_children_sensitive(active);
-        context.refresh_online_module_state("plugin toggled");
     });
 
     if descriptor.id == "new_releases" {

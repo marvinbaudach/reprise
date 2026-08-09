@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::db::Db;
+use crate::format::DatePattern;
 use chrono::{Datelike, NaiveDate, TimeZone};
 
 use super::group_key::KeyResolver;
 use super::stats_period::{
-    apply_activity_granularity, local_parts, week_start, PeriodRange, StatsPeriod,
+    apply_activity_granularity_with_pattern, local_parts, week_start, PeriodRange, StatsPeriod,
 };
 use super::stats_screen::{
     album_rows, artist_rows, first_event_unix, fold_album_rows, genre_artist_rows, genre_rows,
@@ -140,12 +141,28 @@ pub fn compute<Tz: TimeZone>(
     now_unix: i64,
     tz: &Tz,
 ) -> Result<StatsSnapshot, rusqlite::Error> {
+    compute_with_pattern(
+        db,
+        period,
+        now_unix,
+        tz,
+        &DatePattern::from_platform(DatePattern::ISO),
+    )
+}
+
+pub fn compute_with_pattern<Tz: TimeZone>(
+    db: &Db,
+    period: StatsPeriod,
+    now_unix: i64,
+    tz: &Tz,
+    pattern: &DatePattern,
+) -> Result<StatsSnapshot, rusqlite::Error> {
     let conn = db.conn();
     // Eight read statements in a stable order. Keeping this function pure is
     // the seam that permits a transparent cache wrapper later if profiling
     // ever justifies one.
     let first_event = first_event_unix(conn)?; // 1
-    let mut range = period.resolve(now_unix, tz, first_event);
+    let mut range = period.resolve_with_pattern(now_unix, tz, first_event, pattern);
     let listen_rows = listen_rows(conn, range.start_unix, range.end_unix)?; // 2
 
     // The compared span is seasonally congruent, not merely the equally long
@@ -178,12 +195,13 @@ pub fn compute<Tz: TimeZone>(
             .map(|row| row.played_at)
             .min()
             .unwrap_or(range.start_unix);
-        apply_activity_granularity(
+        apply_activity_granularity_with_pattern(
             &mut range,
             tz,
             active_days.len() as i64,
             active_weeks.len(),
             first_active_unix,
+            pattern,
         );
     }
 

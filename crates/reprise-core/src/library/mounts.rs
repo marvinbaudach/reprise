@@ -5,25 +5,20 @@
 //! classification itself is platform-neutral behind
 //! [`super::source::LibrarySource`].
 //!
-//! The whole mechanism rests on one fact that is already sitting in the
-//! database: `tracks.device` (schema v2) is the `st_dev` of the file as it
-//! was last seen by the scanner. When a removable drive is unmounted, its
-//! mount point directory does not vanish — the *mount* goes away, and the
-//! directory that used to be its mount point reverts to belonging to
-//! whatever filesystem is underneath (typically the root filesystem). That
-//! directory's `st_dev` therefore changes. So: walk up from the missing
-//! file's path to the nearest directory that still exists, read its device,
-//! and compare it against the device recorded in the database.
+//! The mechanism uses two facts already available to the scanner: whether the
+//! missing file's parent still exists, and `tracks.device` (schema v2), the
+//! file's `st_dev` when it was last seen. Parent reachability is primary. A
+//! present parent proves the source is reachable even if a btrfs subvolume was
+//! assigned a new anonymous device number after a remount. Only after the
+//! parent has disappeared does the device comparison become useful.
 //!
-//! - Device matches → the mount is still there, reachable, and the file
-//!   genuinely isn't at that path anymore. `Deleted`.
-//! - Device differs → we're looking at a *different* filesystem than the one
-//!   this file lived on — the original mount is absent. `Unmounted`.
-//! - No device was ever recorded → schema v1 predates this column, and the
-//!   v10 migration backfills exactly these rows to `NULL` (see
-//!   `db::SCHEMA_V10`'s doc comment). There is no evidence either way.
-//!   `Unknown` — never treated as safely removable (see `MissingReason`'s
-//!   own doc comment).
+//! - Parent exists → the location answers and the file is gone. `Deleted`.
+//! - Parent is absent and the device matches → the same source is reachable
+//!   farther up a deleted directory tree. `Deleted`.
+//! - Parent is absent, the device differs, and a mount boundary can be named →
+//!   the original source is absent. `Unmounted`.
+//! - Otherwise there is insufficient evidence. `Unknown` — never treated as
+//!   safely removable (see `MissingReason`'s own doc comment).
 //!
 //! This needs only two `stat` calls and a column that already exists, and —
 //! crucially — it is fully testable without root and without mounting
@@ -38,13 +33,12 @@
 //! generalises *which token* stands for "the source is still here", it does
 //! not make either alternative any more testable or any less GTK-bound.
 //!
-//! Known limitation, intentionally not worked around: btrfs subvolumes and
-//! bind mounts can share a single device id across what look like separate
-//! mount points, so [`mount_point_of`] may walk higher than the "obvious"
-//! mount point in those setups. That's acceptable here — the only thing the
-//! resolved mount point is used for is grouping missing tracks by "what
-//! disappears together when this mount goes away", and a too-high boundary
-//! still groups correctly, it just groups a superset together as one unit.
+//! `st_dev` is deliberately secondary because it is neither a stable source
+//! identity nor a perfect mount boundary: btrfs anonymous device numbers can
+//! change across mounts, while subvolumes and bind mounts can also share one
+//! number. [`mount_point_of`] may therefore walk higher than the obvious
+//! boundary; that remaining imprecision affects grouping, not the stronger
+//! parent-present deletion proof.
 
 use std::path::{Path, PathBuf};
 

@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
+use reprise_core::format::DatePattern;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup};
 use reprise_view::search_scope;
@@ -177,6 +178,14 @@ pub(super) fn rendered_source_groups(
 }
 
 pub(super) fn relative_date(timestamp: Option<i64>, today: NaiveDate) -> String {
+    relative_date_with(timestamp, today, &crate::ui::date_format::current().date)
+}
+
+pub(super) fn relative_date_with(
+    timestamp: Option<i64>,
+    today: NaiveDate,
+    pattern: &DatePattern,
+) -> String {
     let Some(date) = timestamp
         .and_then(|value| DateTime::<Utc>::from_timestamp(value, 0))
         .map(|value| value.with_timezone(&Local).date_naive())
@@ -187,10 +196,8 @@ pub(super) fn relative_date(timestamp: Option<i64>, today: NaiveDate) -> String 
         strings::text(strings::PODCAST_TODAY)
     } else if date.succ_opt() == Some(today) {
         strings::text(strings::PODCAST_YESTERDAY)
-    } else if date.year() == today.year() {
-        date.format("%-d. %b").to_string()
     } else {
-        date.format("%-d. %b %Y").to_string()
+        pattern.render(Some(date.year()), Some(date.month()), Some(date.day()))
     }
 }
 

@@ -51,6 +51,7 @@ fn scan_progress_presentation(
     presentation.title = strings::text(match phase {
         DoctorScanPhase::ReadingTags => strings::DOCTOR_PHASE_LOCAL,
         DoctorScanPhase::CheckingRemote => strings::DOCTOR_PHASE_REMOTE,
+        DoctorScanPhase::Fingerprinting => strings::DOCTOR_PHASE_FINGERPRINT,
     });
     presentation
 }
@@ -314,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_2c_the_sidebar_card_names_the_two_scan_phases() {
+    fn doc_2c_the_sidebar_card_names_every_scan_phase() {
         assert_eq!(
             scan_progress_presentation(DoctorScanPhase::ReadingTags, 1, 2).title,
             "Reading tags…"
@@ -322,6 +323,10 @@ mod tests {
         assert_eq!(
             scan_progress_presentation(DoctorScanPhase::CheckingRemote, 1, 2).title,
             "Checking against MusicBrainz…"
+        );
+        assert_eq!(
+            scan_progress_presentation(DoctorScanPhase::Fingerprinting, 1, 2).title,
+            "Fingerprinting audio…"
         );
     }
 

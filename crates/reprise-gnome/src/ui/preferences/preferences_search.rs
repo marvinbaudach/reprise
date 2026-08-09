@@ -552,6 +552,7 @@ fn result_sidebar_row() -> (gtk4::ListBoxRow, gtk4::Label) {
     content.append(&label);
     let row = gtk4::ListBoxRow::new();
     row.set_widget_name(ALL_RESULTS_ROW_NAME);
+    // a11y-semantics: role=list-item name=all-results state=focusable action=focus/navigate
     row.set_focusable(true);
     row.set_child(Some(&content));
     let count = add_non_measuring_count(&row);

@@ -25,11 +25,15 @@ pub const MISSING_CLEAR_TITLE: &str = N_!("No missing files ✓");
 pub const MISSING_CLEAR_DESCRIPTION: &str = N_!("Your library has no missing file entries.");
 pub const MISSING_UNAVAILABLE_ICON: &str = "⏏";
 pub const MISSING_UNAVAILABLE_TITLE: &str = N_!("On unavailable drive");
-pub const MISSING_UNKNOWN_LOCATION: &str = N_!("unknown location");
 pub const MISSING_NOT_MOUNTED: &str = N_!("not mounted");
 pub const MISSING_RETURNS_WHEN_MOUNTED: &str =
     N_!("return automatically when the drive is mounted");
-pub const MISSING_VERIFY_NEXT_SCAN: &str = N_!("will be verified on next scan");
+// U+2753, not a plain "?": the sibling cards use ⏏ and 🗑, which render with
+// emoji presentation. An ASCII question mark renders as a small text glyph
+// next to them and reads as "this failed to render" rather than as an icon.
+pub const MISSING_UNLOCATABLE_ICON: &str = "❓";
+pub const MISSING_UNLOCATABLE_TITLE: &str = N_!("Location unknown");
+pub const MISSING_UNLOCATABLE_META: &str = N_!("files may still exist");
 pub const MISSING_DELETED_ICON: &str = "🗑";
 pub const MISSING_DELETED_TITLE: &str = N_!("Deleted from disk");
 pub const MISSING_DELETED_META: &str = N_!("folder still exists");
@@ -37,6 +41,7 @@ pub const MISSING_REMOVE: &str = N_!("Remove");
 pub const MISSING_REMOVE_ALL: &str = N_!("Remove all {count} from library");
 pub const MISSING_REMOVE_HEADING: &str = N_!("Remove from library?");
 pub const MISSING_REMOVE_BODY: &str = N_!("This removes {count} tracks from the library, including their ratings, playlist entries, and device sync state. Listening history stays in My Stats. Files are never touched.");
+pub const MISSING_UNLOCATABLE_REMOVE_BODY: &str = N_!("These files may still exist, but Reprise no longer knows where they are. This removes {count} tracks from the library, including their ratings, playlist entries, and device sync state. Listening history stays in My Stats. Files are never touched.");
 pub const MISSING_REMOVED_ONE: &str = N_!("1 removed");
 pub const MISSING_REMOVED: &str = N_!("{count} removed");
 pub const MISSING_UNDO: &str = N_!("Undo");
@@ -95,6 +100,13 @@ pub fn missing_remove_all(count: usize) -> String {
 
 pub fn missing_remove_body(count: usize) -> String {
     formatted(MISSING_REMOVE_BODY, &[("count", &count.to_string())])
+}
+
+pub fn missing_unlocatable_remove_body(count: usize) -> String {
+    formatted(
+        MISSING_UNLOCATABLE_REMOVE_BODY,
+        &[("count", &count.to_string())],
+    )
 }
 
 pub fn missing_removed(count: usize) -> String {

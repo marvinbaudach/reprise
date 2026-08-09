@@ -20,6 +20,10 @@ mod tests;
 #[path = "queue_boundary_tests.rs"]
 mod queue_boundary_tests;
 
+#[cfg(test)]
+#[path = "listen_export_playback_tests.rs"]
+mod listen_export_playback_tests;
+
 type EventHandler = dyn Fn(StreamEvent) + Send + Sync + 'static;
 
 /// The playback states Media3 must report back to Core.

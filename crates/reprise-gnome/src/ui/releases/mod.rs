@@ -12,7 +12,7 @@ mod releases_empty_state;
 mod releases_failure_ui;
 mod releases_filter_bar;
 mod releases_model;
-mod releases_presentation;
+pub(in crate::ui) mod releases_presentation;
 mod releases_view;
 
 pub(in crate::ui) use releases_view::ReleasesView;

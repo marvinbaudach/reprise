@@ -3,10 +3,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use gtk4::prelude::*;
 use reprise_core::concerts::ConcertRow;
 
+use crate::ui::concerts::concerts_presentation::format_event_date;
 use crate::ui::strings;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -28,16 +29,7 @@ pub(super) fn delta_presentations(
 ) -> Vec<ConcertDeltaPresentation> {
     rows.iter()
         .map(|row| {
-            let date = NaiveDate::parse_from_str(&row.date_key, "%Y-%m-%d").map_or_else(
-                |_| row.date_key.clone(),
-                |date| {
-                    if date.year() == today.year() {
-                        date.format("%a, %-d %b").to_string()
-                    } else {
-                        date.format("%a, %-d %b %Y").to_string()
-                    }
-                },
-            );
+            let date = format_event_date(&row.date_key, today);
             let location = if row.city.trim().is_empty() {
                 row.venue.clone()
             } else if row.venue.trim().is_empty() {
