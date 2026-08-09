@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -90,7 +91,7 @@ class MainActivityRatingTest {
     }
 
     @Test
-    fun sheetHeartJoinsTheTopActionsAndTransportEndsTheContent() {
+    fun sheetHeaderKeepsAllActionsAndTransportStaysAtTheBottom() {
         publishTrack(1)
         compose.onNodeWithTag("library-mini-player").performClick()
 
@@ -107,15 +108,20 @@ class MainActivityRatingTest {
         val close = compose.onNode(
             hasContentDescription("Collapse Now Playing") and hasAnyAncestor(actionRow),
         )
+        val fullscreen = compose.onNode(
+            hasContentDescription("Open fullscreen visualizer") and hasAnyAncestor(actionRow),
+        )
 
         val queueBounds = queue.getUnclippedBoundsInRoot()
         val sleepBounds = sleep.getUnclippedBoundsInRoot()
         val heartBounds = heart.getUnclippedBoundsInRoot()
         val closeBounds = close.getUnclippedBoundsInRoot()
+        val fullscreenBounds = fullscreen.getUnclippedBoundsInRoot()
         assertEquals(queueBounds.top.value, heartBounds.top.value, 0.5f)
+        assertTrue(closeBounds.left < queueBounds.left)
         assertTrue(queueBounds.left < sleepBounds.left)
         assertTrue(sleepBounds.left < heartBounds.left)
-        assertTrue(heartBounds.left < closeBounds.left)
+        assertTrue(heartBounds.left < fullscreenBounds.left)
 
         heart.performClick()
         compose.waitForIdle()
@@ -124,18 +130,14 @@ class MainActivityRatingTest {
         compose.onNodeWithText("0 plays").assertDoesNotExist()
 
         val transportBottom = compose.onNodeWithTag("now-playing-transport")
-            .fetchSemanticsNode()
-            .boundsInRoot
+            .getUnclippedBoundsInRoot()
             .bottom
-        val laterContent = compose.onAllNodes(
-            hasAnyAncestor(hasTestTag("now-playing-content")),
-            useUnmergedTree = true,
-        ).fetchSemanticsNodes().filter { node ->
-            node.boundsInRoot.bottom > transportBottom + 0.5f
-        }
+        val contentBottom = compose.onNodeWithTag("now-playing-content")
+            .getUnclippedBoundsInRoot()
+            .bottom
         assertTrue(
-            "content continued below the transport row: $laterContent",
-            laterContent.isEmpty(),
+            "transport left too much inactive space below it: $transportBottom..$contentBottom",
+            contentBottom - transportBottom <= 24.dp,
         )
     }
 

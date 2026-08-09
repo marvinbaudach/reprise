@@ -97,10 +97,15 @@ class MainActivity : ComponentActivity() {
             readBars = { trackId, count ->
                 library.trackRenderBars(trackId, count.toUInt())?.map { it.toSpectralBar() }
             },
+            readSpectrogram = library::trackSpectrogram,
             onMainThread = { work -> runOnUiThread { work() } },
         )
     }
     private val analysis by analysisDelegate
+    private val nowPlayingViewSettings by lazy { AndroidNowPlayingViewSettings(library) }
+    private val injectedNowPlayingViewSettings by lazy {
+        InjectedNowPlayingViewSettings(getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE))
+    }
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -165,6 +170,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
+        val activeNowPlayingViewSettings = if (surfaceProvider == null) {
+            nowPlayingViewSettings
+        } else {
+            injectedNowPlayingViewSettings
+        }
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
@@ -200,6 +210,7 @@ class MainActivity : ComponentActivity() {
                             LocalTrackArtwork provides surface.artwork(),
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalTrackAnalysis provides surface.trackAnalysis,
+                            LocalNowPlayingViewSettings provides activeNowPlayingViewSettings,
                             LocalAmbientMotionController provides ambientMotion,
                         ) {
                             LibraryScreen(
