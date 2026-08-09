@@ -2,7 +2,7 @@
 slug: table-column-editing
 worktree: /home/marvin/Projects/reprise-table-column-editing
 branch: feature/table-column-editing
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-09
 ---
