@@ -39,7 +39,8 @@ mod tests {
         ),
         (
             "reprise-stethoscope-symbolic",
-            "library_doctor::doctor_glyph → system-search-symbolic",
+            "library_doctor::doctor_glyph, and sidebar_presentation::NavIcon::LibraryDoctor \
+             through nav_icon's theme check, both → system-search-symbolic",
         ),
     ];
 

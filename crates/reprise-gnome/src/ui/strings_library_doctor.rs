@@ -39,6 +39,11 @@ pub const DOCTOR_SCANNING: &str = N_!("Checking tracks…");
 pub const DOCTOR_PHASE_LOCAL: &str = N_!("Reading tags…");
 #[allow(dead_code)] // Wired by PERF-1 after the single-writer string package lands.
 pub const DOCTOR_PHASE_REMOTE: &str = N_!("Checking against MusicBrainz…");
+/// The third phase, and the only one a single track can hold for a minute:
+/// fingerprinting decodes the audio. Without its own line the bar just stands
+/// at "60/61 tracks" under „Checking against MusicBrainz…", which reads as a
+/// crash.
+pub const DOCTOR_PHASE_FINGERPRINT: &str = N_!("Fingerprinting audio…");
 pub const DOCTOR_CASING_WHITESPACE: &str = N_!("Casing / Whitespace");
 pub const DOCTOR_MISSING_ALBUM_ARTIST: &str = N_!("Missing Album Artist");
 pub const DOCTOR_GENRE_VARIANTS: &str = N_!("Genre Variants");
@@ -529,14 +534,10 @@ pub fn doctor_track_progress(completed: usize, total: usize) -> String {
     )
 }
 
+/// A finished write says the same thing here as in the tag editor's own
+/// toast, so it is the same sentence — kept in one place, not copied.
 pub fn doctor_tags_updated(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "Tags updated · {count} track",
-        "Tags updated · {count} tracks",
-        count,
-        &[("count", &count_text)],
-    )
+    super::tag_save_result_toast(count)
 }
 
 pub fn doctor_tags_reverted(count: usize) -> String {
@@ -609,6 +610,7 @@ mod tests {
     fn doc_9d_the_filter_scope_line_names_shown_total_and_filter() {
         assert_eq!(DOCTOR_PHASE_LOCAL, "Reading tags…");
         assert_eq!(DOCTOR_PHASE_REMOTE, "Checking against MusicBrainz…");
+        assert_eq!(DOCTOR_PHASE_FINGERPRINT, "Fingerprinting audio…");
         assert_eq!(
             doctor_filter_scope(27, 390, "Year"),
             "27 of 390 · filtered by Year"
@@ -657,6 +659,8 @@ mod tests {
     }
 
     /// The result cards after a write, and the empty state that replaces them.
+    /// `doctor_tags_updated` is the tag editor's own toast sentence, so this
+    /// pins the wording for both callers.
     #[test]
     fn doc_9a_every_count_on_the_result_cards_inflects() {
         assert_eq!(doctor_tags_updated(1), "Tags updated · 1 track");
