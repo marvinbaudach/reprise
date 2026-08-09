@@ -376,6 +376,7 @@ pub const STATUS_SEPARATOR: &str = N_!(" · ");
 // Track list column headers (src/ui/track_list.rs).
 pub const COLUMN_TITLE: &str = N_!("Title");
 pub const COLUMN_COVER: &str = N_!("Cover");
+pub const COLUMN_STATUS: &str = N_!("Status");
 pub const COLUMN_ARTIST: &str = N_!("Artist");
 pub const COLUMN_ALBUM: &str = N_!("Album");
 pub const COLUMN_TRACK_NUMBER: &str = N_!("Track");

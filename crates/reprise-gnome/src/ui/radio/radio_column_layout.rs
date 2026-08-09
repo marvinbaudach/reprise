@@ -53,8 +53,8 @@ pub(super) fn install(view: &gtk4::ColumnView, conn: Rc<Db>) -> Rc<dyn EditorMod
 
 fn label(key: RadioColumn) -> String {
     let message = match key {
-        RadioColumn::Artwork => return "Artwork".to_owned(),
-        RadioColumn::State => return "State".to_owned(),
+        RadioColumn::Artwork => crate::ui::strings::COLUMN_COVER,
+        RadioColumn::State => crate::ui::strings::COLUMN_STATUS,
         RadioColumn::Station => crate::ui::strings::RADIO_STATION,
         RadioColumn::Genre => crate::ui::strings::RADIO_GENRE,
         RadioColumn::Bitrate => crate::ui::strings::RADIO_BITRATE,
@@ -73,5 +73,22 @@ fn width(key: RadioColumn) -> i32 {
         RadioColumn::Bitrate => widths::NUMERIC,
         RadioColumn::Country => widths::SHORT_LABEL,
         RadioColumn::NowPlaying => widths::NAME,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_radio_editor_label_uses_the_string_catalog() {
+        assert_eq!(
+            label(RadioColumn::Artwork),
+            crate::ui::strings::text(crate::ui::strings::COLUMN_COVER)
+        );
+        assert_eq!(
+            label(RadioColumn::State),
+            crate::ui::strings::text(crate::ui::strings::COLUMN_STATUS)
+        );
     }
 }
