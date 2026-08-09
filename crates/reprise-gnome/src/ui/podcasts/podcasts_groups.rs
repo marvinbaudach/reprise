@@ -268,7 +268,7 @@ fn group_header(
     let header = skeleton.root.clone();
     header.set_hexpand(true);
 
-    let artwork = super::source_image::SourceImage::new(
+    let artwork = super::source_image::SourceImage::new_after_startup(
         group_image_url(group),
         match group.kind {
             PodcastKind::Rss => "audio-input-microphone-symbolic",

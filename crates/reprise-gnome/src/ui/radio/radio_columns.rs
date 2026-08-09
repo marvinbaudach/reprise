@@ -291,7 +291,7 @@ fn artwork_column(
             cell.remove(&child);
         }
         let row = object.row();
-        let artwork = crate::ui::podcasts::source_image::SourceImage::new(
+        let artwork = crate::ui::podcasts::source_image::SourceImage::new_after_startup(
             row.favicon_url.as_deref(),
             "audio-input-microphone-symbolic",
             36,

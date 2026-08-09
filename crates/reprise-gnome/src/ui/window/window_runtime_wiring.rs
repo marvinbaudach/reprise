@@ -253,10 +253,11 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // The colour of the seek bar arrives the way its shape already does: by
     // itself. The run is resumable, so a library that is already analyzed ends
     // it immediately and shows nothing; the scan card cancels a visible run.
-    // Deferred to idle so it never competes with the first frame.
+    // This automatic start shares the one post-frame quiet gate. A completed
+    // user-requested scan still starts immediately through the callback above.
     {
         let batch = spectrogram_batch.clone();
-        gtk4::glib::idle_add_local_once(move || batch.start());
+        super::startup_quiet::run_after_quiet(move || batch.start());
     }
 
     playing_source_wiring::install(
@@ -455,7 +456,13 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
 
-    lyrics_batch.start_after_cover(cover_batch);
+    {
+        let lyrics_batch = lyrics_batch.clone();
+        let cover_batch = cover_batch.clone();
+        super::startup_quiet::run_after_quiet(move || {
+            lyrics_batch.start_after_cover(&cover_batch);
+        });
+    }
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     app.set_accels_for_action("win.preferences", &["<Control>comma"]);
     app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
@@ -672,6 +679,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     minimal_view.apply_initial();
     super::startup_report::mark("minimal_view::apply_initial");
     super::window_smoke::arm_quit(window);
+    super::startup_quiet::arm(window);
 }
 
 fn start_persisted_watcher(
