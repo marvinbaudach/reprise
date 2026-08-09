@@ -297,14 +297,50 @@ pub(crate) fn release_kind(
     release_date: NaiveDate,
     today: NaiveDate,
 ) -> Option<NewsKind> {
+    let announcement = announcement_kind(primary_type, date_text, release_date, today);
+    if primary_type == "single" {
+        return Some(
+            announcement
+                .filter(|kind| *kind == NewsKind::Upcoming)
+                .unwrap_or(NewsKind::Catalog),
+        );
+    }
+    Some(announcement.unwrap_or(NewsKind::Catalog))
+}
+
+/// Whether a stored catalog row is recent or trustworthy upcoming news.
+///
+/// Albums and EPs may carry partial future dates; singles retain the stricter
+/// exact-date rule that prevents a year-only catalog entry from becoming an
+/// announcement. Released rows of every supported type share the 90-day
+/// boundary.
+pub(crate) fn is_announcement_candidate(
+    primary_type: &str,
+    date_text: &str,
+    today: NaiveDate,
+) -> bool {
+    let Some(release_date) = parse_partial_date(date_text) else {
+        return false;
+    };
+    announcement_kind(primary_type, date_text, release_date, today).is_some()
+}
+
+fn announcement_kind(
+    primary_type: &str,
+    date_text: &str,
+    release_date: NaiveDate,
+    today: NaiveDate,
+) -> Option<NewsKind> {
     let delta = release_date.signed_duration_since(today).num_days();
-    match primary_type {
-        // An announced single needs an exact date to be trustworthy.
-        "single" if date_text.len() == 10 && delta > 0 => Some(NewsKind::Upcoming),
-        "single" => Some(NewsKind::Catalog),
-        _ if delta >= 0 => Some(NewsKind::Upcoming),
-        _ if delta >= -NEWS_WINDOW_DAYS => Some(NewsKind::New),
-        _ => Some(NewsKind::Catalog),
+    if primary_type.eq_ignore_ascii_case("single") && delta > 0 && date_text.len() != 10 {
+        return None;
+    }
+    if delta > 0 || (delta == 0 && !primary_type.eq_ignore_ascii_case("single")) {
+        Some(NewsKind::Upcoming)
+    } else if delta >= -NEWS_WINDOW_DAYS {
+        Some(NewsKind::New)
+    } else {
+        None
     }
 }
 

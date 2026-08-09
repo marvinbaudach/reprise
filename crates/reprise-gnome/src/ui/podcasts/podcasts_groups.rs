@@ -140,7 +140,7 @@ pub(super) fn replace(
 
 /// `CTX-13`: the episodes a grouped render hands to [`EpisodePaths`] — every
 /// episode of every group, including the ones
-/// [`podcasts_episode_window::visible_count`] leaves off screen.
+/// [`super::podcasts_episode_window::visible_count`] leaves off screen.
 ///
 /// It has a name of its own because the tempting shortcut is to feed it the
 /// visible window instead. That is wrong and fails quietly: a collapsed group
