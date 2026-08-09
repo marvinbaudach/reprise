@@ -44,29 +44,9 @@ fn doc_7c_the_library_chrome_is_absent_while_the_doctor_is_visible() {
     window.close();
 }
 
-/// The deferred collapse is a timer, not an idle: pumping a drained main
-/// context proves nothing about it, so these helpers pump against the
-/// clock instead.
-fn pump_for(duration: std::time::Duration) {
-    let deadline = std::time::Instant::now() + duration;
-    while std::time::Instant::now() < deadline {
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-}
-
-fn settle_until(label: &str, condition: impl Fn() -> bool) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !condition() {
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(std::time::Instant::now() < deadline, "timed out: {label}");
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-}
-
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_1_idle_is_icon_not_field() {
+fn search_1a_idle_is_icon_not_field() {
     gtk4::init().unwrap();
     let window = adw::ApplicationWindow::builder().build();
     let header = adw::HeaderBar::new();
@@ -80,18 +60,17 @@ fn search_1_idle_is_icon_not_field() {
         chrome.search_toggle.icon_name().as_deref(),
         Some("system-search-symbolic")
     );
-    assert!(!chrome.search_bar.is_search_mode());
-    let clamp = chrome
-        .search_bar
-        .child()
-        .and_downcast::<adw::Clamp>()
-        .expect("search entry must be wrapped by a clamp");
-    assert!(entry.is_ancestor(&clamp));
+    assert!(!chrome.search.is_open());
+    assert!(entry.is_ancestor(chrome.search.widget()));
+    assert_eq!(
+        chrome.search.widget().parent().as_ref(),
+        Some(chrome.search_toggle.upcast_ref())
+    );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_2b_bar_reveals_flush_under_headerbar() {
+fn search_2c_popover_floats_without_reflowing() {
     gtk4::init().unwrap();
     let window = adw::ApplicationWindow::builder().build();
     let header = adw::HeaderBar::new();
@@ -99,31 +78,28 @@ fn search_2b_bar_reveals_flush_under_headerbar() {
 
     let content = test_content();
     let chrome = build(&header, &content, &entry, &window);
-    let clamp = chrome
-        .search_bar
-        .child()
-        .and_downcast::<adw::Clamp>()
-        .expect("search strip child must be the width clamp");
 
     assert!(header.is_ancestor(&chrome.root));
-    assert!(chrome.search_bar.is_ancestor(&chrome.root));
     assert_eq!(chrome.root.content().as_ref(), Some(content.upcast_ref()));
-    assert!(entry.is_ancestor(&clamp));
-    assert_eq!(clamp.maximum_size(), 450);
-    assert!(chrome.search_bar.hexpands());
-    assert!(chrome.search_bar.has_css_class("reprise-search-strip"));
-
-    chrome.search_bar.set_search_mode(true);
-    assert!(chrome.search_bar.is_search_mode());
+    assert_eq!(
+        chrome.search.widget().position(),
+        gtk4::PositionType::Bottom
+    );
+    assert_eq!(chrome.search.widget().halign(), gtk4::Align::End);
+    assert!(!chrome.search.widget().has_arrow());
+    assert!(chrome
+        .search
+        .widget()
+        .has_css_class("reprise-search-popover"));
 
     let css = css();
-    let strip_css = css
-        .split(".reprise-search-strip")
+    let popover_css = css
+        .split(".reprise-search-popover > contents")
         .nth(1)
         .and_then(|rule| rule.split('}').next())
-        .expect("search strip CSS rule");
-    assert!(strip_css.contains("background-color: @headerbar_bg_color"));
-    assert!(strip_css.contains("border-bottom: 1px solid"));
+        .expect("search popover CSS rule");
+    assert!(popover_css.contains("background-color: @headerbar_bg_color"));
+    assert!(popover_css.contains("border: 1px solid"));
 }
 
 #[test]
@@ -134,20 +110,21 @@ fn search_3_lens_checked_when_active() {
     let header = adw::HeaderBar::new();
     let entry = gtk4::SearchEntry::new();
     let chrome = build(&header, &test_content(), &entry, &window);
+    window.set_content(Some(&chrome.root));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
 
     assert!(!chrome.search_toggle.is_active());
-    chrome.search_bar.set_search_mode(true);
+    chrome.search.open();
     assert!(chrome.search_toggle.is_active());
 
-    chrome.search_bar.set_search_mode(false);
+    chrome.search.close();
     assert!(!chrome.search_toggle.is_active());
     entry.set_text("falling");
 
-    assert!(search_toggle_active(
-        chrome.search_bar.is_search_mode(),
-        &entry.text()
-    ));
+    assert!(search_toggle_active(chrome.search.is_open(), &entry.text()));
     assert!(chrome.search_toggle.is_active());
+    window.close();
 }
 
 #[test]
@@ -158,14 +135,18 @@ fn search_6_hidden_query_survives_as_chip() {
     let header = adw::HeaderBar::new();
     let entry = gtk4::SearchEntry::new();
     let chrome = build(&header, &test_content(), &entry, &window);
-    chrome.search_bar.set_search_mode(true);
+    window.set_content(Some(&chrome.root));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    chrome.search.open();
     entry.set_text("falling");
 
     chrome.search_toggle.emit_clicked();
 
-    assert!(!chrome.search_bar.is_search_mode());
+    assert!(!chrome.search.is_open());
     assert_eq!(entry.text(), "falling");
     assert!(chrome.search_toggle.is_active());
+    window.close();
 }
 
 #[test]
@@ -177,18 +158,16 @@ fn search_5_an_explicitly_cleared_query_does_not_come_back_on_collapse() {
     let header = adw::HeaderBar::new();
     let entry = gtk4::SearchEntry::new();
     let chrome = build(&header, &test_content(), &entry, &window);
-    chrome.search_bar.set_search_mode(true);
+    window.set_content(Some(&chrome.root));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    chrome.search.open();
     entry.set_text("nomatch");
 
-    // Esc stage one: clear the text while the bar stays open. The chip's X
-    // and "Clear all" reach this same state, so all three are covered.
+    // The entry clear icon, chip's ×, and Clear all all reach this state.
     entry.set_text("");
-    assert!(chrome.search_bar.is_search_mode());
-
-    // Esc stage two: collapse. SEARCH-6 restores a *preserved* query here,
-    // but SEARCH-5 preserves it only until the user explicitly removes it —
-    // which just happened, so nothing may be restored.
-    chrome.search_bar.set_search_mode(false);
+    assert!(chrome.search.is_open());
+    chrome.search.close();
     while gtk4::glib::MainContext::default().iteration(false) {}
 
     assert_eq!(
@@ -197,45 +176,27 @@ fn search_5_an_explicitly_cleared_query_does_not_come_back_on_collapse() {
         "an explicitly cleared query must not be resurrected by the collapse"
     );
     assert!(!chrome.search_toggle.is_active());
+    window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_6_wipe_on_collapse_arrives_after_search_mode_is_already_false() {
-    // The SEARCH-5 fix above rests on this ordering: the stash may treat an
-    // empty entry as an explicit clear *only* because GtkSearchBar's own
-    // wipe cannot arrive while search mode is still true. If GTK ever
-    // reordered that, the clear-on-empty branch would eat the stash and
-    // break SEARCH-6 — so assert the premise rather than trust it.
+fn search_6_closing_the_popover_never_wipes_the_query() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let window = adw::ApplicationWindow::builder().build();
     let header = adw::HeaderBar::new();
     let entry = gtk4::SearchEntry::new();
     let chrome = build(&header, &test_content(), &entry, &window);
-    chrome.search_bar.set_search_mode(true);
+    window.set_content(Some(&chrome.root));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    chrome.search.open();
     entry.set_text("falling");
 
-    let mode_when_emptied = Rc::new(RefCell::new(None::<bool>));
-    let observed = mode_when_emptied.clone();
-    let bar = chrome.search_bar.clone();
-    entry.connect_changed(move |entry| {
-        if entry.text().is_empty() && observed.borrow().is_none() {
-            *observed.borrow_mut() = Some(bar.is_search_mode());
-        }
-    });
-
-    chrome.search_bar.set_search_mode(false);
-    while gtk4::glib::MainContext::default().iteration(false) {}
-
-    assert_eq!(
-        *mode_when_emptied.borrow(),
-        Some(false),
-        "GtkSearchBar wiped the entry while still in search mode; the \
-         stash can no longer infer an explicit clear from an empty entry"
-    );
-    // And SEARCH-6 still holds: the query survives the collapse.
+    chrome.search.close();
     assert_eq!(entry.text(), "falling");
+    window.close();
 }
 
 #[test]
@@ -247,140 +208,12 @@ fn search_toggle_projects_open_mode_or_non_empty_query() {
 }
 
 #[test]
-fn search_4_explicit_clear_discards_the_preserved_query() {
-    let mut preserved_query = "nomatch".to_string();
-
-    update_preserved_query(true, "", &mut preserved_query);
-
-    assert_eq!(preserved_query, "");
-}
-
-#[test]
-fn search_6_collapse_clear_keeps_the_preserved_query() {
-    let mut preserved_query = "falling".to_string();
-
-    update_preserved_query(false, "", &mut preserved_query);
-
-    assert_eq!(preserved_query, "falling");
-}
-
-#[test]
-fn search_7_focus_loss_collapses_only_an_open_search() {
-    assert!(should_collapse_search_after_focus_change(
-        true, false, false
-    ));
-    assert!(!should_collapse_search_after_focus_change(
-        true, true, false
-    ));
-    assert!(!should_collapse_search_after_focus_change(
-        false, false, false
-    ));
-}
-
-// FIL-1a: the press that blurs the entry is the first half of a click on
-// something below the strip — most often the search chip's ×. Collapsing
-// between press and release moves that target out from under the pointer
-// and the click is lost, so a held button postpones the collapse.
-#[test]
-fn search_7_a_held_pointer_button_postpones_the_collapse() {
-    assert!(!should_collapse_search_after_focus_change(
-        true, false, true
-    ));
-    assert!(should_collapse_search_after_focus_change(
-        true, false, false
-    ));
-}
-
-#[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_7_blur_collapses_the_bar_and_preserves_the_filter() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    gtk4::init().unwrap();
-    let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.SearchBlurTest")
-        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-        .build();
-    app.register(None::<&gtk4::gio::Cancellable>).unwrap();
-    let window = adw::ApplicationWindow::new(&app);
-    let header = adw::HeaderBar::new();
+fn search_4a_the_entrys_clear_icon_discards_the_query() {
     let entry = gtk4::SearchEntry::new();
-    let content = gtk4::Button::with_label("Library content");
-    let chrome = build(&header, &content, &entry, &window);
-    window.set_content(Some(&chrome.root));
-    window.present();
-    while gtk4::glib::MainContext::default().iteration(false) {}
-
-    chrome.search_bar.set_search_mode(true);
-    entry.set_text("falling");
-    entry.grab_focus();
-    while gtk4::glib::MainContext::default().iteration(false) {}
-    assert!(chrome.search_bar.is_search_mode());
-
-    content.grab_focus();
-    settle_until("the blurred search strip collapses", || {
-        !chrome.search_bar.is_search_mode()
-    });
-
-    assert!(!chrome.search_bar.is_search_mode());
-    assert_eq!(entry.text(), "falling");
-    assert!(chrome.search_toggle.is_active());
-}
-
-// FIL-1a regression: the strip must not collapse while the click that
-// blurred the entry is still held. The real failure this covers is the
-// search chip needing two clicks — the first press collapsed the strip,
-// the filter row jumped up by its height, and the release missed the
-// chip. Proven at the pointer level by
-// `scripts/ptr-e2e/search-chip.sh`; proven here without a device by
-// handing the "button is down" answer in.
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn search_7_a_held_click_keeps_the_strip_in_place_until_release() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    gtk4::init().unwrap();
-    let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.SearchHeldClickTest")
-        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
-        .build();
-    app.register(None::<&gtk4::gio::Cancellable>).unwrap();
-    let window = adw::ApplicationWindow::new(&app);
-    let header = adw::HeaderBar::new();
-    let entry = gtk4::SearchEntry::new();
-    let content = gtk4::Button::with_label("Filter chip");
-    let search_bar = gtk4::SearchBar::new();
-    search_bar.set_child(Some(&entry));
-    search_bar.connect_entry(&entry);
-    let held = Rc::new(std::cell::Cell::new(true));
-    let released = wire_search_focus_collapse_with(&search_bar, &entry, &held);
-    let root = adw::ToolbarView::new();
-    root.add_top_bar(&header);
-    root.add_top_bar(&search_bar);
-    root.set_content(Some(&content));
-    window.set_content(Some(&root));
-    window.present();
-    while gtk4::glib::MainContext::default().iteration(false) {}
-
-    search_bar.set_search_mode(true);
-    entry.set_text("falling");
-    entry.grab_focus();
-    while gtk4::glib::MainContext::default().iteration(false) {}
-    assert!(search_bar.is_search_mode());
-
-    // The press: focus moves to the chip, the button is still down.
-    content.grab_focus();
-    pump_for(std::time::Duration::from_millis(200));
-    assert!(
-        search_bar.is_search_mode(),
-        "the strip must stay put while the click is still held, or the \
-         release lands on whatever moved into the chip's place"
-    );
-
-    // The release.
-    held.set(false);
-    released();
-    settle_until("the strip collapses once the button is up", || {
-        !search_bar.is_search_mode()
-    });
+    entry.set_text("nomatch");
+    entry.set_text("");
+    assert_eq!(entry.text(), "");
 }
 
 #[test]

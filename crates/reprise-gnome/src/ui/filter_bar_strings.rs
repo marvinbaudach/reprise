@@ -27,7 +27,6 @@ pub(in crate::ui) fn scoped_search_chip_label(scope: SearchScope, query: &str) -
 }
 
 /// SEARCH-2c: the popover names the fields the current view searches.
-#[allow(dead_code)] // T3 consumes the staged renderer in SearchPopover.
 pub(in crate::ui) fn searches_scope(scope: SearchScope) -> String {
     render_search_scope_message(messages::searches_scope(scope))
 }
