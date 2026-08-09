@@ -4,8 +4,9 @@ use std::sync::OnceLock;
 
 use gettextrs::{
     bind_textdomain_codeset, bindtextdomain, gettext as gettext_message,
-    ngettext as ngettext_message, setlocale, textdomain, LocaleCategory,
+    ngettext as ngettext_message, textdomain,
 };
+use reprise_core::format::initialize_system_locale;
 
 const DEFAULT_PACKAGE: &str = "reprise";
 const DEFAULT_LOCALE_DIR: &str = "/usr/share/locale";
@@ -15,15 +16,7 @@ const TRANSLATED_LOCALES: &str = include_str!("../../../po/LINGUAS");
 static ACTIVE_GUI_LANGUAGE: OnceLock<String> = OnceLock::new();
 
 pub fn init() {
-    // SAFETY: `init` has one call site: `main` invokes it before constructing
-    // the application and before any thread exists.
-    let (selected_locale, message_locale) = unsafe {
-        (
-            setlocale(LocaleCategory::LcAll, ""),
-            setlocale(LocaleCategory::LcMessages, ""),
-        )
-    };
-    let message_locale = message_locale.or(selected_locale);
+    let message_locale = initialize_system_locale();
     let message_locale = message_locale
         .as_deref()
         .and_then(|locale| std::str::from_utf8(locale).ok());

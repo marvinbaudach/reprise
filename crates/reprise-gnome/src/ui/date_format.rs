@@ -1,13 +1,15 @@
 //! The one place that decides how Reprise writes a date.
 //!
-//! `i18n::init` calls `setlocale(LC_ALL, "")` at startup, so the C library
+//! `i18n::init` initialises the system locale at startup, so the C library
 //! already knows the user's `LC_TIME` — nobody was reading it. This module
 //! reads it exactly once and hands every call site the same value, which is
 //! what makes STYLE-11 enforceable rather than aspirational.
 
 use std::sync::OnceLock;
 
-use reprise_core::format::{ClockConvention, DatePattern, DateTimeFormat};
+use reprise_core::format::{
+    system_date_pattern, system_time_pattern, ClockConvention, DatePattern, DateTimeFormat,
+};
 
 /// Pins the date pattern for tests and screenshots. Changing the process
 /// locale would be the honest alternative, but `setlocale` is global and the
@@ -19,8 +21,8 @@ static FORMAT: OnceLock<DateTimeFormat> = OnceLock::new();
 /// The display format for this process. Cheap after the first call.
 pub(in crate::ui) fn current() -> &'static DateTimeFormat {
     FORMAT.get_or_init(|| DateTimeFormat {
-        date: pattern_from(std::env::var(PATTERN_ENV).ok(), platform_date_pattern),
-        clock: ClockConvention::from_platform(&platform_time_pattern()),
+        date: pattern_from(std::env::var(PATTERN_ENV).ok(), system_date_pattern),
+        clock: ClockConvention::from_platform(&system_time_pattern()),
     })
 }
 
@@ -38,42 +40,6 @@ pub(crate) fn init() {
 fn pattern_from(override_value: Option<String>, platform: impl FnOnce() -> String) -> DatePattern {
     let raw = override_value.unwrap_or_else(platform);
     DatePattern::from_platform(&raw)
-}
-
-#[cfg(unix)]
-fn platform_date_pattern() -> String {
-    langinfo(libc::D_FMT)
-}
-
-#[cfg(unix)]
-fn platform_time_pattern() -> String {
-    langinfo(libc::T_FMT)
-}
-
-#[cfg(not(unix))]
-fn platform_date_pattern() -> String {
-    DatePattern::ISO.to_owned()
-}
-
-#[cfg(not(unix))]
-fn platform_time_pattern() -> String {
-    "%H:%M".to_owned()
-}
-
-#[cfg(unix)]
-fn langinfo(item: libc::nl_item) -> String {
-    // SAFETY: `nl_langinfo` returns a pointer to a NUL-terminated string owned
-    // by the C library, valid until the next `setlocale` on this thread. The
-    // bytes are copied out immediately and the pointer is never retained, and
-    // the only `setlocale` in this process runs once in `i18n::init` before
-    // this is ever called.
-    unsafe {
-        let raw = libc::nl_langinfo(item);
-        if raw.is_null() {
-            return String::new();
-        }
-        std::ffi::CStr::from_ptr(raw).to_string_lossy().into_owned()
-    }
 }
 
 #[cfg(test)]

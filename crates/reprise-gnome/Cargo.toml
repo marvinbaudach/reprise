@@ -18,7 +18,6 @@ default = []
 test-fixtures = ["reprise-core/test-fixtures"]
 
 [dependencies]
-libc = "0.2"
 # The frontend is becoming a client of the headless runtime (plan §9.1). It
 # takes the client and the contract, and deliberately not the *service*: the
 # runtime is a separate process, and a surface that could link its innards
