@@ -617,7 +617,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     nav_history.restore(startup_place.clone(), library_root);
     nav_history.begin_back();
     super::library_shell::route_to_place(
-        &crate::ui::nav_history::NavPlace::browser(startup_place),
+        &crate::ui::nav_history::NavPlace::browser(startup_place.clone()),
         sidebar,
         track_list,
         super::library_shell::ContentPages::new(content_nav, content_stack),
@@ -627,6 +627,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     );
     super::startup_report::mark("route_to_place");
     nav_history.end_back();
+    track_list.finish_startup_load(&startup_place);
     // START-3: the routing above owns the model; this owns the viewport.
     // Order matters — the view must exist before its rows can be centered.
     track_list.center_loaded_track();

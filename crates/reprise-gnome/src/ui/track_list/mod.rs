@@ -24,6 +24,7 @@ pub(in crate::ui) mod reload_restore;
 mod responsive_columns;
 pub(crate) mod row_loss_watchdog;
 pub(crate) mod row_loss_watchdog_state;
+pub(in crate::ui) mod startup_load;
 #[path = "track_list.rs"]
 mod surface;
 pub(in crate::ui) mod tag_mutation_refresh;

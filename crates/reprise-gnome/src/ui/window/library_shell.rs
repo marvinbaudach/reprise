@@ -332,6 +332,7 @@ pub(in crate::ui) fn route_to_place(
     let source = place.view_source();
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_) => {
+            sidebar.ensure_startup_build();
             content_pages.show("library");
             let _ = track_list.restore_browser_place(place.browser_place());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);

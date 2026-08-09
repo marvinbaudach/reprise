@@ -215,10 +215,28 @@ impl Sidebar {
     /// default initial source, so the two start in agreement without a
     /// round trip through `on_select` (not yet wired at this point; see
     /// `set_on_select`'s doc comment).
+    #[cfg(test)]
     pub fn new(
         conn: Rc<Db>,
         window: &adw::ApplicationWindow,
         queue_len_provider: impl Fn() -> usize + 'static,
+    ) -> Self {
+        Self::build(conn, window, queue_len_provider, false)
+    }
+
+    pub(in crate::ui) fn new_for_startup(
+        conn: Rc<Db>,
+        window: &adw::ApplicationWindow,
+        queue_len_provider: impl Fn() -> usize + 'static,
+    ) -> Self {
+        Self::build(conn, window, queue_len_provider, true)
+    }
+
+    fn build(
+        conn: Rc<Db>,
+        window: &adw::ApplicationWindow,
+        queue_len_provider: impl Fn() -> usize + 'static,
+        defer_initial_build: bool,
     ) -> Self {
         let listbox = gtk4::ListBox::new();
         listbox.add_css_class("navigation-sidebar");
@@ -263,7 +281,9 @@ impl Sidebar {
         wire_focus_leave_resync(&shared);
         wire_collection_boundary_navigation(&shared);
 
-        rebuild(&shared, Some(ViewSource::default()), "initial build");
+        if !defer_initial_build {
+            rebuild(&shared, Some(ViewSource::default()), "initial build");
+        }
 
         Self {
             shared,
@@ -404,6 +424,12 @@ impl Sidebar {
 
     pub(in crate::ui) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
         crate::ui::sidebar_session::restore_source(&self.shared, requested)
+    }
+
+    pub(in crate::ui) fn ensure_startup_build(&self) {
+        if self.shared.refresh_count.get() == 0 {
+            rebuild(&self.shared, Some(ViewSource::default()), "initial build");
+        }
     }
 
     /// Shows connected devices below the navigation rows and routes card

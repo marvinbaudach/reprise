@@ -197,6 +197,10 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) show_all_button: gtk4::Button,
     pub(in crate::ui) empty_scan_widget: RefCell<Option<gtk4::Widget>>,
     pub(in crate::ui) sort: RefCell<SortState>,
+    /// Collapses construction and session-routing reload requests into the
+    /// one model load that completes startup. Ordinary TrackLists use an
+    /// immediate gate and retain the existing reload behavior.
+    pub(in crate::ui) startup_load: super::startup_load::StartupLoad,
     pub(in crate::ui) restoring_view: Cell<bool>,
     pub(in crate::ui) filter: RefCell<String>,
     pub(in crate::ui) on_search_restored: RefCell<Option<OnSearchRestored>>,
@@ -362,6 +366,7 @@ impl TrackList {
     /// `Shared::on_reload` doc comment); `queue_ids_provider` supplies the
     /// current queue's ids whenever `source` is switched to `ViewSource::
     /// Queue` (see the `Shared::queue_ids_provider` doc comment).
+    #[cfg(test)]
     pub fn new(
         conn: Rc<Db>,
         on_activate: OnActivate,
@@ -375,7 +380,34 @@ impl TrackList {
             on_reload,
             queue_ids_provider,
             cover_download,
+            super::startup_load::StartupLoad::immediate(),
         )
+    }
+
+    pub(in crate::ui) fn new_for_startup(
+        conn: Rc<Db>,
+        on_activate: OnActivate,
+        on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
+        queue_ids_provider: impl Fn() -> super::queue_sections::QueueViewModel + 'static,
+        cover_download: CoverDownloadRuntime,
+    ) -> Self {
+        super::track_list_builder::build(
+            conn,
+            on_activate,
+            on_reload,
+            queue_ids_provider,
+            cover_download,
+            super::startup_load::StartupLoad::deferred(),
+        )
+    }
+
+    pub(in crate::ui) fn finish_startup_load(&self, place: &reprise_core::browser::BrowserPlace) {
+        if !self.shared.startup_load.finish() {
+            return;
+        }
+        if !self.restore_browser_place(place) {
+            reload(&self.shared);
+        }
     }
 
     /// The root widget: Library browse bar above the Stack that switches

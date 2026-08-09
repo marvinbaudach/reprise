@@ -5,6 +5,17 @@ use reprise_core::view_source::ViewSource;
 use super::{filter_change_viewport, source_snapshot, ReloadViewport};
 
 #[test]
+fn startup_reload_requests_are_served_once_when_startup_finishes() {
+    let load = super::super::startup_load::StartupLoad::deferred();
+
+    assert!(!load.request());
+    assert!(!load.request());
+    assert!(load.finish());
+    assert!(!load.finish());
+    assert!(load.request());
+}
+
+#[test]
 fn source_snapshot_releases_the_borrow_before_reentrant_work() {
     let source = RefCell::new(ViewSource::Library);
 

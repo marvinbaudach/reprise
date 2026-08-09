@@ -142,7 +142,7 @@ pub fn build(
     // the trigger inventory), so every later site can just clone/downgrade
     // this one `Rc` rather than needing a construction-order-driven `Weak`-
     // then-upgrade dance.
-    let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
+    let sidebar = Rc::new(Sidebar::new_for_startup(conn.clone(), &window, {
         let queue_model = queue_model.clone();
         move || queue_model.borrow().sidebar_count()
     }));
@@ -206,7 +206,7 @@ pub fn build(
         // the `player.set_track_list_reload` closure just below for two of
         // the three call sites.
         super::startup_report::mark("initial track-list model build start");
-        let track_list = Rc::new(TrackList::new(
+        let track_list = Rc::new(TrackList::new_for_startup(
             conn.clone(),
             on_activate,
             move |source, _count, filter, browse| {
