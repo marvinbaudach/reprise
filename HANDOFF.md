@@ -47,11 +47,23 @@ Medians over six interleaved runs against a copy of the real 242 MB library:
 
 ## Open
 
-1. **In flight:** Codex is folding the missing-files check into the due
-   register (log `~/.cache/reprise-startup-bench/codex-miss.log`). It must use
-   the **time-window** rule, not the signature rule — "does this file still
-   exist" changes without the database changing, so a signature skip would hide
-   deleted files. Verify with two launches plus a hard-kill launch.
+1. **Needs verification — the only thing between here and a merge.** Codex
+   committed the missing-files change as `88430e75d0` ("perf: time-window
+   filesystem-dependent startup checks"). Nobody has built or run it yet. Do:
+
+   ```
+   cargo build --release -p reprise-gnome
+   cp target/release/reprise ~/.cache/reprise-startup-bench/reprise-miss
+   cd ~/.cache/reprise-startup-bench
+   REPRISE_BIN=$PWD/reprise-miss ./two_launches.sh   # 2nd launch: no check, logged reason
+   REPRISE_BIN=$PWD/reprise-miss ./kill_test.sh      # after hard kill: check runs
+   ```
+
+   The point to confirm: it uses the **time-window** rule, not the library
+   signature. "Does this file still exist" changes without the database
+   changing, so a signature-based skip would hide deleted files forever. If the
+   diff keys the missing-files check off the signature, that is a bug, not a
+   nuance.
 2. `cargo fmt --check` is red on `origin/dev` itself in
    `crates/reprise-core/src/library/library_doctor/album_grouping_tests.rs`
    (from `ed2ab6ccba`, #382 branch) — not ours, deliberately untouched.
