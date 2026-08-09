@@ -263,6 +263,48 @@ fn push_literal(prefix: &mut String, fields: &mut [(DateField, String)], charact
     }
 }
 
+/// Whether the locale writes the time on a twelve- or twenty-four-hour dial.
+///
+/// Reprise takes only that choice from the system and never the locale's full
+/// time pattern: `T_FMT` carries seconds in most locales, and a second-precise
+/// timestamp in a table cell is noise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockConvention {
+    Hours24,
+    Hours12,
+}
+
+impl ClockConvention {
+    /// Derives the dial from a platform time pattern. Any twelve-hour
+    /// conversion — the hour itself (`%I`, `%l`), the meridiem (`%p`, `%P`)
+    /// or the compound twelve-hour time (`%r`) — makes it twelve.
+    pub fn from_platform(t_fmt: &str) -> Self {
+        let twelve = ["%I", "%l", "%p", "%P", "%r"]
+            .iter()
+            .any(|marker| t_fmt.contains(marker));
+        if twelve {
+            Self::Hours12
+        } else {
+            Self::Hours24
+        }
+    }
+
+    /// Renders hour and minute. Seconds are never shown.
+    pub fn render(self, hour: i64, minute: i64) -> String {
+        match self {
+            Self::Hours24 => format!("{hour:02}:{minute:02}"),
+            Self::Hours12 => {
+                let meridiem = if hour < 12 { "AM" } else { "PM" };
+                let hour = match hour % 12 {
+                    0 => 12,
+                    other => other,
+                };
+                format!("{hour}:{minute:02} {meridiem}")
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,5 +485,32 @@ mod tests {
     fn date_pattern_ignores_a_day_without_a_month() {
         let pattern = DatePattern::from_platform("%d.%m.%Y");
         assert_eq!(pattern.render(Some(2026), None, Some(29)), "2026");
+    }
+
+    #[test]
+    fn clock_convention_reads_twelve_hours_from_the_locale() {
+        for raw in ["%I:%M:%S %p", "%r", "%l:%M %P"] {
+            assert_eq!(
+                ClockConvention::from_platform(raw),
+                ClockConvention::Hours12,
+                "pattern {raw:?} is a twelve-hour locale"
+            );
+        }
+        for raw in ["%H:%M:%S", "%T", ""] {
+            assert_eq!(
+                ClockConvention::from_platform(raw),
+                ClockConvention::Hours24,
+                "pattern {raw:?} is a twenty-four-hour locale"
+            );
+        }
+    }
+
+    #[test]
+    fn clock_convention_renders_minutes_and_never_seconds() {
+        assert_eq!(ClockConvention::Hours24.render(14, 3), "14:03");
+        assert_eq!(ClockConvention::Hours24.render(0, 0), "00:00");
+        assert_eq!(ClockConvention::Hours12.render(14, 3), "2:03 PM");
+        assert_eq!(ClockConvention::Hours12.render(0, 5), "12:05 AM");
+        assert_eq!(ClockConvention::Hours12.render(12, 0), "12:00 PM");
     }
 }
