@@ -412,7 +412,6 @@ fn push_term(terms: &mut Vec<String>, field: &str, value: Option<&str>) {
     }
 }
 
-#[allow(dead_code)] // Called by the staged search_release method; MATCH-3 activates it.
 fn release_search_url(query: &AlbumQuery) -> Option<String> {
     if query.album.trim().is_empty() || query.album_artist.trim().is_empty() {
         return None;
@@ -451,7 +450,6 @@ fn parse_release(body: &str) -> RemoteProviderResult {
     parse_release_value(&root).map(|identity| vec![identity])
 }
 
-#[allow(dead_code)] // Called by the staged search_release method; MATCH-3 activates it.
 fn parse_release_search(body: &str) -> RemoteProviderResult {
     let root: Value =
         serde_json::from_str(body).map_err(|_| RemoteProviderError::InvalidResponse)?;
