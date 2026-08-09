@@ -78,3 +78,67 @@ fn only_a_valid_acknowledgement_prunes_and_the_export_sequence_never_restarts() 
         3
     );
 }
+
+#[test]
+fn rating_after_reinstall_survives_the_previous_install_acknowledgement() {
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("reprise.db");
+    let previous_install_acknowledgement = ListenReportAcknowledgement::new(1).encode();
+    assert_eq!(
+        ListenReport::decode(
+            &prepare_report(
+                &database_path,
+                Some(previous_install_acknowledgement.as_slice()),
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+        ListenReport::default(),
+    );
+
+    record_rating(
+        &database_path,
+        "Artist/Album/01 Train.opus",
+        5,
+        1_777_777_002,
+    )
+    .unwrap();
+    let before_acknowledgement =
+        ListenReport::decode(&prepare_report(&database_path, None).unwrap()).unwrap();
+    assert_eq!(before_acknowledgement.ratings.len(), 1);
+    assert_eq!(before_acknowledgement.ratings[0].sequence, 2);
+    assert_eq!(
+        before_acknowledgement.ratings[0].device_path,
+        "Artist/Album/01 Train.opus",
+    );
+
+    let after_acknowledgement = ListenReport::decode(
+        &prepare_report(
+            &database_path,
+            Some(previous_install_acknowledgement.as_slice()),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(after_acknowledgement.ratings.len(), 1);
+    assert_eq!(after_acknowledgement.ratings[0].sequence, 2);
+    assert_eq!(
+        after_acknowledgement.ratings[0].device_path,
+        "Artist/Album/01 Train.opus",
+    );
+}
+
+#[test]
+fn an_exhausted_previous_install_sequence_does_not_break_empty_report_publishing() {
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("reprise.db");
+    let exhausted_acknowledgement = ListenReportAcknowledgement::new(u64::MAX).encode();
+
+    assert_eq!(
+        ListenReport::decode(
+            &prepare_report(&database_path, Some(exhausted_acknowledgement.as_slice())).unwrap(),
+        )
+        .unwrap(),
+        ListenReport::default(),
+    );
+}
