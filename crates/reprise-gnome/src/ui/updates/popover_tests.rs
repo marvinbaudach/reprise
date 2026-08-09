@@ -38,7 +38,7 @@ fn nr_5b_opening_the_popover_never_requests_navigation() {
 /// The visible batch is capped at five, but opening must stamp every unseen
 /// candidate so the badge can clear and the jump row can lead to the rest.
 #[test]
-fn nr_9c_opening_stamps_every_unseen_candidate_not_only_the_visible_batch() {
+fn nr_29_opening_stamps_every_unseen_candidate_not_only_the_visible_batch() {
     let mut releases: Vec<_> = (1..=7).map(|n| release(&format!("release-{n}"))).collect();
     let mut already_seen = release("already-seen");
     already_seen.seen_at = Some(50);
@@ -269,7 +269,7 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
 /// exercises the same production code path the real signal would.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_9c_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
+fn nr_29_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;

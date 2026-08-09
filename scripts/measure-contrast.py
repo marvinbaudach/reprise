@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Measure WCAG text contrast in a screenshot region.
 
-The popover-contrast work (docs/plans/popover-contrast.md) was diagnosed by
-measuring real pixels rather than trusting the palette, and its acceptance is
-the same measurement repeated. Green unit tests were the starting state too.
+The popover contrast rules (`docs/ux-rules.md`, CONTRAST-3 and CONTRAST-5) are
+verified by measuring real pixels rather than trusting the palette. Their
+acceptance repeats the same measurement; green unit tests are only the
+starting state.
 
 Usage:
     measure-contrast.py SHOT.png X0 Y0 X1 Y1 [LABEL]

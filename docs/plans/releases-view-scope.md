@@ -25,7 +25,11 @@ releases) the changes below take the visible table from **665 rows to 168**:
 the majority rule removes 64, the five-year window another 433, duplicate
 collapsing one — the exact pair from the bug screenshot.
 
-## Decisions (all final)
+## Decisions
+
+Decisions 1–7 were final for the original 2026-08-07 catalog work. Decision 8
+was corrected after a 2026-08-09 screenshot showed historical gaps presented
+as new announcements.
 
 1. **Age window** — persistent chip `1 year · 5 years · 10 years · All`,
    default **5 years**. A display filter; nothing is deleted.
@@ -40,15 +44,17 @@ collapsing one — the exact pair from the bug screenshot.
 6. **Migration v62** resets the per-artist fetch ledger so the catalog
    backfills in ~1.5 days instead of up to seven.
 7. **The count line always reads `X of Y gaps`**, Y being the widest scope.
-8. **Popover and badge follow the whole persisted filter** — types and window.
-   What you do not want to see in the catalog does not announce itself.
+8. **Popover and badge use the announcement window** — future plus the last 90
+   days, independently of the full view's age window. Persisted types still
+   apply, so the Single chip remains the sole single-announcement control.
 
 ## Repo rules that bind this task
 
 - `docs/ux-rules.md` is the binding UX contract. Rule IDs are **append-only**:
   never edit an old rule's text — mark it `[replaced by <NEW-ID>]` and append
   the new one. A rule flips to `[active]` in the same commit that implements
-  it, so NR-24/NR-25/NR-26/NR-9c land `[active]` here.
+  it. NR-24/NR-25/NR-26/NR-9c landed in the original work; NR-29 supersedes
+  NR-9c for the post-ship announcement-scope correction.
 - Every `[active]` rule needs a rule-named test (`fn nr_24_…`).
 - Every code file created or substantially edited ends **< 800 lines**.
   `crates/reprise-gnome/src/ui/releases/releases_view.rs` is already 721 lines
@@ -236,17 +242,17 @@ number changed, never the contents or the intent.
   test.
 - New strings in `strings_releases.rs`; regenerate `po/reprise.pot`.
 
-## Package 4 — popover and badge follow the filter
+## Package 4 — popover and badge announcement scope
 
-`delta_candidates` in `artist_news_query.rs:234` feeds both the popover
+`delta_candidates` in `artist_news_query.rs` feeds both the popover
 (`updates/feed_snapshot.rs`) and `unseen_release_count`, i.e. the badge. It
-takes the persisted `ReleasesFilter` and applies:
+applies:
 
 - ownership (`counts_as_owned`, replacing today's `presence != Complete`),
 - the type selection — so with the Single chip off, no single ever badges, and
   with it on singles count like everything else,
-- the window — a 1975 album the pipeline discovers today lands silently in the
-  table instead of badging as "new",
+- a dedicated announcement window — parsable future dates and dates no more
+  than 90 days old; the full view's 1/5/10-year/All window cannot widen it,
 - duplicate collapsing, the same way the table does it.
 
 Hidden entries are already excluded. Because badge and popover read the same
@@ -278,12 +284,10 @@ untouched) and append, `[active]`:
 - **NR-26** `[core]` `[gtk]` — the sidebar badge equals the number of gaps
   visible under the persistent type, window, and hidden filters; 0 renders no
   badge.
-- **NR-9c** `[core]` `[gtk]` — unchanged in batch and stamping semantics, with
-  one addition: the delta popover and its badge draw from the same persisted
-  filter as the full view. Releases owned under NR-24, filtered out by type or
-  window, or already hidden do not enter the popover and do not badge.
-  Duplicates collapse there the same way. Singles therefore announce themselves
-  exactly when their chip is on — there is no separate preference.
+- **NR-29** `[core]` `[gtk]` — replaces NR-9c. The delta popover and badge use
+  future plus 90-day announcements independently of the full view's age
+  window. Releases owned under NR-24, filtered out by type, or already hidden
+  do not enter; duplicates, batches, stamping, and badge consistency remain.
 
 Keep `docs/plans/ux-rules-acceptance-tests.md` in sync if it lists the replaced
 rules.
@@ -312,9 +316,12 @@ neighbours:
 - `nr_25_count_line_never_exceeds_its_total`
 - `nr_25_gaps_beyond_the_window_offer_show_all`
 - `nr_26_badge_follows_the_window_filter`
-- `nr_9c_owned_release_does_not_enter_the_popover`
-- `nr_9c_single_badges_only_when_its_chip_is_on`
-- `nr_9c_ancient_discovery_does_not_badge`
+- `nr_29_owned_release_does_not_enter_the_popover`
+- `nr_29_single_badges_only_when_its_chip_is_on`
+- `nr_29_ancient_discovery_does_not_badge`
+- `nr_29_updates_popover_keeps_catalog_history_out_when_the_full_view_shows_all`
+- `nr_29_announcement_window_includes_day_ninety_and_excludes_day_ninety_one`
+- `nr_29_future_single_requires_an_exact_date_in_the_delta`
 - migration test: v62 zeroes `last_attempt_at`, keeps `artist_mbid`, drops the
   dead setting key, and is idempotent
 
