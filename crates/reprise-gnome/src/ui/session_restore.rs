@@ -21,7 +21,7 @@ const REPORT_ENV: &str = "REPRISE_SMOKE_SESSION_REPORT";
 const PLAY_ENV: &str = "REPRISE_SMOKE_SESSION_PLAY";
 
 pub(super) fn load(db: &Db) -> SessionState {
-    let conn = &db;
+    let persisted = session::load_and_mark_running(db);
     match std::env::var(SEED_ENV) {
         Ok(fixture) => match seeded_state(&fixture) {
             Some(state) => {
@@ -33,10 +33,10 @@ pub(super) fn load(db: &Db) -> SessionState {
                     fixture,
                     "invalid session smoke fixture; loading persisted state"
                 );
-                session::load(conn)
+                persisted
             }
         },
-        Err(_) => session::load(conn),
+        Err(_) => persisted,
     }
 }
 
@@ -160,6 +160,15 @@ pub(super) fn wire_close(
             state.play_origin_label = origin_label;
             state.play_origin_place = origin_place;
             state.active_episode = player.session_episode_snapshot();
+        }
+
+        match reprise_core::library::settings::get_library_root(&conn) {
+            Ok(Some(root)) => session::mark_clean_exit_now(&mut state, root),
+            Ok(None) => state.clean_exit = None,
+            Err(error) => {
+                state.clean_exit = None;
+                tracing::warn!(%error, "could not read library root; clean exit will not suppress a startup scan");
+            }
         }
 
         let result = session::save(&conn, &state);

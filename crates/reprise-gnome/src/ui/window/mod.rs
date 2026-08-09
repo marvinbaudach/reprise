@@ -24,9 +24,11 @@ mod window_bootstrap;
 mod window_build_badge;
 pub(in crate::ui) mod window_decoration_strings;
 pub(in crate::ui) mod window_decorations;
+mod window_header;
 pub(in crate::ui) mod window_navigation;
 pub(in crate::ui) mod window_now_playing_wiring;
 pub(in crate::ui) mod window_queue_model;
+mod window_runtime_setup;
 pub(in crate::ui) mod window_runtime_wiring;
 pub(in crate::ui) mod window_smoke;
 

@@ -17,11 +17,13 @@ pub mod remote_stats;
 pub mod rhythmbox_import;
 pub mod scanner;
 pub mod session;
+mod session_lifecycle;
 pub mod settings;
 pub mod source;
 #[cfg(test)]
 pub(crate) mod source_test_support;
 mod source_unix;
+pub mod startup_tasks;
 pub mod stats;
 pub mod stats_period;
 pub mod stats_screen;

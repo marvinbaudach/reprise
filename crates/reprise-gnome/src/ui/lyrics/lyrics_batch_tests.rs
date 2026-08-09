@@ -54,6 +54,40 @@ fn lyr_6_enabling_the_module_starts_the_batch_once_and_nothing_else_does() {
 }
 
 #[test]
+fn a_recent_clean_restart_skips_the_automatic_batch_without_showing_progress() {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
+        .unwrap();
+    let batch = LyricsBatch::new(&conn);
+    let mut previous_session = reprise_core::library::session::SessionState::default();
+    reprise_core::library::session::mark_clean_exit_now(&mut previous_session, "/music".into());
+
+    batch.start_automatically(&previous_session, "/music");
+
+    assert_eq!(batch.generation.load(Ordering::Relaxed), 0);
+    assert_eq!(batch.progress.get().state, LyricsBatchState::Idle);
+
+    batch.start();
+
+    assert_eq!(batch.generation.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn a_hard_kill_keeps_the_automatic_batch_due() {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
+        .unwrap();
+    let batch = LyricsBatch::new(&conn);
+
+    batch.start_automatically(
+        &reprise_core::library::session::SessionState::default(),
+        "/music",
+    );
+
+    assert_eq!(batch.generation.load(Ordering::Relaxed), 1);
+}
+
+#[test]
 fn a_dead_progress_subscriber_stops_being_called_and_is_pruned() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     let batch = LyricsBatch::new(&conn);

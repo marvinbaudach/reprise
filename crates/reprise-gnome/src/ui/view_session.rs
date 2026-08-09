@@ -167,6 +167,9 @@ pub(super) fn restore_browser_place(track_list: &TrackList, place: &BrowserPlace
         &saved.sort.dir,
     );
     finish_track_source(track_list, &source, Some(&saved));
+    if track_list.shared.startup_load.is_deferred() {
+        return true;
+    }
     let ids = track_list.shared.current_view_ids();
     crate::ui::track_list::view_state_memory::restore(&track_list.shared, &saved, &ids);
     if let Some(callback) = track_list.shared.on_search_restored.borrow().as_ref() {

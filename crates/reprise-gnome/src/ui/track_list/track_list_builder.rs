@@ -37,6 +37,7 @@ pub(in crate::ui) fn build(
     on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
     queue_ids_provider: impl Fn() -> super::queue_sections::QueueViewModel + 'static,
     cover_download: CoverDownloadRuntime,
+    startup_load: super::startup_load::StartupLoad,
 ) -> TrackList {
     let model = TrackListModel::new(conn.clone());
     let selection = gtk4::MultiSelection::new(Some(model.clone()));
@@ -115,6 +116,7 @@ pub(in crate::ui) fn build(
         show_all_button,
         empty_scan_widget: RefCell::new(None),
         sort: RefCell::new(SortState::default()),
+        startup_load,
         restoring_view: Cell::new(false),
         filter: RefCell::new(String::new()),
         on_search_restored: RefCell::new(None),

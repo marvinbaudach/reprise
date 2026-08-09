@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use gtk4::glib;
 use reprise_core::db::Db;
+use reprise_core::library::startup_tasks::{self, SignatureTask};
 
 use super::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
 use super::player_controller::PlayerController;
@@ -137,6 +138,11 @@ impl CoverDownloadBatch {
             self.set_progress(BatchProgress::idle());
             return;
         }
+        let Some(pass) = startup_tasks::begin_exact(&self.conn, SignatureTask::CoverDownload)
+        else {
+            self.set_progress(BatchProgress::running(0));
+            return;
+        };
         let paths = {
             let conn = &self.conn;
             reprise_core::queries::query_live_track_paths(conn)
@@ -156,6 +162,7 @@ impl CoverDownloadBatch {
             // says exactly that, and the batches waiting on this one need to
             // hear it.
             self.set_progress(BatchProgress::running(0));
+            pass.record_completed_or_warn(&self.conn);
             return;
         }
 
@@ -189,6 +196,7 @@ impl CoverDownloadBatch {
             // sit at "0 of <library>" for the rest of the session.
             this.set_progress(BatchProgress::running(paths.len()));
             if paths.is_empty() {
+                pass.record_completed_or_warn(&this.conn);
                 return;
             }
 
@@ -241,6 +249,7 @@ impl CoverDownloadBatch {
                 return;
             }
             this.set_progress(this.progress.get().completed());
+            pass.record_completed_or_warn(&this.conn);
             let refreshed_paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
             this.track_list.reload();
             if let Some(player) = &this.player {

@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use reprise_core::db::Db;
 use reprise_core::spectrogram_backfill::{BackfillProgress, BackfillSummary};
 use reprise_platform_linux::spectrogram_backfill::SpectrogramBackfillHandle;
 
@@ -41,8 +42,8 @@ impl BackfillRun for PlatformRun {
 }
 
 /// The batch, bound to the worker that this platform can actually run.
-pub(in crate::ui) fn build(db_path: PathBuf) -> Rc<SpectrogramBatch> {
-    SpectrogramBatch::new(move || {
+pub(in crate::ui) fn build(conn: Rc<Db>, db_path: PathBuf) -> Rc<SpectrogramBatch> {
+    SpectrogramBatch::new(conn, move || {
         Some(Box::new(PlatformRun(SpectrogramBackfillHandle::start(
             db_path.clone(),
         ))) as Box<dyn BackfillRun>)

@@ -45,6 +45,7 @@ pub(super) fn prepare(app: &adw::Application, conn: &Db) -> Bootstrap {
     // Theme, accent source, and appearance are now final, so installation
     // loads the palette provider once instead of repainting it for each value.
     crate::ui::style::install();
+    crate::ui::startup_report::mark("style::install");
 
     let session_state = crate::ui::session_restore::load(conn);
     let first_run_decision = crate::ui::first_run::initial_decision(conn);
