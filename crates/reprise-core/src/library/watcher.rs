@@ -55,11 +55,13 @@
 //!
 //! ## Startup reconcile closes the stopped-app gap
 //!
-//! The OS watcher is armed before its worker thread starts. That thread runs
-//! one reconcile immediately, then enters the debounced event loop. Files
-//! created while Reprise was closed are therefore discovered at startup,
-//! while changes racing with the initial scan are still covered by the
-//! already-active recursive watch.
+//! The OS watcher is armed before its worker thread starts. [`start`] runs one
+//! reconcile immediately and then enters the debounced event loop, so files
+//! created while Reprise was closed are discovered. [`start_live`] enters the
+//! same event loop without that first pass only after the shared startup
+//! due-check has proved the stopped-app catch-up is not due. In both cases,
+//! changes racing with startup are covered by the already-active recursive
+//! watch.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -135,6 +137,26 @@ pub fn start(
     db_path: PathBuf,
     on_event: impl Fn(WatchEvent) + Send + 'static,
 ) -> Option<WatcherHandle> {
+    start_with_initial_reconcile(root, db_path, true, on_event)
+}
+
+/// Arms the same live watcher without running the stopped-app catch-up scan.
+/// Callers may use this only after the shared startup due-check proved that
+/// catch-up is not due; later filesystem events reconcile exactly as usual.
+pub fn start_live(
+    root: &Path,
+    db_path: PathBuf,
+    on_event: impl Fn(WatchEvent) + Send + 'static,
+) -> Option<WatcherHandle> {
+    start_with_initial_reconcile(root, db_path, false, on_event)
+}
+
+fn start_with_initial_reconcile(
+    root: &Path,
+    db_path: PathBuf,
+    initial_reconcile: bool,
+    on_event: impl Fn(WatchEvent) + Send + 'static,
+) -> Option<WatcherHandle> {
     let (tx, rx) = std_mpsc::channel::<notify::Result<notify::Event>>();
 
     let mut watcher = match notify::recommended_watcher(move |result| {
@@ -170,7 +192,7 @@ pub fn start(
     let root_owned = root.to_path_buf();
 
     std::thread::spawn(move || {
-        if !stopped_thread.load(Ordering::SeqCst) {
+        if initial_reconcile && !stopped_thread.load(Ordering::SeqCst) {
             reconcile(&root_owned, &db_path, &on_event);
         }
         run_watch_loop(&rx, &stopped_thread, &root_owned, &db_path, &on_event);
@@ -530,6 +552,38 @@ mod tests {
             stored.is_some(),
             "new file should be present without a rescan"
         );
+        drop(handle);
+    }
+
+    #[test]
+    fn a_live_only_watcher_skips_catch_up_but_still_finds_later_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("music");
+        std::fs::create_dir(&root).unwrap();
+        let db_path = temp.path().join("reprise.db");
+        {
+            let _conn = crate::db::Db::open_migrated(Some(&db_path)).unwrap();
+        }
+
+        let (sender, receiver) = std_mpsc::sync_channel(1);
+        let handle = start_live(&root, db_path.clone(), move |event| {
+            let _ = sender.send(event);
+        })
+        .expect("temporary directory should be watchable");
+
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_millis(500)),
+            Err(std_mpsc::RecvTimeoutError::Timeout)
+        ));
+
+        let added = root.join("added-after-live-start.flac");
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        std::fs::copy(fixture, &added).unwrap();
+        let event = receiver
+            .recv_timeout(DEBOUNCE + Duration::from_secs(6))
+            .expect("live filesystem changes must still reconcile");
+
+        assert_eq!(event.report.added, 1);
         drop(handle);
     }
 

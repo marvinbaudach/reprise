@@ -15,6 +15,7 @@ use crate::db::Db;
 
 const LIBRARY_SIGNATURE_KEY: &str = "startup_tasks.library_signature";
 const RECORD_PREFIX: &str = "startup_tasks.completed.";
+pub const STARTUP_SCAN_WINDOW_SECONDS: i64 = 15 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartupTask {
@@ -58,6 +59,53 @@ pub enum DueReason {
         completed_at: i64,
         signature: LibrarySignature,
     },
+    NoCleanExit,
+    RecentCleanExit {
+        age_seconds: i64,
+    },
+    CleanExitTooOld {
+        age_seconds: i64,
+    },
+    LibraryRootChanged,
+    ClockMovedBackwards,
+}
+
+/// Decides only whether the stopped-app catch-up scan is needed. The live
+/// watcher is independent and remains armed in either case.
+pub fn startup_scan_decision(
+    previous_session: &crate::library::session::SessionState,
+    current_library_root: &str,
+    now: i64,
+) -> DueDecision {
+    let Some(clean_exit) = &previous_session.clean_exit else {
+        return DueDecision::Run(DueReason::NoCleanExit);
+    };
+    if clean_exit.library_root != current_library_root {
+        return DueDecision::Run(DueReason::LibraryRootChanged);
+    }
+    let Some(age_seconds) = now.checked_sub(clean_exit.completed_at) else {
+        return DueDecision::Run(DueReason::ClockMovedBackwards);
+    };
+    if age_seconds < 0 {
+        return DueDecision::Run(DueReason::ClockMovedBackwards);
+    }
+    if age_seconds >= STARTUP_SCAN_WINDOW_SECONDS {
+        return DueDecision::Run(DueReason::CleanExitTooOld { age_seconds });
+    }
+    tracing::info!(
+        task = "library scan",
+        age_seconds,
+        "startup task skipped: last clean exit was {} minutes ago",
+        age_seconds / 60
+    );
+    DueDecision::Skip(DueReason::RecentCleanExit { age_seconds })
+}
+
+pub fn should_run_startup_scan(
+    previous_session: &crate::library::session::SessionState,
+    current_library_root: &str,
+) -> bool {
+    startup_scan_decision(previous_session, current_library_root, now_unix()).is_due()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,6 +275,7 @@ fn now_unix() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::library::session::{CleanExit, SessionState};
 
     fn copy_track(root: &std::path::Path, name: &str) {
         let fixture =
@@ -312,5 +361,54 @@ mod tests {
         let logs = logs.joined();
         assert!(logs.contains("cover batch"));
         assert!(logs.contains("library signature unchanged"));
+    }
+
+    #[test]
+    fn a_recent_clean_exit_for_the_same_root_skips_and_logs_its_age() {
+        let state = SessionState {
+            clean_exit: Some(CleanExit {
+                completed_at: 1_000,
+                library_root: "/music".into(),
+            }),
+            ..SessionState::default()
+        };
+        let logs = crate::log_capture::CapturedLogs::default();
+
+        let decision = logs.capture(|| startup_scan_decision(&state, "/music", 1_240));
+
+        assert_eq!(
+            decision,
+            DueDecision::Skip(DueReason::RecentCleanExit { age_seconds: 240 })
+        );
+        assert!(logs.joined().contains("last clean exit was 4 minutes ago"));
+    }
+
+    #[test]
+    fn startup_scan_runs_without_a_clean_exit_at_the_boundary_or_after_root_change() {
+        let missing = SessionState::default();
+        assert_eq!(
+            startup_scan_decision(&missing, "/music", 1_000),
+            DueDecision::Run(DueReason::NoCleanExit)
+        );
+
+        let clean = SessionState {
+            clean_exit: Some(CleanExit {
+                completed_at: 1_000,
+                library_root: "/music".into(),
+            }),
+            ..SessionState::default()
+        };
+        assert_eq!(
+            startup_scan_decision(&clean, "/music", 1_900),
+            DueDecision::Run(DueReason::CleanExitTooOld { age_seconds: 900 })
+        );
+        assert_eq!(
+            startup_scan_decision(&clean, "/new-music", 1_100),
+            DueDecision::Run(DueReason::LibraryRootChanged)
+        );
+        assert_eq!(
+            startup_scan_decision(&clean, "/music", 999),
+            DueDecision::Run(DueReason::ClockMovedBackwards)
+        );
     }
 }

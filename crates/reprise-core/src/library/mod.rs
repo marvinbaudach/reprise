@@ -17,6 +17,7 @@ pub mod remote_stats;
 pub mod rhythmbox_import;
 pub mod scanner;
 pub mod session;
+mod session_lifecycle;
 pub mod settings;
 pub mod source;
 #[cfg(test)]

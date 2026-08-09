@@ -15,7 +15,9 @@ use reprise_core::library::watcher::WatcherHandle;
 #[cfg(test)]
 pub(in crate::ui) use super::scan_controls::ScanCompletion;
 pub(in crate::ui) use super::scan_controls::{ScanCancellation, ScanControls};
-pub(in crate::ui) use super::scan_watcher::start_or_restart_watcher;
+pub(in crate::ui) use super::scan_watcher::{
+    start_or_restart_live_watcher, start_or_restart_watcher,
+};
 #[cfg(test)]
 pub(in crate::ui) use super::scan_worker::publish_latest_progress;
 use super::scan_worker::spawn_scan;

@@ -589,6 +589,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     start_persisted_watcher(
         conn,
         db_path,
+        session_state,
         scan_controls,
         track_list,
         sidebar,
@@ -689,6 +690,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
 fn start_persisted_watcher(
     conn: &Rc<Db>,
     db_path: &Path,
+    previous_session: &SessionState,
     scan_controls: &ScanControls,
     track_list: &Rc<TrackList>,
     sidebar: &Rc<Sidebar>,
@@ -699,14 +701,24 @@ fn start_persisted_watcher(
         reprise_core::library::settings::get_library_root(conn)
     };
     match root {
-        Ok(Some(root)) => super::scan_flow::start_or_restart_watcher(
-            watcher_state,
-            &PathBuf::from(root),
-            db_path.to_path_buf(),
-            scan_controls.clone(),
-            Rc::downgrade(track_list),
-            Rc::downgrade(sidebar),
-        ),
+        Ok(Some(root)) => {
+            let start = if reprise_core::library::startup_tasks::should_run_startup_scan(
+                previous_session,
+                &root,
+            ) {
+                super::scan_flow::start_or_restart_watcher
+            } else {
+                super::scan_flow::start_or_restart_live_watcher
+            };
+            start(
+                watcher_state,
+                &PathBuf::from(root),
+                db_path.to_path_buf(),
+                scan_controls.clone(),
+                Rc::downgrade(track_list),
+                Rc::downgrade(sidebar),
+            );
+        }
         Ok(None) => tracing::debug!("no persisted library root; watcher not started at startup"),
         Err(error) => tracing::error!(%error, "failed to read persisted library root at startup"),
     }
