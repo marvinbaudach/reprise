@@ -138,8 +138,31 @@ title and the artist line sit directly on the fog, and against a cover this
 bright the white type all but disappears; the artist line is the worse of the
 two, and the brief does not even name it.
 
-The remedy the brief prescribes applies: **strengthen the top and bottom
-scrims, do not change the type.** That change is not made by this record.
+The remedy the brief prescribes applies, with one correction to its wording:
+the top and bottom scrims are not the ones at fault. `drawFogLegibility` fades
+to transparent between 0.28 and 0.68 of the surface, and the title block sits
+at 0.53 — squarely in the gap. Strengthening the ends would have darkened the
+cover and the transport without touching the rows that fail.
+
+**Fixed, and measured again on the same track.** `NowPlayingFogSpec` now
+carries a title scrim: one more stop set in the same surface-wide gradient,
+anchored to the cover centre so it travels with the layout, flat at 0.58 black
+across 150-252 dp under the centre — where a two-line title and the artist line
+fall — and faded out by 128 and 296 dp so it has no visible edge. The type is
+untouched, as the brief demands.
+
+| element | before | after |
+| --- | --- | --- |
+| title `Dreh auf!` | 2.32:1 | **9.24:1** |
+| artist line | 1.28:1 | **3.82:1** |
+| elapsed time | 12.42:1 | 12.42:1 |
+| remaining time | 8.28:1 | 10.44:1 |
+
+A dark cover is unaffected — over near-black fog the scrim has nothing left to
+darken, checked on `The Shadowing` in the same session.
+`NowPlayingLegibilityTest` renders the same worst case, a solid 230/255 cover,
+and holds the title to 4.5:1 and the artist line to 3:1, so this cannot silently
+regress.
 
 ### 6. Track without analysis
 
@@ -227,6 +250,16 @@ read as overlapping panels rather than the soft fields the brief describes. A
 transparent margin around the source square, or a radial alpha falloff before
 the blur, would remove it.
 
+**The Android unit suite is falsely red under the machine's default JDK.**
+`java -version` is 26.0.2, and Robolectric 4.16.1 cannot instrument class files
+of major version 70: every `@GraphicsMode(NATIVE)` test throws
+`IllegalArgumentException: Unsupported class file major version 70` from
+`Shadows.reset` — *after* its assertions have already passed. Checked on the
+unmodified checkout, so it is the toolchain and not the scene. Run the suite as
+`JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew testDebugUnitTest`; under 21
+the same selection is green. Any earlier green claim for this suite was made
+under a JDK 21 daemon.
+
 ## Broader gates observed in this run
 
 - The regenerated UniFFI/native Android build completed successfully after the
@@ -250,7 +283,7 @@ the blur, would remove it.
 | 2 replay | closed — automated |
 | 3 verse vs breakdown | Visualizer closed; **played view fails the "must differ clearly" wording**, decision needed |
 | 4 greyscale cover | closed — automated |
-| 5 very bright cover | **fails** — title 2.32:1, artist line 1.28:1; scrims need strengthening |
+| 5 very bright cover | **closed** — title scrim added, 9.24:1 and 3.82:1 measured on the app |
 | 6 track without analysis | closed — automated |
 | 7 rapid transition | functionally closed; perceived smoothness needs a real device |
 | 8 both states | direction confirmed on the emulator; **battery per hour needs a real device** |
