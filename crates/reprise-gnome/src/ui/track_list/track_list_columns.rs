@@ -73,7 +73,7 @@ pub(in crate::ui) fn missing_track_explanation(
         MissingReason::Deleted | MissingReason::Unknown => {
             let date = reprise_core::format::format_unix_timestamp(
                 missing_since,
-                &reprise_core::format::DateTimeFormat::iso(),
+                crate::ui::date_format::current(),
             );
             Some(strings::missing_row_file_since(&date))
         }

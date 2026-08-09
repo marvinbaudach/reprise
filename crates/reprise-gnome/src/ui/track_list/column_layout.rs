@@ -590,7 +590,7 @@ pub(super) fn build_columns(
         |track| {
             reprise_core::format::format_unix_timestamp(
                 track.added_at,
-                &reprise_core::format::DateTimeFormat::iso(),
+                crate::ui::date_format::current(),
             )
         },
     );

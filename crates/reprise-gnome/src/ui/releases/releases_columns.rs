@@ -11,7 +11,7 @@ use reprise_core::artist_news_history::HistoryEntry;
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::ReleaseObject;
 use super::releases_presentation::{
-    bandcamp_purchase_target, format_release_date, release_status_label, release_type_label,
+    bandcamp_purchase_target, format_partial_date, release_status_label, release_type_label,
 };
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
@@ -349,7 +349,12 @@ fn append_columns_with_query(
         Some("date"),
         widths::Sizing::pinned(widths::DATE),
         None,
-        |entry| format_release_date(&entry.first_release_date, Local::now().date_naive()),
+        |entry| {
+            format_partial_date(
+                &entry.first_release_date,
+                &crate::ui::date_format::current().date,
+            )
+        },
     );
     // Title is the filler: it owns whatever width the pinned columns leave.
     text_column(

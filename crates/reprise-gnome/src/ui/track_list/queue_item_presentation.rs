@@ -43,7 +43,7 @@ pub(in crate::ui) fn cell_text(item: &QueueItemMetadata, column: &str) -> String
             "duration_ms" => reprise_core::format::format_duration(track.duration_ms),
             "added_at" => reprise_core::format::format_unix_timestamp(
                 track.added_at,
-                &reprise_core::format::DateTimeFormat::iso(),
+                crate::ui::date_format::current(),
             ),
             "play_count" => track.play_count.to_string(),
             _ => String::new(),
