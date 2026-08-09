@@ -343,6 +343,12 @@ impl RadioFilterBar {
             tracing::warn!(%error, "could not persist radio filters");
         }
         let previous_query = self.filter.replace(filter.clone()).query;
+        // Drop the receipt in the same turn as the query — see the note in
+        // `concerts_filter_bar::clear_query`. An empty query has no chip under
+        // either surface, so this cannot disagree with the commit sink.
+        if filter.query.trim().is_empty() {
+            self.committed_query.replace(String::new());
+        }
         self.rebuild_chips();
         if announce_query && previous_query != filter.query {
             if let Some(callback) = self.on_query_changed.borrow().clone() {

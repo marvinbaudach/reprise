@@ -250,6 +250,15 @@ impl PodcastsFilterBar {
         }
         let previous_query = previous.query;
         self.popover.popdown();
+        // Drop the receipt in the same turn as the query — see the note in
+        // `concerts_filter_bar::clear_query`. `rebuild` below reads the
+        // committed query, and the sink that would empty it only answers after
+        // a round trip through the header entry. An empty query has no chip
+        // under either surface, so clearing it here cannot disagree with the
+        // sink.
+        if filter.query.trim().is_empty() {
+            self.committed_query.replace(String::new());
+        }
         self.rebuild();
         if announce_query && previous_query != filter.query {
             let callback = self.on_query_changed.borrow().clone();
@@ -432,6 +441,39 @@ mod tests {
             source: Some(PodcastKind::Youtube),
             ..PodcastFilter::default()
         }));
+    }
+
+    /// UX SEARCH-14: the receipt goes away with the click that removes it.
+    ///
+    /// The commit sink is the authority on which query gets a chip, but it
+    /// answers only after a round trip through the header entry. The bar
+    /// rebuilds its chip row synchronously in the same turn as the click — so
+    /// without clearing the stored receipt here, that rebuild reads the old
+    /// value and paints the very chip the user just dismissed. No main loop is
+    /// pumped in this test on purpose: the frame the user sees is this one.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_14_the_receipt_goes_with_the_click_not_a_turn_later() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let bar = PodcastsFilterBar::new(Rc::new(crate::test_db::open().unwrap()), PodcastKind::Rss);
+        bar.set_query("falling");
+        bar.set_committed_query("falling");
+        assert!(
+            bar.layout
+                .populated_slot_order()
+                .contains(&crate::ui::filter_bar_layout::FilterBarSlot::Search),
+            "the committed query is showing before the click"
+        );
+
+        bar.apply(bar.filter().with_query(""));
+
+        assert!(
+            !bar.layout
+                .populated_slot_order()
+                .contains(&crate::ui::filter_bar_layout::FilterBarSlot::Search),
+            "the receipt must be gone in the same turn as the click"
+        );
     }
 
     #[test]

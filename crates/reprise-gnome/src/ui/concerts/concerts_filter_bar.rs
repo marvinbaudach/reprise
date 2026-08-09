@@ -286,6 +286,14 @@ impl ConcertsFilterBar {
             return;
         }
         self.query.replace(String::new());
+        // Drop the receipt in the same turn as the query. The commit sink is
+        // still the authority for *which* query gets a chip, but it only
+        // answers after a round trip through the header entry, and the caller
+        // below rebuilds immediately — reading a committed query that is about
+        // to be empty redraws the very chip the user just clicked away. An
+        // empty query has no chip under either surface, so clearing here
+        // cannot disagree with the sink.
+        self.committed_query.replace(String::new());
         if let Some(callback) = self.on_query_changed.borrow().clone() {
             callback("");
         }

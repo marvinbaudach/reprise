@@ -19,7 +19,6 @@ pub(in crate::ui) struct WeakSearchPopover {
     popover: gtk4::glib::WeakRef<gtk4::Popover>,
     entry: gtk4::glib::WeakRef<gtk4::SearchEntry>,
     scope_label: gtk4::glib::WeakRef<gtk4::Label>,
-    focus_on_close: Rc<RefCell<Option<FocusCallback>>>,
 }
 
 impl SearchPopover {
@@ -62,8 +61,18 @@ impl SearchPopover {
             }
         });
 
-        let focus_on_close = Rc::new(RefCell::new(None));
-        wire_entry_close(entry, &popover, &focus_on_close);
+        let focus_on_close: Rc<RefCell<Option<FocusCallback>>> = Rc::new(RefCell::new(None));
+        // SEARCH-2c: closing returns focus to the list — on *every* close path.
+        // This hangs on `closed` rather than on the explicit `close()` because
+        // GTK's own autohide (a click outside) never runs our close helper: it
+        // calls `popdown` itself. Wiring focus to the signal is what makes the
+        // outside click behave like Escape instead of leaving the keyboard in a
+        // popover that is no longer on screen.
+        popover.connect_closed({
+            let focus_on_close = Rc::clone(&focus_on_close);
+            move |_| return_focus(&focus_on_close)
+        });
+        wire_entry_close(entry, &popover);
 
         Self {
             popover,
@@ -73,6 +82,9 @@ impl SearchPopover {
         }
     }
 
+    /// Test-only: production drives the popover through this type's own API,
+    /// so handing out the raw widget would only invite a second close path.
+    #[cfg(test)]
     pub(in crate::ui) fn widget(&self) -> &gtk4::Popover {
         &self.popover
     }
@@ -93,6 +105,9 @@ impl SearchPopover {
         self.downgrade().close();
     }
 
+    /// Test-only: `SectionSearch` holds the weak handle and sets the scope
+    /// through that.
+    #[cfg(test)]
     pub(in crate::ui) fn set_scope(&self, scope: SearchScope) {
         self.downgrade().set_scope(scope);
     }
@@ -123,7 +138,6 @@ impl SearchPopover {
             popover: self.popover.downgrade(),
             entry: self.entry.downgrade(),
             scope_label: self.scope_label.downgrade(),
-            focus_on_close: Rc::clone(&self.focus_on_close),
         }
     }
 }
@@ -145,7 +159,7 @@ impl WeakSearchPopover {
     }
 
     pub(in crate::ui) fn close(&self) {
-        close_and_focus(&self.popover, Rc::clone(&self.focus_on_close));
+        close_popover(&self.popover);
     }
 
     pub(in crate::ui) fn set_scope(&self, scope: SearchScope) {
@@ -155,26 +169,20 @@ impl WeakSearchPopover {
     }
 }
 
-fn wire_entry_close(
-    entry: &gtk4::SearchEntry,
-    popover: &gtk4::Popover,
-    focus_on_close: &Rc<RefCell<Option<FocusCallback>>>,
-) {
+fn wire_entry_close(entry: &gtk4::SearchEntry, popover: &gtk4::Popover) {
     let keys = gtk4::EventControllerKey::new();
     keys.set_propagation_phase(gtk4::PropagationPhase::Capture);
     let search = WeakSearchPopover {
         popover: popover.downgrade(),
         entry: entry.downgrade(),
         scope_label: gtk4::glib::WeakRef::new(),
-        focus_on_close: Rc::clone(focus_on_close),
     };
     keys.connect_key_pressed(move |_, key, _, _| handle_close_key(key, &search));
     entry.add_controller(keys);
 
     let popover_weak = popover.downgrade();
-    let focus = Rc::clone(focus_on_close);
     entry.connect_stop_search(move |_| {
-        close_and_focus(&popover_weak, Rc::clone(&focus));
+        close_popover(&popover_weak);
     });
 }
 
@@ -189,17 +197,22 @@ fn handle_close_key(key: gtk4::gdk::Key, search: &WeakSearchPopover) -> gtk4::gl
     gtk4::glib::Propagation::Stop
 }
 
-fn close_and_focus(
-    popover: &gtk4::glib::WeakRef<gtk4::Popover>,
-    focus_on_close: Rc<RefCell<Option<FocusCallback>>>,
-) {
+fn close_popover(popover: &gtk4::glib::WeakRef<gtk4::Popover>) {
     let Some(popover) = popover.upgrade() else {
         return;
     };
     if !popover.is_visible() {
         return;
     }
+    // Focus is not returned here on purpose: `popdown` emits `closed`, and the
+    // handler on that signal owns the focus contract for every path.
     popover.popdown();
+}
+
+/// The borrow is dropped before the callback runs: it can move focus, which
+/// re-enters GTK, and a live `RefCell` borrow across that is how this codebase
+/// has produced `BorrowMutError` panics before.
+fn return_focus(focus_on_close: &Rc<RefCell<Option<FocusCallback>>>) {
     let callback = focus_on_close.borrow().clone();
     if let Some(callback) = callback {
         if !callback() {

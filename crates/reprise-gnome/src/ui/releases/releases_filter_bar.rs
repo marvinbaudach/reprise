@@ -178,6 +178,10 @@ impl ReleasesFilterBar {
             return;
         }
         self.query.replace(String::new());
+        // Drop the receipt in the same turn as the query — see the note in
+        // `concerts_filter_bar::clear_query`. An empty query has no chip under
+        // either surface, so this cannot disagree with the commit sink.
+        self.committed_query.replace(String::new());
         // The borrow ends on this line. Left inside the `if let` condition it
         // would live for the whole body, and a callback that touched this
         // `RefCell` would panic instead of misbehaving visibly.

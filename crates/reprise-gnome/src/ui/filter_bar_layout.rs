@@ -178,6 +178,37 @@ impl FilterBarLayout {
         fill(&self.trailing_action, widget);
     }
 
+    /// The slots that actually hold something, in visual order. `slot_order`
+    /// below reports the fixed construction order and so can never disagree
+    /// with itself; this one changes when the bar's content changes, which is
+    /// what an ordering assertion needs to be worth making.
+    #[cfg(test)]
+    pub(in crate::ui) fn populated_slot_order(&self) -> Vec<FilterBarSlot> {
+        self.slot_order()
+            .into_iter()
+            .filter(|slot| {
+                self.slot_box(*slot)
+                    .is_some_and(|slot| slot.first_child().is_some())
+            })
+            .collect()
+    }
+
+    /// `None` for the spacer: it is structural, so "populated" means nothing
+    /// there and counting it would put it in every ordering assertion.
+    #[cfg(test)]
+    fn slot_box(&self, slot: FilterBarSlot) -> Option<&gtk4::Box> {
+        match slot {
+            FilterBarSlot::Place => Some(&self.place),
+            FilterBarSlot::Search => Some(&self.search),
+            FilterBarSlot::Facets => Some(&self.facets),
+            FilterBarSlot::AddFilter => Some(&self.add_filter),
+            FilterBarSlot::Spacer => None,
+            FilterBarSlot::Count => Some(&self.count),
+            FilterBarSlot::ClearAll => Some(&self.clear_all),
+            FilterBarSlot::TrailingAction => Some(&self.trailing_action),
+        }
+    }
+
     #[cfg(test)]
     pub(in crate::ui) fn slot_order(&self) -> Vec<FilterBarSlot> {
         let mut order = Vec::new();

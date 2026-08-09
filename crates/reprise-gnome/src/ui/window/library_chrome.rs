@@ -109,7 +109,12 @@ fn wire_search_toggle(
     });
 
     let toggle_weak = toggle.downgrade();
-    let search_for_change = search.clone();
+    // Weak, not a clone. This closure is stored in the entry's own handler
+    // list, and a strong `SearchPopover` holds that same entry — a strong
+    // capture here closes the loop onto itself, so `finalize` never runs and
+    // the entry, the popover and its caption outlive the window. Measured, not
+    // assumed. Same rule as the one spelled out on `SectionSearch`.
+    let search_for_change = search.downgrade();
     // `connect_changed`, not `connect_search_changed`: the lens only reflects
     // "a query exists" (SEARCH-3) and must follow every keystroke. Since
     // SEARCH-9 the entry's own `search-delay` is 0 and the two signals fire

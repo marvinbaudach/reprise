@@ -9,6 +9,44 @@ fn test_content() -> gtk4::Label {
     gtk4::Label::new(Some("Library"))
 }
 
+/// UX SEARCH-2c: the chrome's own wiring must not outlive the window.
+///
+/// The lens's `:checked` state follows every keystroke, so a closure holding
+/// the popover sits in the *entry's* handler list — and the popover holds that
+/// same entry. Captured strongly, the loop closes onto itself: GObject
+/// finalize is the only thing that would disconnect the handler, and it can
+/// never run. The entry, the popover and its caption then outlive the window
+/// forever. `SectionSearch` documents the same rule at length; this is the
+/// test that keeps the chrome honest about it.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_2c_the_chrome_wiring_does_not_outlive_its_window() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    let (entry_weak, popover_weak) = {
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let entry = gtk4::SearchEntry::new();
+        let content = test_content();
+        let chrome = build(&header, &content, &entry, &window);
+        let weak = (entry.downgrade(), chrome.search.widget().downgrade());
+        window.close();
+        weak
+    };
+
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(
+        entry_weak.upgrade().is_none(),
+        "the search entry is still alive after its window closed"
+    );
+    assert!(
+        popover_weak.upgrade().is_none(),
+        "the search popover is still alive after its window closed"
+    );
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn doc_7c_the_library_chrome_is_absent_while_the_doctor_is_visible() {
@@ -207,16 +245,11 @@ fn search_toggle_projects_open_mode_or_non_empty_query() {
     assert!(!search_toggle_active(false, "   "));
 }
 
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn search_4a_the_entrys_clear_icon_discards_the_query() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    gtk4::init().unwrap();
-    let entry = gtk4::SearchEntry::new();
-    entry.set_text("nomatch");
-    entry.set_text("");
-    assert_eq!(entry.text(), "");
-}
+// SEARCH-4a's "clearing is a separate act" is proved in
+// `search_popover_tests.rs`, against the popover and the committed chip. The
+// test that used to sit here only set and re-read a bare `GtkSearchEntry`: it
+// outlived the preserved-query stash it was written to guard, and afterwards
+// asserted nothing but that GTK's own `set_text` works.
 
 #[test]
 fn search_5_collapsing_keeps_the_query_active() {

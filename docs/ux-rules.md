@@ -151,8 +151,16 @@ result.
   pixel value; re-sort and insert therefore keep content at its
   position. START-3 restores, across restarts, the last visible browser
   location including scroll position; no history stack is reconstructed.
-- **NAV-6** [active] [e2e] — Search (Ctrl+F) filters the current view
-  live; Esc clears and closes. Search never navigates on its own.
+- **NAV-6** [replaced by NAV-6a] [e2e] — Search (Ctrl+F) filters the current
+  view live; Esc clears and closes. Search never navigates on its own.
+- **NAV-6a** [active] [gtk] — Search (Ctrl+F) filters the current view live;
+  Esc closes the search popover and **keeps** the query and the filtering
+  (SEARCH-4a). Search never navigates on its own: an Esc that closes the
+  popover is consumed there and does not also travel back through the
+  navigation history. NAV-6's "Esc clears" described the two-stage Escape of
+  the old search strip and contradicted SEARCH-4a from the moment the popover
+  landed; releasing a filter is the chip's × or "Clear all", never a dismissal
+  key.
 - **NAV-7** [replaced by NAV-15] — Hamburger menu: "Scan Library" → starts the
   scan, stays in the view (card appears). "Preferences" → Preferences
   window. "Keyboard Shortcuts" → shortcuts overlay. "About Reprise" →
@@ -2064,9 +2072,9 @@ the panel).
   surface, and carries the entry plus one muted caption line naming the
   searched scope and the "Esc to close" hint. It reflows nothing (SEARCH-10).
 - **SEARCH-3** [active] [gtk] — The magnifying glass is a ToggleButton
-  and carries the `:checked` accent style when the search bar is open
-  **or** an active non-empty query exists. A query remains visible
-  even when the search bar is collapsed: its search chip persists. The
+  and carries the `:checked` accent style when the search popover is
+  open **or** an active non-empty query exists. A query remains visible
+  even when the popover is closed: its search chip persists. The
   magnifying glass gets no badge dot; dots remain reserved exclusively
   for the request role (FB-4, P-1).
 - **SEARCH-4** [replaced by SEARCH-4a] [gtk] — Esc is two-stage and applies to the
@@ -2771,7 +2779,7 @@ property is set and yet nothing happens.
      docs/superpowers/plans/2026-07-18-ui-polish-beschluesse.md. -->
 
 - **SEARCH-6** [active] [gtk] — The magnifier and Ctrl+F toggle the
-  search bar both ways (show ↔ hide). Hiding never clears the query: with
+  search popover both ways (open ↔ close). Closing never clears the query: with
   a non-empty query, its chip stays visible and the magnifier stays in the
   `:checked` accent style (FIL-1, SEARCH-3/5).
 - **SEARCH-7** [replaced by SEARCH-7a] [gtk] — If the search field along with its
@@ -2800,23 +2808,24 @@ property is set and yet nothing happens.
   its own query is FIL-1d.
 - **SEARCH-8a** [active] [gtk] — A query belongs only to the sidebar
   destination where it was typed. Choosing another sidebar destination drops
-  the outgoing query, starts the destination empty and collapses the search
-  bar, because a person who switches destinations is looking for something
+  the outgoing query, starts the destination empty and closes the search
+  popover, because a person who switches destinations is looking for something
   else. This binds both top-level switches such as Music ↔ Podcasts and track
   destinations such as Library ↔ Recently added ↔ Playlist ↔ Smart ↔ Queue ↔
   Missing. Drilling into an Artist, Album or Genre place by activating a row is
   not a switch: it carries the current query and its chip into that narrower
   context. Back out of such a place restores the complete remembered list
   state, including its query and facets, from the existing navigation history;
-  search owns no parallel origin or history state. Collapsing the bar without
+  search owns no parallel origin or history state. Closing the popover without
   navigating still preserves the current query per SEARCH-5/SEARCH-6, and an
   explicitly removed query is never resurrected. Facet filters chosen through
   + Filter — including type, window, hidden, unplayed and downloaded — are not
   search and survive sidebar switches untouched. The query itself remains
   transient and is never persisted with those facets. Where there is no list
   there is no search: in My Stats and device Sync the lens is insensitive with
-  the tooltip "Nothing to filter in {section}", Ctrl+F is a no-op, and typing
-  cannot reveal the bar. The active query's scoped chip is FIL-1d. This
+  the tooltip "Nothing to filter in {section}", and Ctrl+F is a no-op — with
+  the lens and Ctrl+F the only two ways in since SEARCH-2c, there is no third
+  route left to close off. The active query's scoped chip is FIL-1d. This
   replaces the per-section restoration described by FIL-1a's 2026-08-05
   revision; FIL-1a records the corrected boundary.
 - **SEARCH-9** [active] [gtk] — **Searching answers at once, and clearing

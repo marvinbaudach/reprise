@@ -219,11 +219,21 @@ fn search_12_closing_commits_exactly_one_chip_before_the_facets() {
         "the slot has one child"
     );
     assert!(harness.facets.first_child().is_some());
-    let order = harness.layout.slot_order();
-    assert!(
-        order.iter().position(|slot| *slot == FilterBarSlot::Search)
-            < order.iter().position(|slot| *slot == FilterBarSlot::Facets)
-    );
+    // `slot_order()` walks the wrapper boxes, which `FilterBarLayout::new`
+    // appends in a fixed order whether or not anything lives in them — asking
+    // it about Search vs Facets can never fail and would pass with the commit
+    // mechanism ripped out. Only the *populated* slots say something about
+    // this run.
+    let order = harness.layout.populated_slot_order();
+    let search = order
+        .iter()
+        .position(|slot| *slot == FilterBarSlot::Search)
+        .expect("the committed chip occupies the search slot");
+    let facets = order
+        .iter()
+        .position(|slot| *slot == FilterBarSlot::Facets)
+        .expect("the facet chips are still there");
+    assert!(search < facets, "the committed chip leads the facet chips");
 }
 
 #[test]
@@ -288,7 +298,7 @@ fn search_14_escape_closes_and_keeps_the_filtered_result_set() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nav_6_escape_is_consumed_before_navigation() {
+fn nav_6a_escape_is_consumed_before_navigation() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let harness = ReceiptHarness::new();
@@ -299,6 +309,51 @@ fn nav_6_escape_is_consumed_before_navigation() {
         gtk4::glib::Propagation::Stop
     );
     assert_eq!(harness.entry.text(), "wer");
+}
+
+/// UX SEARCH-4a: the two halves this design actually rests on, neither of
+/// which `press_close_key` can reach.
+///
+/// `press_close_key` calls the handler directly, so it proves what the handler
+/// does and nothing about whether the handler wins. Two things decide that,
+/// and both are properties of the toolkit rather than of our code:
+///
+/// 1. our key controller sits on the entry in the **capture** phase, so it
+///    runs before `GtkSearchEntry`'s own bubble-phase key bindings, and
+/// 2. `stop-search` — the signal Escape would reach if it ever got past us —
+///    has no default handler that clears the text.
+///
+/// Measured on GTK 4.22.4. If a future GTK starts clearing on `stop-search`,
+/// or the phase is changed to Bubble in a refactor, Escape silently becomes
+/// the old two-stage clear again and every behavioural test above still
+/// passes. This is the test that goes red instead.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_4a_escape_cannot_reach_the_entrys_own_clear() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let harness = ReceiptHarness::new();
+    harness.open_and_type("wer");
+
+    let phases: Vec<gtk4::PropagationPhase> = harness
+        .entry
+        .observe_controllers()
+        .into_iter()
+        .flatten()
+        .filter_map(|controller| controller.downcast::<gtk4::EventControllerKey>().ok())
+        .map(|controller| controller.propagation_phase())
+        .collect();
+    assert!(
+        phases.contains(&gtk4::PropagationPhase::Capture),
+        "the close key controller must capture, or the entry's own bindings run first: {phases:?}"
+    );
+
+    harness.entry.emit_stop_search();
+    assert_eq!(
+        harness.entry.text(),
+        "wer",
+        "GtkSearchEntry must not clear its own text on stop-search"
+    );
 }
 
 #[test]
@@ -334,10 +389,20 @@ fn search_7a_clicking_outside_closes_and_keeps_the_filter() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let harness = ReceiptHarness::new();
+    // SEARCH-2c gives focus back to the list on *every* close, so the one path
+    // that does not run our own close helper has to be held to it explicitly.
+    let returned_focus = Rc::new(std::cell::Cell::new(false));
+    harness.search.set_focus_on_close({
+        let returned_focus = Rc::clone(&returned_focus);
+        Rc::new(move || {
+            returned_focus.set(true);
+            true
+        })
+    });
     harness.open_and_type("wer");
 
-    // `popdown` is the path GTK's autohide click takes; unlike `close`, it
-    // bypasses the explicit focus-return helper and exercises `closed` alone.
+    // `popdown` is the path GTK's autohide click takes: it never reaches
+    // `close()`, only the `closed` signal.
     harness.search.widget().popdown();
     settle_until("autohide commits the receipt", || {
         harness.search_chip().is_some()
@@ -348,5 +413,9 @@ fn search_7a_clicking_outside_closes_and_keeps_the_filter() {
     assert_eq!(
         harness.applied.borrow().last().map(String::as_str),
         Some("wer")
+    );
+    assert!(
+        returned_focus.get(),
+        "a click outside must hand focus back to the list, like Escape does"
     );
 }
