@@ -83,11 +83,6 @@ pub(super) fn is_width_persistable(id: ColumnId) -> bool {
     !matches!(id, ColumnId::Cover)
 }
 
-#[cfg(test)]
-fn is_width_persistable_now(id: ColumnId, column: &gtk4::ColumnViewColumn) -> bool {
-    is_width_persistable(id) && !column.expands()
-}
-
 fn apply_column_width_policy(column: &gtk4::ColumnViewColumn, id: ColumnId) {
     let policy = column_width_policy(id);
     // ColumnView recycles row widgets while scrolling. A fixed width prevents

@@ -61,7 +61,7 @@ fn restore_stored_widths<K: ColumnKey>(registry: &ColumnRegistry<K>) {
     }
 }
 
-fn save_widths_now<K: ColumnKey>(
+pub(in crate::ui) fn save_widths_now<K: ColumnKey>(
     registry: &ColumnRegistry<K>,
     columns: &[(K, gtk4::ColumnViewColumn)],
 ) {

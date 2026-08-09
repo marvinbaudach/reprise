@@ -29,8 +29,8 @@ fn numeric_metadata_columns_are_classified_for_centering() {
 #[test]
 fn every_non_cover_column_can_persist_its_width() {
     // Cover is not resizable (fixed 40px thumbnail) — never stored. Every
-    // other column, Title included, can hold a user-set width; Title only once
-    // its fill-expand has been turned off (see `is_width_persistable_now`).
+    // other column, Title included, can hold a user-set width; the production
+    // width saver stores Title only once its fill-expand has been turned off.
     assert!(!is_width_persistable(ColumnId::Cover));
     for id in [
         ColumnId::Title,
@@ -61,18 +61,37 @@ fn title_width_is_stored_only_after_its_fill_expand_is_turned_off() {
     if gtk4::init().is_err() {
         return;
     }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
     let column = gtk4::ColumnViewColumn::builder().build();
+    column.set_fixed_width(240);
+    view.append_column(&column);
+    let registry = GenericColumnRegistry::new(
+        &view,
+        conn.clone(),
+        TableKeys {
+            layout: "test.title-width-save.layout",
+            widths: "test.title-width-save.widths",
+        },
+        vec![(ColumnId::Title, column.clone())],
+    );
+    let columns = [(ColumnId::Title, column.clone())];
 
     // While Title still fills (expand on), its width is not a real preference.
     column.set_expand(true);
-    assert!(!is_width_persistable_now(ColumnId::Title, &column));
+    width_persistence::save_widths_now(&registry, &columns);
+    assert_eq!(
+        settings::get_setting(&conn, "test.title-width-save.widths").unwrap(),
+        Some(String::new())
+    );
 
     // A manual resize turns the fill off; the width becomes storable.
     column.set_expand(false);
-    assert!(is_width_persistable_now(ColumnId::Title, &column));
-
-    // Cover is excluded regardless of expand state.
-    assert!(!is_width_persistable_now(ColumnId::Cover, &column));
+    width_persistence::save_widths_now(&registry, &columns);
+    assert_eq!(
+        settings::get_setting(&conn, "test.title-width-save.widths").unwrap(),
+        Some("title:240".to_owned())
+    );
 }
 
 #[test]
