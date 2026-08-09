@@ -180,6 +180,26 @@ fn doc_10a_undo_works_when_only_the_quiet_job_exists() {
 }
 
 #[test]
+fn doc_10a_cleanup_availability_tracks_the_cleanup_lifecycle() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), "availability.flac", " Available ");
+    let db = crate::db::Db::open_in_memory().unwrap();
+    assert!(!LibraryDoctor::new(&db).cleanup_available().unwrap());
+
+    let ids = seed(&db, std::slice::from_ref(&path));
+    let plan = auto_plan(&db, ids[0]);
+    LibraryDoctor::new(&db)
+        .apply_review_plan(&plan, |_| DoctorWriteControl::Continue)
+        .unwrap();
+
+    assert!(LibraryDoctor::new(&db).cleanup_available().unwrap());
+    LibraryDoctor::new(&db)
+        .revert_last_cleanup(|_| DoctorWriteControl::Continue)
+        .unwrap();
+    assert!(!LibraryDoctor::new(&db).cleanup_available().unwrap());
+}
+
+#[test]
 fn doc_10a_partial_revert_leaves_the_cleanup_available_for_a_second_attempt() {
     let dir = tempfile::tempdir().unwrap();
     let paths = vec![

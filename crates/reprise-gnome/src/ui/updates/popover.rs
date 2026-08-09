@@ -694,10 +694,26 @@ impl NewReleasesPopover {
 fn bind_runtime(state: &Rc<NewReleasesPopover>, runtime: &Rc<ArtistNewsRuntime>) {
     let alive = Rc::downgrade(state);
     let target = Rc::downgrade(state);
+    let initial = Rc::new(Cell::new(true));
+    let current_enabled = runtime.enabled.clone();
     runtime.subscribe_enabled(
         move || alive.upgrade().is_some(),
         move |enabled| {
-            if let Some(state) = target.upgrade() {
+            let Some(state) = target.upgrade() else {
+                return;
+            };
+            if initial.replace(false) {
+                let current_enabled = current_enabled.clone();
+                crate::ui::startup_quiet::run_after_quiet(move || {
+                    // A user may toggle the module while the initial callback
+                    // is waiting. Never replay that stale startup state.
+                    if current_enabled.get() == enabled {
+                        state.enabled_changed(enabled);
+                    }
+                });
+            } else {
+                // A live Preferences change is explicit and must not wait for
+                // startup's gate.
                 state.enabled_changed(enabled);
             }
         },

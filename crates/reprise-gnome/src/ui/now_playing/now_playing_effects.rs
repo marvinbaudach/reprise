@@ -104,6 +104,7 @@ impl super::NowPlayingPanel {
                 fallback_icon,
                 tokens::NOW_PLAYING_COVER_SIZE,
                 images_allowed,
+                external.restored,
                 move |texture| {
                     if let Some(observer) = observer.as_ref() {
                         observer(texture);

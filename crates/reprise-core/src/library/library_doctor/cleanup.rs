@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params_from_iter, Connection, OptionalExtension};
 
 use super::write::{decoded, prepare_job, run_job, InputChange};
 use super::{
@@ -77,6 +77,20 @@ fn preserve_partial_cleanup(
 }
 
 impl LibraryDoctor<'_> {
+    /// Whether the most recent Doctor cleanup still has anything to undo.
+    ///
+    /// This intentionally does not materialise [`DoctorCleanup`]. Callers that
+    /// only control an Undo affordance do not need its timestamp, job list, or
+    /// applied-change count.
+    pub fn cleanup_available(&self) -> Result<bool, DoctorError> {
+        let available = self.conn.query_row(
+            &format!("SELECT EXISTS(SELECT 1 FROM tag_write_jobs j WHERE {ELIGIBLE})"),
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        Ok(available != 0)
+    }
+
     pub fn last_cleanup(&self) -> Result<Option<DoctorCleanup>, DoctorError> {
         let scan_id = self
             .conn
@@ -120,14 +134,16 @@ impl LibraryDoctor<'_> {
             .map(|(_, _, track_id)| *track_id)
             .collect::<HashSet<_>>()
             .len();
+        let placeholders = std::iter::repeat_n("?", job_ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
         let change_count = self.conn.query_row(
             &format!(
-                "SELECT COUNT(*) FROM tag_write_jobs j \
-                 JOIN tag_write_job_files f ON f.job_id=j.id \
+                "SELECT COUNT(*) FROM tag_write_job_files f \
                  JOIN tag_write_journal v ON v.file_id=f.id \
-                 WHERE j.scan_id=?1 AND {ELIGIBLE} AND v.outcome='applied'"
+                 WHERE f.job_id IN ({placeholders}) AND v.outcome='applied'"
             ),
-            [scan_id],
+            params_from_iter(job_ids.iter()),
             |row| row.get::<_, i64>(0),
         )?;
         Ok(Some(DoctorCleanup {

@@ -9,8 +9,9 @@
 //! already-cached image is never hidden); only the network fallback on a
 //! genuine cache miss is gated, via `reprise_core::remote_image::resolve`,
 //! which is the sole place bytes are ever requested. The bounded on-disk
-//! cache and the gate check both live in that pure core module; this file
-//! only decodes the resulting path into a GTK texture.
+//! cache and the gate check both live in that pure core module. The same
+//! worker that resolves the path also decodes and scales it; the main thread
+//! only wraps the returned pixels in a GTK memory texture.
 //!
 //! The background artwork workers do not simply reuse the `images_allowed`
 //! value a caller passed when a task was queued: that value can go stale if
@@ -23,7 +24,6 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
@@ -31,6 +31,9 @@ use std::sync::OnceLock;
 use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::remote_image::ImageOutcome;
+
+#[path = "source_artwork_queue.rs"]
+mod source_artwork_queue;
 
 const CACHE_LIMIT: usize = 128;
 const ARTWORK_QUEUE_LIMIT: usize = 64;
@@ -51,17 +54,26 @@ thread_local! {
 /// natural connection lifetime); polling settings from a background thread is
 /// the wrong shape here. Instead, every caller of `SourceImage::new`/
 /// `set_url` already recomputes `images_allowed` fresh from its own live
-/// connection on every render pass (`SRC-11`: "Jeder Aufrufer berechnet den
-/// Riegel selbst an seiner eigenen Verbindung") — that is already the
-/// freshest signal the app has. `queue_artwork` publishes each such value
+/// connection on every render pass, as required by `SRC-11` — that is already
+/// the freshest signal the app has. `load_texture` publishes each such value
 /// into this atomic, and the worker reads it again immediately before
 /// calling `remote_image::resolve`, instead of trusting whatever value a
 /// task happened to capture when it was built. A task queued while the gate
 /// was open therefore still gets refused if the gate has since closed.
 ///
+/// The worker queue stays bounded. If it is full, the GTK thread keeps the
+/// request in an asynchronous send until capacity frees instead of blocking
+/// or discarding the visible row's only attempt.
+///
 /// Starts `false` so a failed/unknown gate state (nothing has published a
 /// value yet) counts as not-allowed, per `NET-1a`.
 static GATE_OPEN: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy)]
+pub(crate) enum StartupTiming {
+    Immediate,
+    AfterQuiet,
+}
 
 /// `NET-1a` / `SET-4`: re-publishes the gate from settings when the setting
 /// itself changes, rather than waiting for the next queued image.
@@ -105,7 +117,34 @@ impl SourceImage {
         size: i32,
         images_allowed: bool,
     ) -> SourceImage {
-        Self::new_with_dimensions(image_url, fallback_icon, size, size, images_allowed)
+        Self::new_with_dimensions(
+            image_url,
+            fallback_icon,
+            size,
+            size,
+            images_allowed,
+            StartupTiming::Immediate,
+        )
+    }
+
+    /// Source-table artwork that appears automatically during window startup.
+    /// Explicit previews and playback artwork keep using [`Self::new`].
+    pub(crate) fn new_after_startup(
+        image_url: Option<&str>,
+        fallback_icon: &str,
+        size: i32,
+        images_allowed: bool,
+    ) -> SourceImage {
+        let image = Self::build(fallback_icon, size, size);
+        image.set_url(
+            image_url,
+            size,
+            size,
+            images_allowed,
+            StartupTiming::AfterQuiet,
+            |_| {},
+        );
+        image
     }
 
     /// Same as [`Self::new`], but also hands the decoded texture to
@@ -122,10 +161,22 @@ impl SourceImage {
         fallback_icon: &str,
         size: i32,
         images_allowed: bool,
+        defer_for_startup: bool,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) -> SourceImage {
         let image = Self::build(fallback_icon, size, size);
-        image.set_url(image_url, size, size, images_allowed, on_texture);
+        image.set_url(
+            image_url,
+            size,
+            size,
+            images_allowed,
+            if defer_for_startup {
+                StartupTiming::AfterQuiet
+            } else {
+                StartupTiming::Immediate
+            },
+            on_texture,
+        );
         image
     }
 
@@ -135,9 +186,17 @@ impl SourceImage {
         width: i32,
         height: i32,
         images_allowed: bool,
+        startup_timing: StartupTiming,
     ) -> SourceImage {
         let image = Self::build(fallback_icon, width, height);
-        image.set_url(image_url, width, height, images_allowed, |_| {});
+        image.set_url(
+            image_url,
+            width,
+            height,
+            images_allowed,
+            startup_timing,
+            |_| {},
+        );
         image
     }
 
@@ -200,6 +259,7 @@ impl SourceImage {
         width: i32,
         height: i32,
         images_allowed: bool,
+        startup_timing: StartupTiming,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) {
         let generation = self.generation.get().wrapping_add(1);
@@ -210,9 +270,9 @@ impl SourceImage {
         let weak_artwork = self.artwork.downgrade();
         load_texture(
             image_url,
-            width,
-            height,
+            (width, height),
             images_allowed,
+            startup_timing,
             generation,
             &self.generation,
             move |texture| {
@@ -237,13 +297,14 @@ impl SourceImage {
 /// hands the finished texture to a generation-safe caller.
 fn load_texture(
     image_url: Option<&str>,
-    width: i32,
-    height: i32,
+    dimensions: (i32, i32),
     images_allowed: bool,
+    startup_timing: StartupTiming,
     generation: u64,
     current: &Rc<Cell<u64>>,
     on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
 ) {
+    let (width, height) = dimensions;
     if current.get() != generation {
         return;
     }
@@ -257,33 +318,42 @@ fn load_texture(
     // `NET-1a` / `SRC-11`: resolve checks the disk cache before consulting
     // the network gate, so an already-downloaded image remains visible while
     // a closed gate still refuses every fresh request.
-    let Some(receiver) = queue_artwork(url.clone(), images_allowed) else {
-        tracing::debug!(%url, "source artwork queue is full");
-        return;
-    };
+    // Publish at registration time, before the startup gate can delay this
+    // task. A later Preferences change can therefore close `GATE_OPEN` while
+    // the task waits, and the worker's fetch-time read below remains final.
+    GATE_OPEN.store(images_allowed, Ordering::Relaxed);
     let current = current.clone();
-    gtk4::glib::spawn_future_local(async move {
-        let path = match receiver.recv().await {
-            Ok(Some(path)) => path,
-            Ok(None) => return,
-            Err(error) => {
-                tracing::debug!(%error, %url, "could not load source artwork");
-                return;
-            }
-        };
+    let start = move || {
         if current.get() != generation {
             return;
         }
-        let texture = match decode_texture(&path, width, height) {
-            Ok(texture) => texture,
-            Err(error) => {
-                tracing::debug!(%error, %url, path = %path.display(), "source artwork could not be decoded");
+        let Some(receiver) = queue_artwork(url.clone(), width, height) else {
+            tracing::warn!(%url, "source artwork worker queue is unavailable");
+            return;
+        };
+        gtk4::glib::spawn_future_local(async move {
+            let pixels = match receiver.recv().await {
+                Ok(Some(pixels)) => pixels,
+                Ok(None) => return,
+                Err(error) => {
+                    tracing::debug!(%error, %url, "could not load source artwork");
+                    return;
+                }
+            };
+            // This generation check deliberately remains on the GTK thread,
+            // immediately before the ready-made pixels can be published.
+            if current.get() != generation {
                 return;
             }
-        };
-        remember_texture(url, width, height, texture.clone());
-        on_ready(texture);
-    });
+            let texture = memory_texture(pixels);
+            remember_texture(url, width, height, texture.clone());
+            on_ready(texture);
+        });
+    };
+    match startup_timing {
+        StartupTiming::Immediate => start(),
+        StartupTiming::AfterQuiet => crate::ui::startup_quiet::run_after_quiet(start),
+    }
 }
 
 /// Loads the same gated and cached source artwork into an image owned by a
@@ -292,9 +362,9 @@ fn load_texture(
 pub(crate) fn load_into_image(
     image: &gtk4::Image,
     image_url: Option<&str>,
-    width: i32,
-    height: i32,
+    dimensions: (i32, i32),
     images_allowed: bool,
+    defer_for_startup: bool,
     generation: u64,
     current: &Rc<Cell<u64>>,
 ) {
@@ -305,9 +375,13 @@ pub(crate) fn load_into_image(
     let weak_image = image.downgrade();
     load_texture(
         image_url,
-        width,
-        height,
+        dimensions,
         images_allowed,
+        if defer_for_startup {
+            StartupTiming::AfterQuiet
+        } else {
+            StartupTiming::Immediate
+        },
         generation,
         current,
         move |texture| {
@@ -321,7 +395,17 @@ pub(crate) fn load_into_image(
 
 struct ArtworkTask {
     url: String,
-    response: async_channel::Sender<Option<PathBuf>>,
+    width: i32,
+    height: i32,
+    response: async_channel::Sender<Option<DecodedPixels>>,
+}
+
+struct DecodedPixels {
+    bytes: Vec<u8>,
+    width: i32,
+    height: i32,
+    rowstride: usize,
+    has_alpha: bool,
 }
 
 /// Runs one queued task against the CURRENT gate state — read via
@@ -332,19 +416,31 @@ struct ArtworkTask {
 fn process_task(task: &ArtworkTask, fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>) {
     let allowed = GATE_OPEN.load(Ordering::Relaxed);
     let outcome = reprise_core::remote_image::resolve(Some(&task.url), allowed, fetch);
-    let path = match outcome {
-        ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => Some(path),
+    let pixels = match outcome {
+        ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => {
+            match decode_pixels(&path, task.width, task.height) {
+                Ok(pixels) => Some(pixels),
+                Err(error) => {
+                    tracing::debug!(
+                        %error,
+                        url = %task.url,
+                        path = %path.display(),
+                        "source artwork could not be decoded"
+                    );
+                    None
+                }
+            }
+        }
         ImageOutcome::NotAllowed | ImageOutcome::NoUrl | ImageOutcome::FetchFailed => None,
     };
-    let _ = task.response.send_blocking(path);
+    let _ = task.response.send_blocking(pixels);
 }
 
-fn queue_artwork(url: String, allowed: bool) -> Option<async_channel::Receiver<Option<PathBuf>>> {
-    // Publish the freshest known gate state before anything else: this is
-    // what lets an already-queued task see a later flip to `false`. See
-    // `GATE_OPEN`'s doc comment for why this is updated here rather than
-    // read by the worker from settings directly.
-    GATE_OPEN.store(allowed, Ordering::Relaxed);
+fn queue_artwork(
+    url: String,
+    width: i32,
+    height: i32,
+) -> Option<async_channel::Receiver<Option<DecodedPixels>>> {
     static QUEUE: OnceLock<async_channel::Sender<ArtworkTask>> = OnceLock::new();
     let queue = QUEUE.get_or_init(|| {
         let (sender, receiver) = async_channel::bounded::<ArtworkTask>(ARTWORK_QUEUE_LIMIT);
@@ -367,35 +463,56 @@ fn queue_artwork(url: String, allowed: bool) -> Option<async_channel::Receiver<O
         sender
     });
     let (response, receiver) = async_channel::bounded(1);
-    queue.try_send(ArtworkTask { url, response }).ok()?;
+    source_artwork_queue::submit(
+        queue.clone(),
+        ArtworkTask {
+            url: url.clone(),
+            width,
+            height,
+            response,
+        },
+        url,
+    )
+    .then_some(())?;
     Some(receiver)
 }
 
-fn decode_texture(
+fn decode_pixels(
     path: &std::path::Path,
     width: i32,
     height: i32,
-) -> Result<gtk4::gdk::Texture, gtk4::glib::Error> {
+) -> Result<DecodedPixels, gtk4::glib::Error> {
     let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(
         path,
         width.saturating_mul(2),
         height.saturating_mul(2),
         true,
     )?;
-    let format = if pixbuf.has_alpha() {
+    let bytes = pixbuf.read_pixel_bytes();
+    Ok(DecodedPixels {
+        bytes: bytes.as_ref().to_vec(),
+        width: pixbuf.width(),
+        height: pixbuf.height(),
+        rowstride: pixbuf.rowstride() as usize,
+        has_alpha: pixbuf.has_alpha(),
+    })
+}
+
+fn memory_texture(pixels: DecodedPixels) -> gtk4::gdk::Texture {
+    let format = if pixels.has_alpha {
         gtk4::gdk::MemoryFormat::R8g8b8a8
     } else {
         gtk4::gdk::MemoryFormat::R8g8b8
     };
-    let bytes = pixbuf.read_pixel_bytes();
-    Ok(gtk4::gdk::MemoryTexture::new(
-        pixbuf.width(),
-        pixbuf.height(),
+    let bytes = gtk4::glib::Bytes::from_owned(pixels.bytes);
+    gtk4::gdk::MemoryTexture::new(
+        pixels.width,
+        pixels.height,
         format,
         &bytes,
-        pixbuf.rowstride() as usize,
+        pixels.rowstride,
     )
-    .upcast())
+    .upcast()
 }
 
 fn cached_texture(url: &str, width: i32, height: i32) -> Option<gtk4::gdk::Texture> {
@@ -437,12 +554,13 @@ fn validated_url(value: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use gtk4::gdk::prelude::TextureExt;
+#[path = "source_image_worker_tests.rs"]
+mod worker_tests;
 
+#[cfg(test)]
+mod tests {
     #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn large_source_texture_is_decoded_to_twice_the_requested_cache_size() {
+    fn large_source_pixels_are_decoded_to_twice_the_requested_cache_size() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("large.png");
         let pixbuf =
@@ -451,9 +569,9 @@ mod tests {
         pixbuf.fill(0x336699ff);
         pixbuf.savev(&path, "png", &[]).unwrap();
 
-        let texture = super::decode_texture(&path, 40, 40).unwrap();
+        let pixels = super::decode_pixels(&path, 40, 40).unwrap();
 
-        assert_eq!((texture.width(), texture.height()), (80, 80));
+        assert_eq!((pixels.width, pixels.height), (80, 80));
     }
 
     #[test]
@@ -497,6 +615,8 @@ mod tests {
         let (response, receiver) = async_channel::bounded(1);
         let task = super::ArtworkTask {
             url: url.into(),
+            width: 40,
+            height: 40,
             response,
         };
         // ...but the user switches it off again before this task, still
@@ -514,9 +634,8 @@ mod tests {
             "the worker must not fetch once the gate has closed, even though \
              it was open when the task was queued"
         );
-        assert_eq!(
-            receiver.try_recv(),
-            Ok(None),
+        assert!(
+            matches!(receiver.try_recv(), Ok(None)),
             "a refused, uncached task resolves to no image, never an error image"
         );
     }
@@ -570,6 +689,8 @@ mod tests {
         let (response, _receiver) = async_channel::bounded(1);
         let task = super::ArtworkTask {
             url: "https://images.test/src-11-gate-closed-from-preferences.png".into(),
+            width: 40,
+            height: 40,
             response,
         };
         let mut fetch_called = false;
@@ -655,7 +776,7 @@ mod tests {
         let image = gtk4::Image::new();
         let current = Rc::new(Cell::new(1));
 
-        super::load_into_image(&image, Some(url), 56, 56, false, 1, &current);
+        super::load_into_image(&image, Some(url), (56, 56), false, false, 1, &current);
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while image.paintable().is_none() {

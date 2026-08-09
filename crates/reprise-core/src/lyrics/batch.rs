@@ -23,6 +23,7 @@ pub struct BatchProgress {
     pub total: usize,
     pub downloaded: usize,
     pub unavailable: usize,
+    pub failed: usize,
 }
 
 impl BatchProgress {
@@ -34,6 +35,7 @@ impl BatchProgress {
             total: 0,
             downloaded: 0,
             unavailable: 0,
+            failed: 0,
         }
     }
 
@@ -53,9 +55,10 @@ impl BatchProgress {
     fn advance(mut self, outcome: BatchItemOutcome) -> Self {
         self.checked = self.checked.saturating_add(1).min(self.total);
         match outcome {
-            BatchItemOutcome::Skipped | BatchItemOutcome::Failed => {}
+            BatchItemOutcome::Skipped => {}
             BatchItemOutcome::Downloaded => self.downloaded += 1,
             BatchItemOutcome::Unavailable => self.unavailable += 1,
+            BatchItemOutcome::Failed => self.failed += 1,
         }
         if self.checked == self.total {
             self.state = BatchState::Complete;

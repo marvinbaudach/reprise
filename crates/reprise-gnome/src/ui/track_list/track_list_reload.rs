@@ -494,7 +494,7 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: &ViewSou
     if let Some(callback) = shared.on_search_restored.borrow().as_ref() {
         callback("");
     }
-    run_query(shared, None);
+    run_query_if_requested(shared, None);
 }
 
 /// Re-runs the query against the current source/sort/filter state via
@@ -525,6 +525,9 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     model_change: Option<ModelChange>,
     current_ids: Option<Vec<i64>>,
 ) {
+    if !shared.startup_load.request() {
+        return;
+    }
     // SEARCH-9: `Top` writes the adjustment itself and wants no guard fighting
     // it; only the two variants that restore a captured position need one.
     let hold = matches!(
@@ -544,6 +547,16 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     if let Some(hold) = hold {
         hold.release_after(SCROLL_ADJUSTMENT_HOLD);
     }
+}
+
+/// Direct source switches update the desired source before asking the startup
+/// gate whether the model query may run. Deferred startup therefore retains
+/// the final source while still collapsing the query itself.
+fn run_query_if_requested(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
+    if !shared.startup_load.request() {
+        return;
+    }
+    run_query(shared, model_change);
 }
 
 /// The bare query/model-swap/empty-state work, with no selection/scroll
@@ -582,7 +595,6 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
         shared.queue_sections.borrow_mut().clear();
         None
     };
-
     if let (Some(queue_model), Some(context_window)) = (&queue_model, queue_context_window) {
         shared.model.set_queue_snapshot(
             queue_model,
@@ -667,6 +679,7 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
                 .map_or_else(|| "none".into(), |page| page.to_string()),
         });
 
+    crate::ui::startup_report::event("track_list_reload");
     tracing::info!(
         count,
         field = %sort.field,

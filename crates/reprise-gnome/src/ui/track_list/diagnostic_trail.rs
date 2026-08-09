@@ -201,6 +201,10 @@ pub(crate) fn mark_process_start() {
     PROCESS_START.get_or_init(Instant::now);
 }
 
+pub(crate) fn process_start() -> Option<Instant> {
+    PROCESS_START.get().copied()
+}
+
 pub(crate) fn handle() -> Rc<DiagnosticTrail> {
     THREAD_TRAIL.with(Rc::clone)
 }
