@@ -190,9 +190,6 @@ echo "== Dead-code allowlist =="
 # misses the wide one is worse than no gate: it reads as coverage.
 allowlist=$(cat <<'ALLOWLIST'
 crates/reprise-cli/tests/common/mod.rs:1
-crates/reprise-core/src/library/library_doctor/remote/mod.rs:1
-crates/reprise-core/src/library/library_doctor/remote/network.rs:2
-crates/reprise-core/src/library/library_doctor/remote/orchestrator.rs:1
 crates/reprise-core/src/library/playlists.rs:6
 crates/reprise-gnome/examples/row_loss_dump_repro.rs:2
 crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:1
@@ -204,7 +201,6 @@ crates/reprise-gnome/src/ui/concerts/concerts_view.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_worker.rs:1
 crates/reprise-gnome/src/ui/concerts/mod.rs:1
 crates/reprise-gnome/src/ui/issues/mod.rs:1
-crates/reprise-gnome/src/ui/library_doctor/review_model.rs:1
 crates/reprise-gnome/src/ui/lyrics/lyrics_view.rs:4
 crates/reprise-gnome/src/ui/motion.rs:4
 crates/reprise-gnome/src/ui/playback/external_media.rs:1
@@ -227,7 +223,6 @@ crates/reprise-gnome/src/ui/runtime/commands.rs:1
 crates/reprise-gnome/src/ui/runtime/session.rs:2
 crates/reprise-gnome/src/ui/strings.rs:4
 crates/reprise-gnome/src/ui/strings_concerts.rs:1
-crates/reprise-gnome/src/ui/strings_library_doctor.rs:5
 crates/reprise-gnome/src/ui/strings_news.rs:1
 crates/reprise-gnome/src/ui/strings_online_sources.rs:1
 crates/reprise-gnome/src/ui/strings_podcasts.rs:1
