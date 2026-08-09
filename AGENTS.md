@@ -410,3 +410,25 @@ package.
 | 3 | PERF-5 | `crates/reprise-core/src/library/library_doctor/preferences.rs`, `crates/reprise-gnome/src/ui/library_doctor/start_page.rs` |
 | 3 | REV-2 | `crates/reprise-core/src/library/library_doctor/{review,review_tests}.rs`, `crates/reprise-gnome/src/ui/library_doctor/{review_page,review_filter_bar}.rs`, `crates/reprise-mcp/src/{doctor_dto,doctor_actions}.rs` |
 | 4 | PERF-3 | `crates/reprise-core/src/library/library_doctor/{store,scan}.rs` |
+
+## Session ownership — system date format (2026-08-09)
+
+This worktree implements **one** plan and nothing else:
+`docs/superpowers/plans/2026-08-09-system-date-format.md`.
+
+A sibling worktree (`../reprise-table-column-editing`) is implementing
+`2026-08-09-table-column-editing.md` at the same time. The two overlap on
+exactly two files, in different regions. Stay inside your region:
+
+**Yours in the shared files**
+- `crates/reprise-gnome/src/ui/releases/releases_columns.rs` — only the date
+  cell's rendering call. Do not add, remove or reorder columns.
+- `crates/reprise-gnome/src/ui/track_list/column_layout.rs` — only the
+  `format_unix_timestamp` call site around line 590. Do not restructure the
+  file, the registry or the layout type.
+
+**Not yours at all — do not create or edit**
+`ui/table_columns/`, `column_layout_editor.rs`, `column_header_dnd.rs`,
+`*_column_layout.rs`, `reprise-view/src/columns/`,
+`reprise-view/src/column_widths.rs`, `updates/release_cover.rs`, and the
+`ui.column_layout.*` / `ui.column_widths.*` settings keys.

@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use chrono::{DateTime, Local};
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -270,14 +269,7 @@ impl DoctorStartPage {
 }
 
 fn format_scan_time(timestamp: i64) -> String {
-    DateTime::from_timestamp(timestamp, 0).map_or_else(
-        || timestamp.to_string(),
-        |time| {
-            time.with_timezone(&Local)
-                .format("%Y-%m-%d %H:%M")
-                .to_string()
-        },
-    )
+    reprise_core::format::format_unix_timestamp(timestamp, crate::ui::date_format::current())
 }
 
 const fn show_acoustid_unavailable(remote_active: bool, fingerprint_available: bool) -> bool {

@@ -1,3 +1,4 @@
+use crate::format::DatePattern;
 use chrono::{NaiveDate, TimeZone, Utc};
 
 use super::{week_start, Granularity, StatsPeriod};
@@ -13,7 +14,7 @@ fn stats_12_axis_matches_period() {
     );
     assert_eq!(year_to_date.granularity, Granularity::Week);
     assert_eq!(year_to_date.buckets.len(), 29);
-    assert_eq!(year_to_date.buckets[0].label, "Week of Dec 29");
+    assert_eq!(year_to_date.buckets[0].label, "Week of 12-29");
     assert_eq!(
         year_to_date.buckets[0].start_unix,
         timestamp(2026, 1, 1, 0, 0)
@@ -31,7 +32,7 @@ fn stats_12_axis_matches_period() {
     assert_eq!(last_30_days.granularity, Granularity::Day);
     assert_eq!(last_30_days.buckets.len(), 30);
     assert!(last_30_days.buckets.last().unwrap().open);
-    assert_eq!(last_30_days.buckets.last().unwrap().label, "Jul 19");
+    assert_eq!(last_30_days.buckets.last().unwrap().label, "07-19");
 }
 
 #[test]
@@ -49,7 +50,7 @@ fn stats_12_year_axis_uses_week_buckets() {
         StatsPeriod::Year(2025).resolve(NOW_2026_07_19, &Utc, Some(timestamp(2025, 1, 1, 0, 0)));
     assert_eq!(full_year.granularity, Granularity::Week);
     assert!((52..=53).contains(&full_year.buckets.len()));
-    assert_eq!(full_year.buckets[0].label, "Week of Dec 30");
+    assert_eq!(full_year.buckets[0].label, "Week of 12-30");
     assert!(full_year.buckets.iter().all(|bucket| !bucket.open));
 }
 
@@ -224,6 +225,17 @@ fn available_periods_include_only_calendar_years_with_detailed_history() {
             StatsPeriod::Last30Days,
         ]
     );
+}
+
+/// STYLE-11: an axis label names a bucket, so it may show fewer fields
+/// than the pattern holds — the period selector above the chart already
+/// says which span is on screen. It may not show a different pattern.
+#[test]
+fn style_11_axis_labels_follow_the_pattern_at_bucket_precision() {
+    let pattern = DatePattern::from_platform("%d.%m.%Y");
+    assert_eq!(super::day_label(2026, 8, 15, &pattern), "15.08");
+    assert_eq!(super::week_label(2026, 8, 15, &pattern), "Week of 15.08");
+    assert_eq!(super::month_label(2026, 8, &pattern), "08.2026");
 }
 
 fn timestamp(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {

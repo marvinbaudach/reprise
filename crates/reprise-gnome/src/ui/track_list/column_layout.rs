@@ -587,7 +587,12 @@ pub(super) fn build_columns(
         "added_at",
         &strings::text(strings::COLUMN_ADDED),
         cell_alignment(ColumnId::Added),
-        |track| reprise_core::format::format_unix_timestamp(track.added_at),
+        |track| {
+            reprise_core::format::format_unix_timestamp(
+                track.added_at,
+                crate::ui::date_format::current(),
+            )
+        },
     );
     let rating = append_rating_column(view, shared);
     let play_count = append_column(

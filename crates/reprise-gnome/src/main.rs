@@ -118,6 +118,7 @@ fn main() -> glib::ExitCode {
     ui::track_list::diagnostic_trail::mark_process_start();
     init_logging();
     i18n::init();
+    crate::ui::date_format::init();
     i18n::smoke_report();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Reprise");
 

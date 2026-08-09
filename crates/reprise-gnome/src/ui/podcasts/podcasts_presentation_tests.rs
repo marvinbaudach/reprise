@@ -3,6 +3,8 @@
 //! repository's 800-line source-size gate.
 
 use super::*;
+use chrono::TimeZone;
+use reprise_core::format::DatePattern;
 
 fn row(id: i64, published_at: Option<i64>, kind: PodcastKind) -> EpisodeRow {
     EpisodeRow {
@@ -48,6 +50,32 @@ fn pod_9_presentation_formats_date_length_source_and_status() {
     assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("Resume"));
     episode.played_at = Some(1);
     assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("Played"));
+}
+
+/// STYLE-11: the episode line carried its own current-year year-omission,
+/// the third copy of that rule in the app. One pattern now, year always.
+#[test]
+fn style_11_episode_date_is_the_system_pattern() {
+    let pattern = DatePattern::from_platform("%d.%m.%Y");
+    let today = NaiveDate::from_ymd_opt(2026, 8, 20).unwrap();
+    let current_year = Local
+        .with_ymd_and_hms(2026, 8, 15, 12, 0, 0)
+        .single()
+        .unwrap()
+        .timestamp();
+    let prior_year = Local
+        .with_ymd_and_hms(2025, 8, 15, 12, 0, 0)
+        .single()
+        .unwrap()
+        .timestamp();
+    assert_eq!(
+        relative_date_with(Some(current_year), today, &pattern),
+        "15.08.2026"
+    );
+    assert_eq!(
+        relative_date_with(Some(prior_year), today, &pattern),
+        "15.08.2025"
+    );
 }
 
 #[test]

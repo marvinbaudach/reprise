@@ -17,7 +17,9 @@ use super::device_sync_page_copy::{
 // a plain `cargo build` never compiles that module, so these would
 // otherwise warn as unused.
 #[cfg(test)]
-use super::device_sync_page_copy::{transfer_progress_copy, verification_summary, PageActionCopy};
+use super::device_sync_page_copy::{
+    format_local_date_time, transfer_progress_copy, verification_summary, PageActionCopy,
+};
 use super::device_sync_page_layout;
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
 use super::device_sync_storage_bar::StorageBar;
