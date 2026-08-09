@@ -26,6 +26,7 @@ mod window_header;
 pub(in crate::ui) mod window_navigation;
 pub(in crate::ui) mod window_now_playing_wiring;
 pub(in crate::ui) mod window_queue_model;
+mod window_runtime_setup;
 pub(in crate::ui) mod window_runtime_wiring;
 pub(in crate::ui) mod window_smoke;
 

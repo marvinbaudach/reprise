@@ -24,9 +24,7 @@ use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::view_source::ViewSource;
 
-use super::cover_download_worker;
 use super::file_open::{FileOpenHandler, StartupOpenIntent};
-use super::player_controller::PlayerController;
 use super::scan_progress::ScanProgressView;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
@@ -69,57 +67,17 @@ pub fn build(
     // first frame. If GStreamer is unavailable the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
-    let cover_download = cover_download_worker::setup(conn);
-    let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
-        db_path.to_path_buf(),
-        reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
-        "ListenBrainz",
-    );
-    let lastfm = super::scrobble_runtime::ScrobbleRuntime::new(
-        db_path.to_path_buf(),
-        reprise_core::scrobbling::ScrobbleProvider::LastFm,
-        "Last.fm",
-    );
-    super::preference_lastfm::bootstrap(conn, &lastfm);
-    super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
-    super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
-    super::window_smoke::arm_lastfm(conn, &lastfm);
-    let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(conn);
-    let concerts_runtime = crate::ui::concerts::ConcertsRuntime::setup(conn);
-    let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(conn);
-    let artist_portrait = super::artist_portrait_worker::ArtistPortraitRuntime::setup(conn);
-    super::startup_report::mark("runtime setups");
-    let media = std::env::var(crate::SMOKE_MPRIS_BUS_ENV_VAR).map_or_else(
-        |_| reprise_platform_linux::mpris::start(crate::APP_ID),
-        |bus_name| reprise_platform_linux::mpris::start_with_bus_name(crate::APP_ID, bus_name),
-    );
-    super::startup_report::mark("MPRIS");
-    let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
-        super::device_sync_runtime::DeviceSyncRuntime::new(
-            conn,
-            reprise_platform_linux::device_sync::DeviceMonitor::new(),
-        )
-    });
-    device_sync
-        .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
-    device_sync.bind_preparation_downloader(&podcasts_runtime);
-    super::device_sync_smoke::arm(&device_sync);
-    super::startup_report::mark("device sync");
-    let player = match super::player_backends::build(waveform_backend.clone(), media) {
-        Ok(backends) => Some(PlayerController::new(
-            conn.clone(),
-            cover_download.clone(),
-            listenbrainz.clone(),
-            lastfm.clone(),
-            backends,
-            app,
-        )),
-        Err(error) => {
-            tracing::error!(%error, "player unavailable: playback disabled");
-            None
-        }
-    };
-    super::startup_report::mark("player backends");
+    let super::window_runtime_setup::WindowRuntimes {
+        cover_download,
+        listenbrainz,
+        lastfm,
+        artist_news,
+        concerts: concerts_runtime,
+        podcasts: podcasts_runtime,
+        artist_portrait,
+        device_sync,
+        player,
+    } = super::window_runtime_setup::setup(app, conn, db_path, waveform_backend);
     let startup_intent = startup_intent.with_player_available(player.is_some());
     let initial_view =
         super::compact_mode_controls::initial_transition(conn, first_run_decision, startup_intent);
