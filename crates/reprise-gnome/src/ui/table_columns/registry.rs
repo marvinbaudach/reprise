@@ -445,4 +445,66 @@ mod tests {
             "a visible preferred filler keeps the role"
         );
     }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_10_hiding_the_filler_moves_realized_space_to_the_next_column() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let title = gtk4::ColumnViewColumn::builder()
+            .title("Title")
+            .id(ColumnId::Title.as_str())
+            .fixed_width(120)
+            .expand(true)
+            .build();
+        let artist = gtk4::ColumnViewColumn::builder()
+            .title("Artist")
+            .id(ColumnId::Artist.as_str())
+            .fixed_width(120)
+            .build();
+        view.append_column(&title);
+        view.append_column(&artist);
+        let registry = ColumnRegistry::new(
+            &view,
+            Rc::new(crate::test_db::open().unwrap()),
+            TableKeys {
+                layout: "test.filler-transfer.layout",
+                widths: "test.filler-transfer.widths",
+            },
+            vec![
+                (ColumnId::Title, title.clone()),
+                (ColumnId::Artist, artist.clone()),
+            ],
+        );
+        registry.configure(
+            Rc::new(|key| key.as_str().to_owned()),
+            Rc::new(|_| 120),
+            ColumnId::Title,
+        );
+        registry.apply(&registry.layout());
+        let window = gtk4::Window::builder()
+            .default_width(600)
+            .default_height(160)
+            .child(&view)
+            .build();
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+        let before = crate::ui::table_column_widths::realised_widths(&view);
+        assert_eq!(before.len(), 2, "both free columns must be measurable");
+
+        EditorModel::set_visible(registry.as_ref(), ColumnId::Title.as_str(), false);
+        crate::ui::source_context_surface::settle_layout();
+
+        let after = crate::ui::table_column_widths::realised_widths(&view);
+        assert_eq!(after.len(), 1, "only Artist remains visible");
+        assert!(
+            after[0] > before[1],
+            "Artist must absorb the space released by Title: before={before:?}, after={after:?}"
+        );
+        assert!(artist.expands());
+        assert!(!title.expands());
+        window.close();
+    }
 }

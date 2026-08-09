@@ -2822,8 +2822,10 @@ property is set and yet nothing happens.
   immediately without restarting the app.
 - **STYLE-9** [active] [gtk] — **A column never takes its width from the
   rows that happen to be on screen.** Every column of every table carries an
-  explicitly set width; exactly one column per table additionally expands and
-  absorbs the leftover width. A column left at the framework default
+  explicitly set width; exactly one visible free column per table additionally
+  expands and absorbs the leftover width. Hiding that column transfers the
+  filler role to the first visible free column in the user's order. A column
+  left at the framework default
   (`fixed-width = -1`) measures itself against the cells realized at that
   moment, and `GtkColumnView` recycles its row widgets while scrolling — so
   the whole table shifts sideways as the user scrolls, and the column that
