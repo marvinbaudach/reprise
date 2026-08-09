@@ -582,13 +582,36 @@ mod tests {
         let model = super::super::radio_column_layout::model(&registry);
         crate::ui::table_columns::header_popover::install_header_popover(&view, &model);
 
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
         let controllers = view.observe_controllers();
-        assert!((0..controllers.n_items()).any(|index| {
-            controllers
-                .item(index)
-                .and_downcast::<gtk4::GestureClick>()
-                .is_some_and(|gesture| gesture.button() == gtk4::gdk::BUTTON_SECONDARY)
-        }));
+        let gesture = (0..controllers.n_items())
+            .filter_map(|index| controllers.item(index).and_downcast::<gtk4::GestureClick>())
+            .find(|gesture| gesture.button() == gtk4::gdk::BUTTON_SECONDARY)
+            .expect("no secondary-button gesture was installed on the header");
+        gesture.emit_by_name::<()>("pressed", &[&1i32, &40.0f64, &4.0f64]);
+        crate::ui::source_context_surface::settle_layout();
+
+        let mut child = view.first_child();
+        let mut popovers = 0;
+        while let Some(current) = child {
+            if current
+                .downcast_ref::<gtk4::Popover>()
+                .is_some_and(|popover| popover.has_css_class("reprise-column-header-popover"))
+            {
+                popovers += 1;
+            }
+            child = current.next_sibling();
+        }
+        assert_eq!(
+            popovers, 1,
+            "a right-click on the header band did not open the column editor"
+        );
+
         model.set_visible("station", false);
         use reprise_view::columns::RadioColumn;
         assert!(!registry.is_visible(RadioColumn::Station));
