@@ -1,9 +1,9 @@
-//! One persisted due-check for automatic library maintenance at startup.
+//! One due-check register for automatic library maintenance at startup.
 //!
-//! Exact tasks compare the revision of their last completed pass with the
-//! scanner-maintained library-input revision. The revision changes only when
-//! a scan changes catalog inputs, so reading it is constant-time and cannot
-//! collide like a timestamp/count heuristic.
+//! Signature tasks compare the revision of their last completed pass with the
+//! scanner-maintained library-input revision. Filesystem-dependent tasks use
+//! the previous process's clean-exit age instead: a library signature cannot
+//! reveal a removed sidecar, deleted file, or disconnected drive.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -18,20 +18,18 @@ const RECORD_PREFIX: &str = "startup_tasks.completed.";
 pub const STARTUP_SCAN_WINDOW_SECONDS: i64 = 15 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StartupTask {
+pub enum SignatureTask {
     Spectrogram,
     CoverDownload,
-    Lyrics,
 }
 
-impl StartupTask {
-    pub const EXACT: [Self; 3] = [Self::Spectrogram, Self::CoverDownload, Self::Lyrics];
+impl SignatureTask {
+    pub const ALL: [Self; 2] = [Self::Spectrogram, Self::CoverDownload];
 
     pub fn log_name(self) -> &'static str {
         match self {
             Self::Spectrogram => "spectrogram batch",
             Self::CoverDownload => "cover batch",
-            Self::Lyrics => "lyrics batch",
         }
     }
 
@@ -39,9 +37,25 @@ impl StartupTask {
         let suffix = match self {
             Self::Spectrogram => "spectrogram",
             Self::CoverDownload => "covers",
-            Self::Lyrics => "lyrics",
         };
         format!("{RECORD_PREFIX}{suffix}")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeWindowTask {
+    LibraryScan,
+    Lyrics,
+}
+
+impl TimeWindowTask {
+    pub const ALL: [Self; 2] = [Self::LibraryScan, Self::Lyrics];
+
+    pub fn log_name(self) -> &'static str {
+        match self {
+            Self::LibraryScan => "library scan",
+            Self::Lyrics => "lyrics batch",
+        }
     }
 }
 
@@ -70,9 +84,10 @@ pub enum DueReason {
     ClockMovedBackwards,
 }
 
-/// Decides only whether the stopped-app catch-up scan is needed. The live
-/// watcher is independent and remains armed in either case.
-pub fn startup_scan_decision(
+/// Decides whether filesystem-dependent stopped-app catch-up work is needed.
+/// The live watcher and every manual trigger are independent of this decision.
+pub fn time_window_decision(
+    task: TimeWindowTask,
     previous_session: &crate::library::session::SessionState,
     current_library_root: &str,
     now: i64,
@@ -93,7 +108,7 @@ pub fn startup_scan_decision(
         return DueDecision::Run(DueReason::CleanExitTooOld { age_seconds });
     }
     tracing::info!(
-        task = "library scan",
+        task = task.log_name(),
         age_seconds,
         "startup task skipped: last clean exit was {} minutes ago",
         age_seconds / 60
@@ -101,11 +116,12 @@ pub fn startup_scan_decision(
     DueDecision::Skip(DueReason::RecentCleanExit { age_seconds })
 }
 
-pub fn should_run_startup_scan(
+pub fn should_run_time_window(
+    task: TimeWindowTask,
     previous_session: &crate::library::session::SessionState,
     current_library_root: &str,
 ) -> bool {
-    startup_scan_decision(previous_session, current_library_root, now_unix()).is_due()
+    time_window_decision(task, previous_session, current_library_root, now_unix()).is_due()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,7 +133,7 @@ pub enum DueDecision {
 /// The exact input revision one running pass is responsible for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExactTaskPass {
-    task: StartupTask,
+    task: SignatureTask,
     signature: Option<LibrarySignature>,
 }
 
@@ -168,7 +184,7 @@ pub enum StartupTaskError {
 
 pub fn exact_signature_decision(
     db: &Db,
-    task: StartupTask,
+    task: SignatureTask,
 ) -> Result<DueDecision, StartupTaskError> {
     let current = current_signature_in(db.conn())?;
     let Some(stored) = crate::library::settings::get_setting_in(db.conn(), &task.key())? else {
@@ -207,7 +223,7 @@ pub fn exact_signature_decision(
 /// Starts due work with the exact signature it is allowed to settle.
 /// A due-state read failure still runs conservatively but receives no
 /// settleable signature.
-pub fn begin_exact(db: &Db, task: StartupTask) -> Option<ExactTaskPass> {
+pub fn begin_exact(db: &Db, task: SignatureTask) -> Option<ExactTaskPass> {
     match exact_signature_decision(db, task) {
         Ok(DueDecision::Skip(_)) => None,
         Ok(DueDecision::Run(_)) => Some(ExactTaskPass {
@@ -243,7 +259,7 @@ pub fn begin_exact(db: &Db, task: StartupTask) -> Option<ExactTaskPass> {
 #[doc(hidden)]
 pub fn record_completed_at(
     db: &Db,
-    task: StartupTask,
+    task: SignatureTask,
     completed_at: i64,
 ) -> Result<(), StartupTaskError> {
     let record = TaskRecord {
@@ -257,7 +273,7 @@ pub fn record_completed_at(
 
 fn record_pass_completed(
     db: &Db,
-    task: StartupTask,
+    task: SignatureTask,
     started_signature: LibrarySignature,
     completed_at: i64,
 ) -> Result<bool, StartupTaskError> {
@@ -347,12 +363,12 @@ mod tests {
     fn an_exact_task_is_skipped_only_after_this_library_signature_completed() {
         let db = crate::db::Db::open_in_memory().unwrap();
 
-        assert!(exact_signature_decision(&db, StartupTask::Spectrogram)
+        assert!(exact_signature_decision(&db, SignatureTask::Spectrogram)
             .unwrap()
             .is_due());
 
-        record_completed_at(&db, StartupTask::Spectrogram, 123).unwrap();
-        let decision = exact_signature_decision(&db, StartupTask::Spectrogram).unwrap();
+        record_completed_at(&db, SignatureTask::Spectrogram, 123).unwrap();
+        let decision = exact_signature_decision(&db, SignatureTask::Spectrogram).unwrap();
 
         assert_eq!(
             decision,
@@ -366,7 +382,7 @@ mod tests {
     #[test]
     fn a_catalog_changing_scan_invalidates_every_exact_task_record() {
         let db = crate::db::Db::open_in_memory().unwrap();
-        for task in StartupTask::EXACT {
+        for task in SignatureTask::ALL {
             record_completed_at(&db, task, 123).unwrap();
         }
         let root = tempfile::tempdir().unwrap();
@@ -374,7 +390,7 @@ mod tests {
 
         crate::library::scanner::scan_folder(&db, root.path()).unwrap();
 
-        for task in StartupTask::EXACT {
+        for task in SignatureTask::ALL {
             assert_eq!(
                 exact_signature_decision(&db, task).unwrap(),
                 DueDecision::Run(DueReason::LibrarySignatureChanged {
@@ -391,11 +407,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         copy_track(root.path(), "known.flac");
         crate::library::scanner::scan_folder(&db, root.path()).unwrap();
-        record_completed_at(&db, StartupTask::CoverDownload, 456).unwrap();
+        record_completed_at(&db, SignatureTask::CoverDownload, 456).unwrap();
 
         crate::library::scanner::scan_folder(&db, root.path()).unwrap();
 
-        assert!(!exact_signature_decision(&db, StartupTask::CoverDownload)
+        assert!(!exact_signature_decision(&db, SignatureTask::CoverDownload)
             .unwrap()
             .is_due());
     }
@@ -403,20 +419,20 @@ mod tests {
     #[test]
     fn a_corrupt_library_signature_never_skips_work() {
         let db = crate::db::Db::open_in_memory().unwrap();
-        record_completed_at(&db, StartupTask::Lyrics, 789).unwrap();
+        record_completed_at(&db, SignatureTask::Spectrogram, 789).unwrap();
         crate::library::settings::set_setting(&db, LIBRARY_SIGNATURE_KEY, "not-a-revision")
             .unwrap();
 
-        assert!(exact_signature_decision(&db, StartupTask::Lyrics).is_err());
+        assert!(exact_signature_decision(&db, SignatureTask::Spectrogram).is_err());
     }
 
     #[test]
     fn an_unchanged_signature_skip_names_the_task_and_reason_in_the_log() {
         let db = crate::db::Db::open_in_memory().unwrap();
-        record_completed_at(&db, StartupTask::CoverDownload, 321).unwrap();
+        record_completed_at(&db, SignatureTask::CoverDownload, 321).unwrap();
         let logs = crate::log_capture::CapturedLogs::default();
 
-        logs.capture(|| exact_signature_decision(&db, StartupTask::CoverDownload).unwrap());
+        logs.capture(|| exact_signature_decision(&db, SignatureTask::CoverDownload).unwrap());
 
         let logs = logs.joined();
         assert!(logs.contains("cover batch"));
@@ -426,12 +442,12 @@ mod tests {
     #[test]
     fn a_pass_cannot_settle_a_signature_that_changed_while_it_was_running() {
         let db = crate::db::Db::open_in_memory().unwrap();
-        let pass = begin_exact(&db, StartupTask::Spectrogram).unwrap();
+        let pass = begin_exact(&db, SignatureTask::Spectrogram).unwrap();
         advance_library_signature_in(db.conn()).unwrap();
 
         pass.record_completed_or_warn(&db);
 
-        assert!(exact_signature_decision(&db, StartupTask::Spectrogram)
+        assert!(exact_signature_decision(&db, SignatureTask::Spectrogram)
             .unwrap()
             .is_due());
     }
@@ -447,20 +463,35 @@ mod tests {
         };
         let logs = crate::log_capture::CapturedLogs::default();
 
-        let decision = logs.capture(|| startup_scan_decision(&state, "/music", 1_240));
+        let decision =
+            logs.capture(|| time_window_decision(TimeWindowTask::Lyrics, &state, "/music", 1_240));
 
         assert_eq!(
             decision,
             DueDecision::Skip(DueReason::RecentCleanExit { age_seconds: 240 })
         );
-        assert!(logs.joined().contains("last clean exit was 4 minutes ago"));
+        let logs = logs.joined();
+        assert!(logs.contains("lyrics batch"));
+        assert!(logs.contains("last clean exit was 4 minutes ago"));
+    }
+
+    #[test]
+    fn filesystem_dependent_lyrics_are_not_an_exact_signature_task() {
+        assert_eq!(
+            SignatureTask::ALL,
+            [SignatureTask::Spectrogram, SignatureTask::CoverDownload]
+        );
+        assert_eq!(
+            TimeWindowTask::ALL,
+            [TimeWindowTask::LibraryScan, TimeWindowTask::Lyrics]
+        );
     }
 
     #[test]
     fn startup_scan_runs_without_a_clean_exit_at_the_boundary_or_after_root_change() {
         let missing = SessionState::default();
         assert_eq!(
-            startup_scan_decision(&missing, "/music", 1_000),
+            time_window_decision(TimeWindowTask::LibraryScan, &missing, "/music", 1_000),
             DueDecision::Run(DueReason::NoCleanExit)
         );
 
@@ -472,15 +503,15 @@ mod tests {
             ..SessionState::default()
         };
         assert_eq!(
-            startup_scan_decision(&clean, "/music", 1_900),
+            time_window_decision(TimeWindowTask::LibraryScan, &clean, "/music", 1_900),
             DueDecision::Run(DueReason::CleanExitTooOld { age_seconds: 900 })
         );
         assert_eq!(
-            startup_scan_decision(&clean, "/new-music", 1_100),
+            time_window_decision(TimeWindowTask::LibraryScan, &clean, "/new-music", 1_100),
             DueDecision::Run(DueReason::LibraryRootChanged)
         );
         assert_eq!(
-            startup_scan_decision(&clean, "/music", 999),
+            time_window_decision(TimeWindowTask::LibraryScan, &clean, "/music", 999),
             DueDecision::Run(DueReason::ClockMovedBackwards)
         );
     }

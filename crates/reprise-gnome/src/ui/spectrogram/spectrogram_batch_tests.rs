@@ -174,7 +174,7 @@ fn an_unchanged_library_never_launches_the_spectrogram_worker_twice() {
     let db = Rc::new(crate::test_db::open().unwrap());
     reprise_core::library::startup_tasks::record_completed_at(
         &db,
-        reprise_core::library::startup_tasks::StartupTask::Spectrogram,
+        reprise_core::library::startup_tasks::SignatureTask::Spectrogram,
         123,
     )
     .unwrap();

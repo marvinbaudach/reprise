@@ -463,8 +463,18 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     {
         let lyrics_batch = lyrics_batch.clone();
         let cover_batch = cover_batch.clone();
+        let previous_session = session_state.clone();
+        let current_library_root = reprise_core::library::settings::get_library_root(conn)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not read library root for lyrics due-check");
+                None
+            });
         super::startup_quiet::run_after_quiet(move || {
-            lyrics_batch.start_after_cover(&cover_batch);
+            lyrics_batch.start_after_cover(
+                &cover_batch,
+                &previous_session,
+                current_library_root.as_deref(),
+            );
         });
     }
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
@@ -702,7 +712,8 @@ fn start_persisted_watcher(
     };
     match root {
         Ok(Some(root)) => {
-            let start = if reprise_core::library::startup_tasks::should_run_startup_scan(
+            let start = if reprise_core::library::startup_tasks::should_run_time_window(
+                reprise_core::library::startup_tasks::TimeWindowTask::LibraryScan,
                 previous_session,
                 &root,
             ) {

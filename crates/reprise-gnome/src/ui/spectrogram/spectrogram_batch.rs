@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use gtk4::glib;
 use reprise_core::db::Db;
-use reprise_core::library::startup_tasks::{self, StartupTask};
+use reprise_core::library::startup_tasks::{self, SignatureTask};
 use reprise_core::spectrogram_backfill::{BackfillProgress, BackfillSummary};
 use reprise_view::analysis_progress::settled;
 pub(in crate::ui) use reprise_view::analysis_progress::{
@@ -84,7 +84,7 @@ impl SpectrogramBatch {
         if self.is_running() {
             return;
         }
-        let Some(pass) = startup_tasks::begin_exact(&self.conn, StartupTask::Spectrogram) else {
+        let Some(pass) = startup_tasks::begin_exact(&self.conn, SignatureTask::Spectrogram) else {
             self.set_progress(SpectrogramBatchProgress {
                 state: SpectrogramBatchState::Complete,
                 ..SpectrogramBatchProgress::idle()

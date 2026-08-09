@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gtk4::glib;
 use reprise_core::db::Db;
-use reprise_core::library::startup_tasks::{self, StartupTask};
+use reprise_core::library::startup_tasks::{self, SignatureTask};
 
 use super::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
 use super::player_controller::PlayerController;
@@ -138,7 +138,8 @@ impl CoverDownloadBatch {
             self.set_progress(BatchProgress::idle());
             return;
         }
-        let Some(pass) = startup_tasks::begin_exact(&self.conn, StartupTask::CoverDownload) else {
+        let Some(pass) = startup_tasks::begin_exact(&self.conn, SignatureTask::CoverDownload)
+        else {
             self.set_progress(BatchProgress::running(0));
             return;
         };

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use gtk4::glib;
 use reprise_core::db::Db;
-use reprise_core::library::startup_tasks::{self, StartupTask};
+use reprise_core::library::startup_tasks::{self, TimeWindowTask};
 pub(in crate::ui) use reprise_core::lyrics::{
     BatchProgress as LyricsBatchProgress, BatchState as LyricsBatchState,
 };
@@ -127,10 +127,6 @@ impl LyricsBatch {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
-        let Some(pass) = startup_tasks::begin_exact(&self.conn, StartupTask::Lyrics) else {
-            self.set_progress(LyricsBatchProgress::running(0));
-            return;
-        };
         let summaries = match reprise_core::queries::query_live_track_summaries(&self.conn) {
             Ok(summaries) => summaries,
             Err(error) => {
@@ -144,7 +140,6 @@ impl LyricsBatch {
         let progress = LyricsBatchProgress::running(summaries.len());
         self.set_progress(progress);
         if progress.state == LyricsBatchState::Complete {
-            pass.record_completed_or_warn(&self.conn);
             return;
         }
         let (events, receiver) = async_channel::unbounded();
@@ -176,9 +171,6 @@ impl LyricsBatch {
                 match event {
                     WorkerEvent::Progress(progress) => {
                         batch.set_progress(progress);
-                        if progress.state == LyricsBatchState::Complete && progress.failed == 0 {
-                            pass.record_completed_or_warn(&batch.conn);
-                        }
                     }
                     WorkerEvent::Cancelled => {
                         batch.set_progress(LyricsBatchProgress::idle());
@@ -189,12 +181,44 @@ impl LyricsBatch {
         });
     }
 
-    pub(in crate::ui) fn start_after_cover(self: &Rc<Self>, cover_batch: &Rc<CoverDownloadBatch>) {
+    pub(in crate::ui) fn start_automatically(
+        self: &Rc<Self>,
+        previous_session: &reprise_core::library::session::SessionState,
+        current_library_root: &str,
+    ) {
+        if !startup_tasks::should_run_time_window(
+            TimeWindowTask::Lyrics,
+            previous_session,
+            current_library_root,
+        ) {
+            self.set_progress(LyricsBatchProgress::idle());
+            return;
+        }
+        self.start();
+    }
+
+    pub(in crate::ui) fn start_after_cover(
+        self: &Rc<Self>,
+        cover_batch: &Rc<CoverDownloadBatch>,
+        previous_session: &reprise_core::library::session::SessionState,
+        current_library_root: Option<&str>,
+    ) {
         let lyrics_batch = self.clone();
+        let previous_session = previous_session.clone();
+        let current_library_root = current_library_root.map(str::to_owned);
         let armed = Rc::new(Cell::new(false));
         cover_batch.subscribe_progress(
             || true,
-            start_after_cover_callback(armed.clone(), move || lyrics_batch.start()),
+            start_after_cover_callback(armed.clone(), move || {
+                if let Some(root) = &current_library_root {
+                    lyrics_batch.start_automatically(&previous_session, root);
+                } else {
+                    tracing::warn!(
+                        "library root unavailable for lyrics due-check; running conservatively"
+                    );
+                    lyrics_batch.start();
+                }
+            }),
         );
         armed.set(true);
         cover_batch.start();
