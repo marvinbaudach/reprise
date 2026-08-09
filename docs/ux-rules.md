@@ -2846,8 +2846,9 @@ property is set and yet nothing happens.
   in the editor; every other column belongs to the user. Exactly one visible
   column is the filler (STYLE-9); when the user hides it, the filler role
   moves to the first visible free column in the table's order. Hiding the
-  sorting column does not change the sort, because hiding is a visibility
-  flip and never removes the column from the view. **Test rule:** one
+  sorting column changes the sort to the first visible sortable free column,
+  ascending, or clears sorting when no such column remains, so an active sort
+  and its header indicator never become invisible. **Test rule:** one
   rule-named display test per table, plus a measured filler test.
 - **STYLE-11** [planned] [core] [gtk] — **A date looks the same everywhere.**
   Every displayed calendar date follows the system locale's date pattern, with
