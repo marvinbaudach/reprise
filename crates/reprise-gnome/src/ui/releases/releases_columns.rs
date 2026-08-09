@@ -44,7 +44,7 @@ fn cover_column(view: &gtk4::ColumnView) {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let cover = crate::ui::updates::release_cover::LazyReleaseCover::new_unbound(40);
+        let cover = crate::ui::updates::release_cover::LazyReleaseCover::new_unbound(widths::COVER);
         item.set_child(Some(cover.widget()));
     });
     factory.connect_bind(move |_, object| {
@@ -81,7 +81,7 @@ fn cover_column(view: &gtk4::ColumnView) {
         .factory(&factory)
         .resizable(false)
         .build();
-    widths::pin(&column, 40);
+    widths::pin(&column, widths::COVER);
     view.append_column(&column);
 }
 
