@@ -232,6 +232,17 @@ result.
   once. Checked by hand because no automated level drives either entry
   point end to end: the cua-e2e scenario that once proved this path drove
   the header item and retired with NAV-7.
+- **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
+  switch.** A secondary click, Menu, or Shift+F10 on Podcasts, YouTube,
+  Radio, Releases, or Concerts opens one action, "Turn Off {name}". It
+  changes the same module setting as the Plugins switch, applies the same
+  runtime refresh immediately, and keeps subscriptions, favorites, caches,
+  and source data. If the place being turned off is open, Music becomes the
+  selected place; otherwise the current place does not change. Music, Queue,
+  playlists, smart lists, and My Stats never offer this action. *Tests:*
+  `nav_16_only_optional_module_rows_offer_turn_off`,
+  `nav_16_turn_off_dispatches_the_clicked_module_once`,
+  `nav_16_secondary_click_turns_off_the_row_and_falls_back_to_music`.
 
 ## C. Playback, queue, shuffle, filter
 
