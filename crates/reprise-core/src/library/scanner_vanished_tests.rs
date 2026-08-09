@@ -271,6 +271,9 @@ fn scan_folder_folds_a_deleted_file_into_the_same_scan() {
     let conn = crate::db::Db::open_in_memory().unwrap();
     completed(scan_folder(&conn, tmp.path()).unwrap());
     let (id, ..) = row_by_path(conn.conn(), &path);
+    conn.conn()
+        .execute("UPDATE tracks SET mount_point = NULL WHERE id = ?1", [id])
+        .unwrap();
 
     std::fs::remove_file(&path).unwrap();
     let report = completed(scan_folder(&conn, tmp.path()).unwrap());
@@ -278,6 +281,18 @@ fn scan_folder_folds_a_deleted_file_into_the_same_scan() {
     assert_eq!(report.vanished, 1);
     assert!(is_missing(conn.conn(), id));
     assert_eq!(missing_reason(conn.conn(), id).as_deref(), Some("deleted"));
+    let expected_mount_point = UnixLibrarySource
+        .mount_point(&path)
+        .map(|mount| mount.to_string_lossy().into_owned());
+    let mount_point: Option<String> = conn
+        .conn()
+        .query_row(
+            "SELECT mount_point FROM tracks WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(mount_point, expected_mount_point);
 }
 
 /// Brief case 2 (atomicity/ordering): a move and an unrelated deletion

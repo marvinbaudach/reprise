@@ -156,19 +156,16 @@ pub(super) fn mark_vanished_with(
             continue;
         }
         let reason = source.reachability(path, device);
+        let mount_point = source
+            .mount_point(path)
+            .map(|mount| mount.to_string_lossy().into_owned());
         tx.execute(
-            "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
-            rusqlite::params![id, now_unix(), reason.as_str()],
+            "UPDATE tracks SET missing_since = ?2, missing_reason = ?3, mount_point = ?4 \
+             WHERE id = ?1",
+            rusqlite::params![id, now_unix(), reason.as_str(), mount_point],
         )?;
         marked += 1;
         if reason == MissingReason::Unmounted {
-            // Diagnostic only: `mount_point_of` exists to group "what
-            // disappears together when a mount goes away" (see `mounts`'
-            // own module doc) — a later task's status card is the real
-            // consumer; for now this just makes that grouping visible in
-            // the log for an `Unmounted` row, where it's actually
-            // informative (a `Deleted` row has no mount to report).
-            let mount_point = source.mount_point(path);
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
