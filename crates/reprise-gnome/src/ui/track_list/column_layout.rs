@@ -257,7 +257,7 @@ pub(super) fn build_columns(
         },
         ColumnId::Title,
     );
-    super::column_header_dnd::wire_header_drag(view);
+    super::column_header_dnd::wire_header_drag(view, &registry);
     let layout = registry.layout();
     registry.apply(&layout);
     BuiltColumns {
