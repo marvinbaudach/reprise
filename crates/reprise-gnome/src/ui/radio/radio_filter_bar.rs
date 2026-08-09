@@ -200,6 +200,7 @@ pub(super) struct RadioFilterBar {
     choices: RefCell<Vec<FilterChoice>>,
     conn: Rc<Db>,
     filter: RefCell<RadioFilter>,
+    committed_query: RefCell<String>,
     visible_count: Cell<usize>,
     total_count: Cell<usize>,
     on_changed: RefCell<Option<FilterCallback>>,
@@ -244,6 +245,7 @@ impl RadioFilterBar {
             choices: RefCell::new(Vec::new()),
             conn,
             filter: RefCell::new(filter),
+            committed_query: RefCell::new(String::new()),
             visible_count: Cell::new(0),
             total_count: Cell::new(0),
             on_changed: RefCell::new(None),
@@ -315,6 +317,18 @@ impl RadioFilterBar {
         self.apply_internal(current.with_query(query), false);
     }
 
+    pub(super) fn set_committed_query(self: &Rc<Self>, query: &str) {
+        if *self.committed_query.borrow() == query {
+            return;
+        }
+        self.committed_query.replace(query.to_owned());
+        self.rebuild_chips();
+    }
+
+    fn committed_query(&self) -> String {
+        self.committed_query.borrow().clone()
+    }
+
     fn apply(self: &Rc<Self>, filter: RadioFilter) {
         self.apply_internal(filter, true);
     }
@@ -329,6 +343,12 @@ impl RadioFilterBar {
             tracing::warn!(%error, "could not persist radio filters");
         }
         let previous_query = self.filter.replace(filter.clone()).query;
+        // Drop the receipt in the same turn as the query — see the note in
+        // `concerts_filter_bar::clear_query`. An empty query has no chip under
+        // either surface, so this cannot disagree with the commit sink.
+        if filter.query.trim().is_empty() {
+            self.committed_query.replace(String::new());
+        }
         self.rebuild_chips();
         if announce_query && previous_query != filter.query {
             if let Some(callback) = self.on_query_changed.borrow().clone() {
@@ -382,10 +402,11 @@ impl RadioFilterBar {
             self.chips.remove(&child);
         }
         let filter = self.filter();
+        let committed_query = self.committed_query();
         // FIL-1a/FIL-1d: the search chip comes first, ahead of the facets.
         let weak = Rc::downgrade(self);
         self.layout
-            .replace_scoped_search(SearchScope::Radio, &filter.query, move || {
+            .replace_scoped_search(SearchScope::Radio, &committed_query, move || {
                 if let Some(bar) = weak.upgrade() {
                     let cleared = bar.filter().with_query("");
                     bar.apply(cleared);
@@ -531,6 +552,7 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = RadioFilterBar::new(conn);
         bar.set_query("nova");
+        bar.set_committed_query("nova");
         bar.set_counts(3, 44);
 
         assert_eq!(

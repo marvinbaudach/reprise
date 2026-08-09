@@ -283,6 +283,10 @@ impl PodcastsView {
         self.filter_bar.set_query(query);
     }
 
+    pub(in crate::ui) fn set_committed_search_query(&self, query: &str) {
+        self.filter_bar.set_committed_query(query);
+    }
+
     /// SEARCH-8a: the reverse direction — the bar removed the query itself
     /// (its × or a jump that had to relax it), so the header entry has to
     /// follow.

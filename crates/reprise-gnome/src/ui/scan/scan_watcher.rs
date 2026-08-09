@@ -60,14 +60,58 @@ pub(in crate::ui) fn start_or_restart_watcher(
     track_list: Weak<TrackList>,
     sidebar: Weak<Sidebar>,
 ) {
+    start_or_restart_watcher_inner(
+        watcher_state,
+        root,
+        db_path,
+        controls,
+        track_list,
+        sidebar,
+        true,
+    );
+}
+
+pub(in crate::ui) fn start_or_restart_live_watcher(
+    watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
+    root: &Path,
+    db_path: PathBuf,
+    controls: ScanControls,
+    track_list: Weak<TrackList>,
+    sidebar: Weak<Sidebar>,
+) {
+    start_or_restart_watcher_inner(
+        watcher_state,
+        root,
+        db_path,
+        controls,
+        track_list,
+        sidebar,
+        false,
+    );
+}
+
+fn start_or_restart_watcher_inner(
+    watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
+    root: &Path,
+    db_path: PathBuf,
+    controls: ScanControls,
+    track_list: Weak<TrackList>,
+    sidebar: Weak<Sidebar>,
+    catch_up: bool,
+) {
     watcher_state.borrow_mut().take();
     let (sender, receiver) = async_channel::unbounded::<watcher::WatchEvent>();
 
-    let handle = watcher::start(root, db_path, move |event| {
+    let on_event = move |event| {
         if let Err(error) = sender.send_blocking(event) {
             tracing::warn!(%error, "watcher event dropped: UI receiver is gone");
         }
-    });
+    };
+    let handle = if catch_up {
+        watcher::start(root, db_path, on_event)
+    } else {
+        watcher::start_live(root, db_path, on_event)
+    };
     match &handle {
         Some(_) => tracing::info!(root = %root.display(), "watcher started"),
         None => tracing::warn!(

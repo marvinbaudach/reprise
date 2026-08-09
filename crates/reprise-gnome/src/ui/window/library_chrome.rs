@@ -1,16 +1,15 @@
 //! Full-width library chrome from design mockup 7a.
-use std::cell::RefCell;
-use std::rc::Rc;
 
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
 pub(in crate::ui) use super::library_chrome_css::css;
+use super::search_popover::SearchPopover;
 use super::strings;
 
 pub(in crate::ui) struct LibraryChrome {
     pub(in crate::ui) root: adw::ToolbarView,
-    pub(in crate::ui) search_bar: gtk4::SearchBar,
+    pub(in crate::ui) search: SearchPopover,
     /// SEARCH-8a needs the lens outside tests too: a section without a list
     /// makes it insensitive and re-labels it.
     pub(in crate::ui) search_toggle: gtk4::ToggleButton,
@@ -24,7 +23,7 @@ pub(in crate::ui) fn build(
     header: &adw::HeaderBar,
     content: &impl IsA<gtk4::Widget>,
     search_entry: &gtk4::SearchEntry,
-    key_capture_widget: &impl IsA<gtk4::Widget>,
+    _key_capture_widget: &impl IsA<gtk4::Widget>,
 ) -> LibraryChrome {
     header.add_css_class("reprise-library-header");
     let search_toggle = gtk4::ToggleButton::builder()
@@ -40,27 +39,16 @@ pub(in crate::ui) fn build(
     ))]);
     header.pack_end(&search_toggle);
 
-    let search_clamp = adw::Clamp::builder()
-        .maximum_size(450)
-        .child(search_entry)
-        .build();
-    let search_bar = gtk4::SearchBar::new();
-    search_bar.set_hexpand(true);
-    search_bar.add_css_class("reprise-search-strip");
-    search_bar.set_child(Some(&search_clamp));
-    search_bar.connect_entry(search_entry);
-    search_bar.set_key_capture_widget(Some(key_capture_widget));
-    wire_search_toggle(&search_toggle, &search_bar, search_entry);
-    wire_search_focus_collapse(&search_bar, search_entry, key_capture_widget);
+    let search = SearchPopover::new(&search_toggle, search_entry);
+    wire_search_toggle(&search_toggle, &search, search_entry);
 
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
     root.add_top_bar(header);
-    root.add_top_bar(&search_bar);
     root.set_content(Some(content));
     LibraryChrome {
         root,
-        search_bar,
+        search,
         search_toggle,
     }
 }
@@ -93,187 +81,51 @@ pub(in crate::ui) fn search_toggle_active(search_mode: bool, query: &str) -> boo
     search_mode || !query.trim().is_empty()
 }
 
-fn should_collapse_search_after_focus_change(
-    search_mode: bool,
-    entry_has_focus: bool,
-    pointer_button_held: bool,
-) -> bool {
-    // `pointer_button_held` is the whole reason this is not just
-    // `search_mode && !entry_has_focus`. A press moves focus out of the entry
-    // *before* the release that completes the click. Collapsing in that gap
-    // removes a whole top bar, so everything below it — the filter row with
-    // the search chip, "Clear all" and the facet pills — jumps up by the
-    // strip's height, the release lands on whatever moved into its place, and
-    // GTK never emits `clicked`. What the user saw was the strip vanishing on
-    // the first click and the chip needing a second one. So: never collapse
-    // mid-click; the release hook below finishes the job.
-    search_mode && !entry_has_focus && !pointer_button_held
-}
-
-fn wire_search_focus_collapse(
-    search_bar: &gtk4::SearchBar,
-    search_entry: &gtk4::SearchEntry,
-    pointer_root: &impl IsA<gtk4::Widget>,
-) {
-    let held = Rc::new(std::cell::Cell::new(false));
-    let released = wire_search_focus_collapse_with(search_bar, search_entry, &held);
-
-    // Why an event controller and not `GdkDevice::modifier_state`: on X11
-    // that state is only refreshed from events the toolkit itself received,
-    // and it read "no button down" throughout a real held click — measured,
-    // not assumed. The button events are the authority.
-    //
-    // Legacy (not `GtkGestureClick`) and capture phase: this watcher must
-    // observe every press and release anywhere in the window without ever
-    // claiming the sequence, or it would eat the very clicks it exists to
-    // protect.
-    let controller = gtk4::EventControllerLegacy::new();
-    controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    controller.connect_event(move |_, event| {
-        match event.event_type() {
-            gtk4::gdk::EventType::ButtonPress => held.set(true),
-            gtk4::gdk::EventType::ButtonRelease => {
-                held.set(false);
-                released();
-            }
-            _ => {}
-        }
-        gtk4::glib::Propagation::Proceed
-    });
-    pointer_root.as_ref().add_controller(controller);
-}
-
-/// The wiring above with the pointer-button state handed in, so a test can
-/// hold a button down without a device. Returns the hook to call when the
-/// pointer is released: a collapse that was postponed mid-click runs then.
-fn wire_search_focus_collapse_with(
-    search_bar: &gtk4::SearchBar,
-    search_entry: &gtk4::SearchEntry,
-    held: &Rc<std::cell::Cell<bool>>,
-) -> impl Fn() + 'static {
-    let focus = gtk4::EventControllerFocus::new();
-    let postponed = Rc::new(std::cell::Cell::new(false));
-
-    // One collapse, deferred to an idle by both callers. Pointer activation
-    // transfers focus before emitting `clicked`, so running inside the event
-    // would let the search toggle read the blur-driven collapse as a request
-    // to reopen the bar. When the idle finds a button still down it does not
-    // collapse; it records that one is owed, and the release hook re-runs it.
-    let collapse = {
-        let bar = search_bar.downgrade();
-        let focus = focus.downgrade();
-        let held = held.clone();
-        let postponed = postponed.clone();
-        Rc::new(move || {
-            let (bar, focus, held, postponed) =
-                (bar.clone(), focus.clone(), held.clone(), postponed.clone());
-            gtk4::glib::idle_add_local_once(move || {
-                let (Some(bar), Some(focus)) = (bar.upgrade(), focus.upgrade()) else {
-                    return;
-                };
-                if !bar.is_search_mode() || focus.contains_focus() {
-                    postponed.set(false);
-                    return;
-                }
-                if should_collapse_search_after_focus_change(
-                    bar.is_search_mode(),
-                    focus.contains_focus(),
-                    held.get(),
-                ) {
-                    bar.set_search_mode(false);
-                    postponed.set(false);
-                    return;
-                }
-                // Mid-click: the release hook owns this collapse now.
-                postponed.set(true);
-            });
-        })
-    };
-
-    let collapse_on_blur = collapse.clone();
-    focus.connect_contains_focus_notify(move |_| {
-        collapse_on_blur();
-    });
-    search_entry.add_controller(focus);
-
-    move || {
-        if postponed.replace(false) {
-            collapse();
-        }
-    }
-}
-
-fn update_preserved_query(search_mode: bool, query: &str, preserved_query: &mut String) {
-    if search_mode {
-        *preserved_query = query.to_string();
-    }
-}
-
 fn wire_search_toggle(
     toggle: &gtk4::ToggleButton,
-    search_bar: &gtk4::SearchBar,
+    search: &SearchPopover,
     search_entry: &gtk4::SearchEntry,
 ) {
-    let bar = search_bar.downgrade();
-    let entry = search_entry.downgrade();
+    let search_for_click = search.clone();
     toggle.connect_clicked(move |toggle| {
-        let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
-            return;
-        };
-        bar.set_search_mode(crate::ui::shortcuts::next_search_mode(bar.is_search_mode()));
-        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+        if crate::ui::shortcuts::next_search_mode(search_for_click.is_open()) {
+            search_for_click.open();
+        } else {
+            search_for_click.close();
+        }
+        toggle.set_active(search_toggle_active(
+            search_for_click.is_open(),
+            &search_for_click.entry().text(),
+        ));
     });
 
     let toggle_weak = toggle.downgrade();
     let entry = search_entry.downgrade();
-    // GtkSearchBar clears its connected entry when search mode ends. SEARCH-6
-    // forbids that: hiding the bar must never drop the query — it lives on as
-    // a chip and the lens stays checked. Restore the text the bar just wiped.
-    let preserved_query = Rc::new(RefCell::new(String::new()));
-    let stash = preserved_query.clone();
-    search_bar.connect_search_mode_enabled_notify(move |bar| {
+    search.connect_open_changed(move |open| {
         let (Some(toggle), Some(entry)) = (toggle_weak.upgrade(), entry.upgrade()) else {
             return;
         };
-        if bar.is_search_mode() {
-            stash.borrow_mut().clear();
-        } else {
-            let restored = stash.borrow().clone();
-            if !restored.is_empty() && entry.text().is_empty() {
-                entry.set_text(&restored);
-            }
-        }
-        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+        toggle.set_active(search_toggle_active(open, &entry.text()));
     });
 
     let toggle_weak = toggle.downgrade();
-    let bar = search_bar.downgrade();
+    // Weak, not a clone. This closure is stored in the entry's own handler
+    // list, and a strong `SearchPopover` holds that same entry — a strong
+    // capture here closes the loop onto itself, so `finalize` never runs and
+    // the entry, the popover and its caption outlive the window. Measured, not
+    // assumed. Same rule as the one spelled out on `SectionSearch`.
+    let search_for_change = search.downgrade();
     // `connect_changed`, not `connect_search_changed`: the lens only reflects
     // "a query exists" (SEARCH-3) and must follow every keystroke. Since
     // SEARCH-9 the entry's own `search-delay` is 0 and the two signals fire
     // together, but the app's debounce still sits behind `search_changed` in
     // `view_session`, and the lens must not wait for it.
-    let stash = preserved_query.clone();
     search_entry.connect_changed(move |entry| {
-        let (Some(toggle), Some(bar)) = (toggle_weak.upgrade(), bar.upgrade()) else {
+        let Some(toggle) = toggle_weak.upgrade() else {
             return;
         };
         let query = entry.text();
-        // While the bar is open the stash tracks the entry verbatim, empty
-        // included. Only assigning on non-empty left it stale after an
-        // explicit clear, and the collapse below then resurrected a query the
-        // user had removed — violating SEARCH-5, which preserves the query
-        // only *until* Esc, the chip's X or "Clear all" removes it. All three
-        // funnel through `set_text("")` while the bar is open, so clearing
-        // here covers them in one place.
-        //
-        // `is_search_mode()` is what separates the two kinds of empty entry: a
-        // user-initiated clear arrives while the bar is still open, whereas
-        // GtkSearchBar's own wipe is a consequence of search mode having been
-        // turned off and so cannot reach this branch — which is what makes
-        // SEARCH-6 survive.
-        update_preserved_query(bar.is_search_mode(), &query, &mut stash.borrow_mut());
-        toggle.set_active(search_toggle_active(bar.is_search_mode(), &query));
+        toggle.set_active(search_toggle_active(search_for_change.is_open(), &query));
     });
 }
 
@@ -298,12 +150,12 @@ mod tests;
 #[cfg(test)]
 mod style_guard {
     /// UX STYLE-1: every chrome surface that should read as its own plane
-    /// declares a background and a bottom edge explicitly.
+    /// declares its background explicitly.
     #[test]
     fn style_1_chrome_surfaces_declare_background_and_edge() {
         let css = super::css();
 
-        for class in [".reprise-library-header", ".reprise-search-strip"] {
+        for class in [".reprise-library-header", ".reprise-search-popover"] {
             let block = css
                 .split(class)
                 .nth(1)
@@ -313,10 +165,13 @@ mod style_guard {
                 block.contains("background-color:"),
                 "{class} inherits its background"
             );
-            assert!(
-                block.contains("border-bottom:"),
-                "{class} has no bottom edge against the content"
-            );
+            // The header divides itself from content with a bottom hairline;
+            // the floating popover has a full border instead.
+            if class == ".reprise-library-header" {
+                assert!(block.contains("border-bottom:"));
+            } else {
+                assert!(block.contains("border:"));
+            }
         }
     }
 }

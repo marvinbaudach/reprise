@@ -79,6 +79,7 @@ pub mod models;
 pub mod modules;
 pub mod musicbrainz;
 pub mod online_sources;
+pub mod perf_report;
 pub mod playback;
 pub mod podcasts;
 pub mod provenance;

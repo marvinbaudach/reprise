@@ -1,5 +1,5 @@
-//! Serialization for user-adjusted column widths, persisted independently of
-//! the order/visibility layout. Format is a comma-separated list of
+//! Serialization for a table's user-adjusted column widths, persisted
+//! independently of the order/visibility layout. Format is a comma-separated list of
 //! `id:width` pairs, e.g. `artist:260,album:300`.
 //!
 //! Shared rather than GTK-local because the string it produces is a
@@ -8,11 +8,11 @@
 //! surface has no resizable columns and simply never calls this — that makes
 //! it unused there, not surface-specific (waves plan §4 rule 12).
 
-use crate::columns::ColumnId;
+use crate::columns::ColumnKey;
 
 /// Encodes the given widths as `id:width` pairs, sorted by id for a stable,
 /// diff-friendly string. Non-positive widths are dropped.
-pub fn serialize_widths(widths: &[(ColumnId, i32)]) -> String {
+pub fn serialize_widths<K: ColumnKey>(widths: &[(K, i32)]) -> String {
     let mut pairs: Vec<(&'static str, i32)> = widths
         .iter()
         .filter(|(_, width)| *width > 0)
@@ -28,13 +28,13 @@ pub fn serialize_widths(widths: &[(ColumnId, i32)]) -> String {
 
 /// Parses an `id:width` list, skipping unknown ids and non-positive or
 /// unparseable widths. The first value wins if an id repeats.
-pub fn parse_widths(value: &str) -> Vec<(ColumnId, i32)> {
-    let mut widths: Vec<(ColumnId, i32)> = Vec::new();
+pub fn parse_widths<K: ColumnKey>(value: &str) -> Vec<(K, i32)> {
+    let mut widths: Vec<(K, i32)> = Vec::new();
     for token in value.split(',') {
         let Some((id, width)) = token.trim().split_once(':') else {
             continue;
         };
-        let Some(id) = ColumnId::parse(id.trim()) else {
+        let Some(id) = K::parse(id.trim()) else {
             continue;
         };
         let Ok(width) = width.trim().parse::<i32>() else {
@@ -51,6 +51,7 @@ pub fn parse_widths(value: &str) -> Vec<(ColumnId, i32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::columns::ColumnId;
 
     #[test]
     fn round_trips_sorted_pairs() {
@@ -83,8 +84,8 @@ mod tests {
 
     #[test]
     fn parse_tolerates_empty_and_whitespace() {
-        assert_eq!(parse_widths(""), Vec::new());
-        assert_eq!(parse_widths("  "), Vec::new());
+        assert_eq!(parse_widths::<ColumnId>(""), Vec::new());
+        assert_eq!(parse_widths::<ColumnId>("  "), Vec::new());
         assert_eq!(parse_widths("artist:260"), vec![(ColumnId::Artist, 260)]);
     }
 
@@ -94,5 +95,14 @@ mod tests {
             parse_widths("artist:260,artist:999"),
             vec![(ColumnId::Artist, 260)]
         );
+    }
+
+    #[test]
+    fn widths_round_trip_for_a_second_table() {
+        use crate::columns::ReleaseColumn;
+        let widths = vec![(ReleaseColumn::Artist, 260), (ReleaseColumn::Date, 160)];
+        let serialized = serialize_widths(&widths);
+        assert_eq!(serialized, "artist:260,date:160");
+        assert_eq!(parse_widths::<ReleaseColumn>(&serialized), widths);
     }
 }

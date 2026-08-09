@@ -11,6 +11,10 @@ use crate::queue::{Queue, QueueSnapshot, Repeat};
 use crate::up_next::{QueueItem, UpNextQueue};
 use crate::{browser::BrowserPlace, view_source::ViewSource};
 
+pub use super::session_lifecycle::{
+    load_and_mark_running, mark_clean_exit, mark_clean_exit_now, CleanExit,
+};
+
 pub const SESSION_KEY: &str = "ui.session.v1";
 const VERSION: u8 = 1;
 const DEFAULT_WIDTH: i32 = 1200;
@@ -87,6 +91,8 @@ pub struct SessionState {
     /// Complete immutable playback origin for scoped Album/Artist reveals.
     #[serde(default, deserialize_with = "deserialize_optional_browser_place")]
     pub play_origin_place: Option<BrowserPlace>,
+    #[serde(default)]
+    pub clean_exit: Option<CleanExit>,
 }
 
 impl Default for SessionState {
@@ -110,6 +116,7 @@ impl Default for SessionState {
             play_origin: None,
             play_origin_label: None,
             play_origin_place: None,
+            clean_exit: None,
         }
     }
 }
@@ -453,6 +460,7 @@ mod tests {
             play_origin: None,
             play_origin_label: None,
             play_origin_place: None,
+            clean_exit: None,
         }
     }
 

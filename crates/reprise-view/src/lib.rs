@@ -23,6 +23,7 @@ pub mod device_sync;
 pub mod lyrics;
 pub mod playlists;
 pub mod queue;
+pub mod search_chip;
 pub mod search_scope;
 pub mod spectral_colour;
 pub mod strings;

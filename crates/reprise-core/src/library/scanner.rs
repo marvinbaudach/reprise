@@ -682,6 +682,7 @@ fn scan_folder_inner(
         // writer token and are filtered out by its own consumer.
         if scan_touched_library(&report) || reclassified > 0 {
             crate::events::record(&tx, "library", "", "scan")?;
+            crate::library::startup_tasks::advance_library_signature_in(&tx)?;
         }
         ScanOutcome::Completed(report)
     };

@@ -1,0 +1,34 @@
+use std::sync::atomic::Ordering;
+
+/// A real 1x1 truecolor PNG, small enough to inline and valid enough for the
+/// production worker's decoder.
+const TINY_PNG: [u8; 69] = [
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xA8, 0xAF, 0xAF, 0x07,
+    0x00, 0x02, 0xFE, 0x01, 0x7E, 0xBA, 0x25, 0x70, 0x25, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+#[test]
+fn artwork_worker_returns_finished_pixels_instead_of_a_path() {
+    let url = "https://images.test/startup-worker-decodes-unique-marker.png";
+    super::GATE_OPEN.store(true, Ordering::SeqCst);
+    let (response, receiver) = async_channel::bounded(1);
+    let task = super::ArtworkTask {
+        url: url.into(),
+        width: 40,
+        height: 40,
+        response,
+    };
+
+    super::process_task(&task, &mut |_| Ok(TINY_PNG.to_vec()));
+
+    let pixels = receiver
+        .try_recv()
+        .expect("the worker answers synchronously in this seam")
+        .expect("the valid image decodes");
+    assert_eq!((pixels.width, pixels.height), (80, 80));
+    assert!(pixels.rowstride >= 3);
+    assert!(pixels.bytes.len() >= pixels.rowstride);
+}

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use gtk4::glib;
 use reprise_core::db::Db;
+use reprise_core::library::startup_tasks::{self, TimeWindowTask};
 pub(in crate::ui) use reprise_core::lyrics::{
     BatchProgress as LyricsBatchProgress, BatchState as LyricsBatchState,
 };
@@ -102,6 +103,12 @@ impl LyricsBatch {
         !self.enabled.swap(allowed, Ordering::Relaxed) && allowed
     }
 
+    /// Republishes the live gate and answers whether lyrics work may run at all.
+    fn enabled_now(&self) -> bool {
+        self.store_enabled();
+        self.enabled.load(Ordering::Relaxed)
+    }
+
     pub(in crate::ui) fn cancel(&self) {
         self.cancellation.request();
     }
@@ -121,8 +128,7 @@ impl LyricsBatch {
     }
 
     pub(in crate::ui) fn start(self: &Rc<Self>) {
-        self.store_enabled();
-        if !self.enabled.load(Ordering::Relaxed) {
+        if !self.enabled_now() {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
@@ -168,7 +174,9 @@ impl LyricsBatch {
                     return;
                 }
                 match event {
-                    WorkerEvent::Progress(progress) => batch.set_progress(progress),
+                    WorkerEvent::Progress(progress) => {
+                        batch.set_progress(progress);
+                    }
                     WorkerEvent::Cancelled => {
                         batch.set_progress(LyricsBatchProgress::idle());
                         return;
@@ -178,12 +186,47 @@ impl LyricsBatch {
         });
     }
 
-    pub(in crate::ui) fn start_after_cover(self: &Rc<Self>, cover_batch: &Rc<CoverDownloadBatch>) {
+    pub(in crate::ui) fn start_automatically(
+        self: &Rc<Self>,
+        previous_session: &reprise_core::library::session::SessionState,
+        current_library_root: &str,
+    ) {
+        let is_due = || {
+            startup_tasks::should_run_time_window(
+                TimeWindowTask::Lyrics,
+                previous_session,
+                current_library_root,
+            )
+        };
+        if !automatic_start_decision(self.enabled_now(), is_due) {
+            self.set_progress(LyricsBatchProgress::idle());
+            return;
+        }
+        self.start();
+    }
+
+    pub(in crate::ui) fn start_after_cover(
+        self: &Rc<Self>,
+        cover_batch: &Rc<CoverDownloadBatch>,
+        previous_session: &reprise_core::library::session::SessionState,
+        current_library_root: Option<&str>,
+    ) {
         let lyrics_batch = self.clone();
+        let previous_session = previous_session.clone();
+        let current_library_root = current_library_root.map(str::to_owned);
         let armed = Rc::new(Cell::new(false));
         cover_batch.subscribe_progress(
             || true,
-            start_after_cover_callback(armed.clone(), move || lyrics_batch.start()),
+            start_after_cover_callback(armed.clone(), move || {
+                if let Some(root) = &current_library_root {
+                    lyrics_batch.start_automatically(&previous_session, root);
+                } else {
+                    tracing::warn!(
+                        "library root unavailable for lyrics due-check; running conservatively"
+                    );
+                    lyrics_batch.start();
+                }
+            }),
         );
         armed.set(true);
         cover_batch.start();
@@ -217,6 +260,18 @@ fn cover_batch_finished(armed: bool, state: CoverBatchState) -> bool {
             state,
             CoverBatchState::Idle | CoverBatchState::Complete | CoverBatchState::Failed
         )
+}
+
+/// Whether an automatic startup pass may run — module gate first, due-check
+/// only if it passes.
+///
+/// The order is the point, not the conjunction. The due-check logs the reason
+/// it skipped, and "last clean exit was 4 minutes ago" is a true sentence about
+/// a batch that a switched-off module would never have run in the first place.
+/// Asking it anyway puts the wrong reason in the log, which is how a later
+/// reader concludes the time window is misfiring when nothing is wrong with it.
+fn automatic_start_decision(enabled: bool, is_due: impl FnOnce() -> bool) -> bool {
+    enabled && is_due()
 }
 
 fn failed_progress(mut progress: LyricsBatchProgress) -> LyricsBatchProgress {

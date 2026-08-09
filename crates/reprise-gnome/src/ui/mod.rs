@@ -97,12 +97,15 @@ mod source_error_details;
 mod source_reveal;
 mod source_row;
 mod spectrogram;
+pub(crate) mod startup_quiet;
+pub(crate) mod startup_report;
 mod stats;
 pub mod status_bar;
 pub mod strings;
 mod style;
 mod swell;
 pub(crate) mod table_column_widths;
+mod table_columns;
 mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]

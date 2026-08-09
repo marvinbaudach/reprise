@@ -264,6 +264,7 @@ fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
     );
     bar.restore_filter(&full_filter());
     bar.set_search("falling");
+    bar.set_committed_query("falling");
     assert_eq!(
         bar.root.height_request(),
         filter_bar_layout::FILTER_BAR_MIN_HEIGHT

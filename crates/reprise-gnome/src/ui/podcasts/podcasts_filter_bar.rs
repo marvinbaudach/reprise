@@ -25,6 +25,7 @@ pub(super) struct PodcastsFilterBar {
     layout: FilterBarLayout,
     conn: Rc<Db>,
     filter: RefCell<PodcastFilter>,
+    committed_query: RefCell<String>,
     chips: gtk4::Box,
     add_filter: gtk4::MenuButton,
     popover_box: gtk4::Box,
@@ -87,6 +88,7 @@ impl PodcastsFilterBar {
             layout,
             conn,
             filter: RefCell::new(filter),
+            committed_query: RefCell::new(String::new()),
             chips,
             add_filter,
             popover_box,
@@ -147,6 +149,18 @@ impl PodcastsFilterBar {
             return;
         }
         self.apply_internal(current.with_query(query), false);
+    }
+
+    pub(super) fn set_committed_query(self: &Rc<Self>, query: &str) {
+        if *self.committed_query.borrow() == query {
+            return;
+        }
+        self.committed_query.replace(query.to_owned());
+        self.rebuild();
+    }
+
+    fn committed_query(&self) -> String {
+        self.committed_query.borrow().clone()
     }
 
     pub(super) fn set_context(
@@ -236,6 +250,15 @@ impl PodcastsFilterBar {
         }
         let previous_query = previous.query;
         self.popover.popdown();
+        // Drop the receipt in the same turn as the query — see the note in
+        // `concerts_filter_bar::clear_query`. `rebuild` below reads the
+        // committed query, and the sink that would empty it only answers after
+        // a round trip through the header entry. An empty query has no chip
+        // under either surface, so clearing it here cannot disagree with the
+        // sink.
+        if filter.query.trim().is_empty() {
+            self.committed_query.replace(String::new());
+        }
         self.rebuild();
         if announce_query && previous_query != filter.query {
             let callback = self.on_query_changed.borrow().clone();
@@ -261,6 +284,7 @@ impl PodcastsFilterBar {
             self.chips.remove(&child);
         }
         let filter = self.filter();
+        let committed_query = self.committed_query();
         if filter.unplayed_only {
             self.prepend_chip(&strings::text(strings::PODCAST_FILTER_UNPLAYED), |filter| {
                 PodcastFilter {
@@ -281,7 +305,7 @@ impl PodcastsFilterBar {
         // FIL-1a/FIL-1d: the dedicated search slot keeps the search chip first.
         let weak = Rc::downgrade(self);
         self.layout
-            .replace_scoped_search(self.scope(), &filter.query, move || {
+            .replace_scoped_search(self.scope(), &committed_query, move || {
                 if let Some(bar) = weak.upgrade() {
                     let cleared = bar.filter().with_query("");
                     bar.apply(cleared);
@@ -419,6 +443,40 @@ mod tests {
         }));
     }
 
+    /// UX SEARCH-14: the receipt goes away with the click that removes it.
+    ///
+    /// The commit sink is the authority on which query gets a chip, but it
+    /// answers only after a round trip through the header entry. The bar
+    /// rebuilds its chip row synchronously in the same turn as the click — so
+    /// without clearing the stored receipt here, that rebuild reads the old
+    /// value and paints the very chip the user just dismissed. No main loop is
+    /// pumped in this test on purpose: the frame the user sees is this one.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_14_the_receipt_goes_with_the_click_not_a_turn_later() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let bar =
+            PodcastsFilterBar::new(Rc::new(crate::test_db::open().unwrap()), PodcastKind::Rss);
+        bar.set_query("falling");
+        bar.set_committed_query("falling");
+        assert!(
+            bar.layout
+                .populated_slot_order()
+                .contains(&crate::ui::filter_bar_layout::FilterBarSlot::Search),
+            "the committed query is showing before the click"
+        );
+
+        bar.apply(bar.filter().with_query(""));
+
+        assert!(
+            !bar.layout
+                .populated_slot_order()
+                .contains(&crate::ui::filter_bar_layout::FilterBarSlot::Search),
+            "the receipt must be gone in the same turn as the click"
+        );
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn fil_2a_podcasts_and_youtube_fill_the_same_ordered_slots() {
@@ -431,6 +489,7 @@ mod tests {
                 filter_bar_layout::FILTER_BAR_MIN_HEIGHT
             );
             bar.set_query("falling");
+            bar.set_committed_query("falling");
             bar.set_context(
                 3,
                 LibrarySummary {

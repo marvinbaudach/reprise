@@ -12,6 +12,9 @@ use rusqlite::{Connection, OptionalExtension};
 #[path = "settings_api.rs"]
 mod api;
 pub use api::*;
+#[path = "settings_column_keys.rs"]
+mod column_keys;
+pub use column_keys::*;
 /// The settings key `ui::window`'s scan flow writes the scanned folder under,
 /// and `main.rs`/`ui::window` read at startup/after-scan to (re)start the
 /// watcher. `pub` so both call sites share the exact same literal rather than
@@ -191,10 +194,6 @@ fn set_new_releases_last_completed_at_in(
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
-pub const COLUMN_LAYOUT_KEY: &str = "ui.column_layout";
-/// User-adjusted per-column widths (`id:width` pairs), kept separate from the
-/// order/visibility layout so the layout reducers and their tests stay untouched.
-pub const COLUMN_WIDTHS_KEY: &str = "ui.column_widths";
 
 /// Where the player bar docks. `Bottom` is the default and the fallback for any
 /// unknown/hand-edited value (same tolerance posture as `get_bool`).
@@ -737,60 +736,17 @@ pub(crate) fn set_auto_clean_armed_at_in(
     set_setting_in(conn, AUTO_CLEAN_ARMED_AT_KEY, &armed_at.to_string())
 }
 
-/// Unix-seconds timestamp of the last time the user opened the Missing
-/// files / Import errors views — the clock the sidebar's ISSUES badges
-/// (Task 2.5) are keyed on. `queries::count_new_missing`/`queries::count_
-/// new_import_errors` take this as a plain `i64` parameter rather than
-/// reading it internally, the same "boundary arithmetic stays testable"
-/// shape `auto_clean_eligible`'s `now: i64` parameter already uses above —
-/// a pure function over an explicit timestamp needs no fake clock to test
-/// its `>` boundary.
-///
-/// A never-written key reads back as `0`, not an error and not `None`:
-/// `0` is deliberately BELOW any real `first_seen`/`missing_since` unix
-/// timestamp this app will ever record, so "never viewed" naturally makes
-/// every existing issue count as new — exactly the behavior a first-run
-/// user should see (there IS a backlog, and they haven't looked at it yet).
-/// A stored value that fails to parse as `i64` (hand-edited/corrupt
-/// database) degrades to this same `0` fallback, never an error — the same
-/// "fail toward showing more, not toward crashing" posture `AutoCleanSetting
-/// ::parse`'s doc comment argues for on the opposite (destructive) side of
-/// this codebase's settings.
-pub const LAST_VIEWED_MISSING_KEY: &str = "last_viewed_missing";
-pub const LAST_VIEWED_IMPORT_ERRORS_KEY: &str = "last_viewed_import_errors";
-
-/// See [`LAST_VIEWED_MISSING_KEY`]'s doc comment for the "missing key or
-/// corrupt value both read back as 0" contract this and its three siblings
-/// below share.
-fn get_last_viewed_missing_in(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    let stored = get_setting_in(conn, LAST_VIEWED_MISSING_KEY)?;
-    Ok(stored
-        .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(0))
-}
-
-/// Writes `now` as the Missing-files view's last-viewed timestamp — the
-/// view (a later task) calls this the moment it opens, which is what clears
-/// `queries::count_new_missing`'s badge for everything currently visible.
-fn set_last_viewed_missing_in(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
-    set_setting_in(conn, LAST_VIEWED_MISSING_KEY, &now.to_string())
-}
-
-fn get_last_viewed_import_errors_in(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    let stored = get_setting_in(conn, LAST_VIEWED_IMPORT_ERRORS_KEY)?;
-    Ok(stored
-        .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(0))
-}
-
-fn set_last_viewed_import_errors_in(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
-    set_setting_in(conn, LAST_VIEWED_IMPORT_ERRORS_KEY, &now.to_string())
-}
+#[path = "settings_issue_views.rs"]
+mod issue_views;
+use issue_views::{
+    get_last_viewed_import_errors_in, get_last_viewed_missing_in, set_last_viewed_import_errors_in,
+    set_last_viewed_missing_in,
+};
+pub use issue_views::{LAST_VIEWED_IMPORT_ERRORS_KEY, LAST_VIEWED_MISSING_KEY};
 
 #[path = "settings_seek.rs"]
 mod seek;
 pub use seek::*;
-
 #[cfg(test)]
 #[path = "settings_compact_tests.rs"]
 mod compact_tests;

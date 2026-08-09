@@ -31,6 +31,8 @@ use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
 
+#[path = "window_external_changes_wiring.rs"]
+mod external_changes_wiring;
 #[path = "window_playing_source_wiring.rs"]
 mod playing_source_wiring;
 
@@ -41,7 +43,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) header: &'a adw::HeaderBar,
     pub(in crate::ui) search_entry: &'a gtk4::SearchEntry,
-    pub(in crate::ui) search_bar: &'a gtk4::SearchBar,
+    pub(in crate::ui) search: &'a super::search_popover::SearchPopover,
     pub(in crate::ui) search_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_page: &'a adw::NavigationPage,
@@ -87,7 +89,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         db_path,
         header,
         search_entry,
-        search_bar,
+        search,
         search_toggle,
         sidebar_toggle,
         sidebar_page,
@@ -133,6 +135,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         radio_view,
         device_sync,
     );
+    super::startup_report::mark("source_connectivity::wire");
     super::source_connectivity::wire_source_module_recompute(preferences, device_sync);
 
     let refresh_doctor_views = {
@@ -142,7 +145,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             stats.refresh(&conn);
         }) as Rc<dyn Fn()>
     };
-    let library_doctor = super::library_doctor::LibraryDoctorCoordinator::new(
+    let library_doctor = super::library_doctor::LibraryDoctorLauncher::new(
         super::library_doctor::LibraryDoctorContext {
             conn,
             db_path,
@@ -158,6 +161,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             refresh_views: refresh_doctor_views,
         },
     );
+    super::startup_report::mark("LibraryDoctorLauncher::new");
     {
         let library_doctor = Rc::downgrade(&library_doctor);
         stats_view.set_on_unify_spellings(move |ids| {
@@ -207,6 +211,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         conn,
         Rc::new(move || compact_preferences.present()),
     );
+    super::startup_report::mark("compact_mode_controls::install");
     super::compact_mode_suggestion::install(window, toast_overlay, minimal_view, player.is_some());
 
     let menu_preferences = preferences.clone();
@@ -223,11 +228,21 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // Built here rather than in `window.rs` for the same reason the fingerprint
     // backend above is: this is where the window layer may name a platform
     // concrete, and the composition root is held below 600 lines.
-    let spectrogram_batch = super::spectrogram_backend::build(db_path.to_path_buf());
+    let spectrogram_batch = super::spectrogram_backend::build(conn.clone(), db_path.to_path_buf());
+    super::startup_report::mark("spectrogram_backend::build");
+    let active_table = super::table_columns::active_table(
+        window,
+        content_stack,
+        content_nav,
+        track_list,
+        concerts_view,
+        releases_view,
+        radio_view,
+    );
     super::primary_menu::install(
         header,
         window,
-        track_list,
+        &active_table,
         super::primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),
@@ -240,6 +255,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             on_preferences: Rc::new(move || menu_preferences.present()),
         },
     );
+    super::startup_report::mark("primary_menu::install");
     app.set_accels_for_action("win.open-primary-menu", &["F10"]);
     super::spectrogram_batch_progress::install(scan_controls, &spectrogram_batch);
     {
@@ -252,10 +268,11 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // The colour of the seek bar arrives the way its shape already does: by
     // itself. The run is resumable, so a library that is already analyzed ends
     // it immediately and shows nothing; the scan card cancels a visible run.
-    // Deferred to idle so it never competes with the first frame.
+    // This automatic start shares the one post-frame quiet gate. A completed
+    // user-requested scan still starts immediately through the callback above.
     {
         let batch = spectrogram_batch.clone();
-        gtk4::glib::idle_add_local_once(move || batch.start());
+        super::startup_quiet::run_after_quiet(move || batch.start());
     }
 
     playing_source_wiring::install(
@@ -268,6 +285,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         youtube_view,
         radio_view,
     );
+    super::startup_report::mark("playing_source_wiring::install");
 
     if player.is_some() {
         // NAV-2 Back: pop the most recent place and route there without
@@ -405,11 +423,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             });
         }
     }
+    super::startup_report::mark("navigation actions");
 
     // SEARCH-8a: one transient query for the active view. Built before the
     // routing below so the first route already lands in the right scope.
     let section_search =
-        super::section_search::SectionSearch::new(search_entry, search_bar, search_toggle, window);
+        super::section_search::SectionSearch::new(search_entry, search, search_toggle);
     super::section_search_wiring::install(
         &section_search,
         &super::section_search_wiring::SectionSearchViews {
@@ -452,7 +471,23 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
 
-    lyrics_batch.start_after_cover(cover_batch);
+    {
+        let lyrics_batch = lyrics_batch.clone();
+        let cover_batch = cover_batch.clone();
+        let previous_session = session_state.clone();
+        let current_library_root = reprise_core::library::settings::get_library_root(conn)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not read library root for lyrics due-check");
+                None
+            });
+        super::startup_quiet::run_after_quiet(move || {
+            lyrics_batch.start_after_cover(
+                &cover_batch,
+                &previous_session,
+                current_library_root.as_deref(),
+            );
+        });
+    }
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     app.set_accels_for_action("win.preferences", &["<Control>comma"]);
     app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
@@ -541,8 +576,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     super::shortcuts::wire(
         app,
         window,
-        search_bar,
-        search_entry,
+        search,
         super::shortcuts::ShortcutHooks {
             focus_active_content,
             // SEARCH-8a: Ctrl+F is a no-op where the visible section has no
@@ -575,12 +609,15 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     start_persisted_watcher(
         conn,
         db_path,
+        session_state,
         scan_controls,
         track_list,
         sidebar,
         watcher_state,
     );
-    start_external_changes_refresh(db_path, track_list, sidebar);
+    super::startup_report::mark("start_persisted_watcher");
+    external_changes_wiring::start_external_changes_refresh(db_path, track_list, sidebar);
+    super::startup_report::mark("start_external_changes_refresh");
     wire_queue_episode_marker(track_list, player.as_ref());
     super::mounts::install(&super::mounts::MountWiring {
         conn,
@@ -591,13 +628,16 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         sidebar,
         watcher_state,
     });
+    super::startup_report::mark("mounts::install");
 
     super::playlist_io::wire_import_action(window, toast_overlay, conn.clone(), sidebar);
+    super::startup_report::mark("playlist_io::wire_import_action");
     super::playlist_io::arm_smoke_m3u(conn.clone(), toast_overlay, sidebar.clone());
     super::window_smoke::arm_bar_position(conn, library_player_bar);
     super::lyrics_smoke::arm(player.as_ref(), info_panel, conn);
 
     super::session_restore::restore_runtime(player.as_ref(), session_state);
+    super::startup_report::mark("session_restore::restore_runtime");
     // START-3: restore the last visible place, but not the Back/Forward stack.
     // The Music root remains a separate remembered place so an absolute
     // sidebar click still restores its own refinements.
@@ -609,7 +649,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     nav_history.restore(startup_place.clone(), library_root);
     nav_history.begin_back();
     super::library_shell::route_to_place(
-        &crate::ui::nav_history::NavPlace::browser(startup_place),
+        &crate::ui::nav_history::NavPlace::browser(startup_place.clone()),
         sidebar,
         track_list,
         super::library_shell::ContentPages::new(content_nav, content_stack),
@@ -617,10 +657,13 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         &active_content_focus,
         "session restore",
     );
+    super::startup_report::mark("route_to_place");
     nav_history.end_back();
+    track_list.finish_startup_load(&startup_place);
     // START-3: the routing above owns the model; this owns the viewport.
     // Order matters — the view must exist before its rows can be centered.
     track_list.center_loaded_track();
+    super::startup_report::mark("center_loaded_track");
     super::session_restore::wire_close(
         window,
         conn,
@@ -647,6 +690,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         first_run_decision,
         &present_rhythmbox_import,
     );
+    super::startup_report::mark("first_run::run");
     // `RAD-5`: "Near you" without a stored location hands off to the
     // location setting in Preferences, the same deep-link shape
     // `present_rhythmbox_import` above already uses.
@@ -658,12 +702,15 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     });
     active_content_focus.focus_later_if_unset(window);
     minimal_view.apply_initial();
+    super::startup_report::mark("minimal_view::apply_initial");
     super::window_smoke::arm_quit(window);
+    super::startup_quiet::arm(window);
 }
 
 fn start_persisted_watcher(
     conn: &Rc<Db>,
     db_path: &Path,
+    previous_session: &SessionState,
     scan_controls: &ScanControls,
     track_list: &Rc<TrackList>,
     sidebar: &Rc<Sidebar>,
@@ -674,26 +721,30 @@ fn start_persisted_watcher(
         reprise_core::library::settings::get_library_root(conn)
     };
     match root {
-        Ok(Some(root)) => super::scan_flow::start_or_restart_watcher(
-            watcher_state,
-            &PathBuf::from(root),
-            db_path.to_path_buf(),
-            scan_controls.clone(),
-            Rc::downgrade(track_list),
-            Rc::downgrade(sidebar),
-        ),
+        Ok(Some(root)) => {
+            let start = if reprise_core::library::startup_tasks::should_run_time_window(
+                reprise_core::library::startup_tasks::TimeWindowTask::LibraryScan,
+                previous_session,
+                &root,
+            ) {
+                super::scan_flow::start_or_restart_watcher
+            } else {
+                super::scan_flow::start_or_restart_live_watcher
+            };
+            start(
+                watcher_state,
+                &PathBuf::from(root),
+                db_path.to_path_buf(),
+                scan_controls.clone(),
+                Rc::downgrade(track_list),
+                Rc::downgrade(sidebar),
+            );
+        }
         Ok(None) => tracing::debug!("no persisted library root; watcher not started at startup"),
         Err(error) => tracing::error!(%error, "failed to read persisted library root at startup"),
     }
 }
 
-/// Wires the external-changes live refresh (multi-frontend-core package C):
-/// mutations written to the same database by another process (CLI/MCP) reach
-/// the running app through the change log and `events::Notifier`. The app's own
-/// writes are filtered by its process writer token — it already refreshes
-/// itself — so only foreign writes drive a coarse, silent refresh of the
-/// sidebar and the current track list (UX rules EXT-1a..EXT-4). A notifier that
-/// cannot start just means no live updates; it is never fatal.
 /// Keeps the Queue surfaces' now-playing marker in step with a queued episode.
 ///
 /// The track-side marker is driven by `playing_track_id`, written when a track
@@ -714,37 +765,4 @@ fn wire_queue_episode_marker(track_list: &Rc<TrackList>, player: Option<&Rc<Play
         let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
         track_list.set_playing_episode(episode_mark);
     });
-}
-
-fn start_external_changes_refresh(
-    db_path: &Path,
-    track_list: &Rc<TrackList>,
-    sidebar: &Rc<Sidebar>,
-) {
-    let sidebar = Rc::downgrade(sidebar);
-    let track_list = Rc::downgrade(track_list);
-    crate::ui::external_changes::start(
-        db_path,
-        Some(reprise_core::events::writer_token()),
-        Rc::new(move |plan: crate::ui::external_changes::RefreshPlan| {
-            if plan.sidebar {
-                match sidebar.upgrade() {
-                    Some(sidebar) => sidebar.refresh("external change"),
-                    None => {
-                        tracing::warn!("external change: sidebar refresh skipped: sidebar is gone");
-                    }
-                }
-            }
-            if plan.track_list {
-                match track_list.upgrade() {
-                    Some(track_list) => track_list.reload(),
-                    None => {
-                        tracing::warn!(
-                            "external change: track list reload skipped: track list is gone"
-                        );
-                    }
-                }
-            }
-        }),
-    );
 }

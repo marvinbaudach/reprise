@@ -24,11 +24,12 @@ cd "$repo_root"
 
 frontend=crates/reprise-gnome/src
 shared_view=crates/reprise-view/src
-# PR #370 deliberately removed the obsolete FILTERS label and unscoped
-# search_chip_label presentation API after this floor was last pinned at
-# commit 8d77634e1a. That reduced the honest production baseline by two lines;
-# future migration waves still raise this floor as described below.
-view_floor=1780
+# PR #370 removed the obsolete FILTERS label and unscoped
+# search_chip_label API; the search popover work (#385) then added the
+# commit chip. On top of both, the app-wide column editing work moved
+# layout, key and width code out of reprise-gnome into reprise-view.
+# This floor is the measured sum; future migration waves raise it.
+view_floor=2175
 
 echo "== Frontend thinness =="
 
@@ -41,7 +42,7 @@ echo "== Frontend thinness =="
 # containing `Connection`; direct access to the owned connection is a
 # separate zero-tolerance ban below.
 declare -A budget=(
-  [rusqlite]=114
+  [rusqlite]=113
   [filesystem]=13
   [threads]=15
   [workers]=7

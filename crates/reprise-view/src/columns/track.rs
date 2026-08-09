@@ -1,5 +1,7 @@
 //! Toolkit-independent track-column identity and persistence names.
 
+use super::key::{ColumnKey, Pin};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ColumnId {
     Cover,
@@ -14,6 +16,30 @@ pub enum ColumnId {
     Rating,
     PlayCount,
 }
+
+const DEFAULT_ORDER: [ColumnId; 11] = [
+    ColumnId::Cover,
+    ColumnId::Title,
+    ColumnId::Artist,
+    ColumnId::Album,
+    ColumnId::Year,
+    ColumnId::Added,
+    ColumnId::Duration,
+    ColumnId::Rating,
+    ColumnId::PlayCount,
+    ColumnId::TrackNumber,
+    ColumnId::Genre,
+];
+
+const DEFAULT_VISIBLE: [ColumnId; 7] = [
+    ColumnId::Cover,
+    ColumnId::Title,
+    ColumnId::Artist,
+    ColumnId::Album,
+    ColumnId::Year,
+    ColumnId::Duration,
+    ColumnId::Rating,
+];
 
 impl ColumnId {
     pub fn as_str(self) -> &'static str {
@@ -66,9 +92,35 @@ impl ColumnId {
     }
 }
 
+impl ColumnKey for ColumnId {
+    fn as_str(self) -> &'static str {
+        ColumnId::as_str(self)
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        ColumnId::parse(value)
+    }
+
+    fn all() -> &'static [Self] {
+        &DEFAULT_ORDER
+    }
+
+    fn default_visible() -> &'static [Self] {
+        &DEFAULT_VISIBLE
+    }
+
+    fn pin(self) -> Option<Pin> {
+        match self {
+            Self::Cover => Some(Pin::Leading),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::ColumnId;
+    use crate::columns::{ColumnKey, Layout, Pin};
 
     const IDS: [(ColumnId, &str); 11] = [
         (ColumnId::Cover, "cover"),
@@ -113,5 +165,15 @@ mod tests {
         }
         assert_eq!(ColumnId::from_sort_field("cover"), None);
         assert_eq!(ColumnId::from_sort_field("unknown"), None);
+    }
+
+    #[test]
+    fn the_track_cover_is_pinned_without_changing_the_default_lead() {
+        assert_eq!(ColumnId::Cover.pin(), Some(Pin::Leading));
+        assert_eq!(ColumnId::Title.pin(), None);
+        assert_eq!(
+            &Layout::<ColumnId>::default().order[..2],
+            &[ColumnId::Cover, ColumnId::Title]
+        );
     }
 }

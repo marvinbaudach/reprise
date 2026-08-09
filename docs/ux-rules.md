@@ -151,8 +151,16 @@ result.
   pixel value; re-sort and insert therefore keep content at its
   position. START-3 restores, across restarts, the last visible browser
   location including scroll position; no history stack is reconstructed.
-- **NAV-6** [active] [e2e] — Search (Ctrl+F) filters the current view
-  live; Esc clears and closes. Search never navigates on its own.
+- **NAV-6** [replaced by NAV-6a] [e2e] — Search (Ctrl+F) filters the current
+  view live; Esc clears and closes. Search never navigates on its own.
+- **NAV-6a** [active] [gtk] — Search (Ctrl+F) filters the current view live;
+  Esc closes the search popover and **keeps** the query and the filtering
+  (SEARCH-4a). Search never navigates on its own: an Esc that closes the
+  popover is consumed there and does not also travel back through the
+  navigation history. NAV-6's "Esc clears" described the two-stage Escape of
+  the old search strip and contradicted SEARCH-4a from the moment the popover
+  landed; releasing a filter is the chip's × or "Clear all", never a dismissal
+  key.
 - **NAV-7** [replaced by NAV-15] — Hamburger menu: "Scan Library" → starts the
   scan, stays in the view (card appears). "Preferences" → Preferences
   window. "Keyboard Shortcuts" → shortcuts overlay. "About Reprise" →
@@ -2025,10 +2033,12 @@ the panel).
 
 ## Q. Search
 
-- **SEARCH-1** [active] [gtk] — At rest, search occupies only a
+- **SEARCH-1** [replaced by SEARCH-1a] [gtk] — At rest, search occupies only a
   magnifying-glass icon in the header bar. The search field lives in a
   second, collapsed-by-default top bar and is never shown as a
   permanent wide field.
+- **SEARCH-1a** [active] [gtk] — At rest, search is only the header lens. The
+  field lives in a popover attached to that lens, not in a second top bar.
 - **SEARCH-2** [replaced by SEARCH-2a] — Clicking the magnifying
   glass, Ctrl+F, or typing directly opens the search bar and focuses
   the field. It is a full-width strip flush under the header bar, has
@@ -2047,7 +2057,7 @@ the panel).
   is clamp-centered at approximately 450 px. The bar slides with the
   central Standard duration (MOT-1/3); for GTK-native revealers their
   default applies, provided it matches the Standard token.
-- **SEARCH-2b** [active] [gtk] — Clicking the magnifying glass, Ctrl+F,
+- **SEARCH-2b** [replaced by SEARCH-2c] [gtk] — Clicking the magnifying glass, Ctrl+F,
   or typing directly opens the search bar and focuses the field. It is
   a full-width, opaque strip flush under the header bar with its own
   surface and a bottom divider line; on reveal it structurally
@@ -2055,20 +2065,55 @@ the panel).
   approximately 450 px. The bar slides with the central Standard
   duration (MOT-1/3); for GTK-native revealers their default applies,
   provided it matches the Standard token.
+- **SEARCH-2c** [active] [gtk] — The lens and Ctrl+F open the search popover;
+  typing into the list no longer opens it. Opening focuses the entry and puts
+  the caret at the end of any existing query; closing returns focus to the
+  list. The panel is bottom-end under the lens, without an arrow, on the chrome
+  surface, and carries the entry plus one muted caption line naming the
+  searched scope and the "Esc to close" hint. It reflows nothing (SEARCH-10).
 - **SEARCH-3** [active] [gtk] — The magnifying glass is a ToggleButton
-  and carries the `:checked` accent style when the search bar is open
-  **or** an active non-empty query exists. A query remains visible
-  even when the search bar is collapsed: its search chip persists. The
+  and carries the `:checked` accent style when the search popover is
+  open **or** an active non-empty query exists. A query remains visible
+  even when the popover is closed: its search chip persists. The
   magnifying glass gets no badge dot; dots remain reserved exclusively
   for the request role (FB-4, P-1).
-- **SEARCH-4** [active] [gtk] — Esc is two-stage and applies to the
+- **SEARCH-4** [replaced by SEARCH-4a] [gtk] — Esc is two-stage and applies to the
   whole search bar: with text present, the first Esc clears the query,
   leaves the bar open, and keeps the field focused; with an empty
   field, Esc collapses the bar. A query is never made invisible by
   collapsing without its chip carrying it.
+- **SEARCH-4a** [active] [gtk] — Escape is one stage: it closes the popover and
+  keeps the query and filtering. Clearing from the keyboard is the entry's own
+  clear icon; clearing from the filter bar is the chip's × or "Clear all".
+  Because search hides rows rather than highlighting them, dismissing the
+  panel and undoing the filter must not be the same key.
 - **SEARCH-5** [active] [gtk] — Collapsing ends only the input, not the
   filter. Query, results, and search chip are preserved until the user
   explicitly removes them via Esc, chip, or „Clear all".
+- **SEARCH-10** [active] [gtk] — Opening and closing search changes no layout.
+  The search surface is a popover over the content; the header keeps its
+  height, the content area keeps its allocated height, and the player bar stays
+  flush with the window's bottom edge in both states. Nothing is inserted into
+  the window's vertical layout.
+- **SEARCH-11** [active] [gtk] — While the search popover is open, the entry is
+  the only place the query is shown: the filter bar renders no search chip,
+  even though results and the "N of TOTAL {unit}" count already reflect the
+  query. Facet chips stay visible throughout.
+- **SEARCH-12** [active] [gtk] — Closing with a non-empty query renders exactly
+  one search chip, in the filter bar's search slot ahead of the facet chips. It
+  is built once, on close, not from the entry's `changed` signal.
+- **SEARCH-13** [active] [gtk] — Closing with an empty or whitespace-only query
+  renders no chip and changes nothing.
+- **SEARCH-14** [active] [gtk] — Dismissing is not undoing. Escape, Enter, a
+  click outside, and the lens all close the popover and keep both the query and
+  the filtering (SEARCH-5/6). Releasing the filter is a separate, visible act:
+  the chip's × or "Clear all". The query stays session- and section-scoped: it
+  is never written to `podcasts::config::save_filter` or the radio settings
+  keys, is dropped on restart, and is never carried between sections
+  (SEARCH-8a).
+- **SEARCH-15** [active] [gtk] — Reopening the popover while a search chip
+  exists hides that chip and pre-fills the entry with its query, with the caret
+  at the end. The chip is never duplicated.
 
 ## R. New releases
 
@@ -2296,7 +2341,10 @@ the panel).
   time-based cache retention.
 - **NR-25** [active] [gtk] — The gap view remains the table `Date ·
   Title · Artist · Type · Status`, sorted by date descending by
-  default. Its permanent filter row carries independent Album, EP,
+  default. A fixed cover column leads them, and the `Buy` column of NR-20
+  trails them; both follow STYLE-10's fixed-column rule. The named text
+  columns are otherwise unchanged in name and order. Its permanent filter
+  row carries independent Album, EP,
   and Single toggles — album and EP on by default, single off — a
   persistent window `1 year · 5 years · 10 years · All` defaulting to
   five years, and the Hidden chip. An empty type selection shows every
@@ -2734,15 +2782,19 @@ property is set and yet nothing happens.
      docs/superpowers/plans/2026-07-18-ui-polish-beschluesse.md. -->
 
 - **SEARCH-6** [active] [gtk] — The magnifier and Ctrl+F toggle the
-  search bar both ways (show ↔ hide). Hiding never clears the query: with
+  search popover both ways (open ↔ close). Closing never clears the query: with
   a non-empty query, its chip stays visible and the magnifier stays in the
   `:checked` accent style (FIL-1, SEARCH-3/5).
-- **SEARCH-7** [active] [gtk] — If the search field along with its
+- **SEARCH-7** [replaced by SEARCH-7a] [gtk] — If the search field along with its
   internal controls loses keyboard focus, the open search bar collapses
   after the current pointer activation completes. A non-empty query
   remains, per SEARCH-3/5, as an active filter along with its chip and
   accent magnifier; a click on the magnifier must not accidentally reopen
   the bar that was closed by that same focus change.
+- **SEARCH-7a** [active] [gtk] — The popover autohides. A click outside closes
+  it and keeps the query, chip, and accent lens per SEARCH-3/5. The held-pointer
+  machinery SEARCH-7 needed is gone with the strip: a popover close inserts and
+  removes nothing, so nothing below it can move out from under a click.
 - **SEARCH-8** [replaced by SEARCH-8a] — The query belongs to the section it was
   typed in, not to the window. Switching sections swaps the header
   entry's text to that section's own query; it never carries over, and a
@@ -2759,23 +2811,24 @@ property is set and yet nothing happens.
   its own query is FIL-1d.
 - **SEARCH-8a** [active] [gtk] — A query belongs only to the sidebar
   destination where it was typed. Choosing another sidebar destination drops
-  the outgoing query, starts the destination empty and collapses the search
-  bar, because a person who switches destinations is looking for something
+  the outgoing query, starts the destination empty and closes the search
+  popover, because a person who switches destinations is looking for something
   else. This binds both top-level switches such as Music ↔ Podcasts and track
   destinations such as Library ↔ Recently added ↔ Playlist ↔ Smart ↔ Queue ↔
   Missing. Drilling into an Artist, Album or Genre place by activating a row is
   not a switch: it carries the current query and its chip into that narrower
   context. Back out of such a place restores the complete remembered list
   state, including its query and facets, from the existing navigation history;
-  search owns no parallel origin or history state. Collapsing the bar without
+  search owns no parallel origin or history state. Closing the popover without
   navigating still preserves the current query per SEARCH-5/SEARCH-6, and an
   explicitly removed query is never resurrected. Facet filters chosen through
   + Filter — including type, window, hidden, unplayed and downloaded — are not
   search and survive sidebar switches untouched. The query itself remains
   transient and is never persisted with those facets. Where there is no list
   there is no search: in My Stats and device Sync the lens is insensitive with
-  the tooltip "Nothing to filter in {section}", Ctrl+F is a no-op, and typing
-  cannot reveal the bar. The active query's scoped chip is FIL-1d. This
+  the tooltip "Nothing to filter in {section}", and Ctrl+F is a no-op — with
+  the lens and Ctrl+F the only two ways in since SEARCH-2c, there is no third
+  route left to close off. The active query's scoped chip is FIL-1d. This
   replaces the per-section restoration described by FIL-1a's 2026-08-05
   revision; FIL-1a records the corrected boundary.
 - **SEARCH-9** [active] [gtk] — **Searching answers at once, and clearing
@@ -2840,8 +2893,10 @@ property is set and yet nothing happens.
   immediately without restarting the app.
 - **STYLE-9** [active] [gtk] — **A column never takes its width from the
   rows that happen to be on screen.** Every column of every table carries an
-  explicitly set width; exactly one column per table additionally expands and
-  absorbs the leftover width. A column left at the framework default
+  explicitly set width; exactly one visible free column per table additionally
+  expands and absorbs the leftover width. Hiding that column transfers the
+  filler role to the first visible free column in the user's order. A column
+  left at the framework default
   (`fixed-width = -1`) measures itself against the cells realized at that
   moment, and `GtkColumnView` recycles its row widgets while scrolling — so
   the whole table shifts sideways as the user scrolls, and the column that
@@ -2852,24 +2907,26 @@ property is set and yet nothing happens.
   squeezing its columns (STYLE-6). **Test rule:** measured, not asserted —
   the rule-named test exchanges the rows on screen for markedly wider ones
   and compares the columns' realized widths.
-- **STYLE-10** [planned] [gtk] — **Columns belong to the user, in every
+- **STYLE-10** [active] [gtk] — **Columns belong to the user, in every
   table.** A right-click anywhere on a table's header band opens the column
-  editor popover: toggle visibility, drag to reorder, reset. Behaviour learned
-  in the music library is the same behaviour in Releases, Concerts and Radio —
-  a user does not experience a missing editor there as an absent feature but
-  as the app forgetting what it taught them. The same editor is reachable
-  without a pointer through the primary menu's "Edit column layout…", which
-  addresses the table of the active view and is insensitive where no table is
-  shown. Order, visibility and header-dragged widths are stored per table and
-  survive a restart. A table may declare fixed columns — a leading artwork
-  column, a trailing action column on a surface without a row context menu —
-  which stay visible, keep their position and never appear in the editor;
-  every other column belongs to the user. Exactly one visible column is the
-  filler (STYLE-9); when the user hides it, the filler role moves to the first
-  visible free column in the table's order. Hiding the sorting column does not
-  change the sort, because hiding is a visibility flip and never removes the
-  column from the view. **Test rule:** one rule-named display test per table,
-  plus a measured filler test. Design:
+  editor popover: toggle visibility, drag to reorder, reset. Behaviour
+  learned in the music library is the same behaviour in Releases, Concerts
+  and Radio — a user does not experience a missing editor there as an absent
+  feature but as the app forgetting what it taught them. The same editor is
+  reachable without a pointer through the primary menu's "Edit column
+  layout…", which addresses the table of the active view and is insensitive
+  where no table is shown. Order, visibility and header-dragged widths are
+  stored per table and survive a restart. A table may declare fixed columns
+  — a leading artwork column, a trailing action column on a surface without
+  a row context menu — which stay visible, keep their position and never
+  appear in the editor; every other column belongs to the user. Exactly one
+  visible column is the filler (STYLE-9); when the user hides it, the filler
+  role moves to the first visible free column in the table's order. Hiding
+  the sorting column changes the sort to the first visible sortable free
+  column, ascending, or clears sorting when no such column remains, so an
+  active sort and its header indicator never become invisible. **Test
+  rule:** one rule-named display test per table, plus a measured filler
+  test. Design:
   `docs/superpowers/specs/2026-08-09-table-columns-and-system-dates-design.md`.
 - **STYLE-11** [active] [core] [gtk] — **A date looks the same everywhere.**
   Every displayed calendar date follows the system locale's date pattern, with

@@ -75,6 +75,7 @@ pub(super) struct ReleasesFilterBar {
     /// rather than inside it: that type is persisted, while a query must not
     /// be restored on the next launch.
     query: RefCell<String>,
+    committed_query: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
     on_query_changed: RefCell<Option<OnQueryChanged>>,
 }
@@ -120,6 +121,7 @@ impl ReleasesFilterBar {
             clear_all,
             counts: Cell::new((0, 0)),
             query: RefCell::new(String::new()),
+            committed_query: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
             on_query_changed: RefCell::new(None),
         });
@@ -159,11 +161,27 @@ impl ReleasesFilterBar {
         self.notify_changed();
     }
 
+    pub(super) fn set_committed_query(self: &Rc<Self>, query: &str) {
+        if *self.committed_query.borrow() == query {
+            return;
+        }
+        self.committed_query.replace(query.to_owned());
+        self.rebuild();
+    }
+
+    fn committed_query(&self) -> String {
+        self.committed_query.borrow().clone()
+    }
+
     fn clear_query(self: &Rc<Self>) {
         if self.query.borrow().is_empty() {
             return;
         }
         self.query.replace(String::new());
+        // Drop the receipt in the same turn as the query — see the note in
+        // `concerts_filter_bar::clear_query`. An empty query has no chip under
+        // either surface, so this cannot disagree with the commit sink.
+        self.committed_query.replace(String::new());
         // The borrow ends on this line. Left inside the `if let` condition it
         // would live for the whole body, and a callback that touched this
         // `RefCell` would panic instead of misbehaving visibly.
@@ -223,9 +241,10 @@ impl ReleasesFilterBar {
         }
         let filter = self.filter();
         let query = self.query();
+        let committed_query = self.committed_query();
         let weak = Rc::downgrade(self);
         self.layout
-            .replace_scoped_search(SearchScope::Releases, &query, move || {
+            .replace_scoped_search(SearchScope::Releases, &committed_query, move || {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };
@@ -515,6 +534,7 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ReleasesFilterBar::new(conn);
         bar.set_query("falling");
+        bar.set_committed_query("falling");
         bar.set_counts(15, 1_664);
 
         assert!(bar.layout.slot_contains(

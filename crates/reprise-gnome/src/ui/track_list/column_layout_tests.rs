@@ -1,4 +1,8 @@
 use super::*;
+use std::collections::HashSet;
+
+use gtk4::gio::prelude::*;
+use reprise_view::columns::ColumnKey;
 
 #[test]
 fn numeric_metadata_columns_are_classified_for_centering() {
@@ -25,8 +29,8 @@ fn numeric_metadata_columns_are_classified_for_centering() {
 #[test]
 fn every_non_cover_column_can_persist_its_width() {
     // Cover is not resizable (fixed 40px thumbnail) — never stored. Every
-    // other column, Title included, can hold a user-set width; Title only once
-    // its fill-expand has been turned off (see `is_width_persistable_now`).
+    // other column, Title included, can hold a user-set width; the production
+    // width saver stores Title only once its fill-expand has been turned off.
     assert!(!is_width_persistable(ColumnId::Cover));
     for id in [
         ColumnId::Title,
@@ -57,18 +61,37 @@ fn title_width_is_stored_only_after_its_fill_expand_is_turned_off() {
     if gtk4::init().is_err() {
         return;
     }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
     let column = gtk4::ColumnViewColumn::builder().build();
+    column.set_fixed_width(240);
+    view.append_column(&column);
+    let registry = GenericColumnRegistry::new(
+        &view,
+        conn.clone(),
+        TableKeys {
+            layout: "test.title-width-save.layout",
+            widths: "test.title-width-save.widths",
+        },
+        vec![(ColumnId::Title, column.clone())],
+    );
+    let columns = [(ColumnId::Title, column.clone())];
 
     // While Title still fills (expand on), its width is not a real preference.
     column.set_expand(true);
-    assert!(!is_width_persistable_now(ColumnId::Title, &column));
+    width_persistence::save_widths_now(&registry, &columns);
+    assert_eq!(
+        settings::get_setting(&conn, "test.title-width-save.widths").unwrap(),
+        Some(String::new())
+    );
 
     // A manual resize turns the fill off; the width becomes storable.
     column.set_expand(false);
-    assert!(is_width_persistable_now(ColumnId::Title, &column));
-
-    // Cover is excluded regardless of expand state.
-    assert!(!is_width_persistable_now(ColumnId::Cover, &column));
+    width_persistence::save_widths_now(&registry, &columns);
+    assert_eq!(
+        settings::get_setting(&conn, "test.title-width-save.widths").unwrap(),
+        Some("title:240".to_owned())
+    );
 }
 
 #[test]
@@ -81,9 +104,9 @@ fn rating_column_uses_the_compact_width() {
 
 #[test]
 fn every_track_column_has_stable_width_and_only_title_expands() {
-    for id in DEFAULT_ORDER {
-        let policy = column_width_policy(id);
-        if id == ColumnId::Title {
+    for id in ColumnId::all() {
+        let policy = column_width_policy(*id);
+        if *id == ColumnId::Title {
             // Title uses expand with a low fixed_width so it absorbs
             // remaining space and shrinks when the info panel is open.
             assert!(policy.fixed_width > 0 && policy.fixed_width < 200);
@@ -171,20 +194,34 @@ fn browse_9_track_list_builds_the_hidden_added_column() {
     assert!(!added.is_visible());
 }
 
-fn test_registry(ids: &[ColumnId]) -> ColumnRegistry {
+fn test_registry_with_conn(ids: &[ColumnId], conn: Rc<Db>) -> ColumnRegistry {
     let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
-    let mut columns = HashMap::new();
+    let mut columns = Vec::new();
     for id in ids.iter().copied() {
         let column = gtk4::ColumnViewColumn::builder().title(id.as_str()).build();
         view.append_column(&column);
-        columns.insert(id, column);
+        columns.push((id, column));
     }
-    ColumnRegistry {
-        view,
+    let registry = GenericColumnRegistry::new(
+        &view,
+        conn,
+        TableKeys {
+            layout: COLUMN_LAYOUT_KEY,
+            widths: COLUMN_WIDTHS_KEY,
+        },
         columns,
-        syncing_order: Rc::new(Cell::new(false)),
-        syncing_width: Rc::new(Cell::new(false)),
-    }
+    );
+    width_persistence::wire(
+        &registry,
+        column_label,
+        |id| column_width_policy(id).fixed_width,
+        ColumnId::Title,
+    );
+    registry
+}
+
+fn test_registry(ids: &[ColumnId]) -> ColumnRegistry {
+    test_registry_with_conn(ids, Rc::new(crate::test_db::open().unwrap()))
 }
 
 #[test]
@@ -211,7 +248,7 @@ fn visibility_only_apply_does_not_rebuild_the_column_list() {
     let rebuilds = Rc::new(Cell::new(0u32));
     let counter = rebuilds.clone();
     registry
-        .view
+        .view()
         .columns()
         .connect_items_changed(move |_, _, _, _| counter.set(counter.get() + 1));
 
@@ -254,7 +291,7 @@ fn reordering_apply_rebuilds_the_column_list_once() {
     let rebuilds = Rc::new(Cell::new(0u32));
     let counter = rebuilds.clone();
     registry
-        .view
+        .view()
         .columns()
         .connect_items_changed(move |_, _, _, _| counter.set(counter.get() + 1));
 
@@ -290,11 +327,9 @@ fn restore_stored_widths_applies_persistable_columns_only() {
     if gtk4::init().is_err() {
         return;
     }
-    let conn = crate::test_db::open().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
     settings::set_setting(&conn, COLUMN_WIDTHS_KEY, "artist:333,cover:999").unwrap();
-    let registry = test_registry(&[ColumnId::Cover, ColumnId::Artist]);
-
-    restore_stored_widths(&registry.columns, &conn);
+    let registry = test_registry_with_conn(&[ColumnId::Cover, ColumnId::Artist], conn);
 
     assert_eq!(
         registry.column(ColumnId::Artist).unwrap().fixed_width(),
@@ -316,7 +351,7 @@ fn reset_widths_restores_the_policy_default() {
         .unwrap()
         .set_fixed_width(500);
 
-    registry.reset_widths();
+    registry.reset();
 
     assert_eq!(
         registry.column(ColumnId::Artist).unwrap().fixed_width(),
@@ -328,10 +363,10 @@ fn reset_widths_restores_the_policy_default() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn width_policy_is_applied_to_gtk_columns() {
     gtk4::init().unwrap();
-    for id in DEFAULT_ORDER {
+    for id in ColumnId::all() {
         let column = gtk4::ColumnViewColumn::builder().build();
-        apply_column_width_policy(&column, id);
-        let policy = column_width_policy(id);
+        apply_column_width_policy(&column, *id);
+        let policy = column_width_policy(*id);
         assert_eq!(column.fixed_width(), policy.fixed_width);
         assert_eq!(column.expands(), policy.expand);
     }
@@ -343,11 +378,40 @@ fn layout_round_trips_canonically() {
     assert_eq!(parse_layout(&serialize_layout(&layout)), Some(layout));
 }
 
+/// STYLE-10: the music library is the table this concept came from. After
+/// generalising it, its default layout, widths and filler must be
+/// bit-identical — a silent shift here is a regression for every existing
+/// user, whose stored layout was written against these defaults.
 #[test]
-fn duplicate_or_unknown_ids_are_rejected() {
-    assert!(parse_layout("cover,title,title;cover,title").is_none());
-    assert!(parse_layout("cover,title,banana;cover,title").is_none());
-    assert!(parse_layout("cover,title;cover,banana").is_none());
+fn style_10_the_music_defaults_are_unchanged() {
+    let layout = reprise_view::columns::Layout::<ColumnId>::default();
+    assert_eq!(
+        reprise_view::columns::layout::serialize(&layout),
+        "cover,title,artist,album,year,added,duration,rating,play-count,track-number,genre;\
+cover,title,artist,album,year,duration,rating"
+    );
+}
+
+#[test]
+fn the_fixed_cover_is_absent_from_the_editable_music_band() {
+    let editable = ColumnLayout::default()
+        .order
+        .into_iter()
+        .filter(|id| id.pin().is_none())
+        .collect::<Vec<_>>();
+    assert!(!editable.contains(&ColumnId::Cover));
+    assert!(editable.contains(&ColumnId::Title));
+}
+
+#[test]
+fn duplicate_and_unknown_ids_keep_the_valid_layout() {
+    let duplicate = parse_layout("cover,title,title;cover,title").unwrap();
+    assert_eq!(duplicate.order[..2], [ColumnId::Cover, ColumnId::Title]);
+    let unknown_order = parse_layout("cover,title,banana;cover,title").unwrap();
+    assert_eq!(unknown_order.order[..2], [ColumnId::Cover, ColumnId::Title]);
+    let unknown_visible = parse_layout("cover,title;cover,banana").unwrap();
+    assert!(unknown_visible.visible.contains(&ColumnId::Cover));
+    assert!(!unknown_visible.visible.contains(&ColumnId::Title));
 }
 
 #[test]
