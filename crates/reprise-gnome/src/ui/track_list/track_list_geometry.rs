@@ -4,6 +4,8 @@ use std::cell::Cell;
 
 use gtk4::prelude::AdjustmentExt;
 
+const MAX_READY_DRIFT_IN_ROWS: f64 = 0.5;
+
 /// Approximates the uniform row height from the adjustment's total content
 /// height over the row count — the same technique `current_track_selection::
 /// centered_scroll_value` uses for the "jump to now playing" center (NAV-9b):
@@ -53,6 +55,30 @@ pub(in crate::ui) fn row_height_for_restore(
 }
 
 /// The adjustment is ready only once it describes the same rows as the model.
+/// Sub-row drift allows for fractional allocation rounding, but a full row is
+/// stale geometry: a one-row deletion otherwise looks consistent and poisons
+/// the cached height with `old_upper / new_count`.
 pub(in crate::ui) fn restore_geometry_is_ready(upper: f64, n_rows: usize, height: f64) -> bool {
-    (upper - n_rows as f64 * height).abs() <= height
+    (upper - n_rows as f64 * height).abs() < height * MAX_READY_DRIFT_IN_ROWS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_one_row_count_change_is_not_ready_geometry() {
+        let row_height = 36.0;
+        let old_upper = 200.0 * row_height;
+
+        assert!(!restore_geometry_is_ready(old_upper, 199, row_height));
+    }
+
+    #[test]
+    fn sub_row_rounding_drift_is_ready_geometry() {
+        let row_height = 36.0;
+        let rounded_upper = 199.0 * row_height + row_height * 0.49;
+
+        assert!(restore_geometry_is_ready(rounded_upper, 199, row_height));
+    }
 }

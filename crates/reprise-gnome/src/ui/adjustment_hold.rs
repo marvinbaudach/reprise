@@ -138,7 +138,14 @@ impl AdjustmentHold {
     }
 
     pub(super) fn release_after(self, duration: Duration) {
-        glib::timeout_add_local_once(duration, move || release(&self.inner));
+        glib::timeout_add_local_once(duration, move || {
+            // A bounds/value signal may already have queued a HIGH_IDLE
+            // correction in this same main-loop turn. Timeouts run at the
+            // higher default priority, so releasing here would cancel that
+            // last restore and leave GTK's late handover value behind. Let
+            // the correction run first, then retire the hold at default idle.
+            glib::idle_add_local_once(move || release(&self.inner));
+        });
     }
 }
 
