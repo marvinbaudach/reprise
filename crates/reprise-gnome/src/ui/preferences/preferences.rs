@@ -232,6 +232,7 @@ impl PreferencesContext {
                 }
             }
         });
+        context.wire_sidebar_module_menu();
         context.apply_initial();
         context
     }
