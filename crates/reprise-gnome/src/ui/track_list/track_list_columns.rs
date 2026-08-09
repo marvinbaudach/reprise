@@ -71,7 +71,10 @@ pub(in crate::ui) fn missing_track_explanation(
     match reason.unwrap_or(MissingReason::Unknown) {
         MissingReason::Unmounted => Some(strings::issue_text(strings::MISSING_ROW_UNAVAILABLE)),
         MissingReason::Deleted | MissingReason::Unknown => {
-            let date = reprise_core::format::format_unix_timestamp(missing_since);
+            let date = reprise_core::format::format_unix_timestamp(
+                missing_since,
+                &reprise_core::format::DateTimeFormat::iso(),
+            );
             Some(strings::missing_row_file_since(&date))
         }
     }

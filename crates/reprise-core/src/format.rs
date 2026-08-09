@@ -96,22 +96,35 @@ pub fn format_thousands(n: i64) -> String {
     }
 }
 
-/// Formats a Unix timestamp (seconds since the epoch, UTC) as `YYYY-MM-DD
-/// HH:MM` — used by the import-errors panel's "Time" column (`ui::import_
-/// errors_view`, Stage 3 Task 8). Always UTC (this app has no timezone/
-/// locale dependency yet) — consistent and unambiguous is more important
-/// here than local-time convenience for a low-traffic diagnostic column.
-/// Negative input (clock skew, a malformed row) is clamped to the epoch
-/// itself rather than panicking, matching this module's other clamp-not-
-/// panic conventions.
-pub fn format_unix_timestamp(secs: i64) -> String {
+/// A complete display format: how this system writes a date, and on which
+/// dial it writes the time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DateTimeFormat {
+    pub date: DatePattern,
+    pub clock: ClockConvention,
+}
+
+impl DateTimeFormat {
+    /// The locale-independent fallback, used before a frontend has supplied
+    /// the platform's own and by tests that assert an exact string.
+    pub fn iso() -> Self {
+        Self {
+            date: DatePattern::from_platform(DatePattern::ISO),
+            clock: ClockConvention::Hours24,
+        }
+    }
+}
+
+pub fn format_unix_timestamp(secs: i64, format: &DateTimeFormat) -> String {
     let secs = secs.max(0);
     let days = secs / 86_400;
     let time_of_day = secs % 86_400;
     let (year, month, day) = civil_from_days(days);
     let hour = time_of_day / 3600;
     let minute = (time_of_day % 3600) / 60;
-    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}")
+    let year = i32::try_from(year).unwrap_or(i32::MAX);
+    let date = format.date.render(Some(year), Some(month), Some(day));
+    format!("{date} {}", format.clock.render(hour, minute))
 }
 
 /// Days-since-epoch (1970-01-01) to a proleptic-Gregorian `(year, month,
@@ -388,19 +401,48 @@ mod tests {
 
     #[test]
     fn unix_timestamp_formats_the_epoch() {
-        assert_eq!(format_unix_timestamp(0), "1970-01-01 00:00");
+        assert_eq!(
+            format_unix_timestamp(0, &DateTimeFormat::iso()),
+            "1970-01-01 00:00"
+        );
     }
 
     #[test]
     fn unix_timestamp_formats_a_well_known_value() {
         // 1_000_000_000 seconds after the epoch is the widely-cited
         // "one billion seconds" instant, 2001-09-09T01:46:40Z.
-        assert_eq!(format_unix_timestamp(1_000_000_000), "2001-09-09 01:46");
+        assert_eq!(
+            format_unix_timestamp(1_000_000_000, &DateTimeFormat::iso()),
+            "2001-09-09 01:46"
+        );
     }
 
     #[test]
     fn unix_timestamp_clamps_negative_input_to_the_epoch() {
-        assert_eq!(format_unix_timestamp(-5), "1970-01-01 00:00");
+        assert_eq!(
+            format_unix_timestamp(-5, &DateTimeFormat::iso()),
+            "1970-01-01 00:00"
+        );
+    }
+
+    #[test]
+    fn unix_timestamp_follows_the_supplied_format() {
+        let german = DateTimeFormat {
+            date: DatePattern::from_platform("%d.%m.%Y"),
+            clock: ClockConvention::Hours24,
+        };
+        assert_eq!(
+            format_unix_timestamp(1_000_000_000, &german),
+            "09.09.2001 01:46"
+        );
+        let american = DateTimeFormat {
+            date: DatePattern::from_platform("%m/%d/%y"),
+            clock: ClockConvention::Hours12,
+        };
+        assert_eq!(
+            format_unix_timestamp(1_000_000_000, &american),
+            "09/09/2001 1:46 AM"
+        );
     }
 
     #[test]
