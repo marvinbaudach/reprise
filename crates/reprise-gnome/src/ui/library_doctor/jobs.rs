@@ -76,7 +76,10 @@ pub(super) fn run_scan(
                 {
                     local_finished = Some(now);
                 }
-                reprise_core::library_doctor::DoctorScanPhase::CheckingRemote => {
+                // Fingerprinting is part of the network pass, so it belongs to
+                // the same measured stretch.
+                reprise_core::library_doctor::DoctorScanPhase::CheckingRemote
+                | reprise_core::library_doctor::DoctorScanPhase::Fingerprinting => {
                     remote_started.get_or_insert(now);
                     if progress.completed_tracks == progress.total_tracks {
                         remote_finished = Some(now);

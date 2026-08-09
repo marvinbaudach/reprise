@@ -7,6 +7,7 @@ use crate::db::Db;
 use crate::library::group_key::normalize_group_key;
 
 use super::album_grouping;
+use super::fingerprint_phase;
 use super::local_rules::{self, ReadTrack};
 use super::remote::{self, RemoteProviderError, RemoteResolver};
 use super::scope;
@@ -253,6 +254,18 @@ impl<'connection> LibraryDoctor<'connection> {
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
+            // Decoding the audio for a fingerprint is the one step of the
+            // network pass that can hold a single track for a minute, and the
+            // scan cannot see it happen from here. The backend says so itself
+            // (`fingerprint_phase`); the counter is untouched, so it still
+            // only moves forward.
+            let fingerprinting = std::sync::atomic::AtomicBool::new(false);
+            let announced_backend = fingerprint_backend.map(|backend| {
+                fingerprint_phase::AnnouncedFingerprintBackend::new(backend, &fingerprinting)
+            });
+            let fingerprint_backend = announced_backend
+                .as_ref()
+                .map(|backend| backend as &dyn FingerprintBackend);
             // A release is chosen for a whole album, so an album is reused as a
             // whole or resolved as a whole: mixing a stored decision with a
             // fresh one could put two releases into one album. Where a group
@@ -318,7 +331,7 @@ impl<'connection> LibraryDoctor<'connection> {
                         let published_summary = preview_summary;
                         let mut control = || {
                             progress(DoctorScanProgress {
-                                phase: DoctorScanPhase::CheckingRemote,
+                                phase: fingerprint_phase::remote_phase(&fingerprinting),
                                 completed_tracks: tracks.len().saturating_sub(1),
                                 total_tracks: tracks.len(),
                                 summary: published_summary,

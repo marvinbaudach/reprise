@@ -39,6 +39,11 @@ pub const DOCTOR_SCANNING: &str = N_!("Checking tracks…");
 pub const DOCTOR_PHASE_LOCAL: &str = N_!("Reading tags…");
 #[allow(dead_code)] // Wired by PERF-1 after the single-writer string package lands.
 pub const DOCTOR_PHASE_REMOTE: &str = N_!("Checking against MusicBrainz…");
+/// The third phase, and the only one a single track can hold for a minute:
+/// fingerprinting decodes the audio. Without its own line the bar just stands
+/// at "60/61 tracks" under „Checking against MusicBrainz…", which reads as a
+/// crash.
+pub const DOCTOR_PHASE_FINGERPRINT: &str = N_!("Fingerprinting audio…");
 pub const DOCTOR_CASING_WHITESPACE: &str = N_!("Casing / Whitespace");
 pub const DOCTOR_MISSING_ALBUM_ARTIST: &str = N_!("Missing Album Artist");
 pub const DOCTOR_GENRE_VARIANTS: &str = N_!("Genre Variants");
@@ -609,6 +614,7 @@ mod tests {
     fn doc_9d_the_filter_scope_line_names_shown_total_and_filter() {
         assert_eq!(DOCTOR_PHASE_LOCAL, "Reading tags…");
         assert_eq!(DOCTOR_PHASE_REMOTE, "Checking against MusicBrainz…");
+        assert_eq!(DOCTOR_PHASE_FINGERPRINT, "Fingerprinting audio…");
         assert_eq!(
             doctor_filter_scope(27, 390, "Year"),
             "27 of 390 · filtered by Year"

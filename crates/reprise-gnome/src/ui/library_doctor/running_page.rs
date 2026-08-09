@@ -152,6 +152,9 @@ fn running_heading(kind: DoctorJobKind, phase: Option<DoctorScanPhase>) -> Strin
         (DoctorJobKind::Scan, Some(DoctorScanPhase::CheckingRemote)) => {
             strings::DOCTOR_PHASE_REMOTE
         }
+        (DoctorJobKind::Scan, Some(DoctorScanPhase::Fingerprinting)) => {
+            strings::DOCTOR_PHASE_FINGERPRINT
+        }
         (DoctorJobKind::Scan, None) => strings::DOCTOR_SCANNING,
         (DoctorJobKind::Apply, _) => strings::DOCTOR_UPDATING_TAGS,
         (DoctorJobKind::Revert, _) => strings::DOCTOR_REVERTING_TAGS,
@@ -199,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_2c_the_running_page_names_the_two_phases() {
+    fn doc_2c_the_running_page_names_every_scan_phase() {
         assert_eq!(
             running_heading(DoctorJobKind::Scan, Some(DoctorScanPhase::ReadingTags)),
             "Reading tags…"
@@ -207,6 +210,12 @@ mod tests {
         assert_eq!(
             running_heading(DoctorJobKind::Scan, Some(DoctorScanPhase::CheckingRemote)),
             "Checking against MusicBrainz…"
+        );
+        // The expensive one: without its own heading the page stands still
+        // under the MusicBrainz line for as long as a track takes to decode.
+        assert_eq!(
+            running_heading(DoctorJobKind::Scan, Some(DoctorScanPhase::Fingerprinting)),
+            "Fingerprinting audio…"
         );
     }
 

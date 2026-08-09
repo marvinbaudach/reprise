@@ -1,5 +1,6 @@
 mod album_grouping;
 mod cleanup;
+mod fingerprint_phase;
 mod grouping;
 mod local_rules;
 mod preferences;
