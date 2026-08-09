@@ -31,6 +31,9 @@ pub(in crate::ui) struct ColumnRegistry<K: ColumnKey> {
     /// Suppresses width listeners while defaults and stored widths are being
     /// installed, so setup is never mistaken for a user's header drag.
     pub(super) syncing_width: Rc<Cell<bool>>,
+    current_layout: RefCell<Layout<K>>,
+    #[cfg(test)]
+    layout_settings_reads: Cell<usize>,
     label: RefCell<Option<Labeler<K>>>,
     width_policy: RefCell<Option<WidthPolicy<K>>>,
     preferred_filler: Cell<Option<K>>,
@@ -43,21 +46,38 @@ impl<K: ColumnKey> ColumnRegistry<K> {
         keys: TableKeys,
         columns: Vec<(K, gtk4::ColumnViewColumn)>,
     ) -> Rc<Self> {
-        Rc::new(Self {
+        let stored = settings::get_setting(&conn, keys.layout)
+            .map_err(|error| tracing::warn!(%error, key = keys.layout, "could not load stored column layout"))
+            .ok()
+            .flatten();
+        let layout = stored
+            .as_deref()
+            .and_then(layout::parse::<K>)
+            .unwrap_or_default();
+        let canonical = layout::serialize(&layout);
+        let registry = Rc::new(Self {
             view: view.clone(),
             conn,
             keys,
             columns: columns.into_iter().collect(),
             syncing_order: Rc::new(Cell::new(false)),
             syncing_width: Rc::new(Cell::new(false)),
+            current_layout: RefCell::new(layout),
+            #[cfg(test)]
+            layout_settings_reads: Cell::new(1),
             label: RefCell::new(None),
             width_policy: RefCell::new(None),
             preferred_filler: Cell::new(None),
-        })
+        });
+        if stored.as_deref() != Some(&canonical) {
+            registry.persist_value(&canonical);
+        }
+        registry
     }
 
     pub(in crate::ui) fn apply(&self, layout: &Layout<K>) {
         let layout = layout::normalize(layout.order.clone(), layout.visible.clone());
+        self.current_layout.replace(layout.clone());
         let sort_fallback = self.sort_fallback(&layout);
         // Visibility is a property flip, never a removal: selection,
         // horizontal scroll and the active sort widget remain intact.
@@ -138,19 +158,12 @@ impl<K: ColumnKey> ColumnRegistry<K> {
     }
 
     pub(in crate::ui) fn layout(&self) -> Layout<K> {
-        let stored = settings::get_setting(&self.conn, self.keys.layout)
-            .map_err(|error| tracing::warn!(%error, key = self.keys.layout, "could not load stored column layout"))
-            .ok()
-            .flatten();
-        let layout = stored
-            .as_deref()
-            .and_then(layout::parse::<K>)
-            .unwrap_or_default();
-        let canonical = layout::serialize(&layout);
-        if stored.as_deref() != Some(&canonical) {
-            self.persist_value(&canonical);
-        }
-        layout
+        self.current_layout.borrow().clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn layout_settings_read_count(&self) -> usize {
+        self.layout_settings_reads.get()
     }
 
     pub(super) fn configure(&self, label: Labeler<K>, width: WidthPolicy<K>, filler: K) {
@@ -199,7 +212,9 @@ impl<K: ColumnKey> ColumnRegistry<K> {
     }
 
     pub(super) fn persist(&self, layout: &Layout<K>) {
-        self.persist_value(&layout::serialize(layout));
+        let layout = layout::normalize(layout.order.clone(), layout.visible.clone());
+        self.current_layout.replace(layout.clone());
+        self.persist_value(&layout::serialize(&layout));
     }
 
     pub(super) fn persist_value(&self, serialized: &str) {

@@ -79,6 +79,56 @@ fn sorting_a_new_column_replaces_the_previous_sort_key() {
     assert_eq!(sorter.primary_sort_column(), Some(rating));
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn drag_update_pass_performs_zero_settings_reads() {
+    use crate::ui::table_columns::registry::{ColumnRegistry, TableKeys};
+    use reprise_view::columns::ColumnId;
+
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let title = gtk4::ColumnViewColumn::builder()
+        .title("Title")
+        .id(ColumnId::Title.as_str())
+        .build();
+    let artist = gtk4::ColumnViewColumn::builder()
+        .title("Artist")
+        .id(ColumnId::Artist.as_str())
+        .build();
+    view.append_column(&title);
+    view.append_column(&artist);
+    let registry = ColumnRegistry::new(
+        &view,
+        Rc::new(crate::test_db::open().unwrap()),
+        TableKeys {
+            layout: "test.drag-update.layout",
+            widths: "test.drag-update.widths",
+        },
+        vec![(ColumnId::Title, title.clone()), (ColumnId::Artist, artist)],
+    );
+    let window = gtk4::Window::builder()
+        .default_width(500)
+        .default_height(160)
+        .child(&view)
+        .build();
+    window.present();
+    crate::ui::source_context_surface::settle_layout();
+    let reads_before = registry.layout_settings_read_count();
+    let mut drag = DragState {
+        dragged_column: title.clone(),
+        dragged_id: ColumnId::Title.as_str().to_owned(),
+        dragging: true,
+        marker: None,
+    };
+
+    update_marker(&view, &mut drag, &title, 300.0);
+
+    assert_eq!(registry.layout_settings_read_count(), reads_before);
+    window.close();
+}
+
 fn span(visible: bool, left: f64, right: f64) -> TitleSpan {
     TitleSpan {
         visible,

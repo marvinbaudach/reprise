@@ -366,16 +366,8 @@ fn activate_sort_click(view: &gtk4::ColumnView, column: &gtk4::ColumnViewColumn)
     crate::ui::track_list_sort::sort_by_column(view, column, next_order);
 }
 
-fn editable_column_id(
-    model: &Rc<dyn EditorModel>,
-    column: &gtk4::ColumnViewColumn,
-) -> Option<String> {
-    let title = column.title()?;
-    model
-        .columns()
-        .into_iter()
-        .find(|descriptor| descriptor.label == title)
-        .map(|descriptor| descriptor.id)
+fn editable_column_id(column: &gtk4::ColumnViewColumn) -> Option<String> {
+    column.id().map(|id| id.to_string())
 }
 
 /// The (widget, css-class) an insertion slot should mark, given whether it
@@ -386,7 +378,6 @@ fn marker_target(
     titles: &[HeaderTitle],
     slot: InsertionSlot,
     resolved: Option<usize>,
-    model: &Rc<dyn EditorModel>,
     dragged_column: &gtk4::ColumnViewColumn,
 ) -> Option<(gtk4::Widget, &'static str)> {
     resolved?;
@@ -395,7 +386,7 @@ fn marker_target(
             if let Some(target) = titles
                 .iter()
                 .skip(index)
-                .find(|title| editable_column_id(model, &title.column).is_some())
+                .find(|title| editable_column_id(&title.column).is_some())
             {
                 (target, INSERT_BEFORE_CLASS)
             } else {
@@ -403,7 +394,7 @@ fn marker_target(
                     .iter()
                     .take(index.saturating_add(1))
                     .rev()
-                    .find(|title| editable_column_id(model, &title.column).is_some())?;
+                    .find(|title| editable_column_id(&title.column).is_some())?;
                 (target, INSERT_AFTER_CLASS)
             }
         }
@@ -411,7 +402,7 @@ fn marker_target(
             let target = titles
                 .iter()
                 .rev()
-                .find(|title| editable_column_id(model, &title.column).is_some())?;
+                .find(|title| editable_column_id(&title.column).is_some())?;
             (target, INSERT_AFTER_CLASS)
         }
     };
@@ -447,7 +438,6 @@ fn clear_marker(drag: &mut DragState) {
 /// happens on release.
 fn update_marker(
     view: &gtk4::ColumnView,
-    model: &Rc<dyn EditorModel>,
     drag: &mut DragState,
     dragged_column: &gtk4::ColumnViewColumn,
     pointer_x: f64,
@@ -467,7 +457,7 @@ fn update_marker(
         first_is_pinned,
     );
     let resolved = resolve_drop(dragged_index, slot, titles.len());
-    let target = marker_target(&titles, slot, resolved, model, dragged_column);
+    let target = marker_target(&titles, slot, resolved, dragged_column);
     apply_marker(drag, target);
 }
 
@@ -511,7 +501,7 @@ fn perform_drop(
     let before = remaining
         .iter()
         .skip(target_index)
-        .find_map(|title| editable_column_id(model, &title.column));
+        .find_map(|title| editable_column_id(&title.column));
     if let Some(target) = before {
         model.move_column(dragged_id, &target, false);
         return;
@@ -520,7 +510,7 @@ fn perform_drop(
         .iter()
         .take(target_index.saturating_add(1))
         .rev()
-        .find_map(|title| editable_column_id(model, &title.column))
+        .find_map(|title| editable_column_id(&title.column))
     {
         model.move_column(dragged_id, &target, true);
     }
@@ -530,7 +520,6 @@ fn handle_drag_begin(
     gesture: &gtk4::GestureDrag,
     view: &gtk4::ColumnView,
     state: &Rc<RefCell<Option<DragState>>>,
-    model: &Rc<dyn EditorModel>,
     x: f64,
     y: f64,
 ) {
@@ -550,7 +539,7 @@ fn handle_drag_begin(
     let hit = &titles[hit_index];
     // Pinned columns are absent from the editor model, so they never start a
     // reorder. Leaving the press unclaimed preserves their native action.
-    let Some(dragged_id) = editable_column_id(model, &hit.column) else {
+    let Some(dragged_id) = editable_column_id(&hit.column) else {
         return;
     };
     // Only a resizable column has GTK's own edge resize gesture to yield to;
@@ -576,7 +565,6 @@ fn handle_drag_update(
     gesture: &gtk4::GestureDrag,
     view: &gtk4::ColumnView,
     state: &Rc<RefCell<Option<DragState>>>,
-    model: &Rc<dyn EditorModel>,
     offset_x: f64,
 ) {
     let Some((start_x, _start_y)) = gesture.start_point() else {
@@ -597,7 +585,7 @@ fn handle_drag_update(
 
     let dragged_column = drag.dragged_column.clone();
     let pointer_x = start_x + offset_x;
-    update_marker(view, model, drag, &dragged_column, pointer_x);
+    update_marker(view, drag, &dragged_column, pointer_x);
 }
 
 fn handle_drag_end(
@@ -658,29 +646,21 @@ pub(in crate::ui) fn install_header_drag(view: &gtk4::ColumnView, model: &Rc<dyn
 
     {
         let state = state.clone();
-        let model = model.clone();
         gesture.connect_drag_begin(glib::clone!(
             #[weak]
             view,
             move |gesture, x, y| {
-                let Some(model) = model.upgrade() else {
-                    return;
-                };
-                handle_drag_begin(gesture, &view, &state, &model, x, y);
+                handle_drag_begin(gesture, &view, &state, x, y);
             }
         ));
     }
     {
         let state = state.clone();
-        let model = model.clone();
         gesture.connect_drag_update(glib::clone!(
             #[weak]
             view,
             move |gesture, offset_x, _offset_y| {
-                let Some(model) = model.upgrade() else {
-                    return;
-                };
-                handle_drag_update(gesture, &view, &state, &model, offset_x);
+                handle_drag_update(gesture, &view, &state, offset_x);
             }
         ));
     }

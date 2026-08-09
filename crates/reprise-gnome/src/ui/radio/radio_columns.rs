@@ -3,6 +3,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::connectivity::Connectivity;
 use reprise_core::radio::StationRow;
+use reprise_view::columns::{ColumnKey, RadioColumn};
 
 use super::radio_context_menu;
 use super::radio_live_cells::RadioLiveCells;
@@ -27,6 +28,7 @@ struct ColumnTitle<'a> {
 
 #[derive(Clone, Copy)]
 struct TextColumnSpec<'a> {
+    key: RadioColumn,
     title: ColumnTitle<'a>,
     sizing: widths::Sizing,
     query: Option<&'a crate::ui::search_highlight::QuerySource>,
@@ -55,6 +57,7 @@ fn text_column(
     context: &TextColumnContext<'_>,
 ) {
     let TextColumnSpec {
+        key,
         title,
         sizing,
         query,
@@ -152,6 +155,7 @@ fn text_column(
         }
     });
     let column = gtk4::ColumnViewColumn::builder()
+        .id(key.as_str())
         .title(title.text)
         .factory(&factory)
         .resizable(true)
@@ -325,6 +329,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::Station,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_STATION),
                 playback_accent: true,
@@ -338,6 +343,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::Genre,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_GENRE),
                 playback_accent: false,
@@ -351,6 +357,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::Bitrate,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_BITRATE),
                 playback_accent: false,
@@ -364,6 +371,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::Country,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_COUNTRY),
                 playback_accent: false,
@@ -379,6 +387,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::NowPlaying,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_NOW_PLAYING),
                 playback_accent: false,

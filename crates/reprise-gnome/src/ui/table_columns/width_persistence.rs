@@ -161,8 +161,9 @@ fn wire_order_persistence<K: ColumnKey>(registry: &Rc<ColumnRegistry<K>>) {
                         .is_some_and(gtk4::ColumnViewColumn::is_visible)
                 })
                 .collect();
-            let serialized = layout::serialize(&layout::normalize(order, visible));
-            registry.persist_value(&serialized);
+            let layout = layout::normalize(order, visible);
+            let serialized = layout::serialize(&layout);
+            registry.persist(&layout);
             tracing::debug!(layout = %serialized, "column order persisted after header drag");
         });
 }
