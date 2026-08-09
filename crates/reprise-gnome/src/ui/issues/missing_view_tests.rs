@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn missing_group_copy_keeps_unknown_actionless_and_honest() {
-    let copy = group_copy(&MissingGroupKind::Unavailable { mount_point: None }, 3);
+    let copy = group_copy(&MissingGroupKind::Unlocatable, 3);
     assert_eq!(copy.title, "On unavailable drive");
     assert_eq!(copy.meta, "unknown location — 3 tracks");
     assert_eq!(copy.note, "will be verified on next scan");
@@ -59,7 +59,7 @@ fn deleted_card_is_the_only_actionable_missing_group() {
     assert!(body.contains("Listening history stays in My Stats"));
     let unavailable = group_copy(
         &MissingGroupKind::Unavailable {
-            mount_point: Some("/media/NAS".into()),
+            mount_point: "/media/NAS".into(),
         },
         2,
     );
@@ -76,7 +76,7 @@ fn locate_actions_cover_deleted_and_unknown_but_never_unmounted_tracks() {
         }
     );
     assert_eq!(
-        locate_actions(&MissingGroupKind::Unavailable { mount_point: None }),
+        locate_actions(&MissingGroupKind::Unlocatable),
         LocateActions {
             row: true,
             folder: false,
@@ -84,7 +84,7 @@ fn locate_actions_cover_deleted_and_unknown_but_never_unmounted_tracks() {
     );
     assert_eq!(
         locate_actions(&MissingGroupKind::Unavailable {
-            mount_point: Some("/media/NAS".into()),
+            mount_point: "/media/NAS".into(),
         }),
         LocateActions {
             row: false,

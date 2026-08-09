@@ -144,7 +144,9 @@ pub use issues::{
 // the same cross-crate reachability reason as `query_missing_groups` above:
 // the GUI (a later task) needs to name both directly as `reprise_core::
 // queries::{auto_clean_eligible, run_auto_clean}`.
-pub use issues::{auto_clean_eligible, run_auto_clean, tombstone_still_deleted};
+pub use issues::{
+    auto_clean_eligible, run_auto_clean, tombstone_still_deleted, tombstone_still_missing,
+};
 // Task 2.4: the grouped import-error read/write queries the ImportErrors
 // triage UI is built against — see `import_errors`'s module doc for the
 // hint contract and the dismiss/restore semantics. `pub use` for the same
@@ -740,6 +742,8 @@ mod tests_import_errors;
 mod tests_issues;
 #[cfg(test)]
 mod tests_issues_badges;
+#[cfg(test)]
+mod tests_issues_unlocatable;
 #[cfg(test)]
 mod tests_maintenance;
 #[cfg(test)]

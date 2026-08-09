@@ -46,13 +46,11 @@ fn locate_actions(kind: &MissingGroupKind) -> LocateActions {
             row: true,
             folder: true,
         },
-        MissingGroupKind::Unavailable { mount_point: None } => LocateActions {
+        MissingGroupKind::Unlocatable => LocateActions {
             row: true,
             folder: false,
         },
-        MissingGroupKind::Unavailable {
-            mount_point: Some(_),
-        } => LocateActions {
+        MissingGroupKind::Unavailable { .. } => LocateActions {
             row: false,
             folder: false,
         },
@@ -62,9 +60,7 @@ fn locate_actions(kind: &MissingGroupKind) -> LocateActions {
 fn group_copy(kind: &MissingGroupKind, count: u32) -> GroupCopy {
     let tracks = strings::missing_tracks(count);
     match kind {
-        MissingGroupKind::Unavailable {
-            mount_point: Some(mount),
-        } => GroupCopy {
+        MissingGroupKind::Unavailable { mount_point: mount } => GroupCopy {
             icon: strings::issue_text(strings::MISSING_UNAVAILABLE_ICON),
             title: strings::issue_text(strings::MISSING_UNAVAILABLE_TITLE),
             meta: format!(
@@ -74,7 +70,7 @@ fn group_copy(kind: &MissingGroupKind, count: u32) -> GroupCopy {
             note: strings::issue_text(strings::MISSING_RETURNS_WHEN_MOUNTED),
             actionable: false,
         },
-        MissingGroupKind::Unavailable { mount_point: None } => GroupCopy {
+        MissingGroupKind::Unlocatable => GroupCopy {
             icon: strings::issue_text(strings::MISSING_UNAVAILABLE_ICON),
             title: strings::issue_text(strings::MISSING_UNAVAILABLE_TITLE),
             meta: format!(

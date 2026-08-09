@@ -241,7 +241,7 @@ fn deleted_track_tombstone_revalidates_the_selection_and_rolls_back_atomically()
     .unwrap();
 
     assert_eq!(
-        tombstone_still_deleted(&db, &[3, 2, 1, 1], 1_000).unwrap(),
+        tombstone_still_missing(&db, &MissingGroupKind::Deleted, &[3, 2, 1, 1], 1_000).unwrap(),
         vec![1]
     );
     assert_eq!(
@@ -269,7 +269,7 @@ fn deleted_track_tombstone_revalidates_the_selection_and_rolls_back_atomically()
     )
     .unwrap();
 
-    assert!(tombstone_still_deleted(&db, &[1, 2], 2_000).is_err());
+    assert!(tombstone_still_missing(&db, &MissingGroupKind::Deleted, &[1, 2], 2_000).is_err());
     let removed: Vec<Option<i64>> = conn
         .prepare("SELECT removed_at FROM tracks WHERE id IN (1, 2) ORDER BY id")
         .unwrap()
