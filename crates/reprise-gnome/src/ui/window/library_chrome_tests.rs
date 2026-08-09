@@ -84,6 +84,100 @@ fn doc_7c_the_library_chrome_is_absent_while_the_doctor_is_visible() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn doc_7c_the_visible_doctor_header_owns_the_window_controls() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let animations_were_enabled = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
+
+    let window = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let library_header = adw::HeaderBar::new();
+    let entry = gtk4::SearchEntry::new();
+    let content_stack = gtk4::Stack::new();
+    content_stack.add_named(&gtk4::Label::new(Some("Library")), Some("library"));
+    let doctor_navigation = adw::NavigationView::new();
+    content_stack.add_named(&doctor_navigation, Some("library-doctor"));
+    content_stack.set_visible_child_name("library");
+
+    let root_header = adw::HeaderBar::new();
+    let root_toolbar = adw::ToolbarView::new();
+    root_toolbar.add_top_bar(&root_header);
+    root_toolbar.set_content(Some(&gtk4::Label::new(Some("Start or result"))));
+    let root_page = adw::NavigationPage::builder()
+        .title("Library Doctor")
+        .tag("library-doctor")
+        .child(&root_toolbar)
+        .build();
+    doctor_navigation.add(&root_page);
+
+    let review_header = adw::HeaderBar::new();
+    let review_toolbar = adw::ToolbarView::new();
+    review_toolbar.add_top_bar(&review_header);
+    review_toolbar.set_content(Some(&gtk4::Label::new(Some("Review"))));
+    let review_page = adw::NavigationPage::builder()
+        .title("Review Changes")
+        .tag("library-doctor-review")
+        .child(&review_toolbar)
+        .build();
+
+    let chrome = build(&library_header, &content_stack, &entry, &window);
+    wire_content_stack(&chrome.root, &content_stack);
+    let decorations = crate::ui::window::window_decorations::WindowDecorations::new(
+        &window,
+        &library_header,
+        &content_stack,
+        &doctor_navigation,
+        None,
+    );
+    decorations.content_host().set_content(&chrome.root);
+    decorations.apply(reprise_core::library::settings::WindowDecorationMode::Client);
+    window.present();
+    crate::ui::window::content_stack::show_page(&content_stack, "library-doctor");
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(!chrome.root.reveals_top_bars());
+    assert!(!library_header.shows_start_title_buttons());
+    assert!(!library_header.shows_end_title_buttons());
+    assert!(root_header.shows_start_title_buttons());
+    assert!(root_header.shows_end_title_buttons());
+    assert_eq!(
+        [&library_header, &root_header, &review_header]
+            .into_iter()
+            .filter(|header| header.is_mapped())
+            .count(),
+        1,
+        "only the root Doctor header row may be visible"
+    );
+
+    doctor_navigation.push(&review_page);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(!root_header.shows_start_title_buttons());
+    assert!(!root_header.shows_end_title_buttons());
+    assert!(review_header.shows_start_title_buttons());
+    assert!(review_header.shows_end_title_buttons());
+    assert_eq!(
+        [&library_header, &root_header, &review_header]
+            .into_iter()
+            .filter(|header| header.is_mapped())
+            .count(),
+        1,
+        "only the review header row may be visible"
+    );
+
+    decorations.apply(reprise_core::library::settings::WindowDecorationMode::System);
+    assert!(!review_header.shows_start_title_buttons());
+    assert!(!review_header.shows_end_title_buttons());
+
+    window.close();
+    settings.set_gtk_enable_animations(animations_were_enabled);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn search_1a_idle_is_icon_not_field() {
     gtk4::init().unwrap();
     let window = adw::ApplicationWindow::builder().build();

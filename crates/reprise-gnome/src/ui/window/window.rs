@@ -418,8 +418,13 @@ pub fn build(
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());
-    let decorations =
-        super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
+    let decorations = super::window_decorations::WindowDecorations::new(
+        &window,
+        &header,
+        &content_stack,
+        &library_doctor_navigation,
+        compact_root,
+    );
     let content_host = decorations.content_host();
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
