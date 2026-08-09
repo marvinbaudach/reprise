@@ -46,7 +46,7 @@ impl NavIcon {
             Self::TopRated => "starred-symbolic",
             Self::ImportErrors => "dialog-warning-symbolic",
             Self::Missing => "edit-delete-symbolic",
-            Self::LibraryDoctor => "system-search-symbolic",
+            Self::LibraryDoctor => crate::ui::library_doctor::DOCTOR_GLYPH,
             Self::Releases => "star-new-symbolic",
             Self::Concerts => "ticket-symbolic",
             Self::Podcasts => "audio-input-microphone-symbolic",
@@ -61,6 +61,11 @@ impl NavIcon {
 
     pub(in crate::ui) const fn fallback_icon_name(self) -> &'static str {
         match self {
+            // The app ships the stethoscope itself, so a theme without the
+            // app's icon directory in reach steps down to the magnifier — the
+            // same step `library_doctor::doctor_glyph` takes for the start page
+            // and the result card.
+            Self::LibraryDoctor => crate::ui::library_doctor::DOCTOR_GLYPH_FALLBACK,
             Self::Releases => "starred-symbolic",
             Self::Concerts => "x-office-calendar-symbolic",
             Self::Radio => "network-cellular-symbolic",
@@ -380,6 +385,24 @@ mod tests {
         assert_eq!(
             NavIcon::Concerts.fallback_icon_name(),
             "x-office-calendar-symbolic"
+        );
+    }
+
+    /// The sidebar entry and the two doctor surfaces have to ask for one
+    /// glyph. They did not: the start page and the result card resolved the
+    /// shipped stethoscope through `library_doctor::doctor_glyph`, while this
+    /// row still named the magnifier that glyph replaced. Asserting against
+    /// that same resolution — both of its answers — is what keeps them
+    /// together, because `nav_icon` performs the identical theme check.
+    #[test]
+    fn the_library_doctor_row_asks_for_the_same_glyph_as_the_doctor_surfaces() {
+        assert_eq!(
+            NavIcon::LibraryDoctor.icon_name(),
+            crate::ui::library_doctor::doctor_glyph_for(true)
+        );
+        assert_eq!(
+            NavIcon::LibraryDoctor.fallback_icon_name(),
+            crate::ui::library_doctor::doctor_glyph_for(false)
         );
     }
 
