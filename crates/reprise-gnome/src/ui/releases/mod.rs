@@ -6,6 +6,7 @@ use std::rc::Rc;
 use reprise_core::db::Db;
 
 pub(super) mod css;
+mod releases_column_layout;
 mod releases_columns;
 mod releases_empty_state;
 mod releases_failure_ui;

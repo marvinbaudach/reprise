@@ -195,6 +195,12 @@ pub const COLUMN_LAYOUT_KEY: &str = "ui.column_layout";
 /// User-adjusted per-column widths (`id:width` pairs), kept separate from the
 /// order/visibility layout so the layout reducers and their tests stay untouched.
 pub const COLUMN_WIDTHS_KEY: &str = "ui.column_widths";
+pub const RELEASES_COLUMN_LAYOUT_KEY: &str = "ui.column_layout.releases";
+pub const RELEASES_COLUMN_WIDTHS_KEY: &str = "ui.column_widths.releases";
+pub const CONCERTS_COLUMN_LAYOUT_KEY: &str = "ui.column_layout.concerts";
+pub const CONCERTS_COLUMN_WIDTHS_KEY: &str = "ui.column_widths.concerts";
+pub const RADIO_COLUMN_LAYOUT_KEY: &str = "ui.column_layout.radio";
+pub const RADIO_COLUMN_WIDTHS_KEY: &str = "ui.column_widths.radio";
 
 /// Where the player bar docks. `Bottom` is the default and the fallback for any
 /// unknown/hand-edited value (same tolerance posture as `get_bool`).
@@ -781,11 +787,9 @@ fn get_last_viewed_import_errors_in(conn: &Connection) -> Result<i64, rusqlite::
 fn set_last_viewed_import_errors_in(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
     set_setting_in(conn, LAST_VIEWED_IMPORT_ERRORS_KEY, &now.to_string())
 }
-
 #[path = "settings_seek.rs"]
 mod seek;
 pub use seek::*;
-
 #[cfg(test)]
 #[path = "settings_compact_tests.rs"]
 mod compact_tests;

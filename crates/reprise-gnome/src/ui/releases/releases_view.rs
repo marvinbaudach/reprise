@@ -58,6 +58,7 @@ struct Shared {
     rows: RefCell<Vec<HistoryEntry>>,
     cached_items: Cell<usize>,
     column_view: gtk4::ColumnView,
+    column_model: Rc<dyn crate::ui::table_columns::EditorModel>,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
@@ -119,6 +120,13 @@ impl ReleasesView {
         });
         let date_column =
             releases_columns::append_columns(&column_view, &on_set_hidden, &on_open, &filter_bar);
+        let column_registry = super::releases_column_layout::registry(&column_view, conn.clone());
+        let column_model = super::releases_column_layout::model(&column_registry);
+        crate::ui::table_columns::header_popover::install_header_popover(
+            &column_view,
+            &column_model,
+        );
+        crate::ui::table_columns::header_dnd::install_header_drag(&column_view, &column_model);
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
             .vexpand(true)
@@ -169,6 +177,7 @@ impl ReleasesView {
             rows: RefCell::new(Vec::new()),
             cached_items: Cell::new(0),
             column_view: column_view.clone(),
+            column_model,
             stack,
             status,
             status_button: status_button.clone(),
@@ -231,6 +240,10 @@ impl ReleasesView {
 
     pub(in crate::ui) fn root(&self) -> &gtk4::Widget {
         &self.root
+    }
+
+    pub(in crate::ui) fn column_model(&self) -> Rc<dyn crate::ui::table_columns::EditorModel> {
+        self.shared.column_model.clone()
     }
 
     pub(in crate::ui) fn refresh(&self) {

@@ -24,6 +24,7 @@ pub(super) type OnOpenTarget = Rc<dyn Fn(String)>;
 
 pub(super) fn column_contract() -> Vec<String> {
     [
+        strings::COLUMN_COVER,
         strings::RELEASES_DATE,
         strings::RELEASES_TITLE,
         strings::RELEASES_ARTIST,
@@ -34,6 +35,53 @@ pub(super) fn column_contract() -> Vec<String> {
     .into_iter()
     .map(strings::text)
     .collect()
+}
+
+fn cover_column(view: &gtk4::ColumnView) {
+    let factory = gtk4::SignalListItemFactory::new();
+    factory.connect_setup(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let cover = crate::ui::updates::release_cover::LazyReleaseCover::new_unbound(40);
+        item.set_child(Some(cover.widget()));
+    });
+    factory.connect_bind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let Some(root) = item.child().and_downcast::<gtk4::Overlay>() else {
+            return;
+        };
+        let Some(cover) = crate::ui::updates::release_cover::LazyReleaseCover::from_widget(&root)
+        else {
+            return;
+        };
+        let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
+            return;
+        };
+        let entry = object.entry();
+        cover.set_release(&entry.release_group_mbid, &entry.artist_name);
+    });
+    factory.connect_unbind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let Some(root) = item.child().and_downcast::<gtk4::Overlay>() else {
+            return;
+        };
+        if let Some(cover) = crate::ui::updates::release_cover::LazyReleaseCover::from_widget(&root)
+        {
+            cover.set_release("", "");
+        }
+    });
+    let column = gtk4::ColumnViewColumn::builder()
+        .title(strings::text(strings::COLUMN_COVER))
+        .factory(&factory)
+        .resizable(false)
+        .build();
+    widths::pin(&column, 40);
+    view.append_column(&column);
 }
 
 /// `sizing` fixes the column's width; see [`widths`] for why every column
@@ -343,9 +391,10 @@ fn append_columns_with_query(
     query: &crate::ui::search_highlight::QuerySource,
 ) -> gtk4::ColumnViewColumn {
     let titles = column_contract();
+    cover_column(view);
     let date = text_column(
         view,
-        &titles[0],
+        &titles[1],
         Some("date"),
         widths::Sizing::pinned(widths::DATE),
         None,
@@ -354,7 +403,7 @@ fn append_columns_with_query(
     // Title is the filler: it owns whatever width the pinned columns leave.
     text_column(
         view,
-        &titles[1],
+        &titles[2],
         None,
         widths::Sizing::filler(widths::TITLE_MIN),
         Some(query),
@@ -362,7 +411,7 @@ fn append_columns_with_query(
     );
     text_column(
         view,
-        &titles[2],
+        &titles[3],
         None,
         widths::Sizing::pinned(widths::NAME),
         Some(query),
@@ -370,7 +419,7 @@ fn append_columns_with_query(
     );
     text_column(
         view,
-        &titles[3],
+        &titles[4],
         None,
         widths::Sizing::pinned(widths::SHORT_LABEL),
         None,
@@ -510,14 +559,51 @@ mod tests {
     #[test]
     fn nr_25_table_has_the_five_named_columns() {
         let columns = column_contract();
-        assert_eq!(&columns[..5], ["Date", "Title", "Artist", "Type", "Status"]);
+        assert_eq!(
+            &columns[1..6],
+            ["Date", "Title", "Artist", "Type", "Status"]
+        );
     }
 
     #[test]
     fn nr_20_table_adds_a_bandcamp_purchase_column() {
         assert_eq!(
             column_contract(),
-            ["Date", "Title", "Artist", "Type", "Status", "Buy"]
+            ["Cover", "Date", "Title", "Artist", "Type", "Status", "Buy"]
         );
+    }
+
+    /// STYLE-10: the Releases header exposes the shared editor, and editing a
+    /// free column cannot hide its fixed cover or action columns.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_10_releases_header_right_click_edits_the_table() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+        let registry = super::super::releases_column_layout::registry(
+            &view,
+            Rc::new(crate::test_db::open().unwrap()),
+        );
+        let model = super::super::releases_column_layout::model(&registry);
+        crate::ui::table_columns::header_popover::install_header_popover(&view, &model);
+
+        let controllers = view.observe_controllers();
+        assert!((0..controllers.n_items()).any(|index| {
+            controllers
+                .item(index)
+                .and_downcast::<gtk4::GestureClick>()
+                .is_some_and(|gesture| gesture.button() == gtk4::gdk::BUTTON_SECONDARY)
+        }));
+        model.set_visible("type", false);
+        use reprise_view::columns::ReleaseColumn;
+        assert!(!registry.is_visible(ReleaseColumn::Type));
+        assert!(registry.is_visible(ReleaseColumn::Cover));
+        assert!(registry.is_visible(ReleaseColumn::Status));
+        assert!(registry.is_visible(ReleaseColumn::Buy));
     }
 }
