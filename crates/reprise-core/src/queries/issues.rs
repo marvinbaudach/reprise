@@ -8,40 +8,36 @@
 //! on its own (grouping/paginating one `missing_reason` taxonomy), not a
 //! grab-bag of unrelated maintenance helpers.
 //!
-//! ## The three group kinds, and why `unknown` never joins `Deleted`
+//! ## The three group kinds, and why `Unlocatable` never joins `Deleted`
 //!
 //! `tracks.missing_reason` (schema v10/v11, see `models::MissingReason`) has
 //! three values, and each maps to exactly one card:
 //!
-//! - `unmounted` rows are grouped by `mount_point` — the scanner records
-//!   `mount_point` alongside `device` on every successful `stat` (`library::
-//!   scanner`), so a row classified `Unmounted` (`library::mounts::
-//!   classify_missing`) always carries the mount it was last seen under.
-//!   `N` distinct mount points among these rows becomes `N` separate
+//! - `unmounted` rows with a recorded `mount_point` are grouped by that
+//!   mount. `N` distinct named mount points becomes `N` separate
 //!   [`MissingGroup`]s — never one card mixing tracks from two different
 //!   drives, since "the drive is plugged back in" is a per-mount event.
-//! - `unknown` rows — the v10 migration's backfill for pre-v2 rows that
-//!   predate the `device` column, with no way to tell "deleted" from
-//!   "unmounted" apart — get their own group, `MissingGroupKind::
-//!   Unavailable { mount_point: None }`. It shares the `Unavailable` kind
-//!   (both are "wait and see", not "act now") but carries no mount to wait
-//!   on, which is exactly why the GUI card for this group must say "will be
-//!   verified on next scan" rather than the per-mount card's "returns
-//!   automatically when the drive is mounted" — this group can't honestly
-//!   promise that.
+//! - Rows without a location we can name form one `Unlocatable` group. That
+//!   includes `unknown` rows and the observed real-world state `unmounted`
+//!   with `mount_point IS NULL`. The latter contradicts the scanner's
+//!   intended invariant, but turning it into a nameless `Unavailable` card
+//!   would promise a mount event we cannot identify and would duplicate the
+//!   unknown card. `Unlocatable` is therefore actionable: the user may
+//!   remove those library entries after an explicit warning, while still
+//!   being able to locate individual files.
 //! - `deleted` rows — confirmed gone from a reachable filesystem — are the
 //!   ONLY rows in `MissingGroupKind::Deleted`. This distinction is load-
-//!   bearing: the Deleted card's bulk action hard-deletes library rows
-//!   (ratings, play history, playlist membership — all gone via `ON DELETE
-//!   CASCADE`), so a row this crate cannot actually prove is deleted must
-//!   never be swept into that action by being miscounted here. `query_
-//!   missing_groups` filters on `missing_reason = 'deleted'` alone for this
-//!   group — never a catch-all "everything that isn't unmounted".
+//!   bearing: the Deleted card's bulk action removes library rows and their
+//!   attached ratings, playlist membership, and device-sync state after the
+//!   undo window. `Unlocatable` being removable does not make it deletion
+//!   evidence: its count, row query, confirmation copy, and guarded cleanup
+//!   remain separate from `Deleted`, which continues to filter on the exact
+//!   deleted reason rather than a catch-all.
 //!
 //! A group with zero matching rows is simply absent from the returned
 //! `Vec` — there is no "empty card" concept; the GUI shows exactly the
-//! cards this function returns, in the fixed order above (unmounted groups,
-//! each sorted by `mount_point`, then unknown, then deleted).
+//! cards this function returns, in the fixed order above (named unmounted
+//! groups, each sorted by `mount_point`, then unlocatable, then deleted).
 
 use std::collections::HashSet;
 
@@ -54,19 +50,17 @@ use crate::models::{MissingReason, Track};
 
 use super::clauses::{row_to_track, MISSING};
 
-/// Which card a [`MissingGroup`] represents. See the module doc for why
-/// `Unavailable { mount_point: None }` (the `unknown` reason) is kept
-/// distinct from every per-mount `Unavailable` group and from `Deleted`.
+/// Which card a [`MissingGroup`] represents. See the module doc for why a
+/// missing mount identity is `Unlocatable`, never a nameless `Unavailable`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MissingGroupKind {
-    /// A wait-state card: the file may well still exist, we just can't see
-    /// it right now. `Some(mount_point)` for a confirmed-unmounted drive
-    /// (`missing_reason = 'unmounted'`); `None` for the `unknown` reason —
-    /// no mount to report, because no mount was ever recorded for these
-    /// rows.
-    Unavailable { mount_point: Option<String> },
+    /// A wait-state card for one named, currently unmounted filesystem.
+    Unavailable { mount_point: String },
+    /// No location can be named: `unknown`, plus `unmounted` without a
+    /// `mount_point`. The user may deliberately clean up these entries.
+    Unlocatable,
     /// An actionable card: `missing_reason = 'deleted'` rows only — see the
-    /// module doc's "why `unknown` never joins `Deleted`" section.
+    /// module doc's "why `Unlocatable` never joins `Deleted`" section.
     Deleted,
 }
 
@@ -91,12 +85,22 @@ const MISSING_ROWS_SELECT: &str = "SELECT id, path, title, artist, album, album_
      EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai \
      FROM tracks";
 
+/// The one SQL definition of "no location we can name". Keeping the reason
+/// values derived from [`MissingReason`] and keeping this predicate shared by
+/// card counts, rows, and guarded cleanup prevents those three surfaces from
+/// drifting apart.
+fn unlocatable_predicate() -> String {
+    format!(
+        "(missing_reason = '{}' OR (missing_reason = '{}' AND mount_point IS NULL))",
+        MissingReason::Unknown.as_str(),
+        MissingReason::Unmounted.as_str(),
+    )
+}
+
 /// Returns every non-empty missing-file card, in the fixed 18a order: one
-/// `Unavailable { mount_point: Some(_) }` group per distinct mount point
-/// among `unmounted` rows (sorted by mount point, case-insensitively), then
-/// the single `Unavailable { mount_point: None }` group for `unknown` rows
-/// if any exist, then the single `Deleted` group if any exist. See the
-/// module doc for why `unknown` and `deleted` can never be merged.
+/// `Unavailable` group per named mount point among `unmounted` rows (sorted
+/// case-insensitively), then one `Unlocatable` group if any rows have no
+/// known location, then one `Deleted` group if any exist.
 pub fn query_missing_groups(db: &Db) -> Result<Vec<MissingGroup>, rusqlite::Error> {
     query_missing_groups_matching(db, "")
 }
@@ -111,13 +115,8 @@ pub fn query_missing_groups_matching(
 ) -> Result<Vec<MissingGroup>, rusqlite::Error> {
     let conn = db.conn();
     let mut groups = query_unavailable_groups(conn, path_query)?;
-    if let Some(unknown) = query_reason_count_group(
-        conn,
-        MissingReason::Unknown,
-        MissingGroupKind::Unavailable { mount_point: None },
-        path_query,
-    )? {
-        groups.push(unknown);
+    if let Some(unlocatable) = query_unlocatable_count_group(conn, path_query)? {
+        groups.push(unlocatable);
     }
     if let Some(deleted) = query_reason_count_group(
         conn,
@@ -133,11 +132,11 @@ pub fn query_missing_groups_matching(
 /// The `AND path LIKE …` fragment, or nothing at all for an empty query.
 /// Returning an empty fragment rather than a always-true `LIKE '%'` keeps
 /// the unfiltered plan identical to the one this view has always run.
-fn path_clause(path_query: &str) -> &'static str {
+fn path_clause(path_query: &str, parameter_index: usize) -> String {
     if path_query.trim().is_empty() {
-        ""
+        String::new()
     } else {
-        " AND path LIKE ?2 ESCAPE '\\'"
+        format!(" AND path LIKE ?{parameter_index} ESCAPE '\\'")
     }
 }
 
@@ -154,19 +153,20 @@ fn like_pattern(path_query: &str) -> String {
 }
 
 /// The per-mount half of [`query_missing_groups`]: one row per distinct
-/// `mount_point` among `unmounted` rows, via `GROUP BY` — a mount with zero
+/// non-null `mount_point` among `unmounted` rows, via `GROUP BY` — a mount with zero
 /// matching rows simply never appears as a group row, so no separate empty-
 /// group filtering is needed here (unlike the single-count `unknown`/
-/// `deleted` groups, which need an explicit `count > 0` check since a plain
+/// `Unlocatable`/`Deleted` groups, which need an explicit `count > 0` check since a plain
 /// `COUNT(*)` always returns one row, even when it's zero).
 fn query_unavailable_groups(
     conn: &Connection,
     path_query: &str,
 ) -> Result<Vec<MissingGroup>, rusqlite::Error> {
-    let path_clause = path_clause(path_query);
+    let path_clause = path_clause(path_query, 2);
     let mut stmt = conn.prepare(&format!(
         "SELECT mount_point, count(*) FROM tracks WHERE {MISSING} AND missing_reason = ?1\
-         {path_clause} GROUP BY mount_point ORDER BY mount_point COLLATE NOCASE"
+         AND mount_point IS NOT NULL{path_clause} \
+         GROUP BY mount_point ORDER BY mount_point COLLATE NOCASE"
     ))?;
     let mut params: Vec<Box<dyn rusqlite::ToSql>> =
         vec![Box::new(MissingReason::Unmounted.as_str().to_owned())];
@@ -174,7 +174,7 @@ fn query_unavailable_groups(
         params.push(Box::new(like_pattern(path_query)));
     }
     let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |r| {
-        Ok((r.get::<_, Option<String>>(0)?, r.get::<_, i64>(1)?))
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
     })?;
     rows.map(|row| {
         let (mount_point, count) = row?;
@@ -196,7 +196,7 @@ fn query_reason_count_group(
     kind: MissingGroupKind,
     path_query: &str,
 ) -> Result<Option<MissingGroup>, rusqlite::Error> {
-    let path_clause = path_clause(path_query);
+    let path_clause = path_clause(path_query, 2);
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(reason.as_str().to_owned())];
     if !path_clause.is_empty() {
         params.push(Box::new(like_pattern(path_query)));
@@ -210,6 +210,31 @@ fn query_reason_count_group(
     )?;
     Ok((count > 0).then_some(MissingGroup {
         kind,
+        track_count: count as u32,
+    }))
+}
+
+fn query_unlocatable_count_group(
+    conn: &Connection,
+    path_query: &str,
+) -> Result<Option<MissingGroup>, rusqlite::Error> {
+    let predicate = unlocatable_predicate();
+    let path_clause = path_clause(path_query, 1);
+    let count: i64 = if path_clause.is_empty() {
+        conn.query_row(
+            &format!("SELECT count(*) FROM tracks WHERE {MISSING} AND {predicate}"),
+            [],
+            |row| row.get(0),
+        )?
+    } else {
+        conn.query_row(
+            &format!("SELECT count(*) FROM tracks WHERE {MISSING} AND {predicate}{path_clause}"),
+            [like_pattern(path_query)],
+            |row| row.get(0),
+        )?
+    };
+    Ok((count > 0).then_some(MissingGroup {
+        kind: MissingGroupKind::Unlocatable,
         track_count: count as u32,
     }))
 }
@@ -245,39 +270,25 @@ pub fn query_missing_rows_matching(
     limit: u32,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let conn = db.conn();
-    let (reason, mount_point) = match kind {
-        MissingGroupKind::Deleted => (MissingReason::Deleted, None),
-        MissingGroupKind::Unavailable {
-            mount_point: Some(mount_point),
-        } => (MissingReason::Unmounted, Some(mount_point.as_str())),
-        MissingGroupKind::Unavailable { mount_point: None } => (MissingReason::Unknown, None),
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(limit), Box::new(offset)];
+    let state_filter = match kind {
+        MissingGroupKind::Deleted => {
+            params.push(Box::new(MissingReason::Deleted.as_str().to_owned()));
+            "missing_reason = ?3".to_string()
+        }
+        MissingGroupKind::Unavailable { mount_point } => {
+            params.push(Box::new(MissingReason::Unmounted.as_str().to_owned()));
+            params.push(Box::new(mount_point.clone()));
+            "missing_reason = ?3 AND mount_point = ?4".to_string()
+        }
+        MissingGroupKind::Unlocatable => unlocatable_predicate(),
     };
-    let mount_filter = if mount_point.is_some() {
-        " AND mount_point = ?4"
-    } else {
-        ""
-    };
-    // The path filter always takes the next free index, so the statement
-    // never declares a parameter the binding below does not supply.
-    let path_index = if mount_point.is_some() { 5 } else { 4 };
-    let path_filter = if path_query.trim().is_empty() {
-        String::new()
-    } else {
-        format!(" AND path LIKE ?{path_index} ESCAPE '\\'")
-    };
+    let path_filter = path_clause(path_query, params.len() + 1);
     let sql = format!(
-        "{MISSING_ROWS_SELECT} WHERE {MISSING} AND missing_reason = ?3{mount_filter}{path_filter} \
+        "{MISSING_ROWS_SELECT} WHERE {MISSING} AND {state_filter}{path_filter} \
          ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, track_no LIMIT ?1 OFFSET ?2"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![
-        Box::new(limit),
-        Box::new(offset),
-        Box::new(reason.as_str().to_owned()),
-    ];
-    if let Some(mount_point) = mount_point {
-        params.push(Box::new(mount_point.to_owned()));
-    }
     if !path_filter.is_empty() {
         params.push(Box::new(like_pattern(path_query)));
     }
@@ -401,38 +412,44 @@ pub fn mark_mount_unavailable(
     Ok(marked)
 }
 
-/// Revalidates a potentially stale Deleted-card selection and tombstones
-/// only rows that are still proven deleted.
+/// Revalidates a potentially stale actionable-card selection and tombstones
+/// only rows that still belong to that exact missing state.
 ///
 /// The revalidation read and guarded update share one transaction so a
 /// scanner resurrection cannot land between them. A conflicting writer
 /// makes the operation fail without leaving a partial tombstone batch.
 /// Returned ids preserve the caller's order with duplicates collapsed.
-pub fn tombstone_still_deleted(
+pub fn tombstone_still_missing(
     db: &Db,
+    kind: &MissingGroupKind,
     requested_ids: &[i64],
     now: i64,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
-    tombstone_still_deleted_in(conn, requested_ids, now)
+    tombstone_still_missing_in(conn, kind, requested_ids, now)
 }
 
-fn tombstone_still_deleted_in(
+fn tombstone_still_missing_in(
     conn: &Connection,
+    kind: &MissingGroupKind,
     requested_ids: &[i64],
     now: i64,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     if requested_ids.is_empty() {
         return Ok(Vec::new());
     }
+    let state_predicate = match kind {
+        MissingGroupKind::Deleted => {
+            format!("missing_reason = '{}'", MissingReason::Deleted.as_str())
+        }
+        MissingGroupKind::Unlocatable => unlocatable_predicate(),
+        MissingGroupKind::Unavailable { .. } => return Ok(Vec::new()),
+    };
     let tx = conn.unchecked_transaction()?;
-    let currently_deleted: HashSet<i64> = {
-        let mut statement = tx.prepare(
-            "SELECT id FROM tracks
-             WHERE missing_since IS NOT NULL
-               AND removed_at IS NULL
-               AND missing_reason = 'deleted'",
-        )?;
+    let currently_matching: HashSet<i64> = {
+        let mut statement = tx.prepare(&format!(
+            "SELECT id FROM tracks WHERE {MISSING} AND {state_predicate}"
+        ))?;
         let ids = statement
             .query_map([], |row| row.get(0))?
             .collect::<Result<_, _>>()?;
@@ -442,7 +459,7 @@ fn tombstone_still_deleted_in(
     let tombstoned: Vec<i64> = requested_ids
         .iter()
         .copied()
-        .filter(|id| currently_deleted.contains(id) && seen.insert(*id))
+        .filter(|id| currently_matching.contains(id) && seen.insert(*id))
         .collect();
     if !tombstoned.is_empty() {
         let placeholders = (2..=tombstoned.len() + 1)
@@ -524,6 +541,18 @@ pub fn auto_clean_eligible(db: &Db, now: i64) -> Result<Vec<i64>, rusqlite::Erro
     )
 }
 
+/// The one statement of "this row's grace period has elapsed", built for
+/// whatever parameter indices the calling query needs.
+///
+/// Two queries ask it: [`auto_clean_eligible_in`], which selects the ids, and
+/// `maintenance`'s `RemoveGuard::AutoCleanEligible`, which re-checks each id
+/// at delete time. Those two must not be able to disagree — a selection rule
+/// that is stricter than the delete rule silently widens what auto-clean
+/// removes.
+pub(super) fn auto_clean_deadline_clause(armed: usize, grace: usize, now: usize) -> String {
+    format!("max(missing_since, ?{armed}) + ?{grace} <= ?{now}")
+}
+
 fn auto_clean_eligible_in(
     conn: &Connection,
     setting: AutoCleanSetting,
@@ -537,9 +566,10 @@ fn auto_clean_eligible_in(
         return Ok(Vec::new());
     };
     let grace_period_seconds = i64::from(days) * SECONDS_PER_DAY;
+    let deadline = auto_clean_deadline_clause(2, 3, 4);
     let mut statement = conn.prepare(&format!(
         "SELECT id FROM tracks WHERE {MISSING} AND missing_reason = ?1 \
-         AND max(missing_since, ?2) + ?3 <= ?4 ORDER BY id"
+         AND {deadline} ORDER BY id"
     ))?;
     let ids = statement
         .query_map(
@@ -576,11 +606,12 @@ fn auto_clean_eligible_in(
 /// 'deleted'`) at delete time instead of trusting this snapshot, so a
 /// resurrected row survives with its rating, playlist membership and
 /// listening history intact rather than being hard-deleted out from under a
-/// track the scanner just proved is live again. The guard does NOT re-run
-/// the `days`/`armed_at` deadline arithmetic — time only moves forward, so
-/// an id already past its deadline at selection time is still past it at
-/// delete time; only the missing state and reason can realistically change
-/// under the race, so only those are re-checked (see `maintenance::
+/// track the scanner just proved is live again. The guard re-runs the
+/// `days`/`armed_at` deadline arithmetic too: that used to be skipped as
+/// redundant ("time only moves forward"), which held while `armed_at` moved
+/// only on a rare user action, but scan-time reclassification now advances
+/// it whenever it corrects a row, so a deadline can legitimately move out
+/// from under this selection (see `maintenance::
 /// remove_auto_clean_eligible_tracks`'s doc comment). See `tests_auto_
 /// clean.rs`'s `run_auto_clean_survives_a_resurrection_racing_the_delete_
 /// itself` for the regression test this guards against.
@@ -598,13 +629,23 @@ fn auto_clean_eligible_in(
 /// run — the whole point of a hard delete, made deliberately.
 pub fn run_auto_clean(db: &Db, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
-    let ids = auto_clean_eligible_in(
+    let setting = settings::get_missing_auto_clean(db);
+    let armed_at = settings::get_auto_clean_armed_at(db)?;
+    let ids = auto_clean_eligible_in(conn, setting, armed_at, now)?;
+    // The duration is necessarily set once any id came back — `auto_clean_
+    // eligible_in` returns empty otherwise — but the delete needs the value
+    // itself, not just the ids, so it can re-derive the deadline. It re-reads
+    // `armed_at` on its own inside its transaction rather than taking the
+    // copy read above, which is precisely the value that may have moved.
+    let AutoCleanSetting::Days(days) = setting else {
+        return Ok(Vec::new());
+    };
+    super::maintenance::remove_auto_clean_eligible_tracks(
         conn,
-        settings::get_missing_auto_clean(db),
-        settings::get_auto_clean_armed_at(db)?,
+        &ids,
+        i64::from(days) * SECONDS_PER_DAY,
         now,
-    )?;
-    super::maintenance::remove_auto_clean_eligible_tracks(conn, &ids)
+    )
 }
 
 // -- Badge counts (Task 2.5) -------------------------------------------------

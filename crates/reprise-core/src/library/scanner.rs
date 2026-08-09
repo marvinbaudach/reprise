@@ -671,6 +671,7 @@ fn scan_folder_inner(
             root: root.to_path_buf(),
         }
     } else {
+        let reclassified = vanish::reclassify_missing_with(source, &tx, root, now_unix())?;
         report.vanished =
             vanish::mark_vanished_with(source, &tx, candidates, &observed_audio_paths)?;
         // T0.3: one collective change-log row per scan that actually touched
@@ -679,7 +680,7 @@ fn scan_folder_inner(
         // announces commit together. Foreign scanners (`reprise-cli scan`)
         // wake the running app through this; the app's own scans carry its
         // writer token and are filtered out by its own consumer.
-        if scan_touched_library(&report) {
+        if scan_touched_library(&report) || reclassified > 0 {
             crate::events::record(&tx, "library", "", "scan")?;
             crate::library::startup_tasks::advance_library_signature_in(&tx)?;
         }

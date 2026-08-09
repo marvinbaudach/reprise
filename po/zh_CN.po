@@ -994,6 +994,16 @@ msgid "Quit"
 msgstr "退出"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:38
+#, rust-format
+msgid "Turn Off {name}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
+#, rust-format
+msgid "Could not turn off {name}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:38
 msgid "Accent Color"
 msgstr ""
 

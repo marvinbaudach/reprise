@@ -87,6 +87,7 @@ mod issues;
 mod library;
 pub(crate) mod library_views;
 mod maintenance;
+mod maintenance_missing;
 mod playlist;
 mod queue;
 mod smart;
@@ -144,7 +145,7 @@ pub use issues::{
 // the same cross-crate reachability reason as `query_missing_groups` above:
 // the GUI (a later task) needs to name both directly as `reprise_core::
 // queries::{auto_clean_eligible, run_auto_clean}`.
-pub use issues::{auto_clean_eligible, run_auto_clean, tombstone_still_deleted};
+pub use issues::{auto_clean_eligible, run_auto_clean, tombstone_still_missing};
 // Task 2.4: the grouped import-error read/write queries the ImportErrors
 // triage UI is built against — see `import_errors`'s module doc for the
 // hint contract and the dismiss/restore semantics. `pub use` for the same
@@ -161,14 +162,15 @@ pub use import_errors::{
 pub use import_errors::{count_import_errors_active, count_new_import_errors};
 pub use library_views::*;
 pub use maintenance::{
-    exclude_tracks_matching_paths, filter_present, mark_track_missing_if_current, purge_tombstones,
-    query_has_live_tracks, query_import_error_count, query_live_track_ids, query_live_track_paths,
+    exclude_tracks_matching_paths, filter_present, purge_tombstones, query_has_live_tracks,
+    query_import_error_count, query_live_track_ids, query_live_track_paths,
     query_live_track_summaries, query_queue_purge_track_ids, query_queue_retained_track_ids,
     query_random_live_track_ids, query_sync_tracks, query_sync_tracks_with_source,
     query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
     query_track_summary, remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks,
     track_id_for_path, undo_tombstone,
 };
+pub use maintenance_missing::mark_track_missing_if_current;
 pub use track_summary::TrackSummary;
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_missing_tracks`/`purge_tombstones`/`remove_tracks_matching_paths` all funnel
@@ -740,6 +742,8 @@ mod tests_import_errors;
 mod tests_issues;
 #[cfg(test)]
 mod tests_issues_badges;
+#[cfg(test)]
+mod tests_issues_unlocatable;
 #[cfg(test)]
 mod tests_maintenance;
 #[cfg(test)]

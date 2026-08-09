@@ -336,69 +336,6 @@ pub fn query_sync_tracks_with_source(
     Ok(tracks)
 }
 
-/// Marks `track_id` missing only while it is still the live row at
-/// `expected_path` (Stage 2 Task 5: a physically deleted
-/// file must never crash or dead-end the app — this is the DB-side half of
-/// that guarantee). Every windowed/count/id query for `ViewSource::Library`/
-/// `Playlist`/`Smart` already filters on `PRESENT`, so the row disappears
-/// from those views and from a freshly-seeded queue on the very next
-/// reload, without deleting the row itself — ratings/play history/etc. are
-/// preserved, and the row resurfaces in `ViewSource::Missing` (Stage 3 Task
-/// 3) instead of vanishing outright.
-///
-/// This is the playback-fault call site `Track::is_missing` documents. It uses
-/// [`LibrarySource::reachability`], the same classifier as the scanner's
-/// mark-vanished phase, after selecting the row's path and device. The
-/// expected path is the identity
-/// snapshot taken before the asynchronous backend fault arrived. Both the
-/// read and write require that same path plus `PRESENT`, and the file is
-/// rechecked immediately before writing. A watcher/Locate reconcile that
-/// wins the race therefore survives instead of having its new live identity
-/// marked missing by stale fault work. Returns whether one row changed.
-pub fn mark_track_missing_if_current(
-    db: &Db,
-    track_id: i64,
-    expected_path: &Path,
-) -> Result<bool, rusqlite::Error> {
-    mark_track_missing_if_current_with(&UnixLibrarySource, db, track_id, expected_path)
-}
-
-/// [`mark_track_missing_if_current`] with the library source injected.
-/// Production passes [`UnixLibrarySource`]; the seam exists so a non-POSIX
-/// source can be classified against without a real filesystem, and so an
-/// Android SAF source can be handed in here once one exists.
-pub(super) fn mark_track_missing_if_current_with(
-    source: &dyn LibrarySource,
-    db: &Db,
-    track_id: i64,
-    expected_path: &Path,
-) -> Result<bool, rusqlite::Error> {
-    let conn = db.conn();
-    let expected_path = expected_path.to_string_lossy();
-    let row: Option<(String, Option<i64>)> = conn
-        .query_row(
-            &format!("SELECT path,device FROM tracks WHERE id=?1 AND path=?2 AND {PRESENT}"),
-            rusqlite::params![track_id, expected_path.as_ref()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()?;
-    let Some((path, device)) = row else {
-        return Ok(false);
-    };
-    if source.probe(Path::new(&path), LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
-        return Ok(false);
-    }
-    let reason = source.reachability(Path::new(&path), device);
-    let changed = conn.execute(
-        &format!(
-            "UPDATE tracks SET missing_since=strftime('%s','now'),missing_reason=?3 \
-             WHERE id=?1 AND path=?2 AND {PRESENT}"
-        ),
-        rusqlite::params![track_id, path, reason.as_str()],
-    )?;
-    Ok(changed == 1)
-}
-
 /// Batch, TRANSACTIONAL "Remove from library" (Stage-3 close-out fix): the
 /// version every real caller (`ui::track_actions::remove_missing_selected`)
 /// uses. A bare per-id delete would leave two cross-task invariants broken
@@ -499,7 +436,20 @@ pub(crate) enum RemoveGuard {
     Any,
     MissingOnly,
     TombstonedOnly,
-    AutoCleanEligible,
+    /// Carries the deadline inputs so the delete can re-derive eligibility
+    /// itself instead of trusting the caller's `SELECT` — see
+    /// [`remove_auto_clean_eligible_tracks`] for why that snapshot is no
+    /// longer safe to trust.
+    ///
+    /// `armed_at` is deliberately NOT among them: it is re-read inside the
+    /// delete's own transaction, because the whole point of the re-check is
+    /// to notice an arming clock that moved after the caller's `SELECT`.
+    /// Passing the caller's stale copy down would re-check against exactly
+    /// the value that is suspect.
+    AutoCleanEligible {
+        grace_period_seconds: i64,
+        now: i64,
+    },
 }
 
 pub(crate) fn remove_tracks_impl(
@@ -559,10 +509,39 @@ fn remove_track_requests_impl<'a>(
                 "DELETE FROM tracks WHERE id = ?1 AND removed_at IS NOT NULL",
                 rusqlite::params![id],
             )?,
-            (RemoveGuard::AutoCleanEligible, None) => tx.execute(
-                &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING} AND missing_reason = ?2"),
-                rusqlite::params![id, MissingReason::Deleted.as_str()],
-            )?,
+            (
+                RemoveGuard::AutoCleanEligible {
+                    grace_period_seconds,
+                    now,
+                },
+                None,
+            ) => {
+                // Read inside this transaction, not handed down from the
+                // caller: a scan that advanced the clock between the
+                // caller's SELECT and here is exactly what this re-check
+                // exists to catch.
+                let Some(armed_at) = crate::library::settings::get_auto_clean_armed_at_in(&tx)?
+                else {
+                    // Disarmed under us. An unarmed clock makes the feature
+                    // inert everywhere else (`auto_clean_eligible` returns
+                    // nothing), so it must not delete here either.
+                    continue;
+                };
+                let deadline = super::issues::auto_clean_deadline_clause(3, 4, 5);
+                tx.execute(
+                    &format!(
+                        "DELETE FROM tracks WHERE id = ?1 AND {MISSING} \
+                         AND missing_reason = ?2 AND {deadline}"
+                    ),
+                    rusqlite::params![
+                        id,
+                        MissingReason::Deleted.as_str(),
+                        armed_at,
+                        grace_period_seconds,
+                        now
+                    ],
+                )?
+            }
             (_, Some(_)) => unreachable!("path identity is only valid with RemoveGuard::Any"),
         };
         if deleted == 0 {
@@ -595,18 +574,37 @@ fn remove_track_requests_impl<'a>(
 /// completely unattended, so there is nobody watching to notice and nothing
 /// left to restore.
 ///
-/// The guard only re-checks what can realistically change under it: the
-/// row's missing state and reason. It deliberately does NOT re-run the
-/// `days`/`armed_at` deadline arithmetic — time only moves forward, so an id
-/// that was already past its deadline at `auto_clean_eligible`'s `SELECT` is
-/// still past it by the time this `DELETE` runs; re-deriving the same
-/// monotonic fact here would be redundant, not safer, so do not "fix" this
-/// by adding it back.
+/// The guard re-checks the row's missing state, its reason, AND the
+/// `days`/`armed_at` deadline.
+///
+/// The deadline used to be left out on purpose, reasoning that time only
+/// moves forward: an id past its deadline at `auto_clean_eligible`'s
+/// `SELECT` is still past it when this `DELETE` runs. That held while
+/// `armed_at` moved only when the user changed the setting. It stopped
+/// holding when scan-time reclassification became a writer of it
+/// (`library::scanner_vanish::reclassify_missing_with` advances the clock
+/// whenever it corrects a row, so every corrected row gets a full grace
+/// period). A scan committing that advance while this function is midway
+/// through its id list would otherwise delete rows whose grace period had
+/// just been extended — the extension exists precisely to stop that.
+///
+/// The deadline expression itself comes from `issues::auto_clean_deadline_
+/// clause`, shared with the `SELECT`, so selection and deletion cannot drift
+/// into disagreeing about what "elapsed" means.
 pub(crate) fn remove_auto_clean_eligible_tracks(
     conn: &Connection,
     ids: &[i64],
+    grace_period_seconds: i64,
+    now: i64,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_tracks_impl(conn, ids, RemoveGuard::AutoCleanEligible)
+    remove_tracks_impl(
+        conn,
+        ids,
+        RemoveGuard::AutoCleanEligible {
+            grace_period_seconds,
+            now,
+        },
+    )
 }
 
 // -- Tombstone operations (Task 2.2, 10-second undo) ---------------------

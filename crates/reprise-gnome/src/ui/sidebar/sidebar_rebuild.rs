@@ -16,6 +16,7 @@ use reprise_core::{podcasts, radio};
 use super::sidebar_dnd;
 use super::sidebar_export;
 use super::sidebar_issue_cleanup;
+use super::sidebar_module_menu;
 use super::sidebar_playlist_quick_add;
 use super::sidebar_presentation::{self, NavIcon};
 use super::strings;
@@ -507,6 +508,7 @@ fn add_row(
             None,
         )
     };
+    sidebar_module_menu::wire(shared, &row, &source, title);
     match &source {
         ViewSource::Playlist(playlist_id) => {
             sidebar_dnd::wire_playlist_drop_target(shared, &row, *playlist_id, title);

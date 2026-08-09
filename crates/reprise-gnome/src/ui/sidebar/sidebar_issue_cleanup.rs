@@ -14,7 +14,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
-use reprise_core::queries::{self, MissingGroupKind};
+use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
 use crate::ui::popover_lifecycle;
@@ -174,7 +174,10 @@ fn confirm_remove_all_missing(shared: &Rc<Shared>) {
 }
 
 fn missing_ids_for_cleanup(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
-    queries::query_missing_rows(db, &MissingGroupKind::Deleted, 0, u32::MAX)
+    // Shared with the tombstone guard on the other end of this route — see
+    // `issues::bulk_cleanup_kind` for why selecting and guarding must not be
+    // two independent statements of the same category.
+    queries::query_missing_rows(db, &crate::ui::issues::bulk_cleanup_kind(), 0, u32::MAX)
         .map(|tracks| tracks.into_iter().map(|track| track.id).collect())
 }
 

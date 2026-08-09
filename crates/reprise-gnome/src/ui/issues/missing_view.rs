@@ -46,13 +46,11 @@ fn locate_actions(kind: &MissingGroupKind) -> LocateActions {
             row: true,
             folder: true,
         },
-        MissingGroupKind::Unavailable { mount_point: None } => LocateActions {
+        MissingGroupKind::Unlocatable => LocateActions {
             row: true,
             folder: false,
         },
-        MissingGroupKind::Unavailable {
-            mount_point: Some(_),
-        } => LocateActions {
+        MissingGroupKind::Unavailable { .. } => LocateActions {
             row: false,
             folder: false,
         },
@@ -62,9 +60,7 @@ fn locate_actions(kind: &MissingGroupKind) -> LocateActions {
 fn group_copy(kind: &MissingGroupKind, count: u32) -> GroupCopy {
     let tracks = strings::missing_tracks(count);
     match kind {
-        MissingGroupKind::Unavailable {
-            mount_point: Some(mount),
-        } => GroupCopy {
+        MissingGroupKind::Unavailable { mount_point: mount } => GroupCopy {
             icon: strings::issue_text(strings::MISSING_UNAVAILABLE_ICON),
             title: strings::issue_text(strings::MISSING_UNAVAILABLE_TITLE),
             meta: format!(
@@ -74,15 +70,15 @@ fn group_copy(kind: &MissingGroupKind, count: u32) -> GroupCopy {
             note: strings::issue_text(strings::MISSING_RETURNS_WHEN_MOUNTED),
             actionable: false,
         },
-        MissingGroupKind::Unavailable { mount_point: None } => GroupCopy {
-            icon: strings::issue_text(strings::MISSING_UNAVAILABLE_ICON),
-            title: strings::issue_text(strings::MISSING_UNAVAILABLE_TITLE),
+        MissingGroupKind::Unlocatable => GroupCopy {
+            icon: strings::issue_text(strings::MISSING_UNLOCATABLE_ICON),
+            title: strings::issue_text(strings::MISSING_UNLOCATABLE_TITLE),
             meta: format!(
-                "{} — {tracks}",
-                strings::issue_text(strings::MISSING_UNKNOWN_LOCATION)
+                "{} · {tracks}",
+                strings::issue_text(strings::MISSING_UNLOCATABLE_META)
             ),
-            note: strings::issue_text(strings::MISSING_VERIFY_NEXT_SCAN),
-            actionable: false,
+            note: String::new(),
+            actionable: true,
         },
         MissingGroupKind::Deleted => GroupCopy {
             icon: strings::issue_text(strings::MISSING_DELETED_ICON),
@@ -143,8 +139,13 @@ fn auto_clean_confirmation_body(count: usize, days: u32) -> String {
     strings::missing_auto_clean_body(count, days)
 }
 
-fn remove_confirmation_body(count: usize) -> String {
-    strings::missing_remove_body(count)
+fn remove_confirmation_body(kind: &MissingGroupKind, count: usize) -> String {
+    match kind {
+        MissingGroupKind::Unlocatable => strings::missing_unlocatable_remove_body(count),
+        MissingGroupKind::Deleted | MissingGroupKind::Unavailable { .. } => {
+            strings::missing_remove_body(count)
+        }
+    }
 }
 
 fn now_unix() -> i64 {
@@ -256,7 +257,7 @@ impl MissingFilesView {
     }
 
     pub(in crate::ui) fn remove_with_undo(&self, ids: &[i64]) {
-        tombstone_with_undo(&self.shared, ids);
+        tombstone_with_undo(&self.shared, &bulk_cleanup_kind(), ids);
     }
 
     pub(in crate::ui) fn set_db_path(&self, db_path: PathBuf) {
@@ -302,6 +303,18 @@ fn refresh(shared: &Rc<Shared>) -> usize {
     count
 }
 
+/// The one category the sidebar's bulk "remove all missing" acts on.
+///
+/// Two places have to agree on it: `sidebar_issue_cleanup::missing_ids_for_
+/// cleanup` selects the ids, `MissingFilesView::remove_with_undo` tombstones
+/// them under a state guard keyed by kind. When those two were written out
+/// separately, widening the selection without touching the guard would have
+/// let the extra ids fall silently out of the tombstone — the same shape of
+/// bug the per-card Remove-all button already had. Both now read this.
+pub(in crate::ui) fn bulk_cleanup_kind() -> MissingGroupKind {
+    MissingGroupKind::Deleted
+}
+
 fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
     let copy = group_copy(&group.kind, group.track_count);
     let locate = locate_actions(&group.kind);
@@ -312,9 +325,10 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
         button.add_css_class("pill");
         button.add_css_class("issue-remove-pill");
         let shared = shared.clone();
+        let kind = group.kind.clone();
         button.connect_clicked(move |_| {
-            let ids = collect_group_ids(&shared, &MissingGroupKind::Deleted);
-            confirm_remove(&shared, ids);
+            let ids = collect_group_ids(&shared, &kind);
+            confirm_remove(&shared, kind.clone(), ids);
         });
         Some(button.upcast::<gtk4::Widget>())
     } else if copy.note.is_empty() {
@@ -326,9 +340,15 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
     };
     let card = IssueCard::new(&copy.icon, &copy.title, &copy.meta, action);
     if locate.folder {
-        super::missing_menus::install_card_context_menu(shared, card.header_widget(), &copy.title);
+        super::missing_menus::install_card_context_menu(
+            shared,
+            card.header_widget(),
+            &copy.title,
+            group.kind.clone(),
+        );
     }
     let kind = group.kind.clone();
+    let actionable = copy.actionable;
     let query = shared.query.borrow().clone();
     let row_shared = shared.clone();
     let listbox = card.body_listbox().clone();
@@ -349,7 +369,8 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
                         &row_shared,
                         &listbox,
                         track,
-                        matches!(kind, MissingGroupKind::Deleted),
+                        kind.clone(),
+                        actionable,
                         locate_actions(&kind).row,
                     )
                 },
@@ -363,6 +384,7 @@ fn build_track_row(
     shared: &Rc<Shared>,
     listbox: &gtk4::ListBox,
     track: Track,
+    kind: MissingGroupKind,
     removable: bool,
     locatable: bool,
 ) -> gtk4::Widget {
@@ -374,9 +396,10 @@ fn build_track_row(
     let mut pills = Vec::new();
     if removable {
         let shared = shared.clone();
+        let remove_kind = kind.clone();
         pills.push(
             IssuePill::new(strings::issue_text(strings::MISSING_REMOVE), move || {
-                confirm_remove(&shared, vec![id]);
+                confirm_remove(&shared, remove_kind.clone(), vec![id]);
             })
             .with_css_class("issue-remove-pill"),
         );
@@ -416,6 +439,7 @@ fn build_track_row(
             listbox,
             row.widget(),
             target,
+            kind,
             removable,
             locatable,
         );
@@ -476,7 +500,7 @@ fn collect_group_ids(shared: &Shared, kind: &MissingGroupKind) -> Vec<i64> {
     )
 }
 
-pub(super) fn confirm_remove(shared: &Rc<Shared>, ids: Vec<i64>) {
+pub(super) fn confirm_remove(shared: &Rc<Shared>, kind: MissingGroupKind, ids: Vec<i64>) {
     if ids.is_empty() {
         return;
     }
@@ -486,7 +510,7 @@ pub(super) fn confirm_remove(shared: &Rc<Shared>, ids: Vec<i64>) {
     };
     let dialog = adw::AlertDialog::builder()
         .heading(strings::issue_text(strings::MISSING_REMOVE_HEADING))
-        .body(remove_confirmation_body(ids.len()))
+        .body(remove_confirmation_body(&kind, ids.len()))
         .close_response(RESPONSE_CANCEL)
         .build();
     dialog.add_response(RESPONSE_CANCEL, &strings::issue_text(strings::CANCEL));
@@ -500,13 +524,13 @@ pub(super) fn confirm_remove(shared: &Rc<Shared>, ids: Vec<i64>) {
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
         focus_guard.restore();
         if response.as_str() == RESPONSE_REMOVE {
-            tombstone_with_undo(&shared, &ids);
+            tombstone_with_undo(&shared, &kind, &ids);
         }
     });
 }
 
-fn tombstone_with_undo(shared: &Rc<Shared>, ids: &[i64]) {
-    let result = queries::tombstone_still_deleted(&shared.conn, ids, now_unix());
+fn tombstone_with_undo(shared: &Rc<Shared>, kind: &MissingGroupKind, ids: &[i64]) {
+    let result = queries::tombstone_still_missing(&shared.conn, kind, ids, now_unix());
     let tombstoned = match result {
         Ok(ids) => ids,
         Err(error) => {
@@ -716,6 +740,8 @@ fn build_info_card(shared: &Shared) -> gtk4::Widget {
         settings::get_missing_auto_clean(&shared.conn),
         AutoCleanSetting::Off
     );
+    // Auto-clean remains deleted-only; Unlocatable cleanup is always an
+    // explicit user action despite sharing the card's remove flow.
     let has_deleted = {
         let conn = &shared.conn;
         queries::query_missing_groups(conn).is_ok_and(|groups| {
