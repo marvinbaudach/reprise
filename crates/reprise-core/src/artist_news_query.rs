@@ -10,7 +10,7 @@ use chrono::NaiveDate;
 use rusqlite::Connection;
 
 use crate::artist_news::{normalize, AlbumNews, ArtistNews, NewsKind};
-use crate::artist_news_parsing::{parse_partial_date, release_kind};
+use crate::artist_news_parsing::{is_announcement_candidate, parse_partial_date, release_kind};
 use crate::artist_news_scope::{catalog_type, collapse_duplicates, counts_as_owned, ScopedRelease};
 
 const MAX_NEWS_ITEMS_PER_ARTIST: usize = 20;
@@ -309,8 +309,9 @@ fn cap_releases_per_artist(releases: &mut Vec<StoredRelease>) {
     });
 }
 
-/// The visible release candidates for the Updates popover under the persisted
-/// catalog scope, excluding anything the library counts as owned.
+/// The visible release candidates for the Updates popover: upcoming releases
+/// and releases from the last 90 days under the persisted type scope,
+/// excluding anything the library counts as owned.
 ///
 /// This is also the set [`unseen_release_count`] counts. Keeping the filter in
 /// one query prevents the popover list and its badge from disagreeing.
@@ -320,7 +321,6 @@ pub fn delta_candidates(
 ) -> Result<Vec<StoredRelease>, rusqlite::Error> {
     let conn = db.conn();
     let filter = crate::artist_news_view::persisted_releases_filter(db)?;
-    let cutoff = filter.window.cutoff(today);
     let mut releases = load_releases_in(conn, false, today)?
         .into_iter()
         .filter(|release| {
@@ -336,9 +336,7 @@ pub fn delta_candidates(
         .filter(|release| catalog_type(&release.release_type))
         .filter(|release| filter.release_types.includes(&release.release_type))
         .filter(|release| {
-            cutoff.is_none_or(|cutoff| {
-                parse_partial_date(&release.first_release_date).is_none_or(|date| date >= cutoff)
-            })
+            is_announcement_candidate(&release.release_type, &release.first_release_date, today)
         })
         .collect();
     releases = collapse_duplicates(releases);

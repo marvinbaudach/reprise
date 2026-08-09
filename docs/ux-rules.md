@@ -2299,7 +2299,7 @@ the panel).
   `new_releases` module active. Its badge equals the number of gaps
   visible under the persistent type, window, and hidden filters; 0
   renders no badge.
-- **NR-9c** [active] [core] [gtk] — NR-9b's batch and stamping
+- **NR-9c** [replaced by NR-29] [core] [gtk] — NR-9b's batch and stamping
   semantics remain unchanged. The delta popover and its badge draw
   from the same persisted filter as the full view. Releases owned
   under NR-24, filtered out by type or window, or already hidden do
@@ -2326,12 +2326,22 @@ the panel).
   a release that counts as owned under NR-24, so it carries no
   „Show in library" action and never renders an `In library` status: a
   row that could offer it is a row the filter has already removed. The
-  Updates popover's own row actions are unaffected and stay with NR-9c.
+  Updates popover's own row actions are unaffected and stay with NR-29.
   *Reason:* NR-13 promised an action the overview has not had since
   NR-16 excluded complete releases. The status value stays in the model
   because the presence it names is real, and a test pins that the
   filtered view never yields it — a filter change that let owned rows
   through would otherwise reintroduce the dead branch silently.
+- **NR-29** [active] [core] [gtk] — The Updates popover and its badge show
+  announcements, not the full discography-gap catalog: eligible releases
+  have a parsable date in the future or no more than 90 days in the past.
+  The full view's persistent age window never widens this announcement
+  scope. Its type selection still applies, hidden and NR-24-owned releases
+  stay out, and duplicates still collapse. An upcoming single requires an
+  exact date; a recent single announces itself only while the Single chip is
+  on. NR-9c's visit-batch, cap, stamping, and badge-consistency semantics
+  remain unchanged. Consequently, "new" means newly discovered within this
+  bounded announcement scope, never merely a newly fetched historical gap.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
