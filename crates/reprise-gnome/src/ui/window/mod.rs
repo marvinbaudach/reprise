@@ -19,6 +19,7 @@ mod spectrogram_backend;
 mod surface;
 pub(in crate::ui) mod window_action_wiring;
 mod window_bootstrap;
+mod window_build_badge;
 pub(in crate::ui) mod window_decoration_strings;
 pub(in crate::ui) mod window_decorations;
 mod window_header;

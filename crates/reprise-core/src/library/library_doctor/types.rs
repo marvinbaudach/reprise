@@ -168,7 +168,7 @@ impl ProposalSource {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProblemClass {
     CasingWhitespace,
@@ -212,6 +212,8 @@ pub struct DoctorProposal {
     pub preselected: bool,
     pub never_preselect: bool,
     pub problem_class: ProblemClass,
+    /// The single album release that justified an album-wide remote value.
+    pub resolved_release_mbid: Option<String>,
     /// Ordered, source-native evidence. Local rows deliberately keep this empty.
     pub evidence: Vec<super::remote::RemoteEvidence>,
     /// A local result displaced by stronger remote evidence, retained so hiding
@@ -298,7 +300,18 @@ pub enum ScanControl {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoctorScanPhase {
+    ReadingTags,
+    CheckingRemote,
+    /// Part of the network pass, and the one step of it that decodes audio.
+    /// A single track can hold the counter for a minute, so it is reported on
+    /// its own rather than looking like a stalled remote lookup.
+    Fingerprinting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DoctorScanProgress {
+    pub phase: DoctorScanPhase,
     pub completed_tracks: usize,
     pub total_tracks: usize,
     pub summary: super::DoctorScanSummary,

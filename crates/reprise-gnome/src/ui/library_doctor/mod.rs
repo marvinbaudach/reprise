@@ -2,6 +2,7 @@ mod auto_apply;
 mod jobs;
 #[cfg(test)]
 mod jobs_tests;
+mod navigation;
 mod progress_card;
 pub(in crate::ui) mod remote_toggle;
 mod result_pages;
@@ -13,6 +14,7 @@ mod review_page;
 mod review_row;
 mod running_page;
 mod start_page;
+mod start_page_css;
 mod summary_cards;
 mod summary_model;
 mod summary_page;
@@ -21,13 +23,6 @@ mod summary_page_tests;
 #[cfg(test)]
 mod tests;
 mod write_jobs;
-
-use std::cell::{Cell, RefCell};
-use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-
 use gtk4::glib;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -37,33 +32,96 @@ use reprise_core::library_doctor::{
     DoctorScanOutcome, DoctorScanRequest, DoctorScopeRequest, DoctorViewSnapshot, LibraryDoctor,
 };
 use reprise_core::view_source::ViewSource;
+use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::track_list::TrackList;
 use jobs::run_scan;
+use navigation::DoctorNavigation;
 use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
 
-/// The glyph that stands for the Library Doctor. The sidebar's
-/// `NavIcon::LibraryDoctor` uses the same theme icon, so the result card and the
-/// `ISSUES` entry that leads to it are recognisably the same thing. No
-/// stethoscope symbolic ships with the icon theme or with this app, and the
-/// design's stethoscope is not worth a bundled asset for two 20px slots.
-pub(in crate::ui) const DOCTOR_GLYPH: &str = "system-search-symbolic";
+/// The glyph that stands for the Library Doctor: the design's stethoscope,
+/// which the app now ships itself as
+/// `data/icons/hicolor/symbolic/apps/reprise-stethoscope-symbolic.svg`, drawn
+/// by `scripts/build-brand-assets.sh`.
+///
+/// Resolved here rather than at each call site, so the start page, the result
+/// card and the sidebar entry cannot end up asking for different things — they
+/// did, and both the card and the sidebar kept drawing the magnifier the
+/// stethoscope replaced. A theme without the app's icon directory in reach
+/// falls back to that magnifier; without the guard GTK would render the
+/// missing-image box instead.
+///
+/// The sidebar reaches the same answer through the same two names rather than
+/// through `doctor_glyph`: `NavIcon` already owns a name/fallback pair and
+/// `nav_icon` already performs this theme check, so the row joins that
+/// mechanism instead of adding a second one.
+pub(in crate::ui) const DOCTOR_GLYPH: &str = "reprise-stethoscope-symbolic";
+pub(in crate::ui) const DOCTOR_GLYPH_FALLBACK: &str = "system-search-symbolic";
+
+pub(in crate::ui) fn doctor_glyph() -> &'static str {
+    gtk4::gdk::Display::default().map_or(DOCTOR_GLYPH_FALLBACK, |display| {
+        doctor_glyph_for(gtk4::IconTheme::for_display(&display).has_icon(DOCTOR_GLYPH))
+    })
+}
+
+pub(in crate::ui) const fn doctor_glyph_for(theme_has_stethoscope: bool) -> &'static str {
+    if theme_has_stethoscope {
+        DOCTOR_GLYPH
+    } else {
+        DOCTOR_GLYPH_FALLBACK
+    }
+}
 
 pub(in crate::ui) const DOCTOR_DONE_GLYPH: &str = crate::ui::icons::DONE;
 
 pub(in crate::ui) fn css() -> String {
     [
-        ".doctor-conflicts-dashed { border: 1px dashed @borders; border-radius: 12px; padding: 12px; }",
+        ".doctor-conflicts-dashed { border: 1px dashed color-mix(in srgb, currentColor 18%, transparent); border-radius: 12px; padding: 20px 22px; background: transparent; }",
+        ".doctor-conflicts-warning { color: color-mix(in srgb, currentColor 50%, transparent); }",
+        ".doctor-conflicts-optional { font-size: 13px; color: color-mix(in srgb, currentColor 45%, transparent); }",
+        ".doctor-conflicts-intro { font-size: 13px; color: color-mix(in srgb, currentColor 52%, transparent); }",
+        ".doctor-conflict-row { padding: 12px 0; border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent); }",
+        ".doctor-conflict-scope { font-size: 13px; color: color-mix(in srgb, currentColor 55%, transparent); }",
+        ".doctor-conflict-choice { padding: 5px 12px; border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent); }",
+        ".doctor-conflict-choice.selected { color: var(--accent-color); box-shadow: inset 0 0 0 1px var(--accent-bg-color); }",
+        ".doctor-album-header-later { border-top: 1px solid color-mix(in srgb, currentColor 7%, transparent); padding-top: 20px; }",
+        ".doctor-album-check { min-width: 16px; min-height: 16px; border-radius: 4px; }",
+        ".doctor-album-check:checked { background: var(--accent-bg-color); color: var(--window-bg-color); }",
+        ".doctor-album-check:not(:checked) { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, currentColor 30%, transparent); }",
+        ".doctor-album-cover { background: color-mix(in srgb, currentColor 8%, transparent); border-radius: 5px; -gtk-icon-size: 16px; }",
+        ".doctor-album-title { font-size: 15px; font-weight: 500; }",
+        ".doctor-album-detail { font-size: 13px; color: color-mix(in srgb, currentColor 50%, transparent); }",
+        ".doctor-album-caret { color: color-mix(in srgb, currentColor 40%, transparent); }",
+        ".doctor-review-row { font-size: 13.5px; }",
+        ".doctor-review-row-deselected { opacity: 0.55; }",
+        ".doctor-album-wide-track { color: color-mix(in srgb, currentColor 45%, transparent); }",
+        ".doctor-review-arrow { color: color-mix(in srgb, currentColor 32%, transparent); }",
+        ".doctor-review-current { color: color-mix(in srgb, currentColor 52%, transparent); }",
+        ".doctor-current-empty { color: color-mix(in srgb, currentColor 42%, transparent); }",
+        ".doctor-review-source { font-size: 12.5px; color: color-mix(in srgb, currentColor 55%, transparent); }",
+        ".doctor-review-source.accent { color: var(--accent-color); }",
         // The review card is the only one that carries emphasis: an accent
         // hairline on top of the plain `.card` surface.
         ".doctor-card-accent { box-shadow: inset 0 0 0 1px alpha(@accent_color, 0.45); }",
         // The conflicts card is the quietest thing on the page: an outline, no
         // fill, no shadow.
         ".doctor-card-dashed { border: 1px dashed alpha(@borders, 0.9); border-radius: 12px; }",
+        &start_page_css::css(),
+        ".doctor-review-header-action { font-size: 13px; padding: 5px 12px; }",
+        ".doctor-review-meta { padding: 12px 28px; background: color-mix(in srgb, var(--card-bg-color) 45%, var(--window-bg-color)); }",
+        ".doctor-review-meta-summary { font-size: 14px; }",
+        ".doctor-review-meta-hint { font-size: 13px; color: color-mix(in srgb, currentColor 45%, transparent); }",
+        ".doctor-review-footer { padding: 14px 28px; background: color-mix(in srgb, var(--card-bg-color) 55%, var(--window-bg-color)); border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent); }",
+        ".doctor-review-footer-summary { font-size: 13.5px; color: color-mix(in srgb, currentColor 62%, transparent); }",
+        ".doctor-review-apply { font-size: 14.5px; padding: 9px 18px; }",
     ]
     .join(" ")
 }
@@ -71,7 +129,7 @@ pub(in crate::ui) fn css() -> String {
 pub(in crate::ui) struct LibraryDoctorCoordinator {
     conn: Rc<Db>,
     db_path: PathBuf,
-    navigation: adw::NavigationView,
+    navigation: DoctorNavigation,
     window: adw::ApplicationWindow,
     page: Rc<LibraryDoctorPage>,
     track_list: Rc<TrackList>,
@@ -93,7 +151,9 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
 pub(in crate::ui) struct LibraryDoctorContext<'a> {
     pub(in crate::ui) conn: &'a Rc<Db>,
     pub(in crate::ui) db_path: &'a Path,
-    pub(in crate::ui) navigation: &'a adw::NavigationView,
+    pub(in crate::ui) content_navigation: &'a adw::NavigationView,
+    pub(in crate::ui) content_stack: &'a gtk4::Stack,
+    pub(in crate::ui) doctor_navigation: &'a adw::NavigationView,
     pub(in crate::ui) window: &'a adw::ApplicationWindow,
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
     pub(in crate::ui) scan_controls: &'a ScanControls,
@@ -108,7 +168,9 @@ impl LibraryDoctorCoordinator {
         let LibraryDoctorContext {
             conn,
             db_path,
-            navigation,
+            content_navigation,
+            content_stack,
+            doctor_navigation,
             window,
             track_list,
             scan_controls,
@@ -117,6 +179,8 @@ impl LibraryDoctorCoordinator {
             toast_overlay,
             refresh_views,
         } = context;
+        let navigation =
+            DoctorNavigation::new(content_navigation, content_stack, doctor_navigation);
         let coordinator = Rc::new_cyclic(|weak: &std::rc::Weak<Self>| {
             let refresh = {
                 let weak = weak.clone();
@@ -246,6 +310,9 @@ impl LibraryDoctorCoordinator {
                 }
             });
         }
+        coordinator
+            .navigation
+            .add_root(coordinator.page.navigation_page());
         coordinator.install_tag_edit_observer();
         coordinator
     }
@@ -292,11 +359,7 @@ impl LibraryDoctorCoordinator {
     }
 
     fn open_root_page(&self) {
-        if let Some(page) = self.navigation.find_page("library-doctor") {
-            self.navigation.pop_to_page(&page);
-        } else {
-            self.navigation.push(self.page.navigation_page());
-        }
+        self.navigation.show_root();
     }
 
     pub(super) fn load_last_scan(&self) {
@@ -361,7 +424,11 @@ impl LibraryDoctorCoordinator {
         self.job_kind.set(Some(DoctorJobKind::Scan));
         self.page.set_controls_locked(true);
         self.page.begin_job(DoctorJobKind::Scan, 0);
-        self.progress.show(DoctorJobKind::Scan, 0, 0);
+        self.progress.show_scan(
+            reprise_core::library_doctor::DoctorScanPhase::ReadingTags,
+            0,
+            0,
+        );
         self.scan_controls.button.set_sensitive(false);
         let db_path = self.db_path.clone();
         let fingerprint = self.fingerprint.clone();
@@ -399,13 +466,13 @@ impl LibraryDoctorCoordinator {
                         break;
                     }
                     coordinator.page.set_live_summary(progress.summary);
-                    coordinator.page.update_job(
-                        DoctorJobKind::Scan,
+                    coordinator.page.update_scan_job(
+                        progress.phase,
                         progress.completed_tracks,
                         progress.total_tracks,
                     );
-                    coordinator.progress.show(
-                        DoctorJobKind::Scan,
+                    coordinator.progress.show_scan(
+                        progress.phase,
                         progress.completed_tracks,
                         progress.total_tracks,
                     );
@@ -544,15 +611,8 @@ impl LibraryDoctorCoordinator {
     }
 
     fn open_review_page(&self) {
-        let Some(review) = self.review.borrow().as_ref().cloned() else {
-            self.open_root_page();
-            return;
-        };
-        if self.navigation.find_page("library-doctor-review").is_some() {
-            self.navigation.pop_to_tag("library-doctor-review");
-        } else {
-            self.navigation.push(review.navigation_page());
-        }
+        let review = self.review.borrow().as_ref().cloned();
+        self.navigation.show_review_or_root(review);
     }
 }
 

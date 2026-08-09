@@ -180,6 +180,7 @@ fn local_proposal(
         preselected: true,
         never_preselect: false,
         problem_class,
+        resolved_release_mbid: None,
         evidence: Vec::new(),
         local_fallback: None,
     }

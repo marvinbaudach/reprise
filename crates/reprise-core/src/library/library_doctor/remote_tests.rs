@@ -38,6 +38,10 @@ fn identity(source: RemoteEvidenceSource, confidence: u8, title: &str) -> Remote
         release_year: Some(2024),
         original_release_year: Some(2023),
         duration_ms: Some(180_500),
+        secondary_types: Vec::new(),
+        release_track_count: None,
+        release_track_titles: Vec::new(),
+        release_distinct_track_artists: None,
     }
 }
 
@@ -113,6 +117,13 @@ impl RemoteProvider for FakeProvider {
             .clone()
             .map_or_else(|| Ok(self.searched.clone()), Err)
     }
+    fn search_release(
+        &mut self,
+        _: &super::remote::AlbumQuery,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> RemoteProviderResult {
+        Ok(Vec::new())
+    }
     fn acoustid(
         &mut self,
         _: &RemoteTrackMetadata,
@@ -168,6 +179,7 @@ fn complete_recording_lookup_skips_redundant_embedded_id_requests() {
         &value,
         Path::new("ignored"),
         None,
+        None,
         &mut || ScanControl::Continue,
     )
     .unwrap();
@@ -203,6 +215,7 @@ fn embedded_ids_split_across_candidates_do_not_short_circuit() {
         &mut resolver,
         &value,
         Path::new("ignored"),
+        None,
         None,
         &mut || ScanControl::Continue,
     )
@@ -272,6 +285,7 @@ fn production_cascade_exhausts_embedded_ids_when_recording_response_is_incomplet
         &mut resolver,
         &value,
         Path::new("ignored"),
+        None,
         None,
         &mut || ScanControl::Continue,
     )
@@ -519,6 +533,9 @@ fn invalid_embedded_mbid_is_not_direct_identity() {
 
 #[test]
 fn production_cascade_continues_from_partial_direct_through_search_and_acoustid() {
+    let mut value = metadata();
+    value.recording_mbid = None;
+    value.release_mbid = Some("123e4567-e89b-12d3-a456-426614174001".into());
     let mut direct = identity(RemoteEvidenceSource::MusicBrainz, 100, "Canonical");
     direct.album_artist = None;
     direct.release_year = None;
@@ -537,9 +554,10 @@ fn production_cascade_continues_from_partial_direct_through_search_and_acoustid(
     let mut resolver = ProviderRemoteResolver::new(provider);
     let result = RemoteResolver::resolve_track(
         &mut resolver,
-        &metadata(),
+        &value,
         Path::new("ignored"),
         Some(&FakeFingerprint),
+        None,
         &mut || ScanControl::Continue,
     )
     .unwrap();
@@ -568,6 +586,7 @@ fn production_cascade_isolates_source_failures_and_short_circuits_only_when_comp
         &metadata(),
         Path::new("ignored"),
         Some(&FakeFingerprint),
+        None,
         &mut || ScanControl::Continue,
     )
     .unwrap();
@@ -576,6 +595,9 @@ fn production_cascade_isolates_source_failures_and_short_circuits_only_when_comp
 
 #[test]
 fn production_cascade_isolates_each_unavailable_source() {
+    let mut value = metadata();
+    value.recording_mbid = None;
+    value.release_mbid = Some("123e4567-e89b-12d3-a456-426614174001".into());
     let mut complete = identity(RemoteEvidenceSource::AcoustId, 90, "Canonical");
     complete.release_year = Some(2024);
     let provider = FakeProvider {
@@ -587,9 +609,10 @@ fn production_cascade_isolates_each_unavailable_source() {
     let mut resolver = ProviderRemoteResolver::new(provider);
     let result = RemoteResolver::resolve_track(
         &mut resolver,
-        &metadata(),
+        &value,
         Path::new("ignored"),
         Some(&FakeFingerprint),
+        None,
         &mut || ScanControl::Continue,
     )
     .unwrap();
@@ -608,6 +631,7 @@ fn production_cascade_honors_cancellation_before_a_source_call() {
         &metadata(),
         Path::new("ignored"),
         Some(&FakeFingerprint),
+        None,
         &mut || ScanControl::Cancel,
     );
     assert_eq!(result, Err(RemoteProviderError::Cancelled));
@@ -670,7 +694,8 @@ fn single_candidates_are_guarded_by_field_specific_embedded_ids() {
 fn multiple_releases_do_not_suppress_canonical_recording_title_or_artist() {
     let one = identity(RemoteEvidenceSource::MusicBrainz, 100, "Canonical");
     let mut two = one.clone();
-    two.release_mbid = Some("223e4567-e89b-12d3-a456-426614174001".into());
+    two.source = RemoteEvidenceSource::AcoustId;
+    two.confidence = 90;
     let result = arbitrate(&metadata(), &[one, two]);
     assert!(result
         .proposals

@@ -97,3 +97,145 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
     );
     window.close();
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_5c_a_visible_job_card_never_overlaps_a_navigation_row() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let window = adw::ApplicationWindow::builder()
+        .default_width(240)
+        .default_height(700)
+        .build();
+    let sidebar = Sidebar::new(conn, &window, || 0);
+    sidebar.widget().set_size_request(240, -1);
+    let missing = gtk4::ListBoxRow::new();
+    missing.set_child(Some(&gtk4::Label::new(Some("Missing files"))));
+    sidebar.shared.issues_listbox.append(&missing);
+    sidebar.shared.issues_listbox.set_visible(true);
+
+    let doctor = diagnostic_job_card("Checking tracks…", false);
+    let relink = diagnostic_job_card("Searching for missing files…", true);
+    sidebar.append_doctor_card(&doctor);
+    sidebar.append_relink_card(&relink);
+    window.set_content(Some(sidebar.widget()));
+    window.present();
+
+    doctor.set_reveal_child(true);
+    drain_display_events();
+    assert_card_below_issues(&sidebar, &doctor, "doctor");
+    capture_sidebar_diagnostic("doctor");
+
+    doctor.set_reveal_child(false);
+    relink.set_reveal_child(true);
+    drain_display_events();
+    assert_card_below_issues(&sidebar, &relink, "relink");
+    capture_sidebar_diagnostic("relink");
+
+    window.close();
+}
+
+fn diagnostic_job_card(title: &str, carries_open_action: bool) -> gtk4::Revealer {
+    let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    header.append(&gtk4::Spinner::new());
+    let title = gtk4::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .hexpand(true)
+        .ellipsize(gtk4::pango::EllipsizeMode::End)
+        .css_classes(["scan-card-title"])
+        .build();
+    header.append(&title);
+    header.append(&gtk4::Label::new(Some("45%")));
+    if carries_open_action {
+        header.append(&gtk4::Button::with_label("Missing files"));
+    }
+    header.append(&gtk4::Button::with_label("Cancel"));
+    let progress = gtk4::ProgressBar::new();
+    progress.set_height_request(3);
+    let detail = gtk4::Label::builder()
+        .label("742/1,648 tracks")
+        .xalign(0.0)
+        .ellipsize(gtk4::pango::EllipsizeMode::End)
+        .css_classes(["scan-card-detail"])
+        .build();
+    let body = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    body.add_css_class("scan-card");
+    body.append(&header);
+    body.append(&progress);
+    body.append(&detail);
+    gtk4::Revealer::builder()
+        .transition_duration(0)
+        .child(&body)
+        .build()
+}
+
+fn drain_display_events() {
+    while gtk4::glib::MainContext::default().iteration(false) {}
+}
+
+fn assert_card_below_issues(sidebar: &Sidebar, card: &impl IsA<gtk4::Widget>, kind: &str) {
+    let root = sidebar.widget();
+    let issues = sidebar
+        .shared
+        .issues_listbox
+        .compute_bounds(root)
+        .expect("issues list bounds");
+    let progress = sidebar
+        .activity_slot
+        .progress_widget()
+        .compute_bounds(root)
+        .expect("progress root bounds");
+    let card = card
+        .upcast_ref::<gtk4::Widget>()
+        .compute_bounds(root)
+        .expect("visible job card bounds");
+    let issues_bottom = issues.y() + issues.height();
+    let card_bottom = card.y() + card.height();
+    tracing::warn!(
+        kind,
+        issues_y = issues.y(),
+        issues_height = issues.height(),
+        progress_y = progress.y(),
+        progress_height = progress.height(),
+        card_y = card.y(),
+        card_height = card.height(),
+        "DOC-5c sidebar job-card allocation"
+    );
+    eprintln!(
+        "DOC-5c {kind}: issues={:.1}..{issues_bottom:.1}, progress={:.1}..{:.1}, card={:.1}..{card_bottom:.1}",
+        issues.y(),
+        progress.y(),
+        progress.y() + progress.height(),
+        card.y(),
+    );
+    assert!(
+        issues_bottom <= card.y(),
+        "{kind} card overlaps the Missing files row by {:.1}px (issues {:.1}..{:.1}, card {:.1}..{:.1})",
+        issues_bottom - card.y(),
+        issues.y(),
+        issues_bottom,
+        card.y(),
+        card_bottom
+    );
+}
+
+fn capture_sidebar_diagnostic(kind: &str) {
+    let path = format!(
+        "/tmp/reprise-library-doctor-diag-3-{kind}-{}.png",
+        std::process::id()
+    );
+    let output = std::process::Command::new("import")
+        .args(["-window", "root", &path])
+        .output()
+        .expect("run the existing ImageMagick screenshot command");
+    assert!(
+        output.status.success(),
+        "capture {kind} sidebar screenshot: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    tracing::warn!(kind, path, "DOC-5c retained sidebar screenshot");
+    eprintln!("DOC-5c {kind} screenshot: {path}");
+}

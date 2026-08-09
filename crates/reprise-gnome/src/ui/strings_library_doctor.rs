@@ -35,6 +35,15 @@ pub const DOCTOR_REMOTE_ON: &str = N_!("MusicBrainz on");
 pub const DOCTOR_REMOTE_OFF: &str = N_!("MusicBrainz off");
 pub const DOCTOR_RUN_SCAN: &str = N_!("Run Scan Now");
 pub const DOCTOR_SCANNING: &str = N_!("Checking tracks…");
+#[allow(dead_code)] // Wired by PERF-1 after the single-writer string package lands.
+pub const DOCTOR_PHASE_LOCAL: &str = N_!("Reading tags…");
+#[allow(dead_code)] // Wired by PERF-1 after the single-writer string package lands.
+pub const DOCTOR_PHASE_REMOTE: &str = N_!("Checking against MusicBrainz…");
+/// The third phase, and the only one a single track can hold for a minute:
+/// fingerprinting decodes the audio. Without its own line the bar just stands
+/// at "60/61 tracks" under „Checking against MusicBrainz…", which reads as a
+/// crash.
+pub const DOCTOR_PHASE_FINGERPRINT: &str = N_!("Fingerprinting audio…");
 pub const DOCTOR_CASING_WHITESPACE: &str = N_!("Casing / Whitespace");
 pub const DOCTOR_MISSING_ALBUM_ARTIST: &str = N_!("Missing Album Artist");
 pub const DOCTOR_GENRE_VARIANTS: &str = N_!("Genre Variants");
@@ -117,13 +126,36 @@ pub fn doctor_narrow_source(value: &str) -> String {
     formatted(N_!("From: {value}"), &[("value", value)])
 }
 
+/// Two counts in one line, so each travels through its own `ngettext` lookup
+/// and the skeleton only carries the words between them. One `plural()` call
+/// can agree with one number; a line with two needs two.
 pub fn doctor_scan_estimate(tracks: usize, minutes: usize) -> String {
     formatted(
-        N_!("{tracks} tracks · about {minutes} minutes"),
+        N_!("{tracks} · about {minutes}"),
         &[
-            ("tracks", &tracks.to_string()),
-            ("minutes", &minutes.to_string()),
+            ("tracks", &doctor_scan_estimate_tracks_only(tracks)),
+            ("minutes", &doctor_minute_count(minutes)),
         ],
+    )
+}
+
+fn doctor_minute_count(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} minute",
+        "{count} minutes",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_scan_estimate_tracks_only(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} track",
+        "{count} tracks",
+        count,
+        &[("count", &count_text)],
     )
 }
 
@@ -132,9 +164,12 @@ pub fn doctor_last_scan(when: &str) -> String {
 }
 
 pub fn doctor_last_scan_fixes(count: usize) -> String {
-    formatted(
-        N_!("{count} fixes applied · still reversible"),
-        &[("count", &count.to_string())],
+    let count_text = count.to_string();
+    plural(
+        "{count} fix applied · still reversible",
+        "{count} fixes applied · still reversible",
+        count,
+        &[("count", &count_text)],
     )
 }
 
@@ -270,15 +305,16 @@ pub fn doctor_nothing_to_fix_body(checked: usize) -> String {
 }
 
 /// Same sentence with the skipped clause, used only when tracks were actually
-/// skipped — otherwise the empty state would print a literal `0`.
+/// skipped — otherwise the empty state would print a literal `0`. Both counts
+/// come from their own plural form; the skeleton holds only the sentence
+/// around them.
 pub fn doctor_nothing_to_fix_body_skipped(checked: usize, skipped: usize) -> String {
-    let checked_text = checked.to_string();
-    let skipped_text = skipped.to_string();
-    plural(
-        "{checked} tracks checked, {skipped} skipped. Your tags are already consistent with each other.",
-        "{checked} tracks checked, {skipped} skipped. Your tags are already consistent with each other.",
-        skipped,
-        &[("checked", &checked_text), ("skipped", &skipped_text)],
+    formatted(
+        N_!("{checked}, {skipped}. Your tags are already consistent with each other."),
+        &[
+            ("checked", &doctor_tracks_checked_heading(checked)),
+            ("skipped", &doctor_skipped_facts(skipped)),
+        ],
     )
 }
 
@@ -293,14 +329,23 @@ pub fn doctor_tracks_checked_heading(count: usize) -> String {
 }
 
 pub fn doctor_includes_quiet_fixes(count: usize) -> String {
-    formatted(
-        N_!("Includes the {count} quiet fixes. Available until the next scan."),
-        &[("count", &count.to_string())],
+    let count_text = count.to_string();
+    plural(
+        "Includes the {count} quiet fix. Available until the next scan.",
+        "Includes the {count} quiet fixes. Available until the next scan.",
+        count,
+        &[("count", &count_text)],
     )
 }
 
 pub fn doctor_tags_fixed(count: usize) -> String {
-    formatted(N_!("{count} tags fixed"), &[("count", &count.to_string())])
+    let count_text = count.to_string();
+    plural(
+        "{count} tag fixed",
+        "{count} tags fixed",
+        count,
+        &[("count", &count_text)],
+    )
 }
 
 pub fn doctor_all_tracks(count: usize) -> String {
@@ -317,20 +362,69 @@ pub fn doctor_preselected_hint() -> String {
     N_!("Everything here is preselected. Uncheck what you disagree with.").to_owned()
 }
 
+/// The review header and the post-apply card: two counts, two plural forms,
+/// joined by the separator this page uses everywhere. Nothing between them is
+/// translatable, so the join stays out of the catalog — the same shape as
+/// [`doctor_scan_facts`].
 pub fn doctor_changes_and_albums(changes: usize, albums: usize) -> String {
+    format!(
+        "{} · {}",
+        doctor_change_count(changes),
+        doctor_album_count(albums)
+    )
+}
+
+fn doctor_album_count(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} album",
+        "{count} albums",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+#[allow(dead_code)] // Wired by REV-2 after the single-writer string package lands.
+pub fn doctor_filter_scope(shown: usize, total: usize, filter: &str) -> String {
     formatted(
-        N_!("{changes} changes · {albums} albums"),
+        N_!("{shown} of {total} · filtered by {filter}"),
         &[
-            ("changes", &changes.to_string()),
-            ("albums", &albums.to_string()),
+            ("shown", &shown.to_string()),
+            ("total", &total.to_string()),
+            ("filter", filter),
         ],
     )
 }
 
+#[allow(dead_code)] // Wired by REV-4 after the single-writer string package lands.
+pub fn doctor_change_count_none_selected(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} change · none selected",
+        "{count} changes · none selected",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+#[allow(dead_code)] // Wired by REV-3 after the single-writer string package lands.
+pub fn doctor_conflicts_intro(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "Your library spells this {count} name more than one way. Reprise will not guess. Pick one and the matching track changes appear above.",
+        "Your library spells these {count} names more than one way. Reprise will not guess. Pick one and the matching track changes appear above.",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
 pub fn doctor_conflict_scope(field: &str, tracks: usize) -> String {
-    formatted(
-        N_!("{field} · {tracks} tracks"),
-        &[("field", field), ("tracks", &tracks.to_string())],
+    let tracks_text = tracks.to_string();
+    plural(
+        "{field} · {tracks} track",
+        "{field} · {tracks} tracks",
+        tracks,
+        &[("field", field), ("tracks", &tracks_text)],
     )
 }
 
@@ -367,13 +461,35 @@ pub fn doctor_review_row_description(
     )
 }
 
+/// The review footer. Two counts and a promise: the counts inflect on their
+/// own, the promise stays one translatable clause.
 pub fn doctor_apply_summary(changes: usize, files: usize) -> String {
     formatted(
-        N_!("{changes} tag changes · {files} files · undo available after"),
+        N_!("{changes} · {files} · undo available after"),
         &[
-            ("changes", &changes.to_string()),
-            ("files", &files.to_string()),
+            ("changes", &doctor_tag_change_count(changes)),
+            ("files", &doctor_file_count(files)),
         ],
+    )
+}
+
+fn doctor_tag_change_count(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} tag change",
+        "{count} tag changes",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+fn doctor_file_count(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} file",
+        "{count} files",
+        count,
+        &[("count", &count_text)],
     )
 }
 
@@ -405,37 +521,45 @@ pub fn doctor_duration_delta_ms(delta_ms: u64) -> String {
     )
 }
 
+/// The progress detail agrees with the total, which is the noun's number:
+/// "0/1 track" counts one track that is not done yet, not zero of them.
 pub fn doctor_track_progress(completed: usize, total: usize) -> String {
-    formatted(
-        N_!("{completed}/{total} tracks"),
-        &[
-            ("completed", &completed.to_string()),
-            ("total", &total.to_string()),
-        ],
+    let completed_text = completed.to_string();
+    let total_text = total.to_string();
+    plural(
+        "{completed}/{total} track",
+        "{completed}/{total} tracks",
+        total,
+        &[("completed", &completed_text), ("total", &total_text)],
     )
 }
 
+/// A finished write says the same thing here as in the tag editor's own
+/// toast, so it is the same sentence — kept in one place, not copied.
 pub fn doctor_tags_updated(count: usize) -> String {
-    formatted(
-        N_!("Tags updated · {count} tracks"),
-        &[("count", &count.to_string())],
-    )
+    super::tag_save_result_toast(count)
 }
 
 pub fn doctor_tags_reverted(count: usize) -> String {
-    formatted(
-        N_!("Tags reverted · {count} tracks"),
-        &[("count", &count.to_string())],
+    let count_text = count.to_string();
+    plural(
+        "Tags reverted · {count} track",
+        "Tags reverted · {count} tracks",
+        count,
+        &[("count", &count_text)],
     )
 }
 
+/// Only `updated` carries a noun, so that is the number the form agrees with;
+/// the cancelled remainder is a bare count in both languages.
 pub fn doctor_write_cancelled(updated: usize, cancelled: usize) -> String {
-    formatted(
-        N_!("{updated} tracks updated · {cancelled} cancelled"),
-        &[
-            ("updated", &updated.to_string()),
-            ("cancelled", &cancelled.to_string()),
-        ],
+    let updated_text = updated.to_string();
+    let cancelled_text = cancelled.to_string();
+    plural(
+        "{updated} track updated · {cancelled} cancelled",
+        "{updated} tracks updated · {cancelled} cancelled",
+        updated,
+        &[("updated", &updated_text), ("cancelled", &cancelled_text)],
     )
 }
 
@@ -476,4 +600,121 @@ pub fn doctor_review_category(class: &str, count: usize) -> String {
         N_!("{class} · {count}"),
         &[("class", class), ("count", &doctor_change_count(count))],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doc_9d_the_filter_scope_line_names_shown_total_and_filter() {
+        assert_eq!(DOCTOR_PHASE_LOCAL, "Reading tags…");
+        assert_eq!(DOCTOR_PHASE_REMOTE, "Checking against MusicBrainz…");
+        assert_eq!(DOCTOR_PHASE_FINGERPRINT, "Fingerprinting audio…");
+        assert_eq!(
+            doctor_filter_scope(27, 390, "Year"),
+            "27 of 390 · filtered by Year"
+        );
+        assert_eq!(
+            doctor_change_count_none_selected(2),
+            "2 changes · none selected"
+        );
+        assert_eq!(doctor_scan_estimate_tracks_only(390), "390 tracks");
+        assert_eq!(
+            doctor_conflicts_intro(4),
+            "Your library spells these 4 names more than one way. Reprise will not guess. Pick one and the matching track changes appear above."
+        );
+        assert!(
+            !include_str!("strings_library_doctor.rs").contains("plural(\n        N_!("),
+            "plural forms must remain bare so xgettext emits msgid_plural"
+        );
+    }
+
+    /// The review page's own counters. The header, the footer and the album
+    /// pill all name a count with a noun, and every one of them has to inflect
+    /// through the catalog — an appended `s` is English grammar hard-coded
+    /// into a string German cannot follow.
+    #[test]
+    fn doc_9b_every_count_on_the_review_page_inflects() {
+        assert_eq!(doctor_changes_and_albums(1, 1), "1 change · 1 album");
+        assert_eq!(doctor_changes_and_albums(2, 3), "2 changes · 3 albums");
+        assert_eq!(
+            doctor_apply_summary(1, 1),
+            "1 tag change · 1 file · undo available after"
+        );
+        assert_eq!(
+            doctor_apply_summary(4, 3),
+            "4 tag changes · 3 files · undo available after"
+        );
+        assert_eq!(doctor_change_count(1), "1 change");
+        assert_eq!(doctor_change_count(2), "2 changes");
+        assert_eq!(
+            doctor_change_count_none_selected(1),
+            "1 change · none selected"
+        );
+        assert_eq!(doctor_conflict_scope("Artist", 1), "Artist · 1 track");
+        assert_eq!(doctor_conflict_scope("Artist", 5), "Artist · 5 tracks");
+        assert!(doctor_conflicts_intro(1).starts_with("Your library spells this 1 name "));
+        assert!(doctor_conflicts_intro(4).starts_with("Your library spells these 4 names "));
+    }
+
+    /// The result cards after a write, and the empty state that replaces them.
+    /// `doctor_tags_updated` is the tag editor's own toast sentence, so this
+    /// pins the wording for both callers.
+    #[test]
+    fn doc_9a_every_count_on_the_result_cards_inflects() {
+        assert_eq!(doctor_tags_updated(1), "Tags updated · 1 track");
+        assert_eq!(doctor_tags_updated(9), "Tags updated · 9 tracks");
+        assert_eq!(
+            doctor_includes_quiet_fixes(1),
+            "Includes the 1 quiet fix. Available until the next scan."
+        );
+        assert_eq!(
+            doctor_includes_quiet_fixes(6),
+            "Includes the 6 quiet fixes. Available until the next scan."
+        );
+        assert_eq!(
+            doctor_nothing_to_fix_body_skipped(1, 1),
+            "1 track checked, 1 skipped. Your tags are already consistent with each other."
+        );
+        assert_eq!(
+            doctor_nothing_to_fix_body_skipped(390, 2),
+            "390 tracks checked, 2 skipped. Your tags are already consistent with each other."
+        );
+    }
+
+    /// The start page: the estimate before the run and the line about the last
+    /// cleanup that is still reversible.
+    #[test]
+    fn doc_8c_every_count_on_the_start_page_inflects() {
+        assert_eq!(doctor_scan_estimate(1, 1), "1 track · about 1 minute");
+        assert_eq!(doctor_scan_estimate(390, 4), "390 tracks · about 4 minutes");
+        assert_eq!(
+            doctor_last_scan_fixes(1),
+            "1 fix applied · still reversible"
+        );
+        assert_eq!(
+            doctor_last_scan_fixes(7),
+            "7 fixes applied · still reversible"
+        );
+    }
+
+    /// The running job: its progress detail and the toasts it leaves behind.
+    #[test]
+    fn doc_5c_every_count_on_the_write_progress_inflects() {
+        assert_eq!(doctor_track_progress(0, 1), "0/1 track");
+        assert_eq!(doctor_track_progress(42, 128), "42/128 tracks");
+        assert_eq!(doctor_tags_reverted(1), "Tags reverted · 1 track");
+        assert_eq!(doctor_tags_reverted(4), "Tags reverted · 4 tracks");
+        assert_eq!(doctor_tags_fixed(1), "1 tag fixed");
+        assert_eq!(doctor_tags_fixed(3), "3 tags fixed");
+        assert_eq!(
+            doctor_write_cancelled(1, 2),
+            "1 track updated · 2 cancelled"
+        );
+        assert_eq!(
+            doctor_write_cancelled(5, 2),
+            "5 tracks updated · 2 cancelled"
+        );
+    }
 }

@@ -11,6 +11,8 @@ internal data class MainActivitySurfaceDependencies(
     val initialTheme: MobileThemeSelection,
     val initialVisualizer: MobileVisualizer,
     val initialState: LibraryScreenState,
+    val initialBrowseTab: BrowseTab = BrowseTab.TITLES,
+    val rememberBrowseTab: (BrowseTab) -> Unit = {},
     val artwork: () -> TrackArtwork?,
     val playbackControls: PlaybackControls,
     val trackAnalysis: TrackAnalysisPort,

@@ -375,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_7a_library_doctor_is_live_local_only_and_always_available() {
+    fn doc_7c_library_doctor_is_live_local_only_and_always_available() {
         let db = migrated_db();
         let descriptor = ALL_MODULES
             .iter()

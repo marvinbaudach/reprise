@@ -149,30 +149,36 @@ fun knownTotalUsesHonestProgressFraction() {
 }
 
 @Test
-fun rememberedReadableTreeListsCatalogWithoutScanning() {
-    val favourite = testTrack().copy(id = 2, title = "Favourite", rating = 5)
+fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = "content://provider/tree/Music",
         readable = true,
         tracks = listOf(testTrack()),
-        favouriteTracks = listOf(favourite),
     )
 
-    val state = LibrarySession(port).restore()
+    val state = LibrarySession(port).restore(BrowseTab.ARTISTS)
 
     assertEquals(
         LibraryScreenState.Browse(
-            titles = completeTestWindow(listOf(testTrack())),
+            titles = LibraryWindow.empty(),
             albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
-            favourites = completeTestWindow(listOf(favourite)),
+            favourites = LibraryWindow.empty(),
             folderUri = "content://provider/tree/Music",
+            loadedTabs = setOf(BrowseTab.ARTISTS),
         ),
         state,
     )
     assertEquals(listOf("content://provider/tree/Music"), port.configuredUris)
-    assertTrue(port.operations.contains("favourites:0:200"))
-    assertEquals(1, port.listCalls)
+    assertEquals(
+        listOf(
+            "readable:content://provider/tree/Music",
+            "configure:content://provider/tree/Music",
+            "artists:0:200",
+        ),
+        port.operations,
+    )
+    assertEquals(0, port.listCalls)
     assertEquals(0, port.scanCalls)
 }
 

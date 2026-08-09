@@ -37,6 +37,11 @@ mod tests {
             "external-link-symbolic",
             "updates::release_row_actions::icon_with_fallback → web-browser-symbolic",
         ),
+        (
+            "reprise-stethoscope-symbolic",
+            "library_doctor::doctor_glyph, and sidebar_presentation::NavIcon::LibraryDoctor \
+             through nav_icon's theme check, both → system-search-symbolic",
+        ),
     ];
 
     fn ui_root() -> PathBuf {

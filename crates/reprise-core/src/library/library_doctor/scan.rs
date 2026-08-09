@@ -1,15 +1,20 @@
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
 use crate::db::Db;
+use crate::library::group_key::normalize_group_key;
 
+use super::album_grouping;
+use super::fingerprint_phase;
 use super::local_rules::{self, ReadTrack};
 use super::remote::{self, RemoteProviderError, RemoteResolver};
 use super::scope;
 use super::{
-    DoctorError, DoctorScanOptions, DoctorScanOutcome, DoctorScanProgress, DoctorScanRequest,
-    DoctorScopeRequest, DoctorTrackSnapshot, FrozenScope, LocalScanRequest, ScanControl,
+    DoctorError, DoctorScanOptions, DoctorScanOutcome, DoctorScanPhase, DoctorScanProgress,
+    DoctorScanRequest, DoctorScopeRequest, DoctorTrackSnapshot, FrozenScope, LocalScanRequest,
+    ScanControl,
 };
 use crate::fingerprint::FingerprintBackend;
 
@@ -95,14 +100,69 @@ impl<'connection> LibraryDoctor<'connection> {
         resolver: &mut dyn RemoteResolver,
         progress: &mut dyn FnMut(DoctorScanProgress) -> ScanControl,
     ) -> Result<DoctorScanOutcome, DoctorError> {
-        let previous_scan_id = self.last_complete_scan()?.map(|scan| scan.id);
+        let previous_scan = self.last_complete_scan()?;
+        let previous_scan_id = previous_scan.as_ref().map(|scan| scan.id);
+        let previous_tracks = previous_scan_id.map_or_else(
+            || Ok(HashMap::new()),
+            |scan_id| super::store::previous_scan_identities(self.conn, scan_id),
+        )?;
+        // Identity decides per track, not per library: a library that grew by
+        // one file must not send every other file back through the reader.
+        //
+        // Reusing a stored reading also reuses the remote result behind it,
+        // because saved tags carry no MBIDs (`metadata_from_saved_tags`) and
+        // resolving a track from that would be worse than reading the file. So
+        // a scan that switches the network on after a local-only one starts
+        // over, and so does one whose previous scan never asked the network.
+        let may_reuse_readings = !request.options.remote_enabled
+            || previous_scan
+                .as_ref()
+                .is_some_and(|scan| scan.options.remote_enabled);
+        let unchanged_tracks = tracks
+            .iter()
+            .filter(|track| {
+                may_reuse_readings
+                    && previous_tracks
+                        .get(&track.track_id)
+                        .is_some_and(|previous| previous.snapshot.reference == **track)
+            })
+            .map(|track| track.track_id)
+            .collect::<HashSet<_>>();
         let mut read_tracks = Vec::with_capacity(tracks.len());
+        let mut remote_metadata = Vec::with_capacity(tracks.len());
         let mut snapshot_tracks = Vec::with_capacity(tracks.len());
-        let mut remote_resolutions = Vec::with_capacity(tracks.len());
+        let mut reused_readings = HashSet::new();
         let mut skipped_tracks = 0;
         let mut preview_summary = super::DoctorScanSummary::default();
+        let to_read = tracks
+            .iter()
+            .filter(|track| !unchanged_tracks.contains(&track.track_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        // The reading pass is the long half of a large scan, so Cancel has to
+        // reach it. It asks while it reads; the count it reports stays at zero
+        // because the sequential pass below is what walks the tracks, and
+        // progress never goes backwards.
+        let total_tracks = tracks.len();
+        let read_pass = read_tracks_parallel(&to_read, &mut || {
+            progress(DoctorScanProgress {
+                phase: DoctorScanPhase::ReadingTags,
+                completed_tracks: 0,
+                total_tracks,
+                summary: preview_summary,
+            })
+        });
+        if read_pass.cancelled {
+            return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+        }
+        let mut local_reads = read_pass
+            .reads
+            .into_iter()
+            .map(|(track, result)| (track.track_id, result))
+            .collect::<HashMap<_, _>>();
         for (position, track) in tracks.iter().enumerate() {
             if progress(DoctorScanProgress {
+                phase: DoctorScanPhase::ReadingTags,
                 completed_tracks: position,
                 total_tracks: tracks.len(),
                 summary: preview_summary,
@@ -110,53 +170,34 @@ impl<'connection> LibraryDoctor<'connection> {
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
-            match remote::read_remote_metadata(&track.path) {
-                Ok((tags, metadata)) => {
+            let reused_reading = unchanged_tracks.contains(&track.track_id);
+            let result = if reused_reading {
+                previous_tracks
+                    .get(&track.track_id)
+                    .and_then(|previous| previous.snapshot.tags.clone())
+                    .map(|tags| {
+                        let metadata = metadata_from_saved_tags(&tags);
+                        (tags, metadata)
+                    })
+            } else {
+                local_reads.remove(&track.track_id).unwrap_or(None)
+            };
+            match result {
+                Some((tags, metadata)) => {
+                    if reused_reading {
+                        reused_readings.insert(track.track_id);
+                    }
                     snapshot_tracks.push(DoctorTrackSnapshot {
-                        reference: track.clone(),
+                        reference: (*track).clone(),
                         tags: Some(tags.clone()),
                         stale: false,
                     });
                     let read_track = ReadTrack {
-                        reference: track.clone(),
+                        reference: (*track).clone(),
                         tags,
                     };
-                    let mut remote_resolution = None;
-                    if request.options.remote_enabled {
-                        let published_summary = preview_summary;
-                        let mut control = || {
-                            progress(DoctorScanProgress {
-                                completed_tracks: position,
-                                total_tracks: tracks.len(),
-                                summary: published_summary,
-                            })
-                        };
-                        match resolver.resolve_track(
-                            &metadata,
-                            &track.path,
-                            fingerprint_backend,
-                            &mut control,
-                        ) {
-                            Ok(resolution) => {
-                                remote_resolutions.push((track.track_id, resolution.clone()));
-                                remote_resolution = Some(resolution);
-                            }
-                            Err(RemoteProviderError::Cancelled) => {
-                                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
-                            }
-                            Err(_) => {}
-                        }
-                    }
-                    let (mut track_proposals, mut track_groups) =
+                    let (track_proposals, _track_groups) =
                         local_rules::proposals_for(std::slice::from_ref(&read_track));
-                    if let Some(resolution) = remote_resolution {
-                        merge_remote_resolution(
-                            track.track_id,
-                            resolution,
-                            &mut track_proposals,
-                            &mut track_groups,
-                        );
-                    }
                     // Groups are deliberately reported as none while the scan
                     // runs. A spelling conflict is a statement about several
                     // tracks disagreeing with each other, and a running scan
@@ -177,29 +218,181 @@ impl<'connection> LibraryDoctor<'connection> {
                         0,
                     ));
                     read_tracks.push(read_track);
+                    remote_metadata.push(metadata);
                 }
-                Err(_) => {
+                None => {
                     skipped_tracks += 1;
                     preview_summary.merge(super::presentation::partial_scan_summary(&[], 0, 0, 1));
                     snapshot_tracks.push(DoctorTrackSnapshot {
-                        reference: track.clone(),
+                        reference: (*track).clone(),
                         tags: None,
                         stale: false,
                     });
                 }
             }
+            let last_local_remote_track =
+                request.options.remote_enabled && position + 1 == tracks.len();
+            if !last_local_remote_track
+                && progress(DoctorScanProgress {
+                    phase: DoctorScanPhase::ReadingTags,
+                    completed_tracks: position + 1,
+                    total_tracks: tracks.len(),
+                    summary: preview_summary,
+                }) == ScanControl::Cancel
+            {
+                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+            }
+        }
+        let (mut proposals, mut unresolved_groups) = local_rules::proposals_for(&read_tracks);
+        if request.options.remote_enabled {
             if progress(DoctorScanProgress {
-                completed_tracks: position + 1,
+                phase: DoctorScanPhase::CheckingRemote,
+                completed_tracks: tracks.len().saturating_sub(1),
                 total_tracks: tracks.len(),
                 summary: preview_summary,
             }) == ScanControl::Cancel
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
-        }
-        let (mut proposals, mut unresolved_groups) = local_rules::proposals_for(&read_tracks);
-        for (track_id, resolution) in remote_resolutions {
-            merge_remote_resolution(track_id, resolution, &mut proposals, &mut unresolved_groups);
+            // Decoding the audio for a fingerprint is the one step of the
+            // network pass that can hold a single track for a minute, and the
+            // scan cannot see it happen from here. The backend says so itself
+            // (`fingerprint_phase`); the counter is untouched, so it still
+            // only moves forward.
+            let fingerprinting = std::sync::atomic::AtomicBool::new(false);
+            let announced_backend = fingerprint_backend.map(|backend| {
+                fingerprint_phase::AnnouncedFingerprintBackend::new(backend, &fingerprinting)
+            });
+            let fingerprint_backend = announced_backend
+                .as_ref()
+                .map(|backend| backend as &dyn FingerprintBackend);
+            // A release is chosen for a whole album, so an album is reused as a
+            // whole or resolved as a whole: mixing a stored decision with a
+            // fresh one could put two releases into one album. Where a group
+            // has to be resolved again, the members whose reading was reused
+            // give it up — the release lookup deserves the same input a first
+            // scan would give it, MBIDs included.
+            let album_groups = reusable_album_groups(&read_tracks, &reused_readings);
+            let reread = album_groups
+                .iter()
+                .filter(|(_, reusable)| !*reusable)
+                .flat_map(|(indices, _)| indices.iter().copied())
+                .filter(|index| reused_readings.contains(&read_tracks[*index].reference.track_id))
+                .collect::<Vec<_>>();
+            if !refresh_reused_metadata(
+                &read_tracks,
+                &reread,
+                &mut remote_metadata,
+                &mut || {
+                    progress(DoctorScanProgress {
+                        phase: DoctorScanPhase::CheckingRemote,
+                        completed_tracks: tracks.len().saturating_sub(1),
+                        total_tracks: tracks.len(),
+                        summary: preview_summary,
+                    })
+                },
+            ) {
+                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+            }
+            for (indices, reusable) in album_groups {
+                if reusable {
+                    reuse_remote_results(
+                        &read_tracks,
+                        &indices,
+                        &previous_tracks,
+                        &mut proposals,
+                        &mut unresolved_groups,
+                    );
+                } else {
+                    let query = album_query(&read_tracks, &indices);
+                    let album_resolution = if let Some(query) = query {
+                        let mut control = || {
+                            progress(DoctorScanProgress {
+                                phase: DoctorScanPhase::CheckingRemote,
+                                completed_tracks: tracks.len().saturating_sub(1),
+                                total_tracks: tracks.len(),
+                                summary: preview_summary,
+                            })
+                        };
+                        match resolver.resolve_album(&remote::AlbumRequest { query }, &mut control)
+                        {
+                            Ok(resolution) => resolution,
+                            Err(RemoteProviderError::Cancelled) => {
+                                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+                            }
+                            Err(_) => remote::AlbumResolution::default(),
+                        }
+                    } else {
+                        remote::AlbumResolution::default()
+                    };
+                    for index in indices {
+                        let read_track = &read_tracks[index];
+                        let metadata = &remote_metadata[index];
+                        let published_summary = preview_summary;
+                        let mut control = || {
+                            progress(DoctorScanProgress {
+                                phase: fingerprint_phase::remote_phase(&fingerprinting),
+                                completed_tracks: tracks.len().saturating_sub(1),
+                                total_tracks: tracks.len(),
+                                summary: published_summary,
+                            })
+                        };
+                        match resolver.resolve_track(
+                            metadata,
+                            &read_track.reference.path,
+                            fingerprint_backend,
+                            album_resolution.album_match.as_ref(),
+                            &mut control,
+                        ) {
+                            Ok(mut resolution) => {
+                                // Only a chosen release may speak for the album
+                                // fields. Without one, dropping them would throw
+                                // away what the track resolved directly — from
+                                // its embedded release MBID, say — and replace it
+                                // with nothing.
+                                if album_resolution.album_match.is_some() {
+                                    retain_track_fields(&mut resolution);
+                                }
+                                merge_remote_resolution(
+                                    read_track.reference.track_id,
+                                    resolution,
+                                    &mut proposals,
+                                    &mut unresolved_groups,
+                                );
+                            }
+                            Err(RemoteProviderError::Cancelled) => {
+                                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+                            }
+                            Err(_) => {}
+                        }
+                        if let Some(album_match) = &album_resolution.album_match {
+                            let resolution =
+                                remote::album_resolution_for_track(metadata, album_match);
+                            merge_remote_resolution(
+                                read_track.reference.track_id,
+                                resolution,
+                                &mut proposals,
+                                &mut unresolved_groups,
+                            );
+                        }
+                    }
+                }
+            }
+            preview_summary = super::presentation::partial_scan_summary(
+                &proposals,
+                unresolved_groups.len(),
+                read_tracks.len(),
+                skipped_tracks,
+            );
+            if progress(DoctorScanProgress {
+                phase: DoctorScanPhase::CheckingRemote,
+                completed_tracks: tracks.len(),
+                total_tracks: tracks.len(),
+                summary: preview_summary,
+            }) == ScanControl::Cancel
+            {
+                return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+            }
         }
         let created_at = unix_timestamp();
         let scan = super::store::persist_complete_scan(&super::store::CompleteScanData {
@@ -237,16 +430,300 @@ impl<'connection> LibraryDoctor<'connection> {
     }
 }
 
+pub(super) type ReadTrackResult = (
+    super::DoctorTrackRef,
+    Option<(
+        crate::library::tag_edit::EditableTags,
+        remote::RemoteTrackMetadata,
+    )>,
+);
+
+/// What one reading pass produced, and whether it was stopped on the way.
+#[derive(Default)]
+pub(super) struct ReadPass {
+    pub(super) reads: Vec<ReadTrackResult>,
+    pub(super) cancelled: bool,
+}
+
+/// How long the collecting thread waits for the next file before it asks the
+/// caller again. Cancel must not sit out a slow read on every worker.
+const READ_CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Reads the tag of every track in parallel, and stops when the caller says so.
+///
+/// The workers cannot call `control` — it belongs to the thread that owns the
+/// progress channel — so this thread collects their results, asks after each
+/// one and at least every `READ_CANCEL_POLL`, and raises a flag the workers
+/// read before they open the next file. Cancel therefore costs one file per
+/// worker, not the whole library.
+pub(super) fn read_tracks_parallel(
+    tracks: &[super::DoctorTrackRef],
+    control: &mut dyn FnMut() -> ScanControl,
+) -> ReadPass {
+    if tracks.is_empty() {
+        return ReadPass::default();
+    }
+    if control() == ScanControl::Cancel {
+        return ReadPass {
+            reads: Vec::new(),
+            cancelled: true,
+        };
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(tracks.len());
+    let chunk_size = tracks.len().div_ceil(worker_count);
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        for chunk in tracks.chunks(chunk_size) {
+            let sender = sender.clone();
+            let cancelled = &cancelled;
+            scope.spawn(move || {
+                for track in chunk {
+                    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                        return;
+                    }
+                    let read = (
+                        track.clone(),
+                        remote::read_remote_metadata(&track.path).ok(),
+                    );
+                    if sender.send(read).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+        drop(sender);
+        let mut reads = Vec::with_capacity(tracks.len());
+        loop {
+            match receiver.recv_timeout(READ_CANCEL_POLL) {
+                Ok(read) => reads.push(read),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+            if control() == ScanControl::Cancel {
+                cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        ReadPass {
+            reads,
+            cancelled: cancelled.load(std::sync::atomic::Ordering::Relaxed),
+        }
+    })
+}
+
+fn metadata_from_saved_tags(
+    tags: &crate::library::tag_edit::EditableTags,
+) -> remote::RemoteTrackMetadata {
+    let present = |value: &str| (!value.trim().is_empty()).then(|| value.to_owned());
+    remote::RemoteTrackMetadata {
+        title: present(&tags.title),
+        artist: present(&tags.artist),
+        album: present(&tags.album),
+        album_artist: present(&tags.album_artist),
+        year: tags.year,
+        recording_mbid: None,
+        release_mbid: None,
+        release_group_mbid: None,
+        artist_mbid: None,
+        release_artist_mbid: None,
+        duration_ms: None,
+    }
+}
+
+/// Groups the read tracks by album and marks every group whose members all
+/// came out of the previous scan unchanged. Only such a group may keep the
+/// release decision that was made for it.
+fn reusable_album_groups(
+    read_tracks: &[ReadTrack],
+    reused_readings: &HashSet<i64>,
+) -> Vec<(Vec<usize>, bool)> {
+    group_album_tracks(read_tracks)
+        .into_iter()
+        .map(|indices| {
+            let reusable = indices
+                .iter()
+                .all(|index| reused_readings.contains(&read_tracks[*index].reference.track_id));
+            (indices, reusable)
+        })
+        .collect()
+}
+
+/// Reads the files of tracks whose reading was reused but whose album has to
+/// be resolved again after all. Saved tags carry no MBIDs, so without this the
+/// release lookup would see less than it does on a first scan.
+///
+/// Returns `false` when the scan was cancelled while reading.
+fn refresh_reused_metadata(
+    read_tracks: &[ReadTrack],
+    indices: &[usize],
+    remote_metadata: &mut [remote::RemoteTrackMetadata],
+    control: &mut dyn FnMut() -> ScanControl,
+) -> bool {
+    if indices.is_empty() {
+        return true;
+    }
+    let references = indices
+        .iter()
+        .map(|index| read_tracks[*index].reference.clone())
+        .collect::<Vec<_>>();
+    let pass = read_tracks_parallel(&references, control);
+    if pass.cancelled {
+        return false;
+    }
+    let mut metadata_by_track = pass
+        .reads
+        .into_iter()
+        .filter_map(|(track, result)| result.map(|(_, metadata)| (track.track_id, metadata)))
+        .collect::<HashMap<_, _>>();
+    for index in indices {
+        if let Some(metadata) = metadata_by_track.remove(&read_tracks[*index].reference.track_id) {
+            remote_metadata[*index] = metadata;
+        }
+    }
+    true
+}
+
+fn reuse_remote_results(
+    read_tracks: &[ReadTrack],
+    indices: &[usize],
+    previous_tracks: &HashMap<i64, super::store::PreviousTrackScan>,
+    proposals: &mut Vec<super::DoctorProposal>,
+    unresolved_groups: &mut Vec<super::DoctorUnresolvedGroup>,
+) {
+    for track in indices.iter().map(|index| &read_tracks[*index]) {
+        let track_id = track.reference.track_id;
+        let Some(previous) = previous_tracks.get(&track_id) else {
+            continue;
+        };
+        let reused_proposals = previous
+            .proposals
+            .iter()
+            .filter(|proposal| proposal.source != super::ProposalSource::Local)
+            .cloned()
+            .map(|mut proposal| {
+                proposal.local_fallback = None;
+                proposal
+            })
+            .collect();
+        let reused_groups = previous
+            .unresolved_groups
+            .iter()
+            .filter(|group| {
+                group.members.first().map(|member| member.track_id) == Some(track_id)
+                    && group
+                        .candidates
+                        .iter()
+                        .any(|candidate| !candidate.evidence.is_empty())
+            })
+            .cloned()
+            .map(|mut group| {
+                group.local_fallback = None;
+                if let Some(unscoped) = group.group_key.strip_suffix(&format!(":{track_id}")) {
+                    group.group_key = unscoped.to_owned();
+                }
+                group
+            })
+            .collect();
+        merge_remote_resolution(
+            track_id,
+            remote::RemoteResolution {
+                proposals: reused_proposals,
+                groups: reused_groups,
+            },
+            proposals,
+            unresolved_groups,
+        );
+    }
+}
+
+fn retain_track_fields(resolution: &mut remote::RemoteResolution) {
+    resolution.proposals.retain(|proposal| {
+        matches!(
+            proposal.field,
+            super::DoctorField::Title
+                | super::DoctorField::Artist
+                | super::DoctorField::RecordingMbid
+        )
+    });
+    resolution.groups.retain(|group| {
+        matches!(
+            group.field,
+            super::DoctorField::Title | super::DoctorField::Artist
+        )
+    });
+}
+
+/// Groups by album artist and album title, with a trailing disc marker
+/// dropped from the title: the discs of one set belong to one release, so
+/// they belong to one lookup. See [`album_grouping`] for how narrow that
+/// dropping is.
+fn group_album_tracks(tracks: &[ReadTrack]) -> Vec<Vec<usize>> {
+    let mut positions = HashMap::<String, usize>::new();
+    let mut groups = Vec::<Vec<usize>>::new();
+    for (index, track) in tracks.iter().enumerate() {
+        let key = album_grouping::album_group_key(&track.tags.album_artist, &track.tags.album);
+        let position = *positions.entry(key).or_insert_with(|| {
+            groups.push(Vec::new());
+            groups.len() - 1
+        });
+        groups[position].push(index);
+    }
+    groups
+}
+
+/// The search speaks for the whole group, so it asks after the album rather
+/// than after whichever disc happens to be first: a title with the disc marker
+/// still on it would search for a release that is only part of the set, and
+/// the track count below is the set's.
+///
+/// That count is the right one to compare: MusicBrainz reports a release's
+/// track count as the sum over its media (`release_track_count`), and its
+/// tracklist likewise spans every disc — so a merged group of 24 tracks now
+/// meets the 24 the two-disc release declares, where each disc on its own met
+/// neither.
+fn album_query(tracks: &[ReadTrack], indices: &[usize]) -> Option<remote::AlbumQuery> {
+    let first = tracks.get(*indices.first()?)?;
+    let album = album_grouping::album_title_without_disc(&first.tags.album);
+    if normalize_group_key(&first.tags.album_artist).is_empty()
+        || normalize_group_key(album).is_empty()
+    {
+        return None;
+    }
+    Some(remote::AlbumQuery {
+        album_artist: first.tags.album_artist.clone(),
+        album: album.to_owned(),
+        track_titles: indices
+            .iter()
+            .map(|index| tracks[*index].tags.title.clone())
+            .collect(),
+        track_count: u32::try_from(indices.len()).unwrap_or(u32::MAX),
+        year: indices.iter().find_map(|index| tracks[*index].tags.year),
+    })
+}
+
 fn merge_remote_resolution(
     track_id: i64,
     mut resolution: remote::RemoteResolution,
     proposals: &mut Vec<super::DoctorProposal>,
     unresolved_groups: &mut Vec<super::DoctorUnresolvedGroup>,
 ) {
-    for proposal in &mut resolution.proposals {
+    let mut remote_proposals = Vec::with_capacity(resolution.proposals.len());
+    for mut proposal in resolution.proposals.drain(..) {
         proposal.track_id = track_id;
+        let same_local_target = proposals.iter().any(|local| {
+            local.track_id == track_id
+                && local.field == proposal.field
+                && local.source == super::ProposalSource::Local
+                && local.proposed == proposal.proposed
+        });
+        if same_local_target {
+            continue;
+        }
         proposal.local_fallback =
             take_local_fallback(proposals, unresolved_groups, track_id, proposal.field);
+        remote_proposals.push(proposal);
     }
     for group in &mut resolution.groups {
         group.group_key = format!("{}:{track_id}", group.group_key);
@@ -256,7 +733,7 @@ fn merge_remote_resolution(
         group.local_fallback =
             take_local_fallback(proposals, unresolved_groups, track_id, group.field);
     }
-    proposals.extend(resolution.proposals);
+    proposals.extend(remote_proposals);
     unresolved_groups.extend(resolution.groups);
 }
 

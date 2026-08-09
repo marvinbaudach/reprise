@@ -6,6 +6,7 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use reprise_core::fingerprint::FingerprintBackend;
 use reprise_core::library_doctor::{
@@ -62,8 +63,30 @@ pub(super) fn run_scan(
 ) -> Result<DoctorScanOutcome, String> {
     let conn =
         reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
-    LibraryDoctor::new(&conn)
+    let started = Instant::now();
+    let mut local_finished = None;
+    let mut remote_started = None;
+    let mut remote_finished = None;
+    let outcome = LibraryDoctor::new(&conn)
         .scan(request, Some(fingerprint), |progress| {
+            let now = Instant::now();
+            match progress.phase {
+                reprise_core::library_doctor::DoctorScanPhase::ReadingTags
+                    if progress.completed_tracks == progress.total_tracks =>
+                {
+                    local_finished = Some(now);
+                }
+                // Fingerprinting is part of the network pass, so it belongs to
+                // the same measured stretch.
+                reprise_core::library_doctor::DoctorScanPhase::CheckingRemote
+                | reprise_core::library_doctor::DoctorScanPhase::Fingerprinting => {
+                    remote_started.get_or_insert(now);
+                    if progress.completed_tracks == progress.total_tracks {
+                        remote_finished = Some(now);
+                    }
+                }
+                reprise_core::library_doctor::DoctorScanPhase::ReadingTags => {}
+            }
             publish(progress);
             if cancellation.load(Ordering::Relaxed) {
                 ScanControl::Cancel
@@ -71,7 +94,25 @@ pub(super) fn run_scan(
                 ScanControl::Continue
             }
         })
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if let DoctorScanOutcome::Completed(scan) = &outcome {
+        let finished = Instant::now();
+        let local_elapsed = remote_started
+            .or(local_finished)
+            .unwrap_or(finished)
+            .duration_since(started);
+        let remote_elapsed =
+            remote_started.map(|at| remote_finished.unwrap_or(finished).duration_since(at));
+        if let Err(error) = reprise_core::library_doctor::record_scan_rates(
+            &conn,
+            scan.checked_tracks,
+            local_elapsed,
+            remote_elapsed,
+        ) {
+            tracing::warn!(%error, "could not store Library Doctor scan rates");
+        }
+    }
+    Ok(outcome)
 }
 
 pub(super) fn run_auto_apply(

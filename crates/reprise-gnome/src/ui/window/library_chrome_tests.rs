@@ -9,6 +9,41 @@ fn test_content() -> gtk4::Label {
     gtk4::Label::new(Some("Library"))
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_7c_the_library_chrome_is_absent_while_the_doctor_is_visible() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let window = adw::ApplicationWindow::builder().build();
+    let header = adw::HeaderBar::new();
+    let entry = gtk4::SearchEntry::new();
+    let stack = gtk4::Stack::new();
+    stack.add_named(&gtk4::Label::new(Some("Library")), Some("library"));
+    stack.add_named(&gtk4::Label::new(Some("Stats")), Some("stats"));
+    stack.add_named(&gtk4::Label::new(Some("Concerts")), Some("concerts"));
+    stack.add_named(&adw::NavigationView::new(), Some("library-doctor"));
+    stack.set_visible_child_name("library");
+    let chrome = build(&header, &stack, &entry, &window);
+    wire_content_stack(&chrome.root, &stack);
+    window.set_content(Some(&chrome.root));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(chrome.root.reveals_top_bars());
+    for ordinary_page in ["stats", "concerts"] {
+        crate::ui::window::content_stack::show_page(&stack, ordinary_page);
+        assert!(chrome.root.reveals_top_bars());
+        let header_bounds = header
+            .compute_bounds(&chrome.root)
+            .expect("ordinary pages keep the shared header allocated");
+        assert!(header_bounds.height() > 0.0);
+    }
+    crate::ui::window::content_stack::show_page(&stack, "library-doctor");
+    assert!(!chrome.root.reveals_top_bars());
+    window.close();
+}
+
 /// The deferred collapse is a timer, not an idle: pumping a drained main
 /// context proves nothing about it, so these helpers pump against the
 /// clock instead.

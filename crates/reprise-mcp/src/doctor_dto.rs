@@ -47,6 +47,20 @@ pub enum DoctorCategoryArg {
     Genre,
 }
 
+impl DoctorCategoryArg {
+    pub(crate) const fn matches(self, class: reprise_core::library_doctor::ProblemClass) -> bool {
+        use reprise_core::library_doctor::ProblemClass;
+        match self {
+            Self::Casing => matches!(
+                class,
+                ProblemClass::CasingWhitespace | ProblemClass::MissingAlbumArtist
+            ),
+            Self::Year => matches!(class, ProblemClass::MissingWrongYear),
+            Self::Genre => matches!(class, ProblemClass::GenreVariant),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct ReviewTagsParams {
     #[serde(default)]

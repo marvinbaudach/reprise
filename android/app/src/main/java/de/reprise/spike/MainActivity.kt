@@ -19,19 +19,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -39,9 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -59,10 +50,8 @@ import uniffi.reprise_android_ffi.ScanProgressUpdate
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
 private const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
-
 /** No scrim behind the system bars: the app's own ground is what shows through. */
 private const val TRANSPARENT_SYSTEM_BAR = 0
-
 class MainActivity : ComponentActivity() {
     // The core is told where to cache covers instead of assuming an XDG
     // directory that does not exist here.
@@ -184,6 +173,7 @@ class MainActivity : ComponentActivity() {
             var visualizer by remember { mutableStateOf(surface.initialVisualizer) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
+            surfaceState.initializeSelectedTab(surface.initialBrowseTab, surface.rememberBrowseTab)
             val surfaceLayout = surfaceLayoutFor(calculateWindowSizeClass(this))
             val ambientMotion = remember(surface.observeAmbientScheduling) {
                 AmbientMotionController(surface.observeAmbientScheduling)
@@ -263,38 +253,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun productionSurface() = MainActivitySurfaceDependencies(
-        initialTheme = restoreTheme(),
-        initialVisualizer = restoreVisualizer(),
-        initialState = restoreLibrary(),
-        artwork = { artwork },
-        playbackControls = playbackControls,
-        trackAnalysis = analysis,
-        chooseFolder = ::chooseTree,
-        rescan = ::rescan,
-        searchTitles = { query, range -> session.searchTitles(query, range) },
-        listAlbums = { range -> session.listAlbums(range) },
-        listArtists = { range -> session.listArtists(range) },
-        openAlbum = { album -> session.openAlbum(album) },
-        listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
-        openArtist = { artist -> session.openArtist(artist) },
-        listArtistTracks = { artist, range -> session.listArtistTracks(artist, range) },
-        listFavourites = { range -> session.listFavourites(range) },
-        loadTrack = ::loadTrack,
-        playTracks = ::playTracks,
-        loadPlaybackSettings = ::loadPlaybackSettings,
-        setEqualizerEnabled = ::setEqualizerEnabled,
-        replaceEqualizerCurve = ::replaceEqualizerCurve,
-        setGaplessEnabled = ::setGaplessEnabled,
-        selectTheme = { current, palette -> themeController.select(current, palette) },
-        // Keep native access behind the authored action, like theme selection:
-        // service-lifetime tests create and start this activity without ever
-        // composing a screen, and production should not open the library just
-        // because a callback was assembled.
-        selectVisualizer = { visualizer -> visualizerController.select(visualizer) },
-        animationsEnabled = ValueAnimator::areAnimatorsEnabled,
-        observeAmbientScheduling = {},
-    )
+    private fun productionSurface(): MainActivitySurfaceDependencies {
+        val initialBrowseTab = restoreBrowseTab()
+        return MainActivitySurfaceDependencies(
+            initialTheme = restoreTheme(),
+            initialVisualizer = restoreVisualizer(),
+            initialState = restoreLibrary(initialBrowseTab),
+            initialBrowseTab = initialBrowseTab,
+            rememberBrowseTab = ::rememberBrowseTab,
+            artwork = { artwork },
+            playbackControls = playbackControls,
+            trackAnalysis = analysis,
+            chooseFolder = ::chooseTree,
+            rescan = ::rescan,
+            searchTitles = { query, range -> session.searchTitles(query, range) },
+            listAlbums = { range -> session.listAlbums(range) },
+            listArtists = { range -> session.listArtists(range) },
+            openAlbum = { album -> session.openAlbum(album) },
+            listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
+            openArtist = { artist -> session.openArtist(artist) },
+            listArtistTracks = { artist, range -> session.listArtistTracks(artist, range) },
+            listFavourites = { range -> session.listFavourites(range) },
+            loadTrack = ::loadTrack,
+            playTracks = ::playTracks,
+            loadPlaybackSettings = ::loadPlaybackSettings,
+            setEqualizerEnabled = ::setEqualizerEnabled,
+            replaceEqualizerCurve = ::replaceEqualizerCurve,
+            setGaplessEnabled = ::setGaplessEnabled,
+            selectTheme = { current, palette -> themeController.select(current, palette) },
+            // Keep native access behind the authored action, like theme selection:
+            // service-lifetime tests create and start this activity without ever
+            // composing a screen, and production should not open the library just
+            // because a callback was assembled.
+            selectVisualizer = { visualizer -> visualizerController.select(visualizer) },
+            animationsEnabled = ValueAnimator::areAnimatorsEnabled,
+            observeAmbientScheduling = {},
+        )
+    }
+
+    private fun restoreBrowseTab(): BrowseTab = runCatching {
+        library.libraryDestinationSetting().toBrowseTab()
+    }.getOrElse { error ->
+        Log.e(TAG, "Could not load the library destination; using Titles", error)
+        BrowseTab.TITLES
+    }
+
+    private fun rememberBrowseTab(tab: BrowseTab) {
+        runCatching { library.setLibraryDestination(tab.toLibraryDestinationChoice()) }
+            .onFailure { error -> Log.e(TAG, "Could not remember the library destination", error) }
+    }
 
     private fun configureEdgeToEdge(darkPalette: Boolean) {
         val transparent = SystemBarStyle.auto(
@@ -414,8 +421,8 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun restoreLibrary(): LibraryScreenState = runCatching {
-        session.restore()
+    private fun restoreLibrary(selectedTab: BrowseTab): LibraryScreenState = runCatching {
+        session.restore(selectedTab)
     }.getOrElse { error ->
         val message = "Could not load the saved library: ${error.detail()}"
         Log.e(TAG, message, error)
@@ -681,14 +688,15 @@ private fun LibraryScreen(
             chooseFolder(treeUri) { state = it }
         }
     }
+    val launchFolderPicker = { folderPicker.launch(folderPickerInitialUri()) }
 
     when (val current = state) {
         is LibraryScreenState.NoFolder -> NoFolderScreen(
             message = current.message,
-            chooseFolder = { folderPicker.launch(null) },
+            chooseFolder = launchFolderPicker,
         )
         LibraryScreenState.TreeUnreadable -> TreeUnreadableScreen(
-            chooseFolder = { folderPicker.launch(null) },
+            chooseFolder = launchFolderPicker,
         )
         is LibraryScreenState.Scanning -> ScanningScreen(current)
         is LibraryScreenState.Browse -> BrowseScreen(
@@ -697,7 +705,7 @@ private fun LibraryScreen(
             playbackSettingsRevision = playbackSettingsRevision,
             surfaceLayout = surfaceLayout,
             surfaceState = surfaceState,
-            chooseFolder = { folderPicker.launch(null) },
+            chooseFolder = launchFolderPicker,
             rescan = { rescan { state = it } },
             searchTitles = searchTitles,
             listAlbums = listAlbums,
@@ -716,67 +724,6 @@ private fun LibraryScreen(
             themeSelection = themeSelection,
             selectTheme = selectTheme,
         )
-    }
-}
-
-@Composable
-private fun TreeUnreadableScreen(chooseFolder: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            "Reprise can no longer read the saved music folder. " +
-                "Access may have been revoked or the folder may have been removed.",
-        )
-        Button(onClick = chooseFolder) {
-            Text("Choose folder again")
-        }
-    }
-}
-
-@Composable
-private fun NoFolderScreen(message: String?, chooseFolder: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Choose a music folder to build this device's library.")
-        Button(onClick = chooseFolder) {
-            Text("Choose folder")
-        }
-        message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    }
-}
-
-@Composable
-private fun ScanningScreen(state: LibraryScreenState.Scanning) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            state.total?.let { total -> "Scanning ${state.processed} of $total…" }
-                ?: "Scanning… ${state.processed} found",
-        )
-        when (val progress = state.progressPresentation()) {
-            ScanProgressPresentation.Indeterminate -> LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth(),
-            )
-            is ScanProgressPresentation.Determinate -> LinearProgressIndicator(
-                progress = { progress.fraction },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
     }
 }
 
