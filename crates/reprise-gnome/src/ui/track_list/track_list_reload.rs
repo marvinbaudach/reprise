@@ -712,3 +712,7 @@ mod glide_reload_display_tests;
 #[cfg(test)]
 #[path = "search_viewport_display_tests.rs"]
 mod search_viewport_display_tests;
+
+#[cfg(test)]
+#[path = "navback_anchor_display_tests.rs"]
+mod navback_anchor_display_tests;
