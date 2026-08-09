@@ -14,6 +14,14 @@ pub(in crate::ui) struct SearchPopover {
     focus_on_close: Rc<RefCell<Option<FocusCallback>>>,
 }
 
+#[derive(Clone)]
+pub(in crate::ui) struct WeakSearchPopover {
+    popover: gtk4::glib::WeakRef<gtk4::Popover>,
+    entry: gtk4::glib::WeakRef<gtk4::SearchEntry>,
+    scope_label: gtk4::glib::WeakRef<gtk4::Label>,
+    focus_on_close: Rc<RefCell<Option<FocusCallback>>>,
+}
+
 impl SearchPopover {
     pub(in crate::ui) fn new(lens: &gtk4::ToggleButton, entry: &gtk4::SearchEntry) -> Self {
         let scope_label = gtk4::Label::builder()
@@ -65,7 +73,6 @@ impl SearchPopover {
         }
     }
 
-    #[cfg(test)]
     pub(in crate::ui) fn widget(&self) -> &gtk4::Popover {
         &self.popover
     }
@@ -79,24 +86,25 @@ impl SearchPopover {
     }
 
     pub(in crate::ui) fn open(&self) {
-        self.popover.popup();
-        self.entry.grab_focus();
-        self.entry.set_position(-1);
+        self.downgrade().open();
     }
 
     pub(in crate::ui) fn close(&self) {
-        close_and_focus(&self.popover.downgrade(), Rc::clone(&self.focus_on_close));
+        self.downgrade().close();
     }
 
-    #[allow(dead_code)] // T4 pushes the active section's scope caption.
     pub(in crate::ui) fn set_scope(&self, scope: SearchScope) {
-        self.scope_label
-            .set_label(&crate::ui::filter_bar_strings::searches_scope(scope));
+        self.downgrade().set_scope(scope);
     }
 
     #[cfg(test)]
     pub(in crate::ui) fn scope_text(&self) -> gtk4::glib::GString {
         self.scope_label.text()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn press_close_key(&self, key: gtk4::gdk::Key) -> gtk4::glib::Propagation {
+        handle_close_key(key, &self.downgrade())
     }
 
     pub(in crate::ui) fn connect_open_changed(&self, f: impl Fn(bool) + 'static) {
@@ -106,9 +114,44 @@ impl SearchPopover {
         self.popover.connect_closed(move |_| callback(false));
     }
 
-    #[allow(dead_code)] // T4 wires the active-content focus callback.
     pub(in crate::ui) fn set_focus_on_close(&self, callback: FocusCallback) {
         self.focus_on_close.replace(Some(callback));
+    }
+
+    pub(in crate::ui) fn downgrade(&self) -> WeakSearchPopover {
+        WeakSearchPopover {
+            popover: self.popover.downgrade(),
+            entry: self.entry.downgrade(),
+            scope_label: self.scope_label.downgrade(),
+            focus_on_close: Rc::clone(&self.focus_on_close),
+        }
+    }
+}
+
+impl WeakSearchPopover {
+    pub(in crate::ui) fn is_open(&self) -> bool {
+        self.popover
+            .upgrade()
+            .is_some_and(|popover| popover.is_visible())
+    }
+
+    pub(in crate::ui) fn open(&self) {
+        let (Some(popover), Some(entry)) = (self.popover.upgrade(), self.entry.upgrade()) else {
+            return;
+        };
+        popover.popup();
+        entry.grab_focus();
+        entry.set_position(-1);
+    }
+
+    pub(in crate::ui) fn close(&self) {
+        close_and_focus(&self.popover, Rc::clone(&self.focus_on_close));
+    }
+
+    pub(in crate::ui) fn set_scope(&self, scope: SearchScope) {
+        if let Some(label) = self.scope_label.upgrade() {
+            label.set_label(&crate::ui::filter_bar_strings::searches_scope(scope));
+        }
     }
 }
 
@@ -119,18 +162,13 @@ fn wire_entry_close(
 ) {
     let keys = gtk4::EventControllerKey::new();
     keys.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    let popover_weak = popover.downgrade();
-    let focus = Rc::clone(focus_on_close);
-    keys.connect_key_pressed(move |_, key, _, _| {
-        if !matches!(
-            key,
-            gtk4::gdk::Key::Escape | gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter
-        ) {
-            return gtk4::glib::Propagation::Proceed;
-        }
-        close_and_focus(&popover_weak, Rc::clone(&focus));
-        gtk4::glib::Propagation::Stop
-    });
+    let search = WeakSearchPopover {
+        popover: popover.downgrade(),
+        entry: entry.downgrade(),
+        scope_label: gtk4::glib::WeakRef::new(),
+        focus_on_close: Rc::clone(focus_on_close),
+    };
+    keys.connect_key_pressed(move |_, key, _, _| handle_close_key(key, &search));
     entry.add_controller(keys);
 
     let popover_weak = popover.downgrade();
@@ -138,6 +176,17 @@ fn wire_entry_close(
     entry.connect_stop_search(move |_| {
         close_and_focus(&popover_weak, Rc::clone(&focus));
     });
+}
+
+fn handle_close_key(key: gtk4::gdk::Key, search: &WeakSearchPopover) -> gtk4::glib::Propagation {
+    if !matches!(
+        key,
+        gtk4::gdk::Key::Escape | gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter
+    ) {
+        return gtk4::glib::Propagation::Proceed;
+    }
+    search.close();
+    gtk4::glib::Propagation::Stop
 }
 
 fn close_and_focus(

@@ -1,7 +1,7 @@
 use super::*;
 
 // UX SEARCH-8a: where there is no list, the lens is insensitive, says why,
-// and the bar cannot be revealed.
+// and the popover cannot be opened.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn search_8a_sections_without_a_list_offer_no_search() {
@@ -21,7 +21,6 @@ fn search_8a_sections_without_a_list_offer_no_search() {
         harness.toggle.tooltip_text().as_deref(),
         Some("Nothing to filter in My Stats")
     );
-    assert!(!harness.search_bar.is_search_mode());
+    assert!(!harness.popover.is_open());
     assert!(!harness.search.supports_search());
-    assert!(harness.search_bar.key_capture_widget().is_none());
 }

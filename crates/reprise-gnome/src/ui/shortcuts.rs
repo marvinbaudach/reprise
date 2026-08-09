@@ -1,7 +1,6 @@
 //! Application and window keyboard shortcuts. Space toggles playback only
-//! when the focused widget does not own Space itself. Escape clears search
-//! first, then collapses the search bar and returns focus to the active content
-//! surface. Ctrl+F toggles the search bar while preserving its query.
+//! when the focused widget does not own Space itself. The search popover owns
+//! Escape and Enter locally; Ctrl+F toggles it while preserving its query.
 //!
 //! ## Shortcut wiring mechanisms
 //!
@@ -14,8 +13,8 @@
 //!
 //! - **Ctrl+F** is accelerated the idiomatic way, via `gtk::Application::
 //!   set_accels_for_action`. Nothing else in this app binds Ctrl+F, and
-//!   opening focuses and selects the existing query, while invoking it again
-//!   closes the bar without clearing that query.
+//!   opening focuses the existing query with its caret at the end, while
+//!   invoking it again closes the popover without clearing that query.
 //!
 //! - **Space** uses a capture-phase `EventControllerKey`, not an application
 //!   accelerator. The controller inspects the actual focused widget before
@@ -24,23 +23,14 @@
 //!   cannot provide that contract because it consumes the key before a
 //!   no-op action handler can return it to the focused control.
 //!
-//! - **Escape** is handled by a capture-phase key controller on the search
-//!   bar, scoped to focus inside the bar so dialogs keep their own Escape
-//!   behavior. Note this does *not* intercept a `stop-search` default, as this
-//!   doc long claimed: the entry never emits `stop-search` here. What actually
-//!   happens is that `GtkSearchBar`'s own key-capture controller — installed
-//!   on the *window* by `set_key_capture_widget` — forwards the key to the
-//!   entry connected via `connect_entry`, the entry consumes Escape, and the
-//!   bar reads that as typing and re-opens itself after our handler returns.
-//!   `Propagation::Stop` cannot prevent it, because that controller sits at a
-//!   different dispatch step. Escape therefore records a pending collapse on
-//!   key press and commits it on key release, after the window-level capture
-//!   has finished.
+//! - **Escape and Enter** are capture-phase entry controls installed by
+//!   `SearchPopover`. They close without changing the entry, then use the
+//!   active-content focus callback supplied here.
 //!
 //! ## What's verified headlessly vs. manually
 //!
-//! The predicates below (`space_should_toggle`, `focused_widget_owns_space`'s
-//! boolean-in shape, `escape_action_for`) are pure functions,
+//! The predicates below (`space_should_toggle` and
+//! `focused_widget_owns_space`'s boolean-in shape) are pure functions,
 //! unit-tested with no display. The action *callbacks* that wrap them are
 //! exercised by calling them directly in tests too (see this module's
 //! `#[cfg(test)]`). The isolated CUA suite additionally delivers real key
@@ -54,6 +44,7 @@ use libadwaita as adw;
 use std::rc::Rc;
 
 use super::player_controller::PlayerController;
+use super::window::search_popover::{SearchPopover, WeakSearchPopover};
 
 /// Bare `gio::SimpleAction` names in the window's `"win"` action group —
 /// internal identifiers, not user-facing text.
@@ -107,28 +98,8 @@ fn focused_widget_owns_space(focus: Option<&gtk4::Widget>) -> bool {
     })
 }
 
-/// What Escape should do, given whether the search entry currently has any
-/// text — see the module doc's `## Escape` bullet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EscapeAction {
-    /// First press (search has text): clear it, keep focus in the entry.
-    ClearSearchText,
-    /// Second press (search is already empty): collapse the bar and hand focus
-    /// back to the active content view.
-    CollapseSearchBarAndFocusActiveContent,
-}
-
-/// Pure decision for Escape's two-stage behavior.
-pub fn escape_action_for(search_has_text: bool) -> EscapeAction {
-    if search_has_text {
-        EscapeAction::ClearSearchText
-    } else {
-        EscapeAction::CollapseSearchBarAndFocusActiveContent
-    }
-}
-
 /// Wires the window shortcuts. Called once from `window::build`, after
-/// `window`, `search_bar`, `search_entry`, and `player` all exist. `player`
+/// `window`, `search`, and `player` all exist. `player`
 /// is `None` when GStreamer was unavailable at startup (see `window::
 /// build`'s own doc comment on that degradation) — the Space action still
 /// registers in that case (so the accelerator itself is harmless to press),
@@ -136,8 +107,7 @@ pub fn escape_action_for(search_has_text: bool) -> EscapeAction {
 pub fn wire(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
-    search_bar: &gtk4::SearchBar,
-    search_entry: &gtk4::SearchEntry,
+    search: &SearchPopover,
     hooks: ShortcutHooks,
     player: Option<Rc<PlayerController>>,
 ) {
@@ -147,12 +117,12 @@ pub fn wire(
     } = hooks;
     wire_toggle_play_pause(app, window, player);
     wire_window_lifecycle(app, window);
-    wire_focus_search(app, window, search_bar, search_entry, search_available);
-    wire_escape(search_bar, search_entry, focus_active_content);
+    search.set_focus_on_close(focus_active_content);
+    wire_focus_search(app, window, search.downgrade(), search_available);
 }
 
 /// The shell decisions the shortcuts have to ask about rather than make:
-/// where Escape hands focus and — SEARCH-8a —
+/// where a search close hands focus and — SEARCH-8a —
 /// whether the visible section has a list for Ctrl+F to filter at all.
 pub struct ShortcutHooks {
     pub focus_active_content: Rc<dyn Fn() -> bool>,
@@ -214,35 +184,16 @@ fn wire_toggle_play_pause(
 }
 
 /// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — toggles the
-/// search bar. Opening grabs keyboard focus and selects the entry's full text;
+/// search popover. Opening grabs keyboard focus with the caret at the end;
 /// closing preserves the query so the active filter remains visible as a chip.
-/// `search_entry` is captured
-/// weakly for the same reference-cycle reason as `wire_toggle_play_pause`'s
-/// `window` — the action is owned by `window`, which also (indirectly, via
-/// the widget tree) owns `search_entry`.
+/// The weak handle avoids an action → popover → window ownership cycle.
 fn wire_focus_search(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
-    search_bar: &gtk4::SearchBar,
-    search_entry: &gtk4::SearchEntry,
+    search: WeakSearchPopover,
     search_available: Rc<dyn Fn() -> bool>,
 ) {
-    let pending_focus = Rc::new(std::cell::Cell::new(false));
-    let pending_focus_on_map = pending_focus.clone();
-    let window_on_map = window.downgrade();
-    search_entry.connect_map(move |entry| {
-        if pending_focus_on_map.replace(false) {
-            if let Some(window) = window_on_map.upgrade() {
-                focus_search_entry(&window, entry);
-            }
-        }
-    });
-
     let action = gio::SimpleAction::new(ACTION_FOCUS_SEARCH, None);
-    let search_bar_weak = search_bar.downgrade();
-    let search_entry_weak = search_entry.downgrade();
-    let window_weak = window.downgrade();
-    let pending_focus_on_activate = pending_focus.clone();
     action.connect_activate(move |_, _| {
         // SEARCH-8a: where there is no list, Ctrl+F is a no-op — the same
         // truth the insensitive lens tells, said in the keyboard's language.
@@ -250,105 +201,20 @@ fn wire_focus_search(
             tracing::debug!("focus-search: the visible section has nothing to filter");
             return;
         }
-        let Some(search_bar) = search_bar_weak.upgrade() else {
-            tracing::warn!("focus-search: search bar is gone; ignoring");
-            return;
-        };
-        let Some(search_entry) = search_entry_weak.upgrade() else {
-            tracing::warn!("focus-search: search entry is gone; ignoring");
-            return;
-        };
-        let search_mode = next_search_mode(search_bar.is_search_mode());
-        pending_focus_on_activate.set(search_mode);
-        search_bar.set_search_mode(search_mode);
-        if search_mode && search_entry.is_mapped() && pending_focus_on_activate.replace(false) {
-            if let Some(window) = window_weak.upgrade() {
-                focus_search_entry(&window, &search_entry);
-            }
+        if next_search_mode(search.is_open()) {
+            search.open();
+        } else {
+            search.close();
         }
     });
     window.add_action(&action);
     app.set_accels_for_action(&format!("win.{ACTION_FOCUS_SEARCH}"), &["<Control>f"]);
 }
 
-fn focus_search_entry(window: &adw::ApplicationWindow, entry: &gtk4::SearchEntry) {
-    gtk4::prelude::GtkWindowExt::set_focus(window, Some(entry));
-    entry.select_region(0, -1);
-}
-
 #[cfg(test)]
 fn widget_contains_focus(window: &adw::ApplicationWindow, widget: &gtk4::Widget) -> bool {
     gtk4::prelude::GtkWindowExt::focus(window)
         .is_some_and(|focus| focus == *widget || focus.is_ancestor(widget))
-}
-
-fn apply_search_escape_pressed(
-    search_bar: &gtk4::SearchBar,
-    search_entry: &gtk4::SearchEntry,
-    collapse_on_release: &std::cell::Cell<bool>,
-) {
-    match escape_action_for(!search_entry.text().is_empty()) {
-        EscapeAction::ClearSearchText => {
-            collapse_on_release.set(false);
-            search_entry.set_text("");
-            search_bar.set_search_mode(true);
-            search_entry.grab_focus();
-        }
-        EscapeAction::CollapseSearchBarAndFocusActiveContent => {
-            // GtkSearchBar's separate window-level capture can reassert search
-            // mode after this bar-local key-press handler. Keep the bar mapped
-            // until release, then close after every key-press participant has
-            // finished. This also keeps the release routed to this controller.
-            collapse_on_release.set(true);
-        }
-    }
-}
-
-fn apply_search_escape_released(
-    search_bar: &gtk4::SearchBar,
-    collapse_on_release: &std::cell::Cell<bool>,
-    focus_active_content: &Rc<dyn Fn() -> bool>,
-) {
-    if !collapse_on_release.replace(false) {
-        return;
-    }
-    search_bar.set_search_mode(false);
-    if !focus_active_content() {
-        tracing::warn!("escape: could not move focus to the active content view");
-    }
-}
-
-fn wire_escape(
-    search_bar: &gtk4::SearchBar,
-    search_entry: &gtk4::SearchEntry,
-    focus_active_content: Rc<dyn Fn() -> bool>,
-) {
-    let controller = gtk4::EventControllerKey::new();
-    controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    let collapse_on_release = Rc::new(std::cell::Cell::new(false));
-    let bar = search_bar.downgrade();
-    let entry = search_entry.downgrade();
-    let pending_on_press = collapse_on_release.clone();
-    controller.connect_key_pressed(move |_, key, _, _| {
-        let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
-            return gtk4::glib::Propagation::Proceed;
-        };
-        if key != gtk4::gdk::Key::Escape || !bar.is_search_mode() {
-            return gtk4::glib::Propagation::Proceed;
-        }
-        apply_search_escape_pressed(&bar, &entry, &pending_on_press);
-        gtk4::glib::Propagation::Stop
-    });
-    let bar = search_bar.downgrade();
-    controller.connect_key_released(move |_, key, _, _| {
-        let Some(bar) = bar.upgrade() else {
-            return;
-        };
-        if key == gtk4::gdk::Key::Escape {
-            apply_search_escape_released(&bar, &collapse_on_release, &focus_active_content);
-        }
-    });
-    search_bar.add_controller(controller);
 }
 
 fn wire_window_lifecycle(app: &adw::Application, window: &adw::ApplicationWindow) {
@@ -380,7 +246,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_2b_ctrl_f_reveals_and_focuses() {
+    fn search_2c_ctrl_f_opens_and_focuses() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let app = adw::Application::builder()
@@ -391,15 +257,13 @@ mod tests {
         let window = adw::ApplicationWindow::new(&app);
         let invoker = gtk4::Button::with_label("Open search");
         let entry = gtk4::SearchEntry::new();
-        let search_bar = gtk4::SearchBar::new();
-        search_bar.set_child(Some(&entry));
-        search_bar.connect_entry(&entry);
-        search_bar.set_key_capture_widget(Some(&window));
+        let lens = gtk4::ToggleButton::new();
+        let search = SearchPopover::new(&lens, &entry);
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         content.append(&invoker);
-        content.append(&search_bar);
+        content.append(&lens);
         window.set_content(Some(&content));
-        wire_focus_search(&app, &window, &search_bar, &entry, Rc::new(|| true));
+        wire_focus_search(&app, &window, search.downgrade(), Rc::new(|| true));
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
         gtk4::prelude::GtkWindowExt::set_focus(&window, Some(&invoker));
@@ -418,18 +282,23 @@ mod tests {
             gtk4::glib::MainContext::default().iteration(true);
         }
 
-        assert!(search_bar.is_search_mode());
+        assert!(search.is_open());
         assert!(widget_contains_focus(&window, entry.upcast_ref()));
+        window.close();
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_4_escape_clears_then_collapses() {
+    fn search_4a_escape_closes_and_keeps_the_query() {
         gtk4::init().unwrap();
-        let search_bar = gtk4::SearchBar::new();
+        let lens = gtk4::ToggleButton::new();
         let entry = gtk4::SearchEntry::new();
-        search_bar.set_child(Some(&entry));
-        search_bar.set_search_mode(true);
+        let search = SearchPopover::new(&lens, &entry);
+        let window = gtk4::Window::new();
+        window.set_child(Some(&lens));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        search.open();
         entry.set_text("falling");
 
         let focus_calls = Rc::new(std::cell::Cell::new(0));
@@ -438,66 +307,22 @@ mod tests {
             counted.set(counted.get() + 1);
             true
         });
+        search.set_focus_on_close(focus_active_content);
 
-        let collapse_on_release = std::cell::Cell::new(false);
-        apply_search_escape_pressed(&search_bar, &entry, &collapse_on_release);
-        apply_search_escape_released(&search_bar, &collapse_on_release, &focus_active_content);
-        assert_eq!(entry.text(), "");
-        assert!(search_bar.is_search_mode());
-
-        apply_search_escape_pressed(&search_bar, &entry, &collapse_on_release);
-        assert!(search_bar.is_search_mode());
-        apply_search_escape_released(&search_bar, &collapse_on_release, &focus_active_content);
-        assert!(!search_bar.is_search_mode());
-        assert_eq!(focus_calls.get(), 1);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn search_4_escape_release_wins_over_late_search_bar_reopen() {
-        gtk4::init().unwrap();
-        let search_bar = gtk4::SearchBar::new();
-        let entry = gtk4::SearchEntry::new();
-        search_bar.set_child(Some(&entry));
-        search_bar.set_search_mode(true);
-
-        let focus_calls = Rc::new(std::cell::Cell::new(0));
-        let counted = Rc::clone(&focus_calls);
-        let focus_active_content: Rc<dyn Fn() -> bool> = Rc::new(move || {
-            counted.set(counted.get() + 1);
-            true
-        });
-        let collapse_on_release = std::cell::Cell::new(false);
-        apply_search_escape_pressed(&search_bar, &entry, &collapse_on_release);
-
-        // GtkSearchBar may reassert this same open state from its separate
-        // window-level key capture before release arrives.
-        assert!(search_bar.is_search_mode());
-        search_bar.set_search_mode(true);
-
-        apply_search_escape_released(&search_bar, &collapse_on_release, &focus_active_content);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        assert!(
-            !search_bar.is_search_mode(),
-            "the late GtkSearchBar reopen survived the Escape release"
+        assert_eq!(
+            search.press_close_key(gtk4::gdk::Key::Escape),
+            gtk4::glib::Propagation::Stop
         );
+        assert!(!search.is_open());
+        assert_eq!(entry.text(), "falling");
         assert_eq!(focus_calls.get(), 1);
+        window.close();
     }
 
     #[test]
     fn search_6_ctrl_f_toggles_open_and_closed() {
         assert!(next_search_mode(false));
         assert!(!next_search_mode(true));
-    }
-
-    #[test]
-    fn nav_6_escape_changes_search_state_without_navigation() {
-        assert_eq!(escape_action_for(true), EscapeAction::ClearSearchText);
-        assert_eq!(
-            escape_action_for(false),
-            EscapeAction::CollapseSearchBarAndFocusActiveContent
-        );
     }
 
     #[test]
@@ -659,18 +484,5 @@ mod tests {
                 })
         });
         assert!(has_capture_key_controller);
-    }
-
-    #[test]
-    fn escape_clears_text_when_search_has_text() {
-        assert_eq!(escape_action_for(true), EscapeAction::ClearSearchText);
-    }
-
-    #[test]
-    fn escape_collapses_search_bar_and_focuses_active_content_when_empty() {
-        assert_eq!(
-            escape_action_for(false),
-            EscapeAction::CollapseSearchBarAndFocusActiveContent
-        );
     }
 }

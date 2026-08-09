@@ -1,6 +1,5 @@
 use std::cell::RefCell as StdRefCell;
 
-use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::browser::navigation::{NavigationIntent, SidebarTarget};
 use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
@@ -15,19 +14,17 @@ struct Harness {
     search: Rc<SectionSearch>,
     entry: gtk4::SearchEntry,
     toggle: gtk4::ToggleButton,
-    search_bar: gtk4::SearchBar,
+    popover: SearchPopover,
     track_filter_layout: crate::ui::filter_bar_layout::FilterBarLayout,
     applied: Rc<StdRefCell<Vec<(SearchScope, String)>>>,
     facets_cleared: Rc<StdRefCell<Vec<SearchScope>>>,
 }
 
 fn harness() -> Harness {
-    let window = adw::ApplicationWindow::builder().build();
     let entry = gtk4::SearchEntry::new();
-    let search_bar = gtk4::SearchBar::new();
-    search_bar.connect_entry(&entry);
     let toggle = gtk4::ToggleButton::new();
-    let search = SectionSearch::new(&entry, &search_bar, &toggle, &window);
+    let popover = SearchPopover::new(&toggle, &entry);
+    let search = SectionSearch::new(&entry, &popover, &toggle);
     let track_filter_layout = crate::ui::filter_bar_layout::FilterBarLayout::new();
     let applied = Rc::new(StdRefCell::new(Vec::new()));
     let facets_cleared = Rc::new(StdRefCell::new(Vec::new()));
@@ -43,6 +40,8 @@ fn harness() -> Harness {
             scope,
             move |query| {
                 sink.borrow_mut().push((scope, query.to_owned()));
+            },
+            move |query| {
                 if scope != SearchScope::Tracks {
                     return;
                 }
@@ -55,7 +54,7 @@ fn harness() -> Harness {
         search,
         entry,
         toggle,
-        search_bar,
+        popover,
         track_filter_layout,
         applied,
         facets_cleared,
@@ -92,14 +91,13 @@ fn settle_until(label: &str, condition: impl Fn() -> bool) {
 // because the destination is a new search context.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_8a_switching_views_drops_the_query_and_collapses_the_bar() {
+fn search_8a_switching_views_drops_the_query_and_closes_the_popover() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let harness = harness();
 
     harness.search.activate(SearchScope::Tracks, "Music");
-    harness.toggle.set_active(true);
-    harness.search_bar.set_search_mode(true);
+    harness.popover.open();
     harness.entry.set_text("falling");
     settle();
 
@@ -111,7 +109,7 @@ fn search_8a_switching_views_drops_the_query_and_collapses_the_bar() {
         "the Podcasts section starts without the Library query"
     );
     assert!(!harness.toggle.is_active());
-    assert!(!harness.search_bar.is_search_mode());
+    assert!(!harness.popover.is_open());
 
     harness.search.activate(SearchScope::Tracks, "Music");
     settle();
@@ -134,8 +132,7 @@ fn search_8a_switching_track_views_drops_the_query_despite_the_shared_scope() {
     harness
         .search
         .activate_source(&ViewSource::Library, "Music");
-    harness.toggle.set_active(true);
-    harness.search_bar.set_search_mode(true);
+    harness.popover.open();
     harness.entry.set_text("falling");
     settle();
 
@@ -164,7 +161,7 @@ fn search_8a_switching_track_views_drops_the_query_despite_the_shared_scope() {
 
     assert_eq!(harness.entry.text(), "");
     assert!(!harness.toggle.is_active());
-    assert!(!harness.search_bar.is_search_mode());
+    assert!(!harness.popover.is_open());
 }
 
 // UX SEARCH-8a/FIL-1c: a metadata intent drills into the Library's filter
@@ -370,7 +367,7 @@ fn search_8a_back_from_a_detail_restores_the_same_lists_query_from_history() {
     settle();
 
     assert_eq!(harness.entry.text(), "falling");
-    assert!(!harness.search_bar.is_search_mode());
+    assert!(!harness.popover.is_open());
 }
 
 // UX FIL-2a: "Clear all" clears the current section only.
@@ -384,6 +381,7 @@ fn fil_2a_clear_all_only_touches_the_current_section() {
     let counter = cleared.clone();
     harness.search.register(
         SearchScope::Podcasts,
+        |_| {},
         |_| {},
         move || {
             counter.set(counter.get() + 1);

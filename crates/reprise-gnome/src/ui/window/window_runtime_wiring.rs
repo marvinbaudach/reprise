@@ -41,7 +41,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) header: &'a adw::HeaderBar,
     pub(in crate::ui) search_entry: &'a gtk4::SearchEntry,
-    pub(in crate::ui) search_bar: &'a gtk4::SearchBar,
+    pub(in crate::ui) search: &'a super::search_popover::SearchPopover,
     pub(in crate::ui) search_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_page: &'a adw::NavigationPage,
@@ -87,7 +87,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         db_path,
         header,
         search_entry,
-        search_bar,
+        search,
         search_toggle,
         sidebar_toggle,
         sidebar_page,
@@ -409,7 +409,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // SEARCH-8a: one transient query for the active view. Built before the
     // routing below so the first route already lands in the right scope.
     let section_search =
-        super::section_search::SectionSearch::new(search_entry, search_bar, search_toggle, window);
+        super::section_search::SectionSearch::new(search_entry, search, search_toggle);
     super::section_search_wiring::install(
         &section_search,
         &super::section_search_wiring::SectionSearchViews {
@@ -541,8 +541,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     super::shortcuts::wire(
         app,
         window,
-        search_bar,
-        search_entry,
+        search,
         super::shortcuts::ShortcutHooks {
             focus_active_content,
             // SEARCH-8a: Ctrl+F is a no-op where the visible section has no

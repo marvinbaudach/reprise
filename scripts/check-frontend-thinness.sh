@@ -237,7 +237,6 @@ crates/reprise-gnome/src/ui/strings_sources.rs:1
 crates/reprise-gnome/src/ui/strings_tag_edit.rs:7
 crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs:1
 crates/reprise-gnome/src/ui/updates/release_cover.rs:1
-crates/reprise-gnome/src/ui/window/search_popover.rs:2
 crates/reprise-mcp/tests/common/mod.rs:1
 ALLOWLIST
 )
