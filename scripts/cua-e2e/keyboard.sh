@@ -29,8 +29,10 @@ assert_after_has_focus() {
 reset_surface_baseline() {
   local pid=$1 window_id=$2 stem=$3 state_path
 
-  # Escape closes a popover or dialog; a second one collapses a revealed search
-  # bar. Both are no-ops when nothing is open.
+  # Escape closes a popover or dialog — including the search popover, which
+  # since SEARCH-4a closes in one stage and keeps its query rather than
+  # clearing it. The second press is a no-op when nothing is left open, and is
+  # kept because a dialog can sit over a popover.
   cua_press_key_window "$pid" "$window_id" escape "$stem-reset-1" || return 1
   cua_press_key_window "$pid" "$window_id" escape "$stem-reset-2" || return 1
 

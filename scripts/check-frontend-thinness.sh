@@ -28,7 +28,7 @@ shared_view=crates/reprise-view/src
 # search_chip_label presentation API after this floor was last pinned at
 # commit 8d77634e1a. That reduced the honest production baseline by two lines;
 # future migration waves still raise this floor as described below.
-view_floor=1780
+view_floor=1807
 
 echo "== Frontend thinness =="
 

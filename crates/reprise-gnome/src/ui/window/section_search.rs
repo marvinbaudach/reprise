@@ -2,7 +2,7 @@
 //!
 //! The header bar owns a single `GtkSearchEntry`, but the query it holds
 //! is deliberately transient: a sidebar destination switch clears the view
-//! being left, starts the destination empty, and collapses the bar. Metadata
+//! being left, starts the destination empty, and closes the popover. Metadata
 //! drills carry the query in their `BrowserPlace`, and Back restores the
 //! complete saved place; this module does not keep parallel history.
 //!
@@ -11,11 +11,11 @@
 //! * The entry text is always the active scope's query. Every write pushed
 //!   back by a view that cleared its own chip goes through here, so no
 //!   participant has to guess which section a query belongs to.
-//! * Query clearing calls only a section's `apply` handler. Its separately
+//! * Query clearing calls only a section's `apply` and `commit` handlers. Its separately
 //!   stored facet filters remain untouched unless the user invokes Clear all.
 //! * A section without a list ([`SectionSearch::supports_search`] is false) can neither be
-//!   searched nor reveal the bar: the lens is insensitive with a tooltip that
-//!   names the section, Ctrl+F is a no-op, and typing cannot open the strip.
+//!   searched nor open the popover: the lens is insensitive with a tooltip that
+//!   names the section, and Ctrl+F is a no-op.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -23,10 +23,13 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use reprise_core::view_source::ViewSource;
+use reprise_view::search_chip::{self, SearchSurface};
 use reprise_view::search_scope::{self, SearchScope};
 
 use crate::ui::filter_bar_strings as filter_strings;
 use crate::ui::strings;
+
+use super::search_popover::{SearchPopover, WeakSearchPopover};
 
 /// The content-stack page names this module has to recognise by hand: the
 /// shared track page serves several sources, and the device page has no
@@ -50,9 +53,11 @@ fn page_source(page: &str) -> Option<ViewSource> {
 
 /// What a section does with its query. `apply` runs whenever the query for
 /// that scope changes *and* whenever the section becomes visible again;
+/// `commit` receives only the query that should appear as a filter chip;
 /// `clear_facets` is the section's own half of "Clear all".
 struct SectionHandlers {
     apply: Rc<dyn Fn(&str)>,
+    commit: Rc<dyn Fn(&str)>,
     clear_facets: Rc<dyn Fn()>,
 }
 
@@ -63,20 +68,17 @@ struct ShellState {
     current_source: Rc<dyn Fn() -> ViewSource>,
 }
 
-/// Every widget reference here is weak, deliberately. `SectionSearch` is
+/// Every widget handle here is weak, deliberately. `SectionSearch` is
 /// owned by the closures that consult it — a window action, the entry's own
 /// signal handlers, the sidebar's `on_select` — and those closures are owned
-/// by widgets under the window. A strong clone of the entry, the lens, or
-/// (worst) the window itself as `key_capture` would close that loop and keep
-/// the whole window alive past its own destruction: GTK's dispose normally
-/// papers over it, but the test harness and any window replaced without
-/// being closed would leak the pair. Weak here breaks the cycle at the end
-/// that has no business owning anything.
+/// by widgets under the window. A strong clone of the entry, lens, or popover
+/// would close that loop and keep the whole window alive past destruction.
+/// Weak handles break the cycle at the end that has no business owning it.
 pub(in crate::ui) struct SectionSearch {
     entry: gtk4::glib::WeakRef<gtk4::SearchEntry>,
-    search_bar: gtk4::glib::WeakRef<gtk4::SearchBar>,
+    search: WeakSearchPopover,
     toggle: gtk4::glib::WeakRef<gtk4::ToggleButton>,
-    key_capture: gtk4::glib::WeakRef<gtk4::Widget>,
+    surface: Cell<SearchSurface>,
     active: Cell<SearchScope>,
     active_source: RefCell<Option<ViewSource>>,
     handlers: RefCell<BTreeMap<SearchScope, SectionHandlers>>,
@@ -86,15 +88,14 @@ pub(in crate::ui) struct SectionSearch {
 impl SectionSearch {
     pub(in crate::ui) fn new(
         entry: &gtk4::SearchEntry,
-        search_bar: &gtk4::SearchBar,
+        popover: &SearchPopover,
         toggle: &gtk4::ToggleButton,
-        key_capture: &impl IsA<gtk4::Widget>,
     ) -> Rc<Self> {
         let search = Rc::new(Self {
             entry: entry.downgrade(),
-            search_bar: search_bar.downgrade(),
+            search: popover.downgrade(),
             toggle: toggle.downgrade(),
-            key_capture: key_capture.clone().upcast::<gtk4::Widget>().downgrade(),
+            surface: Cell::new(SearchSurface::Closed),
             active: Cell::new(SearchScope::Tracks),
             active_source: RefCell::new(None),
             handlers: RefCell::new(BTreeMap::new()),
@@ -108,21 +109,36 @@ impl SectionSearch {
             };
             search.apply_to_active(&entry.text());
         });
+        let weak = Rc::downgrade(&search);
+        popover.connect_open_changed(move |open| {
+            let Some(search) = weak.upgrade() else {
+                return;
+            };
+            search.surface.set(if open {
+                SearchSurface::Open
+            } else {
+                SearchSurface::Closed
+            });
+            search.apply_to_active(&search.entry_text());
+        });
         search
     }
 
-    /// Registers a section's query sink. `apply` receives the raw query;
+    /// Registers a section's query sinks. `apply` receives the live query,
+    /// `commit` receives the closed-surface query or an empty string;
     /// `clear_facets` drops that section's facet filters for "Clear all".
     pub(in crate::ui) fn register(
         &self,
         scope: SearchScope,
         apply: impl Fn(&str) + 'static,
+        commit: impl Fn(&str) + 'static,
         clear_facets: impl Fn() + 'static,
     ) {
         self.handlers.borrow_mut().insert(
             scope,
             SectionHandlers {
                 apply: Rc::new(apply),
+                commit: Rc::new(commit),
                 clear_facets: Rc::new(clear_facets),
             },
         );
@@ -240,7 +256,7 @@ impl SectionSearch {
         let previous = self.active.replace(scope);
         self.apply_to_scope(previous, "");
         let entry_changed = self.write_entry("");
-        self.collapse_bar();
+        self.close_popover();
         self.sync_affordance(section_name);
         if !entry_changed {
             // Identical text emits no signal, so reset explicitly.
@@ -303,34 +319,31 @@ impl SectionSearch {
     }
 
     fn apply_to_scope(&self, scope: SearchScope, query: &str) {
-        let apply = self
+        let handlers = self
             .handlers
             .borrow()
             .get(&scope)
-            .map(|handlers| handlers.apply.clone());
-        match apply {
-            Some(apply) => apply(query.trim()),
-            None => tracing::debug!(?scope, "no search sink registered for this section"),
-        }
+            .map(|handlers| (handlers.apply.clone(), handlers.commit.clone()));
+        let Some((apply, commit)) = handlers else {
+            tracing::debug!(?scope, "no search sink registered for this section");
+            return;
+        };
+        let query = query.trim();
+        apply(query);
+        commit(search_chip::committed_query(query, self.surface.get()).unwrap_or_default());
     }
 
-    fn collapse_bar(&self) {
-        if let Some(toggle) = self.toggle.upgrade() {
-            toggle.set_active(false);
-        }
-        if let Some(search_bar) = self.search_bar.upgrade() {
-            search_bar.set_search_mode(false);
-        }
+    fn close_popover(&self) {
+        self.search.close();
     }
 
     /// SEARCH-8a: where there is no list, there is nothing to filter — the
-    /// lens says so and stops responding, and the strip cannot be revealed by
-    /// typing either.
+    /// lens says so and stops responding.
     fn sync_affordance(&self, section_name: &str) {
-        let (Some(toggle), Some(search_bar)) = (self.toggle.upgrade(), self.search_bar.upgrade())
-        else {
+        let Some(toggle) = self.toggle.upgrade() else {
             return;
         };
+        self.search.set_scope(self.active.get());
         let supported = self.supports_search();
         toggle.set_sensitive(supported);
         if supported {
@@ -338,15 +351,11 @@ impl SectionSearch {
                 strings::SEARCH_PLACEHOLDER,
                 strings::SHORTCUT_SEARCH,
             )));
-            if let Some(key_capture) = self.key_capture.upgrade() {
-                search_bar.set_key_capture_widget(Some(&key_capture));
-            }
             return;
         }
         toggle.set_tooltip_text(Some(&filter_strings::nothing_to_filter(section_name)));
         toggle.set_active(false);
-        search_bar.set_search_mode(false);
-        search_bar.set_key_capture_widget(None::<&gtk4::Widget>);
+        self.close_popover();
     }
 }
 

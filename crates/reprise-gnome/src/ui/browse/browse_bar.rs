@@ -48,6 +48,7 @@ pub struct BrowseBar {
     root: gtk4::Box,
     layout: FilterBarLayout,
     search: RefCell<String>,
+    committed_query: RefCell<String>,
     source: RefCell<ViewSource>,
     track_source: Cell<bool>,
     is_library: Cell<bool>,
@@ -133,6 +134,7 @@ impl BrowseBar {
             root,
             layout,
             search: RefCell::new(String::new()),
+            committed_query: RefCell::new(String::new()),
             source: RefCell::new(ViewSource::Library),
             track_source: Cell::new(true),
             is_library: Cell::new(true),
@@ -286,6 +288,18 @@ impl BrowseBar {
         self.sync_visibility();
     }
 
+    pub(in crate::ui) fn set_committed_query(self: &Rc<Self>, query: &str) {
+        if *self.committed_query.borrow() == query {
+            return;
+        }
+        self.committed_query.replace(query.to_owned());
+        self.refresh();
+    }
+
+    fn committed_query(&self) -> String {
+        self.committed_query.borrow().clone()
+    }
+
     pub fn set_preference_visible(&self, visible: bool) {
         self.preference_visible.set(visible);
         self.sync_visibility();
@@ -403,12 +417,12 @@ impl BrowseBar {
         while let Some(child) = self.chips.first_child() {
             self.chips.remove(&child);
         }
-        let query = self.search.borrow().trim().to_string();
+        let committed_query = self.committed_query();
         // FIL-1d: the shared chip renderer names the fields this source
         // actually searches.
         let weak = Rc::downgrade(self);
         self.layout
-            .replace_scoped_search(self.search_scope(), &query, move || {
+            .replace_scoped_search(self.search_scope(), &committed_query, move || {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };

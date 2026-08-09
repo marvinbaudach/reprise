@@ -16,6 +16,7 @@ pub const PLAY_OR_PAUSE: &str = N_!("Play or Pause");
 pub const INCREASE_VOLUME: &str = N_!("Increase Volume");
 pub const DECREASE_VOLUME: &str = N_!("Decrease Volume");
 pub const SEARCH_LIBRARY: &str = N_!("Search Library");
+pub const ESC_TO_CLOSE: &str = N_!("Esc to close");
 pub const TOGGLE_COMPACT_VIEW: &str = N_!("Toggle Compact View");
 pub const CLEAR_SEARCH_OR_RETURN_TO_CONTENT: &str = N_!("Clear Search or Return to Content");
 pub const PLAY_SELECTED_TRACK: &str = N_!("Play Selected Track");
