@@ -47,6 +47,7 @@ pub(in crate::ui) struct SpectrogramBatch {
     conn: Rc<Db>,
     launch: Box<dyn Fn() -> Option<Box<dyn BackfillRun>>>,
     run: RefCell<Option<Box<dyn BackfillRun>>>,
+    pass: Cell<Option<startup_tasks::ExactTaskPass>>,
     progress: Cell<SpectrogramBatchProgress>,
     subscribers: ProgressSubscribers<SpectrogramBatchProgress>,
 }
@@ -60,6 +61,7 @@ impl SpectrogramBatch {
             conn,
             launch: Box::new(launch),
             run: RefCell::new(None),
+            pass: Cell::new(None),
             progress: Cell::new(SpectrogramBatchProgress::idle()),
             subscribers: ProgressSubscribers::default(),
         })
@@ -82,14 +84,16 @@ impl SpectrogramBatch {
         if self.is_running() {
             return;
         }
-        if !startup_tasks::should_run_exact(&self.conn, StartupTask::Spectrogram) {
+        let Some(pass) = startup_tasks::begin_exact(&self.conn, StartupTask::Spectrogram) else {
             self.set_progress(SpectrogramBatchProgress {
                 state: SpectrogramBatchState::Complete,
                 ..SpectrogramBatchProgress::idle()
             });
             return;
-        }
+        };
+        self.pass.set(Some(pass));
         let Some(run) = (self.launch)() else {
+            self.pass.set(None);
             tracing::warn!("could not start the library analysis worker");
             self.set_progress(SpectrogramBatchProgress::failed());
             return;
@@ -132,6 +136,7 @@ impl SpectrogramBatch {
             return glib::ControlFlow::Continue;
         }
         let summary = self.run.borrow_mut().take().and_then(BackfillRun::finish);
+        let pass = self.pass.take();
         let completed_cleanly = summary.as_ref().is_some_and(|summary| {
             summary.status == reprise_core::spectrogram_backfill::BackfillStatus::Completed
                 && summary.failed == 0
@@ -145,7 +150,9 @@ impl SpectrogramBatch {
             "library analysis finished"
         );
         if completed_cleanly {
-            startup_tasks::record_completed_or_warn(&self.conn, StartupTask::Spectrogram);
+            if let Some(pass) = pass {
+                pass.record_completed_or_warn(&self.conn);
+            }
         }
         self.set_progress(settled);
         glib::ControlFlow::Break

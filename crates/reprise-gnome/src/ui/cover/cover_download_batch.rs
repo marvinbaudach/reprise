@@ -138,10 +138,10 @@ impl CoverDownloadBatch {
             self.set_progress(BatchProgress::idle());
             return;
         }
-        if !startup_tasks::should_run_exact(&self.conn, StartupTask::CoverDownload) {
+        let Some(pass) = startup_tasks::begin_exact(&self.conn, StartupTask::CoverDownload) else {
             self.set_progress(BatchProgress::running(0));
             return;
-        }
+        };
         let paths = {
             let conn = &self.conn;
             reprise_core::queries::query_live_track_paths(conn)
@@ -161,7 +161,7 @@ impl CoverDownloadBatch {
             // says exactly that, and the batches waiting on this one need to
             // hear it.
             self.set_progress(BatchProgress::running(0));
-            startup_tasks::record_completed_or_warn(&self.conn, StartupTask::CoverDownload);
+            pass.record_completed_or_warn(&self.conn);
             return;
         }
 
@@ -195,7 +195,7 @@ impl CoverDownloadBatch {
             // sit at "0 of <library>" for the rest of the session.
             this.set_progress(BatchProgress::running(paths.len()));
             if paths.is_empty() {
-                startup_tasks::record_completed_or_warn(&this.conn, StartupTask::CoverDownload);
+                pass.record_completed_or_warn(&this.conn);
                 return;
             }
 
@@ -248,7 +248,7 @@ impl CoverDownloadBatch {
                 return;
             }
             this.set_progress(this.progress.get().completed());
-            startup_tasks::record_completed_or_warn(&this.conn, StartupTask::CoverDownload);
+            pass.record_completed_or_warn(&this.conn);
             let refreshed_paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
             this.track_list.reload();
             if let Some(player) = &this.player {

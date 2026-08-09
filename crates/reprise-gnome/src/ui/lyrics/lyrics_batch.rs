@@ -127,10 +127,10 @@ impl LyricsBatch {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
-        if !startup_tasks::should_run_exact(&self.conn, StartupTask::Lyrics) {
+        let Some(pass) = startup_tasks::begin_exact(&self.conn, StartupTask::Lyrics) else {
             self.set_progress(LyricsBatchProgress::running(0));
             return;
-        }
+        };
         let summaries = match reprise_core::queries::query_live_track_summaries(&self.conn) {
             Ok(summaries) => summaries,
             Err(error) => {
@@ -144,7 +144,7 @@ impl LyricsBatch {
         let progress = LyricsBatchProgress::running(summaries.len());
         self.set_progress(progress);
         if progress.state == LyricsBatchState::Complete {
-            startup_tasks::record_completed_or_warn(&self.conn, StartupTask::Lyrics);
+            pass.record_completed_or_warn(&self.conn);
             return;
         }
         let (events, receiver) = async_channel::unbounded();
@@ -177,10 +177,7 @@ impl LyricsBatch {
                     WorkerEvent::Progress(progress) => {
                         batch.set_progress(progress);
                         if progress.state == LyricsBatchState::Complete && progress.failed == 0 {
-                            startup_tasks::record_completed_or_warn(
-                                &batch.conn,
-                                StartupTask::Lyrics,
-                            );
+                            pass.record_completed_or_warn(&batch.conn);
                         }
                     }
                     WorkerEvent::Cancelled => {

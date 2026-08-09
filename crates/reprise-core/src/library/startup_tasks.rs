@@ -7,7 +7,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -114,6 +114,38 @@ pub enum DueDecision {
     Skip(DueReason),
 }
 
+/// The exact input revision one running pass is responsible for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExactTaskPass {
+    task: StartupTask,
+    signature: Option<LibrarySignature>,
+}
+
+impl ExactTaskPass {
+    pub fn record_completed_or_warn(self, db: &Db) {
+        let Some(signature) = self.signature else {
+            tracing::warn!(
+                task = self.task.log_name(),
+                "startup task completion not persisted because its starting signature was unavailable"
+            );
+            return;
+        };
+        match record_pass_completed(db, self.task, signature, now_unix()) {
+            Ok(true) => {}
+            Ok(false) => tracing::info!(
+                task = self.task.log_name(),
+                started_signature = signature.0,
+                "startup task completion not persisted: library signature changed during the pass"
+            ),
+            Err(error) => tracing::warn!(
+                task = self.task.log_name(),
+                %error,
+                "could not persist startup task completion"
+            ),
+        }
+    }
+}
+
 impl DueDecision {
     pub fn is_due(self) -> bool {
         matches!(self, Self::Run(_))
@@ -172,35 +204,43 @@ pub fn exact_signature_decision(
     }
 }
 
-/// Conservative runtime boundary: a due-state read failure runs the task.
-pub fn should_run_exact(db: &Db, task: StartupTask) -> bool {
+/// Starts due work with the exact signature it is allowed to settle.
+/// A due-state read failure still runs conservatively but receives no
+/// settleable signature.
+pub fn begin_exact(db: &Db, task: StartupTask) -> Option<ExactTaskPass> {
     match exact_signature_decision(db, task) {
-        Ok(decision) => decision.is_due(),
+        Ok(DueDecision::Skip(_)) => None,
+        Ok(DueDecision::Run(_)) => Some(ExactTaskPass {
+            task,
+            signature: match current_signature_in(db.conn()) {
+                Ok(signature) => Some(signature),
+                Err(error) => {
+                    tracing::warn!(
+                        task = task.log_name(),
+                        %error,
+                        "could not capture startup task signature; running conservatively"
+                    );
+                    None
+                }
+            },
+        }),
         Err(error) => {
             tracing::warn!(
                 task = task.log_name(),
                 %error,
                 "could not decide startup task freshness; running conservatively"
             );
-            true
+            Some(ExactTaskPass {
+                task,
+                signature: None,
+            })
         }
     }
 }
 
-pub fn record_completed(db: &Db, task: StartupTask) -> Result<(), StartupTaskError> {
-    record_completed_at(db, task, now_unix())
-}
-
-pub fn record_completed_or_warn(db: &Db, task: StartupTask) {
-    if let Err(error) = record_completed(db, task) {
-        tracing::warn!(
-            task = task.log_name(),
-            %error,
-            "could not persist startup task completion"
-        );
-    }
-}
-
+/// Seeds a completion record at a controlled time for deterministic tests.
+/// Production callers must use [`begin_exact`] and finish its returned pass.
+#[doc(hidden)]
 pub fn record_completed_at(
     db: &Db,
     task: StartupTask,
@@ -213,6 +253,26 @@ pub fn record_completed_at(
     let value = serde_json::to_string(&record).expect("TaskRecord serialization cannot fail");
     set_internal_setting_in(db.conn(), &task.key(), &value)?;
     Ok(())
+}
+
+fn record_pass_completed(
+    db: &Db,
+    task: StartupTask,
+    started_signature: LibrarySignature,
+    completed_at: i64,
+) -> Result<bool, StartupTaskError> {
+    let tx = Transaction::new_unchecked(db.conn(), TransactionBehavior::Immediate)?;
+    if current_signature_in(&tx)? != started_signature {
+        return Ok(false);
+    }
+    let record = TaskRecord {
+        completed_at,
+        signature: started_signature,
+    };
+    let value = serde_json::to_string(&record).expect("TaskRecord serialization cannot fail");
+    set_internal_setting_in(&tx, &task.key(), &value)?;
+    tx.commit()?;
+    Ok(true)
 }
 
 pub(crate) fn advance_library_signature_in(
@@ -361,6 +421,19 @@ mod tests {
         let logs = logs.joined();
         assert!(logs.contains("cover batch"));
         assert!(logs.contains("library signature unchanged"));
+    }
+
+    #[test]
+    fn a_pass_cannot_settle_a_signature_that_changed_while_it_was_running() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let pass = begin_exact(&db, StartupTask::Spectrogram).unwrap();
+        advance_library_signature_in(db.conn()).unwrap();
+
+        pass.record_completed_or_warn(&db);
+
+        assert!(exact_signature_decision(&db, StartupTask::Spectrogram)
+            .unwrap()
+            .is_due());
     }
 
     #[test]
