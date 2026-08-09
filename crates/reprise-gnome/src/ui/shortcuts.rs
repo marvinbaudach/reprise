@@ -104,7 +104,7 @@ fn focused_widget_owns_space(focus: Option<&gtk4::Widget>) -> bool {
 /// build`'s own doc comment on that degradation) — the Space action still
 /// registers in that case (so the accelerator itself is harmless to press),
 /// it just logs and no-ops instead of toggling anything.
-pub fn wire(
+pub(in crate::ui) fn wire(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
     search: &SearchPopover,

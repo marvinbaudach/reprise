@@ -446,6 +446,7 @@ mod tests {
                 filter_bar_layout::FILTER_BAR_MIN_HEIGHT
             );
             bar.set_query("falling");
+            bar.set_committed_query("falling");
             bar.set_context(
                 3,
                 LibrarySummary {

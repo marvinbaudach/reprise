@@ -640,6 +640,7 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ConcertsFilterBar::new(conn);
         bar.set_query("winterthur");
+        bar.set_committed_query("winterthur");
         bar.set_counts(3, 44);
 
         assert!(bar.layout.slot_contains(

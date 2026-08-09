@@ -530,6 +530,7 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ReleasesFilterBar::new(conn);
         bar.set_query("falling");
+        bar.set_committed_query("falling");
         bar.set_counts(15, 1_664);
 
         assert!(bar.layout.slot_contains(

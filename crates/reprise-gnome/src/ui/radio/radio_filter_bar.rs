@@ -546,6 +546,7 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = RadioFilterBar::new(conn);
         bar.set_query("nova");
+        bar.set_committed_query("nova");
         bar.set_counts(3, 44);
 
         assert_eq!(
