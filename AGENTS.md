@@ -410,3 +410,28 @@ package.
 | 3 | PERF-5 | `crates/reprise-core/src/library/library_doctor/preferences.rs`, `crates/reprise-gnome/src/ui/library_doctor/start_page.rs` |
 | 3 | REV-2 | `crates/reprise-core/src/library/library_doctor/{review,review_tests}.rs`, `crates/reprise-gnome/src/ui/library_doctor/{review_page,review_filter_bar}.rs`, `crates/reprise-mcp/src/{doctor_dto,doctor_actions}.rs` |
 | 4 | PERF-3 | `crates/reprise-core/src/library/library_doctor/{store,scan}.rs` |
+
+## Session ownership — table column editing (2026-08-09)
+
+This worktree implements **one** plan and nothing else:
+`docs/superpowers/plans/2026-08-09-table-column-editing.md`.
+
+A sibling worktree (`../reprise-system-date-format`) is implementing
+`2026-08-09-system-date-format.md` at the same time. The two overlap on
+exactly two files, in different regions. Stay inside your region:
+
+**Yours in the shared files**
+- `crates/reprise-gnome/src/ui/releases/releases_columns.rs` — the column set:
+  add the leading cover column, update `column_contract()` and its two `nr_*`
+  tests. Leave every date-rendering call exactly as you find it.
+- `crates/reprise-gnome/src/ui/track_list/column_layout.rs` — the whole file
+  is yours to restructure **except** the `format_unix_timestamp` call around
+  line 590; copy that expression through unchanged, whatever it currently says.
+
+**Not yours at all — do not create or edit**
+`reprise-core/src/format.rs`, `ui/date_format.rs`, the date functions in
+`releases_presentation.rs`, `concerts_presentation.rs`,
+`updates/release_row.rs`, `updates/concerts_section.rs`,
+`podcasts_presentation.rs`, `add_dialog_results.rs`,
+`library_doctor/start_page.rs`, `issues/missing_view.rs`,
+`device_sync/device_sync_page_copy.rs`, `core/library/stats_period.rs`.
