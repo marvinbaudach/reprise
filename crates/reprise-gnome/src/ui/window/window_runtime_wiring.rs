@@ -226,7 +226,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // Built here rather than in `window.rs` for the same reason the fingerprint
     // backend above is: this is where the window layer may name a platform
     // concrete, and the composition root is held below 600 lines.
-    let spectrogram_batch = super::spectrogram_backend::build(db_path.to_path_buf());
+    let spectrogram_batch = super::spectrogram_backend::build(conn.clone(), db_path.to_path_buf());
     super::startup_report::mark("spectrogram_backend::build");
     super::primary_menu::install(
         header,

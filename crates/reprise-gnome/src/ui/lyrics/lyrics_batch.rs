@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use gtk4::glib;
 use reprise_core::db::Db;
+use reprise_core::library::startup_tasks::{self, StartupTask};
 pub(in crate::ui) use reprise_core::lyrics::{
     BatchProgress as LyricsBatchProgress, BatchState as LyricsBatchState,
 };
@@ -126,6 +127,10 @@ impl LyricsBatch {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
+        if !startup_tasks::should_run_exact(&self.conn, StartupTask::Lyrics) {
+            self.set_progress(LyricsBatchProgress::running(0));
+            return;
+        }
         let summaries = match reprise_core::queries::query_live_track_summaries(&self.conn) {
             Ok(summaries) => summaries,
             Err(error) => {
@@ -139,6 +144,7 @@ impl LyricsBatch {
         let progress = LyricsBatchProgress::running(summaries.len());
         self.set_progress(progress);
         if progress.state == LyricsBatchState::Complete {
+            startup_tasks::record_completed_or_warn(&self.conn, StartupTask::Lyrics);
             return;
         }
         let (events, receiver) = async_channel::unbounded();
@@ -168,7 +174,15 @@ impl LyricsBatch {
                     return;
                 }
                 match event {
-                    WorkerEvent::Progress(progress) => batch.set_progress(progress),
+                    WorkerEvent::Progress(progress) => {
+                        batch.set_progress(progress);
+                        if progress.state == LyricsBatchState::Complete && progress.failed == 0 {
+                            startup_tasks::record_completed_or_warn(
+                                &batch.conn,
+                                StartupTask::Lyrics,
+                            );
+                        }
+                    }
                     WorkerEvent::Cancelled => {
                         batch.set_progress(LyricsBatchProgress::idle());
                         return;

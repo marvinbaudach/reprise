@@ -54,7 +54,8 @@ fn summary(status: BackfillStatus, stored: usize, failed: usize) -> BackfillSumm
 fn batch_over(run: FakeRun) -> (Rc<SpectrogramBatch>, Rc<Cell<usize>>) {
     let cancels = run.cancels.clone();
     let run = RefCell::new(Some(run));
-    let batch = SpectrogramBatch::new(move || {
+    let db = Rc::new(crate::test_db::open().unwrap());
+    let batch = SpectrogramBatch::new(db, move || {
         run.borrow_mut()
             .take()
             .map(|run| Box::new(run) as Box<dyn BackfillRun>)
@@ -127,7 +128,7 @@ fn a_worker_that_vanishes_without_a_summary_counts_as_failed() {
 #[test]
 fn a_run_that_cannot_be_launched_fails_instead_of_reporting_progress() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
-    let batch = SpectrogramBatch::new(|| None);
+    let batch = SpectrogramBatch::new(Rc::new(crate::test_db::open().unwrap()), || None);
 
     batch.start();
 
@@ -152,7 +153,7 @@ fn nav_15_a_started_run_can_still_be_cancelled_from_its_progress_card() {
 fn nav_15_a_second_start_never_opens_a_second_run() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let launches = Rc::new(Cell::new(0));
-    let batch = SpectrogramBatch::new({
+    let batch = SpectrogramBatch::new(Rc::new(crate::test_db::open().unwrap()), {
         let launches = launches.clone();
         move || {
             launches.set(launches.get() + 1);
@@ -165,6 +166,31 @@ fn nav_15_a_second_start_never_opens_a_second_run() {
     batch.start();
 
     assert_eq!(launches.get(), 1);
+}
+
+#[test]
+fn an_unchanged_library_never_launches_the_spectrogram_worker_twice() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let db = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::library::startup_tasks::record_completed_at(
+        &db,
+        reprise_core::library::startup_tasks::StartupTask::Spectrogram,
+        123,
+    )
+    .unwrap();
+    let launches = Rc::new(Cell::new(0));
+    let batch = SpectrogramBatch::new(db, {
+        let launches = launches.clone();
+        move || {
+            launches.set(launches.get() + 1);
+            Some(Box::new(FakeRun::default()) as Box<dyn BackfillRun>)
+        }
+    });
+
+    batch.start();
+
+    assert_eq!(launches.get(), 0);
+    assert_eq!(batch.progress.get().state, SpectrogramBatchState::Complete);
 }
 
 #[test]

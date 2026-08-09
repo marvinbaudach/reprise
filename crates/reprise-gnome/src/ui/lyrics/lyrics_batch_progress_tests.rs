@@ -9,6 +9,7 @@ fn progress(state: LyricsBatchState, checked: usize, total: usize) -> LyricsBatc
         total,
         downloaded: 1,
         unavailable: 2,
+        failed: 0,
     }
 }
 
@@ -60,6 +61,7 @@ fn lyr_6_scan_controls_show_live_lyrics_batch_progress() {
         total: 4,
         downloaded: 1,
         unavailable: 0,
+        failed: 0,
     });
 
     assert!(view.widget().reveals_child());

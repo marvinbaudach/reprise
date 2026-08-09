@@ -54,6 +54,25 @@ fn lyr_6_enabling_the_module_starts_the_batch_once_and_nothing_else_does() {
 }
 
 #[test]
+fn an_unchanged_library_never_launches_the_lyrics_worker_twice() {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
+        .unwrap();
+    reprise_core::library::startup_tasks::record_completed_at(
+        &conn,
+        reprise_core::library::startup_tasks::StartupTask::Lyrics,
+        123,
+    )
+    .unwrap();
+    let batch = LyricsBatch::new(&conn);
+
+    batch.start();
+
+    assert_eq!(batch.generation.load(Ordering::Relaxed), 0);
+    assert_eq!(batch.progress.get().state, LyricsBatchState::Complete);
+}
+
+#[test]
 fn a_dead_progress_subscriber_stops_being_called_and_is_pruned() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     let batch = LyricsBatch::new(&conn);

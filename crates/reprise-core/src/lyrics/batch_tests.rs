@@ -80,7 +80,16 @@ fn progress_counts_checked_downloaded_and_unavailable_without_counting_skips() {
     assert_eq!(progress.checked, 3);
     assert_eq!(progress.downloaded, 1);
     assert_eq!(progress.unavailable, 1);
+    assert_eq!(progress.failed, 0);
     assert_eq!(progress.fraction(), 1.0);
+}
+
+#[test]
+fn transient_failures_remain_visible_after_the_batch_reaches_the_end() {
+    let progress = BatchProgress::running(1).advance(BatchItemOutcome::Failed);
+
+    assert_eq!(progress.state, BatchState::Complete);
+    assert_eq!(progress.failed, 1);
 }
 
 #[test]

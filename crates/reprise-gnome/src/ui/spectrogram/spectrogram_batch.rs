@@ -16,6 +16,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::glib;
+use reprise_core::db::Db;
+use reprise_core::library::startup_tasks::{self, StartupTask};
 use reprise_core::spectrogram_backfill::{BackfillProgress, BackfillSummary};
 use reprise_view::analysis_progress::settled;
 pub(in crate::ui) use reprise_view::analysis_progress::{
@@ -42,6 +44,7 @@ pub(in crate::ui) trait BackfillRun {
 }
 
 pub(in crate::ui) struct SpectrogramBatch {
+    conn: Rc<Db>,
     launch: Box<dyn Fn() -> Option<Box<dyn BackfillRun>>>,
     run: RefCell<Option<Box<dyn BackfillRun>>>,
     progress: Cell<SpectrogramBatchProgress>,
@@ -50,9 +53,11 @@ pub(in crate::ui) struct SpectrogramBatch {
 
 impl SpectrogramBatch {
     pub(in crate::ui) fn new(
+        conn: Rc<Db>,
         launch: impl Fn() -> Option<Box<dyn BackfillRun>> + 'static,
     ) -> Rc<Self> {
         Rc::new(Self {
+            conn,
             launch: Box::new(launch),
             run: RefCell::new(None),
             progress: Cell::new(SpectrogramBatchProgress::idle()),
@@ -75,6 +80,13 @@ impl SpectrogramBatch {
 
     pub(in crate::ui) fn start(self: &Rc<Self>) {
         if self.is_running() {
+            return;
+        }
+        if !startup_tasks::should_run_exact(&self.conn, StartupTask::Spectrogram) {
+            self.set_progress(SpectrogramBatchProgress {
+                state: SpectrogramBatchState::Complete,
+                ..SpectrogramBatchProgress::idle()
+            });
             return;
         }
         let Some(run) = (self.launch)() else {
@@ -120,6 +132,11 @@ impl SpectrogramBatch {
             return glib::ControlFlow::Continue;
         }
         let summary = self.run.borrow_mut().take().and_then(BackfillRun::finish);
+        let completed_cleanly = summary.as_ref().is_some_and(|summary| {
+            summary.status == reprise_core::spectrogram_backfill::BackfillStatus::Completed
+                && summary.failed == 0
+                && summary.source_changed == 0
+        });
         let settled = settled(progress, summary);
         tracing::info!(
             state = ?settled.state,
@@ -127,6 +144,9 @@ impl SpectrogramBatch {
             failed = settled.failed,
             "library analysis finished"
         );
+        if completed_cleanly {
+            startup_tasks::record_completed_or_warn(&self.conn, StartupTask::Spectrogram);
+        }
         self.set_progress(settled);
         glib::ControlFlow::Break
     }

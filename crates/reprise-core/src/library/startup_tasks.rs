@@ -106,6 +106,12 @@ pub fn exact_signature_decision(
         }
     };
     if record.signature == current {
+        tracing::info!(
+            task = task.log_name(),
+            completed_at = record.completed_at,
+            signature = current.0,
+            "startup task skipped: library signature unchanged"
+        );
         Ok(DueDecision::Skip(DueReason::LibrarySignatureUnchanged {
             completed_at: record.completed_at,
             signature: current,
@@ -118,8 +124,33 @@ pub fn exact_signature_decision(
     }
 }
 
+/// Conservative runtime boundary: a due-state read failure runs the task.
+pub fn should_run_exact(db: &Db, task: StartupTask) -> bool {
+    match exact_signature_decision(db, task) {
+        Ok(decision) => decision.is_due(),
+        Err(error) => {
+            tracing::warn!(
+                task = task.log_name(),
+                %error,
+                "could not decide startup task freshness; running conservatively"
+            );
+            true
+        }
+    }
+}
+
 pub fn record_completed(db: &Db, task: StartupTask) -> Result<(), StartupTaskError> {
     record_completed_at(db, task, now_unix())
+}
+
+pub fn record_completed_or_warn(db: &Db, task: StartupTask) {
+    if let Err(error) = record_completed(db, task) {
+        tracing::warn!(
+            task = task.log_name(),
+            %error,
+            "could not persist startup task completion"
+        );
+    }
 }
 
 pub fn record_completed_at(
@@ -268,5 +299,18 @@ mod tests {
             .unwrap();
 
         assert!(exact_signature_decision(&db, StartupTask::Lyrics).is_err());
+    }
+
+    #[test]
+    fn an_unchanged_signature_skip_names_the_task_and_reason_in_the_log() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        record_completed_at(&db, StartupTask::CoverDownload, 321).unwrap();
+        let logs = crate::log_capture::CapturedLogs::default();
+
+        logs.capture(|| exact_signature_decision(&db, StartupTask::CoverDownload).unwrap());
+
+        let logs = logs.joined();
+        assert!(logs.contains("cover batch"));
+        assert!(logs.contains("library signature unchanged"));
     }
 }
