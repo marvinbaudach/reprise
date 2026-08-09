@@ -336,69 +336,6 @@ pub fn query_sync_tracks_with_source(
     Ok(tracks)
 }
 
-/// Marks `track_id` missing only while it is still the live row at
-/// `expected_path` (Stage 2 Task 5: a physically deleted
-/// file must never crash or dead-end the app — this is the DB-side half of
-/// that guarantee). Every windowed/count/id query for `ViewSource::Library`/
-/// `Playlist`/`Smart` already filters on `PRESENT`, so the row disappears
-/// from those views and from a freshly-seeded queue on the very next
-/// reload, without deleting the row itself — ratings/play history/etc. are
-/// preserved, and the row resurfaces in `ViewSource::Missing` (Stage 3 Task
-/// 3) instead of vanishing outright.
-///
-/// This is the playback-fault call site `Track::is_missing` documents. It uses
-/// [`LibrarySource::reachability`], the same classifier as the scanner's
-/// mark-vanished phase, after selecting the row's path and device. The
-/// expected path is the identity
-/// snapshot taken before the asynchronous backend fault arrived. Both the
-/// read and write require that same path plus `PRESENT`, and the file is
-/// rechecked immediately before writing. A watcher/Locate reconcile that
-/// wins the race therefore survives instead of having its new live identity
-/// marked missing by stale fault work. Returns whether one row changed.
-pub fn mark_track_missing_if_current(
-    db: &Db,
-    track_id: i64,
-    expected_path: &Path,
-) -> Result<bool, rusqlite::Error> {
-    mark_track_missing_if_current_with(&UnixLibrarySource, db, track_id, expected_path)
-}
-
-/// [`mark_track_missing_if_current`] with the library source injected.
-/// Production passes [`UnixLibrarySource`]; the seam exists so a non-POSIX
-/// source can be classified against without a real filesystem, and so an
-/// Android SAF source can be handed in here once one exists.
-pub(super) fn mark_track_missing_if_current_with(
-    source: &dyn LibrarySource,
-    db: &Db,
-    track_id: i64,
-    expected_path: &Path,
-) -> Result<bool, rusqlite::Error> {
-    let conn = db.conn();
-    let expected_path = expected_path.to_string_lossy();
-    let row: Option<(String, Option<i64>)> = conn
-        .query_row(
-            &format!("SELECT path,device FROM tracks WHERE id=?1 AND path=?2 AND {PRESENT}"),
-            rusqlite::params![track_id, expected_path.as_ref()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()?;
-    let Some((path, device)) = row else {
-        return Ok(false);
-    };
-    if source.probe(Path::new(&path), LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
-        return Ok(false);
-    }
-    let reason = source.reachability(Path::new(&path), device);
-    let changed = conn.execute(
-        &format!(
-            "UPDATE tracks SET missing_since=strftime('%s','now'),missing_reason=?3 \
-             WHERE id=?1 AND path=?2 AND {PRESENT}"
-        ),
-        rusqlite::params![track_id, path, reason.as_str()],
-    )?;
-    Ok(changed == 1)
-}
-
 /// Batch, TRANSACTIONAL "Remove from library" (Stage-3 close-out fix): the
 /// version every real caller (`ui::track_actions::remove_missing_selected`)
 /// uses. A bare per-id delete would leave two cross-task invariants broken
