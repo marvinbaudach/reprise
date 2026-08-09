@@ -592,7 +592,10 @@ mod tests {
 
         let store = gtk4::gio::ListStore::new::<ReleaseObject>();
         store.append(&ReleaseObject::new(entry(
-            "Artist", "Full", "Album", "2026-05-29",
+            "Artist",
+            "Full",
+            "Album",
+            "2026-05-29",
         )));
         store.append(&ReleaseObject::new(entry(
             "Artist", "Month", "Album", "2026-05",

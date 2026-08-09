@@ -12,6 +12,9 @@ use rusqlite::{Connection, OptionalExtension};
 #[path = "settings_api.rs"]
 mod api;
 pub use api::*;
+#[path = "settings_column_keys.rs"]
+mod column_keys;
+pub use column_keys::*;
 /// The settings key `ui::window`'s scan flow writes the scanned folder under,
 /// and `main.rs`/`ui::window` read at startup/after-scan to (re)start the
 /// watcher. `pub` so both call sites share the exact same literal rather than
@@ -191,16 +194,6 @@ fn set_new_releases_last_completed_at_in(
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
-pub const COLUMN_LAYOUT_KEY: &str = "ui.column_layout";
-/// User-adjusted per-column widths (`id:width` pairs), kept separate from the
-/// order/visibility layout so the layout reducers and their tests stay untouched.
-pub const COLUMN_WIDTHS_KEY: &str = "ui.column_widths";
-pub const RELEASES_COLUMN_LAYOUT_KEY: &str = "ui.column_layout.releases";
-pub const RELEASES_COLUMN_WIDTHS_KEY: &str = "ui.column_widths.releases";
-pub const CONCERTS_COLUMN_LAYOUT_KEY: &str = "ui.column_layout.concerts";
-pub const CONCERTS_COLUMN_WIDTHS_KEY: &str = "ui.column_widths.concerts";
-pub const RADIO_COLUMN_LAYOUT_KEY: &str = "ui.column_layout.radio";
-pub const RADIO_COLUMN_WIDTHS_KEY: &str = "ui.column_widths.radio";
 
 /// Where the player bar docks. `Bottom` is the default and the fallback for any
 /// unknown/hand-edited value (same tolerance posture as `get_bool`).
