@@ -389,18 +389,17 @@ fn mark_track_missing_classifies_deleted_when_device_matches() {
     assert_eq!(missing_reason.as_deref(), Some("deleted"));
 }
 
-/// The classifier's `Unmounted` branch, same shape as the `Deleted` test
-/// above but with a fabricated non-matching device (`real_dev + 99_999`,
-/// mirroring `mounts.rs`'s own test convention for a guaranteed
-/// non-collision) — pure arithmetic, no loopback device or real unmount
-/// needed to prove the branch.
+/// The classifier's `Unmounted` branch: both the track and its parent directory
+/// are absent, while a fabricated non-matching device (`real_dev + 99_999`)
+/// represents the source that used to live below the still-nameable mount
+/// boundary. Pure arithmetic keeps this deterministic without a real unmount.
 #[test]
 fn mark_track_missing_classifies_unmounted_when_device_differs() {
     use std::os::unix::fs::MetadataExt;
 
     let dir = tempfile::tempdir().unwrap();
     let real_dev = std::fs::symlink_metadata(dir.path()).unwrap().dev() as i64;
-    let path = dir.path().join("gone.flac");
+    let path = dir.path().join("gone-album/gone.flac");
 
     let db = crate::db::Db::open_in_memory().unwrap();
     let conn = db.conn();
