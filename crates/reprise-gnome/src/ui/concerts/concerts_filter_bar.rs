@@ -155,6 +155,7 @@ pub(super) struct ConcertsFilterBar {
     /// `ConcertFilter` rather than inside it — a query must not be restored
     /// on the next launch.
     query: RefCell<String>,
+    committed_query: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
     on_query_changed: RefCell<Option<OnQueryChanged>>,
 }
@@ -225,6 +226,7 @@ impl ConcertsFilterBar {
             has_similar_rows: Cell::new(false),
             counts: Cell::new((0, 0)),
             query: RefCell::new(String::new()),
+            committed_query: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
             on_query_changed: RefCell::new(None),
         });
@@ -267,11 +269,31 @@ impl ConcertsFilterBar {
         }
     }
 
+    pub(super) fn set_committed_query(self: &Rc<Self>, query: &str) {
+        if *self.committed_query.borrow() == query {
+            return;
+        }
+        self.committed_query.replace(query.to_owned());
+        self.rebuild();
+    }
+
+    fn committed_query(&self) -> String {
+        self.committed_query.borrow().clone()
+    }
+
     fn clear_query(self: &Rc<Self>) {
         if self.query.borrow().is_empty() {
             return;
         }
         self.query.replace(String::new());
+        // Drop the receipt in the same turn as the query. The commit sink is
+        // still the authority for *which* query gets a chip, but it only
+        // answers after a round trip through the header entry, and the caller
+        // below rebuilds immediately — reading a committed query that is about
+        // to be empty redraws the very chip the user just clicked away. An
+        // empty query has no chip under either surface, so clearing here
+        // cannot disagree with the sink.
+        self.committed_query.replace(String::new());
         if let Some(callback) = self.on_query_changed.borrow().clone() {
             callback("");
         }
@@ -327,12 +349,13 @@ impl ConcertsFilterBar {
         }
         let filter = self.filter();
         let query = self.query();
+        let committed_query = self.committed_query();
         let facets = active_facets(&filter);
         let active = !facets.is_empty() || !query.is_empty();
         // FIL-1a/FIL-1d: the search chip is the row's first chip.
         let weak = Rc::downgrade(self);
         self.layout
-            .replace_scoped_search(SearchScope::Concerts, &query, move || {
+            .replace_scoped_search(SearchScope::Concerts, &committed_query, move || {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };
@@ -625,6 +648,7 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ConcertsFilterBar::new(conn);
         bar.set_query("winterthur");
+        bar.set_committed_query("winterthur");
         bar.set_counts(3, 44);
 
         assert!(bar.layout.slot_contains(
