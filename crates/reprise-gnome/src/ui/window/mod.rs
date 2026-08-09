@@ -15,6 +15,7 @@ mod source_connectivity;
 pub(in crate::ui) mod source_views;
 mod source_views_smoke;
 mod spectrogram_backend;
+mod table_columns;
 #[path = "window.rs"]
 mod surface;
 pub(in crate::ui) mod window_action_wiring;

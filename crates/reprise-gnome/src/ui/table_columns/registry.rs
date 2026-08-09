@@ -124,17 +124,6 @@ impl<K: ColumnKey> ColumnRegistry<K> {
         self.persist(&layout);
     }
 
-    pub(in crate::ui) fn reset_widths(&self) {
-        self.syncing_width.set(true);
-        if let Some(width) = self.width_policy.borrow().as_ref() {
-            for (key, column) in &self.columns {
-                column.set_fixed_width(width(*key));
-            }
-        }
-        self.syncing_width.set(false);
-        self.apply(&self.layout());
-    }
-
     pub(in crate::ui) fn layout(&self) -> Layout<K> {
         let stored = settings::get_setting(&self.conn, self.keys.layout)
             .map_err(|error| tracing::warn!(%error, key = self.keys.layout, "could not load stored column layout"))
@@ -183,7 +172,12 @@ impl<K: ColumnKey> ColumnRegistry<K> {
 
     pub(super) fn persist_value(&self, serialized: &str) {
         if let Err(error) = settings::set_setting(&self.conn, self.keys.layout, serialized) {
-            tracing::warn!(%error, key = self.keys.layout, "could not persist column layout");
+            tracing::warn!(
+                %error,
+                key = self.keys.layout,
+                message = %crate::ui::strings::text(crate::ui::strings::COLUMN_LAYOUT_SAVE_FAILED),
+                "could not persist column layout"
+            );
         }
     }
 }

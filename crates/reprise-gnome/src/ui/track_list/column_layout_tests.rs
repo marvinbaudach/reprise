@@ -332,7 +332,7 @@ fn reset_widths_restores_the_policy_default() {
         .unwrap()
         .set_fixed_width(500);
 
-    registry.reset_widths();
+    registry.reset();
 
     assert_eq!(
         registry.column(ColumnId::Artist).unwrap().fixed_width(),
@@ -357,6 +357,31 @@ fn width_policy_is_applied_to_gtk_columns() {
 fn layout_round_trips_canonically() {
     let layout = ColumnLayout::default();
     assert_eq!(parse_layout(&serialize_layout(&layout)), Some(layout));
+}
+
+/// STYLE-10: the music library is the table this concept came from. After
+/// generalising it, its default layout, widths and filler must be
+/// bit-identical — a silent shift here is a regression for every existing
+/// user, whose stored layout was written against these defaults.
+#[test]
+fn style_10_the_music_defaults_are_unchanged() {
+    let layout = reprise_view::columns::Layout::<ColumnId>::default();
+    assert_eq!(
+        reprise_view::columns::layout::serialize(&layout),
+        "cover,title,artist,album,year,added,duration,rating,play-count,track-number,genre;\
+cover,title,artist,album,year,duration,rating"
+    );
+}
+
+#[test]
+fn the_fixed_cover_is_absent_from_the_editable_music_band() {
+    let editable = ColumnLayout::default()
+        .order
+        .into_iter()
+        .filter(|id| id.pin().is_none())
+        .collect::<Vec<_>>();
+    assert!(!editable.contains(&ColumnId::Cover));
+    assert!(editable.contains(&ColumnId::Title));
 }
 
 #[test]

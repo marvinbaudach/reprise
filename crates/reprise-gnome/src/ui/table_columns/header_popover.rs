@@ -71,7 +71,7 @@ mod tests {
     use super::is_header_click;
 
     #[test]
-    fn header_hit_test_matches_only_the_header_band() {
+    fn column_layout_header_hit_test_matches_only_the_header_band() {
         assert!(is_header_click(0.0, 25));
         assert!(is_header_click(25.0, 25));
         assert!(!is_header_click(25.1, 25));

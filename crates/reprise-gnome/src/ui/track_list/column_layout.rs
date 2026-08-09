@@ -10,8 +10,8 @@ use crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH;
 use crate::ui::strings;
 use crate::ui::table_columns::registry::{ColumnRegistry as GenericColumnRegistry, TableKeys};
 use crate::ui::table_columns::width_persistence;
-use crate::ui::track_list::Shared;
 use crate::ui::track_list::track_list_title_column::append_title_column;
+use crate::ui::track_list::{Shared, TrackList};
 use crate::ui::track_list_columns::{
     CellAlignment, append_column, append_cover_column, append_rating_column,
 };
@@ -21,6 +21,16 @@ use reprise_view::columns::{Layout, layout};
 
 pub type ColumnLayout = Layout<ColumnId>;
 pub(in crate::ui) type ColumnRegistry = Rc<GenericColumnRegistry<ColumnId>>;
+
+pub(in crate::ui) fn registry(track_list: &Rc<TrackList>) -> ColumnRegistry {
+    track_list.column_registry.clone()
+}
+
+pub(in crate::ui) fn model(
+    track_list: &Rc<TrackList>,
+) -> Rc<dyn crate::ui::table_columns::EditorModel> {
+    registry(track_list)
+}
 
 fn cell_alignment(id: ColumnId) -> CellAlignment {
     match id {
@@ -126,14 +136,17 @@ pub fn load_layout(conn: &Db) -> ColumnLayout {
     layout
 }
 
+#[cfg(test)]
 pub fn set_column_visible(layout: &ColumnLayout, id: ColumnId, visible: bool) -> ColumnLayout {
     layout::set_visible(layout, id, visible)
 }
 
+#[cfg(test)]
 pub fn move_column(layout: &ColumnLayout, id: ColumnId, target: ColumnId) -> ColumnLayout {
     layout::move_before(layout, id, target)
 }
 
+#[cfg(test)]
 pub fn move_column_after(layout: &ColumnLayout, id: ColumnId, target: ColumnId) -> ColumnLayout {
     layout::move_after(layout, id, target)
 }
@@ -257,7 +270,6 @@ pub(super) fn build_columns(
         },
         ColumnId::Title,
     );
-    super::column_header_dnd::wire_header_drag(view, &registry);
     let layout = registry.layout();
     registry.apply(&layout);
     BuiltColumns {
