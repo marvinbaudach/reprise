@@ -557,6 +557,48 @@ mod tests {
         });
     }
 
+    /// STYLE-10: the Radio header exposes the shared editor. Hiding Station
+    /// moves the filler role while Artwork and State remain fixed leaders.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_10_radio_header_right_click_edits_the_table() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let live_state: LiveState = Rc::new(RadioLiveState::default);
+        let connectivity: ConnectivitySource = Rc::new(|| Connectivity::Online);
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns(
+            &view,
+            &live_state,
+            &connectivity,
+            &Rc::new(RadioLiveCells::default()),
+            &query,
+        );
+        let registry = super::super::radio_column_layout::registry(
+            &view,
+            Rc::new(crate::test_db::open().unwrap()),
+        );
+        let model = super::super::radio_column_layout::model(&registry);
+        crate::ui::table_columns::header_popover::install_header_popover(&view, &model);
+
+        let controllers = view.observe_controllers();
+        assert!((0..controllers.n_items()).any(|index| {
+            controllers
+                .item(index)
+                .and_downcast::<gtk4::GestureClick>()
+                .is_some_and(|gesture| gesture.button() == gtk4::gdk::BUTTON_SECONDARY)
+        }));
+        model.set_visible("station", false);
+        use reprise_view::columns::RadioColumn;
+        assert!(!registry.is_visible(RadioColumn::Station));
+        assert!(registry.is_visible(RadioColumn::Artwork));
+        assert!(registry.is_visible(RadioColumn::State));
+        assert!(registry
+            .column(RadioColumn::Genre)
+            .is_some_and(gtk4::ColumnViewColumn::expands));
+    }
+
     /// `SRC-4a`: the radio star was hover-only and not even focusable, so the
     /// context menu was already the only reachable path for keyboard users.
     #[test]
