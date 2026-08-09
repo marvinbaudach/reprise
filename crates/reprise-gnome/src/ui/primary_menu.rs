@@ -2,6 +2,7 @@
 //! `window.rs` because that composition root is already close to the
 //! project's 800-line limit.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -10,7 +11,21 @@ use gtk4::glib;
 use libadwaita as adw;
 
 use crate::ui::strings;
-use crate::ui::track_list::TrackList;
+
+#[derive(Default)]
+pub(in crate::ui) struct ActiveTable(
+    RefCell<Option<Rc<dyn crate::ui::table_columns::EditorModel>>>,
+);
+
+impl ActiveTable {
+    pub(in crate::ui) fn set(&self, model: Option<Rc<dyn crate::ui::table_columns::EditorModel>>) {
+        self.0.replace(model);
+    }
+
+    pub(in crate::ui) fn get(&self) -> Option<Rc<dyn crate::ui::table_columns::EditorModel>> {
+        self.0.borrow().clone()
+    }
+}
 
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
@@ -40,10 +55,16 @@ pub(super) struct Callbacks {
 
 /// View section: mode switches and personal views.
 fn view_section_entries() -> Vec<(String, &'static str)> {
-    vec![(
-        strings::text(strings::COMPACT_MODE),
-        "win.toggle-minimal-view",
-    )]
+    vec![
+        (
+            strings::text(strings::COMPACT_MODE),
+            "win.toggle-minimal-view",
+        ),
+        (
+            strings::text(strings::EDIT_COLUMN_LAYOUT),
+            "win.edit-column-layout",
+        ),
+    ]
 }
 
 fn build_library_section() -> gio::Menu {
@@ -93,7 +114,7 @@ fn build_primary_menu() -> gio::Menu {
 pub(super) fn install(
     header: &adw::HeaderBar,
     window: &adw::ApplicationWindow,
-    track_list: &Rc<TrackList>,
+    active_table: &Rc<ActiveTable>,
     callbacks: Callbacks,
 ) {
     let menu = build_primary_menu();
@@ -133,14 +154,18 @@ pub(super) fn install(
     window.add_action(&open_primary_menu);
 
     let edit = gio::SimpleAction::new(ACTION_EDIT_COLUMN_LAYOUT, None);
+    edit.set_enabled(active_table.get().is_some());
     {
         let window = window.downgrade();
-        let track_list = Rc::downgrade(track_list);
+        let active_table = active_table.clone();
         edit.connect_activate(move |_, _| {
-            let (Some(window), Some(track_list)) = (window.upgrade(), track_list.upgrade()) else {
+            let Some(window) = window.upgrade() else {
                 return;
             };
-            crate::ui::column_layout_editor::present(&window, &track_list);
+            let Some(model) = active_table.get() else {
+                return;
+            };
+            crate::ui::table_columns::editor::present_dialog(&window, &model);
         });
     }
     window.add_action(&edit);
@@ -255,6 +280,44 @@ mod tests {
     // `Mount::root` and `set_content` shadow the GTK widget methods of the same
     // name. A second glob would deepen that.
     use gtk4::prelude::BoxExt;
+
+    struct FakeModel(&'static str);
+
+    impl crate::ui::table_columns::EditorModel for FakeModel {
+        fn title(&self) -> String {
+            self.0.to_owned()
+        }
+
+        fn columns(&self) -> Vec<crate::ui::table_columns::ColumnDescriptor> {
+            Vec::new()
+        }
+
+        fn is_visible(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn set_visible(&self, _id: &str, _visible: bool) {}
+
+        fn move_column(&self, _id: &str, _target: &str, _after: bool) {}
+
+        fn reset(&self) {}
+    }
+
+    fn fake_model(title: &'static str) -> Rc<dyn crate::ui::table_columns::EditorModel> {
+        Rc::new(FakeModel(title))
+    }
+
+    /// STYLE-10: the keyboard route addresses the table the user is looking
+    /// at and has no stale target on a non-table surface.
+    #[test]
+    fn style_10_the_menu_action_follows_the_active_table() {
+        let active = ActiveTable::default();
+        assert!(active.get().is_none(), "no table, no target");
+        active.set(Some(fake_model("Releases")));
+        assert_eq!(active.get().expect("a table").title(), "Releases");
+        active.set(None);
+        assert!(active.get().is_none());
+    }
 
     #[test]
     fn view_section_starts_with_compact_mode() {

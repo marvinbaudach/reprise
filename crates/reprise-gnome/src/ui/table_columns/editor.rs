@@ -7,8 +7,8 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use super::EditorModel;
 use super::editor_dnd;
+use super::EditorModel;
 use crate::ui::strings;
 
 struct EditorState {
@@ -316,10 +316,9 @@ mod tests {
 
         assert_eq!(page.title(), strings::text(strings::COLUMN_LAYOUT));
         assert!(page.can_pop());
-        assert!(
-            page.child()
-                .is_some_and(|child| child.is::<adw::ToolbarView>())
-        );
+        assert!(page
+            .child()
+            .is_some_and(|child| child.is::<adw::ToolbarView>()));
     }
 
     #[test]

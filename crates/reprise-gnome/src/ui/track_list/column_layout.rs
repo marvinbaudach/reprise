@@ -13,11 +13,11 @@ use crate::ui::table_columns::width_persistence;
 use crate::ui::track_list::track_list_title_column::append_title_column;
 use crate::ui::track_list::{Shared, TrackList};
 use crate::ui::track_list_columns::{
-    CellAlignment, append_column, append_cover_column, append_rating_column,
+    append_column, append_cover_column, append_rating_column, CellAlignment,
 };
 use reprise_core::format::format_duration;
 pub use reprise_view::columns::ColumnId;
-use reprise_view::columns::{Layout, layout};
+use reprise_view::columns::{layout, Layout};
 
 pub type ColumnLayout = Layout<ColumnId>;
 pub(in crate::ui) type ColumnRegistry = Rc<GenericColumnRegistry<ColumnId>>;

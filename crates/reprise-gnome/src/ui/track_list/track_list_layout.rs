@@ -1,5 +1,5 @@
-use super::TrackList;
 use super::column_layout::{self, ColumnLayout};
+use super::TrackList;
 
 pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
 pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";

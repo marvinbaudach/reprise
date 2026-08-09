@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
-use super::{EditorModel, editor};
+use super::{editor, EditorModel};
 
 /// True when a click at vertical offset `y` (relative to the ColumnView) landed
 /// on the header row. The header is always the ColumnView's first child and sits

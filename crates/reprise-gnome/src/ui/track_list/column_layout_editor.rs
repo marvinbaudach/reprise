@@ -16,7 +16,3 @@ pub(in crate::ui) fn css() -> String {
 pub(in crate::ui) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
     table_columns::editor::build_navigation_page(&super::column_layout::model(track_list))
 }
-
-pub(in crate::ui) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
-    table_columns::editor::present_dialog(window, &super::column_layout::model(track_list));
-}

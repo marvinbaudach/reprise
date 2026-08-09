@@ -7,7 +7,7 @@ use std::rc::Rc;
 use gtk4::gio::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
-use reprise_view::columns::{ColumnKey, Layout, layout};
+use reprise_view::columns::{layout, ColumnKey, Layout};
 
 use super::{ColumnDescriptor, EditorModel};
 

@@ -7,7 +7,7 @@ use std::time::Duration;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
 use reprise_core::library::settings;
-use reprise_view::columns::{ColumnKey, layout};
+use reprise_view::columns::{layout, ColumnKey};
 
 use super::registry::ColumnRegistry;
 
