@@ -143,7 +143,7 @@ class ComposeBehaviorTest {
     @Test
     fun miniPlayerOpensTheSheetBackClosesItAndTheLibraryKeepsWorking() {
         val tracks = listOf(
-            testTrack(rating = 2).copy(id = 830, title = "First Song"),
+            testTrack(rating = 2).copy(id = 830, title = "First Song", playCount = 1),
             testTrack(rating = 4).copy(
                 id = 831,
                 uri = "content://provider/document/second.flac",
@@ -209,6 +209,8 @@ class ComposeBehaviorTest {
         // the cover does not, and the separately clickable heart keeps its own
         // node so rating a track cannot also start it.
         compose.onNodeWithText("First Song")
+            .assertContentDescriptionEquals("1 play")
+        compose.onNodeWithText("Second Song")
             .assertContentDescriptionEquals("27 plays")
 
         compose.onNodeWithText("First Song").performClick()

@@ -19,19 +19,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -39,9 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -697,14 +688,15 @@ private fun LibraryScreen(
             chooseFolder(treeUri) { state = it }
         }
     }
+    val launchFolderPicker = { folderPicker.launch(folderPickerInitialUri()) }
 
     when (val current = state) {
         is LibraryScreenState.NoFolder -> NoFolderScreen(
             message = current.message,
-            chooseFolder = { folderPicker.launch(null) },
+            chooseFolder = launchFolderPicker,
         )
         LibraryScreenState.TreeUnreadable -> TreeUnreadableScreen(
-            chooseFolder = { folderPicker.launch(null) },
+            chooseFolder = launchFolderPicker,
         )
         is LibraryScreenState.Scanning -> ScanningScreen(current)
         is LibraryScreenState.Browse -> BrowseScreen(
@@ -713,7 +705,7 @@ private fun LibraryScreen(
             playbackSettingsRevision = playbackSettingsRevision,
             surfaceLayout = surfaceLayout,
             surfaceState = surfaceState,
-            chooseFolder = { folderPicker.launch(null) },
+            chooseFolder = launchFolderPicker,
             rescan = { rescan { state = it } },
             searchTitles = searchTitles,
             listAlbums = listAlbums,
@@ -732,67 +724,6 @@ private fun LibraryScreen(
             themeSelection = themeSelection,
             selectTheme = selectTheme,
         )
-    }
-}
-
-@Composable
-private fun TreeUnreadableScreen(chooseFolder: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            "Reprise can no longer read the saved music folder. " +
-                "Access may have been revoked or the folder may have been removed.",
-        )
-        Button(onClick = chooseFolder) {
-            Text("Choose folder again")
-        }
-    }
-}
-
-@Composable
-private fun NoFolderScreen(message: String?, chooseFolder: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Choose a music folder to build this device's library.")
-        Button(onClick = chooseFolder) {
-            Text("Choose folder")
-        }
-        message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    }
-}
-
-@Composable
-private fun ScanningScreen(state: LibraryScreenState.Scanning) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            state.total?.let { total -> "Scanning ${state.processed} of $total…" }
-                ?: "Scanning… ${state.processed} found",
-        )
-        when (val progress = state.progressPresentation()) {
-            ScanProgressPresentation.Indeterminate -> LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth(),
-            )
-            is ScanProgressPresentation.Determinate -> LinearProgressIndicator(
-                progress = { progress.fraction },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
     }
 }
 
