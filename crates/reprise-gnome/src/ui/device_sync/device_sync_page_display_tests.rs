@@ -89,6 +89,12 @@ fn mtp_15_sync_status_text_does_not_resize_the_playlist_workspace() {
     );
     let window = gtk4::Window::new();
     window.set_default_size(968, 800);
+    // Pin the toplevel so this MTP-15 probe measures column behaviour, not
+    // post-present window settlement. With fresh XDG roots the window/root
+    // shrank from 881 to 873 px while the overview card stayed at 414 px, so
+    // the playlist allocation alone fell from 343 to 335 px between phases.
+    window.set_width_request(968);
+    window.set_resizable(false);
     window.set_child(Some(&root));
     window.present();
     gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
