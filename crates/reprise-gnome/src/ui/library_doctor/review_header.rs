@@ -159,6 +159,7 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
     checkbox.update_property(&[gtk4::accessible::Property::Label(
         &strings::doctor_change_count(row_ids.len()),
     )]);
+    // a11y-semantics: role=checkbox name=change-count state=selection action=toggle
     checkbox.set_focusable(true);
     let callback = on_select.clone();
     checkbox.connect_toggled(move |button| callback(&row_ids, button.is_active()));

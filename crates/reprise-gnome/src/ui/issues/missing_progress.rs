@@ -130,6 +130,7 @@ impl RelinkProgressView {
         container.append(&header);
         container.append(&progress);
         container.append(&detail);
+        // a11y-semantics: role=button name=missing-files state=progress action=open
         container.set_focusable(true);
         container.set_accessible_role(gtk4::AccessibleRole::Button);
         container.update_property(&[
@@ -152,6 +153,7 @@ impl RelinkProgressView {
             }
         });
         let activation = RelinkProgressActivation::default();
+        // input-parity: ACC-8 keyboard=enter-space
         let click = gtk4::GestureClick::new();
         {
             let activation = activation.clone();

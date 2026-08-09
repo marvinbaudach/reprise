@@ -34,6 +34,14 @@ pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
 pub const ALWAYS_ON_TOP: &str = N_!("Always on Top");
 pub const QUIT: &str = N_!("Quit");
 
+pub fn sidebar_turn_off(name: &str) -> String {
+    super::formatted(N_!("Turn Off {name}"), &[("name", name)])
+}
+
+pub fn sidebar_turn_off_failed(name: &str) -> String {
+    super::formatted(N_!("Could not turn off {name}"), &[("name", name)])
+}
+
 // Appearance accent and color scheme preferences.
 pub const ACCENT_COLOR: &str = N_!("Accent Color");
 pub const ACCENT_COLOR_SUBTITLE: &str = N_!("Choose the Reprise accent or follow the system");

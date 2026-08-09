@@ -35,9 +35,7 @@ pub const DOCTOR_REMOTE_ON: &str = N_!("MusicBrainz on");
 pub const DOCTOR_REMOTE_OFF: &str = N_!("MusicBrainz off");
 pub const DOCTOR_RUN_SCAN: &str = N_!("Run Scan Now");
 pub const DOCTOR_SCANNING: &str = N_!("Checking tracks…");
-#[allow(dead_code)] // Wired by PERF-1 after the single-writer string package lands.
 pub const DOCTOR_PHASE_LOCAL: &str = N_!("Reading tags…");
-#[allow(dead_code)] // Wired by PERF-1 after the single-writer string package lands.
 pub const DOCTOR_PHASE_REMOTE: &str = N_!("Checking against MusicBrainz…");
 /// The third phase, and the only one a single track can hold for a minute:
 /// fingerprinting decodes the audio. Without its own line the bar just stands
@@ -384,7 +382,6 @@ fn doctor_album_count(count: usize) -> String {
     )
 }
 
-#[allow(dead_code)] // Wired by REV-2 after the single-writer string package lands.
 pub fn doctor_filter_scope(shown: usize, total: usize, filter: &str) -> String {
     formatted(
         N_!("{shown} of {total} · filtered by {filter}"),
@@ -396,7 +393,6 @@ pub fn doctor_filter_scope(shown: usize, total: usize, filter: &str) -> String {
     )
 }
 
-#[allow(dead_code)] // Wired by REV-4 after the single-writer string package lands.
 pub fn doctor_change_count_none_selected(count: usize) -> String {
     let count_text = count.to_string();
     plural(
@@ -407,7 +403,6 @@ pub fn doctor_change_count_none_selected(count: usize) -> String {
     )
 }
 
-#[allow(dead_code)] // Wired by REV-3 after the single-writer string package lands.
 pub fn doctor_conflicts_intro(count: usize) -> String {
     let count_text = count.to_string();
     plural(

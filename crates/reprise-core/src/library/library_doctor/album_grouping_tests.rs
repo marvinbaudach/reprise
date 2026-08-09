@@ -36,7 +36,14 @@ fn scan_albums(albums: &[&str]) -> Vec<super::remote::AlbumQuery> {
     for (position, album) in albums.iter().enumerate() {
         let id = i64::try_from(position).unwrap() + 1;
         let path = fixture_copy(dir.path(), &format!("disc-{id}.flac"));
-        write_tags(&path, &format!("Track {id}"), "Artist", album, "Artist", "Rock");
+        write_tags(
+            &path,
+            &format!("Track {id}"),
+            "Artist",
+            album,
+            "Artist",
+            "Rock",
+        );
         insert_track(&conn, id, &path, "Artist");
     }
     let mut resolver = CountingAlbumResolver::default();

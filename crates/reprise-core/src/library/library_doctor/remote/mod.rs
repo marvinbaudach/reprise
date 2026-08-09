@@ -5,7 +5,6 @@
 //! policy stay below this seam.
 
 mod acoustid;
-#[allow(dead_code)] // MATCH-3 consumes the release matcher after its pure-function package lands.
 mod album_match;
 mod arbitration;
 mod cache;

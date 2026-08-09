@@ -8,6 +8,7 @@ pub(crate) mod sidebar_export;
 pub(in crate::ui) mod sidebar_issue_cleanup;
 pub(in crate::ui) mod sidebar_issue_strings;
 mod sidebar_issues_section;
+mod sidebar_module_menu;
 mod sidebar_navigation_scroller;
 pub(in crate::ui) mod sidebar_playlist_creation;
 mod sidebar_playlist_quick_add;

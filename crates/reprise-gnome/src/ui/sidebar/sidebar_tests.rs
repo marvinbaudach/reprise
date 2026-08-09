@@ -26,6 +26,7 @@ fn test_shared() -> Rc<Shared> {
         on_tracks_added: RefCell::new(None),
         on_remove_missing: RefCell::new(None),
         on_queue_drop: RefCell::new(None),
+        on_disable_module: RefCell::new(None),
         window: glib::WeakRef::new(),
         toast_overlay: glib::WeakRef::new(),
         refresh_count: Cell::new(0),
