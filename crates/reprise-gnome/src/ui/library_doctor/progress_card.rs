@@ -3,12 +3,9 @@ use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
+use reprise_core::library_doctor::DoctorScanPhase;
 
 use crate::ui::strings;
-
-/// Enough for the longest of the three titles ("Checking tracks…") at the
-/// card's 12px bold, inside a 240px sidebar (NPP-1).
-const TITLE_MIN_CHARS: i32 = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DoctorJobKind {
@@ -45,6 +42,19 @@ fn progress_presentation(
     }
 }
 
+fn scan_progress_presentation(
+    phase: DoctorScanPhase,
+    completed: usize,
+    total: usize,
+) -> ProgressPresentation {
+    let mut presentation = progress_presentation(DoctorJobKind::Scan, completed, total);
+    presentation.title = strings::text(match phase {
+        DoctorScanPhase::ReadingTags => strings::DOCTOR_PHASE_LOCAL,
+        DoctorScanPhase::CheckingRemote => strings::DOCTOR_PHASE_REMOTE,
+    });
+    presentation
+}
+
 type Callback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 #[derive(Clone)]
@@ -74,18 +84,21 @@ impl DoctorProgressCard {
             // a default-padded Cancel took the row's allocation first. A
             // minimum in characters keeps the label whole and pushes the loss
             // onto the detail line below, which is what it is there for.
-            .width_chars(TITLE_MIN_CHARS)
+            .width_chars(crate::ui::scan_card_css::JOB_CARD_TITLE_MIN_CHARS)
             .css_classes(["scan-card-title"])
             .build();
         let percent = gtk4::Label::builder()
             .xalign(1.0)
             .css_classes(["scan-card-percent"])
             .build();
+        let cancel_label = strings::text(strings::CANCEL);
         let cancel = gtk4::Button::builder()
-            .label(strings::text(strings::CANCEL))
+            .icon_name("window-close-symbolic")
+            .tooltip_text(&cancel_label)
             .css_classes(["flat", "scan-card-cancel"])
             .build();
-        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        cancel.update_property(&[gtk4::accessible::Property::Label(&cancel_label)]);
+        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
         header.append(&spinner);
         header.append(&title);
         header.append(&percent);
@@ -100,7 +113,8 @@ impl DoctorProgressCard {
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .css_classes(["scan-card-detail"])
             .build();
-        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
+        container.set_height_request(crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX);
         container.add_css_class("scan-card");
         container.append(&header);
         container.append(&progress);
@@ -131,8 +145,16 @@ impl DoctorProgressCard {
         let click = gtk4::GestureClick::new();
         {
             let callback = on_activate.clone();
-            click.connect_released(move |gesture, _, _, _| {
+            let cancel = cancel.clone();
+            click.connect_released(move |gesture, _, x, y| {
                 if gesture.current_button() == 1 {
+                    let Some(container) = gesture.widget() else {
+                        return;
+                    };
+                    let cancel_bounds = cancel.compute_bounds(&container);
+                    if !card_body_activates(cancel_bounds.as_ref(), x, y) {
+                        return;
+                    }
                     if let Some(callback) = callback.borrow().clone() {
                         callback();
                     }
@@ -143,7 +165,11 @@ impl DoctorProgressCard {
         let keys = gtk4::EventControllerKey::new();
         {
             let callback = on_activate.clone();
+            let cancel = cancel.clone();
             keys.connect_key_pressed(move |_, key, _, _| {
+                if cancel.has_focus() {
+                    return glib::Propagation::Proceed;
+                }
                 if matches!(key, gtk4::gdk::Key::Return | gtk4::gdk::Key::space) {
                     if let Some(callback) = callback.borrow().clone() {
                         callback();
@@ -183,6 +209,14 @@ impl DoctorProgressCard {
 
     pub(super) fn show(&self, kind: DoctorJobKind, completed: usize, total: usize) {
         let presentation = progress_presentation(kind, completed, total);
+        self.show_presentation(&presentation);
+    }
+
+    pub(super) fn show_scan(&self, phase: DoctorScanPhase, completed: usize, total: usize) {
+        self.show_presentation(&scan_progress_presentation(phase, completed, total));
+    }
+
+    fn show_presentation(&self, presentation: &ProgressPresentation) {
         self.title.set_label(&presentation.title);
         self.detail.set_label(&presentation.detail);
         self.percent
@@ -204,11 +238,24 @@ impl DoctorProgressCard {
     }
 }
 
+fn card_body_activates(cancel_bounds: Option<&gtk4::graphene::Rect>, x: f64, y: f64) -> bool {
+    cancel_bounds.is_none_or(|bounds| {
+        x < f64::from(bounds.x())
+            || x > f64::from(bounds.x() + bounds.width())
+            || y < f64::from(bounds.y())
+            || y > f64::from(bounds.y() + bounds.height())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use gtk4::prelude::*;
 
-    use super::{progress_presentation, DoctorJobKind, DoctorProgressCard};
+    use super::{
+        card_body_activates, progress_presentation, scan_progress_presentation, DoctorJobKind,
+        DoctorProgressCard,
+    };
+    use reprise_core::library_doctor::DoctorScanPhase;
 
     /// NPP-1: the sidebar is 240px, and the card is a passenger in it.
     const SIDEBAR_WIDTH: i32 = 240;
@@ -234,6 +281,11 @@ mod tests {
         while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert_eq!(card.title.label(), "Checking tracks…");
+        assert_eq!(
+            card.cancel.icon_name().as_deref(),
+            Some("window-close-symbolic")
+        );
+        assert_eq!(card.cancel.tooltip_text().as_deref(), Some("Cancel"));
         assert!(
             !card.title.layout().is_ellipsized(),
             "the job label must be readable, not truncated to a few characters"
@@ -259,5 +311,25 @@ mod tests {
         assert_eq!(revert.title, "Reverting tags…");
         assert_eq!(revert.detail, "3/4 tracks");
         assert_eq!(revert.percent, 75);
+    }
+
+    #[test]
+    fn doc_2c_the_sidebar_card_names_the_two_scan_phases() {
+        assert_eq!(
+            scan_progress_presentation(DoctorScanPhase::ReadingTags, 1, 2).title,
+            "Reading tags…"
+        );
+        assert_eq!(
+            scan_progress_presentation(DoctorScanPhase::CheckingRemote, 1, 2).title,
+            "Checking against MusicBrainz…"
+        );
+    }
+
+    #[test]
+    fn doc_5e_the_card_body_activates_and_cancel_does_not() {
+        let cancel = gtk4::graphene::Rect::new(180.0, 4.0, 56.0, 24.0);
+
+        assert!(card_body_activates(Some(&cancel), 40.0, 16.0));
+        assert!(!card_body_activates(Some(&cancel), 200.0, 16.0));
     }
 }

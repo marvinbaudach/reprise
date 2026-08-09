@@ -5,7 +5,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::library_doctor::{
-    DoctorScan, DoctorScanSummary, DoctorWriteReport, DoctorWriteRowState,
+    DoctorScan, DoctorScanPhase, DoctorScanSummary, DoctorWriteReport, DoctorWriteRowState,
 };
 
 use super::progress_card::DoctorJobKind;
@@ -337,6 +337,24 @@ impl LibraryDoctorPage {
         let live = self.live_summary.borrow().unwrap_or_default();
         *self.state.borrow_mut() = DoctorPageState::Running {
             kind,
+            phase: (kind == DoctorJobKind::Scan).then_some(DoctorScanPhase::ReadingTags),
+            completed,
+            total,
+            live,
+        };
+        self.refresh();
+    }
+
+    pub(in crate::ui) fn update_scan_job(
+        &self,
+        phase: DoctorScanPhase,
+        completed: usize,
+        total: usize,
+    ) {
+        let live = self.live_summary.borrow().unwrap_or_default();
+        *self.state.borrow_mut() = DoctorPageState::Running {
+            kind: DoctorJobKind::Scan,
+            phase: Some(phase),
             completed,
             total,
             live,
@@ -355,14 +373,19 @@ impl LibraryDoctorPage {
         let running = match &*self.state.borrow() {
             DoctorPageState::Running {
                 kind,
+                phase,
                 completed,
                 total,
                 ..
-            } => Some((*kind, *completed, *total)),
+            } => Some((*kind, *phase, *completed, *total)),
             _ => None,
         };
-        if let Some((kind, completed, total)) = running {
-            self.update_job(kind, completed, total);
+        if let Some((kind, phase, completed, total)) = running {
+            if let Some(phase) = phase {
+                self.update_scan_job(phase, completed, total);
+            } else {
+                self.update_job(kind, completed, total);
+            }
         }
     }
 
@@ -447,12 +470,22 @@ impl LibraryDoctorPage {
             DoctorPageState::PostApply => self.stack.set_visible_child_name("result"),
             DoctorPageState::Running {
                 kind,
+                phase,
                 completed,
                 total,
                 live,
             } => {
-                self.running
-                    .render(kind, completed, total, LiveCounters::from_summary(&live));
+                if let Some(phase) = phase {
+                    self.running.render_scan(
+                        phase,
+                        completed,
+                        total,
+                        LiveCounters::from_summary(&live),
+                    );
+                } else {
+                    self.running
+                        .render(kind, completed, total, LiveCounters::from_summary(&live));
+                }
                 self.running.set_cancellable(true);
                 self.stack.set_visible_child_name("running");
             }

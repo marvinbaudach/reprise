@@ -5,25 +5,37 @@
 //! policy stay below this seam.
 
 mod acoustid;
+#[allow(dead_code)] // MATCH-3 consumes the release matcher after its pure-function package lands.
+mod album_match;
 mod arbitration;
 mod cache;
+#[cfg(test)]
+mod diagnostics;
 pub(crate) mod guard_rails;
 mod metadata;
 mod network;
 mod orchestrator;
 
 #[cfg(test)]
+mod album_match_tests;
+#[cfg(test)]
 mod cache_tests;
 #[cfg(test)]
 mod guard_rails_tests;
 
+#[allow(unused_imports)] // MATCH-3 consumes these staged exports.
+pub(crate) use album_match::{best_release, AlbumMatch, AlbumQuery};
 pub(crate) use cache::CachedRemoteProvider;
 pub(crate) use metadata::read_remote_metadata;
 pub use metadata::{RemoteDirectLookup, RemoteTrackMetadata};
 pub(crate) use network::{NetworkProvider, NoNetworkProvider};
-pub(crate) use orchestrator::{ProviderRemoteResolver, RemoteResolver};
+pub(crate) use orchestrator::{
+    album_resolution_for_track, AlbumRequest, AlbumResolution, ProviderRemoteResolver,
+    RemoteResolver,
+};
 pub use orchestrator::{
-    RemoteIdentity, RemoteProvider, RemoteProviderError, RemoteProviderResult, RemoteResolution,
+    ReleaseSecondaryType, RemoteIdentity, RemoteProvider, RemoteProviderError,
+    RemoteProviderResult, RemoteResolution,
 };
 
 use serde::{Deserialize, Serialize};

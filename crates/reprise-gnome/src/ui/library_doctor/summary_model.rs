@@ -11,8 +11,8 @@
 
 use reprise_core::library_doctor::{
     group_review_rows, scan_summary, DoctorField, DoctorProblemCount, DoctorReviewFilter,
-    DoctorReviewSession, DoctorScan, DoctorScanSummary, DoctorWriteReport, DoctorWriteRowState,
-    ProblemClass,
+    DoctorReviewSession, DoctorScan, DoctorScanPhase, DoctorScanSummary, DoctorWriteReport,
+    DoctorWriteRowState, ProblemClass,
 };
 
 use super::progress_card::DoctorJobKind;
@@ -48,6 +48,7 @@ pub(super) enum DoctorPageState {
     Start,
     Running {
         kind: DoctorJobKind,
+        phase: Option<DoctorScanPhase>,
         completed: usize,
         total: usize,
         live: DoctorScanSummary,
@@ -261,6 +262,7 @@ mod tests {
             preselected: source == ProposalSource::Local,
             never_preselect: false,
             problem_class: class,
+            resolved_release_mbid: None,
             evidence: Vec::new(),
             local_fallback: None,
         }

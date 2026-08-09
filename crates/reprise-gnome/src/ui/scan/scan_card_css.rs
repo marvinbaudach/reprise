@@ -16,50 +16,63 @@ const CHIP_BORDER_ALPHA: &str = "0.32";
 /// Edge-line track alpha over the named window foreground colour.
 const EDGE_TRACK_ALPHA: &str = "0.10";
 
+pub(in crate::ui) const JOB_CARD_HEIGHT_PX: i32 = 70;
+pub(in crate::ui) const JOB_CARD_TITLE_MIN_CHARS: i32 = 16;
+
 pub(in crate::ui) fn css() -> String {
     let spin_ms = crate::ui::motion::INDICATOR_SPIN_MS;
     format!(
         "\
     .scan-card {{\
-        background: alpha(white, 0.05);\
-        border: 1px solid alpha(white, 0.05);\
-        border-radius: 10px;\
-        padding: 10px;\
-        margin: 8px 4px 0 4px;\
+        background: color-mix(in srgb, var(--accent-bg-color) 12%, transparent);\
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-bg-color) 34%, transparent);\
+        border-radius: 12px;\
+        padding: 10px 11px;\
+        margin: 0 4px;\
     }}\
+    .sidebar-job-card-dock {{ margin-top: 8px; }}\
     .scan-card-title {{\
-        font-size: 12px;\
-        font-weight: bold;\
+        font-size: 12.5px;\
     }}\
     .scan-card-percent {{\
         font-size: 12px;\
-        font-weight: bold;\
         font-feature-settings: 'tnum';\
+        color: color-mix(in srgb, currentColor 55%, transparent);\
     }}\
     .scan-card-detail {{\
-        font-size: 10.5px;\
-        opacity: 0.45;\
+        font-size: 11.5px;\
+        color: color-mix(in srgb, currentColor 50%, transparent);\
     }}\
     /* The cancel control is a text link, not a chunky button: in a 240px \
        sidebar a default-padded button starves the title of its allocation \
        until it truncates to three characters. */\
     .scan-card-cancel {{\
-        font-size: 11px;\
+        font-size: 12px;\
         min-height: 0;\
         min-width: 0;\
         padding: 0 2px;\
-        color: @reprise_accent_text_color;\
+        color: var(--accent-color);\
+    }}\
+    .scan-card-compact-action {{\
+        font-size: 12px;\
+        min-height: 0;\
+        min-width: 0;\
+        padding: 0 2px;\
     }}\
     .scan-card progressbar trough {{\
-        min-height: 3px;\
-        border-radius: 1.5px;\
+        min-height: 4px;\
+        background: color-mix(in srgb, currentColor 12%, transparent);\
+        border-radius: 2px;\
     }}\
     .scan-card progressbar trough progress {{\
-        border-radius: 1.5px;\
+        min-height: 4px;\
+        background: var(--accent-bg-color);\
+        border-radius: 2px;\
     }}\
     .scan-card-spinner {{\
-        min-width: 13px;\
-        min-height: 13px;\
+        min-width: 12px;\
+        min-height: 12px;\
+        color: var(--accent-color);\
     }}\
     @keyframes scan-chip-gear-spin {{\
         from {{ transform: rotate(0deg); }}\
@@ -170,7 +183,8 @@ mod tests {
     fn css_has_scan_card_class() {
         let css = super::css();
         assert!(css.contains(".scan-card"));
-        assert!(css.contains("border-radius: 10px"));
+        assert!(css.contains("border-radius: 12px"));
+        assert!(css.contains("min-height: 4px"));
     }
 
     #[test]

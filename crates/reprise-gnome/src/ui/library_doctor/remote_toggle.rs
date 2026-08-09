@@ -143,7 +143,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn doc_7a_first_remote_enable_requires_confirmation_and_cancel_stays_off() {
+    fn doc_7c_first_remote_enable_requires_confirmation_and_cancel_stays_off() {
         let consent_required = reprise_core::library_doctor::RemoteSuggestionPreference {
             enabled: false,
             consent_required: true,

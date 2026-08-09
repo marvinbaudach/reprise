@@ -154,6 +154,37 @@ pub(crate) fn migrate_v66(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v67(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 67 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    let column_exists = transaction.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM pragma_table_info('library_doctor_proposals')
+           WHERE name='resolved_release_mbid'
+         )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !column_exists {
+        transaction.execute(
+            "ALTER TABLE library_doctor_proposals
+             ADD COLUMN resolved_release_mbid TEXT",
+            [],
+        )?;
+    }
+    transaction.execute("DELETE FROM library_doctor_remote_cache", [])?;
+    transaction.execute(
+        "UPDATE library_doctor_state
+         SET last_complete_scan_id=NULL, reviewed_scan_id=NULL",
+        [],
+    )?;
+    transaction.pragma_update(None, "user_version", 67)?;
+    transaction.commit()
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
@@ -361,6 +392,78 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
+        assert_eq!(pointers, (None, None));
+    }
+
+    #[test]
+    fn migration_v66_to_v67_preserves_existing_scans_and_is_idempotent() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO library_doctor_scans
+             (scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks)
+             VALUES ('whole_library', 1, 1, 0, 0)",
+            [],
+        )
+        .unwrap();
+        let scan_id = conn.last_insert_rowid();
+        conn.execute(
+            "UPDATE library_doctor_state
+             SET last_complete_scan_id=?1, reviewed_scan_id=?1 WHERE singleton=1",
+            [scan_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO library_doctor_remote_cache
+             (cache_key, fetched_at, expires_at, result_json)
+             VALUES ('old-shape', 1, 2, '{}')",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(
+            "ALTER TABLE library_doctor_proposals DROP COLUMN resolved_release_mbid;
+             PRAGMA user_version=66;",
+        )
+        .unwrap();
+
+        super::migrate_v67(conn).unwrap();
+        super::migrate_v67(conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        let scans: i64 = conn
+            .query_row("SELECT COUNT(*) FROM library_doctor_scans", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let column_type: String = conn
+            .query_row(
+                "SELECT type FROM pragma_table_info('library_doctor_proposals')
+                 WHERE name='resolved_release_mbid'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let cache_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM library_doctor_remote_cache",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let pointers: (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT last_complete_scan_id, reviewed_scan_id
+                 FROM library_doctor_state WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!((version, scans), (67, 1));
+        assert_eq!(column_type, "TEXT");
+        assert_eq!(cache_rows, 0);
         assert_eq!(pointers, (None, None));
     }
 }

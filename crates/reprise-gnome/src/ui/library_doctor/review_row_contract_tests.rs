@@ -1,7 +1,10 @@
 use gtk4::prelude::*;
 
 use super::super::review_header::ReviewHeader;
-use super::{build_row, narrow_prefixed, strike_range, value_label, ReviewLayout, ValueKind};
+use super::{
+    apply_album_wide_style, build_row, narrow_prefixed, strike_range, value_label,
+    visible_edge_spaces, ReviewLayout, ValueKind,
+};
 
 /// A window this wide is an ordinary maximised desktop window. Everything the
 /// review row promises has to be readable inside it.
@@ -119,4 +122,44 @@ fn doc_3b_the_strikethrough_covers_a_wide_value_whole() {
     let rendered = narrow_prefixed(ReviewLayout::Wide, ValueKind::Current, value);
 
     assert_eq!(strike_range(&rendered, value), (0, value.len() as u32));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_an_album_wide_change_renders_all_n_tracks_italic_and_muted() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let label = gtk4::Label::new(Some("All 11 tracks"));
+
+    apply_album_wide_style(&label, true);
+
+    assert!(label.has_css_class("doctor-album-wide-track"));
+    assert!(label
+        .attributes()
+        .unwrap()
+        .iterator()
+        .get(gtk4::pango::AttrType::Style)
+        .is_some());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_a_recycled_row_loses_the_italic_style_again() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let label = gtk4::Label::new(Some("All 11 tracks"));
+    apply_album_wide_style(&label, true);
+
+    apply_album_wide_style(&label, false);
+
+    assert!(!label.has_css_class("doctor-album-wide-track"));
+    assert!(label.attributes().is_none());
+}
+
+#[test]
+fn doc_9b_edge_spaces_are_visible_without_replacing_internal_spaces() {
+    assert_eq!(visible_edge_spaces(" Panic Attack "), "␣Panic Attack␣");
+    assert_eq!(visible_edge_spaces("   "), "␣␣␣");
 }

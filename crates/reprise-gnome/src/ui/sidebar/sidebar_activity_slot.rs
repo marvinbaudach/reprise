@@ -96,6 +96,7 @@ impl SidebarActivitySlot {
     /// (FB-8, amended).
     fn track_progress_visibility(card: &gtk4::Widget) {
         if let Some(revealer) = card.downcast_ref::<gtk4::Revealer>() {
+            revealer.add_css_class("sidebar-job-card-dock");
             revealer.connect_reveal_child_notify(sync_revealer_visibility);
             revealer.connect_child_revealed_notify(sync_revealer_visibility);
             sync_revealer_visibility(revealer);
@@ -144,6 +145,87 @@ mod tests {
     use gtk4::prelude::*;
 
     use super::SidebarActivitySlot;
+
+    const JOB_CARD_HEIGHT_PX: f32 = 70.0;
+
+    fn job_card(with_extra_action: bool) -> gtk4::Revealer {
+        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        let spinner = gtk4::Spinner::new();
+        spinner.add_css_class("scan-card-spinner");
+        header.append(&spinner);
+        let title = gtk4::Label::new(Some("Checking tracks…"));
+        title.set_hexpand(true);
+        title.add_css_class("scan-card-title");
+        header.append(&title);
+        let percent = gtk4::Label::new(Some("45%"));
+        percent.add_css_class("scan-card-percent");
+        header.append(&percent);
+        if with_extra_action {
+            let open = gtk4::Button::with_label("Open");
+            open.add_css_class("flat");
+            open.add_css_class("scan-card-compact-action");
+            header.append(&open);
+        }
+        let cancel = gtk4::Button::with_label("Cancel");
+        cancel.add_css_class("flat");
+        cancel.add_css_class("scan-card-cancel");
+        header.append(&cancel);
+        let body = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
+        body.set_height_request(crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX);
+        body.add_css_class("scan-card");
+        body.append(&header);
+        body.append(&gtk4::ProgressBar::new());
+        let detail = gtk4::Label::new(Some("742/1,648 tracks"));
+        detail.add_css_class("scan-card-detail");
+        body.append(&detail);
+        gtk4::Revealer::builder()
+            .transition_duration(0)
+            .child(&body)
+            .build()
+    }
+
+    fn pump() {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+    }
+
+    fn measured_job_card(with_extra_action: bool) -> gtk4::graphene::Rect {
+        let slot = SidebarActivitySlot::new();
+        let card = job_card(with_extra_action);
+        slot.set_doctor_card(&card);
+        let region = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        region.set_size_request(240, 470);
+        region.append(slot.progress_widget());
+        let window = gtk4::Window::builder()
+            .default_width(240)
+            .default_height(470)
+            .child(&region)
+            .build();
+        card.set_reveal_child(true);
+        window.present();
+        pump();
+        let bounds = card
+            .child()
+            .unwrap()
+            .compute_bounds(&window)
+            .expect("job card must be allocated");
+        window.close();
+        bounds
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn doc_5e_every_job_card_docks_at_the_same_place_and_height() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        crate::ui::style::install_css_string_for_test(&crate::ui::scan_card_css::css());
+        let doctor_bounds = measured_job_card(false);
+        let relink_bounds = measured_job_card(true);
+
+        assert_eq!(doctor_bounds.y(), relink_bounds.y());
+        assert_eq!(doctor_bounds.height(), relink_bounds.height());
+        assert_eq!(doctor_bounds.height(), JOB_CARD_HEIGHT_PX);
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]

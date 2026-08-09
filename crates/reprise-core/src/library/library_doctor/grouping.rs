@@ -108,6 +108,7 @@ fn album_from_seed(
     let album_rows = session
         .rows()
         .iter()
+        .filter(|row| session.category_filter_matches(row.problem_class))
         .filter(|row| track_keys.get(&row.track_id) == Some(&seed.key))
         .collect::<Vec<_>>();
     if album_rows.is_empty() {
