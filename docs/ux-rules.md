@@ -3835,7 +3835,8 @@ means deterministic and high-confidence, never „without review".
   the title truncating to a few characters and making two different jobs look
   like duplicates of each other. *Tests:*
   `doc_5c_the_card_label_stays_whole_at_sidebar_width`,
-  `doc_5c_progress_uses_tracks_as_the_primary_currency`.
+  `doc_5c_progress_uses_tracks_as_the_primary_currency`,
+  `doc_5c_every_count_on_the_write_progress_inflects`.
 
 - **DOC-5d** [active] [gtk] — **Result and app stay honestly current
   after writes.** After Apply or Revert, track list, Browse Bar,
@@ -4008,7 +4009,8 @@ means deterministic and high-confidence, never „without review".
   rough duration beside it. Below a separator, and only while a revertible
   cleanup exists, are the last-scan line and the only "Revert Last Cleanup"
   action. *Tests:* `doc_8c_start_page_carries_scope_remote_run_and_the_only_revert`,
-  `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`.
+  `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`,
+  `doc_8c_every_count_on_the_start_page_inflects`.
 
 - **DOC-8d** [active] [gtk] — **The start page is flush left, capped at 620
   pixels, and weighted toward the top.** A small accent icon begins the block;
@@ -4057,6 +4059,7 @@ means deterministic and high-confidence, never „without review".
   `doc_9a_scan_facts_describe_the_scan_not_the_controls`,
   `doc_9a_scan_facts_stay_silent_about_zero_skipped_tracks`,
   `doc_9a_singular_forms_go_through_ngettext`,
+  `doc_9a_every_count_on_the_result_cards_inflects`,
   `doc_9a_the_action_sits_inline_at_the_trailing_edge_top_aligned`,
   `doc_9a_the_conflicts_card_is_the_quietest_and_carries_no_button`,
   `doc_9a_only_the_review_card_carries_the_accent_emphasis`,
@@ -4102,7 +4105,8 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_a_fully_deselected_album_says_none_selected`,
   `doc_9b_every_section_boundary_binds_a_non_empty_header`,
   `doc_9b_an_album_wide_change_renders_all_n_tracks_italic_and_muted`,
-  `doc_9b_a_recycled_row_loses_the_italic_style_again`.
+  `doc_9b_a_recycled_row_loses_the_italic_style_again`,
+  `doc_9b_every_count_on_the_review_page_inflects`.
   *Amended 2026-08-08: “every reviewable row starts selected” means every Ready
   row except the two cases excluded by DOC-4c.*
   *Amended 2026-08-08: the conflict panel is the final element **inside** the
