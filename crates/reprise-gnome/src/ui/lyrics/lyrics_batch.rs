@@ -103,6 +103,12 @@ impl LyricsBatch {
         !self.enabled.swap(allowed, Ordering::Relaxed) && allowed
     }
 
+    /// Republishes the live gate and answers whether lyrics work may run at all.
+    fn enabled_now(&self) -> bool {
+        self.store_enabled();
+        self.enabled.load(Ordering::Relaxed)
+    }
+
     pub(in crate::ui) fn cancel(&self) {
         self.cancellation.request();
     }
@@ -122,8 +128,7 @@ impl LyricsBatch {
     }
 
     pub(in crate::ui) fn start(self: &Rc<Self>) {
-        self.store_enabled();
-        if !self.enabled.load(Ordering::Relaxed) {
+        if !self.enabled_now() {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
@@ -186,11 +191,14 @@ impl LyricsBatch {
         previous_session: &reprise_core::library::session::SessionState,
         current_library_root: &str,
     ) {
-        if !startup_tasks::should_run_time_window(
-            TimeWindowTask::Lyrics,
-            previous_session,
-            current_library_root,
-        ) {
+        let is_due = || {
+            startup_tasks::should_run_time_window(
+                TimeWindowTask::Lyrics,
+                previous_session,
+                current_library_root,
+            )
+        };
+        if !automatic_start_decision(self.enabled_now(), is_due) {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
@@ -252,6 +260,18 @@ fn cover_batch_finished(armed: bool, state: CoverBatchState) -> bool {
             state,
             CoverBatchState::Idle | CoverBatchState::Complete | CoverBatchState::Failed
         )
+}
+
+/// Whether an automatic startup pass may run — module gate first, due-check
+/// only if it passes.
+///
+/// The order is the point, not the conjunction. The due-check logs the reason
+/// it skipped, and "last clean exit was 4 minutes ago" is a true sentence about
+/// a batch that a switched-off module would never have run in the first place.
+/// Asking it anyway puts the wrong reason in the log, which is how a later
+/// reader concludes the time window is misfiring when nothing is wrong with it.
+fn automatic_start_decision(enabled: bool, is_due: impl FnOnce() -> bool) -> bool {
+    enabled && is_due()
 }
 
 fn failed_progress(mut progress: LyricsBatchProgress) -> LyricsBatchProgress {
