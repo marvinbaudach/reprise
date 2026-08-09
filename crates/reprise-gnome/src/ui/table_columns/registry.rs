@@ -667,6 +667,10 @@ mod tests {
         gtk4::init().unwrap();
 
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let cover = gtk4::ColumnViewColumn::builder()
+            .title("Cover")
+            .fixed_width(40)
+            .build();
         let title = gtk4::ColumnViewColumn::builder()
             .title("Title")
             .id(ColumnId::Title.as_str())
@@ -678,6 +682,7 @@ mod tests {
             .id(ColumnId::Artist.as_str())
             .fixed_width(120)
             .build();
+        view.append_column(&cover);
         view.append_column(&title);
         view.append_column(&artist);
         let registry = ColumnRegistry::new(
@@ -688,6 +693,7 @@ mod tests {
                 widths: "test.filler-transfer.widths",
             },
             vec![
+                (ColumnId::Cover, cover.clone()),
                 (ColumnId::Title, title.clone()),
                 (ColumnId::Artist, artist.clone()),
             ],
@@ -706,15 +712,29 @@ mod tests {
         window.present();
         crate::ui::source_context_surface::settle_layout();
         let before = crate::ui::table_column_widths::realised_widths(&view);
-        assert_eq!(before.len(), 2, "both free columns must be measurable");
+        let artist_index = registry
+            .current_order()
+            .iter()
+            .position(|key| *key == ColumnId::Artist)
+            .unwrap();
+        let artist_before = before[artist_index];
 
         EditorModel::set_visible(registry.as_ref(), ColumnId::Title.as_str(), false);
         crate::ui::source_context_surface::settle_layout();
 
-        let after = crate::ui::table_column_widths::realised_widths(&view);
-        assert_eq!(after.len(), 1, "only Artist remains visible");
+        let visible_free = [ColumnId::Title, ColumnId::Artist]
+            .into_iter()
+            .filter(|key| registry.is_visible(*key))
+            .count();
+        assert_eq!(visible_free, 1, "only Artist remains visible and free");
         assert!(
-            after[0] > before[1],
+            registry.is_visible(ColumnId::Cover),
+            "the pinned leading Cover remains visible"
+        );
+        let after = crate::ui::table_column_widths::realised_widths(&view);
+        let artist_after = after[artist_index];
+        assert!(
+            artist_after > artist_before,
             "Artist must absorb the space released by Title: before={before:?}, after={after:?}"
         );
         assert!(artist.expands());
