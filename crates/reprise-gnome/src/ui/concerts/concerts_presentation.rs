@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use reprise_core::concerts::ConcertRow;
+use reprise_core::format::DatePattern;
 use std::cmp::Ordering;
 
 use crate::ui::strings;
@@ -18,15 +19,14 @@ pub(super) enum SortDirection {
     Descending,
 }
 
-pub(super) fn format_event_date(date_key: &str, today: NaiveDate) -> String {
-    let Ok(date) = NaiveDate::parse_from_str(date_key, "%Y-%m-%d") else {
-        return date_key.to_owned();
-    };
-    if date.year() == today.year() {
-        date.format("%a, %b %-d").to_string()
-    } else {
-        date.format("%a, %b %-d, %Y").to_string()
-    }
+pub(in crate::ui) fn format_event_date(date_key: &str, _today: NaiveDate) -> String {
+    format_event_date_with(date_key, &crate::ui::date_format::current().date)
+}
+
+/// The pattern-taking form, so the rule can be tested without reaching for
+/// the process-wide format.
+pub(super) fn format_event_date_with(date_key: &str, pattern: &DatePattern) -> String {
+    crate::ui::releases::releases_presentation::format_partial_date(date_key, pattern)
 }
 
 pub(super) fn format_distance_km(distance: Option<f64>) -> String {
@@ -107,6 +107,7 @@ pub(super) fn updated_ago(latest_attempt: Option<i64>, now: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::format::DatePattern;
 
     fn row(date: &str, distance: Option<f64>) -> ConcertRow {
         ConcertRow {
@@ -130,12 +131,14 @@ mod tests {
         }
     }
 
+    /// STYLE-11: the weekday and the current-year abbreviation are gone. A
+    /// concert date reads exactly like a release date.
     #[test]
-    fn event_date_is_compact_and_adds_a_year_only_when_needed() {
-        let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
-        assert_eq!(format_event_date("2026-10-17", today), "Sat, Oct 17");
-        assert_eq!(format_event_date("2027-01-02", today), "Sat, Jan 2, 2027");
-        assert_eq!(format_event_date("broken", today), "broken");
+    fn style_11_event_date_is_the_system_pattern() {
+        let pattern = DatePattern::from_platform("%d.%m.%Y");
+        assert_eq!(format_event_date_with("2026-10-17", &pattern), "17.10.2026");
+        assert_eq!(format_event_date_with("2027-01-02", &pattern), "02.01.2027");
+        assert_eq!(format_event_date_with("broken", &pattern), "broken");
     }
 
     #[test]
