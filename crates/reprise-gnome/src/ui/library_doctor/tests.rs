@@ -40,6 +40,19 @@ fn snapshot() -> DoctorViewSnapshot {
     }
 }
 
+/// The stethoscope ships with the app, but the app can run against a theme
+/// that has not been installed alongside it — a build tree, a broken package.
+/// Then both doctor surfaces take the same step down to the magnifier rather
+/// than drawing GTK's missing-image box.
+#[test]
+fn doc_8d_the_start_page_icon_falls_back_when_the_theme_lacks_it() {
+    assert_eq!(
+        super::doctor_glyph_for(true),
+        "reprise-stethoscope-symbolic"
+    );
+    assert_eq!(super::doctor_glyph_for(false), "system-search-symbolic");
+}
+
 #[test]
 fn doc_2a_scope_choice_freezes_the_requested_input_shape() {
     assert!(matches!(

@@ -4060,6 +4060,7 @@ means deterministic and high-confidence, never „without review".
   `doc_9a_scan_facts_stay_silent_about_zero_skipped_tracks`,
   `doc_9a_singular_forms_go_through_ngettext`,
   `doc_9a_every_count_on_the_result_cards_inflects`,
+  `doc_9a_the_review_card_leads_with_the_doctors_own_glyph`,
   `doc_9a_the_action_sits_inline_at_the_trailing_edge_top_aligned`,
   `doc_9a_the_conflicts_card_is_the_quietest_and_carries_no_button`,
   `doc_9a_only_the_review_card_carries_the_accent_emphasis`,

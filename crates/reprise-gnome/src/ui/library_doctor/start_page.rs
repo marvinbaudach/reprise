@@ -9,11 +9,8 @@ use reprise_core::library_doctor::{DoctorCleanup, LibraryDoctor};
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
-use super::remote_toggle;
+use super::{doctor_glyph, remote_toggle};
 use crate::ui::strings;
-
-const DOCTOR_START_ICON: &str = "reprise-stethoscope-symbolic";
-const DOCTOR_START_ICON_FALLBACK: &str = "system-search-symbolic";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StartPageModel {
@@ -70,7 +67,7 @@ impl DoctorStartPage {
         root.append(&clamp);
 
         let intro = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        let icon = gtk4::Image::from_icon_name(doctor_start_icon_name());
+        let icon = gtk4::Image::from_icon_name(doctor_glyph());
         icon.set_pixel_size(30);
         icon.set_halign(gtk4::Align::Start);
         icon.set_margin_bottom(16);
@@ -272,21 +269,6 @@ impl DoctorStartPage {
     }
 }
 
-fn doctor_start_icon_name() -> &'static str {
-    let Some(display) = gtk4::gdk::Display::default() else {
-        return doctor_start_icon_name_for(false);
-    };
-    doctor_start_icon_name_for(gtk4::IconTheme::for_display(&display).has_icon(DOCTOR_START_ICON))
-}
-
-const fn doctor_start_icon_name_for(theme_has_primary: bool) -> &'static str {
-    if theme_has_primary {
-        DOCTOR_START_ICON
-    } else {
-        DOCTOR_START_ICON_FALLBACK
-    }
-}
-
 fn format_scan_time(timestamp: i64) -> String {
     DateTime::from_timestamp(timestamp, 0).map_or_else(
         || timestamp.to_string(),
@@ -334,7 +316,7 @@ mod tests {
         assert!(!source.contains(&["adw::", "StatusPage"].concat()));
         assert!(!source.contains(&["adw::", "PreferencesGroup"].concat()));
         assert!(source.contains("adw::Clamp"));
-        assert!(source.contains("reprise-stethoscope-symbolic"));
+        assert!(source.contains("doctor_glyph()"));
     }
 
     #[test]
@@ -402,15 +384,6 @@ mod tests {
             change_count: 5,
         };
         assert!(StartPageModel::from_cleanup(Some(&cleanup)).shows_last_scan());
-    }
-
-    #[test]
-    fn doc_8d_the_start_page_icon_falls_back_when_the_theme_lacks_it() {
-        assert_eq!(doctor_start_icon_name_for(true), DOCTOR_START_ICON);
-        assert_eq!(
-            doctor_start_icon_name_for(false),
-            DOCTOR_START_ICON_FALLBACK
-        );
     }
 
     #[test]

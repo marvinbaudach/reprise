@@ -50,7 +50,7 @@ pub(super) fn applied_card(heading: String, lines: Vec<String>, undo: &gtk4::But
 pub(super) fn review_card(heading: String, lines: Vec<String>, review: &gtk4::Button) -> adw::Bin {
     let card = card_shell(
         &CardContent {
-            icon_name: super::DOCTOR_GLYPH,
+            icon_name: super::doctor_glyph(),
             icon_class: Some("accent"),
             heading,
             heading_class: Some("heading"),
@@ -196,6 +196,46 @@ mod tests {
             last.downcast_ref::<gtk4::Button>().is_none(),
             "no button belongs on the conflicts card"
         );
+    }
+
+    /// The card leads with the doctor's own glyph, resolved by the same guard
+    /// the start page uses — never a name of its own. It named one, and kept
+    /// drawing the magnifier that the shipped stethoscope replaced.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn doc_9a_the_review_card_leads_with_the_doctors_own_glyph() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let Some(display) = gtk4::gdk::Display::default() else {
+            return;
+        };
+
+        let review = gtk4::Button::with_label("Review 3 changes");
+        let card = review_card("3 changes need your eye".into(), Vec::new(), &review);
+        let icon = card
+            .child()
+            .expect("card has a row")
+            .downcast::<gtk4::Box>()
+            .expect("the card's child is the horizontal row")
+            .first_child()
+            .expect("the row leads with its icon")
+            .downcast::<gtk4::Image>()
+            .expect("the leading child is the icon");
+
+        assert_eq!(
+            icon.icon_name().as_deref(),
+            Some(super::super::doctor_glyph()),
+            "the card must take the glyph the guard resolves, not name one itself"
+        );
+
+        // And what the guard resolves, once the shipped icon directory is in
+        // reach, is the stethoscope — so the fallback really is a fallback.
+        let theme = gtk4::IconTheme::for_display(&display);
+        theme.add_search_path(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/icons"),
+        );
+        assert_eq!(super::super::doctor_glyph(), "reprise-stethoscope-symbolic");
     }
 
     #[test]

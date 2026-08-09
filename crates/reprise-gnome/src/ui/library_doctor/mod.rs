@@ -47,12 +47,33 @@ use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
 
-/// The glyph that stands for the Library Doctor. The sidebar's
-/// `NavIcon::LibraryDoctor` uses the same theme icon, so the result card and the
-/// `ISSUES` entry that leads to it are recognisably the same thing. No
-/// stethoscope symbolic ships with the icon theme or with this app, and the
-/// design's stethoscope is not worth a bundled asset for two 20px slots.
-pub(in crate::ui) const DOCTOR_GLYPH: &str = "system-search-symbolic";
+/// The glyph that stands for the Library Doctor: the design's stethoscope,
+/// which the app now ships itself as
+/// `data/icons/hicolor/symbolic/apps/reprise-stethoscope-symbolic.svg`, drawn
+/// by `scripts/build-brand-assets.sh`.
+///
+/// Resolved here rather than at each call site, so the start page and the
+/// result card cannot end up asking for different things — they did, and the
+/// card kept drawing the magnifier the stethoscope replaced. A theme without
+/// the app's icon directory in reach falls back to that magnifier, which is
+/// also what the sidebar's `NavIcon::LibraryDoctor` draws; without the guard
+/// GTK would render the missing-image box instead.
+const DOCTOR_GLYPH: &str = "reprise-stethoscope-symbolic";
+const DOCTOR_GLYPH_FALLBACK: &str = "system-search-symbolic";
+
+pub(in crate::ui) fn doctor_glyph() -> &'static str {
+    gtk4::gdk::Display::default().map_or(DOCTOR_GLYPH_FALLBACK, |display| {
+        doctor_glyph_for(gtk4::IconTheme::for_display(&display).has_icon(DOCTOR_GLYPH))
+    })
+}
+
+const fn doctor_glyph_for(theme_has_stethoscope: bool) -> &'static str {
+    if theme_has_stethoscope {
+        DOCTOR_GLYPH
+    } else {
+        DOCTOR_GLYPH_FALLBACK
+    }
+}
 
 pub(in crate::ui) const DOCTOR_DONE_GLYPH: &str = crate::ui::icons::DONE;
 

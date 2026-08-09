@@ -35,7 +35,7 @@ mod tests {
         ),
         (
             "reprise-stethoscope-symbolic",
-            "library_doctor::start_page::doctor_start_icon_name → system-search-symbolic",
+            "library_doctor::doctor_glyph → system-search-symbolic",
         ),
     ];
 
