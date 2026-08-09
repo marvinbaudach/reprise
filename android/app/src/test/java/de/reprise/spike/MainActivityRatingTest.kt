@@ -129,15 +129,31 @@ class MainActivityRatingTest {
         heart.assertContentDescriptionEquals("Remove from favourites")
         compose.onNodeWithText("0 plays").assertDoesNotExist()
 
-        val transportBottom = compose.onNodeWithTag("now-playing-transport")
-            .getUnclippedBoundsInRoot()
-            .bottom
+        val transportRow = compose.onNodeWithTag("now-playing-transport")
+        val transportBottom = transportRow.getUnclippedBoundsInRoot().bottom
         val contentBottom = compose.onNodeWithTag("now-playing-content")
             .getUnclippedBoundsInRoot()
             .bottom
         assertTrue(
             "transport left too much inactive space below it: $transportBottom..$contentBottom",
             contentBottom - transportBottom <= 24.dp,
+        )
+
+        // Nothing may be placed under the transport row. The scene draws in
+        // layers now, so the full-bleed background and the row's own padded
+        // frame reach past it; both begin above the row. Anything that begins
+        // below it and still renders lower is content that escaped downwards.
+        val transport = transportRow.fetchSemanticsNode().boundsInRoot
+        val laterContent = compose.onAllNodes(
+            hasAnyAncestor(hasTestTag("now-playing-content")),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes().filter { node ->
+            node.boundsInRoot.top > transport.top + 0.5f &&
+                node.boundsInRoot.bottom > transport.bottom + 0.5f
+        }
+        assertTrue(
+            "content continued below the transport row: ${laterContent.map { it.boundsInRoot }}",
+            laterContent.isEmpty(),
         )
     }
 

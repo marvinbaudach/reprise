@@ -21,6 +21,7 @@ class ScenePowerGateTest {
         assertFalse(power.burstEffects.bloom)
         assertFalse(power.burstEffects.hotRay)
         assertTrue(power.coronaKeepsCurrentSignal)
+        assertTrue(controller.sceneFramesAllowed)
     }
 
     @Test
@@ -39,5 +40,39 @@ class ScenePowerGateTest {
         assertTrue(power.burstEffects.bloom)
         assertTrue(power.burstEffects.hotRay)
         assertTrue(power.coronaKeepsCurrentSignal)
+    }
+
+    /**
+     * The other gate, and the harder one: animations-off only takes the three
+     * effects away, while a backgrounded activity or a dark screen must stop
+     * the scene from being drawn at all. That is [SceneDriver]'s first line, so
+     * what these two assert is the answer it asks for.
+     */
+    @Test
+    fun a_backgrounded_activity_stops_scene_frames_altogether() {
+        val controller = AmbientMotionController()
+        controller.attach()
+        controller.runtimeChanged(
+            resumed = false,
+            screenInteractive = true,
+            animationsEnabled = true,
+        )
+
+        assertFalse(controller.sceneFramesAllowed)
+        assertFalse(controller.sceneAnimationsEnabled)
+    }
+
+    @Test
+    fun a_dark_screen_stops_scene_frames_altogether() {
+        val controller = AmbientMotionController()
+        controller.attach()
+        controller.runtimeChanged(
+            resumed = true,
+            screenInteractive = false,
+            animationsEnabled = true,
+        )
+
+        assertFalse(controller.sceneFramesAllowed)
+        assertFalse(controller.sceneAnimationsEnabled)
     }
 }

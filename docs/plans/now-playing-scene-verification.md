@@ -14,9 +14,18 @@ export CARGO_BUILD_JOBS=4
 scripts/verify-now-playing-scene.sh
 ```
 
-The harness removes prior unit-test results, runs the nine named suites, checks
-that every XML file is newer than the run marker, and verifies the exact total.
-On 2026-08-09 it reported 29 fresh tests with zero failures, errors, or skips.
+The harness removes prior unit-test results, runs the named suites, checks that
+every XML file is newer than the run marker, and verifies the exact total. Both
+expected numbers — how many suites and how many tests — are derived from the
+suite list itself by counting `@Test` in each suite's source, so the gate cannot
+drift out of step with the tests the way it did when the totals were typed in by
+hand. A suite whose source is missing, or which contains no `@Test`, fails the
+run rather than quietly lowering the bar.
+
+The list originally named nine suites and expected 29 tests, which silently left
+out three of the four scene-mathematics suites — the envelope coefficients, the
+per-track core shape and the colour rule all went unchecked while the script
+still printed that verification had passed. All four are in the list now.
 
 ## The emulator run of 2026-08-09, 20:20-21:00
 
@@ -58,8 +67,18 @@ Automated: **passed**.
 - `SceneDriverTest.pause_produces_one_frame_then_no_more_revision_or_invalidation`
   proves that the runtime stops scheduling after adopting the paused frame.
 - `NowPlayingSceneVerificationTest.paused_fog_and_corona_raster_is_pixel_identical_three_seconds_later`
-  renders the combined fog and corona before and after 60 repeated paused
-  frames (three seconds at 20 Hz) and compares every pixel.
+  renders the combined fog and corona, then drives a real `SceneDriver` through
+  180 ticks with the clock moved forward 16.7 ms each — three seconds of the
+  60 Hz loop the scene actually runs on — against a paused position sample, and
+  compares every pixel. It also asserts the driver is still on the same frame,
+  so the test cannot pass by never having ticked at all.
+
+  Its first form was worthless: it called `advanceTo` with the frame index the
+  state was already on, which returns immediately, so it compared an unchanged
+  render with itself and could not fail. The property is only meaningful when
+  something is actually asked to move the scene and declines to. Breaking the
+  `!sample.playing` early return in `SceneDriver.estimatedPositionMs` now turns
+  the test red.
 
 The automated raster is pixel-identical.
 

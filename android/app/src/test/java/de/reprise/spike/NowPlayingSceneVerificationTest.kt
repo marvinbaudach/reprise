@@ -13,6 +13,7 @@ import de.reprise.spike.scene.CoreShape
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -33,15 +34,35 @@ class NowPlayingSceneVerificationTest {
         assertArrayEquals(first, second)
     }
 
+    /**
+     * The pause claim asked of the wiring that carries it: [SceneDriver] alone
+     * decides how a paused position becomes a frame index, and it is the clock
+     * — not the position — that keeps running while playback stands still. So
+     * the scene is driven through the driver with a paused sample while three
+     * seconds of frame callbacks go by, and both the frame it settled on and
+     * every pixel it drew must be the ones from before those three seconds.
+     */
     @Test
     fun paused_fog_and_corona_raster_is_pixel_identical_three_seconds_later() {
-        val state = SceneState(patternedFrames(frameCount = 80), CoreShape("Still", "Reprise"))
-        state.advanceTo(40)
+        val frames = patternedFrames(frameCount = 80)
+        val state = SceneState(frames, CoreShape("Still", "Reprise"))
+        val clock = AdvancingSceneClock()
+        val paused = ScenePositionSample(
+            positionMs = PAUSED_POSITION_MS,
+            observedAtNanos = 0,
+            playing = false,
+        )
+        val driver = SceneDriver(frames, state, clock, ScenePositionSource { paused }) { true }
+        driver.tick()
         val fog = prepareCoverFogBitmap(greyscaleArtwork(), Color.DKGRAY)
         val before = renderScene(state, fog)
 
-        repeat(3 * 20) { state.advanceTo(40) }
+        repeat(PAUSED_FRAME_COUNT) {
+            clock.nanos += FRAME_INTERVAL_NANOS
+            driver.tick()
+        }
 
+        assertEquals(PAUSED_FRAME_INDEX, driver.lastDrivenFrameIndex)
         assertArrayEquals(before, renderScene(state, fog))
     }
 
@@ -107,4 +128,19 @@ class NowPlayingSceneVerificationTest {
             }
         }
     }
+
+    /** A clock the test moves by hand; a paused scene must ignore it entirely. */
+    private class AdvancingSceneClock(var nanos: Long = 0) : SceneClock {
+        override fun nowNanos(): Long = nanos
+    }
 }
+
+/** Far enough into the track that any extrapolation leaves the paused frame. */
+private const val PAUSED_POSITION_MS = 2_000L
+
+/** Where [PAUSED_POSITION_MS] falls at the fixture's 20 Hz frame rate. */
+private const val PAUSED_FRAME_INDEX = 40
+
+/** Three seconds of the 60 Hz frame loop the scene is actually driven by. */
+private const val PAUSED_FRAME_COUNT = 3 * 60
+private const val FRAME_INTERVAL_NANOS = 16_666_667L

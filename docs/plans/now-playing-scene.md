@@ -299,8 +299,11 @@ Centre at **47 %** of the height.
 - **Bloom.** A second, unsharp copy over the top in Screen blend.
   Blur `6 dp + level * 16 dp`, opacity `level²` — squared, because linear stays
   milky. Implementation: draw the scene into an offscreen `ImageBitmap` at
-  **quarter resolution**, then draw it back scaled up and additive. It looks
-  practically the same and costs a sixteenth.
+  **quarter resolution**, then draw it back scaled up and additive. Quarter
+  resolution means a quarter of the pixels — each edge halved, so `BLOOM_SCALE`
+  is 2. The first implementation halved each edge twice and rendered a
+  sixteenth of the area, which is cheaper but visibly coarser once the bloom is
+  strong; decided on 2026-08-09 in favour of the finer buffer.
 - Colour from `SceneColour` (P2): top blue, right magenta, bottom orange, left
   green, fixed for the whole song.
 

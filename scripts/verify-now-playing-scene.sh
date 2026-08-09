@@ -10,8 +10,12 @@ trap 'rm -f "$marker"' EXIT
 
 test_suites=(
   de.reprise.spike.scene.SceneStateTest
+  de.reprise.spike.scene.BandEnvelopeTest
+  de.reprise.spike.scene.CoreShapeTest
+  de.reprise.spike.scene.SceneColourTest
   de.reprise.spike.CoverFogBitmapTest
   de.reprise.spike.NowPlayingFogTest
+  de.reprise.spike.NowPlayingLegibilityTest
   de.reprise.spike.NowPlayingBurstTest
   de.reprise.spike.NowPlayingBurstPixelsTest
   de.reprise.spike.SceneDriverTest
@@ -19,6 +23,25 @@ test_suites=(
   de.reprise.spike.MainActivityVisualizerTest
   de.reprise.spike.NowPlayingSceneVerificationTest
 )
+
+# The expected totals are read off the suite list and its sources, never typed
+# out a second time: a suite added above must not need a number edited below,
+# and a suite whose tests silently stop being run must not still add up.
+expected_suites=${#test_suites[@]}
+expected_tests=0
+for suite in "${test_suites[@]}"; do
+  source_file="$android_root/app/src/test/java/${suite//./\/}.kt"
+  if [[ ! -f $source_file ]]; then
+    echo "missing test source: $suite" >&2
+    exit 1
+  fi
+  suite_tests=$(grep -c '^[[:space:]]*@Test' "$source_file" || true)
+  if [[ $suite_tests -eq 0 ]]; then
+    echo "no @Test found in: $source_file" >&2
+    exit 1
+  fi
+  expected_tests=$((expected_tests + suite_tests))
+done
 
 gradle_args=(
   --max-workers=2
@@ -64,9 +87,12 @@ read -r xml_files tests failures errors skipped < <(
   ' "$result_dir"/TEST-*.xml
 )
 
-if [[ $xml_files -ne 9 || $tests -ne 29 || $failures -ne 0 || $errors -ne 0 || $skipped -ne 0 ]]; then
-  echo "unexpected Now Playing verification totals: suites=$xml_files tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+if [[
+  $xml_files -ne $expected_suites || $tests -ne $expected_tests ||
+  $failures -ne 0 || $errors -ne 0 || $skipped -ne 0
+]]; then
+  echo "unexpected Now Playing verification totals: suites=$xml_files/$expected_suites tests=$tests/$expected_tests failures=$failures errors=$errors skipped=$skipped" >&2
   exit 1
 fi
 
-echo "Now Playing verification passed: 9 fresh suites, 29 tests, 0 failures."
+echo "Now Playing verification passed: $xml_files fresh suites, $tests tests, 0 failures."
