@@ -507,6 +507,40 @@ mod tests {
         });
     }
 
+    /// STYLE-10: the Concerts header exposes the shared editor. Tickets is
+    /// fixed because it is the table's only route to the external action.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_10_concerts_header_right_click_edits_the_table() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns(&view, &on_open, &query);
+        let registry = super::super::concerts_column_layout::registry(
+            &view,
+            Rc::new(crate::test_db::open().unwrap()),
+        );
+        let model = super::super::concerts_column_layout::model(&registry);
+        crate::ui::table_columns::header_popover::install_header_popover(&view, &model);
+
+        let controllers = view.observe_controllers();
+        assert!((0..controllers.n_items()).any(|index| {
+            controllers
+                .item(index)
+                .and_downcast::<gtk4::GestureClick>()
+                .is_some_and(|gesture| gesture.button() == gtk4::gdk::BUTTON_SECONDARY)
+        }));
+        model.set_visible("city", false);
+        use reprise_view::columns::ConcertColumn;
+        assert!(!registry.is_visible(ConcertColumn::City));
+        assert!(registry.is_visible(ConcertColumn::Tickets));
+        assert!(registry
+            .column(ConcertColumn::Venue)
+            .is_some_and(gtk4::ColumnViewColumn::expands));
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn conc_10_artist_cell_is_vertically_centered_with_the_other_columns() {

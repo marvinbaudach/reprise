@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use reprise_core::db::Db;
 
+mod concerts_column_layout;
 mod concerts_columns;
 mod concerts_empty_state;
 mod concerts_failure_ui;
