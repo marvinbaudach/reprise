@@ -2025,10 +2025,12 @@ the panel).
 
 ## Q. Search
 
-- **SEARCH-1** [active] [gtk] — At rest, search occupies only a
+- **SEARCH-1** [replaced by SEARCH-1a] [gtk] — At rest, search occupies only a
   magnifying-glass icon in the header bar. The search field lives in a
   second, collapsed-by-default top bar and is never shown as a
   permanent wide field.
+- **SEARCH-1a** [active] [gtk] — At rest, search is only the header lens. The
+  field lives in a popover attached to that lens, not in a second top bar.
 - **SEARCH-2** [replaced by SEARCH-2a] — Clicking the magnifying
   glass, Ctrl+F, or typing directly opens the search bar and focuses
   the field. It is a full-width strip flush under the header bar, has
@@ -2047,7 +2049,7 @@ the panel).
   is clamp-centered at approximately 450 px. The bar slides with the
   central Standard duration (MOT-1/3); for GTK-native revealers their
   default applies, provided it matches the Standard token.
-- **SEARCH-2b** [active] [gtk] — Clicking the magnifying glass, Ctrl+F,
+- **SEARCH-2b** [replaced by SEARCH-2c] [gtk] — Clicking the magnifying glass, Ctrl+F,
   or typing directly opens the search bar and focuses the field. It is
   a full-width, opaque strip flush under the header bar with its own
   surface and a bottom divider line; on reveal it structurally
@@ -2055,20 +2057,55 @@ the panel).
   approximately 450 px. The bar slides with the central Standard
   duration (MOT-1/3); for GTK-native revealers their default applies,
   provided it matches the Standard token.
+- **SEARCH-2c** [active] [gtk] — The lens and Ctrl+F open the search popover;
+  typing into the list no longer opens it. Opening focuses the entry and puts
+  the caret at the end of any existing query; closing returns focus to the
+  list. The panel is bottom-end under the lens, without an arrow, on the chrome
+  surface, and carries the entry plus one muted caption line naming the
+  searched scope and the "Esc to close" hint. It reflows nothing (SEARCH-10).
 - **SEARCH-3** [active] [gtk] — The magnifying glass is a ToggleButton
   and carries the `:checked` accent style when the search bar is open
   **or** an active non-empty query exists. A query remains visible
   even when the search bar is collapsed: its search chip persists. The
   magnifying glass gets no badge dot; dots remain reserved exclusively
   for the request role (FB-4, P-1).
-- **SEARCH-4** [active] [gtk] — Esc is two-stage and applies to the
+- **SEARCH-4** [replaced by SEARCH-4a] [gtk] — Esc is two-stage and applies to the
   whole search bar: with text present, the first Esc clears the query,
   leaves the bar open, and keeps the field focused; with an empty
   field, Esc collapses the bar. A query is never made invisible by
   collapsing without its chip carrying it.
+- **SEARCH-4a** [active] [gtk] — Escape is one stage: it closes the popover and
+  keeps the query and filtering. Clearing from the keyboard is the entry's own
+  clear icon; clearing from the filter bar is the chip's × or "Clear all".
+  Because search hides rows rather than highlighting them, dismissing the
+  panel and undoing the filter must not be the same key.
 - **SEARCH-5** [active] [gtk] — Collapsing ends only the input, not the
   filter. Query, results, and search chip are preserved until the user
   explicitly removes them via Esc, chip, or „Clear all".
+- **SEARCH-10** [active] [gtk] — Opening and closing search changes no layout.
+  The search surface is a popover over the content; the header keeps its
+  height, the content area keeps its allocated height, and the player bar stays
+  flush with the window's bottom edge in both states. Nothing is inserted into
+  the window's vertical layout.
+- **SEARCH-11** [active] [gtk] — While the search popover is open, the entry is
+  the only place the query is shown: the filter bar renders no search chip,
+  even though results and the "N of TOTAL {unit}" count already reflect the
+  query. Facet chips stay visible throughout.
+- **SEARCH-12** [active] [gtk] — Closing with a non-empty query renders exactly
+  one search chip, in the filter bar's search slot ahead of the facet chips. It
+  is built once, on close, not from the entry's `changed` signal.
+- **SEARCH-13** [active] [gtk] — Closing with an empty or whitespace-only query
+  renders no chip and changes nothing.
+- **SEARCH-14** [active] [gtk] — Dismissing is not undoing. Escape, Enter, a
+  click outside, and the lens all close the popover and keep both the query and
+  the filtering (SEARCH-5/6). Releasing the filter is a separate, visible act:
+  the chip's × or "Clear all". The query stays session- and section-scoped: it
+  is never written to `podcasts::config::save_filter` or the radio settings
+  keys, is dropped on restart, and is never carried between sections
+  (SEARCH-8a).
+- **SEARCH-15** [active] [gtk] — Reopening the popover while a search chip
+  exists hides that chip and pre-fills the entry with its query, with the caret
+  at the end. The chip is never duplicated.
 
 ## R. New releases
 
@@ -2737,12 +2774,16 @@ property is set and yet nothing happens.
   search bar both ways (show ↔ hide). Hiding never clears the query: with
   a non-empty query, its chip stays visible and the magnifier stays in the
   `:checked` accent style (FIL-1, SEARCH-3/5).
-- **SEARCH-7** [active] [gtk] — If the search field along with its
+- **SEARCH-7** [replaced by SEARCH-7a] [gtk] — If the search field along with its
   internal controls loses keyboard focus, the open search bar collapses
   after the current pointer activation completes. A non-empty query
   remains, per SEARCH-3/5, as an active filter along with its chip and
   accent magnifier; a click on the magnifier must not accidentally reopen
   the bar that was closed by that same focus change.
+- **SEARCH-7a** [active] [gtk] — The popover autohides. A click outside closes
+  it and keeps the query, chip, and accent lens per SEARCH-3/5. The held-pointer
+  machinery SEARCH-7 needed is gone with the strip: a popover close inserts and
+  removes nothing, so nothing below it can move out from under a click.
 - **SEARCH-8** [replaced by SEARCH-8a] — The query belongs to the section it was
   typed in, not to the window. Switching sections swaps the header
   entry's text to that section's own query; it never carries over, and a
