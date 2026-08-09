@@ -69,7 +69,7 @@ fn pump_until(label: &str, condition: impl Fn() -> bool) {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
+fn nr_20_releases_view_exposes_filters_seven_columns_and_footer() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = ReleasesView::new(conn, PathBuf::new());
@@ -89,7 +89,7 @@ fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
         .and_then(|scrolled| scrolled.child())
         .and_downcast::<gtk4::ColumnView>()
         .unwrap();
-    assert_eq!(table.columns().n_items(), 6);
+    assert_eq!(table.columns().n_items(), 7);
     assert_eq!(
         table
             .columns()
@@ -98,7 +98,7 @@ fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
             .unwrap()
             .id()
             .as_deref(),
-        Some("date")
+        Some("cover")
     );
 }
 
