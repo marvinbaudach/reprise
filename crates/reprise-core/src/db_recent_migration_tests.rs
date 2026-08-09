@@ -709,7 +709,7 @@ fn migrate_v13_to_v14_indexes_present_album_order_without_changing_rows() {
         "SELECT count(*) FROM tracks \
          WHERE missing_since IS NULL AND removed_at IS NULL \
          AND (title LIKE '%needle%' ESCAPE '\\' OR artist LIKE '%needle%' ESCAPE '\\' \
-         OR album LIKE '%needle%' ESCAPE '\\' OR genre LIKE '%needle%' ESCAPE '\\')",
+         OR album LIKE '%needle%' ESCAPE '\\')",
         "SELECT count(*), coalesce(sum(duration_ms), 0) FROM tracks \
          WHERE missing_since IS NULL AND removed_at IS NULL",
     ] {

@@ -1,4 +1,6 @@
+use super::super::add_dialog_rows::{candidate_row, title_markup};
 use super::*;
+use crate::ui::search_highlight::HighlightPalette;
 
 #[test]
 fn src_3a_radio_add_dialog_submits_search_or_url_through_one_field() {
@@ -191,6 +193,110 @@ fn rad_4_playlist_type_is_detected_without_consuming_a_live_stream() {
         Some(reprise_core::radio::playlist::PlaylistKind::M3u)
     );
     assert_eq!(playlist_kind("https://radio.example/live"), None);
+}
+
+/// `RAD-6`: free-text searches carry the station-name query into the shared
+/// escaped highlighter, while shortcut-chip searches deliberately carry no
+/// query. Radio-browser's accent folding remains an accepted unmarked-row gap.
+#[test]
+fn rad_6_only_text_searches_supply_station_name_highlighting() {
+    let palette = HighlightPalette::new("#45d0b2", "#2ec8a6");
+    assert_eq!(
+        title_markup("Metal & <More>", Some("metal"), Some(&palette)),
+        Some(
+            "<span foreground=\"#45d0b2\" background=\"#2ec8a6\" bgalpha=\"18%\" \
+             weight=\"bold\">Metal</span> &amp; &lt;More&gt;"
+                .to_owned()
+        )
+    );
+    assert_eq!(
+        title_markup("La Grosse Radio Métal", Some("metal"), Some(&palette)),
+        None,
+        "local ASCII comparison cannot reproduce radio-browser's accent folding"
+    );
+
+    let (text_state, _) = AddDialogState::default().begin(&AddInput::Search("metal".into()));
+    assert_eq!(text_state.query.as_deref(), Some("metal"));
+    let (chip_state, _) = AddDialogState::default().begin_chip_search("Top voted".into());
+    assert_eq!(
+        chip_state.query, None,
+        "tag and country chip criteria must never become a text highlight needle"
+    );
+    assert_eq!(
+        chip_state.result_label.as_deref(),
+        Some("Top voted"),
+        "the chip label remains available for the existing empty-result copy"
+    );
+}
+
+/// `RAD-6`: a term that exists only in generated station metadata must never
+/// produce title or details markup. A real title match uses the shared
+/// accent-bold markup and keeps the dialog's ellipsis contract.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rad_6_radio_results_highlight_only_the_station_name() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let on_added: Rc<dyn Fn()> = Rc::new(|| {});
+    let candidate = StationCandidate {
+        uuid: "details-only".into(),
+        name: "Rock & <Roll>".into(),
+        url_resolved: "https://radio.test/details-only".into(),
+        codec: Some("MP3".into()),
+        bitrate_kbps: Some(128),
+        country_code: Some("DE".into()),
+        genre: Some("Rock".into()),
+        tags: vec!["Rock".into()],
+        votes: 1_200,
+        favicon_url: None,
+    };
+
+    let details_hit = candidate_row(candidate.clone(), Some("128"), &conn, &on_added);
+    let details_hit_copy = details_hit
+        .child()
+        .and_downcast::<gtk4::Box>()
+        .and_then(|content| content.first_child()?.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("station result text");
+    let unmarked_title = details_hit_copy
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("station name");
+    let details = details_hit_copy
+        .last_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("generated station details");
+    assert_eq!(
+        details_hit_copy.observe_children().n_items(),
+        2,
+        "radio rows must not invent SRC-22's podcast explanation marker"
+    );
+    assert!(!unmarked_title.uses_markup());
+    assert_eq!(
+        details.text().as_str(),
+        "Rock · 128 kbit/s · DE · 1.2k votes"
+    );
+    assert!(
+        !details.uses_markup(),
+        "a details-only hit must stay escaped plain text, never highlighted markup"
+    );
+
+    let title_hit = candidate_row(candidate, Some("rock"), &conn, &on_added);
+    let title = title_hit
+        .child()
+        .and_downcast::<gtk4::Box>()
+        .and_then(|content| content.first_child()?.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .and_then(|copy| copy.first_child())
+        .and_downcast::<gtk4::Label>()
+        .expect("highlighted station name");
+    assert!(title.uses_markup());
+    assert_eq!(title.text().as_str(), "Rock & <Roll>");
+    assert_eq!(title.ellipsize(), gtk4::pango::EllipsizeMode::End);
+    assert!(
+        title.layout().attributes().is_some(),
+        "the matching station-name fragment must carry accent-bold attributes"
+    );
 }
 
 /// Walk a widget's descendants and return the first `ScrolledWindow`.

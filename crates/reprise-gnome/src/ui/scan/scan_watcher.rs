@@ -32,6 +32,26 @@ fn reconcile_changes_rows(event: &watcher::WatchEvent) -> bool {
         || !event.auto_cleaned_ids.is_empty()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ReconcileRefreshes {
+    track_list: bool,
+    sidebar: bool,
+}
+
+/// Chooses the UI surfaces whose database-backed projections can have changed.
+///
+/// Import failures and heals mutate the sidebar's Import Errors count even
+/// when no track row changed. The scanner does not report whether an error was
+/// newly inserted or merely refreshed, so an error-bearing reconcile remains
+/// conservatively refreshable while the common all-zero event does no work.
+fn reconcile_refreshes(event: &watcher::WatchEvent) -> ReconcileRefreshes {
+    let track_list = reconcile_changes_rows(event);
+    ReconcileRefreshes {
+        track_list,
+        sidebar: track_list || event.report.errors > 0 || event.report.healed > 0,
+    }
+}
+
 pub(in crate::ui) fn start_or_restart_watcher(
     watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
     root: &Path,
@@ -69,7 +89,7 @@ pub(in crate::ui) fn start_or_restart_watcher(
                 "watcher: reconciling UI after live library update"
             );
             // Read before the match below moves `root_unavailable` out.
-            let changes_rows = reconcile_changes_rows(&event);
+            let refreshes = reconcile_refreshes(&event);
             match (track_list.upgrade(), event.root_unavailable) {
                 (Some(track_list), Some(root)) => {
                     controls.set_library_root_unavailable(true);
@@ -81,7 +101,7 @@ pub(in crate::ui) fn start_or_restart_watcher(
                         controls.finish_progress();
                         controls.set_library_root_unavailable(false);
                         track_list.set_library_root_unavailable(None);
-                    } else if changes_rows {
+                    } else if refreshes.track_list {
                         track_list.reload();
                     }
                     track_list.notify_scan_postprocessed(&event.auto_cleaned_ids);
@@ -90,9 +110,11 @@ pub(in crate::ui) fn start_or_restart_watcher(
                     tracing::warn!("watcher: track list reload skipped: track list is gone");
                 }
             }
-            match sidebar.upgrade() {
-                Some(sidebar) => sidebar.refresh("watcher reconcile"),
-                None => tracing::warn!("watcher: sidebar refresh skipped: sidebar is gone"),
+            if refreshes.sidebar {
+                match sidebar.upgrade() {
+                    Some(sidebar) => sidebar.refresh("watcher reconcile"),
+                    None => tracing::warn!("watcher: sidebar refresh skipped: sidebar is gone"),
+                }
             }
         }
         tracing::debug!("watcher: event receiver closed; exiting UI drain loop");
@@ -103,7 +125,7 @@ pub(in crate::ui) fn start_or_restart_watcher(
 mod tests {
     use reprise_core::library::watcher::WatchEvent;
 
-    use super::reconcile_changes_rows;
+    use super::{reconcile_changes_rows, reconcile_refreshes};
 
     fn quiet_event() -> WatchEvent {
         WatchEvent {
@@ -144,5 +166,42 @@ mod tests {
                 "a change of this kind must still reach the table"
             );
         }
+    }
+
+    #[test]
+    fn a_quiet_reconcile_refreshes_neither_rows_nor_sidebar() {
+        let refreshes = reconcile_refreshes(&quiet_event());
+        assert!(!refreshes.track_list);
+        assert!(!refreshes.sidebar);
+    }
+
+    #[test]
+    fn an_import_error_only_reconcile_still_refreshes_its_sidebar_count() {
+        let mut event = quiet_event();
+        event.report.errors = 1;
+
+        let refreshes = reconcile_refreshes(&event);
+        assert!(!refreshes.track_list);
+        assert!(refreshes.sidebar);
+    }
+
+    #[test]
+    fn catalog_deletion_has_its_own_sidebar_refresh_before_queue_purge() {
+        let wiring = include_str!("../window/window_action_wiring.rs");
+        let callback = wiring
+            .split_once("track_list.set_on_library_mutated")
+            .expect("library mutation callback must remain wired")
+            .1;
+        let refresh = callback
+            .find("sidebar.refresh(\"track removed from library\")")
+            .expect("catalog deletion must refresh sidebar counters immediately");
+        let purge = callback
+            .find("player.purge_queue_ids(removed_ids)")
+            .expect("catalog deletion must still purge deleted queue ids");
+
+        assert!(
+            refresh < purge,
+            "counter refresh must precede queue callbacks"
+        );
     }
 }

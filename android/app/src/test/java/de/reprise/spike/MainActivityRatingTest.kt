@@ -3,14 +3,18 @@ package de.reprise.spike
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,16 +55,16 @@ class MainActivityRatingTest {
         assertEquals(emptyList<LibraryTrack>(), application.currentQueue)
 
         compose.onNodeWithText("Favourites").performClick()
-        compose.onNodeWithText("Rotation Song 1").assertIsDisplayed()
+        favouriteTrack().assertIsDisplayed()
         libraryHeart("Remove from favourites").performClick()
         compose.waitForIdle()
 
         assertEquals(listOf(1L to 5, 1L to 0), application.controls.ratingRequests)
         assertEquals(0, application.trackRatings[1L])
-        compose.onNodeWithText("Rotation Song 1").assertDoesNotExist()
+        favouriteTrack().assertDoesNotExist()
 
         recreate()
-        compose.onNodeWithText("Rotation Song 1").assertDoesNotExist()
+        favouriteTrack().assertDoesNotExist()
     }
 
     @Test
@@ -86,6 +90,56 @@ class MainActivityRatingTest {
     }
 
     @Test
+    fun sheetHeartJoinsTheTopActionsAndTransportEndsTheContent() {
+        publishTrack(1)
+        compose.onNodeWithTag("library-mini-player").performClick()
+
+        val actionRow = hasTestTag("now-playing-actions")
+        val queue = compose.onNode(
+            hasContentDescription("Show queue") and hasAnyAncestor(actionRow),
+        )
+        val sleep = compose.onNode(
+            hasContentDescription("Set sleep timer") and hasAnyAncestor(actionRow),
+        )
+        val heart = compose.onNode(
+            hasTestTag("now-playing-heart") and hasAnyAncestor(actionRow),
+        ).assertContentDescriptionEquals("Add to favourites")
+        val close = compose.onNode(
+            hasContentDescription("Collapse Now Playing") and hasAnyAncestor(actionRow),
+        )
+
+        val queueBounds = queue.getUnclippedBoundsInRoot()
+        val sleepBounds = sleep.getUnclippedBoundsInRoot()
+        val heartBounds = heart.getUnclippedBoundsInRoot()
+        val closeBounds = close.getUnclippedBoundsInRoot()
+        assertEquals(queueBounds.top.value, heartBounds.top.value, 0.5f)
+        assertTrue(queueBounds.left < sleepBounds.left)
+        assertTrue(sleepBounds.left < heartBounds.left)
+        assertTrue(heartBounds.left < closeBounds.left)
+
+        heart.performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(1L to 5), application.controls.ratingRequests)
+        heart.assertContentDescriptionEquals("Remove from favourites")
+        compose.onNodeWithText("0 plays").assertDoesNotExist()
+
+        val transportBottom = compose.onNodeWithTag("now-playing-transport")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .bottom
+        val laterContent = compose.onAllNodes(
+            hasAnyAncestor(hasTestTag("now-playing-content")),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes().filter { node ->
+            node.boundsInRoot.bottom > transportBottom + 0.5f
+        }
+        assertTrue(
+            "content continued below the transport row: $laterContent",
+            laterContent.isEmpty(),
+        )
+    }
+
+    @Test
     fun refusedHeartWriteMovesNoSurfaceAndExplainsTheFailure() {
         application.controls.ratingFailure = RATING_REFUSED
 
@@ -98,8 +152,20 @@ class MainActivityRatingTest {
     }
 
     private fun libraryHeart(description: String) =
-        compose.onAllNodesWithTag(TRACK_HEART_TAG)[0]
+        compose.onNode(
+            hasTestTag(TRACK_HEART_TAG) and
+                hasContentDescription(description) and
+                hasAnyAncestor(hasTestTag("library-track-row-1")) and
+                hasAnyAncestor(
+                    hasTestTag("library-page-${application.rememberedDestination.name}"),
+                ),
+        )
             .assertContentDescriptionEquals(description)
+
+    private fun favouriteTrack() = compose.onNode(
+        hasTestTag("library-track-row-1") and
+            hasAnyAncestor(hasTestTag("library-page-FAVOURITES")),
+    )
 
     private fun publishTrack(trackId: Long) {
         application.service.publish(m9bSnapshot(trackId))

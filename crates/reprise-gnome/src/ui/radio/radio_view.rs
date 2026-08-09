@@ -25,6 +25,7 @@ use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
 use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::source_reveal::LoadedItemChange;
 use crate::ui::strings;
+use crate::ui::style::buttons;
 
 #[path = "radio_failure_ui.rs"]
 mod failure_ui;
@@ -41,6 +42,7 @@ const STATUS_PAGE: &str = "status";
 /// state — distinct from `STATUS_PAGE`, which still carries `NoResults`
 /// (Block B2, unchanged).
 const EMPTY_PAGE: &str = "empty";
+const ACTION_OPEN_ADD: &str = "open-add";
 
 type IdCallback = Rc<dyn Fn(i64)>;
 type Callback = Rc<dyn Fn()>;
@@ -50,6 +52,7 @@ pub(super) struct Shared {
     controller: std::rc::Weak<PlayerController>,
     model: Rc<RadioModel>,
     pub(super) filter_bar: Rc<RadioFilterBar>,
+    end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<StationRow>>,
     live: Rc<RefCell<RadioLiveState>>,
     /// `NET-3b`: explicit, injectable connectivity seam (see
@@ -65,6 +68,8 @@ pub(super) struct Shared {
     empty_page: SourceEmptyState,
     error_banner: SourceErrorBanner,
     root: gtk4::Widget,
+    footer: gtk4::Box,
+    footer_add: gtk4::Button,
     add_dialog: RefCell<Option<Rc<RadioAddDialog>>>,
     toast_overlay: gtk4::glib::WeakRef<adw::ToastOverlay>,
     pending_toasts: Cell<u32>,
@@ -124,7 +129,17 @@ impl RadioView {
                 cells_for_state.reapply();
             });
         }
-        radio_columns::append_columns(&column_view, &live_source, &connectivity_source, &cells);
+        let query_source: crate::ui::search_highlight::QuerySource = {
+            let filter_bar = filter_bar.clone();
+            Rc::new(move || filter_bar.filter().query)
+        };
+        radio_columns::append_columns(
+            &column_view,
+            &live_source,
+            &connectivity_source,
+            &cells,
+            &query_source,
+        );
         {
             let live = live_source.clone();
             let connectivity = connectivity_source.clone();
@@ -143,6 +158,18 @@ impl RadioView {
             .vexpand(true)
             .hexpand(true)
             .build();
+        let list_overlay = gtk4::Overlay::new();
+        list_overlay.set_child(Some(&scrolled));
+        let end_of_results = crate::ui::end_of_results::EndOfResults::install(
+            &list_overlay,
+            &scrolled,
+            &column_view,
+            crate::ui::end_of_results::ResultsUnit::Stations,
+        );
+        {
+            let filter_bar = filter_bar.clone();
+            end_of_results.connect_recover(move || filter_bar.clear_all());
+        }
         let status = adw::StatusPage::builder().vexpand(true).build();
         let status_button = gtk4::Button::new();
         status_button.set_halign(gtk4::Align::Center);
@@ -153,7 +180,7 @@ impl RadioView {
             .transition_type(gtk4::StackTransitionType::Crossfade)
             .vexpand(true)
             .build();
-        stack.add_named(&scrolled, Some(LIST_PAGE));
+        stack.add_named(&list_overlay, Some(LIST_PAGE));
         stack.add_named(&status, Some(STATUS_PAGE));
         stack.add_named(empty_page.widget(), Some(EMPTY_PAGE));
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -161,6 +188,15 @@ impl RadioView {
         root.append(filter_bar.widget());
         root.append(error_banner.widget());
         root.append(&stack);
+        let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        footer.set_margin_top(6);
+        footer.set_margin_bottom(6);
+        footer.set_margin_start(12);
+        footer.set_margin_end(12);
+        let footer_add = radio_add_button();
+        footer.append(&footer_add);
+        root.append(&footer);
+        root.insert_action_group("radio", Some(&action_group));
         let reveal = super::radio_reveal::install(
             root.upcast_ref(),
             &scrolled,
@@ -174,6 +210,7 @@ impl RadioView {
             controller: controller.map_or_else(std::rc::Weak::new, Rc::downgrade),
             model,
             filter_bar: filter_bar.clone(),
+            end_of_results,
             rows: RefCell::new(Vec::new()),
             live,
             connectivity,
@@ -185,6 +222,8 @@ impl RadioView {
             empty_page,
             error_banner,
             root: root.upcast(),
+            footer,
+            footer_add,
             add_dialog: RefCell::new(None),
             toast_overlay: gtk4::glib::WeakRef::new(),
             pending_toasts: Cell::new(0),
@@ -229,14 +268,6 @@ impl RadioView {
             filter_bar.set_on_changed(move |_| {
                 if let Some(shared) = weak.upgrade() {
                     render_rows(&shared);
-                }
-            });
-        }
-        {
-            let weak = Rc::downgrade(&shared);
-            filter_bar.connect_add(move || {
-                if let Some(shared) = weak.upgrade() {
-                    present_add_dialog(&shared);
                 }
             });
         }
@@ -358,10 +389,6 @@ fn on_external_snapshot(
         shared.error_banner.hide();
     }
     render_rows(shared);
-    // The station list itself is unchanged for a pure playback snapshot, so
-    // `render_rows` left the store alone; the live parts of the visible rows
-    // are pushed straight into their cells instead.
-    shared.cells.reapply();
     shared
         .reveal
         .on_external_change(was_connected, reveal_change(shared));
@@ -395,13 +422,26 @@ fn refresh_shared(shared: &Rc<Shared>) {
 }
 
 fn render_rows(shared: &Rc<Shared>) {
-    let rows = filter_rows(&shared.rows.borrow(), &shared.filter_bar.filter());
+    let filter = shared.filter_bar.filter();
+    let rows = filter_rows(&shared.rows.borrow(), &filter);
     let total = shared.rows.borrow().len();
     shared.filter_bar.set_counts(rows.len(), total);
+    shared
+        .end_of_results
+        .update(crate::ui::end_of_results::EndOfResultsInput {
+            shown: rows.len(),
+            total,
+            query: filter.query.clone(),
+            facets_restrict: filter.genre.is_some() || filter.country.is_some(),
+        });
     shared.model.replace(rows.clone());
+    // FIL-5a: a refined query can keep exactly the same station rows, in
+    // which case the model deliberately emits no rebind signal. Reapply the
+    // bound cells so their in-place search markup still follows the query.
+    shared.cells.reapply();
     apply_empty_state(
         shared,
-        radio_empty_state_for(rows.len(), shared.filter_bar.filter().is_active()),
+        radio_empty_state_for(rows.len(), filter.is_active()),
     );
 }
 
@@ -415,6 +455,7 @@ fn apply_empty_state(shared: &Shared, state: RadioEmptyState) {
         .filter_bar
         .widget()
         .set_visible(state != RadioEmptyState::Empty);
+    shared.footer.set_visible(state != RadioEmptyState::Empty);
     match state {
         RadioEmptyState::List => shared.stack.set_visible_child_name(LIST_PAGE),
         RadioEmptyState::Empty => shared.stack.set_visible_child_name(EMPTY_PAGE),
@@ -449,6 +490,13 @@ fn present_add_dialog(shared: &Shared) {
     if let Some(dialog) = shared.add_dialog.borrow().clone() {
         dialog.present(&shared.root);
     }
+}
+
+fn radio_add_button() -> gtk4::Button {
+    let add = gtk4::Button::with_label(&strings::text(strings::RADIO_ADD));
+    buttons::arm(&add, buttons::ADD_ACTION_CLASS);
+    add.set_action_name(Some("radio.open-add"));
+    add
 }
 
 fn activate_station(shared: &Rc<Shared>, station: &StationRow) {
@@ -646,6 +694,14 @@ fn commit_remove(shared: &Rc<Shared>, id: i64) {
 }
 
 fn wire_actions(actions: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
+    let open_add = gio::SimpleAction::new(ACTION_OPEN_ADD, None);
+    let weak = Rc::downgrade(shared);
+    open_add.connect_activate(move |_, _| {
+        if let Some(shared) = weak.upgrade() {
+            present_add_dialog(&shared);
+        }
+    });
+    actions.add_action(&open_add);
     add_id_action(
         actions,
         radio_context_menu::ACTION_PLAY,

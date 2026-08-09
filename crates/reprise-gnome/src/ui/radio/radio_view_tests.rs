@@ -166,8 +166,10 @@ fn list_vadjustment(view: &RadioView) -> gtk4::Adjustment {
     view.shared
         .stack
         .child_by_name(LIST_PAGE)
+        .and_downcast::<gtk4::Overlay>()
+        .and_then(|overlay| overlay.child())
         .and_downcast::<gtk4::ScrolledWindow>()
-        .expect("the list page is a ScrolledWindow")
+        .expect("the list overlay owns a ScrolledWindow")
         .vadjustment()
 }
 
@@ -248,6 +250,103 @@ fn src_1_radio_empty_state_offers_add_station_without_playback() {
         Some("Add station")
     );
     assert_eq!(view.shared.empty_state.get(), RadioEmptyState::Empty);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_2_radio_add_action_is_the_leftmost_footer_child_not_a_filter_control() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    add_station(&conn, "Radio Nova");
+    let view = RadioView::new(conn, None);
+
+    assert_eq!(
+        view.shared.footer.first_child(),
+        Some(view.shared.footer_add.clone().upcast::<gtk4::Widget>())
+    );
+    assert_eq!(
+        view.shared.footer_add.action_name().as_deref(),
+        Some("radio.open-add")
+    );
+    assert!(view
+        .shared
+        .footer_add
+        .has_css_class(crate::ui::style::buttons::ADD_ACTION_CLASS));
+    assert!(!descendant_buttons(view.shared.filter_bar.widget())
+        .iter()
+        .any(|button| button.action_name().as_deref() == Some("radio.open-add")));
+}
+
+fn descendant_buttons(widget: &impl IsA<gtk4::Widget>) -> Vec<gtk4::Button> {
+    let mut buttons = Vec::new();
+    let mut child = widget.as_ref().first_child();
+    while let Some(current) = child {
+        if let Ok(button) = current.clone().downcast::<gtk4::Button>() {
+            buttons.push(button);
+        }
+        buttons.extend(descendant_buttons(&current));
+        child = current.next_sibling();
+    }
+    buttons
+}
+
+fn descendant_with_class<T: IsA<gtk4::Widget> + Clone + 'static>(
+    widget: &gtk4::Widget,
+    class: &str,
+) -> Option<T> {
+    if widget.has_css_class(class) {
+        if let Ok(found) = widget.clone().downcast::<T>() {
+            return Some(found);
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = descendant_with_class(&current, class) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fil_3a_radio_end_line_counts_stations_and_recovers_with_clear_all() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    add_station(&conn, "Afd Radio");
+    add_station(&conn, "Different Radio");
+    let view = RadioView::new(conn, None);
+    let window = gtk4::Window::new();
+    window.set_default_size(900, 600);
+    window.set_child(Some(view.root()));
+    window.present();
+
+    view.set_search_query("afd");
+    crate::ui::source_context_surface::settle_layout();
+
+    let line = descendant_with_class::<gtk4::Label>(
+        view.root(),
+        crate::ui::end_of_results::LINE_CSS_CLASS,
+    )
+    .expect("Radio owns the shared end-of-results line");
+    assert_eq!(
+        line.text(),
+        "End of results — 1 station hidden by search “afd”"
+    );
+    assert!(line.is_visible());
+    let recovery = descendant_with_class::<gtk4::Button>(
+        view.root(),
+        crate::ui::end_of_results::RECOVERY_CSS_CLASS,
+    )
+    .expect("Radio owns the shared recovery pill");
+    assert_eq!(recovery.label().as_deref(), Some("Show all 2 stations"));
+    recovery.emit_clicked();
+    crate::ui::source_context_surface::settle_layout();
+    assert_eq!(view.shared.filter_bar.filter().query, "");
+    assert!(!line.is_visible());
 }
 
 #[test]

@@ -289,10 +289,10 @@ fn pod_25_query_composes_with_facets_and_relaxes_for_a_jump() {
     assert_eq!(relaxed.query, "");
 }
 
-/// UX SEARCH-8: the query is transient — it never travels into the
+/// UX SEARCH-8a: the query is transient — it never travels into the
 /// persisted facet config, and a restored config starts without one.
 #[test]
-fn search_8_the_query_is_never_part_of_the_persisted_facets() {
+fn search_8a_the_query_is_never_part_of_the_persisted_facets() {
     let filter = PodcastFilter {
         unplayed_only: true,
         downloaded_only: true,

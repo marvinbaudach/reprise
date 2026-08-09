@@ -35,17 +35,21 @@ pub mod delete_tracks;
 mod device_sync;
 pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
+pub(in crate::ui) mod end_of_results;
 mod enumerated;
 pub(crate) mod eq_bars;
 mod external_changes;
 pub(crate) mod external_link;
 pub(crate) mod file_open;
+mod filter_bar_layout;
+mod filter_bar_strings;
 pub mod first_run;
 mod help;
 mod icons;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
 mod issues;
+pub(crate) mod lazy_tooltip;
 mod library_doctor;
 mod library_views;
 pub(crate) mod link_activation;
@@ -77,6 +81,7 @@ mod scan;
 mod scrobbling;
 mod scroll_center;
 mod scroll_glide;
+mod search_highlight;
 pub mod session_restore;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
@@ -119,7 +124,7 @@ use artist_news::artist_news_worker;
 #[allow(unused_imports)]
 pub(crate) use browse::browse_bar;
 #[allow(unused_imports)]
-use browse::{browse_filter_count, browse_filter_strings, search_chip};
+use browse::browse_filter_count;
 #[allow(unused_imports)]
 use compact::{
     compact_mode_controls, compact_mode_suggestion, compact_player, compact_player_layouts,

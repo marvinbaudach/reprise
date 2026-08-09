@@ -121,6 +121,42 @@ pub(in crate::ui) fn build_nav_row(
     navigation_row(&hbox, title)
 }
 
+/// Builds a row whose trailing count can be updated without replacing the
+/// row. Queue mutations use this seam so playback never pays for the full
+/// sidebar query projection.
+pub(in crate::ui) fn build_live_count_nav_row(
+    title: &str,
+    count: Option<i64>,
+    icon: NavIcon,
+) -> (gtk4::ListBoxRow, gtk4::Label) {
+    let hbox = row_box();
+    hbox.append(&nav_icon(icon));
+
+    let title_label = gtk4::Label::new(Some(title));
+    title_label.set_xalign(0.0);
+    title_label.set_hexpand(true);
+    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    hbox.append(&title_label);
+
+    let count_label = gtk4::Label::new(None);
+    count_label.add_css_class("dim-label");
+    count_label.add_css_class("numeric");
+    update_live_count_label(&count_label, count);
+    hbox.append(&count_label);
+
+    (navigation_row(&hbox, title), count_label)
+}
+
+pub(in crate::ui) fn update_live_count_label(label: &gtk4::Label, count: Option<i64>) {
+    if let Some(count) = count {
+        label.set_label(&format_thousands(count));
+        label.set_visible(true);
+    } else {
+        label.set_visible(false);
+        label.set_label("");
+    }
+}
+
 pub(in crate::ui) fn build_issue_nav_row(
     title: &str,
     presentation: IssueRowPresentation,

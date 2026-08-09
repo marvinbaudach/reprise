@@ -18,7 +18,7 @@ use crate::ui::strings;
 /// The facets are named exactly as `PodcastFilterConfig` names them and go
 /// back to it through [`PodcastFilter::facets`], so the round trip through the
 /// database still has one spelling. `query` deliberately stays out of that
-/// round trip — SEARCH-8 makes the query belong to the visit, not to the
+/// round trip — SEARCH-8a makes the query belong to the visit, not to the
 /// saved view; persisting it would resurrect a search the user never typed
 /// again on the next launch.
 ///

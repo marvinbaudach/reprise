@@ -257,6 +257,36 @@ fn the_device_metadata_list_is_never_an_orphan_removal() {
 }
 
 #[test]
+fn canonical_listen_report_files_are_not_orphans_but_numbered_neighbours_are() {
+    let mut mirror_input = synced_audio_input();
+    mirror_input.managed_files.extend([
+        ManagedDeviceFile {
+            relative_path: "reprise-listens-back.rpl".into(),
+            size_bytes: 79,
+        },
+        ManagedDeviceFile {
+            relative_path: "reprise-listens-back-ack.rpl".into(),
+            size_bytes: 18,
+        },
+        ManagedDeviceFile {
+            relative_path: "reprise-listens-back (1).rpl".into(),
+            size_bytes: 18,
+        },
+    ]);
+
+    let plan = plan_mirror(mirror_input);
+
+    assert_eq!(
+        plan.remove,
+        vec![ManagedRemoval::Orphan(ManagedDeviceFile {
+            relative_path: "reprise-listens-back (1).rpl".into(),
+            size_bytes: 18,
+        })]
+    );
+    assert_eq!(plan.bytes_freed, 18);
+}
+
+#[test]
 fn overlap_and_playlist_repeats_are_deduplicated_only_for_physical_storage() {
     let first = SelectionSource::Playlist(10);
     let second = SelectionSource::Smart(20);

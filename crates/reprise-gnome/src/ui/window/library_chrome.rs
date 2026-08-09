@@ -11,7 +11,7 @@ use super::strings;
 pub(in crate::ui) struct LibraryChrome {
     pub(in crate::ui) root: adw::ToolbarView,
     pub(in crate::ui) search_bar: gtk4::SearchBar,
-    /// SEARCH-8 needs the lens outside tests too: a section without a list
+    /// SEARCH-8a needs the lens outside tests too: a section without a list
     /// makes it insensitive and re-labels it.
     pub(in crate::ui) search_toggle: gtk4::ToggleButton,
 }

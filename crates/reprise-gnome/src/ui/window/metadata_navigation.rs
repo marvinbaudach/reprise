@@ -297,10 +297,9 @@ mod tests {
     }
 
     /// UX FIL-1c, end to end: starting playback from inside an artist scope
-    /// mutates the queue, and `window.rs`'s `on_queue_changed` hook answers
-    /// that with `sidebar.refresh("up next changed")`. That refresh must not
-    /// route the view anywhere — the scope, its chip, and its filtered rows
-    /// have to survive the play the user just started.
+    /// mutates the queue, and `window.rs`'s `on_queue_changed` hook updates
+    /// only the retained Queue badge. It must not route the view anywhere —
+    /// the scope, its chip, and its filtered rows survive the play.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn fil_1c_playing_inside_a_scope_keeps_the_scope_and_its_chip() {
@@ -349,12 +348,12 @@ mod tests {
             },
             "test artist navigation",
         );
-        sidebar.refresh("up next changed");
+        sidebar.refresh_queue_count();
 
         assert_eq!(
             track_list.current_source(),
             ViewSource::Artist("Lorna Shore".into()),
-            "the queue refresh a play triggers must not drop the artist scope"
+            "the queue badge update a play triggers must not drop the artist scope"
         );
         assert_eq!(source_title.title(), "Lorna Shore");
         let scope_chip = track_list

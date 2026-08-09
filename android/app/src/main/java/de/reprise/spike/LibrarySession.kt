@@ -72,13 +72,13 @@ internal class LibrarySession(
      */
     private var artworkGeneration = 0
 
-    fun restore(): LibraryScreenState {
+    fun restore(selectedTab: BrowseTab = BrowseTab.TITLES): LibraryScreenState {
         val treeUri = port.rememberedTreeUri() ?: return LibraryScreenState.NoFolder()
         if (!port.isTreeReadable(treeUri)) {
             return LibraryScreenState.TreeUnreadable
         }
         port.configureTree(treeUri)
-        return browseState()
+        return browseState(selectedTab = selectedTab)
     }
 
     fun chooseTree(
@@ -202,13 +202,33 @@ internal class LibrarySession(
         return browseState()
     }
 
-    private fun browseState(message: String? = null): LibraryScreenState.Browse =
+    private fun browseState(
+        message: String? = null,
+        selectedTab: BrowseTab? = null,
+    ): LibraryScreenState.Browse =
         LibraryScreenState.Browse(
-            titles = port.searchTracks("", firstLibraryWindow()),
-            albums = port.listAlbums(firstLibraryWindow()),
-            artists = port.listArtists(firstLibraryWindow()),
-            favourites = port.listFavourites(firstLibraryWindow()),
+            titles = if (selectedTab == null || selectedTab == BrowseTab.TITLES) {
+                port.searchTracks("", firstLibraryWindow())
+            } else {
+                LibraryWindow.empty()
+            },
+            albums = if (selectedTab == null || selectedTab == BrowseTab.ALBUMS) {
+                port.listAlbums(firstLibraryWindow())
+            } else {
+                LibraryWindow.empty()
+            },
+            artists = if (selectedTab == null || selectedTab == BrowseTab.ARTISTS) {
+                port.listArtists(firstLibraryWindow())
+            } else {
+                LibraryWindow.empty()
+            },
+            favourites = if (selectedTab == null || selectedTab == BrowseTab.FAVOURITES) {
+                port.listFavourites(firstLibraryWindow())
+            } else {
+                LibraryWindow.empty()
+            },
             message = message,
             folderUri = port.rememberedTreeUri(),
+            loadedTabs = selectedTab?.let(::setOf) ?: BrowseTab.entries.toSet(),
         )
 }

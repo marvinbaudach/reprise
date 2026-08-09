@@ -105,6 +105,7 @@ fn app_css() -> String {
         super::link_activation::css(),
         menus::css(),
         super::browse_bar::css(),
+        super::filter_bar_layout::css(),
         super::column_header_dnd::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),

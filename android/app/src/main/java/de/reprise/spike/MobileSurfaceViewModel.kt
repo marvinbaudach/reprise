@@ -55,6 +55,7 @@ internal data class LoadedLibraryWindows(
     val albums: LibraryWindow<LibraryAlbum>,
     val artists: LibraryWindow<LibraryArtist>,
     val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
+    val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
     /**
      * The album the listener is standing in, if any, and the tracks of it they
      * have paged in. It is kept here rather than reopened, because reopening it
@@ -125,16 +126,27 @@ internal class MobileSurfaceViewModel : ViewModel() {
     private var scrubTrackId: Long? = null
     private var scrubPosition by mutableStateOf<SeekPositionState?>(null)
     private var previousSurfaceLayout: SurfaceLayout? = null
+    private var selectedTabInitialized = false
+    private var rememberSelectedTab: (BrowseTab) -> Unit = {}
+
+    fun initializeSelectedTab(initial: BrowseTab, remember: (BrowseTab) -> Unit) {
+        rememberSelectedTab = remember
+        if (selectedTabInitialized) return
+        selectedTab = initial
+        selectedTabInitialized = true
+    }
 
     fun selectTab(tab: BrowseTab) {
+        if (tab == selectedTab) return
         selectedTab = tab
+        rememberSelectedTab(tab)
         if (tab != BrowseTab.TITLES) {
             searchVisible = false
         }
     }
 
     fun openSearch() {
-        selectedTab = BrowseTab.TITLES
+        selectTab(BrowseTab.TITLES)
         searchVisible = true
     }
 

@@ -122,6 +122,7 @@ private fun StackedNowPlayingContent(
     Column(
             modifier = Modifier
                 .fillMaxSize()
+                .testTag("now-playing-content")
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -133,11 +134,18 @@ private fun StackedNowPlayingContent(
                     .background(MaterialTheme.colorScheme.outline),
             )
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("now-playing-actions"),
                 horizontalArrangement = Arrangement.End,
             ) {
                 QueuePageButton(surfaceState)
                 SleepTimerControl(playback.sleepTimer)
+                FavouriteHeartButton(
+                    track = track,
+                    surfaceState = surfaceState,
+                    tag = "now-playing-heart",
+                )
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
@@ -182,8 +190,6 @@ private fun StackedNowPlayingContent(
                 overflow = TextOverflow.Ellipsis,
             )
             SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
-            PlaybackActions(playback = playback, metrics = metrics, wideShort = false)
-            RatingRow(track = track, surfaceState = surfaceState)
             playback.error?.let { message ->
                 Text(
                     text = message,
@@ -192,7 +198,7 @@ private fun StackedNowPlayingContent(
                     textAlign = TextAlign.Center,
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            PlaybackActions(playback = playback, metrics = metrics, wideShort = false)
     }
 }
 
@@ -235,7 +241,9 @@ private fun WideShortNowPlayingContent(
                 .fillMaxHeight(),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("now-playing-actions"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -263,11 +271,15 @@ private fun WideShortNowPlayingContent(
                 }
                 QueuePageButton(surfaceState)
                 SleepTimerControl(playback.sleepTimer)
+                FavouriteHeartButton(
+                    track = track,
+                    surfaceState = surfaceState,
+                    tag = "now-playing-heart",
+                )
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
             }
-            RatingRow(track = track, surfaceState = surfaceState, wideShort = true)
             SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             playback.error?.let { message ->
                 Text(
@@ -439,38 +451,5 @@ private fun ModeButton(
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
         )
-    }
-}
-
-@Composable
-private fun RatingRow(
-    track: LibraryTrack,
-    surfaceState: MobileSurfaceViewModel,
-    wideShort: Boolean = false,
-) {
-    val content: @Composable () -> Unit = {
-        Text(
-            text = "${track.playCount.coerceAtLeast(0)} plays",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        FavouriteHeartButton(
-            track = track,
-            surfaceState = surfaceState,
-            tag = "now-playing-heart",
-        )
-    }
-    if (wideShort) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            content()
-        }
-    } else {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            content()
-        }
     }
 }

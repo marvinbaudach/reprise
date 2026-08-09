@@ -265,10 +265,11 @@ pub fn build(
     super::column_layout_editor::install_header_popover(&track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
+        let sidebar_for_played = sidebar.clone();
         let track_list_weak = Rc::downgrade(&track_list);
         let refresh = Rc::new(move || {
             if let Some(sidebar) = sidebar.upgrade() {
-                sidebar.refresh("up next changed");
+                sidebar.refresh_queue_count();
             }
             if let Some(track_list) = track_list_weak.upgrade() {
                 track_list.reload_queue_if_visible();
@@ -282,6 +283,14 @@ pub fn build(
         let on_external_changed =
             super::window_queue_model::refresh_on_model_change(&queue_model, refresh);
         player.add_on_external_changed(move |_| on_external_changed());
+        // Marking an episode played is the one playback event that moves a
+        // database-backed sidebar count (Podcasts/YouTube unplayed), so it
+        // still needs the full refresh the queue path no longer does.
+        player.add_on_episode_played(move || {
+            if let Some(sidebar) = sidebar_for_played.upgrade() {
+                sidebar.refresh("episode played");
+            }
+        });
         let track_list_weak = Rc::downgrade(&track_list);
         player.set_view_refill_provider(move || match track_list_weak.upgrade() {
             Some(track_list) => track_list.transport_refill_view(),

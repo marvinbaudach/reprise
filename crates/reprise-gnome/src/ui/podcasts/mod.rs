@@ -2,8 +2,10 @@
 #![allow(dead_code)]
 
 mod add_dialog;
+mod add_dialog_chips;
 mod add_dialog_input;
 mod add_dialog_results;
+mod add_dialog_rows;
 mod add_dialog_subscription;
 mod css;
 mod podcasts_batch_actions;
@@ -19,6 +21,7 @@ mod podcasts_episode_files;
 mod podcasts_episode_window;
 mod podcasts_filter_bar;
 mod podcasts_groups;
+mod podcasts_list_surface;
 mod podcasts_model;
 mod podcasts_playback;
 mod podcasts_presentation;
@@ -37,8 +40,6 @@ pub(crate) mod source_image;
 mod youtube_channel_detail;
 
 pub(in crate::ui) use podcasts_callbacks::PodcastsCallbacks;
-#[cfg(test)]
-pub(in crate::ui) use podcasts_filter_bar::add_button as podcast_add_button;
 pub(in crate::ui) use podcasts_playback::{episode_mark_from_snapshot, EpisodeMark};
 pub(in crate::ui) use podcasts_view::PodcastsView;
 // `MTP-43`: the device-sync preparation phase (E9) reuses `MTP-44`'s

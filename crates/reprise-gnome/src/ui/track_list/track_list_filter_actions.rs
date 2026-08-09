@@ -194,7 +194,7 @@ mod tests {
         assert_eq!(
             track_list.shared.browse_bar.result_count(),
             Some((3, 5)),
-            "FIL-2: 3 of 5 tracks"
+            "FIL-2a: 3 of 5 tracks"
         );
     }
 }

@@ -231,7 +231,7 @@ impl MissingFilesView {
         refresh(&self.shared)
     }
 
-    /// SEARCH-8 / FIL-1d: applies this section's query, matched against file
+    /// SEARCH-8a / FIL-1d: applies this view's query, matched against file
     /// paths. Returns the number of gaps that survived it, which is what the
     /// filter row counts.
     pub(in crate::ui) fn set_search_query(&self, query: &str) -> usize {

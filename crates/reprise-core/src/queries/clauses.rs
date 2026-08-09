@@ -130,7 +130,7 @@ mod sort_key_column_tests {
     }
 }
 
-/// Shared LIKE-filter clause on `(title, artist, album, genre)`, parameterized
+/// Shared Music/list LIKE-filter clause on `(title, artist, album)`, parameterized
 /// by the positional index of the bound `?N` placeholder: callers bind the
 /// filter value at whatever placeholder index is free once their own
 /// preceding parameters (limit/offset, a playlist id, smart-rules params,
@@ -139,6 +139,20 @@ mod sort_key_column_tests {
 /// semantics can never drift apart between a count and the rows it
 /// describes (DRY).
 pub(super) fn filter_clause(has_filter: bool, param_index: u8) -> String {
+    if has_filter {
+        format!(
+            " AND (title LIKE ?{param_index} ESCAPE '\\' OR artist LIKE ?{param_index} ESCAPE '\\' \
+             OR album LIKE ?{param_index} ESCAPE '\\')"
+        )
+    } else {
+        String::new()
+    }
+}
+
+/// Metadata-search clause for non-GUI surfaces whose published contract also
+/// includes genre. This stays separate from [`filter_clause`] so the Music
+/// search box cannot silently regain classification matching.
+pub(super) fn metadata_filter_clause(has_filter: bool, param_index: u8) -> String {
     if has_filter {
         format!(
             " AND (title LIKE ?{param_index} ESCAPE '\\' OR artist LIKE ?{param_index} ESCAPE '\\' \

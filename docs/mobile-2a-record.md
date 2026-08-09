@@ -338,7 +338,7 @@ emulator, device".
 | claim | evidence |
 | --- | --- |
 | Covers come from embedded artwork over SAF | rows and mini player render real art; tracks without a picture keep the no-artwork symbol |
-| The cache honours the platform root | `/data/data/de.reprise.spike/cache/reprise/covers/…-168.png` and `…-1092.png` |
+| The cache honours the platform root | the app-private cache root contained `reprise/covers/…-168.png` and `…-1092.png` |
 | Recycling holds | rows of one album share a cover, two albums by one artist differ, after repeated scrolling |
 | Paging survives artwork | the count steps `200 → 400 of 1824` |
 | The status bar defect is gone | the title clears the clock |
@@ -355,6 +355,12 @@ emulator, device".
 | The curve is projected, not stored twice | a real ten-point curve rendered on the emulator's **five** reported bands as +1.1 / +4.0 / +0.1 / −1.0 / +1.9 dB, and the stored curve was unchanged afterwards |
 | The merge kept dev's launcher icon | the built APK's own manifest resolves `application: icon='res/mipmap-anydpi-v26/ic_launcher.xml'` — read from the artifact, not from the source file the conflict was resolved in |
 | A rating still writes through after leaving the main thread | on the merged build: track 643 went `4 → 2` on a tap of the second star and back `2 → 4` on a tap of the fourth, two writes through the one writer thread in one session, no crash and no ANR |
+
+The installed Android identity is now `org.reprise`. Android treats that as a
+different app from the earlier exploration build: the old app remains installed,
+while the new app starts with empty app-private storage. Its SAF tree grant must
+be given again, and both the play journal and the listen-export journal start
+empty. This is an accepted one-time identity cutover, not a data migration.
 
 That last row took four attempts, and the two failures are worth keeping because
 both would have read as green:

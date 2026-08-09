@@ -77,7 +77,11 @@ pub(in crate::ui) fn missing_track_explanation(
     }
 }
 
-pub(super) fn apply_missing_title(label: &gtk4::Label, track: &Track) {
+pub(super) fn apply_missing_title(
+    label: &gtk4::Label,
+    tooltip: &crate::ui::lazy_tooltip::LazyTooltip,
+    track: &Track,
+) {
     let missing = track.is_missing();
     toggle_class(label, MISSING_TRACK_TITLE_CLASS, missing);
     let attributes = missing.then(|| {
@@ -87,13 +91,16 @@ pub(super) fn apply_missing_title(label: &gtk4::Label, track: &Track) {
     });
     label.set_attributes(attributes.as_ref());
     let explanation = missing_track_explanation(track.missing_since, track.missing_reason);
-    label.set_tooltip_text(explanation.as_deref());
+    tooltip.set_text(label, explanation);
 }
 
-pub(super) fn clear_missing_title(label: &gtk4::Label) {
+pub(super) fn clear_missing_title(
+    label: &gtk4::Label,
+    tooltip: &crate::ui::lazy_tooltip::LazyTooltip,
+) {
     toggle_class(label, MISSING_TRACK_TITLE_CLASS, false);
     label.set_attributes(None);
-    label.set_tooltip_text(None);
+    tooltip.set_text(label, None);
 }
 
 /// Toggles the `.now-playing` marker on `cell` by comparing `track_id`
@@ -187,7 +194,7 @@ fn clear_cover_album_link(
     accessible_label: &str,
 ) {
     *slot.borrow_mut() = None;
-    crate::ui::link_activation::unpresent(cover, accessible_label, gtk4::AccessibleRole::Img);
+    crate::ui::link_activation::unpresent(cover, accessible_label);
 }
 
 fn bind_cover_album_link(
@@ -316,9 +323,11 @@ pub(in crate::ui) fn append_column(
             &render,
         );
         let markup = if super::match_highlight::is_searchable_column(sort_id) {
-            super::match_highlight::highlight_from_filter(&raw, &shared_for_bind.filter, || {
-                super::match_highlight::accent_foreground(&label)
-            })
+            crate::ui::search_highlight::highlight_from_filter(
+                &raw,
+                &shared_for_bind.filter,
+                || crate::ui::search_highlight::accent_palette(&label),
+            )
         } else {
             None
         };

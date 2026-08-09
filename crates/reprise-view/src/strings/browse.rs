@@ -3,7 +3,6 @@
 use super::{plural, Message, Plural};
 use crate::search_scope::SearchScope;
 
-pub const FILTERS: &str = N_!("FILTER");
 pub const ADD_FILTER: &str = N_!("Add filter");
 pub const CLEAR_ALL: &str = N_!("Clear all");
 // Active filters are cleared through their removable chips, not a duplicate Reset action.
@@ -23,10 +22,11 @@ pub const UNKNOWN_RATING: &str = N_!("Unrated");
 
 const CHIP_LABEL: &str = N_!("{facet}: {value}");
 const REMOVE_FILTER_LABEL: &str = N_!("Remove {facet} filter: {value}");
-const SEARCH_CHIP_LABEL: &str = N_!("⌕ “{query}” in any field");
+const SEARCH_CHIP_LABEL_ANY_FIELD: &str = N_!("⌕ “{query}” in any field");
 // FIL-1d: one msgid per scope rather than one template with an interpolated
 // field list — a translator needs the whole sentence to inflect it, and a
 // section that gains a searched field has to change its own text here.
+const SEARCH_CHIP_LABEL_TRACK_FIELDS: &str = N_!("⌕ “{query}” in track, artist and album");
 const SEARCH_CHIP_LABEL_EPISODE_TITLES: &str = N_!("⌕ “{query}” in episode titles");
 const SEARCH_CHIP_LABEL_VIDEO_TITLES: &str = N_!("⌕ “{query}” in video titles");
 const SEARCH_CHIP_LABEL_STATION_NAMES: &str = N_!("⌕ “{query}” in station names");
@@ -58,26 +58,22 @@ pub fn remove_filter_label(facet: &str, value: &str) -> Message {
     }
 }
 
-pub fn search_chip_label(query: &str) -> Message {
-    message_with_one_arg(SEARCH_CHIP_LABEL, "query", query)
-}
-
 /// FIL-1d: the search chip names the fields its own view actually reads.
-/// Music keeps "in any field"; every other list says what it matched.
 pub fn search_chip_label_in(scope: SearchScope, query: &str) -> Message {
     let id = match scope {
-        SearchScope::Tracks | SearchScope::Unsupported => SEARCH_CHIP_LABEL,
+        SearchScope::Tracks => SEARCH_CHIP_LABEL_TRACK_FIELDS,
         SearchScope::Podcasts => SEARCH_CHIP_LABEL_EPISODE_TITLES,
         SearchScope::Youtube => SEARCH_CHIP_LABEL_VIDEO_TITLES,
         SearchScope::Radio => SEARCH_CHIP_LABEL_STATION_NAMES,
         SearchScope::Releases => SEARCH_CHIP_LABEL_TITLE_AND_ARTIST,
         SearchScope::Concerts => SEARCH_CHIP_LABEL_ARTIST_AND_VENUE,
         SearchScope::Missing => SEARCH_CHIP_LABEL_FILE_PATHS,
+        SearchScope::Unsupported => SEARCH_CHIP_LABEL_ANY_FIELD,
     };
     message_with_one_arg(id, "query", query)
 }
 
-/// SEARCH-8: the insensitive lens says why it is insensitive, naming the
+/// SEARCH-8a: the insensitive lens says why it is insensitive, naming the
 /// section the user is actually looking at.
 pub fn nothing_to_filter(section: &str) -> Message {
     message_with_one_arg(NOTHING_TO_FILTER, "section", section)
@@ -147,7 +143,6 @@ mod tests {
     fn browse_labels_and_messages_preserve_the_existing_catalog_msgids() {
         assert_eq!(
             [
-                FILTERS,
                 ADD_FILTER,
                 CLEAR_ALL,
                 BACK,
@@ -165,7 +160,6 @@ mod tests {
                 UNKNOWN_RATING,
             ],
             [
-                "FILTER",
                 "Add filter",
                 "Clear all",
                 "Back",
@@ -199,17 +193,19 @@ mod tests {
                 args: vec![("facet", "Genre".to_owned()), ("value", "Metal".to_owned()),],
             }
         );
-        assert_eq!(search_chip_label("falling").id, "⌕ “{query}” in any field");
         assert_eq!(remove_search_label("falling").id, "Remove search: {query}");
         assert_eq!(leave_place_label("Lorna Shore").id, "Leave {place}");
     }
 
-    // UX FIL-1d: the chip names the fields the view reads; Music keeps the
-    // unchanged "in any field" msgid so its catalog entry survives.
+    // UX FIL-1d: the chip names the fields the view reads.
     #[test]
     fn fil_1d_search_chip_msgid_follows_the_scope() {
         assert_eq!(
             search_chip_label_in(SearchScope::Tracks, "wer").id,
+            "⌕ “{query}” in track, artist and album"
+        );
+        assert_eq!(
+            search_chip_label_in(SearchScope::Unsupported, "wer").id,
             "⌕ “{query}” in any field"
         );
         assert_eq!(

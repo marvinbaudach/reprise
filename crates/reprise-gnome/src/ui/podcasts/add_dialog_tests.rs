@@ -19,7 +19,7 @@ fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_6_the_foreign_url_hint_appears_while_typing() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, true, "DE", None);
 
     surface.entry.set_text("https://www.youtube.com/@example");
     assert_eq!(
@@ -48,7 +48,7 @@ fn src_6_the_foreign_url_hint_appears_while_typing() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline, None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline, true, "DE", None);
 
     assert_eq!(
         surface.status.text().as_str(),
@@ -81,7 +81,7 @@ fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_8_add_dialog_results_scroll_vertically_only() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, true, "DE", None);
     let scroller = surface
         .dialog
         .child()
@@ -108,7 +108,7 @@ fn src_8_add_dialog_results_scroll_vertically_only() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, true, "DE", None);
     let cancel = strings::text(strings::PODCAST_CANCEL);
     let search = strings::text(strings::PODCAST_SEARCH);
     let preview = strings::text(strings::PODCAST_PREVIEW);
@@ -123,38 +123,311 @@ fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     assert!(surface.primary.is_sensitive());
 }
 
-/// `SRC-15`: the add dialog offers one suggestion drawn from the library —
-/// and only when the library has one. A library that has played nothing with
-/// a genre gets no chip rather than an empty pill.
+/// `SRC-15a`: the library-genre chip belongs to YouTube, where the genre is a
+/// real query. The Apple dialog spends its one chip slot on `SRC-19` instead.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_15_the_library_chip_appears_only_with_a_genre_to_suggest() {
+fn src_15a_the_library_chip_appears_only_with_a_genre_to_suggest() {
     gtk4::init().unwrap();
 
-    let without = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    let without = build_surface(PodcastKind::Youtube, Connectivity::Online, true, "DE", None);
     assert!(
-        without.library_chip.is_none(),
+        without.suggestion_chip.is_none(),
         "no played genre must mean no chip at all"
     );
 
-    let with = build_surface(PodcastKind::Rss, Connectivity::Online, Some("Metal"));
-    let chip = with.library_chip.expect("a played genre must offer a chip");
-    assert_eq!(
-        chip.label().as_deref(),
-        Some(strings::podcast_chip_genre("Metal").as_str())
+    let youtube = build_surface(
+        PodcastKind::Youtube,
+        Connectivity::Online,
+        true,
+        "DE",
+        Some("Metal"),
     );
-    assert!(chip.has_css_class("pill"));
-
-    let youtube = build_surface(PodcastKind::Youtube, Connectivity::Online, Some("Metal"));
     assert_eq!(
         youtube
-            .library_chip
-            .expect("the YouTube page carries the same chip")
+            .suggestion_chip
+            .expect("the YouTube page carries the library chip")
             .label()
             .as_deref(),
         Some(strings::youtube_chip_genre("Metal").as_str()),
         "the YouTube page finds channels, not podcasts, and says so"
     );
+
+    let apple = build_surface(
+        PodcastKind::Rss,
+        Connectivity::Online,
+        true,
+        "DE",
+        Some("Metal"),
+    );
+    let label = apple
+        .suggestion_chip
+        .expect("the Apple page carries its charts chip")
+        .label()
+        .expect("chip label");
+    assert_eq!(label, strings::podcast_chip_popular_in_country("DE"));
+    assert_ne!(
+        label,
+        strings::youtube_chip_genre("Metal"),
+        "the Apple page must not spend its one slot on the library chip"
+    );
+}
+
+/// `SRC-19`: what `build_surface` alone can establish — the pill exists, reads
+/// the country chart, and starts beside an untouched entry. It deliberately
+/// does *not* click: `build_surface` attaches no handlers, `present` wires them
+/// (`AddDialogChip::Charts` into `load_charts`, `LibraryGenre` into the entry
+/// plus `submit`), so an `emit_clicked` here would pass whatever the click was
+/// wired to do. The chip's recorded action is the honest stand-in — it is the
+/// value `present` matches on, and `Charts` is the branch that never writes to
+/// the entry.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_19_the_apple_dialog_carries_the_charts_chip_and_the_entry_stays_empty() {
+    gtk4::init().unwrap();
+    let surface = build_surface(
+        PodcastKind::Rss,
+        Connectivity::Online,
+        true,
+        "DE",
+        Some("Metal"),
+    );
+    let chip = surface
+        .suggestion_chip
+        .as_ref()
+        .expect("an online Apple dialog must carry the charts chip");
+
+    assert_eq!(
+        chip.label().as_deref(),
+        Some(strings::podcast_chip_popular_in_country("DE").as_str())
+    );
+    assert!(chip.has_css_class("pill"));
+    assert!(surface.entry.text().is_empty());
+    assert_eq!(
+        surface.chip_action,
+        Some(AddDialogChip::Charts {
+            country: "DE".to_owned()
+        }),
+        "a chart is not a hidden search term — it loads into the result list"
+    );
+}
+
+/// `SRC-19` / `NET-1a`: the widget-level half of the consent gate. The pure
+/// decision is proven by `add_dialog_chips`'
+/// `src_19_the_charts_chip_is_absent_without_network_consent`; this one proves
+/// the surface asks — with podcast online sources off there is no pill to
+/// click, so the two Apple requests can never be issued.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_19_the_charts_chip_is_absent_when_online_sources_are_off() {
+    gtk4::init().unwrap();
+    let surface = build_surface(
+        PodcastKind::Rss,
+        Connectivity::Online,
+        false,
+        "DE",
+        Some("Metal"),
+    );
+
+    assert!(
+        surface.suggestion_chip.is_none(),
+        "a refused source must not offer a pill that issues its requests anyway"
+    );
+    assert!(surface.chip_action.is_none());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_18_a_result_row_states_its_freshness_after_the_author() {
+    gtk4::init().unwrap();
+    let subtitle =
+        super::super::add_dialog_results::rss_subtitle(Some("Ada"), Some(0), 14 * 86_400);
+    let row = candidate_row("Show", &subtitle, None, None, PodcastKind::Rss, None, false);
+    let labels = row
+        .first_child()
+        .and_then(|child| child.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("result labels");
+    let rendered = labels
+        .last_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("result subtitle");
+
+    assert_eq!(rendered.text(), "Ada · New 2 weeks ago");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_21_highlighted_title_keeps_its_end_ellipsis_and_pango_attributes() {
+    gtk4::init().unwrap();
+    let row = candidate_row(
+        "A matched title long enough to require ellipsizing inside the fixed-width dialog row",
+        "Publisher · New 1 week ago",
+        Some("Publisher"),
+        Some("matched"),
+        PodcastKind::Rss,
+        None,
+        false,
+    );
+    let window = gtk4::Window::builder()
+        .default_width(280)
+        .default_height(100)
+        .child(&row)
+        .build();
+    window.present();
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || quit.quit());
+    main_loop.run();
+
+    let labels = row
+        .first_child()
+        .and_then(|child| child.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("result labels");
+    let title_line = labels
+        .first_child()
+        .and_downcast::<gtk4::Box>()
+        .expect("result title line");
+    let title = title_line
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("result title");
+
+    assert_eq!(title.ellipsize(), gtk4::pango::EllipsizeMode::End);
+    assert!(title.uses_markup());
+    assert!(title.layout().is_ellipsized());
+    assert!(
+        title.layout().attributes().is_some(),
+        "Pango must retain the accent-bold span while ellipsizing the title"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
+    gtk4::init().unwrap();
+    let adjacent_row = candidate_row(
+        "The Jasta Show",
+        "GaS Digital Network · New last week",
+        Some("GaS Digital Network"),
+        Some("Metalcore"),
+        PodcastKind::Rss,
+        None,
+        false,
+    );
+    let adjacent_labels = adjacent_row
+        .first_child()
+        .and_then(|child| child.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("result labels");
+    let adjacent_title_line = adjacent_labels
+        .first_child()
+        .and_downcast::<gtk4::Box>()
+        .expect("result title line");
+    let adjacent_title = adjacent_title_line
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("result title");
+    let adjacent_marker = adjacent_title_line
+        .last_child()
+        .and_downcast::<gtk4::Image>()
+        .expect("unexplained search match marker after the title");
+    let row = candidate_row(
+        "The Jasta Show with an exceptionally long title that must ellipsize before the marker",
+        "GaS Digital Network · New last week",
+        Some("GaS Digital Network"),
+        Some("Metalcore"),
+        PodcastKind::Rss,
+        None,
+        false,
+    );
+    let labels = row
+        .first_child()
+        .and_then(|child| child.next_sibling())
+        .and_downcast::<gtk4::Box>()
+        .expect("result labels");
+    let title_line = labels
+        .first_child()
+        .and_downcast::<gtk4::Box>()
+        .expect("result title line");
+    let title = title_line
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("result title");
+    let marker = title_line
+        .last_child()
+        .and_downcast::<gtk4::Image>()
+        .expect("unexplained search match marker after the title");
+    let explanation = strings::text(strings::PODCAST_SEARCH_MATCH_NOT_SHOWN);
+
+    assert_eq!(
+        marker.icon_name().as_deref(),
+        Some(crate::ui::icons::UNEXPLAINED_SEARCH_MATCH)
+    );
+    assert_eq!(marker.tooltip_text().as_deref(), Some(explanation.as_str()));
+    assert!(
+        !adjacent_title.hexpands(),
+        "the title must not consume the free space between its text and the marker"
+    );
+    assert!(marker.has_css_class("reprise-text-secondary"));
+    assert_eq!(
+        marker.pixel_size(),
+        16,
+        "the quiet marker must remain legible at the subtitle's visual weight"
+    );
+    assert!(gtk4::test_accessible_has_role(
+        &marker,
+        gtk4::AccessibleRole::Img
+    ));
+    assert!(gtk4::test_accessible_has_property(
+        &marker,
+        gtk4::AccessibleProperty::Description
+    ));
+
+    let marker_minimum = marker.measure(gtk4::Orientation::Horizontal, -1).0;
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    content.append(&adjacent_row);
+    content.append(&row);
+    let window = gtk4::Window::builder()
+        .default_width(280)
+        .default_height(160)
+        .child(&content)
+        .build();
+    window.present();
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || quit.quit());
+    main_loop.run();
+
+    let adjacent_title_natural = adjacent_title.measure(gtk4::Orientation::Horizontal, -1).1;
+    assert_eq!(
+        adjacent_title.width(),
+        adjacent_title_natural,
+        "a short title must keep only its text width so the marker travels with it"
+    );
+    let adjacent_title_origin = adjacent_title
+        .compute_point(&adjacent_title_line, &gtk4::graphene::Point::new(0.0, 0.0))
+        .expect("title position inside its line");
+    let adjacent_marker_origin = adjacent_marker
+        .compute_point(&adjacent_title_line, &gtk4::graphene::Point::new(0.0, 0.0))
+        .expect("marker position inside its line");
+    assert_eq!(
+        adjacent_marker_origin.x(),
+        adjacent_title_origin.x()
+            + adjacent_title.width() as f32
+            + adjacent_title_line.spacing() as f32,
+        "the marker must sit immediately after the title"
+    );
+    assert!(title.layout().is_ellipsized());
+    assert!(marker_minimum > 0);
+    assert!(
+        marker.width() >= marker_minimum,
+        "the title must yield space to the {marker_minimum}px marker, got {}px",
+        marker.width()
+    );
+    window.close();
 }
 
 /// `SRC-8`: the dialog keeps one width. Neither a long show title nor a
@@ -169,11 +442,21 @@ fn src_8_a_long_result_row_never_widens_the_dialog() {
     let long = candidate_row(
         "Ein außergewöhnlich langer Podcasttitel, der die Dialogbreite deutlich überschreitet",
         "Herausgegeben von einem Sender mit einem ebenso langen Namen · 480 Folgen",
+        None,
+        Some("Metalcore"),
         PodcastKind::Rss,
         None,
         false,
     );
-    let short = candidate_row("Show", "Publisher", PodcastKind::Rss, None, false);
+    let short = candidate_row(
+        "Show",
+        "Publisher",
+        None,
+        Some("Metalcore"),
+        PodcastKind::Rss,
+        None,
+        false,
+    );
 
     let (long_minimum, _, _, _) = long.measure(gtk4::Orientation::Horizontal, -1);
     let (short_minimum, _, _, _) = short.measure(gtk4::Orientation::Horizontal, -1);
@@ -192,7 +475,15 @@ fn src_8_a_long_result_row_never_widens_the_dialog() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_5_result_rows_use_the_source_artwork_surface() {
     gtk4::init().unwrap();
-    let row = candidate_row("Show", "Publisher", PodcastKind::Rss, None, false);
+    let row = candidate_row(
+        "Show",
+        "Publisher",
+        None,
+        None,
+        PodcastKind::Rss,
+        None,
+        false,
+    );
     let image = row
         .first_child()
         .and_downcast::<gtk4::Stack>()
@@ -233,6 +524,8 @@ fn src_11_result_row_stays_on_the_fallback_when_images_are_not_allowed() {
     let row = candidate_row(
         "Show",
         "Publisher",
+        None,
+        None,
         PodcastKind::Rss,
         Some("https://images.test/net-1a-add-dialog.jpg"),
         false,
@@ -251,7 +544,7 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let on_added: OnAdded = Rc::new(|_| {});
-    append_heading(&parent, strings::PODCAST_APPLE_RESULTS);
+    append_heading(&parent, &strings::text(strings::PODCAST_APPLE_RESULTS));
     append_candidate(
         &parent,
         Candidate {
@@ -263,6 +556,7 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
             url: "https://example.test/new-feed".into(),
             identity_guids: Vec::new(),
         },
+        None,
         &conn,
         &on_added,
         false,
@@ -291,6 +585,23 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
         "the acknowledged action must not be pressable again"
     );
     assert!(button.has_css_class("reprise-source-added"));
+}
+
+/// `SRC-19`: the chart path owns its empty sentence. Borrowing the search
+/// one would quote the chip's label back as though it were a typed term and
+/// then advise pasting a feed URL — advice for a search that missed, not for a
+/// curated list that is empty or that this library already follows in full.
+#[test]
+fn src_19_an_empty_chart_does_not_speak_the_language_of_a_failed_search() {
+    let label = strings::podcast_chip_popular_in_country("DE");
+    let empty = strings::podcast_charts_empty("DE");
+
+    assert_ne!(empty, strings::source_nothing_found(&label));
+    assert!(
+        !empty.contains(label.as_str()),
+        "the chart's country label is not a search term: {empty}"
+    );
+    assert!(empty.contains("DE"), "the chart still says which country");
 }
 
 #[test]

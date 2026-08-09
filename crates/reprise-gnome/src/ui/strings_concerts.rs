@@ -18,7 +18,6 @@ pub const CONCERTS_VENUE: &str = N_!("Venue");
 pub const CONCERTS_DISTANCE: &str = N_!("Distance");
 pub const CONCERTS_TICKETS: &str = N_!("Tickets");
 pub const CONCERTS_ADD_FILTER: &str = N_!("+ Add filter");
-pub const CONCERTS_FILTER: &str = N_!("FILTER");
 pub const CONCERTS_CLEAR_ALL: &str = N_!("Clear all ×");
 pub const CONCERTS_RADIUS: &str = N_!("Radius");
 pub const CONCERTS_COUNTRY: &str = N_!("Country");

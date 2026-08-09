@@ -87,6 +87,7 @@ pub(in crate::ui) fn build(
     let cover_loader = CoverLoader::new(cover_download);
     let shared = Rc::new(Shared {
         model,
+        activation_queue_cache: RefCell::new(None),
         diagnostic_trail: super::diagnostic_trail::handle(),
         selection: selection.clone(),
         column_view: column_view.clone(),
@@ -308,7 +309,48 @@ pub(in crate::ui) fn build(
         &column_registry,
         &column_layout::load_layout(&shared.conn),
     );
-    super::end_of_results::install(&shared, &list_overlay, &scrolled);
+    let end_of_results = crate::ui::end_of_results::EndOfResults::install(
+        &list_overlay,
+        &scrolled,
+        &column_view,
+        crate::ui::end_of_results::ResultsUnit::Tracks,
+    );
+    end_of_results.set_recovery_action_name("win.clear-all-filters");
+    {
+        let shared = Rc::downgrade(&shared);
+        let end_of_results = end_of_results.clone();
+        selection.connect_items_changed(move |_, _, _, _| {
+            let shared = shared.clone();
+            let end_of_results = end_of_results.clone();
+            gtk4::glib::idle_add_local_once(move || {
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                let source = shared.source.borrow().clone();
+                let browse = if matches!(source, ViewSource::Library) {
+                    shared.browse_filter.borrow().clone()
+                } else {
+                    BrowseFilter::default()
+                };
+                let query = shared.filter.borrow().clone();
+                let facets_restrict = crate::ui::browse::filter_restriction::filters_restrict(
+                    "",
+                    &browse,
+                    shared.browse_bar.exclude_ai(),
+                );
+                let total = shared
+                    .browse_bar
+                    .result_count()
+                    .map_or(0, |(_, total)| total);
+                end_of_results.update(crate::ui::end_of_results::EndOfResultsInput {
+                    shown: shared.model.n_items() as usize,
+                    total,
+                    query,
+                    facets_restrict,
+                });
+            });
+        });
+    }
     let initial_sort_column = if column_registry.is_visible(ColumnId::Artist) {
         artist_column.clone()
     } else {

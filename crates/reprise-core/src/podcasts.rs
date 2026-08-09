@@ -13,6 +13,7 @@ pub mod episode_tags;
 pub mod feed;
 pub mod http;
 pub mod itunes;
+pub mod itunes_charts;
 mod media_character;
 pub mod offline_add;
 pub mod phone_sync;

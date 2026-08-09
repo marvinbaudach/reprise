@@ -212,14 +212,10 @@ pub(in crate::ui) fn wire_source_routing(
             Ok(false) => {}
             Err(error) => tracing::error!(%error, "failed to record issue view as viewed"),
         }
-        // SEARCH-8: the scope switches BEFORE the view is routed, not after.
-        // `track_list.set_source` restores that source's own remembered
-        // search into the shared entry on its way in; if the scope were
-        // still the outgoing section at that moment, that restored text
-        // would be recorded as the *outgoing* section's query — silently
-        // overwriting it — and the entry would then be overwritten again
-        // with whatever the incoming scope last held. Switching first makes
-        // the restore land in the section it belongs to.
+        // SEARCH-8a: switch the query sink before routing the view. This
+        // clears an ordinary destination, while a Back route subsequently
+        // restores its complete history-owned BrowserPlace through the
+        // track list. Search itself keeps no origin or per-view memory.
         section_search.activate_source(&source, &source_name);
         if matches!(source, ViewSource::MyStats) {
             super::window_navigation::show_content_page(
