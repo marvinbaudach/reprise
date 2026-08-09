@@ -14,13 +14,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import de.reprise.spike.LocalVisualizerControl
 import de.reprise.spike.MobileTheme
 import de.reprise.spike.MobileThemeSelection
-import de.reprise.spike.MobileVisualizer
 
 @Composable
 internal fun AppearanceSettingsPage(
@@ -28,7 +25,6 @@ internal fun AppearanceSettingsPage(
     selectTheme: (MobileTheme) -> Unit,
     back: () -> Unit,
 ) {
-    val visualizer = LocalVisualizerControl.current
     Column(modifier = Modifier.fillMaxSize()) {
         SettingsTopAppBar(
             title = "Appearance",
@@ -48,34 +44,7 @@ internal fun AppearanceSettingsPage(
                     select = { selectTheme(theme) },
                 )
             }
-            item { SettingsSectionTitle("Visualizer") }
-            items(MobileVisualizer.entries) { mode ->
-                VisualizerChoiceRow(
-                    mode = mode,
-                    selected = visualizer.selected == mode,
-                    select = { visualizer.select(mode) },
-                )
-            }
         }
-    }
-}
-
-@Composable
-private fun VisualizerChoiceRow(
-    mode: MobileVisualizer,
-    selected: Boolean,
-    select: () -> Unit,
-) {
-    // The row is the target, not the radio at its edge.
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(selected = selected, onClick = select, role = Role.RadioButton)
-            .testTag("settings-visualizer-${mode.name}"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(mode.label, modifier = Modifier.weight(1f))
-        RadioButton(selected = selected, onClick = null)
     }
 }
 

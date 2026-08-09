@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 /**
@@ -157,11 +158,11 @@ private fun StackedNowPlayingContent(
                     NowPlayingQueuePage(playback, surfaceState)
                 }
             } else {
-                NowPlayingVisualizer(
-                    trackId = track.id,
+                TrackCover(
                     trackUri = track.uri,
-                    playbackFraction = playback.progressFraction,
                     size = metrics.coverSizeDp,
+                    modifier = Modifier.testTag("now-playing-cover"),
+                    artworkSize = AndroidArtworkSize.NOW_PLAYING,
                     shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
                 )
             }
@@ -225,11 +226,11 @@ private fun WideShortNowPlayingContent(
             if (surfaceState.nowPlayingQueueVisible) {
                 NowPlayingQueuePage(playback, surfaceState)
             } else {
-                NowPlayingVisualizer(
-                    trackId = track.id,
+                TrackCover(
                     trackUri = track.uri,
-                    playbackFraction = playback.progressFraction,
                     size = metrics.coverSizeDp,
+                    modifier = Modifier.testTag("now-playing-cover"),
+                    artworkSize = AndroidArtworkSize.NOW_PLAYING,
                     shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
                 )
             }

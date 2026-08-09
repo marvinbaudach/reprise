@@ -9,7 +9,6 @@ internal interface MainActivitySurfaceProvider {
 
 internal data class MainActivitySurfaceDependencies(
     val initialTheme: MobileThemeSelection,
-    val initialVisualizer: MobileVisualizer,
     val initialState: LibraryScreenState,
     val initialBrowseTab: BrowseTab = BrowseTab.TITLES,
     val rememberBrowseTab: (BrowseTab) -> Unit = {},
@@ -37,7 +36,6 @@ internal data class MainActivitySurfaceDependencies(
     val replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
     val setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     val selectTheme: (MobileThemeSelection, MobileTheme) -> MobileThemeSelection,
-    val selectVisualizer: (MobileVisualizer) -> MobileVisualizer,
     val animationsEnabled: () -> Boolean,
     val observeAmbientScheduling: (Boolean) -> Unit,
 )

@@ -336,7 +336,7 @@ paths; waves run in the order recorded by the plan.
 | --- | --- | --- |
 | A | P1 | `crates/reprise-android-ffi/src/track_analysis.rs` |
 | A | P2 | `android/app/src/main/java/de/reprise/spike/scene/**`, `android/app/src/test/java/de/reprise/spike/scene/**` |
-| A | P7 | `android/app/src/main/java/de/reprise/spike/{VisualizerSelection,NowPlayingVisualizer}.kt`, `android/app/src/test/java/de/reprise/spike/{MainActivityVisualizerTest,VisualizerSelectionTest}.kt` |
+| A | P7 | `android/app/src/main/java/de/reprise/spike/{VisualizerSelection,NowPlayingVisualizer,MainActivitySurface,MainActivity,NowPlayingSheet}.kt`, `android/app/src/main/java/de/reprise/spike/settings/AppearanceSettingsPage.kt`, and directly affected visualizer/settings tests plus the shared activity test fixture |
 | B | P3 | `android/app/src/main/java/de/reprise/spike/{NowPlayingFog,CoverFogBitmap}.kt` and focused tests |
 | B | P4 | `android/app/src/main/java/de/reprise/spike/NowPlayingBurst.kt` and focused tests |
 | B | P6 | `android/app/src/main/java/de/reprise/spike/{SceneDriver,AmbientRuntime}.kt` and focused tests |

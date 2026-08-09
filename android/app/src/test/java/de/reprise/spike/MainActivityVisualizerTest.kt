@@ -1,27 +1,13 @@
 package de.reprise.spike
 
-import android.content.Context
-import android.content.Intent
 import android.os.Looper
-import android.os.PowerManager
-import android.view.HapticFeedbackConstants
-import android.view.View
-import android.view.ViewGroup
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
-import androidx.lifecycle.Lifecycle
 import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,7 +25,6 @@ import uniffi.reprise_android_ffi.AndroidRepeatMode
     qualifiers = "w412dp-h916dp-port",
     application = ConfigurationTestApplication::class,
 )
-@Suppress("DEPRECATION") // ShadowPowerManager's screen-off test hook is deprecated upstream.
 class MainActivityVisualizerTest {
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
@@ -53,155 +38,32 @@ class MainActivityVisualizerTest {
     }
 
     @Test
-    fun theRealActivityPathSharesOnePersistedTwoEntryChoiceWithTheTouchAnchoredMenu() {
+    fun retired_visualizer_modes_are_absent_from_now_playing_and_appearance_settings() {
         application.service.publish(m9bSnapshot(trackId = 1))
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
         compose.onNodeWithTag("library-mini-player").performClick()
 
-        compose.onNodeWithTag("visualizer-bar-COVER").assertExists()
-        compose.onNodeWithTag("visualizer-bar-AMBIENT").assertExists()
-        // Absent, not greyed: they need a stored spectrogram, the phone no
-        // longer computes one, and nothing carries the desktop's across yet.
-        // An entry that can never become available explains a wait that never
-        // ends.
-        compose.onNodeWithTag("visualizer-bar-SPECTRUM").assertDoesNotExist()
-        compose.onNodeWithTag("visualizer-bar-PREVIEW_BAND").assertDoesNotExist()
-
-        val surface = compose.onNodeWithTag("visualizer-surface")
-        val surfaceBounds = surface.getUnclippedBoundsInRoot()
-        surface.performTouchInput {
-            down(Offset(width * 0.8f, height * 0.72f))
-            advanceEventTime(600)
-            up()
-        }
-
-        assertEquals(
-            HapticFeedbackConstants.LONG_PRESS,
-            lastHapticFeedback(compose.activity.window.decorView),
-        )
-        listOf("Cover", "Ambient").forEach { label ->
-            compose.onAllNodesWithText(label).assertCountEquals(2)
-        }
-        listOf("Spectrum", "Preview").forEach { label ->
-            compose.onAllNodesWithText(label).assertCountEquals(0)
-        }
-        val anchorBounds = compose.onNodeWithTag("visualizer-menu-anchor").getUnclippedBoundsInRoot()
-        assertTrue(anchorBounds.left > (surfaceBounds.left + surfaceBounds.right) / 2f)
-        assertTrue(anchorBounds.top > (surfaceBounds.top + surfaceBounds.bottom) / 2f)
-
-        compose.mainClock.autoAdvance = false
-        compose.onNodeWithTag("visualizer-menu-AMBIENT").performClick()
-        compose.mainClock.advanceTimeBy(60)
-        compose.onNodeWithTag("visualizer-cover-surface").assertExists()
-        compose.onNodeWithTag("visualizer-ambient-surface").assertExists()
-        // One frame establishes the transition before its 120 ms clock starts.
-        compose.mainClock.advanceTimeBy(140)
-        compose.onNodeWithTag("visualizer-cover-surface").assertDoesNotExist()
-        compose.onNodeWithTag("visualizer-ambient-surface").assertExists()
-        compose.onNodeWithTag("visualizer-menu-AMBIENT").assertDoesNotExist()
-        compose.mainClock.autoAdvance = true
-        assertEquals(listOf(MobileVisualizer.AMBIENT), application.visualizerWrites)
-
-        compose.activityRule.scenario.recreate()
-        shadowOf(Looper.getMainLooper()).idle()
-        application.service.republish()
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.waitForIdle()
-        compose.onNodeWithTag("visualizer-ambient-surface").assertExists()
-        assertEquals(listOf(MobileVisualizer.AMBIENT), application.visualizerWrites)
-
-        application.service.publish(m9bSnapshot(trackId = 2))
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.waitForIdle()
-        compose.onNodeWithTag("visualizer-ambient-surface").assertExists()
-    }
-
-    @Test
-    fun ambientFramesAreUnscheduledOnTheRealPathInBackgroundAndWithTheScreenOff() {
-        openAmbient()
-        assertEquals(true, application.ambientScheduleEvents.lastOrNull())
-
-        compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
-        shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(false, application.ambientScheduleEvents.lastOrNull())
-
-        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-        shadowOf(Looper.getMainLooper()).idle()
-        application.service.republish()
-        shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(true, application.ambientScheduleEvents.lastOrNull())
-
-        val power = compose.activity.getSystemService(Context.POWER_SERVICE) as PowerManager
-        shadowOf(power).setIsInteractive(false)
-        compose.activity.sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
-        shadowOf(Looper.getMainLooper()).idle()
-
-        assertEquals(false, application.ambientScheduleEvents.lastOrNull())
-    }
-
-    @Test
-    fun systemAnimationsOffKeepsAmbientStaticOnTheRealActivityPath() {
-        openAmbient()
-        assertEquals(true, application.ambientScheduleEvents.lastOrNull())
-        application.animationsEnabled = false
-        application.ambientScheduleEvents.clear()
-
-        compose.activityRule.scenario.recreate()
-        shadowOf(Looper.getMainLooper()).idle()
-        application.service.republish()
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.waitForIdle()
-
-        compose.onNodeWithTag("visualizer-ambient-surface").assertExists()
-        assertEquals(false, application.ambientScheduleEvents.lastOrNull())
-        assertTrue(application.ambientScheduleEvents.none { it })
-    }
-
-    /**
-     * The two modes that need an analysis are gone from both places at once.
-     *
-     * They were greyed with "Needs track analysis" while the phone still
-     * computed one. It does not any more, and nothing brings the desktop's
-     * across yet, so the greying explained a wait with no end. A surface that
-     * offers only what it can do says more than one that lists what it cannot.
-     */
-    @Test
-    fun theModesThatNeedAnAnalysisAreOfferedNowhere() {
-        application.service.publish(m9bSnapshot(trackId = 1))
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.waitForIdle()
-        compose.onNodeWithTag("library-mini-player").performClick()
-
-        compose.onNodeWithTag("visualizer-bar-COVER").assertTextEquals("Cover")
-        compose.onNodeWithTag("visualizer-bar-AMBIENT").assertTextEquals("Ambient")
-        compose.onNodeWithTag("visualizer-bar-SPECTRUM").assertDoesNotExist()
-        compose.onNodeWithTag("visualizer-bar-PREVIEW_BAND").assertDoesNotExist()
-        compose.onAllNodesWithText("Needs track analysis").assertCountEquals(0)
-    }
-
-    private fun openAmbient() {
-        application.service.publish(m9bSnapshot(trackId = 1))
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.waitForIdle()
-        compose.onNodeWithTag("library-mini-player").performClick()
-        compose.onNodeWithTag("visualizer-surface").performTouchInput {
+        compose.onNodeWithTag("now-playing-cover").assertExists()
+        compose.onNodeWithTag("visualizer-bar-COVER").assertDoesNotExist()
+        compose.onNodeWithTag("visualizer-bar-AMBIENT").assertDoesNotExist()
+        compose.onNodeWithTag("visualizer-surface").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing-cover").performTouchInput {
             down(center)
             advanceEventTime(600)
             up()
         }
-        compose.onNodeWithTag("visualizer-menu-AMBIENT").performClick()
-        compose.waitForIdle()
-    }
-}
+        compose.onNodeWithTag("visualizer-menu-COVER").assertDoesNotExist()
+        compose.onNodeWithTag("visualizer-menu-AMBIENT").assertDoesNotExist()
 
-private fun lastHapticFeedback(view: View): Int {
-    val own = shadowOf(view).lastHapticFeedbackPerformed()
-    if (view !is ViewGroup) return own
-    return (0 until view.childCount)
-        .maxOfOrNull { index -> lastHapticFeedback(view.getChildAt(index)) }
-        ?.coerceAtLeast(own)
-        ?: own
+        compose.onNodeWithContentDescription("Collapse Now Playing").performClick()
+        compose.onNodeWithContentDescription("Library actions").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Open Appearance").performClick()
+        compose.onNodeWithText("Visualizer").assertDoesNotExist()
+        compose.onNodeWithTag("settings-visualizer-COVER").assertDoesNotExist()
+        compose.onNodeWithTag("settings-visualizer-AMBIENT").assertDoesNotExist()
+    }
 }
 
 internal fun m9bSnapshot(trackId: Long) = AndroidPlaybackSnapshot(

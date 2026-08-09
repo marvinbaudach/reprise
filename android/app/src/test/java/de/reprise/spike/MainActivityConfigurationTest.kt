@@ -364,7 +364,6 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
         startSleepTimer = { selection -> service.startSleepTimer(selection) },
         cancelSleepTimer = { service.cancelSleepTimer() },
     )
-    val visualizerWrites = mutableListOf<MobileVisualizer>()
     val analysisImports = mutableListOf<Long>()
     private val trackAnalysis = object : TrackAnalysisPort {
         override val revision = 0L
@@ -381,7 +380,6 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
     val ambientScheduleEvents = mutableListOf<Boolean>()
     var animationsEnabled = true
     val trackRatings = mutableMapOf<Long, Int>()
-    private var selectedVisualizer = MobileVisualizer.COVER
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
         private set
@@ -551,7 +549,6 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
                 colorScheme = AndroidColorScheme.SYSTEM,
                 dynamicAvailable = false,
             ),
-            initialVisualizer = selectedVisualizer,
             initialState = browse,
             initialBrowseTab = rememberedDestination,
             rememberBrowseTab = { tab ->
@@ -596,11 +593,6 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
                 PlaybackSettingsUiState(false, enabled, emptyList())
             },
             selectTheme = { current, _ -> current },
-            selectVisualizer = { visualizer ->
-                selectedVisualizer = visualizer
-                visualizerWrites += visualizer
-                visualizer
-            },
             animationsEnabled = { animationsEnabled },
             observeAmbientScheduling = ambientScheduleEvents::add,
         )
