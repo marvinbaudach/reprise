@@ -245,12 +245,16 @@ impl<'connection> LibraryDoctor<'connection> {
         }
         let (mut proposals, mut unresolved_groups) = local_rules::proposals_for(&read_tracks);
         if request.options.remote_enabled {
-            if progress(DoctorScanProgress {
-                phase: DoctorScanPhase::CheckingRemote,
-                completed_tracks: tracks.len().saturating_sub(1),
-                total_tracks: tracks.len(),
-                summary: preview_summary,
-            }) == ScanControl::Cancel
+            let mut publish_phase_progress = |phase, completed_tracks, summary| {
+                progress(DoctorScanProgress {
+                    phase,
+                    completed_tracks,
+                    total_tracks,
+                    summary,
+                })
+            };
+            if publish_phase_progress(DoctorScanPhase::CheckingRemote, 0, preview_summary)
+                == ScanControl::Cancel
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
@@ -266,6 +270,7 @@ impl<'connection> LibraryDoctor<'connection> {
             let fingerprint_backend = announced_backend
                 .as_ref()
                 .map(|backend| backend as &dyn FingerprintBackend);
+            let mut remote_completed_tracks = 0;
             // A release is chosen for a whole album, so an album is reused as a
             // whole or resolved as a whole: mixing a stored decision with a
             // fresh one could put two releases into one album. Where a group
@@ -280,12 +285,11 @@ impl<'connection> LibraryDoctor<'connection> {
                 .filter(|index| reused_readings.contains(&read_tracks[*index].reference.track_id))
                 .collect::<Vec<_>>();
             if !refresh_reused_metadata(&read_tracks, &reread, &mut remote_metadata, &mut || {
-                progress(DoctorScanProgress {
-                    phase: DoctorScanPhase::CheckingRemote,
-                    completed_tracks: tracks.len().saturating_sub(1),
-                    total_tracks: tracks.len(),
-                    summary: preview_summary,
-                })
+                publish_phase_progress(
+                    DoctorScanPhase::CheckingRemote,
+                    remote_completed_tracks,
+                    preview_summary,
+                )
             }) {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }
@@ -302,12 +306,11 @@ impl<'connection> LibraryDoctor<'connection> {
                     let query = album_query(&read_tracks, &indices);
                     let album_resolution = if let Some(query) = query {
                         let mut control = || {
-                            progress(DoctorScanProgress {
-                                phase: DoctorScanPhase::CheckingRemote,
-                                completed_tracks: tracks.len().saturating_sub(1),
-                                total_tracks: tracks.len(),
-                                summary: preview_summary,
-                            })
+                            publish_phase_progress(
+                                DoctorScanPhase::CheckingRemote,
+                                remote_completed_tracks,
+                                preview_summary,
+                            )
                         };
                         match resolver.resolve_album(&remote::AlbumRequest { query }, &mut control)
                         {
@@ -320,17 +323,16 @@ impl<'connection> LibraryDoctor<'connection> {
                     } else {
                         remote::AlbumResolution::default()
                     };
-                    for index in indices {
+                    for &index in &indices {
                         let read_track = &read_tracks[index];
                         let metadata = &remote_metadata[index];
                         let published_summary = preview_summary;
                         let mut control = || {
-                            progress(DoctorScanProgress {
-                                phase: fingerprint_phase::remote_phase(&fingerprinting),
-                                completed_tracks: tracks.len().saturating_sub(1),
-                                total_tracks: tracks.len(),
-                                summary: published_summary,
-                            })
+                            publish_phase_progress(
+                                fingerprint_phase::remote_phase(&fingerprinting),
+                                remote_completed_tracks,
+                                published_summary,
+                            )
                         };
                         match resolver.resolve_track(
                             metadata,
@@ -372,6 +374,16 @@ impl<'connection> LibraryDoctor<'connection> {
                         }
                     }
                 }
+                remote_completed_tracks += indices.len();
+                if remote_completed_tracks < total_tracks
+                    && publish_phase_progress(
+                        DoctorScanPhase::CheckingRemote,
+                        remote_completed_tracks,
+                        preview_summary,
+                    ) == ScanControl::Cancel
+                {
+                    return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
+                }
             }
             preview_summary = super::presentation::partial_scan_summary(
                 &proposals,
@@ -379,12 +391,11 @@ impl<'connection> LibraryDoctor<'connection> {
                 read_tracks.len(),
                 skipped_tracks,
             );
-            if progress(DoctorScanProgress {
-                phase: DoctorScanPhase::CheckingRemote,
-                completed_tracks: tracks.len(),
-                total_tracks: tracks.len(),
-                summary: preview_summary,
-            }) == ScanControl::Cancel
+            if publish_phase_progress(
+                DoctorScanPhase::CheckingRemote,
+                total_tracks,
+                preview_summary,
+            ) == ScanControl::Cancel
             {
                 return Ok(DoctorScanOutcome::Cancelled { previous_scan_id });
             }

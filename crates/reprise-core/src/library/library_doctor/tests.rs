@@ -342,9 +342,18 @@ fn combined_scan_progress_is_monotonic_and_completes_after_remote_resolution() {
         )
         .unwrap();
     assert!(matches!(outcome, DoctorScanOutcome::Completed(_)));
-    assert!(progress
-        .windows(2)
-        .all(|pair| pair[0].completed_tracks <= pair[1].completed_tracks));
+    for phase in [
+        DoctorScanPhase::ReadingTags,
+        DoctorScanPhase::CheckingRemote,
+        DoctorScanPhase::Fingerprinting,
+    ] {
+        let phase_progress = progress
+            .iter()
+            .filter(|item| item.phase == phase)
+            .map(|item| item.completed_tracks)
+            .collect::<Vec<_>>();
+        assert!(phase_progress.windows(2).all(|pair| pair[0] <= pair[1]));
+    }
     assert_eq!(
         progress
             .last()

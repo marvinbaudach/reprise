@@ -217,3 +217,82 @@ fn doc_1g_the_local_pass_completes_before_the_first_network_request() {
 
     assert!(first_remote_saw_local_complete.get());
 }
+
+#[test]
+fn doc_1g_remote_progress_advances_after_each_completed_album_group() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = migrated_connection();
+    for (id, album) in [(1, "First Album"), (2, "First Album"), (3, "Second Album")] {
+        let path = fixture_copy(dir.path(), &format!("remote-progress-{id}.flac"));
+        write_tags(
+            &path,
+            &format!("Track {id}"),
+            "Artist",
+            album,
+            "Artist",
+            "Rock",
+        );
+        insert_track(&conn, id, &path, "Artist");
+    }
+    LibraryDoctor::new(&conn)
+        .scan_with_resolver(
+            &DoctorScanRequest {
+                scope: DoctorScopeRequest::Selection {
+                    track_ids: vec![1, 2, 3],
+                },
+                options: DoctorScanOptions {
+                    remote_enabled: true,
+                },
+            },
+            None,
+            &mut CollisionRemoteResolver,
+            &mut |_| ScanControl::Continue,
+        )
+        .unwrap();
+    conn.conn()
+        .execute("UPDATE tracks SET file_mtime = 1 WHERE id = 3", [])
+        .unwrap();
+    let mut remote_progress = Vec::new();
+
+    LibraryDoctor::new(&conn)
+        .scan_with_resolver(
+            &DoctorScanRequest {
+                scope: DoctorScopeRequest::Selection {
+                    track_ids: vec![1, 2, 3],
+                },
+                options: DoctorScanOptions {
+                    remote_enabled: true,
+                },
+            },
+            None,
+            &mut CollisionRemoteResolver,
+            &mut |progress| {
+                if progress.phase == DoctorScanPhase::CheckingRemote {
+                    remote_progress.push(progress);
+                }
+                ScanControl::Continue
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        remote_progress
+            .first()
+            .map(|progress| progress.completed_tracks),
+        Some(0),
+        "the remote phase starts on its own zero-based scale"
+    );
+    let completed_group_boundaries = remote_progress.iter().fold(Vec::new(), |mut values, item| {
+        if values.last() != Some(&item.completed_tracks) {
+            values.push(item.completed_tracks);
+        }
+        values
+    });
+    assert_eq!(completed_group_boundaries, vec![0, 2, 3]);
+    assert!(remote_progress
+        .windows(2)
+        .all(|pair| pair[0].completed_tracks <= pair[1].completed_tracks));
+    assert!(remote_progress
+        .iter()
+        .all(|progress| progress.total_tracks == 3));
+}
