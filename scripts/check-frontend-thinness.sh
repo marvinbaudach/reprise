@@ -37,7 +37,7 @@ echo "== Frontend thinness =="
 # containing `Connection`; direct access to the owned connection is a
 # separate zero-tolerance ban below.
 declare -A budget=(
-  [rusqlite]=114
+  [rusqlite]=113
   [filesystem]=13
   [threads]=15
   [workers]=7
