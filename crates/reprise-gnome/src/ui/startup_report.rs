@@ -1,7 +1,5 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
-use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -116,13 +114,7 @@ pub(crate) fn write_if_armed() {
             phases: &report.phases,
             counters: &report.counters,
         };
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&report_path)
-            .map(BufWriter::new)
-            .map_err(serde_json::Error::io)
-            .and_then(|writer| serde_json::to_writer(writer, &serializable))
+        reprise_core::perf_report::write_new_json(&report_path, &serializable)
     });
     match result {
         Ok(()) => {
