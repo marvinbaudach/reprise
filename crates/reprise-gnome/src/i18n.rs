@@ -15,8 +15,15 @@ const TRANSLATED_LOCALES: &str = include_str!("../../../po/LINGUAS");
 static ACTIVE_GUI_LANGUAGE: OnceLock<String> = OnceLock::new();
 
 pub fn init() {
-    let selected_locale = setlocale(LocaleCategory::LcAll, "");
-    let message_locale = setlocale(LocaleCategory::LcMessages, "").or(selected_locale);
+    // SAFETY: `init` has one call site: `main` invokes it before constructing
+    // the application and before any thread exists.
+    let (selected_locale, message_locale) = unsafe {
+        (
+            setlocale(LocaleCategory::LcAll, ""),
+            setlocale(LocaleCategory::LcMessages, ""),
+        )
+    };
+    let message_locale = message_locale.or(selected_locale);
     let message_locale = message_locale
         .as_deref()
         .and_then(|locale| std::str::from_utf8(locale).ok());

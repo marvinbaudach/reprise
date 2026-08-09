@@ -47,7 +47,7 @@ async-channel = "2.5.0"
 # combinator for racing the podcast worker's priority and ordinary channels
 # without hand-rolled unsafe pinning or a busy-poll loop.
 futures-lite = "2.6"
-gettext-rs = { version = "0.7.7", features = ["gettext-system"] }
+gettext-rs = { version = "0.8.0", features = ["gettext-system"] }
 oo7 = { version = "0.6", default-features = false, features = ["async-std", "native_crypto"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
