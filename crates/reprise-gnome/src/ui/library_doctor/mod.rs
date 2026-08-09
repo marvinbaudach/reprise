@@ -130,11 +130,15 @@ impl LibraryDoctorCoordinator {
                     }
                 }) as Rc<dyn Fn(bool)>
             };
+            super::startup_report::mark("LibraryDoctorCoordinator::fingerprint.capability begin");
             let fingerprint_available = matches!(
                 fingerprint.capability(),
                 FingerprintCapability::Available { .. }
             );
+            super::startup_report::mark("LibraryDoctorCoordinator::fingerprint.capability end");
+            super::startup_report::mark("LibraryDoctorPage::new begin");
             let page = LibraryDoctorPage::new(conn, window, fingerprint_available, refresh);
+            super::startup_report::mark("LibraryDoctorPage::new end");
             let progress = DoctorProgressCard::new();
             Self {
                 conn: conn.clone(),
@@ -159,7 +163,9 @@ impl LibraryDoctorCoordinator {
             }
         });
         sidebar.append_doctor_card(coordinator.progress.widget());
+        super::startup_report::mark("LibraryDoctorCoordinator::load_last_scan begin");
         coordinator.load_last_scan();
+        super::startup_report::mark("LibraryDoctorCoordinator::load_last_scan end");
         {
             let weak = Rc::downgrade(&coordinator);
             coordinator.page.connect_run(move || {
@@ -294,6 +300,7 @@ impl LibraryDoctorCoordinator {
     }
 
     pub(super) fn load_last_scan(&self) {
+        super::startup_report::mark("LibraryDoctorCoordinator::last_complete_scan begin");
         let scan = {
             let conn = &self.conn;
             LibraryDoctor::new(conn)
@@ -303,7 +310,11 @@ impl LibraryDoctorCoordinator {
                     None
                 })
         };
-        self.page.set_scan(scan, self.revert_available());
+        super::startup_report::mark("LibraryDoctorCoordinator::last_complete_scan end");
+        super::startup_report::mark("LibraryDoctorCoordinator::last_cleanup begin");
+        let revert_available = self.revert_available();
+        super::startup_report::mark("LibraryDoctorCoordinator::last_cleanup end");
+        self.page.set_scan(scan, revert_available);
     }
 
     /// `Undo` is only offered while there is a cleanup left to undo. Without
