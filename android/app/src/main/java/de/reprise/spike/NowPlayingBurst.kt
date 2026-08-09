@@ -64,37 +64,92 @@ internal fun burstHotRay(transient: Transient?, bandCount: Int): BurstHotRay? {
     return BurstHotRay(
         bandIndex = transient.bandIndex.coerceIn(0, bandCount - 1),
         angleDegrees = transient.bandIndex.coerceIn(0, bandCount - 1) * 360f / bandCount,
-        excess = transient.excess.coerceIn(0f, 1f),
+        excess = transient.excess.clamped01(),
     )
 }
 
 internal fun burstCoreRadii(shape: CoreShape, bass: Float, pointCount: Int): FloatArray =
-    FloatArray(pointCount.coerceAtLeast(0)) { index ->
-        val theta = index * TWO_PI / pointCount
-        shape.radiusAt(theta, NowPlayingBurstSpec.coreBaseRadiusDp, bass)
+    FloatArray(pointCount.coerceAtLeast(0)).also { radii -> burstCoreRadiiInto(radii, shape, bass) }
+
+/** Fills [radii] with the core outline; the shape and the bass term are its only inputs. */
+internal fun burstCoreRadiiInto(radii: FloatArray, shape: CoreShape, bass: Float) {
+    for (index in radii.indices) {
+        val theta = index * TWO_PI / radii.size
+        radii[index] = shape.radiusAt(theta, NowPlayingBurstSpec.coreBaseRadiusDp, bass)
     }
+}
 
 internal fun burstBloomSize(width: Int, height: Int): BloomSize = BloomSize(
     width = (width / BLOOM_SCALE).coerceAtLeast(1),
     height = (height / BLOOM_SCALE).coerceAtLeast(1),
 )
 
-internal fun burstBloomBlurDp(level: Float): Float = 6f + level.coerceIn(0f, 1f) * 16f
+internal fun burstBloomBlurDp(level: Float): Float = 6f + level.clamped01() * 16f
 
 internal fun burstBloomOpacity(level: Float): Float =
-    level.coerceIn(0f, 1f).let { bounded -> bounded * bounded }
+    level.clamped01().let { bounded -> bounded * bounded }
 
+/**
+ * The bloom surface and the geometry the burst reuses between frames. Every cached value is a
+ * pure function of the arguments it is keyed on, so two identical draws stay identical.
+ */
 internal class BurstBloomBuffer {
     private var size = BloomSize(0, 0)
     private var bitmap: ImageBitmap? = null
+    private var bitmapCanvas: Canvas? = null
+    private var scaledDensity: Density? = null
+    private var coreShape: CoreShape? = null
+    private var coreBassBits = 0
+    private var cachedCoreRadii = FloatArray(0)
+
+    /** Rewound before every wedge, so all 112 of them share one path. */
+    val wedgePath = Path()
+
+    /** Rewound before every core outline. */
+    val corePath = Path()
+
+    /** [CanvasDrawScope.draw] installs its parameters per call, so one instance serves every frame. */
+    val bloomScope = CanvasDrawScope()
 
     fun image(width: Int, height: Int): ImageBitmap {
-        val next = burstBloomSize(width, height)
-        if (next != size || bitmap == null) {
-            size = next
-            bitmap = ImageBitmap(next.width, next.height)
-        }
+        resize(width, height)
         return checkNotNull(bitmap)
+    }
+
+    fun canvas(width: Int, height: Int): Canvas {
+        resize(width, height)
+        return checkNotNull(bitmapCanvas)
+    }
+
+    fun density(scale: Float, fontScale: Float): Density {
+        val current = scaledDensity
+        if (current == null || current.density != scale || current.fontScale != fontScale) {
+            scaledDensity = Density(scale, fontScale)
+        }
+        return checkNotNull(scaledDensity)
+    }
+
+    /** The core outline for [shape] at [bass]; recomputed only when one of those inputs changes. */
+    fun coreRadii(shape: CoreShape, bass: Float, pointCount: Int): FloatArray {
+        val bassBits = bass.toRawBits()
+        if (coreShape !== shape || coreBassBits != bassBits || cachedCoreRadii.size != pointCount) {
+            if (cachedCoreRadii.size != pointCount) {
+                cachedCoreRadii = FloatArray(pointCount.coerceAtLeast(0))
+            }
+            burstCoreRadiiInto(cachedCoreRadii, shape, bass)
+            coreShape = shape
+            coreBassBits = bassBits
+        }
+        return cachedCoreRadii
+    }
+
+    private fun resize(width: Int, height: Int) {
+        val next = burstBloomSize(width, height)
+        if (next == size && bitmap != null) return
+        val image = ImageBitmap(next.width, next.height)
+        size = next
+        bitmap = image
+        bitmapCanvas = Canvas(image)
     }
 }
 
@@ -108,10 +163,10 @@ internal fun DrawScope.drawNowPlayingBurst(
     opacity: Float,
     effects: BurstEffects,
 ) {
-    val boundedOpacity = opacity.coerceIn(0f, 1f)
+    val boundedOpacity = opacity.clamped01()
     if (boundedOpacity <= 0f) return
     val center = Offset(size.width / 2f, size.height * NowPlayingBurstSpec.centerHeightFraction)
-    drawBurstScene(state, center, boundedOpacity, effects)
+    drawBurstScene(state, bloomBuffer, center, boundedOpacity, effects)
     if (effects.bloom && state.level > 0f) {
         drawBurstBloom(state, bloomBuffer, boundedOpacity, effects)
     }
@@ -119,17 +174,18 @@ internal fun DrawScope.drawNowPlayingBurst(
 
 private fun DrawScope.drawBurstScene(
     state: SceneState,
+    buffer: BurstBloomBuffer,
     center: Offset,
     opacity: Float,
     effects: BurstEffects,
 ) {
-    drawWedges(state.burstBands, center, opacity)
+    drawWedges(state.burstBands, buffer.wedgePath, center, opacity)
     drawCorona(state, center, opacity)
-    drawCore(state, center, opacity)
+    drawCore(state, buffer, center, opacity)
     if (effects.hotRay) drawHotRay(state, center, opacity)
 }
 
-private fun DrawScope.drawWedges(bands: FloatArray, center: Offset, opacity: Float) {
+private fun DrawScope.drawWedges(bands: FloatArray, path: Path, center: Offset, opacity: Float) {
     val resting = SceneColour.hsl(0f, 0f)
     drawRect(
         color = Color.hsl(resting.hue, resting.saturation, resting.lightness),
@@ -143,17 +199,21 @@ private fun DrawScope.drawWedges(bands: FloatArray, center: Offset, opacity: Flo
         val band = bands.valueFor(index, NowPlayingBurstSpec.wedgeCount)
         val angle = index * TWO_PI / NowPlayingBurstSpec.wedgeCount - HALF_PI
         val halfStep = TWO_PI / NowPlayingBurstSpec.wedgeCount * 0.53f
-        val path = Path().apply {
+        path.apply {
+            rewind()
             moveTo(center.x, center.y)
             lineTo(center.x + cos(angle - halfStep) * radius, center.y + sin(angle - halfStep) * radius)
             lineTo(center.x + cos(angle + halfStep) * radius, center.y + sin(angle + halfStep) * radius)
             close()
         }
         val angleDegrees = index * 360f / NowPlayingBurstSpec.wedgeCount
-        val hsl = SceneColour.hsl(angleDegrees, band)
         drawPath(
             path = path,
-            color = Color.hsl(hsl.hue, hsl.saturation, hsl.lightness),
+            color = Color.hsl(
+                SceneColour.hue(angleDegrees),
+                SceneColour.saturation,
+                SceneColour.lightness(band),
+            ),
             alpha = (0.66f + band * 0.34f) * opacity,
         )
     }
@@ -175,19 +235,24 @@ private fun DrawScope.drawCorona(
     center: Offset,
     opacity: Float,
 ) {
-    val ring = (NowPlayingBurstSpec.coronaBaseRadiusDp + state.bass * NowPlayingBurstSpec.coronaBassRadiusDp) * density
+    val bass = state.bass.clamped01()
+    val level = state.level.clamped01()
+    val ring = (NowPlayingBurstSpec.coronaBaseRadiusDp + bass * NowPlayingBurstSpec.coronaBassRadiusDp) * density
     repeat(NowPlayingBurstSpec.coronaStrokeCount) { index ->
         val band = state.burstBands.valueFor(index, NowPlayingBurstSpec.coronaStrokeCount)
-        val response = band * state.level
+        val response = band * level
         val length = (NowPlayingBurstSpec.coronaBaseLengthDp + response * NowPlayingBurstSpec.coronaBandLengthDp) * density
         val angle = index * TWO_PI / NowPlayingBurstSpec.coronaStrokeCount - HALF_PI
         val unit = Offset(cos(angle), sin(angle))
         val start = center + unit * ring
         val end = center + unit * (ring + length)
         val angleDegrees = index * 360f / NowPlayingBurstSpec.coronaStrokeCount
-        val hsl = SceneColour.hsl(angleDegrees, band)
         drawLine(
-            color = Color.hsl(hsl.hue, hsl.saturation, (hsl.lightness + 0.16f).coerceAtMost(0.74f)),
+            color = Color.hsl(
+                SceneColour.hue(angleDegrees),
+                SceneColour.saturation,
+                (SceneColour.lightness(band) + 0.16f).coerceAtMost(0.74f),
+            ),
             start = start,
             end = end,
             strokeWidth = NowPlayingBurstSpec.coronaStrokeWidthDp * density,
@@ -197,9 +262,19 @@ private fun DrawScope.drawCorona(
     }
 }
 
-private fun DrawScope.drawCore(state: SceneState, center: Offset, opacity: Float) {
-    val radii = burstCoreRadii(state.coreShape, state.bass, NowPlayingBurstSpec.coronaStrokeCount)
-    val path = Path()
+private fun DrawScope.drawCore(
+    state: SceneState,
+    buffer: BurstBloomBuffer,
+    center: Offset,
+    opacity: Float,
+) {
+    val radii = buffer.coreRadii(
+        state.coreShape,
+        state.bass.clamped01(),
+        NowPlayingBurstSpec.coronaStrokeCount,
+    )
+    val path = buffer.corePath
+    path.rewind()
     radii.forEachIndexed { index, radiusDp ->
         val angle = index * TWO_PI / radii.size - HALF_PI
         val point = center + Offset(cos(angle), sin(angle)) * (radiusDp * density)
@@ -264,10 +339,10 @@ private fun DrawScope.drawBurstBloom(
     val height = size.height.roundToInt().coerceAtLeast(1)
     val image = buffer.image(width, height)
     val bloomSize = burstBloomSize(width, height)
-    CanvasDrawScope().draw(
-        density = Density(density / BLOOM_SCALE, drawContext.density.fontScale),
+    buffer.bloomScope.draw(
+        density = buffer.density(density / BLOOM_SCALE, drawContext.density.fontScale),
         layoutDirection = layoutDirection,
-        canvas = Canvas(image),
+        canvas = buffer.canvas(width, height),
         size = Size(bloomSize.width.toFloat(), bloomSize.height.toFloat()),
     ) {
         drawRect(Color.Transparent, blendMode = BlendMode.Clear)
@@ -275,7 +350,7 @@ private fun DrawScope.drawBurstBloom(
             bloomSize.width / 2f,
             bloomSize.height * NowPlayingBurstSpec.centerHeightFraction,
         )
-        drawBurstScene(state, bloomCenter, 1f, effects)
+        drawBurstScene(state, buffer, bloomCenter, 1f, effects)
     }
     val bloomOpacity = burstBloomOpacity(state.level) * opacity
     val blurRadius = burstBloomBlurDp(state.level) * density
@@ -294,11 +369,18 @@ private fun DrawScope.drawBurstBloom(
 }
 
 private fun FloatArray.valueFor(index: Int, count: Int): Float =
-    getOrElse(burstBandIndex(index, count, size)) { 0f }.coerceIn(0f, 1f)
+    getOrElse(burstBandIndex(index, count, size)) { 0f }.clamped01()
+
+/**
+ * Bounds a value to 0..1. [Float.coerceIn] lets NaN through unchanged, and a NaN reaching
+ * `drawPath`/`drawLine`/`Color.hsl` costs the whole frame, so every value entering the renderer
+ * passes here.
+ */
+private fun Float.clamped01(): Float = if (isNaN()) 0f else coerceIn(0f, 1f)
 
 private operator fun Offset.times(scale: Float): Offset = Offset(x * scale, y * scale)
 
-private const val BLOOM_SCALE = 4
+private const val BLOOM_SCALE = 2
 private const val BLOOM_SAMPLE_COUNT = 8
 private const val TWO_PI = (PI * 2.0).toFloat()
 private const val HALF_PI = (PI / 2.0).toFloat()

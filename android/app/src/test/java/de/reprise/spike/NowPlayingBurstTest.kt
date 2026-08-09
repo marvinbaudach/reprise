@@ -54,11 +54,18 @@ class NowPlayingBurstTest {
     }
 
     @Test
-    fun bloom_is_quarter_resolution_squared_and_bounded_by_level() {
-        assertEquals(BloomSize(270, 585), burstBloomSize(1080, 2340))
+    fun bloom_is_quarter_resolution_and_bounded_by_level() {
+        assertEquals(BloomSize(540, 1170), burstBloomSize(1080, 2340))
         assertEquals(6f, burstBloomBlurDp(0f))
         assertEquals(22f, burstBloomBlurDp(1f))
         assertTrue(abs(burstBloomOpacity(0.5f) - 0.25f) < 0.0001f)
+    }
+
+    @Test
+    fun a_nan_never_reaches_the_drawing_commands() {
+        assertEquals(0f, burstHotRay(Transient(bandIndex = 3, excess = Float.NaN), 24)?.excess)
+        assertEquals(0f, burstBloomOpacity(Float.NaN))
+        assertEquals(6f, burstBloomBlurDp(Float.NaN))
     }
 
     @Test
