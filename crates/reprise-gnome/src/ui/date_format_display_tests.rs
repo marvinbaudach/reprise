@@ -20,31 +20,35 @@ fn descendant_labels(widget: &gtk4::Widget) -> Vec<gtk4::Label> {
     labels
 }
 
-/// STYLE-11: four surfaces, one pattern. Renders the releases and concerts
-/// tables with `REPRISE_DATE_PATTERN` pinned and asserts that every date-like
-/// label matches the day-first shape — measured against the widgets that
-/// actually render, not against the formatting functions, because the drift
-/// this rule removes lived in the call sites rather than in the formatter.
+/// STYLE-11: the real concerts view, with `REPRISE_DATE_PATTERN` pinned to the
+/// day-first shape — measured against the widget that actually renders, not
+/// against the formatting function, because the drift this rule removes lived
+/// in the call sites rather than in the formatter. The concerts table is the
+/// surface that used to write `Sat, Oct 17` here and `Sat, 17 Oct` in the
+/// Updates panel for the same event.
+///
+/// The releases table is proved by
+/// `releases_columns::tests::style_11_the_releases_date_column_renders_the_pinned_pattern`
+/// instead of here: its view stays on the "No discography data yet" empty
+/// state unless a whole fetch pipeline has run, so a full-view fixture asserts
+/// against an empty table and passes for the wrong reason.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn style_11_every_surface_renders_the_pinned_pattern() {
+fn style_11_the_concerts_view_renders_the_pinned_pattern() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     std::env::set_var(crate::ui::date_format::PATTERN_ENV, "%d.%m.%Y");
     gtk4::init().unwrap();
 
-    let releases_db = Rc::new(crate::test_db::open().unwrap());
-    crate::test_db::connection(&releases_db)
-        .execute(
-            "INSERT INTO new_releases (
-               release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at
-             ) VALUES ('style-11-release', 'Artist', 'artist-id', 'Release',
-                       'Album', '2026-05-29', 1)",
-            [],
-        )
-        .unwrap();
-    let releases = crate::ui::releases::ReleasesView::new(releases_db, PathBuf::new());
-    releases.refresh();
+    // The process resolves its date format exactly once, so the override above
+    // only takes effect if this test is the first read in the process — which
+    // is why display tests here run one per process (`--exact`). Assert it
+    // rather than trust it: on a machine whose own locale is already day-first
+    // a batch run would otherwise pass for the wrong reason.
+    assert_eq!(
+        crate::ui::date_format::current().date,
+        reprise_core::format::DatePattern::from_platform("%d.%m.%Y"),
+        "another test resolved the date format first; run this one with --exact"
+    );
 
     let concerts_db = Rc::new(crate::test_db::open().unwrap());
     crate::test_db::connection(&concerts_db)
@@ -63,7 +67,6 @@ fn style_11_every_surface_renders_the_pinned_pattern() {
     concerts.refresh();
 
     let tables = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
-    tables.append(releases.root());
     tables.append(concerts.root());
     let window = gtk4::Window::new();
     window.set_default_size(1200, 800);
@@ -72,10 +75,12 @@ fn style_11_every_surface_renders_the_pinned_pattern() {
     crate::ui::source_context_surface::settle_layout();
 
     let labels = descendant_labels(tables.upcast_ref());
-    for text in ["29.05.2026", "17.10.2026"] {
-        assert!(
-            labels.iter().any(|label| label.text() == text),
-            "no rendered table label used the pinned date {text:?}"
-        );
-    }
+    assert!(
+        labels.iter().any(|label| label.text() == "17.10.2026"),
+        "no rendered concert label used the pinned date; rendered labels were {:?}",
+        labels
+            .iter()
+            .map(|label| label.text().to_string())
+            .collect::<Vec<_>>()
+    );
 }
