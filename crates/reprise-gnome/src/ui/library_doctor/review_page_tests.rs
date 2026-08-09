@@ -241,6 +241,48 @@ fn doc_9d_the_footer_states_the_scope_of_the_filter() {
     );
 }
 
+/// The header describes the page, the footer describes the decision. With
+/// everything selected the two agree; unchecking a row moves the footer and
+/// the Apply button down and leaves the header where it is, because the row
+/// is still on screen.
+#[test]
+fn doc_9d_the_header_counts_the_inventory_while_the_footer_counts_the_selection() {
+    let scan = album_change_scan();
+    let mut session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+
+    let rows = grouped_rows_for(&scan, &session, &HashMap::new());
+    assert_eq!(review_header_counts(&rows), (14, 1));
+    assert_eq!(session.summary().tag_change_count, 14);
+
+    session.none();
+    let rows = grouped_rows_for(&scan, &session, &HashMap::new());
+    assert_eq!(
+        review_header_counts(&rows),
+        (14, 1),
+        "unchecking rows removes nothing from the page"
+    );
+    assert_eq!(session.summary().tag_change_count, 0);
+}
+
+/// A filter does change what is on screen, so the header follows it — and
+/// with everything inside the filter selected, header, footer and button all
+/// name the same number.
+#[test]
+fn doc_9d_a_filtered_header_counts_only_the_filtered_rows() {
+    let scan = album_change_scan();
+    let mut session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+    session.set_category_filter(Some(ReviewCategory::Year.problem_classes()));
+
+    let rows = grouped_rows_for(&scan, &session, &HashMap::new())
+        .into_iter()
+        .filter(|row| session.category_filter_matches(row.row.problem_class))
+        .collect::<Vec<_>>();
+
+    assert_eq!(review_header_counts(&rows), (1, 1));
+    assert_eq!(session.summary().tag_change_count, 1);
+    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 change");
+}
+
 #[test]
 fn doc_9b_the_album_pill_counts_written_changes_not_display_rows() {
     let scan = album_change_scan();

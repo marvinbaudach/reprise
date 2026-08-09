@@ -4117,13 +4117,24 @@ means deterministic and high-confidence, never „without review".
 - **DOC-9d** [active] [gtk] — **An active filter limits everything.** Apply
   writes only the filtered set and counts that set in its label. `All` and
   `None` operate only on that set. The footer states the scope, for example
-  "27 of 390 · filtered by Year". Every number on screen is derived from the
-  same selection state. *Tests:*
+  "27 of 390 · filtered by Year".
+  **Two references, split cleanly:** the header states what is on screen — the
+  filtered inventory and the albums it covers — and does not move when a row is
+  unchecked; the footer and the Apply button state the selection inside that
+  inventory, and both come out of one selection state, so they can never
+  disagree with each other. Filtered and everything selected, all three name the
+  same number; unchecking makes the footer and the button fall below the header,
+  which is what unchecking means. *Tests:*
   `doc_9d_the_filter_scope_line_names_shown_total_and_filter`,
   `doc_9d_a_filtered_apply_writes_only_the_filtered_set`,
   `doc_9d_all_and_none_operate_on_the_filtered_set`,
   `doc_9d_the_footer_states_the_scope_of_the_filter`,
-  `doc_9d_every_number_recomputes_from_one_selection_state`.
+  `doc_9d_the_header_counts_the_inventory_while_the_footer_counts_the_selection`,
+  `doc_9d_a_filtered_header_counts_only_the_filtered_rows`,
+  `doc_9d_the_selection_counts_recompute_from_one_selection_state`.
+  *Amended 2026-08-09: the header used to be described as one more number off
+  the selection state, and rendered as one — "1 changes · 2 albums" after
+  unchecking, where the changes followed the checkbox and the albums did not.*
 
 - **DOC-9c** [active] [gtk] — **After the write, and after a clean scan, the
   Doctor says so on its own page.** Post-apply names updated tracks, written

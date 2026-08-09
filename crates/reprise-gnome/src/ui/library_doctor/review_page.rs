@@ -89,13 +89,7 @@ impl ReviewState {
     }
 
     fn refresh_filter_summary(&self) {
-        let rows = self.visible_rows();
-        let changes = rows.iter().map(|row| row.selected_change_count).sum();
-        let albums = rows
-            .iter()
-            .map(|row| row.album_key.as_str())
-            .collect::<HashSet<_>>()
-            .len();
+        let (changes, albums) = review_header_counts(&self.visible_rows());
         self.filter_bar.set_summary(changes, albums);
     }
 
@@ -252,6 +246,24 @@ fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> 
         .ok()?;
     let row = object.borrow::<ReviewRowModel>().clone();
     Some(row)
+}
+
+/// What the header states: the changes on screen and the albums they sit in.
+///
+/// This is the inventory, not the selection — the (possibly filtered) rows the
+/// page is showing. Unchecking a row leaves it standing, which is the whole
+/// point of the split: the header answers "what is here", the footer and the
+/// Apply button answer "what will be written". Mixing the two produced
+/// "1 changes · 2 albums", where the first number followed the checkbox and the
+/// second did not.
+fn review_header_counts(rows: &[ReviewRowModel]) -> (usize, usize) {
+    let changes = rows.iter().map(|row| row.selectable_row_ids.len()).sum();
+    let albums = rows
+        .iter()
+        .map(|row| row.album_key.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    (changes, albums)
 }
 
 fn review_footer_summary(

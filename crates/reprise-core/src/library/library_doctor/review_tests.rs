@@ -360,8 +360,9 @@ fn doc_9d_all_and_none_operate_on_the_filtered_set() {
     assert!(review.rows().iter().all(|row| row.selected));
 }
 
+/// Footer and Apply button, out of one `summary()` — not the header (DOC-9d).
 #[test]
-fn doc_9d_every_number_recomputes_from_one_selection_state() {
+fn doc_9d_the_selection_counts_recompute_from_one_selection_state() {
     let mut review = review_with_year_filter();
 
     review.none();
