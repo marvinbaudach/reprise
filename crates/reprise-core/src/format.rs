@@ -133,6 +133,136 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (year, month, day)
 }
 
+/// The three numeric fields a locale date pattern may carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DateField {
+    Day,
+    Month,
+    Year,
+}
+
+/// A locale date pattern reduced to what Reprise is willing to render: the
+/// three numeric fields and the literals between them.
+///
+/// Reprise takes the *order and punctuation* from the system and nothing
+/// else. A locale that spells the month (`%b`, `%B`) or names the weekday
+/// (`%a`, `%A`) is not rendered in its own shape — the whole pattern falls
+/// back to ISO — because a month name is exactly what this change exists to
+/// remove. A two-digit year (`%y`, which glibc still hands out for `en_US`)
+/// is upgraded rather than rejected: the field is right, only its width is
+/// wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatePattern {
+    /// Literal text before the first field. Usually empty.
+    prefix: String,
+    /// Each field with the literal run that follows it.
+    fields: Vec<(DateField, String)>,
+}
+
+impl DatePattern {
+    /// The fallback whenever the platform pattern cannot be rendered
+    /// numerically. Unambiguous in every locale and already the shape the
+    /// library's "Added" column has always used.
+    pub const ISO: &'static str = "%Y-%m-%d";
+
+    /// Reduces a platform strftime pattern to a [`DatePattern`], falling back
+    /// to [`Self::ISO`] when it carries anything this renderer will not
+    /// print.
+    pub fn from_platform(raw: &str) -> Self {
+        Self::parse(raw).unwrap_or_else(|| {
+            Self::parse(Self::ISO).expect("the ISO pattern is renderable by construction")
+        })
+    }
+
+    fn parse(raw: &str) -> Option<Self> {
+        let mut prefix = String::new();
+        let mut fields: Vec<(DateField, String)> = Vec::new();
+        let mut chars = raw.chars().peekable();
+
+        while let Some(character) = chars.next() {
+            if character != '%' {
+                push_literal(&mut prefix, &mut fields, character);
+                continue;
+            }
+            // Skip the padding and locale modifiers glibc allows between the
+            // percent and the conversion character (`%-d`, `%_d`, `%0e`,
+            // `%Ey`), so a padded field is still recognised as its field.
+            let mut conversion = chars.next()?;
+            while matches!(conversion, '-' | '_' | '0' | '^' | '#' | 'E' | 'O') {
+                conversion = chars.next()?;
+            }
+            let field = match conversion {
+                'd' | 'e' => DateField::Day,
+                'm' => DateField::Month,
+                'Y' | 'y' => DateField::Year,
+                '%' => {
+                    push_literal(&mut prefix, &mut fields, '%');
+                    continue;
+                }
+                // Month names, weekday names, day-of-year, compound
+                // conversions — anything else means this locale's shape is
+                // not one Reprise renders.
+                _ => return None,
+            };
+            if fields.iter().any(|(seen, _)| *seen == field) {
+                return None; // a repeated field is not a date pattern
+            }
+            fields.push((field, String::new()));
+        }
+
+        // All three fields must be present; a pattern missing one is not a
+        // full date and would silently drop information.
+        let complete = [DateField::Day, DateField::Month, DateField::Year]
+            .iter()
+            .all(|field| fields.iter().any(|(seen, _)| seen == field));
+        complete.then_some(Self { prefix, fields })
+    }
+
+    /// Renders the date, omitting absent fields together with the literal run
+    /// that follows them.
+    ///
+    /// A day without a month is not a date anyone can read, so the day is
+    /// dropped in that case. When any field is omitted, a trailing run of
+    /// ASCII punctuation or whitespace is trimmed — a dangling `/` or `.`
+    /// reads as truncation. Non-ASCII trailing text (the CJK unit markers) is
+    /// kept, because there it carries the meaning of the field. A complete
+    /// date is reproduced verbatim, trailing punctuation included.
+    pub fn render(&self, year: Option<i32>, month: Option<u32>, day: Option<u32>) -> String {
+        let day = month.and(day);
+        let omitted = year.is_none() || month.is_none() || day.is_none();
+
+        let mut out = self.prefix.clone();
+        for (field, suffix) in &self.fields {
+            let value = match field {
+                DateField::Day => day.map(|day| format!("{day:02}")),
+                DateField::Month => month.map(|month| format!("{month:02}")),
+                DateField::Year => year.map(|year| format!("{year:04}")),
+            };
+            if let Some(value) = value {
+                out.push_str(&value);
+                out.push_str(suffix);
+            }
+        }
+
+        if omitted {
+            let trimmed = out.trim_end_matches(|character: char| {
+                character.is_ascii_punctuation() || character.is_whitespace()
+            });
+            return trimmed.trim_start().to_owned();
+        }
+        out
+    }
+}
+
+/// Appends a literal character to whichever run is currently open: the
+/// prefix while no field has been seen, otherwise the suffix of the last one.
+fn push_literal(prefix: &mut String, fields: &mut [(DateField, String)], character: char) {
+    match fields.last_mut() {
+        Some((_, suffix)) => suffix.push(character),
+        None => prefix.push(character),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +379,69 @@ mod tests {
     #[test]
     fn format_remaining_with_hours() {
         assert_eq!(format_remaining(0, 3_753_000), "\u{2212}1:02:33");
+    }
+
+    #[test]
+    fn date_pattern_renders_the_day_first_convention() {
+        let pattern = DatePattern::from_platform("%d.%m.%Y");
+        assert_eq!(pattern.render(Some(2026), Some(5), Some(29)), "29.05.2026");
+        assert_eq!(pattern.render(Some(2026), Some(5), None), "05.2026");
+        assert_eq!(pattern.render(Some(2026), None, None), "2026");
+        assert_eq!(pattern.render(None, Some(8), Some(15)), "15.08");
+    }
+
+    #[test]
+    fn date_pattern_renders_the_month_first_convention() {
+        let pattern = DatePattern::from_platform("%m/%d/%Y");
+        assert_eq!(pattern.render(Some(2026), Some(5), Some(29)), "05/29/2026");
+        assert_eq!(pattern.render(Some(2026), Some(5), None), "05/2026");
+        assert_eq!(pattern.render(None, Some(8), Some(15)), "08/15");
+    }
+
+    #[test]
+    fn date_pattern_keeps_non_ascii_unit_markers_when_fields_drop() {
+        let pattern = DatePattern::from_platform("%Y年%m月%d日");
+        assert_eq!(
+            pattern.render(Some(2026), Some(5), Some(29)),
+            "2026年05月29日"
+        );
+        assert_eq!(pattern.render(Some(2026), Some(5), None), "2026年05月");
+        assert_eq!(pattern.render(Some(2026), None, None), "2026年");
+    }
+
+    #[test]
+    fn date_pattern_reproduces_a_complete_date_verbatim() {
+        // Hungarian ends a full date with a period; a complete render must
+        // not trim it. Only an omitted field licenses trailing trimming.
+        let pattern = DatePattern::from_platform("%Y. %m. %d.");
+        assert_eq!(
+            pattern.render(Some(2026), Some(5), Some(29)),
+            "2026. 05. 29."
+        );
+        assert_eq!(pattern.render(Some(2026), Some(5), None), "2026. 05");
+    }
+
+    #[test]
+    fn date_pattern_upgrades_a_two_digit_year() {
+        // glibc hands out %m/%d/%y for en_US. Four digits, always.
+        let pattern = DatePattern::from_platform("%m/%d/%y");
+        assert_eq!(pattern.render(Some(2026), Some(5), Some(29)), "05/29/2026");
+    }
+
+    #[test]
+    fn date_pattern_falls_back_to_iso_for_a_non_numeric_pattern() {
+        for raw in ["%a, %b %-d, %Y", "%A %d %B %Y", "", "%d.%m", "nonsense"] {
+            assert_eq!(
+                DatePattern::from_platform(raw).render(Some(2026), Some(5), Some(29)),
+                "2026-05-29",
+                "pattern {raw:?} should have fallen back to ISO"
+            );
+        }
+    }
+
+    #[test]
+    fn date_pattern_ignores_a_day_without_a_month() {
+        let pattern = DatePattern::from_platform("%d.%m.%Y");
+        assert_eq!(pattern.render(Some(2026), None, Some(29)), "2026");
     }
 }
