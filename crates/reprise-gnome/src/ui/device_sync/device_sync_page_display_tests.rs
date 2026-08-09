@@ -7,6 +7,10 @@
 
 use super::*;
 
+/// The width every presented probe window in this file is built at. Named
+/// rather than repeated so a pinned probe and its siblings cannot drift apart.
+const PROBE_WINDOW_WIDTH: i32 = 968;
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mtp_14_full_page_uses_a_device_dashboard_instead_of_preferences_chrome() {
@@ -88,12 +92,16 @@ fn mtp_15_sync_status_text_does_not_resize_the_playlist_workspace() {
         &no_op_content_actions(),
     );
     let window = gtk4::Window::new();
-    window.set_default_size(968, 800);
+    window.set_default_size(PROBE_WINDOW_WIDTH, 800);
     // Pin the toplevel so this MTP-15 probe measures column behaviour, not
     // post-present window settlement. With fresh XDG roots the window/root
     // shrank from 881 to 873 px while the overview card stayed at 414 px, so
     // the playlist allocation alone fell from 343 to 335 px between phases.
-    window.set_width_request(968);
+    // The width request is the line that holds: with `set_resizable(false)`
+    // alone the window still settled at 881 px and the flake came straight
+    // back, because the bare Xvfb the display gate runs under has no window
+    // manager to honour `set_default_size` for a non-resizable toplevel.
+    window.set_width_request(PROBE_WINDOW_WIDTH);
     window.set_resizable(false);
     window.set_child(Some(&root));
     window.present();
@@ -153,7 +161,7 @@ fn mtp_15_playlist_and_sync_overview_cards_share_the_same_edges() {
         &no_op_content_actions(),
     );
     let window = gtk4::Window::new();
-    window.set_default_size(968, 800);
+    window.set_default_size(PROBE_WINDOW_WIDTH, 800);
     window.set_child(Some(&root));
     window.present();
     gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
