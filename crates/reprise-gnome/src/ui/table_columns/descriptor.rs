@@ -7,13 +7,11 @@
 //! and labels, and the per-table adapter behind this trait turns an id back
 //! into its typed key.
 
-#[allow(dead_code)] // Staged API: the shared editor consumes it in the next task.
 pub(in crate::ui) struct ColumnDescriptor {
     pub id: String,
     pub label: String,
 }
 
-#[allow(dead_code)] // Staged API: the shared editor consumes it in the next task.
 pub(in crate::ui) trait EditorModel: 'static {
     fn title(&self) -> String;
 
