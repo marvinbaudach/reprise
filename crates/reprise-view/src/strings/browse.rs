@@ -22,17 +22,16 @@ pub const UNKNOWN_RATING: &str = N_!("Unrated");
 
 const CHIP_LABEL: &str = N_!("{facet}: {value}");
 const REMOVE_FILTER_LABEL: &str = N_!("Remove {facet} filter: {value}");
-const SEARCH_CHIP_LABEL_ANY_FIELD: &str = N_!("⌕ “{query}” in any field");
-// FIL-1d: one msgid per scope rather than one template with an interpolated
-// field list — a translator needs the whole sentence to inflect it, and a
-// section that gains a searched field has to change its own text here.
-const SEARCH_CHIP_LABEL_TRACK_FIELDS: &str = N_!("⌕ “{query}” in track, artist and album");
-const SEARCH_CHIP_LABEL_EPISODE_TITLES: &str = N_!("⌕ “{query}” in episode titles");
-const SEARCH_CHIP_LABEL_VIDEO_TITLES: &str = N_!("⌕ “{query}” in video titles");
-const SEARCH_CHIP_LABEL_STATION_NAMES: &str = N_!("⌕ “{query}” in station names");
-const SEARCH_CHIP_LABEL_TITLE_AND_ARTIST: &str = N_!("⌕ “{query}” in title and artist");
-const SEARCH_CHIP_LABEL_ARTIST_AND_VENUE: &str = N_!("⌕ “{query}” in artist and venue");
-const SEARCH_CHIP_LABEL_FILE_PATHS: &str = N_!("⌕ “{query}” in file paths");
+const SEARCH_CHIP_LABEL_IN: &str = N_!("⌕ “{query}” in {scope}");
+const SEARCHES_SCOPE: &str = N_!("Searches {scope}");
+const SEARCH_FIELDS_ANY_FIELD: &str = N_!("any field");
+const SEARCH_FIELDS_TRACKS: &str = N_!("track, artist and album");
+const SEARCH_FIELDS_PODCASTS: &str = N_!("episode titles");
+const SEARCH_FIELDS_YOUTUBE: &str = N_!("video titles");
+const SEARCH_FIELDS_RADIO: &str = N_!("station names");
+const SEARCH_FIELDS_RELEASES: &str = N_!("title and artist");
+const SEARCH_FIELDS_CONCERTS: &str = N_!("artist and venue");
+const SEARCH_FIELDS_MISSING: &str = N_!("file paths");
 const NOTHING_TO_FILTER: &str = N_!("Nothing to filter in {section}");
 const REMOVE_SEARCH_LABEL: &str = N_!("Remove search: {query}");
 const LEAVE_PLACE_LABEL: &str = N_!("Leave {place}");
@@ -60,17 +59,32 @@ pub fn remove_filter_label(facet: &str, value: &str) -> Message {
 
 /// FIL-1d: the search chip names the fields its own view actually reads.
 pub fn search_chip_label_in(scope: SearchScope, query: &str) -> Message {
-    let id = match scope {
-        SearchScope::Tracks => SEARCH_CHIP_LABEL_TRACK_FIELDS,
-        SearchScope::Podcasts => SEARCH_CHIP_LABEL_EPISODE_TITLES,
-        SearchScope::Youtube => SEARCH_CHIP_LABEL_VIDEO_TITLES,
-        SearchScope::Radio => SEARCH_CHIP_LABEL_STATION_NAMES,
-        SearchScope::Releases => SEARCH_CHIP_LABEL_TITLE_AND_ARTIST,
-        SearchScope::Concerts => SEARCH_CHIP_LABEL_ARTIST_AND_VENUE,
-        SearchScope::Missing => SEARCH_CHIP_LABEL_FILE_PATHS,
-        SearchScope::Unsupported => SEARCH_CHIP_LABEL_ANY_FIELD,
-    };
-    message_with_one_arg(id, "query", query)
+    Message {
+        id: SEARCH_CHIP_LABEL_IN,
+        plural: None,
+        args: vec![
+            ("query", query.to_owned()),
+            ("scope", search_fields(scope).to_owned()),
+        ],
+    }
+}
+
+/// SEARCH-2c: the popover names the fields the current view searches.
+pub fn searches_scope(scope: SearchScope) -> Message {
+    message_with_one_arg(SEARCHES_SCOPE, "scope", search_fields(scope))
+}
+
+fn search_fields(scope: SearchScope) -> &'static str {
+    match scope {
+        SearchScope::Tracks => SEARCH_FIELDS_TRACKS,
+        SearchScope::Podcasts => SEARCH_FIELDS_PODCASTS,
+        SearchScope::Youtube => SEARCH_FIELDS_YOUTUBE,
+        SearchScope::Radio => SEARCH_FIELDS_RADIO,
+        SearchScope::Releases => SEARCH_FIELDS_RELEASES,
+        SearchScope::Concerts => SEARCH_FIELDS_CONCERTS,
+        SearchScope::Missing => SEARCH_FIELDS_MISSING,
+        SearchScope::Unsupported => SEARCH_FIELDS_ANY_FIELD,
+    }
 }
 
 /// SEARCH-8a: the insensitive lens says why it is insensitive, naming the
@@ -201,41 +215,33 @@ mod tests {
     #[test]
     fn fil_1d_search_chip_msgid_follows_the_scope() {
         assert_eq!(
-            search_chip_label_in(SearchScope::Tracks, "wer").id,
-            "⌕ “{query}” in track, artist and album"
-        );
-        assert_eq!(
-            search_chip_label_in(SearchScope::Unsupported, "wer").id,
-            "⌕ “{query}” in any field"
-        );
-        assert_eq!(
-            search_chip_label_in(SearchScope::Podcasts, "wer").id,
-            "⌕ “{query}” in episode titles"
-        );
-        assert_eq!(
-            search_chip_label_in(SearchScope::Youtube, "wer").id,
-            "⌕ “{query}” in video titles"
-        );
-        assert_eq!(
-            search_chip_label_in(SearchScope::Radio, "wer").id,
-            "⌕ “{query}” in station names"
-        );
-        assert_eq!(
-            search_chip_label_in(SearchScope::Releases, "wer").id,
-            "⌕ “{query}” in title and artist"
-        );
-        assert_eq!(
-            search_chip_label_in(SearchScope::Concerts, "wer").id,
-            "⌕ “{query}” in artist and venue"
-        );
-        assert_eq!(
-            search_chip_label_in(SearchScope::Missing, "wer").id,
-            "⌕ “{query}” in file paths"
-        );
-        assert_eq!(
             search_chip_label_in(SearchScope::Podcasts, "wer").args,
-            vec![("query", "wer".to_owned())]
+            vec![
+                ("query", "wer".to_owned()),
+                ("scope", "episode titles".to_owned()),
+            ]
         );
+    }
+
+    // UX SEARCH-2c: the popover caption names the same fields as the chip.
+    #[test]
+    fn search_2c_scope_caption_names_the_fields_of_its_view() {
+        let cases = [
+            (SearchScope::Tracks, "track, artist and album"),
+            (SearchScope::Podcasts, "episode titles"),
+            (SearchScope::Youtube, "video titles"),
+            (SearchScope::Radio, "station names"),
+            (SearchScope::Releases, "title and artist"),
+            (SearchScope::Concerts, "artist and venue"),
+            (SearchScope::Missing, "file paths"),
+            (SearchScope::Unsupported, "any field"),
+        ];
+
+        for (scope, fields) in cases {
+            let caption = searches_scope(scope);
+            assert_eq!(caption.id, "Searches {scope}", "{scope:?}");
+            assert_eq!(caption.args, vec![("scope", fields.to_owned())]);
+        }
     }
 
     #[test]
