@@ -1,8 +1,9 @@
 //! Platform-neutral library-source residence contract.
 //!
-//! Core owns the comparison that distinguishes a deleted track from a
-//! temporarily unreachable source. Concrete sources own only the stable token
-//! that makes that comparison meaningful on their platform.
+//! Core owns the evidence order that distinguishes a deleted track from a
+//! temporarily unreachable source. Concrete sources provide presence,
+//! residence-token, and mount-boundary evidence without any one signal being
+//! treated as infallible.
 
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -209,7 +210,8 @@ pub(crate) fn walk_with(
 ///
 /// A source without a stable residence token returns `None` from
 /// [`Self::residence_token`]. That documented degradation produces
-/// [`MissingReason::Unknown`] and never fabricates an identity.
+/// [`MissingReason::Unknown`] unless a path-backed source can positively prove
+/// that the item's parent still exists, and never fabricates an identity.
 ///
 /// **No question a source alone can answer has a default implementation.** A
 /// source that cannot yet answer one must fail to compile rather than guess.
@@ -303,19 +305,25 @@ pub trait LibrarySource: Send + Sync {
     /// failed on the last scan — see `library::scanner::scanner_file_metadata`'s
     /// doc comment).
     ///
-    /// - `stored` is `None` → there is nothing to compare against. `Unknown`
-    ///   (see `MissingReason`'s own doc comment for why this must stay
-    ///   `Unknown` rather than defaulting to either concrete reason: nothing
-    ///   downstream may treat such a row as safely auto-removable without
-    ///   re-verifying the item first).
-    /// - The item's location reports the same token it was last seen under →
-    ///   the source it lived on is present and reachable, and the item simply
-    ///   isn't there anymore. `Deleted`.
-    /// - It reports a *different* token → we are looking at a different source
-    ///   than the one recorded for this item, which means the original one is
-    ///   currently absent. `Unmounted`.
-    /// - This source can supply no token at all → no evidence either way.
-    ///   `Unknown`. Two unknowns are never evidence of each other.
+    /// Reachability is stronger than token identity. For an absolute,
+    /// path-backed location, a confirmed-present parent proves that the source
+    /// is reachable and the item itself was deleted. This check comes first
+    /// because Linux `st_dev` is not stable across btrfs subvolume remounts: in
+    /// the measured library the same `/home` source carried tokens 30, 47, and
+    /// 49 across scans. A stale anonymous btrfs device number must not outweigh
+    /// a directory that is visibly present now.
+    ///
+    /// When the parent is confirmed absent, the token remains useful as a
+    /// secondary signal. A matching token means the same source is reachable
+    /// farther up the deleted tree (`Deleted`). A differing token means
+    /// `Unmounted` only when the source can also name a concrete mount boundary;
+    /// otherwise the evidence is insufficient and the result is `Unknown`.
+    /// Missing stored/current tokens likewise remain `Unknown`.
+    ///
+    /// Opaque, non-absolute identifiers such as Android SAF content URIs have no
+    /// filesystem-parent meaning. Those sources therefore retain the token
+    /// comparison alone: equal is `Deleted`, different is `Unmounted`, and an
+    /// unavailable token is `Unknown`. No directory reachability is invented.
     ///
     /// The token is `i64` because SQLite has no other integer type; it matches
     /// `Track::device` and the scanner metadata projection's storage cast.
@@ -323,12 +331,26 @@ pub trait LibrarySource: Send + Sync {
     /// cast away from `u64` on the way in, so this stays the same comparison
     /// Linux made before the trait existed.
     fn reachability(&self, at: &Path, stored: Option<i64>) -> MissingReason {
+        if at.is_absolute() {
+            let Some(parent) = at.parent() else {
+                return MissingReason::Unknown;
+            };
+            match self.probe(parent, LibraryLinkMode::Follow) {
+                LibraryPathPresence::Present(_) => return MissingReason::Deleted,
+                LibraryPathPresence::Unknown => return MissingReason::Unknown,
+                LibraryPathPresence::Absent => {}
+            }
+        }
+
         let Some(stored) = stored else {
             return MissingReason::Unknown;
         };
         match self.residence_token(at) {
             Some(current) if current == stored => MissingReason::Deleted,
-            Some(_) => MissingReason::Unmounted,
+            Some(_) if !at.is_absolute() || self.mount_point(at).is_some() => {
+                MissingReason::Unmounted
+            }
+            Some(_) => MissingReason::Unknown,
             None => MissingReason::Unknown,
         }
     }
@@ -461,8 +483,7 @@ mod tests {
 
     use super::{
         LibraryDirectoryEntry, LibraryLinkMode, LibraryPathPresence, LibraryReadHandle,
-        LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
-        UnixLibrarySource,
+        LibrarySource, LibraryWalkOrder, LibraryWalkVisitor, UnixLibrarySource,
     };
     use crate::models::MissingReason;
 
@@ -497,17 +518,68 @@ mod tests {
         );
     }
 
-    /// A stored device that doesn't match anything on this filesystem
-    /// fabricates exactly the situation an unmounted drive produces: the
-    /// nearest existing ancestor belongs to a different device than the one
-    /// recorded. `real_dev + 99_999` is never going to collide with a real
-    /// `st_dev` in a test environment, so this is deterministic without
-    /// mounting or unmounting anything.
+    /// The token comparison is not dead weight behind the parent check: when
+    /// a whole album folder is deleted, the file's immediate parent is gone
+    /// too, so the parent-reachable shortcut does NOT apply and the verdict
+    /// falls through to the stored token. A matching token then means the
+    /// filesystem the track lived on is still the one mounted here — the
+    /// folder was deleted, not unmounted.
+    ///
+    /// Every other `Deleted` case in this module keeps the immediate parent
+    /// alive and therefore never reaches this arm; without this test the
+    /// fall-through path has no coverage at all.
     #[test]
-    fn unix_source_reports_unmounted_when_the_device_differs() {
+    fn unix_source_reports_deleted_when_the_whole_folder_is_gone_but_the_device_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_dev = dev_of(dir.path());
+        // `gone-album` is never created: the track's parent is absent, its
+        // grandparent (the temp dir) is present and on `real_dev`.
+        let gone_path = dir.path().join("gone-album/gone.flac");
+        assert!(
+            !gone_path.parent().unwrap().exists(),
+            "the parent must be absent, otherwise this test silently \
+             re-tests the parent-reachable shortcut instead"
+        );
+
+        assert_eq!(
+            UnixLibrarySource.reachability(&gone_path, Some(real_dev as i64)),
+            MissingReason::Deleted
+        );
+    }
+
+    /// A btrfs subvolume can receive a different anonymous device number after
+    /// a reboot. The still-existing parent is stronger evidence than that stale
+    /// token: the source is reachable and only the track itself is gone.
+    #[test]
+    fn unix_source_reports_deleted_when_parent_exists_but_device_differs() {
         let dir = tempfile::tempdir().unwrap();
         let real_dev = dev_of(dir.path());
         let gone_path = dir.path().join("gone.flac");
+
+        assert_eq!(
+            UnixLibrarySource.reachability(&gone_path, Some(real_dev as i64 + 99_999)),
+            MissingReason::Deleted
+        );
+    }
+
+    /// A confirmed-present parent is sufficient evidence even when the earlier
+    /// scan could not record a device token.
+    #[test]
+    fn unix_source_reports_deleted_when_parent_exists_without_a_stored_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone_path = dir.path().join("gone.flac");
+
+        assert_eq!(
+            UnixLibrarySource.reachability(&gone_path, None),
+            MissingReason::Deleted
+        );
+    }
+
+    #[test]
+    fn unix_source_reports_unmounted_when_parent_is_gone_and_device_differs() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_dev = dev_of(dir.path());
+        let gone_path = dir.path().join("gone-album/gone.flac");
 
         assert_eq!(
             UnixLibrarySource.reachability(&gone_path, Some(real_dev as i64 + 99_999)),
@@ -515,16 +587,54 @@ mod tests {
         );
     }
 
-    /// No recorded device (schema-v1 row, or a `stat` that failed on last
-    /// scan) means there is no basis for a verdict at all — `Unknown`, never
-    /// a guessed concrete reason.
+    struct NoMountUnixSource;
+
+    impl LibrarySource for NoMountUnixSource {
+        fn residence_token(&self, at: &Path) -> Option<i64> {
+            UnixLibrarySource.residence_token(at)
+        }
+
+        fn mount_point(&self, _at: &Path) -> Option<std::path::PathBuf> {
+            None
+        }
+
+        fn display_name(&self, at: &Path) -> Option<String> {
+            UnixLibrarySource.display_name(at)
+        }
+
+        fn container_name(&self, at: &Path) -> Option<String> {
+            UnixLibrarySource.container_name(at)
+        }
+
+        fn relative_path(&self, root: &Path, at: &Path) -> Option<std::path::PathBuf> {
+            UnixLibrarySource.relative_path(root, at)
+        }
+
+        fn open_read(&self, at: &Path) -> std::io::Result<LibraryReadHandle> {
+            UnixLibrarySource.open_read(at)
+        }
+
+        fn probe(&self, at: &Path, links: LibraryLinkMode) -> LibraryPathPresence {
+            UnixLibrarySource.probe(at, links)
+        }
+
+        fn read_directory(&self, directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
+            UnixLibrarySource.read_directory(directory)
+        }
+
+        fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor) {
+            UnixLibrarySource.walk(root, order, visitor);
+        }
+    }
+
     #[test]
-    fn unix_source_reports_unknown_when_no_device_was_recorded() {
+    fn path_source_without_a_mount_boundary_never_claims_unmounted() {
         let dir = tempfile::tempdir().unwrap();
-        let gone_path = dir.path().join("gone.flac");
+        let real_dev = dev_of(dir.path());
+        let gone_path = dir.path().join("gone-album/gone.flac");
 
         assert_eq!(
-            UnixLibrarySource.reachability(&gone_path, None),
+            NoMountUnixSource.reachability(&gone_path, Some(real_dev as i64 + 99_999)),
             MissingReason::Unknown
         );
     }
@@ -626,163 +736,8 @@ mod tests {
             MissingReason::Unknown
         );
     }
-
-    enum DocumentNode {
-        Directory(&'static str, Vec<DocumentNode>),
-        File(&'static str),
-    }
-
-    struct DocumentTreeTraversalSource {
-        children: Vec<DocumentNode>,
-    }
-
-    impl DocumentTreeTraversalSource {
-        fn emit(
-            visitor: &mut dyn LibraryWalkVisitor,
-            parent: &Path,
-            nodes: &[DocumentNode],
-            order: LibraryWalkOrder,
-        ) -> LibraryWalkControl {
-            let mut nodes: Vec<_> = nodes.iter().collect();
-            if order == LibraryWalkOrder::FileName {
-                nodes.sort_by_key(|node| match node {
-                    DocumentNode::Directory(name, _) | DocumentNode::File(name) => *name,
-                });
-            }
-            for node in nodes {
-                let (name, is_file) = match node {
-                    DocumentNode::Directory(name, _) => (*name, false),
-                    DocumentNode::File(name) => (*name, true),
-                };
-                let path = parent.join(name);
-                if visitor.visit(LibraryWalkItem::Entry(super::LibraryEntry {
-                    path: path.clone(),
-                    is_file,
-                    metadata: None,
-                })) == LibraryWalkControl::Stop
-                {
-                    return LibraryWalkControl::Stop;
-                }
-                if let DocumentNode::Directory(_, children) = node {
-                    if Self::emit(visitor, &path, children, order) == LibraryWalkControl::Stop {
-                        return LibraryWalkControl::Stop;
-                    }
-                }
-            }
-            LibraryWalkControl::Continue
-        }
-    }
-
-    impl LibrarySource for DocumentTreeTraversalSource {
-        fn residence_token(&self, _at: &Path) -> Option<i64> {
-            Some(41)
-        }
-
-        fn mount_point(&self, _at: &Path) -> Option<std::path::PathBuf> {
-            None
-        }
-
-        fn display_name(&self, at: &Path) -> Option<String> {
-            at.file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_owned)
-        }
-
-        fn container_name(&self, _at: &Path) -> Option<String> {
-            None
-        }
-
-        fn relative_path(&self, root: &Path, at: &Path) -> Option<std::path::PathBuf> {
-            at.strip_prefix(root).ok().map(Path::to_path_buf)
-        }
-
-        fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "traversal-only test source carries names, not content",
-            ))
-        }
-
-        /// Unused by this double's tests. Made explicit rather than inherited:
-        /// the trait has no defaults precisely so a source cannot answer
-        /// "absent" for a question it was never taught to answer.
-        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> LibraryPathPresence {
-            LibraryPathPresence::Unknown
-        }
-
-        fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
-            None
-        }
-
-        fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor) {
-            Self::emit(visitor, root, &self.children, order);
-        }
-    }
-
-    #[derive(Default)]
-    struct AudioPaths {
-        root: std::path::PathBuf,
-        paths: Vec<std::path::PathBuf>,
-    }
-
-    impl LibraryWalkVisitor for AudioPaths {
-        fn visit(&mut self, item: LibraryWalkItem) -> LibraryWalkControl {
-            let LibraryWalkItem::Entry(entry) = item else {
-                panic!("fixture traversal must not fail");
-            };
-            if entry.is_file
-                && entry
-                    .path
-                    .extension()
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("flac"))
-            {
-                self.paths
-                    .push(entry.path.strip_prefix(&self.root).unwrap().to_path_buf());
-            }
-            LibraryWalkControl::Continue
-        }
-    }
-
-    #[test]
-    fn non_filesystem_tree_matches_unix_order_and_file_filtering() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("Album")).unwrap();
-        std::fs::write(dir.path().join("Album/notes.txt"), b"notes").unwrap();
-        std::fs::write(dir.path().join("Album/song.FLAC"), b"audio").unwrap();
-        std::fs::write(dir.path().join("loose.flac"), b"audio").unwrap();
-
-        let document_tree = DocumentTreeTraversalSource {
-            children: vec![
-                DocumentNode::File("loose.flac"),
-                DocumentNode::Directory(
-                    "Album",
-                    vec![
-                        DocumentNode::File("song.FLAC"),
-                        DocumentNode::File("notes.txt"),
-                    ],
-                ),
-            ],
-        };
-        let document_root = Path::new("content:/music");
-
-        let mut unix = AudioPaths {
-            root: dir.path().to_path_buf(),
-            ..AudioPaths::default()
-        };
-        UnixLibrarySource.walk(dir.path(), LibraryWalkOrder::FileName, &mut unix);
-        let mut document = AudioPaths {
-            root: document_root.to_path_buf(),
-            ..AudioPaths::default()
-        };
-        document_tree.walk(document_root, LibraryWalkOrder::FileName, &mut document);
-
-        assert_eq!(
-            unix.paths,
-            vec![
-                std::path::PathBuf::from("Album/song.FLAC"),
-                std::path::PathBuf::from("loose.flac"),
-            ]
-        );
-        assert_eq!(document.paths, unix.paths);
-    }
 }
+
+#[cfg(test)]
+#[path = "source_traversal_tests.rs"]
+mod traversal_tests;

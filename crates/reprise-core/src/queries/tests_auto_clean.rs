@@ -247,8 +247,15 @@ fn run_auto_clean_survives_a_resurrection_racing_the_delete_itself() {
     .unwrap();
     let stale_snapshot = eligible;
 
-    let deleted =
-        remove_tracks_impl(conn, &stale_snapshot, RemoveGuard::AutoCleanEligible).unwrap();
+    let deleted = remove_tracks_impl(
+        conn,
+        &stale_snapshot,
+        RemoveGuard::AutoCleanEligible {
+            grace_period_seconds: 30 * DAY,
+            now,
+        },
+    )
+    .unwrap();
 
     assert_eq!(
         deleted,
@@ -288,4 +295,85 @@ fn run_auto_clean_survives_a_resurrection_racing_the_delete_itself() {
         listen_event_count, 1,
         "the survivor's listening history must not be cascaded away"
     );
+}
+
+/// The sibling race on the *deadline* rather than on the row state.
+///
+/// `run_auto_clean` reads `armed_at`, selects overdue ids, then deletes them
+/// one by one. Scan-time reclassification (`library::scanner_vanish::
+/// reclassify_missing_with`) advances `armed_at` whenever it corrects a row's
+/// reason, so that every corrected row gets the full configured grace period
+/// instead of inheriting a deadline that elapsed while it was mis-classified.
+/// If that advance lands after the `SELECT`, the ids in flight are no longer
+/// overdue — and deleting them anyway would spend a grace period the moment
+/// after it was granted.
+///
+/// A real thread race cannot be scheduled deterministically, so this drives
+/// the guard directly: make rows eligible, commit the clock advance a scan
+/// would have written, then hand the delete path the STALE id list and assert
+/// nothing is removed. Guards against re-introducing the old "time only moves
+/// forward, so the deadline need not be re-checked" shortcut, which was true
+/// only while `armed_at` moved on rare user action alone.
+#[test]
+fn auto_clean_delete_honours_a_grace_period_extended_after_its_selection() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
+    settings::set_auto_clean_armed_at(&db, 0).unwrap();
+
+    for id in 1..=3 {
+        seed_missing(conn, id, MissingReason::Deleted, 0);
+    }
+
+    let now = 30 * DAY;
+    let stale_snapshot = auto_clean_eligible(&db, now).unwrap();
+    assert_eq!(
+        stale_snapshot,
+        vec![1, 2, 3],
+        "all three rows are past their deadline at selection time"
+    );
+
+    // What a scan correcting some other row commits in the window: the
+    // arming clock moves to `now`, so every waiting row's deadline slides a
+    // full grace period into the future.
+    settings::set_auto_clean_armed_at(&db, now).unwrap();
+
+    let deleted =
+        super::maintenance::remove_auto_clean_eligible_tracks(conn, &stale_snapshot, 30 * DAY, now)
+            .unwrap();
+
+    assert!(
+        deleted.is_empty(),
+        "the extension moved every deadline past `now`; nothing may be deleted, got {deleted:?}"
+    );
+    let surviving: i64 = conn
+        .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        surviving, 3,
+        "no row may be hard-deleted under the extension"
+    );
+}
+
+/// The same guard must not lock up the ordinary case: once the extended
+/// grace period has genuinely elapsed, the rows go.
+#[test]
+fn auto_clean_delete_proceeds_once_the_extended_grace_period_elapses() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
+    settings::set_auto_clean_armed_at(&db, 30 * DAY).unwrap();
+    for id in 1..=2 {
+        seed_missing(conn, id, MissingReason::Deleted, 0);
+    }
+
+    let now = 60 * DAY;
+    let eligible = auto_clean_eligible(&db, now).unwrap();
+    assert_eq!(eligible, vec![1, 2]);
+
+    let deleted =
+        super::maintenance::remove_auto_clean_eligible_tracks(conn, &eligible, 30 * DAY, now)
+            .unwrap();
+
+    assert_eq!(deleted, vec![1, 2], "an elapsed deadline must still delete");
 }

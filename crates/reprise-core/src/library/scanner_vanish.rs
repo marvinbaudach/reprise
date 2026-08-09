@@ -106,6 +106,22 @@ pub(super) fn guard_evidence_under_root(
     candidates_under_root(tx, root, "removed_at IS NULL")
 }
 
+/// Already-missing rows whose stored reason is not yet the proven `deleted`
+/// state. The scan walk has already healed any file that reappeared, so this
+/// list contains only unresolved state that is safe to re-probe after the root
+/// guard confirms the scan location itself is reachable.
+fn reclassification_candidates_under_root(
+    tx: &rusqlite::Transaction,
+    root: &Path,
+) -> Result<Vec<(i64, String, Option<i64>)>, ScanError> {
+    candidates_under_root(
+        tx,
+        root,
+        "missing_since IS NOT NULL AND removed_at IS NULL AND \
+         (missing_reason IS NULL OR missing_reason <> 'deleted')",
+    )
+}
+
 /// The root guard's evidence check: does ANY guard-evidence candidate's
 /// recorded residence token match the token `root` currently resolves to?
 /// Always called with [`guard_evidence_under_root`]'s wider list, never
@@ -156,19 +172,22 @@ pub(super) fn mark_vanished_with(
             continue;
         }
         let reason = source.reachability(path, device);
-        tx.execute(
-            "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
-            rusqlite::params![id, now_unix(), reason.as_str()],
-        )?;
-        marked += 1;
+        // `mount_point` is only ever read back for `unmounted` rows (see
+        // `queries::issues`' `query_unavailable_groups`, which binds the
+        // reason). Resolving it costs `mounts::mount_point_of` its own
+        // ancestor walk, on top of the one `reachability` just did, so it is
+        // resolved for the one reason that consumes it and left as-is
+        // otherwise — a `deleted` row keeps whatever the last successful
+        // scan recorded, which no query looks at.
         if reason == MissingReason::Unmounted {
-            // Diagnostic only: `mount_point_of` exists to group "what
-            // disappears together when a mount goes away" (see `mounts`'
-            // own module doc) — a later task's status card is the real
-            // consumer; for now this just makes that grouping visible in
-            // the log for an `Unmounted` row, where it's actually
-            // informative (a `Deleted` row has no mount to report).
-            let mount_point = source.mount_point(path);
+            let mount_point = source
+                .mount_point(path)
+                .map(|mount| mount.to_string_lossy().into_owned());
+            tx.execute(
+                "UPDATE tracks SET missing_since = ?2, missing_reason = ?3, mount_point = ?4 \
+                 WHERE id = ?1",
+                rusqlite::params![id, now_unix(), reason.as_str(), mount_point],
+            )?;
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
@@ -176,14 +195,77 @@ pub(super) fn mark_vanished_with(
                 "scan: marked vanished track missing (mount currently absent)"
             );
         } else {
+            tx.execute(
+                "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
+                rusqlite::params![id, now_unix(), reason.as_str()],
+            )?;
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
                 "scan: marked vanished track missing"
             );
         }
+        marked += 1;
     }
     Ok(marked)
+}
+
+/// Corrects stale `unmounted`/`unknown` reasons only when current source
+/// evidence positively resolves the still-absent item as [`MissingReason::Deleted`].
+/// `missing_since` is deliberately left untouched because it is the user-facing
+/// first-absence time. If auto-clean was already armed, its global lower-bound
+/// clock is advanced to `now`, giving every corrected row the full configured
+/// grace period without changing that display timestamp.
+///
+/// That advance is what makes this function a *frequent* writer of
+/// `auto_clean_armed_at`, where before it moved only on a rare user action.
+/// `maintenance::remove_auto_clean_eligible_tracks` re-checks the deadline at
+/// delete time for exactly that reason — see its guard.
+pub(super) fn reclassify_missing_with(
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    root: &Path,
+    now: i64,
+) -> Result<u32, ScanError> {
+    let candidates = reclassification_candidates_under_root(tx, root)?;
+    let mut corrected = 0u32;
+    for (id, path_str, device) in candidates {
+        let path = Path::new(&path_str);
+        if source.probe(path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
+            continue;
+        }
+        if source.reachability(path, device) != MissingReason::Deleted {
+            continue;
+        }
+        // No `mount_point` write here: this path only ever lands on
+        // `deleted`, and that column is read back exclusively for
+        // `unmounted` rows. Resolving it would buy a second ancestor walk
+        // per corrected row for a value nothing queries.
+        let changed = tx.execute(
+            "UPDATE tracks SET missing_reason = 'deleted' \
+             WHERE id = ?1 AND missing_since IS NOT NULL AND removed_at IS NULL AND \
+             (missing_reason IS NULL OR missing_reason <> 'deleted')",
+            rusqlite::params![id],
+        )?;
+        corrected = corrected.saturating_add(changed as u32);
+    }
+
+    if corrected > 0 {
+        rearm_auto_clean_if_armed(tx, now)?;
+    }
+    Ok(corrected)
+}
+
+fn rearm_auto_clean_if_armed(tx: &rusqlite::Transaction, now: i64) -> Result<(), rusqlite::Error> {
+    // Goes through `settings`' own accessors rather than re-deriving "read
+    // the key, parse it as i64" from the raw primitives: the parse fallback
+    // is a decision (a corrupt value means "inert", not "armed at 0"), and
+    // it belongs in one place. `&Transaction` derefs to `&Connection`, so
+    // the `_in` variants take this transaction directly.
+    let Some(armed_at) = crate::library::settings::get_auto_clean_armed_at_in(tx)? else {
+        return Ok(());
+    };
+    crate::library::settings::set_auto_clean_armed_at_in(tx, armed_at.max(now))
 }
 
 #[cfg(test)]

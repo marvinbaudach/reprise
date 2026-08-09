@@ -12,7 +12,9 @@ mod missing_view;
 pub(in crate::ui) use issue_card::IssueCard;
 pub(in crate::ui) use issue_collapse::CollapsedList;
 pub(in crate::ui) use issue_row::{IssuePill, IssueRow, RowSpec};
-pub(in crate::ui) use missing_view::{purge_startup_tombstones, MissingFilesView};
+pub(in crate::ui) use missing_view::{
+    bulk_cleanup_kind, purge_startup_tombstones, MissingFilesView,
+};
 
 /// Structural styles shared by every issue-card consumer.
 pub(in crate::ui) fn css() -> String {
