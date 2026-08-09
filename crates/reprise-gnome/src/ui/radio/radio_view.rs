@@ -51,6 +51,7 @@ pub(super) struct Shared {
     conn: Rc<Db>,
     controller: std::rc::Weak<PlayerController>,
     model: Rc<RadioModel>,
+    column_model: Rc<dyn crate::ui::table_columns::EditorModel>,
     pub(super) filter_bar: Rc<RadioFilterBar>,
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<StationRow>>,
@@ -140,6 +141,7 @@ impl RadioView {
             &cells,
             &query_source,
         );
+        let column_model = super::radio_column_layout::install(&column_view, conn.clone());
         {
             let live = live_source.clone();
             let connectivity = connectivity_source.clone();
@@ -209,6 +211,7 @@ impl RadioView {
             conn: conn.clone(),
             controller: controller.map_or_else(std::rc::Weak::new, Rc::downgrade),
             model,
+            column_model,
             filter_bar: filter_bar.clone(),
             end_of_results,
             rows: RefCell::new(Vec::new()),
@@ -308,6 +311,10 @@ impl RadioView {
 
     pub(in crate::ui) fn root(&self) -> &gtk4::Widget {
         &self.shared.root
+    }
+
+    pub(in crate::ui) fn column_model(&self) -> Rc<dyn crate::ui::table_columns::EditorModel> {
+        self.shared.column_model.clone()
     }
 
     pub(in crate::ui) fn refresh(&self) {

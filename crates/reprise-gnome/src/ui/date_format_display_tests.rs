@@ -1,6 +1,5 @@
 //! STYLE-11 across the real tables, under a pinned pattern.
 
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::prelude::*;

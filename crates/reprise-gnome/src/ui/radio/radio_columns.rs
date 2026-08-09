@@ -3,6 +3,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::connectivity::Connectivity;
 use reprise_core::radio::StationRow;
+use reprise_view::columns::{ColumnKey, RadioColumn};
 
 use super::radio_context_menu;
 use super::radio_live_cells::RadioLiveCells;
@@ -27,6 +28,7 @@ struct ColumnTitle<'a> {
 
 #[derive(Clone, Copy)]
 struct TextColumnSpec<'a> {
+    key: RadioColumn,
     title: ColumnTitle<'a>,
     sizing: widths::Sizing,
     query: Option<&'a crate::ui::search_highlight::QuerySource>,
@@ -55,6 +57,7 @@ fn text_column(
     context: &TextColumnContext<'_>,
 ) {
     let TextColumnSpec {
+        key,
         title,
         sizing,
         query,
@@ -152,6 +155,7 @@ fn text_column(
         }
     });
     let column = gtk4::ColumnViewColumn::builder()
+        .id(key.as_str())
         .title(title.text)
         .factory(&factory)
         .resizable(true)
@@ -325,6 +329,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::Station,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_STATION),
                 playback_accent: true,
@@ -338,6 +343,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::Genre,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_GENRE),
                 playback_accent: false,
@@ -351,6 +357,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::Bitrate,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_BITRATE),
                 playback_accent: false,
@@ -364,6 +371,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::Country,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_COUNTRY),
                 playback_accent: false,
@@ -379,6 +387,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         TextColumnSpec {
+            key: RadioColumn::NowPlaying,
             title: ColumnTitle {
                 text: &strings::text(strings::RADIO_NOW_PLAYING),
                 playback_accent: false,
@@ -555,6 +564,71 @@ mod tests {
             long.country_code = Some("AR".into());
             store.splice(0, 1, &[RadioObject::new(long)]);
         });
+    }
+
+    /// STYLE-10: the Radio header exposes the shared editor. Hiding Station
+    /// moves the filler role while Artwork and State remain fixed leaders.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_10_radio_header_right_click_edits_the_table() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let live_state: LiveState = Rc::new(RadioLiveState::default);
+        let connectivity: ConnectivitySource = Rc::new(|| Connectivity::Online);
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns(
+            &view,
+            &live_state,
+            &connectivity,
+            &Rc::new(RadioLiveCells::default()),
+            &query,
+        );
+        let registry = super::super::radio_column_layout::registry(
+            &view,
+            Rc::new(crate::test_db::open().unwrap()),
+        );
+        let model = super::super::radio_column_layout::model(&registry);
+        crate::ui::table_columns::header_popover::install_header_popover(&view, &model);
+
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let controllers = view.observe_controllers();
+        let gesture = (0..controllers.n_items())
+            .filter_map(|index| controllers.item(index).and_downcast::<gtk4::GestureClick>())
+            .find(|gesture| gesture.button() == gtk4::gdk::BUTTON_SECONDARY)
+            .expect("no secondary-button gesture was installed on the header");
+        gesture.emit_by_name::<()>("pressed", &[&1i32, &40.0f64, &4.0f64]);
+        crate::ui::source_context_surface::settle_layout();
+
+        let mut child = view.first_child();
+        let mut popovers = 0;
+        while let Some(current) = child {
+            if current
+                .downcast_ref::<gtk4::Popover>()
+                .is_some_and(|popover| popover.has_css_class("reprise-column-header-popover"))
+            {
+                popovers += 1;
+            }
+            child = current.next_sibling();
+        }
+        assert_eq!(
+            popovers, 1,
+            "a right-click on the header band did not open the column editor"
+        );
+
+        model.set_visible("station", false);
+        use reprise_view::columns::RadioColumn;
+        assert!(!registry.is_visible(RadioColumn::Station));
+        assert!(registry.is_visible(RadioColumn::Artwork));
+        assert!(registry.is_visible(RadioColumn::State));
+        assert!(registry
+            .column(RadioColumn::Genre)
+            .is_some_and(gtk4::ColumnViewColumn::expands));
     }
 
     /// `SRC-4a`: the radio star was hover-only and not even focusable, so the

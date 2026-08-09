@@ -262,7 +262,7 @@ pub fn build(
             cover_download.clone(),
         ))
     };
-    super::column_layout_editor::install_header_popover(&track_list);
+    super::table_columns::install(&track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let sidebar_for_played = sidebar.clone();

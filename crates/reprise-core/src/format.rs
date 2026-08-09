@@ -115,6 +115,81 @@ impl DateTimeFormat {
     }
 }
 
+/// Initialises the process locale from the environment and returns the
+/// selected message locale as opaque bytes.
+///
+/// Reprise calls this exactly once during single-threaded startup, before
+/// constructing the application or querying the locale's date patterns.
+#[cfg(unix)]
+pub fn initialize_system_locale() -> Option<Vec<u8>> {
+    let selected_locale = setlocale_and_copy(libc::LC_ALL);
+    let message_locale = setlocale_and_copy(libc::LC_MESSAGES);
+    message_locale.or(selected_locale)
+}
+
+#[cfg(not(unix))]
+pub fn initialize_system_locale() -> Option<Vec<u8>> {
+    None
+}
+
+#[cfg(unix)]
+fn setlocale_and_copy(category: libc::c_int) -> Option<Vec<u8>> {
+    // SAFETY: `initialize_system_locale` has one call site: `i18n::init`
+    // invokes it before constructing the application and before any thread
+    // exists. The locale argument is a static NUL-terminated empty string.
+    // `setlocale` returns C-library-owned storage, so the bytes are copied
+    // before the next call can invalidate the pointer.
+    unsafe {
+        let raw = libc::setlocale(category, c"".as_ptr());
+        (!raw.is_null()).then(|| std::ffi::CStr::from_ptr(raw).to_bytes().to_owned())
+    }
+}
+
+/// Returns the date pattern selected by the system's current time locale.
+///
+/// Frontends must initialise the process locale before calling this. On
+/// platforms without `nl_langinfo`, Reprise's ISO date pattern is returned.
+#[cfg(unix)]
+pub fn system_date_pattern() -> String {
+    langinfo(libc::D_FMT)
+}
+
+#[cfg(not(unix))]
+pub fn system_date_pattern() -> String {
+    DatePattern::ISO.to_owned()
+}
+
+/// Returns the time pattern selected by the system's current time locale.
+///
+/// Frontends use this only to derive the twelve- or twenty-four-hour clock
+/// convention. On platforms without `nl_langinfo`, a 24-hour pattern is
+/// returned.
+#[cfg(unix)]
+pub fn system_time_pattern() -> String {
+    langinfo(libc::T_FMT)
+}
+
+#[cfg(not(unix))]
+pub fn system_time_pattern() -> String {
+    "%H:%M".to_owned()
+}
+
+#[cfg(unix)]
+fn langinfo(item: libc::nl_item) -> String {
+    // SAFETY: `nl_langinfo` returns a pointer to a NUL-terminated string owned
+    // by the C library, valid until the next `setlocale` on this thread. The
+    // bytes are copied out immediately and the pointer is never retained, and
+    // the only `setlocale` in this process runs once in `i18n::init` before
+    // this is ever called.
+    unsafe {
+        let raw = libc::nl_langinfo(item);
+        if raw.is_null() {
+            return String::new();
+        }
+        std::ffi::CStr::from_ptr(raw).to_string_lossy().into_owned()
+    }
+}
+
 pub fn format_unix_timestamp(secs: i64, format: &DateTimeFormat) -> String {
     let secs = secs.max(0);
     let days = secs / 86_400;

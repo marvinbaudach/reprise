@@ -50,6 +50,14 @@ pub(in crate::ui) fn mark(view: &gtk4::ColumnView) {
             sync_primary_sort_indicator(&view);
         }
     });
+    if let Some(sorter) = view.sorter().and_downcast::<gtk4::ColumnViewSorter>() {
+        let view_weak = view.downgrade();
+        sorter.connect_primary_sort_column_notify(move |_| {
+            if let Some(view) = view_weak.upgrade() {
+                sync_primary_sort_indicator(&view);
+            }
+        });
+    }
 }
 
 fn find_sort_indicator(widget: &gtk4::Widget) -> Option<gtk4::Widget> {

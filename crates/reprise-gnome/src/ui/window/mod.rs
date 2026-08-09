@@ -18,6 +18,7 @@ mod source_views_smoke;
 mod spectrogram_backend;
 #[path = "window.rs"]
 mod surface;
+mod table_columns;
 pub(in crate::ui) mod window_action_wiring;
 mod window_bootstrap;
 mod window_build_badge;

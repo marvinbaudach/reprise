@@ -50,6 +50,7 @@ struct Shared {
     rows: RefCell<Vec<ConcertRow>>,
     cached_items: Cell<usize>,
     column_view: gtk4::ColumnView,
+    column_model: Rc<dyn crate::ui::table_columns::EditorModel>,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
@@ -99,6 +100,13 @@ impl ConcertsView {
             Rc::new(move || filter_bar.query())
         };
         let columns = concerts_columns::append_columns(&column_view, &on_open, &query_source);
+        let column_registry = super::concerts_column_layout::registry(&column_view, conn.clone());
+        let column_model = super::concerts_column_layout::model(&column_registry);
+        crate::ui::table_columns::header_popover::install_header_popover(
+            &column_view,
+            &column_model,
+        );
+        crate::ui::table_columns::header_dnd::install_header_drag(&column_view, &column_model);
 
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
@@ -149,6 +157,7 @@ impl ConcertsView {
             rows: RefCell::new(Vec::new()),
             cached_items: Cell::new(0),
             column_view: column_view.clone(),
+            column_model,
             stack,
             status,
             status_button: status_button.clone(),
@@ -281,6 +290,10 @@ impl ConcertsView {
 
     pub(in crate::ui) fn root(&self) -> &gtk4::Widget {
         &self.root
+    }
+
+    pub(in crate::ui) fn column_model(&self) -> Rc<dyn crate::ui::table_columns::EditorModel> {
+        self.shared.column_model.clone()
     }
 
     /// SEARCH-8a: applies this view's query (FIL-1d: artist and venue).

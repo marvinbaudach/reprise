@@ -69,7 +69,7 @@ fn pump_until(label: &str, condition: impl Fn() -> bool) {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
+fn nr_20_releases_view_exposes_filters_seven_columns_and_footer() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = ReleasesView::new(conn, PathBuf::new());
@@ -89,16 +89,31 @@ fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
         .and_then(|scrolled| scrolled.child())
         .and_downcast::<gtk4::ColumnView>()
         .unwrap();
-    assert_eq!(table.columns().n_items(), 6);
+    let columns = table.columns();
+    assert_eq!(columns.n_items(), 7);
+    let cover = columns
+        .item(0)
+        .and_downcast::<gtk4::ColumnViewColumn>()
+        .unwrap();
+    assert!(
+        cover.id().is_none(),
+        "the pinned leading cover column must remain id-less"
+    );
+    let cover_title = strings::text(strings::COLUMN_COVER);
     assert_eq!(
-        table
-            .columns()
-            .item(0)
+        cover.title().as_deref(),
+        Some(cover_title.as_str()),
+        "the id-less leading column must be the pinned cover"
+    );
+    assert_eq!(
+        columns
+            .item(1)
             .and_downcast::<gtk4::ColumnViewColumn>()
             .unwrap()
             .id()
             .as_deref(),
-        Some("date")
+        Some("date"),
+        "Date must be the first id-carrying column"
     );
 }
 
