@@ -193,7 +193,7 @@ fn mtp_12_playlist_copy_reports_its_last_verified_sync_time() {
         playlist_subtitle(&playlist),
         format!(
             "Smart snapshot · 3 entries · 2 unique tracks · 32.0 KiB · Last synced {}",
-            local.format("%b %-d, %Y at %H:%M")
+            format_local_date_time(&local)
         )
     );
 }
@@ -392,7 +392,7 @@ fn mtp_14_device_header_reports_the_last_device_sync_without_claiming_one() {
         .unwrap();
     assert_eq!(
         device_last_sync_copy(&device),
-        format!("Last synced {}", local.format("%b %-d, %Y at %H:%M"))
+        format!("Last synced {}", format_local_date_time(&local))
     );
 }
 
@@ -417,7 +417,7 @@ fn mtp_50_remembered_page_names_the_last_verified_size_without_a_live_diff() {
         device_last_sync_copy(&device),
         format!(
             "Last synced {} · 2.2 GiB on device when last verified",
-            local.format("%b %-d, %Y at %H:%M")
+            format_local_date_time(&local)
         )
     );
 }
