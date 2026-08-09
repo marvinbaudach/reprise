@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 
 use super::{editor, EditorModel};
@@ -43,32 +44,60 @@ pub(in crate::ui) fn install_header_popover(view: &gtk4::ColumnView, model: &Rc<
     // runs first, and its claim below keeps the title's own gesture (and
     // GTK's plain visibility menu) from ever seeing header right-clicks.
     gesture.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    let model = model.clone();
-    let view = view.clone();
-    let gesture_view = view.clone();
-    gesture.connect_pressed(move |gesture, _, x, y| {
-        let header_height = gesture_view
-            .first_child()
-            .map_or(0, |header| header.height());
-        if !is_header_click(y, header_height) {
-            return;
+    let model = Rc::downgrade(model);
+    gesture.connect_pressed(glib::clone!(
+        #[weak]
+        view,
+        move |gesture, _, x, y| {
+            let Some(model) = model.upgrade() else {
+                return;
+            };
+            let header_height = view.first_child().map_or(0, |header| header.height());
+            if !is_header_click(y, header_height) {
+                return;
+            }
+            gesture.set_state(gtk4::EventSequenceState::Claimed);
+            let (popover, initial_focus) = build_header_popover(&model);
+            popover.set_parent(&view);
+            popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&view);
+            focus_guard.bind_popover(&popover, &initial_focus);
+            crate::ui::popover_lifecycle::unparent_after_actions(&popover);
+            popover.popup();
+            tracing::debug!("column header popover opened");
         }
-        gesture.set_state(gtk4::EventSequenceState::Claimed);
-        let (popover, initial_focus) = build_header_popover(&model);
-        popover.set_parent(&gesture_view);
-        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-        let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&gesture_view);
-        focus_guard.bind_popover(&popover, &initial_focus);
-        crate::ui::popover_lifecycle::unparent_after_actions(&popover);
-        popover.popup();
-        tracing::debug!("column header popover opened");
-    });
+    ));
     view.add_controller(gesture);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_header_click;
+    use std::rc::Rc;
+
+    use super::{install_header_popover, is_header_click};
+    use crate::ui::table_columns::{header_dnd, ColumnDescriptor, EditorModel};
+
+    struct FakeModel;
+
+    impl EditorModel for FakeModel {
+        fn title(&self) -> String {
+            "Columns".to_owned()
+        }
+
+        fn columns(&self) -> Vec<ColumnDescriptor> {
+            Vec::new()
+        }
+
+        fn is_visible(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn set_visible(&self, _id: &str, _visible: bool) {}
+
+        fn move_column(&self, _id: &str, _target: &str, _after: bool) {}
+
+        fn reset(&self) {}
+    }
 
     #[test]
     fn column_layout_header_hit_test_matches_only_the_header_band() {
@@ -77,5 +106,22 @@ mod tests {
         assert!(!is_header_click(25.1, 25));
         assert!(!is_header_click(200.0, 25));
         assert!(!is_header_click(0.0, 0));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn header_gestures_do_not_keep_the_editor_model_alive() {
+        gtk4::init().unwrap();
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let model: Rc<dyn EditorModel> = Rc::new(FakeModel);
+
+        install_header_popover(&view, &model);
+        header_dnd::install_header_drag(&view, &model);
+
+        assert_eq!(
+            Rc::strong_count(&model),
+            1,
+            "view-owned gesture closures retained the editor model"
+        );
     }
 }

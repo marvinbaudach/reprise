@@ -63,6 +63,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::gio::prelude::*;
+use gtk4::glib;
 use gtk4::prelude::*;
 
 use super::EditorModel;
@@ -649,41 +650,63 @@ fn handle_cancel(view: &gtk4::ColumnView, state: &Rc<RefCell<Option<DragState>>>
 /// existing `wire_order_persistence` listener on `view.columns()`.
 pub(in crate::ui) fn install_header_drag(view: &gtk4::ColumnView, model: &Rc<dyn EditorModel>) {
     let state: Rc<RefCell<Option<DragState>>> = Rc::new(RefCell::new(None));
+    let model = Rc::downgrade(model);
     // input-parity: ACC-8 keyboard=column-editor-alt-arrows
     let gesture = gtk4::GestureDrag::new();
     gesture.set_button(gtk4::gdk::BUTTON_PRIMARY);
     gesture.set_propagation_phase(gtk4::PropagationPhase::Capture);
 
     {
-        let view = view.clone();
         let state = state.clone();
         let model = model.clone();
-        gesture.connect_drag_begin(move |gesture, x, y| {
-            handle_drag_begin(gesture, &view, &state, &model, x, y);
-        });
+        gesture.connect_drag_begin(glib::clone!(
+            #[weak]
+            view,
+            move |gesture, x, y| {
+                let Some(model) = model.upgrade() else {
+                    return;
+                };
+                handle_drag_begin(gesture, &view, &state, &model, x, y);
+            }
+        ));
     }
     {
-        let view = view.clone();
         let state = state.clone();
         let model = model.clone();
-        gesture.connect_drag_update(move |gesture, offset_x, _offset_y| {
-            handle_drag_update(gesture, &view, &state, &model, offset_x);
-        });
+        gesture.connect_drag_update(glib::clone!(
+            #[weak]
+            view,
+            move |gesture, offset_x, _offset_y| {
+                let Some(model) = model.upgrade() else {
+                    return;
+                };
+                handle_drag_update(gesture, &view, &state, &model, offset_x);
+            }
+        ));
     }
     {
-        let view = view.clone();
         let state = state.clone();
         let model = model.clone();
-        gesture.connect_drag_end(move |gesture, offset_x, _offset_y| {
-            handle_drag_end(gesture, &view, &state, &model, offset_x);
-        });
+        gesture.connect_drag_end(glib::clone!(
+            #[weak]
+            view,
+            move |gesture, offset_x, _offset_y| {
+                let Some(model) = model.upgrade() else {
+                    return;
+                };
+                handle_drag_end(gesture, &view, &state, &model, offset_x);
+            }
+        ));
     }
     {
-        let view = view.clone();
         let state = state.clone();
-        gesture.connect_cancel(move |_gesture, _sequence| {
-            handle_cancel(&view, &state);
-        });
+        gesture.connect_cancel(glib::clone!(
+            #[weak]
+            view,
+            move |_gesture, _sequence| {
+                handle_cancel(&view, &state);
+            }
+        ));
     }
 
     view.add_controller(gesture);
