@@ -2852,6 +2852,41 @@ property is set and yet nothing happens.
   squeezing its columns (STYLE-6). **Test rule:** measured, not asserted —
   the rule-named test exchanges the rows on screen for markedly wider ones
   and compares the columns' realized widths.
+- **STYLE-10** [planned] [gtk] — **Columns belong to the user, in every
+  table.** A right-click anywhere on a table's header band opens the column
+  editor popover: toggle visibility, drag to reorder, reset. Behaviour learned
+  in the music library is the same behaviour in Releases, Concerts and Radio —
+  a user does not experience a missing editor there as an absent feature but
+  as the app forgetting what it taught them. The same editor is reachable
+  without a pointer through the primary menu's "Edit column layout…", which
+  addresses the table of the active view and is insensitive where no table is
+  shown. Order, visibility and header-dragged widths are stored per table and
+  survive a restart. A table may declare fixed columns — a leading artwork
+  column, a trailing action column on a surface without a row context menu —
+  which stay visible, keep their position and never appear in the editor;
+  every other column belongs to the user. Exactly one visible column is the
+  filler (STYLE-9); when the user hides it, the filler role moves to the first
+  visible free column in the table's order. Hiding the sorting column does not
+  change the sort, because hiding is a visibility flip and never removes the
+  column from the view. **Test rule:** one rule-named display test per table,
+  plus a measured filler test. Design:
+  `docs/superpowers/specs/2026-08-09-table-columns-and-system-dates-design.md`.
+- **STYLE-11** [planned] [core] [gtk] — **A date looks the same everywhere.**
+  Every displayed calendar date follows the system locale's date pattern, with
+  a numeric month and an always four-digit year; a locale pattern the app
+  cannot render numerically falls back to ISO. Incomplete dates shorten within
+  that same pattern instead of switching to a different one. Times show
+  minutes and never seconds, on the system's twelve- or twenty-four-hour dial.
+  No call site formats dates itself and no surface keeps a month name. A label
+  may show fewer fields than the pattern holds — a chart axis whose period is
+  already named on screen omits the year — but never a different pattern.
+  Machine-readable strings (API query keys, stored timestamps, filenames) and
+  relative phrasings that name an interval rather than a day are not dates in
+  this sense and are unaffected. **Test rule:** the pattern renderer is
+  unit-tested against the day-first, month-first, year-first and suffixed
+  conventions; one display test renders the affected surfaces under a pinned
+  pattern. Design:
+  `docs/superpowers/specs/2026-08-09-table-columns-and-system-dates-design.md`.
 - **CONTRAST-1** [active] [gtk] — There are three central text levels:
   primary approximately 0.95 for titles and values, secondary approximately
   0.7 for artist, status, metadata, and column headers, hint approximately
