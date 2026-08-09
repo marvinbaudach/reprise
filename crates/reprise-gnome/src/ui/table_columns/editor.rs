@@ -11,6 +11,8 @@ use super::editor_dnd;
 use super::EditorModel;
 use crate::ui::strings;
 
+pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_COLUMN_LAYOUT_EDITOR";
+
 struct EditorState {
     model: Rc<dyn EditorModel>,
     list: gtk4::ListBox,
@@ -24,6 +26,26 @@ pub(in crate::ui) struct EditorSurface {
 pub(in crate::ui) struct EditorDialogSurface {
     pub dialog: adw::Dialog,
     pub list: gtk4::ListBox,
+}
+
+struct SmokeExercise {
+    hidden_id: String,
+    moved_id: String,
+    target_id: String,
+}
+
+fn apply_smoke_exercise(model: &dyn EditorModel) -> Option<SmokeExercise> {
+    let columns = model.columns();
+    let [hidden, moved, ..] = columns.as_slice() else {
+        return None;
+    };
+    model.set_visible(&hidden.id, false);
+    model.move_column(&moved.id, &hidden.id, false);
+    Some(SmokeExercise {
+        hidden_id: hidden.id.clone(),
+        moved_id: moved.id.clone(),
+        target_id: hidden.id.clone(),
+    })
 }
 
 impl EditorState {
@@ -179,13 +201,26 @@ pub(in crate::ui) fn present_dialog(window: &adw::ApplicationWindow, model: &Rc<
     focus_guard.bind_closable_dialog(&dialog, &surface.list);
     dialog.present(Some(window));
     tracing::info!(table = %model.title(), "column layout editor presented");
-    if let Ok(smoke) = std::env::var(crate::ui::column_layout_editor::SMOKE_ENV) {
+    if let Ok(smoke) = std::env::var(SMOKE_ENV) {
         let model = model.clone();
         glib::timeout_add_seconds_local_once(1, move || {
             if smoke == "exercise" {
-                model.set_visible("artist", false);
-                model.move_column("rating", "artist", false);
-                tracing::info!("column layout editor smoke applied");
+                let table = model.title();
+                if let Some(applied) = apply_smoke_exercise(model.as_ref()) {
+                    tracing::info!(
+                        %table,
+                        hidden_column = %applied.hidden_id,
+                        moved_column = %applied.moved_id,
+                        before_column = %applied.target_id,
+                        "column layout editor smoke applied"
+                    );
+                } else {
+                    tracing::warn!(
+                        %table,
+                        editable_columns = model.columns().len(),
+                        "column layout editor smoke skipped; at least two editable columns required"
+                    );
+                }
             }
             dialog.close();
             tracing::info!("column layout editor smoke closed");
@@ -202,12 +237,14 @@ mod tests {
 
     struct FakeModel {
         order: RefCell<Vec<String>>,
+        hidden: RefCell<Vec<String>>,
     }
 
     impl FakeModel {
         fn new() -> Self {
             Self {
-                order: RefCell::new(vec!["artist".to_owned(), "album".to_owned()]),
+                order: RefCell::new(vec!["date".to_owned(), "title".to_owned()]),
+                hidden: RefCell::new(Vec::new()),
             }
         }
     }
@@ -228,11 +265,17 @@ mod tests {
                 .collect()
         }
 
-        fn is_visible(&self, _id: &str) -> bool {
-            true
+        fn is_visible(&self, id: &str) -> bool {
+            !self.hidden.borrow().iter().any(|hidden| hidden == id)
         }
 
-        fn set_visible(&self, _id: &str, _visible: bool) {}
+        fn set_visible(&self, id: &str, visible: bool) {
+            if visible {
+                self.hidden.borrow_mut().retain(|hidden| hidden != id);
+            } else {
+                self.hidden.borrow_mut().push(id.to_owned());
+            }
+        }
 
         fn move_column(&self, id: &str, target: &str, after: bool) {
             let mut order = self.order.borrow_mut();
@@ -251,6 +294,19 @@ mod tests {
 
     fn model() -> Rc<dyn EditorModel> {
         Rc::new(FakeModel::new())
+    }
+
+    #[test]
+    fn smoke_exercise_uses_the_models_own_column_descriptors() {
+        let model = FakeModel::new();
+
+        let applied = apply_smoke_exercise(&model).expect("two editable columns");
+
+        assert_eq!(applied.hidden_id, "date");
+        assert_eq!(applied.moved_id, "title");
+        assert_eq!(applied.target_id, "date");
+        assert!(!model.is_visible("date"));
+        assert_eq!(model.order.borrow().as_slice(), ["title", "date"]);
     }
 
     fn descendant_button_count(widget: &gtk4::Widget) -> usize {

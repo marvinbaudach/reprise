@@ -266,7 +266,7 @@ fn arm_smoke_minimal_view(action: &gio::SimpleAction) {
 }
 
 fn arm_smoke_column_layout_editor(action: &gio::SimpleAction) {
-    if std::env::var(crate::ui::column_layout_editor::SMOKE_ENV).is_err() {
+    if std::env::var(crate::ui::table_columns::editor::SMOKE_ENV).is_err() {
         return;
     }
     let action = action.clone();

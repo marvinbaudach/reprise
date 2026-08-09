@@ -7,8 +7,6 @@ use libadwaita as adw;
 use crate::ui::table_columns;
 use crate::ui::track_list::TrackList;
 
-pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_COLUMN_LAYOUT_EDITOR";
-
 pub(in crate::ui) fn css() -> String {
     table_columns::editor_dnd::css()
 }
