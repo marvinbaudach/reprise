@@ -128,7 +128,7 @@ fn stats_12_sparse_year_axis_starts_at_first_play_week_but_eight_weeks_keep_the_
         sparse_snapshot.period.buckets[0].start_unix,
         timestamp(2026, 7, 1, 12, 0)
     );
-    assert_eq!(sparse_snapshot.period.buckets[0].label, "Week of Jun 29");
+    assert_eq!(sparse_snapshot.period.buckets[0].label, "Week of 06-29");
 
     let threshold = migrated_conn();
     insert_track(

@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::db::Db;
+use crate::format::DatePattern;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Weekday};
 
 /// Length of the rolling window behind [`StatsPeriod::Last30Days`], counted in
@@ -49,6 +50,21 @@ impl StatsPeriod {
         now_unix: i64,
         tz: &Tz,
         first_event_unix: Option<i64>,
+    ) -> PeriodRange {
+        self.resolve_with_pattern(
+            now_unix,
+            tz,
+            first_event_unix,
+            &DatePattern::from_platform(DatePattern::ISO),
+        )
+    }
+
+    pub fn resolve_with_pattern<Tz: TimeZone>(
+        self,
+        now_unix: i64,
+        tz: &Tz,
+        first_event_unix: Option<i64>,
+        pattern: &DatePattern,
     ) -> PeriodRange {
         let Some(now) = tz.timestamp_opt(now_unix, 0).earliest() else {
             return empty_range();
@@ -118,7 +134,7 @@ impl StatsPeriod {
             end_unix,
             granularity,
             sparse_weeks: false,
-            buckets: build_buckets(tz, start_unix, end_unix, granularity, open),
+            buckets: build_buckets(tz, start_unix, end_unix, granularity, open, pattern),
         }
     }
 
@@ -237,12 +253,13 @@ pub fn week_start<Tz: TimeZone>(tz: &Tz, unix: i64) -> Option<NaiveDate> {
     local_parts(tz, unix).map(|(date, _)| date.week(Weekday::Mon).first_day())
 }
 
-pub(crate) fn apply_activity_granularity<Tz: TimeZone>(
+pub(crate) fn apply_activity_granularity_with_pattern<Tz: TimeZone>(
     range: &mut PeriodRange,
     tz: &Tz,
     distinct_active_days: i64,
     distinct_active_weeks: usize,
     first_active_unix: i64,
+    pattern: &DatePattern,
 ) {
     if range.start_unix >= range.end_unix {
         range.sparse_weeks = false;
@@ -264,7 +281,7 @@ pub(crate) fn apply_activity_granularity<Tz: TimeZone>(
     };
     range.granularity = granularity;
     range.sparse_weeks = sparse_weeks;
-    range.buckets = build_buckets(tz, bucket_start, range.end_unix, granularity, open);
+    range.buckets = build_buckets(tz, bucket_start, range.end_unix, granularity, open, pattern);
 }
 
 fn empty_range() -> PeriodRange {
@@ -329,6 +346,7 @@ fn build_buckets<Tz: TimeZone>(
     end_unix: i64,
     granularity: Granularity,
     open: bool,
+    pattern: &DatePattern,
 ) -> Vec<Bucket> {
     let Some((mut cursor_date, _)) = local_parts(tz, start_unix) else {
         return Vec::new();
@@ -354,11 +372,21 @@ fn build_buckets<Tz: TimeZone>(
         let (next_date, label) = match granularity {
             Granularity::Day => (
                 cursor_date + Duration::days(1),
-                cursor_date.format("%b %-d").to_string(),
+                day_label(
+                    cursor_date.year(),
+                    cursor_date.month(),
+                    cursor_date.day(),
+                    pattern,
+                ),
             ),
             Granularity::Week => (
                 cursor_date + Duration::days(7),
-                format!("Week of {}", cursor_date.format("%b %-d")),
+                week_label(
+                    cursor_date.year(),
+                    cursor_date.month(),
+                    cursor_date.day(),
+                    pattern,
+                ),
             ),
             Granularity::Month => {
                 let next = if cursor_date.month() == 12 {
@@ -372,7 +400,10 @@ fn build_buckets<Tz: TimeZone>(
                 let Some(next) = next else {
                     break;
                 };
-                (next, cursor_date.format("%b").to_string())
+                (
+                    next,
+                    month_label(cursor_date.year(), cursor_date.month(), pattern),
+                )
             }
         };
         let Some(natural_end) = local_midnight(tz, next_date) else {
@@ -392,6 +423,18 @@ fn build_buckets<Tz: TimeZone>(
         cursor_date = next_date;
     }
     buckets
+}
+
+fn day_label(_year: i32, month: u32, day: u32, pattern: &DatePattern) -> String {
+    pattern.render(None, Some(month), Some(day))
+}
+
+fn week_label(year: i32, month: u32, day: u32, pattern: &DatePattern) -> String {
+    format!("Week of {}", day_label(year, month, day, pattern))
+}
+
+fn month_label(year: i32, month: u32, pattern: &DatePattern) -> String {
+    pattern.render(Some(year), Some(month), None)
 }
 
 #[cfg(test)]

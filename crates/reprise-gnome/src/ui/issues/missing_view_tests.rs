@@ -109,7 +109,13 @@ fn locate_actions_cover_deleted_and_unknown_but_never_unmounted_tracks() {
 
 #[test]
 fn missing_since_copy_uses_a_short_calendar_date() {
-    assert_eq!(missing_since_label(1_752_278_400), "since Jul 12");
+    let date = crate::ui::date_format::current()
+        .date
+        .render(Some(2025), Some(7), Some(12));
+    assert_eq!(
+        missing_since_label(1_752_278_400),
+        strings::missing_since(&date)
+    );
     assert_eq!(MissingReason::Deleted.as_str(), "deleted");
 }
 

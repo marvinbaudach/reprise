@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use chrono::Datelike;
 use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -153,9 +154,10 @@ fn now_unix() -> i64 {
 }
 
 fn missing_since_label(timestamp: i64) -> String {
+    let pattern = &crate::ui::date_format::current().date;
     let date = chrono::DateTime::from_timestamp(timestamp.max(0), 0).map_or_else(
-        || "Jan 1".to_string(),
-        |value| value.format("%b %-d").to_string(),
+        || pattern.render(Some(1970), Some(1), Some(1)),
+        |value| pattern.render(Some(value.year()), Some(value.month()), Some(value.day())),
     );
     strings::missing_since(&date)
 }
