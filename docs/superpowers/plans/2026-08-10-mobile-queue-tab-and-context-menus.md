@@ -178,13 +178,29 @@ gone from `upcoming_tracks`.
 ### Task 5 — Kotlin plumbing
 
 **Files:** `PlaybackControls.kt`, `ActivityPlaybackControls.kt`,
-`LibrarySession.kt`, `AndroidLibrarySessionPort.kt`.
+`ReprisePlaybackService.kt`, `MainActivity.kt`, `LibrarySession.kt`,
+`AndroidLibrarySessionPort.kt`.
 
-`queueTracksNext` / `queueTracksLast` on the controls; `albumTrackIds` and
-`deleteTracks` on the session, the latter passing
-`DocumentsContract.deleteDocument(resolver, Uri.parse(uri))` in as the
-`TrashAction`. Results come back over `ApplicationLooperDispatch`, exactly as
-the existing queue operations do.
+**Corrected 2026-08-10** after the first run stopped here, correctly: the
+original four-file list was impossible. `AndroidPlaybackSession` lives as a
+`private var coreSession` inside `ReprisePlaybackService` (`:25`), and
+`AndroidLibrarySessionPort` holds only `resolver`, `preferences` and `library` —
+neither of the four files could reach playback at all.
+
+Follow the pattern the service already uses rather than inventing a second
+owner. `ReprisePlaybackService` exposes `internal fun playTracks`,
+`togglePause`, `playUpcomingTrackNow` and friends, all delegating to
+`coreSession()`; add `queueTracksNext`, `queueTracksLast` and `trashTracks` the
+same way, and let `ActivityPlaybackControls` reach them over the same bound-
+service route it already uses for the queue operations. `MainActivity` only
+wires them through.
+
+`albumTrackIds` needs none of that — it is a plain library query and belongs on
+`LibrarySession` / `AndroidLibrarySessionPort`, next to `listAlbumTracks`.
+
+`deleteTracks` passes `DocumentsContract.deleteDocument(resolver, Uri.parse(uri))`
+in as the `TrashAction`. Results come back over `ApplicationLooperDispatch`,
+exactly as the existing queue operations do.
 
 **Prove:** the port forwards ids unchanged and reports a partial delete as a
 partial delete.
