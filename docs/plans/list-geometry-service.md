@@ -259,6 +259,17 @@ Besitzt ausschließlich Testdateien.
 - Volle Nicht-Display-Suite grün, Suitenzahl gegengeprüft (eine fehlende Suite
   hat hier schon einmal einen grünen Lauf vorgetäuscht).
 
+**M3 counterprobe recipe.** Once the geometry-service track provides
+`REPRISE_NO_PRESEED`, run the exact M2 test in its own display process:
+
+```text
+scratchpad/probe-any.sh large-delete-no-preseed ui::delete_tracks::large_block_display_tests::browse_11_large_block_delete_keeps_the_deep_viewport_off_the_top REPRISE_NO_PRESEED=1
+```
+
+The run is accepted only when exactly one test executes and it fails on the
+sampled viewport journey. A passing run means the positive test is insensitive
+to the pre-seed; a zero-test run means the filter path is wrong.
+
 ## Wie hier gemessen wird
 
 Ein Prozess pro Display-Test, frische XDG-Wurzeln, `GDK_BACKEND=x11`, eigene
