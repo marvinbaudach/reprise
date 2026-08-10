@@ -2285,7 +2285,7 @@ the panel).
   or a genuine purchase relation, the unchanged external MusicBrainz
   relation remains commission-free. Library data and secret keys never
   end up in the URL. <!-- REVIEW: rule proposal -->
-- **NR-20** [active] [core] [gtk] — The releases table extends NR-17
+- **NR-20** [replaced by NR-30] [core] [gtk] — The releases table extends NR-17
   with the `Buy` column. Only when MusicBrainz supplies a genuine
   HTTP(S) relation for the release group to a `/album/…` page on
   `bandcamp.com` or a subdomain does the row show `Bandcamp` there and
@@ -2339,7 +2339,7 @@ the panel).
   release date collapse to one row: album ahead of EP ahead of single.
   Catalog rows of all three types are durable and exempt from
   time-based cache retention.
-- **NR-25** [active] [gtk] — The gap view remains the table `Date ·
+- **NR-25** [replaced by NR-31] [gtk] — The gap view remains the table `Date ·
   Title · Artist · Type · Status`, sorted by date descending by
   default. A fixed cover column leads them, and the `Buy` column of NR-20
   trails them; both follow STYLE-10's fixed-column rule. The named text
@@ -2401,6 +2401,21 @@ the panel).
   on. NR-9c's visit-batch, cap, stamping, and badge-consistency semantics
   remain unchanged. Consequently, "new" means newly discovered within this
   bounded announcement scope, never merely a newly fetched historical gap.
+- **NR-30** [active] [gtk] — replaces NR-20. The trailing release action is a
+  visible external-link button for every row with a launchable target. A
+  genuine tracking-free HTTP(S) Bandcamp `/album/…` relation wins and reads
+  `Bandcamp`; otherwise a launchable stored announcement reads `Open`; if that
+  value is missing or unsafe, the launchable MusicBrainz release-group fallback
+  reads `MusicBrainz`. Every candidate passes the shared external-link guard,
+  so non-web schemes never reach the desktop launcher. Bandcamp lookalike
+  hosts, homepages, search URLs and tracked URLs remain ordinary announcement
+  links rather than receiving the `Bandcamp` label. The cell tooltip exposes
+  the exact selected target, and the button's accessible label matches its
+  visible label.
+- **NR-31** [active] [gtk] — replaces NR-25. The gap view's fixed trailing
+  action column is named `Link` and follows NR-30; its fixed cover column,
+  named text columns, sorting, filters, counts, activation semantics and zero
+  result recovery remain exactly as specified by NR-25.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows

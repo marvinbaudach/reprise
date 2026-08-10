@@ -12,7 +12,7 @@ use reprise_view::columns::{ColumnKey, ReleaseColumn};
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::ReleaseObject;
 use super::releases_presentation::{
-    bandcamp_purchase_target, format_partial_date, release_status_label, release_type_label,
+    format_partial_date, release_link, release_status_label, release_type_label,
 };
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
@@ -31,7 +31,7 @@ pub(super) fn column_contract() -> Vec<String> {
         strings::RELEASES_ARTIST,
         strings::RELEASES_TYPE,
         strings::RELEASES_STATUS,
-        strings::RELEASES_BUY,
+        strings::RELEASES_LINK,
     ]
     .into_iter()
     .map(strings::text)
@@ -309,13 +309,14 @@ fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden) {
     view.append_column(&column);
 }
 
-fn purchase_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
+fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
     let factory = gtk4::SignalListItemFactory::new();
     let on_open = on_open.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
+        let cell = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         let button = gtk4::Button::new();
         button.add_css_class("flat");
         button.add_css_class("link");
@@ -328,43 +329,57 @@ fn purchase_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
             let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
                 return;
             };
-            if let Some(target) = bandcamp_purchase_target(&object.entry()) {
-                on_open(target.to_owned());
+            if let Some(link) = release_link(&object.entry()) {
+                on_open(link.target().to_owned());
             }
         });
-        item.set_child(Some(&button));
+        cell.append(&button);
+        item.set_child(Some(&cell));
     });
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(button) = item.child().and_downcast::<gtk4::Button>() else {
+        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(button) = cell.first_child().and_downcast::<gtk4::Button>() else {
             return;
         };
         let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
             return;
         };
         let entry = object.entry();
-        let target = bandcamp_purchase_target(&entry);
-        button.set_label(&strings::text(strings::RELEASES_BANDCAMP));
-        button.set_tooltip_text(target);
-        button.set_visible(target.is_some());
-        let accessible_label = strings::text(strings::RELEASES_BUY_ON_BANDCAMP);
-        button.update_property(&[gtk4::accessible::Property::Label(&accessible_label)]);
+        if let Some(link) = release_link(&entry) {
+            let label = link.label();
+            button.set_label(&label);
+            button.set_visible(true);
+            cell.set_tooltip_text(Some(link.target()));
+            button.update_property(&[gtk4::accessible::Property::Label(&label)]);
+        } else {
+            button.set_label("");
+            button.set_visible(false);
+            cell.set_tooltip_text(None);
+            button.reset_property(gtk4::AccessibleProperty::Label);
+        }
     });
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(button) = item.child().and_downcast::<gtk4::Button>() else {
+        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(button) = cell.first_child().and_downcast::<gtk4::Button>() else {
             return;
         };
         button.set_label("");
-        button.set_tooltip_text(None);
+        cell.set_tooltip_text(None);
         button.set_visible(false);
+        button.reset_property(gtk4::AccessibleProperty::Label);
     });
     let column = gtk4::ColumnViewColumn::builder()
-        .title(strings::text(strings::RELEASES_BUY))
+        .title(strings::text(strings::RELEASES_LINK))
         .factory(&factory)
         .resizable(false)
         .build();
@@ -432,13 +447,15 @@ fn append_columns_with_query(
         |entry| release_type_label(&entry.release_type),
     );
     status_column(view, on_set_hidden);
-    purchase_column(view, on_open);
+    link_column(view, on_open);
     date
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::cell::RefCell;
 
     use reprise_core::artist_news::LibraryPresence;
 
@@ -473,6 +490,21 @@ mod tests {
             child = current.next_sibling();
         }
         labels
+    }
+
+    fn descendant_buttons(widget: &gtk4::Widget) -> Vec<gtk4::Button> {
+        let mut buttons = widget
+            .clone()
+            .downcast::<gtk4::Button>()
+            .ok()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            buttons.extend(descendant_buttons(&current));
+            child = current.next_sibling();
+        }
+        buttons
     }
 
     /// UX FIL-5a: Releases marks the matching title and artist, leaves an
@@ -637,11 +669,66 @@ mod tests {
     }
 
     #[test]
-    fn nr_20_table_adds_a_bandcamp_purchase_column() {
+    fn nr_31_table_ends_with_the_release_link_column() {
         assert_eq!(
             column_contract(),
-            ["Cover", "Date", "Title", "Artist", "Type", "Status", "Buy"]
+            ["Cover", "Date", "Title", "Artist", "Type", "Status", "Link"]
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nr_31_release_link_cell_binds_and_clears_the_visible_affordance() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let store = gtk4::gio::ListStore::new::<ReleaseObject>();
+        store.append(&ReleaseObject::new(entry(
+            "Artist", "Album", "Album", "2026",
+        )));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
+        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
+        let opened = Rc::new(RefCell::new(None));
+        let on_open: OnOpenTarget = {
+            let opened = opened.clone();
+            Rc::new(move |target| *opened.borrow_mut() = Some(target))
+        };
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let button = descendant_buttons(view.upcast_ref())
+            .into_iter()
+            .find(|button| button.label().as_deref() == Some("MusicBrainz"))
+            .expect("the fallback link button was not rendered");
+        let cell = button.parent().and_downcast::<gtk4::Box>().unwrap();
+        assert!(button.has_css_class("flat") && button.has_css_class("link"));
+        assert_eq!(
+            cell.tooltip_text().as_deref(),
+            Some("https://musicbrainz.org/release-group/mbid")
+        );
+        assert!(gtk4::test_accessible_has_property(
+            &button,
+            gtk4::AccessibleProperty::Label
+        ));
+        button.emit_clicked();
+        assert_eq!(
+            opened.borrow().as_deref(),
+            Some("https://musicbrainz.org/release-group/mbid")
+        );
+
+        store.remove(0);
+        crate::ui::source_context_surface::settle_layout();
+        assert!(!button.is_visible());
+        assert_eq!(button.label().as_deref(), Some(""));
+        assert_eq!(cell.tooltip_text(), None);
+        assert!(!gtk4::test_accessible_has_property(
+            &button,
+            gtk4::AccessibleProperty::Label
+        ));
     }
 
     /// STYLE-10: the Releases header exposes the shared editor, and editing a

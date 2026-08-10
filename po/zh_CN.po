@@ -2681,16 +2681,16 @@ msgid "Status"
 msgstr "状态"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:17
-msgid "Buy"
-msgstr ""
+msgid "Link"
+msgstr "链接"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:18
 msgid "Bandcamp"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:19
-msgid "Buy on Bandcamp"
-msgstr ""
+msgid "Open"
+msgstr "打开"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:22
 msgid "Hidden"

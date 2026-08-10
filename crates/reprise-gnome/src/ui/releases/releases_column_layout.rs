@@ -38,7 +38,7 @@ fn label(key: ReleaseColumn) -> String {
         ReleaseColumn::Artist => crate::ui::strings::RELEASES_ARTIST,
         ReleaseColumn::Type => crate::ui::strings::RELEASES_TYPE,
         ReleaseColumn::Status => crate::ui::strings::RELEASES_STATUS,
-        ReleaseColumn::Buy => crate::ui::strings::RELEASES_BUY,
+        ReleaseColumn::Buy => crate::ui::strings::RELEASES_LINK,
     };
     crate::ui::strings::text(message)
 }
