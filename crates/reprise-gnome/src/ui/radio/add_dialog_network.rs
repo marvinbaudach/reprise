@@ -22,6 +22,13 @@ pub(super) fn station_from_candidate(candidate: StationCandidate) -> radio::stat
     }
 }
 
+pub(super) fn preview_name_claim(icy_name: Option<&str>) -> (String, Option<String>) {
+    match icy_name.map(str::trim).filter(|name| !name.is_empty()) {
+        Some(name) => (name.to_owned(), Some(name.to_owned())),
+        None => (strings::RADIO_STREAM_DETECTED.to_owned(), None),
+    }
+}
+
 pub(super) fn preview_url(url: &str, fetch_metadata: bool) -> Result<StationPreview, RadioError> {
     let kind = playlist_kind(url);
     let stream_url = match kind {
@@ -38,24 +45,22 @@ pub(super) fn preview_url(url: &str, fetch_metadata: bool) -> Result<StationPrev
         None => url.to_owned(),
     };
     let probe = radio::icy::probe(&stream_url)?;
-    let mut preview = StationPreview::manual(
-        probe
-            .name
-            .as_deref()
-            .unwrap_or(strings::RADIO_STREAM_DETECTED),
-        &stream_url,
-    )
-    .with_probe(probe);
+    let (display_name, mut name_claim) = preview_name_claim(probe.name.as_deref());
+    let mut preview = StationPreview::manual(&display_name, &stream_url).with_probe(probe);
     preview.playlist_kind = kind;
     if fetch_metadata {
         if let Ok(Some(candidate)) = radio::search::find_by_url(&stream_url) {
             preview = preview.with_candidate(candidate);
+            if preview.uuid.is_some() {
+                name_claim = Some(preview.name.clone());
+            }
         }
         if preview.favicon_url.is_none() {
-            let candidates =
-                radio::search::search(&preview.name, radio::search::SearchOrder::Votes)
+            if let Some(name) = name_claim.as_deref() {
+                let candidates = radio::search::search(name, radio::search::SearchOrder::Votes)
                     .unwrap_or_default();
-            preview = preview.with_favicon_candidates(&candidates);
+                preview = preview.with_favicon_candidates(&candidates);
+            }
         }
     }
     Ok(preview)

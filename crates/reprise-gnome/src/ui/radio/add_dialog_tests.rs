@@ -88,6 +88,19 @@ fn rad_8_radio_favicon_lookup_accepts_only_secure_station_identity() {
     );
 }
 
+#[test]
+fn rad_8_placeholder_is_display_only_not_a_name_claim() {
+    let (display_name, lookup_name) = super::super::add_dialog_network::preview_name_claim(None);
+
+    assert_eq!(display_name, strings::RADIO_STREAM_DETECTED);
+    assert_eq!(lookup_name, None);
+
+    let (display_name, lookup_name) =
+        super::super::add_dialog_network::preview_name_claim(Some("Real Station"));
+    assert_eq!(display_name, "Real Station");
+    assert_eq!(lookup_name.as_deref(), Some("Real Station"));
+}
+
 fn favicon_candidate(
     uuid: &str,
     name: &str,
