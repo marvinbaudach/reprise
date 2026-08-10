@@ -10,17 +10,66 @@ import org.junit.Test
 
 class SceneDriverTest {
     @Test
-    fun pause_produces_one_frame_then_no_more_revision_or_invalidation() {
+    fun paused_non_empty_fog_keeps_turning_at_the_base_drift_rate() {
         val fixture = driverFixture(
             sample = ScenePositionSample(positionMs = 500, observedAtNanos = 0, playing = false),
         )
 
         assertTrue(fixture.driver.tick())
-        val revision = fixture.state.revision
-        repeat(10) { assertFalse(fixture.driver.tick()) }
+        val startAngle = fixture.state.fogAngleA
+        repeat(20) {
+            fixture.clock.now += SPECTROGRAM_FRAME_MS * NANOS_PER_MILLISECOND
+            assertTrue(fixture.driver.tick())
+        }
 
-        assertEquals(revision, fixture.state.revision)
+        assertTrue(fixture.state.fogAngleA > startAngle)
+        assertEquals(
+            SceneState.FOG_BASE_DEGREES_PER_SECOND,
+            fixture.state.fogAngleA - startAngle,
+            0.001f,
+        )
         assertEquals(10, fixture.driver.lastDrivenFrameIndex)
+    }
+
+    @Test
+    fun strong_music_turns_the_fog_at_least_five_times_faster_than_base_drift() {
+        val paused = driverFixture(
+            sample = ScenePositionSample(positionMs = 0, observedAtNanos = 0, playing = false),
+            frames = constantFrames(cell = 255, frameCount = 24),
+        )
+        val strong = driverFixture(
+            sample = ScenePositionSample(positionMs = 0, observedAtNanos = 0, playing = true),
+            frames = constantFrames(cell = 255, frameCount = 24),
+        )
+        paused.driver.tick()
+        strong.driver.tick()
+        val pausedStart = paused.state.fogAngleA
+        val strongStart = strong.state.fogAngleA
+
+        repeat(20) { step ->
+            val elapsedMs = (step + 1) * SPECTROGRAM_FRAME_MS
+            paused.clock.now = elapsedMs * NANOS_PER_MILLISECOND
+            strong.clock.now = elapsedMs * NANOS_PER_MILLISECOND
+            strong.source.sample = strong.source.sample.copy(
+                positionMs = elapsedMs,
+                observedAtNanos = strong.clock.now,
+            )
+            paused.driver.tick()
+            strong.driver.tick()
+        }
+
+        val pausedChange = paused.state.fogAngleA - pausedStart
+        val strongChange = strong.state.fogAngleA - strongStart
+        assertTrue(
+            "strong change $strongChange must be at least five times base $pausedChange",
+            strongChange >= pausedChange * 5f,
+        )
+        assertTrue(strong.state.fogAngleB < paused.state.fogAngleB)
+    }
+
+    @Test
+    fun paused_frame_loop_requests_no_more_than_twenty_callbacks_per_second() {
+        assertTrue(1_000L / PAUSED_SCENE_FRAME_INTERVAL_MS <= 20L)
     }
 
     @Test
@@ -149,6 +198,7 @@ private data class DriverFixture(
 
 /** One spectrogram frame at the 20 Hz frame rate the fixtures below use. */
 private const val SPECTROGRAM_FRAME_MS = 50L
+private const val NANOS_PER_MILLISECOND = 1_000_000L
 
 /** A gap the phone spends in a pocket: ten seconds, comfortably inside the cap. */
 private const val GAP_FRAMES = 200
@@ -161,6 +211,12 @@ private fun patternedFrames(frameCount: Int): SpectrogramFrames = SpectrogramFra
         val band = index % 24
         ((frame * 17 + band * 7) % 256).toByte()
     },
+)
+
+private fun constantFrames(cell: Int, frameCount: Int): SpectrogramFrames = SpectrogramFrames(
+    bandCount = 24,
+    frameRateHz = 20,
+    cells = ByteArray(frameCount * 24) { cell.toByte() },
 )
 
 private fun driverFixture(

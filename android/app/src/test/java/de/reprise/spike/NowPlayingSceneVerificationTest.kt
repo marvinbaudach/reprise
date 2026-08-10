@@ -13,6 +13,7 @@ import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,16 +54,8 @@ class NowPlayingSceneVerificationTest {
         assertArrayEquals(first, second)
     }
 
-    /**
-     * The pause claim asked of the wiring that carries it: [SceneDriver] alone
-     * decides how a paused position becomes a frame index, and it is the clock
-     * — not the position — that keeps running while playback stands still. So
-     * the scene is driven through the driver with a paused sample while three
-     * seconds of frame callbacks go by, and both the frame it settled on and
-     * every pixel it drew must be the ones from before those three seconds.
-     */
     @Test
-    fun paused_fog_raster_is_pixel_identical_three_seconds_later() {
+    fun paused_non_empty_fog_keeps_turning_and_changes_the_rendered_raster() {
         val frames = patternedFrames(frameCount = 80)
         val state = SceneState(frames)
         val clock = AdvancingSceneClock()
@@ -74,6 +67,7 @@ class NowPlayingSceneVerificationTest {
         val driver = SceneDriver(frames, state, clock, ScenePositionSource { paused }) { true }
         driver.tick()
         val fog = prepareCoverFogBitmap(greyscaleArtwork(), Color.DKGRAY)
+        val angleBefore = state.fogAngleA
         val before = renderScene(state, fog)
 
         repeat(PAUSED_FRAME_COUNT) {
@@ -82,7 +76,8 @@ class NowPlayingSceneVerificationTest {
         }
 
         assertEquals(PAUSED_FRAME_INDEX, driver.lastDrivenFrameIndex)
-        assertArrayEquals(before, renderScene(state, fog))
+        assertTrue(state.fogAngleA > angleBefore)
+        assertFalse(before.contentEquals(renderScene(state, fog)))
     }
 
     private fun angleTrace(frames: SpectrogramFrames): IntArray {
@@ -204,7 +199,7 @@ class NowPlayingSceneVerificationTest {
         }
     }
 
-    /** A clock the test moves by hand; a paused scene must ignore it entirely. */
+    /** A clock the test moves by hand while the paused media position stays fixed. */
     private class AdvancingSceneClock(var nanos: Long = 0) : SceneClock {
         override fun nowNanos(): Long = nanos
     }

@@ -1,6 +1,6 @@
 package de.reprise.spike.scene
 
-/** The deterministic scene state stepped only by consumed spectrogram frames. */
+/** Signal state stepped by spectrogram frames, with wall-time base drift applied separately. */
 class SceneState(
     private val frames: SpectrogramFrames,
 ) {
@@ -84,6 +84,22 @@ class SceneState(
         }
     }
 
+    /** Keeps both fog layers breathing even when playback has no new signal frame. */
+    fun advanceFogBy(elapsedSeconds: Float) {
+        if (elapsedSeconds <= 0f) return
+        val oldAngleA = fogAngleA
+        val oldAngleB = fogAngleB
+        fogAngleA = EnergyIntegrator.wrap360(
+            fogAngleA + FOG_BASE_DEGREES_PER_SECOND * elapsedSeconds,
+        )
+        fogAngleB = EnergyIntegrator.wrap360(
+            fogAngleB + FOG_BASE_DEGREES_PER_SECOND_B * elapsedSeconds,
+        )
+        if (fogAngleA.changedFrom(oldAngleA) || fogAngleB.changedFrom(oldAngleB)) {
+            revision += 1
+        }
+    }
+
     private fun step(frameIndex: Int) {
         readRaw(frameIndex)
         targets.indices.forEach { band ->
@@ -136,5 +152,8 @@ class SceneState(
         const val SEEK_FRAMES = 20
         const val FOG_FACTOR_A = 0.9f
         const val FOG_FACTOR_B = -0.6f
+        const val FOG_BASE_DEGREES_PER_SECOND = 360f / (4f * 60f)
+        const val FOG_BASE_DEGREES_PER_SECOND_B =
+            FOG_BASE_DEGREES_PER_SECOND * FOG_FACTOR_B / FOG_FACTOR_A
     }
 }
