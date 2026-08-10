@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::borrow::Cow;
+
 use chrono::NaiveDate;
 use reprise_core::artist_news::{release_status, RefreshProgress, ReleaseStatus};
 use reprise_core::artist_news_history::HistoryEntry;
@@ -124,6 +126,70 @@ pub(super) fn release_status_label(entry: &HistoryEntry, today: NaiveDate) -> St
 
 pub(super) fn bandcamp_purchase_target(entry: &HistoryEntry) -> Option<&str> {
     reprise_core::artist_news_links::bandcamp_purchase_url(entry.announce_url.as_deref())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReleaseLinkLabel {
+    Bandcamp,
+    MusicBrainz,
+    Open,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ReleaseLink<'a> {
+    target: Cow<'a, str>,
+    label: ReleaseLinkLabel,
+}
+
+impl ReleaseLink<'_> {
+    pub(super) fn target(&self) -> &str {
+        &self.target
+    }
+
+    pub(super) fn label(&self) -> String {
+        match self.label {
+            ReleaseLinkLabel::Bandcamp => strings::text(strings::RELEASES_BANDCAMP),
+            ReleaseLinkLabel::MusicBrainz => strings::text(strings::RELEASES_MUSICBRAINZ),
+            ReleaseLinkLabel::Open => strings::text(strings::RELEASES_OPEN),
+        }
+    }
+}
+
+pub(super) fn release_link(entry: &HistoryEntry) -> Option<ReleaseLink<'_>> {
+    if let Some(target) = bandcamp_purchase_target(entry)
+        .filter(|target| reprise_core::external_link::is_launchable_url(target))
+    {
+        return Some(ReleaseLink {
+            target: Cow::Borrowed(target),
+            label: ReleaseLinkLabel::Bandcamp,
+        });
+    }
+
+    if let Some(target) = entry
+        .announce_url
+        .as_deref()
+        .filter(|target| reprise_core::external_link::is_launchable_url(target))
+    {
+        return Some(ReleaseLink {
+            target: Cow::Borrowed(target),
+            label: ReleaseLinkLabel::Open,
+        });
+    }
+
+    let target =
+        reprise_core::artist_news_links::announce_url_or_fallback(None, &entry.release_group_mbid);
+    reprise_core::external_link::is_launchable_url(&target).then_some(ReleaseLink {
+        target: Cow::Owned(target),
+        label: ReleaseLinkLabel::MusicBrainz,
+    })
+}
+
+pub(super) fn release_link_label(entry: &HistoryEntry) -> Option<String> {
+    release_link(entry).map(|link| link.label())
+}
+
+pub(super) fn release_link_target(entry: &HistoryEntry) -> Option<Cow<'_, str>> {
+    release_link(entry).map(|link| link.target)
 }
 
 pub(super) fn releases_row_action(entry: &HistoryEntry, _today: NaiveDate) -> ReleasesRowAction {
@@ -286,5 +352,70 @@ mod tests {
 
         release.announce_url = Some("https://bandcamp.com.evil.example/album/fake".into());
         assert_eq!(bandcamp_purchase_target(&release), None);
+    }
+
+    #[test]
+    fn nr_30_release_link_keeps_the_bandcamp_purchase_target() {
+        let mut release = entry("2026", LibraryPresence::Absent, false);
+        release.announce_url =
+            Some("https://oceansleeper.bandcamp.com/album/maybe-death-is-all-i-need".into());
+
+        assert_eq!(release_link_label(&release).as_deref(), Some("Bandcamp"));
+        assert_eq!(
+            release_link_target(&release).as_deref(),
+            Some("https://oceansleeper.bandcamp.com/album/maybe-death-is-all-i-need")
+        );
+    }
+
+    #[test]
+    fn nr_30_release_link_uses_musicbrainz_when_no_announcement_is_stored() {
+        let release = entry("2026", LibraryPresence::Absent, false);
+
+        assert_eq!(release_link_label(&release).as_deref(), Some("MusicBrainz"));
+        assert_eq!(
+            release_link_target(&release).as_deref(),
+            Some("https://musicbrainz.org/release-group/release-id")
+        );
+    }
+
+    #[test]
+    fn nr_30_release_link_labels_a_foreign_announcement_as_open() {
+        let mut release = entry("2026", LibraryPresence::Absent, false);
+        release.announce_url = Some("https://artist.example/releases/new-album".into());
+
+        assert_eq!(release_link_label(&release).as_deref(), Some("Open"));
+        assert_eq!(
+            release_link_target(&release).as_deref(),
+            Some("https://artist.example/releases/new-album")
+        );
+    }
+
+    #[test]
+    fn nr_30_release_link_rejects_non_web_announcements_before_fallback() {
+        for announce_url in ["javascript:alert(1)", "file:///etc/passwd"] {
+            let mut release = entry("2026", LibraryPresence::Absent, false);
+            release.announce_url = Some(announce_url.into());
+
+            assert_eq!(
+                release_link_label(&release).as_deref(),
+                Some("MusicBrainz"),
+                "{announce_url} received the wrong label"
+            );
+            assert_eq!(
+                release_link_target(&release).as_deref(),
+                Some("https://musicbrainz.org/release-group/release-id"),
+                "{announce_url} escaped instead of using the web fallback"
+            );
+        }
+    }
+
+    #[test]
+    fn nr_30_release_link_decision_keeps_label_and_target_together() {
+        let mut release = entry("2026", LibraryPresence::Absent, false);
+        release.announce_url = Some("https://artist.example/releases/new-album".into());
+
+        let link = release_link(&release).expect("the fallback makes every catalog row linkable");
+        assert_eq!(link.label(), "Open");
+        assert_eq!(link.target(), "https://artist.example/releases/new-album");
     }
 }

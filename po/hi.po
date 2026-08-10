@@ -2709,16 +2709,16 @@ msgid "Status"
 msgstr "स्थिति"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:17
-msgid "Buy"
-msgstr ""
+msgid "Link"
+msgstr "लिंक"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:18
 msgid "Bandcamp"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:19
-msgid "Buy on Bandcamp"
-msgstr ""
+msgid "Open"
+msgstr "खोलें"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:22
 msgid "Hidden"
