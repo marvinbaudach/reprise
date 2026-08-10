@@ -419,13 +419,28 @@ fn apply_scroll_anchor_if_allocated(
     let Some(target) = reload_restore::scroll_target(anchor, current_ids, height, page) else {
         return false;
     };
-    // Teach the existing handover hold the final target. It defers while the
-    // old bounds are still installed, then applies the full target from its
-    // bounds-change callback as soon as GTK allocates the new model.
+    // Teach the existing handover hold the final target. If the old bounds
+    // cannot represent it, the guarded pre-seed below makes it reachable
+    // before the queued row request can move the viewport.
     if let Some(hold) = hold {
         hold.set_target(target);
     }
-    if !restore_geometry_is_ready(upper, current_ids.len(), height) {
+    let model_matches_ids = shared.model.n_items() as usize == current_ids.len();
+    let has_no_section_headers = shared.queue_sections.borrow().is_empty();
+    if !restore_geometry_is_ready(upper, current_ids.len(), height)
+        && hold.is_some()
+        && model_matches_ids
+        && has_no_section_headers
+    {
+        // The model is already exact, but GTK has not allocated it yet. Seed
+        // the uniform-list bound so the cached anchor can be painted in the
+        // first frame — GTK otherwise clamps the pending row request into the
+        // stale range and the list visits that value before the rebuilt range
+        // settles. The parity guard deliberately fails closed when the id
+        // projection is truncated or otherwise differs from the model.
+        adjustment.set_upper(current_ids.len() as f64 * height);
+    }
+    if !restore_geometry_is_ready(adjustment.upper(), current_ids.len(), height) {
         return false;
     }
     remember_row_height(

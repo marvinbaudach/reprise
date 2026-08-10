@@ -144,16 +144,9 @@ impl AdjustmentHold {
             // higher default priority, so releasing here would cancel that
             // last restore and leave GTK's late handover value behind. Let
             // the correction run first, then retire the hold at default idle.
-            glib::idle_add_local_once(move || settle_and_release(&self.inner));
+            glib::idle_add_local_once(move || release(&self.inner));
         });
     }
-}
-
-fn bounded_target(lower: f64, upper: f64, page: f64, target: f64) -> Option<f64> {
-    if !lower.is_finite() || !upper.is_finite() || !page.is_finite() || upper <= lower {
-        return None;
-    }
-    Some(target.clamp(lower, (upper - page).max(lower)))
 }
 
 enum CorrectionTarget {
@@ -206,21 +199,6 @@ fn write_target(inner: &HoldInner, target: f64) {
     inner.correcting.set(false);
 }
 
-fn settle_and_release(inner: &HoldInner) {
-    let target = bounded_target(
-        inner.adjustment.lower(),
-        inner.adjustment.upper(),
-        inner.adjustment.page_size(),
-        inner.target.get(),
-    );
-    if let Some(target) = target {
-        if (inner.adjustment.value() - target).abs() > VALUE_EPSILON {
-            write_target(inner, target);
-        }
-    }
-    release(inner);
-}
-
 /// Restores from ordinary application code, where no GTK signal emission or
 /// allocation is on the stack. Construction and explicit target changes use
 /// this path so the reload path retains its immediate pre-paint placement.
@@ -238,7 +216,7 @@ fn restore_direct(inner: &HoldInner) {
         }
         CorrectionTarget::Deferred => {
             if !claim_correction(inner, inner.target.get()) {
-                settle_and_release(inner);
+                release(inner);
             }
         }
     }
@@ -261,24 +239,12 @@ fn restore_deferred(inner: &Rc<HoldInner>) {
     let Some(correction) = correction_target(inner) else {
         return;
     };
-    let (target, settle_if_exhausted) = match correction {
-        CorrectionTarget::Reachable(target) => (target, false),
-        CorrectionTarget::Deferred => (inner.target.get(), true),
+    let target = match correction {
+        CorrectionTarget::Reachable(target) => target,
+        CorrectionTarget::Deferred => inner.target.get(),
     };
     if !claim_correction(inner, target) {
-        if settle_if_exhausted {
-            inner.pending.set(true);
-            let weak = Rc::downgrade(inner);
-            glib::idle_add_local_full(glib::Priority::HIGH_IDLE, move || {
-                if let Some(inner) = weak.upgrade() {
-                    inner.pending.set(false);
-                    settle_and_release(&inner);
-                }
-                glib::ControlFlow::Break
-            });
-        } else {
-            release(inner);
-        }
+        release(inner);
         return;
     }
     inner.pending.set(true);
@@ -315,12 +281,6 @@ impl Drop for HoldInner {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn target_is_clamped_to_the_live_scrollable_range() {
-        assert_eq!(bounded_target(0.0, 1_000.0, 200.0, 600.0), Some(600.0));
-        assert_eq!(bounded_target(0.0, 1_000.0, 200.0, 900.0), Some(800.0));
-    }
 
     fn scrollable() -> gtk4::Adjustment {
         // GtkAdjustment itself is a display-free GObject. Default GObject
@@ -370,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn unreachable_target_is_clamped_only_when_the_latest_range_settles() {
+    fn unreachable_target_stays_deferred_when_the_latest_range_settles() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         let adjustment = scrollable();
         let hold = AdjustmentHold::new(&adjustment);
@@ -393,7 +353,42 @@ mod tests {
         }
 
         assert!(!inner.active.get());
-        assert_eq!(adjustment.value(), 6_000.0);
+        assert_eq!(adjustment.value(), 0.0);
+    }
+
+    #[test]
+    fn unreachable_target_is_never_written_as_a_clamp_while_the_hold_retires() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let adjustment = scrollable();
+        let writes = Rc::new(RefCell::new(Vec::new()));
+        let writes_for_signal = writes.clone();
+        adjustment.connect_value_changed(move |adjustment| {
+            writes_for_signal.borrow_mut().push(adjustment.value());
+        });
+        let hold = AdjustmentHold::new(&adjustment);
+        hold.set_target(12_000.0);
+        let inner = hold.inner.clone();
+
+        // The replacement model grows the stale range, but not far enough to
+        // make the anchor reachable before the bounded handover ends.
+        adjustment.set_upper(11_000.0);
+        assert!(gtk4::glib::MainContext::default().iteration(false));
+        hold.release_after(Duration::ZERO);
+
+        let context = gtk4::glib::MainContext::default();
+        for _ in 0..8 {
+            if !inner.active.get() || !context.iteration(false) {
+                break;
+            }
+        }
+
+        assert!(!inner.active.get(), "the hold must still retire");
+        assert!(
+            writes.borrow().iter().all(|value| *value == 12_000.0),
+            "the hold wrote an intermediate clamp instead of its target: {:?}",
+            writes.borrow()
+        );
+        assert_eq!(adjustment.value(), 0.0);
     }
 
     #[test]
@@ -543,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn unreachable_target_retires_at_the_budget_and_clamps_to_the_settled_range() {
+    fn unreachable_target_retires_at_the_budget_without_writing_a_clamp() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         let adjustment = scrollable();
         let hold = AdjustmentHold::new(&adjustment);
@@ -564,9 +559,6 @@ mod tests {
             "the correction budget must retire the hold"
         );
         assert_eq!(hold.inner.corrections.get(), MAX_CORRECTIONS + 1);
-        assert_eq!(
-            adjustment.value(),
-            adjustment.upper() - adjustment.page_size()
-        );
+        assert_eq!(adjustment.value(), 0.0);
     }
 }
