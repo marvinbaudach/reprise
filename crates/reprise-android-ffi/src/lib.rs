@@ -128,7 +128,7 @@ impl MusicLibrary {
 
     pub fn list_albums(&self, window: WindowRange) -> Result<AlbumWindow, LibraryError> {
         let state = self.lock()?;
-        queries::query_albums(&state.db, window.into())
+        queries::query_albums(&state.db, "", window.into())
             .map(AlbumWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -137,7 +137,7 @@ impl MusicLibrary {
 
     pub fn list_artists(&self, window: WindowRange) -> Result<ArtistWindow, LibraryError> {
         let state = self.lock()?;
-        queries::query_artists(&state.db, window.into())
+        queries::query_artists(&state.db, "", window.into())
             .map(ArtistWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
