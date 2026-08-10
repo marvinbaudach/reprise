@@ -452,6 +452,8 @@ class AgentAcceptanceTests(unittest.TestCase):
 
         self.assertEqual(actions[-1]["kind"], "complete-workload")
         self.assertIn("agent-sidebar-unavailable", {note.code for note in session.notes})
+        self.assertIn("agent-precondition-unmet:search-YouTube", {note.code for note in session.notes})
+        self.assertNotIn("agent-search-scope-leak", {note.code for note in session.notes})
         self.assertFalse(any(action.get("target", {}).get("label") == "YouTube" for action in actions))
         audit = audit_action_workload(0, mission.workloads[0], session.traces, mission.fixture_tokens)
         self.assertFalse(audit["route_results"]["YouTube"])

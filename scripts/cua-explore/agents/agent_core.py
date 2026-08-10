@@ -210,6 +210,7 @@ class AgentSession:
         self._pending_activation_retry: tuple[dict[str, Any], dict[str, Any]] | None = None
         self._activation_retry_inflight: dict[str, Any] | None = None
         self._semantic_ax_failures: list[dict[str, Any]] = []
+        self._section_changes: dict[str, bool] = {}
         if self.notes_dir is not None:
             self.notes_dir.mkdir(parents=True, exist_ok=True)
             (self.notes_dir / "agent-notes.jsonl").touch(exist_ok=True)
@@ -435,11 +436,23 @@ class AgentSession:
                 observation,
                 self.last_step_name,
                 selection_count=batch_selection_count(self.mission or {}),
+                section_changed=self._section_precondition(self.last_step_name),
             ):
                 self.add_note(Note(code, summary, evidence))
         self.last_observation = observation
         self.last_action = None
         self.last_step_name = None
+
+    def _section_precondition(self, step_name: str | None) -> bool | None:
+        if step_name is None or not step_name.startswith("search-"):
+            return None
+        return self._section_changes.get(step_name.removeprefix("search-"), False)
+
+    def _remember_section_change(
+        self, step_name: str | None, target: str, changed: bool
+    ) -> None:
+        if step_name == f"open-{target}":
+            self._section_changes[target] = changed
 
     def _track_activation_result(
         self,
@@ -454,6 +467,9 @@ class AgentSession:
         if self._activation_retry_inflight is not None:
             context = self._activation_retry_inflight
             self._activation_retry_inflight = None
+            self._remember_section_change(
+                str(context["step"]), str(context["target"]), changed
+            )
             if not changed:
                 self.add_note(
                     Note(
@@ -487,6 +503,11 @@ class AgentSession:
                     )
             return
         if changed:
+            self._remember_section_change(
+                step_name,
+                str(action.get("target", {}).get("label", "")),
+                True,
+            )
             if action.get("dispatch") == "ax":
                 self._semantic_ax_failures.clear()
             return
