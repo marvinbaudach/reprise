@@ -9,7 +9,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp", "ico"];
+use crate::cover_download::IMAGE_EXTS;
 
 /// Hard cap on the number of cached source-image files. Channel, show, and
 /// station artwork is small and there are only ever as many distinct images

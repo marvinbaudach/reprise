@@ -12,7 +12,7 @@ use crate::{
     source_error::{SourceError, SourceErrorKind},
 };
 
-pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
+pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp", "ico"];
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
@@ -597,6 +597,20 @@ mod tests {
         let favicon = include_bytes!("../tests/fixtures/rock-antenne-favicon.ico");
 
         assert_eq!(validated_image_extension(favicon), Some("ico"));
+    }
+
+    #[test]
+    fn validated_ico_download_is_found_again() {
+        let favicon = include_bytes!("../tests/fixtures/rock-antenne-favicon.ico");
+        let extension = validated_image_extension(favicon).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(format!("station.{extension}"));
+        std::fs::write(&path, favicon).unwrap();
+
+        assert_eq!(
+            downloaded_cover_path_from_dir(directory.path(), "station"),
+            Some(path)
+        );
     }
 
     #[test]
