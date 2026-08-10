@@ -250,6 +250,40 @@ fn rad_8_a_failed_radio_favicon_lookup_never_blocks_adding_the_station() {
 }
 
 #[test]
+fn malformed_radio_browser_mirror_never_panics_radio_add() {
+    let dir = TempDir::new().unwrap();
+    let path = fixture_db(&dir);
+    let fixtures = TempDir::new().unwrap();
+    std::fs::write(
+        fixtures.path().join("servers.json"),
+        r#"[{"name":"https://["}]"#,
+    )
+    .unwrap();
+    set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
+    set_bool_setting(&path, "online-sources-enabled", true);
+    set_bool_setting(&path, "module.radio.enabled", true);
+    let mut client =
+        McpClient::start_with_env(&path, &[("REPRISE_RADIO_FIXTURE_DIR", fixtures.path())]);
+
+    let added = structured_ok(&client.call_tool(
+        "music_manage_radio",
+        json!({
+            "action": "add",
+            "url": "https://radio.example.test/live",
+            "name": "Malformed Mirror Radio",
+            "uuid": "station-one"
+        }),
+    ));
+
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let station = reprise_core::radio::station::get(&db, added["id"].as_i64().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(station.name, "Malformed Mirror Radio");
+    assert_eq!(station.favicon_url, None);
+}
+
+#[test]
 fn edits_and_removes_a_subscription_without_deleting_downloads() {
     use reprise_core::podcasts::feed::ParsedEpisode;
     use reprise_core::podcasts::store::{self, NewSubscription};
