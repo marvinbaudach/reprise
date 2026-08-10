@@ -403,6 +403,7 @@ private fun PlayedHeader(
         QueuePageButton(surfaceState)
         SleepTimerControl(playback.sleepTimer)
         FavouriteHeartButton(track, surfaceState, tag = "now-playing-heart")
+        NowPlayingTrackContextMenu(track)
         IconButton(
             onClick = enterFullscreen,
             modifier = Modifier

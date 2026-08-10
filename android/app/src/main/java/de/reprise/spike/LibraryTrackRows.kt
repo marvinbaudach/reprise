@@ -1,6 +1,5 @@
 package de.reprise.spike
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -206,6 +205,7 @@ private fun LibraryTrackRow(
     play: () -> Unit,
 ) {
     var swipeOffset by remember(track.id) { mutableFloatStateOf(0f) }
+    val contextMenu = rememberTrackContextMenuAnchorState()
     val queueGesture = if (queueActions == null) {
         Modifier
     } else {
@@ -239,7 +239,7 @@ private fun LibraryTrackRow(
                 },
             )
             .then(queueGesture)
-            .clickable {
+            .trackContextMenuAnchor(contextMenu) {
                 if (queueActions == null) {
                     play()
                 } else {
@@ -332,6 +332,27 @@ private fun LibraryTrackRow(
                     .align(Alignment.BottomStart),
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
+            if (queueActions == null) {
+                TrackContextMenu(
+                    anchor = contextMenu,
+                    target = LibraryTrackMenuTarget(
+                        label = track.title,
+                        trackCount = 1,
+                        resolveTrackIds = { listOf(track.id) },
+                        play = { play() },
+                    ),
+                )
+            } else {
+                TrackContextMenu(
+                    anchor = contextMenu,
+                    target = QueueTrackMenuTarget(
+                        trackId = track.id,
+                        position = queuePosition,
+                        rowCount = queueRowCount,
+                        actions = queueActions,
+                    ),
+                )
+            }
         }
     }
 }

@@ -12,6 +12,36 @@ use crate::{TrackRow, TrackWindow, WindowRange};
 
 #[uniffi::export]
 impl AndroidPlaybackSession {
+    /// Replaces the queue from stable track identities and starts the selected
+    /// item after resolving every path from the live database.
+    pub fn play_track_ids(
+        &self,
+        track_ids: Vec<i64>,
+        start_index: u64,
+    ) -> Result<(), AndroidPlaybackError> {
+        let start_index =
+            usize::try_from(start_index).map_err(|_| AndroidPlaybackError::InvalidRequest {
+                detail: "the tapped track index does not fit this device".to_owned(),
+            })?;
+        if start_index >= track_ids.len() {
+            return Err(AndroidPlaybackError::InvalidRequest {
+                detail: "the tapped track is outside the requested list".to_owned(),
+            });
+        }
+        let resolved = self.resolve_track_uris(track_ids, "could not resolve a played track")?;
+        let resolved_start = resolved
+            .iter()
+            .position(|(requested_index, _, _)| *requested_index == start_index)
+            .ok_or(AndroidPlaybackError::InvalidRequest {
+                detail: "the tapped track is no longer in the library".to_owned(),
+            })?;
+        self.play_tracks(
+            resolved.iter().map(|(_, track_id, _)| *track_id).collect(),
+            resolved.into_iter().map(|(_, _, uri)| uri).collect(),
+            u64::try_from(resolved_start).unwrap_or(u64::MAX),
+        )
+    }
+
     pub fn queue_tracks_next(&self, track_ids: Vec<i64>) -> Result<u32, AndroidPlaybackError> {
         self.enqueue_tracks(track_ids, QueuePlacement::Next)
     }
@@ -197,29 +227,16 @@ impl AndroidPlaybackSession {
         requested_ids: Vec<i64>,
         placement: QueuePlacement,
     ) -> Result<u32, AndroidPlaybackError> {
-        let (track_ids, uris) = {
-            let database =
-                self.inner
-                    .database
-                    .lock()
-                    .map_err(|_| AndroidPlaybackError::Backend {
-                        detail: "playback queue database was poisoned".to_owned(),
-                    })?;
-            let mut track_ids = Vec::with_capacity(requested_ids.len());
-            let mut uris = Vec::with_capacity(requested_ids.len());
-            for track_id in requested_ids {
-                let path = queries::track_source_path(&database, track_id).map_err(|error| {
-                    AndroidPlaybackError::Backend {
-                        detail: format!("could not resolve an enqueued track: {error}"),
-                    }
-                })?;
-                if let Some(path) = path {
-                    track_ids.push(track_id);
-                    uris.push(path.to_string_lossy().into_owned());
-                }
-            }
-            (track_ids, uris)
-        };
+        let resolved =
+            self.resolve_track_uris(requested_ids, "could not resolve an enqueued track")?;
+        let track_ids = resolved
+            .iter()
+            .map(|(_, track_id, _)| *track_id)
+            .collect::<Vec<_>>();
+        let uris = resolved
+            .into_iter()
+            .map(|(_, _, uri)| uri)
+            .collect::<Vec<_>>();
         let (taken, next_uri, queue_to_save) = {
             let mut state = self.inner.lock()?;
             state.track_ids.extend_from_slice(&track_ids);
@@ -232,6 +249,34 @@ impl AndroidPlaybackSession {
         self.inner.backend()?.set_next(next_uri.as_deref());
         self.inner.notify();
         Ok(u32::try_from(taken).unwrap_or(u32::MAX))
+    }
+
+    fn resolve_track_uris(
+        &self,
+        requested_ids: Vec<i64>,
+        error_context: &str,
+    ) -> Result<Vec<(usize, i64, String)>, AndroidPlaybackError> {
+        let database = self
+            .inner
+            .database
+            .lock()
+            .map_err(|_| AndroidPlaybackError::Backend {
+                detail: "playback queue database was poisoned".to_owned(),
+            })?;
+        requested_ids
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, track_id)| {
+                queries::track_source_path(&database, track_id)
+                    .map_err(|error| AndroidPlaybackError::Backend {
+                        detail: format!("{error_context}: {error}"),
+                    })
+                    .transpose()
+                    .map(|result| {
+                        result.map(|path| (index, track_id, path.to_string_lossy().into_owned()))
+                    })
+            })
+            .collect()
     }
 }
 

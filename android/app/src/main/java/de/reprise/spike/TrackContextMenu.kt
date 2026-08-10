@@ -1,0 +1,308 @@
+package de.reprise.spike
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
+
+@Stable
+internal class TrackContextMenuAnchorState {
+    var expanded by mutableStateOf(false)
+    var touchOffset by mutableStateOf(DpOffset.Zero)
+    internal var heightPx = 0
+}
+
+@Composable
+internal fun rememberTrackContextMenuAnchorState() = remember { TrackContextMenuAnchorState() }
+
+@OptIn(ExperimentalFoundationApi::class)
+internal fun Modifier.trackContextMenuAnchor(
+    state: TrackContextMenuAnchorState,
+    onClick: () -> Unit,
+): Modifier = composed {
+    val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
+    onSizeChanged { size -> state.heightPx = size.height }
+        .pointerInput(state, density) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                state.touchOffset = with(density) {
+                    DpOffset(
+                        x = down.position.x.toDp(),
+                        y = (down.position.y - state.heightPx).toDp(),
+                    )
+                }
+            }
+        }
+        .combinedClickable(
+            onClick = onClick,
+            onLongClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                state.expanded = true
+            },
+        )
+}
+
+internal data class LibraryTrackMenuTarget(
+    val label: String,
+    val trackCount: Long,
+    val resolveTrackIds: () -> List<Long>,
+    val play: (List<Long>) -> Unit,
+)
+
+internal data class QueueTrackMenuTarget(
+    val trackId: Long,
+    val position: Int,
+    val rowCount: Int,
+    val actions: QueueRowActions,
+)
+
+private data class TrackDeletionTarget(
+    val label: String,
+    val trackCount: Long,
+    val resolveTrackIds: () -> List<Long>,
+)
+
+private fun LibraryTrackMenuTarget.deletionTarget() = TrackDeletionTarget(
+    label = label,
+    trackCount = trackCount,
+    resolveTrackIds = resolveTrackIds,
+)
+
+@Composable
+internal fun TrackContextMenu(
+    anchor: TrackContextMenuAnchorState,
+    target: QueueTrackMenuTarget,
+) {
+    DropdownMenu(
+        expanded = anchor.expanded,
+        onDismissRequest = { anchor.expanded = false },
+        offset = anchor.touchOffset,
+    ) {
+        DropdownMenuItem(
+            text = { Text("Play now") },
+            onClick = {
+                anchor.expanded = false
+                target.actions.play(target.position, target.trackId)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Move up") },
+            enabled = target.position > 0,
+            onClick = {
+                anchor.expanded = false
+                target.actions.move(target.position, target.trackId, target.position - 1)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Move down") },
+            enabled = target.position + 1 < target.rowCount,
+            onClick = {
+                anchor.expanded = false
+                target.actions.move(target.position, target.trackId, target.position + 1)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Remove from queue") },
+            onClick = {
+                anchor.expanded = false
+                target.actions.remove(target.position, target.trackId)
+            },
+        )
+    }
+}
+
+@Composable
+internal fun TrackContextMenu(
+    anchor: TrackContextMenuAnchorState,
+    target: LibraryTrackMenuTarget,
+) {
+    val controls = LocalPlaybackControls.current
+    var deleteConfirmation by remember { mutableStateOf<TrackDeletionTarget?>(null) }
+    var message by remember { mutableStateOf<TransientMessage?>(null) }
+
+    fun resolvedIds(): List<Long>? = runCatching(target.resolveTrackIds)
+        .onFailure { error ->
+            message = TransientMessage(
+                "Could not load the tracks: ${error.message ?: "unknown error"}",
+            ).after(message)
+        }
+        .getOrNull()
+
+    fun queued(outcome: Result<UInt>) {
+        val text = outcome.fold(
+            onSuccess = { count ->
+                if (count == 0u) {
+                    "No tracks were queued."
+                } else {
+                    "$count ${if (count == 1u) "track" else "tracks"} queued"
+                }
+            },
+            onFailure = { error ->
+                "Could not edit the queue: ${error.message ?: "unknown error"}"
+            },
+        )
+        message = TransientMessage(text).after(message)
+    }
+
+    DropdownMenu(
+        expanded = anchor.expanded,
+        onDismissRequest = { anchor.expanded = false },
+        offset = anchor.touchOffset,
+    ) {
+        DropdownMenuItem(
+            text = { Text("Play") },
+            onClick = {
+                anchor.expanded = false
+                resolvedIds()?.let(target.play)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Play next") },
+            onClick = {
+                anchor.expanded = false
+                resolvedIds()?.let { ids -> controls.queueTracksNext(ids, ::queued) }
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Add to queue") },
+            onClick = {
+                anchor.expanded = false
+                resolvedIds()?.let { ids -> controls.queueTracksLast(ids, ::queued) }
+            },
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("Delete from device…") },
+            onClick = {
+                anchor.expanded = false
+                deleteConfirmation = target.deletionTarget()
+            },
+        )
+    }
+    TrackDeletionConfirmation(
+        target = deleteConfirmation,
+        dismiss = { deleteConfirmation = null },
+        report = { text -> message = TransientMessage(text).after(message) },
+    )
+    TransientMessageText(message) { message = null }
+}
+
+@Composable
+internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
+    var expanded by remember { mutableStateOf(false) }
+    var deleteConfirmation by remember { mutableStateOf<TrackDeletionTarget?>(null) }
+    var message by remember { mutableStateOf<TransientMessage?>(null) }
+    val target = remember(track.id, track.title) {
+        TrackDeletionTarget(track.title, 1) { listOf(track.id) }
+    }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier.size(48.dp).testTag("now-playing-overflow"),
+        ) {
+            MaterialSymbol("more_vert", "More actions")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Delete from device…") },
+                onClick = {
+                    expanded = false
+                    deleteConfirmation = target
+                },
+            )
+        }
+    }
+    TrackDeletionConfirmation(
+        target = deleteConfirmation,
+        dismiss = { deleteConfirmation = null },
+        report = { text -> message = TransientMessage(text).after(message) },
+    )
+    TransientMessageText(message) { message = null }
+}
+
+@Composable
+private fun TrackDeletionConfirmation(
+    target: TrackDeletionTarget?,
+    dismiss: () -> Unit,
+    report: (String) -> Unit,
+) {
+    val controls = LocalPlaybackControls.current
+    target ?: return
+    val title = if (target.trackCount == 1L) {
+        "Delete ${target.label}?"
+    } else {
+        "Delete ${target.trackCount} tracks from ${target.label}?"
+    }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(title) },
+        text = {
+            Text("The selected files will be deleted from this device. This cannot be undone.")
+        },
+        dismissButton = {
+            TextButton(onClick = dismiss) { Text("Cancel") }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    dismiss()
+                    val ids = runCatching(target.resolveTrackIds).getOrElse { error ->
+                        report("Could not load the tracks: ${error.message ?: "unknown error"}")
+                        return@TextButton
+                    }
+                    controls.deleteTracks(ids) { outcome ->
+                        report(
+                            outcome.fold(
+                                onSuccess = { deletion ->
+                                    if (deletion.failures.isEmpty()) {
+                                        "${deletion.removedIds.size} " +
+                                            if (deletion.removedIds.size == 1) {
+                                                "track deleted"
+                                            } else {
+                                                "tracks deleted"
+                                            }
+                                    } else {
+                                        "${deletion.failures.size} of ${ids.size} could not " +
+                                            "be deleted: " +
+                                            deletion.failures.joinToString { it.error }
+                                    }
+                                },
+                                onFailure = { error ->
+                                    "Could not delete tracks: " +
+                                        (error.message ?: "unknown error")
+                                },
+                            ),
+                        )
+                    }
+                },
+            ) { Text("Delete") }
+        },
+    )
+}

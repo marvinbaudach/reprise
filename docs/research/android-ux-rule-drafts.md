@@ -363,6 +363,10 @@ Belege je Regel-ID in `ux-android-m3.md` (Scratchpad).
   playback to the next surviving track in play order; it stops only when no
   queued track survives.
   <!-- REVIEW: Regelvorschlag -->
+- **MOB-26** [planned] — Deleting one or more tracks from an Android library
+  surface always requires explicit confirmation that names the selection and
+  states that the file deletion is irreversible; cancelling deletes nothing.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## Speicherzugriff und Berechtigungen — `STOR`, 18 Entwürfe
 

@@ -195,6 +195,7 @@ private fun WideShortNowPlayingContent(
                     surfaceState = surfaceState,
                     tag = "now-playing-heart",
                 )
+                NowPlayingTrackContextMenu(track)
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
