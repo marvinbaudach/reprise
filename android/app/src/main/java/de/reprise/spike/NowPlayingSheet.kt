@@ -14,11 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -33,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 /**
@@ -84,11 +85,19 @@ internal fun NowPlayingSheet(
                 scaleX = 1f - backProgress * 0.03f
                 scaleY = 1f - backProgress * 0.03f
             },
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(
-            topStart = nowPlayingMetrics.coverRadiusDp.dp,
-            topEnd = nowPlayingMetrics.coverRadiusDp.dp,
-        ),
+        color = if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+            MaterialTheme.colorScheme.surfaceContainer
+        } else {
+            Color.Black
+        },
+        shape = if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+            RoundedCornerShape(
+                topStart = nowPlayingMetrics.coverRadiusDp.dp,
+                topEnd = nowPlayingMetrics.coverRadiusDp.dp,
+            )
+        } else {
+            RectangleShape
+        },
         shadowElevation = 12.dp,
     ) {
         if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
@@ -100,105 +109,15 @@ internal fun NowPlayingSheet(
                 close = close,
             )
         } else {
-            StackedNowPlayingContent(
-                track = track,
-                playback = playback,
-                surfaceState = surfaceState,
-                metrics = metrics,
-                close = close,
-            )
-        }
-    }
-}
-
-@Composable
-private fun StackedNowPlayingContent(
-    track: LibraryTrack,
-    playback: PlaybackUiState,
-    surfaceState: MobileSurfaceViewModel,
-    metrics: NowPlayingMetrics,
-    close: () -> Unit,
-) {
-    Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("now-playing-content")
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(width = 40.dp, height = 4.dp)
-                    .clip(MaterialTheme.shapes.extraSmall)
-                    .background(MaterialTheme.colorScheme.outline),
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("now-playing-actions"),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                QueuePageButton(surfaceState)
-                SleepTimerControl(playback.sleepTimer)
-                FavouriteHeartButton(
+            Box(Modifier.fillMaxSize().testTag("now-playing-content")) {
+                NowPlayingScene(
                     track = track,
+                    playback = playback,
                     surfaceState = surfaceState,
-                    tag = "now-playing-heart",
-                )
-                IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
-                    MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
-                }
-            }
-            if (surfaceState.nowPlayingQueueVisible) {
-                Box(
-                    modifier = Modifier.size(metrics.coverSizeDp.dp),
-                ) {
-                    NowPlayingQueuePage(playback, surfaceState)
-                }
-            } else {
-                NowPlayingVisualizer(
-                    trackId = track.id,
-                    trackUri = track.uri,
-                    playbackFraction = playback.progressFraction,
-                    size = metrics.coverSizeDp,
-                    shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
+                    close = close,
                 )
             }
-            Spacer(Modifier.height(20.dp))
-            Text(
-                text = track.title,
-                modifier = Modifier.testTag("now-playing-title"),
-                style = TextStyle(
-                    fontSize = metrics.titleSizeSp.sp,
-                    lineHeight = metrics.titleLineHeightSp.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = track.artist.ifBlank { "Unknown artist" },
-                style = TextStyle(
-                    fontSize = metrics.artistSizeSp.sp,
-                    lineHeight = metrics.artistLineHeightSp.sp,
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
-            playback.error?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            PlaybackActions(playback = playback, metrics = metrics, wideShort = false)
+        }
     }
 }
 
@@ -225,11 +144,11 @@ private fun WideShortNowPlayingContent(
             if (surfaceState.nowPlayingQueueVisible) {
                 NowPlayingQueuePage(playback, surfaceState)
             } else {
-                NowPlayingVisualizer(
-                    trackId = track.id,
+                TrackCover(
                     trackUri = track.uri,
-                    playbackFraction = playback.progressFraction,
                     size = metrics.coverSizeDp,
+                    modifier = Modifier.testTag("now-playing-cover"),
+                    artworkSize = AndroidArtworkSize.NOW_PLAYING,
                     shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
                 )
             }
@@ -297,7 +216,7 @@ private fun WideShortNowPlayingContent(
 }
 
 @Composable
-private fun QueuePageButton(surfaceState: MobileSurfaceViewModel) {
+internal fun QueuePageButton(surfaceState: MobileSurfaceViewModel) {
     val visible = surfaceState.nowPlayingQueueVisible
     IconButton(
         onClick = { surfaceState.showNowPlayingQueue(!visible) },
@@ -312,7 +231,7 @@ private fun QueuePageButton(surfaceState: MobileSurfaceViewModel) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun SpectralSeekSlider(
+internal fun SpectralSeekSlider(
     trackId: Long,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,

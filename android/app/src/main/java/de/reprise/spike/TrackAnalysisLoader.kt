@@ -9,7 +9,9 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
+import de.reprise.spike.scene.SpectrogramFrames
 import uniffi.reprise_android_ffi.AndroidTrackRenderBar
+import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
 private const val TAG = "RepriseAnalysis"
 private const val SHUTDOWN_TIMEOUT_MS = 2_000L
@@ -31,6 +33,12 @@ internal fun AndroidTrackRenderBar.toSpectralBar() = SpectralBar(
     blue = blue,
 )
 
+internal fun AndroidTrackSpectrogram.toSpectrogramFrames() = SpectrogramFrames(
+    bandCount = bandCount.toInt(),
+    frameRateHz = frameRateHz.toInt(),
+    cells = cells,
+)
+
 /** The analysis edge used by the playing-track lifecycle and seek surface. */
 internal interface TrackAnalysisPort {
     /** Changes on the main thread after a sidecar import attempt completes. */
@@ -39,6 +47,8 @@ internal interface TrackAnalysisPort {
     fun prepare(trackId: Long)
 
     fun loadBars(trackId: Long, count: Int, deliver: (List<SpectralBar>?) -> Unit)
+
+    fun loadSpectrogram(trackId: Long, deliver: (SpectrogramFrames?) -> Unit) = deliver(null)
 }
 
 /**
@@ -52,6 +62,7 @@ internal interface TrackAnalysisPort {
 internal class TrackAnalysisLoader(
     private val importAnalysis: (Long) -> Unit,
     private val readBars: (Long, Int) -> List<SpectralBar>?,
+    private val readSpectrogram: (Long) -> AndroidTrackSpectrogram? = { null },
     private val onMainThread: (() -> Unit) -> Unit,
     private val worker: ExecutorService = singleAnalysisThread(),
 ) : TrackAnalysisPort {
@@ -72,6 +83,17 @@ internal class TrackAnalysisLoader(
                 .onFailure { error -> Log.w(TAG, "Could not load analysis for track $trackId", error) }
                 .getOrNull()
             onMainThread { deliver(bars) }
+        }
+    }
+
+    override fun loadSpectrogram(trackId: Long, deliver: (SpectrogramFrames?) -> Unit) {
+        submit("load spectrogram for track $trackId") {
+            val frames = runCatching { readSpectrogram(trackId)?.toSpectrogramFrames() }
+                .onFailure { error ->
+                    Log.w(TAG, "Could not load spectrogram for track $trackId", error)
+                }
+                .getOrNull()
+            onMainThread { deliver(frames) }
         }
     }
 

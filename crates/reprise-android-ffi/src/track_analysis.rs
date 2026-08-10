@@ -1,5 +1,6 @@
 use reprise_core::db::{get_track_spectrogram, get_waveform_peaks};
 use reprise_core::queries::query_present_track_by_id;
+use reprise_core::spectrogram::{SPECTROGRAM_BAND_COUNT, SPECTROGRAM_FRAME_RATE_HZ};
 use reprise_view::spectral_colour::{
     shape_centroid, smooth_centroid_over_seconds, spectral_colour, CENTROID_WINDOW_S,
 };
@@ -20,8 +21,37 @@ pub struct AndroidTrackRenderBar {
     pub blue: f64,
 }
 
+/// One complete frame-major spectrogram in the format owned by Rust.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct AndroidTrackSpectrogram {
+    pub band_count: u32,
+    pub frame_rate_hz: u32,
+    /// Frame-major cells, `band_count` bytes per frame.
+    pub cells: Vec<u8>,
+}
+
 #[uniffi::export]
 impl MusicLibrary {
+    /// Returns the complete stored spectrogram for one track.
+    ///
+    /// `Ok(None)` is the ordinary no-analysis answer. The whole track crosses
+    /// the boundary once so rendering never needs per-frame FFI traffic.
+    pub fn track_spectrogram(
+        &self,
+        track_id: i64,
+    ) -> Result<Option<AndroidTrackSpectrogram>, LibraryError> {
+        let state = self.lock()?;
+        query_present_track_by_id(&state.db, track_id)
+            .map_err(query_error)?
+            .ok_or(LibraryError::TrackNotFound { track_id })?;
+        let spectrogram = get_track_spectrogram(&state.db, track_id).map_err(database_error)?;
+        Ok(spectrogram.map(|spectrogram| AndroidTrackSpectrogram {
+            band_count: SPECTROGRAM_BAND_COUNT as u32,
+            frame_rate_hz: SPECTROGRAM_FRAME_RATE_HZ,
+            cells: spectrogram.cells().to_vec(),
+        }))
+    }
+
     /// Returns finished seek-bar cells for one track and requested bar count.
     ///
     /// `Ok(None)` is the ordinary no-analysis answer. Heights, the fixed
@@ -100,11 +130,20 @@ mod tests {
     use reprise_core::db::{set_track_render_data, track_source_fingerprint, Db};
     use reprise_core::library::scanner::scan_folder;
     use reprise_core::queries::{query_library_text_search, WindowRange};
-    use reprise_core::spectrogram::{TrackSpectrogram, SPECTROGRAM_BAND_COUNT};
+    use reprise_core::spectrogram::{
+        TrackSpectrogram, SPECTROGRAM_BAND_COUNT, SPECTROGRAM_FRAME_RATE_HZ,
+    };
     use reprise_core::waveform::TrackRenderData;
     use reprise_view::spectral_colour::spectral_colour;
 
-    use crate::MusicLibrary;
+    use crate::{LibraryError, MusicLibrary};
+
+    fn stored_spectrogram_cells() -> Vec<u8> {
+        let mut cells = vec![0; SPECTROGRAM_BAND_COUNT * 2];
+        cells[0] = u8::MAX;
+        cells[SPECTROGRAM_BAND_COUNT * 2 - 1] = u8::MAX;
+        cells
+    }
 
     fn library_with_two_tracks() -> (tempfile::TempDir, MusicLibrary, i64, i64) {
         let directory = tempfile::tempdir().unwrap();
@@ -138,16 +177,13 @@ mod tests {
             .unwrap()
             .id;
         let source = track_source_fingerprint(&db, analysed_id).unwrap().unwrap();
-        let mut cells = vec![0; SPECTROGRAM_BAND_COUNT * 2];
-        cells[0] = u8::MAX;
-        cells[SPECTROGRAM_BAND_COUNT * 2 - 1] = u8::MAX;
         set_track_render_data(
             &db,
             analysed_id,
             source,
             &TrackRenderData {
                 waveform_peaks: vec![0, u8::MAX],
-                spectrogram: TrackSpectrogram::from_cells(cells).unwrap(),
+                spectrogram: TrackSpectrogram::from_cells(stored_spectrogram_cells()).unwrap(),
             },
         )
         .unwrap();
@@ -204,5 +240,34 @@ mod tests {
             .unwrap();
 
         assert_eq!(bars.len(), 4_096);
+    }
+
+    #[test]
+    fn stored_spectrogram_crosses_the_boundary_exactly() {
+        let (_directory, library, analysed_id, _plain_id) = library_with_two_tracks();
+
+        let spectrogram = library.track_spectrogram(analysed_id).unwrap().unwrap();
+
+        assert_eq!(spectrogram.cells, stored_spectrogram_cells());
+        assert_eq!(spectrogram.band_count, SPECTROGRAM_BAND_COUNT as u32);
+        assert_eq!(spectrogram.frame_rate_hz, SPECTROGRAM_FRAME_RATE_HZ);
+        assert_eq!(spectrogram.cells.len() % spectrogram.band_count as usize, 0,);
+    }
+
+    #[test]
+    fn track_without_analysis_has_no_spectrogram() {
+        let (_directory, library, _analysed_id, plain_id) = library_with_two_tracks();
+
+        assert_eq!(library.track_spectrogram(plain_id).unwrap(), None);
+    }
+
+    #[test]
+    fn unknown_track_spectrogram_reports_track_not_found() {
+        let (_directory, library, _analysed_id, _plain_id) = library_with_two_tracks();
+
+        assert!(matches!(
+            library.track_spectrogram(i64::MAX),
+            Err(LibraryError::TrackNotFound { track_id: i64::MAX })
+        ));
     }
 }

@@ -40,6 +40,12 @@ internal class AmbientMotionController(
     var scheduled by mutableStateOf(false)
         private set
 
+    internal val sceneFramesAllowed: Boolean
+        get() = scheduled || attachedSurfaces > 0 && resumed && screenInteractive
+
+    internal val sceneAnimationsEnabled: Boolean
+        get() = scheduled
+
     fun attach() {
         attachedSurfaces += 1
         update()
