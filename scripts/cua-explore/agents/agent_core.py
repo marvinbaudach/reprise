@@ -214,6 +214,7 @@ class AgentSession:
         if self.notes_dir is not None:
             self.notes_dir.mkdir(parents=True, exist_ok=True)
             (self.notes_dir / "agent-notes.jsonl").touch(exist_ok=True)
+            self._write_dispatch_policy()
 
     def next_action(
         self,
@@ -494,6 +495,7 @@ class AgentSession:
                         "effective": "px",
                         "reason": "semantic-route-unavailable",
                     }
+                    self._write_dispatch_policy()
                     self.add_note(
                         Note(
                             "semantic-route-unavailable",
@@ -773,3 +775,11 @@ class AgentSession:
                 )
                 + "\n"
             )
+
+    def _write_dispatch_policy(self) -> None:
+        if self.notes_dir is None:
+            return
+        (self.notes_dir / "dispatch-policy.json").write_text(
+            json.dumps(self.dispatch_policy, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )

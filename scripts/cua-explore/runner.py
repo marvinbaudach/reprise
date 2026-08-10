@@ -62,6 +62,74 @@ STARTUP_TIMEOUT_SECONDS_PER_10K_ROWS = 60.0
 STARTUP_TIMEOUT_CAP_SECONDS = 1_200.0
 STARTUP_POLL_SECONDS = 0.25
 
+ORACLE_FINDING_CODES = {
+    "feedback": {"slow-visible-feedback"},
+    "waiting-state": {"missing-waiting-feedback"},
+    "layout-shift": {"uninvited-layout-shift"},
+    "pointer-reachability": {"suspected-occlusion", "misrouted-click"},
+    "scroll-direction": {"wrong-scroll-direction", "scroll-jump", "scroll-lost-selection"},
+    "main-loop-stall": {"main-loop-stall"},
+    "accessibility": {
+        "degraded-accessibility",
+        "invisible-actionable",
+        "no-accessible-action",
+        "suspected-no-handler",
+    },
+    "offline-continuity": {
+        "offline-broke-local-music",
+        "offline-lost-cached-content",
+        "reconnect-kept-offline-status",
+    },
+    "hover-affordance": {
+        "hover-skipped",
+        "hover-unmeasurable",
+        "hover-affordance-missing",
+        "hover-affordance-weak",
+    },
+}
+
+
+class OracleActivityTracker:
+    """Counts whether each declared oracle reached an applicable observation."""
+
+    def __init__(self, names: Sequence[str]) -> None:
+        self.activity = {
+            str(name): {"evaluated": 0, "fired": 0} for name in names
+        }
+
+    def record(self, evidence: Any, findings: Sequence[Any]) -> None:
+        codes = {str(item.code) for item in findings}
+        for name, record in self.activity.items():
+            if name == "clean-runtime" or not self._applies(name, evidence):
+                continue
+            record["evaluated"] += 1
+            record["fired"] += len(codes & ORACLE_FINDING_CODES.get(name, set()))
+
+    def record_clean_runtime(self, *, fired: bool) -> None:
+        record = self.activity.get("clean-runtime")
+        if record is not None:
+            record["evaluated"] += 1
+            record["fired"] += int(fired)
+
+    def supersede(self, name: str, finding_code: str) -> None:
+        if name in self.activity:
+            self.activity[name]["superseded_by"] = finding_code
+
+    @staticmethod
+    def _applies(name: str, evidence: Any) -> bool:
+        kind = str(getattr(evidence, "kind", ""))
+        return {
+            "feedback": kind == "activate",
+            "waiting-state": kind == "wait",
+            "layout-shift": kind == "wait",
+            "pointer-reachability": kind == "activate" and evidence.dispatch == "px",
+            "scroll-direction": kind == "scroll",
+            "main-loop-stall": bool(kind),
+            "accessibility": kind == "activate" and evidence.dispatch == "ax",
+            "offline-continuity": kind == "set-connectivity",
+            "hover-affordance": kind == "hover",
+        }.get(name, False)
+
 
 def startup_timeout_seconds(profile: str) -> float:
     """How long this fixture profile may take to reach a usable window."""
@@ -188,13 +256,50 @@ def retain_agent_notes(profile_root: pathlib.Path, evidence_dir: pathlib.Path) -
     source = profile_root / "agent-home"
     if not source.is_dir():
         return
-    files = sorted(source.glob("*.jsonl"))
+    files = sorted((*source.glob("*.jsonl"), *source.glob("*.json")))
     if not files:
         return
     target = evidence_dir / "agent"
     target.mkdir(parents=True, exist_ok=True)
     for path in files:
         shutil.copy2(path, target / path.name)
+
+
+def read_agent_dispatch_policy(profile_root: pathlib.Path) -> Mapping[str, Any] | None:
+    path = profile_root / "agent-home" / "dispatch-policy.json"
+    if not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def agent_product_findings(profile_root: pathlib.Path) -> Iterator[Mapping[str, Any]]:
+    path = profile_root / "agent-home" / "agent-notes.jsonl"
+    if not path.is_file():
+        return
+    severities = {
+        "semantic-activation-ineffective": "warning",
+        "semantic-route-unavailable": "error",
+    }
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            note = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        code = str(note.get("code", ""))
+        if code not in severities:
+            continue
+        yield {
+            "code": code,
+            "severity": severities[code],
+            "confidence": 1.0,
+            "summary": str(note.get("summary", "")),
+            "evidence": note.get("evidence", {}),
+            "blocks_gate": False,
+        }
 
 
 class RunError(RuntimeError):
@@ -673,6 +778,7 @@ def run(args: argparse.Namespace) -> int:
         required_workloads=len(mission.workloads),
         required_audits=tuple(range(len(mission.workloads))),
     )
+    oracle_activity = OracleActivityTracker(mission.oracles)
     history: list[Mapping[str, Any]] = []
     traces: list[ActionTrace] = []
     agent_context: Any
@@ -886,6 +992,7 @@ def run(args: argparse.Namespace) -> int:
                     )
                     continue
                 result = executor.execute(accepted)
+                oracle_activity.record(result.evidence, result.findings)
                 finding_dicts = [dataclasses.asdict(item) for item in result.findings]
                 report.add_step(
                     action=_action_for_report(accepted),
@@ -936,14 +1043,26 @@ def run(args: argparse.Namespace) -> int:
         report.set_unknown_action_names(
             getattr(executor, "unknown_action_names", {}) or {}
         )
-        report.set_dispatch_policy(getattr(explorer, "dispatch_policy", None))
+        dispatch_policy = read_agent_dispatch_policy(profile_root)
+        report.set_dispatch_policy(
+            dispatch_policy or getattr(explorer, "dispatch_policy", None)
+        )
+        if dispatch_policy and dispatch_policy.get("reason") == "semantic-route-unavailable":
+            oracle_activity.supersede("accessibility", "semantic-route-unavailable")
+        for finding in agent_product_findings(profile_root):
+            report.add_finding(finding)
+        report.set_oracle_activity(oracle_activity.activity)
         report.write()
     try:
         lifecycle.assert_clean_logs()
     except Exception as error:
+        oracle_activity.record_clean_runtime(fired=True)
+        report.set_oracle_activity(oracle_activity.activity)
         report.set_abort_reason(str(error))
         report.write()
         raise
+    oracle_activity.record_clean_runtime(fired=False)
+    report.set_oracle_activity(oracle_activity.activity)
     summary = report.write()
     if args.hover_smoke or args.hover_probe or args.click_probe:
         return 0

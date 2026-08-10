@@ -7,6 +7,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -139,6 +140,54 @@ class OutcomeTests(unittest.TestCase):
     def test_missing_finish_still_aborts_the_tool(self) -> None:
         with self.assertRaisesRegex(runner.RunError, "without finish"):
             runner.ensure_run_complete(False, {"mission_complete": False})
+
+    def test_a_declared_oracle_that_never_evaluates_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = report_at(pathlib.Path(directory))
+            report.set_oracle_activity({"accessibility": {"evaluated": 0, "fired": 0}})
+            summary = report.write()
+
+        self.assertEqual(summary["finding_codes"]["oracle-never-evaluated"], 1)
+
+    def test_an_evaluated_clean_oracle_is_not_reported_as_silent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = report_at(pathlib.Path(directory))
+            report.set_oracle_activity({"accessibility": {"evaluated": 1, "fired": 0}})
+            summary = report.write()
+
+        self.assertNotIn("oracle-never-evaluated", summary["finding_codes"])
+
+    def test_a_superseded_oracle_is_not_reported_as_silent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = report_at(pathlib.Path(directory))
+            report.set_oracle_activity(
+                {
+                    "accessibility": {
+                        "evaluated": 0,
+                        "fired": 0,
+                        "superseded_by": "semantic-route-unavailable",
+                    }
+                }
+            )
+            summary = report.write()
+
+        self.assertNotIn("oracle-never-evaluated", summary["finding_codes"])
+
+    def test_runner_counts_only_applicable_oracles_and_their_findings(self) -> None:
+        tracker = runner.OracleActivityTracker(("accessibility", "scroll-direction"))
+
+        tracker.record(
+            SimpleNamespace(kind="activate", dispatch="ax"),
+            (SimpleNamespace(code="no-accessible-action"),),
+        )
+
+        self.assertEqual(
+            tracker.activity,
+            {
+                "accessibility": {"evaluated": 1, "fired": 1},
+                "scroll-direction": {"evaluated": 0, "fired": 0},
+            },
+        )
 
 
 if __name__ == "__main__":

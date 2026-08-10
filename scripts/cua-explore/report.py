@@ -198,6 +198,7 @@ class RunReport:
     def write(self) -> Mapping[str, Any]:
         findings = [
             *self.run_findings,
+            *self._silent_oracle_findings(),
             *(finding for step in self.steps for finding in step["findings"]),
         ]
         severity_counts = Counter(str(item.get("severity", "unknown")) for item in findings)
@@ -278,6 +279,23 @@ class RunReport:
             self._markdown(summary, findings), encoding="utf-8"
         )
         return summary
+
+    def _silent_oracle_findings(self) -> list[dict[str, Any]]:
+        findings = []
+        for name, record in self.oracle_activity.items():
+            if int(record.get("evaluated", 0)) > 0 or record.get("superseded_by"):
+                continue
+            findings.append(
+                {
+                    "code": "oracle-never-evaluated",
+                    "severity": "warning",
+                    "confidence": 1.0,
+                    "summary": f"The declared '{name}' oracle never evaluated during this run.",
+                    "evidence": {"oracle": name},
+                    "blocks_gate": False,
+                }
+            )
+        return findings
 
     def _markdown(
         self, summary: Mapping[str, Any], findings: Sequence[Mapping[str, Any]]
