@@ -24,6 +24,8 @@ internal object NowPlayingFogSpec {
 
     private const val WIDE_FLOOR = 0.62f
     private const val TIGHT_FLOOR = 0.40f
+    private const val FOG_LEVEL_LOW = 0.05f
+    private const val FOG_LEVEL_HIGH = 0.70f
 
     fun wideAlpha(fogLevel: Float, opacity: Float): Float =
         wideOpacity * response(fogLevel, WIDE_FLOOR) * opacity
@@ -32,8 +34,9 @@ internal object NowPlayingFogSpec {
         tightOpacity * response(fogLevel, TIGHT_FLOOR) * opacity
 
     private fun response(fogLevel: Float, floor: Float): Float {
-        val bounded = fogLevel.coerceIn(0f, 1f)
-        return floor + (1f - floor) * bounded
+        val measuredRange = FOG_LEVEL_HIGH - FOG_LEVEL_LOW
+        val normalized = ((fogLevel - FOG_LEVEL_LOW) / measuredRange).coerceIn(0f, 1f)
+        return floor + (1f - floor) * normalized
     }
 
     /**

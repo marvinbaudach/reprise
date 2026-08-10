@@ -6,25 +6,44 @@ import org.junit.Test
 
 class NowPlayingFogTest {
     @Test
-    fun fog_alpha_answers_a_five_point_three_times_energy_step() {
-        val quiet = NowPlayingFogSpec.wideAlpha(fogLevel = 0.15f, opacity = 1f)
-        val breakdown = NowPlayingFogSpec.wideAlpha(fogLevel = 0.80f, opacity = 1f)
+    fun fog_alpha_answers_the_measured_p5_to_p95_energy_step() {
+        val quietWide = NowPlayingFogSpec.wideAlpha(fogLevel = 0.1308f, opacity = 1f)
+        val loudWide = NowPlayingFogSpec.wideAlpha(fogLevel = 0.6444f, opacity = 1f)
+        val quietTight = NowPlayingFogSpec.tightAlpha(fogLevel = 0.1308f, opacity = 1f)
+        val loudTight = NowPlayingFogSpec.tightAlpha(fogLevel = 0.6444f, opacity = 1f)
 
         assertTrue(
-            "a 5.3x energy step must lift effective wide alpha by at least 25%",
-            breakdown >= quiet * 1.25f,
+            "measured p5-to-p95 energy must lift effective wide alpha by at least 40%",
+            loudWide >= quietWide * 1.40f,
+        )
+        assertTrue(
+            "measured p5-to-p95 energy must lift effective tight alpha by at least 90%",
+            loudTight >= quietTight * 1.90f,
         )
     }
 
     @Test
     fun fog_alpha_never_exceeds_the_signed_off_peak() {
+        listOf(0.70f, 1f).forEach { fogLevel ->
+            assertEquals(
+                0.92f.toRawBits(),
+                NowPlayingFogSpec.wideAlpha(fogLevel, opacity = 1f).toRawBits(),
+            )
+            assertEquals(
+                0.55f.toRawBits(),
+                NowPlayingFogSpec.tightAlpha(fogLevel, opacity = 1f).toRawBits(),
+            )
+        }
+
         assertEquals(
-            0.92f.toRawBits(),
-            NowPlayingFogSpec.wideAlpha(fogLevel = 1f, opacity = 1f).toRawBits(),
+            0.89848614f,
+            NowPlayingFogSpec.wideAlpha(fogLevel = 0.66f, opacity = 1f),
+            FLOAT_TOLERANCE,
         )
         assertEquals(
-            0.55f.toRawBits(),
-            NowPlayingFogSpec.tightAlpha(fogLevel = 1f, opacity = 1f).toRawBits(),
+            0.5296923f,
+            NowPlayingFogSpec.tightAlpha(fogLevel = 0.66f, opacity = 1f),
+            FLOAT_TOLERANCE,
         )
     }
 
@@ -43,7 +62,7 @@ class NowPlayingFogTest {
 
     @Test
     fun fog_alpha_is_monotonically_non_decreasing_with_energy() {
-        val levels = listOf(-1f, 0f, 0.15f, 0.5f, 0.8f, 1f, 2f)
+        val levels = listOf(-1f, 0f, 0.05f, 0.1308f, 0.66f, 0.70f, 1f, 2f)
 
         assertMonotonic(levels.map { NowPlayingFogSpec.wideAlpha(it, opacity = 1f) })
         assertMonotonic(levels.map { NowPlayingFogSpec.tightAlpha(it, opacity = 1f) })

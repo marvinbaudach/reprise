@@ -20,6 +20,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import kotlin.math.roundToInt
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -27,8 +28,8 @@ import org.robolectric.annotation.GraphicsMode
 class NowPlayingSceneVerificationTest {
     @Test
     fun played_fog_render_answers_the_settled_slow_envelope_without_drifting() {
-        val quietState = settledState(cell = 38)
-        val loudState = settledState(cell = 204)
+        val quietState = settledState(level = 0.126f)
+        val loudState = settledState(level = 0.646f)
         val fog = prepareCoverFogBitmap(solidArtwork(Color.WHITE), Color.DKGRAY)
 
         val quiet = renderPlayedFog(quietState, fog)
@@ -169,7 +170,8 @@ class NowPlayingSceneVerificationTest {
         return (total / count / 255.0).toFloat()
     }
 
-    private fun settledState(cell: Int): SceneState {
+    private fun settledState(level: Float): SceneState {
+        val cell = (level.coerceIn(0f, 1f) * 255f).roundToInt()
         val frames = SpectrogramFrames(
             bandCount = 24,
             frameRateHz = 20,
