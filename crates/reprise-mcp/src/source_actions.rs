@@ -612,11 +612,13 @@ fn lookup_radio_favicon(
         return None;
     }
     if let Some(uuid) = uuid {
-        let candidates = reprise_core::radio::servers::try_servers(|server| {
-            let body = reprise_core::radio::http::get(&radio_uuid_url(server, uuid))?;
+        let candidates = match reprise_core::radio::servers::try_servers(|server| {
+            let body = reprise_core::radio::http::get(&radio_uuid_url(server, uuid)?)?;
             reprise_core::radio::search::parse_candidates(&body)
-        })
-        .unwrap_or_default();
+        }) {
+            Ok(candidates) => candidates,
+            Err(_) => return None,
+        };
         if let Some(favicon) = favicon_for_strong_identity(&candidates, Some(uuid), stream_url) {
             return Some(favicon);
         }
@@ -630,16 +632,24 @@ fn lookup_radio_favicon(
     favicon_for_identity(&candidates, uuid, name, stream_url)
 }
 
-fn radio_uuid_url(server: &str, uuid: &str) -> String {
+fn radio_uuid_url(server: &str, uuid: &str) -> Result<String, reprise_core::radio::RadioError> {
     let mut url = url::Url::parse(&format!(
         "{}/json/stations/byuuid",
         server.trim_end_matches('/')
     ))
-    .expect("radio-browser server URLs are normalized");
+    .map_err(|_| {
+        reprise_core::radio::RadioError::Parse(
+            "radio-browser returned an invalid server URL".to_owned(),
+        )
+    })?;
     url.path_segments_mut()
-        .expect("radio-browser server URLs can carry path segments")
+        .map_err(|()| {
+            reprise_core::radio::RadioError::Parse(
+                "radio-browser server URL cannot carry path segments".to_owned(),
+            )
+        })?
         .push(uuid.trim());
-    url.into()
+    Ok(url.into())
 }
 
 fn favicon_for_strong_identity(
@@ -764,3 +774,7 @@ fn now_secs() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
+
+#[cfg(test)]
+#[path = "source_actions_tests.rs"]
+mod tests;
