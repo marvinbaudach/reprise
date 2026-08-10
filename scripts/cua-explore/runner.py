@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from actions import (
     CompleteWorkloadAction,
@@ -32,6 +32,7 @@ from report import RunReport
 from oracles import Finding
 from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
 from workload_audit import ActionTrace, audit_action_workload
+from window_setup import apply_window_size
 
 
 FAILURE_LOG_PATTERN = re.compile(
@@ -740,6 +741,54 @@ def _snapshot_has_busy_state(snapshot: Any) -> bool:
     )
 
 
+def launch_executor(
+    lifecycle_action: Callable[[], tuple[int, int, int]],
+    transport: Any,
+    *,
+    mission: Mission,
+    args: argparse.Namespace,
+    report: RunReport,
+    hover_geometry: Any | None = None,
+) -> tuple[int, int, int, WindowGeometry, CuaExecutor]:
+    """Start one app generation, apply mission geometry, then build its executor."""
+    pid, window_id, generation = lifecycle_action()
+    window_setup = apply_window_size(
+        transport,
+        window_id=window_id,
+        requested=mission.window,
+    )
+    report.set_window_setup(window_setup)
+    if window_setup is not None and window_setup["honoured"] is not True:
+        report.add_finding(
+            dataclasses.asdict(
+                Finding(
+                    "window-size-not-honoured",
+                    "warning",
+                    1.0,
+                    "The window manager did not honour the mission's requested size.",
+                    window_setup,
+                    blocks_gate=False,
+                )
+            )
+        )
+    window_origin = resolve_window_origin(
+        transport, pid=pid, window_id=window_id
+    )
+    executor = CuaExecutor(
+        transport,
+        pid=pid,
+        window_id=window_id,
+        session=args.session,
+        state_prefix=f"launch-{generation}-state",
+        fixture_tokens=mission.fixture_tokens,
+        evidence_dir=args.evidence_dir / "states",
+        hover_geometry=hover_geometry,
+        geometry_provider=make_geometry_provider(pid, window_origin),
+        window_origin=window_origin,
+    )
+    return pid, window_id, generation, window_origin, executor
+
+
 def run(args: argparse.Namespace) -> int:
     _private_environment_required()
     mission = load_mission(args.mission)
@@ -805,20 +854,12 @@ def run(args: argparse.Namespace) -> int:
     finished = False
     executor: Any = None
     try:
-        pid, window_id, generation = lifecycle.start()
-        window_origin = resolve_window_origin(
-            transport, pid=pid, window_id=window_id
-        )
-        executor = CuaExecutor(
+        pid, window_id, generation, window_origin, executor = launch_executor(
+            lifecycle.start,
             transport,
-            pid=pid,
-            window_id=window_id,
-            session=args.session,
-            state_prefix=f"launch-{generation}-state",
-            fixture_tokens=mission.fixture_tokens,
-            evidence_dir=args.evidence_dir / "states",
-            geometry_provider=make_geometry_provider(pid, window_origin),
-            window_origin=window_origin,
+            mission=mission,
+            args=args,
+            report=report,
         )
         observation = executor.observe()
         hover_geometry = None
@@ -954,23 +995,19 @@ def run(args: argparse.Namespace) -> int:
                 if isinstance(accepted, RestartAction):
                     before_observation = observation
                     before_state = observation["state_id"]
-                    pid, window_id, generation = lifecycle.restart()
-                    restart_origin = resolve_window_origin(
-                        transport, pid=pid, window_id=window_id
-                    )
-                    executor = CuaExecutor(
+                    (
+                        pid,
+                        window_id,
+                        generation,
+                        restart_origin,
+                        executor,
+                    ) = launch_executor(
+                        lifecycle.restart,
                         transport,
-                        pid=pid,
-                        window_id=window_id,
-                        session=args.session,
-                        state_prefix=f"launch-{generation}-state",
-                        fixture_tokens=mission.fixture_tokens,
-                        evidence_dir=args.evidence_dir / "states",
+                        mission=mission,
+                        args=args,
+                        report=report,
                         hover_geometry=hover_geometry,
-                        geometry_provider=make_geometry_provider(
-                            pid, restart_origin
-                        ),
-                        window_origin=restart_origin,
                     )
                     observation = executor.observe()
                     report.add_step(

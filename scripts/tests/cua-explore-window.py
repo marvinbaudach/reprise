@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -16,6 +19,7 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 
 from hover_geometry import WindowGeometry  # noqa: E402
 from protocol import ContractError, load_mission  # noqa: E402
+import runner  # noqa: E402
 from window_setup import apply_window_size  # noqa: E402
 
 
@@ -144,7 +148,112 @@ class WindowSetupTests(unittest.TestCase):
     def test_display_canvas_has_room_for_the_declared_window(self) -> None:
         run_script = (EXPLORE_ROOT / "run.sh").read_text(encoding="utf-8")
 
-        self.assertIn('cua_common_start_display "$output_dir" "$scratch_root" "1920x1200x24"', run_script)
+        self.assertIn(
+            'cua_common_start_display "$output_dir" "$scratch_root" "1920x1200x24"',
+            run_script,
+        )
+
+
+class RunnerWindowWiringTests(unittest.TestCase):
+    def test_launch_orders_resize_measure_origin_and_executor(self) -> None:
+        events = []
+        mission = load_mission(
+            EXPLORE_ROOT / "missions" / "first-time-exploration.json"
+        )
+
+        class Lifecycle:
+            def start(self):
+                events.append("start")
+                return 12, 34, 1
+
+        class Transport:
+            def resize_window(self, window_id, width, height):
+                events.append(("resize", window_id, width, height))
+
+            def wmctrl_geometry(self, window_id):
+                events.append(("wmctrl", window_id))
+                return WindowGeometry(0, 0, 1596, 1000)
+
+        class Report:
+            def __init__(self):
+                self.setup = None
+                self.findings = []
+
+            def set_window_setup(self, record):
+                self.setup = record
+
+            def add_finding(self, finding):
+                self.findings.append(finding)
+
+        report = Report()
+        args = SimpleNamespace(session="session", evidence_dir=pathlib.Path("evidence"))
+        with mock.patch.object(
+            runner,
+            "resolve_window_origin",
+            side_effect=lambda *_args, **_kwargs: events.append("origin")
+            or WindowGeometry(0, 0, 1596, 1000),
+        ), mock.patch.object(
+            runner,
+            "make_geometry_provider",
+            return_value=lambda: (),
+        ), mock.patch.object(
+            runner,
+            "CuaExecutor",
+            side_effect=lambda *_args, **_kwargs: events.append("executor") or object(),
+        ):
+            runner.launch_executor(
+                Lifecycle().start,
+                Transport(),
+                mission=mission,
+                args=args,
+                report=report,
+            )
+
+        self.assertEqual(
+            events,
+            [
+                "start",
+                ("resize", 34, 1600, 1000),
+                ("wmctrl", 34),
+                "origin",
+                "executor",
+            ],
+        )
+        self.assertFalse(report.setup["honoured"])
+        self.assertEqual(report.findings[0]["code"], "window-size-not-honoured")
+
+    def test_missing_window_skips_only_the_setup_resize(self) -> None:
+        events = []
+        mission = dataclasses.replace(
+            load_mission(EXPLORE_ROOT / "missions" / "first-time-exploration.json"),
+            window=None,
+        )
+
+        class Transport:
+            def resize_window(self, *_args):
+                events.append("resize")
+
+            def wmctrl_geometry(self, _window_id):
+                events.append("wmctrl")
+                return WindowGeometry(0, 0, 1440, 900)
+
+        report = mock.Mock()
+        args = SimpleNamespace(session="session", evidence_dir=pathlib.Path("evidence"))
+        with mock.patch.object(
+            runner, "resolve_window_origin", return_value=WindowGeometry(0, 0, 1440, 900)
+        ), mock.patch.object(
+            runner, "make_geometry_provider", return_value=lambda: ()
+        ), mock.patch.object(runner, "CuaExecutor", return_value=object()):
+            runner.launch_executor(
+                lambda: (12, 34, 1),
+                Transport(),
+                mission=mission,
+                args=args,
+                report=report,
+            )
+
+        self.assertEqual(events, [])
+        report.set_window_setup.assert_called_once_with(None)
 
 
 if __name__ == "__main__":
