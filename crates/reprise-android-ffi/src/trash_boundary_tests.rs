@@ -127,6 +127,35 @@ fn trash_tracks_reports_partial_failure_and_keeps_failed_database_rows() {
 }
 
 #[test]
+fn an_id_whose_row_is_already_gone_is_reported_rather_than_dropped() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Survivor"]);
+    let survivor = &tracks[0];
+    let vanished = survivor.id + 10_000;
+    let (session, _) = session_with_calls(directory.path());
+
+    let report = session
+        .trash_tracks(vec![vanished, survivor.id], successful_trash())
+        .unwrap();
+
+    assert_eq!(report.removed_ids, vec![survivor.id]);
+    assert_eq!(
+        report.failures.len(),
+        1,
+        "a batch must account for every requested id, not quietly under-report",
+    );
+    assert_eq!(report.failures[0].track_id, vanished);
+    assert_eq!(
+        report.failures[0].uri, "",
+        "there is no file to name for a row that no longer exists",
+    );
+    assert_eq!(
+        report.failures[0].error,
+        "this track was already gone from the library",
+    );
+}
+
+#[test]
 fn trashing_the_playing_track_advances_plays_and_removes_it_from_upcoming() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["Playing", "Next", "Tail"]);
