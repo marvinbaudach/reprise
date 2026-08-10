@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Iterable, Mapping
 
 
 CANONICAL_ROW_ROLE = "row"
@@ -35,6 +35,15 @@ ROLE_ALIASES: Mapping[str, str] = {
     "grouping": "group",
     "scrollbar": "scroll bar",
 }
+
+# Measured over all 1020 recorded snapshots of the 2026-08-10 exploratory run
+# (GTK 4.22, Reprise edd458e8df): 27 distinct action names, exactly one of them
+# invocable. Structural means assistive technology may call it, but it is not a
+# user affordance - GTK4 puts listitem.scroll-to on every row and cell of a
+# ColumnView, list.select-all on every list, and the win.*/window.*/default.*
+# GActions on the window itself.
+STRUCTURAL_ACTION_PREFIXES = ("listitem.", "list.", "win.", "window.", "default.")
+MEASURED_INVOCABLE_ACTIONS = frozenset({"click"})
 
 # Only the spellings that really denote a row - ROLE_ALIASES also carries
 # button, cell and window variants now, and folding those in here would have
@@ -102,6 +111,23 @@ def canonical_role(role: str) -> str:
     """Return the stable role spelling used by every harness consumer."""
     normalized = str(role or "unknown").strip().casefold()
     return ROLE_ALIASES.get(normalized, normalized)
+
+
+def is_structural_action(name: str) -> bool:
+    return str(name).startswith(STRUCTURAL_ACTION_PREFIXES)
+
+
+def invocable_actions(names: Iterable[str]) -> tuple[str, ...]:
+    """Keep measured invocable and unknown names visible to the harness."""
+    return tuple(name for name in names if not is_structural_action(name))
+
+
+def unknown_action_names(names: Iterable[str]) -> tuple[str, ...]:
+    return tuple(
+        name
+        for name in names
+        if not is_structural_action(name) and name not in MEASURED_INVOCABLE_ACTIONS
+    )
 
 
 def is_row(role: str) -> bool:
