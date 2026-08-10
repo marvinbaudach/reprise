@@ -49,7 +49,7 @@ pub(in crate::ui) fn remember_row_height(
 /// The row height is a property of the display density, and a density change is
 /// the one event that invalidates it without any geometry looking wrong.
 pub(in crate::ui) fn forget_row_height(last_row_height: &Cell<f64>) {
-    last_row_height.set(0.0);
+    crate::ui::list_geometry::invalidate_row_height(last_row_height);
 }
 
 /// Decides whether a freshly measured row height replaces the cached one.
@@ -186,7 +186,10 @@ mod tests {
 
         forget_row_height(&cached);
 
-        assert_eq!(cached.get(), 0.0);
+        assert_eq!(
+            cached.get(),
+            crate::ui::list_geometry::INVALIDATED_ROW_HEIGHT
+        );
         assert!(should_replace_cached_height(24.0, cached.get(), 200));
     }
 
