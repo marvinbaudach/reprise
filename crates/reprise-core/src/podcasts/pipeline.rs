@@ -175,6 +175,7 @@ pub struct RefreshFailure {
     pub subscription_id: i64,
     pub title: String,
     pub kind: SourceErrorKind,
+    pub classified_cause: &'static str,
 }
 
 impl RefreshFailure {
@@ -187,6 +188,7 @@ impl RefreshFailure {
             subscription_id,
             title: title.into(),
             kind: SourceErrorKind::from(error),
+            classified_cause: error.classify(),
         }
     }
 }
