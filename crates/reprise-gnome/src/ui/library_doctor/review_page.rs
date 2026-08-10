@@ -339,6 +339,7 @@ pub(super) struct LibraryDoctorReviewPage {
     rows: gtk4::ListView,
     all: gtk4::Button,
     none: gtk4::Button,
+    chrome_actions: gtk4::Box,
 }
 
 impl LibraryDoctorReviewPage {
@@ -474,11 +475,6 @@ impl LibraryDoctorReviewPage {
         let presets = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         presets.append(&all);
         presets.append(&none);
-        let top_bar = adw::HeaderBar::new();
-        let title = adw::WindowTitle::new(&strings::text(strings::DOCTOR_REVIEW_TITLE), "");
-        top_bar.set_title_widget(Some(&title));
-        top_bar.pack_end(&presets);
-
         let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         page_content.append(&state.filter_bar.root);
         page_content.append(&header.root);
@@ -506,13 +502,10 @@ impl LibraryDoctorReviewPage {
             });
         }
         responsive.add_breakpoint(breakpoint);
-        let toolbar = adw::ToolbarView::new();
-        toolbar.add_top_bar(&top_bar);
-        toolbar.set_content(Some(&responsive));
         let navigation_page = adw::NavigationPage::builder()
             .title(strings::text(strings::DOCTOR_REVIEW_TITLE))
             .tag("library-doctor-review")
-            .child(&toolbar)
+            .child(&responsive)
             .build();
         let page = Rc::new(Self {
             navigation_page,
@@ -520,6 +513,7 @@ impl LibraryDoctorReviewPage {
             rows,
             all,
             none,
+            chrome_actions: presets,
         });
         page.state.refresh();
         page
@@ -527,6 +521,10 @@ impl LibraryDoctorReviewPage {
 
     pub(super) fn navigation_page(&self) -> &adw::NavigationPage {
         &self.navigation_page
+    }
+
+    pub(super) fn chrome_actions(&self) -> &gtk4::Box {
+        &self.chrome_actions
     }
 
     pub(super) fn mark_paths_stale(&self, paths: &[PathBuf]) {

@@ -402,7 +402,13 @@ pub fn build(
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome =
         super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
-    super::library_chrome::wire_content_stack(&library_chrome.root, &content_stack);
+    let doctor_chrome = super::library_chrome::wire_content_stack(
+        &library_chrome,
+        &content_stack,
+        &library_doctor_navigation,
+        &window_title,
+        &scan_button,
+    );
     crate::ui::updates::popover::install(
         &header,
         &window,
@@ -513,6 +519,7 @@ pub fn build(
         podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,
         library_doctor_navigation: &library_doctor_navigation,
+        doctor_chrome: &doctor_chrome,
         device_sync: &device_sync,
         window_title: &window_title,
         scan_controls: &scan_controls,

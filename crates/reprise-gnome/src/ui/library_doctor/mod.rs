@@ -146,6 +146,7 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     refresh_views: Rc<dyn Fn()>,
     sidebar: Rc<Sidebar>,
     selection_override: RefCell<Option<Vec<i64>>>,
+    doctor_chrome: Rc<crate::ui::window::library_chrome::DoctorChrome>,
 }
 
 pub(in crate::ui) struct LibraryDoctorLauncher {
@@ -158,6 +159,7 @@ pub(in crate::ui) struct LibraryDoctorContext<'a> {
     pub(in crate::ui) content_navigation: &'a adw::NavigationView,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) doctor_navigation: &'a adw::NavigationView,
+    pub(in crate::ui) doctor_chrome: &'a Rc<crate::ui::window::library_chrome::DoctorChrome>,
     pub(in crate::ui) window: &'a adw::ApplicationWindow,
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
     pub(in crate::ui) scan_controls: &'a ScanControls,
@@ -173,6 +175,7 @@ struct OwnedLibraryDoctorContext {
     content_navigation: adw::NavigationView,
     content_stack: gtk4::Stack,
     doctor_navigation: adw::NavigationView,
+    doctor_chrome: Rc<crate::ui::window::library_chrome::DoctorChrome>,
     window: adw::ApplicationWindow,
     track_list: Rc<TrackList>,
     scan_controls: ScanControls,
@@ -190,6 +193,7 @@ impl LibraryDoctorContext<'_> {
             content_navigation: self.content_navigation.clone(),
             content_stack: self.content_stack.clone(),
             doctor_navigation: self.doctor_navigation.clone(),
+            doctor_chrome: self.doctor_chrome.clone(),
             window: self.window.clone(),
             track_list: self.track_list.clone(),
             scan_controls: self.scan_controls.clone(),
@@ -236,6 +240,7 @@ impl LibraryDoctorCoordinator {
             content_navigation,
             content_stack,
             doctor_navigation,
+            doctor_chrome,
             window,
             track_list,
             scan_controls,
@@ -288,6 +293,7 @@ impl LibraryDoctorCoordinator {
                 refresh_views,
                 sidebar: sidebar.clone(),
                 selection_override: RefCell::new(None),
+                doctor_chrome,
             }
         });
         super::startup_report::mark("LibraryDoctorCoordinator::load_last_scan begin");
@@ -646,6 +652,7 @@ impl LibraryDoctorCoordinator {
                 });
             }
             self.review.borrow_mut().replace(page.clone());
+            self.doctor_chrome.set_review_actions(page.chrome_actions());
         }
         self.open_review_page();
     }
