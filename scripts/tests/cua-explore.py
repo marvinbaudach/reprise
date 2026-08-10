@@ -262,6 +262,7 @@ def snapshot(elements, *, state_id="state", width=1200, height=800, window=True)
 def element(index, label, role="button", x=10, y=10, w=100, h=32, **extra):
     return {
         "element_index": index,
+        "element_token": f"s00000001:{index}",
         "label": label,
         "role": role,
         "frame": {"x": x, "y": y, "w": w, "h": h},
@@ -924,7 +925,7 @@ class FakeTransport:
 
 
 class CuaExecutorTests(unittest.TestCase):
-    def test_action_is_bracketed_and_uses_index_from_fresh_pre_action_snapshot(self) -> None:
+    def test_action_is_bracketed_and_uses_token_from_fresh_pre_action_snapshot(self) -> None:
         initial = {
             "screenshot_width": 800,
             "screenshot_height": 600,
@@ -965,7 +966,8 @@ class CuaExecutorTests(unittest.TestCase):
             [tool for tool, _payload in transport.calls],
             ["get_window_state", "get_window_state", "click", "get_window_state"],
         )
-        self.assertEqual(transport.calls[2][1]["element_index"], 9)
+        self.assertEqual(transport.calls[2][1]["element_token"], "s00000001:9")
+        self.assertNotIn("element_index", transport.calls[2][1])
         self.assertEqual(result.before.state_id, "state-2")
         self.assertEqual(result.after.state_id, "state-3")
 

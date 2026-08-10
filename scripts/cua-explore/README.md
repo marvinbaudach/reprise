@@ -175,6 +175,15 @@ route is refused outright when the element's position was not measured, and a
 target below 8 px carries a warning rather than a silent coin toss. Retained as
 `click-probe.json` with two screenshots per route.
 
+Every element-addressed action carries the `element_token` from the exact
+`get_window_state` response that exposed its target. If a driver snapshot lacks
+that preferred handle, the harness sends `element_index` together with the same
+snapshot's `snapshot_id`; it never sends a bare index. This contract also covers
+targeted `type_text`, `press_key`, and `scroll` calls. A token whose embedded
+snapshot disagrees with the response's `snapshot_id` fails before dispatch, so
+a stale handle cannot be rewritten to look current. The click probe marks
+`dispatched` only when the returned action payload actually confirms dispatch.
+
 Before trusting any hover verdict, settle whether a pointer move reaches the
 app at all. The probe places the pointer on one named control twice - once
 through cua-driver's `move_cursor`, once through a real X11 warp - and prints
@@ -375,6 +384,19 @@ had no sidebar.
 so the collapse and its undo toast are part of what that mission tests. The
 other five declare `1600x1000`.
 
+## Semantic dispatch fallback
+
+The reasoning agent switches its effective activation policy from `ax` to `px`
+only after three semantic actions were accepted by the driver, produced no
+observable effect, and the same targets then responded to pointer dispatch.
+That is the `semantic-route-unavailable` environmental finding.
+
+A driver refusal is categorically different. It is a harness contract failure,
+raises `DriverError`, aborts the action path, and never reaches the agent as an
+ineffective activation. It therefore cannot schedule a pointer retry, increment
+the three-attempt fallback counter, emit `semantic-route-unavailable`, or
+supersede the accessibility oracle.
+
 ## When a run ends
 
 | Class | Example | Behaviour | Exit |
@@ -395,10 +417,11 @@ JSON or a timeout. It never retries an action: a second `click` would be a
 second user input and would falsify the run.
 
 Every failed attempt is retained in `evidence/driver-faults.jsonl` with the
-first 2000 characters of stdout and stderr, counted in
-`summary.json → transport_faults`, and reported once per run as
-`driver-transport-fault`. The point is the payload: one malformed frame killed a
-20-minute run on 2026-08-10 and left nothing behind to diagnose.
+first 2000 characters of stdout and stderr. A parsed response with a refusal or
+non-success status is retained there in full even when the process exits 0.
+Each failure is counted in `summary.json → transport_faults` and reported once
+per run as `driver-transport-fault`. The point is the payload: one malformed
+frame killed a 20-minute run on 2026-08-10 and left nothing behind to diagnose.
 
 ## Oracles that never fire
 

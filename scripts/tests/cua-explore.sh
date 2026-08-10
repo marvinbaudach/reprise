@@ -17,6 +17,7 @@ python3 scripts/tests/cua-explore-real-snapshot.py
 python3 scripts/tests/cua-explore-click-probe.py
 python3 scripts/tests/cua-explore-fixture-integrity.py
 python3 scripts/tests/cua-explore-target-resolution.py
+python3 scripts/tests/cua-explore-driver-contract.py
 python3 scripts/tests/cua-explore-window.py
 python3 scripts/tests/cua-explore-outcome.py
 python3 scripts/tests/cua-explore-aggregate.py

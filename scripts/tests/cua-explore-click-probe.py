@@ -50,10 +50,21 @@ def recorded_elements():
 class RecordedStarTransport:
     """Serves the recorded snapshot; a click may flip one empty star."""
 
-    def __init__(self, *, flips=("px",), small_target=False, measured=True):
+    def __init__(
+        self,
+        *,
+        flips=("px",),
+        small_target=False,
+        measured=True,
+        click_response=None,
+    ):
         self.flips = set(flips)
         self.small_target = small_target
         self.measured = measured
+        self.click_response = click_response or {
+            "effect": "confirmed",
+            "verified": True,
+        }
         self.elements = [dict(item) for item in recorded_elements()]
         self.calls = []
         self.pending_route = None
@@ -70,10 +81,10 @@ class RecordedStarTransport:
     def call(self, tool, payload):
         self.calls.append((tool, dict(payload)))
         if tool == "click":
-            route = "ax" if "element_index" in payload else "px"
+            route = "ax" if {"element_index", "element_token"} & payload.keys() else "px"
             if route in self.flips:
                 self.target["label"] = "★"
-            return {"effect": "confirmed", "verified": True}
+            return dict(self.click_response)
         if tool == "get_window_state":
             output = payload.get("screenshot_out_file")
             if output:
@@ -178,12 +189,26 @@ class ClickProbeTests(unittest.TestCase):
 
         self.assertEqual([item.route for item in results], ["ax", "px"])
 
-    def test_the_accessibility_route_addresses_the_element_index(self) -> None:
+    def test_dispatched_is_derived_from_the_driver_response(self) -> None:
+        results = run(RecordedStarTransport(flips=(), click_response={"note": "none"}))
+
+        self.assertEqual([item.dispatched for item in results], [False, False])
+
+    def test_the_accessibility_route_sends_the_recorded_element_token(self) -> None:
         transport = RecordedStarTransport()
 
         results = run(transport)
 
-        self.assertIn("element_index", results[0].address)
+        self.assertEqual(
+            results[0].address["element_token"], transport.target["element_token"]
+        )
+        click_payload = next(
+            payload
+            for tool, payload in transport.calls
+            if tool == "click" and "element_token" in payload
+        )
+        self.assertEqual(click_payload["element_token"], transport.target["element_token"])
+        self.assertNotIn("element_index", results[0].address)
         self.assertNotIn("x", results[0].address)
 
     def test_the_pixel_route_aims_at_the_measured_centre(self) -> None:
@@ -240,7 +265,7 @@ class ClickProbeTests(unittest.TestCase):
         self.assertFalse(results["px"].dispatched)
         self.assertIn("not measured", results["px"].note)
         clicks = [payload for tool, payload in transport.calls if tool == "click"]
-        self.assertTrue(all("element_index" in payload for payload in clicks))
+        self.assertTrue(all("element_token" in payload for payload in clicks))
 
     def test_a_target_too_small_for_pixels_says_so(self) -> None:
         results = {item.route: item for item in run(RecordedStarTransport(small_target=True))}

@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import os
 import pathlib
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Mapping, Sequence
 
 from actions import (
     AcceptedAction,
@@ -26,25 +25,11 @@ from actions import (
     TypeAction,
     WaitAction,
 )
+from driver_faults import MAX_RETAINED_FAULT_LINES
+from driver_transport import CliTransport, DriverError, Transport, response_dispatched
 from oracles import ActionEvidence, Finding, OracleEngine, Snapshot, normalize_snapshot
 from protocol import ContractError, SCHEMA_VERSION
 from ui_vocabulary import ACTIONABLE_ROLES, canonical_role, invocable_actions
-
-
-class DriverError(RuntimeError):
-    """The native driver or target window could not honor the bounded action."""
-
-
-RETRYABLE_TOOLS = frozenset({"get_window_state", "get_cursor_position", "get_screen_size"})
-RETRY_DELAYS_SECONDS = (0.25, 0.50)
-# Per-field truncation alone does not bound the file: a driver that answers
-# every read with garbage writes one record per call for a whole run. The
-# 2026-08-10 night run retained a single fault across twelve runs, so 200 lines
-# keep every realistic diagnosis (at most ~4 KB each, under a megabyte total)
-# while a broken driver cannot fill the evidence directory. The cap is not
-# silent - the last line says that it was reached, and transport_faults in
-# summary.json keeps counting.
-MAX_RETAINED_FAULT_LINES = 200
 
 
 def _target_order(item: Mapping[str, Any]) -> tuple[float, float, int]:
@@ -56,154 +41,31 @@ def _target_order(item: Mapping[str, Any]) -> tuple[float, float, int]:
     return coordinate("y"), coordinate("x"), index if isinstance(index, int) else 2**63
 
 
-class Transport(Protocol):
-    def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]: ...
-    def resize_window(self, window_id: int, width: int, height: int) -> Mapping[str, Any]: ...
-    def set_connectivity(self, state: str) -> Mapping[str, Any]: ...
-    def wmctrl_geometry(self, window_id: int) -> Any: ...
+def snapshot_element_address(
+    snapshot: Mapping[str, Any], target: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    """Return an element handle bound to the snapshot that exposed it."""
 
-
-class CliTransport:
-    """No-shell adapter for cua-driver, wmctrl, and the test connectivity file."""
-
-    def __init__(
-        self,
-        *,
-        driver_binary: str = "cua-driver",
-        socket_path: pathlib.Path | None = None,
-        connectivity_file: pathlib.Path | None = None,
-        evidence_dir: pathlib.Path | None = None,
-        timeout_seconds: int = 30,
-    ) -> None:
-        self.driver_binary = driver_binary
-        self.socket_path = socket_path
-        self.connectivity_file = connectivity_file
-        self.evidence_dir = evidence_dir
-        self.timeout_seconds = timeout_seconds
-        self.transport_faults = 0
-        self._fault_finding_emitted = False
-        self._retained_fault_lines = 0
-    def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        command = [self.driver_binary, tool, json.dumps(payload, separators=(",", ":"))]
-        if self.socket_path is not None:
-            command.extend(["--socket", str(self.socket_path)])
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                completed = self._run(command)
-            except subprocess.TimeoutExpired as error:
-                self._retain_fault(tool, attempt, error)
-                if tool in RETRYABLE_TOOLS and attempt <= len(RETRY_DELAYS_SECONDS):
-                    time.sleep(RETRY_DELAYS_SECONDS[attempt - 1])
-                    continue
-                raise DriverError(f"cua-driver {tool} timed out") from error
-            if completed.returncode != 0:
-                self._retain_fault(tool, attempt, completed)
-                message = completed.stderr.strip() or completed.stdout.strip()
-                raise DriverError(f"cua-driver {tool} failed: {message[:500]}")
-            try:
-                response = json.loads(completed.stdout)
-            except json.JSONDecodeError as error:
-                if completed.stdout.strip().startswith("✅"):
-                    return {"effect": "confirmed", "verified": True}
-                self._retain_fault(tool, attempt, completed)
-                if tool in RETRYABLE_TOOLS and attempt <= len(RETRY_DELAYS_SECONDS):
-                    time.sleep(RETRY_DELAYS_SECONDS[attempt - 1])
-                    continue
-                raise DriverError(f"cua-driver {tool} returned invalid JSON") from error
-            if not isinstance(response, dict):
-                raise DriverError(f"cua-driver {tool} returned a non-object response")
-            return response
-    def _run(self, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            command, check=False, capture_output=True, text=True,
-            timeout=self.timeout_seconds,
-            env={**os.environ, "CUA_DRIVER_RS_UPDATE_CHECK": "0"},
-        )
-    def _retain_fault(self, tool: str, attempt: int, result: Any) -> None:
-        def head(value: Any) -> str:
-            if isinstance(value, bytes):
-                value = value.decode("utf-8", errors="replace")
-            return str(value or "")[:2000]
-        self.transport_faults += 1
-        if self.evidence_dir is None:
-            return
-        self._retained_fault_lines += 1
-        if self._retained_fault_lines > MAX_RETAINED_FAULT_LINES + 1:
-            return
-        if self._retained_fault_lines == MAX_RETAINED_FAULT_LINES + 1:
-            record = {
-                "truncated": True,
-                "tool": tool,
-                "retained": MAX_RETAINED_FAULT_LINES,
-                "note": "further payloads are dropped; transport_faults keeps counting",
-            }
-        else:
-            stdout = getattr(result, "stdout", None)
-            if stdout is None:
-                stdout = getattr(result, "output", None)
-            record = {
-                "tool": tool,
-                "attempt": attempt,
-                "returncode": getattr(result, "returncode", None),
-                "stdout_head": head(stdout),
-                "stderr_head": head(getattr(result, "stderr", None)),
-            }
-        self.evidence_dir.mkdir(parents=True, exist_ok=True)
-        with (self.evidence_dir / "driver-faults.jsonl").open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, sort_keys=True) + "\n")
-    def take_findings(self) -> list[Finding]:
-        if not self.transport_faults or self._fault_finding_emitted:
-            return []
-        self._fault_finding_emitted = True
-        return [
-            Finding(
-                "driver-transport-fault", "warning", 0.9,
-                "A read-only driver call failed and its payload was retained.",
-                {"transport_faults": self.transport_faults}, blocks_gate=False,
+    snapshot_id = snapshot.get("snapshot_id")
+    token = target.get("element_token")
+    if isinstance(token, str) and token:
+        if (
+            isinstance(snapshot_id, str)
+            and snapshot_id
+            and token.partition(":")[0] != snapshot_id
+        ):
+            raise DriverError(
+                "fresh target element_token does not belong to its snapshot_id"
             )
-        ]
-    def resize_window(self, window_id: int, width: int, height: int) -> Mapping[str, Any]:
-        completed = subprocess.run(
-            ["wmctrl", "-i", "-r", f"0x{window_id:x}", "-e", f"0,-1,-1,{width},{height}"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
+        return {"element_token": token}
+    index = target.get("element_index")
+    if not isinstance(index, int):
+        raise DriverError("fresh target has no element_token or element_index")
+    if not isinstance(snapshot_id, str) or not snapshot_id:
+        raise DriverError(
+            "fresh target has no element_token and its snapshot has no snapshot_id"
         )
-        if completed.returncode != 0:
-            raise DriverError(f"wmctrl resize failed: {completed.stderr.strip()[:300]}")
-        return {"effect": "unverifiable", "verified": False}
-
-    def set_connectivity(self, state: str) -> Mapping[str, Any]:
-        if self.connectivity_file is None:
-            raise DriverError("connectivity perturbation has no private control file")
-        self.connectivity_file.write_text(state + "\n", encoding="utf-8")
-        return {"effect": "confirmed", "verified": True}
-
-    def wmctrl_geometry(self, window_id: int) -> Any:
-        from hover_geometry import WindowGeometry
-        completed = subprocess.run(
-            ["wmctrl", "-lG"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if completed.returncode != 0:
-            raise DriverError(f"wmctrl geometry failed: {completed.stderr.strip()[:300]}")
-        expected = f"0x{window_id:08x}".casefold()
-        for line in completed.stdout.splitlines():
-            fields = line.split(maxsplit=7)
-            if len(fields) < 6 or fields[0].casefold() != expected:
-                continue
-            try:
-                x, y, width, height = (int(value) for value in fields[2:6])
-            except ValueError as error:
-                raise DriverError("wmctrl returned invalid window geometry") from error
-            return WindowGeometry(x, y, width, height)
-        raise DriverError("wmctrl did not find the target window")
+    return {"element_index": index, "snapshot_id": snapshot_id}
 
 
 @dataclass(frozen=True)
@@ -422,7 +284,7 @@ class CuaExecutor:
                     "pid": self.pid,
                     "window_id": self.window_id,
                     "session": self.session,
-                    **self._address(target, "ax"),
+                    **self._address(after_raw, target, "ax"),
                 },
             )
             response = {**response, "ax_probe": probe_response}
@@ -492,7 +354,10 @@ class CuaExecutor:
             return self._dispatch_evidence(evidence, before_raw, base)
         if isinstance(accepted, ActivateAction):
             target = self._target(before_raw, evidence.target_label)
-            payload = {**base, **self._address(target, evidence.dispatch)}
+            payload = {
+                **base,
+                **self._address(before_raw, target, evidence.dispatch),
+            }
             return self.transport.call("click", payload)
         if isinstance(accepted, TypeAction):
             try:
@@ -500,12 +365,17 @@ class CuaExecutor:
             except KeyError as error:
                 raise DriverError(f"missing trusted fixture token: {accepted.fixture_token}") from error
             target = self._target(before_raw, accepted.target_label)
-            payload = {**base, **self._address(target, accepted.dispatch), "text": text}
+            payload = {
+                **base,
+                **self._address(before_raw, target, accepted.dispatch),
+                "text": text,
+            }
             return self.transport.call("type_text", payload)
         if isinstance(accepted, PressAction):
             payload = {**base, "key": accepted.key}
             if accepted.target_label is not None:
-                payload.update(self._address(self._target(before_raw, accepted.target_label), "ax"))
+                target = self._target(before_raw, accepted.target_label)
+                payload.update(self._address(before_raw, target, "ax"))
             return self.transport.call("press_key", payload)
         if isinstance(accepted, HotkeyAction):
             payload = {**base, "keys": list(accepted.keys)}
@@ -519,7 +389,8 @@ class CuaExecutor:
                 "by": evidence.by,
             }
             if target_label is not None:
-                payload.update(self._address(self._target(before_raw, target_label), "ax"))
+                target = self._target(before_raw, target_label)
+                payload.update(self._address(before_raw, target, "ax"))
             return self.transport.call("scroll", payload)
         if isinstance(accepted, ResizeAction):
             return self.transport.resize_window(self.window_id, accepted.width, accepted.height)
@@ -543,7 +414,8 @@ class CuaExecutor:
         if evidence.kind == "activate":
             target = self._target(before_raw, evidence.target_label)
             return self.transport.call(
-                "click", {**base, **self._address(target, evidence.dispatch)}
+                "click",
+                {**base, **self._address(before_raw, target, evidence.dispatch)},
             )
         if evidence.kind == "scroll":
             payload = {
@@ -554,7 +426,7 @@ class CuaExecutor:
             }
             if evidence.target_label is not None:
                 target = self._target(before_raw, evidence.target_label)
-                payload.update(self._address(target, "ax"))
+                payload.update(self._address(before_raw, target, "ax"))
             return self.transport.call("scroll", payload)
         if evidence.kind == "set-connectivity" and evidence.connectivity_state:
             return self.transport.set_connectivity(evidence.connectivity_state)
@@ -747,12 +619,14 @@ class CuaExecutor:
             findings.extend(take_transport())
         return findings
 
-    def _address(self, target: Mapping[str, Any], dispatch: str) -> Mapping[str, Any]:
+    def _address(
+        self,
+        snapshot: Mapping[str, Any],
+        target: Mapping[str, Any],
+        dispatch: str,
+    ) -> Mapping[str, Any]:
         if dispatch == "ax":
-            index = target.get("element_index")
-            if not isinstance(index, int):
-                raise DriverError("fresh target has no element_index")
-            return {"element_index": index}
+            return snapshot_element_address(snapshot, target)
         frame = target.get("frame")
         if not isinstance(frame, dict):
             raise DriverError("pointer target has no frame")
