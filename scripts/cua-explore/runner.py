@@ -29,6 +29,7 @@ from explorer import DeterministicExplorer
 from fixtures import FixtureError, audit_batch_edit, build_plan
 from protocol import ActionGateway, ContractError, Mission, load_mission
 from report import RunReport
+from oracles import Finding
 from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
 from workload_audit import ActionTrace, audit_action_workload
 
@@ -622,7 +623,7 @@ def _trace_from_observations(
 def ensure_run_complete(finished: bool, summary: Mapping[str, Any]) -> None:
     if not finished:
         raise RunError("mission ended without finish action")
-    if summary.get("mission_complete") is not True:
+    if summary.get("outcome") is None and summary.get("mission_complete") is not True:
         raise RunError("mission incomplete after workload evidence audit")
 
 
@@ -795,9 +796,31 @@ def run(args: argparse.Namespace) -> int:
                         }
                     report.add_workload_audit(audit)
                     if audit.get("complete") is not True:
-                        raise RunError(
-                            f"workload evidence incomplete: {accepted.workload_index}"
+                        report.add_finding(
+                            dataclasses.asdict(
+                                Finding(
+                                    "workload-incomplete",
+                                    "error",
+                                    1.0,
+                                    "The workload checkpoint did not produce complete retained evidence.",
+                                    {
+                                        "workload_index": accepted.workload_index,
+                                        "kind": workload.get("kind"),
+                                        "audit": audit,
+                                    },
+                                    blocks_gate=True,
+                                )
+                            )
                         )
+                        gateway.record_incomplete_workload(accepted.workload_index)
+                        history.append(
+                            {
+                                "action": _action_for_report(accepted),
+                                "finding_codes": ["workload-incomplete"],
+                                "after_state": observation["state_id"],
+                            }
+                        )
+                        continue
                     gateway.confirm_workload(accepted.workload_index)
                     report.add_step(
                         action=_action_for_report(accepted),
@@ -892,6 +915,9 @@ def run(args: argparse.Namespace) -> int:
                 )
     except HoverSmokeComplete:
         pass
+    except Exception as error:
+        report.set_abort_reason(str(error))
+        raise
     finally:
         lifecycle.stop()
         retain_agent_notes(profile_root, args.evidence_dir)
@@ -906,11 +932,24 @@ def run(args: argparse.Namespace) -> int:
             getattr(executor, "geometry_resolution", None)
         )
         report.set_hover_coverage(getattr(explorer, "hover_coverage", None))
+        report.set_transport_faults(getattr(transport, "transport_faults", 0))
+        report.set_unknown_action_names(
+            getattr(executor, "unknown_action_names", {}) or {}
+        )
+        report.set_dispatch_policy(getattr(explorer, "dispatch_policy", None))
         report.write()
-    lifecycle.assert_clean_logs()
+    try:
+        lifecycle.assert_clean_logs()
+    except Exception as error:
+        report.set_abort_reason(str(error))
+        report.write()
+        raise
     summary = report.write()
     if args.hover_smoke or args.hover_probe or args.click_probe:
         return 0
+    if not finished:
+        report.set_abort_reason("mission ended without finish action")
+        summary = report.write()
     ensure_run_complete(finished, summary)
     return 0
 

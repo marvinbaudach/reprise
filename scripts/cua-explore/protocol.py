@@ -410,6 +410,7 @@ class ActionGateway:
         self._accepted_actions = 0
         self._accepted_restarts = 0
         self._completed_workloads: set[int] = set()
+        self._incomplete_workloads: set[int] = set()
 
     def accept(
         self, raw: Mapping[str, Any], observation: Mapping[str, Any]
@@ -432,7 +433,11 @@ class ActionGateway:
             raise ContractError(f"unknown action kind: {kind}")
         action = parser(value, observation)
         if isinstance(action, FinishAction) and self.mission.workloads:
-            missing = sorted(set(range(len(self.mission.workloads))) - self._completed_workloads)
+            missing = sorted(
+                set(range(len(self.mission.workloads)))
+                - self._completed_workloads
+                - self._incomplete_workloads
+            )
             diagnostic_abort = action.reason.startswith(
                 ("agent-contract-mismatch:", "agent-internal-error:")
             )
@@ -450,6 +455,14 @@ class ActionGateway:
         if workload_index in self._completed_workloads:
             raise ContractError("workload checkpoint was already recorded")
         self._completed_workloads.add(workload_index)
+
+    def record_incomplete_workload(self, workload_index: int) -> None:
+        """Allow a later finish while keeping this checkpoint unconfirmed."""
+        if not 0 <= workload_index < len(self.mission.workloads):
+            raise ContractError("workload index is out of range")
+        if workload_index in self._completed_workloads:
+            raise ContractError("completed workload cannot become incomplete")
+        self._incomplete_workloads.add(workload_index)
 
     def _target(self, value: Mapping[str, Any], observation: Mapping[str, Any]) -> str:
         target = _object(value.get("target"), "target")
