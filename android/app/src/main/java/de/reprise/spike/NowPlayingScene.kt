@@ -244,6 +244,7 @@ internal fun NowPlayingScene(
                 center = playedCenter,
                 angleA = state.fogAngleA,
                 angleB = state.fogAngleB,
+                fogLevel = state.fogLevel,
                 opacity = 1f - transition,
                 rotationsEnabled = power.fogRotates,
             )

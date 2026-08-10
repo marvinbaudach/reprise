@@ -91,6 +91,7 @@ class NowPlayingSceneVerificationTest {
                 center = Offset(size.width / 2f, size.height * 0.34f),
                 angleA = state.fogAngleA,
                 angleB = state.fogAngleB,
+                fogLevel = state.fogLevel,
                 opacity = 0.5f,
                 rotationsEnabled = true,
             )

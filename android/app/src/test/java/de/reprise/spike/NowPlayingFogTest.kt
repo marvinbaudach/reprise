@@ -6,6 +6,44 @@ import org.junit.Test
 
 class NowPlayingFogTest {
     @Test
+    fun fog_alpha_answers_a_five_point_three_times_energy_step() {
+        val quiet = NowPlayingFogSpec.wideAlpha(fogLevel = 0.15f, opacity = 1f)
+        val breakdown = NowPlayingFogSpec.wideAlpha(fogLevel = 0.80f, opacity = 1f)
+
+        assertTrue(
+            "a 5.3x energy step must lift effective wide alpha by at least 25%",
+            breakdown >= quiet * 1.25f,
+        )
+    }
+
+    @Test
+    fun fog_alpha_never_exceeds_the_signed_off_peak() {
+        assertEquals(0.92f, NowPlayingFogSpec.wideAlpha(fogLevel = 1f, opacity = 1f))
+        assertEquals(0.55f, NowPlayingFogSpec.tightAlpha(fogLevel = 1f, opacity = 1f))
+    }
+
+    @Test
+    fun quiet_fog_keeps_the_accepted_atmosphere_floor() {
+        val wideFloor = NowPlayingFogSpec.wideAlpha(fogLevel = 0f, opacity = 1f)
+        val tightFloor = NowPlayingFogSpec.tightAlpha(fogLevel = 0f, opacity = 1f)
+
+        assertEquals(0.62f, wideFloor / NowPlayingFogSpec.wideOpacity)
+        assertEquals(0.40f, tightFloor / NowPlayingFogSpec.tightOpacity)
+        assertTrue(
+            "the dominant wide fog must retain at least 55% of its peak in silence",
+            wideFloor >= NowPlayingFogSpec.wideOpacity * 0.55f,
+        )
+    }
+
+    @Test
+    fun fog_alpha_is_monotonically_non_decreasing_with_energy() {
+        val levels = listOf(-1f, 0f, 0.15f, 0.5f, 0.8f, 1f, 2f)
+
+        assertMonotonic(levels.map { NowPlayingFogSpec.wideAlpha(it, opacity = 1f) })
+        assertMonotonic(levels.map { NowPlayingFogSpec.tightAlpha(it, opacity = 1f) })
+    }
+
+    @Test
     fun fog_layers_keep_the_specified_geometry_blend_and_counter_rotation() {
         assertEquals(620f, NowPlayingFogSpec.wideSizeDp)
         assertEquals(470f, NowPlayingFogSpec.tightSizeDp)
@@ -54,5 +92,11 @@ class NowPlayingFogTest {
 
         assertTrue("Modifier.blur must not enter the Now Playing fog", "Modifier.blur" !in source)
         assertTrue("RenderEffect would violate minSdk 26", "RenderEffect" !in source)
+    }
+
+    private fun assertMonotonic(values: List<Float>) {
+        values.zipWithNext().forEach { (before, after) ->
+            assertTrue("$after must not be below $before", after >= before)
+        }
     }
 }
