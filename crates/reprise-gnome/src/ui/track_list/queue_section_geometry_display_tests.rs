@@ -109,7 +109,7 @@ impl SectionedTrackModel {
     /// Stages the section map before the inner model emits its row change.
     /// Emitting here would expose the next view's ranges against the current
     /// view's row count, the exact inconsistent handover this test must avoid.
-    fn prepare_sections(&self, sections: Vec<(u32, u32)>) {
+    pub(in crate::ui::track_list) fn prepare_sections(&self, sections: Vec<(u32, u32)>) {
         *self.imp().sections.borrow_mut() = sections;
     }
 }
@@ -129,12 +129,13 @@ impl SectionedTrackModel {
 ///
 /// Two materialised sections answer the geometry question just as well: a
 /// section header costs its height whichever section it titles.
-fn queue_model() -> queue_sections::QueueViewModel {
+pub(in crate::ui::track_list) fn queue_model() -> queue_sections::QueueViewModel {
     let play_next = (2..=ROWS).map(QueueItem::Track).collect::<Vec<_>>();
     queue_sections::compose(Some(QueueItem::Track(1)), &play_next, &[], Some("Music"))
 }
 
-fn sectioned_track_list() -> (TrackList, SectionedTrackModel, gtk4::Window) {
+pub(in crate::ui::track_list) fn sectioned_track_list(
+) -> (TrackList, SectionedTrackModel, gtk4::Window) {
     let conn = crate::test_db::open().unwrap();
     let fixture_conn = crate::test_db::connection(&conn);
     let tx = fixture_conn.unchecked_transaction().unwrap();
@@ -188,7 +189,9 @@ fn sectioned_track_list() -> (TrackList, SectionedTrackModel, gtk4::Window) {
     (track_list, sectioned, window)
 }
 
-fn rendered_queue_headers(column_view: &gtk4::ColumnView) -> Vec<String> {
+pub(in crate::ui::track_list) fn rendered_queue_headers(
+    column_view: &gtk4::ColumnView,
+) -> Vec<String> {
     let mut labels = Vec::new();
     let mut pending = vec![column_view.clone().upcast::<gtk4::Widget>()];
     while let Some(widget) = pending.pop() {

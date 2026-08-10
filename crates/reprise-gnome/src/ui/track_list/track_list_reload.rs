@@ -771,4 +771,4 @@ mod navback_anchor_display_tests;
 
 #[cfg(test)]
 #[path = "queue_section_geometry_display_tests.rs"]
-mod queue_section_geometry_display_tests;
+pub(in crate::ui::track_list) mod queue_section_geometry_display_tests;
