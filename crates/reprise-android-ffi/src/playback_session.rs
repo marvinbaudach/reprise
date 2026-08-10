@@ -15,6 +15,9 @@ use crate::playback::{
 
 mod queue_boundary;
 mod queue_persistence;
+mod trash_boundary;
+
+pub use trash_boundary::{AndroidTrashFailure, AndroidTrashReport, TrashAction};
 
 /// Queue repeat state carried across UniFFI without stringly typed modes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]

@@ -21,6 +21,10 @@ mod tests;
 mod queue_boundary_tests;
 
 #[cfg(test)]
+#[path = "trash_boundary_tests.rs"]
+mod trash_boundary_tests;
+
+#[cfg(test)]
 #[path = "listen_export_playback_tests.rs"]
 mod listen_export_playback_tests;
 
