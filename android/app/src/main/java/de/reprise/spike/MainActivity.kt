@@ -133,6 +133,7 @@ class MainActivity : ComponentActivity() {
         postToMain = { work -> runOnUiThread(work) },
         setFavouriteAction = ::setFavourite,
         trashAction = trashAction,
+        playTrackIdsAction = ::playTrackIds,
     )
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -480,6 +481,12 @@ class MainActivity : ComponentActivity() {
         runPlaybackCommand("play ${selected.title}", reportError) {
             playTracks(selection.tracks, selection.startIndex)
         }
+    }
+
+    private fun playTrackIds(trackIds: List<Long>, startIndex: Int) {
+        keepPlaybackRunningWithoutThisScreen()
+        askAboutTheNotificationOnce()
+        runPlaybackCommand("play tracks") { playTrackIds(trackIds, startIndex) }
     }
 
     /**

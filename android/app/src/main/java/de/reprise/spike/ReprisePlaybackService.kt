@@ -207,6 +207,10 @@ open class ReprisePlaybackService : MediaSessionService() {
         )
     }
 
+    internal open fun playTrackIds(trackIds: List<Long>, startIndex: Int) {
+        coreSession().playTrackIds(trackIds, startIndex.toULong())
+    }
+
     internal fun togglePause() {
         coreSession().togglePause()
     }

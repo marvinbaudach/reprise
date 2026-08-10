@@ -21,6 +21,21 @@ import uniffi.reprise_android_ffi.TrashAction
 @Config(sdk = [36])
 class KotlinPlumbingTest {
     @Test
+    fun playbackPortForwardsIdOnlyPlayOrderAndStartUnchanged() {
+        val service = RecordingPlumbingService()
+        val controls = controlsFor(service)
+
+        try {
+            controls.playTrackIds(listOf(41L, 7L, 99L), startIndex = 1)
+
+            assertEquals(listOf(41L, 7L, 99L), service.playedIds)
+            assertEquals(1, service.playedStartIndex)
+        } finally {
+            controls.shutdown()
+        }
+    }
+
+    @Test
     fun albumIdsCrossTheLibraryPortWithoutPagingOrReordering() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val library = RecordingAlbumLibrary()
@@ -118,6 +133,7 @@ class KotlinPlumbingTest {
         postToMain = { work -> work() },
         setFavouriteAction = { _, _, report -> report(null) },
         trashAction = trashAction,
+        playTrackIdsAction = { ids, startIndex -> service.playTrackIds(ids, startIndex) },
     )
 
     private fun successfulTrashAction() = object : TrashAction {
@@ -135,10 +151,17 @@ private class RecordingAlbumLibrary : MusicLibrary(NoHandle) {
 }
 
 private class RecordingPlumbingService : ReprisePlaybackService() {
+    var playedIds: List<Long>? = null
+    var playedStartIndex: Int? = null
     var queuedNext: List<Long>? = null
     var queuedLast: List<Long>? = null
     var deleted: List<Long>? = null
     var trashAction: TrashAction? = null
+
+    override fun playTrackIds(trackIds: List<Long>, startIndex: Int) {
+        playedIds = trackIds
+        playedStartIndex = startIndex
+    }
 
     override fun queueTracksNext(trackIds: List<Long>): UInt {
         queuedNext = trackIds

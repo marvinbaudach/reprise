@@ -77,6 +77,8 @@ internal interface PlaybackControls {
         report: (Result<AndroidTrashReport>) -> Unit,
     ) = report(Result.failure(IllegalStateException("playback is not connected")))
 
+    fun playTrackIds(trackIds: List<Long>, startIndex: Int) = Unit
+
     fun startSleepTimer(selection: SleepTimerSelection) = Unit
 
     fun cancelSleepTimer() = Unit

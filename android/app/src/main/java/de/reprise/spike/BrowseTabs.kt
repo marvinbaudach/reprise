@@ -2,6 +2,7 @@ package de.reprise.spike
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -303,14 +304,28 @@ private fun AlbumRows(
 
 @Composable
 private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
-    ListItem(
-        headlineContent = { Text(album.title) },
-        supportingContent = { Text(album.details()) },
-        trailingContent = { Text(formatDuration(album.totalDurationMs)) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { openAlbum(album) },
-    )
+    val contextMenu = rememberTrackContextMenuAnchorState()
+    val albumTrackIds = LocalAlbumTrackIds.current
+    val controls = LocalPlaybackControls.current
+    Box {
+        ListItem(
+            headlineContent = { Text(album.title) },
+            supportingContent = { Text(album.details()) },
+            trailingContent = { Text(formatDuration(album.totalDurationMs)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .trackContextMenuAnchor(contextMenu) { openAlbum(album) },
+        )
+        TrackContextMenu(
+            anchor = contextMenu,
+            target = LibraryTrackMenuTarget(
+                label = album.title,
+                trackCount = album.trackCount,
+                resolveTrackIds = { albumTrackIds(album) },
+                play = { ids -> controls.playTrackIds(ids, 0) },
+            ),
+        )
+    }
     HorizontalDivider()
 }
 

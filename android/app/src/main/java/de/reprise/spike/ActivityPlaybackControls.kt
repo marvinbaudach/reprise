@@ -40,6 +40,7 @@ internal class ActivityPlaybackControls(
     private val postToMain: (() -> Unit) -> Unit,
     private val setFavouriteAction: (Long, Boolean, (String?) -> Unit) -> Unit,
     private val trashAction: TrashAction,
+    private val playTrackIdsAction: (List<Long>, Int) -> Unit,
     private val queries: PlaybackQueryRunner = PlaybackQueryRunner(),
 ) : PlaybackControls {
     override fun togglePause() = command("change playback state") { togglePause() }
@@ -98,6 +99,9 @@ internal class ActivityPlaybackControls(
         trackIds: List<Long>,
         report: (Result<AndroidTrashReport>) -> Unit,
     ) = query(report) { trashTracks(trackIds, trashAction) }
+
+    override fun playTrackIds(trackIds: List<Long>, startIndex: Int) =
+        playTrackIdsAction(trackIds, startIndex)
 
     override fun startSleepTimer(selection: SleepTimerSelection) = command("start sleep timer") {
         startSleepTimer(selection)
