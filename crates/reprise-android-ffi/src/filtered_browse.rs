@@ -12,11 +12,12 @@ fn filtered_track_window(
     library: &MusicLibrary,
     browse: &BrowseFilter,
     sort_field: &str,
+    filter: &str,
     window: WindowRange,
 ) -> Result<TrackWindow, LibraryError> {
     let state = library.lock()?;
     let total =
-        queries::query_track_count_browsed(&state.db, &ViewSource::Library, "", browse, &[])
+        queries::query_track_count_browsed(&state.db, &ViewSource::Library, filter, browse, &[])
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })?;
@@ -25,7 +26,7 @@ fn filtered_track_window(
         &ViewSource::Library,
         sort_field,
         "asc",
-        "",
+        filter,
         browse,
         window.offset,
         window.limit,
@@ -73,6 +74,15 @@ impl MusicLibrary {
     /// track-number order. Albums remain grouped when their tracks share the
     /// album's year.
     pub fn list_favourites(&self, window: WindowRange) -> Result<TrackWindow, LibraryError> {
+        self.search_favourites(String::new(), window)
+    }
+
+    pub fn search_favourites(
+        &self,
+        text: String,
+        window: WindowRange,
+    ) -> Result<TrackWindow, LibraryError> {
+        let text = text.into_boxed_str();
         filtered_track_window(
             self,
             &BrowseFilter {
@@ -80,6 +90,7 @@ impl MusicLibrary {
                 ..BrowseFilter::default()
             },
             "artist",
+            &text,
             window,
         )
     }
@@ -265,6 +276,42 @@ mod tests {
             [(" aDa ", "Alpha", "Omega"), ("Ada", "Zulu", "Gamma")]
         );
         assert!(window.rows.iter().all(|track| track.title != "Beta"));
+    }
+
+    #[test]
+    fn favourite_search_keeps_the_filter_count_and_window_in_step() {
+        let (_directory, library) = filtered_library();
+
+        let first = library
+            .search_favourites(
+                "ada".to_owned(),
+                WindowRange {
+                    offset: 0,
+                    limit: 1,
+                },
+            )
+            .unwrap();
+        let second = library
+            .search_favourites(
+                "ADA".to_owned(),
+                WindowRange {
+                    offset: 1,
+                    limit: 1,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(first.total, 2);
+        assert_eq!(first.rows.len(), 1);
+        assert!(first.has_more);
+        assert_eq!(second.total, 2);
+        assert_eq!(second.rows.len(), 1);
+        assert!(!second.has_more);
+        assert!(first
+            .rows
+            .iter()
+            .chain(&second.rows)
+            .all(|track| track.rating == 5));
     }
 
     #[test]
