@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -20,7 +22,7 @@ from cua_explore_expectations import (  # noqa: E402
     MUSIC_COLLAPSED_ACTIONABLE_COUNT_BEFORE,
     MUSIC_COLLAPSED_ACTIONABLE_LABELS,
 )
-from driver import CuaExecutor  # noqa: E402
+from driver import CliTransport, CuaExecutor, DriverError  # noqa: E402
 from explorer import DeterministicExplorer  # noqa: E402
 from oracles import ActionEvidence, OracleEngine, normalize_snapshot  # noqa: E402
 from protocol import ActionGateway, load_mission  # noqa: E402
@@ -59,6 +61,24 @@ class RecordedTransport:
 
     def wmctrl_geometry(self, window_id):
         return None
+
+
+def completed(stdout: str, *, returncode: int = 0, stderr: str = ""):
+    return subprocess.CompletedProcess([], returncode, stdout, stderr)
+
+
+class ScriptedCliTransport(CliTransport):
+    def __init__(self, responses, *, evidence_dir: pathlib.Path) -> None:
+        super().__init__(evidence_dir=evidence_dir)
+        self.responses = list(responses)
+        self.run_count = 0
+
+    def _run(self, command):
+        self.run_count += 1
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 class ActionVocabularyTests(unittest.TestCase):
@@ -217,6 +237,97 @@ class DeterministicTargetTests(unittest.TestCase):
 
         clicks = [call for call in self.transport.calls if call[0] == "click"]
         self.assertEqual(len(clicks), 10)
+
+
+class CliTransportRetryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.evidence_dir = pathlib.Path(self.temporary.name)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def fault_records(self) -> list[dict]:
+        path = self.evidence_dir / "driver-faults.jsonl"
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+    def test_read_recovers_from_invalid_json_and_retains_the_payload(self) -> None:
+        transport = ScriptedCliTransport(
+            [completed("not-json"), completed('{"elements": []}')],
+            evidence_dir=self.evidence_dir,
+        )
+
+        response = transport.call("get_window_state", {})
+
+        self.assertEqual(response, {"elements": []})
+        self.assertEqual(transport.transport_faults, 1)
+        self.assertEqual(self.fault_records()[0]["stdout_head"], "not-json")
+        self.assertEqual(
+            [finding.code for finding in transport.take_findings()],
+            ["driver-transport-fault"],
+        )
+        self.assertEqual(transport.take_findings(), [])
+
+    def test_three_invalid_reads_fail_after_retaining_every_attempt(self) -> None:
+        transport = ScriptedCliTransport(
+            [completed("one"), completed("two"), completed("three")],
+            evidence_dir=self.evidence_dir,
+        )
+
+        with self.assertRaisesRegex(DriverError, "invalid JSON"):
+            transport.call("get_window_state", {})
+
+        self.assertEqual(transport.run_count, 3)
+        self.assertEqual(
+            [record["stdout_head"] for record in self.fault_records()],
+            ["one", "two", "three"],
+        )
+
+    def test_input_action_is_never_retried(self) -> None:
+        transport = ScriptedCliTransport(
+            [completed("broken"), completed('{"effect": "confirmed"}')],
+            evidence_dir=self.evidence_dir,
+        )
+
+        with self.assertRaisesRegex(DriverError, "invalid JSON"):
+            transport.call("click", {})
+
+        self.assertEqual(transport.run_count, 1)
+        self.assertEqual(transport.transport_faults, 1)
+
+    def test_nonzero_exit_is_not_retried(self) -> None:
+        transport = ScriptedCliTransport(
+            [completed("", returncode=2, stderr="driver failed")],
+            evidence_dir=self.evidence_dir,
+        )
+
+        with self.assertRaisesRegex(DriverError, "driver failed"):
+            transport.call("get_window_state", {})
+
+        self.assertEqual(transport.run_count, 1)
+        self.assertEqual(transport.transport_faults, 1)
+        self.assertEqual(self.fault_records()[0]["returncode"], 2)
+
+    def test_read_timeout_retries_and_is_retained(self) -> None:
+        timeout = subprocess.TimeoutExpired(["cua-driver"], 30, output="partial")
+        transport = ScriptedCliTransport(
+            [timeout, completed('{"width": 1440}')],
+            evidence_dir=self.evidence_dir,
+        )
+
+        self.assertEqual(transport.call("get_screen_size", {}), {"width": 1440})
+        self.assertEqual(self.fault_records()[0]["stdout_head"], "partial")
+
+    def test_confirmation_glyph_compatibility_is_unchanged(self) -> None:
+        transport = ScriptedCliTransport(
+            [completed("✅ action completed")], evidence_dir=self.evidence_dir
+        )
+
+        self.assertEqual(
+            transport.call("click", {}),
+            {"effect": "confirmed", "verified": True},
+        )
+        self.assertEqual(transport.transport_faults, 0)
 
 
 if __name__ == "__main__":

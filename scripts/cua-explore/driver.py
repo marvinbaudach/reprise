@@ -35,6 +35,19 @@ class DriverError(RuntimeError):
     """The native driver or target window could not honor the bounded action."""
 
 
+RETRYABLE_TOOLS = frozenset({"get_window_state", "get_cursor_position", "get_screen_size"})
+RETRY_DELAYS_SECONDS = (0.25, 0.50)
+
+
+def _target_order(item: Mapping[str, Any]) -> tuple[float, float, int]:
+    frame = item.get("frame") if isinstance(item.get("frame"), dict) else {}
+    def coordinate(name: str) -> float:
+        value = frame.get(name)
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else float("inf")
+    index = item.get("element_index")
+    return coordinate("y"), coordinate("x"), index if isinstance(index, int) else 2**63
+
+
 class Transport(Protocol):
     def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]: ...
     def resize_window(self, window_id: int, width: int, height: int) -> Mapping[str, Any]: ...
@@ -51,38 +64,86 @@ class CliTransport:
         driver_binary: str = "cua-driver",
         socket_path: pathlib.Path | None = None,
         connectivity_file: pathlib.Path | None = None,
+        evidence_dir: pathlib.Path | None = None,
         timeout_seconds: int = 30,
     ) -> None:
         self.driver_binary = driver_binary
         self.socket_path = socket_path
         self.connectivity_file = connectivity_file
+        self.evidence_dir = evidence_dir
         self.timeout_seconds = timeout_seconds
-
+        self.transport_faults = 0
+        self._fault_finding_emitted = False
     def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         command = [self.driver_binary, tool, json.dumps(payload, separators=(",", ":"))]
         if self.socket_path is not None:
             command.extend(["--socket", str(self.socket_path)])
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                completed = self._run(command)
+            except subprocess.TimeoutExpired as error:
+                self._retain_fault(tool, attempt, error)
+                if tool in RETRYABLE_TOOLS and attempt <= len(RETRY_DELAYS_SECONDS):
+                    time.sleep(RETRY_DELAYS_SECONDS[attempt - 1])
+                    continue
+                raise DriverError(f"cua-driver {tool} timed out") from error
+            if completed.returncode != 0:
+                self._retain_fault(tool, attempt, completed)
+                message = completed.stderr.strip() or completed.stdout.strip()
+                raise DriverError(f"cua-driver {tool} failed: {message[:500]}")
+            try:
+                response = json.loads(completed.stdout)
+            except json.JSONDecodeError as error:
+                if completed.stdout.strip().startswith("✅"):
+                    return {"effect": "confirmed", "verified": True}
+                self._retain_fault(tool, attempt, completed)
+                if tool in RETRYABLE_TOOLS and attempt <= len(RETRY_DELAYS_SECONDS):
+                    time.sleep(RETRY_DELAYS_SECONDS[attempt - 1])
+                    continue
+                raise DriverError(f"cua-driver {tool} returned invalid JSON") from error
+            if not isinstance(response, dict):
+                raise DriverError(f"cua-driver {tool} returned a non-object response")
+            return response
+    def _run(self, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            command, check=False, capture_output=True, text=True,
             timeout=self.timeout_seconds,
             env={**os.environ, "CUA_DRIVER_RS_UPDATE_CHECK": "0"},
         )
-        if completed.returncode != 0:
-            message = completed.stderr.strip() or completed.stdout.strip()
-            raise DriverError(f"cua-driver {tool} failed: {message[:500]}")
-        try:
-            response = json.loads(completed.stdout)
-        except json.JSONDecodeError:
-            if completed.stdout.strip().startswith("✅"):
-                return {"effect": "confirmed", "verified": True}
-            raise DriverError(f"cua-driver {tool} returned invalid JSON")
-        if not isinstance(response, dict):
-            raise DriverError(f"cua-driver {tool} returned a non-object response")
-        return response
-
+    def _retain_fault(self, tool: str, attempt: int, result: Any) -> None:
+        def head(value: Any) -> str:
+            if isinstance(value, bytes):
+                value = value.decode("utf-8", errors="replace")
+            return str(value or "")[:2000]
+        self.transport_faults += 1
+        if self.evidence_dir is None:
+            return
+        self.evidence_dir.mkdir(parents=True, exist_ok=True)
+        stdout = getattr(result, "stdout", None)
+        if stdout is None:
+            stdout = getattr(result, "output", None)
+        record = {
+            "tool": tool,
+            "attempt": attempt,
+            "returncode": getattr(result, "returncode", None),
+            "stdout_head": head(stdout),
+            "stderr_head": head(getattr(result, "stderr", None)),
+        }
+        with (self.evidence_dir / "driver-faults.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True) + "\n")
+    def take_findings(self) -> list[Finding]:
+        if not self.transport_faults or self._fault_finding_emitted:
+            return []
+        self._fault_finding_emitted = True
+        return [
+            Finding(
+                "driver-transport-fault", "warning", 0.9,
+                "A read-only driver call failed and its payload was retained.",
+                {"transport_faults": self.transport_faults}, blocks_gate=False,
+            )
+        ]
     def resize_window(self, window_id: int, width: int, height: int) -> Mapping[str, Any]:
         completed = subprocess.run(
             ["wmctrl", "-i", "-r", f"0x{window_id:x}", "-e", f"0,-1,-1,{width},{height}"],
@@ -103,7 +164,6 @@ class CliTransport:
 
     def wmctrl_geometry(self, window_id: int) -> Any:
         from hover_geometry import WindowGeometry
-
         completed = subprocess.run(
             ["wmctrl", "-lG"],
             check=False,
@@ -175,7 +235,7 @@ class CuaExecutor:
         self.geometry_calibration: Any | None = None
         self.geometry_resolution: Any | None = None
         self._ambiguity_notes: dict[tuple[str, str], dict[str, Any]] = {}
-        self._reported_ambiguities: set[tuple[str, str]] = set()
+        self._pending_findings: list[Finding] = []
         self._hover_cursor_disabled = False
         self._state_counter = 0
         self._step_counter = 0
@@ -272,10 +332,8 @@ class CuaExecutor:
             elapsed_ms=elapsed_ms,
             observation_ms=elapsed_ms,
         )
-        findings = list(
-            self.oracle_engine.analyze(evidence, before, after, settled=(after,))
-        )
-        findings.extend(self._new_ambiguity_findings())
+        findings = list(self.oracle_engine.analyze(evidence, before, after, settled=(after,)))
+        findings.extend(self._take_harness_findings())
         if self.evidence_dir is None:
             hover_findings = analyze_hover(
                 pathlib.Path("missing-hover-before.png"),
@@ -293,14 +351,7 @@ class CuaExecutor:
                 exclude_cursor=self.exclude_cursor,
             )
         findings.extend(hover_findings)
-        result = StepResult(
-            before=before,
-            after=after,
-            settled=(after,),
-            action_response=response,
-            evidence=evidence,
-            findings=tuple(findings),
-        )
+        result = StepResult(before, after, (after,), response, evidence, tuple(findings))
         self._retain_step(result)
         return result
 
@@ -400,22 +451,12 @@ class CuaExecutor:
             snapshot_ms=tuple(self._snapshot_durations_ms),
             snapshot_ms_before_first_change=snapshot_ms_before_first_change,
         )
-        findings = list(
-            self.oracle_engine.analyze(
-                completed_evidence,
-                before,
-                after,
-                settled=tuple(settled),
-            )
-        )
-        findings.extend(self._new_ambiguity_findings())
+        findings = list(self.oracle_engine.analyze(
+            completed_evidence, before, after, settled=tuple(settled)
+        ))
+        findings.extend(self._take_harness_findings())
         result = StepResult(
-            before=before,
-            after=after,
-            settled=tuple(settled),
-            action_response=response,
-            evidence=completed_evidence,
-            findings=tuple(findings),
+            before, after, tuple(settled), response, completed_evidence, tuple(findings)
         )
         self._retain_step(result)
         return result
@@ -640,37 +681,27 @@ class CuaExecutor:
         if len(carrying) == 1:
             return carrying[0]
         if len(carrying) > 1:
-            def reading_order(item: Mapping[str, Any]) -> tuple[float, float, int]:
-                frame = item.get("frame")
-                frame = frame if isinstance(frame, dict) else {}
-
-                def coordinate(name: str) -> float:
-                    value = frame.get(name)
-                    return (
-                        float(value)
-                        if isinstance(value, (int, float)) and not isinstance(value, bool)
-                        else float("inf")
-                    )
-
-                index = item.get("element_index")
-                return coordinate("y"), coordinate("x"), index if isinstance(index, int) else 2**63
-
-            carrying.sort(key=reading_order)
+            carrying.sort(key=_target_order)
             chosen = carrying[0]
             role = canonical_role(str(chosen.get("role", "")))
             key = role, label
-            self._ambiguity_notes.setdefault(
-                key,
-                {
+            if key not in self._ambiguity_notes:
+                evidence = {
                     "target": label,
                     "role": role,
                     "count": len(carrying),
                     "chosen": dict(chosen.get("frame", {})),
-                    "alternatives": [
-                        dict(item.get("frame", {})) for item in carrying[1:9]
-                    ],
-                },
-            )
+                    "alternatives": [dict(item.get("frame", {})) for item in carrying[1:9]],
+                }
+                self._ambiguity_notes[key] = evidence
+                self._pending_findings.append(
+                    Finding(
+                        "ambiguous-accessible-name", "warning", 0.8,
+                        f"{len(carrying)} nodes share the accessible name '{label}'; "
+                        "assistive technology cannot tell them apart.",
+                        evidence, blocks_gate=False,
+                    )
+                )
             return chosen
         actionable = [
             item
@@ -679,39 +710,21 @@ class CuaExecutor:
         ]
         return actionable[0] if actionable else matches[0]
 
-    def target_carries_action(
-        self, raw: Mapping[str, Any], label: str | None
-    ) -> bool | None:
+    def target_carries_action(self, raw: Mapping[str, Any], label: str | None) -> bool | None:
         """Does any node with this label offer an invocable action?"""
         structured = raw.get("structuredContent")
         container = structured if isinstance(structured, dict) else raw
         elements = container.get("elements", [])
-        matches = [
-            item
-            for item in elements
-            if isinstance(item, dict) and item.get("label") == label
-        ]
+        matches = [item for item in elements if isinstance(item, dict) and item.get("label") == label]
         if not any("actions" in item for item in matches):
             return None
         return any(invocable_actions(item.get("actions", ())) for item in matches)
 
-    def _new_ambiguity_findings(self) -> list[Finding]:
-        findings = []
-        for key, evidence in self._ambiguity_notes.items():
-            if key in self._reported_ambiguities:
-                continue
-            self._reported_ambiguities.add(key)
-            findings.append(
-                Finding(
-                    "ambiguous-accessible-name",
-                    "warning",
-                    0.8,
-                    f"{evidence['count']} nodes share the accessible name "
-                    f"'{evidence['target']}'; assistive technology cannot tell them apart.",
-                    evidence,
-                    blocks_gate=False,
-                )
-            )
+    def _take_harness_findings(self) -> list[Finding]:
+        findings, self._pending_findings = self._pending_findings, []
+        take_transport = getattr(self.transport, "take_findings", None)
+        if callable(take_transport):
+            findings.extend(take_transport())
         return findings
 
     def _address(self, target: Mapping[str, Any], dispatch: str) -> Mapping[str, Any]:
