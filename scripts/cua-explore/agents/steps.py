@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from agents.vocabulary import LabelMatcher
+from ui_vocabulary import invocable_actions
 
 
 @dataclass(frozen=True)
@@ -20,27 +21,6 @@ class Step:
     token_hint: str | None = None
     skip_when: LabelMatcher | None = None
     missing_code: str | None = None
-
-
-_STRUCTURAL_ACTION_PREFIXES_LOCAL = (
-    "listitem.",
-    "list.",
-    "win.",
-    "window.",
-    "default.",
-)
-
-
-def _invocable_actions_local(names: object) -> tuple[str, ...]:
-    """Temporary local copy until STROM I's shared vocabulary is integrated."""
-    if not isinstance(names, (list, tuple)):
-        return ()
-    return tuple(
-        str(name)
-        for name in names
-        if isinstance(name, str)
-        and not name.startswith(_STRUCTURAL_ACTION_PREFIXES_LOCAL)
-    )
 
 
 def step_is_satisfied(step: Step, observation: Mapping[str, Any]) -> bool:
@@ -63,7 +43,7 @@ def _activation_dispatch(
     )
     if not matches or not all("actions" in item for item in matches):
         return default
-    if any(_invocable_actions_local(item.get("actions")) for item in matches):
+    if any(invocable_actions(item.get("actions") or ()) for item in matches):
         return "ax"
     frame = matches[0].get("frame", {})
     width = frame.get("width", frame.get("w", 0)) if isinstance(frame, dict) else 0

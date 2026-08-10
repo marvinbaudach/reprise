@@ -7,7 +7,7 @@ import hashlib
 from typing import Any, Mapping
 
 from protocol import Mission, SCHEMA_VERSION
-from ui_vocabulary import canonical_role, hover_strictness
+from ui_vocabulary import canonical_role, hover_strictness, invocable_actions
 
 
 DESTRUCTIVE_WORDS = ("delete", "remove", "forget", "eject", "trash", "erase")
@@ -388,16 +388,6 @@ class DeterministicExplorer:
         return None
 
     def _activate(self, state_id: str, label: str) -> dict[str, Any]:
-        def _invocable_actions_local(names: object) -> tuple[str, ...]:
-            structural = ("listitem.", "list.", "win.", "window.", "default.")
-            if not isinstance(names, (list, tuple)):
-                return ()
-            return tuple(
-                str(name)
-                for name in names
-                if isinstance(name, str) and not name.startswith(structural)
-            )
-
         if any(word in label.casefold() for word in ASYNC_WORDS):
             self._pending_status_probe = True
         dispatch = "px" if self.mission.mission_id == "pointer-layout-reachability" else "ax"
@@ -411,11 +401,11 @@ class DeterministicExplorer:
             (
                 item
                 for item in matches
-                if _invocable_actions_local(item.get("actions"))
+                if invocable_actions(item.get("actions") or ())
             ),
             matches[0] if matches else {},
         )
-        if "actions" in target and not _invocable_actions_local(target.get("actions")):
+        if "actions" in target and not invocable_actions(target.get("actions") or ()):
             frame = target.get("frame", {})
             width = frame.get("width", frame.get("w", 0)) if isinstance(frame, dict) else 0
             height = frame.get("height", frame.get("h", 0)) if isinstance(frame, dict) else 0
