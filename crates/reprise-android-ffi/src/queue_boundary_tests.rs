@@ -132,6 +132,74 @@ fn explicit_enqueue_resolves_live_ids_persists_order_and_starts_nothing() {
 }
 
 #[test]
+fn enqueueing_into_an_exhausted_session_revives_it_and_shows_the_pick() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Played", "Picked"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let (session, calls, bridge) = session_with_controls(directory.path());
+    session
+        .play_tracks(
+            vec![track("Played").id],
+            vec![track("Played").path.clone()],
+            0,
+        )
+        .unwrap();
+    bridge
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .emit(23, AndroidPlayerEvent::TrackFinished);
+    let future = |session: &AndroidPlaybackSession| {
+        session
+            .upcoming_tracks(WindowRange {
+                offset: 0,
+                limit: 10,
+            })
+            .unwrap()
+    };
+    assert_eq!(
+        session.snapshot().unwrap().state,
+        AndroidPlaybackState::Stopped,
+        "the fixture only means something while the session really is exhausted",
+    );
+    assert!(future(&session).rows.is_empty());
+    calls.lock().unwrap().clear();
+
+    assert_eq!(
+        session.queue_tracks_last(vec![track("Picked").id]).unwrap(),
+        1,
+    );
+
+    let revived = future(&session);
+    assert_eq!(revived.total, 1);
+    assert_eq!(
+        revived.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Picked").id],
+        "an explicit pick must not evaporate into a queue that ran off its end",
+    );
+    assert!(
+        !calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| matches!(call, PortCall::PlayUri(_))),
+        "reviving the queue is not permission to start playing",
+    );
+
+    drop(session);
+    assert_eq!(
+        future(&session_in(directory.path()))
+            .rows
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        vec![track("Picked").id],
+        "the revived position has to survive the process that raised it",
+    );
+}
+
+#[test]
 fn stopped_queue_view_and_play_now_share_the_current_row_offset() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
