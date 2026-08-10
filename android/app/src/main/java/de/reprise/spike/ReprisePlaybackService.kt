@@ -239,22 +239,6 @@ open class ReprisePlaybackService : MediaSessionService() {
     internal fun upcomingTracks(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
         coreSession().upcomingTracks(window.toFfi()).toLibraryTracks()
 
-    internal fun playUpcomingTrackNow(position: Int, expectedTrackId: Long): Boolean =
-        coreSession().playUpcomingTrackNow(position.toULong(), expectedTrackId)
-
-    internal fun moveUpcomingTrack(
-        fromPosition: Int,
-        expectedTrackId: Long,
-        toPosition: Int,
-    ): Boolean = coreSession().moveUpcomingTrack(
-        fromPosition.toULong(),
-        expectedTrackId,
-        toPosition.toULong(),
-    )
-
-    internal fun removeUpcomingTrack(position: Int, expectedTrackId: Long): Boolean =
-        coreSession().removeUpcomingTrack(position.toULong(), expectedTrackId)
-
     private fun coreSession(): AndroidPlaybackSession = checkNotNull(coreSession) {
         "Core playback session is not ready"
     }

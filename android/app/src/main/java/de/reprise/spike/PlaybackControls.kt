@@ -46,25 +46,6 @@ internal interface PlaybackControls {
         report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
     ) = report(Result.failure(IllegalStateException("playback is not connected")))
 
-    fun playUpcomingTrackNow(
-        position: Int,
-        expectedTrackId: Long,
-        report: (Result<Boolean>) -> Unit,
-    ) = report(Result.failure(IllegalStateException("playback is not connected")))
-
-    fun moveUpcomingTrack(
-        fromPosition: Int,
-        expectedTrackId: Long,
-        toPosition: Int,
-        report: (Result<Boolean>) -> Unit,
-    ) = report(Result.failure(IllegalStateException("playback is not connected")))
-
-    fun removeUpcomingTrack(
-        position: Int,
-        expectedTrackId: Long,
-        report: (Result<Boolean>) -> Unit,
-    ) = report(Result.failure(IllegalStateException("playback is not connected")))
-
     fun startSleepTimer(selection: SleepTimerSelection) = Unit
 
     fun cancelSleepTimer() = Unit

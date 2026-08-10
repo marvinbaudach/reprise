@@ -359,9 +359,6 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
     val controls = ConfigurationTestPlaybackControls(
         store = { trackId, rating -> trackRatings[trackId] = rating },
         loadUpcoming = ::upcomingWindow,
-        playUpcoming = ::playUpcoming,
-        moveUpcoming = ::moveUpcoming,
-        removeUpcoming = ::removeUpcoming,
         startSleepTimer = { selection -> service.startSleepTimer(selection) },
         cancelSleepTimer = { service.cancelSleepTimer() },
     )
@@ -479,46 +476,9 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
         currentQueueIndex = startIndex
     }
 
-    fun removeUpcomingBehindScreen(trackId: Long) {
-        currentQueue = currentQueue.filterNot { it.id == trackId }
-    }
-
     private fun upcomingWindow(range: LibraryWindowRange): LibraryWindow<LibraryTrack> {
         val upcoming = currentQueue.drop((currentQueueIndex ?: -1) + 1)
         return upcoming.window(range)
-    }
-
-    private fun playUpcoming(position: Int, expectedTrackId: Long): Boolean {
-        val current = currentQueueIndex ?: return false
-        val absolute = current + 1 + position
-        if (currentQueue.getOrNull(absolute)?.id != expectedTrackId) return false
-        val order = currentQueue.toMutableList()
-        val promoted = order.removeAt(absolute)
-        order.add(current + 1, promoted)
-        currentQueue = order
-        currentQueueIndex = current + 1
-        return true
-    }
-
-    private fun moveUpcoming(from: Int, expectedTrackId: Long, to: Int): Boolean {
-        val first = (currentQueueIndex ?: return false) + 1
-        val source = first + from
-        val target = first + to
-        if (currentQueue.getOrNull(source)?.id != expectedTrackId || target !in currentQueue.indices) {
-            return false
-        }
-        val order = currentQueue.toMutableList()
-        val moved = order.removeAt(source)
-        order.add(target, moved)
-        currentQueue = order
-        return true
-    }
-
-    private fun removeUpcoming(position: Int, expectedTrackId: Long): Boolean {
-        val absolute = (currentQueueIndex ?: return false) + 1 + position
-        if (currentQueue.getOrNull(absolute)?.id != expectedTrackId) return false
-        currentQueue = currentQueue.toMutableList().also { it.removeAt(absolute) }
-        return true
     }
 
     override fun onCreate() {
@@ -620,32 +580,14 @@ internal class ConfigurationTestPlaybackControls(
     private val loadUpcoming: (LibraryWindowRange) -> LibraryWindow<LibraryTrack> = {
         LibraryWindow.empty()
     },
-    private val playUpcoming: (Int, Long) -> Boolean = { _, _ -> false },
-    private val moveUpcoming: (Int, Long, Int) -> Boolean = { _, _, _ -> false },
-    private val removeUpcoming: (Int, Long) -> Boolean = { _, _ -> false },
     private val startSleepTimer: (SleepTimerSelection) -> Unit = {},
     private val cancelSleepTimer: () -> Unit = {},
 ) : PlaybackControls {
-    private var deferredUpcomingOffset: Long? = null
-    private val deferredUpcomingLoads = mutableListOf<() -> Unit>()
     val seekPositions = mutableListOf<Long>()
     val ratingRequests = mutableListOf<Pair<Long, Int>>()
-    val playUpcomingRequests = mutableListOf<Pair<Int, Long>>()
-    val moveUpcomingRequests = mutableListOf<Triple<Int, Long, Int>>()
-    val removeUpcomingRequests = mutableListOf<Pair<Int, Long>>()
-    val loadUpcomingRequests = mutableListOf<LibraryWindowRange>()
 
     /** What the write answers with; null is the database agreeing. */
     var ratingFailure: String? = null
-
-    fun deferUpcomingLoad(offset: Long) {
-        deferredUpcomingOffset = offset
-    }
-
-    fun completeDeferredUpcomingLoads() {
-        deferredUpcomingOffset = null
-        deferredUpcomingLoads.toList().also { deferredUpcomingLoads.clear() }.forEach { it() }
-    }
 
     override fun togglePause() = Unit
     override fun next() = Unit
@@ -668,42 +610,7 @@ internal class ConfigurationTestPlaybackControls(
         window: LibraryWindowRange,
         report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
     ) {
-        loadUpcomingRequests += window
-        val answer = Result.success(loadUpcoming(window))
-        if (window.offset == deferredUpcomingOffset) {
-            deferredUpcomingOffset = null
-            deferredUpcomingLoads += { report(answer) }
-        } else {
-            report(answer)
-        }
-    }
-
-    override fun playUpcomingTrackNow(
-        position: Int,
-        expectedTrackId: Long,
-        report: (Result<Boolean>) -> Unit,
-    ) {
-        playUpcomingRequests += position to expectedTrackId
-        report(Result.success(playUpcoming(position, expectedTrackId)))
-    }
-
-    override fun moveUpcomingTrack(
-        fromPosition: Int,
-        expectedTrackId: Long,
-        toPosition: Int,
-        report: (Result<Boolean>) -> Unit,
-    ) {
-        moveUpcomingRequests += Triple(fromPosition, expectedTrackId, toPosition)
-        report(Result.success(moveUpcoming(fromPosition, expectedTrackId, toPosition)))
-    }
-
-    override fun removeUpcomingTrack(
-        position: Int,
-        expectedTrackId: Long,
-        report: (Result<Boolean>) -> Unit,
-    ) {
-        removeUpcomingRequests += position to expectedTrackId
-        report(Result.success(removeUpcoming(position, expectedTrackId)))
+        report(Result.success(loadUpcoming(window)))
     }
 
     override fun startSleepTimer(selection: SleepTimerSelection) = startSleepTimer.invoke(selection)

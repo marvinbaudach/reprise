@@ -66,25 +66,6 @@ internal class ActivityPlaybackControls(
         report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
     ) = query(report) { upcomingTracks(window) }
 
-    override fun playUpcomingTrackNow(
-        position: Int,
-        expectedTrackId: Long,
-        report: (Result<Boolean>) -> Unit,
-    ) = query(report) { playUpcomingTrackNow(position, expectedTrackId) }
-
-    override fun moveUpcomingTrack(
-        fromPosition: Int,
-        expectedTrackId: Long,
-        toPosition: Int,
-        report: (Result<Boolean>) -> Unit,
-    ) = query(report) { moveUpcomingTrack(fromPosition, expectedTrackId, toPosition) }
-
-    override fun removeUpcomingTrack(
-        position: Int,
-        expectedTrackId: Long,
-        report: (Result<Boolean>) -> Unit,
-    ) = query(report) { removeUpcomingTrack(position, expectedTrackId) }
-
     override fun startSleepTimer(selection: SleepTimerSelection) = command("start sleep timer") {
         startSleepTimer(selection)
     }

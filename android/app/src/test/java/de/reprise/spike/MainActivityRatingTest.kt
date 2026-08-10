@@ -1,12 +1,14 @@
 package de.reprise.spike
 
 import android.os.Looper
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -94,14 +96,13 @@ class MainActivityRatingTest {
     }
 
     @Test
-    fun sheetHeaderKeepsAllActionsAndTransportStaysAtTheBottom() {
+    fun sheetHeaderKeepsSleepAndHeartWithoutAQueueActionAndTransportStaysAtTheBottom() {
         publishTrack(1)
         compose.onNodeWithTag("library-mini-player").performClick()
 
         val actionRow = hasTestTag("now-playing-actions")
-        val queue = compose.onNode(
-            hasContentDescription("Show queue") and hasAnyAncestor(actionRow),
-        )
+        compose.onAllNodes(hasClickAction() and hasAnyAncestor(actionRow))
+            .assertCountEquals(2)
         val sleep = compose.onNode(
             hasContentDescription("Set sleep timer") and hasAnyAncestor(actionRow),
         )
@@ -109,11 +110,9 @@ class MainActivityRatingTest {
             hasTestTag("now-playing-heart") and hasAnyAncestor(actionRow),
         ).assertContentDescriptionEquals("Add to favourites")
 
-        val queueBounds = queue.getUnclippedBoundsInRoot()
         val sleepBounds = sleep.getUnclippedBoundsInRoot()
         val heartBounds = heart.getUnclippedBoundsInRoot()
-        assertEquals(queueBounds.top.value, heartBounds.top.value, 0.5f)
-        assertTrue(queueBounds.left < sleepBounds.left)
+        assertEquals(sleepBounds.top.value, heartBounds.top.value, 0.5f)
         assertTrue(sleepBounds.left < heartBounds.left)
         compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
 

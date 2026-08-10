@@ -202,17 +202,6 @@ internal fun NowPlayingScene(
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 18.dp, vertical = 18.dp),
         )
-
-        if (surfaceState.nowPlayingQueueVisible) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(COVER_SIZE_DP.dp)
-                    .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(18.dp)),
-            ) {
-                NowPlayingQueuePage(playback, surfaceState)
-            }
-        }
     }
 }
 
@@ -264,7 +253,6 @@ private fun PlayedHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(Modifier.weight(1f))
-        QueuePageButton(surfaceState)
         SleepTimerControl(playback.sleepTimer)
         FavouriteHeartButton(track, surfaceState, tag = "now-playing-heart")
     }

@@ -32,7 +32,6 @@ internal enum class LibraryListKey {
     FAVOURITES,
     ALBUM_TRACKS,
     ARTIST_TRACKS,
-    UPCOMING,
 }
 
 /**
@@ -108,8 +107,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     var nowPlayingExpanded by mutableStateOf(false)
         private set
-    var nowPlayingQueueVisible by mutableStateOf(false)
-        private set
     var settingsVisible by mutableStateOf(false)
         private set
     var dockMode by mutableStateOf(false)
@@ -161,11 +158,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     fun showNowPlaying(show: Boolean) {
         nowPlayingExpanded = show
-        if (!show) nowPlayingQueueVisible = false
-    }
-
-    fun showNowPlayingQueue(show: Boolean) {
-        nowPlayingQueueVisible = show
     }
 
     /** Requests exactly the next two queue covers once for each current track. */
