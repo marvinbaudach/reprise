@@ -4116,9 +4116,12 @@ means deterministic and high-confidence, never „without review".
   not as a push over `content_nav`.** The right Now Playing pane stays open if
   it was open. The Doctor stack child owns an `adw::NavigationView`: Start or
   Result is its root and Review is pushed inside it, preserving the back
-  gesture, title animation, and in-session selection. The child also owns its
-  header; Library chrome never appears above a page it does not control. The
-  provider switch exists only on Start, never on Review.
+  gesture, title animation, and in-session selection. The shared outer header
+  remains the single draggable window-chrome row while the Doctor is visible:
+  its Library-only source title, search action, and scan action are hidden, its
+  title reads "Library Doctor", and Review places only its "All" and "None"
+  actions there. Doctor pages carry no nested header. The provider switch
+  exists only on Start, never on Review.
 
   Library Doctor has no main switch and its local, purely read-only checks can
   be started manually at any time. This is not a network release. The separate
@@ -4140,7 +4143,7 @@ means deterministic and high-confidence, never „without review".
   `doc_7c_the_doctor_is_a_content_stack_child_not_a_content_nav_push`,
   `doc_7c_opening_the_doctor_keeps_the_now_playing_pane_open`,
   `doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view`,
-  `doc_7c_the_library_chrome_is_absent_while_the_doctor_is_visible`,
+  `doc_7c_the_doctor_uses_the_shared_window_chrome`,
   `doc_7c_the_review_page_carries_no_provider_toggle`,
   `doc_7c_a_second_review_session_replaces_the_first`.
 

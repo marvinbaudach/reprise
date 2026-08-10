@@ -49,37 +49,105 @@ fn search_2c_the_chrome_wiring_does_not_outlive_its_window() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn doc_7c_the_library_chrome_is_absent_while_the_doctor_is_visible() {
-    if gtk4::init().is_err() {
-        return;
-    }
-    let window = adw::ApplicationWindow::builder().build();
-    let header = adw::HeaderBar::new();
+fn doc_7c_the_doctor_uses_the_shared_window_chrome() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let animations_were_enabled = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
+
+    let window = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let library_header = adw::HeaderBar::new();
+    let source_title = adw::WindowTitle::new("Music", "");
+    library_header.set_title_widget(Some(&source_title));
     let entry = gtk4::SearchEntry::new();
-    let stack = gtk4::Stack::new();
-    stack.add_named(&gtk4::Label::new(Some("Library")), Some("library"));
-    stack.add_named(&gtk4::Label::new(Some("Stats")), Some("stats"));
-    stack.add_named(&gtk4::Label::new(Some("Concerts")), Some("concerts"));
-    stack.add_named(&adw::NavigationView::new(), Some("library-doctor"));
-    stack.set_visible_child_name("library");
-    let chrome = build(&header, &stack, &entry, &window);
-    wire_content_stack(&chrome.root, &stack);
-    window.set_content(Some(&chrome.root));
+    let scan_button = gtk4::Button::with_label("Scan");
+    let content_stack = gtk4::Stack::new();
+    content_stack.add_named(&gtk4::Label::new(Some("Library")), Some("library"));
+    let doctor_navigation = adw::NavigationView::new();
+    content_stack.add_named(&doctor_navigation, Some("library-doctor"));
+    content_stack.set_visible_child_name("library");
+
+    let root_page = adw::NavigationPage::builder()
+        .title("Library Doctor")
+        .tag("library-doctor")
+        .child(&gtk4::Label::new(Some("Start or result")))
+        .build();
+    doctor_navigation.add(&root_page);
+
+    let review_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    let all = gtk4::Button::with_label("All");
+    let none = gtk4::Button::with_label("None");
+    review_actions.append(&all);
+    review_actions.append(&none);
+    let review_page = adw::NavigationPage::builder()
+        .title("Review Changes")
+        .tag("library-doctor-review")
+        .child(&gtk4::Label::new(Some("Review")))
+        .build();
+
+    let chrome = build(&library_header, &content_stack, &entry, &window);
+    let doctor_chrome = wire_content_stack(
+        &chrome,
+        &content_stack,
+        &doctor_navigation,
+        &source_title,
+        &scan_button,
+    );
+    doctor_chrome.set_review_actions(&review_actions);
+    let decorations = crate::ui::window::window_decorations::WindowDecorations::new(
+        &window,
+        &library_header,
+        None,
+    );
+    decorations.content_host().set_content(&chrome.root);
+    decorations.apply(reprise_core::library::settings::WindowDecorationMode::Client);
     window.present();
+    crate::ui::window::content_stack::show_page(&content_stack, "library-doctor");
     while gtk4::glib::MainContext::default().iteration(false) {}
 
     assert!(chrome.root.reveals_top_bars());
-    for ordinary_page in ["stats", "concerts"] {
-        crate::ui::window::content_stack::show_page(&stack, ordinary_page);
-        assert!(chrome.root.reveals_top_bars());
-        let header_bounds = header
-            .compute_bounds(&chrome.root)
-            .expect("ordinary pages keep the shared header allocated");
-        assert!(header_bounds.height() > 0.0);
-    }
-    crate::ui::window::content_stack::show_page(&stack, "library-doctor");
-    assert!(!chrome.root.reveals_top_bars());
+    assert!(library_header.shows_start_title_buttons());
+    assert!(library_header.shows_end_title_buttons());
+    assert!(!source_title.is_visible());
+    assert!(!chrome.search_toggle.is_visible());
+    assert!(!scan_button.is_visible());
+    assert_eq!(visible_header_title(&library_header), "Library Doctor");
+    assert!(!review_actions.is_visible());
+    assert_eq!(mapped_adw_header_rows(chrome.root.upcast_ref()), 1);
+
+    doctor_navigation.push(&review_page);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(review_actions.is_visible());
+    assert!(all.is_ancestor(&library_header));
+    assert!(none.is_ancestor(&library_header));
+    assert_eq!(mapped_adw_header_rows(chrome.root.upcast_ref()), 1);
+
     window.close();
+    settings.set_gtk_enable_animations(animations_were_enabled);
+}
+
+fn visible_header_title(header: &adw::HeaderBar) -> String {
+    header
+        .title_widget()
+        .expect("the shared header has a title")
+        .downcast::<adw::WindowTitle>()
+        .expect("the shared header title uses AdwWindowTitle")
+        .title()
+        .into()
+}
+
+fn mapped_adw_header_rows(root: &gtk4::Widget) -> usize {
+    let mut rows = usize::from(root.is::<adw::HeaderBar>() && root.is_mapped());
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        rows += mapped_adw_header_rows(&widget);
+        child = widget.next_sibling();
+    }
+    rows
 }
 
 #[test]

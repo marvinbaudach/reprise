@@ -101,12 +101,17 @@ fn doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view() {
     let coordinator = include_str!("mod.rs");
     let navigation = include_str!("navigation.rs");
     let review = include_str!("review_page.rs");
+    let chrome = include_str!("../window/library_chrome.rs");
 
     assert!(coordinator.contains("self.navigation.show_review_or_root(review)"));
+    assert!(coordinator.contains(".set_review_actions(page.chrome_actions())"));
     assert!(navigation.contains("self.show_review(review.navigation_page())"));
     assert!(navigation.contains("self.doctor_navigation.push(page)"));
-    assert!(review.contains("adw::WindowTitle::new"));
+    assert!(review.contains("chrome_actions: gtk4::Box"));
     assert!(review.contains("doctor-review-header-action"));
+    assert!(!review.contains("adw::HeaderBar::new"));
+    assert!(!review.contains("toolbar.add_top_bar"));
+    assert!(chrome.contains("review_actions.set_visible(review_visible)"));
 }
 
 #[test]
