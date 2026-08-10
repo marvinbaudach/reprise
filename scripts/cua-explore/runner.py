@@ -29,13 +29,12 @@ from report import RunReport
 from oracles import Finding
 from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
 from workload_audit import ActionTrace, audit_action_workload
-from window_setup import (
+from launch import (
     AppLifecycle,
     HoverSmokeComplete,
     RunError,
     accessibility_tree_ready,
     app_launch_argv,
-    apply_window_size,
     parse_window_origin,
     prepare_hover,
     private_environment_required as _private_environment_required,
@@ -43,6 +42,7 @@ from window_setup import (
     wait_for_accessibility_tree,
     write_gtk_animation_settings,
 )
+from window_setup import apply_window_size
 
 # AppLifecycle launches through: unshare --user --map-current-user --net --
 
