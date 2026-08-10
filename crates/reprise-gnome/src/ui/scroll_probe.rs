@@ -43,8 +43,7 @@ pub(in crate::ui) fn set_upper_suppressed() -> bool {
 /// restore runs? Answers whether a measured row height can close the
 /// allocation window, or whether only the density token can.
 pub(in crate::ui) fn probe_rows(where_: &str, column_view: &gtk4::ColumnView) {
-    use gtk4::glib::prelude::{Cast, ObjectExt};
-    use gtk4::prelude::WidgetExt;
+    use gtk4::glib::prelude::Cast;
 
     if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
         return;
