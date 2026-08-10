@@ -1,4 +1,4 @@
-//! TEMPORARY diagnostic — do not ship.
+//! Environment-gated scroll diagnostics for display regressions.
 //!
 //! Names every writer of a scroll adjustment so a display run can show which
 //! one produces an intermediate value. Silent unless `REPRISE_SCROLL_PROBE`
@@ -33,15 +33,13 @@ pub(in crate::ui) fn probe_upper(writer: &str, adjustment: &gtk4::Adjustment, up
 }
 
 /// Lets one build run both the shipped behaviour and the experiment: with
-/// `REPRISE_NO_SET_UPPER` set, `apply_scroll_anchor_if_allocated` stops
-/// pre-seeding the bound it then reads back as proof of readiness.
-pub(in crate::ui) fn set_upper_suppressed() -> bool {
-    std::env::var_os("REPRISE_NO_SET_UPPER").is_some()
+/// `REPRISE_NO_PRESEED` set, the restore leaves the stale allocation range in
+/// place as a counterprobe for the first-frame jump.
+pub(in crate::ui) fn preseed_suppressed() -> bool {
+    std::env::var_os("REPRISE_NO_PRESEED").is_some()
 }
 
-/// TEMPORARY: is there a realized row widget to measure, at the moment the
-/// restore runs? Answers whether a measured row height can close the
-/// allocation window, or whether only the density token can.
+/// Records realized row widgets at the moment a restore runs.
 pub(in crate::ui) fn probe_rows(where_: &str, column_view: &gtk4::ColumnView) {
     use gtk4::glib::prelude::Cast;
 

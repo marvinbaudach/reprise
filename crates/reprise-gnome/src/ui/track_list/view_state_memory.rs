@@ -10,7 +10,6 @@ use reprise_core::browser::{SortDirection, TrackAnchor, TrackSort, TrackViewStat
 use reprise_core::queries::BrowseFilter;
 
 use crate::ui::list_geometry::ListGeometry;
-use crate::ui::track_list::track_list_geometry::restore_geometry_is_ready;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::SortState;
 
@@ -108,9 +107,15 @@ pub(in crate::ui) fn capture(shared: &Shared) -> SavedViewState {
     let scroll_value = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
         .map_or(0.0, |adjustment| adjustment.value());
     let total = shared.model.n_items();
+    let n_sections = shared.queue_sections.borrow().len();
     let geometry = ListGeometry::for_view(&shared.column_view);
     let anchor = geometry
-        .observed_row_height(&shared.conn, &shared.last_row_height, total as usize)
+        .observed_row_height(
+            &shared.conn,
+            &shared.last_row_height,
+            total as usize,
+            n_sections,
+        )
         .and_then(|height| {
             let height = height.pixels();
             let index = (scroll_value / height).floor().max(0.0) as u32;
@@ -199,17 +204,25 @@ fn restore_scroll_when_ready(
             return;
         };
         let (upper, page) = (adjustment.upper(), adjustment.page_size());
+        let n_sections = shared.queue_sections.borrow().len();
         if upper > page {
-            if let Some(height) = ListGeometry::for_view(&shared.column_view)
-                .observed_row_height(&shared.conn, &shared.last_row_height, current_ids.len())
+            let geometry = ListGeometry::for_view(&shared.column_view);
+            if let Some(height) = geometry
+                .observed_row_height(
+                    &shared.conn,
+                    &shared.last_row_height,
+                    current_ids.len(),
+                    n_sections,
+                )
                 .map(crate::ui::list_geometry::RowHeight::pixels)
             {
-                if restore_geometry_is_ready(upper, current_ids.len(), height) {
-                    ListGeometry::for_view(&shared.column_view).remember_if_settled(
+                if geometry.is_settled(upper, current_ids.len(), n_sections) {
+                    geometry.remember_if_settled(
                         &shared.conn,
                         &shared.last_row_height,
                         upper,
                         current_ids.len(),
+                        n_sections,
                     );
                     if let Some(target) =
                         super::reload_restore::scroll_target(anchor, &current_ids, height, page)

@@ -28,7 +28,6 @@ impl RowHeight {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[allow(dead_code)] // The G4 pre-seed consumes the named known/unknown state.
 pub(in crate::ui) enum ContentHeight {
     Known(f64),
     Unknown,
@@ -87,6 +86,25 @@ pub(in crate::ui) fn settled_row_height(
         .then_some(widget_height)
 }
 
+pub(in crate::ui) fn settled_content_row_height(
+    upper: f64,
+    n_rows: usize,
+    n_sections: usize,
+    rows: RowMeasurement,
+    headers: Option<RowMeasurement>,
+) -> Option<RowHeight> {
+    if n_sections == 0 {
+        return settled_row_height(upper, n_rows, rows);
+    }
+    let headers = headers?;
+    if !headers.is_uniform() {
+        return None;
+    }
+    let header_height = headers.modal()?;
+    let row_content_height = upper - n_sections as f64 * header_height.pixels();
+    settled_row_height(row_content_height, n_rows, rows)
+}
+
 pub(in crate::ui) fn adjustment_row_height(upper: f64, n_rows: usize) -> Option<RowHeight> {
     if n_rows == 0 {
         return None;
@@ -99,7 +117,6 @@ pub(in crate::ui) fn is_settled(upper: f64, n_rows: usize, measurement: RowMeasu
     settled_row_height(upper, n_rows, measurement).is_some()
 }
 
-#[allow(dead_code)] // The G4 pre-seed consumes section-aware content height.
 pub(in crate::ui) fn content_height(
     n_rows: usize,
     n_sections: usize,
@@ -161,29 +178,44 @@ impl ListGeometry {
     }
 
     pub(in crate::ui) fn measurement(&self) -> RowMeasurement {
-        fn collect(widget: &gtk4::Widget, heights: &mut Vec<i32>) {
-            if widget.type_().name().contains("ColumnViewRow") {
+        self.widget_measurement("ColumnViewRow")
+    }
+
+    fn widget_measurement(&self, type_fragment: &str) -> RowMeasurement {
+        fn collect(widget: &gtk4::Widget, type_fragment: &str, heights: &mut Vec<i32>) {
+            if widget.type_().name().contains(type_fragment) {
                 heights.push(widget.height());
             }
             let mut child = widget.first_child();
             while let Some(current) = child {
-                collect(&current, heights);
+                collect(&current, type_fragment, heights);
                 child = current.next_sibling();
             }
         }
 
         let mut heights = Vec::new();
-        collect(self.view.upcast_ref(), &mut heights);
+        collect(self.view.upcast_ref(), type_fragment, &mut heights);
         RowMeasurement::from_widget_heights(heights)
+    }
+
+    fn section_header_measurement(&self) -> Option<RowMeasurement> {
+        let measurement = self.widget_measurement("ListHeader");
+        measurement.modal().map(|_| measurement)
     }
 
     pub(in crate::ui) fn settled_row_height(&self, upper: f64, n_rows: usize) -> Option<RowHeight> {
         settled_row_height(upper, n_rows, self.measurement())
     }
 
-    #[allow(dead_code)] // The G4 readiness migration consumes this adapter.
-    pub(in crate::ui) fn is_settled(&self, upper: f64, n_rows: usize) -> bool {
-        is_settled(upper, n_rows, self.measurement())
+    pub(in crate::ui) fn is_settled(&self, upper: f64, n_rows: usize, n_sections: usize) -> bool {
+        settled_content_row_height(
+            upper,
+            n_rows,
+            n_sections,
+            self.measurement(),
+            self.section_header_measurement(),
+        )
+        .is_some()
     }
 
     fn density(&self) -> ListDensity {
@@ -222,8 +254,15 @@ impl ListGeometry {
         cache: &Cell<f64>,
         upper: f64,
         n_rows: usize,
+        n_sections: usize,
     ) -> bool {
-        let Some(height) = self.settled_row_height(upper, n_rows) else {
+        let Some(height) = settled_content_row_height(
+            upper,
+            n_rows,
+            n_sections,
+            self.measurement(),
+            self.section_header_measurement(),
+        ) else {
             return false;
         };
         cache.set(height.pixels());
@@ -238,12 +277,13 @@ impl ListGeometry {
         db: &reprise_core::db::Db,
         cache: &Cell<f64>,
         n_rows: usize,
+        n_sections: usize,
     ) -> Option<RowHeight> {
         if n_rows == 0 {
             return None;
         }
         if let Some(adjustment) = self.view.vadjustment() {
-            self.remember_if_settled(db, cache, adjustment.upper(), n_rows);
+            self.remember_if_settled(db, cache, adjustment.upper(), n_rows, n_sections);
         }
         Some(self.row_height(db, cache))
     }
@@ -251,6 +291,45 @@ impl ListGeometry {
     pub(in crate::ui) fn live_row_height(&self, n_rows: usize) -> Option<RowHeight> {
         let adjustment = self.view.vadjustment()?;
         self.settled_row_height(adjustment.upper(), n_rows)
+    }
+
+    pub(in crate::ui) fn content_height(
+        &self,
+        db: &reprise_core::db::Db,
+        cache: &Cell<f64>,
+        n_rows: usize,
+        n_sections: usize,
+    ) -> ContentHeight {
+        let row_height = self.row_height(db, cache);
+        let header_height = self
+            .section_header_measurement()
+            .filter(|measurement| measurement.is_uniform())
+            .and_then(RowMeasurement::modal);
+        content_height(n_rows, n_sections, row_height, header_height)
+    }
+
+    pub(in crate::ui) fn configure(
+        &self,
+        adjustment: &gtk4::Adjustment,
+        target: f64,
+        db: &reprise_core::db::Db,
+        cache: &Cell<f64>,
+        n_rows: usize,
+        n_sections: usize,
+    ) -> bool {
+        let ContentHeight::Known(upper) = self.content_height(db, cache, n_rows, n_sections) else {
+            return false;
+        };
+        crate::ui::scroll_probe::probe_upper("anchor.configure", adjustment, upper);
+        adjustment.configure(
+            target,
+            adjustment.lower(),
+            upper,
+            adjustment.step_increment(),
+            adjustment.page_increment(),
+            adjustment.page_size(),
+        );
+        true
     }
 }
 
@@ -299,6 +378,31 @@ mod tests {
         assert_eq!(
             content_height(100, 2, row_height, RowHeight::new(20.0)),
             ContentHeight::Known(3_440.0)
+        );
+    }
+
+    #[test]
+    fn sectioned_geometry_needs_independent_row_and_header_measurements() {
+        let rows = RowMeasurement::from_widget_heights([34, 34, 34]);
+        let headers = RowMeasurement::from_widget_heights([20, 20]);
+
+        assert_eq!(
+            settled_content_row_height(3_440.0, 100, 2, rows, Some(headers)),
+            RowHeight::new(34.0)
+        );
+        assert_eq!(
+            settled_content_row_height(3_440.0, 100, 2, rows, None),
+            None
+        );
+        assert_eq!(
+            settled_content_row_height(
+                3_440.0,
+                100,
+                2,
+                rows,
+                Some(RowMeasurement::from_widget_heights([19, 20])),
+            ),
+            None
         );
     }
 
