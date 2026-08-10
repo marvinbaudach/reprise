@@ -8,7 +8,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use gtk4::glib::prelude::{Cast, ObjectExt};
-use gtk4::prelude::WidgetExt;
+use gtk4::prelude::{AdjustmentExt, ScrollableExt, WidgetExt};
 use reprise_core::library::settings::{self, ListDensity};
 
 const ROW_HEIGHT_AGREEMENT_EPSILON: f64 = 0.5;
@@ -82,11 +82,19 @@ pub(in crate::ui) fn settled_row_height(
         return None;
     }
     let widget_height = measurement.modal()?;
-    let adjustment_height = upper / n_rows as f64;
+    let adjustment_height = upper * (n_rows as f64).recip();
     ((adjustment_height - widget_height.pixels()).abs() < ROW_HEIGHT_AGREEMENT_EPSILON)
         .then_some(widget_height)
 }
 
+pub(in crate::ui) fn adjustment_row_height(upper: f64, n_rows: usize) -> Option<RowHeight> {
+    if n_rows == 0 {
+        return None;
+    }
+    RowHeight::new(upper * (n_rows as f64).recip())
+}
+
+#[allow(dead_code)] // The G4 readiness migration consumes this pure predicate.
 pub(in crate::ui) fn is_settled(upper: f64, n_rows: usize, measurement: RowMeasurement) -> bool {
     settled_row_height(upper, n_rows, measurement).is_some()
 }
@@ -143,12 +151,10 @@ fn load_row_height(
 /// constructed for any `ColumnView`; all acceptance arithmetic above remains
 /// GTK-free and directly unit tested.
 #[derive(Clone)]
-#[allow(dead_code)] // The G3 call-site migration consumes this service.
 pub(in crate::ui) struct ListGeometry {
     view: gtk4::ColumnView,
 }
 
-#[allow(dead_code)] // The G3 call-site migration consumes these GTK adapters.
 impl ListGeometry {
     pub(in crate::ui) fn for_view(view: &gtk4::ColumnView) -> Self {
         Self { view: view.clone() }
@@ -175,6 +181,7 @@ impl ListGeometry {
         settled_row_height(upper, n_rows, self.measurement())
     }
 
+    #[allow(dead_code)] // The G4 readiness migration consumes this adapter.
     pub(in crate::ui) fn is_settled(&self, upper: f64, n_rows: usize) -> bool {
         is_settled(upper, n_rows, self.measurement())
     }
@@ -224,6 +231,26 @@ impl ListGeometry {
             tracing::warn!(%error, "could not persist settled row height");
         }
         true
+    }
+
+    pub(in crate::ui) fn observed_row_height(
+        &self,
+        db: &reprise_core::db::Db,
+        cache: &Cell<f64>,
+        n_rows: usize,
+    ) -> Option<RowHeight> {
+        if n_rows == 0 {
+            return None;
+        }
+        if let Some(adjustment) = self.view.vadjustment() {
+            self.remember_if_settled(db, cache, adjustment.upper(), n_rows);
+        }
+        Some(self.row_height(db, cache))
+    }
+
+    pub(in crate::ui) fn live_row_height(&self, n_rows: usize) -> Option<RowHeight> {
+        let adjustment = self.view.vadjustment()?;
+        self.settled_row_height(adjustment.upper(), n_rows)
     }
 }
 

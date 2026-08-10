@@ -2,8 +2,6 @@
 
 use std::cell::Cell;
 
-use gtk4::prelude::AdjustmentExt;
-
 use crate::ui::style::tokens::{ROW_MIN_HEIGHT_COMFORTABLE, ROW_MIN_HEIGHT_COMPACT};
 
 const MAX_READY_DRIFT_IN_ROWS: f64 = 0.5;
@@ -16,34 +14,6 @@ const MAX_READY_DRIFT_IN_ROWS: f64 = 0.5;
 /// smallest step needs only seven rows to clear this — shorter lists fit
 /// their viewport and never reach a scroll restore at all.
 const MAX_STALE_DRIFT_IN_ROWS: f64 = 2.0;
-
-/// Approximates the uniform row height from the adjustment's total content
-/// height over the row count — the same technique `current_track_selection::
-/// centered_scroll_value` uses for the "jump to now playing" center (NAV-9b):
-/// `GtkColumnView` rows are uniform height by design, and there is no
-/// per-row height API to query instead.
-pub(in crate::ui) fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
-    if n_rows == 0 {
-        return None;
-    }
-    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(column_view)?;
-    let upper = adjustment.upper();
-    (upper > 0.0).then(|| upper / f64::from(n_rows))
-}
-
-/// Remembers a row height only while there is enough geometry to measure it,
-/// and only when the measurement is not the artefact of a stale adjustment.
-pub(in crate::ui) fn remember_row_height(
-    column_view: &gtk4::ColumnView,
-    n_rows: u32,
-    last_row_height: &Cell<f64>,
-) {
-    if let Some(height) = row_height(column_view, n_rows) {
-        if should_replace_cached_height(height, last_row_height.get(), n_rows as usize) {
-            last_row_height.set(height);
-        }
-    }
-}
 
 /// Drops the cached height, so the next measurement is believed unconditionally.
 /// The row height is a property of the display density, and a density change is
@@ -66,6 +36,7 @@ pub(in crate::ui) fn forget_row_height(last_row_height: &Cell<f64>) {
 /// An absolute budget cannot separate those: the same 10 px per row is a
 /// rounding artefact in a three-row list and a whole density step in a
 /// 200-row one. Judging total drift in rows does separate them.
+#[allow(dead_code)] // Removed with its superseded heuristic in G5.
 pub(in crate::ui) fn should_replace_cached_height(
     measured: f64,
     cached: f64,
@@ -92,6 +63,7 @@ pub(in crate::ui) fn should_replace_cached_height(
 
 /// Uses the last consistent measurement across a model swap, falling back to
 /// the live geometry during the first allocation.
+#[allow(dead_code)] // Removed with its superseded fallback in G5.
 pub(in crate::ui) fn row_height_for_restore(
     last_row_height: &Cell<f64>,
     upper: f64,
@@ -104,7 +76,7 @@ pub(in crate::ui) fn row_height_for_restore(
     Some(if cached > 0.0 {
         cached
     } else {
-        upper / n_rows as f64
+        crate::ui::list_geometry::adjustment_row_height(upper, n_rows)?.pixels()
     })
 }
 
