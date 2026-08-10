@@ -13,10 +13,15 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class BrowseSurfaceTest {
     @Test
     fun seekDragOwnsTheHeadUntilRelease() {
@@ -243,8 +248,12 @@ class BrowseSurfaceTest {
         val artwork = TrackArtwork(
             resolve = { _, _ ->
                 resolvingThread.set(Thread.currentThread())
-                null
+                throw IllegalStateException("synthetic failed artwork read")
             },
+            fallback = { _, _, _ ->
+                android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ARGB_8888)
+            },
+            cache = ArtworkCache(),
             onMainThread = { work ->
                 mainThreadWork.set(work)
                 deliveryScheduled.countDown()

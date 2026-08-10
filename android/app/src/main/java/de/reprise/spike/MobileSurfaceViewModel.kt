@@ -128,6 +128,7 @@ internal class MobileSurfaceViewModel : ViewModel() {
     private var previousSurfaceLayout: SurfaceLayout? = null
     private var selectedTabInitialized = false
     private var rememberSelectedTab: (BrowseTab) -> Unit = {}
+    private var prefetchedForTrackId: Long? = null
 
     fun initializeSelectedTab(initial: BrowseTab, remember: (BrowseTab) -> Unit) {
         rememberSelectedTab = remember
@@ -165,6 +166,33 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     fun showNowPlayingQueue(show: Boolean) {
         nowPlayingQueueVisible = show
+    }
+
+    /** Requests exactly the next two queue covers once for each current track. */
+    fun prefetchUpcomingArtwork(
+        currentTrackId: Long?,
+        controls: PlaybackControls,
+        artwork: TrackArtwork?,
+    ) {
+        if (currentTrackId == null || artwork == null) {
+            prefetchedForTrackId = null
+            return
+        }
+        if (prefetchedForTrackId == currentTrackId) return
+        prefetchedForTrackId = currentTrackId
+        controls.loadUpcomingTracks(LibraryWindowRange(0, 2)) { outcome ->
+            if (prefetchedForTrackId != currentTrackId) return@loadUpcomingTracks
+            outcome.getOrNull()?.rows?.take(2)?.forEach { track ->
+                artwork.prefetch(
+                    ArtworkRequest(
+                        trackUri = track.uri,
+                        size = uniffi.reprise_android_ffi.AndroidArtworkSize.NOW_PLAYING,
+                        title = track.title,
+                        artist = track.artist,
+                    ),
+                )
+            }
+        }
     }
 
     fun showSettings(show: Boolean) {

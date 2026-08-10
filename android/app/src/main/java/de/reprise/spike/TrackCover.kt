@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -38,6 +39,8 @@ private const val TAG = "RepriseArtwork"
 internal class TrackArtwork(
     private val resolve: (String, AndroidArtworkSize) -> String?,
     private val decode: (String) -> android.graphics.Bitmap? = BitmapFactory::decodeFile,
+    private val fallback: (String, String, Int) -> android.graphics.Bitmap = ::fallbackCoverBitmap,
+    private val cache: ArtworkCache = SharedArtworkCache,
     private val worker: ExecutorService = singleArtworkThread("reprise-artwork-list"),
     private val fullSizeWorker: ExecutorService = singleArtworkThread("reprise-artwork-full"),
     private val onMainThread: (() -> Unit) -> Unit = { work ->
@@ -62,6 +65,10 @@ internal class TrackArtwork(
         gate: ArtworkRequestGate,
         deliver: (ArtworkVisual?) -> Unit,
     ) {
+        cache.artwork(request)?.let { cached ->
+            if (gate.accepts(request)) deliver(cached)
+            return
+        }
         val lane = when (request.size) {
             AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
             AndroidArtworkSize.LIST -> worker
@@ -75,22 +82,18 @@ internal class TrackArtwork(
             // failures this catches is teardown itself — a read that reaches the
             // library handle after `MainActivity.onDestroy` closed it is refused
             // with `IllegalStateException`. See [shutdown].
-            val visual = runCatching {
-                resolve(request.trackUri, request.size)?.let(decode)?.let { bitmap ->
-                    ArtworkVisual(
-                        image = bitmap.asImageBitmap(),
-                        ambientColors = if (request.size == AndroidArtworkSize.NOW_PLAYING) {
-                            extractAmbientArtworkColors(bitmap)
-                        } else {
-                            null
-                        },
-                    )
-                }
+            val visual = runCatching { resolveVisual(request) }.getOrElse { error ->
+                Log.w(TAG, "Could not read artwork for ${request.trackUri}", error)
+                runCatching { generatedVisual(request, resolved = false) }
+                    .onFailure { fallbackError ->
+                        Log.w(
+                            TAG,
+                            "Could not generate artwork for ${request.trackUri}",
+                            fallbackError,
+                        )
+                    }
+                    .getOrNull()
             }
-                .onFailure { error ->
-                    Log.w(TAG, "Could not read artwork for ${request.trackUri}", error)
-                }
-                .getOrNull()
             if (!gate.accepts(request)) {
                 return@execute
             }
@@ -100,6 +103,71 @@ internal class TrackArtwork(
                 }
             }
         }
+    }
+
+    /** Fills both cover and fog LRUs without claiming a visible slot. */
+    fun prefetch(request: ArtworkRequest) {
+        if (cache.artwork(request) != null) return
+        val lane = when (request.size) {
+            AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
+            AndroidArtworkSize.LIST -> worker
+        }
+        lane.execute {
+            val visual = runCatching { resolveVisual(request) }.getOrElse { error ->
+                Log.w(TAG, "Could not prefetch artwork for ${request.trackUri}", error)
+                runCatching { generatedVisual(request, resolved = false) }
+                    .onFailure { fallbackError ->
+                        Log.w(
+                            TAG,
+                            "Could not generate prefetched artwork for ${request.trackUri}",
+                            fallbackError,
+                        )
+                    }
+                    .getOrNull()
+            }
+                ?: return@execute
+            if (cache.fog(visual.image) == null) {
+                val fog = prepareCoverFogBitmap(
+                    visual.image.asAndroidBitmap(),
+                    android.graphics.Color.BLACK,
+                )
+                cache.putFog(visual.image, fog)
+            }
+        }
+    }
+
+    /** Immediate composition seed: cached source first, generated cover otherwise. */
+    fun seedVisual(request: ArtworkRequest): ArtworkVisual =
+        cache.artwork(request) ?: generatedVisual(request, resolved = false)
+
+    private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
+        cache.artwork(request)?.let { return it }
+        val bitmap = resolve(request.trackUri, request.size)?.let(decode)
+            ?: return generatedVisual(request, resolved = true)
+        return ArtworkVisual(
+            image = bitmap.asImageBitmap(),
+            ambientColors = if (request.size == AndroidArtworkSize.NOW_PLAYING) {
+                extractAmbientArtworkColors(bitmap)
+            } else {
+                null
+            },
+        ).also { visual -> cache.putArtwork(request, visual) }
+    }
+
+    private fun generatedVisual(request: ArtworkRequest, resolved: Boolean): ArtworkVisual {
+        cache.generated(request)?.let { visual ->
+            if (resolved) cache.putGenerated(request, visual, resolved = true)
+            return visual
+        }
+        val bitmap = fallback(request.title, request.artist, request.size.fallbackSizePx())
+        return ArtworkVisual(
+            image = bitmap.asImageBitmap(),
+            ambientColors = if (request.size == AndroidArtworkSize.NOW_PLAYING) {
+                extractAmbientArtworkColors(bitmap)
+            } else {
+                null
+            },
+        ).also { visual -> cache.putGenerated(request, visual, resolved) }
     }
 
     /**
@@ -141,8 +209,8 @@ internal data class ArtworkVisual(
 )
 
 /**
- * A track's cover, or the honest no-artwork symbol until one arrives. Tracks
- * without local artwork keep the symbol: nothing is downloaded here.
+ * A track's cover, or its deterministic generated cover while one resolves.
+ * Tracks without local artwork keep the generated image: nothing is downloaded.
  *
  * [decorative] drops the cover's own description for the covers that sit inside
  * a node which already announces the track. A content description anywhere
@@ -153,13 +221,15 @@ internal data class ArtworkVisual(
 @Composable
 internal fun TrackCover(
     trackUri: String,
+    title: String = "",
+    artist: String = "",
     size: Int,
     modifier: Modifier = Modifier,
     artworkSize: AndroidArtworkSize = AndroidArtworkSize.LIST,
     shape: Shape? = null,
     decorative: Boolean = false,
 ) {
-    val visual = rememberTrackArtworkVisual(trackUri, artworkSize)
+    val visual = rememberTrackArtworkVisual(trackUri, artworkSize, title, artist)
     ArtworkCover(visual, size, modifier, shape, decorative)
 }
 
@@ -167,14 +237,21 @@ internal fun TrackCover(
 internal fun rememberTrackArtworkVisual(
     trackUri: String,
     artworkSize: AndroidArtworkSize,
+    title: String = "",
+    artist: String = "",
 ): ArtworkVisual? {
     val artwork = LocalTrackArtwork.current
     val gate = remember { ArtworkRequestGate() }
-    var visual by remember(trackUri, artworkSize) { mutableStateOf<ArtworkVisual?>(null) }
-    DisposableEffect(trackUri, artwork, artworkSize) {
-        val request = gate.begin(trackUri, artworkSize)
-        artwork?.loadVisual(request, gate) { loaded -> visual = loaded }
-        onDispose { gate.invalidate(request) }
+    val request = remember(trackUri, artworkSize, title, artist) {
+        ArtworkRequest(trackUri, artworkSize, title, artist)
+    }
+    var visual by remember(request, artwork) {
+        mutableStateOf(artwork?.seedVisual(request))
+    }
+    DisposableEffect(request, artwork) {
+        val admitted = gate.begin(trackUri, artworkSize, title, artist)
+        artwork?.loadVisual(admitted, gate) { loaded -> visual = loaded }
+        onDispose { gate.invalidate(admitted) }
     }
     return visual
 }
@@ -204,3 +281,8 @@ internal fun ArtworkCover(
 
 private fun singleArtworkThread(name: String): ExecutorService =
     Executors.newSingleThreadExecutor { runnable -> Thread(runnable, name) }
+
+private fun AndroidArtworkSize.fallbackSizePx(): Int = when (this) {
+    AndroidArtworkSize.LIST -> 168
+    AndroidArtworkSize.NOW_PLAYING -> 1_092
+}
