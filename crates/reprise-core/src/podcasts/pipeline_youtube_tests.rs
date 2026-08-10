@@ -516,6 +516,7 @@ fn a_channel_that_cannot_be_resolved_fails_alone_and_never_aborts_the_batch() {
             subscription_id: youtube_id,
             title: "Channel".to_owned(),
             kind: crate::source_error::SourceErrorKind::HelperOutdated,
+            classified_cause: "YouTube source could not be read with yt-dlp",
         }]
     );
     assert_eq!(summary.failed, summary.failures.len());
