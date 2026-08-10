@@ -32,6 +32,83 @@ fn dialog_state_ignores_stale_results_and_requires_a_valid_preview() {
 }
 
 #[test]
+fn rad_8_radio_favicon_lookup_accepts_only_secure_station_identity() {
+    let by_name = StationPreview::manual("  Radio Bob  ", "https://own.test/live")
+        .with_favicon_candidates(&[favicon_candidate(
+            "other",
+            "radio bob",
+            "https://other.test/live",
+            Some("https://images.test/name.png"),
+        )]);
+    assert_eq!(
+        by_name.favicon_url.as_deref(),
+        Some("https://images.test/name.png")
+    );
+
+    let ambiguous = StationPreview::manual("Radio Bob", "https://own.test/live")
+        .with_favicon_candidates(&[
+            favicon_candidate(
+                "one",
+                "RADIO BOB",
+                "https://one.test/live",
+                Some("https://images.test/one.png"),
+            ),
+            favicon_candidate(
+                "two",
+                "radio bob",
+                "https://two.test/live",
+                Some("https://images.test/two.png"),
+            ),
+        ]);
+    assert_eq!(ambiguous.favicon_url, None);
+
+    let by_stream = StationPreview::manual("Different", "https://own.test/live")
+        .with_favicon_candidates(&[favicon_candidate(
+            "other",
+            "Other",
+            "https://own.test/live",
+            Some("https://images.test/stream.png"),
+        )]);
+    assert_eq!(
+        by_stream.favicon_url.as_deref(),
+        Some("https://images.test/stream.png")
+    );
+
+    let mut by_uuid = StationPreview::manual("Different", "https://own.test/live");
+    by_uuid.uuid = Some("wanted".into());
+    let by_uuid = by_uuid.with_favicon_candidates(&[favicon_candidate(
+        "wanted",
+        "Other",
+        "https://other.test/live",
+        Some("https://images.test/uuid.png"),
+    )]);
+    assert_eq!(
+        by_uuid.favicon_url.as_deref(),
+        Some("https://images.test/uuid.png")
+    );
+}
+
+fn favicon_candidate(
+    uuid: &str,
+    name: &str,
+    stream_url: &str,
+    favicon_url: Option<&str>,
+) -> StationCandidate {
+    StationCandidate {
+        uuid: uuid.into(),
+        name: name.into(),
+        url_resolved: stream_url.into(),
+        codec: None,
+        bitrate_kbps: None,
+        country_code: None,
+        genre: None,
+        tags: Vec::new(),
+        votes: 0,
+        favicon_url: favicon_url.map(str::to_owned),
+    }
+}
+
+#[test]
 fn src_5_radio_search_hides_existing_favorites() {
     let candidates = vec![
         StationCandidate {

@@ -172,6 +172,84 @@ printf '%s\n' '{"title":"HOLLOW FALLEN","entries":[{"id":"video-two","title":"Vi
 }
 
 #[test]
+fn rad_8_adds_a_radio_favorite_with_the_favicon_from_an_exact_stream_match() {
+    let dir = TempDir::new().unwrap();
+    let path = fixture_db(&dir);
+    let fixtures = TempDir::new().unwrap();
+    let stream_url = "https://radio.example.test/live";
+    std::fs::write(
+        fixtures.path().join("servers.json"),
+        r#"[{"name":"fixture.radio-browser.test"}]"#,
+    )
+    .unwrap();
+    std::fs::write(
+        fixtures
+            .path()
+            .join("byurl-https___radio.example.test_live.json"),
+        r#"[{"stationuuid":"station-one","name":"Metal One",
+             "url_resolved":"https://radio.example.test/live",
+             "favicon":"https://images.example.test/metal-one.ico","votes":12}]"#,
+    )
+    .unwrap();
+    set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
+    set_bool_setting(&path, "online-sources-enabled", true);
+    set_bool_setting(&path, "module.radio.enabled", true);
+    let mut client =
+        McpClient::start_with_env(&path, &[("REPRISE_RADIO_FIXTURE_DIR", fixtures.path())]);
+
+    let added = structured_ok(&client.call_tool(
+        "music_manage_radio",
+        json!({
+            "action": "add",
+            "url": stream_url,
+            "name": "Metal One"
+        }),
+    ));
+
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let station = reprise_core::radio::station::get(&db, added["id"].as_i64().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        station.favicon_url.as_deref(),
+        Some("https://images.example.test/metal-one.ico")
+    );
+}
+
+#[test]
+fn rad_8_a_failed_radio_favicon_lookup_never_blocks_adding_the_station() {
+    let dir = TempDir::new().unwrap();
+    let path = fixture_db(&dir);
+    let fixtures = TempDir::new().unwrap();
+    std::fs::write(
+        fixtures.path().join("servers.json"),
+        r#"[{"name":"fixture.radio-browser.test"}]"#,
+    )
+    .unwrap();
+    set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
+    set_bool_setting(&path, "online-sources-enabled", true);
+    set_bool_setting(&path, "module.radio.enabled", true);
+    let mut client =
+        McpClient::start_with_env(&path, &[("REPRISE_RADIO_FIXTURE_DIR", fixtures.path())]);
+
+    let added = structured_ok(&client.call_tool(
+        "music_manage_radio",
+        json!({
+            "action": "add",
+            "url": "https://radio.example.test/no-directory-entry",
+            "name": "Unlisted Radio"
+        }),
+    ));
+
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let station = reprise_core::radio::station::get(&db, added["id"].as_i64().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(station.name, "Unlisted Radio");
+    assert_eq!(station.favicon_url, None);
+}
+
+#[test]
 fn edits_and_removes_a_subscription_without_deleting_downloads() {
     use reprise_core::podcasts::feed::ParsedEpisode;
     use reprise_core::podcasts::store::{self, NewSubscription};
@@ -313,6 +391,8 @@ fn adds_edits_and_removes_a_radio_favorite_without_echoing_its_stream_url() {
             "action": "add",
             "url": "https://radio.example.test/live?token=secret",
             "name": "Metal One",
+            "homepage": "https://radio.example.test/",
+            "favicon_url": "https://images.example.test/metal-one.png",
             "genre": "Metal",
             "codec": "MP3",
             "bitrate_kbps": 192,
@@ -325,6 +405,19 @@ fn adds_edits_and_removes_a_radio_favorite_without_echoing_its_stream_url() {
     assert_eq!(added["name"], "Metal One");
     assert_eq!(added["country_code"], "DE");
     assert_no_leaks(&serde_json::to_string(&added_response).unwrap());
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let stored = reprise_core::radio::station::get(&db, station_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        stored.homepage.as_deref(),
+        Some("https://radio.example.test/")
+    );
+    assert_eq!(
+        stored.favicon_url.as_deref(),
+        Some("https://images.example.test/metal-one.png")
+    );
+    drop(db);
 
     let edited = structured_ok(&client.call_tool(
         "music_manage_radio",

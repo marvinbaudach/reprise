@@ -5007,8 +5007,9 @@ listening statistics.
   through a module of their own (`module.source_images.enabled`) and are
   subject to `NET-1a`: a cache hit is always shown, regardless of the gate — a
   cache miss triggers a fetch only when the global gate **and** the module are
-  both active, otherwise the source glyph stays, never an error image. The pure
-  fetch and cache policy lives, testable without a display, in
+  both active, otherwise the surface's source fallback stays, never an error
+  image (`RAD-7` defines the radio list's initials fallback). The pure fetch
+  and cache policy lives, testable without a display, in
   `reprise_core::remote_image` (no gtk4/libadwaita/gstreamer/zbus); decoding
   and display stay in the GNOME crate. The on-disk cache is limited to
   `MAX_CACHE_ENTRIES` (300) entries and, when exceeded, deterministically
@@ -5655,6 +5656,23 @@ listening statistics.
   local comparison cannot mark (for example, "metal" and "Métal"). As in
   `FIL-5` and `POD-25`, that listed but unaccented row is an accepted gap,
   never a wrong row.
+- **RAD-7** [active] [gtk] — Every station row has cover-shaped identity. A
+  stored station image uses `SRC-11`'s gated cache and decode path; without a
+  usable image the radio list shows up to two uppercase initials from the
+  shared artist-avatar helper (or `?` for a blank name), never the generic
+  microphone glyph. The fallback uses a 16 px, weight-700 accent label on the
+  shared 155-degree accent/window gradient with the same 8 px radius as source
+  covers. This exception belongs only to the radio list; podcast and channel
+  fallbacks remain unchanged.
+- **RAD-8** [active] [core] [gtk] — Adding a radio station may fill a missing
+  favicon from radio-browser only under the Radio online gate and only with
+  secure identity: a matching supplied UUID, an exactly equal resolved stream
+  URL, or exactly one trimmed case-insensitive exact-name result, in that
+  priority order. Empty favicons, ambiguous exact names and approximate names
+  are misses. A closed gate performs no lookup, and every lookup miss or
+  provider failure is best-effort: the station is still added and `RAD-7`
+  supplies its visible fallback. An explicitly supplied HTTP(S) favicon or
+  homepage is stored without lookup.
 
 ## AG. Runtime service (headless control)
 

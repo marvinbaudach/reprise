@@ -51,6 +51,12 @@ pub struct ManageRadioParams {
     pub country_code: Option<String>,
     #[serde(default)]
     pub uuid: Option<String>,
+    /// Optional HTTP(S) station homepage for `add` or `edit`.
+    #[serde(default)]
+    pub homepage: Option<String>,
+    /// Optional HTTP(S) station artwork for `add` or `edit`.
+    #[serde(default)]
+    pub favicon_url: Option<String>,
     #[serde(default)]
     pub votes: Option<i64>,
 }
@@ -175,12 +181,16 @@ fn add_radio(
                 "radio stream returned no station name; provide name explicitly".to_owned(),
             )
         })?;
+    let uuid = normalized(params.uuid.as_deref());
+    let homepage = optional_http_url(params.homepage.as_deref(), "homepage")?;
+    let favicon_url = optional_http_url(params.favicon_url.as_deref(), "favicon_url")?
+        .or_else(|| lookup_radio_favicon(db, uuid.as_deref(), &name, &stream_url));
     let station = reprise_core::radio::station::NewStation {
-        uuid: normalized(params.uuid.as_deref()),
+        uuid,
         name,
         stream_url,
-        homepage: None,
-        favicon_url: None,
+        homepage,
+        favicon_url,
         genre: normalized(params.genre.as_deref())
             .or_else(|| probe.as_ref().and_then(|value| value.genre.clone())),
         codec: normalized(params.codec.as_deref()).or_else(|| {
@@ -212,6 +222,8 @@ fn edit_radio(
         && params.codec.is_none()
         && params.bitrate_kbps.is_none()
         && params.country_code.is_none()
+        && params.homepage.is_none()
+        && params.favicon_url.is_none()
         && params.votes.is_none()
     {
         return Err(DataError::InvalidInput(
@@ -234,8 +246,14 @@ fn edit_radio(
         uuid: current.uuid,
         name,
         stream_url,
-        homepage: current.homepage,
-        favicon_url: current.favicon_url,
+        homepage: match params.homepage.as_deref() {
+            Some(value) => optional_http_url(Some(value), "homepage")?,
+            None => current.homepage,
+        },
+        favicon_url: match params.favicon_url.as_deref() {
+            Some(value) => optional_http_url(Some(value), "favicon_url")?,
+            None => current.favicon_url,
+        },
         genre: params
             .genre
             .as_deref()
@@ -569,6 +587,98 @@ fn normalized(value: Option<&str>) -> Option<String> {
 
 fn normalized_country(value: Option<&str>) -> Option<String> {
     normalized(value).map(|value| value.to_ascii_uppercase())
+}
+
+fn optional_http_url(value: Option<&str>, field: &str) -> Result<Option<String>, DataError> {
+    let Some(value) = normalized(value) else {
+        return Ok(None);
+    };
+    required_http_url(Some(&value), &format!("{field} must be HTTP or HTTPS"))?;
+    Ok(Some(value))
+}
+
+fn lookup_radio_favicon(
+    db: &reprise_core::db::Db,
+    uuid: Option<&str>,
+    name: &str,
+    stream_url: &str,
+) -> Option<String> {
+    use reprise_core::radio::search::{self, SearchOrder};
+
+    if !reprise_core::online_sources::network_allowed_or_off(
+        db,
+        &reprise_core::modules::RADIO_MODULE,
+    ) {
+        return None;
+    }
+    if let Some(uuid) = uuid {
+        let candidates = reprise_core::radio::servers::try_servers(|server| {
+            let body = reprise_core::radio::http::get(&radio_uuid_url(server, uuid))?;
+            reprise_core::radio::search::parse_candidates(&body)
+        })
+        .unwrap_or_default();
+        if let Some(favicon) = favicon_for_strong_identity(&candidates, Some(uuid), stream_url) {
+            return Some(favicon);
+        }
+    }
+    if let Ok(Some(candidate)) = search::find_by_url(stream_url) {
+        if let Some(favicon) = favicon_for_strong_identity(&[candidate], uuid, stream_url) {
+            return Some(favicon);
+        }
+    }
+    let candidates = search::search(name, SearchOrder::Votes).ok()?;
+    favicon_for_identity(&candidates, uuid, name, stream_url)
+}
+
+fn radio_uuid_url(server: &str, uuid: &str) -> String {
+    let mut url = url::Url::parse(&format!(
+        "{}/json/stations/byuuid",
+        server.trim_end_matches('/')
+    ))
+    .expect("radio-browser server URLs are normalized");
+    url.path_segments_mut()
+        .expect("radio-browser server URLs can carry path segments")
+        .push(uuid.trim());
+    url.into()
+}
+
+fn favicon_for_strong_identity(
+    candidates: &[reprise_core::radio::search::StationCandidate],
+    uuid: Option<&str>,
+    stream_url: &str,
+) -> Option<String> {
+    if let Some(uuid) = uuid {
+        if let Some(favicon) = candidates
+            .iter()
+            .filter(|candidate| candidate.uuid == uuid)
+            .find_map(|candidate| candidate.favicon_url.clone())
+        {
+            return Some(favicon);
+        }
+    }
+    candidates
+        .iter()
+        .filter(|candidate| candidate.url_resolved == stream_url)
+        .find_map(|candidate| candidate.favicon_url.clone())
+}
+
+fn favicon_for_identity(
+    candidates: &[reprise_core::radio::search::StationCandidate],
+    uuid: Option<&str>,
+    name: &str,
+    stream_url: &str,
+) -> Option<String> {
+    if let Some(favicon) = favicon_for_strong_identity(candidates, uuid, stream_url) {
+        return Some(favicon);
+    }
+    let mut exact_names = candidates
+        .iter()
+        .filter(|candidate| candidate.name.trim().eq_ignore_ascii_case(name.trim()));
+    let candidate = exact_names.next()?;
+    if exact_names.next().is_some() {
+        return None;
+    }
+    candidate.favicon_url.clone()
 }
 
 fn required_id(value: Option<i64>, message: &str) -> Result<i64, DataError> {
