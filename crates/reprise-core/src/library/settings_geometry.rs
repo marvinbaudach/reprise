@@ -64,6 +64,22 @@ pub fn set_section_header_height(
     set_height_in(db.conn(), section_header_height_key(density), height)
 }
 
+pub fn set_row_and_section_header_heights(
+    db: &crate::db::Db,
+    density: ListDensity,
+    row_height: f64,
+    section_header_height: f64,
+) -> Result<(), SqlError> {
+    crate::events::in_txn(db.conn(), |conn| {
+        set_height_in(conn, row_height_key(density), Some(row_height))?;
+        set_height_in(
+            conn,
+            section_header_height_key(density),
+            Some(section_header_height),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::set_setting_in;
@@ -113,6 +129,22 @@ mod tests {
         assert_eq!(
             get_section_header_height(&db, ListDensity::Standard).unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn settled_row_and_header_heights_are_written_together() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+
+        set_row_and_section_header_heights(&db, ListDensity::Standard, 34.0, 38.0).unwrap();
+
+        assert_eq!(
+            get_row_height(&db, ListDensity::Standard).unwrap(),
+            Some(34.0)
+        );
+        assert_eq!(
+            get_section_header_height(&db, ListDensity::Standard).unwrap(),
+            Some(38.0)
         );
     }
 }

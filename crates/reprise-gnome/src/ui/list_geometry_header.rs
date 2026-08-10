@@ -5,8 +5,8 @@ use std::cell::Cell;
 use reprise_core::library::settings::{self, ListDensity};
 
 use crate::ui::list_geometry::{
-    invalidate_row_height, remember_preferred_height, RowHeight, RowHeightSource, RowMeasurement,
-    TrustedRowHeight, INVALIDATED_ROW_HEIGHT,
+    invalidate_row_height, remember_preferred_height, RowHeight, RowMeasurement, TrustedRowHeight,
+    INVALIDATED_ROW_HEIGHT,
 };
 
 fn minimum_height() -> RowHeight {
@@ -52,21 +52,31 @@ pub(in crate::ui) fn load_height(
     TrustedRowHeight::from_cache(cache.get()).unwrap_or(loaded)
 }
 
-pub(in crate::ui) fn remember_measured_height(
-    db: &reprise_core::db::Db,
-    density: ListDensity,
-    cache: &Cell<f64>,
-    measurement: RowMeasurement,
-) -> Option<RowHeight> {
+pub(in crate::ui) fn measured_height(measurement: RowMeasurement) -> Option<RowHeight> {
     if !measurement.is_uniform() {
         return None;
     }
-    let height = measurement.modal()?;
-    remember_preferred_height(cache, TrustedRowHeight::measured(height));
-    if let Err(error) = settings::set_section_header_height(db, density, Some(height.pixels())) {
-        tracing::warn!(%error, "could not persist settled section-header height");
+    measurement.modal()
+}
+
+pub(in crate::ui) fn remember_settled_heights(
+    db: &reprise_core::db::Db,
+    density: ListDensity,
+    row_cache: &Cell<f64>,
+    header_cache: &Cell<f64>,
+    row_height: RowHeight,
+    header_height: RowHeight,
+) {
+    if let Err(error) = settings::set_row_and_section_header_heights(
+        db,
+        density,
+        row_height.pixels(),
+        header_height.pixels(),
+    ) {
+        tracing::warn!(%error, "could not persist settled list geometry");
     }
-    Some(height)
+    remember_preferred_height(row_cache, TrustedRowHeight::measured(row_height));
+    remember_preferred_height(header_cache, TrustedRowHeight::measured(header_height));
 }
 
 pub(in crate::ui) fn invalidate_height(cache: &Cell<f64>) {
@@ -75,6 +85,8 @@ pub(in crate::ui) fn invalidate_height(cache: &Cell<f64>) {
 
 #[cfg(test)]
 mod tests {
+    use crate::ui::list_geometry::RowHeightSource;
+
     use super::*;
 
     #[test]
@@ -94,12 +106,7 @@ mod tests {
         assert_eq!(trusted.source, RowHeightSource::Measured);
 
         assert_eq!(
-            remember_measured_height(
-                &db,
-                ListDensity::Standard,
-                &cache,
-                measurement_from_widget_heights([36, 40]),
-            ),
+            measured_height(measurement_from_widget_heights([36, 40])),
             None
         );
         assert_eq!(load_height(&db, ListDensity::Standard, &cache), trusted);
@@ -119,13 +126,17 @@ mod tests {
         assert_eq!(cold.height, RowHeight::new(36.0).unwrap());
 
         assert_eq!(
-            remember_measured_height(
-                &db,
-                ListDensity::Standard,
-                &cache,
-                measurement_from_widget_heights([38, 38]),
-            ),
+            measured_height(measurement_from_widget_heights([38, 38])),
             RowHeight::new(38.0)
+        );
+        let row_cache = Cell::new(0.0);
+        remember_settled_heights(
+            &db,
+            ListDensity::Standard,
+            &row_cache,
+            &cache,
+            RowHeight::new(34.0).unwrap(),
+            RowHeight::new(38.0).unwrap(),
         );
         let measured = load_height(&db, ListDensity::Standard, &cache);
         assert_eq!(measured.source, RowHeightSource::Measured);
