@@ -49,6 +49,7 @@ struct ConstraintState {
     active: bool,
     snapshot: Option<PanelVisibility>,
     changed_by_user: bool,
+    first_frame_done: bool,
 }
 
 impl ConstraintState {
@@ -63,6 +64,22 @@ impl ConstraintState {
         if self.active {
             self.changed_by_user = true;
         }
+    }
+
+    fn note_first_frame(&mut self) {
+        self.first_frame_done = true;
+    }
+
+    /// Whether a collapse is worth telling the user about.
+    ///
+    /// A window that opens below the breakpoint closes its panels during the
+    /// very first layout pass, before anything has been on screen. Announcing
+    /// that is a message about a non-event: the user saw no panels close, and
+    /// the Undo it offers restores a state they never chose. Every collapse
+    /// after the first frame is the consequence of a real resize and is
+    /// announced as before.
+    fn announces_collapse(&self) -> bool {
+        self.first_frame_done
     }
 
     fn should_enforce_constraint(&self) -> bool {
@@ -208,11 +225,15 @@ pub(in crate::ui) fn install(
         let active_toast = active_toast.clone();
         breakpoint.connect_apply(move |_| {
             let current = visibility(&library, &now_playing, &conn);
+            let announces = state.borrow().announces_collapse();
             let Some(target) = state.borrow_mut().apply(current) else {
                 return;
             };
             set_transient_visibility(&applying, &library, &now_playing, target);
 
+            if !announces {
+                return;
+            }
             let Some(overlay) = overlay.upgrade() else {
                 return;
             };
@@ -260,6 +281,15 @@ pub(in crate::ui) fn install(
     }
 
     window.add_breakpoint(breakpoint);
+
+    // Layout runs on the frame clock (GDK_PRIORITY_REDRAW), which outranks the
+    // default idle - so a breakpoint that fires because the window was born
+    // narrow has already applied by the time this runs. From here on, every
+    // collapse is one the user caused and gets its toast.
+    {
+        let state = state.clone();
+        gtk4::glib::idle_add_local_once(move || state.borrow_mut().note_first_frame());
+    }
 }
 
 #[cfg(test)]
@@ -319,6 +349,48 @@ mod tests {
         changed.apply(before_snap);
         changed.note_user_change();
         assert_eq!(changed.unapply(), None);
+    }
+
+    #[test]
+    fn style_7_default_window_is_not_born_below_its_own_breakpoint() {
+        let default = reprise_core::library::session::SessionState::default();
+
+        assert!(
+            default.window_width > CONSTRAINED_WIDTH,
+            "a fresh profile must not open at a width that closes both side \
+             panels during the first layout pass: {} vs {CONSTRAINED_WIDTH}",
+            default.window_width,
+        );
+    }
+
+    #[test]
+    fn style_7_a_collapse_before_the_first_frame_is_not_announced() {
+        let open = PanelVisibility {
+            library: true,
+            now_playing: true,
+        };
+
+        let born_narrow = ConstraintState::default();
+        assert!(
+            !born_narrow.announces_collapse(),
+            "a window that opens below the breakpoint closes panels the user \
+             never saw - there is nothing to announce and nothing to undo"
+        );
+
+        let mut resized_by_user = ConstraintState::default();
+        resized_by_user.note_first_frame();
+        assert!(
+            resized_by_user.announces_collapse(),
+            "a collapse caused by a real resize keeps its toast"
+        );
+        assert_eq!(
+            resized_by_user.apply(open),
+            Some(PanelVisibility {
+                library: false,
+                now_playing: false,
+            }),
+            "the announcement gate must not change which panels close"
+        );
     }
 
     #[test]

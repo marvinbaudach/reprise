@@ -17,8 +17,12 @@ pub use super::session_lifecycle::{
 
 pub const SESSION_KEY: &str = "ui.session.v1";
 const VERSION: u8 = 1;
-const DEFAULT_WIDTH: i32 = 1200;
-const DEFAULT_HEIGHT: i32 = 800;
+// Kept above the width at which the GNOME frontend closes both side panels
+// (`responsive_side_panels::CONSTRAINED_WIDTH`, 1400). A fresh profile that
+// opens below that threshold snaps its own layout shut on the first frame,
+// which is how every window in the 2026-08-10 exploratory run started.
+const DEFAULT_WIDTH: i32 = 1440;
+const DEFAULT_HEIGHT: i32 = 900;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
