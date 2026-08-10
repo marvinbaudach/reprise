@@ -9,7 +9,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
-import de.reprise.spike.scene.CoreShape
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
 import org.junit.Assert.assertArrayEquals
@@ -63,9 +62,9 @@ class NowPlayingSceneVerificationTest {
      * every pixel it drew must be the ones from before those three seconds.
      */
     @Test
-    fun paused_fog_and_corona_raster_is_pixel_identical_three_seconds_later() {
+    fun paused_fog_raster_is_pixel_identical_three_seconds_later() {
         val frames = patternedFrames(frameCount = 80)
-        val state = SceneState(frames, CoreShape("Still", "Reprise"))
+        val state = SceneState(frames)
         val clock = AdvancingSceneClock()
         val paused = ScenePositionSample(
             positionMs = PAUSED_POSITION_MS,
@@ -87,7 +86,7 @@ class NowPlayingSceneVerificationTest {
     }
 
     private fun angleTrace(frames: SpectrogramFrames): IntArray {
-        val state = SceneState(frames, CoreShape("Repeatable", "Reprise"))
+        val state = SceneState(frames)
         return IntArray(frames.frameCount * 2).also { trace ->
             repeat(frames.frameCount) { frame ->
                 state.advanceTo(frame)
@@ -114,12 +113,6 @@ class NowPlayingSceneVerificationTest {
                 fogLevel = state.fogLevel,
                 opacity = 0.5f,
                 rotationsEnabled = true,
-            )
-            drawNowPlayingBurst(
-                state = state,
-                bloomBuffer = BurstBloomBuffer(),
-                opacity = 0.5f,
-                effects = BurstEffects(bloom = false, hotRay = false),
             )
         }
         return IntArray(bitmap.width * bitmap.height).also { pixels ->
@@ -177,7 +170,7 @@ class NowPlayingSceneVerificationTest {
             frameRateHz = 20,
             cells = ByteArray(SETTLE_FRAME_COUNT * 24) { cell.toByte() },
         )
-        return SceneState(frames, CoreShape("Fog response", "Reprise")).also { state ->
+        return SceneState(frames).also { state ->
             repeat(frames.frameCount) { frame -> state.advanceTo(frame) }
         }
     }

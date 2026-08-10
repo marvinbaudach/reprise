@@ -42,7 +42,7 @@ internal class SceneDriver(
         private set
     private var framesWithheld = false
 
-    fun tick(transitionRunning: Boolean = false): Boolean {
+    fun tick(): Boolean {
         if (!framesAllowed()) {
             noteFramesWithheld()
             return false
@@ -54,7 +54,7 @@ internal class SceneDriver(
         state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
         framesWithheld = false
         lastDrivenFrameIndex = frameIndex
-        return state.revision != before || transitionRunning
+        return state.revision != before
     }
 
     /**
@@ -112,7 +112,6 @@ internal fun DriveScene(
     state: SceneState,
     playback: PlaybackUiState,
     controller: AmbientMotionController,
-    transitionRunning: Boolean,
 ): Int {
     val source = remember(state) { MutableScenePositionSource() }
     val driver = remember(frames, state) {
@@ -142,17 +141,17 @@ internal fun DriveScene(
         animationsEnabled,
         playback.isPlaying,
         playback.positionMs,
-        transitionRunning,
     ) {
         if (!runtimeActive) {
             driver.noteFramesWithheld()
             return@LaunchedEffect
         }
+        if (frames.frameCount == 0) return@LaunchedEffect
         do {
             withFrameNanos {
-                if (driver.tick(transitionRunning)) drawRevision += 1
+                if (driver.tick()) drawRevision += 1
             }
-        } while (animationsEnabled && (playback.isPlaying || transitionRunning))
+        } while (animationsEnabled && playback.isPlaying)
     }
     return drawRevision
 }

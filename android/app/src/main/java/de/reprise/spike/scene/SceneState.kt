@@ -1,17 +1,11 @@
 package de.reprise.spike.scene
 
-data class Transient(
-    val bandIndex: Int,
-    val excess: Float,
-)
-
 /** The deterministic scene state stepped only by consumed spectrogram frames. */
 class SceneState(
     private val frames: SpectrogramFrames,
-    val coreShape: CoreShape,
 ) {
     private val fogEnvelopes = BandEnvelopes.fog(frames.bandCount, frames.frameRateHz)
-    private val burstEnvelopes = BandEnvelopes.burst(frames.bandCount, frames.frameRateHz)
+    private val motionEnvelopes = BandEnvelopes.motion(frames.bandCount, frames.frameRateHz)
     private val rawBands = FloatArray(frames.bandCount)
     private val targets = FloatArray(frames.bandCount)
     private var lastFrameIndex: Int? = null
@@ -19,26 +13,21 @@ class SceneState(
     /**
      * The live follower array, handed out by reference on purpose.
      *
-     * The burst reads its band arrays once per corona stroke — 168 times per
-     * scene pass, twice that once the bloom pass is counted — so a defensive
-     * copy per read would allocate some 340 arrays per frame on the very path
-     * this class exists to feed. The contract instead: the scene is stepped and
-     * read on the main thread only, and callers treat the array as read-only.
+     * The canvas reads its band arrays repeatedly, so a defensive copy per read
+     * would allocate on the frame path this class exists to feed. The contract
+     * instead: the scene is stepped and read on the main thread only, and callers
+     * treat the array as read-only.
      * Anything that must outlive the next [advanceTo] takes its own `copyOf()`.
      */
     val fogBands: FloatArray
         get() = fogEnvelopes.values
 
-    /** The live burst follower array. See [fogBands] for the read-only contract. */
-    val burstBands: FloatArray
-        get() = burstEnvelopes.values
+    /** The fast follower bank that keeps fog rotation responsive to the music. */
+    val motionBands: FloatArray
+        get() = motionEnvelopes.values
     var fogLevel: Float = 0f
         private set
-    var level: Float = 0f
-        private set
-    var bass: Float = 0f
-        private set
-    var transient: Transient? = null
+    var motionLevel: Float = 0f
         private set
     var fogAngleA: Float = 0f
         private set
@@ -81,19 +70,15 @@ class SceneState(
         val targetIndex = frames.clampFrameIndex(frameIndex)
         readRaw(targetIndex)
         val fogChanged = fogEnvelopes.adopt(rawBands)
-        val burstChanged = burstEnvelopes.adopt(rawBands)
+        val motionChanged = motionEnvelopes.adopt(rawBands)
         val oldFogLevel = fogLevel
-        val oldLevel = level
-        val oldBass = bass
-        val oldTransient = transient
+        val oldMotionLevel = motionLevel
         fogLevel = mean(fogBands).coerceIn(0f, 1f)
-        level = mean(burstBands)
-        bass = bassMean(burstBands)
-        transient = strongestTransient(rawBands, fogBands)
+        motionLevel = mean(motionBands)
         lastFrameIndex = targetIndex
         if (
-            fogChanged || burstChanged || fogLevel.changedFrom(oldFogLevel) ||
-            level.changedFrom(oldLevel) || bass.changedFrom(oldBass) || transient != oldTransient
+            fogChanged || motionChanged || fogLevel.changedFrom(oldFogLevel) ||
+            motionLevel.changedFrom(oldMotionLevel)
         ) {
             revision += 1
         }
@@ -105,22 +90,18 @@ class SceneState(
             targets[band] = Lookahead.target(frames, frameIndex, band)
         }
         val fogChanged = fogEnvelopes.step(targets)
-        val burstChanged = burstEnvelopes.step(targets)
+        val motionChanged = motionEnvelopes.step(targets)
         val oldFogLevel = fogLevel
-        val oldLevel = level
-        val oldBass = bass
-        val oldTransient = transient
+        val oldMotionLevel = motionLevel
         val oldAngleA = fogAngleA
         val oldAngleB = fogAngleB
         fogLevel = mean(fogBands).coerceIn(0f, 1f)
-        level = mean(burstBands)
-        bass = bassMean(burstBands)
-        transient = strongestTransient(rawBands, fogBands)
-        fogAngleA = EnergyIntegrator.advance(fogAngleA, level, FOG_FACTOR_A)
-        fogAngleB = EnergyIntegrator.advance(fogAngleB, level, FOG_FACTOR_B)
+        motionLevel = mean(motionBands)
+        fogAngleA = EnergyIntegrator.advance(fogAngleA, motionLevel, FOG_FACTOR_A)
+        fogAngleB = EnergyIntegrator.advance(fogAngleB, motionLevel, FOG_FACTOR_B)
         if (
-            fogChanged || burstChanged || fogLevel.changedFrom(oldFogLevel) ||
-            level.changedFrom(oldLevel) || bass.changedFrom(oldBass) || transient != oldTransient ||
+            fogChanged || motionChanged || fogLevel.changedFrom(oldFogLevel) ||
+            motionLevel.changedFrom(oldMotionLevel) ||
             fogAngleA.changedFrom(oldAngleA) || fogAngleB.changedFrom(oldAngleB)
         ) {
             revision += 1
@@ -133,29 +114,8 @@ class SceneState(
         }
     }
 
-    private fun strongestTransient(raw: FloatArray, fog: FloatArray): Transient? {
-        var strongestBand = -1
-        var strongestExcess = TRANSIENT_THRESHOLD
-        raw.indices.forEach { band ->
-            val excess = raw[band] - fog[band]
-            if (excess > strongestExcess) {
-                strongestBand = band
-                strongestExcess = excess
-            }
-        }
-        return if (strongestBand < 0) null else Transient(strongestBand, strongestExcess)
-    }
-
     private fun mean(values: FloatArray): Float =
         if (values.isEmpty()) 0f else values.sum() / values.size
-
-    private fun bassMean(values: FloatArray): Float {
-        val count = minOf(BASS_BAND_COUNT, values.size)
-        if (count == 0) return 0f
-        var sum = 0f
-        repeat(count) { sum += values[it] }
-        return sum / count
-    }
 
     private fun Float.changedFrom(previous: Float): Boolean = toRawBits() != previous.toRawBits()
 
@@ -174,8 +134,6 @@ class SceneState(
          */
         const val CATCH_UP_FRAMES = 1_200
         const val SEEK_FRAMES = 20
-        const val BASS_BAND_COUNT = 4
-        const val TRANSIENT_THRESHOLD = 0.18f
         const val FOG_FACTOR_A = 0.9f
         const val FOG_FACTOR_B = -0.6f
     }

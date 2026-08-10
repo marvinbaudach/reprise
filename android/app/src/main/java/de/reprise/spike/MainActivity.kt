@@ -102,10 +102,6 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val analysis by analysisDelegate
-    private val nowPlayingViewSettings by lazy { AndroidNowPlayingViewSettings(library) }
-    private val injectedNowPlayingViewSettings by lazy {
-        InjectedNowPlayingViewSettings(getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE))
-    }
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -170,17 +166,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
-        // Deferred for the same reason as [tracks] and [analysisDelegate]: reading
-        // it opens the library, and onCreate must survive a core that will not
-        // load so that restoreLibrary can show the failure instead of crashing.
-        // The scene asks for it during composition, which is late enough.
-        val activeNowPlayingViewSettings by lazy {
-            if (surfaceProvider == null) {
-                nowPlayingViewSettings
-            } else {
-                injectedNowPlayingViewSettings
-            }
-        }
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
@@ -216,7 +201,6 @@ class MainActivity : ComponentActivity() {
                             LocalTrackArtwork provides surface.artwork(),
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalTrackAnalysis provides surface.trackAnalysis,
-                            LocalNowPlayingViewSettings provides activeNowPlayingViewSettings,
                             LocalAmbientMotionController provides ambientMotion,
                         ) {
                             LibraryScreen(

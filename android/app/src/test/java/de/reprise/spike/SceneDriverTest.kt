@@ -1,6 +1,5 @@
 package de.reprise.spike
 
-import de.reprise.spike.scene.CoreShape
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
 import org.junit.Assert.assertArrayEquals
@@ -59,11 +58,11 @@ class SceneDriverTest {
         )
 
         assertTrue(fixture.driver.tick())
-        val stepped = SceneState(frames, CoreShape("Track", "Artist"))
+        val stepped = SceneState(frames)
         (0..SceneState.CATCH_UP_FRAMES).forEach(stepped::advanceTo)
         assertEquals(SceneState.CATCH_UP_FRAMES, fixture.driver.lastDrivenFrameIndex)
         assertArrayEquals(stepped.fogBands, fixture.state.fogBands, 0f)
-        assertArrayEquals(stepped.burstBands, fixture.state.burstBands, 0f)
+        assertArrayEquals(stepped.motionBands, fixture.state.motionBands, 0f)
         assertEquals(stepped.fogAngleA.toRawBits(), fixture.state.fogAngleA.toRawBits())
         assertEquals(stepped.fogAngleB.toRawBits(), fixture.state.fogAngleB.toRawBits())
     }
@@ -83,7 +82,7 @@ class SceneDriverTest {
         )
 
         assertTrue(fixture.driver.tick())
-        val stepped = SceneState(frames, CoreShape("Track", "Artist"))
+        val stepped = SceneState(frames)
         (0..GAP_FRAMES).forEach(stepped::advanceTo)
         assertArrayEquals(stepped.fogBands, fixture.state.fogBands, 0f)
         assertEquals(stepped.fogAngleA.toRawBits(), fixture.state.fogAngleA.toRawBits())
@@ -138,16 +137,6 @@ class SceneDriverTest {
         assertEquals(500L, SceneDriver.measuredPositionIntervalMs)
     }
 
-    @Test
-    fun transition_is_the_only_non_revision_reason_to_invalidate() {
-        val fixture = driverFixture(
-            sample = ScenePositionSample(positionMs = 500, observedAtNanos = 0, playing = false),
-        )
-        fixture.driver.tick()
-
-        assertFalse(fixture.driver.tick(transitionRunning = false))
-        assertTrue(fixture.driver.tick(transitionRunning = true))
-    }
 }
 
 private data class DriverFixture(
@@ -178,7 +167,7 @@ private fun driverFixture(
     sample: ScenePositionSample,
     frames: SpectrogramFrames = SpectrogramFrames(24, 20, ByteArray(24 * 80) { 180.toByte() }),
 ): DriverFixture {
-    val state = SceneState(frames, CoreShape("Track", "Artist"))
+    val state = SceneState(frames)
     val clock = FakeSceneClock()
     val source = FakeScenePositionSource(sample)
     val power = FakeScenePower()

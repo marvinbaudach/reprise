@@ -302,7 +302,8 @@ class MainActivityConfigurationTest {
         compose.onNodeWithTag("library-mini-player").performClick()
         compose.onNodeWithTag("now-playing-cover").assertWidthIsEqualTo(364.dp)
         compose.onNodeWithTag("now-playing-play").assertWidthIsEqualTo(80.dp)
-        compose.onNodeWithContentDescription("Collapse Now Playing").performClick()
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+        compose.waitForIdle()
 
         recreateAt("w916dp-h412dp-land")
 

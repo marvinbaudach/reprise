@@ -25,6 +25,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -223,7 +224,7 @@ class ComposeBehaviorTest {
         miniPlayer.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription))
 
         miniPlayer.performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onAllNodesWithText("First Song").assertCountEquals(3)
 
         // The full-screen sheet should intercept pointer hit testing. Calling
@@ -235,7 +236,7 @@ class ComposeBehaviorTest {
         assertEquals(listOf(0, 1), playedIndices)
 
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing-transport").assertDoesNotExist()
         compose.onAllNodesWithText("Second Song").assertCountEquals(2)
     }
 
@@ -311,7 +312,7 @@ class ComposeBehaviorTest {
         val restoredMiniPlayer = compose.onNode(hasClickLabel("Open Now Playing"))
         restoredMiniPlayer.assertTextContains("Rotation Song")
         restoredMiniPlayer.performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
 
         compose.runOnIdle {
             playback = PlaybackUiState(ready = true)
@@ -321,7 +322,7 @@ class ComposeBehaviorTest {
         compose.waitForIdle()
 
         compose.onNode(hasClickLabel("Open Now Playing")).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing-transport").assertDoesNotExist()
         assertEquals(listOf(track.id, track.id), loadedIds)
     }
 
@@ -450,8 +451,8 @@ class ComposeBehaviorTest {
                 }
             }
         }
-        val collapse = compose.onNodeWithContentDescription("Collapse Now Playing")
-        val restTop = collapse.getUnclippedBoundsInRoot().top
+        val transport = compose.onNodeWithTag("now-playing-transport")
+        val restTop = transport.getUnclippedBoundsInRoot().top
 
         compose.runOnIdle {
             val dispatcher = compose.activity.onBackPressedDispatcher
@@ -461,8 +462,8 @@ class ComposeBehaviorTest {
         compose.waitForIdle()
 
         assertFalse(closed)
-        collapse.assertIsDisplayed()
-        val progressedTop = collapse.getUnclippedBoundsInRoot().top
+        transport.assertIsDisplayed()
+        val progressedTop = transport.getUnclippedBoundsInRoot().top
         // A completed drag at halfway drives roughly 39dp of the 64dp full
         // step in practice; the threshold stays well clear of both that and
         // measurement noise so it fails if the translation stops tracking
@@ -495,8 +496,8 @@ class ComposeBehaviorTest {
                 }
             }
         }
-        val collapse = compose.onNodeWithContentDescription("Collapse Now Playing")
-        val restTop = collapse.getUnclippedBoundsInRoot().top
+        val transport = compose.onNodeWithTag("now-playing-transport")
+        val restTop = transport.getUnclippedBoundsInRoot().top
 
         compose.runOnIdle {
             val dispatcher = compose.activity.onBackPressedDispatcher
@@ -504,14 +505,14 @@ class ComposeBehaviorTest {
             dispatcher.dispatchOnBackProgressed(BackEventCompat(0f, 0f, 0.5f, BackEventCompat.EDGE_LEFT))
         }
         compose.waitForIdle()
-        assertTrue(collapse.getUnclippedBoundsInRoot().top.value > restTop.value + PROGRESS_MOTION_THRESHOLD_DP)
+        assertTrue(transport.getUnclippedBoundsInRoot().top.value > restTop.value + PROGRESS_MOTION_THRESHOLD_DP)
 
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.dispatchOnBackCancelled() }
         compose.waitForIdle()
 
         assertFalse(closed)
-        collapse.assertIsDisplayed()
-        assertEquals(restTop.value, collapse.getUnclippedBoundsInRoot().top.value, 0.5f)
+        transport.assertIsDisplayed()
+        assertEquals(restTop.value, transport.getUnclippedBoundsInRoot().top.value, 0.5f)
     }
 
     @Test

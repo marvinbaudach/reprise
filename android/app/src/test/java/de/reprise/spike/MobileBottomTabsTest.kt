@@ -103,13 +103,13 @@ class MobileBottomTabsTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
         compose.onNodeWithTag("library-mini-player").performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onNodeWithTag("library-navigation-bar").assertIsDisplayed()
 
         compose.onNodeWithTag("library-destination-ARTISTS")
             .performTouchInput { click() }
 
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing-transport").assertDoesNotExist()
         compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
         compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
     }
