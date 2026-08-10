@@ -20,7 +20,10 @@ from cua_explore_expectations import (  # noqa: E402
     MUSIC_COLLAPSED_ACTIONABLE_COUNT_BEFORE,
     MUSIC_COLLAPSED_ACTIONABLE_LABELS,
 )
-from oracles import OracleEngine, normalize_snapshot  # noqa: E402
+from driver import CuaExecutor  # noqa: E402
+from explorer import DeterministicExplorer  # noqa: E402
+from oracles import ActionEvidence, OracleEngine, normalize_snapshot  # noqa: E402
+from protocol import ActionGateway, load_mission  # noqa: E402
 from ui_vocabulary import (  # noqa: E402
     invocable_actions,
     is_structural_action,
@@ -35,6 +38,27 @@ def recorded_elements() -> list[dict]:
 
 def load_fixture(path: pathlib.Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+class RecordedTransport:
+    def __init__(self, raw: dict) -> None:
+        self.raw = raw
+        self.calls: list[tuple[str, dict]] = []
+
+    def call(self, tool: str, payload: dict) -> dict:
+        self.calls.append((tool, payload))
+        if tool == "get_window_state":
+            return self.raw
+        return {"effect": "confirmed", "verified": True}
+
+    def resize_window(self, *args):
+        return {}
+
+    def set_connectivity(self, state):
+        return {}
+
+    def wmctrl_geometry(self, window_id):
+        return None
 
 
 class ActionVocabularyTests(unittest.TestCase):
@@ -133,6 +157,66 @@ class NormalizedSnapshotTests(unittest.TestCase):
         self.assertEqual(len(first), 1)
         self.assertEqual(first[0].evidence["action_name"], "foo.bar")
         self.assertEqual(second, [])
+
+
+class DeterministicTargetTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.raw = load_fixture(AMBIGUOUS_CELLS)
+        self.transport = RecordedTransport(self.raw)
+        self.executor = CuaExecutor(
+            self.transport,
+            pid=1,
+            window_id=2,
+            session="recorded",
+            settle_delays=(),
+        )
+
+    def test_structural_cell_collision_uses_the_existing_role_fallback(self) -> None:
+        chosen = self.executor._target(self.raw, "Fixture Album 34")
+
+        self.assertEqual(chosen["element_index"], 118)
+        self.assertEqual(self.executor._ambiguity_notes, {})
+
+    def test_invocable_name_collision_chooses_reading_order_and_fires_once(self) -> None:
+        chosen = self.executor._target(self.raw, "☆")
+
+        self.assertEqual(chosen["element_index"], 35)
+        first = self.executor.execute_evidence(
+            ActionEvidence.activate("☆", expect_effect="idempotent")
+        )
+        second = self.executor.execute_evidence(
+            ActionEvidence.activate("☆", expect_effect="idempotent")
+        )
+        first_findings = [
+            item for item in first.findings if item.code == "ambiguous-accessible-name"
+        ]
+        second_findings = [
+            item for item in second.findings if item.code == "ambiguous-accessible-name"
+        ]
+
+        self.assertEqual(len(first_findings), 1)
+        self.assertEqual(second_findings, [])
+        evidence = first_findings[0].evidence
+        self.assertEqual(evidence["count"], 21)
+        self.assertEqual(evidence["chosen"], chosen["frame"])
+        self.assertLessEqual(len(evidence["alternatives"]), 8)
+
+    def test_recorded_explorer_reaches_ten_actions_without_target_failure(self) -> None:
+        mission = load_mission(
+            EXPLORE_ROOT / "missions" / "first-time-exploration.json"
+        )
+        explorer = DeterministicExplorer(mission, seed=11)
+        gateway = ActionGateway(mission)
+        observation = self.executor.observe()
+
+        for _step in range(10):
+            proposal = explorer.propose(observation)
+            accepted = gateway.accept(proposal, observation)
+            result = self.executor.execute(accepted)
+            observation = self.executor.observation_from_snapshot(result.after)
+
+        clicks = [call for call in self.transport.calls if call[0] == "click"]
+        self.assertEqual(len(clicks), 10)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ from actions import (
 )
 from oracles import ActionEvidence, Finding, OracleEngine, Snapshot, normalize_snapshot
 from protocol import ContractError, SCHEMA_VERSION
-from ui_vocabulary import ACTIONABLE_ROLES, canonical_role
+from ui_vocabulary import ACTIONABLE_ROLES, canonical_role, invocable_actions
 
 
 class DriverError(RuntimeError):
@@ -174,6 +174,8 @@ class CuaExecutor:
         self.geometry_failures: list[str] = []
         self.geometry_calibration: Any | None = None
         self.geometry_resolution: Any | None = None
+        self._ambiguity_notes: dict[tuple[str, str], dict[str, Any]] = {}
+        self._reported_ambiguities: set[tuple[str, str]] = set()
         self._hover_cursor_disabled = False
         self._state_counter = 0
         self._step_counter = 0
@@ -273,6 +275,7 @@ class CuaExecutor:
         findings = list(
             self.oracle_engine.analyze(evidence, before, after, settled=(after,))
         )
+        findings.extend(self._new_ambiguity_findings())
         if self.evidence_dir is None:
             hover_findings = analyze_hover(
                 pathlib.Path("missing-hover-before.png"),
@@ -397,12 +400,15 @@ class CuaExecutor:
             snapshot_ms=tuple(self._snapshot_durations_ms),
             snapshot_ms_before_first_change=snapshot_ms_before_first_change,
         )
-        findings = self.oracle_engine.analyze(
-            completed_evidence,
-            before,
-            after,
-            settled=tuple(settled),
+        findings = list(
+            self.oracle_engine.analyze(
+                completed_evidence,
+                before,
+                after,
+                settled=tuple(settled),
+            )
         )
+        findings.extend(self._new_ambiguity_findings())
         result = StepResult(
             before=before,
             after=after,
@@ -628,14 +634,44 @@ class CuaExecutor:
         # The same label appears several times - a cell, a button and a toggle
         # button can all read "Add filter" - and only one of them carries the
         # AT-SPI action. Picking by role landed on a shell that never had one.
-        carrying = [item for item in matches if item.get("actions")]
+        carrying = [
+            item for item in matches if invocable_actions(item.get("actions", ()))
+        ]
         if len(carrying) == 1:
             return carrying[0]
         if len(carrying) > 1:
-            raise DriverError(
-                f"more than one node labelled {label!r} carries an action; "
-                "refusing to guess which one the user would mean"
+            def reading_order(item: Mapping[str, Any]) -> tuple[float, float, int]:
+                frame = item.get("frame")
+                frame = frame if isinstance(frame, dict) else {}
+
+                def coordinate(name: str) -> float:
+                    value = frame.get(name)
+                    return (
+                        float(value)
+                        if isinstance(value, (int, float)) and not isinstance(value, bool)
+                        else float("inf")
+                    )
+
+                index = item.get("element_index")
+                return coordinate("y"), coordinate("x"), index if isinstance(index, int) else 2**63
+
+            carrying.sort(key=reading_order)
+            chosen = carrying[0]
+            role = canonical_role(str(chosen.get("role", "")))
+            key = role, label
+            self._ambiguity_notes.setdefault(
+                key,
+                {
+                    "target": label,
+                    "role": role,
+                    "count": len(carrying),
+                    "chosen": dict(chosen.get("frame", {})),
+                    "alternatives": [
+                        dict(item.get("frame", {})) for item in carrying[1:9]
+                    ],
+                },
             )
+            return chosen
         actionable = [
             item
             for item in matches
@@ -646,7 +682,7 @@ class CuaExecutor:
     def target_carries_action(
         self, raw: Mapping[str, Any], label: str | None
     ) -> bool | None:
-        """Does any node with this label offer an action? None when unknown."""
+        """Does any node with this label offer an invocable action?"""
         structured = raw.get("structuredContent")
         container = structured if isinstance(structured, dict) else raw
         elements = container.get("elements", [])
@@ -657,7 +693,26 @@ class CuaExecutor:
         ]
         if not any("actions" in item for item in matches):
             return None
-        return any(item.get("actions") for item in matches)
+        return any(invocable_actions(item.get("actions", ())) for item in matches)
+
+    def _new_ambiguity_findings(self) -> list[Finding]:
+        findings = []
+        for key, evidence in self._ambiguity_notes.items():
+            if key in self._reported_ambiguities:
+                continue
+            self._reported_ambiguities.add(key)
+            findings.append(
+                Finding(
+                    "ambiguous-accessible-name",
+                    "warning",
+                    0.8,
+                    f"{evidence['count']} nodes share the accessible name "
+                    f"'{evidence['target']}'; assistive technology cannot tell them apart.",
+                    evidence,
+                    blocks_gate=False,
+                )
+            )
+        return findings
 
     def _address(self, target: Mapping[str, Any], dispatch: str) -> Mapping[str, Any]:
         if dispatch == "ax":
