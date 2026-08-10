@@ -57,7 +57,7 @@ import kotlin.math.roundToInt
 private const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
 private const val PLAYED_CENTRE_FRACTION = 0.34f
-private const val TITLE_TWO_LINE_HEIGHT_DP = 58
+private const val TITLE_TO_ARTIST_GAP_DP = 6
 
 @Composable
 internal fun NowPlayingScene(
@@ -273,11 +273,14 @@ private fun SceneTitle(
             .padding(horizontal = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // The title takes the height it needs rather than always reserving two
+        // lines: the reservation left a visible hole under every one-line title,
+        // and it was buying less than it looked. Everything below this block —
+        // seek bar, transport — is placed against the screen height, so a title
+        // growing to a second line moves the artist line and nothing else.
         Text(
             text = track.title,
-            modifier = Modifier
-                .height(TITLE_TWO_LINE_HEIGHT_DP.dp)
-                .testTag("now-playing-title"),
+            modifier = Modifier.testTag("now-playing-title"),
             style = TextStyle(
                 fontSize = 24.sp,
                 lineHeight = 29.sp,
@@ -288,6 +291,7 @@ private fun SceneTitle(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.height(TITLE_TO_ARTIST_GAP_DP.dp))
         Text(
             text = track.artist.ifBlank { "Unknown artist" },
             style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Light),
