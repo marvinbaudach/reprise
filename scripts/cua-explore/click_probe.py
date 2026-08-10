@@ -132,6 +132,12 @@ def probe_click(
                 "screenshot_out_file": str(path),
             },
         )
+        # Keep the tree behind every screenshot. Roles and labels that exist
+        # only after a control was activated cannot be read back from pixels,
+        # and a probe is the only place a fixture for them can come from.
+        (evidence_dir / f"{stem}.json").write_text(
+            json.dumps(raw, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return raw, path
 
     results: list[ClickResult] = []
