@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,7 +27,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,7 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
@@ -62,7 +69,20 @@ internal fun NowPlayingSheet(
     close: () -> Unit,
 ) {
     val metrics = nowPlayingMetrics(surfaceLayout)
+    val controls = LocalPlaybackControls.current
+    val motion = LocalAmbientMotionController.current
+    val neighbours = rememberPlayGestureNeighbours(track, controls)
+    val horizontalOffset = remember { Animatable(0f) }
+    val verticalOffset = remember { Animatable(0f) }
+    val gestureScope = rememberCoroutineScope()
+    var seekMarker by remember { mutableStateOf<String?>(null) }
+    var seekMarkerRevision by remember { mutableIntStateOf(0) }
     var backProgress by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(seekMarkerRevision) {
+        if (seekMarkerRevision == 0) return@LaunchedEffect
+        delay(600)
+        seekMarker = null
+    }
     PredictiveBackHandler {
         try {
             it.collect { event -> backProgress = event.progress }
@@ -80,8 +100,36 @@ internal fun NowPlayingSheet(
     Surface(
         modifier = Modifier
             .fillMaxSize()
+            .testTag("now-playing-gestures")
+            .nowPlayingGestures(
+                animationsEnabled = motion.sceneAnimationsEnabled,
+                onHorizontalOffset = { offset ->
+                    gestureScope.launch { horizontalOffset.snapTo(offset) }
+                },
+                onVerticalOffset = { offset ->
+                    gestureScope.launch { verticalOffset.snapTo(offset) }
+                },
+                onSettle = { decision ->
+                    when (decision) {
+                        PlayGestureDecision.NEXT -> controls.next()
+                        PlayGestureDecision.PREVIOUS -> controls.previous()
+                        PlayGestureDecision.DISMISS -> close()
+                        PlayGestureDecision.SPRING_BACK -> Unit
+                    }
+                    gestureScope.launch {
+                        horizontalOffset.animateTo(0f, spring())
+                        verticalOffset.animateTo(0f, spring())
+                    }
+                },
+                onDoubleTap = { leftHalf ->
+                    val delta = if (leftHalf) -10_000L else 10_000L
+                    controls.seekTo((playback.positionMs + delta).coerceIn(0L, playback.durationMs))
+                    seekMarker = if (leftHalf) "−10 s" else "+10 s"
+                    seekMarkerRevision += 1
+                },
+            )
             .graphicsLayer {
-                translationY = backProgress * 64.dp.toPx()
+                translationY = backProgress * 64.dp.toPx() + verticalOffset.value
                 scaleX = 1f - backProgress * 0.03f
                 scaleY = 1f - backProgress * 0.03f
             },
@@ -106,7 +154,6 @@ internal fun NowPlayingSheet(
                 playback = playback,
                 surfaceState = surfaceState,
                 metrics = metrics,
-                close = close,
             )
         } else {
             Box(Modifier.fillMaxSize().testTag("now-playing-content")) {
@@ -114,8 +161,22 @@ internal fun NowPlayingSheet(
                     track = track,
                     playback = playback,
                     surfaceState = surfaceState,
-                    close = close,
+                    horizontalOffsetPx = horizontalOffset.value,
+                    previousTrack = neighbours.previous,
+                    nextTrack = neighbours.next,
                 )
+                seekMarker?.let { marker ->
+                    Text(
+                        text = marker,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
+                            .padding(horizontal = 18.dp, vertical = 10.dp)
+                            .testTag("now-playing-seek-marker"),
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
             }
         }
     }
@@ -127,7 +188,6 @@ private fun WideShortNowPlayingContent(
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
     metrics: NowPlayingMetrics,
-    close: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -146,6 +206,8 @@ private fun WideShortNowPlayingContent(
             } else {
                 TrackCover(
                     trackUri = track.uri,
+                    title = track.title,
+                    artist = track.artist,
                     size = metrics.coverSizeDp,
                     modifier = Modifier.testTag("now-playing-cover"),
                     artworkSize = AndroidArtworkSize.NOW_PLAYING,
@@ -195,9 +257,6 @@ private fun WideShortNowPlayingContent(
                     surfaceState = surfaceState,
                     tag = "now-playing-heart",
                 )
-                IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
-                    MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
-                }
             }
             SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             playback.error?.let { message ->

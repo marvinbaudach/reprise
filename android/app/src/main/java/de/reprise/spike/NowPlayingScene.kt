@@ -64,13 +64,35 @@ internal fun NowPlayingScene(
     track: LibraryTrack,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
-    @Suppress("UNUSED_PARAMETER") close: () -> Unit,
+    horizontalOffsetPx: Float = 0f,
+    previousTrack: LibraryTrack? = null,
+    nextTrack: LibraryTrack? = null,
 ) {
     val frames = rememberSpectrogram(track.id)
     val state = remember(frames) { SceneState(frames) }
-    val artwork = rememberTrackArtworkVisual(track.uri, AndroidArtworkSize.NOW_PLAYING)
-    val fallback = MaterialTheme.colorScheme.primary
-    val fog = rememberCoverFogBitmap(artwork?.image, fallback)
+    val artwork = rememberTrackArtworkVisual(
+        track.uri,
+        AndroidArtworkSize.NOW_PLAYING,
+        track.title,
+        track.artist,
+    )
+    val previousArtwork = previousTrack?.let { neighbour ->
+        rememberTrackArtworkVisual(
+            neighbour.uri,
+            AndroidArtworkSize.NOW_PLAYING,
+            neighbour.title,
+            neighbour.artist,
+        )
+    }
+    val nextArtwork = nextTrack?.let { neighbour ->
+        rememberTrackArtworkVisual(
+            neighbour.uri,
+            AndroidArtworkSize.NOW_PLAYING,
+            neighbour.title,
+            neighbour.artist,
+        )
+    }
+    val fog = rememberCoverFogTransition(artwork?.image, Color.Black)
     val motion = LocalAmbientMotionController.current
     val drawRevision = DriveScene(
         frames = frames,
@@ -96,18 +118,48 @@ internal fun NowPlayingScene(
             // per scene frame; the value itself has nothing to contribute to the drawing.
             observeSceneFrame(drawRevision)
             drawRect(Color.Black)
-            val playedCenter = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION)
+            val playedCenter = Offset(
+                size.width / 2f + horizontalOffsetPx,
+                size.height * PLAYED_CENTRE_FRACTION,
+            )
+            val fogCenter = playedCenter.copy(
+                x = size.width / 2f + horizontalOffsetPx * FOG_SWIPE_DISTANCE_FACTOR,
+            )
             drawPlayedNowPlayingFog(
-                fog = fog,
-                center = playedCenter,
+                fog = fog.previous,
+                center = fogCenter,
                 state = state,
-                opacity = 1f,
+                opacity = 1f - fog.fraction,
                 rotationsEnabled = power.fogRotates,
             )
+            drawPlayedNowPlayingFog(
+                fog = fog.current,
+                center = fogCenter,
+                state = state,
+                opacity = fog.fraction,
+                rotationsEnabled = power.fogRotates,
+            )
+            if (horizontalOffsetPx > 0f) {
+                previousArtwork?.image?.let { neighbour ->
+                    drawPlayedCover(
+                        artwork = neighbour,
+                        center = playedCenter.copy(x = playedCenter.x - size.width),
+                        fallback = Color.Black,
+                    )
+                }
+            } else if (horizontalOffsetPx < 0f) {
+                nextArtwork?.image?.let { neighbour ->
+                    drawPlayedCover(
+                        artwork = neighbour,
+                        center = playedCenter.copy(x = playedCenter.x + size.width),
+                        fallback = Color.Black,
+                    )
+                }
+            }
             drawPlayedCover(
                 artwork = artwork?.image,
                 center = playedCenter,
-                fallback = fallback,
+                fallback = Color.Black,
             )
         }
 
@@ -397,3 +449,5 @@ private fun DrawScope.drawPlayedCover(
 
 /** Keeps the frame counter captured by the scene's draw lambda; the value is not drawn. */
 private fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit
+
+private const val FOG_SWIPE_DISTANCE_FACTOR = 0.35f

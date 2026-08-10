@@ -2,6 +2,7 @@ package de.reprise.spike
 
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -130,9 +132,19 @@ internal fun LibraryBottomFrame(
     selectedTab: BrowseTab,
     selectTab: (BrowseTab) -> Unit,
     openNowPlaying: () -> Unit,
+    nowPlayingExpanded: Boolean = false,
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
-    Column {
+    val hiddenFraction by animateFloatAsState(
+        targetValue = if (nowPlayingExpanded) 1f else 0f,
+        label = "library-bottom-frame-visibility",
+    )
+    Column(
+        modifier = Modifier.graphicsLayer {
+            translationY = size.height * hiddenFraction
+            alpha = 1f - hiddenFraction
+        },
+    ) {
         if (currentTrack != null) {
             MiniPlayer(
                 metrics = metrics,

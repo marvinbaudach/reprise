@@ -17,7 +17,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationRailDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -95,6 +94,8 @@ internal fun BrowseScreen(
     selectTheme: (MobileTheme) -> Unit,
 ) {
     val trackAnalysis = LocalTrackAnalysis.current
+    val playbackControls = LocalPlaybackControls.current
+    val trackArtwork = LocalTrackArtwork.current
     val selectedTab = surfaceState.selectedTab
     val searchVisible = surfaceState.searchVisible
     val searchText = surfaceState.searchText
@@ -359,6 +360,9 @@ internal fun BrowseScreen(
     // the composition. See [TrackLoader].
     var answeredTrack by remember { mutableStateOf<AnsweredTrack?>(null) }
     val playingTrackId = playback.currentTrackId
+    LaunchedEffect(playingTrackId, playbackControls, trackArtwork) {
+        surfaceState.prefetchUpcomingArtwork(playingTrackId, playbackControls, trackArtwork)
+    }
     LaunchedEffect(playingTrackId, playback.currentTrackUri) {
         if (playingTrackId != null) {
             trackAnalysis.prepare(playingTrackId)
@@ -387,12 +391,6 @@ internal fun BrowseScreen(
     val nowPlayingFrameModifier = when (surfaceLayout) {
         SurfaceLayout.STACKED -> Modifier
             .fillMaxSize()
-            .padding(
-                bottom = frameMetrics.navigationBarHeightDp.dp +
-                    NavigationBarDefaults.windowInsets
-                        .asPaddingValues()
-                        .calculateBottomPadding(),
-            )
         SurfaceLayout.WIDE_SHORT -> Modifier
             .fillMaxSize()
             .padding(
@@ -415,6 +413,7 @@ internal fun BrowseScreen(
                         selectedTab = selectedTab,
                         selectTab = ::selectDestination,
                         openNowPlaying = { surfaceState.showNowPlaying(true) },
+                        nowPlayingExpanded = nowPlayingExpanded,
                     )
                 },
             ) { contentPadding ->

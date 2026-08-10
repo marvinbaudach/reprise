@@ -55,7 +55,10 @@ class MainActivityQueueTest {
         compose.onNodeWithTag("now-playing-queue").assertIsDisplayed()
         compose.onNodeWithText("Upcoming One").assertIsDisplayed()
         compose.onNodeWithText("Upcoming Two").assertIsDisplayed()
-        assertEquals(listOf(LibraryWindowRange(0, 200)), application.controls.loadUpcomingRequests)
+        assertEquals(
+            listOf(LibraryWindowRange(0, 2), LibraryWindowRange(0, 200)),
+            application.controls.loadUpcomingRequests,
+        )
         compose.onNode(
             hasText("Rotation Song 1") and hasAnyAncestor(hasTestTag("now-playing-queue")),
             useUnmergedTree = true,
