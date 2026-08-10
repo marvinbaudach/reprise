@@ -641,8 +641,12 @@ mod tests {
         assert_eq!(ClockConvention::Hours12.render(12, 0), "12:00 PM");
     }
 
+    /// Pins the strings Android and every other `nl_langinfo`-less platform
+    /// falls back to. That those platforms *reach* them is guaranteed by the
+    /// `cfg` split above, not by this test: the fallback arm is never compiled
+    /// on the host that runs `cargo test`.
     #[test]
-    fn system_pattern_fallbacks_are_iso_and_twenty_four_hour() {
+    fn the_pattern_fallbacks_are_iso_and_twenty_four_hour() {
         assert_eq!(fallback_date_pattern(), "%Y-%m-%d");
         assert_eq!(fallback_time_pattern(), "%H:%M");
     }
