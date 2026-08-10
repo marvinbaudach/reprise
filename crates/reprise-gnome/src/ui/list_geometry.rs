@@ -29,33 +29,33 @@ impl RowHeight {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RowHeightSource {
+pub(in crate::ui) enum RowHeightSource {
     Assumed,
     Measured,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct TrustedRowHeight {
-    height: RowHeight,
-    source: RowHeightSource,
+pub(in crate::ui) struct TrustedRowHeight {
+    pub(in crate::ui) height: RowHeight,
+    pub(in crate::ui) source: RowHeightSource,
 }
 
 impl TrustedRowHeight {
-    fn assumed(height: RowHeight) -> Self {
+    pub(in crate::ui) fn assumed(height: RowHeight) -> Self {
         Self {
             height,
             source: RowHeightSource::Assumed,
         }
     }
 
-    fn measured(height: RowHeight) -> Self {
+    pub(in crate::ui) fn measured(height: RowHeight) -> Self {
         Self {
             height,
             source: RowHeightSource::Measured,
         }
     }
 
-    fn from_cache(value: f64) -> Option<Self> {
+    pub(in crate::ui) fn from_cache(value: f64) -> Option<Self> {
         if value == INVALIDATED_ROW_HEIGHT || value == 0.0 {
             return None;
         }
@@ -67,7 +67,7 @@ impl TrustedRowHeight {
         RowHeight::new(value.abs()).map(|height| Self { height, source })
     }
 
-    fn cache_value(self) -> f64 {
+    pub(in crate::ui) fn cache_value(self) -> f64 {
         match self.source {
             RowHeightSource::Assumed => -self.height.pixels(),
             RowHeightSource::Measured => self.height.pixels(),
@@ -75,7 +75,7 @@ impl TrustedRowHeight {
     }
 }
 
-fn remember_preferred_height(cache: &Cell<f64>, candidate: TrustedRowHeight) {
+pub(in crate::ui) fn remember_preferred_height(cache: &Cell<f64>, candidate: TrustedRowHeight) {
     let existing = TrustedRowHeight::from_cache(cache.get());
     if existing.is_some_and(|height| {
         height.source == RowHeightSource::Measured && candidate.source == RowHeightSource::Assumed
@@ -119,7 +119,7 @@ impl RowMeasurement {
         }
     }
 
-    fn from_widget_heights_at_least(
+    pub(in crate::ui) fn from_widget_heights_at_least(
         heights: impl IntoIterator<Item = i32>,
         minimum: RowHeight,
     ) -> Self {
