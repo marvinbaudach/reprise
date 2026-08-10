@@ -2812,16 +2812,16 @@ msgid "Status"
 msgstr "Status"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:17
-msgid "Buy"
-msgstr "Kaufen"
+msgid "Link"
+msgstr "Link"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:18
 msgid "Bandcamp"
 msgstr "Bandcamp"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:19
-msgid "Buy on Bandcamp"
-msgstr "Auf Bandcamp kaufen"
+msgid "Open"
+msgstr "Öffnen"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:22
 msgid "Hidden"

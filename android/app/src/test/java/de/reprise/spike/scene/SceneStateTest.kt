@@ -9,6 +9,21 @@ import org.junit.Test
 
 class SceneStateTest {
     @Test
+    fun fog_level_is_the_clamped_mean_of_the_slow_fog_envelopes() {
+        val cells = ByteArray(22 * 24) { index ->
+            if (index % 24 % 2 == 0) 0 else 255.toByte()
+        }
+        val state = SceneState(
+            SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = cells),
+            CoreShape("Slow fog", "Reprise"),
+        )
+
+        state.advanceTo(21)
+
+        assertEquals(0.5f.toRawBits(), state.fogLevel.toRawBits())
+    }
+
+    @Test
     fun replay_is_bit_identical_for_single_steps_and_irregular_redraw_jumps() {
         val frames = patternedFrames(frameCount = 24)
         val oneAtATime = SceneState(frames, CoreShape("Northern Lights", "Reprise"))

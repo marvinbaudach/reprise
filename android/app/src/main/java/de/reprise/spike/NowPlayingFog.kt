@@ -22,6 +22,23 @@ internal object NowPlayingFogSpec {
     const val tightAngleFactor = -0.6f
     const val tightUsesScreenBlend = true
 
+    private const val WIDE_FLOOR = 0.62f
+    private const val TIGHT_FLOOR = 0.40f
+    private const val FOG_LEVEL_LOW = 0.05f
+    private const val FOG_LEVEL_HIGH = 0.70f
+
+    fun wideAlpha(fogLevel: Float, opacity: Float): Float =
+        wideOpacity * response(fogLevel, WIDE_FLOOR) * opacity
+
+    fun tightAlpha(fogLevel: Float, opacity: Float): Float =
+        tightOpacity * response(fogLevel, TIGHT_FLOOR) * opacity
+
+    private fun response(fogLevel: Float, floor: Float): Float {
+        val measuredRange = FOG_LEVEL_HIGH - FOG_LEVEL_LOW
+        val normalized = ((fogLevel - FOG_LEVEL_LOW) / measuredRange).coerceIn(0f, 1f)
+        return floor + (1f - floor) * normalized
+    }
+
     /**
      * The scrim that keeps the title readable, measured from the cover centre.
      *
@@ -44,6 +61,7 @@ internal fun DrawScope.drawNowPlayingFog(
     center: Offset,
     angleA: Float,
     angleB: Float,
+    fogLevel: Float,
     opacity: Float,
     rotationsEnabled: Boolean,
 ) {
@@ -54,7 +72,7 @@ internal fun DrawScope.drawNowPlayingFog(
             center = center,
             sizeDp = NowPlayingFogSpec.wideSizeDp,
             angle = if (rotationsEnabled) angleA else 0f,
-            alpha = NowPlayingFogSpec.wideOpacity * boundedOpacity,
+            alpha = NowPlayingFogSpec.wideAlpha(fogLevel, boundedOpacity),
             blendMode = BlendMode.SrcOver,
         )
         drawFogLayer(
@@ -62,7 +80,7 @@ internal fun DrawScope.drawNowPlayingFog(
             center = center,
             sizeDp = NowPlayingFogSpec.tightSizeDp,
             angle = if (rotationsEnabled) angleB else 0f,
-            alpha = NowPlayingFogSpec.tightOpacity * boundedOpacity,
+            alpha = NowPlayingFogSpec.tightAlpha(fogLevel, boundedOpacity),
             blendMode = BlendMode.Screen,
         )
     }

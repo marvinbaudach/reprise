@@ -329,7 +329,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         match saved {
             Ok(()) => {
                 committed_density_for_change.set(row.selected());
-                super::list_density::apply(context.track_list.column_view_widget(), value);
+                context.track_list.apply_list_density(value);
             }
             Err(error) => {
                 tracing::warn!(%error, "could not save list density");

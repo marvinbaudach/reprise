@@ -249,7 +249,7 @@ impl PreferencesContext {
                 settings::get_window_decoration_mode(conn),
             )
         };
-        super::list_density::apply(self.track_list.column_view_widget(), density);
+        self.track_list.apply_list_density(density);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
@@ -408,7 +408,7 @@ impl PreferencesContext {
         );
         let _ = settings::set_player_bar_position(conn, PlayerBarPosition::Top);
         let _ = settings::set_equalizer_bands(conn, equalizer_preset(1));
-        super::list_density::apply(self.track_list.column_view_widget(), ListDensity::Compact);
+        self.track_list.apply_list_density(ListDensity::Compact);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
