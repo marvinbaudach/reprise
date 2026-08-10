@@ -17,6 +17,8 @@ from ui_vocabulary import (
     OFFLINE_WORDS,
     WINDOW_ROLES,
     canonical_role,
+    invocable_actions as classify_invocable_actions,
+    unknown_action_names as classify_unknown_action_names,
 )
 
 
@@ -97,8 +99,12 @@ class Element:
     geometry_trusted: bool = True
 
     @property
+    def invocable_actions(self) -> tuple[str, ...]:
+        return classify_invocable_actions(self.actions)
+
+    @property
     def actionable(self) -> bool:
-        return bool(self.actions) or self.role in ACTIONABLE_ROLES
+        return bool(self.invocable_actions) or self.role in ACTIONABLE_ROLES
 
 
 @dataclass(frozen=True)
@@ -137,6 +143,18 @@ class Snapshot:
         )
 
     @property
+    def unknown_action_names(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {
+                    name
+                    for element in self.elements
+                    for name in classify_unknown_action_names(element.actions)
+                }
+            )
+        )
+
+    @property
     def state_signature(self) -> tuple[tuple[Any, ...], ...]:
         return tuple(
             sorted(
@@ -171,8 +189,9 @@ class ActionEvidence:
     connectivity_state: str | None = None
     sample_gaps_ms: tuple[int, ...] = ()
     # Harness cost, so the timing oracles can subtract themselves out.
-    # True when the resolved target really offers an AT-SPI action, False when
-    # no node with that label offers one, None when no walk was available.
+    # True when the resolved target really offers an invocable AT-SPI action,
+    # False when no node with that label offers one, None when no walk was
+    # available.
     target_has_action: bool | None = None
     settle_delay_ms: int = 0
     snapshot_ms: tuple[int, ...] = ()
@@ -297,8 +316,25 @@ def normalize_snapshot(
 class OracleEngine:
     """Classifies observable anomalies without turning heuristics into CI gates."""
 
+    def __init__(self) -> None:
+        self._reported_unknown_actions: set[str] = set()
+
     def inspect_snapshot(self, snapshot: Snapshot) -> list[Finding]:
         findings = []
+        for name in snapshot.unknown_action_names:
+            if name in self._reported_unknown_actions:
+                continue
+            self._reported_unknown_actions.add(name)
+            findings.append(
+                Finding(
+                    "unknown-action-name",
+                    "warning",
+                    0.8,
+                    f"The unclassified accessibility action '{name}' is treated as invocable.",
+                    {"action_name": name},
+                    blocks_gate=False,
+                )
+            )
         if snapshot.degraded:
             findings.append(
                 Finding(
