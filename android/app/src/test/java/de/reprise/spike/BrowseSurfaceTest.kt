@@ -328,7 +328,7 @@ fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
 }
 
 @Test
-fun libraryFrameUsesTheExactTwoAMetricsAndAllFourBrowseDestinations() {
+fun libraryFrameUsesTheExactTwoAMetricsAndAllFiveBrowseDestinations() {
     assertEquals(
         LibraryFrameMetrics(
             filterChipHeightDp = 32,
@@ -340,7 +340,13 @@ fun libraryFrameUsesTheExactTwoAMetricsAndAllFourBrowseDestinations() {
         libraryFrameMetrics,
     )
     assertEquals(
-        listOf(BrowseTab.TITLES, BrowseTab.ARTISTS, BrowseTab.ALBUMS, BrowseTab.FAVOURITES),
+        listOf(
+            BrowseTab.TITLES,
+            BrowseTab.ARTISTS,
+            BrowseTab.ALBUMS,
+            BrowseTab.FAVOURITES,
+            BrowseTab.QUEUE,
+        ),
         libraryDestinations,
     )
 }

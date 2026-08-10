@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -16,14 +17,19 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
@@ -60,15 +66,39 @@ internal fun TitlesTab(
 }
 
 @Composable
-internal fun TitleSearchField(searchText: String, search: (String) -> Unit) {
+internal fun TitleSearchField(
+    searchText: String,
+    search: (String) -> Unit,
+    close: () -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+    BackHandler(onBack = close)
     OutlinedTextField(
         value = searchText,
         onValueChange = search,
         label = { Text("Search titles") },
         leadingIcon = { MaterialSymbol("search", "") },
+        trailingIcon = {
+            IconButton(onClick = { if (searchText.isEmpty()) close() else search("") }) {
+                MaterialSymbol(
+                    name = if (searchText.isEmpty()) "close" else "clear",
+                    contentDescription = if (searchText.isEmpty()) {
+                        "Close search"
+                    } else {
+                        "Clear search"
+                    },
+                )
+            }
+        },
         singleLine = true,
         modifier = Modifier
             .fillMaxWidth()
+            .focusRequester(focusRequester)
             .padding(horizontal = 16.dp, vertical = 4.dp),
     )
 }

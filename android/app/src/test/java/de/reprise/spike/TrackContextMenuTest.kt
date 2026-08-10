@@ -128,7 +128,11 @@ class TrackContextMenuTest {
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalPlaybackControls provides controls) {
-                    NowPlayingQueuePage(PlaybackUiState(), MobileSurfaceViewModel())
+                    NowPlayingQueuePage(
+                        PlaybackUiState(),
+                        MobileSurfaceViewModel(),
+                        SurfaceLayout.STACKED,
+                    )
                 }
             }
         }
