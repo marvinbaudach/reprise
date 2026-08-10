@@ -202,6 +202,30 @@ pub(in crate::ui) fn content_height(
     })
 }
 
+fn preseed_upper(
+    current_upper: f64,
+    content: ContentHeight,
+    source: RowHeightSource,
+) -> Option<f64> {
+    let ContentHeight::Known(wanted_upper) = content else {
+        return None;
+    };
+    let current_describes_geometry = match source {
+        // A CSS token is only a lower bound on a complete row. A larger live
+        // range may already include GTK's row chrome and must never be shrunk
+        // back to the token-derived estimate.
+        RowHeightSource::Assumed => {
+            current_upper.is_finite()
+                && current_upper + ROW_HEIGHT_AGREEMENT_EPSILON >= wanted_upper
+        }
+        RowHeightSource::Measured => {
+            current_upper.is_finite()
+                && (current_upper - wanted_upper).abs() < ROW_HEIGHT_AGREEMENT_EPSILON
+        }
+    };
+    (!current_describes_geometry).then_some(wanted_upper)
+}
+
 pub(in crate::ui) fn invalidate_row_height(cache: &Cell<f64>) {
     // The persisted startup density is projected before this view has loaded
     // any geometry. Preserve that unloaded state so its per-density measured
@@ -365,6 +389,12 @@ impl ListGeometry {
         load_row_height(db, self.density(), cache, self.minimum_row_height())
     }
 
+    fn trusted_row_height(&self, db: &reprise_core::db::Db, cache: &Cell<f64>) -> TrustedRowHeight {
+        let height = self.row_height(db, cache);
+        TrustedRowHeight::from_cache(cache.get())
+            .unwrap_or_else(|| TrustedRowHeight::assumed(height))
+    }
+
     pub(in crate::ui) fn remember_if_settled(
         &self,
         db: &reprise_core::db::Db,
@@ -434,8 +464,14 @@ impl ListGeometry {
         n_rows: usize,
         n_sections: usize,
     ) -> bool {
-        let ContentHeight::Known(upper) = self.content_height(db, cache, n_rows, n_sections) else {
+        self.remember_if_settled(db, cache, adjustment.upper(), n_rows, n_sections);
+        let trusted = self.trusted_row_height(db, cache);
+        let content = self.content_height(db, cache, n_rows, n_sections);
+        let ContentHeight::Known(_) = content else {
             return false;
+        };
+        let Some(upper) = preseed_upper(adjustment.upper(), content, trusted.source) else {
+            return true;
         };
         crate::ui::scroll_probe::probe_upper("anchor.configure", adjustment, upper);
         adjustment.configure(
@@ -640,6 +676,27 @@ mod tests {
         );
 
         assert_eq!(cache.get(), 34.0);
+    }
+
+    #[test]
+    fn assumed_preseed_only_grows_a_range_below_its_lower_bound() {
+        let assumed = TrustedRowHeight::assumed(RowHeight::new(28.0).unwrap());
+        let wanted = ContentHeight::Known(63_728.0);
+
+        assert_eq!(preseed_upper(748.0, wanted, assumed.source), Some(63_728.0));
+        assert_eq!(preseed_upper(77_384.0, wanted, assumed.source), None);
+    }
+
+    #[test]
+    fn measured_preseed_only_skips_the_range_it_measured() {
+        let measured = TrustedRowHeight::measured(RowHeight::new(34.0).unwrap());
+        let wanted = ContentHeight::Known(77_384.0);
+
+        assert_eq!(
+            preseed_upper(748.0, wanted, measured.source),
+            Some(77_384.0)
+        );
+        assert_eq!(preseed_upper(77_384.0, wanted, measured.source), None);
     }
 
     #[test]
