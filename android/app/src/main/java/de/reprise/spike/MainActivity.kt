@@ -313,7 +313,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun rememberBrowseTab(tab: BrowseTab) {
-        runCatching { library.setLibraryDestination(tab.toLibraryDestinationChoice()) }
+        val destination = tab.toLibraryDestinationChoice() ?: return
+        runCatching { library.setLibraryDestination(destination) }
             .onFailure { error -> Log.e(TAG, "Could not remember the library destination", error) }
     }
 
