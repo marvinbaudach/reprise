@@ -32,6 +32,8 @@ class SceneState(
     /** The live burst follower array. See [fogBands] for the read-only contract. */
     val burstBands: FloatArray
         get() = burstEnvelopes.values
+    var fogLevel: Float = 0f
+        private set
     var level: Float = 0f
         private set
     var bass: Float = 0f
@@ -80,16 +82,18 @@ class SceneState(
         readRaw(targetIndex)
         val fogChanged = fogEnvelopes.adopt(rawBands)
         val burstChanged = burstEnvelopes.adopt(rawBands)
+        val oldFogLevel = fogLevel
         val oldLevel = level
         val oldBass = bass
         val oldTransient = transient
+        fogLevel = mean(fogBands).coerceIn(0f, 1f)
         level = mean(burstBands)
         bass = bassMean(burstBands)
         transient = strongestTransient(rawBands, fogBands)
         lastFrameIndex = targetIndex
         if (
-            fogChanged || burstChanged || level.changedFrom(oldLevel) || bass.changedFrom(oldBass) ||
-            transient != oldTransient
+            fogChanged || burstChanged || fogLevel.changedFrom(oldFogLevel) ||
+            level.changedFrom(oldLevel) || bass.changedFrom(oldBass) || transient != oldTransient
         ) {
             revision += 1
         }
@@ -102,20 +106,22 @@ class SceneState(
         }
         val fogChanged = fogEnvelopes.step(targets)
         val burstChanged = burstEnvelopes.step(targets)
+        val oldFogLevel = fogLevel
         val oldLevel = level
         val oldBass = bass
         val oldTransient = transient
         val oldAngleA = fogAngleA
         val oldAngleB = fogAngleB
+        fogLevel = mean(fogBands).coerceIn(0f, 1f)
         level = mean(burstBands)
         bass = bassMean(burstBands)
         transient = strongestTransient(rawBands, fogBands)
         fogAngleA = EnergyIntegrator.advance(fogAngleA, level, FOG_FACTOR_A)
         fogAngleB = EnergyIntegrator.advance(fogAngleB, level, FOG_FACTOR_B)
         if (
-            fogChanged || burstChanged || level.changedFrom(oldLevel) || bass.changedFrom(oldBass) ||
-            transient != oldTransient || fogAngleA.changedFrom(oldAngleA) ||
-            fogAngleB.changedFrom(oldAngleB)
+            fogChanged || burstChanged || fogLevel.changedFrom(oldFogLevel) ||
+            level.changedFrom(oldLevel) || bass.changedFrom(oldBass) || transient != oldTransient ||
+            fogAngleA.changedFrom(oldAngleA) || fogAngleB.changedFrom(oldAngleB)
         ) {
             revision += 1
         }
