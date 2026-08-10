@@ -174,7 +174,7 @@ Belege je Regel-ID in `ux-android-audio.md` (Scratchpad).
   target SDK by the deadline loses the ability to publish updates —
   entirely apart from whether its actual behavior still works.
 
-## Material-3-Muster und Interaktion — `MOB`, 22 Entwürfe
+## Material-3-Muster und Interaktion — `MOB`, 23 Entwürfe
 
 Navigation, Predictive Back, Listen, Now Playing, Bottom Sheets, Gesten, Trefferflächen. Quellen: m3.material.io, Compose-Doku.
 
@@ -351,6 +351,10 @@ Belege je Regel-ID in `ux-android-m3.md` (Scratchpad).
   same action would be focused repeatedly" — so an ungrouped row
   multiplies TalkBack's per-item traversal cost by however many buttons
   it has.
+- **MOB-23** [planned] — Explicitly enqueueing one or more tracks never
+  starts playback, including when the queue was empty or exhausted; only a
+  separate play action may make an enqueued track audible.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## Speicherzugriff und Berechtigungen — `STOR`, 18 Entwürfe
 
@@ -587,7 +591,7 @@ Belege je Regel-ID in `ux-android-praxis.md` (Scratchpad).
 
 ## Zusammenfassung
 
-**77 Entwürfe.** Zum Vergleich: aus dem bestehenden Regelwerk erbt
+**78 Entwürfe.** Zum Vergleich: aus dem bestehenden Regelwerk erbt
 die Android-App 61 Regeln (`p5-surface-scopes.md`). Ihr Verhalten bezieht
 die mobile Oberfläche also überwiegend aus diesen Entwürfen, nicht aus
 dem Bestand.
