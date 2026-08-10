@@ -7,7 +7,7 @@
 //! key) rather than one bespoke function per setting — a future setting is
 //! then just one more constant and call site, not a new migration.
 
-use rusqlite::{Connection, Error as SqlError, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension};
 
 #[path = "settings_api.rs"]
 mod api;
@@ -15,6 +15,9 @@ pub use api::*;
 #[path = "settings_column_keys.rs"]
 mod column_keys;
 pub use column_keys::*;
+#[path = "settings_geometry.rs"]
+mod geometry;
+pub use geometry::*;
 /// The settings key `ui::window`'s scan flow writes the scanned folder under,
 /// and `main.rs`/`ui::window` read at startup/after-scan to (re)start the
 /// watcher. `pub` so both call sites share the exact same literal rather than
@@ -231,9 +234,6 @@ fn set_player_bar_position_in(
 }
 
 pub const LIST_DENSITY_KEY: &str = "ui.list_density";
-pub const ROW_HEIGHT_COMFORTABLE_KEY: &str = "ui.row_height.comfortable";
-pub const ROW_HEIGHT_STANDARD_KEY: &str = "ui.row_height.standard";
-pub const ROW_HEIGHT_COMPACT_KEY: &str = "ui.row_height.compact";
 pub const SIDEBAR_VISIBLE_KEY: &str = "ui.sidebar_visible";
 pub const SIDEBAR_COLLAPSED_KEY: &str = "ui.sidebar_collapsed";
 pub const BROWSE_VISIBLE_KEY: &str = "ui.browse_visible";
@@ -417,44 +417,6 @@ fn set_list_density_in(conn: &Connection, value: ListDensity) -> Result<(), rusq
         ListDensity::Compact => "compact",
     };
     set_setting_in(conn, LIST_DENSITY_KEY, value)
-}
-
-const fn row_height_key(density: ListDensity) -> &'static str {
-    match density {
-        ListDensity::Comfortable => ROW_HEIGHT_COMFORTABLE_KEY,
-        ListDensity::Standard => ROW_HEIGHT_STANDARD_KEY,
-        ListDensity::Compact => ROW_HEIGHT_COMPACT_KEY,
-    }
-}
-
-fn get_row_height_in(conn: &Connection, density: ListDensity) -> Result<Option<f64>, SqlError> {
-    Ok(get_setting_in(conn, row_height_key(density))?
-        .and_then(|value| value.parse().ok())
-        .filter(|height: &f64| height.is_finite() && *height > 0.0))
-}
-
-fn set_row_height_in(
-    conn: &Connection,
-    density: ListDensity,
-    height: Option<f64>,
-) -> Result<(), SqlError> {
-    set_setting_in(
-        conn,
-        row_height_key(density),
-        &height.unwrap_or(0.0).to_string(),
-    )
-}
-
-pub fn get_row_height(db: &crate::db::Db, density: ListDensity) -> Result<Option<f64>, SqlError> {
-    get_row_height_in(db.conn(), density)
-}
-
-pub fn set_row_height(
-    db: &crate::db::Db,
-    density: ListDensity,
-    height: Option<f64>,
-) -> Result<(), SqlError> {
-    set_row_height_in(db.conn(), density, height)
 }
 
 fn get_sidebar_visible_in(conn: &Connection) -> bool {
