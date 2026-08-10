@@ -6,6 +6,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,23 +18,38 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXPLORE_ROOT = REPO_ROOT / "scripts" / "cua-explore"
 sys.path.insert(0, str(EXPLORE_ROOT))
 
+from driver import DriverError  # noqa: E402
 from hover_geometry import WindowGeometry  # noqa: E402
 from protocol import ContractError, load_mission  # noqa: E402
 import runner  # noqa: E402
+import window_setup  # noqa: E402
 from window_setup import apply_window_size  # noqa: E402
 
 
 class FakeTransport:
-    def __init__(self, achieved: WindowGeometry) -> None:
+    def __init__(
+        self,
+        achieved: WindowGeometry,
+        *,
+        measure_failures: int = 0,
+        resize_error: Exception | None = None,
+    ) -> None:
         self.achieved = achieved
         self.calls: list[tuple[object, ...]] = []
+        self.measure_failures = measure_failures
+        self.resize_error = resize_error
 
     def resize_window(self, window_id: int, width: int, height: int):
         self.calls.append(("resize", window_id, width, height))
+        if self.resize_error is not None:
+            raise self.resize_error
         return {"effect": "unverifiable", "verified": False}
 
     def wmctrl_geometry(self, window_id: int) -> WindowGeometry:
         self.calls.append(("measure", window_id))
+        if self.measure_failures > 0:
+            self.measure_failures -= 1
+            raise DriverError("wmctrl geometry failed: connection refused")
         return self.achieved
 
 
@@ -144,6 +160,67 @@ class WindowSetupTests(unittest.TestCase):
 
         self.assertIsNone(record)
         self.assertEqual(transport.calls, [])
+
+    def test_a_transient_measurement_failure_is_retried_not_fatal(self) -> None:
+        transport = FakeTransport(WindowGeometry(0, 0, 1600, 1000), measure_failures=2)
+
+        with mock.patch.object(window_setup.time, "sleep") as sleep:
+            record = apply_window_size(
+                transport,
+                window_id=7,
+                requested={"width": 1600, "height": 1000},
+            )
+
+        self.assertTrue(record["honoured"])
+        self.assertEqual([call for call in transport.calls if call[0] == "measure"], [("measure", 7)] * 3)
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            list(window_setup.MEASURE_RETRY_DELAYS_SECONDS),
+        )
+
+    def test_a_permanent_measurement_failure_degrades_to_a_finding(self) -> None:
+        transport = FakeTransport(WindowGeometry(0, 0, 1600, 1000), measure_failures=99)
+
+        with mock.patch.object(window_setup.time, "sleep"):
+            record = apply_window_size(
+                transport,
+                window_id=7,
+                requested={"width": 1600, "height": 1000},
+            )
+
+        self.assertIsNone(record["achieved"])
+        self.assertFalse(record["honoured"])
+        self.assertIn("wmctrl geometry failed", record["error"])
+
+    def test_a_failed_resize_is_never_repeated_and_never_aborts(self) -> None:
+        transport = FakeTransport(
+            WindowGeometry(0, 0, 1440, 900),
+            resize_error=DriverError("wmctrl resize failed: no such window"),
+        )
+
+        record = apply_window_size(
+            transport,
+            window_id=7,
+            requested={"width": 1600, "height": 1000},
+        )
+
+        self.assertEqual(transport.calls, [("resize", 7, 1600, 1000)])
+        self.assertFalse(record["honoured"])
+        self.assertIn("wmctrl resize failed", record["error"])
+
+    def test_a_hung_wmctrl_is_caught_like_any_other_transport_failure(self) -> None:
+        transport = FakeTransport(
+            WindowGeometry(0, 0, 1600, 1000),
+            resize_error=subprocess.TimeoutExpired(["wmctrl"], 10),
+        )
+
+        record = apply_window_size(
+            transport,
+            window_id=7,
+            requested={"width": 1600, "height": 1000},
+        )
+
+        self.assertIn("TimeoutExpired", record["error"])
 
     def test_display_canvas_has_room_for_the_declared_window(self) -> None:
         run_script = (EXPLORE_ROOT / "run.sh").read_text(encoding="utf-8")

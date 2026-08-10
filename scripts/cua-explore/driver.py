@@ -37,6 +37,14 @@ class DriverError(RuntimeError):
 
 RETRYABLE_TOOLS = frozenset({"get_window_state", "get_cursor_position", "get_screen_size"})
 RETRY_DELAYS_SECONDS = (0.25, 0.50)
+# Per-field truncation alone does not bound the file: a driver that answers
+# every read with garbage writes one record per call for a whole run. The
+# 2026-08-10 night run retained a single fault across twelve runs, so 200 lines
+# keep every realistic diagnosis (at most ~4 KB each, under a megabyte total)
+# while a broken driver cannot fill the evidence directory. The cap is not
+# silent - the last line says that it was reached, and transport_faults in
+# summary.json keeps counting.
+MAX_RETAINED_FAULT_LINES = 200
 
 
 def _target_order(item: Mapping[str, Any]) -> tuple[float, float, int]:
@@ -74,6 +82,7 @@ class CliTransport:
         self.timeout_seconds = timeout_seconds
         self.transport_faults = 0
         self._fault_finding_emitted = False
+        self._retained_fault_lines = 0
     def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         command = [self.driver_binary, tool, json.dumps(payload, separators=(",", ":"))]
         if self.socket_path is not None:
@@ -120,17 +129,28 @@ class CliTransport:
         self.transport_faults += 1
         if self.evidence_dir is None:
             return
+        self._retained_fault_lines += 1
+        if self._retained_fault_lines > MAX_RETAINED_FAULT_LINES + 1:
+            return
+        if self._retained_fault_lines == MAX_RETAINED_FAULT_LINES + 1:
+            record = {
+                "truncated": True,
+                "tool": tool,
+                "retained": MAX_RETAINED_FAULT_LINES,
+                "note": "further payloads are dropped; transport_faults keeps counting",
+            }
+        else:
+            stdout = getattr(result, "stdout", None)
+            if stdout is None:
+                stdout = getattr(result, "output", None)
+            record = {
+                "tool": tool,
+                "attempt": attempt,
+                "returncode": getattr(result, "returncode", None),
+                "stdout_head": head(stdout),
+                "stderr_head": head(getattr(result, "stderr", None)),
+            }
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
-        stdout = getattr(result, "stdout", None)
-        if stdout is None:
-            stdout = getattr(result, "output", None)
-        record = {
-            "tool": tool,
-            "attempt": attempt,
-            "returncode": getattr(result, "returncode", None),
-            "stdout_head": head(stdout),
-            "stderr_head": head(getattr(result, "stderr", None)),
-        }
         with (self.evidence_dir / "driver-faults.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(record, sort_keys=True) + "\n")
     def take_findings(self) -> list[Finding]:

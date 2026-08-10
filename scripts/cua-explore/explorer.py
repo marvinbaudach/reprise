@@ -19,6 +19,10 @@ CURRENT_VIEW_SECTION = "(view on entry)"
 # Free exploration happens before the workload phase starts; those actions are
 # spent either way, so the hover budget has to account for them.
 EXPLORATION_PROPOSALS = 12
+# Why a run kept the semantic route although the element asked for the pointer
+# one; the runner reports this record as `dispatch_policy`.
+UNMEASURED_DISPATCH_REASON = "activation-geometry-unmeasurable"
+MAX_UNMEASURED_DISPATCH_TARGETS = 8
 SURFACE_PRIORITY = (
     "Music",
     "Queue",
@@ -51,6 +55,8 @@ class DeterministicExplorer:
         self._hover_seen: set[tuple[str, str]] = set()
         # What the sweep actually covered, so a truncated sweep is visible.
         self.hover_coverage: list[dict[str, Any]] = []
+        # Stays None while every route was provable; the runner reports it.
+        self.dispatch_policy: dict[str, Any] | None = None
         self._hover_swept_current = False
         self._hover_planned_sections = 0
 
@@ -411,6 +417,8 @@ class DeterministicExplorer:
             height = frame.get("height", frame.get("h", 0)) if isinstance(frame, dict) else 0
             if target.get("geometry_trusted") is not False and width > 0 and height > 0:
                 dispatch = "px"
+            elif dispatch == "ax":
+                self._note_unmeasured_dispatch(label, target)
         return {
             "schema_version": SCHEMA_VERSION,
             "state_id": state_id,
@@ -419,6 +427,36 @@ class DeterministicExplorer:
             "dispatch": dispatch,
             "expect_effect": "required",
         }
+
+    def _note_unmeasured_dispatch(
+        self, label: str, target: Mapping[str, Any]
+    ) -> None:
+        """Keep an unproven route visible.
+
+        Three measurements on two profiles: `ax` dispatched without any
+        observable effect while `px` always worked. A target without an
+        invocable action belongs on the pointer route, but an unmeasured
+        coordinate must not be invented - so the run stays semantic and says so
+        through the record the runner already reads.
+        """
+        policy = self.dispatch_policy or {
+            "declared": "ax",
+            "effective": "ax",
+            "reason": UNMEASURED_DISPATCH_REASON,
+            "targets": [],
+        }
+        targets = list(policy["targets"])
+        known = any(item["target"] == label for item in targets)
+        if not known and len(targets) < MAX_UNMEASURED_DISPATCH_TARGETS:
+            targets.append(
+                {
+                    "target": label,
+                    "role": str(target.get("role", "")),
+                    "actions": list(target.get("actions") or ()),
+                    "geometry_trusted": target.get("geometry_trusted"),
+                }
+            )
+        self.dispatch_policy = {**policy, "targets": targets}
 
     def _rank(self, label: str) -> str:
         payload = f"{self.seed}:{label}".encode("utf-8")

@@ -11,6 +11,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from actions import (
@@ -24,7 +25,13 @@ from driver import CliTransport, CuaExecutor, DriverError, hover_preflight
 from hover_geometry import WindowGeometry, resolve_window_origin
 from explorer import DeterministicExplorer
 from fixtures import FixtureError, audit_batch_edit
-from protocol import ActionGateway, ContractError, Mission, load_mission
+from protocol import (
+    ActionGateway,
+    BudgetExhausted,
+    ContractError,
+    Mission,
+    load_mission,
+)
 from report import RunReport
 from oracles import Finding
 from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
@@ -43,76 +50,9 @@ from launch import (
     write_gtk_animation_settings,
 )
 from window_setup import apply_window_size
+from oracle_activity import ORACLE_FINDING_CODES, OracleActivityTracker
 
 # AppLifecycle launches through: unshare --user --map-current-user --net --
-
-ORACLE_FINDING_CODES = {
-    "feedback": {"slow-visible-feedback"},
-    "waiting-state": {"missing-waiting-feedback"},
-    "layout-shift": {"uninvited-layout-shift"},
-    "pointer-reachability": {"suspected-occlusion", "misrouted-click"},
-    "scroll-direction": {"wrong-scroll-direction", "scroll-jump", "scroll-lost-selection"},
-    "main-loop-stall": {"main-loop-stall"},
-    "accessibility": {
-        "degraded-accessibility",
-        "invisible-actionable",
-        "no-accessible-action",
-        "suspected-no-handler",
-    },
-    "offline-continuity": {
-        "offline-broke-local-music",
-        "offline-lost-cached-content",
-        "reconnect-kept-offline-status",
-    },
-    "hover-affordance": {
-        "hover-skipped",
-        "hover-unmeasurable",
-        "hover-affordance-missing",
-        "hover-affordance-weak",
-    },
-}
-
-
-class OracleActivityTracker:
-    """Counts whether each declared oracle reached an applicable observation."""
-
-    def __init__(self, names: Sequence[str]) -> None:
-        self.activity = {
-            str(name): {"evaluated": 0, "fired": 0} for name in names
-        }
-
-    def record(self, evidence: Any, findings: Sequence[Any]) -> None:
-        codes = {str(item.code) for item in findings}
-        for name, record in self.activity.items():
-            if name == "clean-runtime" or not self._applies(name, evidence):
-                continue
-            record["evaluated"] += 1
-            record["fired"] += len(codes & ORACLE_FINDING_CODES.get(name, set()))
-
-    def record_clean_runtime(self, *, fired: bool) -> None:
-        record = self.activity.get("clean-runtime")
-        if record is not None:
-            record["evaluated"] += 1
-            record["fired"] += int(fired)
-
-    def supersede(self, name: str, finding_code: str) -> None:
-        if name in self.activity:
-            self.activity[name]["superseded_by"] = finding_code
-
-    @staticmethod
-    def _applies(name: str, evidence: Any) -> bool:
-        kind = str(getattr(evidence, "kind", ""))
-        return {
-            "feedback": kind == "activate",
-            "waiting-state": kind == "wait",
-            "layout-shift": kind == "wait",
-            "pointer-reachability": kind == "activate" and evidence.dispatch == "px",
-            "scroll-direction": kind == "scroll",
-            "main-loop-stall": bool(kind),
-            "accessibility": kind == "activate" and evidence.dispatch == "ax",
-            "offline-continuity": kind == "set-connectivity",
-            "hover-affordance": kind == "hover",
-        }.get(name, False)
 
 
 def retain_agent_notes(profile_root: pathlib.Path, evidence_dir: pathlib.Path) -> None:
@@ -343,9 +283,18 @@ def _trace_from_observations(
     )
 
 
-def ensure_run_complete(finished: bool, summary: Mapping[str, Any]) -> None:
+def ensure_run_complete(
+    finished: bool,
+    summary: Mapping[str, Any],
+    *,
+    incomplete_reason: str | None = None,
+) -> None:
+    # E6: a spent budget is a regular ending (exit 0). Only a stop we cannot
+    # explain - no finish action and no exhausted budget - is an abort.
     if not finished:
-        raise RunError("mission ended without finish action")
+        if incomplete_reason is None:
+            raise RunError("mission ended without finish action")
+        return
     if summary.get("outcome") is None and summary.get("mission_complete") is not True:
         raise RunError("mission incomplete after workload evidence audit")
 
@@ -423,6 +372,9 @@ def run(args: argparse.Namespace) -> int:
     transport = CliTransport(
         socket_path=args.socket,
         connectivity_file=connectivity_file,
+        # Without this the retained driver payload of E7 has nowhere to go, and
+        # `driver-faults.jsonl` was never written for a single production run.
+        evidence_dir=args.evidence_dir,
     )
     lifecycle = AppLifecycle(
         app_binary=args.app_binary.resolve(),
@@ -445,6 +397,7 @@ def run(args: argparse.Namespace) -> int:
         required_audits=tuple(range(len(mission.workloads))),
     )
     oracle_activity = OracleActivityTracker(mission.oracles)
+    unknown_action_names: Counter[str] = Counter()
     history: list[Mapping[str, Any]] = []
     traces: list[ActionTrace] = []
     agent_context: Any
@@ -469,6 +422,7 @@ def run(args: argparse.Namespace) -> int:
 
     gateway = ActionGateway(mission)
     finished = False
+    incomplete_reason: str | None = None
     executor: Any = None
     try:
         pid, window_id, generation, window_origin, executor = launch_executor(
@@ -534,7 +488,13 @@ def run(args: argparse.Namespace) -> int:
                     proposed = agent.propose(
                         _mission_for_agent(mission), observation, history
                     )
-                accepted = gateway.accept(proposed, observation)
+                try:
+                    accepted = gateway.accept(proposed, observation)
+                except BudgetExhausted as error:
+                    # Only the budget ends the run this way; every other
+                    # contract breach keeps propagating and aborts the tool.
+                    incomplete_reason = str(error)
+                    break
                 if isinstance(accepted, CompleteWorkloadAction):
                     workload = mission.workloads[accepted.workload_index]
                     audit = audit_action_workload(
@@ -647,6 +607,11 @@ def run(args: argparse.Namespace) -> int:
                     continue
                 result = executor.execute(accepted)
                 oracle_activity.record(result.evidence, result.findings)
+                for snapshot in (result.before, *result.settled):
+                    # The executor never carried these counts, so the earlier
+                    # getattr default always won and E1's tally read as "nothing
+                    # unknown" instead of "never looked".
+                    unknown_action_names.update(snapshot.unknown_action_names)
                 finding_dicts = [dataclasses.asdict(item) for item in result.findings]
                 report.add_step(
                     action=_action_for_report(accepted),
@@ -674,6 +639,10 @@ def run(args: argparse.Namespace) -> int:
                 traces.append(
                     trace
                 )
+            if not finished and incomplete_reason is None:
+                # The loop bound is the action budget, so falling out of it
+                # means the budget is spent - not that the agent vanished.
+                incomplete_reason = "action budget exhausted"
     except HoverSmokeComplete:
         pass
     except Exception as error:
@@ -694,15 +663,18 @@ def run(args: argparse.Namespace) -> int:
         )
         report.set_hover_coverage(getattr(explorer, "hover_coverage", None))
         report.set_transport_faults(getattr(transport, "transport_faults", 0))
-        report.set_unknown_action_names(
-            getattr(executor, "unknown_action_names", {}) or {}
+        report.set_unknown_action_names(unknown_action_names)
+        dispatch_policy = read_agent_dispatch_policy(profile_root) or getattr(
+            explorer, "dispatch_policy", None
         )
-        dispatch_policy = read_agent_dispatch_policy(profile_root)
-        report.set_dispatch_policy(
-            dispatch_policy or getattr(explorer, "dispatch_policy", None)
-        )
+        report.set_dispatch_policy(dispatch_policy)
         if dispatch_policy and dispatch_policy.get("reason") == "semantic-route-unavailable":
             oracle_activity.supersede("accessibility", "semantic-route-unavailable")
+        elif oracle_activity.only_pointer_activations():
+            # Without an external agent there is no dispatch-policy file, and
+            # the deterministic explorer picks `px` per target: the silent
+            # accessibility oracle is then correct, not a product finding.
+            oracle_activity.supersede("accessibility", "pointer-dispatch-only")
         for finding in agent_product_findings(profile_root):
             report.add_finding(finding)
         report.set_oracle_activity(oracle_activity.activity)
@@ -721,9 +693,14 @@ def run(args: argparse.Namespace) -> int:
     if args.hover_smoke or args.hover_probe or args.click_probe:
         return 0
     if not finished:
-        report.set_abort_reason("mission ended without finish action")
+        if incomplete_reason is None:
+            report.set_abort_reason("mission ended without finish action")
+        else:
+            # E6: the report stays valid evidence, so no abort reason is set -
+            # the spent budget is only announced to whoever reads the log.
+            print(f"exploratory run ended early: {incomplete_reason}", file=sys.stderr)
         summary = report.write()
-    ensure_run_complete(finished, summary)
+    ensure_run_complete(finished, summary, incomplete_reason=incomplete_reason)
     return 0
 
 

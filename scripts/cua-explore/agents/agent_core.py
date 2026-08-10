@@ -295,9 +295,10 @@ class AgentSession:
                 or self.mission.get("id") == "pointer-layout-reachability"
                 else None
             )
-            action, role_mismatch = step_to_action(
+            action, role_mismatch, dispatch_note = step_to_action(
                 step, observation, force_dispatch=force_dispatch
             )
+            self._note_unmeasured_route(step.name, dispatch_note)
             if role_mismatch:
                 self.add_note(
                     Note(
@@ -328,9 +329,10 @@ class AgentSession:
             if self.sequencer.alternate_index < len(step.alternates):
                 alternate = step.alternates[self.sequencer.alternate_index]
                 self.sequencer.alternate_index += 1
-                alternate_action, _mismatch = step_to_action(
+                alternate_action, _mismatch, alternate_note = step_to_action(
                     alternate, observation, force_dispatch=force_dispatch
                 )
+                self._note_unmeasured_route(alternate.name, alternate_note)
                 if alternate_action is not None:
                     self.last_step_name = alternate.name
                     return self._emit(alternate_action, observation)
@@ -356,6 +358,21 @@ class AgentSession:
                 )
             )
             self.sequencer.advance_step()
+
+    def _note_unmeasured_route(
+        self, step_name: str, dispatch_note: Mapping[str, Any] | None
+    ) -> None:
+        if dispatch_note is None:
+            return
+        self.add_note(
+            Note(
+                f"agent-dispatch-geometry-unmeasured:{step_name}",
+                "The target offers no invocable action, but its geometry stayed "
+                "unmeasured, so the step kept the semantic route that was measured "
+                "to dispatch without effect.",
+                dict(dispatch_note),
+            )
+        )
 
     def _initialize(self, mission: Mapping[str, Any]) -> None:
         if mission.get("schema_version") != 1:
@@ -417,6 +434,10 @@ class AgentSession:
                 self.last_action,
                 self.last_step_name,
             )
+            # Snapshot before the learner adopts this observation: afterwards the
+            # typed token carries whatever the entry shows, which would make the
+            # assertion compare a value against itself.
+            known_token_values = dict(self.learner.values)
             if not self.learner.observe(observation, self.last_action):
                 self.add_note(
                     Note(
@@ -438,6 +459,7 @@ class AgentSession:
                 self.last_step_name,
                 selection_count=batch_selection_count(self.mission or {}),
                 section_changed=self._section_precondition(self.last_step_name),
+                known_token_values=known_token_values,
             ):
                 self.add_note(Note(code, summary, evidence))
         self.last_observation = observation

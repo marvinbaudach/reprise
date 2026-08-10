@@ -360,7 +360,10 @@ identity in the harness and belongs with the optional `key` target, not here.
 applies it once after every launch and restart, before the window origin is
 resolved, and measures back what the window manager granted
 (`summary.json → window_setup`). More than two pixels of drift raises
-`window-size-not-honoured` — a warning, not an abort.
+`window-size-not-honoured` — a warning, not an abort. If the measurement itself
+fails (wmctrl gone, hung, or the window not found) the record degrades to
+`achieved: null` plus an `error`, and the same warning is raised: measuring is a
+read and gets a bounded retry, resizing is a write and never gets a second one.
 
 This exists because the window size used to be inherited from whatever the app
 defaulted to, and that default was below the width at which Reprise closes both

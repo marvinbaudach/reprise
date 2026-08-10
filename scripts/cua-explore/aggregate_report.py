@@ -18,6 +18,25 @@ class RunRecord:
     findings: tuple[Mapping[str, Any], ...]
 
 
+@dataclass(frozen=True)
+class RunGap:
+    """A run whose artefacts could not be read.
+
+    Measured with a truncated summary.json (a writer killed mid-flush is a
+    normal night-run ending): the parse error propagated out of main and the
+    maintainer got a traceback instead of a report for the healthy runs.
+    """
+
+    path: pathlib.Path
+    reason: str
+
+
+@dataclass(frozen=True)
+class Discovery:
+    runs: tuple[RunRecord, ...]
+    gaps: tuple[RunGap, ...]
+
+
 def _integer(value: Any, default: int = 0) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else default
 
@@ -163,19 +182,35 @@ def load_run(summary_path: pathlib.Path) -> RunRecord:
     return RunRecord(summary_path.parent, summary, tuple(findings))
 
 
-def discover_runs(root: pathlib.Path) -> list[RunRecord]:
+def discover_runs(root: pathlib.Path) -> Discovery:
     paths = [root] if root.name == "summary.json" and root.is_file() else sorted(root.glob("*/summary.json"))
-    return [load_run(path) for path in paths]
+    runs: list[RunRecord] = []
+    gaps: list[RunGap] = []
+    for path in paths:
+        try:
+            runs.append(load_run(path))
+        except (OSError, ValueError) as error:
+            # One unreadable artefact must cost exactly one run, never the
+            # report. Silently dropping it would be worse: the gap is what the
+            # maintainer needs to see at 03:26.
+            gaps.append(RunGap(path.parent, f"{type(error).__name__}: {error}"))
+    return Discovery(tuple(runs), tuple(gaps))
 
 
-def render_report(runs: Sequence[RunRecord]) -> str:
+def render_report(runs: Sequence[RunRecord], gaps: Sequence[RunGap] = ()) -> str:
     outcomes = Counter(str(run.summary.get("outcome", "unknown")) for run in runs)
     lines = ["# Exploratory CUA aggregate", "", f"Runs: {len(runs)}"]
     if outcomes:
         lines.append(
             "Outcomes: " + ", ".join(f"{name}={count}" for name, count in sorted(outcomes.items()))
         )
+    if gaps:
+        lines.append(f"Unreadable runs: {len(gaps)}")
+        lines.extend(["", "## Unreadable runs", ""])
+        lines.extend(f"- {gap.path.name}: {gap.reason}" for gap in gaps)
     lines.extend(["", "## Run health", ""])
+    if not runs:
+        lines.append("No run could be read.")
     lines.extend(f"- {health_line(run.summary)}" for run in runs)
     lines.extend(["", "## Findings by reproducibility", ""])
     groups = group_findings(runs)
@@ -196,10 +231,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("evidence_root", type=pathlib.Path)
     parser.add_argument("--output", type=pathlib.Path)
     args = parser.parse_args(argv)
-    runs = discover_runs(args.evidence_root)
-    if not runs:
+    discovery = discover_runs(args.evidence_root)
+    if not discovery.runs and not discovery.gaps:
         parser.error("no summary.json files found")
-    report = render_report(runs)
+    report = render_report(discovery.runs, discovery.gaps)
     if args.output is None:
         print(report, end="")
     else:

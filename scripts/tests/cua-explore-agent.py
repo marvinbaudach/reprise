@@ -215,6 +215,90 @@ class SelectionCountAssertionTests(unittest.TestCase):
         self.assertEqual(self._codes(self._observation("Music"), None), set())
 
 
+class SectionSearchPreconditionTests(unittest.TestCase):
+    """The night run invented four scope leaks from a value nobody had typed."""
+
+    TYPED = {
+        "kind": "type",
+        "target": {"label": "Search all fields"},
+        "fixture_token": "PODCAST_ONLY_NEEDLE",
+    }
+
+    def _observation(self, entry_value, rows=("Row A", "Row B")):
+        return {
+            "schema_version": 1,
+            "state_id": "state-3",
+            "elements": [
+                {
+                    "label": "Search all fields",
+                    "role": "search box",
+                    "value": entry_value,
+                },
+                *({"label": row, "role": "row"} for row in rows),
+            ],
+        }
+
+    def _codes(self, observation, known_token_values):
+        return {
+            code
+            for code, _summary, _evidence in assertion_codes(
+                self.TYPED,
+                observation,
+                "search-Podcasts",
+                section_changed=True,
+                known_token_values=known_token_values,
+            )
+        }
+
+    def test_the_previous_sources_value_does_not_satisfy_the_precondition(self) -> None:
+        codes = self._codes(
+            self._observation("Writable Batch 0042"),
+            {"MUSIC_ONLY_NEEDLE": "Writable Batch 0042"},
+        )
+
+        self.assertIn("agent-precondition-unmet:search-Podcasts", codes)
+        self.assertNotIn("agent-search-scope-leak", codes)
+
+    def test_the_token_that_was_typed_still_produces_the_scope_leak(self) -> None:
+        codes = self._codes(
+            self._observation("Fixture Podcast Needle"),
+            {
+                "MUSIC_ONLY_NEEDLE": "Writable Batch 0042",
+                "PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle",
+            },
+        )
+
+        self.assertIn("agent-search-scope-leak", codes)
+        self.assertNotIn("agent-precondition-unmet:search-Podcasts", codes)
+
+    def test_a_first_search_without_any_learned_value_is_believed(self) -> None:
+        codes = self._codes(self._observation("Fixture Podcast Needle"), {})
+
+        self.assertIn("agent-search-scope-leak", codes)
+
+    def test_a_single_row_under_the_typed_value_asserts_nothing(self) -> None:
+        codes = self._codes(
+            self._observation(
+                "Fixture Podcast Needle", rows=("Fixture Podcast Needle",)
+            ),
+            {"PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle"},
+        )
+
+        self.assertEqual(codes, set())
+
+    def test_the_evidence_names_the_token_and_what_stood_in_the_entry(self) -> None:
+        _code, _summary, evidence = assertion_codes(
+            self.TYPED,
+            self._observation("Writable Batch 0042"),
+            "search-Podcasts",
+            section_changed=True,
+            known_token_values={"MUSIC_ONLY_NEEDLE": "Writable Batch 0042"},
+        )[0]
+
+        self.assertEqual(evidence["fixture_token"], "PODCAST_ONLY_NEEDLE")
+        self.assertEqual(evidence["entry_values"], ["Writable Batch 0042"])
+
+
 class AgentAcceptanceTests(unittest.TestCase):
     def test_recorded_actions_choose_dispatch_and_entry_roles_stay_strict(self) -> None:
         closed = self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
@@ -234,6 +318,53 @@ class AgentAcceptanceTests(unittest.TestCase):
         action = step_to_action(type_step, opened)[0]
         self.assertEqual(action["target"], {"label": "Search all fields"})
         ActionGateway(self._mission("section-search-isolation")).accept(action, opened)
+
+    def test_an_unmeasured_route_is_noted_instead_of_silently_staying_semantic(self) -> None:
+        observation = self._without_geometry(
+            self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
+        )
+        session = AgentSession(seed=11, probe_ratio=0)
+
+        action = session.next_action(
+            self._agent_mission(self._mission("section-search-isolation")),
+            observation,
+            [],
+        )
+
+        self.assertEqual(action["dispatch"], "ax")
+        note = next(
+            note
+            for note in session.notes
+            if note.code.startswith("agent-dispatch-geometry-unmeasured:")
+        )
+        self.assertEqual(note.evidence["target"], action["target"]["label"])
+        self.assertEqual(note.evidence["actions"], [])
+        self.assertEqual(note.evidence["dispatch"], "ax")
+
+    def test_the_explorer_records_the_route_it_could_not_prove(self) -> None:
+        measured = self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
+        explorer = DeterministicExplorer(self._mission("first-time-exploration"), 11)
+
+        action = explorer.propose(self._without_geometry(measured))
+
+        self.assertEqual(
+            (action["target"], action["dispatch"]), ({"label": "Music"}, "ax")
+        )
+        self.assertEqual(
+            explorer.dispatch_policy["reason"], "activation-geometry-unmeasurable"
+        )
+        self.assertEqual(
+            [item["target"] for item in explorer.dispatch_policy["targets"]], ["Music"]
+        )
+
+    def test_a_measured_route_leaves_the_explorer_policy_empty(self) -> None:
+        explorer = DeterministicExplorer(self._mission("first-time-exploration"), 11)
+
+        explorer.propose(
+            self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
+        )
+
+        self.assertIsNone(explorer.dispatch_policy)
 
     def test_semantic_retry_switches_the_run_to_pointer_dispatch_after_three(self) -> None:
         mission = self._mission("section-search-isolation")
@@ -627,6 +758,17 @@ class AgentAcceptanceTests(unittest.TestCase):
         ] + [toggle]
         opened["actionable_labels"] = sorted({item["label"] for item in opened["elements"] if item["actionable"]})
         return opened
+
+    @staticmethod
+    def _without_geometry(observation):
+        """The same recorded tree with every frame left unmeasured."""
+        return {
+            **observation,
+            "elements": [
+                {**item, "frame": {**item.get("frame", {}), "width": 0, "height": 0}}
+                for item in observation["elements"]
+            ],
+        }
 
     @staticmethod
     def _state(template, index, signature):

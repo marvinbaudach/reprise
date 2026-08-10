@@ -29,7 +29,8 @@ def step_is_satisfied(step: Step, observation: Mapping[str, Any]) -> bool:
 
 def _activation_dispatch(
     observation: Mapping[str, Any], label: str, default: str
-) -> str:
+) -> tuple[str, Mapping[str, Any] | None]:
+    """The route plus, when the route is unproven, the evidence for saying so."""
     matches = [
         item
         for item in observation.get("elements", [])
@@ -42,15 +43,27 @@ def _activation_dispatch(
         )
     )
     if not matches or not all("actions" in item for item in matches):
-        return default
+        return default, None
     if any(invocable_actions(item.get("actions") or ()) for item in matches):
-        return "ax"
+        return "ax", None
     frame = matches[0].get("frame", {})
     width = frame.get("width", frame.get("w", 0)) if isinstance(frame, dict) else 0
     height = frame.get("height", frame.get("h", 0)) if isinstance(frame, dict) else 0
     if matches[0].get("geometry_trusted") is not False and width > 0 and height > 0:
-        return "px"
-    return default
+        return "px", None
+    # Three measurements on two profiles: `ax` dispatched without any observable
+    # effect while `px` always worked. The target offers no invocable action, so
+    # the pointer route is the indicated one - but its geometry is unmeasured and
+    # guessing a coordinate would be worse. Staying is right; staying silently is
+    # not, because the run then acts on a route measured to do nothing.
+    return default, {
+        "target": label,
+        "role": str(matches[0].get("role", "")),
+        "actions": list(matches[0].get("actions") or ()),
+        "dispatch": default,
+        "geometry_trusted": matches[0].get("geometry_trusted"),
+        "frame": dict(frame) if isinstance(frame, dict) else {},
+    }
 
 
 def step_to_action(
@@ -58,7 +71,8 @@ def step_to_action(
     observation: Mapping[str, Any],
     *,
     force_dispatch: str | None = None,
-) -> tuple[dict[str, Any] | None, bool]:
+) -> tuple[dict[str, Any] | None, bool, Mapping[str, Any] | None]:
+    """The action, whether a role fallback was needed, and an unproven route."""
     action = {
         "schema_version": 1,
         "state_id": str(observation.get("state_id", "")),
@@ -66,16 +80,20 @@ def step_to_action(
         **dict(step.fields),
     }
     mismatch = False
+    dispatch_note = None
     if step.matcher is not None:
         candidates, mismatch = step.matcher.candidates_with_role_fallback(observation)
         if not candidates:
-            return None, mismatch
+            return None, mismatch, None
         action["target"] = {"label": candidates[0]}
         if step.kind == "activate":
             declared = str(action.get("dispatch", "auto"))
-            action["dispatch"] = force_dispatch or _activation_dispatch(
-                observation,
-                candidates[0],
-                "ax" if declared == "auto" else declared,
-            )
-    return action, mismatch
+            if force_dispatch:
+                action["dispatch"] = force_dispatch
+            else:
+                action["dispatch"], dispatch_note = _activation_dispatch(
+                    observation,
+                    candidates[0],
+                    "ax" if declared == "auto" else declared,
+                )
+    return action, mismatch, dispatch_note

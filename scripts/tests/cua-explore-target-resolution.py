@@ -22,7 +22,12 @@ from cua_explore_expectations import (  # noqa: E402
     MUSIC_COLLAPSED_ACTIONABLE_COUNT_BEFORE,
     MUSIC_COLLAPSED_ACTIONABLE_LABELS,
 )
-from driver import CliTransport, CuaExecutor, DriverError  # noqa: E402
+from driver import (  # noqa: E402
+    MAX_RETAINED_FAULT_LINES,
+    CliTransport,
+    CuaExecutor,
+    DriverError,
+)
 from explorer import DeterministicExplorer  # noqa: E402
 from oracles import ActionEvidence, OracleEngine, normalize_snapshot  # noqa: E402
 from protocol import ActionGateway, load_mission  # noqa: E402
@@ -113,6 +118,26 @@ class ActionVocabularyTests(unittest.TestCase):
         self.assertTrue(
             all(invocable_actions(item.get("actions", ())) == ("click",) for item in stars)
         )
+
+    def test_absent_and_malformed_action_lists_classify_as_empty(self) -> None:
+        # `.get("actions", ())` hands None straight through when the key exists
+        # with a null value; iterating it raised TypeError and ended the run.
+        for value in (None, 7, True, object()):
+            with self.subTest(value=value):
+                self.assertEqual(invocable_actions(value), ())
+                self.assertEqual(unknown_action_names(value), ())
+
+    def test_a_lone_string_counts_as_one_action_name(self) -> None:
+        self.assertEqual(invocable_actions("click"), ("click",))
+        self.assertEqual(invocable_actions("listitem.scroll-to"), ())
+
+    def test_classification_reads_the_same_in_both_spellings(self) -> None:
+        # normalize_snapshot lowercases the names, atspi_geometry hands them
+        # through verbatim, and driver._target judges the verbatim ones.
+        self.assertTrue(is_structural_action("ListItem.Scroll-To"))
+        self.assertEqual(invocable_actions((" ListItem.scroll-to ",)), ())
+        self.assertEqual(invocable_actions(("Click",)), ("click",))
+        self.assertEqual(unknown_action_names(("Click",)), ())
 
 
 class NormalizedSnapshotTests(unittest.TestCase):
@@ -221,6 +246,20 @@ class DeterministicTargetTests(unittest.TestCase):
         self.assertEqual(evidence["chosen"], chosen["frame"])
         self.assertLessEqual(len(evidence["alternatives"]), 8)
 
+    def test_null_actions_do_not_end_the_run(self) -> None:
+        raw = load_fixture(AMBIGUOUS_CELLS)
+        for item in raw["elements"]:
+            if item.get("label") == "☆":
+                item["actions"] = None
+        executor = CuaExecutor(
+            RecordedTransport(raw), pid=1, window_id=2, session="null", settle_delays=()
+        )
+
+        chosen = executor._target(raw, "☆")
+
+        self.assertEqual(chosen["label"], "☆")
+        self.assertIs(executor.target_carries_action(raw, "☆"), False)
+
     def test_recorded_explorer_reaches_ten_actions_without_target_failure(self) -> None:
         mission = load_mission(
             EXPLORE_ROOT / "missions" / "first-time-exploration.json"
@@ -317,6 +356,25 @@ class CliTransportRetryTests(unittest.TestCase):
 
         self.assertEqual(transport.call("get_screen_size", {}), {"width": 1440})
         self.assertEqual(self.fault_records()[0]["stdout_head"], "partial")
+
+    def test_fault_log_stops_at_the_line_cap_and_says_so(self) -> None:
+        # Per-field truncation bounds a line, not the file; a permanently broken
+        # driver writes one record per call for a whole run.
+        overshoot = 5
+        attempts = MAX_RETAINED_FAULT_LINES + overshoot
+        transport = ScriptedCliTransport(
+            [completed("junk")] * attempts, evidence_dir=self.evidence_dir
+        )
+
+        for _attempt in range(attempts):
+            with self.assertRaises(DriverError):
+                transport.call("click", {})
+
+        records = self.fault_records()
+        self.assertEqual(len(records), MAX_RETAINED_FAULT_LINES + 1)
+        self.assertEqual(records[-1]["truncated"], True)
+        self.assertEqual(records[-1]["retained"], MAX_RETAINED_FAULT_LINES)
+        self.assertEqual(transport.transport_faults, attempts)
 
     def test_confirmation_glyph_compatibility_is_unchanged(self) -> None:
         transport = ScriptedCliTransport(

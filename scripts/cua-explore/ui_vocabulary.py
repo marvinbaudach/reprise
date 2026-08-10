@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Mapping
+from typing import Any, Mapping
 
 
 CANONICAL_ROW_ROLE = "row"
@@ -113,19 +113,40 @@ def canonical_role(role: str) -> str:
     return ROLE_ALIASES.get(normalized, normalized)
 
 
+def _action_tokens(names: Any) -> tuple[str, ...]:
+    """Fold whatever an element carries under "actions" onto comparable tokens.
+
+    Two measured defects meet here. An element with `"actions": null` reaches
+    `driver._target` through `.get("actions", ())` - the default never fires,
+    and iterating None raised a TypeError that ended the run. And
+    `oracles.normalize_snapshot` lowercases the names while
+    `atspi_geometry._action_names` hands them through verbatim, so the same
+    node was classified twice under two spellings.
+    """
+    if names is None:
+        return ()
+    # A lone string is one action name, not a sequence of characters.
+    if isinstance(names, (str, bytes)):
+        names = (names,)
+    try:
+        return tuple(str(name).strip().casefold() for name in names)
+    except TypeError:
+        return ()
+
+
 def is_structural_action(name: str) -> bool:
-    return str(name).startswith(STRUCTURAL_ACTION_PREFIXES)
+    return str(name).strip().casefold().startswith(STRUCTURAL_ACTION_PREFIXES)
 
 
-def invocable_actions(names: Iterable[str]) -> tuple[str, ...]:
+def invocable_actions(names: Any) -> tuple[str, ...]:
     """Keep measured invocable and unknown names visible to the harness."""
-    return tuple(name for name in names if not is_structural_action(name))
+    return tuple(name for name in _action_tokens(names) if not is_structural_action(name))
 
 
-def unknown_action_names(names: Iterable[str]) -> tuple[str, ...]:
+def unknown_action_names(names: Any) -> tuple[str, ...]:
     return tuple(
         name
-        for name in names
+        for name in _action_tokens(names)
         if not is_structural_action(name) and name not in MEASURED_INVOCABLE_ACTIONS
     )
 

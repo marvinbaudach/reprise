@@ -125,6 +125,15 @@ class ContractError(ValueError):
     """The agent or mission crossed the explicitly bounded contract."""
 
 
+class BudgetExhausted(ContractError):
+    """The action or time budget ran out.
+
+    E6 calls this a regular ending, not a violation: the run stays incomplete
+    but the tool worked. It stays a `ContractError` so every existing caller
+    keeps catching it; only the runner tells the two apart.
+    """
+
+
 def _object(value: Any, name: str) -> Mapping[str, Any]:
     if not isinstance(value, dict):
         raise ContractError(f"{name} must be an object")
@@ -416,9 +425,9 @@ class ActionGateway:
         self, raw: Mapping[str, Any], observation: Mapping[str, Any]
     ) -> AcceptedAction:
         if self._accepted_actions >= self.mission.budgets.actions:
-            raise ContractError("action budget exhausted")
+            raise BudgetExhausted("action budget exhausted")
         if time.monotonic() - self._started > self.mission.budgets.seconds:
-            raise ContractError("time budget exhausted")
+            raise BudgetExhausted("time budget exhausted")
         value = _object(raw, "action")
         if value.get("schema_version") != SCHEMA_VERSION:
             raise ContractError(f"action schema_version must be {SCHEMA_VERSION}")
