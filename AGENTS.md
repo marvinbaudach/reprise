@@ -315,6 +315,28 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | Append-only package-5 rule, plan, and completion records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, and `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and unrelated source UI or packaging work |
 
+## Active file ownership — list geometry service
+
+Plan: `docs/plans/list-geometry-service.md`
+Two tracks run in parallel from the same base commit; they share no file.
+
+**Track 1 · mechanics** — branch `feat/list-geometry-service`
+- `crates/reprise-gnome/src/ui/list_geometry.rs` (new)
+- `crates/reprise-gnome/src/ui/scroll_probe.rs`
+- `crates/reprise-gnome/src/ui/scroll_center.rs`
+- `crates/reprise-gnome/src/ui/track_list/track_list_geometry.rs` (removed)
+- `crates/reprise-gnome/src/ui/track_list/track_list_reload.rs`
+- `crates/reprise-gnome/src/ui/track_list/view_state_memory.rs`
+- `crates/reprise-gnome/src/ui/track_list/reload_restore.rs`
+- `crates/reprise-core/src/library/settings.rs`
+
+**Track 2 · measurement** — branch `feat/list-geometry-tests`
+- `crates/reprise-gnome/src/ui/track_list/current_track_selection/delete_follow_display_tests.rs`
+- new display-test files for the large-delete and queue-sections cases
+
+This ownership is ACTIVE. A sibling branch that edits an owned path must
+rebase onto the owning branch first, not merge past it.
+
 ## Active file ownership — multi-surface frontends
 
 Spec: `docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md`
