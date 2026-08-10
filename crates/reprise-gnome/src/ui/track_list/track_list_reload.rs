@@ -766,3 +766,7 @@ mod search_viewport_display_tests;
 #[cfg(test)]
 #[path = "navback_anchor_display_tests.rs"]
 mod navback_anchor_display_tests;
+
+#[cfg(test)]
+#[path = "queue_section_geometry_display_tests.rs"]
+mod queue_section_geometry_display_tests;
