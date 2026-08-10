@@ -144,7 +144,7 @@ impl AdjustmentHold {
             // higher default priority, so releasing here would cancel that
             // last restore and leave GTK's late handover value behind. Let
             // the correction run first, then retire the hold at default idle.
-            glib::idle_add_local_once(move || release(&self.inner));
+            glib::idle_add_local_once(move || settle_and_release(&self.inner));
         });
     }
 }
@@ -156,20 +156,30 @@ fn bounded_target(lower: f64, upper: f64, page: f64, target: f64) -> Option<f64>
     Some(target.clamp(lower, (upper - page).max(lower)))
 }
 
-fn correction_target(inner: &HoldInner) -> Option<f64> {
+enum CorrectionTarget {
+    Reachable(f64),
+    Deferred,
+}
+
+fn correction_target(inner: &HoldInner) -> Option<CorrectionTarget> {
     if !inner.active.get() || inner.correcting.get() {
         return None;
     }
-    let target = bounded_target(
-        inner.adjustment.lower(),
-        inner.adjustment.upper(),
-        inner.adjustment.page_size(),
-        inner.target.get(),
-    )?;
+    let lower = inner.adjustment.lower();
+    let upper = inner.adjustment.upper();
+    let page = inner.adjustment.page_size();
+    if !lower.is_finite() || !upper.is_finite() || !page.is_finite() || upper <= lower {
+        return None;
+    }
+    let target = inner.target.get();
+    let maximum = (upper - page).max(lower);
+    if target < lower || target > maximum {
+        return Some(CorrectionTarget::Deferred);
+    }
     if (inner.adjustment.value() - target).abs() <= VALUE_EPSILON {
         return None;
     }
-    Some(target)
+    Some(CorrectionTarget::Reachable(target))
 }
 
 fn claim_correction(inner: &HoldInner, target: f64) -> bool {
@@ -185,7 +195,6 @@ fn claim_correction(inner: &HoldInner, target: f64) -> bool {
             value = inner.adjustment.value(),
             "scroll hold outlasted its correction budget; releasing it"
         );
-        release(inner);
         return false;
     }
     true
@@ -197,15 +206,41 @@ fn write_target(inner: &HoldInner, target: f64) {
     inner.correcting.set(false);
 }
 
+fn settle_and_release(inner: &HoldInner) {
+    let target = bounded_target(
+        inner.adjustment.lower(),
+        inner.adjustment.upper(),
+        inner.adjustment.page_size(),
+        inner.target.get(),
+    );
+    if let Some(target) = target {
+        if (inner.adjustment.value() - target).abs() > VALUE_EPSILON {
+            write_target(inner, target);
+        }
+    }
+    release(inner);
+}
+
 /// Restores from ordinary application code, where no GTK signal emission or
 /// allocation is on the stack. Construction and explicit target changes use
 /// this path so the reload path retains its immediate pre-paint placement.
 fn restore_direct(inner: &HoldInner) {
-    let Some(target) = correction_target(inner) else {
+    let Some(correction) = correction_target(inner) else {
         return;
     };
-    if claim_correction(inner, target) {
-        write_target(inner, target);
+    match correction {
+        CorrectionTarget::Reachable(target) => {
+            if claim_correction(inner, target) {
+                write_target(inner, target);
+            } else {
+                release(inner);
+            }
+        }
+        CorrectionTarget::Deferred => {
+            if !claim_correction(inner, inner.target.get()) {
+                settle_and_release(inner);
+            }
+        }
     }
 }
 
@@ -223,10 +258,27 @@ fn restore_deferred(inner: &Rc<HoldInner>) {
     if inner.pending.get() {
         return;
     }
-    let Some(target) = correction_target(inner) else {
+    let Some(correction) = correction_target(inner) else {
         return;
     };
+    let (target, settle_if_exhausted) = match correction {
+        CorrectionTarget::Reachable(target) => (target, false),
+        CorrectionTarget::Deferred => (inner.target.get(), true),
+    };
     if !claim_correction(inner, target) {
+        if settle_if_exhausted {
+            inner.pending.set(true);
+            let weak = Rc::downgrade(inner);
+            glib::idle_add_local_full(glib::Priority::HIGH_IDLE, move || {
+                if let Some(inner) = weak.upgrade() {
+                    inner.pending.set(false);
+                    settle_and_release(&inner);
+                }
+                glib::ControlFlow::Break
+            });
+        } else {
+            release(inner);
+        }
         return;
     }
     inner.pending.set(true);
@@ -238,7 +290,7 @@ fn restore_deferred(inner: &Rc<HoldInner>) {
         inner.pending.set(false);
         // The hold may have expired or been superseded, and configure may
         // have changed the range again. Re-check both at execution time.
-        if let Some(target) = correction_target(&inner) {
+        if let Some(CorrectionTarget::Reachable(target)) = correction_target(&inner) {
             write_target(&inner, target);
         }
         glib::ControlFlow::Break
@@ -280,6 +332,30 @@ mod tests {
     }
 
     #[test]
+    fn target_beyond_the_live_range_is_not_written_as_a_clamped_value() {
+        let adjustment = scrollable();
+        let hold = AdjustmentHold::new(&adjustment);
+
+        hold.set_target(12_000.0);
+
+        assert_eq!(adjustment.value(), 0.0);
+    }
+
+    #[test]
+    fn full_deferred_target_is_written_after_the_range_grows() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let adjustment = scrollable();
+        let hold = AdjustmentHold::new(&adjustment);
+        hold.set_target(12_000.0);
+        assert_eq!(adjustment.value(), 0.0);
+
+        adjustment.set_upper(13_000.0);
+
+        assert!(gtk4::glib::MainContext::default().iteration(false));
+        assert_eq!(adjustment.value(), 12_000.0);
+    }
+
+    #[test]
     fn value_change_is_restored_only_after_the_signal_returns() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         let adjustment = scrollable();
@@ -294,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn bounds_change_is_restored_later_against_the_latest_range() {
+    fn unreachable_target_is_clamped_only_when_the_latest_range_settles() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         let adjustment = scrollable();
         let hold = AdjustmentHold::new(&adjustment);
@@ -305,6 +381,18 @@ mod tests {
 
         assert_eq!(adjustment.value(), 0.0);
         assert!(gtk4::glib::MainContext::default().iteration(false));
+        assert_eq!(adjustment.value(), 0.0);
+
+        let inner = hold.inner.clone();
+        hold.release_after(Duration::ZERO);
+        let context = gtk4::glib::MainContext::default();
+        for _ in 0..8 {
+            if !inner.active.get() || !context.iteration(false) {
+                break;
+            }
+        }
+
+        assert!(!inner.active.get());
         assert_eq!(adjustment.value(), 6_000.0);
     }
 
@@ -452,5 +540,33 @@ mod tests {
 
         assert!(!hold.inner.active.get());
         assert_eq!(adjustment.value(), 0.0);
+    }
+
+    #[test]
+    fn unreachable_target_retires_at_the_budget_and_clamps_to_the_settled_range() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let adjustment = scrollable();
+        let hold = AdjustmentHold::new(&adjustment);
+        hold.set_target(12_000.0);
+        assert_eq!(adjustment.value(), 0.0);
+
+        let context = gtk4::glib::MainContext::default();
+        for correction in 0..MAX_CORRECTIONS * 2 {
+            if !hold.inner.active.get() {
+                break;
+            }
+            adjustment.set_upper(10_001.0 + f64::from(correction % 2));
+            while context.iteration(false) {}
+        }
+
+        assert!(
+            !hold.inner.active.get(),
+            "the correction budget must retire the hold"
+        );
+        assert_eq!(hold.inner.corrections.get(), MAX_CORRECTIONS + 1);
+        assert_eq!(
+            adjustment.value(),
+            adjustment.upper() - adjustment.page_size()
+        );
     }
 }
