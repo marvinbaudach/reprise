@@ -189,9 +189,7 @@ fn run_anchor_deleting_delete(label: &str, delete_from: i64, delete_through: i64
         .into_iter()
         .filter(|id| *id >= delete_from && *id <= delete_through)
         .collect::<Vec<_>>();
-    let anchor_is_deleted = captured_anchor
-        .map(|(id, _)| removed_ids.contains(&id))
-        .unwrap_or(false);
+    let anchor_is_deleted = captured_anchor.is_some_and(|(id, _)| removed_ids.contains(&id));
 
     let samples: Rc<RefCell<Vec<f64>>> = Rc::new(RefCell::new(Vec::new()));
     let sampler = {
