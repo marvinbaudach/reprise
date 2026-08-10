@@ -45,6 +45,7 @@ internal class SceneDriver(
         private set
     private var framesWithheld = false
     private var lastTickNanos: Long? = null
+    private var firstTickNanos: Long? = null
 
     fun tick(): Boolean {
         if (!framesAllowed()) {
@@ -56,11 +57,26 @@ internal class SceneDriver(
         val positionMs = estimatedPositionMs(sample, nowNanos)
         val frameIndex = frames.frameIndexFor(positionMs)
         val before = state.revision
-        state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
+        val analysed = frames.frameCount > 0
+        if (analysed) {
+            state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
+        }
         val previousTick = lastTickNanos
         if (previousTick != null) {
             val elapsedSeconds = (nowNanos - previousTick).coerceAtLeast(0) / NANOS_PER_SECOND
-            state.advanceFogBy(elapsedSeconds)
+            if (analysed) {
+                state.advanceFogBy(elapsedSeconds)
+            } else {
+                // No spectrogram ever arrived for this track, so there is no
+                // signal to follow. Wandering is the honest substitute: it is
+                // visibly alive without pretending to answer music it cannot
+                // hear.
+                val totalSeconds = (nowNanos - (firstTickNanos ?: nowNanos)) / NANOS_PER_SECOND
+                state.wanderTo(totalSeconds, elapsedSeconds)
+            }
+        }
+        if (firstTickNanos == null) {
+            firstTickNanos = nowNanos
         }
         lastTickNanos = nowNanos
         framesWithheld = false

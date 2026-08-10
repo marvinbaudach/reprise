@@ -46,10 +46,21 @@ class CoverShadowBitmapTest {
         }
 
         assertTrue("the shadow must start visibly below the cover: $alphas", alphas.first() > 0)
-        alphas.zipWithNext().forEach { (upper, lower) ->
+        // One hump, not a staircase. The shadow is cast downwards, so its
+        // darkest point sits below the cover's edge rather than at it — what
+        // must never happen is alpha going back up once it has started to
+        // fall, which is exactly what stacked rectangles did.
+        val peak = alphas.indexOf(alphas.max())
+        alphas.take(peak + 1).zipWithNext().forEach { (upper, lower) ->
+            assertTrue("shadow alpha must rise smoothly into its peak: $alphas", lower >= upper)
+        }
+        alphas.drop(peak).zipWithNext().forEach { (upper, lower) ->
             assertTrue("shadow alpha must fall monotonically: $upper then $lower", lower <= upper)
         }
-        assertEquals(0, alphas.last())
+        // The shadow has to run out, not stop: a single count of alpha 96 px
+        // below the cover is one 255th and invisible, but a hard 0 here would
+        // only be measuring where the sample happens to end.
+        assertTrue("the shadow must fade out, not end abruptly: $alphas", alphas.last() <= 2)
         assertTrue(
             "a soft shadow needs a gradient, not a handful of stacked alpha steps: $alphas",
             alphas.distinct().size >= MIN_GRADIENT_LEVELS,

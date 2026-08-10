@@ -25,10 +25,10 @@ import kotlin.math.roundToInt
 private const val SHADOW_TEXTURE_SIZE = 480
 private const val SHADOW_CONTENT_SIZE = 272
 private const val SHADOW_PADDING = 104
-private const val SHADOW_OFFSET_Y = 14
+private const val SHADOW_OFFSET_Y = 24
 private const val SHADOW_CORNER_RADIUS = 18f
-private const val SHADOW_ALPHA = 115
-private const val SHADOW_BLUR_RADIUS = 27
+private const val SHADOW_ALPHA = 175
+private const val SHADOW_BLUR_RADIUS = 32
 private const val SHADOW_BLUR_PASSES = 3
 
 /** One process-wide texture; preparation is first entered from the background dispatcher. */

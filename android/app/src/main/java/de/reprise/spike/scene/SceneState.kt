@@ -84,6 +84,26 @@ class SceneState(
         }
     }
 
+    /**
+     * Drives the haze from wall time alone, for tracks the desktop never
+     * analysed.
+     *
+     * Three sine waves whose periods share no common multiple never repeat
+     * within a listening session, which is what "random" has to mean here: a
+     * new value per frame would be noise, and noise does not drift. The mix
+     * moves the fog's density and speeds its rotation up and down, so a track
+     * without analysis still looks alive rather than merely rotating.
+     */
+    fun wanderTo(totalSeconds: Float, elapsedSeconds: Float) {
+        val mix = wanderMix(totalSeconds)
+        val oldFogLevel = fogLevel
+        fogLevel = (WANDER_CENTRE + WANDER_SWING * mix).coerceIn(0f, 1f)
+        advanceFogBy(elapsedSeconds * (1f + WANDER_SPEED_SWING * mix))
+        if (fogLevel.changedFrom(oldFogLevel)) {
+            revision += 1
+        }
+    }
+
     /** Keeps both fog layers breathing even when playback has no new signal frame. */
     fun advanceFogBy(elapsedSeconds: Float) {
         if (elapsedSeconds <= 0f) return
@@ -155,5 +175,20 @@ class SceneState(
         const val FOG_BASE_DEGREES_PER_SECOND = 360f / (4f * 60f)
         const val FOG_BASE_DEGREES_PER_SECOND_B =
             FOG_BASE_DEGREES_PER_SECOND * FOG_FACTOR_B / FOG_FACTOR_A
+
+        /** The unanalysed wander: centre density, how far it swings, how much it hurries. */
+        const val WANDER_CENTRE = 0.42f
+        const val WANDER_SWING = 0.30f
+        const val WANDER_SPEED_SWING = 0.7f
+
+        private const val TAU = 6.2831855f
+
+        /** −1..1, from three periods with no common multiple. */
+        fun wanderMix(totalSeconds: Float): Float {
+            val a = kotlin.math.sin(totalSeconds * TAU / 7.3f)
+            val b = kotlin.math.sin(totalSeconds * TAU / 11.7f + 1.7f)
+            val c = kotlin.math.sin(totalSeconds * TAU / 19.1f + 3.1f)
+            return (a * 0.5f + b * 0.33f + c * 0.17f).coerceIn(-1f, 1f)
+        }
     }
 }
