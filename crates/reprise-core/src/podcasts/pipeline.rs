@@ -31,7 +31,7 @@ pub trait FeedFetcher {
         etag: Option<&str>,
         last_modified: Option<&str>,
     ) -> Result<Response, PodcastError> {
-        super::http::get_conditional(url, etag, last_modified)
+        super::http::get_feed_conditional(url, etag, last_modified)
     }
     fn download(&self, url: &str, destination: &Path) -> Result<(), PodcastError>;
 
@@ -80,7 +80,7 @@ pub struct HttpFeedFetcher;
 
 impl FeedFetcher for HttpFeedFetcher {
     fn fetch(&self, subscription: &SubscriptionRow) -> Result<Response, PodcastError> {
-        super::http::get_conditional(
+        super::http::get_feed_conditional(
             &subscription.feed_url,
             subscription.etag.as_deref(),
             subscription.last_modified.as_deref(),
