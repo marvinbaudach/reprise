@@ -202,6 +202,24 @@ pub(in crate::ui) fn content_height(
     })
 }
 
+fn trusted_content_height(
+    n_rows: usize,
+    n_sections: usize,
+    row_height: TrustedRowHeight,
+    section_header_height: Option<TrustedRowHeight>,
+) -> (ContentHeight, RowHeightSource) {
+    let header_height = section_header_height.map(|header| header.height);
+    let content = content_height(n_rows, n_sections, row_height.height, header_height);
+    let source = if row_height.source == RowHeightSource::Assumed
+        || section_header_height.is_some_and(|header| header.source == RowHeightSource::Assumed)
+    {
+        RowHeightSource::Assumed
+    } else {
+        RowHeightSource::Measured
+    };
+    (content, source)
+}
+
 fn preseed_upper(
     current_upper: f64,
     content: ContentHeight,
@@ -233,6 +251,19 @@ pub(in crate::ui) fn invalidate_row_height(cache: &Cell<f64>) {
     // estimate and invalidates it here before the new CSS is applied.
     if TrustedRowHeight::from_cache(cache.get()).is_some() {
         cache.set(INVALIDATED_ROW_HEIGHT);
+    }
+}
+
+#[derive(Default)]
+pub(in crate::ui) struct ListGeometryCache {
+    row_height: Cell<f64>,
+    section_header_height: Cell<f64>,
+}
+
+impl ListGeometryCache {
+    pub(in crate::ui) fn invalidate(&self) {
+        invalidate_row_height(&self.row_height);
+        crate::ui::list_geometry_header::invalidate_height(&self.section_header_height);
     }
 }
 
@@ -335,12 +366,10 @@ impl ListGeometry {
         heights
     }
 
-    fn widget_measurement(&self, type_fragment: &str) -> RowMeasurement {
-        RowMeasurement::from_widget_heights(self.widget_heights(type_fragment))
-    }
-
     fn section_header_measurement(&self) -> Option<RowMeasurement> {
-        let measurement = self.widget_measurement("ListHeader");
+        let measurement = crate::ui::list_geometry_header::measurement_from_widget_heights(
+            self.widget_heights("ListHeader"),
+        );
         measurement.modal().map(|_| measurement)
     }
 
@@ -384,45 +413,72 @@ impl ListGeometry {
     pub(in crate::ui) fn row_height(
         &self,
         db: &reprise_core::db::Db,
-        cache: &Cell<f64>,
+        cache: &ListGeometryCache,
     ) -> RowHeight {
-        load_row_height(db, self.density(), cache, self.minimum_row_height())
+        load_row_height(
+            db,
+            self.density(),
+            &cache.row_height,
+            self.minimum_row_height(),
+        )
     }
 
-    fn trusted_row_height(&self, db: &reprise_core::db::Db, cache: &Cell<f64>) -> TrustedRowHeight {
+    fn trusted_row_height(
+        &self,
+        db: &reprise_core::db::Db,
+        cache: &ListGeometryCache,
+    ) -> TrustedRowHeight {
         let height = self.row_height(db, cache);
-        TrustedRowHeight::from_cache(cache.get())
+        TrustedRowHeight::from_cache(cache.row_height.get())
             .unwrap_or_else(|| TrustedRowHeight::assumed(height))
     }
 
     pub(in crate::ui) fn remember_if_settled(
         &self,
         db: &reprise_core::db::Db,
-        cache: &Cell<f64>,
+        cache: &ListGeometryCache,
         upper: f64,
         n_rows: usize,
         n_sections: usize,
     ) -> bool {
+        let header_measurement = self.section_header_measurement();
         let Some(height) = settled_content_row_height(
             upper,
             n_rows,
             n_sections,
             self.measurement(),
-            self.section_header_measurement(),
+            header_measurement,
         ) else {
             return false;
         };
-        remember_preferred_height(cache, TrustedRowHeight::measured(height));
-        if let Err(error) = settings::set_row_height(db, self.density(), Some(height.pixels())) {
-            tracing::warn!(%error, "could not persist settled row height");
+        if n_sections == 0 {
+            remember_preferred_height(&cache.row_height, TrustedRowHeight::measured(height));
+            if let Err(error) = settings::set_row_height(db, self.density(), Some(height.pixels()))
+            {
+                tracing::warn!(%error, "could not persist settled row height");
+            }
+            return true;
         }
+        let Some(header_height) =
+            header_measurement.and_then(crate::ui::list_geometry_header::measured_height)
+        else {
+            return false;
+        };
+        crate::ui::list_geometry_header::remember_settled_heights(
+            db,
+            self.density(),
+            &cache.row_height,
+            &cache.section_header_height,
+            height,
+            header_height,
+        );
         true
     }
 
     pub(in crate::ui) fn observed_row_height(
         &self,
         db: &reprise_core::db::Db,
-        cache: &Cell<f64>,
+        cache: &ListGeometryCache,
         n_rows: usize,
         n_sections: usize,
     ) -> Option<RowHeight> {
@@ -443,16 +499,22 @@ impl ListGeometry {
     pub(in crate::ui) fn content_height(
         &self,
         db: &reprise_core::db::Db,
-        cache: &Cell<f64>,
+        cache: &ListGeometryCache,
         n_rows: usize,
         n_sections: usize,
-    ) -> ContentHeight {
-        let row_height = self.row_height(db, cache);
-        let header_height = self
-            .section_header_measurement()
-            .filter(|measurement| measurement.is_uniform())
-            .and_then(RowMeasurement::modal);
-        content_height(n_rows, n_sections, row_height, header_height)
+    ) -> (ContentHeight, RowHeightSource, Option<RowHeightSource>) {
+        let row_height = self.trusted_row_height(db, cache);
+        let header_height = (n_sections > 0).then(|| {
+            crate::ui::list_geometry_header::load_height(
+                db,
+                self.density(),
+                &cache.section_header_height,
+            )
+        });
+        let header_source = header_height.map(|header| header.source);
+        let (content, source) =
+            trusted_content_height(n_rows, n_sections, row_height, header_height);
+        (content, source, header_source)
     }
 
     pub(in crate::ui) fn configure(
@@ -460,17 +522,20 @@ impl ListGeometry {
         adjustment: &gtk4::Adjustment,
         target: f64,
         db: &reprise_core::db::Db,
-        cache: &Cell<f64>,
+        cache: &ListGeometryCache,
         n_rows: usize,
         n_sections: usize,
     ) -> bool {
         self.remember_if_settled(db, cache, adjustment.upper(), n_rows, n_sections);
-        let trusted = self.trusted_row_height(db, cache);
-        let content = self.content_height(db, cache, n_rows, n_sections);
+        let (content, source, _header_source) = self.content_height(db, cache, n_rows, n_sections);
+        #[cfg(test)]
+        if n_sections > 0 {
+            eprintln!("QUEUEPROBE preseed header_source={_header_source:?}");
+        }
         let ContentHeight::Known(_) = content else {
             return false;
         };
-        let Some(upper) = preseed_upper(adjustment.upper(), content, trusted.source) else {
+        let Some(upper) = preseed_upper(adjustment.upper(), content, source) else {
             return true;
         };
         crate::ui::scroll_probe::probe_upper("anchor.configure", adjustment, upper);
@@ -485,6 +550,10 @@ impl ListGeometry {
         true
     }
 }
+
+#[cfg(test)]
+#[path = "list_geometry_cache_tests.rs"]
+mod cache_tests;
 
 #[cfg(test)]
 mod tests {

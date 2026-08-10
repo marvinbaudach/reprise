@@ -106,7 +106,7 @@ pub(in crate::ui) fn capture(shared: &Shared) -> SavedViewState {
     let anchor = geometry
         .observed_row_height(
             &shared.conn,
-            &shared.last_row_height,
+            &shared.list_geometry_cache,
             total as usize,
             n_sections,
         )
@@ -214,7 +214,7 @@ fn apply_restored_scroll(shared: &Shared, anchor: Option<(i64, f64)>, current_id
     let Some(height) = geometry
         .observed_row_height(
             &shared.conn,
-            &shared.last_row_height,
+            &shared.list_geometry_cache,
             current_ids.len(),
             n_sections,
         )
@@ -227,7 +227,7 @@ fn apply_restored_scroll(shared: &Shared, anchor: Option<(i64, f64)>, current_id
     }
     geometry.remember_if_settled(
         &shared.conn,
-        &shared.last_row_height,
+        &shared.list_geometry_cache,
         upper,
         current_ids.len(),
         n_sections,

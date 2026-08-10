@@ -63,7 +63,7 @@ fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
     ListGeometry::for_view(&shared.column_view)
         .observed_row_height(
             &shared.conn,
-            &shared.last_row_height,
+            &shared.list_geometry_cache,
             n_rows as usize,
             n_sections,
         )
@@ -380,6 +380,7 @@ fn schedule_scroll_restore(
                 let Some(shared) = weak_shared.upgrade() else {
                     return;
                 };
+                super::track_list_geometry::remember_after_layout(&shared, callback_ids.len());
                 apply_scroll_anchor_if_allocated(
                     &shared,
                     anchor,
@@ -415,7 +416,7 @@ fn apply_scroll_anchor_if_allocated(
     let Some(height) = geometry
         .observed_row_height(
             &shared.conn,
-            &shared.last_row_height,
+            &shared.list_geometry_cache,
             current_ids.len(),
             n_sections,
         )
@@ -439,7 +440,7 @@ fn apply_scroll_anchor_if_allocated(
             &adjustment,
             target,
             &shared.conn,
-            &shared.last_row_height,
+            &shared.list_geometry_cache,
             current_ids.len(),
             n_sections,
         );
@@ -449,7 +450,7 @@ fn apply_scroll_anchor_if_allocated(
     }
     geometry.remember_if_settled(
         &shared.conn,
-        &shared.last_row_height,
+        &shared.list_geometry_cache,
         adjustment.upper(),
         current_ids.len(),
         n_sections,
@@ -609,7 +610,7 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
         ListGeometry::for_view(&shared.column_view).remember_if_settled(
             &shared.conn,
-            &shared.last_row_height,
+            &shared.list_geometry_cache,
             adjustment.upper(),
             shared.model.n_items() as usize,
             n_sections,
@@ -687,6 +688,9 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     // with the viewport scrolled past the ranges' end that aborted the app
     // on the `header->widget == NULL` assertion in gtklistitemmanager.c.
     super::queue_sections::apply_queue_header_factory(shared, is_queue);
+    if is_queue {
+        super::track_list_geometry::schedule_section_measurement(shared);
+    }
 
     // Stage 3 Task 8: the ImportErrors source's rows live in `import_errors_
     // view`, not `shared.model` (which `queries.rs` always resolves to an
