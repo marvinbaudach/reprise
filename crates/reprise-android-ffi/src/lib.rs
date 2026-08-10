@@ -13,6 +13,7 @@ mod appearance;
 #[cfg(test)]
 mod artwork_tests;
 mod browse;
+mod fallback_cover;
 mod filtered_browse;
 mod library_listen_report;
 mod library_types;
@@ -37,6 +38,7 @@ pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
 };
+pub use fallback_cover::*;
 pub use library_types::{
     AndroidArtworkSize, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
     ScanSummary,
