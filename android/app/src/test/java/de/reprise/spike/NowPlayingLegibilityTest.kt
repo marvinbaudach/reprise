@@ -77,6 +77,7 @@ class NowPlayingLegibilityTest {
                 center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION),
                 angleA = 0f,
                 angleB = 0f,
+                fogLevel = 1f,
                 opacity = 1f,
                 rotationsEnabled = false,
             )
