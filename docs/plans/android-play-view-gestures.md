@@ -115,13 +115,25 @@ In `NowPlayingScene.kt` (715 lines today, expect roughly 380 after):
   nothing to advance. Its `transitionRunning` parameter goes with the
   transition.
 
-In `scene/SceneState.kt`: drop `coreShape`, `burstEnvelopes`, `burstBands`,
-`transient`, and `level`/`bass` if nothing outside the burst read them — check,
-do not assume. `drawNowPlayingFog` reads `fogAngleA`, `fogAngleB` and
-`fogLevel`; those stay. `scene/BandEnvelopes.kt` keeps `fog()` and loses
-`burst()`. Delete `scene/CoreShape.kt` and `scene/CoreShapeTest.kt` once no
-caller remains. `AmbientRuntime.kt` loses `burstEffects` from the render power
-gate and keeps `fogRotates`.
+In `scene/SceneState.kt`, mind the trap: the fog's **rotation speed** is
+`EnergyIntegrator.advance(fogAngleA/B, level, factor)` at lines 119-120, and
+that `level` is `mean(burstBands)` — the fog turns on the *burst* envelopes.
+Deleting them with the burst would leave the fog standing still in a track that
+is playing.
+
+So: keep `fogEnvelopes`, `fogBands`, `fogLevel`, `fogAngleA/B` **and** the
+second envelope bank with its mean. Rename that bank and its mean to
+`motionEnvelopes` / `motionLevel` (`BandEnvelopes.burst()` becomes
+`BandEnvelopes.motion()` with the same coefficients) so the next reader is not
+told it is burst state. Drop `coreShape`, `bass` and `transient` once the burst
+renderer is gone — check for other readers first, do not assume. Delete
+`scene/CoreShape.kt` and `scene/CoreShapeTest.kt` when no caller remains.
+`AmbientRuntime.kt` loses `burstEffects` from the render power gate and keeps
+`fogRotates`.
+
+Pin the trap with a test: with a playing track and a non-empty spectrogram,
+`fogAngleA` must keep changing across frames. That is the regression this
+rename is there to prevent.
 
 `MainActivity.kt` loses `nowPlayingViewSettings`, the injected variant and the
 `LocalNowPlayingViewSettings` provider (lines 105, 107, 219).
@@ -326,9 +338,9 @@ whether the core needs anything.
 
 ## Risks
 
-- **`SceneState` may be more entangled with the burst than it reads.** If
-  `level` or `bass` turn out to feed the fog, P1 must keep them; deleting them
-  would flatten the fog response #394 just added.
+- **`SceneState` is more entangled with the burst than it reads** — confirmed,
+  not hypothetical: the fog's rotation is driven by the burst envelopes' mean.
+  P1 keeps and renames that bank; see the package for the test that pins it.
 - **The prefetch reaches into the queue.** `loadUpcomingTracks` goes through
   the single playback query lane; two prefetched entries per track change is
   cheap, but it must not be issued per frame.
