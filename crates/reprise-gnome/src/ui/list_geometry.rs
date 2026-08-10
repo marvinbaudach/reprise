@@ -105,6 +105,7 @@ pub(in crate::ui) fn settled_content_row_height(
     settled_row_height(row_content_height, n_rows, rows)
 }
 
+#[cfg(test)]
 pub(in crate::ui) fn adjustment_row_height(upper: f64, n_rows: usize) -> Option<RowHeight> {
     if n_rows == 0 {
         return None;
