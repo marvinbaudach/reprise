@@ -2,7 +2,7 @@
 slug: navback-scroll-jump-to-top
 worktree: /home/marvin/Projects/reprise-navback
 branch: fix/navback-anchor
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-08-09
 ---

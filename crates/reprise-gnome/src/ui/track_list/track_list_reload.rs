@@ -425,8 +425,7 @@ fn apply_scroll_anchor_if_allocated(
     if let Some(hold) = hold {
         hold.set_target(target);
     }
-    let model_matches_ids =
-        usize::try_from(shared.model.n_items()).is_ok_and(|n_items| n_items == current_ids.len());
+    let model_matches_ids = shared.model.n_items() as usize == current_ids.len();
     let has_no_section_headers = shared.queue_sections.borrow().is_empty();
     if !restore_geometry_is_ready(upper, current_ids.len(), height)
         && hold.is_some()
@@ -435,8 +434,10 @@ fn apply_scroll_anchor_if_allocated(
     {
         // The model is already exact, but GTK has not allocated it yet. Seed
         // the uniform-list bound so the cached anchor can be painted in the
-        // first frame. The parity guard deliberately fails closed when the id
-        // projection is truncated or otherwise differs from the model.
+        // first frame — the hold otherwise clamps its target into the stale
+        // range and the list visits that clamped value for a frame. The parity
+        // guard deliberately fails closed when the id projection is truncated
+        // or otherwise differs from the model.
         adjustment.set_upper(current_ids.len() as f64 * height);
     }
     if !restore_geometry_is_ready(adjustment.upper(), current_ids.len(), height) {

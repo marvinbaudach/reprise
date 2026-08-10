@@ -332,6 +332,36 @@ mod tests {
         assert_eq!(target_writes.get(), 1);
     }
 
+    /// NAV-10b: the reload that follows a deletion hands the list over while
+    /// the hold's release timer is already due. A timeout runs at the default
+    /// priority, *above* the `HIGH_IDLE` correction a bounds change queued in
+    /// the same turn — so releasing from the timeout itself cancels the last
+    /// restore and leaves GTK's handover value on screen. The release must
+    /// therefore queue itself behind the correction instead.
+    #[test]
+    fn release_does_not_overtake_a_correction_that_is_already_queued() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let adjustment = scrollable();
+        let hold = AdjustmentHold::new(&adjustment);
+        hold.set_target(5_000.0);
+        let inner = hold.inner.clone();
+
+        // GTK's handover: the value moves, which queues the correction.
+        adjustment.set_value(0.0);
+        assert!(inner.pending.get());
+        hold.release_after(Duration::ZERO);
+
+        let context = gtk4::glib::MainContext::default();
+        for _ in 0..8 {
+            if !inner.active.get() || !context.iteration(false) {
+                break;
+            }
+        }
+
+        assert!(!inner.active.get(), "the hold must still retire");
+        assert_eq!(adjustment.value(), 5_000.0);
+    }
+
     #[test]
     fn released_hold_does_not_run_its_queued_write() {
         let _main_context = crate::ui::test_main_context::lock_main_context();

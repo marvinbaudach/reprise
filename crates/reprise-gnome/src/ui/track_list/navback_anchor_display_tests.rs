@@ -20,6 +20,11 @@ use reprise_core::view_source::ViewSource;
 use crate::ui::track_list::TrackList;
 
 const PAST_THE_SCROLL_HOLD: Duration = Duration::from_millis(600);
+/// The 8ms sampler yields ~70 values over the window above. A run starved of
+/// main-loop turns collects far fewer, and a handful of samples cannot show
+/// that the viewport never visited the top — so demand a floor well below the
+/// healthy count but far above "it ran at all".
+const MIN_SAMPLES: usize = 20;
 const FILTER_ARTIST: &str = "Filter Artist";
 const ROWS: i64 = 2_276;
 /// Mirrors a real library: ~2300 tracks, an artist holding ~23 of them —
@@ -243,8 +248,10 @@ fn run_journey(track_list: &TrackList, journey: Journey) -> Outcome {
 
 fn assert_landed_on_the_anchor(label: &str, outcome: &Outcome) {
     assert!(
-        !outcome.samples.is_empty(),
-        "the sampler must have run — an empty sample set proves nothing"
+        outcome.samples.len() >= MIN_SAMPLES,
+        "the sampler must have run throughout the journey — {} samples prove \
+         nothing about the frames in between",
+        outcome.samples.len(),
     );
     eprintln!(
         "PROBE {label}: value={} expected={} row_height={} top={:?} wanted={} \
