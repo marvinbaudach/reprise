@@ -14,11 +14,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.sqrt
 
 private const val FOG_BITMAP_SIZE = 256
+private const val FOG_CONTENT_SIZE = 208
 private const val WIDE_BLUR_RADIUS_PX = 18
 private const val TIGHT_BLUR_RADIUS_PX = 10
 private const val BOX_BLUR_PASSES = 2
+private const val RADIAL_FADE_START = 0.62f
 
 /** The two textures prepared once and only transformed by the frame draw. */
 internal data class CoverFogBitmap(
@@ -61,23 +64,39 @@ internal fun rememberCoverFogBitmap(
 
 private fun cropSquare(source: Bitmap?, fallbackArgb: Int): Bitmap {
     val output = Bitmap.createBitmap(FOG_BITMAP_SIZE, FOG_BITMAP_SIZE, Bitmap.Config.ARGB_8888)
-    if (source == null || source.width <= 0 || source.height <= 0) {
-        output.eraseColor(fallbackArgb)
-        return output
-    }
-    val sourceSize = minOf(source.width, source.height)
-    val left = (source.width - sourceSize) / 2
-    val top = (source.height - sourceSize) / 2
     val pixels = IntArray(FOG_BITMAP_SIZE * FOG_BITMAP_SIZE)
-    for (y in 0 until FOG_BITMAP_SIZE) {
-        val sourceY = top + (y * sourceSize / FOG_BITMAP_SIZE).coerceAtMost(sourceSize - 1)
-        for (x in 0 until FOG_BITMAP_SIZE) {
-            val sourceX = left + (x * sourceSize / FOG_BITMAP_SIZE).coerceAtMost(sourceSize - 1)
-            pixels[y * FOG_BITMAP_SIZE + x] = source.getPixel(sourceX, sourceY)
+    val validSource = source?.takeIf { it.width > 0 && it.height > 0 }
+    val sourceSize = validSource?.let { minOf(it.width, it.height) } ?: 1
+    val sourceLeft = validSource?.let { (it.width - sourceSize) / 2 } ?: 0
+    val sourceTop = validSource?.let { (it.height - sourceSize) / 2 } ?: 0
+    val contentOffset = (FOG_BITMAP_SIZE - FOG_CONTENT_SIZE) / 2
+    for (y in 0 until FOG_CONTENT_SIZE) {
+        val sourceY = sourceTop + (y * sourceSize / FOG_CONTENT_SIZE).coerceAtMost(sourceSize - 1)
+        for (x in 0 until FOG_CONTENT_SIZE) {
+            val sourceX = sourceLeft + (x * sourceSize / FOG_CONTENT_SIZE).coerceAtMost(sourceSize - 1)
+            val colour = validSource?.getPixel(sourceX, sourceY) ?: fallbackArgb
+            val alpha = ((colour ushr 24 and 0xff) * radialAlpha(x, y)).toInt()
+            val outputX = contentOffset + x
+            val outputY = contentOffset + y
+            pixels[outputY * FOG_BITMAP_SIZE + outputX] =
+                (alpha shl 24) or (colour and 0x00ffffff)
         }
     }
     output.setPixels(pixels, 0, FOG_BITMAP_SIZE, 0, 0, FOG_BITMAP_SIZE, FOG_BITMAP_SIZE)
     return output
+}
+
+private fun radialAlpha(x: Int, y: Int): Float {
+    val centre = (FOG_CONTENT_SIZE - 1) / 2f
+    val radius = FOG_CONTENT_SIZE / 2f
+    val dx = x - centre
+    val dy = y - centre
+    val distance = sqrt(dx * dx + dy * dy) / radius
+    if (distance <= RADIAL_FADE_START) return 1f
+    if (distance >= 1f) return 0f
+    val progress = (distance - RADIAL_FADE_START) / (1f - RADIAL_FADE_START)
+    val smoothstep = progress * progress * (3f - 2f * progress)
+    return 1f - smoothstep
 }
 
 private fun repeatedBoxBlur(source: Bitmap, radius: Int): Bitmap {

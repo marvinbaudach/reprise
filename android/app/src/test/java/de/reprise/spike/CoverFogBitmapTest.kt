@@ -14,6 +14,39 @@ import org.robolectric.annotation.Config
 @Config(sdk = [26])
 class CoverFogBitmapTest {
     @Test
+    fun blurred_fog_dissolves_before_the_texture_edge() {
+        val source = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.WHITE)
+        }
+
+        val fog = prepareCoverFogBitmap(source, Color.MAGENTA)
+
+        listOf(fog.wide, fog.tight).forEach { bitmap ->
+            val last = bitmap.width - 1
+            val secondLast = last - 1
+            for (coordinate in 0 until bitmap.width) {
+                assertEquals(0, Color.alpha(bitmap.getPixel(coordinate, 0)))
+                assertEquals(0, Color.alpha(bitmap.getPixel(coordinate, 1)))
+                assertEquals(0, Color.alpha(bitmap.getPixel(coordinate, secondLast)))
+                assertEquals(0, Color.alpha(bitmap.getPixel(coordinate, last)))
+                assertEquals(0, Color.alpha(bitmap.getPixel(0, coordinate)))
+                assertEquals(0, Color.alpha(bitmap.getPixel(1, coordinate)))
+                assertEquals(0, Color.alpha(bitmap.getPixel(secondLast, coordinate)))
+                assertEquals(0, Color.alpha(bitmap.getPixel(last, coordinate)))
+            }
+            listOf(0 to 0, last to 0, 0 to last, last to last).forEach { (x, y) ->
+                assertEquals(0, Color.alpha(bitmap.getPixel(x, y)))
+            }
+
+            val centre = bitmap.width / 2
+            val axisAlpha = (centre..last).map { x -> Color.alpha(bitmap.getPixel(x, centre)) }
+            axisAlpha.zipWithNext().forEach { (inner, outer) ->
+                assertTrue("axis alpha must fade toward the edge: $inner then $outer", outer <= inner)
+            }
+        }
+    }
+
+    @Test
     fun artwork_is_cropped_once_into_two_distinct_256_pixel_preblurred_layers() {
         val source = Bitmap.createBitmap(8, 4, Bitmap.Config.ARGB_8888)
         for (y in 0 until source.height) {
