@@ -4,6 +4,7 @@ use std::cell::Cell;
 
 use crate::ui::style::tokens::{ROW_MIN_HEIGHT_COMFORTABLE, ROW_MIN_HEIGHT_COMPACT};
 
+#[allow(dead_code)] // Removed with the circular readiness predicate in G5.
 const MAX_READY_DRIFT_IN_ROWS: f64 = 0.5;
 
 /// Total drift, expressed in rows, that a row count running ahead of the
@@ -84,6 +85,7 @@ pub(in crate::ui) fn row_height_for_restore(
 /// Sub-row drift allows for fractional allocation rounding, but a full row is
 /// stale geometry: a one-row deletion otherwise looks consistent and poisons
 /// the cached height with `old_upper / new_count`.
+#[allow(dead_code)] // Removed with its superseded readiness tests in G5.
 pub(in crate::ui) fn restore_geometry_is_ready(upper: f64, n_rows: usize, height: f64) -> bool {
     (upper - n_rows as f64 * height).abs() < height * MAX_READY_DRIFT_IN_ROWS
 }

@@ -46,7 +46,6 @@ use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
     apply_empty_state, empty_state_for_availability,
 };
-use crate::ui::track_list::track_list_geometry::restore_geometry_is_ready;
 use crate::ui::track_list::track_list_model_change::ModelChange;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::resolve_sort_on_switch;
@@ -60,8 +59,14 @@ pub(in crate::ui) fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> 
 }
 
 fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
+    let n_sections = shared.queue_sections.borrow().len();
     ListGeometry::for_view(&shared.column_view)
-        .observed_row_height(&shared.conn, &shared.last_row_height, n_rows as usize)
+        .observed_row_height(
+            &shared.conn,
+            &shared.last_row_height,
+            n_rows as usize,
+            n_sections,
+        )
         .map(crate::ui::list_geometry::RowHeight::pixels)
 }
 
@@ -424,12 +429,19 @@ fn apply_scroll_anchor_if_allocated(
         return false;
     };
     crate::ui::scroll_probe::probe_rows("apply_scroll_anchor", &shared.column_view);
-    let (upper, page) = (adjustment.upper(), adjustment.page_size());
-    if upper <= page || current_ids.is_empty() {
+    let page = adjustment.page_size();
+    if current_ids.is_empty() {
         return false;
     }
-    let Some(height) = ListGeometry::for_view(&shared.column_view)
-        .observed_row_height(&shared.conn, &shared.last_row_height, current_ids.len())
+    let n_sections = shared.queue_sections.borrow().len();
+    let geometry = ListGeometry::for_view(&shared.column_view);
+    let Some(height) = geometry
+        .observed_row_height(
+            &shared.conn,
+            &shared.last_row_height,
+            current_ids.len(),
+            n_sections,
+        )
         .map(crate::ui::list_geometry::RowHeight::pixels)
     else {
         return false;
@@ -437,41 +449,33 @@ fn apply_scroll_anchor_if_allocated(
     let Some(target) = reload_restore::scroll_target(anchor, current_ids, height, page) else {
         return false;
     };
-    // Teach the existing handover hold the final target. If the old bounds
-    // cannot represent it, the guarded pre-seed below makes it reachable
-    // before the queued row request can move the viewport.
+    // Teach the existing handover hold the final target.
     if let Some(hold) = hold {
         hold.set_target(target);
     }
-    let model_matches_ids = shared.model.n_items() as usize == current_ids.len();
-    let has_no_section_headers = shared.queue_sections.borrow().is_empty();
-    if !crate::ui::scroll_probe::set_upper_suppressed()
-        && !restore_geometry_is_ready(upper, current_ids.len(), height)
-        && hold.is_some()
-        && model_matches_ids
-        && has_no_section_headers
-    {
-        // The model is already exact, but GTK has not allocated it yet. Seed
-        // the uniform-list bound so the cached anchor can be painted in the
-        // first frame — GTK otherwise clamps the pending row request into the
-        // stale range and the list visits that value before the rebuilt range
-        // settles. The parity guard deliberately fails closed when the id
-        // projection is truncated or otherwise differs from the model.
-        crate::ui::scroll_probe::probe_upper(
-            "anchor.set_upper",
+    if !crate::ui::scroll_probe::preseed_suppressed() {
+        // Close the allocation window atomically: the new target and the range
+        // that can represent it become visible in one adjustment change,
+        // before GTK can clamp the target into the old model's range for a
+        // painted frame. Unknown section-header geometry fails closed.
+        geometry.configure(
             &adjustment,
-            current_ids.len() as f64 * height,
+            target,
+            &shared.conn,
+            &shared.last_row_height,
+            current_ids.len(),
+            n_sections,
         );
-        adjustment.set_upper(current_ids.len() as f64 * height);
     }
-    if !restore_geometry_is_ready(adjustment.upper(), current_ids.len(), height) {
+    if !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections) {
         return false;
     }
-    ListGeometry::for_view(&shared.column_view).remember_if_settled(
+    geometry.remember_if_settled(
         &shared.conn,
         &shared.last_row_height,
         adjustment.upper(),
         current_ids.len(),
+        n_sections,
     );
     crate::ui::scroll_probe::probe("anchor", &adjustment, target);
     adjustment.set_value(target);
@@ -624,12 +628,14 @@ fn run_query_if_requested(shared: &Rc<Shared>, model_change: Option<ModelChange>
 /// handling of its own — see `reload`'s and `set_source_and_reload`'s doc
 /// comments for who wraps this and why.
 fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
+    let n_sections = shared.queue_sections.borrow().len();
     if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
         ListGeometry::for_view(&shared.column_view).remember_if_settled(
             &shared.conn,
             &shared.last_row_height,
             adjustment.upper(),
             shared.model.n_items() as usize,
+            n_sections,
         );
     }
     let sort = shared.sort.borrow().clone();
