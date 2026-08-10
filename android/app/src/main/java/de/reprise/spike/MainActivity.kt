@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.DocumentsContract
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
@@ -46,6 +47,7 @@ import uniffi.reprise_android_ffi.AndroidEqualizerPoint
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
+import uniffi.reprise_android_ffi.TrashAction
 
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
@@ -112,6 +114,15 @@ class MainActivity : ComponentActivity() {
             dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
         )
     }
+    private val trashAction = object : TrashAction {
+        override fun trash(uri: String): String? = runCatching {
+            if (DocumentsContract.deleteDocument(contentResolver, Uri.parse(uri))) {
+                null
+            } else {
+                "The document provider refused to delete this file."
+            }
+        }.getOrElse { error -> error.detail() }
+    }
     /**
      * Every transport command the surface can issue, bound once here instead of
      * threaded through two composables that issue none of them.
@@ -121,6 +132,7 @@ class MainActivity : ComponentActivity() {
         connectedService = { playbackService },
         postToMain = { work -> runOnUiThread(work) },
         setFavouriteAction = ::setFavourite,
+        trashAction = trashAction,
     )
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -215,6 +227,7 @@ class MainActivity : ComponentActivity() {
                         CompositionLocalProvider(
                             LocalTrackArtwork provides surface.artwork(),
                             LocalPlaybackControls provides surface.playbackControls,
+                            LocalAlbumTrackIds provides { album -> session.albumTrackIds(album) },
                             LocalTrackAnalysis provides surface.trackAnalysis,
                             LocalNowPlayingViewSettings provides activeNowPlayingViewSettings,
                             LocalAmbientMotionController provides ambientMotion,

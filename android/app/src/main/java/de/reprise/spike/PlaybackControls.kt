@@ -3,6 +3,7 @@ package de.reprise.spike
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+import uniffi.reprise_android_ffi.AndroidTrashReport
 
 /**
  * Every transport command the surface can issue, in one place.
@@ -63,6 +64,17 @@ internal interface PlaybackControls {
         position: Int,
         expectedTrackId: Long,
         report: (Result<Boolean>) -> Unit,
+    ) = report(Result.failure(IllegalStateException("playback is not connected")))
+
+    fun queueTracksNext(trackIds: List<Long>, report: (Result<UInt>) -> Unit) =
+        report(Result.failure(IllegalStateException("playback is not connected")))
+
+    fun queueTracksLast(trackIds: List<Long>, report: (Result<UInt>) -> Unit) =
+        report(Result.failure(IllegalStateException("playback is not connected")))
+
+    fun deleteTracks(
+        trackIds: List<Long>,
+        report: (Result<AndroidTrashReport>) -> Unit,
     ) = report(Result.failure(IllegalStateException("playback is not connected")))
 
     fun startSleepTimer(selection: SleepTimerSelection) = Unit

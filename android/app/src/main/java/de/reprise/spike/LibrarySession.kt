@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import androidx.compose.runtime.staticCompositionLocalOf
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 /**
@@ -40,6 +41,8 @@ internal interface LibrarySessionPort {
         albumArtist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack>
+
+    fun albumTrackIds(album: String, albumArtist: String): List<Long>
 
     fun trackById(trackId: Long): LibraryTrack?
 
@@ -141,6 +144,9 @@ internal class LibrarySession(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = port.listAlbumTracks(album.title, album.artist, window)
 
+    fun albumTrackIds(album: LibraryAlbum): List<Long> =
+        port.albumTrackIds(album.title, album.artist)
+
     fun listArtistTracks(
         artist: LibraryArtist,
         window: LibraryWindowRange,
@@ -232,3 +238,9 @@ internal class LibrarySession(
             loadedTabs = selectedTab?.let(::setOf) ?: BrowseTab.entries.toSet(),
         )
 }
+
+/** The unwindowed album identity query used only by whole-album actions. */
+internal val LocalAlbumTrackIds =
+    staticCompositionLocalOf<(LibraryAlbum) -> List<Long>> {
+        { throw IllegalStateException("library is not connected") }
+    }
