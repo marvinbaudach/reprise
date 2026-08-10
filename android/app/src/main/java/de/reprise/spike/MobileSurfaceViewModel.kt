@@ -55,6 +55,7 @@ internal data class LoadedLibraryWindows(
     val artists: LibraryWindow<LibraryArtist>,
     val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
     val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
+    val searchText: String = "",
     /**
      * The album the listener is standing in, if any, and the tracks of it they
      * have paged in. It is kept here rather than reopened, because reopening it
@@ -138,13 +139,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
         if (tab == selectedTab) return
         selectedTab = tab
         rememberSelectedTab(tab)
-        if (tab != BrowseTab.TITLES) {
-            searchVisible = false
-        }
     }
 
     fun openSearch() {
-        selectTab(BrowseTab.TITLES)
         searchVisible = true
     }
 
@@ -258,9 +255,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
         scrollPositions[list] = position
     }
 
-    /** The paged-in windows, while they still belong to the catalog on disk. */
+    /** Paged-in windows while both their catalog and refinement still match. */
     fun loadedWindows(shape: LibraryCatalogShape): LoadedLibraryWindows? =
-        loadedWindows.takeIf { loadedShape == shape }
+        loadedWindows?.takeIf { loadedShape == shape && it.searchText == searchText }
 
     fun keepLoadedWindows(shape: LibraryCatalogShape, windows: LoadedLibraryWindows) {
         loadedShape = shape

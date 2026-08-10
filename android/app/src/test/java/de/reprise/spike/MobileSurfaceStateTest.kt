@@ -112,7 +112,7 @@ class MobileSurfaceStateTest {
      * the activity path a configuration change really takes.
      */
     @Test
-    fun openingSearchReturnsToTitlesAndTheViewModelKeepsWhatItIsHanded() {
+    fun openingSearchStaysOnTheCurrentTabAndTheViewModelKeepsWhatItIsHanded() {
         val state = MobileSurfaceViewModel()
 
         state.selectTab(BrowseTab.ARTISTS)
@@ -123,7 +123,7 @@ class MobileSurfaceStateTest {
             LibraryScrollPosition(firstVisibleItemIndex = 18, itemOffsetFraction = 0.25f),
         )
 
-        assertEquals(BrowseTab.TITLES, state.selectedTab)
+        assertEquals(BrowseTab.ARTISTS, state.selectedTab)
         assertTrue(state.searchVisible)
         assertEquals("slowdive", state.searchText)
         assertEquals(
@@ -147,6 +147,26 @@ class MobileSurfaceStateTest {
 
         assertEquals(paged, state.loadedWindows(shape))
         assertNull(state.loadedWindows(shape.copy(titles = 451)))
+    }
+
+    @Test
+    fun pagedInWindowsAreRestoredOnlyWithTheSearchThatProducedThem() {
+        val state = MobileSurfaceViewModel()
+        val shape = LibraryCatalogShape(titles = 450, albums = 450, artists = 450)
+        val filtered = LoadedLibraryWindows(
+            titles = LibraryWindow.empty(),
+            albums = LibraryWindow(total = 450, rows = emptyList(), hasMore = true),
+            artists = LibraryWindow.empty(),
+            searchText = "slow",
+            openAlbum = null,
+        )
+
+        state.updateSearch("slow")
+        state.keepLoadedWindows(shape, filtered)
+
+        assertEquals(filtered, state.loadedWindows(shape))
+        state.updateSearch("")
+        assertNull(state.loadedWindows(shape))
     }
 
     @Test

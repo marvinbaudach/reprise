@@ -448,6 +448,34 @@ fun titleSearchDelegatesTheLiteralTextToTheCorePort() {
 }
 
 @Test
+fun browseSearchesDelegateLiteralTextAndWindowToTheirPortMethods() {
+    val port = RecordingBrowsePort()
+    val session = LibrarySession(port)
+    val window = LibraryWindowRange(offset = 200, limit = 75)
+
+    session.searchAlbums(" slow ", window)
+    session.searchArtists(" slow ", window)
+    session.searchFavourites(" slow ", window)
+
+    assertEquals(
+        listOf(
+            "search-albums: slow :200:75",
+            "search-artists: slow :200:75",
+            "search-favourites: slow :200:75",
+        ),
+        port.operations,
+    )
+}
+
+@Test
+fun emptyBrowseMessagesNameTheFilteredDestination() {
+    assertEquals("No matching titles.", BrowseTab.TITLES.emptyMessage("slow"))
+    assertEquals("No matching albums.", BrowseTab.ALBUMS.emptyMessage("slow"))
+    assertEquals("No matching artists.", BrowseTab.ARTISTS.emptyMessage("slow"))
+    assertEquals("No matching favourites.", BrowseTab.FAVOURITES.emptyMessage("slow"))
+}
+
+@Test
 fun openingAnAlbumUsesItsCoreIdentityAndOrder() {
     val album = testAlbum()
     val coreOrder = listOf(testBrowseTrack("disc-one"), testBrowseTrack("disc-two"))
