@@ -214,6 +214,21 @@ album grid in `BrowseTabs.kt`, the queue page, and both Now Playing action rows
 (`NowPlayingSheet.kt` around the sleep-timer/heart row, `NowPlayingScene.kt`
 around `now-playing-actions`).
 
+**These file lists are a starting point, not a fence.** Two runs have now
+stopped because a list was too narrow. If honouring the contract needs an
+adjacent file — the playback service, `MainActivity`, an FFI boundary — change
+it, keep the change as small as the contract allows, and name it in the commit
+message. Only stop if the *contract itself* is wrong, not merely its file list.
+
+**Playing a whole album needs an id-only route** (this is what stopped run 2).
+`ReprisePlaybackService.playTracks` takes `List<LibraryTrack>` and splits it into
+ids and uris (`:202`), while `album_track_ids` returns ids alone. Add
+`play_track_ids(track_ids, start_index)` at the FFI playback boundary, resolving
+the uris there exactly as `queue_tracks_next` does, and an
+`internal fun playTrackIds` on the service beside `playTracks`. Do **not** hand
+uris down from the UI — that is the stale-path trap Task 2 exists to avoid, and
+an opened album's rows are windowed anyway, so the UI does not have them all.
+
 Long press opens a `DropdownMenu` at the touch point with
 `HapticFeedbackType.LongPress`; short tap keeps today's meaning
 (`combinedClickable(onClick = …, onLongClick = …)`).
