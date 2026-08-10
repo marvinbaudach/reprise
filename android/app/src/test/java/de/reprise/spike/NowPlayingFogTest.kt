@@ -18,8 +18,14 @@ class NowPlayingFogTest {
 
     @Test
     fun fog_alpha_never_exceeds_the_signed_off_peak() {
-        assertEquals(0.92f, NowPlayingFogSpec.wideAlpha(fogLevel = 1f, opacity = 1f))
-        assertEquals(0.55f, NowPlayingFogSpec.tightAlpha(fogLevel = 1f, opacity = 1f))
+        assertEquals(
+            0.92f.toRawBits(),
+            NowPlayingFogSpec.wideAlpha(fogLevel = 1f, opacity = 1f).toRawBits(),
+        )
+        assertEquals(
+            0.55f.toRawBits(),
+            NowPlayingFogSpec.tightAlpha(fogLevel = 1f, opacity = 1f).toRawBits(),
+        )
     }
 
     @Test
@@ -27,8 +33,8 @@ class NowPlayingFogTest {
         val wideFloor = NowPlayingFogSpec.wideAlpha(fogLevel = 0f, opacity = 1f)
         val tightFloor = NowPlayingFogSpec.tightAlpha(fogLevel = 0f, opacity = 1f)
 
-        assertEquals(0.62f, wideFloor / NowPlayingFogSpec.wideOpacity)
-        assertEquals(0.40f, tightFloor / NowPlayingFogSpec.tightOpacity)
+        assertEquals(0.62f, wideFloor / NowPlayingFogSpec.wideOpacity, FLOAT_TOLERANCE)
+        assertEquals(0.40f, tightFloor / NowPlayingFogSpec.tightOpacity, FLOAT_TOLERANCE)
         assertTrue(
             "the dominant wide fog must retain at least 55% of its peak in silence",
             wideFloor >= NowPlayingFogSpec.wideOpacity * 0.55f,
@@ -98,5 +104,9 @@ class NowPlayingFogTest {
         values.zipWithNext().forEach { (before, after) ->
             assertTrue("$after must not be below $before", after >= before)
         }
+    }
+
+    private companion object {
+        const val FLOAT_TOLERANCE = 0.000_001f
     }
 }

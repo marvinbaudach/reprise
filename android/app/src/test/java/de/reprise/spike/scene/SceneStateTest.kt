@@ -20,7 +20,7 @@ class SceneStateTest {
 
         state.advanceTo(21)
 
-        assertEquals(0.5f, state.fogLevel, 0f)
+        assertEquals(0.5f.toRawBits(), state.fogLevel.toRawBits())
     }
 
     @Test

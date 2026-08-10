@@ -239,12 +239,10 @@ internal fun NowPlayingScene(
             observeSceneFrame(drawRevision)
             drawRect(Color.Black)
             val playedCenter = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION)
-            drawNowPlayingFog(
+            drawPlayedNowPlayingFog(
                 fog = fog,
                 center = playedCenter,
-                angleA = state.fogAngleA,
-                angleB = state.fogAngleB,
-                fogLevel = state.fogLevel,
+                state = state,
                 opacity = 1f - transition,
                 rotationsEnabled = power.fogRotates,
             )
@@ -345,6 +343,25 @@ internal fun NowPlayingScene(
             }
         }
     }
+}
+
+/** The played-view wiring kept shared with its rendered-pixel verification. */
+internal fun DrawScope.drawPlayedNowPlayingFog(
+    fog: CoverFogBitmap?,
+    center: Offset,
+    state: SceneState,
+    opacity: Float,
+    rotationsEnabled: Boolean,
+) {
+    drawNowPlayingFog(
+        fog = fog,
+        center = center,
+        angleA = state.fogAngleA,
+        angleB = state.fogAngleB,
+        fogLevel = state.fogLevel,
+        opacity = opacity,
+        rotationsEnabled = rotationsEnabled,
+    )
 }
 
 @Composable
