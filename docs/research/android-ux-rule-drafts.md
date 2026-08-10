@@ -359,6 +359,10 @@ Belege je Regel-ID in `ux-android-m3.md` (Scratchpad).
   includes the current queue entry so an explicit enqueue remains visible and
   every row action addresses the same item the user sees.
   <!-- REVIEW: Regelvorschlag -->
+- **MOB-25** [planned] — Deleting the track that is currently playing advances
+  playback to the next surviving track in play order; it stops only when no
+  queued track survives.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## Speicherzugriff und Berechtigungen — `STOR`, 18 Entwürfe
 
@@ -595,7 +599,7 @@ Belege je Regel-ID in `ux-android-praxis.md` (Scratchpad).
 
 ## Zusammenfassung
 
-**79 Entwürfe.** Zum Vergleich: aus dem bestehenden Regelwerk erbt
+**80 Entwürfe.** Zum Vergleich: aus dem bestehenden Regelwerk erbt
 die Android-App 61 Regeln (`p5-surface-scopes.md`). Ihr Verhalten bezieht
 die mobile Oberfläche also überwiegend aus diesen Entwürfen, nicht aus
 dem Bestand.
