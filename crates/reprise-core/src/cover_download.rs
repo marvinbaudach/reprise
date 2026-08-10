@@ -302,6 +302,7 @@ pub(crate) fn validated_image_extension(bytes: &[u8]) -> Option<&'static str> {
         image::ImageFormat::WebP => "webp",
         image::ImageFormat::Gif => "gif",
         image::ImageFormat::Bmp => "bmp",
+        image::ImageFormat::Ico => "ico",
         _ => return None,
     };
     image::load_from_memory_with_format(bytes, format).ok()?;
@@ -589,6 +590,13 @@ mod tests {
             .write_to(&mut png, image::ImageFormat::Png)
             .unwrap();
         assert_eq!(validated_image_extension(png.get_ref()), Some("png"));
+    }
+
+    #[test]
+    fn rock_antenne_favicon_is_accepted_as_ico() {
+        let favicon = include_bytes!("../tests/fixtures/rock-antenne-favicon.ico");
+
+        assert_eq!(validated_image_extension(favicon), Some("ico"));
     }
 
     #[test]
