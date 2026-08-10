@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Display-free tests for declarative exploratory-run window setup."""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import sys
+import tempfile
+import unittest
+
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXPLORE_ROOT = REPO_ROOT / "scripts" / "cua-explore"
+sys.path.insert(0, str(EXPLORE_ROOT))
+
+from hover_geometry import WindowGeometry  # noqa: E402
+from protocol import ContractError, load_mission  # noqa: E402
+from window_setup import apply_window_size  # noqa: E402
+
+
+class FakeTransport:
+    def __init__(self, achieved: WindowGeometry) -> None:
+        self.achieved = achieved
+        self.calls: list[tuple[object, ...]] = []
+
+    def resize_window(self, window_id: int, width: int, height: int):
+        self.calls.append(("resize", window_id, width, height))
+        return {"effect": "unverifiable", "verified": False}
+
+    def wmctrl_geometry(self, window_id: int) -> WindowGeometry:
+        self.calls.append(("measure", window_id))
+        return self.achieved
+
+
+class MissionWindowTests(unittest.TestCase):
+    MISSIONS = (
+        "first-time-exploration",
+        "hover-affordance-sweep",
+        "large-library-stress",
+        "offline-recovery",
+        "pointer-layout-reachability",
+        "section-search-isolation",
+    )
+
+    def test_every_mission_declares_its_intended_window(self) -> None:
+        for name in self.MISSIONS:
+            with self.subTest(mission=name):
+                mission = load_mission(EXPLORE_ROOT / "missions" / f"{name}.json")
+                expected = (
+                    {"width": 1200, "height": 800}
+                    if name == "pointer-layout-reachability"
+                    else {"width": 1600, "height": 1000}
+                )
+                self.assertEqual(mission.window, expected)
+
+    def test_missing_window_remains_valid(self) -> None:
+        mission = self._mission_json()
+        mission.pop("window", None)
+
+        loaded = self._load(mission)
+
+        self.assertIsNone(loaded.window)
+
+    def test_invalid_window_values_and_fields_are_rejected(self) -> None:
+        invalid_windows = (
+            {"width": 0, "height": 1000},
+            {"width": "1600", "height": 1000},
+            {"width": -1, "height": 1000},
+            {"width": 1600, "height": 1000, "scale": 2},
+        )
+        for window in invalid_windows:
+            with self.subTest(window=window), self.assertRaises(ContractError):
+                mission = self._mission_json()
+                mission["window"] = window
+                self._load(mission)
+
+    def test_window_bounds_are_inclusive(self) -> None:
+        for window in (
+            {"width": 600, "height": 400},
+            {"width": 3840, "height": 2160},
+        ):
+            with self.subTest(window=window):
+                mission = self._mission_json()
+                mission["window"] = window
+                self.assertEqual(self._load(mission).window, window)
+
+    def _mission_json(self) -> dict:
+        return json.loads(
+            (EXPLORE_ROOT / "missions" / "first-time-exploration.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def _load(self, mission: dict):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "mission.json"
+            path.write_text(json.dumps(mission), encoding="utf-8")
+            return load_mission(path)
+
+
+class WindowSetupTests(unittest.TestCase):
+    def test_resize_is_measured_and_four_pixel_drift_is_not_honoured(self) -> None:
+        transport = FakeTransport(WindowGeometry(20, 30, 1596, 1000))
+
+        record = apply_window_size(
+            transport,
+            window_id=41,
+            requested={"width": 1600, "height": 1000},
+        )
+
+        self.assertEqual(
+            transport.calls,
+            [("resize", 41, 1600, 1000), ("measure", 41)],
+        )
+        self.assertEqual(
+            record,
+            {
+                "requested": {"width": 1600, "height": 1000},
+                "achieved": {"width": 1596, "height": 1000},
+                "honoured": False,
+            },
+        )
+
+    def test_two_pixel_drift_is_honoured(self) -> None:
+        transport = FakeTransport(WindowGeometry(0, 0, 1598, 1002))
+
+        record = apply_window_size(
+            transport,
+            window_id=9,
+            requested={"width": 1600, "height": 1000},
+        )
+
+        self.assertTrue(record["honoured"])
+
+    def test_missing_request_does_not_touch_the_transport(self) -> None:
+        transport = FakeTransport(WindowGeometry(0, 0, 1440, 900))
+
+        record = apply_window_size(transport, window_id=9, requested=None)
+
+        self.assertIsNone(record)
+        self.assertEqual(transport.calls, [])
+
+    def test_display_canvas_has_room_for_the_declared_window(self) -> None:
+        run_script = (EXPLORE_ROOT / "run.sh").read_text(encoding="utf-8")
+
+        self.assertIn('cua_common_start_display "$output_dir" "$scratch_root" "1920x1200x24"', run_script)
+
+
+if __name__ == "__main__":
+    unittest.main()

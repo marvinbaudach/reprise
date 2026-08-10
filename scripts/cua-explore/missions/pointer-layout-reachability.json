@@ -6,6 +6,7 @@
   "mode": "adversarial",
   "agent": "optional",
   "profile": "mixed-128",
+  "window": {"width": 1200, "height": 800},
   "budgets": {"actions": 100, "seconds": 1200, "restarts": 3},
   "capabilities": ["activate", "press", "hotkey", "scroll", "resize", "restart", "wait", "complete-workload", "finish"],
   "fixture_tokens": {"SEARCH_NEEDLE": "Writable Batch 0042"},

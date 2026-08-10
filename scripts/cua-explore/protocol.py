@@ -110,6 +110,7 @@ MISSION_FIELDS = {
     "mode",
     "agent",
     "profile",
+    "window",
     "budgets",
     "capabilities",
     "fixture_tokens",
@@ -165,6 +166,7 @@ class Mission:
     mode: str
     agent: str
     profile: str
+    window: Mapping[str, int] | None
     budgets: Budgets
     capabilities: frozenset[str]
     fixture_tokens: Mapping[str, str]
@@ -182,6 +184,17 @@ def _parse_budgets(raw: Any) -> Budgets:
         seconds=_integer(value.get("seconds"), "budgets.seconds", 10, 7_200),
         restarts=_integer(value.get("restarts"), "budgets.restarts", 0, 10),
     )
+
+
+def _parse_window(raw: Any) -> Mapping[str, int] | None:
+    if raw is None:
+        return None
+    value = _object(raw, "window")
+    _reject_unknown(value, {"width", "height"}, "window")
+    return {
+        "width": _integer(value.get("width"), "window.width", 600, 3_840),
+        "height": _integer(value.get("height"), "window.height", 400, 2_160),
+    }
 
 
 def _parse_string_set(raw: Any, name: str, allowed: set[str]) -> frozenset[str]:
@@ -377,6 +390,7 @@ def load_mission(path: pathlib.Path | str) -> Mission:
         mode=mode,
         agent=agent,
         profile=profile,
+        window=_parse_window(value.get("window")),
         budgets=_parse_budgets(value.get("budgets")),
         capabilities=capabilities,
         fixture_tokens=fixture_tokens,
