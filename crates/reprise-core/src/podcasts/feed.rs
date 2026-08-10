@@ -134,7 +134,7 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
                     );
                 }
                 if matches!(name.as_str(), "item" | "entry") {
-                    if episodes.len() < limit {
+                    if limit == 0 || episodes.len() < limit {
                         if let Some(parsed) = episode.take().and_then(EpisodeBuilder::finish) {
                             episodes.push(parsed);
                         }
@@ -540,6 +540,31 @@ mod tests {
         assert_eq!(parsed.author.as_deref(), Some("Lin"));
         assert_eq!(parsed.episodes.len(), 1);
         assert_eq!(parsed.episodes[0].guid, "one");
+    }
+
+    #[test]
+    fn zero_limit_imports_every_episode() {
+        let parsed = parse_feed(
+            r#"<rss><channel><title>Complete Show</title>
+              <item><title>One</title><guid>one</guid>
+                <enclosure url="https://e.test/1.mp3" type="audio/mpeg"/></item>
+              <item><title>Two</title><guid>two</guid>
+                <enclosure url="https://e.test/2.mp3" type="audio/mpeg"/></item>
+              <item><title>Three</title><guid>three</guid>
+                <enclosure url="https://e.test/3.mp3" type="audio/mpeg"/></item>
+            </channel></rss>"#,
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed
+                .episodes
+                .iter()
+                .map(|episode| episode.guid.as_str())
+                .collect::<Vec<_>>(),
+            vec!["one", "two", "three"]
+        );
     }
 
     #[test]
