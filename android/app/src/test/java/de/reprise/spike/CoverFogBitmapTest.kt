@@ -9,10 +9,33 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.math.abs
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [26])
 class CoverFogBitmapTest {
+    @Test
+    fun partially_faded_rim_keeps_the_source_colour() {
+        val sourceColour = Color.rgb(240, 64, 16)
+        val source = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(sourceColour)
+        }
+
+        val fog = prepareCoverFogBitmap(source, Color.MAGENTA)
+
+        listOf(fog.wide, fog.tight).forEach { bitmap ->
+            val y = bitmap.height / 2
+            val rimX = (bitmap.width / 2 until bitmap.width).first { x ->
+                Color.alpha(bitmap.getPixel(x, y)) in PARTIAL_ALPHA_RANGE
+            }
+            val rim = bitmap.getPixel(rimX, y)
+
+            assertChannelClose("red", Color.red(sourceColour), Color.red(rim))
+            assertChannelClose("green", Color.green(sourceColour), Color.green(rim))
+            assertChannelClose("blue", Color.blue(sourceColour), Color.blue(rim))
+        }
+    }
+
     @Test
     fun blurred_fog_dissolves_before_the_texture_edge() {
         val source = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
@@ -97,5 +120,17 @@ class CoverFogBitmapTest {
             assertTrue(Color.green(pixel) in 90..92)
             assertTrue(Color.blue(pixel) in 203..205)
         }
+    }
+
+    private fun assertChannelClose(channel: String, expected: Int, actual: Int) {
+        assertTrue(
+            "$channel channel $actual must stay within $RGB_TOLERANCE of source $expected",
+            abs(actual - expected) <= RGB_TOLERANCE,
+        )
+    }
+
+    private companion object {
+        val PARTIAL_ALPHA_RANGE = 48..80
+        const val RGB_TOLERANCE = 3
     }
 }

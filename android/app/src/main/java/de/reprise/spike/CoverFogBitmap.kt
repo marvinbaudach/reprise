@@ -70,14 +70,23 @@ private fun cropSquare(source: Bitmap?, fallbackArgb: Int): Bitmap {
     val sourceLeft = validSource?.let { (it.width - sourceSize) / 2 } ?: 0
     val sourceTop = validSource?.let { (it.height - sourceSize) / 2 } ?: 0
     val contentOffset = (FOG_BITMAP_SIZE - FOG_CONTENT_SIZE) / 2
-    for (y in 0 until FOG_CONTENT_SIZE) {
-        val sourceY = sourceTop + (y * sourceSize / FOG_CONTENT_SIZE).coerceAtMost(sourceSize - 1)
-        for (x in 0 until FOG_CONTENT_SIZE) {
-            val sourceX = sourceLeft + (x * sourceSize / FOG_CONTENT_SIZE).coerceAtMost(sourceSize - 1)
+    val contentEnd = contentOffset + FOG_CONTENT_SIZE
+    for (outputY in 0 until FOG_BITMAP_SIZE) {
+        val contentY = (outputY - contentOffset).coerceIn(0, FOG_CONTENT_SIZE - 1)
+        val sourceY = sourceTop +
+            (contentY * sourceSize / FOG_CONTENT_SIZE).coerceAtMost(sourceSize - 1)
+        for (outputX in 0 until FOG_BITMAP_SIZE) {
+            val contentX = (outputX - contentOffset).coerceIn(0, FOG_CONTENT_SIZE - 1)
+            val sourceX = sourceLeft +
+                (contentX * sourceSize / FOG_CONTENT_SIZE).coerceAtMost(sourceSize - 1)
             val colour = validSource?.getPixel(sourceX, sourceY) ?: fallbackArgb
-            val alpha = ((colour ushr 24 and 0xff) * radialAlpha(x, y)).toInt()
-            val outputX = contentOffset + x
-            val outputY = contentOffset + y
+            val insideContent = outputX in contentOffset until contentEnd &&
+                outputY in contentOffset until contentEnd
+            val alpha = if (insideContent) {
+                ((colour ushr 24 and 0xff) * radialAlpha(contentX, contentY)).toInt()
+            } else {
+                0
+            }
             pixels[outputY * FOG_BITMAP_SIZE + outputX] =
                 (alpha shl 24) or (colour and 0x00ffffff)
         }
