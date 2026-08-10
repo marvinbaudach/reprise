@@ -93,6 +93,7 @@ internal fun NowPlayingScene(
         )
     }
     val fog = rememberCoverFogTransition(artwork?.image, Color.Black)
+    val coverShadow = rememberCoverShadowBitmap()
     val motion = LocalAmbientMotionController.current
     val drawRevision = DriveScene(
         frames = frames,
@@ -145,6 +146,7 @@ internal fun NowPlayingScene(
                         artwork = neighbour,
                         center = playedCenter.copy(x = playedCenter.x - size.width),
                         fallback = Color.Black,
+                        shadow = coverShadow,
                     )
                 }
             } else if (horizontalOffsetPx < 0f) {
@@ -153,6 +155,7 @@ internal fun NowPlayingScene(
                         artwork = neighbour,
                         center = playedCenter.copy(x = playedCenter.x + size.width),
                         fallback = Color.Black,
+                        shadow = coverShadow,
                     )
                 }
             }
@@ -160,6 +163,7 @@ internal fun NowPlayingScene(
                 artwork = artwork?.image,
                 center = playedCenter,
                 fallback = Color.Black,
+                shadow = coverShadow,
             )
         }
 
@@ -399,10 +403,11 @@ private fun ScenePauseButton(
     }
 }
 
-private fun DrawScope.drawPlayedCover(
+internal fun DrawScope.drawPlayedCover(
     artwork: ImageBitmap?,
     center: Offset,
     fallback: Color,
+    shadow: CoverShadowBitmap?,
 ) {
     val side = COVER_SIZE_DP.dp.toPx()
     val rect = Rect(
@@ -412,15 +417,7 @@ private fun DrawScope.drawPlayedCover(
         center.y + side / 2f,
     )
     val radius = COVER_RADIUS_DP.dp.toPx()
-    repeat(5) { index ->
-        val spread = index * 2.dp.toPx()
-        drawRoundRect(
-            color = Color.Black.copy(alpha = 0.24f - index * 0.035f),
-            topLeft = Offset(rect.left - spread, rect.top + (12 + index * 3).dp.toPx()),
-            size = Size(rect.width + spread * 2f, rect.height + spread),
-            cornerRadius = CornerRadius(radius + spread),
-        )
-    }
+    shadow?.let { drawCoverShadow(it, rect) }
     val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
     clipPath(path) {
         if (artwork == null) {
