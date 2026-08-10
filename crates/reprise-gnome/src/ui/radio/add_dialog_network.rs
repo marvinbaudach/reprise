@@ -48,8 +48,14 @@ pub(super) fn preview_url(url: &str, fetch_metadata: bool) -> Result<StationPrev
     .with_probe(probe);
     preview.playlist_kind = kind;
     if fetch_metadata {
-        if let Some(candidate) = radio::search::find_by_url(&stream_url)? {
+        if let Ok(Some(candidate)) = radio::search::find_by_url(&stream_url) {
             preview = preview.with_candidate(candidate);
+        }
+        if preview.favicon_url.is_none() {
+            let candidates =
+                radio::search::search(&preview.name, radio::search::SearchOrder::Votes)
+                    .unwrap_or_default();
+            preview = preview.with_favicon_candidates(&candidates);
         }
     }
     Ok(preview)

@@ -1,6 +1,6 @@
 //! Remote source artwork used by library rows and Add-dialog result/preview
 //! rows (channel/show thumbnails, iTunes `artworkUrl600`, radio-browser
-//! `favicon`).
+//! `favicon`) with either an icon or initials fallback.
 //!
 //! `NET-1a` / `C1`: every caller passes `images_allowed`, already computed as
 //! `online_sources::network_allowed(conn, &modules::SOURCE_IMAGES_MODULE)` at
@@ -34,6 +34,8 @@ use reprise_core::remote_image::ImageOutcome;
 
 #[path = "source_artwork_queue.rs"]
 mod source_artwork_queue;
+#[path = "source_image_fallback.rs"]
+mod source_image_fallback;
 
 const CACHE_LIMIT: usize = 128;
 const ARTWORK_QUEUE_LIMIT: usize = 64;
@@ -105,7 +107,7 @@ pub(in crate::ui) fn gate_open() -> bool {
 #[derive(Clone)]
 pub(crate) struct SourceImage {
     root: gtk4::Stack,
-    fallback: gtk4::Image,
+    fallback: gtk4::Widget,
     artwork: gtk4::Image,
     generation: Rc<Cell<u64>>,
 }
@@ -127,26 +129,6 @@ impl SourceImage {
         )
     }
 
-    /// Source-table artwork that appears automatically during window startup.
-    /// Explicit previews and playback artwork keep using [`Self::new`].
-    pub(crate) fn new_after_startup(
-        image_url: Option<&str>,
-        fallback_icon: &str,
-        size: i32,
-        images_allowed: bool,
-    ) -> SourceImage {
-        let image = Self::build(fallback_icon, size, size);
-        image.set_url(
-            image_url,
-            size,
-            size,
-            images_allowed,
-            StartupTiming::AfterQuiet,
-            |_| {},
-        );
-        image
-    }
-
     /// Same as [`Self::new`], but also hands the decoded texture to
     /// `on_texture`.
     ///
@@ -164,7 +146,11 @@ impl SourceImage {
         defer_for_startup: bool,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) -> SourceImage {
-        let image = Self::build(fallback_icon, size, size);
+        let image = Self::build(
+            source_image_fallback::Fallback::Icon(fallback_icon),
+            size,
+            size,
+        );
         image.set_url(
             image_url,
             size,
@@ -188,7 +174,11 @@ impl SourceImage {
         images_allowed: bool,
         startup_timing: StartupTiming,
     ) -> SourceImage {
-        let image = Self::build(fallback_icon, width, height);
+        let image = Self::build(
+            source_image_fallback::Fallback::Icon(fallback_icon),
+            width,
+            height,
+        );
         image.set_url(
             image_url,
             width,
@@ -202,13 +192,12 @@ impl SourceImage {
 
     /// The widget tree alone, without a load — both constructors share it so
     /// the artwork is only ever requested once, by whichever `set_url` follows.
-    fn build(fallback_icon: &str, width: i32, height: i32) -> SourceImage {
-        let fallback = gtk4::Image::from_icon_name(fallback_icon);
-        fallback.set_pixel_size(width.min(height));
-        fallback.set_halign(gtk4::Align::Center);
-        fallback.set_valign(gtk4::Align::Center);
-        fallback.set_hexpand(false);
-        fallback.set_vexpand(false);
+    fn build(
+        fallback_kind: source_image_fallback::Fallback<'_>,
+        width: i32,
+        height: i32,
+    ) -> SourceImage {
+        let fallback = source_image_fallback::widget(fallback_kind, width, height);
         // The artwork is a `Gtk::Image`, not a `Gtk::Picture`, and that is the
         // whole point of this widget: a `Picture` measures its natural size
         // from the texture, and neither `set_size_request` nor an `AspectFrame`
