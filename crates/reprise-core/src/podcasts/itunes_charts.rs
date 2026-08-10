@@ -71,12 +71,12 @@ pub fn in_chart_order(ids: &[String], rows: Vec<(Option<i64>, SearchResult)>) ->
 }
 
 pub fn top_podcasts(country: &str) -> Result<Vec<SearchResult>, PodcastError> {
-    let chart = super::http::get(&chart_url(country))?;
+    let chart = super::http::get_json(&chart_url(country))?;
     let ids = parse_chart_ids(&chart.body)?;
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    let lookup = super::http::get(&lookup_url(&ids))?;
+    let lookup = super::http::get_json(&lookup_url(&ids))?;
     let rows = itunes::parse_results_with_ids(&lookup.body)?;
     Ok(in_chart_order(&ids, rows))
 }

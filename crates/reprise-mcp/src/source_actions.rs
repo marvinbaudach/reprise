@@ -438,7 +438,7 @@ fn add_podcast(
     let (feed, response) = match kind {
         podcasts::PodcastKind::Rss => {
             let response =
-                podcasts::http::get(url).map_err(|error| podcast_source_error(&error))?;
+                podcasts::http::get_feed(url).map_err(|error| podcast_source_error(&error))?;
             let feed = podcasts::feed::parse_feed(&response.body, config.import_count)
                 .map_err(|error| podcast_source_error(&error))?;
             (feed, Some(response))
