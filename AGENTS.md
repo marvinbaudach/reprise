@@ -323,6 +323,26 @@ Branch: `feature/multi-surface-frontends`
 This ownership is ACTIVE. A sibling branch that edits an owned path must
 rebase onto this branch first, not merge past it.
 
+## Completed file ownership — Android Now Playing scene
+
+Plan: `docs/plans/now-playing-scene.md`
+Branch: `feature/now-playing-scene`
+
+This ownership is COMPLETE and released. Packages P1 through P7 and the Wave D
+verification record are committed. The table remains as the historical package
+boundary.
+
+| Wave | Package | Owned files |
+| --- | --- | --- |
+| A | P1 | `crates/reprise-android-ffi/src/track_analysis.rs` |
+| A | P2 | `android/app/src/main/java/de/reprise/spike/scene/**`, `android/app/src/test/java/de/reprise/spike/scene/**` |
+| A | P7 | `android/app/src/main/java/de/reprise/spike/{VisualizerSelection,NowPlayingVisualizer,MainActivitySurface,MainActivity,NowPlayingSheet}.kt`, `android/app/src/main/java/de/reprise/spike/settings/AppearanceSettingsPage.kt`, and directly affected visualizer/settings tests plus the shared activity test fixture |
+| B | P3 | `android/app/src/main/java/de/reprise/spike/{NowPlayingFog,CoverFogBitmap}.kt` and focused tests |
+| B | P4 | `android/app/src/main/java/de/reprise/spike/NowPlayingBurst.kt` and focused tests |
+| B | P6 | `android/app/src/main/java/de/reprise/spike/{SceneDriver,AmbientRuntime}.kt`, the narrow scene-power getters on `AmbientMotionController` in `AmbientSurface.kt`, and focused tests |
+| C | P5 | `android/app/src/main/java/de/reprise/spike/{NowPlayingScene,NowPlayingSheet,MainActivity,TrackAnalysisLoader}.kt`, `crates/reprise-android-ffi/src/appearance.rs`, and rewritten `MainActivityVisualizerTest.kt` |
+| D | verification | `docs/plans/now-playing-scene-verification.md` and any dedicated harness scripts |
+
 ### P0 — groundwork (this plan)
 
 | Owner | Files |

@@ -97,18 +97,20 @@ class MainActivity : ComponentActivity() {
             readBars = { trackId, count ->
                 library.trackRenderBars(trackId, count.toUInt())?.map { it.toSpectralBar() }
             },
+            readSpectrogram = { trackId -> library.trackSpectrogram(trackId) },
             onMainThread = { work -> runOnUiThread { work() } },
         )
     }
     private val analysis by analysisDelegate
+    private val nowPlayingViewSettings by lazy { AndroidNowPlayingViewSettings(library) }
+    private val injectedNowPlayingViewSettings by lazy {
+        InjectedNowPlayingViewSettings(getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE))
+    }
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
             dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
         )
-    }
-    private val visualizerController by lazy {
-        VisualizerController(AndroidVisualizerSettingsPort(library))
     }
     /**
      * Every transport command the surface can issue, bound once here instead of
@@ -168,9 +170,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
+        // Deferred for the same reason as [tracks] and [analysisDelegate]: reading
+        // it opens the library, and onCreate must survive a core that will not
+        // load so that restoreLibrary can show the failure instead of crashing.
+        // The scene asks for it during composition, which is late enough.
+        val activeNowPlayingViewSettings by lazy {
+            if (surfaceProvider == null) {
+                nowPlayingViewSettings
+            } else {
+                injectedNowPlayingViewSettings
+            }
+        }
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
-            var visualizer by remember { mutableStateOf(surface.initialVisualizer) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
             surfaceState.initializeSelectedTab(surface.initialBrowseTab, surface.rememberBrowseTab)
@@ -204,13 +216,7 @@ class MainActivity : ComponentActivity() {
                             LocalTrackArtwork provides surface.artwork(),
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalTrackAnalysis provides surface.trackAnalysis,
-                            LocalVisualizerControl provides VisualizerControl(visualizer) { mode ->
-                                runCatching { surface.selectVisualizer(mode) }
-                                    .onSuccess { selected -> visualizer = selected }
-                                    .onFailure { error ->
-                                        Log.e(TAG, "Could not change visualizer", error)
-                                    }
-                            },
+                            LocalNowPlayingViewSettings provides activeNowPlayingViewSettings,
                             LocalAmbientMotionController provides ambientMotion,
                         ) {
                             LibraryScreen(
@@ -257,7 +263,6 @@ class MainActivity : ComponentActivity() {
         val initialBrowseTab = restoreBrowseTab()
         return MainActivitySurfaceDependencies(
             initialTheme = restoreTheme(),
-            initialVisualizer = restoreVisualizer(),
             initialState = restoreLibrary(initialBrowseTab),
             initialBrowseTab = initialBrowseTab,
             rememberBrowseTab = ::rememberBrowseTab,
@@ -281,11 +286,6 @@ class MainActivity : ComponentActivity() {
             replaceEqualizerCurve = ::replaceEqualizerCurve,
             setGaplessEnabled = ::setGaplessEnabled,
             selectTheme = { current, palette -> themeController.select(current, palette) },
-            // Keep native access behind the authored action, like theme selection:
-            // service-lifetime tests create and start this activity without ever
-            // composing a screen, and production should not open the library just
-            // because a callback was assembled.
-            selectVisualizer = { visualizer -> visualizerController.select(visualizer) },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
         )
@@ -351,13 +351,6 @@ class MainActivity : ComponentActivity() {
             colorScheme = AndroidColorScheme.SYSTEM,
             dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
         )
-    }
-
-    private fun restoreVisualizer(): MobileVisualizer = runCatching {
-        visualizerController.load()
-    }.getOrElse { error ->
-        Log.e(TAG, "Could not load visualizer setting; using Cover", error)
-        MobileVisualizer.COVER
     }
 
     override fun onStart() {
