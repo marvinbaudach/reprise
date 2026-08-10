@@ -149,14 +149,14 @@ fn setlocale_and_copy(category: libc::c_int) -> Option<Vec<u8>> {
 ///
 /// Frontends must initialise the process locale before calling this. On
 /// platforms without `nl_langinfo`, Reprise's ISO date pattern is returned.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "android")))]
 pub fn system_date_pattern() -> String {
     langinfo(libc::D_FMT)
 }
 
-#[cfg(not(unix))]
+#[cfg(any(not(unix), target_os = "android"))]
 pub fn system_date_pattern() -> String {
-    DatePattern::ISO.to_owned()
+    fallback_date_pattern()
 }
 
 /// Returns the time pattern selected by the system's current time locale.
@@ -164,17 +164,27 @@ pub fn system_date_pattern() -> String {
 /// Frontends use this only to derive the twelve- or twenty-four-hour clock
 /// convention. On platforms without `nl_langinfo`, a 24-hour pattern is
 /// returned.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "android")))]
 pub fn system_time_pattern() -> String {
     langinfo(libc::T_FMT)
 }
 
-#[cfg(not(unix))]
+#[cfg(any(not(unix), target_os = "android"))]
 pub fn system_time_pattern() -> String {
+    fallback_time_pattern()
+}
+
+#[cfg(any(test, not(unix), target_os = "android"))]
+fn fallback_date_pattern() -> String {
+    DatePattern::ISO.to_owned()
+}
+
+#[cfg(any(test, not(unix), target_os = "android"))]
+fn fallback_time_pattern() -> String {
     "%H:%M".to_owned()
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "android")))]
 fn langinfo(item: libc::nl_item) -> String {
     // SAFETY: `nl_langinfo` returns a pointer to a NUL-terminated string owned
     // by the C library, valid until the next `setlocale` on this thread. The
@@ -629,5 +639,11 @@ mod tests {
         assert_eq!(ClockConvention::Hours12.render(14, 3), "2:03 PM");
         assert_eq!(ClockConvention::Hours12.render(0, 5), "12:05 AM");
         assert_eq!(ClockConvention::Hours12.render(12, 0), "12:00 PM");
+    }
+
+    #[test]
+    fn system_pattern_fallbacks_are_iso_and_twenty_four_hour() {
+        assert_eq!(fallback_date_pattern(), "%Y-%m-%d");
+        assert_eq!(fallback_time_pattern(), "%H:%M");
     }
 }
