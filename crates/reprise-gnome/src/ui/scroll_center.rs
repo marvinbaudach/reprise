@@ -12,26 +12,27 @@
 use gtk4::prelude::*;
 
 /// Resolves the vertical adjustment and the value that vertically centers row
-/// `position` in `scrollable`, given the list has `n_rows` (near-)uniform-height
+/// `position` in `column_view`, given the list has `n_rows` (near-)uniform-height
 /// rows. Returns `None` when the list has no usable geometry yet — not allocated
 /// (`upper`/`page_size` unset), or it fits the viewport entirely — in which case
 /// there is nothing to center.
 pub(in crate::ui) fn centered_scroll_target(
-    scrollable: &impl IsA<gtk4::Scrollable>,
+    column_view: &gtk4::ColumnView,
     n_rows: u32,
     position: u32,
 ) -> Option<(gtk4::Adjustment, f64)> {
-    let adjustment = scrollable.vadjustment()?;
+    let adjustment = column_view.vadjustment()?;
+    let row_height = crate::ui::list_geometry::ListGeometry::for_view(column_view)
+        .settled_row_height(adjustment.upper(), n_rows as usize)?;
     let value =
-        centered_scroll_value(position, n_rows, adjustment.upper(), adjustment.page_size())?;
+        centered_scroll_value_with_height(position, n_rows, row_height, adjustment.page_size())?;
     Some((adjustment, value))
 }
 
 /// Adjustment value that vertically centers row `position`, assuming
-/// (near-)uniform row heights, so a row's offset is derived from the
-/// adjustment's total content height. Returns `None` when the list is
-/// unallocated (`upper`/`page_size` unset), fits entirely in the viewport, or
-/// `position` is not a row of this list.
+/// (near-)uniform row heights independently supplied by `ListGeometry`.
+/// Returns `None` when the list is unallocated, fits entirely in the viewport,
+/// or `position` is not a row of this list.
 ///
 /// The `position >= n_rows` rejection is load-bearing, not defensive padding:
 /// a caller that resolved a row index and then let the model change underneath
@@ -39,21 +40,36 @@ pub(in crate::ui) fn centered_scroll_target(
 /// clamps into range and cannot tell a stale index from a real one — and would
 /// scroll to an unrelated row. Callers that derive `position` and `n_rows` from
 /// the same snapshot can never hit it.
-pub(in crate::ui) fn centered_scroll_value(
+pub(in crate::ui) fn centered_scroll_value_with_height(
     position: u32,
     n_rows: u32,
-    upper: f64,
+    row_height: crate::ui::list_geometry::RowHeight,
     page_size: f64,
 ) -> Option<f64> {
-    if n_rows == 0 || upper <= 0.0 || page_size <= 0.0 || upper <= page_size {
+    let content_height = f64::from(n_rows) * row_height.pixels();
+    if n_rows == 0 || page_size <= 0.0 || content_height <= page_size {
         return None;
     }
     if position >= n_rows {
         return None;
     }
-    let row_height = upper / f64::from(n_rows);
-    let target = (f64::from(position) + 0.5) * row_height - page_size / 2.0;
-    Some(target.clamp(0.0, upper - page_size))
+    let target = (f64::from(position) + 0.5) * row_height.pixels() - page_size / 2.0;
+    Some(target.clamp(0.0, content_height - page_size))
+}
+
+/// Compatibility seam for pure callers that already hold total content
+/// height. Live widgets use [`centered_scroll_target`], whose row height must
+/// pass the independent `ListGeometry` agreement rule.
+#[cfg(test)]
+pub(in crate::ui) fn centered_scroll_value(
+    position: u32,
+    n_rows: u32,
+    content_height: f64,
+    page_size: f64,
+) -> Option<f64> {
+    let row_height =
+        crate::ui::list_geometry::adjustment_row_height(content_height, n_rows as usize)?;
+    centered_scroll_value_with_height(position, n_rows, row_height, page_size)
 }
 
 #[cfg(test)]
@@ -64,7 +80,15 @@ mod tests {
     fn centered_scroll_value_centers_a_mid_list_row() {
         // 100 rows x 10px = 1000px content, 200px viewport. Row 50's middle
         // sits at 505px; centering puts the viewport at 505 - 100 = 405.
-        assert_eq!(centered_scroll_value(50, 100, 1000.0, 200.0), Some(405.0));
+        assert_eq!(
+            centered_scroll_value_with_height(
+                50,
+                100,
+                crate::ui::list_geometry::RowHeight::new(10.0).unwrap(),
+                200.0,
+            ),
+            Some(405.0)
+        );
     }
 
     #[test]

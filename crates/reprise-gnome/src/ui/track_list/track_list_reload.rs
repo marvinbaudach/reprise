@@ -41,20 +41,29 @@ use gtk4::prelude::*;
 
 use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::browse_filter_count;
+use crate::ui::list_geometry::ListGeometry;
 use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
     apply_empty_state, empty_state_for_availability,
 };
-use crate::ui::track_list::track_list_geometry::{
-    remember_row_height, restore_geometry_is_ready, row_height_for_restore,
-};
+use crate::ui::track_list::track_list_geometry::restore_geometry_is_ready;
 use crate::ui::track_list::track_list_model_change::ModelChange;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-pub(in crate::ui) use super::track_list_geometry::row_height;
+pub(in crate::ui) fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
+    ListGeometry::for_view(column_view)
+        .live_row_height(n_rows as usize)
+        .map(crate::ui::list_geometry::RowHeight::pixels)
+}
+
+fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
+    ListGeometry::for_view(&shared.column_view)
+        .observed_row_height(&shared.conn, &shared.last_row_height, n_rows as usize)
+        .map(crate::ui::list_geometry::RowHeight::pixels)
+}
 
 /// How many idle-callback rounds the scroll restore waits for the rebuilt
 /// list to gain usable geometry before giving up — mirrors `view_state_
@@ -122,7 +131,7 @@ fn pending_reveal_anchor(shared: &Shared, old_total: u32) -> Option<(i64, f64)> 
     }
     let track_id = shared.playing_track_id.get()?;
     let adjustment = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)?;
-    let height = row_height(&shared.column_view, old_total)?;
+    let height = observed_row_height(shared, old_total)?;
     // `scroll_center::centered_scroll_value` in anchor form: the row's middle
     // on the viewport's middle is its top, minus half a viewport, plus half a
     // row.
@@ -162,7 +171,7 @@ pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
     if selected.is_empty() && scroll_value == 0.0 {
         return ReloadAnchor::default();
     }
-    let anchor = row_height(&shared.column_view, old_total).and_then(|height| {
+    let anchor = observed_row_height(shared, old_total).and_then(|height| {
         let index = (scroll_value / height).floor().max(0.0) as u32;
         shared
             .model
@@ -315,13 +324,17 @@ fn schedule_centered_scroll_refinement(
         if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) {
             let (upper, page) = (adjustment.upper(), adjustment.page_size());
             if upper > page {
-                let height = upper / current_ids.len() as f64;
-                if let Some(value) = reload_restore::centered_track_scroll_target(
-                    track_id,
-                    &current_ids,
-                    height,
-                    page,
-                ) {
+                let height = ListGeometry::for_view(&column_view)
+                    .live_row_height(current_ids.len())
+                    .map(crate::ui::list_geometry::RowHeight::pixels);
+                if let Some(value) = height.and_then(|height| {
+                    reload_restore::centered_track_scroll_target(
+                        track_id,
+                        &current_ids,
+                        height,
+                        page,
+                    )
+                }) {
                     crate::ui::scroll_probe::probe("centered_refinement", &adjustment, value);
                     adjustment.set_value(value);
                 }
@@ -415,7 +428,9 @@ fn apply_scroll_anchor_if_allocated(
     if upper <= page || current_ids.is_empty() {
         return false;
     }
-    let Some(height) = row_height_for_restore(&shared.last_row_height, upper, current_ids.len())
+    let Some(height) = ListGeometry::for_view(&shared.column_view)
+        .observed_row_height(&shared.conn, &shared.last_row_height, current_ids.len())
+        .map(crate::ui::list_geometry::RowHeight::pixels)
     else {
         return false;
     };
@@ -452,10 +467,11 @@ fn apply_scroll_anchor_if_allocated(
     if !restore_geometry_is_ready(adjustment.upper(), current_ids.len(), height) {
         return false;
     }
-    remember_row_height(
-        &shared.column_view,
-        current_ids.len() as u32,
+    ListGeometry::for_view(&shared.column_view).remember_if_settled(
+        &shared.conn,
         &shared.last_row_height,
+        adjustment.upper(),
+        current_ids.len(),
     );
     crate::ui::scroll_probe::probe("anchor", &adjustment, target);
     adjustment.set_value(target);
@@ -608,11 +624,14 @@ fn run_query_if_requested(shared: &Rc<Shared>, model_change: Option<ModelChange>
 /// handling of its own — see `reload`'s and `set_source_and_reload`'s doc
 /// comments for who wraps this and why.
 fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
-    remember_row_height(
-        &shared.column_view,
-        shared.model.n_items(),
-        &shared.last_row_height,
-    );
+    if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
+        ListGeometry::for_view(&shared.column_view).remember_if_settled(
+            &shared.conn,
+            &shared.last_row_height,
+            adjustment.upper(),
+            shared.model.n_items() as usize,
+        );
+    }
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
