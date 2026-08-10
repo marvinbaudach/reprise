@@ -44,6 +44,82 @@ fn seed_tracks(directory: &Path, titles: &[&str]) -> Vec<reprise_core::models::T
 }
 
 #[test]
+fn an_id_without_a_live_path_is_skipped_and_the_start_still_names_its_track() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second"]);
+    let vanished = tracks.iter().map(|track| track.id).max().unwrap() + 10_000;
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        directory.path().to_str().unwrap(),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    calls.lock().unwrap().clear();
+
+    // Position 2 in the request is the second surviving track; a start index
+    // read against the *resolved* list would start the wrong one.
+    session
+        .play_track_ids(vec![tracks[0].id, vanished, tracks[1].id], 2)
+        .unwrap();
+
+    let snapshot = session.snapshot().unwrap();
+    assert_eq!(snapshot.current_track_id, Some(tracks[1].id));
+    assert_eq!(
+        snapshot.current_track_uri.as_deref(),
+        Some(tracks[1].path.as_str())
+    );
+    assert_eq!(
+        calls.lock().unwrap().as_slice(),
+        &[
+            PortCall::PlayUri(tracks[1].path.clone()),
+            PortCall::CurrentGeneration,
+            PortCall::SetNext(None),
+        ],
+    );
+}
+
+#[test]
+fn tapping_a_track_that_no_longer_resolves_is_refused_rather_than_shifted() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second"]);
+    let vanished = tracks.iter().map(|track| track.id).max().unwrap() + 10_000;
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        directory.path().to_str().unwrap(),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    calls.lock().unwrap().clear();
+
+    let refused = session.play_track_ids(vec![tracks[0].id, vanished, tracks[1].id], 1);
+
+    let error = refused.expect_err("the tapped row no longer exists");
+    assert!(
+        format!("{error}").contains("no longer in the library"),
+        "the surface has to be told which row it lost, not handed a neighbour: {error}",
+    );
+    assert_eq!(session.snapshot().unwrap().current_track_id, None);
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "a refused tap must not touch the backend",
+    );
+}
+
+#[test]
 fn id_only_play_resolves_live_paths_and_preserves_the_requested_start() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
