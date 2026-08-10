@@ -97,11 +97,11 @@ impl SectionedTrackModel {
             let Some(model) = weak.upgrade() else {
                 return;
             };
+            // Items only, exactly like production: `TrackListModel` emits
+            // `items-changed` and lets GTK re-read `section()` while it
+            // rebuilds the rows. Measured: an extra `sections-changed` here
+            // changes nothing either way.
             model.items_changed(position, removed, added);
-            let total = model.n_items();
-            if total > 0 {
-                model.sections_changed(0, total);
-            }
         });
         model
     }
@@ -114,15 +114,24 @@ impl SectionedTrackModel {
     }
 }
 
+/// Every queue row is materialised on purpose — no virtual context tail.
+///
+/// `run_query` builds the Queue's context window from the live
+/// `PlayerController` (`QueueContextWindow::from_player`), and a display test
+/// has no player, so `rows()` answers every request with an empty vector.
+/// Measured with a virtual tail of 2273 rows: `item()` returns `None` for each
+/// of them, GTK receives NULL for rows it was told exist, logs one
+/// `g_object_unref: assertion 'G_IS_OBJECT (object)' failed` per fetch (2478 in
+/// one run, against zero for every other display test of this app) and never
+/// materialises that section — so its header widget is created and left
+/// unbound, which is what the first version of this test died on as a missing
+/// "Playing from …" precondition.
+///
+/// Two materialised sections answer the geometry question just as well: a
+/// section header costs its height whichever section it titles.
 fn queue_model() -> queue_sections::QueueViewModel {
-    let play_next = [QueueItem::Track(2), QueueItem::Track(3)];
-    let context = (4..=ROWS).collect::<Vec<_>>();
-    queue_sections::compose(
-        Some(QueueItem::Track(1)),
-        &play_next,
-        &context,
-        Some("Music"),
-    )
+    let play_next = (2..=ROWS).map(QueueItem::Track).collect::<Vec<_>>();
+    queue_sections::compose(Some(QueueItem::Track(1)), &play_next, &[], Some("Music"))
 }
 
 fn sectioned_track_list() -> (TrackList, SectionedTrackModel, gtk4::Window) {
@@ -209,16 +218,16 @@ fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
     sectioned.prepare_sections(queue_ranges.clone());
     assert!(track_list.restore_browser_place(&BrowserPlace::from(ViewSource::Queue)));
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-        rendered_queue_headers(&track_list.shared.column_view).len() >= 3
+        rendered_queue_headers(&track_list.shared.column_view).len() >= 2
     });
     let headers = rendered_queue_headers(&track_list.shared.column_view);
-    assert!(headers.iter().any(|title| title == "Now Playing"));
-    assert!(headers.iter().any(|title| title == "Play Next"));
     assert!(
-        headers
-            .iter()
-            .any(|title| title.starts_with("Playing from ")),
-        "precondition: the real queue renders all three section headers; got {headers:?}"
+        headers.iter().any(|title| title == "Now Playing"),
+        "precondition: the queue renders its section headers; got {headers:?}"
+    );
+    assert!(
+        headers.iter().any(|title| title == "Play Next"),
+        "precondition: the queue renders its section headers; got {headers:?}"
     );
 
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
@@ -277,6 +286,15 @@ fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
     let sample_report = format!(
         "samples(n={} first={first:?} min={minimum} max={maximum})",
         samples.len()
+    );
+    // Printed on the green path too: the plan asks this test for the journey,
+    // not just the endpoint, and a passing run is the interesting case for
+    // decision 5 (do section headers have to enter the height model?).
+    eprintln!(
+        "QUEUEPROBE headers={headers:?} rows={} row_h={row_height:.1} \
+         expected={expected:.0} final={:.0} {sample_report}",
+        restored_ids.len(),
+        adjustment.value(),
     );
     assert!(
         samples.len() >= MIN_SAMPLES,
