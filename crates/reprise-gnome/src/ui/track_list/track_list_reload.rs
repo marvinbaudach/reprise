@@ -266,6 +266,7 @@ fn schedule_top_scroll_restore(column_view: gtk4::ColumnView, attempts: u8) {
         return;
     };
     let already_settled = adjustment.value() == 0.0;
+    crate::ui::scroll_probe::probe("top_restore", &adjustment, 0.0);
     adjustment.set_value(0.0);
     if already_settled || attempts == 0 {
         return;
@@ -321,6 +322,7 @@ fn schedule_centered_scroll_refinement(
                     height,
                     page,
                 ) {
+                    crate::ui::scroll_probe::probe("centered_refinement", &adjustment, value);
                     adjustment.set_value(value);
                 }
             }
@@ -408,6 +410,7 @@ fn apply_scroll_anchor_if_allocated(
     let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) else {
         return false;
     };
+    crate::ui::scroll_probe::probe_rows("apply_scroll_anchor", &shared.column_view);
     let (upper, page) = (adjustment.upper(), adjustment.page_size());
     if upper <= page || current_ids.is_empty() {
         return false;
@@ -427,7 +430,8 @@ fn apply_scroll_anchor_if_allocated(
     }
     let model_matches_ids = shared.model.n_items() as usize == current_ids.len();
     let has_no_section_headers = shared.queue_sections.borrow().is_empty();
-    if !restore_geometry_is_ready(upper, current_ids.len(), height)
+    if !crate::ui::scroll_probe::set_upper_suppressed()
+        && !restore_geometry_is_ready(upper, current_ids.len(), height)
         && hold.is_some()
         && model_matches_ids
         && has_no_section_headers
@@ -438,6 +442,11 @@ fn apply_scroll_anchor_if_allocated(
         // stale range and the list visits that value before the rebuilt range
         // settles. The parity guard deliberately fails closed when the id
         // projection is truncated or otherwise differs from the model.
+        crate::ui::scroll_probe::probe_upper(
+            "anchor.set_upper",
+            &adjustment,
+            current_ids.len() as f64 * height,
+        );
         adjustment.set_upper(current_ids.len() as f64 * height);
     }
     if !restore_geometry_is_ready(adjustment.upper(), current_ids.len(), height) {
@@ -448,6 +457,7 @@ fn apply_scroll_anchor_if_allocated(
         current_ids.len() as u32,
         &shared.last_row_height,
     );
+    crate::ui::scroll_probe::probe("anchor", &adjustment, target);
     adjustment.set_value(target);
     true
 }

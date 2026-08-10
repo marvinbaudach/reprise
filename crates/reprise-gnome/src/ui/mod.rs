@@ -84,6 +84,7 @@ mod scan;
 mod scrobbling;
 mod scroll_center;
 mod scroll_glide;
+mod scroll_probe;
 mod search_highlight;
 pub mod session_restore;
 pub mod shortcuts;

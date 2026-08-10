@@ -218,6 +218,7 @@ fn restore_scroll_when_ready(
                     if let Some(target) =
                         super::reload_restore::scroll_target(anchor, &current_ids, height, page)
                     {
+                        crate::ui::scroll_probe::probe("view_state_restore", &adjustment, target);
                         adjustment.set_value(target);
                     }
                     return;
