@@ -26,7 +26,11 @@ internal interface LibrarySessionPort {
 
     fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum>
 
+    fun searchAlbums(text: String, window: LibraryWindowRange): LibraryWindow<LibraryAlbum>
+
     fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist>
+
+    fun searchArtists(text: String, window: LibraryWindowRange): LibraryWindow<LibraryArtist>
 
     fun listArtistTracks(
         artist: String,
@@ -34,6 +38,8 @@ internal interface LibrarySessionPort {
     ): LibraryWindow<LibraryTrack>
 
     fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack>
+
+    fun searchFavourites(text: String, window: LibraryWindowRange): LibraryWindow<LibraryTrack>
 
     fun listAlbumTracks(
         album: String,

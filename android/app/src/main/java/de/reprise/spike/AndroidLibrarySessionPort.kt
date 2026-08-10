@@ -75,8 +75,18 @@ internal class AndroidLibrarySessionPort(
     override fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> =
         library.listAlbums(window.toFfi()).toLibraryAlbums()
 
+    override fun searchAlbums(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> = library.searchAlbums(text, window.toFfi()).toLibraryAlbums()
+
     override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> =
         library.listArtists(window.toFfi()).toLibraryArtists()
+
+    override fun searchArtists(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryArtist> = library.searchArtists(text, window.toFfi()).toLibraryArtists()
 
     override fun listArtistTracks(
         artist: String,
@@ -86,6 +96,11 @@ internal class AndroidLibrarySessionPort(
 
     override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
         library.listFavourites(window.toFfi()).toLibraryTracks()
+
+    override fun searchFavourites(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = library.searchFavourites(text, window.toFfi()).toLibraryTracks()
 
     override fun listAlbumTracks(
         album: String,

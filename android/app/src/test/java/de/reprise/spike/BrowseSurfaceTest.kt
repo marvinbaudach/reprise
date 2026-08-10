@@ -550,8 +550,24 @@ private class RecordingBrowsePort(
         return albums
     }
 
+    override fun searchAlbums(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> {
+        operations += "search-albums:$text:${window.offset}:${window.limit}"
+        return albums
+    }
+
     override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> {
         operations += "artists:${window.offset}:${window.limit}"
+        return artists
+    }
+
+    override fun searchArtists(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryArtist> {
+        operations += "search-artists:$text:${window.offset}:${window.limit}"
         return artists
     }
 
@@ -565,6 +581,14 @@ private class RecordingBrowsePort(
 
     override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> {
         operations += "favourites:${window.offset}:${window.limit}"
+        return favourites
+    }
+
+    override fun searchFavourites(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "search-favourites:$text:${window.offset}:${window.limit}"
         return favourites
     }
 
