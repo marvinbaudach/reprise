@@ -104,8 +104,11 @@ pub fn get_conditional(
     }
     let response_etag = header(&response, "ETag");
     let response_last_modified = header(&response, "Last-Modified");
-    let body = http_body::read_bounded_string(response.into_body().into_reader())
-        .map_err(map_body_error)?;
+    let body = http_body::read_bounded_string_with_limit(
+        response.into_body().into_reader(),
+        http_body::MAX_FEED_RESPONSE_BYTES,
+    )
+    .map_err(map_body_error)?;
     Ok(Response {
         body,
         etag: response_etag,
@@ -294,7 +297,8 @@ fn fixture_get(
     }
     let file =
         std::fs::File::open(path).map_err(|error| PodcastError::Transport(error.to_string()))?;
-    let body = http_body::read_bounded_string(file).map_err(map_body_error)?;
+    let body = http_body::read_bounded_string_with_limit(file, http_body::MAX_FEED_RESPONSE_BYTES)
+        .map_err(map_body_error)?;
     Ok(Response {
         body,
         etag: stored_etag,
@@ -410,6 +414,40 @@ mod tests {
                 Err(PodcastError::NotModified)
             ));
         });
+    }
+
+    #[test]
+    fn feed_bodies_use_the_feed_budget_without_raising_the_json_budget() {
+        const TWO_AND_A_HALF_MIB: usize = 5 * 1024 * 1024 / 2;
+
+        let directory = tempfile::tempdir().unwrap();
+        let accepted_url = "https://feeds.example.test/large.xml";
+        let accepted_path = directory
+            .path()
+            .join(fixture_route(accepted_url).unwrap().filename());
+        std::fs::write(&accepted_path, vec![b'x'; TWO_AND_A_HALF_MIB]).unwrap();
+
+        with_fixture_dir(directory.path(), || {
+            assert_eq!(get(accepted_url).unwrap().body.len(), TWO_AND_A_HALF_MIB);
+        });
+
+        let rejected_url = "https://feeds.example.test/oversized.xml";
+        let rejected_path = directory
+            .path()
+            .join(fixture_route(rejected_url).unwrap().filename());
+        std::fs::write(
+            rejected_path,
+            vec![b'x'; crate::http_body::MAX_FEED_RESPONSE_BYTES as usize + 1024 * 1024],
+        )
+        .unwrap();
+
+        with_fixture_dir(directory.path(), || {
+            assert!(matches!(
+                get(rejected_url),
+                Err(PodcastError::Body(message)) if message == "response is too large"
+            ));
+        });
+        assert_eq!(crate::http_body::MAX_JSON_RESPONSE_BYTES, 2 * 1024 * 1024);
     }
 
     #[test]
