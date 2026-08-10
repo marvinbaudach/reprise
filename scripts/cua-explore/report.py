@@ -109,7 +109,40 @@ class RunReport:
         self.geometry_resolution: dict[str, Any] | None = None
         self.cursor_visibility: dict[str, Any] | None = None
         self.hover_coverage: list[dict[str, Any]] = []
+        self.run_findings: list[dict[str, Any]] = []
+        self.abort_reason: str | None = None
+        self.transport_faults = 0
+        self.unknown_action_names: dict[str, int] = {}
+        self.oracle_activity: dict[str, dict[str, Any]] = {}
+        self.window_setup: dict[str, Any] | None = None
+        self.dispatch_policy: dict[str, Any] | None = None
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def add_finding(self, finding: Mapping[str, Any]) -> None:
+        self.run_findings.append(dict(_sanitize(finding)))
+
+    def set_abort_reason(self, reason: str | None) -> None:
+        self.abort_reason = str(_sanitize(reason)) if reason else None
+
+    def set_transport_faults(self, count: int) -> None:
+        self.transport_faults = max(0, int(count))
+
+    def set_unknown_action_names(self, counts: Mapping[str, int]) -> None:
+        self.unknown_action_names = {
+            str(name): int(count) for name, count in sorted(counts.items())
+        }
+
+    def set_oracle_activity(self, activity: Mapping[str, Mapping[str, Any]]) -> None:
+        self.oracle_activity = {
+            str(name): dict(_sanitize(record))
+            for name, record in sorted(activity.items())
+        }
+
+    def set_window_setup(self, record: Mapping[str, Any] | None) -> None:
+        self.window_setup = dict(_sanitize(record)) if record else None
+
+    def set_dispatch_policy(self, policy: Mapping[str, Any] | None) -> None:
+        self.dispatch_policy = dict(_sanitize(policy)) if policy else None
 
     def set_geometry_failures(self, failures: Sequence[str]) -> None:
         """Snapshots whose element positions could not be proven; oracles stayed quiet."""
@@ -163,7 +196,11 @@ class RunReport:
         )
 
     def write(self) -> Mapping[str, Any]:
-        findings = [finding for step in self.steps for finding in step["findings"]]
+        findings = [
+            *self.run_findings,
+            *self._silent_oracle_findings(),
+            *(finding for step in self.steps for finding in step["findings"]),
+        ]
         severity_counts = Counter(str(item.get("severity", "unknown")) for item in findings)
         code_counts = Counter(str(item.get("code", "unknown")) for item in findings)
         completed_workloads = sorted(
@@ -186,6 +223,11 @@ class RunReport:
             len(completed_workloads) == self.required_workloads
             and audits_complete
             and finished
+        )
+        outcome = (
+            "aborted"
+            if self.abort_reason is not None
+            else "complete" if mission_complete else "incomplete"
         )
         summary = _sanitize(
             {
@@ -216,6 +258,13 @@ class RunReport:
                 "required_audits": sorted(required_audits),
                 "finished": finished,
                 "mission_complete": mission_complete,
+                "outcome": outcome,
+                "abort_reason": self.abort_reason,
+                "transport_faults": self.transport_faults,
+                "unknown_action_names": self.unknown_action_names,
+                "oracle_activity": self.oracle_activity,
+                "window_setup": self.window_setup,
+                "dispatch_policy": self.dispatch_policy,
                 "automatic_gate": False,
                 "requires_confirmation_runs": True,
             }
@@ -231,6 +280,23 @@ class RunReport:
         )
         return summary
 
+    def _silent_oracle_findings(self) -> list[dict[str, Any]]:
+        findings = []
+        for name, record in self.oracle_activity.items():
+            if int(record.get("evaluated", 0)) > 0 or record.get("superseded_by"):
+                continue
+            findings.append(
+                {
+                    "code": "oracle-never-evaluated",
+                    "severity": "warning",
+                    "confidence": 1.0,
+                    "summary": f"The declared '{name}' oracle never evaluated during this run.",
+                    "evidence": {"oracle": name},
+                    "blocks_gate": False,
+                }
+            )
+        return findings
+
     def _markdown(
         self, summary: Mapping[str, Any], findings: Sequence[Mapping[str, Any]]
     ) -> str:
@@ -241,9 +307,12 @@ class RunReport:
             f"- Seed: `{self.seed}`",
             f"- Commit: `{self.commit}`",
             f"- Actions: {summary['steps']}",
+            f"- Outcome: `{summary['outcome']}`",
             "- Status: advisory until reproduced in two fresh profiles",
             "",
         ]
+        if summary.get("abort_reason"):
+            lines.extend([f"Abort reason: {summary['abort_reason']}", ""])
         if summary.get("hover_coverage"):
             lines.extend(["## Hover coverage", ""])
             planned = next(

@@ -15,6 +15,7 @@ class LabelMatcher:
     roles: tuple[str, ...] = ()
     require_actionable: bool = True
     require_enabled: bool = True
+    strict_roles: bool = False
 
     def candidates(self, observation: Mapping[str, Any]) -> tuple[str, ...]:
         candidates, _mismatch = self.candidates_with_role_fallback(observation)
@@ -27,6 +28,8 @@ class LabelMatcher:
         if not self.roles:
             return all_candidates, False
         role_candidates = self._matching(observation, use_roles=True)
+        if self.strict_roles:
+            return role_candidates, bool(all_candidates and not role_candidates)
         return (role_candidates, False) if role_candidates else (all_candidates, bool(all_candidates))
 
     def resolve(self, observation: Mapping[str, Any]) -> str | None:
