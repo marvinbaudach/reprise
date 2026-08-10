@@ -218,13 +218,10 @@ impl LibraryDoctorPage {
             .hscrollbar_policy(gtk4::PolicyType::Never)
             .child(&content)
             .build();
-        let toolbar = adw::ToolbarView::new();
-        toolbar.add_top_bar(&adw::HeaderBar::new());
-        toolbar.set_content(Some(&scrolled));
         let navigation_page = adw::NavigationPage::builder()
             .title(strings::text(strings::LIBRARY_DOCTOR))
             .tag("library-doctor")
-            .child(&toolbar)
+            .child(&scrolled)
             .build();
         Rc::new(Self {
             navigation_page,

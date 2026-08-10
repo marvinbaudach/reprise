@@ -80,9 +80,6 @@ pub(in crate::ui) struct WindowDecorations {
     window: adw::ApplicationWindow,
     content_host: WindowContentHost,
     library_header: adw::HeaderBar,
-    content_stack: gtk4::Stack,
-    doctor_navigation: adw::NavigationView,
-    active_doctor_headers: RefCell<Vec<adw::HeaderBar>>,
     compact_headers: Vec<adw::HeaderBar>,
     compact_titles: Vec<adw::WindowTitle>,
     controls: Vec<gtk4::WindowControls>,
@@ -94,8 +91,6 @@ impl WindowDecorations {
     pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
         library_header: &adw::HeaderBar,
-        content_stack: &gtk4::Stack,
-        doctor_navigation: &adw::NavigationView,
         compact_root: Option<&gtk4::Widget>,
     ) -> Rc<Self> {
         let mut compact_headers = Vec::new();
@@ -114,9 +109,6 @@ impl WindowDecorations {
             window: window.clone(),
             content_host,
             library_header: library_header.clone(),
-            content_stack: content_stack.clone(),
-            doctor_navigation: doctor_navigation.clone(),
-            active_doctor_headers: RefCell::new(Vec::new()),
             compact_headers,
             compact_titles,
             controls,
@@ -127,18 +119,6 @@ impl WindowDecorations {
         window.connect_realize(move |_| {
             if let Some(decorations) = weak.upgrade() {
                 decorations.apply_surface_request();
-                decorations.sync_controls();
-            }
-        });
-        let weak = Rc::downgrade(&decorations);
-        content_stack.connect_visible_child_name_notify(move |_| {
-            if let Some(decorations) = weak.upgrade() {
-                decorations.sync_controls();
-            }
-        });
-        let weak = Rc::downgrade(&decorations);
-        doctor_navigation.connect_visible_page_notify(move |_| {
-            if let Some(decorations) = weak.upgrade() {
                 decorations.sync_controls();
             }
         });
@@ -185,45 +165,20 @@ impl WindowDecorations {
     }
 
     fn sync_controls(&self) {
-        let integrated = integrated_chrome_visible(self.mode.get());
-        let doctor_visible =
-            self.content_stack.visible_child_name().as_deref() == Some("library-doctor");
-        let library_controls_visible = integrated && !doctor_visible;
-        self.library_header
-            .set_show_start_title_buttons(library_controls_visible);
-        self.library_header
-            .set_show_end_title_buttons(library_controls_visible);
-        let previous_doctor_headers = self.active_doctor_headers.replace(Vec::new());
-        for header in previous_doctor_headers {
-            header.set_show_start_title_buttons(false);
-            header.set_show_end_title_buttons(false);
-        }
-        let doctor_headers = self
-            .doctor_navigation
-            .visible_page()
-            .map_or_else(Vec::new, |page| header_bars(page.upcast_ref()));
-        for header in &doctor_headers {
-            header.set_show_start_title_buttons(integrated && doctor_visible);
-            header.set_show_end_title_buttons(integrated && doctor_visible);
-        }
-        self.active_doctor_headers.replace(doctor_headers);
+        let visible = integrated_chrome_visible(self.mode.get());
+        self.library_header.set_show_start_title_buttons(visible);
+        self.library_header.set_show_end_title_buttons(visible);
         for header in &self.compact_headers {
-            header.set_show_start_title_buttons(integrated);
-            header.set_show_end_title_buttons(integrated);
+            header.set_show_start_title_buttons(visible);
+            header.set_show_end_title_buttons(visible);
         }
         for title in &self.compact_titles {
-            title.set_visible(integrated);
+            title.set_visible(visible);
         }
         for controls in &self.controls {
-            controls.set_visible(integrated);
+            controls.set_visible(visible);
         }
     }
-}
-
-fn header_bars(root: &gtk4::Widget) -> Vec<adw::HeaderBar> {
-    let mut headers = Vec::new();
-    collect_decorations(root, &mut headers, &mut Vec::new(), &mut Vec::new());
-    headers
 }
 
 fn collect_decorations(
@@ -283,15 +238,8 @@ mod tests {
         compact_root.append(&compact_header);
         compact_root.append(&compact_title);
         compact_root.append(&compact_controls);
-        let content_stack = gtk4::Stack::new();
-        let doctor_navigation = adw::NavigationView::new();
-        let decorations = WindowDecorations::new(
-            &window,
-            &library_header,
-            &content_stack,
-            &doctor_navigation,
-            Some(compact_root.upcast_ref()),
-        );
+        let decorations =
+            WindowDecorations::new(&window, &library_header, Some(compact_root.upcast_ref()));
         decorations.content_host.set_content(&library_root);
 
         decorations.apply(WindowDecorationMode::Client);
