@@ -64,6 +64,13 @@ fn large_track_list() -> (Rc<TrackList>, gtk4::Window) {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+// Counterprobe after the geometry-service track provides the switch:
+// scratchpad/probe-any.sh large-delete-no-preseed \
+//   ui::delete_tracks::large_block_display_tests::browse_11_large_block_delete_keeps_the_deep_viewport_off_the_top \
+//   REPRISE_NO_PRESEED=1
+// The same test must fail: suppressing the pre-seed must make the sampled
+// viewport jump observable again. Verify that the runner reports one test,
+// because an incomplete path silently filters the proof out.
 fn browse_11_large_block_delete_keeps_the_deep_viewport_off_the_top() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
