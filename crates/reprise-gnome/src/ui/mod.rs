@@ -56,6 +56,7 @@ pub(crate) mod lazy_tooltip;
 mod library_doctor;
 mod library_views;
 pub(crate) mod link_activation;
+mod list_geometry;
 mod lyrics;
 pub(crate) mod motion;
 pub(crate) mod motion_reveal;
