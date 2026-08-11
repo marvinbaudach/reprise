@@ -146,6 +146,7 @@ fn all_artist_summaries(db: &Db) -> Result<Vec<queries::ArtistSummary>, DataErro
     loop {
         let window = queries::query_artists(
             db,
+            "",
             queries::WindowRange {
                 offset,
                 limit: SUMMARY_WINDOW_SIZE,
@@ -170,6 +171,7 @@ fn all_album_summaries(db: &Db) -> Result<Vec<queries::AlbumSummary>, DataError>
     loop {
         let window = queries::query_albums(
             db,
+            "",
             queries::WindowRange {
                 offset,
                 limit: SUMMARY_WINDOW_SIZE,
@@ -273,8 +275,8 @@ pub fn library_summary(path: &Path) -> Result<LibrarySummary, DataError> {
     require_read(&db)?;
 
     let stats = queries::query_library_stats(&db, "").map_err(DataError::Db)?;
-    let artist_count = queries::query_artist_count(&db).map_err(DataError::Db)?;
-    let album_count = queries::query_album_count(&db).map_err(DataError::Db)?;
+    let artist_count = queries::query_artist_count(&db, "").map_err(DataError::Db)?;
+    let album_count = queries::query_album_count(&db, "").map_err(DataError::Db)?;
 
     Ok(LibrarySummary {
         track_count: stats.track_count,

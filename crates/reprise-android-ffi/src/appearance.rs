@@ -11,7 +11,6 @@ use crate::{LibraryError, MusicLibrary};
 
 const THEME_SETTING_KEY: &str = "ui.theme";
 const VISUALIZER_SETTING_KEY: &str = "ui.now_playing.visualizer";
-const NOW_PLAYING_VIEW_SETTING_KEY: &str = "ui.now_playing.view";
 const LIBRARY_DESTINATION_SETTING_KEY: &str = "ui.mobile.library_destination";
 
 /// What the shared `ui.theme` key currently contains.
@@ -90,42 +89,6 @@ impl AndroidVisualizerChoice {
             Self::Spectrum => "spectrum",
             Self::PreviewBand => "preview-band",
             Self::Ambient => "ambient",
-        }
-    }
-}
-
-/// What Android's remembered Now Playing surface currently contains.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum AndroidStoredNowPlayingView {
-    Player,
-    Visualizer,
-    Unset,
-    Unsupported { id: String },
-}
-
-impl AndroidStoredNowPlayingView {
-    fn from_setting(value: Option<&str>) -> Self {
-        match value {
-            Some("player") => Self::Player,
-            Some("visualizer") => Self::Visualizer,
-            None => Self::Unset,
-            Some(id) => Self::Unsupported { id: id.to_owned() },
-        }
-    }
-}
-
-/// Now Playing surfaces Android is allowed to remember after an explicit choice.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum AndroidNowPlayingViewChoice {
-    Player,
-    Visualizer,
-}
-
-impl AndroidNowPlayingViewChoice {
-    fn setting_id(self) -> &'static str {
-        match self {
-            Self::Player => "player",
-            Self::Visualizer => "visualizer",
         }
     }
 }
@@ -241,29 +204,6 @@ impl MusicLibrary {
         )
     }
 
-    pub fn now_playing_view_setting(&self) -> Result<AndroidStoredNowPlayingView, LibraryError> {
-        let state = self.lock()?;
-        let value =
-            settings::get_setting(&state.db, NOW_PLAYING_VIEW_SETTING_KEY).map_err(|error| {
-                LibraryError::Database {
-                    detail: error.to_string(),
-                }
-            })?;
-        Ok(AndroidStoredNowPlayingView::from_setting(value.as_deref()))
-    }
-
-    pub fn set_now_playing_view(
-        &self,
-        view: AndroidNowPlayingViewChoice,
-    ) -> Result<(), LibraryError> {
-        let state = self.lock()?;
-        settings::set_setting(&state.db, NOW_PLAYING_VIEW_SETTING_KEY, view.setting_id()).map_err(
-            |error| LibraryError::Database {
-                detail: error.to_string(),
-            },
-        )
-    }
-
     pub fn library_destination_setting(
         &self,
     ) -> Result<AndroidStoredLibraryDestination, LibraryError> {
@@ -300,9 +240,8 @@ mod tests {
     use reprise_core::library::settings;
 
     use super::{
-        AndroidColorScheme, AndroidLibraryDestinationChoice, AndroidNowPlayingViewChoice,
-        AndroidStoredLibraryDestination, AndroidStoredNowPlayingView, AndroidStoredTheme,
-        AndroidStoredVisualizer, AndroidThemeChoice, AndroidVisualizerChoice,
+        AndroidColorScheme, AndroidLibraryDestinationChoice, AndroidStoredLibraryDestination,
+        AndroidStoredTheme, AndroidStoredVisualizer, AndroidThemeChoice, AndroidVisualizerChoice,
     };
     use crate::MusicLibrary;
 
@@ -374,44 +313,6 @@ mod tests {
         assert_eq!(
             library.visualizer_setting().unwrap(),
             AndroidStoredVisualizer::Ambient,
-        );
-    }
-
-    #[test]
-    fn now_playing_view_crosses_the_typed_boundary_without_stealing_unknown_values() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = MusicLibrary::open(
-            directory.path().to_str().unwrap(),
-            directory.path().join("cache").to_str().unwrap(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            library.now_playing_view_setting().unwrap(),
-            AndroidStoredNowPlayingView::Unset,
-        );
-        {
-            let state = library.lock().unwrap();
-            settings::set_setting(
-                &state.db,
-                super::NOW_PLAYING_VIEW_SETTING_KEY,
-                "future-now-playing-view",
-            )
-            .unwrap();
-        }
-        assert_eq!(
-            library.now_playing_view_setting().unwrap(),
-            AndroidStoredNowPlayingView::Unsupported {
-                id: "future-now-playing-view".to_owned(),
-            },
-        );
-
-        library
-            .set_now_playing_view(AndroidNowPlayingViewChoice::Visualizer)
-            .unwrap();
-        assert_eq!(
-            library.now_playing_view_setting().unwrap(),
-            AndroidStoredNowPlayingView::Visualizer,
         );
     }
 

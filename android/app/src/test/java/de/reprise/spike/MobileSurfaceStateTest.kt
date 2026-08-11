@@ -7,10 +7,73 @@ import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
+import android.graphics.Bitmap
+import uniffi.reprise_android_ffi.AndroidArtworkSize
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class MobileSurfaceStateTest {
+    @Test
+    fun aNewCurrentTrackPrefetchesTheFollowingTwoCoversAndFogTextures() {
+        val cache = ArtworkCache()
+        val tracks = listOf(prefetchTrack(2), prefetchTrack(3))
+        val controls = object : PlaybackControls {
+            override fun togglePause() = Unit
+            override fun next() = Unit
+            override fun previous() = Unit
+            override fun seekTo(positionMs: Long) = Unit
+            override fun setShuffle(enabled: Boolean) = Unit
+            override fun setRepeat(mode: AndroidRepeatMode) = Unit
+            override fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) =
+                report(null)
+            override fun loadUpcomingTracks(
+                window: LibraryWindowRange,
+                report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
+            ) {
+                assertEquals(LibraryWindowRange(0, 2), window)
+                report(Result.success(LibraryWindow(2, tracks, hasMore = false)))
+            }
+        }
+        val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        val artwork = TrackArtwork(
+            resolve = { uri, _ -> uri },
+            decode = { bitmap },
+            cache = cache,
+            onMainThread = { work -> work() },
+        )
+        val state = MobileSurfaceViewModel()
+
+        try {
+            state.prefetchUpcomingArtwork(currentTrackId = 1, controls, artwork)
+
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (
+                tracks.any { track ->
+                    val visual = cache.artwork(prefetchRequest(track))
+                    visual == null || cache.fog(visual.image) == null
+                } &&
+                System.nanoTime() < deadline
+            ) {
+                Thread.yield()
+            }
+            tracks.forEach { track ->
+                val visual = cache.artwork(prefetchRequest(track))
+                assertNotNull(visual)
+                assertNotNull(cache.fog(checkNotNull(visual).image))
+            }
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
     @Test
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     fun frame17aSelectsTheWideShortSurfaceFromItsWindowSizeClass() {
@@ -49,7 +112,7 @@ class MobileSurfaceStateTest {
      * the activity path a configuration change really takes.
      */
     @Test
-    fun openingSearchReturnsToTitlesAndTheViewModelKeepsWhatItIsHanded() {
+    fun openingSearchStaysOnTheCurrentTabAndTheViewModelKeepsWhatItIsHanded() {
         val state = MobileSurfaceViewModel()
 
         state.selectTab(BrowseTab.ARTISTS)
@@ -60,7 +123,7 @@ class MobileSurfaceStateTest {
             LibraryScrollPosition(firstVisibleItemIndex = 18, itemOffsetFraction = 0.25f),
         )
 
-        assertEquals(BrowseTab.TITLES, state.selectedTab)
+        assertEquals(BrowseTab.ARTISTS, state.selectedTab)
         assertTrue(state.searchVisible)
         assertEquals("slowdive", state.searchText)
         assertEquals(
@@ -99,6 +162,26 @@ class MobileSurfaceStateTest {
 
         assertEquals(paged, state.loadedWindows(shape))
         assertNull(state.loadedWindows(shape.copy(titles = 451)))
+    }
+
+    @Test
+    fun pagedInWindowsAreRestoredOnlyWithTheSearchThatProducedThem() {
+        val state = MobileSurfaceViewModel()
+        val shape = LibraryCatalogShape(titles = 450, albums = 450, artists = 450)
+        val filtered = LoadedLibraryWindows(
+            titles = LibraryWindow.empty(),
+            albums = LibraryWindow(total = 450, rows = emptyList(), hasMore = true),
+            artists = LibraryWindow.empty(),
+            searchText = "slow",
+            openAlbum = null,
+        )
+
+        state.updateSearch("slow")
+        state.keepLoadedWindows(shape, filtered)
+
+        assertEquals(filtered, state.loadedWindows(shape))
+        state.updateSearch("")
+        assertNull(state.loadedWindows(shape))
     }
 
     @Test
@@ -177,3 +260,21 @@ class MobileSurfaceStateTest {
         assertFalse(state.dockMode)
     }
 }
+
+private fun prefetchTrack(id: Long) = LibraryTrack(
+    id = id,
+    uri = "content://tracks/$id",
+    title = "Track $id",
+    artist = "Artist",
+    album = "Album",
+    durationMs = 180_000,
+    playCount = 0,
+    rating = 0,
+)
+
+private fun prefetchRequest(track: LibraryTrack) = ArtworkRequest(
+    track.uri,
+    AndroidArtworkSize.NOW_PLAYING,
+    track.title,
+    track.artist,
+)

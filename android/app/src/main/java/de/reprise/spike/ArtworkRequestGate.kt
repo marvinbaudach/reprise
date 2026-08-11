@@ -11,6 +11,8 @@ import uniffi.reprise_android_ffi.AndroidArtworkSize
 internal class ArtworkRequest(
     val trackUri: String,
     val size: AndroidArtworkSize,
+    val title: String = "",
+    val artist: String = "",
 )
 
 /**
@@ -29,7 +31,11 @@ internal class ArtworkRequestGate {
     fun begin(
         trackUri: String,
         size: AndroidArtworkSize = AndroidArtworkSize.LIST,
-    ): ArtworkRequest = ArtworkRequest(trackUri, size).also { request -> current = request }
+        title: String = "",
+        artist: String = "",
+    ): ArtworkRequest = ArtworkRequest(trackUri, size, title, artist).also { request ->
+        current = request
+    }
 
     @Synchronized
     fun accepts(request: ArtworkRequest): Boolean = current === request

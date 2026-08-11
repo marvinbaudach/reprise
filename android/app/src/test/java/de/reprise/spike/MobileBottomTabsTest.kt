@@ -2,9 +2,9 @@ package de.reprise.spike
 
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -99,20 +99,19 @@ class MobileBottomTabsTest {
     }
 
     @Test
-    fun nowPlayingLeavesTheNavigationBarVisibleAndReceivingTheDestinationTap() {
+    fun nowPlayingHidesTheNavigationBarAndConsumesThePagerSwipe() {
         application.service.publish(mobileTabsPlayingSnapshot())
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
         compose.onNodeWithTag("library-mini-player").performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
-        compose.onNodeWithTag("library-navigation-bar").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
+        compose.onNodeWithTag("library-navigation-bar").assertIsNotDisplayed()
 
-        compose.onNodeWithTag("library-destination-ARTISTS")
-            .performTouchInput { click() }
+        compose.onNodeWithTag("now-playing-gestures").performTouchInput { swipeLeft() }
 
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
-        compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
-        compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
+        compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-TITLES").assertIsSelected()
     }
 }
 
