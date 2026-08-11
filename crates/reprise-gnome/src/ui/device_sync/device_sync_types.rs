@@ -189,22 +189,8 @@ pub struct DeviceView {
     /// re-walk the raw inventory lists.
     pub youtube_bytes: u64,
     pub podcast_bytes: u64,
-    /// `MTP-37`: the Content section's live selection summary for YouTube
-    /// audio and podcast episodes — "N of M channels/shows selected",
-    /// read from `POD-12`'s existing per-device subscription selection
-    /// rather than computed here.
-    pub youtube_selection: reprise_core::device_sync::YoutubeSelectionSummary,
     /// Whether selected smart playlists follow their live definition.
     pub keep_smart_playlists_updated: bool,
-    pub podcast_selection: reprise_core::device_sync::PodcastSelectionSummary,
-    /// `MTP-46`: which content sources the user currently has switched on.
-    /// A switched-off source contributes no candidates in core, and its
-    /// Content row is hidden here — a row reporting "0 of 3 channels" for a
-    /// feature the user has turned off is noise that invites the reader to
-    /// re-enable something they deliberately disabled. Carried on the
-    /// snapshot rather than read here, because the panel does not touch the
-    /// database (`ARCH-2`'s thin frontend).
-    pub enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources,
     /// `MTP-42`'s preparation-phase projection (design 7f, `MTP-43`) — the
     /// device page's preparation overview, switch behavior, and primary
     /// button label are all driven from this, never re-derived.

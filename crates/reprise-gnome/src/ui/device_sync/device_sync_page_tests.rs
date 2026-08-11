@@ -15,14 +15,12 @@ use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
 
 fn no_op_content_actions() -> ContentPanelActions {
     ContentPanelActions {
-        set_target_enabled: Rc::new(|_, _| {}),
-        set_target_cap: Rc::new(|_, _| {}),
         set_remove_deleted: Rc::new(|_| {}),
         set_sync_automatically: Rc::new(|_| {}),
         set_prepare_before_sync: Rc::new(|_| {}),
         scan_device: Rc::new(|| {}),
-        open_folder_browser: Rc::new(|_, _| {}),
-        open_picker: Rc::new(|_, _| {}),
+        open_folder_browser: Rc::new(|_| {}),
+        open_picker: Rc::new(|_| {}),
     }
 }
 
@@ -93,15 +91,7 @@ fn device() -> DeviceView {
         category_readings: crate::ui::device_sync_runtime::empty_category_readings(),
         youtube_bytes: 0,
         podcast_bytes: 0,
-        youtube_selection: Default::default(),
         keep_smart_playlists_updated: true,
-        // `MTP-46`: these fixtures are about rendering a device that has
-        // both sources in use, so both are on.
-        enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources {
-            rss: true,
-            youtube: true,
-        },
-        podcast_selection: Default::default(),
         preparation: reprise_core::device_sync::PreparationPhase::Absent,
         preparation_missing: Vec::new(),
         preparation_run: crate::ui::device_sync_runtime::PreparationRunState::Idle,

@@ -155,12 +155,7 @@ fn mtp_38_sync_now_routes_the_playlists_transfer_through_its_persisted_storage()
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
 
         runtime
-            .set_target_folder(
-                "a",
-                SyncTargetKind::Playlists,
-                Some(StorageId(7)),
-                "/Music/Reprise".to_string(),
-            )
+            .set_target_folder("a", Some(StorageId(7)), "/Music/Reprise".to_string())
             .unwrap();
         settle().await;
 

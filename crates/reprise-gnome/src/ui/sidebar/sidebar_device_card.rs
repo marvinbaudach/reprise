@@ -537,15 +537,7 @@ pub(super) mod tests {
             category_readings: crate::ui::device_sync_runtime::empty_category_readings(),
             youtube_bytes: 0,
             podcast_bytes: 0,
-            youtube_selection: Default::default(),
             keep_smart_playlists_updated: true,
-            // `MTP-46`: these fixtures are about rendering a device that has
-            // both sources in use, so both are on.
-            enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources {
-                rss: true,
-                youtube: true,
-            },
-            podcast_selection: Default::default(),
             preparation: reprise_core::device_sync::PreparationPhase::Absent,
             preparation_missing: Vec::new(),
             preparation_run: crate::ui::device_sync_runtime::PreparationRunState::Idle,

@@ -9,12 +9,11 @@ use reprise_core::device_sync::preparation::MissingFile;
 use reprise_core::device_sync::settings::{
     load_device_files, load_device_playlists, resolve_selection_track_ids, save_settings,
 };
-use reprise_core::device_sync::targets::save_target;
 use reprise_core::device_sync::{
     load_everything_playlist_snapshot, load_mirror_playlist_snapshots, plan_preparation,
     project_storage, project_sync_page, resolve_latest_per_channel, select_episodes,
     DeviceSelection, EpisodeSelectionCandidate, EpisodeSelectionResult, EpisodeSelectionRule,
-    PreparationFacts, SelectionSource, SyncPageInput, SyncTarget, SyncTargetKind, TransferProfile,
+    PreparationFacts, SelectionSource, SyncPageInput, SyncTargetKind, TransferProfile,
     EVERYTHING_SOURCE,
 };
 
@@ -145,91 +144,6 @@ impl DeviceSyncRuntime {
         let mut settings = self.settings_for_update(device_id)?;
         settings.prepare_before_sync = prepare_before_sync;
         self.update_settings(settings)
-    }
-
-    /// `MTP-38`'s one per-device toggle exposed by the Content section
-    /// (`MTP-37`): whether this device's slot for `kind` is active at all.
-    /// `E-6` withdrew the once-planned global "sync this content type" rule
-    /// outright, so this switch owns its section without a second,
-    /// higher-priority one anywhere — see
-    /// `device_view::project_device_category_reading`.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn set_target_enabled(
-        self: &Rc<Self>,
-        device_id: &str,
-        kind: SyncTargetKind,
-        enabled: bool,
-    ) -> Result<(), String> {
-        let (mut target, rememberable) = {
-            let devices = self.device_states.borrow();
-            let device = devices
-                .iter()
-                .find(|device| device.descriptor.id == device_id)
-                .ok_or_else(|| "device is not connected".to_string())?;
-            if device.is_busy() {
-                return Err("device synchronization is active".into());
-            }
-            (
-                device
-                    .targets
-                    .iter()
-                    .find(|target| target.kind == kind)
-                    .cloned()
-                    .unwrap_or_else(|| SyncTarget::default_for(kind)),
-                device.descriptor.persistent_id.is_some(),
-            )
-        };
-        target.enabled = enabled;
-        if rememberable {
-            save_target(&self.conn, device_id, &target).map_err(|error| error.to_string())?;
-        }
-        update_runtime_target(&mut self.device_states.borrow_mut(), device_id, target)?;
-        self.recompute_delta(device_id)
-    }
-
-    /// `MTP-37` (`E-6`, `E-8`): the Content section's size-cap column
-    /// becomes a real per-device control here — before this, `cap_bytes`
-    /// was persisted (`MTP-38`) and enforced by `build_plan`'s eviction
-    /// pass (`MTP-39`/`MTP-25`) but had no editing surface anywhere, so a
-    /// user could never actually change it. `None` clears the cap
-    /// (unlimited); `Some` sets it in bytes. Playlists have no cap concept
-    /// (`MTP-38`'s `default_cap_bytes`) and no eviction path reads a
-    /// playlist cap, so the GTK side never offers this control for that
-    /// kind — this method does not special-case it either way, it simply
-    /// persists whatever is asked and lets the existing eviction pass
-    /// (which already ignores `None`) do the rest.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn set_target_cap(
-        self: &Rc<Self>,
-        device_id: &str,
-        kind: SyncTargetKind,
-        cap_bytes: Option<u64>,
-    ) -> Result<(), String> {
-        let (mut target, rememberable) = {
-            let devices = self.device_states.borrow();
-            let device = devices
-                .iter()
-                .find(|device| device.descriptor.id == device_id)
-                .ok_or_else(|| "device is not connected".to_string())?;
-            if device.is_busy() {
-                return Err("device synchronization is active".into());
-            }
-            (
-                device
-                    .targets
-                    .iter()
-                    .find(|target| target.kind == kind)
-                    .cloned()
-                    .unwrap_or_else(|| SyncTarget::default_for(kind)),
-                device.descriptor.persistent_id.is_some(),
-            )
-        };
-        target.cap_bytes = cap_bytes;
-        if rememberable {
-            save_target(&self.conn, device_id, &target).map_err(|error| error.to_string())?;
-        }
-        update_runtime_target(&mut self.device_states.borrow_mut(), device_id, target)?;
-        self.recompute_delta(device_id)
     }
 
     pub fn selection_options(&self) -> Result<Vec<DeviceSelectionOption>, String> {
@@ -630,24 +544,6 @@ pub(super) fn verified_track_bytes(files: &[reprise_core::device_sync::ManagedDe
         .filter(|file| is_verified_track_file(file))
         .map(|file| file.size_bytes)
         .fold(0_u64, u64::saturating_add)
-}
-
-fn update_runtime_target(
-    devices: &mut [DeviceState],
-    device_id: &str,
-    next: SyncTarget,
-) -> Result<(), String> {
-    let device = devices
-        .iter_mut()
-        .find(|device| device.descriptor.id == device_id)
-        .ok_or_else(|| "device is not connected".to_string())?;
-    let target = device
-        .targets
-        .iter_mut()
-        .find(|target| target.kind == next.kind)
-        .ok_or_else(|| "device sync target is unavailable".to_string())?;
-    *target = next;
-    Ok(())
 }
 
 /// Builds one target's podcast/YouTube plan, or an empty one when that

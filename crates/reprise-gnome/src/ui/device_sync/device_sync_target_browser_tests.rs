@@ -3,7 +3,6 @@ use std::future::Future;
 use std::time::Duration;
 
 use gtk4::gio;
-use reprise_core::device_sync::browser::StorageKind;
 use reprise_core::device_sync::DeviceStorageInspection;
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 
@@ -25,50 +24,18 @@ fn mtp_31_preview_text_names_the_resolved_storage_and_path() {
     assert_eq!(
         preview_text(&TargetPreview::Resolved {
             storage_name: "Internal shared storage".to_string(),
-            path: "/Music/Reprise-YouTube".to_string(),
+            path: "/Music/Reprise".to_string(),
         }),
-        "Files will be stored at Internal shared storage → /Music/Reprise-YouTube"
+        "Files will be stored at Internal shared storage → /Music/Reprise"
     );
     assert!(preview_text(&TargetPreview::Unresolved {
-        path: "/Music/Reprise-YouTube".to_string()
+        path: "/Music/Reprise".to_string()
     })
     .contains("once a storage is chosen"));
     assert!(preview_text(&TargetPreview::StorageMissing {
-        path: "/Music/Reprise-YouTube".to_string()
+        path: "/Music/Reprise".to_string()
     })
     .contains("no longer available"));
-}
-
-#[test]
-fn mtp_31_conflict_warning_only_fires_against_an_actual_playlist_target() {
-    let playlists = SyncTarget {
-        kind: SyncTargetKind::Playlists,
-        storage_id: Some(StorageId(1)),
-        path: "/Music/Reprise".to_string(),
-        enabled: true,
-        cap_bytes: None,
-    };
-    let state = BrowserState {
-        original: SyncTarget {
-            kind: SyncTargetKind::YoutubeAudio,
-            storage_id: Some(StorageId(1)),
-            path: "/Music/Reprise-YouTube".to_string(),
-            enabled: true,
-            cap_bytes: None,
-        },
-        playlist_target: Some(playlists.clone()),
-        storages: vec![StorageOption {
-            id: StorageId(1),
-            name: "Internal".to_string(),
-            kind: StorageKind::Internal,
-        }],
-        storage: Some(StorageId(1)),
-        path: "/Music/Reprise/Nested".to_string(),
-    };
-    let conflicts = state.playlist_target.as_ref().is_some_and(|playlist| {
-        folder_conflicts_with_playlist_target(state.storage, &state.path, playlist)
-    });
-    assert!(conflicts);
 }
 
 // `MTP-35`: the Save button's persistence-result handling, tested directly

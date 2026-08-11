@@ -3,32 +3,6 @@ use chrono::TimeZone;
 use reprise_core::device_sync::PreparationPhase;
 
 #[test]
-fn source_off_uses_the_catalogued_global_source_copy() {
-    assert_eq!(
-        category_reading_text(&reprise_core::device_sync::CategoryReading::SourceOff),
-        "Source off"
-    );
-}
-
-#[test]
-fn design_2c_legend_uses_short_translatable_names_and_shared_size_formatting() {
-    use reprise_core::device_sync::SyncTargetKind;
-
-    assert_eq!(
-        category_legend_text(SyncTargetKind::Playlists, 1152 * 1024 * 1024),
-        "Music 1.1 GiB"
-    );
-    assert_eq!(
-        category_legend_text(SyncTargetKind::YoutubeAudio, 693 * 1024 * 1024),
-        "YouTube 693.0 MiB"
-    );
-    assert_eq!(
-        category_legend_text(SyncTargetKind::PodcastEpisodes, 217 * 1024 * 1024),
-        "Podcasts 217.0 MiB"
-    );
-}
-
-#[test]
 fn mtp_43_preparation_overview_is_absent_for_absent_and_nothing_missing() {
     assert_eq!(preparation_overview(&PreparationPhase::Absent), None);
     assert_eq!(
@@ -169,12 +143,6 @@ fn mtp_22_deletions_only_balance_never_claims_zero_bytes_to_copy() {
     };
 
     assert_eq!(balance_text(&balance), "3 to remove");
-}
-
-#[test]
-fn cap_text_names_the_cap_or_says_there_is_none() {
-    assert_eq!(cap_text(Some(8 * 1024 * 1024 * 1024)), "max 8.0 GiB");
-    assert_eq!(cap_text(None), "no size limit");
 }
 
 #[test]
