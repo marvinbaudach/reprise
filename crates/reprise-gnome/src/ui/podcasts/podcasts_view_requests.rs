@@ -3,54 +3,6 @@
 use super::*;
 
 impl PodcastsView {
-    /// `NET-3c`: dispatches the queued-download runner. Only ever called
-    /// from `set_connectivity`'s `Offline` → `Online` transition — this
-    /// does not itself decide connectivity, it only wires the request and
-    /// applies whatever the worker reports back, the same shape as
-    /// `request_refresh` and `request_load_more` below.
-    pub(super) fn request_run_queued(self: &Rc<Self>) -> bool {
-        let operation = PodcastsOperation::RunQueued;
-        let generation = request_generation(self.generation.get(), operation);
-        let (response, receiver) = podcasts_response_channel();
-        if !self.runtime.request(PodcastsRequest {
-            generation,
-            operation,
-            priority: PodcastsPriority::Normal,
-            response,
-        }) {
-            return false;
-        }
-        let weak = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            while let Ok(response) = receiver.recv().await {
-                let Some(view) = weak.upgrade() else {
-                    return;
-                };
-                if view.generation.get() != response.generation {
-                    return;
-                }
-                match response.result {
-                    Ok(PodcastsWorkerResult::DownloadState { episode_id, state }) => {
-                        view.set_download_state(episode_id, &state);
-                        if matches!(state, DownloadState::Downloaded { .. }) {
-                            view.refresh();
-                        }
-                    }
-                    Ok(PodcastsWorkerResult::QueueRunComplete { .. }) => break,
-                    Ok(
-                        PodcastsWorkerResult::Refreshed(_)
-                        | PodcastsWorkerResult::LoadedMore { .. },
-                    ) => {}
-                    Err(error) => {
-                        view.show_error(&error);
-                        break;
-                    }
-                }
-            }
-        });
-        true
-    }
-
     pub(in crate::ui) fn request_refresh(self: &Rc<Self>, force: bool) -> bool {
         let operation = PodcastsOperation::Refresh { force };
         let generation = request_generation(self.generation.get(), operation);
@@ -110,11 +62,6 @@ impl PodcastsView {
                         view.refresh();
                         break;
                     }
-                    // `NET-3c`: this request's own response channel never
-                    // actually carries this variant — only a `RunQueued`
-                    // request's dedicated channel does — but the match must
-                    // stay exhaustive over the one shared result enum.
-                    Ok(PodcastsWorkerResult::QueueRunComplete { .. }) => {}
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
@@ -180,10 +127,7 @@ impl PodcastsView {
                     Ok(PodcastsWorkerResult::DownloadState { episode_id, state }) => {
                         view.set_download_state(episode_id, &state);
                     }
-                    Ok(
-                        PodcastsWorkerResult::Refreshed(_)
-                        | PodcastsWorkerResult::QueueRunComplete { .. },
-                    ) => {}
+                    Ok(PodcastsWorkerResult::Refreshed(_)) => {}
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();

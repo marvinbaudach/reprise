@@ -327,7 +327,6 @@ pub fn build(
         player.as_ref(),
         &sidebar,
         &content_stack,
-        &device_sync,
     );
     super::startup_report::mark("source_views::install (podcasts / YouTube / radio)");
     // The toast layer is attached after the player-bar shell exists so

@@ -16,7 +16,7 @@ use super::podcasts_context_surface;
 use super::podcasts_episode_files::EpisodePaths;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
-    duration, file_size, on_phone, relative_date, source_header, status_pill, RenderedSourceGroup,
+    duration, file_size, relative_date, source_header, status_pill, RenderedSourceGroup,
     SourceSummary,
 };
 use super::podcasts_row_interaction::{
@@ -69,8 +69,6 @@ struct GroupRenderContext<'a> {
     query: &'a str,
     expanded_episode_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
     download_states: &'a BTreeMap<i64, DownloadState>,
-    connected_devices: &'a [podcasts_context_menu::PodcastSyncDevice],
-    selected_devices: &'a BTreeMap<i64, Vec<String>>,
     /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
     /// &modules::SOURCE_IMAGES_MODULE)`, computed once per render pass by
     /// the caller — this module never reads settings itself.
@@ -101,8 +99,6 @@ pub(super) fn replace(
     expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
     expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
     download_states: &BTreeMap<i64, DownloadState>,
-    connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
-    selected_devices: &BTreeMap<i64, Vec<String>>,
     images_allowed: bool,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
@@ -124,8 +120,6 @@ pub(super) fn replace(
         query,
         expanded_episode_sources,
         download_states,
-        connected_devices,
-        selected_devices,
         images_allowed,
         connectivity,
         unavailable_episode,
@@ -184,16 +178,7 @@ fn build_group(
         }
     });
     expander.add_css_class("reprise-podcast-group");
-    let header = group_header(
-        group,
-        &rendered.summary,
-        context.connected_devices,
-        context
-            .selected_devices
-            .get(&group.subscription_id)
-            .map_or(&[], Vec::as_slice),
-        context.images_allowed,
-    );
+    let header = group_header(group, &rendered.summary, context.images_allowed);
     expander.set_label_widget(Some(&header));
     widgets.channels.insert(
         subscription_id,
@@ -260,8 +245,6 @@ fn build_group(
 fn group_header(
     group: &SourceGroup,
     summary: &SourceSummary,
-    connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
-    selected_device_ids: &[String],
     images_allowed: bool,
 ) -> gtk4::Widget {
     let skeleton = crate::ui::source_row::skeleton();
@@ -311,30 +294,14 @@ fn group_header(
     facts.add_css_class("caption");
     facts.add_css_class("dim-label");
     skeleton.trailing.append(&facts);
-    // RSS and YouTube sources sync to their own device target folder alike
-    // (`POD-12`), so the phone-sync indicator is not kind-restricted.
-    if on_phone(connected_devices, selected_device_ids) {
-        let sync = gtk4::Image::from_icon_name("phone-symbolic");
-        sync.set_tooltip_text(Some(&strings::text(strings::PODCAST_SYNC_PHONE)));
-        skeleton.trailing.append(&sync);
-    }
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
-        .menu_model(&podcasts_context_menu::build_source(
-            group,
-            connected_devices,
-            selected_device_ids,
-        ))
+        .menu_model(&podcasts_context_menu::build_source(group))
         .build();
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     skeleton.trailing.append(&menu);
-    podcasts_context_surface::wire_source_header(
-        &header,
-        group,
-        connected_devices,
-        selected_device_ids,
-    );
+    podcasts_context_surface::wire_source_header(&header, group);
     header.upcast()
 }
 

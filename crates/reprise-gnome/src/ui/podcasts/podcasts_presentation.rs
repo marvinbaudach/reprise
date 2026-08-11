@@ -9,7 +9,6 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup};
 use reprise_view::search_scope;
 
-use super::podcasts_context_menu::PodcastSyncDevice;
 use crate::ui::enumerated::enumerated;
 use crate::ui::strings;
 
@@ -463,24 +462,6 @@ pub(super) fn sort_newest_first(rows: &mut [EpisodeRow]) {
             (None, None) => right.first_seen_at.cmp(&left.first_seen_at),
         },
     );
-}
-
-/// `POD-12` / `D3`: whether this channel is selected for at least one
-/// currently connected device — the single read-only fact the "On phone"
-/// indicator mirrors on both the channel list (`podcasts_groups::
-/// group_header`) and the channel detail page (`youtube_channel_detail::
-/// build_header`). Pure projection of state that already lives in
-/// `podcast_subscription_devices`; nothing about this function's shape lets
-/// a caller write the selection back — it takes no database handle and
-/// returns a plain `bool`, never a handle to mutate anything.
-#[must_use]
-pub(super) fn on_phone(
-    connected_devices: &[PodcastSyncDevice],
-    selected_device_ids: &[String],
-) -> bool {
-    connected_devices
-        .iter()
-        .any(|device| selected_device_ids.contains(&device.id))
 }
 
 pub(super) fn updated_ago(timestamp: Option<i64>, now: i64) -> String {
