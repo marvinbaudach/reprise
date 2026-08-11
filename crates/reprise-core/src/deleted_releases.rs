@@ -435,26 +435,8 @@ pub(crate) fn forget_deleted_release_memory(
     if forgotten.is_empty() {
         return Ok(vec![release_group_mbid.to_owned()]);
     }
-    for memory in &forgotten {
-        conn.execute(
-            "DELETE FROM deleted_releases
-             WHERE artist_key = ?1 AND title_key = ?2 AND scope = ?3",
-            rusqlite::params![memory.artist_key, memory.title_key, memory.scope],
-        )?;
-    }
+    delete_memories(conn, &forgotten)?;
     let remaining = load_memories(conn)?;
-    Ok(load_releases(conn)?
-        .into_iter()
-        .filter_map(|(mbid, artist, title, release_type, _, memory_owned)| {
-            let key = (
-                crate::artist_news::normalize(&artist),
-                crate::artist_news::normalize(&title),
-            );
-            (mbid == release_group_mbid
-                || (memory_owned
-                    && is_release_covered(&forgotten, &key, &release_type)
-                    && !is_release_covered(&remaining, &key, &release_type)))
-            .then_some(mbid)
-        })
-        .collect())
+    reconcile_forgotten_release_rows(conn, &forgotten, &remaining)?;
+    Ok(vec![release_group_mbid.to_owned()])
 }
