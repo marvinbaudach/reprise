@@ -137,12 +137,18 @@ fn nr_32_deleted_release_memory_is_reflected_in_releases_view() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     insert_release(&conn, "deleted", "Deleted Album");
     insert_release(&conn, "control", "Visible Control Album");
+    // The second track is what keeps this fixture honest: the view only shows
+    // releases by artists who still own something (`current_library_artist_keys`),
+    // so deleting the artist's only track would empty the table for a reason
+    // that has nothing to do with the deletion memory.
     crate::test_db::connection(&conn)
         .execute(
             "INSERT INTO tracks (
                id, path, title, artist, album_artist, album, added_at
              ) VALUES (1, '/music/deleted.flac', 'Deleted Song',
-                       'Artist', 'Artist', 'Deleted Album', 0)",
+                       'Artist', 'Artist', 'Deleted Album', 0),
+                      (2, '/music/kept.flac', 'Kept Song',
+                       'Artist', 'Artist', 'Kept Album', 0)",
             [],
         )
         .unwrap();
