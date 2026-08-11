@@ -222,7 +222,7 @@ mod tests {
             return;
         }
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.FileOpenCompactModeTest")
+            .application_id("io.github.marvinbaudach.Reprise.FileOpenCompactModeTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
@@ -276,7 +276,7 @@ mod tests {
             return;
         }
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.CompactModeTest")
+            .application_id("io.github.marvinbaudach.Reprise.CompactModeTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();

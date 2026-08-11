@@ -399,9 +399,10 @@ mod tests {
     #[test]
     fn desktop_and_appstream_advertise_the_same_supported_media() {
         let data = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data");
-        let desktop = std::fs::read_to_string(data.join("org.reprise.Reprise.desktop")).unwrap();
+        let desktop =
+            std::fs::read_to_string(data.join(format!("{}.desktop", crate::APP_ID))).unwrap();
         let metainfo =
-            std::fs::read_to_string(data.join("org.reprise.Reprise.metainfo.xml")).unwrap();
+            std::fs::read_to_string(data.join(format!("{}.metainfo.xml", crate::APP_ID))).unwrap();
         let mime_types = [
             "audio/mpeg",
             "audio/flac",

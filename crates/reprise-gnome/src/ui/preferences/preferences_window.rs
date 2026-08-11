@@ -515,7 +515,7 @@ mod tests {
     fn preferences_are_a_dialog_with_a_page_sidebar() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.PreferencesWindowTest")
+            .application_id("io.github.marvinbaudach.Reprise.PreferencesWindowTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
@@ -566,7 +566,7 @@ mod tests {
     fn preferences_push_detail_pages_inside_the_dialog() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.PreferencesNavigationTest")
+            .application_id("io.github.marvinbaudach.Reprise.PreferencesNavigationTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
@@ -597,7 +597,7 @@ mod tests {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.PreferencesChromeGeometryTest")
+            .application_id("io.github.marvinbaudach.Reprise.PreferencesChromeGeometryTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
@@ -670,7 +670,7 @@ mod tests {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.PreferencesChromePagesTest")
+            .application_id("io.github.marvinbaudach.Reprise.PreferencesChromePagesTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();

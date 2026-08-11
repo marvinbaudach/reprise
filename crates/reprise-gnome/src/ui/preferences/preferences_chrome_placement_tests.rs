@@ -166,7 +166,8 @@ fn fb_9_counterprobe_legacy_toolbar_status_moves_the_content() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn fb_9_chip_end_inset_is_measured_from_the_header_title_buttons() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
-    let dialog = ChromeDialog::present("org.reprise.Reprise.PreferencesChromeInsetTest");
+    let dialog =
+        ChromeDialog::present("io.github.marvinbaudach.Reprise.PreferencesChromeInsetTest");
     let header = dialog.header();
 
     let strip = header_end_strip(&header)
@@ -189,7 +190,8 @@ fn fb_9_chip_end_inset_is_measured_from_the_header_title_buttons() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn fb_9_chip_recenters_when_a_text_scale_change_grows_the_header() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
-    let dialog = ChromeDialog::present("org.reprise.Reprise.PreferencesChromeRescaleTest");
+    let dialog =
+        ChromeDialog::present("io.github.marvinbaudach.Reprise.PreferencesChromeRescaleTest");
     let header = dialog.header();
     let settled_height = header.height();
     let settled_margin = dialog.chip().margin_top();

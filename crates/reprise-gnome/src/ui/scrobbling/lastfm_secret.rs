@@ -4,10 +4,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] = [
-    ("application", "org.reprise.Reprise"),
-    ("service", "lastfm"),
-];
+pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] =
+    [("application", crate::APP_ID), ("service", "lastfm")];
 
 const LABEL: &str = "Reprise Last.fm credentials";
 
@@ -81,10 +79,7 @@ mod tests {
     fn attributes_are_stable_and_contain_no_credentials() {
         assert_eq!(
             ATTRIBUTES,
-            [
-                ("application", "org.reprise.Reprise"),
-                ("service", "lastfm")
-            ]
+            [("application", crate::APP_ID), ("service", "lastfm")]
         );
         let serialized = format!("{ATTRIBUTES:?}");
         for secret in ["api-key", "shared-secret", "session-key"] {

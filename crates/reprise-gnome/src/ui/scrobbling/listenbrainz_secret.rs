@@ -1,9 +1,7 @@
 //! Secure ListenBrainz token storage in the system keyring.
 
-pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] = [
-    ("application", "org.reprise.Reprise"),
-    ("service", "listenbrainz"),
-];
+pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] =
+    [("application", crate::APP_ID), ("service", "listenbrainz")];
 
 const LABEL: &str = "Reprise ListenBrainz token";
 
@@ -47,10 +45,7 @@ mod tests {
     fn lookup_attributes_are_stable_and_contain_no_secret() {
         assert_eq!(
             ATTRIBUTES,
-            [
-                ("application", "org.reprise.Reprise"),
-                ("service", "listenbrainz")
-            ]
+            [("application", crate::APP_ID), ("service", "listenbrainz")]
         );
         assert!(!ATTRIBUTES.iter().any(|(key, _)| *key == "token"));
     }
