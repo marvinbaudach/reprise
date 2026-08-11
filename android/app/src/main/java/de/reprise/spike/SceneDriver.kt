@@ -54,6 +54,7 @@ internal class SceneDriver(
     private var framesWithheld = false
     private var lastTickNanos: Long? = null
     private var firstTickNanos: Long? = null
+    private var lastFrameFraction = 0f
 
     fun tick(): Boolean {
         if (!framesAllowed()) {
@@ -64,6 +65,7 @@ internal class SceneDriver(
         val nowNanos = clock.nowNanos()
         val positionMs = estimatedPositionMs(sample, nowNanos)
         val frameIndex = frames.frameIndexFor(positionMs)
+        val frameFraction = frames.frameFractionFor(positionMs)
         val newFrame = lastDrivenFrameIndex != frameIndex
         val before = state.revision
         val analysed = frames.frameCount > 0
@@ -91,15 +93,34 @@ internal class SceneDriver(
         framesWithheld = false
         lastDrivenFrameIndex = frameIndex
         val sink = frameSink
-        sink?.onFrame(
-            when {
-                analysed && (newFrame || frameSinkNeedsSnapshot) -> state.motionBands
-                !analysed && frameSinkNeedsSnapshot -> EMPTY_BANDS
-                else -> null
-            },
-        )
+        sink?.onFrame(bandsForTick(analysed, newFrame, frameFraction))
         if (sink != null) frameSinkNeedsSnapshot = false
+        lastFrameFraction = frameFraction
         return state.revision != before || sink != null
+    }
+
+    /**
+     * What this tick has to hand the visualizer, or null when it has nothing
+     * new to say.
+     *
+     * A stepped frame is passed on as it is. The two ticks that fall between
+     * two 20 Hz frames would otherwise repeat it verbatim and leave the picture
+     * standing for ~33 ms each, so they read the followers at the point the
+     * playhead has reached inside the frame instead. That reading only moves
+     * when the playhead does: a paused position keeps its fraction, sends
+     * nothing, and leaves the engine's own release to fade the bars out. Where
+     * the analysis is already as fine as the display, every tick brings a frame
+     * and this branch is never reached.
+     */
+    private fun bandsForTick(
+        analysed: Boolean,
+        newFrame: Boolean,
+        frameFraction: Float,
+    ): FloatArray? {
+        if (!analysed) return if (frameSinkNeedsSnapshot) EMPTY_BANDS else null
+        if (newFrame || frameSinkNeedsSnapshot) return state.motionBands
+        if (frameFraction == lastFrameFraction) return null
+        return state.motionBandsWithin(frameFraction)
     }
 
     /**

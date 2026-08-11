@@ -8,6 +8,7 @@ class SceneState(
     private val motionEnvelopes = BandEnvelopes.motion(frames.bandCount, frames.frameRateHz)
     private val rawBands = FloatArray(frames.bandCount)
     private val targets = FloatArray(frames.bandCount)
+    private val projectedMotion = FloatArray(frames.bandCount)
     private var lastFrameIndex: Int? = null
 
     /**
@@ -82,6 +83,34 @@ class SceneState(
         ) {
             revision += 1
         }
+    }
+
+    /**
+     * Reads the motion followers [frameFraction] of their way into the step
+     * towards the next measured frame, without stepping anything.
+     *
+     * The analysis runs at 20 Hz against a display asking for three pictures per
+     * frame, so a consumer handed [motionBands] alone sees the same numbers for
+     * ~33 ms at a time. Both ends here are measured: the followers stand on the
+     * frame the playhead is in, the target belongs to the frame after it, and
+     * the reading is the follower's own curve between the two. A fraction of 1
+     * is exactly what the next [advanceTo] will produce, so the reading never
+     * runs ahead of the music.
+     *
+     * Fog is deliberately left out: its angles integrate whole frames, and
+     * reading between them must not lend them a second step. The array is
+     * handed out by reference under the same read-only contract as [motionBands]
+     * and is overwritten by the next call.
+     */
+    fun motionBandsWithin(frameFraction: Float): FloatArray {
+        val currentIndex = lastFrameIndex ?: return motionBands
+        if (frames.frameCount == 0) return motionBands
+        val nextIndex = frames.clampFrameIndex(currentIndex + 1)
+        targets.indices.forEach { band ->
+            targets[band] = Lookahead.target(frames, nextIndex, band)
+        }
+        motionEnvelopes.projectInto(projectedMotion, targets, frameFraction)
+        return projectedMotion
     }
 
     /**

@@ -74,6 +74,31 @@ class SceneStateTest {
     }
 
     @Test
+    fun reading_between_frames_starts_on_this_frame_lands_on_the_next_and_moves_no_fog() {
+        val frames = patternedFrames(frameCount = 24)
+        val read = SceneState(frames)
+        val stepped = SceneState(frames)
+        (0..9).forEach(read::advanceTo)
+        (0..9).forEach(stepped::advanceTo)
+        val motionBefore = read.motionBands.copyOf()
+        val fogBefore = read.fogBands.copyOf()
+        val angleA = read.fogAngleA.toRawBits()
+        val angleB = read.fogAngleB.toRawBits()
+        val revision = read.revision
+
+        assertArrayEquals(motionBefore, read.motionBandsWithin(0f), 0f)
+        val wholeFrame = read.motionBandsWithin(1f).copyOf()
+        stepped.advanceTo(10)
+
+        assertArrayEquals(stepped.motionBands, wholeFrame, 0f)
+        assertArrayEquals(motionBefore, read.motionBands, 0f)
+        assertArrayEquals(fogBefore, read.fogBands, 0f)
+        assertEquals(angleA, read.fogAngleA.toRawBits())
+        assertEquals(angleB, read.fogAngleB.toRawBits())
+        assertEquals(revision, read.revision)
+    }
+
+    @Test
     fun a_fresh_far_forward_position_adopts_raw_values_without_integrating_missing_music() {
         val state = SceneState(constantFrames(cell = 255, frameCount = 30))
 

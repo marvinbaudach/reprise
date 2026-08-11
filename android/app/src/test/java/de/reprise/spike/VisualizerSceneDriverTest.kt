@@ -56,6 +56,77 @@ class VisualizerSceneDriverTest {
     }
 
     @Test
+    fun everyDisplayTickBetweenTwoFramesDrawsAValueInsideThatPairOfFrames() {
+        val frames = risingFrames(frameCount = 20)
+        var nowNanos = 0L
+        val received = mutableListOf<FloatArray?>()
+        val driver = SceneDriver(
+            frames = frames,
+            state = SceneState(frames),
+            clock = SceneClock { nowNanos },
+            positionSource = ScenePositionSource {
+                ScenePositionSample(nowNanos / NANOS_PER_MILLISECOND, nowNanos, true)
+            },
+            frameSink = SceneFrameSink { bands -> received += bands?.copyOf() },
+            framesAllowed = { true },
+        )
+
+        // Three display ticks inside one 20 Hz frame, then the frame after it.
+        listOf(0L, 16_666_667L, 33_333_333L, 50_000_000L).forEach { nanos ->
+            nowNanos = nanos
+            driver.tick()
+        }
+
+        assertEquals(4, received.size)
+        val drawn = received.filterNotNull()
+        assertEquals("every tick draws bands", received.size, drawn.size)
+        drawn.zipWithNext().forEach { (earlier, later) ->
+            earlier.indices.forEach { band ->
+                assertTrue(
+                    "band $band stood still: ${earlier[band]} then ${later[band]}",
+                    later[band] > earlier[band],
+                )
+            }
+        }
+        val thisFrame = drawn.first()
+        val nextFrame = drawn.last()
+        drawn.drop(1).dropLast(1).forEach { between ->
+            between.indices.forEach { band ->
+                assertTrue(
+                    "band $band left its frame pair: ${between[band]}",
+                    between[band] > thisFrame[band] && between[band] < nextFrame[band],
+                )
+            }
+        }
+    }
+
+    @Test
+    fun aPausedPlayheadFeedsTheVisualizerNothingBetweenFrames() {
+        val frames = risingFrames(frameCount = 20)
+        var nowNanos = 0L
+        val received = mutableListOf<FloatArray?>()
+        val driver = SceneDriver(
+            frames = frames,
+            state = SceneState(frames),
+            clock = SceneClock { nowNanos },
+            // Paused two thirds of the way into the first frame.
+            positionSource = ScenePositionSource { ScenePositionSample(33, 0, false) },
+            frameSink = SceneFrameSink { bands -> received += bands?.copyOf() },
+            framesAllowed = { true },
+        )
+
+        driver.tick()
+        repeat(5) {
+            nowNanos += 16_666_667L
+            driver.tick()
+        }
+
+        assertEquals(6, received.size)
+        assertNotNull(received.first())
+        assertTrue("a still playhead has nothing to feed", received.drop(1).all { it == null })
+    }
+
+    @Test
     fun attachingAndDetachingTheVisualizerDoesNotResetFogMotion() {
         val frames = SpectrogramFrames(24, 20, ByteArray(48) { 96.toByte() })
         var nowNanos = 0L
@@ -87,3 +158,14 @@ class VisualizerSceneDriverTest {
         assertEquals(1, driver.lastDrivenFrameIndex)
     }
 }
+
+private const val NANOS_PER_MILLISECOND = 1_000_000L
+
+/** A spectrogram whose every band climbs frame by frame, so any hold is visible. */
+private fun risingFrames(frameCount: Int): SpectrogramFrames = SpectrogramFrames(
+    bandCount = 24,
+    frameRateHz = 20,
+    cells = ByteArray(frameCount * 24) { index ->
+        ((index / 24) * 12).coerceAtMost(255).toByte()
+    },
+)
