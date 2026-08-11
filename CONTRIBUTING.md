@@ -6,6 +6,8 @@ Thanks for looking. Reprise is a GTK4 music player for GNOME, written in Rust.
 
 Open an issue describing what you want to change. For anything beyond a small
 fix, agreeing on the approach first saves both of us work.
+Repository workflow and safety boundaries are documented in
+[AGENTS.md](AGENTS.md).
 
 ## Building
 

@@ -71,6 +71,8 @@ this README deliberately avoids numbers that would go stale.
 audio, desktop, and device adapters in `reprise-platform-linux`.
 
 Start with [AGENTS.md](AGENTS.md) and the [UX rulebook](docs/ux-rules.md).
+Contributor setup and pull-request details are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 Every change starts with a failing test, respects the core boundary, and lands
 through a squashed pull request into `dev`, from where `main` is
 fast-forwarded. The goal is not more code —
