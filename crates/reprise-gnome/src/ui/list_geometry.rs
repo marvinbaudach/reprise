@@ -181,7 +181,7 @@ pub(in crate::ui) fn adjustment_row_height(upper: f64, n_rows: usize) -> Option<
     RowHeight::new(upper * (n_rows as f64).recip())
 }
 
-#[allow(dead_code)] // The G4 readiness migration consumes this pure predicate.
+#[cfg(test)]
 pub(in crate::ui) fn is_settled(upper: f64, n_rows: usize, measurement: RowMeasurement) -> bool {
     settled_row_height(upper, n_rows, measurement).is_some()
 }

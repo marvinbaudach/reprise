@@ -4,7 +4,7 @@
 //! `reprise-platform-linux`; frontends feed validated tracks into the queue
 //! and project immutable snapshots into their UI. Filesystem access is
 //! confined to the two places whose subject is a file rather than a device —
-//! [`podcasts`] sizes what it plans to copy, [`staging`] writes what a backend
+//! [`crate::podcasts`] sizes what it plans to copy, [`staging`] writes what a backend
 //! will copy — so that no frontend has to reimplement either.
 
 use std::collections::{HashSet, VecDeque};

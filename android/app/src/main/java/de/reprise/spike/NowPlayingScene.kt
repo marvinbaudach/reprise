@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
+import de.reprise.spike.ui.theme.AmbientTrueBlack
+import de.reprise.spike.ui.theme.NowPlayingOnBackdrop
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import kotlin.math.roundToInt
@@ -92,7 +94,7 @@ internal fun NowPlayingScene(
             neighbour.artist,
         )
     }
-    val fog = rememberCoverFogTransition(artwork?.image, Color.Black)
+    val fog = rememberCoverFogTransition(artwork?.image, AmbientTrueBlack)
     val coverShadow = rememberCoverShadowBitmap()
     val motion = LocalAmbientMotionController.current
     val drawRevision = DriveScene(
@@ -106,7 +108,7 @@ internal fun NowPlayingScene(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(AmbientTrueBlack)
             .testTag("now-playing-player"),
     ) {
         val coverTop = maxHeight * PLAYED_CENTRE_FRACTION - (COVER_SIZE_DP / 2).dp
@@ -118,7 +120,7 @@ internal fun NowPlayingScene(
             // Capturing the frame counter is what makes Compose re-run this lambda once
             // per scene frame; the value itself has nothing to contribute to the drawing.
             observeSceneFrame(drawRevision)
-            drawRect(Color.Black)
+            drawRect(AmbientTrueBlack)
             val playedCenter = Offset(
                 size.width / 2f + horizontalOffsetPx,
                 size.height * PLAYED_CENTRE_FRACTION,
@@ -145,7 +147,7 @@ internal fun NowPlayingScene(
                     drawPlayedCover(
                         artwork = neighbour,
                         center = playedCenter.copy(x = playedCenter.x - size.width),
-                        fallback = Color.Black,
+                        fallback = AmbientTrueBlack,
                         shadow = coverShadow,
                     )
                 }
@@ -154,7 +156,7 @@ internal fun NowPlayingScene(
                     drawPlayedCover(
                         artwork = neighbour,
                         center = playedCenter.copy(x = playedCenter.x + size.width),
-                        fallback = Color.Black,
+                        fallback = AmbientTrueBlack,
                         shadow = coverShadow,
                     )
                 }
@@ -162,7 +164,7 @@ internal fun NowPlayingScene(
             drawPlayedCover(
                 artwork = artwork?.image,
                 center = playedCenter,
-                fallback = Color.Black,
+                fallback = AmbientTrueBlack,
                 shadow = coverShadow,
             )
         }
@@ -289,7 +291,7 @@ private fun SceneTitle(
                 lineHeight = 29.sp,
                 fontWeight = FontWeight.SemiBold,
             ),
-            color = Color.White,
+            color = NowPlayingOnBackdrop,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -298,7 +300,7 @@ private fun SceneTitle(
         Text(
             text = track.artist.ifBlank { "Unknown artist" },
             style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Light),
-            color = Color.White.copy(alpha = 0.62f),
+            color = NowPlayingOnBackdrop.copy(alpha = 0.62f),
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -381,7 +383,7 @@ private fun FlatSceneButton(
             tint = if (active) {
                 MaterialTheme.colorScheme.onSecondaryContainer
             } else {
-                Color.White
+                NowPlayingOnBackdrop
             },
         )
     }
@@ -404,7 +406,7 @@ private fun ScenePauseButton(
         MaterialSymbol(
             name = if (playback.isPlaying) "pause" else "play_arrow",
             contentDescription = playback.playPauseLabel,
-            tint = Color.White,
+            tint = NowPlayingOnBackdrop,
             sizeSp = 40,
         )
     }

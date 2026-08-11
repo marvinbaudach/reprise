@@ -286,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_25_status_pills_describe_discography_gaps() {
+    fn status_pills_describe_discography_gaps() {
         assert_eq!(
             release_status_label(&entry("2027", LibraryPresence::Complete, false), today()),
             "In library"
@@ -314,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_25_activation_uses_restore_or_external_release_link() {
+    fn nr_31_activation_uses_restore_or_external_release_link() {
         let hidden = entry("2026-01-01", LibraryPresence::Complete, true);
         assert_eq!(
             releases_row_action(&hidden, today()),
@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_20_bandcamp_purchase_target_requires_a_real_bandcamp_relation() {
+    fn nr_30_bandcamp_purchase_target_requires_a_real_bandcamp_relation() {
         let mut release = entry("2026", LibraryPresence::Absent, false);
         release.announce_url =
             Some("https://oceansleeper.bandcamp.com/album/maybe-death-is-all-i-need".into());

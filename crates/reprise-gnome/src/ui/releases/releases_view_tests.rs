@@ -69,7 +69,7 @@ fn pump_until(label: &str, condition: impl Fn() -> bool) {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_20_releases_view_exposes_filters_seven_columns_and_footer() {
+fn nr_31_releases_view_exposes_filters_seven_columns_and_footer() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = ReleasesView::new(conn, PathBuf::new());
