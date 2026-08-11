@@ -262,6 +262,131 @@ fn nr_32_show_again_restores_every_row_hidden_by_the_same_album_memory() {
 }
 
 #[test]
+fn nr_32_show_again_keeps_a_row_covered_by_surviving_track_memory_hidden() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    insert_release(&db, "album", "Shared Title", "Album");
+    insert_release(&db, "single", "Shared Title", "Single");
+    insert_track(&db, 1, "Shared Title", "Shared Title");
+    insert_track(&db, 99, "Library Anchor", "Other Album");
+    remove_from_library(&db, &[1]);
+
+    crate::artist_news::set_release_hidden(&db, "album", false).unwrap();
+
+    let hidden = db
+        .conn()
+        .prepare("SELECT release_group_mbid FROM new_releases WHERE hidden = 1 ORDER BY 1")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(hidden, ["single"]);
+    assert_eq!(
+        crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap(),
+        0,
+        "a refresh must not make the still-remembered single flap"
+    );
+    assert_eq!(crate::artist_news::hidden_release_count(&db).unwrap(), 1);
+}
+
+#[test]
+fn nr_32_show_again_preserves_a_manually_hidden_twin() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    insert_release(&db, "album", "Shared Work", "Album");
+    insert_release(&db, "ep", "Shared Work", "EP");
+    insert_track(&db, 1, "One Song", "Shared Work");
+    insert_track(&db, 99, "Library Anchor", "Other Album");
+    crate::artist_news::set_release_hidden(&db, "ep", true).unwrap();
+    remove_from_library(&db, &[1]);
+
+    crate::artist_news::set_release_hidden(&db, "album", false).unwrap();
+
+    let hidden = db
+        .conn()
+        .prepare("SELECT release_group_mbid FROM new_releases WHERE hidden = 1 ORDER BY 1")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(hidden, ["ep"]);
+}
+
+#[test]
+fn nr_32_show_again_rolls_back_memory_and_twins_when_one_unhide_fails() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    insert_release(&db, "album", "Shared Work", "Album");
+    insert_release(&db, "ep", "Shared Work", "EP");
+    insert_track(&db, 1, "One Song", "Shared Work");
+    insert_track(&db, 99, "Library Anchor", "Other Album");
+    remove_from_library(&db, &[1]);
+    db.conn()
+        .execute_batch(
+            "CREATE TRIGGER fail_ep_unhide
+             BEFORE UPDATE OF hidden ON new_releases
+             WHEN OLD.release_group_mbid = 'ep' AND NEW.hidden = 0
+             BEGIN
+               SELECT RAISE(ABORT, 'injected unhide failure');
+             END;",
+        )
+        .unwrap();
+
+    assert!(crate::artist_news::set_release_hidden(&db, "album", false).is_err());
+
+    let hidden_count: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM new_releases WHERE hidden = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let album_memory: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM deleted_releases WHERE scope = 'album'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(hidden_count, 2);
+    assert_eq!(album_memory, 1);
+}
+
+#[test]
+fn nr_32_unrelated_deletion_forgets_a_reacquired_release_before_hiding() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    insert_release(&db, "target", "Target Album", "Album");
+    insert_track(&db, 1, "Target Song", "Target Album");
+    insert_track(&db, 99, "Library Anchor", "Anchor Album");
+    remove_from_library(&db, &[1]);
+
+    insert_track(&db, 2, "Target Song", "Target Album");
+    insert_track(&db, 3, "Unrelated Song", "Unrelated Album");
+    remove_from_library(&db, &[3]);
+
+    let target_memory: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM deleted_releases
+             WHERE title_key = 'target album' AND scope = 'album'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let target_hidden: bool = db
+        .conn()
+        .query_row(
+            "SELECT hidden FROM new_releases WHERE release_group_mbid = 'target'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(target_memory, 0);
+    assert!(!target_hidden);
+}
+
+#[test]
 fn deletion_memory_rejects_an_album_without_an_artist_identity() {
     let db = crate::db::Db::open_in_memory().unwrap();
     db.conn()

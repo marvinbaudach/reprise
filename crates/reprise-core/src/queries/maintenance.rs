@@ -628,13 +628,21 @@ pub fn undo_tombstone(db: &Db, ids: &[i64]) -> Result<usize, rusqlite::Error> {
         .collect::<Vec<_>>()
         .join(",");
     let sql = format!(
-        "UPDATE tracks SET removed_at = NULL WHERE id IN ({placeholders}) AND removed_at IS NOT NULL"
+        "UPDATE tracks SET removed_at = NULL
+         WHERE id IN ({placeholders}) AND removed_at IS NOT NULL
+         RETURNING id"
     );
     let transaction = conn.unchecked_transaction()?;
-    let restored = transaction.execute(&sql, rusqlite::params_from_iter(ids.iter()))?;
-    crate::deleted_releases::apply_deleted_release_memory(&transaction)?;
+    let restored_ids = {
+        let mut statement = transaction.prepare(&sql)?;
+        let restored = statement
+            .query_map(rusqlite::params_from_iter(ids.iter()), |row| row.get(0))?
+            .collect::<Result<Vec<i64>, _>>()?;
+        restored
+    };
+    crate::deleted_releases::reconcile_restored_tracks(&transaction, &restored_ids)?;
     transaction.commit()?;
-    Ok(restored)
+    Ok(restored_ids.len())
 }
 
 /// Hard-deletes every currently-tombstoned row: the real, irreversible

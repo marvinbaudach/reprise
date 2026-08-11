@@ -65,7 +65,7 @@ pub(super) fn remove_path_requests_impl<'a>(
     } else {
         requests
     };
-    if remember_deletion {
+    let reconciliation = if remember_deletion {
         let ids = requests
             .iter()
             .map(|request| request.id)
@@ -73,15 +73,19 @@ pub(super) fn remove_path_requests_impl<'a>(
         let now = tx.query_row("SELECT CAST(strftime('%s', 'now') AS INTEGER)", [], |row| {
             row.get(0)
         })?;
-        crate::deleted_releases::remember_deleted_releases(&tx, &ids, now)?;
-    }
+        Some(crate::deleted_releases::remember_deleted_releases(
+            &tx, &ids, now,
+        )?)
+    } else {
+        None
+    };
     let removed = delete_requests(
         &tx,
         requests.into_iter().map(RemovalRequest::Path),
         exclusion_time,
     )?;
-    if remember_deletion {
-        crate::deleted_releases::hide_deleted_release_memory(&tx)?;
+    if let Some(reconciliation) = reconciliation {
+        crate::deleted_releases::hide_deleted_release_memory(&tx, &reconciliation)?;
     }
     tx.commit()?;
     Ok(removed)
@@ -107,7 +111,7 @@ pub(super) fn remove_id_requests_impl(
             now,
         },
     });
-    let tx = unchecked_transaction(conn)?;
+    let tx = transaction_for_guard(conn, guard)?;
     let removed = delete_requests(&tx, requests, None)?;
     tx.commit()?;
     Ok(removed)
@@ -118,6 +122,16 @@ fn unchecked_transaction(conn: &Connection) -> Result<Transaction<'_>, rusqlite:
     // `unchecked_transaction()` here after auditing every nested call to
     // ensure none opens another transaction.
     conn.unchecked_transaction()
+}
+
+fn transaction_for_guard(
+    conn: &Connection,
+    guard: RemoveGuard,
+) -> Result<Transaction<'_>, rusqlite::Error> {
+    if matches!(guard, RemoveGuard::TombstonedOnly) {
+        return Transaction::new_unchecked(conn, TransactionBehavior::Immediate);
+    }
+    unchecked_transaction(conn)
 }
 
 fn eligible_path_requests<'a>(
@@ -222,5 +236,33 @@ fn delete_guarded_track(
                 ],
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tombstone_purge_claims_the_writer_lock_before_deleting() {
+        let database = tempfile::NamedTempFile::new().unwrap();
+        let first = Connection::open(database.path()).unwrap();
+        let second = Connection::open(database.path()).unwrap();
+        first.execute_batch("PRAGMA journal_mode = WAL;").unwrap();
+        second.execute_batch("PRAGMA journal_mode = WAL;").unwrap();
+        second.busy_timeout(std::time::Duration::ZERO).unwrap();
+
+        let transaction = transaction_for_guard(&first, RemoveGuard::TombstonedOnly).unwrap();
+        let competing = Transaction::new_unchecked(&second, TransactionBehavior::Immediate);
+
+        assert!(matches!(
+            competing,
+            Err(rusqlite::Error::SqliteFailure(error, _))
+                if matches!(
+                    error.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                )
+        ));
+        transaction.rollback().unwrap();
     }
 }
