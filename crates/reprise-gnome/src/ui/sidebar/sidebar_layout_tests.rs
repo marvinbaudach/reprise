@@ -126,13 +126,11 @@ fn doc_5c_a_visible_job_card_never_overlaps_a_navigation_row() {
     doctor.set_reveal_child(true);
     drain_display_events();
     assert_card_below_issues(&sidebar, &doctor, "doctor");
-    capture_sidebar_diagnostic("doctor");
 
     doctor.set_reveal_child(false);
     relink.set_reveal_child(true);
     drain_display_events();
     assert_card_below_issues(&sidebar, &relink, "relink");
-    capture_sidebar_diagnostic("relink");
 
     window.close();
 }
@@ -220,22 +218,4 @@ fn assert_card_below_issues(sidebar: &Sidebar, card: &impl IsA<gtk4::Widget>, ki
         card.y(),
         card_bottom
     );
-}
-
-fn capture_sidebar_diagnostic(kind: &str) {
-    let path = format!(
-        "/tmp/reprise-library-doctor-diag-3-{kind}-{}.png",
-        std::process::id()
-    );
-    let output = std::process::Command::new("import")
-        .args(["-window", "root", &path])
-        .output()
-        .expect("run the existing ImageMagick screenshot command");
-    assert!(
-        output.status.success(),
-        "capture {kind} sidebar screenshot: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    tracing::warn!(kind, path, "DOC-5c retained sidebar screenshot");
-    eprintln!("DOC-5c {kind} screenshot: {path}");
 }
