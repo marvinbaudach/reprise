@@ -488,7 +488,8 @@ impl LibraryDoctorReviewPage {
             adw::LengthUnit::Px,
         );
         let breakpoint = adw::Breakpoint::new(condition);
-        breakpoint.add_setter(&header.root, "visible", Some(&false.to_value()));
+        breakpoint.add_setter(&header.labels, "visible", Some(&false.to_value()));
+        breakpoint.add_setter(&header.select_all_label, "visible", Some(&true.to_value()));
         {
             let state = state.clone();
             breakpoint.connect_apply(move |_| {

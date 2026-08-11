@@ -74,6 +74,9 @@ impl ReviewColumnGroups {
 
 pub(super) struct ReviewHeader {
     pub(super) root: gtk4::Box,
+    pub(super) labels: gtk4::Box,
+    pub(super) select_all: gtk4::CheckButton,
+    pub(super) select_all_label: gtk4::Label,
     pub(super) groups: ReviewColumnGroups,
 }
 
@@ -84,8 +87,31 @@ impl ReviewHeader {
         root.set_margin_end(12);
         root.add_css_class("dim-label");
         let groups = ReviewColumnGroups::new();
+
+        let select_all = gtk4::CheckButton::new();
+        select_all.set_size_request(16, 16);
+        select_all.add_css_class("doctor-album-check");
+        select_all.add_css_class("doctor-review-select-all");
+        select_all.set_tooltip_text(Some(&strings::text(strings::DOCTOR_SELECT_ALL_VISIBLE)));
+        select_all.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::DOCTOR_SELECT_ALL_VISIBLE,
+        ))]);
+        // a11y-semantics: role=checkbox name=select-all-visible state=selection action=toggle
+        select_all.set_focusable(true);
+        groups.selection.add_widget(&select_all);
+        root.append(&select_all);
+
+        let select_all_label = gtk4::Label::builder()
+            .label(strings::text(strings::DOCTOR_SELECT_ALL))
+            .xalign(0.0)
+            .visible(false)
+            .css_classes(["caption"])
+            .build();
+        root.append(&select_all_label);
+
+        let labels = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        labels.set_hexpand(true);
         for (group, text) in [
-            (&groups.selection, ""),
             (&groups.track, strings::DOCTOR_TRACK),
             (&groups.field, strings::DOCTOR_FIELD),
             (&groups.current, strings::DOCTOR_CURRENT),
@@ -105,9 +131,17 @@ impl ReviewHeader {
                 .css_classes(["caption"])
                 .build();
             group.add_widget(&label);
-            root.append(&label);
+            labels.append(&label);
         }
-        Self { root, groups }
+        root.append(&labels);
+
+        Self {
+            root,
+            labels,
+            select_all,
+            select_all_label,
+            groups,
+        }
     }
 }
 
