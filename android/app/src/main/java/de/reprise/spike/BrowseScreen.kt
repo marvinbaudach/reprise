@@ -639,8 +639,13 @@ internal fun BrowseScreen(
             } ?: DockModeWaitingSurface()
         } else {
             AnimatedVisibility(
-                visible = nowPlayingExpanded && playingTrackId != null,
-                modifier = nowPlayingFrameModifier,
+                // The row is part of the condition, not just of the content: a
+                // sheet that slides up around nothing — which is what a stop
+                // followed straight away by a new track used to do, the answer
+                // for the new row still being read — pops its content in
+                // afterwards, with no animation of its own.
+                visible = nowPlayingExpanded && playingTrackId != null && shownTrack != null,
+                modifier = nowPlayingFrameModifier.testTag("now-playing-frame"),
                 enter = slideInVertically(initialOffsetY = { height -> height }) + expandVertically(
                     expandFrom = Alignment.Bottom,
                 ),

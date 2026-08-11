@@ -80,20 +80,38 @@ class MainActivityPlayViewStabilityTest {
 
         application.deferTrack(3)
         publishTrack(3)
-        application.service.publish(
-            m9bSnapshot(3).copy(
-                state = AndroidPlaybackState.STOPPED,
-                currentIndex = null,
-                currentTrackId = null,
-                currentTrackUri = null,
-                positionMs = 0,
-                durationMs = 0,
-            ),
-        )
-        idlePlayback()
+        stopPlayback()
 
         compose.onNodeWithTag("now-playing-gestures").assertDoesNotExist()
         compose.onNodeWithTag("library-mini-player").assertDoesNotExist()
+    }
+
+    /**
+     * Playing again right after a stop finds the sheet still open and no row to
+     * put in it: the previous answer was dropped with the stop, and the new one
+     * is still being read. The sheet has to wait for it rather than slide up
+     * around nothing and pop its content in afterwards.
+     */
+    @Test
+    fun playingAgainRightAfterAStopWaitsForTheRowInsteadOfRisingEmpty() {
+        publishTrack(1)
+        compose.onNodeWithTag("library-mini-player").performClick()
+        compose.onNodeWithTag("now-playing-frame").assertExists()
+
+        stopPlayback()
+        compose.onNodeWithTag("now-playing-frame").assertDoesNotExist()
+
+        application.deferTrack(2)
+        publishTrack(2)
+
+        compose.onNodeWithTag("now-playing-frame")
+            .assertDoesNotExist()
+
+        application.completeTrack(2)
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("now-playing-frame").assertExists()
+        compose.onNodeWithTag("now-playing-title").assertTextContains("Rotation Song 2")
     }
 
     /**
@@ -129,6 +147,20 @@ class MainActivityPlayViewStabilityTest {
 
     private fun publishTrack(trackId: Long) {
         application.service.publish(m9bSnapshot(trackId))
+        idlePlayback()
+    }
+
+    private fun stopPlayback() {
+        application.service.publish(
+            m9bSnapshot(1).copy(
+                state = AndroidPlaybackState.STOPPED,
+                currentIndex = null,
+                currentTrackId = null,
+                currentTrackUri = null,
+                positionMs = 0,
+                durationMs = 0,
+            ),
+        )
         idlePlayback()
     }
 
