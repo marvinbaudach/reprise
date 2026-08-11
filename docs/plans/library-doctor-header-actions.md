@@ -426,7 +426,7 @@ pub(super) struct ReviewHeader {
 ```
   reviewable starts selected.** Every concrete track/field change has its own
   selection and arrives preselected. The master checkbox in the column header
-  selects every ready row when it is off and clears every row when it is on;
+  selects every ready row when it is on and clears every row when it is off;
   neither touches a stale or conflicting row. …
   *Amended 2026-08-11: the `All`/`None` title-bar buttons became one
   tri-state master checkbox in the review's own column header — see DOC-3c
