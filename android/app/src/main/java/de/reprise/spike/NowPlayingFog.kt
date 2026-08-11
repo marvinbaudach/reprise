@@ -51,11 +51,15 @@ internal object NowPlayingFogSpec {
         tightOpacity * response(swell, bassPressure, TIGHT_FLOOR) * opacity
 
     private fun response(swell: Float, bassPressure: Float, floor: Float): Float {
-        val normalizedSwell = normalize(swell, SWELL_LOW, SWELL_HIGH)
-        val normalizedPressure = normalize(bassPressure, PRESSURE_LOW, PRESSURE_HIGH)
+        val normalizedSwell = normalizedSwell(swell)
+        val normalizedPressure = normalizedPressure(bassPressure)
         val drive = SWELL_WEIGHT * normalizedSwell + PRESSURE_WEIGHT * normalizedPressure
         return floor + (1f - floor) * drive.coerceIn(0f, 1f)
     }
+
+    fun normalizedSwell(value: Float): Float = normalize(value, SWELL_LOW, SWELL_HIGH)
+
+    fun normalizedPressure(value: Float): Float = normalize(value, PRESSURE_LOW, PRESSURE_HIGH)
 
     private fun normalize(value: Float, low: Float, high: Float): Float =
         ((value - low) / (high - low)).coerceIn(0f, 1f)

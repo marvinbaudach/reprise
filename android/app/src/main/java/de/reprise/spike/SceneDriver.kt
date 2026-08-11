@@ -76,15 +76,17 @@ internal class SceneDriver(
         val previousTick = lastTickNanos
         if (previousTick != null) {
             val elapsedSeconds = (nowNanos - previousTick).coerceAtLeast(0) / NANOS_PER_SECOND
+            state.advanceShimmerBy(elapsedSeconds)
             if (analysed) {
-                state.advanceFogBy(elapsedSeconds)
+                state.advanceFogBy(elapsedSeconds.toFloat())
             } else {
                 // No spectrogram ever arrived for this track, so there is no
                 // signal to follow. Wandering is the honest substitute: it is
                 // visibly alive without pretending to answer music it cannot
                 // hear.
-                val totalSeconds = (nowNanos - (firstTickNanos ?: nowNanos)) / NANOS_PER_SECOND
-                state.wanderTo(totalSeconds, elapsedSeconds)
+                val totalSeconds =
+                    (nowNanos - (firstTickNanos ?: nowNanos)) / NANOS_PER_SECOND
+                state.wanderTo(totalSeconds.toFloat(), elapsedSeconds.toFloat())
             }
         }
         if (firstTickNanos == null) {
@@ -155,7 +157,7 @@ internal class SceneDriver(
         /** Measured from Media3PlaybackPort's published position interval. */
         const val measuredPositionIntervalMs = 500L
         private const val NANOS_PER_MILLISECOND = 1_000_000L
-        private const val NANOS_PER_SECOND = 1_000_000_000f
+        private const val NANOS_PER_SECOND = 1_000_000_000.0
         private val EMPTY_BANDS = FloatArray(0)
     }
 }
@@ -225,9 +227,10 @@ internal fun DriveScene(
             driver.noteFramesWithheld()
             return@LaunchedEffect
         }
-        if (frames.frameCount == 0 && frameSink == null) return@LaunchedEffect
         do {
-            if (!playback.isPlaying) delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
+            if (!playback.isPlaying || frames.frameCount == 0 && frameSink == null) {
+                delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
+            }
             withFrameNanos {
                 if (driver.tick()) drawRevision += 1
             }

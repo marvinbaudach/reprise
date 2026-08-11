@@ -36,6 +36,8 @@ class SceneState(
         private set
     var fogAngleB: Float = 0f
         private set
+    var shimmerElapsedSeconds: Double = 0.0
+        private set
     var revision: Int = 0
         private set
 
@@ -172,6 +174,14 @@ class SceneState(
         }
     }
 
+    /** Advances the artwork disc from unscaled wall time, independent of fog energy. */
+    fun advanceShimmerBy(elapsedSeconds: Double) {
+        if (elapsedSeconds <= 0.0) return
+        val previous = shimmerElapsedSeconds
+        shimmerElapsedSeconds = (shimmerElapsedSeconds + elapsedSeconds) % SHIMMER_TURN_SECONDS
+        if (shimmerElapsedSeconds != previous) revision += 1
+    }
+
     private fun step(frameIndex: Int) {
         readRaw(frameIndex)
         targets.indices.forEach { band ->
@@ -239,6 +249,7 @@ class SceneState(
         const val FOG_BASE_DEGREES_PER_SECOND = 360f / (4f * 60f)
         const val FOG_BASE_DEGREES_PER_SECOND_B =
             FOG_BASE_DEGREES_PER_SECOND * FOG_FACTOR_B / FOG_FACTOR_A
+        private const val SHIMMER_TURN_SECONDS = 60.0
 
         /** The unanalysed wander: centre density, how far it swings, how much it hurries. */
         const val WANDER_CENTRE = 0.42f

@@ -175,6 +175,20 @@ internal fun NowPlayingScene(
                 opacity = fog.fraction,
                 rotationsEnabled = power.fogRotates,
             )
+            drawPlayedNowPlayingShimmer(
+                fog = fog.previous,
+                center = fogCenter,
+                state = state,
+                opacity = 1f - fog.fraction,
+                rotationsEnabled = power.fogRotates,
+            )
+            drawPlayedNowPlayingShimmer(
+                fog = fog.current,
+                center = fogCenter,
+                state = state,
+                opacity = fog.fraction,
+                rotationsEnabled = power.fogRotates,
+            )
             if (horizontalOffsetPx > 0f) {
                 previousArtwork?.image?.let { neighbour ->
                     drawPlayedCover(
@@ -300,6 +314,25 @@ internal fun DrawScope.drawPlayedNowPlayingFog(
         angleA = state.fogAngleA,
         angleB = state.fogAngleB,
         fogLevel = state.fogLevel,
+        bassPressure = state.bassPressure,
+        opacity = opacity,
+        rotationsEnabled = rotationsEnabled,
+    )
+}
+
+/** The cover-disc wiring shared with its deterministic renderer tests. */
+internal fun DrawScope.drawPlayedNowPlayingShimmer(
+    fog: CoverFogBitmap?,
+    center: Offset,
+    state: SceneState,
+    opacity: Float,
+    rotationsEnabled: Boolean,
+) {
+    drawNowPlayingShimmer(
+        fog = fog,
+        center = center,
+        elapsedSeconds = state.shimmerElapsedSeconds,
+        swell = state.fogLevel,
         bassPressure = state.bassPressure,
         opacity = opacity,
         rotationsEnabled = rotationsEnabled,
