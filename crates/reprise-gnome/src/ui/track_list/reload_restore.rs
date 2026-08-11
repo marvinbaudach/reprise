@@ -168,11 +168,11 @@ pub(in crate::ui) fn centered_track_scroll_target(
     let position = current_ids.iter().position(|&id| id == track_id)?;
     let position = u32::try_from(position).ok()?;
     let n_rows = u32::try_from(current_ids.len()).ok()?;
-    let content_height = current_ids.len() as f64 * row_height;
-    crate::ui::scroll_center::centered_scroll_value(
+    let row_height = crate::ui::list_geometry::RowHeight::new(row_height)?;
+    crate::ui::scroll_center::centered_scroll_value_with_height(
         position,
         n_rows,
-        content_height,
+        row_height,
         viewport_height,
     )
 }

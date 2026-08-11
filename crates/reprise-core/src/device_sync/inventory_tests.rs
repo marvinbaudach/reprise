@@ -9,8 +9,8 @@ use super::settings::{
 };
 use super::sync_log::{recent_runs, start_run, RunStart};
 use super::{
-    load_or_create_targets, load_target, save_target, DeviceSelection, Mp3Quality, SelectionSource,
-    StorageId, SyncTargetKind, TransferProfile, REPRISE_DEVICE_DIR,
+    load_or_create_target, load_target, save_target, DeviceSelection, Mp3Quality, SelectionSource,
+    StorageId, TransferProfile, REPRISE_DEVICE_DIR,
 };
 
 fn open_legacy_v33() -> Connection {
@@ -54,7 +54,7 @@ fn mtp_49_rekeys_legacy_uri_settings_and_target_folders_when_a_stable_key_arrive
     let mut settings = load_or_create_settings(&db, legacy, "Pixel 7a").unwrap();
     settings.profile = TransferProfile::Original;
     save_settings(&db, &settings).unwrap();
-    let mut target = load_or_create_targets(&db, legacy).unwrap()[0].clone();
+    let mut target = load_or_create_target(&db, legacy).unwrap();
     target.storage_id = Some(StorageId(7));
     target.path = "/Music/Anna".into();
     save_target(&db, legacy, &target).unwrap();
@@ -76,12 +76,7 @@ fn mtp_49_rekeys_legacy_uri_settings_and_target_folders_when_a_stable_key_arrive
             .profile,
         TransferProfile::Original
     );
-    assert_eq!(
-        load_target(&db, stable, SyncTargetKind::Playlists)
-            .unwrap()
-            .unwrap(),
-        target
-    );
+    assert_eq!(load_target(&db, stable).unwrap().unwrap(), target);
     assert_eq!(
         db.conn()
             .query_row(
@@ -153,7 +148,7 @@ fn mtp_50_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forg
     let db = crate::db::Db::open_in_memory().unwrap();
     load_or_create_settings(&db, "pixel-anna", "Pixel 7a").unwrap();
     load_or_create_settings(&db, "mtp://[usb:001,013]/", "Legacy phone").unwrap();
-    let mut target = load_or_create_targets(&db, "pixel-anna").unwrap()[0].clone();
+    let mut target = load_or_create_target(&db, "pixel-anna").unwrap();
     target.storage_id = Some(StorageId(7));
     target.path = "/Music/Anna".into();
     save_target(&db, "pixel-anna", &target).unwrap();
@@ -175,9 +170,7 @@ fn mtp_50_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forg
     assert_eq!(remembered[0].last_verified_at, Some(1_753_612_496));
     assert_eq!(remembered[0].size_on_device_bytes, Some(2_400_000_000));
     assert_eq!(
-        load_target(&db, "pixel-anna", SyncTargetKind::Playlists)
-            .unwrap()
-            .unwrap(),
+        load_target(&db, "pixel-anna").unwrap().unwrap(),
         target,
         "the local rename must leave target folders unchanged"
     );
@@ -197,9 +190,7 @@ fn mtp_50_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forg
         "forgetting a device drops its replay high-water mark"
     );
     assert!(
-        load_target(&db, "pixel-anna", SyncTargetKind::Playlists)
-            .unwrap()
-            .is_none(),
+        load_target(&db, "pixel-anna").unwrap().is_none(),
         "forgetting drops only Reprise's device memory"
     );
     assert_eq!(
@@ -400,36 +391,6 @@ fn v37_migration_preserves_existing_mp3_behavior_while_fresh_devices_default_to_
             .unwrap()
             .profile,
         TransferProfile::Opus160
-    );
-}
-
-/// `MTP-43`: a device row that predates the "Download missing files before
-/// syncing" switch gets it backfilled to `true` (the same default a brand
-/// new device gets), never `false` — a silently-off switch on upgrade would
-/// change behavior nobody asked to change.
-#[test]
-fn v46_migration_backfills_prepare_before_sync_to_true_for_existing_rows() {
-    let conn = open_legacy_v33();
-    conn.execute(
-        "INSERT INTO device_settings (device_serial, device_name) VALUES ('existing', 'Phone')",
-        [],
-    )
-    .unwrap();
-    crate::db_device_sync::migrate_v36(&conn).unwrap();
-    crate::db_device_sync::migrate_v37(&conn).unwrap();
-    crate::db_device_sync::migrate_v44(&conn).unwrap();
-
-    crate::db_device_sync::migrate_v46(&conn).unwrap();
-
-    let version: i64 = conn
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 46);
-    let db = crate::db::Db::from_connection(conn);
-    assert!(
-        load_or_create_settings(&db, "existing", "ignored")
-            .unwrap()
-            .prepare_before_sync
     );
 }
 

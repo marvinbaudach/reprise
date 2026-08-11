@@ -22,7 +22,7 @@ impl DeviceBackend for FailingCopyBackend {
     fn inspect(
         &self,
         _root_uri: String,
-        _targets: [reprise_core::device_sync::SyncTarget; 3],
+        _target: reprise_core::device_sync::SyncTarget,
     ) -> TestFuture<DeviceStorageInspection> {
         Box::pin(async {
             Ok(DeviceStorageInspection {
@@ -32,8 +32,6 @@ impl DeviceBackend for FailingCopyBackend {
                     ..Default::default()
                 },
                 managed_files: Vec::new(),
-                podcast_files: Vec::new(),
-                youtube_files: Vec::new(),
             })
         })
     }
@@ -101,7 +99,6 @@ fn save_sources(conn: &Rc<Db>, device_id: &str, sources: Vec<SelectionSource>) {
             // `MTP-30`: these tests drive `sync_now` manually and must not
             // race an automatic start on connect.
             sync_automatically: false,
-            prepare_before_sync: true,
         },
     )
     .unwrap();

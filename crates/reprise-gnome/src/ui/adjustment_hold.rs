@@ -194,6 +194,7 @@ fn claim_correction(inner: &HoldInner, target: f64) -> bool {
 }
 
 fn write_target(inner: &HoldInner, target: f64) {
+    crate::ui::scroll_probe::probe("hold", &inner.adjustment, target);
     inner.correcting.set(true);
     inner.adjustment.set_value(target);
     inner.correcting.set(false);

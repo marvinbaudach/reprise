@@ -123,13 +123,9 @@ pub fn row_presentation(connectivity: Connectivity, local: LocalAvailability) ->
     }
 }
 
-/// `NET-3a`: what a deferrable action (download, or a device sync of an
-/// item) does. A deferrable action can wait for the network, unlike a live
+/// `NET-3a`: what a deferrable action such as a download does. A deferrable
+/// action can wait for the network, unlike a live
 /// stream — see [`live_stream_action_outcome`].
-///
-/// Phone sync's rule falls straight out of this: MTP transfer itself is
-/// local, so an already-downloaded file's sync `RunsNow` even offline; only
-/// an item still missing its file waits (`QueuedOffline`).
 #[must_use]
 pub fn deferrable_action_outcome(
     connectivity: Connectivity,
@@ -212,9 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn net_3a_phone_sync_of_an_already_downloaded_file_runs_even_offline() {
-        // MTP is local: syncing a file that is already on disk does not
-        // need the network, so it must not wait behind the queue.
+    fn net_3a_an_action_on_an_already_downloaded_file_runs_even_offline() {
         assert_eq!(
             deferrable_action_outcome(Connectivity::Offline, LocalAvailability::Available),
             ActionOutcome::RunsNow

@@ -2,6 +2,7 @@
 
 pub mod color;
 pub mod engine;
+pub mod fallback_cover;
 pub mod modes;
 pub mod scene;
 

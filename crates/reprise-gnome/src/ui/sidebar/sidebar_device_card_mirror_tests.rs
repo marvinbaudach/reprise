@@ -30,7 +30,6 @@ fn diff(
         bytes_to_copy,
         files_to_remove,
         bytes_freed,
-        files_waiting_for_download: 0,
         playlists_rewritten: 0,
     }
 }
@@ -87,11 +86,7 @@ fn mtp_29_idle_card_reads_the_aggregate_balance_not_a_blended_change_count() {
     let mut device = view(PlannedSyncPhase::Idle);
     select_playlist(&mut device);
     device.contents_state = DeviceContentsState::Verified;
-    device.category_readings = [
-        CategoryReading::Diff(diff(1, 1_024 * 1_024, 1, 0)),
-        CategoryReading::SourceOff,
-        CategoryReading::SourceOff,
-    ];
+    device.target_reading = CategoryReading::Diff(diff(1, 1_024 * 1_024, 1, 0));
 
     assert_eq!(card_title(&device), "Pixel 8");
     assert_eq!(card_subtitle(&device), "1 to copy · 1.0 MiB · 1 to remove");
@@ -117,11 +112,7 @@ fn mtp_50_remembered_card_is_dimmed_has_no_diff_and_exposes_local_memory_actions
     device.connected = false;
     device.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
     device.last_sync = Some(chrono::Utc::now() - chrono::Duration::days(3));
-    device.category_readings = [
-        CategoryReading::Diff(diff(14, 2_600_000_000, 3, 148 * 1_024 * 1_024)),
-        CategoryReading::SourceOff,
-        CategoryReading::SourceOff,
-    ];
+    device.target_reading = CategoryReading::Diff(diff(14, 2_600_000_000, 3, 148 * 1_024 * 1_024));
 
     assert_eq!(card_subtitle(&device), "Not connected · synced 3 days ago");
     assert!(idle_tooltip(&device).is_none());
@@ -181,11 +172,7 @@ fn css_parses_in_gtk_without_dropping_declarations() {
 fn mtp_29_deletions_only_idle_card_reads_frees_not_zero_bytes() {
     let mut device = view(PlannedSyncPhase::Idle);
     device.contents_state = DeviceContentsState::Verified;
-    device.category_readings = [
-        CategoryReading::Diff(diff(0, 0, 3, 148 * 1_024 * 1_024)),
-        CategoryReading::SourceOff,
-        CategoryReading::SourceOff,
-    ];
+    device.target_reading = CategoryReading::Diff(diff(0, 0, 3, 148 * 1_024 * 1_024));
 
     let subtitle = card_subtitle(&device);
 
@@ -206,11 +193,7 @@ fn mtp_29_up_to_date_idle_card_names_when_it_last_synced() {
 fn mtp_29_never_verified_idle_card_prompts_a_scan_instead_of_the_balance() {
     let mut device = view(PlannedSyncPhase::Idle);
     device.contents_state = DeviceContentsState::NeverVerified;
-    device.category_readings = [
-        CategoryReading::Diff(diff(5, 1, 0, 0)),
-        CategoryReading::SourceOff,
-        CategoryReading::SourceOff,
-    ];
+    device.target_reading = CategoryReading::Diff(diff(5, 1, 0, 0));
 
     assert_eq!(card_subtitle(&device), "Tap to scan device contents");
 }

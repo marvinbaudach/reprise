@@ -147,13 +147,9 @@ impl RepriseServer {
             path the refresh pipeline's auto-download uses; gated per episode \
             by whether its source — RSS or YouTube — is enabled), `remove` \
             (tombstones and immediately commits — unlike the GUI's ten-second \
-            undo toast, there is no MCP-side undo window), and `want_on_device` \
-            (sets or clears the persistent 'sync to phone' intent, MTP-40; \
-            requires `wanted`. An episode marked wanted without a local file \
-            has its download queued automatically by the sync pipeline rather \
-            than being rejected). Reports one outcome per id, so a bad id in a \
-            batch never fails the whole call. Requires 'sources:manage', off \
-            by default."
+            undo toast, there is no MCP-side undo window). Reports one outcome \
+            per id, so a bad id in a batch never fails the whole call. Requires \
+            'sources:manage', off by default."
     )]
     async fn music_manage_episodes(
         &self,

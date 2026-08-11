@@ -18,6 +18,15 @@ pub(in crate::ui) const DONE: &str = "object-select-symbolic";
 /// do not contain the query. Present in the installed Adwaita symbolic set.
 pub(in crate::ui) const UNEXPLAINED_SEARCH_MATCH: &str = "dialog-information-symbolic";
 
+/// Lyrics are words carried by music: three text lines beside one note. This
+/// app-owned symbolic avoids presenting the tab as document editing, which it
+/// is not.
+pub(in crate::ui) const LYRICS: &str = "reprise-lyrics-symbolic";
+
+/// Four unequal level bars, matching the Bars mode shown by the page. This is
+/// intentionally not a network-strength glyph borrowed from the system theme.
+pub(in crate::ui) const VISUAL_BARS: &str = "reprise-visual-bars-symbolic";
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -105,6 +114,21 @@ mod tests {
         assert!(names.len() > 40, "only {} names found", names.len());
     }
 
+    #[test]
+    fn private_symbolics_are_embedded_at_icon_theme_paths() {
+        crate::register_app_resources();
+        for name in [super::LYRICS, super::VISUAL_BARS] {
+            let path = format!("/org/reprise/Reprise/icons/scalable/actions/{name}.svg");
+            let bytes =
+                gtk4::gio::resources_lookup_data(&path, gtk4::gio::ResourceLookupFlags::NONE)
+                    .unwrap_or_else(|error| panic!("{path} is not embedded: {error}"));
+            assert!(
+                bytes.as_ref().starts_with(b"<?xml") && bytes.as_ref().ends_with(b"</svg>\n"),
+                "{path} is not a complete SVG"
+            );
+        }
+    }
+
     /// The app may not ask for an icon this system cannot draw.
     ///
     /// Environment-dependent on purpose: it asks the icon theme that is actually
@@ -114,9 +138,11 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn every_icon_name_the_app_asks_for_can_be_drawn() {
+        crate::register_app_resources();
         if gtk4::init().is_err() {
             return;
         }
+        crate::install_app_icon_resource_path();
         let Some(display) = gtk4::gdk::Display::default() else {
             return;
         };
@@ -141,9 +167,11 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn every_guarded_name_falls_back_to_one_that_exists() {
+        crate::register_app_resources();
         if gtk4::init().is_err() {
             return;
         }
+        crate::install_app_icon_resource_path();
         let Some(display) = gtk4::gdk::Display::default() else {
             return;
         };

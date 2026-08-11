@@ -18,7 +18,6 @@ use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::view_source::ViewSource;
 
 use super::cover_download_batch::CoverDownloadBatch;
-use super::device_sync_runtime::DeviceSyncRuntime;
 use super::first_run::FirstRunDecision;
 use super::library_player_bar::LibraryPlayerBarShell;
 use super::lyrics_batch::LyricsBatch;
@@ -61,7 +60,6 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) library_doctor_navigation: &'a adw::NavigationView,
     pub(in crate::ui) doctor_chrome: &'a Rc<super::library_chrome::DoctorChrome>,
-    pub(in crate::ui) device_sync: &'a Rc<DeviceSyncRuntime>,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
@@ -108,7 +106,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         content_stack,
         library_doctor_navigation,
         doctor_chrome,
-        device_sync,
         window_title,
         scan_controls,
         toast_overlay,
@@ -135,10 +132,8 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         podcasts_view,
         youtube_view,
         radio_view,
-        device_sync,
     );
     super::startup_report::mark("source_connectivity::wire");
-    super::source_connectivity::wire_source_module_recompute(preferences, device_sync);
 
     let refresh_doctor_views = {
         let stats = stats_view.clone();

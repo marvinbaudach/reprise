@@ -245,11 +245,21 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     assert_eq!(surface.primary.label().as_deref(), Some("_Sync now"));
     assert!(surface.primary.uses_underline());
     assert!(surface.primary.is_sensitive());
-    assert!(!surface.root_text().contains("Entire library"));
-    assert!(!surface.root_text().contains("Device files"));
-    assert!(!surface.root_text().contains("Songs"));
-    assert!(!surface.root_text().contains("ratings"));
-    assert!(!surface.root_text().contains("Remove unselected"));
+    let root_text = surface.root_text();
+    assert!(root_text.contains("Playlists"));
+    for removed in [
+        "YouTube audio",
+        "Podcast episodes",
+        "Size limit in GiB",
+        "no size limit",
+        "Entire library",
+        "Device files",
+        "Songs",
+        "ratings",
+        "Remove unselected",
+    ] {
+        assert!(!root_text.contains(removed), "removed control: {removed}");
+    }
 
     surface.profile.set_selected(2);
     surface.playlist_rows.borrow()[0].button.set_active(false);
@@ -357,8 +367,8 @@ fn device_page_sections_have_one_explicit_owner_and_order() {
 fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
     gtk4::init().expect("GTK test display");
     let mut device = device();
-    device.content_rows[0].item_count = 291;
-    device.content_rows[0].size_on_device_bytes = 1024 * 1024 * 1024;
+    device.content_row.item_count = 291;
+    device.content_row.size_on_device_bytes = 1024 * 1024 * 1024;
 
     let (surface, _root) = DeviceSyncPage::new(
         &device,
@@ -385,39 +395,6 @@ fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn design_2c_up_next_legend_uses_the_rows_projected_sizes() {
-    gtk4::init().expect("GTK test display");
-    let mut device = device();
-    device.content_rows[0].size_on_device_bytes = 1024 * 1024 * 1024;
-    device.category_readings[0] =
-        reprise_core::device_sync::CategoryReading::Diff(reprise_core::device_sync::CategoryDiff {
-            bytes_to_copy: 128 * 1024 * 1024,
-            ..Default::default()
-        });
-    device.content_rows[1].size_on_device_bytes = 693 * 1024 * 1024;
-    device.content_rows[2].size_on_device_bytes = 217 * 1024 * 1024;
-
-    let (surface, _root) = DeviceSyncPage::new(
-        &device,
-        PageActions {
-            set_profile: Rc::new(|_| {}),
-            set_playlist: Rc::new(|_, _| {}),
-            start: Rc::new(|| {}),
-            cancel: Rc::new(|| {}),
-            eject: Rc::new(|| {}),
-        },
-        &no_op_content_actions(),
-    );
-
-    let text = surface.root_text();
-    let lines = text.lines().collect::<Vec<_>>();
-    assert!(lines.contains(&"Music 1.1 GiB"));
-    assert!(lines.contains(&"YouTube 693.0 MiB"));
-    assert!(lines.contains(&"Podcasts 217.0 MiB"));
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
 fn unrememberable_device_disables_hero_rename_with_the_identity_explanation() {
     gtk4::init().expect("GTK test display");
     let mut device = device();
@@ -439,114 +416,6 @@ fn unrememberable_device_disables_hero_rename_with_the_identity_explanation() {
     assert!(tooltip.contains("no durable identity"));
     assert!(tooltip.contains("per-device settings cannot be kept between connections"));
     assert!(!tooltip.contains("history"));
-}
-
-/// `MTP-46`, the visible half: a globally available source keeps its Content
-/// row even when this phone's target is off, and explains that per-device
-/// opt-in instead of implying that a zero selection is active. Turning the
-/// global source off still removes the row entirely. Both halves run against
-/// the same page, so the only difference is that global switch.
-///
-/// Deliberately not written against `root_text()` like its siblings: that
-/// helper walks every child regardless of visibility, so it would happily
-/// report a hidden row's label and the test would pass with the feature
-/// removed.
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn mtp_46_a_switched_off_source_has_no_content_row_on_the_device_page() {
-    gtk4::init().expect("GTK test display");
-
-    fn visible_text(widget: &gtk4::Widget, output: &mut String) {
-        if !widget.is_visible() {
-            return;
-        }
-        if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
-            output.push_str(&label.text());
-            output.push('\n');
-        }
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            visible_text(&current, output);
-            child = current.next_sibling();
-        }
-    }
-
-    fn page_text(device: &DeviceView) -> String {
-        let (_surface, root) = DeviceSyncPage::new(
-            device,
-            PageActions {
-                set_profile: Rc::new(|_| {}),
-                set_playlist: Rc::new(|_, _| {}),
-                start: Rc::new(|| {}),
-                cancel: Rc::new(|| {}),
-                eject: Rc::new(|| {}),
-            },
-            &no_op_content_actions(),
-        );
-        let mut text = String::new();
-        visible_text(root.upcast_ref(), &mut text);
-        text
-    }
-
-    let mut both_on = device();
-    both_on.enabled_sources = reprise_core::device_sync::podcasts::EnabledSyncSources {
-        rss: true,
-        youtube: true,
-    };
-    let on = page_text(&both_on);
-    assert!(
-        on.contains("YouTube audio"),
-        "with YouTube on its Content row is visible"
-    );
-    assert!(
-        on.contains("Podcast episodes"),
-        "with Podcasts on its Content row is visible"
-    );
-    assert!(
-        on.contains("YouTube 0 B") && on.contains("Podcasts 0 B"),
-        "visible sources also have entries in the storage legend"
-    );
-    assert_eq!(
-        on.matches("Not synchronized with this phone").count(),
-        2,
-        "both new extra-source targets stay discoverable and explain their per-device opt-in"
-    );
-
-    let mut youtube_off = both_on.clone();
-    youtube_off.enabled_sources.youtube = false;
-    let off = page_text(&youtube_off);
-    assert!(
-        !off.contains("YouTube audio"),
-        "switching YouTube off must take its Content row off the page, not leave a zero row"
-    );
-    assert!(
-        !off.contains("YouTube 0 B"),
-        "switching YouTube off must hide the same legend entry"
-    );
-    assert!(
-        off.contains("Podcast episodes"),
-        "Podcasts is a peer module and must be untouched by YouTube's switch"
-    );
-    assert!(
-        off.contains("Playlists"),
-        "local playlists have no module switch and always stay"
-    );
-
-    let mut podcasts_off = both_on.clone();
-    podcasts_off.enabled_sources.rss = false;
-    let off = page_text(&podcasts_off);
-    assert!(
-        !off.contains("Podcast episodes"),
-        "switching Podcasts off must take its Content row off the page"
-    );
-    assert!(
-        !off.contains("Podcasts 0 B"),
-        "switching Podcasts off must hide the same legend entry"
-    );
-    assert!(
-        off.contains("YouTube audio"),
-        "and must leave YouTube, its peer, alone"
-    );
 }
 
 /// `NPP-1`'s second pitfall is not confined to the panel itself: a label

@@ -75,6 +75,6 @@ fn v31_is_idempotent() {
 }
 
 #[test]
-fn supported_schema_version_is_v67() {
-    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 67);
+fn supported_schema_version_is_v68() {
+    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 68);
 }

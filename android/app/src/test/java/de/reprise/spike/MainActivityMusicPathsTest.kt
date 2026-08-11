@@ -128,12 +128,12 @@ class MainActivityMusicPathsTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
         compose.onNodeWithTag("library-mini-player").performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
 
         compose.activity.onBackPressedDispatcher.onBackPressed()
         compose.waitForIdle()
 
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing-transport").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
 
         compose.activity.onBackPressedDispatcher.onBackPressed()

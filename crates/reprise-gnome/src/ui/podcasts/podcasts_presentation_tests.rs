@@ -217,7 +217,6 @@ fn show(subscription_id: i64, title: &str, episodes: Vec<EpisodeRow>) -> SourceG
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes,
     }
 }
@@ -361,7 +360,6 @@ fn src_5_source_summary_counts_new_downloads_and_latest_episode() {
         author: Some("Publisher".into()),
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: true,
         episodes: vec![first, second],
     };
 
@@ -397,7 +395,6 @@ fn pod_9_library_summary_counts_shows_episodes_and_new_across_all_groups() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![played, unplayed],
     };
     let group_b = SourceGroup {
@@ -406,7 +403,6 @@ fn pod_9_library_summary_counts_shows_episodes_and_new_across_all_groups() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![resuming],
     };
 
@@ -440,7 +436,6 @@ fn pod_9_filtered_children_keep_the_full_source_summary() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![played, unplayed],
     };
 
@@ -457,44 +452,4 @@ fn pod_9_filtered_children_keep_the_full_source_summary() {
     assert_eq!(rendered[0].summary.episode_count, 2);
     assert_eq!(rendered[0].summary.new_count, 1);
     assert_eq!(rendered[0].summary.latest_published_at, Some(20));
-}
-
-/// `POD-12` / `D3`: the "On phone" indicator must track the selection
-/// exactly — on the moment a connected device is added to the
-/// selection, off the moment it is removed, and unaffected by devices
-/// that are not currently connected.
-#[test]
-fn pod_12_on_phone_reflects_the_toggle() {
-    let phone = PodcastSyncDevice {
-        id: "mtp:phone".into(),
-        name: "Phone".into(),
-    };
-    let tablet = PodcastSyncDevice {
-        id: "mtp:tablet".into(),
-        name: "Tablet".into(),
-    };
-
-    // Nothing selected yet.
-    assert!(!on_phone(std::slice::from_ref(&phone), &[]));
-
-    // Selected, but only for a device that is not currently connected.
-    assert!(!on_phone(
-        std::slice::from_ref(&phone),
-        &["mtp:tablet".to_owned()]
-    ));
-
-    // Selected for the connected device: the toggle just turned on.
-    assert!(on_phone(
-        std::slice::from_ref(&phone),
-        &["mtp:phone".to_owned(), "mtp:tablet".to_owned()]
-    ));
-
-    // A second connected device also counts.
-    assert!(on_phone(
-        &[phone.clone(), tablet],
-        &["mtp:tablet".to_owned()]
-    ));
-
-    // Un-toggled again: back to false.
-    assert!(!on_phone(&[phone], &[]));
 }

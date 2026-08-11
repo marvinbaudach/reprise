@@ -15,11 +15,11 @@ pub const YTDLP_PATH_KEY: &str = "podcasts.ytdlp_path";
 pub const REFRESH_HOURS_KEY: &str = "sources.refresh_hours";
 pub const FILTER_UNPLAYED_KEY: &str = "podcasts.filter.unplayed";
 pub const FILTER_SOURCE_KEY: &str = "podcasts.filter.source";
-/// `MTP-36`: the global "latest N per channel" default for the phone-sync
-/// YouTube target, overridable per channel
-/// (`podcasts::store::latest_per_channel_overrides`). Device-independent —
-/// `E-5` means there is exactly one MTP device, so this lives here rather
-/// than on `DeviceSettings` or a per-device sync target.
+/// The global "latest N per channel" default: how many recent episodes a
+/// YouTube channel offers the local library. It began as `MTP-36`'s bound on
+/// the YouTube phone-sync target and outlived it — phone sync is
+/// playlist-only since `MTP-54`, and the per-channel override that used to
+/// beat this default is gone with it, so this value now stands alone.
 pub const LATEST_PER_CHANNEL_DEFAULT_KEY: &str = "podcasts.latest_per_channel_default";
 /// `SRC-10` addendum (Block B2): the "Downloaded" filter chip.
 pub const FILTER_DOWNLOADED_KEY: &str = "podcasts.filter.downloaded";
@@ -148,10 +148,11 @@ pub struct PodcastConfig {
     pub youtube_browser: Option<YoutubeBrowser>,
     pub ytdlp_path: Option<String>,
     pub refresh_hours: i64,
-    /// `MTP-36`: the global "latest N per channel" default for YouTube
-    /// phone sync — `0` means unlimited, like every other numeric sync
-    /// setting since `MTP-38`. A subscription's own override (`podcasts::
-    /// store::latest_per_channel_overrides`) always wins over this.
+    /// The global "latest N per channel" default for YouTube channels in the
+    /// local library — `0` means unlimited, like every other numeric
+    /// quantity setting since `E-9`. It has no per-channel override any
+    /// more: that override belonged to the retired phone-sync target
+    /// (`MTP-36`, dropped by `MTP-54`).
     pub latest_per_channel_default: usize,
     /// `POD-5` / `O-5`: the global "keep N downloaded" default backing
     /// `CleanupPolicy::KeepLast5` — `0` means unlimited, like every other
@@ -397,17 +398,6 @@ mod tests {
         assert_eq!(config.refresh_hours, 1);
         assert_eq!(config.latest_per_channel_default, 100);
         assert_eq!(config.keep_downloaded_default, 100);
-    }
-
-    #[test]
-    fn mtp_36_latest_per_channel_default_clamp_floor_is_zero_not_the_documented_minimum() {
-        // Like `import_count`, 0 is a valid, meaningful value here
-        // (unlimited) — the clamp floor must not reject it back up to some
-        // positive minimum.
-        let db = db();
-        crate::library::settings::set_setting(&db, LATEST_PER_CHANNEL_DEFAULT_KEY, "0").unwrap();
-
-        assert_eq!(load(&db).unwrap().latest_per_channel_default, 0);
     }
 
     #[test]

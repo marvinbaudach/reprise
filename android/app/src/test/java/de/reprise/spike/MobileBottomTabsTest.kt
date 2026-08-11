@@ -2,9 +2,9 @@ package de.reprise.spike
 
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -51,6 +51,7 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
         compose.onNodeWithTag("library-destination-ALBUMS").assertIsNotSelected()
         compose.onNodeWithTag("library-destination-FAVOURITES").assertIsNotSelected()
+        compose.onNodeWithTag("library-destination-QUEUE").assertIsNotSelected()
     }
 
     @Test
@@ -63,12 +64,12 @@ class MobileBottomTabsTest {
     }
 
     @Test
-    fun swipingPastTheLastDestinationStopsOnFavourites() {
-        compose.onNodeWithTag("library-destination-FAVOURITES").performClick()
+    fun swipingPastTheLastDestinationStopsOnQueue() {
+        compose.onNodeWithTag("library-destination-QUEUE").performClick()
         compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
 
-        compose.onNodeWithTag("library-page-FAVOURITES").assertIsDisplayed()
-        compose.onNodeWithTag("library-destination-FAVOURITES").assertIsSelected()
+        compose.onNodeWithTag("library-page-QUEUE").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-QUEUE").assertIsSelected()
     }
 
     @Test
@@ -98,20 +99,19 @@ class MobileBottomTabsTest {
     }
 
     @Test
-    fun nowPlayingLeavesTheNavigationBarVisibleAndReceivingTheDestinationTap() {
+    fun nowPlayingHidesTheNavigationBarAndConsumesThePagerSwipe() {
         application.service.publish(mobileTabsPlayingSnapshot())
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
         compose.onNodeWithTag("library-mini-player").performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
-        compose.onNodeWithTag("library-navigation-bar").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
+        compose.onNodeWithTag("library-navigation-bar").assertIsNotDisplayed()
 
-        compose.onNodeWithTag("library-destination-ARTISTS")
-            .performTouchInput { click() }
+        compose.onNodeWithTag("now-playing-gestures").performTouchInput { swipeLeft() }
 
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
-        compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
-        compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
+        compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-TITLES").assertIsSelected()
     }
 }
 

@@ -194,6 +194,22 @@ fn doc_7c_the_review_page_carries_no_provider_toggle() {
 }
 
 #[test]
+fn review_widget_handlers_hold_review_state_weakly() {
+    // Whitespace-insensitive on purpose: an assertion that pins exact indentation
+    // breaks on the next rustfmt reflow while proving nothing about behaviour.
+    // What matters is that neither handler captures the state strongly.
+    let source = include_str!("review_page.rs").replace([' ', '\n'], "");
+
+    assert!(source.contains("select_all.connect_toggled(glib::clone!(#[weak]state,"));
+    assert!(
+        source.contains("apply.connect_clicked(glib::clone!(#[weak(rename_to=state)]self.state,")
+    );
+    // `callback_state` on its own is fine — the filter bar uses it legitimately.
+    assert!(!source.contains("letcallback_state=state.clone();lethandler=header.select_all"));
+    assert!(!source.contains("letstate=self.state.clone();self.state.apply.connect_clicked"));
+}
+
+#[test]
 fn doc_9b_every_reviewable_row_starts_selected() {
     let mut source = scan();
     let mut capped = source.proposals[0].clone();

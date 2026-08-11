@@ -40,7 +40,7 @@ impl TrackList {
     /// the *old* density from here on: nothing about the geometry looks wrong
     /// afterwards, so only this event can invalidate it.
     pub(in crate::ui) fn apply_list_density(&self, density: ListDensity) {
-        super::track_list_geometry::forget_row_height(&self.shared.last_row_height);
+        super::track_list_geometry::forget_row_height(&self.shared.list_geometry_cache);
         super::list_density::apply(&self.shared.column_view, density);
     }
 

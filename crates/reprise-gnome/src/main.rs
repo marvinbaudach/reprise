@@ -5,6 +5,7 @@ mod ui;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use gtk4::gio;
 use gtk4::glib;
@@ -17,6 +18,28 @@ use tracing_subscriber::EnvFilter;
 /// GNOME application ID; must match the `.desktop` file and D-Bus name used
 /// for GNOME integration. Shared with `mpris` module for MPRIS `DesktopEntry`.
 pub(crate) const APP_ID: &str = "org.reprise.Reprise";
+
+static APP_RESOURCES_REGISTERED: OnceLock<()> = OnceLock::new();
+const APP_ICON_RESOURCE_PATH: &str = "/org/reprise/Reprise/icons";
+
+/// Registers app-private icons once for both the production application and
+/// display-backed tests. The resource prefix follows `APP_ID`, allowing
+/// `GtkApplication` to expose its `icons` subtree through the active theme.
+pub(crate) fn register_app_resources() {
+    APP_RESOURCES_REGISTERED.get_or_init(|| {
+        gio::resources_register_include!("reprise.gresource")
+            .expect("the compiled Reprise resources must register");
+    });
+}
+
+/// Adds the registered private icon subtree to the theme for the active
+/// display. `GtkApplication` also derives this path from `APP_ID`; doing it
+/// explicitly keeps the contract testable and independent of startup order.
+pub(crate) fn install_app_icon_resource_path() {
+    let display = gtk4::gdk::Display::default()
+        .expect("the icon resource path requires an initialized GTK display");
+    gtk4::IconTheme::for_display(&display).add_resource_path(APP_ICON_RESOURCE_PATH);
+}
 
 /// Dev/verification hook (not a user-facing feature): when set, a folder is
 /// scanned into the database synchronously at startup, before the window is
@@ -115,6 +138,7 @@ fn ensure_window(
 }
 
 fn main() -> glib::ExitCode {
+    register_app_resources();
     ui::track_list::diagnostic_trail::mark_process_start();
     init_logging();
     ui::startup_report::mark("logging initialised");
@@ -128,6 +152,7 @@ fn main() -> glib::ExitCode {
         .application_id(APP_ID)
         .flags(application_flags())
         .build();
+    app.connect_startup(|_| install_app_icon_resource_path());
     ui::startup_report::mark("adw::Application built");
 
     // Primary-vs-secondary is decided *before* the database is touched

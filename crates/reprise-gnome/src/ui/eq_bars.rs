@@ -14,9 +14,7 @@
 //!
 //! ## Why a CSS widget, not an icon
 //!
-//! The app ships no symbolic icon resources (no GResource/`build.rs`) and
-//! relies on the system icon theme, which has no dependable "bar chart" name
-//! — and a theme symbolic could never animate anyway. Drawing three
+//! A static app-owned symbolic could not animate with playback. Drawing three
 //! `gtk::Box` bars styled by app-owned CSS renders identically on every icon
 //! theme (the same reasoning the rating widget uses text glyphs over theme
 //! symbolics — see `ui::rating`'s module doc), animates for free, and serves

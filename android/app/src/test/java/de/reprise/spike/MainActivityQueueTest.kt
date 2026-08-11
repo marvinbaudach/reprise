@@ -13,7 +13,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -24,7 +23,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
-/** M12 queue claims exercise MainActivity, its service bind, and the real sheet. */
+/** Queue-tab claims exercise MainActivity, its service bind, and the real page. */
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [36],
@@ -45,12 +44,7 @@ class MainActivityQueueTest {
 
     @Test
     fun queuePageListsOnlyWhatFollowsThePlayingTrack() {
-        application.replaceQueue(queueFixture())
-        application.service.publish(m9bSnapshot(trackId = 1))
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.onNodeWithTag("library-mini-player").performClick()
-
-        compose.onNodeWithContentDescription("Show queue").performClick()
+        openQueue()
 
         compose.onNodeWithTag("now-playing-queue").assertIsDisplayed()
         compose.onNodeWithText("Upcoming One").assertIsDisplayed()
@@ -134,7 +128,7 @@ class MainActivityQueueTest {
     fun exhaustedQueueExplainsItselfAndSurvivesRecreate() {
         application.replaceQueue(queueFixture().take(1))
         publishPlayingTrack()
-        compose.onNodeWithContentDescription("Show queue").performClick()
+        compose.onNodeWithTag("library-destination-QUEUE").performClick()
         compose.onNodeWithText("The queue is exhausted.").assertIsDisplayed()
 
         compose.activityRule.scenario.recreate()
@@ -146,29 +140,21 @@ class MainActivityQueueTest {
     }
 
     @Test
-    fun backClosesTheQueuePageBeforeTheSheet() {
+    fun queueTabIsTheOnlyQueueRouteAndNowPlayingHasNoToggle() {
         openQueue()
+        assertEquals(BrowseTab.TITLES, application.rememberedDestination)
+        assertEquals(emptyList<BrowseTab>(), application.rememberedDestinationWrites)
+        compose.onNodeWithContentDescription("Show queue").assertDoesNotExist()
 
-        compose.activityRule.scenario.recreate()
-        shadowOf(Looper.getMainLooper()).idle()
-        application.service.republish()
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.waitForIdle()
-        compose.onNodeWithTag("now-playing-queue").assertIsDisplayed()
-
-        compose.activity.onBackPressedDispatcher.onBackPressed()
-        compose.waitForIdle()
-        assertEquals(Lifecycle.State.RESUMED, compose.activityRule.scenario.state)
-        compose.onNodeWithContentDescription("Show queue").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
-
-        compose.activity.onBackPressedDispatcher.onBackPressed()
-        compose.waitForIdle()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithTag("library-mini-player").performClick()
+        // Now Playing is dismissed by swiping it down rather than by a button,
+        // so the sheet's own content is what says it opened.
+        compose.onNodeWithTag("now-playing-content").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Show queue").assertDoesNotExist()
     }
 
     @Test
-    fun stackedAndWideShortLayoutsBothDrawTheQueuePage() {
+    fun stackedAndWideShortLibraryLayoutsBothDrawTheQueueTab() {
         openQueue()
         compose.onNodeWithTag("now-playing-queue").assertIsDisplayed()
 
@@ -180,14 +166,19 @@ class MainActivityQueueTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag("now-playing-queue").assertIsDisplayed()
-        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
-        compose.onNodeWithTag("now-playing-title").assertIsDisplayed()
+        compose.onNodeWithTag("library-navigation-rail").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Show queue").assertDoesNotExist()
+        val firstRowTop = compose.onNodeWithTag("queue-track-row-501")
+            .fetchSemanticsNode().boundsInRoot.top
+        val secondRowTop = compose.onNodeWithTag("queue-track-row-502")
+            .fetchSemanticsNode().boundsInRoot.top
+        assertEquals(firstRowTop, secondRowTop, 0.5f)
     }
 
     private fun openQueue() {
         application.replaceQueue(queueFixture())
         publishPlayingTrack()
-        compose.onNodeWithContentDescription("Show queue").performClick()
+        compose.onNodeWithTag("library-destination-QUEUE").performClick()
         compose.onNodeWithTag("now-playing-queue").assertIsDisplayed()
     }
 
@@ -195,7 +186,6 @@ class MainActivityQueueTest {
         application.service.publish(m9bSnapshot(trackId = 1))
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
-        compose.onNodeWithTag("library-mini-player").performClick()
     }
 
     private fun dragHandle(trackId: Long, rowHeights: Float) {

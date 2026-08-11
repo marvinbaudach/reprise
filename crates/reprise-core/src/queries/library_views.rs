@@ -50,13 +50,39 @@ pub struct ArtistWindow {
     pub has_more: bool,
 }
 
+fn album_summary_filter_clause(has_filter: bool, param_index: u8) -> String {
+    if has_filter {
+        format!(
+            " AND (TRIM(album) LIKE ?{param_index} ESCAPE '\\' \
+             OR {EFFECTIVE_ALBUM_ARTIST} LIKE ?{param_index} ESCAPE '\\')"
+        )
+    } else {
+        String::new()
+    }
+}
+
+fn artist_summary_filter_clause(has_filter: bool, param_index: u8) -> String {
+    if has_filter {
+        format!(" AND {EFFECTIVE_ALBUM_ARTIST} LIKE ?{param_index} ESCAPE '\\'")
+    } else {
+        String::new()
+    }
+}
+
 /// Returns one row per case-insensitive `(album, effective album artist)`
 /// pair. Blank albums and missing tracks are excluded; the lowest track id
-/// supplies stable display spelling and the representative cover path.
-pub fn query_albums(db: &Db, window: WindowRange) -> Result<AlbumWindow, rusqlite::Error> {
-    let total = query_album_count(db)?;
+/// supplies stable display spelling and the representative cover path. A
+/// non-blank filter matches the album title or effective album artist.
+pub fn query_albums(
+    db: &Db,
+    filter: &str,
+    window: WindowRange,
+) -> Result<AlbumWindow, rusqlite::Error> {
+    let total = query_album_count(db, filter)?;
     let conn = db.conn();
     let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !filter.trim().is_empty();
+    let filter_sql = album_summary_filter_clause(has_filter, 3);
     let sql = format!(
         "WITH grouped AS ( \
            SELECT LOWER(TRIM(album)) AS album_key, \
@@ -68,7 +94,7 @@ pub fn query_albums(db: &Db, window: WindowRange) -> Result<AlbumWindow, rusqlit
                   MAX(added_at) AS max_added_at, \
                   SUM(play_count) AS total_play_count \
            FROM tracks \
-           WHERE {PRESENT} AND TRIM(album) <> '' \
+           WHERE {PRESENT} AND TRIM(album) <> ''{filter_sql} \
            GROUP BY album_key, artist_key \
          ) \
          SELECT TRIM(tracks.album), {EFFECTIVE_ALBUM_ARTIST}, tracks.path, \
@@ -82,7 +108,11 @@ pub fn query_albums(db: &Db, window: WindowRange) -> Result<AlbumWindow, rusqlit
          LIMIT ?1 OFFSET ?2"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(rusqlite::params![limit, window.offset], |row| {
+    let mut params = vec![Value::Integer(limit), Value::Integer(window.offset)];
+    if has_filter {
+        params.push(Value::Text(like_pattern(filter.trim())));
+    }
+    let rows = statement.query_map(rusqlite::params_from_iter(params), |row| {
         Ok(AlbumSummary {
             album: row.get(0)?,
             album_artist: row.get(1)?,
@@ -104,11 +134,18 @@ pub fn query_albums(db: &Db, window: WindowRange) -> Result<AlbumWindow, rusqlit
 
 /// One row per case-insensitive effective album artist. Compilation and
 /// featured tracks collapse under their album artist rather than exploding
-/// the list. Blank artists and missing tracks are excluded.
-pub fn query_artists(db: &Db, window: WindowRange) -> Result<ArtistWindow, rusqlite::Error> {
-    let total = query_artist_count(db)?;
+/// the list. Blank artists and missing tracks are excluded; a non-blank filter
+/// matches the effective album artist.
+pub fn query_artists(
+    db: &Db,
+    filter: &str,
+    window: WindowRange,
+) -> Result<ArtistWindow, rusqlite::Error> {
+    let total = query_artist_count(db, filter)?;
     let conn = db.conn();
     let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !filter.trim().is_empty();
+    let filter_sql = artist_summary_filter_clause(has_filter, 3);
     let sql = format!(
         "WITH grouped AS ( \
            SELECT LOWER({EFFECTIVE_ALBUM_ARTIST}) AS artist_key, \
@@ -119,7 +156,7 @@ pub fn query_artists(db: &Db, window: WindowRange) -> Result<ArtistWindow, rusql
                   COALESCE(SUM(play_count), 0) AS total_plays, \
                   COALESCE(MAX(last_played_at), 0) AS last_played_at \
            FROM tracks \
-           WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
+           WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> ''{filter_sql} \
            GROUP BY artist_key \
          ) \
          SELECT {EFFECTIVE_ALBUM_ARTIST}, grouped.track_count, grouped.album_count, \
@@ -129,7 +166,11 @@ pub fn query_artists(db: &Db, window: WindowRange) -> Result<ArtistWindow, rusql
          LIMIT ?1 OFFSET ?2"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(rusqlite::params![limit, window.offset], |row| {
+    let mut params = vec![Value::Integer(limit), Value::Integer(window.offset)];
+    if has_filter {
+        params.push(Value::Text(like_pattern(filter.trim())));
+    }
+    let rows = statement.query_map(rusqlite::params_from_iter(params), |row| {
         Ok(ArtistSummary {
             artist: row.get(0)?,
             track_count: row.get(1)?,
@@ -149,35 +190,45 @@ pub fn query_artists(db: &Db, window: WindowRange) -> Result<ArtistWindow, rusql
 
 /// Counts the distinct `(album, effective album artist)` groups — the exact
 /// total reported by [`query_albums`] without materializing every
-/// [`AlbumSummary`]. Same `PRESENT`/blank-album filter and same
+/// [`AlbumSummary`]. Same presence, blank-album and text filters and same
 /// case-insensitive grouping keys, so the two always agree.
-pub fn query_album_count(db: &Db) -> Result<i64, rusqlite::Error> {
+pub fn query_album_count(db: &Db, filter: &str) -> Result<i64, rusqlite::Error> {
     let conn = db.conn();
+    let has_filter = !filter.trim().is_empty();
+    let filter_sql = album_summary_filter_clause(has_filter, 1);
+    let params = has_filter
+        .then(|| Value::Text(like_pattern(filter.trim())))
+        .into_iter();
     conn.query_row(
         &format!(
             "SELECT COUNT(*) FROM ( \
                SELECT 1 FROM tracks \
-               WHERE {PRESENT} AND TRIM(album) <> '' \
+               WHERE {PRESENT} AND TRIM(album) <> ''{filter_sql} \
                GROUP BY LOWER(TRIM(album)), LOWER({EFFECTIVE_ALBUM_ARTIST}) \
              )"
         ),
-        [],
+        rusqlite::params_from_iter(params),
         |row| row.get(0),
     )
 }
 
 /// Counts the distinct effective album artists — the exact total reported by
 /// [`query_artists`] without materializing every [`ArtistSummary`]. Same
-/// `PRESENT`/blank-artist filter and case-insensitive key as `query_artists`,
-/// so the two always agree.
-pub fn query_artist_count(db: &Db) -> Result<i64, rusqlite::Error> {
+/// presence, blank-artist and text filters and case-insensitive key as
+/// `query_artists`, so the two always agree.
+pub fn query_artist_count(db: &Db, filter: &str) -> Result<i64, rusqlite::Error> {
     let conn = db.conn();
+    let has_filter = !filter.trim().is_empty();
+    let filter_sql = artist_summary_filter_clause(has_filter, 1);
+    let params = has_filter
+        .then(|| Value::Text(like_pattern(filter.trim())))
+        .into_iter();
     conn.query_row(
         &format!(
             "SELECT COUNT(DISTINCT LOWER({EFFECTIVE_ALBUM_ARTIST})) FROM tracks \
-             WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> ''"
+             WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> ''{filter_sql}"
         ),
-        [],
+        rusqlite::params_from_iter(params),
         |row| row.get(0),
     )
 }
@@ -310,6 +361,12 @@ pub(super) fn query_album_track_ids_browsed(
 /// current sort and filter: those control presentation, not PLAY-1a's queue
 /// snapshot. Legacy rows without a disc number behave as disc 1; unknown
 /// track numbers sort after numbered tracks, then path/id make ties stable.
+///
+/// Rows with a blank album are not an album, exactly as in [`query_albums`] and
+/// [`query_artist_detail_albums`]: an empty argument would otherwise collect
+/// every untagged track in the library under one name. That matters here beyond
+/// presentation, because this list is what the Android context menu offers to
+/// delete from the device.
 pub fn query_album_canonical_track_ids(
     db: &Db,
     album: &str,
@@ -317,7 +374,7 @@ pub fn query_album_canonical_track_ids(
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
     let sql = format!(
-        "SELECT id FROM tracks WHERE {PRESENT} \
+        "SELECT id FROM tracks WHERE {PRESENT} AND TRIM(album) <> '' \
          AND TRIM(album) = ?1 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE \
          ORDER BY COALESCE(disc_no, 1) ASC, \
@@ -462,309 +519,5 @@ pub(super) fn query_artist_track_ids(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::queries::{query_track_count, query_track_ids, query_track_window, WindowRange};
-    use crate::view_source::ViewSource;
-
-    fn seeded_library() -> crate::db::Db {
-        let db = crate::db::Db::open_in_memory().unwrap();
-        let conn = db.conn();
-        conn.execute_batch(
-            "INSERT INTO tracks
-               (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
-             (1,'/music/first-a.flac','A','Solo',' First ','',0,NULL),
-             (2,'/music/first-b.flac','B','Solo','first','',0,NULL),
-             (3,'/music/other.flac','Other','Other Artist','First','',0,NULL),
-             (4,'/music/mix-a.flac','Mix A','Guest A','Compilation','Various Artists',0,NULL),
-             (5,'/music/mix-b.flac','Mix B','Guest B','Compilation','Various Artists',0,NULL),
-             (6,'/music/blank.flac','Blank','Nobody','','',0,NULL),
-             (7,'/music/missing.flac','Missing','Solo','Lost','',0,999999999);",
-        )
-        .unwrap();
-        db
-    }
-
-    fn full_window() -> WindowRange {
-        WindowRange {
-            offset: 0,
-            limit: MAX_WINDOW_LIMIT,
-        }
-    }
-
-    #[test]
-    fn artist_and_album_counts_match_the_grouped_summaries() {
-        let db = seeded_library();
-        // These fixture-sized windows include every grouped summary, while
-        // the response total still comes from the dedicated count query.
-        assert_eq!(
-            query_artist_count(&db).unwrap(),
-            query_artists(&db, full_window()).unwrap().rows.len() as i64
-        );
-        assert_eq!(
-            query_album_count(&db).unwrap(),
-            query_albums(&db, full_window()).unwrap().rows.len() as i64
-        );
-        // Nobody, Other Artist, Solo, Various Artists; the missing "Lost" and
-        // blank-album rows are excluded exactly as in the summaries.
-        assert_eq!(query_artist_count(&db).unwrap(), 4);
-        assert_eq!(query_album_count(&db).unwrap(), 3);
-    }
-
-    #[test]
-    fn album_and_artist_summaries_are_counted_bounded_windows() {
-        let db = seeded_library();
-        let range = WindowRange {
-            offset: 0,
-            limit: 2,
-        };
-
-        let albums = query_albums(&db, range).unwrap();
-        let artists = query_artists(&db, range).unwrap();
-
-        assert_eq!(albums.total, 3);
-        assert_eq!(albums.rows.len(), 2);
-        assert!(albums.has_more);
-        assert_eq!(artists.total, 4);
-        assert_eq!(artists.rows.len(), 2);
-        assert!(artists.has_more);
-    }
-
-    #[test]
-    fn albums_group_by_trimmed_case_insensitive_title_and_effective_artist() {
-        let db = seeded_library();
-
-        assert_eq!(
-            query_albums(&db, full_window()).unwrap().rows,
-            vec![
-                AlbumSummary {
-                    album: "Compilation".into(),
-                    album_artist: "Various Artists".into(),
-                    representative_path: "/music/mix-a.flac".into(),
-                    track_count: 2,
-                    year: None,
-                    total_duration_ms: 0,
-                    max_added_at: 0,
-                    total_play_count: 0,
-                },
-                AlbumSummary {
-                    album: "First".into(),
-                    album_artist: "Other Artist".into(),
-                    representative_path: "/music/other.flac".into(),
-                    track_count: 1,
-                    year: None,
-                    total_duration_ms: 0,
-                    max_added_at: 0,
-                    total_play_count: 0,
-                },
-                AlbumSummary {
-                    album: "First".into(),
-                    album_artist: "Solo".into(),
-                    representative_path: "/music/first-a.flac".into(),
-                    track_count: 2,
-                    year: None,
-                    total_duration_ms: 0,
-                    max_added_at: 0,
-                    total_play_count: 0,
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn albums_query_is_read_only_and_excludes_blank_or_missing_rows() {
-        let db = seeded_library();
-        let conn = db.conn();
-        let changes_before = conn.total_changes();
-
-        let albums = query_albums(&db, full_window()).unwrap().rows;
-
-        assert_eq!(conn.total_changes(), changes_before);
-        assert!(albums.iter().all(|album| !album.album.is_empty()));
-        assert!(albums.iter().all(|album| album.album != "Lost"));
-    }
-
-    #[test]
-    fn album_source_count_window_and_ids_select_the_exact_album_artist_group() {
-        let db = seeded_library();
-        let source = ViewSource::Album {
-            album: "FIRST".into(),
-            album_artist: "solo".into(),
-        };
-
-        assert_eq!(query_track_count(&db, &source, "", &[]).unwrap(), 2);
-        assert_eq!(
-            query_track_window(&db, &source, "title", "desc", "", 0, 20, &[])
-                .unwrap()
-                .into_iter()
-                .map(|track| track.title)
-                .collect::<Vec<_>>(),
-            ["B", "A"]
-        );
-        assert_eq!(
-            query_track_ids(&db, &source, "title", "asc", "A", &[]).unwrap(),
-            [1]
-        );
-    }
-
-    #[test]
-    fn canonical_album_ids_order_disc_then_track_with_stable_null_fallbacks() {
-        let db = crate::db::Db::open_in_memory().unwrap();
-        let conn = db.conn();
-        conn.execute_batch(
-            "INSERT INTO tracks
-               (id,path,title,artist,album,album_artist,disc_no,track_no,added_at,missing_since) VALUES
-             (10,'/music/z.flac','D2T1','Artist','Album','Artist',2,1,0,NULL),
-             (20,'/music/b.flac','D1T2','Artist','Album','Artist',1,2,0,NULL),
-             (30,'/music/c.flac','Legacy T1','Artist','Album','Artist',NULL,1,0,NULL),
-             (40,'/music/d.flac','D1 unknown','Artist','Album','Artist',1,NULL,0,NULL),
-             (50,'/music/a.flac','Legacy unknown','Artist','Album','Artist',NULL,NULL,0,NULL),
-             (60,'/music/first.flac','D1T1','Artist','Album','Artist',1,1,0,NULL),
-             (70,'/music/missing.flac','Missing','Artist','Album','Artist',1,1,0,99);",
-        )
-        .unwrap();
-
-        assert_eq!(
-            query_album_canonical_track_ids(&db, "album", "artist").unwrap(),
-            [30, 60, 20, 50, 40, 10]
-        );
-    }
-
-    #[test]
-    fn artists_group_by_effective_album_artist_with_aggregates() {
-        let db = seeded_library();
-        let artists = query_artists(&db, full_window()).unwrap().rows;
-        let names: Vec<&str> = artists.iter().map(|a| a.artist.as_str()).collect();
-        assert_eq!(
-            names,
-            vec!["Nobody", "Other Artist", "Solo", "Various Artists"]
-        );
-        let solo = artists.iter().find(|a| a.artist == "Solo").unwrap();
-        assert_eq!(solo.track_count, 2);
-        assert_eq!(solo.album_count, 1);
-        assert_eq!(solo.total_plays, 0);
-        let va = artists
-            .iter()
-            .find(|a| a.artist == "Various Artists")
-            .unwrap();
-        assert_eq!(va.track_count, 2);
-        assert_eq!(va.album_count, 1);
-        assert_eq!(va.representative_path, "/music/mix-a.flac");
-    }
-
-    #[test]
-    fn artists_sum_play_count_and_max_last_played_at_across_group_rows() {
-        let db = crate::db::Db::open_in_memory().unwrap();
-        let conn = db.conn();
-        conn.execute_batch(
-            "INSERT INTO tracks
-               (id,path,title,artist,album,album_artist,added_at,play_count,last_played_at) VALUES
-             (1,'/music/a.flac','Track A','Solo','Album','',0,3,100),
-             (2,'/music/b.flac','Track B','Solo','Album','',0,5,200);",
-        )
-        .unwrap();
-
-        let artists = query_artists(&db, full_window()).unwrap().rows;
-        let solo = artists.iter().find(|a| a.artist == "Solo").unwrap();
-
-        // A per-row read (e.g. only the representative row's play_count) or a
-        // MIN/first-value bug would yield 3 or 5, not the summed/maxed value.
-        assert_eq!(solo.total_plays, 8);
-        assert_eq!(solo.last_played_at, 200);
-        assert_eq!(solo.representative_path, "/music/a.flac");
-    }
-
-    #[test]
-    fn artists_query_is_read_only_and_excludes_blank_or_missing_rows() {
-        let db = seeded_library();
-        let conn = db.conn();
-        conn.execute(
-            "INSERT INTO tracks (path,title,artist,album,added_at) \
-             VALUES ('/music/no-artist.flac','No Artist',' ','First',0)",
-            [],
-        )
-        .unwrap();
-        let changes_before = conn.total_changes();
-
-        let artists = query_artists(&db, full_window()).unwrap().rows;
-
-        assert_eq!(conn.total_changes(), changes_before);
-        assert!(artists.iter().all(|artist| !artist.artist.is_empty()));
-        assert_eq!(
-            artists
-                .iter()
-                .find(|artist| artist.artist == "Solo")
-                .unwrap()
-                .track_count,
-            2
-        );
-    }
-
-    #[test]
-    fn artist_source_count_window_and_ids_select_the_exact_artist_group() {
-        let db = seeded_library();
-        let source = ViewSource::Artist(" SOLO ".into());
-
-        assert_eq!(query_track_count(&db, &source, "", &[]).unwrap(), 2);
-        assert_eq!(
-            query_track_window(&db, &source, "title", "desc", "", 0, 20, &[])
-                .unwrap()
-                .into_iter()
-                .map(|track| track.title)
-                .collect::<Vec<_>>(),
-            ["B", "A"]
-        );
-        assert_eq!(
-            query_track_ids(&db, &source, "title", "asc", "A", &[]).unwrap(),
-            [1]
-        );
-    }
-
-    #[test]
-    fn albums_include_year_duration_added_and_play_count_aggregates() {
-        let db = crate::db::Db::open_in_memory().unwrap();
-        let conn = db.conn();
-        conn.execute_batch(
-            "INSERT INTO tracks
-               (id,path,title,artist,album,album_artist,year,duration_ms,added_at,play_count) VALUES
-             (1,'/a.flac','A','Solo','Album','',2020,180000,1000,5),
-             (2,'/b.flac','B','Solo','Album','',2020,240000,2000,3),
-             (3,'/c.flac','C','Solo','Album','',0,120000,500,0);",
-        )
-        .unwrap();
-
-        let albums = super::query_albums(&db, full_window()).unwrap().rows;
-        assert_eq!(albums.len(), 1);
-        let album = &albums[0];
-        assert_eq!(album.year, Some(2020));
-        assert_eq!(album.total_duration_ms, 540000);
-        assert_eq!(album.max_added_at, 2000);
-        assert_eq!(album.total_play_count, 8);
-    }
-
-    #[test]
-    fn artist_source_matches_by_effective_album_artist() {
-        let db = seeded_library();
-        let solo = ViewSource::Artist(" SOLO ".into());
-        assert_eq!(query_track_count(&db, &solo, "", &[]).unwrap(), 2);
-        let va = ViewSource::Artist("Various Artists".into());
-        assert_eq!(query_track_count(&db, &va, "", &[]).unwrap(), 2);
-    }
-
-    #[test]
-    fn artist_albums_are_newest_first() {
-        let db = crate::db::Db::open_in_memory().unwrap();
-        let conn = db.conn();
-        conn.execute_batch(
-            "INSERT INTO tracks (path,title,artist,album,album_artist,year,added_at) VALUES
-             ('/a','A','Solo','Old','Solo',2010,0),
-             ('/b','B','Solo','New','Solo',2024,0);",
-        )
-        .unwrap();
-        let albums = query_artist_detail_albums(&db, "Solo").unwrap();
-        assert_eq!(
-            albums.iter().map(|a| a.album.as_str()).collect::<Vec<_>>(),
-            vec!["New", "Old"]
-        );
-    }
-}
+#[path = "library_views_tests.rs"]
+mod tests;

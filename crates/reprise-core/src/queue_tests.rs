@@ -443,6 +443,71 @@ fn append_tracks_after_exhaustion_does_not_resume_playback_state() {
 }
 
 #[test]
+fn enqueue_into_empty_queue_revives_the_first_pick_and_changes_identity() {
+    let mut q = Queue::new();
+    let before = q.sequence_identity();
+    assert_eq!(q.enqueue(&[10, 20], QueuePlacement::Last), 2);
+    assert_eq!(q.current(), Some(10));
+    assert_eq!(q.remaining_window(0, 10), vec![20]);
+    assert_ne!(q.sequence_identity(), before);
+}
+
+#[test]
+fn enqueue_into_exhausted_queue_revives_at_the_first_new_pick() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![1, 2], 0);
+    q.advance_auto();
+    q.advance_auto();
+    assert_eq!(q.current(), None);
+
+    assert_eq!(q.enqueue(&[3, 4], QueuePlacement::Next), 2);
+    assert_eq!(q.current(), Some(3));
+    assert_eq!(q.remaining_window(0, 10), vec![4]);
+}
+
+#[test]
+fn enqueue_next_uses_play_order_while_shuffle_stays_enabled() {
+    fastrand::seed(17);
+    let mut q = Queue::new();
+    q.set_tracks(vec![1, 2, 3, 4, 5], 0);
+    q.set_shuffle(true);
+    let before = q.ids_in_order();
+
+    q.enqueue(&[90, 91], QueuePlacement::Next);
+
+    assert_eq!(&q.ids_in_order()[..3], &[before[0], 90, 91]);
+    assert!(q.is_shuffled());
+}
+
+#[test]
+fn later_enqueue_next_batch_precedes_the_earlier_batch() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![1, 2, 3], 0);
+    q.enqueue(&[4, 5], QueuePlacement::Next);
+    q.enqueue(&[6, 7], QueuePlacement::Next);
+    assert_eq!(q.ids_in_order(), vec![1, 6, 7, 4, 5, 2, 3]);
+}
+
+#[test]
+fn enqueue_last_keeps_duplicates_at_the_play_order_tail() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![1, 2, 3], 1);
+    assert_eq!(q.enqueue(&[4, 4], QueuePlacement::Last), 2);
+    assert_eq!(q.current(), Some(2));
+    assert_eq!(q.ids_in_order(), vec![1, 2, 3, 4, 4]);
+}
+
+#[test]
+fn enqueue_empty_slice_is_an_identity_preserving_no_op() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![1, 2], 0);
+    let before = q.sequence_identity();
+    assert_eq!(q.enqueue(&[], QueuePlacement::Next), 0);
+    assert_eq!(q.ids_in_order(), vec![1, 2]);
+    assert_eq!(q.sequence_identity(), before);
+}
+
+#[test]
 fn ids_in_order_matches_linear_order_when_unshuffled() {
     let mut q = Queue::new();
     q.set_tracks(vec![10, 20, 30], 0);

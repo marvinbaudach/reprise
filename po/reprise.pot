@@ -1561,8 +1561,8 @@ msgstr ""
 msgid "Return to the results and choose another review filter."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:72
-msgid "None"
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:71
+msgid "Select all visible changes"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:73
@@ -3200,18 +3200,6 @@ msgstr ""
 msgid "Unsubscribe"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:166
-msgid "Sync downloaded episodes to phone"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:167
-msgid "Stop syncing episodes to phone"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:168
-msgid "Sync downloaded episodes to devices"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:169
 msgid "Load more"
 msgstr ""
@@ -3477,11 +3465,6 @@ msgstr ""
 msgid "Unsubscribe from “{show}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:489
-#, rust-format
-msgid "Sync downloaded episodes to “{device}”"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:505
 #, rust-format
 msgid "{shown} of {available} · {downloaded} downloaded · {size}"
@@ -3490,11 +3473,6 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:520
 #, rust-format
 msgid "{summary} · {count} selected"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:527
-#, rust-format
-msgid "Stop syncing episodes to “{device}”"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:533
@@ -5006,6 +4984,7 @@ msgstr ""
 msgid "Filter sync content"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
 msgid "Select all"
 msgstr ""

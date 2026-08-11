@@ -64,8 +64,8 @@ enum Recorded {
 
 type Calls = Arc<Mutex<Vec<Recorded>>>;
 use reprise_runtime_protocol::device_sync::{
-    DeviceCategorySnapshot, DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot,
-    DeviceSourceSelection, DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
+    DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSelection,
+    DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot, DeviceTargetSnapshot,
 };
 use reprise_runtime_protocol::queue::{QueueItem, QueueSnapshot};
 use reprise_runtime_protocol::PROTOCOL_VERSION;
@@ -290,20 +290,17 @@ impl DeviceSyncStub {
             },
             current_track: "Sun//Eater — Lorna Shore".into(),
             last_synced_at: Some(1_721_234_890),
-            categories: vec![DeviceCategorySnapshot {
-                kind: "podcast_episodes".into(),
-                target_path: "/Podcasts/Reprise".into(),
+            target: DeviceTargetSnapshot {
+                target_path: "/Music/Reprise".into(),
                 target_enabled: true,
                 size_on_device_bytes: 1_024,
-                cap_bytes: Some(4_294_967_296),
                 reading_kind: "diff".into(),
                 files_to_copy: 2,
                 bytes_to_copy: 512,
                 files_to_remove: 1,
                 bytes_freed: 256,
-                files_waiting_for_download: 3,
                 playlists_rewritten: 0,
-            }],
+            },
         }]
     }
 
@@ -485,8 +482,12 @@ fn device_sync_state_and_commands_round_trip_without_internal_identity() {
     assert_eq!(body["devices"][0]["progress"]["bytes_per_second"], 10);
     assert_eq!(body["devices"][0]["controls"]["can_cancel"], true);
     assert_eq!(body["devices"][0]["controls"]["can_eject"], false);
+    assert_eq!(
+        body["devices"][0]["target"]["target_path"],
+        "/Music/Reprise"
+    );
     assert!(!state.to_string().contains("serial"));
-    assert!(!state.to_string().contains("path"));
+    assert!(!state.to_string().contains("source_path"));
 
     for params in [
         json!({

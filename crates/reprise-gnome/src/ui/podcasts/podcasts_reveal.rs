@@ -238,7 +238,6 @@ mod tests {
             author: None,
             image_url: None,
             kind: PodcastKind::Youtube,
-            sync_to_phone: false,
             episodes: episode_ids
                 .iter()
                 .map(|id| episode(*id, subscription_id))

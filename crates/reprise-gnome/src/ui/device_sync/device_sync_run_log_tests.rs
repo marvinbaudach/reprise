@@ -185,10 +185,8 @@ fn rejecting_a_start_maps_every_error_to_a_closed_run() {
     });
 }
 
-/// The call-site half. `start_transfer_now` is entered with an already-open
-/// run whenever a preparation download finishes, and by then the device may be
-/// gone — the exact window this task opened by moving `RunLog::open` earlier.
-/// Asserting on the recorded outcome, not on "it did not panic".
+/// `start_transfer_now` must close an already-open run when its device has
+/// disappeared. Assert the recorded outcome, not merely that it did not panic.
 #[test]
 fn start_transfer_now_closes_the_open_run_when_the_device_is_gone() {
     run(async {
@@ -207,8 +205,8 @@ fn start_transfer_now_closes_the_open_run_when_the_device_is_gone() {
                 planned: 0,
             },
         );
-        // "b" is not connected — the same shape as a phone unplugged during
-        // its preparation download.
+        // "b" is not connected — the same shape as a phone unplugged after
+        // the run log opened.
         let error = runtime
             .start_transfer_now("b", SyncInitiator::Listener, log)
             .expect_err("an absent device must not start a transfer");
@@ -220,7 +218,7 @@ fn start_transfer_now_closes_the_open_run_when_the_device_is_gone() {
         assert_eq!(
             latest.outcome,
             reprise_core::device_sync::sync_log::RunOutcome::Cancelled,
-            "the run opened before preparation must be closed, not abandoned"
+            "the open run must be closed, not abandoned"
         );
         assert!(latest.finished_at.is_some(), "no dangling running row");
     });

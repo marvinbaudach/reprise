@@ -12,10 +12,9 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::device_sync::browser::{
-    folder_conflicts_with_playlist_target, preview_target_folder, reset_target_folder,
-    StorageOption, TargetPreview,
+    preview_target_folder, reset_target_folder, StorageOption, TargetPreview,
 };
-use reprise_core::device_sync::{StorageId, SyncTarget, SyncTargetKind};
+use reprise_core::device_sync::{StorageId, SyncTarget};
 
 use super::device_sync_runtime::DeviceSyncRuntime;
 use super::device_sync_strings;
@@ -27,31 +26,25 @@ type NavigateFn = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
 struct BrowserState {
     original: SyncTarget,
-    playlist_target: Option<SyncTarget>,
     storages: Vec<StorageOption>,
     storage: Option<StorageId>,
     path: String,
 }
 
-/// Opens the folder browser for `kind` on `device_id`, relative to
+/// Opens the playlists folder browser on `device_id`, relative to
 /// `parent`. A no-op if the device disconnected between the click and this
 /// call — there is nothing left to browse.
 pub(in crate::ui) fn present(
     parent: &impl IsA<gtk4::Widget>,
     runtime: &Rc<DeviceSyncRuntime>,
     device_id: &str,
-    kind: SyncTargetKind,
 ) {
-    let Some(original) = runtime.current_target(device_id, kind) else {
+    let Some(original) = runtime.current_target(device_id) else {
         return;
     };
-    let playlist_target = (kind != SyncTargetKind::Playlists)
-        .then(|| runtime.current_target(device_id, SyncTargetKind::Playlists))
-        .flatten();
 
     let state = Rc::new(RefCell::new(BrowserState {
         original: original.clone(),
-        playlist_target,
         storages: Vec::new(),
         storage: original.storage_id,
         path: original.path.clone(),
@@ -91,14 +84,6 @@ pub(in crate::ui) fn present(
     new_folder_row.append(&new_folder_button);
 
     let preview_label = detail_label("");
-    let warning_label = gtk4::Label::new(None);
-    warning_label.set_xalign(0.0);
-    warning_label.set_wrap(true);
-    let warning_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    warning_box.add_css_class("warning");
-    warning_box.set_visible(false);
-    warning_box.append(&warning_label);
-
     let error_label = gtk4::Label::new(None);
     error_label.set_xalign(0.0);
     error_label.set_wrap(true);
@@ -122,7 +107,6 @@ pub(in crate::ui) fn present(
     content.append(&folder_scroller);
     content.append(&new_folder_row);
     content.append(&error_box);
-    content.append(&warning_box);
     content.append(&preview_label);
     let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     footer.append(&reset_button);
@@ -135,10 +119,7 @@ pub(in crate::ui) fn present(
 
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new(
-        &format!(
-            "Choose folder for {}",
-            device_sync_strings::category_name(kind)
-        ),
+        &device_sync_strings::text(device_sync_strings::CHOOSE_PLAYLIST_FOLDER),
         "",
     )));
     let toolbar = adw::ToolbarView::new();
@@ -170,8 +151,6 @@ pub(in crate::ui) fn present(
         let breadcrumb = breadcrumb.clone();
         let up_button = up_button.clone();
         let preview_label = preview_label.clone();
-        let warning_box = warning_box.clone();
-        let warning_label = warning_label.clone();
         let error_box = error_box.clone();
         let error_label = error_label.clone();
         let new_folder_entry = new_folder_entry.clone();
@@ -187,12 +166,7 @@ pub(in crate::ui) fn present(
             up_button.set_sensitive(path != "/");
             new_folder_entry.set_sensitive(true);
             new_folder_button.set_sensitive(true);
-            refresh_preview_and_warning(
-                &state.borrow(),
-                &preview_label,
-                &warning_box,
-                &warning_label,
-            );
+            refresh_preview(&state.borrow(), &preview_label);
             while let Some(child) = folder_list.first_child() {
                 folder_list.remove(&child);
             }
@@ -342,8 +316,6 @@ pub(in crate::ui) fn present(
         let new_folder_entry = new_folder_entry.clone();
         let new_folder_button = new_folder_button.clone();
         let preview_label = preview_label.clone();
-        let warning_box = warning_box.clone();
-        let warning_label = warning_label.clone();
         let error_box = error_box.clone();
         let folder_list = folder_list.clone();
         let generation = generation.clone();
@@ -366,12 +338,7 @@ pub(in crate::ui) fn present(
             while let Some(child) = folder_list.first_child() {
                 folder_list.remove(&child);
             }
-            refresh_preview_and_warning(
-                &state.borrow(),
-                &preview_label,
-                &warning_box,
-                &warning_label,
-            );
+            refresh_preview(&state.borrow(), &preview_label);
         }
     });
 
@@ -395,7 +362,7 @@ pub(in crate::ui) fn present(
                 let state = state.borrow();
                 (state.storage, state.path.clone())
             };
-            let result = runtime.set_target_folder(&device_id, kind, storage, path);
+            let result = runtime.set_target_folder(&device_id, storage, path);
             let error_label = error_label.clone();
             let error_box = error_box.clone();
             let dialog = dialog.clone();
@@ -414,12 +381,7 @@ pub(in crate::ui) fn present(
         }
     });
 
-    refresh_preview_and_warning(
-        &state.borrow(),
-        &preview_label,
-        &warning_box,
-        &warning_label,
-    );
+    refresh_preview(&state.borrow(), &preview_label);
     dialog.present(Some(parent));
 
     let load_storages = {
@@ -552,14 +514,9 @@ fn folder_row(name: &str) -> gtk4::ListBoxRow {
     row
 }
 
-/// Pure display logic behind the preview label and the warning banner —
-/// kept separate from the widgets so it is unit-tested without a display.
-fn refresh_preview_and_warning(
-    state: &BrowserState,
-    preview_label: &gtk4::Label,
-    warning_box: &gtk4::Box,
-    warning_label: &gtk4::Label,
-) {
+/// Pure display logic behind the preview label — kept separate from the
+/// widgets so it is unit-tested without a display.
+fn refresh_preview(state: &BrowserState, preview_label: &gtk4::Label) {
     let candidate = SyncTarget {
         storage_id: state.storage,
         path: state.path.clone(),
@@ -569,17 +526,6 @@ fn refresh_preview_and_warning(
         &candidate,
         &state.storages,
     )));
-    let conflicts = state.playlist_target.as_ref().is_some_and(|playlist| {
-        folder_conflicts_with_playlist_target(state.storage, &state.path, playlist)
-    });
-    warning_box.set_visible(conflicts);
-    if conflicts {
-        warning_label.set_label(
-            "This folder is inside the Playlists folder, which removes anything Reprise \
-             does not recognize on its own. Files copied here for this category could be \
-             deleted by a playlist sync.",
-        );
-    }
 }
 
 /// `MTP-31`: the target preview's exact copy for each resolution state.

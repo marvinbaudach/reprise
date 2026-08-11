@@ -93,7 +93,7 @@ pub(in crate::ui) fn build(
         selection: selection.clone(),
         column_view: column_view.clone(),
         scrolled: scrolled.clone(),
-        last_row_height: Cell::new(0.0),
+        list_geometry_cache: crate::ui::list_geometry::ListGeometryCache::default(),
         playing_track_id: Cell::new(None),
         track_reveal_generation: Cell::new(0),
         track_reveal_pending: Cell::new(false),

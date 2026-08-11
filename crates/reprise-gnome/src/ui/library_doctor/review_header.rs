@@ -9,6 +9,21 @@ use crate::ui::strings;
 
 pub(super) type OnSelect = Rc<dyn Fn(&[DoctorReviewRowId], bool)>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct MasterCheckState {
+    pub(super) active: bool,
+    pub(super) inconsistent: bool,
+    pub(super) sensitive: bool,
+}
+
+pub(super) fn master_check_state(selected: usize, selectable: usize) -> MasterCheckState {
+    MasterCheckState {
+        active: selectable > 0 && selected == selectable,
+        inconsistent: selected > 0 && selected < selectable,
+        sensitive: selectable > 0,
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct ReviewColumnGroups {
     pub(super) selection: gtk4::SizeGroup,
@@ -59,18 +74,44 @@ impl ReviewColumnGroups {
 
 pub(super) struct ReviewHeader {
     pub(super) root: gtk4::Box,
+    pub(super) labels: gtk4::Box,
+    pub(super) select_all: gtk4::CheckButton,
+    pub(super) select_all_label: gtk4::Label,
     pub(super) groups: ReviewColumnGroups,
 }
 
 impl ReviewHeader {
     pub(super) fn new() -> Self {
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        root.set_margin_start(12);
-        root.set_margin_end(12);
+        root.set_margin_start(28);
+        root.set_margin_end(28);
         root.add_css_class("dim-label");
         let groups = ReviewColumnGroups::new();
+
+        let select_all = gtk4::CheckButton::new();
+        select_all.set_size_request(16, 16);
+        select_all.add_css_class("doctor-album-check");
+        select_all.add_css_class("doctor-review-select-all");
+        select_all.set_tooltip_text(Some(&strings::text(strings::DOCTOR_SELECT_ALL_VISIBLE)));
+        select_all.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::DOCTOR_SELECT_ALL_VISIBLE,
+        ))]);
+        // a11y-semantics: role=checkbox name=select-all-visible state=selection action=toggle
+        select_all.set_focusable(true);
+        groups.selection.add_widget(&select_all);
+        root.append(&select_all);
+
+        let select_all_label = gtk4::Label::builder()
+            .label(strings::text(strings::DOCTOR_SELECT_ALL))
+            .xalign(0.0)
+            .visible(false)
+            .css_classes(["caption"])
+            .build();
+        root.append(&select_all_label);
+
+        let labels = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        labels.set_hexpand(true);
         for (group, text) in [
-            (&groups.selection, ""),
             (&groups.track, strings::DOCTOR_TRACK),
             (&groups.field, strings::DOCTOR_FIELD),
             (&groups.current, strings::DOCTOR_CURRENT),
@@ -90,9 +131,17 @@ impl ReviewHeader {
                 .css_classes(["caption"])
                 .build();
             group.add_widget(&label);
-            root.append(&label);
+            labels.append(&label);
         }
-        Self { root, groups }
+        root.append(&labels);
+
+        Self {
+            root,
+            labels,
+            select_all,
+            select_all_label,
+            groups,
+        }
     }
 }
 
@@ -154,8 +203,9 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
     let checkbox = gtk4::CheckButton::new();
     checkbox.set_size_request(16, 16);
     checkbox.add_css_class("doctor-album-check");
-    checkbox.set_active(selected == row_ids.len() && !row_ids.is_empty());
-    checkbox.set_inconsistent(selected > 0 && selected < row_ids.len());
+    let check_state = master_check_state(selected, total);
+    checkbox.set_active(check_state.active);
+    checkbox.set_inconsistent(check_state.inconsistent);
     checkbox.update_property(&[gtk4::accessible::Property::Label(
         &strings::doctor_change_count(row_ids.len()),
     )]);
@@ -249,6 +299,43 @@ fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn doc_3c_the_master_check_mirrors_the_visible_selection() {
+        use super::MasterCheckState;
+        assert_eq!(
+            super::master_check_state(0, 0),
+            MasterCheckState {
+                active: false,
+                inconsistent: false,
+                sensitive: false,
+            }
+        );
+        assert_eq!(
+            super::master_check_state(0, 4),
+            MasterCheckState {
+                active: false,
+                inconsistent: false,
+                sensitive: true,
+            }
+        );
+        assert_eq!(
+            super::master_check_state(2, 4),
+            MasterCheckState {
+                active: false,
+                inconsistent: true,
+                sensitive: true,
+            }
+        );
+        assert_eq!(
+            super::master_check_state(4, 4),
+            MasterCheckState {
+                active: true,
+                inconsistent: false,
+                sensitive: true,
+            }
+        );
+    }
+
     #[test]
     fn doc_9b_a_fully_deselected_album_says_none_selected() {
         assert_eq!(super::album_change_count(2, 0), "2 changes · none selected");

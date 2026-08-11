@@ -16,6 +16,13 @@ pub enum Repeat {
     One,
 }
 
+/// Where an explicitly enqueued track belongs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueuePlacement {
+    Next,
+    Last,
+}
+
 static NEXT_QUEUE_LINEAGE: AtomicU64 = AtomicU64::new(1);
 
 /// Queue state: tracks, playback order (possibly shuffled), current position, and repeat mode.
@@ -372,6 +379,33 @@ impl Queue {
             self.pos = Some(0);
         }
         self.note_sequence_changed();
+    }
+
+    /// Enqueues explicit user picks and returns how many were taken. Never
+    /// starts playback.
+    ///
+    /// Unlike [`Self::append_tracks`], this revives an exhausted queue: an
+    /// explicit user action must not evaporate.
+    pub fn enqueue(&mut self, new_ids: &[i64], placement: QueuePlacement) -> usize {
+        if new_ids.is_empty() {
+            return 0;
+        }
+
+        let first_new_slot = self.ids.len();
+        let insertion = match placement {
+            QueuePlacement::Next => self.pos.map_or(self.order.len(), |pos| pos + 1),
+            QueuePlacement::Last => self.order.len(),
+        };
+        self.ids.extend_from_slice(new_ids);
+        self.order.splice(
+            insertion..insertion,
+            first_new_slot..first_new_slot + new_ids.len(),
+        );
+        if self.pos.is_none() {
+            self.pos = Some(insertion);
+        }
+        self.note_sequence_changed();
+        new_ids.len()
     }
 
     /// Moves the track at `order` index `from` to index `to` (Stage 3 Task 6:

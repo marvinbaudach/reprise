@@ -36,7 +36,11 @@ class NowPlayingQueueTest {
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalPlaybackControls provides controls) {
-                    NowPlayingQueuePage(playback, MobileSurfaceViewModel())
+                    NowPlayingQueuePage(
+                        playback,
+                        MobileSurfaceViewModel(),
+                        SurfaceLayout.STACKED,
+                    )
                 }
             }
         }

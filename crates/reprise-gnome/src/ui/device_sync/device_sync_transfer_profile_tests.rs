@@ -21,7 +21,6 @@ fn save_profile(
             // `MTP-30`: these tests drive `sync_now` manually and must not
             // race an automatic start on connect.
             sync_automatically: false,
-            prepare_before_sync: true,
         },
     )
     .unwrap();

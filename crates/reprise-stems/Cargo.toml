@@ -5,11 +5,12 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-# MIT. The heavy ML runtime (onnxruntime, via `ort`) is MIT OR Apache-2.0 and
+# GPL-3.0-or-later, inherited from the workspace. The heavy ML runtime
+# (onnxruntime, via `ort`) is MIT OR Apache-2.0 and
 # the htdemucs weights are MIT (Meta) — cleared against LICENSING.md by the
 # package E spike (docs/research/stem-separation-runtime.md). The pure-Rust
 # audio codecs are permissive too; see the module docs in `src/lib.rs`.
-license = "MIT"
+license.workspace = true
 
 [dependencies]
 # The engine whose `StemSeparationBackend` contract this crate implements.

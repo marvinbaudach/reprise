@@ -17,6 +17,8 @@ import uniffi.reprise_android_ffi.AndroidPlaybackSession
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+import uniffi.reprise_android_ffi.AndroidTrashReport
+import uniffi.reprise_android_ffi.TrashAction
 
 /** Owns Media3 for background playback, notifications and external controls. */
 open class ReprisePlaybackService : MediaSessionService() {
@@ -205,6 +207,10 @@ open class ReprisePlaybackService : MediaSessionService() {
         )
     }
 
+    internal open fun playTrackIds(trackIds: List<Long>, startIndex: Int) {
+        coreSession().playTrackIds(trackIds, startIndex.toULong())
+    }
+
     internal fun togglePause() {
         coreSession().togglePause()
     }
@@ -254,6 +260,17 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     internal fun removeUpcomingTrack(position: Int, expectedTrackId: Long): Boolean =
         coreSession().removeUpcomingTrack(position.toULong(), expectedTrackId)
+
+    internal open fun queueTracksNext(trackIds: List<Long>): UInt =
+        coreSession().queueTracksNext(trackIds)
+
+    internal open fun queueTracksLast(trackIds: List<Long>): UInt =
+        coreSession().queueTracksLast(trackIds)
+
+    internal open fun trashTracks(
+        trackIds: List<Long>,
+        action: TrashAction,
+    ): AndroidTrashReport = coreSession().trashTracks(trackIds, action)
 
     private fun coreSession(): AndroidPlaybackSession = checkNotNull(coreSession) {
         "Core playback session is not ready"

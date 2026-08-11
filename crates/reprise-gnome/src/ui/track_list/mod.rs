@@ -16,6 +16,8 @@ pub(crate) mod queue_row_mapping {
         QueueRow,
     };
 }
+#[cfg(test)]
+mod queue_section_header_display_tests;
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
 pub(in crate::ui) mod rating_cell_refresh;

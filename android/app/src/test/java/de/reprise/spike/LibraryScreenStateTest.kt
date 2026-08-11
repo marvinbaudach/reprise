@@ -341,8 +341,24 @@ private class RecordingLibrarySessionPort(
         return completeTestWindow(emptyList())
     }
 
+    override fun searchAlbums(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> {
+        operations += "search-albums:$text:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
+    }
+
     override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> {
         operations += "artists:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
+    }
+
+    override fun searchArtists(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryArtist> {
+        operations += "search-artists:$text:${window.offset}:${window.limit}"
         return completeTestWindow(emptyList())
     }
 
@@ -359,11 +375,21 @@ private class RecordingLibrarySessionPort(
         return completeTestWindow(favouriteTracks)
     }
 
+    override fun searchFavourites(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "search-favourites:$text:${window.offset}:${window.limit}"
+        return completeTestWindow(favouriteTracks)
+    }
+
     override fun listAlbumTracks(
         album: String,
         albumArtist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
+
+    override fun albumTrackIds(album: String, albumArtist: String): List<Long> = emptyList()
 
     override fun trackById(trackId: Long): LibraryTrack? = tracks.firstOrNull { it.id == trackId }
 

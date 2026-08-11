@@ -25,7 +25,6 @@ struct ConnectivityTargets {
     podcasts: Weak<crate::ui::podcasts::PodcastsView>,
     youtube: Weak<crate::ui::podcasts::PodcastsView>,
     radio: Weak<crate::ui::radio::RadioView>,
-    device_sync: Weak<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
 }
 
 impl ConnectivityTargets {
@@ -35,7 +34,6 @@ impl ConnectivityTargets {
         podcasts: &Rc<crate::ui::podcasts::PodcastsView>,
         youtube: &Rc<crate::ui::podcasts::PodcastsView>,
         radio: &Rc<crate::ui::radio::RadioView>,
-        device_sync: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
     ) -> Self {
         Self {
             concerts: Rc::downgrade(concerts),
@@ -43,11 +41,10 @@ impl ConnectivityTargets {
             podcasts: Rc::downgrade(podcasts),
             youtube: Rc::downgrade(youtube),
             radio: Rc::downgrade(radio),
-            device_sync: Rc::downgrade(device_sync),
         }
     }
 
-    fn project(&self, connectivity: Connectivity, metered: bool) {
+    fn project(&self, connectivity: Connectivity) {
         if let Some(view) = self.concerts.upgrade() {
             view.set_connectivity(connectivity);
         }
@@ -62,10 +59,6 @@ impl ConnectivityTargets {
         }
         if let Some(view) = self.radio.upgrade() {
             view.set_connectivity(connectivity);
-        }
-        if let Some(runtime) = self.device_sync.upgrade() {
-            runtime.set_connectivity(connectivity);
-            runtime.set_metered(metered);
         }
     }
 }
@@ -84,7 +77,7 @@ fn wire_test_connectivity(targets: ConnectivityTargets) -> bool {
         );
     }
     let initial = initial.unwrap_or(Connectivity::Online);
-    targets.project(initial, false);
+    targets.project(initial);
     let last = Cell::new(initial);
     gtk4::glib::timeout_add_local(Duration::from_millis(100), move || {
         let next = reprise_core::connectivity::read_test_connectivity(&path);
@@ -95,7 +88,7 @@ fn wire_test_connectivity(targets: ConnectivityTargets) -> bool {
             return gtk4::glib::ControlFlow::Continue;
         }
         last.set(next);
-        targets.project(next, false);
+        targets.project(next);
         gtk4::glib::ControlFlow::Continue
     });
     true
@@ -104,9 +97,7 @@ fn wire_test_connectivity(targets: ConnectivityTargets) -> bool {
 /// Projects `gio::NetworkMonitor` at the window boundary and pushes the result
 /// into every seam that needs it. `NET-3a` requires *connectivity* to be an
 /// explicitly set value rather than something each consumer infers where it
-/// stands, and this is the only place that derives it; device sync is included
-/// for exactly that reason — it used to read the monitor itself, which is the
-/// drift this projection exists to stop.
+/// stands, and this is the only place that derives it.
 ///
 /// One direct reader remains and is deliberate: `podcast_refresh_scheduler`
 /// asks for `is_network_metered()` at the moment it decides whether to start an
@@ -119,44 +110,19 @@ pub(super) fn wire(
     podcasts: &Rc<crate::ui::podcasts::PodcastsView>,
     youtube: &Rc<crate::ui::podcasts::PodcastsView>,
     radio: &Rc<crate::ui::radio::RadioView>,
-    device_sync: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
 ) {
-    let targets =
-        ConnectivityTargets::new(concerts, releases, podcasts, youtube, radio, device_sync);
+    let targets = ConnectivityTargets::new(concerts, releases, podcasts, youtube, radio);
     #[cfg(feature = "test-fixtures")]
     if wire_test_connectivity(targets.clone()) {
         return;
     }
     let monitor = gio::NetworkMonitor::default();
     let initial = connectivity_for(monitor.is_network_available());
-    targets.project(initial, monitor.is_network_metered());
-    monitor.connect_network_changed(move |monitor, available| {
+    targets.project(initial);
+    monitor.connect_network_changed(move |_monitor, available| {
         let connectivity = connectivity_for(available);
-        // `MTP-43` reads metered separately, and it changes on the same
-        // signal — tethering after Wi-Fi drops is one network change, not
-        // two, so device sync must not be left believing the old answer.
-        targets.project(connectivity, monitor.is_network_metered());
+        targets.project(connectivity);
     });
-}
-
-/// `MTP-46`/`SET-4`: the two source-module switches live in Preferences but
-/// change what a device may sync, and the device page renders from a snapshot
-/// that only a recompute refreshes. Without this the row of a switched-off
-/// source stays until something unrelated triggers one.
-///
-/// The runtime is held weakly: the preferences context outlives it in no
-/// meaningful sense, and a strong cycle through this closure would keep both
-/// alive for the life of the process.
-pub(super) fn wire_source_module_recompute(
-    preferences: &Rc<crate::ui::preferences::PreferencesContext>,
-    device_sync: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
-) {
-    let device_sync = Rc::downgrade(device_sync);
-    *preferences.on_source_modules_changed.borrow_mut() = Some(Rc::new(move || {
-        if let Some(device_sync) = device_sync.upgrade() {
-            device_sync.recompute_all_devices();
-        }
-    }));
 }
 
 #[cfg(test)]

@@ -13,10 +13,15 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class BrowseSurfaceTest {
     @Test
     fun seekDragOwnsTheHeadUntilRelease() {
@@ -243,8 +248,12 @@ class BrowseSurfaceTest {
         val artwork = TrackArtwork(
             resolve = { _, _ ->
                 resolvingThread.set(Thread.currentThread())
-                null
+                throw IllegalStateException("synthetic failed artwork read")
             },
+            fallback = { _, _, _ ->
+                android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ARGB_8888)
+            },
+            cache = ArtworkCache(),
             onMainThread = { work ->
                 mainThreadWork.set(work)
                 deliveryScheduled.countDown()
@@ -328,7 +337,7 @@ fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
 }
 
 @Test
-fun libraryFrameUsesTheExactTwoAMetricsAndAllFourBrowseDestinations() {
+fun libraryFrameUsesTheExactTwoAMetricsAndAllFiveBrowseDestinations() {
     assertEquals(
         LibraryFrameMetrics(
             filterChipHeightDp = 32,
@@ -340,7 +349,13 @@ fun libraryFrameUsesTheExactTwoAMetricsAndAllFourBrowseDestinations() {
         libraryFrameMetrics,
     )
     assertEquals(
-        listOf(BrowseTab.TITLES, BrowseTab.ARTISTS, BrowseTab.ALBUMS, BrowseTab.FAVOURITES),
+        listOf(
+            BrowseTab.TITLES,
+            BrowseTab.ARTISTS,
+            BrowseTab.ALBUMS,
+            BrowseTab.FAVOURITES,
+            BrowseTab.QUEUE,
+        ),
         libraryDestinations,
     )
 }
@@ -436,6 +451,34 @@ fun titleSearchDelegatesTheLiteralTextToTheCorePort() {
 
     assertEquals(returnedWindow, tracks)
     assertEquals(listOf("search: folk :0:200"), port.operations)
+}
+
+@Test
+fun browseSearchesDelegateLiteralTextAndWindowToTheirPortMethods() {
+    val port = RecordingBrowsePort()
+    val session = LibrarySession(port)
+    val window = LibraryWindowRange(offset = 200, limit = 75)
+
+    session.searchAlbums(" slow ", window)
+    session.searchArtists(" slow ", window)
+    session.searchFavourites(" slow ", window)
+
+    assertEquals(
+        listOf(
+            "search-albums: slow :200:75",
+            "search-artists: slow :200:75",
+            "search-favourites: slow :200:75",
+        ),
+        port.operations,
+    )
+}
+
+@Test
+fun emptyBrowseMessagesNameTheFilteredDestination() {
+    assertEquals("No matching titles.", BrowseTab.TITLES.emptyMessage("slow"))
+    assertEquals("No matching albums.", BrowseTab.ALBUMS.emptyMessage("slow"))
+    assertEquals("No matching artists.", BrowseTab.ARTISTS.emptyMessage("slow"))
+    assertEquals("No matching favourites.", BrowseTab.FAVOURITES.emptyMessage("slow"))
 }
 
 @Test
@@ -541,8 +584,24 @@ private class RecordingBrowsePort(
         return albums
     }
 
+    override fun searchAlbums(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> {
+        operations += "search-albums:$text:${window.offset}:${window.limit}"
+        return albums
+    }
+
     override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> {
         operations += "artists:${window.offset}:${window.limit}"
+        return artists
+    }
+
+    override fun searchArtists(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryArtist> {
+        operations += "search-artists:$text:${window.offset}:${window.limit}"
         return artists
     }
 
@@ -559,6 +618,14 @@ private class RecordingBrowsePort(
         return favourites
     }
 
+    override fun searchFavourites(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "search-favourites:$text:${window.offset}:${window.limit}"
+        return favourites
+    }
+
     override fun listAlbumTracks(
         album: String,
         albumArtist: String,
@@ -567,6 +634,9 @@ private class RecordingBrowsePort(
         operations += "album:$album:$albumArtist:${window.offset}:${window.limit}"
         return albumTracks
     }
+
+    override fun albumTrackIds(album: String, albumArtist: String): List<Long> =
+        albumTracks.rows.map(LibraryTrack::id)
 
     override fun trackById(trackId: Long): LibraryTrack? =
         titleResults.values.asSequence().flatMap { it.rows }.firstOrNull { it.id == trackId }

@@ -4,15 +4,13 @@ use reprise_core::device_sync::settings::{
     list_remembered_devices, load_or_create_settings, rekey_legacy_device, save_settings,
     LegacyDeviceRekey,
 };
-use reprise_core::device_sync::{
-    load_or_create_targets, DeviceSettings, SyncTarget, SyncTargetKind,
-};
+use reprise_core::device_sync::{load_or_create_target, DeviceSettings, SyncTarget};
 use reprise_platform_linux::device_sync::DeviceDescriptor;
 
 pub(super) struct RememberedDeviceMemory {
     pub(super) descriptor: DeviceDescriptor,
     pub(super) settings: DeviceSettings,
-    pub(super) targets: [SyncTarget; 3],
+    pub(super) target: SyncTarget,
     pub(super) last_verified_at: Option<i64>,
     pub(super) size_on_device_bytes: Option<u64>,
 }
@@ -27,7 +25,7 @@ pub(super) fn load_remembered_device_memories(
             let settings =
                 load_or_create_settings(db, &remembered.stable_id, &remembered.local_name)
                     .map_err(|error| error.to_string())?;
-            let targets = load_or_create_targets(db, &remembered.stable_id)
+            let target = load_or_create_target(db, &remembered.stable_id)
                 .map_err(|error| error.to_string())?;
             Ok(RememberedDeviceMemory {
                 descriptor: DeviceDescriptor {
@@ -39,7 +37,7 @@ pub(super) fn load_remembered_device_memories(
                     icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
                 },
                 settings,
-                targets,
+                target,
                 last_verified_at: remembered.last_verified_at,
                 size_on_device_bytes: remembered.size_on_device_bytes,
             })
@@ -50,11 +48,11 @@ pub(super) fn load_remembered_device_memories(
 pub(super) fn load_device_memory(
     db: &Db,
     descriptor: &DeviceDescriptor,
-) -> Result<(DeviceSettings, [SyncTarget; 3]), String> {
+) -> Result<(DeviceSettings, SyncTarget), String> {
     let Some(stable_id) = descriptor.persistent_id.as_deref() else {
         return Ok((
             DeviceSettings::transient(&descriptor.id, &descriptor.name),
-            SyncTargetKind::ALL.map(SyncTarget::default_for),
+            SyncTarget::default(),
         ));
     };
     if descriptor.root_uri.starts_with("mtp://") {
@@ -78,8 +76,8 @@ pub(super) fn load_device_memory(
     let mut settings = load_or_create_settings(db, stable_id, &descriptor.name)
         .map_err(|error| error.to_string())?;
     adopt_detected_device_name(db, &mut settings, descriptor)?;
-    let targets = load_or_create_targets(db, stable_id).map_err(|error| error.to_string())?;
-    Ok((settings, targets))
+    let target = load_or_create_target(db, stable_id).map_err(|error| error.to_string())?;
+    Ok((settings, target))
 }
 
 /// Refreshes a name that was only ever seeded, never chosen.
