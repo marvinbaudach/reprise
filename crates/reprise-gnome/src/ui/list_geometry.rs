@@ -4,9 +4,8 @@
 //! allocation frame. The adjustment quotient is therefore trusted only when
 //! it agrees with an independently measured, uniform set of bound row widgets.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
 use gtk4::glib::prelude::{Cast, ObjectExt};
 use gtk4::prelude::{AdjustmentExt, ScrollableExt, WidgetExt};
@@ -267,37 +266,33 @@ impl ListGeometryCache {
     }
 }
 
-struct OneShot<F>(RefCell<Option<F>>);
-
-impl<F> OneShot<F> {
-    fn new(callback: F) -> Self {
-        Self(RefCell::new(Some(callback)))
+/// The one cache-then-persistence load, shared by row and section-header
+/// geometry: check the cache, discard a persisted value the cache marked
+/// invalid, fall back to `minimum` as an *assumed* height, and remember the
+/// result. `discard` clears the persisted value, `load` reads it — the only
+/// two things that differ between the two kinds of height. Keeping this
+/// sequence in one place is deliberate: the same decision living in two
+/// functions is how this codebase has produced drift before.
+pub(in crate::ui) fn load_trusted_height(
+    cache: &Cell<f64>,
+    minimum: RowHeight,
+    discard: impl FnOnce(),
+    load: impl FnOnce() -> Option<f64>,
+) -> TrustedRowHeight {
+    if let Some(cached) = TrustedRowHeight::from_cache(cache.get()) {
+        return cached;
     }
-
-    fn take(&self) -> Option<F> {
-        self.0.borrow_mut().take()
+    let invalidated = cache.get() == INVALIDATED_ROW_HEIGHT;
+    if invalidated {
+        discard();
     }
-}
-
-pub(in crate::ui) fn on_changed_once(
-    adjustment: &gtk4::Adjustment,
-    callback: impl FnOnce(&gtk4::Adjustment) + 'static,
-) {
-    let handler = Rc::new(RefCell::new(None));
-    let pending_callback = Rc::new(OneShot::new(callback));
-    let callback_handler = handler.clone();
-    let callback_slot = pending_callback.clone();
-    let id = adjustment.connect_changed(move |changed| {
-        let handler = callback_handler.borrow_mut().take();
-        if let Some(handler) = handler {
-            changed.disconnect(handler);
-        }
-        let callback = callback_slot.take();
-        if let Some(callback) = callback {
-            callback(changed);
-        }
-    });
-    handler.borrow_mut().replace(id);
+    let persisted = if invalidated { None } else { load() };
+    let loaded = persisted.and_then(RowHeight::new).map_or_else(
+        || TrustedRowHeight::assumed(minimum),
+        TrustedRowHeight::measured,
+    );
+    remember_preferred_height(cache, loaded);
+    TrustedRowHeight::from_cache(cache.get()).unwrap_or(loaded)
 }
 
 fn load_row_height(
@@ -306,29 +301,22 @@ fn load_row_height(
     cache: &Cell<f64>,
     minimum: RowHeight,
 ) -> RowHeight {
-    if let Some(cached) = TrustedRowHeight::from_cache(cache.get()) {
-        return cached.height;
-    }
-    let invalidated = cache.get() == INVALIDATED_ROW_HEIGHT;
-    if invalidated {
-        if let Err(error) = settings::set_row_height(db, density, None) {
-            tracing::warn!(%error, "could not discard invalidated row height");
-        }
-    }
-    let persisted = if invalidated {
-        None
-    } else {
-        settings::get_row_height(db, density).unwrap_or_else(|error| {
-            tracing::warn!(%error, "could not load persisted row height");
-            None
-        })
-    };
-    let loaded = persisted.and_then(RowHeight::new).map_or_else(
-        || TrustedRowHeight::assumed(minimum),
-        TrustedRowHeight::measured,
-    );
-    remember_preferred_height(cache, loaded);
-    TrustedRowHeight::from_cache(cache.get()).map_or(loaded.height, |height| height.height)
+    load_trusted_height(
+        cache,
+        minimum,
+        || {
+            if let Err(error) = settings::set_row_height(db, density, None) {
+                tracing::warn!(%error, "could not discard invalidated row height");
+            }
+        },
+        || {
+            settings::get_row_height(db, density).unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not load persisted row height");
+                None
+            })
+        },
+    )
+    .height
 }
 
 /// GTK-facing handle for one list view. It owns no track-list state and can be
@@ -527,10 +515,9 @@ impl ListGeometry {
         n_sections: usize,
     ) -> bool {
         self.remember_if_settled(db, cache, adjustment.upper(), n_rows, n_sections);
-        let (content, source, _header_source) = self.content_height(db, cache, n_rows, n_sections);
-        #[cfg(test)]
+        let (content, source, header_source) = self.content_height(db, cache, n_rows, n_sections);
         if n_sections > 0 {
-            eprintln!("QUEUEPROBE preseed header_source={_header_source:?}");
+            crate::ui::scroll_probe::probe_preseed_source(&format!("{header_source:?}"));
         }
         let ContentHeight::Known(_) = content else {
             return false;
@@ -538,6 +525,13 @@ impl ListGeometry {
         let Some(upper) = preseed_upper(adjustment.upper(), content, source) else {
             return true;
         };
+        // `adjustment.configure` re-enters GTK's layout when it runs inside an
+        // allocation-time `changed` emission — see [`in_changed_emission`].
+        // Callers reached from a `changed` handler must defer instead.
+        debug_assert!(
+            !crate::ui::list_geometry_changed::in_changed_emission(),
+            "list geometry configured the adjustment from inside a changed emission"
+        );
         crate::ui::scroll_probe::probe_upper("anchor.configure", adjustment, upper);
         adjustment.configure(
             target,
@@ -766,13 +760,5 @@ mod tests {
             Some(77_384.0)
         );
         assert_eq!(preseed_upper(77_384.0, wanted, measured.source), None);
-    }
-
-    #[test]
-    fn changed_subscription_callback_can_only_be_taken_once() {
-        let callback = OneShot::new(|| 42);
-
-        assert_eq!(callback.take().map(|callback| callback()), Some(42));
-        assert!(callback.take().is_none());
     }
 }

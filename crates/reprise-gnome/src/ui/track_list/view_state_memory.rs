@@ -193,7 +193,7 @@ fn restore_scroll_when_ready(
         return;
     };
     let weak_shared = std::rc::Rc::downgrade(shared);
-    crate::ui::list_geometry::on_changed_once(&adjustment, move |_| {
+    crate::ui::list_geometry_changed::on_changed_once(&adjustment, move |_| {
         let Some(shared) = weak_shared.upgrade() else {
             return;
         };

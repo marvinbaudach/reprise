@@ -295,7 +295,7 @@ fn schedule_centered_scroll_restore(
         return;
     };
     let weak_view = column_view.downgrade();
-    crate::ui::list_geometry::on_changed_once(&adjustment, move |_| {
+    crate::ui::list_geometry_changed::on_changed_once(&adjustment, move |_| {
         let Some(column_view) = weak_view.upgrade() else {
             return;
         };
@@ -376,10 +376,22 @@ fn schedule_scroll_restore(
             let weak_shared = Rc::downgrade(shared);
             let callback_ids = current_ids.to_owned();
             let callback_hold = hold.cloned();
-            crate::ui::list_geometry::on_changed_once(&adjustment, move |_| {
+            let generation = shared.model.generation();
+            // This refinement writes the adjustment, and the `changed` that
+            // wakes it can be emitted from inside GTK's allocation pass —
+            // writing there re-enters the running layout, which is what once
+            // left the track list permanently empty while the scrollbar kept
+            // full, correct geometry. `after_changed_once` steps out of the
+            // emission first, early enough to stay ahead of the next frame.
+            crate::ui::list_geometry_changed::after_changed_once(&adjustment, move || {
                 let Some(shared) = weak_shared.upgrade() else {
                     return;
                 };
+                // A reload while this was queued means the ids below describe
+                // a list nobody is looking at any more.
+                if shared.model.generation() != generation {
+                    return;
+                }
                 super::track_list_geometry::remember_after_layout(&shared, callback_ids.len());
                 apply_scroll_anchor_if_allocated(
                     &shared,
@@ -456,6 +468,14 @@ fn apply_scroll_anchor_if_allocated(
         n_sections,
     );
     crate::ui::scroll_probe::probe("anchor", &adjustment, target);
+    // Same rule as `ListGeometry::configure`: never write the adjustment from
+    // inside a `changed` emission, which may be running inside GTK's
+    // allocation. The signal-driven caller above defers to `HIGH_IDLE` so this
+    // holds; the direct pre-paint call comes from ordinary application code.
+    debug_assert!(
+        !crate::ui::list_geometry_changed::in_changed_emission(),
+        "scroll anchor written from inside a changed emission"
+    );
     adjustment.set_value(target);
     true
 }

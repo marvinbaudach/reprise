@@ -32,6 +32,18 @@ pub(in crate::ui) fn probe_upper(writer: &str, adjustment: &gtk4::Adjustment, up
     );
 }
 
+/// Names which geometry source the pre-seed actually used. The measured run
+/// that accepted the sectioned pre-seed reported `Assumed` here, so this is
+/// the line that distinguishes a warm cache from the fail-closed fallback.
+pub(in crate::ui) fn probe_preseed_source(source: &str) {
+    if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
+        return;
+    }
+    // Keep this wording: the accepted measurement and the plan both cite
+    // `QUEUEPROBE preseed header_source=…` verbatim as their evidence line.
+    eprintln!("QUEUEPROBE preseed header_source={source}");
+}
+
 /// Lets one build run both the shipped behaviour and the experiment: with
 /// `REPRISE_NO_PRESEED` set, the restore leaves the stale allocation range in
 /// place as a counterprobe for the first-frame jump.
