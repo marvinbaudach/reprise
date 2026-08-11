@@ -195,19 +195,18 @@ fn doc_7c_the_review_page_carries_no_provider_toggle() {
 
 #[test]
 fn review_widget_handlers_hold_review_state_weakly() {
-    let source = include_str!("review_page.rs");
+    // Whitespace-insensitive on purpose: an assertion that pins exact indentation
+    // breaks on the next rustfmt reflow while proving nothing about behaviour.
+    // What matters is that neither handler captures the state strongly.
+    let source = include_str!("review_page.rs").replace([' ', '\n'], "");
 
-    assert!(source.contains(
-        "header.select_all.connect_toggled(glib::clone!(\n                #[weak]\n                state,"
-    ));
-    assert!(source.contains(
-        "self.state.apply.connect_clicked(glib::clone!(\n            #[weak(rename_to = state)]\n            self.state,"
-    ));
-    assert!(!source.contains(
-        "let callback_state = state.clone();\n            let handler = header.select_all.connect_toggled"
-    ));
-    assert!(!source
-        .contains("let state = self.state.clone();\n        self.state.apply.connect_clicked"));
+    assert!(source.contains("select_all.connect_toggled(glib::clone!(#[weak]state,"));
+    assert!(
+        source.contains("apply.connect_clicked(glib::clone!(#[weak(rename_to=state)]self.state,")
+    );
+    // `callback_state` on its own is fine — the filter bar uses it legitimately.
+    assert!(!source.contains("letcallback_state=state.clone();lethandler=header.select_all"));
+    assert!(!source.contains("letstate=self.state.clone();self.state.apply.connect_clicked"));
 }
 
 #[test]
