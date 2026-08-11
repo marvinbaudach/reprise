@@ -2,13 +2,17 @@
 <component type="desktop-application">
   <id>io.github.marvinbaudach.Reprise</id>
   <name>Reprise</name>
-  <summary>Play and organize your local music library</summary>
-  <summary xml:lang="de">Die lokale Musiksammlung abspielen und organisieren</summary>
+  <summary>Play and organize your music</summary>
+  <summary xml:lang="de">Musik abspielen und verwalten</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <developer id="org.reprise">
     <name>Marvin Baudach</name>
   </developer>
+  <url type="homepage">https://marvinbaudach.github.io/reprise</url>
+  <url type="bugtracker">https://github.com/marvinbaudach/reprise/issues</url>
+  <url type="vcs-browser">https://github.com/marvinbaudach/reprise</url>
+  <url type="contribute">https://github.com/marvinbaudach/reprise/blob/main/CONTRIBUTING.md</url>
   <description>
     <p>
       Reprise is a native music player for GNOME with a fast, column-based
@@ -73,19 +77,29 @@
     <keyword xml:lang="de">Wiedergabeliste</keyword>
   </keywords>
   <supports>
-    <control>keyboard</control>
-    <control>pointing</control>
     <control>touch</control>
   </supports>
   <content_rating type="oars-1.1"/>
+  <branding>
+    <color type="primary" scheme_preference="light">#4FDBD4</color>
+    <color type="primary" scheme_preference="dark">#00706B</color>
+  </branding>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+  <update_contact>tomateq_AT_pm.me</update_contact>
   <releases>
-    <release version="0.1.1" date="2026-07-25">
+    <release version="0.1.1" date="2026-07-25" type="stable">
       <description>
         <p>Improves Now Playing panel sizing and playback-marker stability during sorting.</p>
         <p xml:lang="de">Verbessert die Größe des Panels für die aktuelle Wiedergabe und die Stabilität der Wiedergabemarkierung beim Sortieren.</p>
       </description>
     </release>
-    <release version="0.1.0" date="2026-07-12">
+    <release version="0.1.0" date="2026-07-12" type="stable">
       <description>
         <p>Initial release with local-library playback and organization.</p>
         <p xml:lang="de">Erste Veröffentlichung mit Wiedergabe und Organisation der lokalen Sammlung.</p>
