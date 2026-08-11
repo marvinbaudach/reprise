@@ -6,7 +6,7 @@
   <summary xml:lang="de">Musik abspielen und verwalten</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <developer id="org.reprise">
+  <developer id="io.github.marvinbaudach">
     <name>Marvin Baudach</name>
   </developer>
   <url type="homepage">https://marvinbaudach.github.io/reprise</url>
