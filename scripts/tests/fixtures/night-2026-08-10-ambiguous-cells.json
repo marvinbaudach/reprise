@@ -1,6 +1,6 @@
 {
  "_note": "Prefer `elements` \u2014 `tree_markdown` will continue to work but new fields will only be added to the structured side. Use `max_elements` / `max_depth` to bound the AT-SPI walk on apps with very large trees.",
- "_source": "night run 2026-08-10, first-time-exploration seed 11, profile mixed-128, window 1200x800 (side panels collapsed). Contains 'Fixture Album 34' twice - two tracks of one album, not a duplicate node.",
+ "_source": "night run 2026-08-10, first-time-exploration seed 11, profile mixed-128, window 1200x800 (side panels collapsed). Contains 'Fixture Album 34' twice - two tracks of one album, not a duplicate node. The top-level `snapshot_id` was dropped when this copy was trimmed; restored from the element_token prefix every element in it carries, which is the same string the driver returns (measured on cua-driver 0.19.3).",
  "element_count": 168,
  "elements": [
   {
@@ -3205,5 +3205,6 @@
  "returned_element_count": 168,
  "screenshot_height": 800,
  "screenshot_width": 1200,
+ "snapshot_id": "s00000004",
  "total_element_count": 168
 }

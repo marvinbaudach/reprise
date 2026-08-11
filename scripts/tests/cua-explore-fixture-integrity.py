@@ -55,6 +55,29 @@ class FixtureProvenance(unittest.TestCase):
                 self.assertTrue(elements(path), "fixture without elements")
 
 
+class SnapshotIdentity(unittest.TestCase):
+    """A trimmed snapshot silently disables the freshness check.
+
+    `snapshot_element_address` only compares a token against its snapshot when
+    the snapshot names itself. A recorded copy without `snapshot_id` therefore
+    walks past the check, and the branch that catches a stale handle is never
+    executed by any test that uses it.
+    """
+
+    def test_the_contract_fixture_names_the_snapshot_its_tokens_belong_to(self) -> None:
+        raw = load(AMBIGUOUS_CELLS)
+        prefixes = {
+            str(item.get("element_token") or "").partition(":")[0]
+            for item in elements(AMBIGUOUS_CELLS)
+        }
+        self.assertEqual(
+            {str(raw.get("snapshot_id") or "")},
+            prefixes,
+            "the driver returns snapshot_id next to tokens that embed it; a "
+            "copy that lost it cannot exercise the staleness check",
+        )
+
+
 class MeasuredFixtures(unittest.TestCase):
     """Recorded after with_measured_geometry - these must carry actions."""
 

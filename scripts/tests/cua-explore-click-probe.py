@@ -47,6 +47,16 @@ def recorded_elements():
     return json.loads(FIXTURE.read_text(encoding="utf-8"))["elements"]
 
 
+def recorded_snapshot_id():
+    """The generation every recorded element_token in this fixture embeds."""
+    prefixes = {
+        str(item.get("element_token") or "").partition(":")[0]
+        for item in recorded_elements()
+    }
+    assert len(prefixes) == 1, prefixes
+    return prefixes.pop()
+
+
 class RecordedStarTransport:
     """Serves the recorded snapshot; a click may flip one empty star."""
 
@@ -98,6 +108,7 @@ class RecordedStarTransport:
                     [[(shade, shade, shade)] * IMAGE_WIDTH for _ in range(IMAGE_HEIGHT)],
                 )
             return {
+                "snapshot_id": recorded_snapshot_id(),
                 "screenshot_width": IMAGE_WIDTH,
                 "screenshot_height": IMAGE_HEIGHT,
                 "elements": [dict(item) for item in self.elements],
