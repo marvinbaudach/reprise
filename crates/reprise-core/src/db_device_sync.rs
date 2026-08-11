@@ -211,6 +211,70 @@ pub(crate) fn migrate_v46(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+/// Drops the subscription-fed phone targets while preserving the playlists
+/// target exactly as configured. Files already on the device are never
+/// touched; only local inventory rows under the retired target paths leave the
+/// database so Reprise no longer claims to manage them.
+pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 68 {
+        return Ok(());
+    }
+    let target_has_kind = has_column(conn, "device_sync_targets", "kind")?;
+    let inventory_has_path = has_column(conn, "device_files", "device_path")?;
+    let episodes_have_wanted = has_column(conn, "podcast_episodes", "wanted_on_device")?;
+    let transaction = conn.unchecked_transaction()?;
+    if target_has_kind {
+        if inventory_has_path {
+            transaction.execute_batch(
+                r#"
+        DELETE FROM device_files
+        WHERE EXISTS (
+          SELECT 1
+          FROM device_sync_targets AS target
+          WHERE target.device_serial = device_files.device_serial
+            AND target.kind IN ('youtube_audio', 'podcast_episodes')
+            AND (
+              ltrim(device_files.device_path, '/') = ltrim(target.path, '/')
+              OR substr(
+                   ltrim(device_files.device_path, '/'),
+                   1,
+                   length(ltrim(target.path, '/')) + 1
+                 ) = ltrim(target.path, '/') || '/'
+            )
+        );
+        "#,
+            )?;
+        }
+
+        transaction.execute_batch(
+            r#"
+        DELETE FROM device_sync_targets
+        WHERE kind IN ('youtube_audio', 'podcast_episodes');
+
+        CREATE TABLE device_sync_targets_v68 (
+          device_serial TEXT PRIMARY KEY,
+          storage_id    INTEGER,
+          path          TEXT NOT NULL CHECK (length(trim(path)) > 0),
+          enabled       INTEGER NOT NULL DEFAULT 1
+        );
+        INSERT INTO device_sync_targets_v68 (device_serial, storage_id, path, enabled)
+        SELECT device_serial, storage_id, path, enabled
+        FROM device_sync_targets
+        WHERE kind = 'playlists';
+        DROP TABLE device_sync_targets;
+        ALTER TABLE device_sync_targets_v68 RENAME TO device_sync_targets;
+        "#,
+        )?;
+    }
+    transaction.execute_batch("DROP TABLE IF EXISTS podcast_subscription_devices;")?;
+    if episodes_have_wanted {
+        transaction.execute_batch("ALTER TABLE podcast_episodes DROP COLUMN wanted_on_device;")?;
+    }
+    transaction.pragma_update(None, "user_version", 68)?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, rusqlite::Error> {
     conn.query_row(
         "SELECT EXISTS(
@@ -219,4 +283,141 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, rusq
         [table, column],
         |row| row.get(0),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn open_v67_device_sync_shape() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE device_sync_targets (
+               device_serial TEXT NOT NULL,
+               kind TEXT NOT NULL,
+               storage_id INTEGER,
+               path TEXT NOT NULL,
+               enabled INTEGER NOT NULL DEFAULT 1,
+               cap_bytes INTEGER,
+               PRIMARY KEY (device_serial, kind)
+             );
+             CREATE TABLE podcast_subscription_devices (
+               subscription_id INTEGER NOT NULL,
+               device_id TEXT NOT NULL
+             );
+             CREATE TABLE podcast_episodes (
+               id INTEGER PRIMARY KEY,
+               title TEXT NOT NULL,
+               wanted_on_device INTEGER NOT NULL DEFAULT 0
+             );
+             CREATE TABLE device_files (
+               device_serial TEXT NOT NULL,
+               track_id INTEGER NOT NULL,
+               device_path TEXT NOT NULL,
+               PRIMARY KEY (device_serial, track_id)
+             );
+             PRAGMA user_version = 67;",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn migration_v67_to_v68_keeps_only_the_playlist_target_and_its_inventory() {
+        let conn = open_v67_device_sync_shape();
+        conn.execute_batch(
+            "INSERT INTO device_sync_targets VALUES
+               ('pixel', 'playlists', 65537, '/Music/My Reprise', 1, NULL),
+               ('pixel', 'youtube_audio', 65537, '/Media/Channels', 1, 1000),
+               ('pixel', 'podcast_episodes', 65538, '/Podcasts/Reprise', 1, 2000);
+             INSERT INTO podcast_subscription_devices VALUES (1, 'pixel');
+             INSERT INTO podcast_episodes VALUES (1, 'Episode', 1);
+             INSERT INTO device_files VALUES
+               ('pixel', 1, 'Music/My Reprise/Artist/Track.opus'),
+               ('pixel', 2, '/Media/Channels/Channel/Video.opus'),
+               ('pixel', 3, 'Podcasts/Reprise/Show/Episode.mp3'),
+               ('pixel', 4, 'Podcasts/Unmanaged/Keep.mp3');",
+        )
+        .unwrap();
+
+        migrate_v68(&conn).unwrap();
+
+        let target: (Option<i64>, String, bool) = conn
+            .query_row(
+                "SELECT storage_id, path, enabled FROM device_sync_targets",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(target, (Some(65537), "/Music/My Reprise".into(), true));
+        let target_columns = conn
+            .prepare("PRAGMA table_info(device_sync_targets)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            target_columns,
+            ["device_serial", "storage_id", "path", "enabled"]
+        );
+        assert!(!has_column(&conn, "podcast_episodes", "wanted_on_device").unwrap());
+        let subscription_devices_exist: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM sqlite_master
+                   WHERE type = 'table' AND name = 'podcast_subscription_devices'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!subscription_devices_exist);
+        let paths = conn
+            .prepare("SELECT device_path FROM device_files ORDER BY track_id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            paths,
+            [
+                "Music/My Reprise/Artist/Track.opus",
+                "Podcasts/Unmanaged/Keep.mp3"
+            ]
+        );
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 68);
+    }
+
+    #[test]
+    fn migration_v68_is_a_no_op_when_the_database_is_already_current() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE device_sync_targets (
+               device_serial TEXT PRIMARY KEY,
+               storage_id INTEGER,
+               path TEXT NOT NULL,
+               enabled INTEGER NOT NULL DEFAULT 1
+             );
+             INSERT INTO device_sync_targets VALUES
+               ('pixel', 65537, '/Music/Reprise', 1);
+             PRAGMA user_version = 68;",
+        )
+        .unwrap();
+
+        migrate_v68(&conn).unwrap();
+
+        let target: (Option<i64>, String, bool) = conn
+            .query_row(
+                "SELECT storage_id, path, enabled FROM device_sync_targets",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(target, (Some(65537), "/Music/Reprise".into(), true));
+    }
 }

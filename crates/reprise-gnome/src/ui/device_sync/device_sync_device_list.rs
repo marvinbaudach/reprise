@@ -66,13 +66,13 @@ impl DeviceSyncRuntime {
                 state.session_state = DeviceSessionState::Remembered;
                 state.scanning = false;
                 state.scan_generation = state.scan_generation.saturating_add(1);
-                if state.machine.is_some() || state.preparing {
+                if state.machine.is_some() {
                     state.resume_initiator = state
                         .descriptor
                         .reconnectable
                         .then_some(state.active_initiator)
                         .flatten();
-                    preparation::cancel_preparation(state);
+                    cancel_device_run(state);
                 }
             }
             states.retain(|state| {
@@ -107,7 +107,7 @@ impl DeviceSyncRuntime {
                         refresh.push(id.clone());
                     }
                 } else {
-                    let (settings, targets) = memory::load_device_memory(&self.conn, &descriptor)
+                    let (settings, target) = memory::load_device_memory(&self.conn, &descriptor)
                         .unwrap_or_else(|error| {
                             tracing::warn!(
                                 device_id = descriptor.id,
@@ -116,14 +116,14 @@ impl DeviceSyncRuntime {
                             );
                             (
                                 DeviceSettings::transient(&descriptor.id, &descriptor.name),
-                                SyncTargetKind::ALL.map(SyncTarget::default_for),
+                                SyncTarget::default(),
                             )
                         });
                     let opens_session = projected.state.opens_session();
                     states.push(DeviceState::new(
                         descriptor,
                         settings,
-                        targets,
+                        target,
                         projected.state,
                     ));
                     if opens_session {

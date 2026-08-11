@@ -48,7 +48,6 @@ fn rendered_group(kind: PodcastKind, id: i64) -> RenderedSourceGroup {
             author: Some("Publisher".into()),
             image_url: None,
             kind,
-            sync_to_phone: false,
             episodes: vec![row],
         },
     }
@@ -87,7 +86,6 @@ fn src_13_replace_returns_one_channel_widget_per_group() {
             author: Some("Publisher".into()),
             image_url: None,
             kind: PodcastKind::Rss,
-            sync_to_phone: false,
             episodes: vec![episode()],
         },
     };

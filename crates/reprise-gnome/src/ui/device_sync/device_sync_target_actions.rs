@@ -29,13 +29,7 @@ impl DeviceSyncRuntime {
             .borrow()
             .iter()
             .find(|device| device.descriptor.id == device_id)
-            .and_then(|device| {
-                device
-                    .targets
-                    .iter()
-                    .find(|target| target.kind == SyncTargetKind::Playlists)
-                    .cloned()
-            })
+            .map(|device| device.target.clone())
     }
 
     /// Design 7d's storage selection: every browsable storage volume on
@@ -108,12 +102,7 @@ impl DeviceSyncRuntime {
                 return Err("device synchronization is active".into());
             }
             (
-                device
-                    .targets
-                    .iter()
-                    .find(|target| target.kind == SyncTargetKind::Playlists)
-                    .cloned()
-                    .unwrap_or_else(|| SyncTarget::default_for(SyncTargetKind::Playlists)),
+                device.target.clone(),
                 device.descriptor.persistent_id.is_some(),
             )
         };
@@ -131,12 +120,7 @@ impl DeviceSyncRuntime {
                 .iter_mut()
                 .find(|device| device.descriptor.id == device_id)
                 .ok_or_else(|| "device is not connected".to_string())?;
-            let target = device
-                .targets
-                .iter_mut()
-                .find(|target| target.kind == SyncTargetKind::Playlists)
-                .ok_or_else(|| "device sync target is unavailable".to_string())?;
-            *target = next.clone();
+            device.target = next.clone();
         }
         if let TargetRelocation::MoveFolder { from_path } =
             target_relocation_action(&previous, &next)

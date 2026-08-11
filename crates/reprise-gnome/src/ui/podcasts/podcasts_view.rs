@@ -37,8 +37,8 @@ use super::podcasts_reveal::RevealRequest;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
 use super::podcasts_worker::{
-    podcasts_response_channel, request_generation, PodcastsOperation, PodcastsPriority,
-    PodcastsRequest, PodcastsRuntime, PodcastsWorkerResult,
+    podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
+    PodcastsRuntime, PodcastsWorkerResult,
 };
 use super::youtube_channel_detail::YoutubeChannelDetail;
 use crate::ui::source_empty_state::{SourceEmptyState, SourceFailureState};
@@ -543,7 +543,6 @@ impl PodcastsView {
         if !self.runtime.request(PodcastsRequest {
             generation,
             operation,
-            priority: PodcastsPriority::Normal,
             response,
         }) {
             return false;

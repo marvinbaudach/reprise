@@ -28,8 +28,10 @@ shared_view=crates/reprise-view/src
 # search_chip_label API; the search popover work (#385) then added the
 # commit chip. On top of both, the app-wide column editing work moved
 # layout, key and width code out of reprise-gnome into reprise-view.
-# This floor is the measured sum; future migration waves raise it.
-view_floor=2175
+# Dropping the phone-only podcast/YouTube preparation action removed five
+# obsolete presentation lines. This floor is the measured sum; future
+# migration waves raise it.
+view_floor=2170
 
 echo "== Frontend thinness =="
 

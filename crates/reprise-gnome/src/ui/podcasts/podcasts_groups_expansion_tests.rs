@@ -49,7 +49,6 @@ fn pod_25_a_query_expands_surviving_shows_without_overwriting_manual_state() {
             author: None,
             image_url: None,
             kind: PodcastKind::Rss,
-            sync_to_phone: false,
             episodes: vec![episode()],
         },
     };

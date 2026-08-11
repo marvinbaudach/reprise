@@ -18,7 +18,7 @@ use gtk4::gio::prelude::*;
 use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::{
     DeviceStorageAccess, DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile,
-    StorageId, SyncTarget, SyncTargetKind,
+    StorageId, SyncTarget,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -61,8 +61,8 @@ pub(super) struct FakeState {
     pub(super) deleted: RefCell<Vec<String>>,
     /// Every `replace_track`/`delete_track` call that reached this double,
     /// recorded as `(target_path, relative_path)` — the seam's proof that
-    /// the right named target (`MTP-38`) was used, without touching a real
-    /// or simulated filesystem.
+    /// the selected target was used, without touching a real or simulated
+    /// filesystem.
     pub(super) managed_copies: RefCell<Vec<(String, String)>>,
     /// Bytes handed to the backend for generated attachments. Audio produced
     /// by the fake transcoder has no real temporary file, so absent sources
@@ -70,17 +70,15 @@ pub(super) struct FakeState {
     pub(super) managed_copy_contents: RefCell<Vec<(String, String, Vec<u8>)>>,
     pub(super) managed_reads: RefCell<Vec<(String, String)>>,
     pub(super) managed_deleted: RefCell<Vec<(String, String)>>,
-    /// `MTP-38`/finding-1 proof: the `storage_id` each `replace_track`/
+    /// The `storage_id` each `replace_track`/
     /// `delete_track`/`replace_playlist` call actually reached this double
     /// with, keyed by `target_path` — the seam a test uses to prove a
     /// device's persisted per-target storage choice is what the transfer
     /// layer uses, not just what `device.targets` records in memory.
     pub(super) transfer_storage_ids: RefCell<Vec<(String, Option<StorageId>)>>,
     pub(super) inspection_roots: RefCell<Vec<String>>,
-    pub(super) last_inspected_targets: RefCell<Option<[SyncTarget; 3]>>,
+    pub(super) last_inspected_target: RefCell<Option<SyncTarget>>,
     pub(super) managed_files: RefCell<Vec<ManagedDeviceFile>>,
-    pub(super) podcast_files: RefCell<Vec<ManagedDeviceFile>>,
-    pub(super) youtube_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) ejected: RefCell<Vec<String>>,
     pub(super) planned_operations: RefCell<Vec<(String, &'static str)>>,
     available_bytes: Cell<Option<u64>>,
@@ -88,11 +86,6 @@ pub(super) struct FakeState {
     storage_access: Cell<DeviceStorageAccess>,
     transcode_probe_error: RefCell<Option<String>>,
     cleanup_error: RefCell<Option<String>>,
-    /// Forces every `replace_track` call to fail, whatever target it is
-    /// aimed at — the content-phase counterpart of `playlist_error` /
-    /// `cleanup_error` below. Used to prove a failed podcast/YouTube copy
-    /// must stop the run before later removals (`MTP-23`).
-    replace_track_error: RefCell<Option<String>>,
     sidecar_replace_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
     playlist_error: RefCell<Option<String>>,
@@ -152,16 +145,6 @@ impl FakeBackend {
 
     pub(super) fn with_playlist_error(self, error: &str) -> Self {
         self.state.playlist_error.replace(Some(error.into()));
-        self
-    }
-
-    /// Makes every `replace_track` call fail on demand — the podcast/YouTube
-    /// content-phase counterpart of `with_playlist_error`. A test that wants
-    /// only the content copy to fail, not any music-mirror copy in the same
-    /// run, must keep the device's library selection empty so the mirror
-    /// never calls `replace_track` itself (see the content-phase tests).
-    pub(super) fn with_replace_track_error(self, error: &str) -> Self {
-        self.state.replace_track_error.replace(Some(error.into()));
         self
     }
 
@@ -284,21 +267,15 @@ impl DeviceBackend for FakeBackend {
         self.state.subscribers.borrow_mut().push(callback);
     }
 
-    fn inspect(
-        &self,
-        root_uri: String,
-        targets: [SyncTarget; 3],
-    ) -> TestFuture<DeviceStorageInspection> {
+    fn inspect(&self, root_uri: String, target: SyncTarget) -> TestFuture<DeviceStorageInspection> {
         let available_bytes = self.state.available_bytes.get();
         let total_bytes = self.state.total_bytes.get();
         let storage_access = self.state.storage_access.get();
         let gate = self.state.inspection_gate.borrow_mut().take();
         let inspection_error = self.state.inspection_error.borrow_mut().take();
         let managed_files = self.state.managed_files.borrow().clone();
-        let podcast_files = self.state.podcast_files.borrow().clone();
-        let youtube_files = self.state.youtube_files.borrow().clone();
         self.state.inspection_roots.borrow_mut().push(root_uri);
-        self.state.last_inspected_targets.replace(Some(targets));
+        self.state.last_inspected_target.replace(Some(target));
         Box::pin(async move {
             if let Some(gate) = gate {
                 gate.started
@@ -322,8 +299,6 @@ impl DeviceBackend for FakeBackend {
                     ..DeviceStorageSnapshot::default()
                 },
                 managed_files,
-                podcast_files,
-                youtube_files,
             })
         })
     }
@@ -370,16 +345,11 @@ impl DeviceBackend for FakeBackend {
             reprise_core::device_sync::track_metadata_list::FILE_NAME
                 | reprise_core::device_sync::listen_report::ACKNOWLEDGEMENT_FILE_NAME
         );
-        let is_playlists_target =
-            state
-                .last_inspected_targets
-                .borrow()
-                .as_ref()
-                .is_some_and(|targets| {
-                    targets.iter().any(|target| {
-                        target.kind == SyncTargetKind::Playlists && target.path == target_path
-                    })
-                });
+        let is_playlists_target = state
+            .last_inspected_target
+            .borrow()
+            .as_ref()
+            .is_some_and(|target| target.path == target_path);
         if !is_generated_metadata {
             state
                 .transfer_storage_ids
@@ -393,9 +363,6 @@ impl DeviceBackend for FakeBackend {
                 if let Some(error) = state.sidecar_replace_error.borrow().clone() {
                     return Err(error);
                 }
-            }
-            if let Some(error) = state.replace_track_error.borrow().clone() {
-                return Err(error);
             }
             if is_generated_metadata {
                 if let Some(contents) = source_contents {

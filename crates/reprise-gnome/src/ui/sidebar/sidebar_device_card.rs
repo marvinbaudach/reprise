@@ -372,7 +372,7 @@ fn idle_tooltip(device: &DeviceView) -> Option<String> {
     if device.contents_state != DeviceContentsState::Verified {
         return None;
     }
-    let balance = reprise_core::device_sync::aggregate_balance(&device.category_readings);
+    let balance = reprise_core::device_sync::aggregate_balance(&[device.target_reading]);
     balance
         .has_work()
         .then(|| sidebar_device_card_text::tooltip_text(&balance))
@@ -479,7 +479,7 @@ fn card_subtitle(device: &DeviceView) -> String {
                 let space = device_sync_strings::available_space(device.storage.free_bytes);
                 return format!("Needs attention · {space}");
             }
-            let balance = reprise_core::device_sync::aggregate_balance(&device.category_readings);
+            let balance = reprise_core::device_sync::aggregate_balance(&[device.target_reading]);
             sidebar_device_card_text::leading_sentence(
                 &device.contents_state,
                 &balance,
@@ -523,7 +523,6 @@ pub(super) mod tests {
                 opus_bitrate: 0,
                 remove_deleted: true,
                 sync_automatically: true,
-                prepare_before_sync: true,
             },
             sync_phase: phase,
             sync_error: None,
@@ -533,15 +532,9 @@ pub(super) mod tests {
             managed_track_count: 0,
             bytes_per_second: 0,
             contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
-            content_rows: crate::ui::device_sync_runtime::empty_content_rows(),
-            category_readings: crate::ui::device_sync_runtime::empty_category_readings(),
-            youtube_bytes: 0,
-            podcast_bytes: 0,
+            content_row: crate::ui::device_sync_runtime::empty_content_row(),
+            target_reading: crate::ui::device_sync_runtime::empty_target_reading(),
             keep_smart_playlists_updated: true,
-            preparation: reprise_core::device_sync::PreparationPhase::Absent,
-            preparation_missing: Vec::new(),
-            preparation_run: crate::ui::device_sync_runtime::PreparationRunState::Idle,
-            prepared_this_run: false,
             page: Default::default(),
         }
     }

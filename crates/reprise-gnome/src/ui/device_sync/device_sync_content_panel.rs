@@ -19,7 +19,6 @@ use crate::ui::style::category_colors::music_css_class;
 pub(super) struct ContentPanelActions {
     pub(super) set_remove_deleted: Rc<dyn Fn(bool)>,
     pub(super) set_sync_automatically: Rc<dyn Fn(bool)>,
-    pub(super) set_prepare_before_sync: Rc<dyn Fn(bool)>,
     pub(super) scan_device: Rc<dyn Fn()>,
     pub(super) open_folder_browser: Rc<dyn Fn(gtk4::Widget)>,
     pub(super) open_picker: Rc<dyn Fn(gtk4::Widget)>,
@@ -45,15 +44,6 @@ impl ContentPanelActions {
                 }
             }) as Rc<dyn Fn(bool)>
         };
-        let set_prepare_before_sync = {
-            let runtime = runtime.clone();
-            let device_id = device_id.to_string();
-            Rc::new(move |value| {
-                if let Err(error) = runtime.set_prepare_before_sync(&device_id, value) {
-                    tracing::warn!(%error, "could not update prepare-before-sync setting");
-                }
-            }) as Rc<dyn Fn(bool)>
-        };
         let scan_device = {
             let runtime = runtime.clone();
             let device_id = device_id.to_string();
@@ -76,7 +66,6 @@ impl ContentPanelActions {
         Self {
             set_remove_deleted,
             set_sync_automatically,
-            set_prepare_before_sync,
             scan_device,
             open_folder_browser,
             open_picker,
@@ -102,7 +91,6 @@ pub(super) struct ContentPanel {
     balance_label: gtk4::Label,
     remove_deleted_switch: gtk4::Switch,
     sync_automatically_switch: gtk4::Switch,
-    prepare_before_sync_switch: gtk4::Switch,
     updating: Rc<Cell<bool>>,
 }
 
@@ -163,18 +151,6 @@ impl ContentPanel {
                 }
             },
         );
-        let prepare_before_sync_switch = labeled_switch(
-            &device_sync_strings::text(device_sync_strings::PREPARE_BEFORE_SYNC),
-            {
-                let set_prepare_before_sync = actions.set_prepare_before_sync.clone();
-                let updating = updating.clone();
-                move |value| {
-                    if !updating.get() {
-                        set_prepare_before_sync(value);
-                    }
-                }
-            },
-        );
 
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 16);
         content.set_margin_top(16);
@@ -194,10 +170,6 @@ impl ContentPanel {
             &sync_automatically_switch.0,
             &sync_automatically_switch.1,
         ));
-        content.append(&row_widget(
-            &prepare_before_sync_switch.0,
-            &prepare_before_sync_switch.1,
-        ));
         let root = adw::Bin::builder().child(&content).build();
         root.add_css_class("card");
 
@@ -212,7 +184,6 @@ impl ContentPanel {
             balance_label,
             remove_deleted_switch: remove_deleted_switch.1,
             sync_automatically_switch: sync_automatically_switch.1,
-            prepare_before_sync_switch: prepare_before_sync_switch.1,
             updating,
         }
     }
@@ -232,15 +203,10 @@ impl ContentPanel {
         self.verification_title.set_text(&title);
         self.scan_button.set_sensitive(can_scan);
 
-        let reading = &device.category_readings[0];
+        let reading = &device.target_reading;
         let balance = aggregate_balance(std::slice::from_ref(reading));
-        let segments = project_category_segments(
-            &device.storage,
-            device.youtube_bytes,
-            device.podcast_bytes,
-            balance.bytes_to_copy,
-            balance.bytes_freed,
-        );
+        let segments =
+            project_category_segments(&device.storage, balance.bytes_to_copy, balance.bytes_freed);
         self.storage_bar.update(segments);
         self.free_space_line.set_text(&segments.map_or_else(
             || device_sync_strings::text(device_sync_strings::SPACE_UNKNOWN),
@@ -252,7 +218,7 @@ impl ContentPanel {
             },
         ));
 
-        let content_row = &device.content_rows[0];
+        let content_row = &device.content_row;
         self.target_row
             .path
             .set_text(&device_sync_strings::target_folder(
@@ -273,10 +239,6 @@ impl ContentPanel {
         set_switch(
             &self.sync_automatically_switch,
             device.settings.sync_automatically,
-        );
-        set_switch(
-            &self.prepare_before_sync_switch,
-            device.settings.prepare_before_sync,
         );
         self.updating.set(false);
     }

@@ -171,43 +171,6 @@ fn v40_adds_download_sizes_and_rss_phone_sync_defaults() {
 }
 
 #[test]
-fn v41_adds_stable_per_device_podcast_selections() {
-    let conn = db::open(None).unwrap();
-    db::migrate_connection(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO podcast_subscriptions
-         (id, kind, feed_url, title, added_at)
-         VALUES (1, 'rss', 'https://example.test/feed', 'Show', 1)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO podcast_subscription_devices (subscription_id, device_id)
-         VALUES (1, 'mtp:pixel-serial')",
-        [],
-    )
-    .unwrap();
-
-    let selected = conn
-        .query_row(
-            "SELECT device_id FROM podcast_subscription_devices
-             WHERE subscription_id = 1",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .unwrap();
-
-    assert_eq!(selected, "mtp:pixel-serial");
-    assert!(conn
-        .execute(
-            "INSERT INTO podcast_subscription_devices (subscription_id, device_id)
-             VALUES (1, '')",
-            [],
-        )
-        .is_err());
-}
-
-#[test]
 fn v47_adds_a_nullable_per_channel_latest_override_defaulting_to_no_override() {
     let conn = db::open(None).unwrap();
     db::migrate_connection(&conn).unwrap();

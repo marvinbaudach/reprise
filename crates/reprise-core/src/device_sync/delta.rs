@@ -93,3 +93,30 @@ fn estimated_seconds(bytes: u64) -> u32 {
             .min(u64::from(u32::MAX)) as u32
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(track_id: i64) -> DeviceFileRecord {
+        DeviceFileRecord {
+            device_serial: "phone".into(),
+            track_id,
+            source_path: format!("/{track_id}.flac"),
+            source_size: 1,
+            source_mtime: 1,
+            device_path: format!("{track_id}.flac"),
+            device_size: 1,
+            profile_fingerprint: "original".into(),
+            pinned: false,
+        }
+    }
+
+    #[test]
+    fn mtp_33_remove_deleted_controls_playlist_track_removal() {
+        let files = [file(1)];
+
+        assert_eq!(compute_delta(&[], &files, true).to_remove, [1]);
+        assert!(compute_delta(&[], &files, false).to_remove.is_empty());
+    }
+}

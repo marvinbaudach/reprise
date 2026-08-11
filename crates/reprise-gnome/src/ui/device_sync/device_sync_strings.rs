@@ -79,7 +79,6 @@ pub const CHANGE_FOLDER: &str = N_!("Change folder…");
 pub const PLAYLISTS: &str = N_!("Playlists");
 pub const REMOVE_FROM_PHONE: &str = N_!("Remove from phone when removed from a playlist");
 pub const SYNC_AUTOMATICALLY: &str = N_!("Sync automatically when this phone connects");
-pub const PREPARE_BEFORE_SYNC: &str = N_!("Download missing files before syncing");
 pub const TARGET_FOLDER: &str = N_!("Target folder: {path}");
 pub const FILTER_SYNC_CONTENT: &str = N_!("Filter sync content");
 pub const SELECT_ALL: &str = N_!("Select all");
@@ -93,7 +92,6 @@ pub const PICKER_FOOTER: &str = N_!("{selected} selected · {content} · {size}"
 pub const TRACKS: &str = N_!("{count} tracks");
 pub const SMART_LISTS_UPDATED: &str = N_!("smart lists kept up to date");
 pub const SMART_LISTS_FROZEN: &str = N_!("smart lists keep their current contents");
-const SYNCHRONIZATION_UNAVAILABLE: &str = N_!("Synchronization unavailable");
 
 pub fn available_space(bytes: Option<u64>) -> String {
     bytes.map_or_else(
@@ -227,22 +225,6 @@ pub fn music_track_count(count: usize) -> String {
 /// the two surfaces never drift into different wording for the same numbers.
 /// (The device page's own one-line summary is the shorter [`balance_text`],
 /// built from `plan_balance_parts`; the split is deliberate.)
-pub fn category_reading_text(reading: &reprise_core::device_sync::CategoryReading) -> String {
-    use reprise_core::device_sync::CategoryReading;
-    match reading {
-        CategoryReading::SourceOff | CategoryReading::UnavailableKeptOnPhone => {
-            text(SYNCHRONIZATION_UNAVAILABLE)
-        }
-        CategoryReading::Diff(diff) => detailed_balance_parts(
-            diff.files_to_copy,
-            diff.bytes_to_copy,
-            diff.files_to_remove,
-            diff.bytes_freed,
-            diff.playlists_rewritten,
-        ),
-    }
-}
-
 /// The compact aggregate result: "14 files to copy · 2.6 GiB · 3 to
 /// remove". Copy and removal counts stay separate.
 pub fn balance_text(balance: &reprise_core::device_sync::SyncBalance) -> String {
@@ -361,84 +343,6 @@ pub fn free_space_line(free_before_bytes: u64, free_after_bytes: u64) -> String 
 /// Design 7c: "synced 12 min ago". Coarse buckets are deliberate — the
 /// sidebar card is a glance surface, not a log.
 pub use super::device_sync_time_copy::{relative_time, verified_ago};
-
-/// `MTP-43`'s preparation overview: "2 files to download · 312 MiB" for
-/// `Offered`/`Planned`, "2 episodes skipped · not downloaded" for
-/// `SkippedOffline`. `None` for every other phase — including `Absent` and
-/// `NothingMissing` — so the caller knows the surface must not exist at all,
-/// not render an empty box (`MTP-42`).
-pub fn preparation_overview(phase: &reprise_core::device_sync::PreparationPhase) -> Option<String> {
-    use reprise_core::device_sync::PreparationPhase;
-    match phase {
-        PreparationPhase::Absent | PreparationPhase::NothingMissing => None,
-        PreparationPhase::SkippedOffline { files } => Some(preparation_skipped_offline(*files)),
-        PreparationPhase::Offered { files, bytes } | PreparationPhase::Planned { files, bytes } => {
-            Some(preparation_files_to_download(*files, *bytes))
-        }
-    }
-}
-
-/// "2 files to download · 312 MiB". `bytes == 0` means no source in this
-/// codebase yet persists an expected size for that episode (see
-/// `device_sync_compact::gather_missing_files`'s doc comment) — the count
-/// still shows, the byte figure is simply omitted rather than claiming
-/// "0 B".
-fn preparation_files_to_download(files: usize, bytes: u64) -> String {
-    let noun = if files == 1 { "file" } else { "files" };
-    if bytes == 0 {
-        format!("{files} {noun} to download")
-    } else {
-        format!("{files} {noun} to download · {}", file_size(bytes))
-    }
-}
-
-/// "2 episodes skipped · not downloaded" (`NET-3`/`MTP-42`'s
-/// `SkippedOffline`) — every one of these episodes stays `wanted_on_device`
-/// for the next attempt.
-fn preparation_skipped_offline(files: usize) -> String {
-    let noun = if files == 1 { "episode" } else { "episodes" };
-    format!("{files} {noun} skipped · not downloaded")
-}
-
-/// How many episode titles the preparation overview names before it starts
-/// counting. `MTP-43` wants the user to know *what* is about to download,
-/// not to read the whole queue: pasting all of them into one label grew the
-/// overview card several screens tall and pulled the page's layout with it.
-const PREPARATION_TITLE_PREVIEW: usize = 3;
-
-/// "Nachtwind, Abendrot … and 57 more" — the titles line below
-/// `preparation_files_to_download`. `None` when nothing is named, so the
-/// caller appends no empty line.
-pub fn preparation_titles(titles: &[&str]) -> Option<String> {
-    let shown = titles.len().min(PREPARATION_TITLE_PREVIEW);
-    if shown == 0 {
-        return None;
-    }
-    let named = titles[..shown].join(", ");
-    Some(match titles.len() - shown {
-        0 => named,
-        rest => format!("{named} \u{2026} and {rest} more"),
-    })
-}
-
-/// "Step 1 of 2 · Downloading 1 of 2 · 62%" — the preparation download's own
-/// progress line. Always step 1: a preparation phase only ever precedes the
-/// transfer, never follows it.
-#[cfg(test)]
-fn preparation_step_progress(current_index: usize, total: usize, percent: u64) -> String {
-    format!(
-        "Step 1 of 2 · Downloading {} of {total} · {percent}%",
-        current_index + 1
-    )
-}
-
-/// Prefixes an existing transfer-progress title with "Step 2 of 2" — used
-/// only when this run's transfer phase was actually preceded by a
-/// preparation download, never for a plain single-phase sync.
-#[cfg(test)]
-fn two_phase_title(title: &str) -> String {
-    format!("Step 2 of 2 · {title}")
-}
 
 fn format_bytes(bytes: u64) -> String {
     const KIB: f64 = 1_024.0;

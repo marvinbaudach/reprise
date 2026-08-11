@@ -5218,10 +5218,6 @@ msgstr ""
 msgid "Sync automatically when this phone connects"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
-msgid "Download missing files before syncing"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:83
 #, rust-format
 msgid "Target folder: {path}"
@@ -5262,10 +5258,6 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:95
 msgid "smart lists keep their current contents"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:96
-msgid "Synchronization unavailable"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:103

@@ -197,6 +197,9 @@ pub(crate) fn migrate_v41(conn: &Connection) -> Result<(), rusqlite::Error> {
 // `podcasts::wanted_on_device` for the pure transition this column backs.
 pub(crate) fn migrate_v43(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 68 {
+        return Ok(());
+    }
     let has_wanted = has_column(conn, "podcast_episodes", "wanted_on_device")?;
     if version >= 43 && has_wanted {
         return Ok(());
