@@ -23,9 +23,12 @@ an explicit skip otherwise. It never launches Reprise or opens a user database.
 
 Only `RUSTSEC-2024-0436` (`paste`, transitively through `lofty`) is an accepted
 audit warning. Any additional advisory is a release blocker. The AppStream check
-allows exactly two documented informational conditions: the established
-uppercase component ID `org.reprise.Reprise` and the absent homepage while no
-public project URL exists.
+allows exactly two documented informational conditions: the pedantic
+`cid-contains-uppercase-letter` note for `io.github.marvinbaudach.Reprise`,
+which is intentionally accepted because an uppercase final component is
+conventional for GNOME applications (for example, `org.gnome.TextEditor`) and
+is not a failure without `--pedantic`, and the absent homepage while no public
+project URL exists.
 
 GTK regression tests that require a display are ignored by the normal test suite.
 Run all currently discovered display tests in their own isolated processes because
@@ -186,8 +189,8 @@ DESTDIR=/tmp/reprise-release-root meson install -C /tmp/reprise-release-build
 The install root must contain:
 
 - `/usr/bin/reprise`
-- `/usr/share/applications/org.reprise.Reprise.desktop`
-- `/usr/share/metainfo/org.reprise.Reprise.metainfo.xml`
+- `/usr/share/applications/io.github.marvinbaudach.Reprise.desktop`
+- `/usr/share/metainfo/io.github.marvinbaudach.Reprise.metainfo.xml`
 - both scalable application icons under `/usr/share/icons/hicolor`
 - `/usr/share/locale/de/LC_MESSAGES/reprise.mo`
 
@@ -338,7 +341,7 @@ Two external prerequisites remain and cannot be inferred or manufactured:
 1. Publish the source through a maintainer-controlled public remote and create an
    immutable 0.1.1 archive/tag with a verified SHA-256 checksum.
 2. Establish a verifiable project identity appropriate for the existing
-   `org.reprise.Reprise` application ID.
+   `io.github.marvinbaudach.Reprise` application ID.
 
 The MusicBrainz `User-Agent` now uses the reachable maintainer profile as its contact
 URL; this no longer depends on a placeholder project page. After the prerequisites
