@@ -5,9 +5,11 @@
 
   <name xml:lang="en">Reprise</name>
   <shortdesc xml:lang="en">Play and organize your music</shortdesc>
-  <description xml:lang="en">A native GTK4 music player for GNOME with a fast
-  column-based library, playlists, a play queue, album covers, synchronized
-  lyrics, tag editing, podcasts, internet radio, and MPRIS integration.</description>
+  <description xml:lang="en">Reprise is a native music player for GNOME with a
+  fast, column-based library, playlists, a play queue, album covers, synchronized
+  played-track lyrics, tag editing, and MPRIS integration for media keys and the
+  lock screen. Optional ListenBrainz and Last.fm scrobbling can report completed
+  listens after explicit account setup.</description>
 
   <homepage rdf:resource="https://marvinbaudach.github.io/reprise" />
   <download-page rdf:resource="https://github.com/marvinbaudach/reprise/releases" />
