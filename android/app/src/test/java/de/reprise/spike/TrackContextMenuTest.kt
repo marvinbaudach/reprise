@@ -4,8 +4,11 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -143,6 +146,29 @@ class TrackContextMenuTest {
         compose.onNodeWithText("Move down").performClick()
 
         assertEquals(listOf(Triple(0, 41L, 1)), controls.moved)
+    }
+
+    @Test
+    fun theQueueTabRendersOneTrackTwiceInsteadOfCrashingOnItsKey() {
+        // Queue::enqueue allows duplicates by design and "Play next" puts a
+        // second copy of one track a tap away. A uri-only row key throws
+        // "Key … was already used" out of LazyColumn before anything renders.
+        val queued = configurationTestTrack(41, "Twice Queued")
+        val controls = RecordingContextMenuControls(listOf(queued, queued))
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalPlaybackControls provides controls) {
+                    NowPlayingQueuePage(
+                        PlaybackUiState(),
+                        MobileSurfaceViewModel(),
+                        SurfaceLayout.STACKED,
+                    )
+                }
+            }
+        }
+
+        compose.onAllNodesWithTag("queue-track-row-41").assertCountEquals(2)
+        compose.onAllNodesWithText("Twice Queued").assertCountEquals(2)
     }
 
     @Test

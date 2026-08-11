@@ -67,6 +67,11 @@ internal fun TrackRows(
     val metrics = libraryFrameMetrics(surfaceLayout)
     val content = trackListContent(tracks, lastRequestedOffset)
     val anchor = surfaceState.scrollPosition(listKey).within(content.size)
+    val rowKey: (TrackListContent) -> Any = if (queueActions == null) {
+        TrackListContent::libraryRowKey
+    } else {
+        TrackListContent::queueRowKey
+    }
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
         val gridState = rememberLibraryGridState(anchor)
         ObserveLibraryGridAnchor(listKey, gridState, surfaceState)
@@ -80,7 +85,7 @@ internal fun TrackRows(
         ) {
             items(
                 items = content,
-                key = TrackListContent::stableKey,
+                key = rowKey,
                 span = { item ->
                     if (item is TrackListContent.Continuation) {
                         GridItemSpan(maxLineSpan)
@@ -116,7 +121,7 @@ internal fun TrackRows(
     ) {
         items(
             items = content,
-            key = TrackListContent::stableKey,
+            key = rowKey,
         ) { content ->
             TrackListItem(
                 content,
@@ -134,8 +139,29 @@ internal fun TrackRows(
     }
 }
 
-private fun TrackListContent.stableKey(): String = when (this) {
+/**
+ * What identifies a row to the lazy list, and why the queue answers differently.
+ *
+ * A library list holds each track once, so the uri *is* the row: it survives
+ * paging and re-sorting, and keeping it means a row keeps its item state while
+ * the window around it grows.
+ *
+ * A queue slot is not a track. `Queue::enqueue` allows duplicates by design,
+ * and "Play next" makes a second copy of one track a single tap away — at which
+ * point a uri-only key is not merely imprecise, it throws
+ * `IllegalArgumentException: Key … was already used` and takes the tab down.
+ * The queue is therefore keyed by the slot, with the uri kept alongside so a
+ * slot that changes hands does not inherit the previous occupant's row state.
+ * Its window only ever grows by appending and is reloaded whole after every
+ * edit, so the index is stable for exactly as long as the slot is.
+ */
+private fun TrackListContent.libraryRowKey(): String = when (this) {
     is TrackListContent.Row -> "track-${track.uri}"
+    is TrackListContent.Continuation -> "load-window-${request.offset}"
+}
+
+private fun TrackListContent.queueRowKey(): String = when (this) {
+    is TrackListContent.Row -> "queue-$index-${track.uri}"
     is TrackListContent.Continuation -> "load-window-${request.offset}"
 }
 
