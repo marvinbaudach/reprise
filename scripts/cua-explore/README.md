@@ -69,7 +69,8 @@ accessibility tree itself in WINDOW coordinates, starting at the frame child of
 the application - the application node carries no component interface, and
 starting there would shift both walks by one level - normalises against the
 frame node, and adds the window origin from `list_windows`. The frame node's
-own WINDOW rectangle is retained in `summary.json` as `geometry_calibration`:
+own WINDOW rectangle is retained per snapshot in `summary.json` under
+`geometry_measurements[].calibration`:
 normalising against it is right exactly when it is the same rectangle as the
 `list_windows` entry, and the sizes are the test for that. Geometry is resolved per element, not per tree: cua-driver returns one entry
 per indexed row - measured 180 against 485 nodes in the full walk, and not a
@@ -85,10 +86,12 @@ subset argument rather than on the key alone. `subset_violations` counts the
 elements in groups where the driver reports *more* nodes than the walk can see:
 those never pair, and a non-zero count is evidence against the subset argument
 everywhere else too. The
-position oracles skip untrusted elements. `summary.json` records the quota
-under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
-outside the window) together with up to 40 unresolved elements per reason -
-each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
+position oracles skip untrusted elements. `summary.json` records one entry per
+snapshot under `geometry_measurements`, named by executor generation and state.
+Each successful entry carries its own resolution quota (resolved, unmatched,
+ambiguous, degenerate, outside the window) and calibration; each failed entry
+names the reason. The report renders generations separately, so a clean restart
+cannot overwrite an earlier untrusted measurement.
 
 The two driver tools take pixels in different spaces, measured from their own
 schemas: `move_cursor` with `scope=desktop` takes desktop coordinates, while

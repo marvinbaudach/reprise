@@ -107,6 +107,7 @@ class RunReport:
         self.geometry_failures: list[str] = []
         self.geometry_calibration: dict[str, Any] | None = None
         self.geometry_resolution: dict[str, Any] | None = None
+        self.geometry_measurements: list[dict[str, Any]] = []
         self.cursor_visibility: dict[str, Any] | None = None
         self.hover_coverage: list[dict[str, Any]] = []
         self.run_findings: list[dict[str, Any]] = []
@@ -165,6 +166,20 @@ class RunReport:
     def set_geometry_resolution(self, resolution: Mapping[str, Any] | None) -> None:
         """How many driver elements got a measured position, and why the rest did not."""
         self.geometry_resolution = dict(_sanitize(resolution)) if resolution else None
+
+    def set_geometry_measurements(
+        self, measurements: Sequence[Mapping[str, Any]]
+    ) -> None:
+        """Retain each snapshot measurement across every executor generation."""
+        self.geometry_measurements = [
+            dict(_sanitize(measurement)) for measurement in measurements
+        ]
+        self.geometry_failures = [
+            f"Generation {measurement.get('generation')}, "
+            f"{measurement.get('state_id')}: {measurement.get('failure')}"
+            for measurement in self.geometry_measurements
+            if measurement.get("failure")
+        ]
 
     def set_startup_timings(self, timings: Sequence[Mapping[str, Any]]) -> None:
         """Measured launch cost per app start; a slow start is a product finding."""
@@ -241,6 +256,7 @@ class RunReport:
                 "geometry_failures": self.geometry_failures,
                 "geometry_calibration": self.geometry_calibration,
                 "geometry_resolution": self.geometry_resolution,
+                "geometry_measurements": self.geometry_measurements,
                 "cursor_visibility": self.cursor_visibility,
                 "hover_coverage": self.hover_coverage,
                 "hover_candidates": sum(
@@ -249,7 +265,11 @@ class RunReport:
                 "hover_reached": sum(
                     int(item.get("hovered", 0)) for item in self.hover_coverage
                 ),
-                "geometry_trusted": not self.geometry_failures,
+                "geometry_trusted": (
+                    all(item.get("trusted") is True for item in self.geometry_measurements)
+                    if self.geometry_measurements
+                    else not self.geometry_failures
+                ),
                 "finding_counts": dict(sorted(severity_counts.items())),
                 "finding_codes": dict(sorted(code_counts.items())),
                 "required_workloads": self.required_workloads,
@@ -342,8 +362,33 @@ class RunReport:
                     f"{item.get('skipped_without_geometry')} without geometry)"
                 )
             lines.append("")
+        measurements = summary.get("geometry_measurements") or []
         resolution = summary.get("geometry_resolution")
-        if resolution:
+        if measurements:
+            lines.extend(["## Geometry", ""])
+            previous_generation = object()
+            for measurement in measurements:
+                generation = measurement.get("generation")
+                if generation != previous_generation:
+                    lines.extend([f"### Generation {generation}", ""])
+                    previous_generation = generation
+                state_id = measurement.get("state_id")
+                snapshot_resolution = measurement.get("resolution")
+                if snapshot_resolution:
+                    lines.append(
+                        f"- `{state_id}` - Measured positions: "
+                        f"{snapshot_resolution.get('resolved')} of "
+                        f"{snapshot_resolution.get('driver_elements')} driver elements "
+                        f"({snapshot_resolution.get('resolved_ratio')})"
+                    )
+                    lines.append(
+                        f"  ({snapshot_resolution.get('resolved_unique')} on a unique key, "
+                        f"{snapshot_resolution.get('resolved_ordered')} paired in walk order)"
+                    )
+                if measurement.get("failure"):
+                    lines.append(f"- `{state_id}` - **Untrusted:** {measurement['failure']}")
+            lines.append("")
+        elif resolution:
             lines.extend(["## Geometry", ""])
             lines.append(
                 f"- Measured positions: {resolution.get('resolved')} of "
@@ -393,7 +438,7 @@ class RunReport:
                         f"{entry.get('candidates')} walk"
                     )
             lines.append("")
-        if summary["geometry_failures"]:
+        if summary["geometry_failures"] and not measurements:
             if not resolution:
                 lines.extend(["## Geometry", ""])
             lines.append(

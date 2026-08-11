@@ -23,7 +23,9 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 import protocol  # noqa: E402
 import runner  # noqa: E402
 import launch  # noqa: E402
+from atspi_geometry import GeometryError, GeometryNode  # noqa: E402
 from driver import CliTransport, DriverError  # noqa: E402
+from hover_geometry import WindowGeometry  # noqa: E402
 from oracles import Finding, normalize_snapshot  # noqa: E402
 from protocol import ActionGateway, load_mission  # noqa: E402
 from report import RunReport  # noqa: E402
@@ -50,7 +52,7 @@ class FakeLifecycle:
         return 12, 34, 1
 
     def restart(self) -> tuple[int, int, int]:
-        return 12, 34, 2
+        return 13, 35, 2
 
     def stop(self) -> None:
         return None
@@ -103,6 +105,42 @@ class StationaryPointerTransport:
         if tool == "get_window_state":
             return {"elements": []}
         raise AssertionError(f"unexpected stationary-pointer tool: {tool}")
+
+
+class GeometryRunTransport:
+    """The driver snapshot boundary used by the restart evidence regression."""
+
+    def __init__(self, **_kwargs: Any) -> None:
+        self.transport_faults = 0
+
+    def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        if tool != "get_window_state":
+            raise AssertionError(f"unexpected geometry-run tool: {tool}")
+        return {
+            "snapshot_id": f"snapshot-{payload['pid']}",
+            "window": {"x": 200, "y": 50, "width": 1200, "height": 800},
+            "structuredContent": {
+                "elements": [
+                    {
+                        "element_index": 0,
+                        "role": "frame",
+                        "label": "Reprise",
+                        "depth": 0,
+                        "frame": {"x": 200, "y": 50, "w": 1200, "h": 800},
+                    },
+                    {
+                        "element_index": 3,
+                        "role": "push button",
+                        "label": "Music",
+                        "depth": 1,
+                        "frame": {"x": 200, "y": 50, "w": 34, "h": 34},
+                    },
+                ]
+            },
+        }
+
+    def take_findings(self) -> list[Any]:
+        return []
 
 
 def scripted_explorer(action: Mapping[str, Any]) -> type:
@@ -321,6 +359,7 @@ class RunPathTests(unittest.TestCase):
         transport_factory: Callable[..., Any] | None = None,
         extra_patches: Mapping[str, Any] | None = None,
         argv_extra: tuple[str, ...] = (),
+        real_launch_executor: bool = False,
     ) -> SimpleNamespace:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -362,13 +401,17 @@ class RunPathTests(unittest.TestCase):
             *argv_extra,
         ]
         with contextlib.ExitStack() as stack:
-            for name, replacement in (
+            replacements = [
                 ("_private_environment_required", lambda: None),
                 ("AppLifecycle", FakeLifecycle),
                 ("CliTransport", remember),
                 ("DeterministicExplorer", scripted_explorer(action)),
-                ("launch_executor", lambda *_a, **_k: (12, 34, 1, None, executor)),
-            ):
+            ]
+            if not real_launch_executor:
+                replacements.append(
+                    ("launch_executor", lambda *_a, **_k: (12, 34, 1, None, executor))
+                )
+            for name, replacement in replacements:
                 stack.enter_context(mock.patch.object(runner, name, replacement))
             for name, replacement in (extra_patches or {}).items():
                 stack.enter_context(mock.patch.object(runner, name, replacement))
@@ -558,6 +601,59 @@ class RunPathTests(unittest.TestCase):
         self.assertNotEqual(evidence["target"], {"x": 800.0, "y": 500.0})
         self.assertEqual(evidence["after"], evidence["before"])
         self.assertEqual(evidence["verdict"], "pointer-did-not-reach-target")
+
+    def test_restart_retains_geometry_evidence_from_every_executor_generation(
+        self,
+    ) -> None:
+        origin = WindowGeometry(200, 50, 1200, 800)
+
+        def geometry_provider(pid: int, _origin: Any) -> Callable[[], Any]:
+            if pid == 12:
+                def failed_walk() -> Any:
+                    raise GeometryError("generation one accessibility walk failed")
+
+                return failed_walk
+            return lambda: [
+                GeometryNode("frame", "Reprise", -5, -5, 1200, 800, ()),
+                GeometryNode("push button", "Music", -5, 41, 34, 34, ("click",)),
+            ]
+
+        result = self.drive(
+            action=RESTART_ACTION,
+            budgets={"actions": 1, "seconds": 900, "restarts": 1},
+            transport_factory=GeometryRunTransport,
+            real_launch_executor=True,
+            extra_patches={
+                "apply_window_size": lambda *_a, **_k: None,
+                "resolve_window_origin": lambda *_a, **_k: origin,
+                "make_geometry_provider": geometry_provider,
+            },
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        measurements = result.summary["geometry_measurements"]
+        self.assertEqual(
+            [(item["generation"], item["state_id"], item["trusted"]) for item in measurements],
+            [
+                (1, "launch-1-state-1", False),
+                (2, "launch-2-state-1", True),
+            ],
+        )
+        self.assertEqual(
+            measurements[0]["failure"], "generation one accessibility walk failed"
+        )
+        self.assertEqual(measurements[1]["resolution"]["resolved"], 2)
+        self.assertIsNone(result.summary["geometry_resolution"])
+        self.assertIn(
+            "generation one accessibility walk failed",
+            result.summary["geometry_failures"][0],
+        )
+        self.assertFalse(result.summary["geometry_trusted"])
+        report = (result.evidence_dir / "report.md").read_text(encoding="utf-8")
+        self.assertIn("Generation 1", report)
+        self.assertIn("generation one accessibility walk failed", report)
+        self.assertIn("Generation 2", report)
+        self.assertIn("Measured positions: 2 of 2", report)
 
 
 if __name__ == "__main__":

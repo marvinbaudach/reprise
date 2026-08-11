@@ -315,6 +315,7 @@ def launch_executor(
     args: argparse.Namespace,
     report: RunReport,
     hover_geometry: Any | None = None,
+    geometry_measurements: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int, int, WindowGeometry, CuaExecutor]:
     """Start one app generation, apply mission geometry, then build its executor."""
     pid, window_id, generation = lifecycle_action()
@@ -351,6 +352,8 @@ def launch_executor(
         hover_geometry=hover_geometry,
         geometry_provider=make_geometry_provider(pid, window_origin),
         window_origin=window_origin,
+        generation=generation,
+        geometry_measurements=geometry_measurements,
     )
     return pid, window_id, generation, window_origin, executor
 
@@ -400,6 +403,7 @@ def run(args: argparse.Namespace) -> int:
     unknown_action_names: Counter[str] = Counter()
     history: list[Mapping[str, Any]] = []
     traces: list[ActionTrace] = []
+    geometry_measurements: list[dict[str, Any]] = []
     agent_context: Any
     if args.agent_command_json:
         try:
@@ -431,6 +435,7 @@ def run(args: argparse.Namespace) -> int:
             mission=mission,
             args=args,
             report=report,
+            geometry_measurements=geometry_measurements,
         )
         observation = executor.observe()
         hover_geometry = None
@@ -585,6 +590,7 @@ def run(args: argparse.Namespace) -> int:
                         args=args,
                         report=report,
                         hover_geometry=hover_geometry,
+                        geometry_measurements=geometry_measurements,
                     )
                     observation = executor.observe()
                     report.add_step(
@@ -652,15 +658,7 @@ def run(args: argparse.Namespace) -> int:
         lifecycle.stop()
         retain_agent_notes(profile_root, args.evidence_dir)
         report.set_startup_timings(lifecycle.startup_timings)
-        report.set_geometry_failures(
-            list(getattr(executor, "geometry_failures", []) or [])
-        )
-        report.set_geometry_calibration(
-            getattr(executor, "geometry_calibration", None)
-        )
-        report.set_geometry_resolution(
-            getattr(executor, "geometry_resolution", None)
-        )
+        report.set_geometry_measurements(geometry_measurements)
         report.set_hover_coverage(getattr(explorer, "hover_coverage", None))
         report.set_transport_faults(getattr(transport, "transport_faults", 0))
         report.set_unknown_action_names(unknown_action_names)

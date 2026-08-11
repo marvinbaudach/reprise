@@ -100,6 +100,8 @@ class CuaExecutor:
         hover_geometry: Any | None = None,
         geometry_provider: Any | None = None,
         window_origin: Any | None = None,
+        generation: int | None = None,
+        geometry_measurements: list[dict[str, Any]] | None = None,
     ) -> None:
         self.transport = transport
         self.pid = pid
@@ -117,6 +119,10 @@ class CuaExecutor:
         # the geometry provider walks the accessibility tree for us.
         self.geometry_provider = geometry_provider
         self.window_origin = window_origin
+        self.generation = generation
+        self.geometry_measurements = (
+            geometry_measurements if geometry_measurements is not None else []
+        )
         self.geometry_failures: list[str] = []
         self.geometry_calibration: Any | None = None
         self.geometry_resolution: Any | None = None
@@ -479,7 +485,7 @@ class CuaExecutor:
         captured_ms = round(time.monotonic() * 1000)
         round_trip_started = time.monotonic()
         raw = self.transport.call("get_window_state", payload)
-        raw = self.with_measured_geometry(raw)
+        raw = self.with_measured_geometry(raw, state_id=state_id)
         # Retained so the timing oracles can subtract the harness's own cost.
         self._snapshot_durations_ms.append(
             round((time.monotonic() - round_trip_started) * 1000)
@@ -490,7 +496,9 @@ class CuaExecutor:
             )
         return raw, normalize_snapshot(raw, state_id=state_id, captured_ms=captured_ms)
 
-    def with_measured_geometry(self, raw: Mapping[str, Any]) -> Mapping[str, Any]:
+    def with_measured_geometry(
+        self, raw: Mapping[str, Any], *, state_id: str
+    ) -> Mapping[str, Any]:
         """Replace the driver's placeholder positions with measured ones."""
         origin = self.window_origin or self.hover_geometry
         if self.geometry_provider is None or origin is None:
@@ -501,24 +509,43 @@ class CuaExecutor:
         container = structured if isinstance(structured, dict) else raw
         elements = container.get("elements")
         if not isinstance(elements, list):
-            return self._untrusted(raw, "snapshot carries no element list")
+            failure = "snapshot carries no element list"
+            self.geometry_failures.append(failure)
+            self._record_geometry(state_id, trusted=False, failure=failure)
+            return self._untrusted(raw, failure)
         try:
             resolution = resolve_driver_geometry(
                 elements, self.geometry_provider(), origin
             )
         except GeometryError as error:
-            self.geometry_failures.append(str(error))
-            return self._untrusted(raw, str(error))
+            failure = str(error)
+            self.geometry_failures.append(failure)
+            self._record_geometry(state_id, trusted=False, failure=failure)
+            return self._untrusted(raw, failure)
         self.geometry_calibration = resolution.calibration
         self.geometry_resolution = resolution.as_record()
         frames = resolution.frames
         if not resolution.trusted:
-            self.geometry_failures.append(
+            failure = (
                 "no element could be matched to a measured position "
                 f"({resolution.driver_elements} driver elements, "
                 f"{resolution.walk_nodes} walk nodes)"
             )
+            self.geometry_failures.append(failure)
+            self._record_geometry(
+                state_id,
+                trusted=False,
+                failure=failure,
+                resolution=self.geometry_resolution,
+                calibration=self.geometry_calibration,
+            )
             return self._untrusted(raw, "no element resolved")
+        self._record_geometry(
+            state_id,
+            trusted=True,
+            resolution=self.geometry_resolution,
+            calibration=self.geometry_calibration,
+        )
         rebuilt = []
         for index, element in enumerate(elements):
             if not isinstance(element, dict):
@@ -550,6 +577,28 @@ class CuaExecutor:
             "structuredContent": {**structured, "elements": rebuilt},
             "geometry_trusted": True,
         }
+
+    def _record_geometry(
+        self,
+        state_id: str,
+        *,
+        trusted: bool,
+        failure: str | None = None,
+        resolution: Mapping[str, Any] | None = None,
+        calibration: Mapping[str, Any] | None = None,
+    ) -> None:
+        record: dict[str, Any] = {
+            "generation": self.generation,
+            "state_id": state_id,
+            "trusted": trusted,
+        }
+        if failure is not None:
+            record["failure"] = failure
+        if resolution is not None:
+            record["resolution"] = dict(resolution)
+        if calibration is not None:
+            record["calibration"] = dict(calibration)
+        self.geometry_measurements.append(record)
 
     @staticmethod
     def _untrusted(raw: Mapping[str, Any], note: str) -> Mapping[str, Any]:
