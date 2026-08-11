@@ -117,6 +117,18 @@ fn doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view() {
 }
 
 #[test]
+fn style_12_the_title_bar_only_carries_permanent_actions() {
+    let coordinator = include_str!("mod.rs");
+    let review = include_str!("review_page.rs");
+    let chrome = include_str!("../window/library_chrome.rs");
+
+    assert!(!coordinator.contains("set_review_actions"));
+    assert!(!review.contains("chrome_actions"));
+    assert!(!chrome.contains("review_actions"));
+    assert!(review.contains("header.select_all.connect_toggled"));
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn doc_7c_opening_the_doctor_keeps_the_now_playing_pane_open() {
     if gtk4::init().is_err() {
