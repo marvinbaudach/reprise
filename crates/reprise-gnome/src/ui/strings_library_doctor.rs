@@ -67,7 +67,6 @@ pub const DOCTOR_EDIT_TRACK_TAGS: &str = N_!("Edit track tags…");
 pub const DOCTOR_NO_CHANGES: &str = N_!("No Changes to Review");
 pub const DOCTOR_NO_CHANGES_DESCRIPTION: &str =
     N_!("Return to the results and choose another review filter.");
-pub const DOCTOR_NONE: &str = N_!("None");
 pub const DOCTOR_SELECT_ALL: &str = N_!("Select all");
 pub const DOCTOR_SELECT_ALL_VISIBLE: &str = N_!("Select all visible changes");
 pub const DOCTOR_REVIEW_TITLE: &str = N_!("Review Tag Changes");

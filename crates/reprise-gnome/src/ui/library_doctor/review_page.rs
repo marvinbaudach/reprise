@@ -17,7 +17,9 @@ use reprise_core::library_doctor::{
 
 use super::review_conflicts::ReviewConflicts;
 use super::review_filter_bar::ReviewFilterBar;
-use super::review_header::{album_header_factory, OnSelect, ReviewColumnGroups, ReviewHeader};
+use super::review_header::{
+    album_header_factory, master_check_state, OnSelect, ReviewColumnGroups, ReviewHeader,
+};
 use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
     ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
@@ -39,6 +41,9 @@ struct ReviewState {
     filter_bar: ReviewFilterBar,
     apply: gtk4::Button,
     change_summary: gtk4::Label,
+    select_all: gtk4::CheckButton,
+    select_all_handler: RefCell<Option<glib::SignalHandlerId>>,
+    controls_locked: Cell<bool>,
     layout: Rc<Cell<ReviewLayout>>,
     column_groups: ReviewColumnGroups,
     outcomes: RefCell<HashMap<DoctorReviewRowId, ReviewOutcome>>,
@@ -80,6 +85,7 @@ impl ReviewState {
         self.change_summary
             .set_label(&review_footer_summary(summary, self.category.get()));
         self.refresh_filter_summary();
+        self.refresh_master_check();
     }
 
     fn visible_rows(&self) -> Vec<ReviewRowModel> {
@@ -91,6 +97,31 @@ impl ReviewState {
     fn refresh_filter_summary(&self) {
         let (changes, albums) = review_header_counts(&self.visible_rows());
         self.filter_bar.set_summary(changes, albums);
+    }
+
+    fn refresh_master_check(&self) {
+        let rows = self.visible_rows();
+        let selected = rows
+            .iter()
+            .map(|row| row.selected_change_count)
+            .sum::<usize>();
+        let selectable = rows
+            .iter()
+            .map(|row| row.selectable_row_ids.len())
+            .sum::<usize>();
+        let check = master_check_state(selected, selectable);
+        let handler = self.select_all_handler.borrow_mut().take();
+        if let Some(handler) = handler.as_ref() {
+            self.select_all.block_signal(handler);
+        }
+        self.select_all.set_active(check.active);
+        self.select_all.set_inconsistent(check.inconsistent);
+        self.select_all
+            .set_sensitive(check.sensitive && !self.controls_locked.get());
+        if let Some(handler) = handler.as_ref() {
+            self.select_all.unblock_signal(handler);
+        }
+        *self.select_all_handler.borrow_mut() = handler;
     }
 
     fn set_selected(self: &Rc<Self>, row_ids: &[DoctorReviewRowId], selected: bool) {
@@ -337,8 +368,6 @@ pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
     state: Rc<ReviewState>,
     rows: gtk4::ListView,
-    all: gtk4::Button,
-    none: gtk4::Button,
     chrome_actions: gtk4::Box,
 }
 
@@ -425,6 +454,9 @@ impl LibraryDoctorReviewPage {
             filter_bar,
             apply,
             change_summary,
+            select_all: header.select_all.clone(),
+            select_all_handler: RefCell::new(None),
+            controls_locked: Cell::new(false),
             layout,
             column_groups: header.groups.clone(),
             outcomes: RefCell::new(HashMap::new()),
@@ -454,27 +486,18 @@ impl LibraryDoctorReviewPage {
             }));
         }
 
-        let all = gtk4::Button::with_label(&strings::text(strings::DOCTOR_ALL));
-        let none = gtk4::Button::with_label(&strings::text(strings::DOCTOR_NONE));
-        all.add_css_class("doctor-review-header-action");
-        none.add_css_class("doctor-review-header-action");
         {
-            let state = state.clone();
-            all.connect_clicked(move |_| {
-                state.session.borrow_mut().all();
-                state.refresh();
+            let callback_state = state.clone();
+            let handler = header.select_all.connect_toggled(move |button| {
+                if button.is_active() {
+                    callback_state.session.borrow_mut().all();
+                } else {
+                    callback_state.session.borrow_mut().none();
+                }
+                callback_state.refresh();
             });
+            *state.select_all_handler.borrow_mut() = Some(handler);
         }
-        {
-            let state = state.clone();
-            none.connect_clicked(move |_| {
-                state.session.borrow_mut().none();
-                state.refresh();
-            });
-        }
-        let presets = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        presets.append(&all);
-        presets.append(&none);
         let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         page_content.append(&state.filter_bar.root);
         page_content.append(&header.root);
@@ -512,9 +535,7 @@ impl LibraryDoctorReviewPage {
             navigation_page,
             state,
             rows,
-            all,
-            none,
-            chrome_actions: presets,
+            chrome_actions: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
         });
         page.state.refresh();
         page
@@ -547,9 +568,9 @@ impl LibraryDoctorReviewPage {
     }
 
     pub(super) fn set_running(&self, running: bool) {
+        self.state.controls_locked.set(running);
         self.rows.set_sensitive(!running);
-        self.all.set_sensitive(!running);
-        self.none.set_sensitive(!running);
+        self.state.select_all.set_sensitive(!running);
         self.state.filter_bar.set_sensitive(!running);
         if running {
             self.state.apply.set_sensitive(false);
