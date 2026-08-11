@@ -77,3 +77,13 @@ fn gp_16_name_and_summary_stay_within_length_limits() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn gp_14_flatpak_manifest_passes_lint() {
+    let out = run_gate("check-flatpak-manifest.sh");
+    assert!(
+        out.status.success(),
+        "check-flatpak-manifest.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
