@@ -9,6 +9,7 @@ import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
@@ -31,6 +32,7 @@ open class ReprisePlaybackService : MediaSessionService() {
     private var latestPlaybackSnapshot: AndroidPlaybackSnapshot? = null
     private lateinit var sleepTimer: SleepTimerController
     private val localBinder = LocalBinder()
+    private val livePcmSink = LivePcmBufferSink()
 
     /**
      * The core's own callback, and the one place that learns playback has run
@@ -67,7 +69,10 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this)
+        val player = ExoPlayer.Builder(
+            this,
+            LivePcmRenderersFactory(this, TeeAudioProcessor(livePcmSink)),
+        )
             // Media3 defaults both of these off, and the device confirms it:
             // while a track was playing, the system's audio focus stack was
             // empty. Without focus the app talks over other players, keeps
@@ -82,6 +87,10 @@ open class ReprisePlaybackService : MediaSessionService() {
                 /* handleAudioFocus = */ true,
             )
             .setHandleAudioBecomingNoisy(true)
+            .build()
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
             .build()
         val port = Media3PlaybackPort(player) { settingsObserver?.invoke() }
         playbackPort = port
