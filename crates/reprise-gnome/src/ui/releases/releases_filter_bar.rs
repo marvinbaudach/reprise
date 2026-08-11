@@ -196,7 +196,7 @@ impl ReleasesFilterBar {
         self.rebuild();
     }
 
-    /// NR-25/FIL-2a: takes the filter row back to its default and clears this
+    /// NR-31/FIL-2a: takes the filter row back to its default and clears this
     /// section's transient search query.
     ///
     /// Back to *default*, not to the widest scope: since the default is itself
@@ -479,7 +479,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nr_25_type_toggles_are_independent_and_empty_means_every_type() {
+    fn nr_31_type_toggles_are_independent_and_empty_means_every_type() {
         let selection = ReleaseTypeSelection::default();
         let selection = toggle_type(selection, TypeChip::Album, false);
         let selection = toggle_type(selection, TypeChip::Ep, false);
@@ -490,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_25_widest_scope_count_line_names_shown_and_total() {
+    fn fil_2a_widest_scope_count_line_names_shown_and_total() {
         // Nothing is filtered away, so the line states one number.
         assert_eq!(release_count_presentation(19, 19), "19 gaps");
         // The default view filters, and says so without an alarm.
@@ -515,7 +515,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_25_filter_header_is_permanent_and_reserves_its_height() {
+    fn nr_31_filter_header_is_permanent_and_reserves_its_height() {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ReleasesFilterBar::new(conn);
@@ -581,13 +581,13 @@ mod tests {
         labels
     }
 
-    /// NR-25: the default view is the quiet one. The row still names its
+    /// FIL-2a: the default view is the quiet one. The row still names its
     /// total, but offers no "Clear all" and accents nothing — the button
     /// appears when the reader has changed something, not because the
     /// default itself filters.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_25_the_default_filter_row_offers_no_clear_all() {
+    fn fil_2a_the_default_filter_row_offers_no_clear_all() {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ReleasesFilterBar::new(conn);
