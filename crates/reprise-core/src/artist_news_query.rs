@@ -374,6 +374,9 @@ pub(crate) fn set_release_hidden_in(
     release_group_mbid: &str,
     hidden: bool,
 ) -> Result<(), rusqlite::Error> {
+    if !hidden {
+        crate::deleted_releases::forget_deleted_release_memory(conn, release_group_mbid)?;
+    }
     conn.execute(
         "UPDATE new_releases
             SET hidden = ?1,
