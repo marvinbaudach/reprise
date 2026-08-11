@@ -16,6 +16,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -245,11 +246,18 @@ internal fun TrackContextMenu(
 
 @Composable
 internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
+    val enabled = LocalNowPlayingActionsEnabled.current
     var expanded by remember { mutableStateOf(false) }
     var deleteConfirmation by remember { mutableStateOf<TrackDeletionTarget?>(null) }
     var message by remember { mutableStateOf<TransientMessage?>(null) }
     val target = remember(track.id, track.title) {
         TrackDeletionTarget(track.title, 1) { listOf(track.id) }
+    }
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            expanded = false
+            deleteConfirmation = null
+        }
     }
     // The message needs a slot of its own, exactly as in FavouriteHeartButton
     // next door: as a bare sibling it becomes another cell of the actions Row
@@ -257,6 +265,7 @@ internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
     Column {
         Box {
             IconButton(
+                enabled = enabled,
                 onClick = { expanded = true },
                 modifier = Modifier.size(48.dp).testTag("now-playing-overflow"),
             ) {

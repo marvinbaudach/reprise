@@ -2,7 +2,9 @@ package de.reprise.spike
 
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -11,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import org.junit.After
@@ -96,18 +99,13 @@ class MainActivityQueueTest {
     }
 
     @Test
-    fun fullWidthSwipeRemovesButShortFlickDoesNot() {
+    fun fullWidthHorizontalSwipeLeavesTheQueueUntouched() {
         openQueue()
-
-        swipeRow(trackId = 501, fraction = 0.3f)
-        compose.waitForIdle()
-        assertEquals(emptyList<Pair<Int, Long>>(), application.controls.removeUpcomingRequests)
-        assertEquals(listOf(501L, 502L, 503L), upcomingIds())
 
         swipeRow(trackId = 501, fraction = 0.9f)
         compose.waitForIdle()
-        assertEquals(listOf(0 to 501L), application.controls.removeUpcomingRequests)
-        assertEquals(listOf(502L, 503L), upcomingIds())
+        assertEquals(emptyList<Pair<Int, Long>>(), application.controls.removeUpcomingRequests)
+        assertEquals(listOf(501L, 502L, 503L), upcomingIds())
     }
 
     @Test
@@ -115,13 +113,38 @@ class MainActivityQueueTest {
         openQueue()
         application.removeUpcomingBehindScreen(trackId = 501)
 
-        swipeRow(trackId = 502, fraction = 0.9f)
+        compose.onNodeWithTag("queue-track-row-502").performTouchInput { longClick() }
+        compose.onNodeWithText("Remove from queue").performClick()
         compose.waitForIdle()
 
         assertEquals(listOf(1 to 502L), application.controls.removeUpcomingRequests)
         compose.onNodeWithText("Upcoming One").assertDoesNotExist()
         compose.onNodeWithText("Upcoming Two").assertIsDisplayed()
         compose.onNodeWithText("Upcoming Three").assertIsDisplayed()
+    }
+
+    @Test
+    fun contextMenuRemainsTheQueueRemovalPath() {
+        openQueue()
+
+        compose.onNodeWithTag("queue-track-row-501").performTouchInput { longClick() }
+        compose.onNodeWithText("Remove from queue").performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf(0 to 501L), application.controls.removeUpcomingRequests)
+        assertEquals(listOf(502L, 503L), upcomingIds())
+    }
+
+    @Test
+    fun horizontalSwipeStartedOnAQueueRowChangesTheSelectedTab() {
+        openQueue()
+
+        compose.onNodeWithTag("queue-track-row-501").performTouchInput { swipeRight() }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("library-destination-FAVOURITES").assertIsSelected()
+        assertEquals(emptyList<Pair<Int, Long>>(), application.controls.removeUpcomingRequests)
+        assertEquals(listOf(501L, 502L, 503L), upcomingIds())
     }
 
     @Test
