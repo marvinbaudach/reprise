@@ -19,6 +19,7 @@ import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.AndroidTrashReport
+import uniffi.reprise_android_ffi.AndroidVisualEngine
 import uniffi.reprise_android_ffi.TrashAction
 
 /** Owns Media3 for background playback, notifications and external controls. */
@@ -33,6 +34,7 @@ open class ReprisePlaybackService : MediaSessionService() {
     private lateinit var sleepTimer: SleepTimerController
     private val localBinder = LocalBinder()
     private val livePcmSink = LivePcmBufferSink()
+    private var liveVisualEngine: NativeVisualSceneEngine? = null
 
     /**
      * The core's own callback, and the one place that learns playback has run
@@ -155,8 +157,19 @@ open class ReprisePlaybackService : MediaSessionService() {
         mediaSession = null
         playbackPort?.release()
         playbackPort = null
+        livePcmSink.detachAll()
+        liveVisualEngine?.close()
+        liveVisualEngine = null
         super.onDestroy()
     }
+
+    internal fun visualSceneEngineFactory(): VisualSceneEngineFactory =
+        VisualSceneEngineFactory {
+            val engine = liveVisualEngine ?: NativeVisualSceneEngine(AndroidVisualEngine()).also {
+                liveVisualEngine = it
+            }
+            LiveVisualSceneEngineLease(engine, livePcmSink)
+        }
 
     internal fun attachObserver(observer: (AndroidPlaybackSnapshot) -> Unit) {
         this.observer = observer
@@ -306,6 +319,28 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     internal companion object {
         const val LOCAL_BIND_ACTION = "org.reprise.BIND_PLAYBACK"
+    }
+}
+
+private class LiveVisualSceneEngineLease(
+    private val engine: NativeVisualSceneEngine,
+    private val sink: LivePcmBufferSink,
+) : VisualSceneEngine by engine, LivePcmConsumer {
+    init {
+        sink.attach(this)
+    }
+
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ) = engine.ingestPcm16(bytes, byteCount, sampleRateHz, channelCount)
+
+    override fun resetAudioStream() = engine.resetAudioStream()
+
+    override fun close() {
+        sink.detach(this)
     }
 }
 

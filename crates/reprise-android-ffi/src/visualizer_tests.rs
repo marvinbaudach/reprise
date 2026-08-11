@@ -91,6 +91,72 @@ fn an_empty_analysis_uses_the_shared_resting_scene_while_playback_runs() {
     );
 }
 
+#[test]
+fn live_pcm_produces_sixty_four_non_interpolated_cava_bands() {
+    let engine = AndroidVisualEngine::new();
+    engine.set_playing(true);
+
+    for chunk in 0..20 {
+        let pcm = stereo_sine_pcm16(2_000.0, 48_000, chunk, 512);
+        assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    }
+
+    let bands = engine.live_bands_for_testing();
+    let largest_neighbor_step = bands
+        .windows(2)
+        .map(|pair| (pair[0] - pair[1]).abs())
+        .fold(0.0_f32, f32::max);
+    assert_eq!(bands.len(), 64);
+    assert!(
+        largest_neighbor_step > 1.0 / 23.0,
+        "direct CAVA bins should retain detail finer than one 24-band interpolation step: {bands:?}"
+    );
+    assert!(engine.has_live_audio());
+    assert!(!engine.scene(272.0, 272.0).is_empty());
+}
+
+#[test]
+fn stereo_pcm_is_averaged_to_mono_instead_of_summed() {
+    let engine = AndroidVisualEngine::new();
+    let pcm = opposite_phase_stereo_pcm16(512);
+
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    assert!(engine
+        .live_bands_for_testing()
+        .iter()
+        .all(|band| *band == 0.0));
+    assert_eq!(engine.bass_pressure().pressure, 0.0);
+}
+
+#[test]
+fn stream_and_track_changes_reset_cava_and_bass_history() {
+    let engine = AndroidVisualEngine::new();
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    assert!(engine
+        .live_bands_for_testing()
+        .iter()
+        .any(|band| *band > 0.0));
+
+    engine.reset_audio_stream();
+    assert!(!engine.has_live_audio());
+    assert!(engine
+        .live_bands_for_testing()
+        .iter()
+        .all(|band| *band == 0.0));
+    assert_eq!(engine.bass_pressure().pressure, 0.0);
+
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    engine.note_track_changed();
+    assert!(!engine.has_live_audio());
+    assert!(engine
+        .live_bands_for_testing()
+        .iter()
+        .all(|band| *band == 0.0));
+    assert_eq!(engine.bass_pressure().pressure, 0.0);
+}
+
 fn shape(geom: Geom) -> Shape {
     Shape {
         geom,
@@ -104,6 +170,35 @@ fn shape(geom: Geom) -> Shape {
         glow: 0.6,
         dash: None,
     }
+}
+
+fn stereo_sine_pcm16(
+    frequency_hz: f32,
+    sample_rate_hz: u32,
+    chunk: usize,
+    frame_count: usize,
+) -> Vec<u8> {
+    let mut pcm = Vec::with_capacity(frame_count * 4);
+    for frame in 0..frame_count {
+        let absolute_frame = chunk * frame_count + frame;
+        let sample = (std::f32::consts::TAU * frequency_hz * absolute_frame as f32
+            / sample_rate_hz as f32)
+            .sin();
+        let sample = (sample * 20_000.0).round() as i16;
+        pcm.extend_from_slice(&sample.to_le_bytes());
+        pcm.extend_from_slice(&sample.to_le_bytes());
+    }
+    pcm
+}
+
+fn opposite_phase_stereo_pcm16(frame_count: usize) -> Vec<u8> {
+    let mut pcm = Vec::with_capacity(frame_count * 4);
+    for frame in 0..frame_count {
+        let left = ((frame as i32 * 997 % 40_000) - 20_000) as i16;
+        pcm.extend_from_slice(&left.to_le_bytes());
+        pcm.extend_from_slice(&left.saturating_neg().to_le_bytes());
+    }
+    pcm
 }
 
 fn decode_scene(buffer: &[f32]) -> Scene {

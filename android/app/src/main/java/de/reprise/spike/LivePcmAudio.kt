@@ -43,6 +43,10 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink {
         if (this.consumer === consumer) this.consumer = null
     }
 
+    fun detachAll() {
+        consumer = null
+    }
+
     override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
         this.sampleRateHz = sampleRateHz
         this.channelCount = channelCount
