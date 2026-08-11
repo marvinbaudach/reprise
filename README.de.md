@@ -67,6 +67,23 @@ Benchmarkmethoden, ihre Grenzen und die akzeptierten Ergebnisse stehen in
 [TESTING.md](TESTING.md) und im [Engineering-Showcase](docs/showcase.md) —
 dieses README verzichtet bewusst auf Zahlen, die schnell veralten.
 
+## Wie das hier entsteht
+
+Reprise entsteht mit erheblicher LLM-Unterstützung — und das steht hier, statt
+gefunden zu werden. Ein Entwurf wird geschrieben und anschliessend gezielt
+angegriffen, bevor eine Zeile Code existiert; die Umsetzung übernimmt ein
+Coding-Agent in einem isolierten Worktree; das Ergebnis läuft durch Review und
+die oben genannten Gates, und eine Änderung ohne den fehlschlagenden Test, der
+sie motiviert hat, landet nicht. Die Entwürfe, ihre Review-Runden und die
+Übergabenotizen liegen in `docs/plans/` — der Prozess ist Teil des Repositorys,
+keine Fussnote dazu.
+
+Was das nicht ändert: Ich bin der Maintainer, die Entscheidungen und die Fehler
+gehören mir. Die Engineering-Verträge oben gibt es genau deshalb, weil kein Teil
+dieses Codes Vertrauen verdient, weil ihn jemand oder etwas Bestimmtes
+geschrieben hat — sondern weil ein benannter Test ihn absichert, und jeden
+dieser Tests kannst du selbst laufen lassen.
+
 ## Mitentwickeln
 
 **Such dir deinen Einstieg:** reine Bibliotheks-, Scanner-, Queue- oder
