@@ -8,6 +8,22 @@ import org.junit.Test
 
 class SceneStateTest {
     @Test
+    fun bass_pressure_is_the_fast_follower_mean_over_the_first_seven_bands() {
+        val cells = ByteArray(10 * 24) { index ->
+            if (index % 24 < 7) 255.toByte() else 0
+        }
+        val state = SceneState(
+            SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = cells),
+        )
+
+        state.advanceTo(0)
+
+        val expected = state.motionBands.take(7).average().toFloat()
+        assertEquals(expected.toRawBits(), state.bassPressure.toRawBits())
+        assertTrue(state.bassPressure > state.motionLevel)
+    }
+
+    @Test
     fun fog_level_is_the_clamped_mean_of_the_slow_fog_envelopes() {
         val cells = ByteArray(22 * 24) { index ->
             if (index % 24 % 2 == 0) 0 else 255.toByte()
@@ -96,6 +112,49 @@ class SceneStateTest {
         assertEquals(angleA, read.fogAngleA.toRawBits())
         assertEquals(angleB, read.fogAngleB.toRawBits())
         assertEquals(revision, read.revision)
+    }
+
+    @Test
+    fun bass_pressure_read_lands_between_the_current_and_next_fast_follower_frames() {
+        val cells = ByteArray(10 * 24) { index ->
+            val frame = index / 24
+            val band = index % 24
+            if (frame == 9 && band < 7) 255.toByte() else 0
+        }
+        val frames = SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = cells)
+        val read = SceneState(frames)
+        val stepped = SceneState(frames)
+        read.advanceTo(0)
+        stepped.advanceTo(0)
+        val current = read.bassPressure
+        val angleA = read.fogAngleA.toRawBits()
+        val angleB = read.fogAngleB.toRawBits()
+
+        val halfway = read.readBassPressureAt(0.5f)
+        val next = read.readBassPressureAt(1f)
+        stepped.advanceTo(1)
+
+        assertTrue("halfway $halfway must exceed current $current", halfway > current)
+        assertTrue("halfway $halfway must stay below next $next", halfway < next)
+        assertEquals(stepped.bassPressure.toRawBits(), next.toRawBits())
+        assertEquals(angleA, read.fogAngleA.toRawBits())
+        assertEquals(angleB, read.fogAngleB.toRawBits())
+    }
+
+    @Test
+    fun bass_pressure_snaps_on_seek_and_a_paused_fraction_keeps_its_value() {
+        val frames = patternedFrames(frameCount = 60)
+        val state = SceneState(frames)
+        state.advanceTo(0)
+        state.advanceTo(40)
+
+        val expected = state.motionBands.take(7).average().toFloat()
+        assertEquals(expected.toRawBits(), state.bassPressure.toRawBits())
+
+        val paused = state.readBassPressureAt(0.4f).toRawBits()
+        repeat(10) {
+            assertEquals(paused, state.readBassPressureAt(0.4f).toRawBits())
+        }
     }
 
     @Test
@@ -190,8 +249,21 @@ class SceneStateTest {
 
         assertEquals(0, frames.frameCount)
         assertEquals(0f, state.motionLevel, 0f)
+        assertEquals(0f, state.bassPressure, 0f)
         assertTrue(state.fogBands.all { it == 0f })
         assertTrue(state.motionBands.all { it == 0f })
+    }
+
+    @Test
+    fun unanalysed_wander_keeps_bass_pressure_at_rest() {
+        val state = SceneState(
+            SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = byteArrayOf()),
+        )
+
+        state.wanderTo(totalSeconds = 4f, elapsedSeconds = 0.05f)
+
+        assertTrue(state.fogLevel > 0f)
+        assertEquals(0f, state.bassPressure, 0f)
     }
 
     @Test

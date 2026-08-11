@@ -71,6 +71,7 @@ internal class SceneDriver(
         val analysed = frames.frameCount > 0
         if (analysed) {
             state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
+            state.readBassPressureAt(frameFraction)
         }
         val previousTick = lastTickNanos
         if (previousTick != null) {
