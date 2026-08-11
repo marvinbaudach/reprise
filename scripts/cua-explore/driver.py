@@ -233,6 +233,7 @@ class CuaExecutor:
                 target,
                 origin=self.hover_geometry,
                 exclude_cursor=self.exclude_cursor,
+                screenshots_available=before.screenshot_available and after.screenshot_available,
             )
         else:
             hover_findings = analyze_hover(
@@ -241,6 +242,7 @@ class CuaExecutor:
                 target,
                 origin=self.hover_geometry,
                 exclude_cursor=self.exclude_cursor,
+                screenshots_available=before.screenshot_available and after.screenshot_available,
             )
         findings.extend(hover_findings)
         result = StepResult(before, after, (after,), response, evidence, tuple(findings))
@@ -485,15 +487,14 @@ class CuaExecutor:
         captured_ms = round(time.monotonic() * 1000)
         round_trip_started = time.monotonic()
         raw = self.transport.call("get_window_state", payload)
+        raw = {**raw, "screenshot_available": json_path is not None and raw.get("screenshot_available") is not False}
         raw = self.with_measured_geometry(raw, state_id=state_id)
         # Retained so the timing oracles can subtract the harness's own cost.
         self._snapshot_durations_ms.append(
             round((time.monotonic() - round_trip_started) * 1000)
         )
         if json_path is not None:
-            json_path.write_text(
-                json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-            )
+            json_path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return raw, normalize_snapshot(raw, state_id=state_id, captured_ms=captured_ms)
 
     def with_measured_geometry(

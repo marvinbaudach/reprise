@@ -47,11 +47,20 @@ def analyze_hover(
     *,
     origin: Any,
     exclude_cursor: bool = True,
+    screenshots_available: bool = True,
 ) -> tuple[Finding, ...]:
     """Return a finding only when hover is absent, weak, skipped, or unmeasurable."""
     label = str(element.get("label") or "")
     role = str(element.get("role") or "unknown")
     evidence = {"label": label, "role": role}
+    if not screenshots_available:
+        return (
+            _info(
+                "hover-skipped",
+                "The snapshot has no screenshot, so no pixel verdict was drawn.",
+                {**evidence, "reason": "screenshot-unavailable"},
+            ),
+        )
     if element.get("enabled") is False or element.get("visible") is False:
         return (
             _info(

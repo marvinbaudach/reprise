@@ -27,6 +27,10 @@ RETRY_DELAYS_SECONDS = (0.25, 0.50)
 # final snapshot attempt beyond that gap while capping added mission time at
 # six seconds for one empty get_window_state call.
 WINDOW_STATE_READINESS_RETRY_DELAYS_SECONDS = (1.0, 2.0, 3.0)
+# M4b measured three screenshot-backend failures inside 0.75 seconds while the
+# driver was already reconnecting. Give that recovery the same six-second
+# budget as startup readiness before asking for the intact tree without pixels.
+CAPTURE_RETRY_DELAYS_SECONDS = (1.0, 2.0, 3.0)
 SUCCESS_STATUSES = frozenset({"ok", "success", "succeeded"})
 BACKGROUND_UNAVAILABLE_CODE = "background_unavailable"
 # Measured from the cua-driver 0.19.3 schemas used by the mission actions:
@@ -100,6 +104,7 @@ class CliTransport:
         self.transport_faults = 0
         self._fault_finding_emitted = False
         self._retained_fault_lines = 0
+        self._plain_text_fault_line: str | None = None
 
     def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         request_payload = dict(payload)
@@ -112,6 +117,7 @@ class CliTransport:
             command.extend(["--socket", str(self.socket_path)])
         attempt = 0
         delivery_escalation: dict[str, str] | None = None
+        capture_unavailable_reason: str | None = None
         while True:
             attempt += 1
             try:
@@ -144,11 +150,24 @@ class CliTransport:
                 confirmation = _human_confirmation(tool, completed.stdout)
                 if confirmation is not None:
                     return confirmation
+                first_line = _first_line(completed.stdout)
+                self._plain_text_fault_line = first_line
+                if _is_capture_failure(tool, request_payload, first_line):
+                    if attempt <= len(CAPTURE_RETRY_DELAYS_SECONDS):
+                        time.sleep(CAPTURE_RETRY_DELAYS_SECONDS[attempt - 1])
+                        continue
+                    tree_payload = dict(request_payload)
+                    tree_payload.pop("screenshot_out_file", None)
+                    request_payload = tree_payload
+                    command[2] = json.dumps(tree_payload, separators=(",", ":"))
+                    capture_unavailable_reason = first_line
+                    attempt = 0
+                    continue
                 if tool in RETRYABLE_TOOLS and attempt <= len(RETRY_DELAYS_SECONDS):
                     time.sleep(RETRY_DELAYS_SECONDS[attempt - 1])
                     continue
                 raise DriverError(
-                    f"cua-driver {tool} returned invalid JSON"
+                    f"cua-driver {tool} returned non-JSON text: {first_line}"
                 ) from error
             if not isinstance(response, dict):
                 raise DriverError(
@@ -172,6 +191,12 @@ class CliTransport:
                     )
                     continue
                 raise DriverError(response_error)
+            if capture_unavailable_reason is not None:
+                response = {
+                    **response,
+                    "screenshot_available": False,
+                    "screenshot_unavailable_reason": capture_unavailable_reason,
+                }
             delivery_failure = _delivery_failure(response)
             if delivery_failure is not None:
                 # The tool answered its contract and reported in the same
@@ -227,13 +252,21 @@ class CliTransport:
         if not self.transport_faults or self._fault_finding_emitted:
             return []
         self._fault_finding_emitted = True
+        detail = (
+            f" The driver text began: {self._plain_text_fault_line}"
+            if self._plain_text_fault_line
+            else ""
+        )
         return [
             Finding(
                 "driver-transport-fault",
                 "warning",
                 0.9,
-                "A driver call failed and its payload was retained.",
-                {"transport_faults": self.transport_faults},
+                "A driver call failed and its payload was retained." + detail,
+                {
+                    "transport_faults": self.transport_faults,
+                    "driver_text_first_line": self._plain_text_fault_line,
+                },
                 blocks_gate=False,
             )
         ]
@@ -308,6 +341,21 @@ def _human_confirmation(tool: str, stdout: str) -> Mapping[str, Any] | None:
     if _response_error(tool, confirmation) is not None:
         return None
     return confirmation
+
+
+def _first_line(stdout: str) -> str:
+    lines = stdout.strip().splitlines()
+    return lines[0][:500] if lines else "<empty>"
+
+
+def _is_capture_failure(
+    tool: str, payload: Mapping[str, Any], first_line: str
+) -> bool:
+    return (
+        tool == "get_window_state"
+        and "screenshot_out_file" in payload
+        and first_line.startswith("Capture error:")
+    )
 
 
 def _can_retry_in_foreground(

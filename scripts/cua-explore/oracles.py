@@ -118,6 +118,7 @@ class Snapshot:
     raw_signature: str
     window_frame: Frame | None = None
     geometry_trusted: bool = True
+    screenshot_available: bool = True
 
     @property
     def viewport(self) -> Frame | None:
@@ -314,6 +315,7 @@ def normalize_snapshot(
         raw_signature=hashlib.sha256(signature_payload).hexdigest(),
         window_frame=_root_window_frame(root_candidates),
         geometry_trusted=raw.get("geometry_trusted") is not False,
+        screenshot_available=raw.get("screenshot_available") is not False,
     )
 
 

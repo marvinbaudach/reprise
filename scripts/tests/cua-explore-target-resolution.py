@@ -287,7 +287,7 @@ class CliTransportRetryTests(unittest.TestCase):
         path = self.evidence_dir / "driver-faults.jsonl"
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
-    def test_read_recovers_from_invalid_json_and_retains_the_payload(self) -> None:
+    def test_read_recovers_from_non_json_text_and_retains_the_payload(self) -> None:
         transport = ScriptedCliTransport(
             [completed("not-json"), completed('{"elements": []}')],
             evidence_dir=self.evidence_dir,
@@ -304,13 +304,15 @@ class CliTransportRetryTests(unittest.TestCase):
         )
         self.assertEqual(transport.take_findings(), [])
 
-    def test_three_invalid_reads_fail_after_retaining_every_attempt(self) -> None:
+    def test_three_non_json_reads_name_the_last_line_after_retaining_every_attempt(
+        self,
+    ) -> None:
         transport = ScriptedCliTransport(
             [completed("one"), completed("two"), completed("three")],
             evidence_dir=self.evidence_dir,
         )
 
-        with self.assertRaisesRegex(DriverError, "invalid JSON"):
+        with self.assertRaisesRegex(DriverError, "returned non-JSON text: three"):
             transport.call("get_window_state", {})
 
         self.assertEqual(transport.run_count, 3)
@@ -352,7 +354,7 @@ class CliTransportRetryTests(unittest.TestCase):
             evidence_dir=self.evidence_dir,
         )
 
-        with self.assertRaisesRegex(DriverError, "invalid JSON"):
+        with self.assertRaisesRegex(DriverError, "returned non-JSON text: broken"):
             transport.call("click", {})
 
         self.assertEqual(transport.run_count, 1)
@@ -420,7 +422,7 @@ class CliTransportRetryTests(unittest.TestCase):
             [completed("✅ done")] * 3, evidence_dir=self.evidence_dir
         )
 
-        with self.assertRaisesRegex(DriverError, "invalid JSON"):
+        with self.assertRaisesRegex(DriverError, "returned non-JSON text: ✅ done"):
             transport.call("get_window_state", {})
 
         self.assertEqual(transport.run_count, 3)
