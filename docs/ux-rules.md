@@ -2353,11 +2353,13 @@ the panel).
   result recovery remain exactly as specified by NR-25.
 - **NR-32** [active] [core] [gtk] — A release the listener deliberately deleted
   does not return as a gap. When "move to trash" or "remove from library"
-  finally removes the last track of an album, or the song a single is matched
-  by, that release is remembered and hidden — including when the catalog only
-  learns of it later. Files that merely go missing never trigger this.
-  Restoring the release through "Show again" forgets it, and so does
-  re-acquiring it.
+  removes the last track of an album, album-scope memory hides every matching
+  album/EP row; deleting a song writes track-scope memory that hides a matching
+  `single` even when another song keeps the album row owned. The catalog also
+  applies memory learned before a release was fetched. Missing-files cleanup,
+  including tombstone purge, never writes memory. "Show again" restores every
+  row hidden by the selected memory scope, while re-acquisition forgets only
+  the scope that returned.
 - **NR-33** [active] [gtk] — replaces NR-31. The gap view's columns are
   `Cover · Date · Release · Artist · Type · Status · Link`; the second text
   column is named `Release` because its rows are albums, EPs and singles, not

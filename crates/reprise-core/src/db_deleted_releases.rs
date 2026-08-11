@@ -39,6 +39,7 @@ mod tests {
         .unwrap();
 
         migrate_v69(&conn).unwrap();
+        conn.pragma_update(None, "user_version", 68).unwrap();
         migrate_v69(&conn).unwrap();
 
         let version: i64 = conn

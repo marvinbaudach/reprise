@@ -33,22 +33,22 @@ pub(crate) fn remember_deleted_releases(
         return Ok(());
     }
     let removed_ids = ids.iter().copied().collect::<HashSet<_>>();
-    let selected = ids
-        .iter()
-        .filter_map(|id| {
-            conn.query_row(
-                "SELECT artist, album_artist, album, title FROM tracks WHERE id = ?1",
-                [id],
-                |row| {
-                    let album = row.get::<_, String>(2)?;
-                    let title = row.get::<_, String>(3)?;
-                    Ok(track_identity(row.get(0)?, row.get(1)?, &album, &title))
-                },
-            )
-            .optional()
-            .transpose()
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut identity_statement =
+        conn.prepare_cached("SELECT artist, album_artist, album, title FROM tracks WHERE id = ?1")?;
+    let mut selected = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(identity) = identity_statement
+            .query_row([id], |row| {
+                let album = row.get::<_, String>(2)?;
+                let title = row.get::<_, String>(3)?;
+                Ok(track_identity(row.get(0)?, row.get(1)?, &album, &title))
+            })
+            .optional()?
+        {
+            selected.push(identity);
+        }
+    }
+    drop(identity_statement);
     // This is deliberately wider than `local_library_index`: a missing row
     // still owns its metadata here, so an unmounted drive cannot fabricate a
     // deletion memory. Only a row already committed to removal is excluded.
@@ -74,7 +74,7 @@ pub(crate) fn remember_deleted_releases(
 
     let album_keys = selected
         .iter()
-        .filter(|identity| !identity.album_key.is_empty())
+        .filter(|identity| !identity.artist_key.is_empty() && !identity.album_key.is_empty())
         .map(|identity| (identity.artist_key.clone(), identity.album_key.clone()))
         .collect::<HashSet<_>>();
     for (artist_key, title_key) in album_keys {
@@ -113,8 +113,11 @@ pub(crate) fn remember_deleted_releases(
 
 pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, rusqlite::Error> {
     let memories = load_memories(conn)?;
+    if memories.is_empty() {
+        return Ok(0);
+    }
     let library = crate::artist_news_query::local_library_index(conn)?;
-    let (acquired, mut remaining): (Vec<_>, Vec<_>) = memories.into_iter().partition(|memory| {
+    let (acquired, remaining): (Vec<_>, Vec<_>) = memories.into_iter().partition(|memory| {
         if memory.scope == "album" {
             library
                 .album_track_counts
@@ -132,57 +135,23 @@ pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, r
             rusqlite::params![memory.artist_key, memory.title_key, memory.scope],
         )?;
     }
-    let releases = conn
-        .prepare(
-            "SELECT release_group_mbid, artist_name, title, release_type, hidden
-             FROM new_releases",
-        )?
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, bool>(4)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    let forgotten_keys = releases
-        .iter()
-        .filter(|(_, artist, title, release_type, hidden)| {
-            if !hidden {
-                return false;
-            }
-            let key = (
-                crate::artist_news::normalize(artist),
-                crate::artist_news::normalize(title),
-            );
-            acquired
-                .iter()
-                .any(|memory| memory.matches(&key, release_type))
-                && !remaining
-                    .iter()
-                    .any(|memory| memory.matches(&key, release_type))
-        })
-        .map(|(_, artist, title, _, _)| {
-            (
-                crate::artist_news::normalize(artist),
-                crate::artist_news::normalize(title),
-            )
-        })
-        .collect::<HashSet<_>>();
-    for (mbid, artist, title, _, hidden) in &releases {
+    let releases = load_releases(conn)?;
+    for (mbid, artist, title, release_type, hidden) in &releases {
         let key = (
             crate::artist_news::normalize(artist),
             crate::artist_news::normalize(title),
         );
-        if *hidden && forgotten_keys.contains(&key) {
-            crate::artist_news_query::set_release_hidden_in(conn, mbid, false)?;
+        if *hidden
+            && acquired
+                .iter()
+                .any(|memory| memory.matches(&key, release_type))
+            && !remaining
+                .iter()
+                .any(|memory| memory.matches(&key, release_type))
+        {
+            crate::artist_news_query::update_release_hidden_in(conn, mbid, false)?;
         }
     }
-    remaining.retain(|memory| {
-        !forgotten_keys.contains(&(memory.artist_key.clone(), memory.title_key.clone()))
-    });
     let mut hidden_count = 0;
     for (mbid, artist, title, release_type, hidden) in releases {
         let key = (
@@ -192,7 +161,30 @@ pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, r
         let remembered = remaining
             .iter()
             .any(|memory| memory.matches(&key, &release_type));
-        if !hidden && remembered && !forgotten_keys.contains(&key) {
+        if !hidden && remembered {
+            crate::artist_news_query::set_release_hidden_in(conn, &mbid, true)?;
+            hidden_count += 1;
+        }
+    }
+    Ok(hidden_count)
+}
+
+pub(crate) fn hide_deleted_release_memory(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    let memories = load_memories(conn)?;
+    if memories.is_empty() {
+        return Ok(0);
+    }
+    let mut hidden_count = 0;
+    for (mbid, artist, title, release_type, hidden) in load_releases(conn)? {
+        let key = (
+            crate::artist_news::normalize(&artist),
+            crate::artist_news::normalize(&title),
+        );
+        if !hidden
+            && memories
+                .iter()
+                .any(|memory| memory.matches(&key, &release_type))
+        {
             crate::artist_news_query::set_release_hidden_in(conn, &mbid, true)?;
             hidden_count += 1;
         }
@@ -228,26 +220,75 @@ fn load_memories(conn: &Connection) -> Result<Vec<DeletedReleaseMemory>, rusqlit
         .collect()
 }
 
+type ReleaseRow = (String, String, String, String, bool);
+
+fn load_releases(conn: &Connection) -> Result<Vec<ReleaseRow>, rusqlite::Error> {
+    conn.prepare(
+        "SELECT release_group_mbid, artist_name, title, release_type, hidden
+         FROM new_releases",
+    )?
+    .query_map([], |row| {
+        Ok((
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+        ))
+    })?
+    .collect()
+}
+
 pub(crate) fn forget_deleted_release_memory(
     conn: &Connection,
     release_group_mbid: &str,
-) -> Result<(), rusqlite::Error> {
+) -> Result<Vec<String>, rusqlite::Error> {
     let release = conn
         .query_row(
-            "SELECT artist_name, title FROM new_releases WHERE release_group_mbid = ?1",
+            "SELECT artist_name, title, release_type
+             FROM new_releases WHERE release_group_mbid = ?1",
             [release_group_mbid],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
         )
         .optional()?;
-    let Some((artist, title)) = release else {
-        return Ok(());
+    let Some((artist, title, release_type)) = release else {
+        return Ok(Vec::new());
     };
-    conn.execute(
-        "DELETE FROM deleted_releases WHERE artist_key = ?1 AND title_key = ?2",
-        rusqlite::params![
-            crate::artist_news::normalize(&artist),
-            crate::artist_news::normalize(&title)
-        ],
-    )?;
-    Ok(())
+    let key = (
+        crate::artist_news::normalize(&artist),
+        crate::artist_news::normalize(&title),
+    );
+    let forgotten = load_memories(conn)?
+        .into_iter()
+        .filter(|memory| memory.matches(&key, &release_type))
+        .collect::<Vec<_>>();
+    if forgotten.is_empty() {
+        return Ok(vec![release_group_mbid.to_owned()]);
+    }
+    for memory in &forgotten {
+        conn.execute(
+            "DELETE FROM deleted_releases
+             WHERE artist_key = ?1 AND title_key = ?2 AND scope = ?3",
+            rusqlite::params![memory.artist_key, memory.title_key, memory.scope],
+        )?;
+    }
+    Ok(load_releases(conn)?
+        .into_iter()
+        .filter_map(|(mbid, artist, title, release_type, _)| {
+            let key = (
+                crate::artist_news::normalize(&artist),
+                crate::artist_news::normalize(&title),
+            );
+            forgotten
+                .iter()
+                .any(|memory| memory.matches(&key, &release_type))
+                .then_some(mbid)
+        })
+        .collect())
 }

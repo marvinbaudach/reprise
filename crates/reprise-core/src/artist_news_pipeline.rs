@@ -276,6 +276,9 @@ where
         }
         (hooks.on_progress)(completed);
     }
+    let transaction = conn.unchecked_transaction().map_err(database_error)?;
+    crate::deleted_releases::apply_deleted_release_memory(&transaction).map_err(database_error)?;
+    transaction.commit().map_err(database_error)?;
     crate::artist_news_history::enforce_retention(db, now).map_err(database_error)?;
     if report.failures.is_empty() {
         crate::library::settings::set_new_releases_last_completed_at(db, (hooks.completion_time)())
@@ -502,7 +505,6 @@ fn sync_releases(
             ],
         )?;
     }
-    crate::deleted_releases::apply_deleted_release_memory(&transaction)?;
     transaction.commit()
 }
 

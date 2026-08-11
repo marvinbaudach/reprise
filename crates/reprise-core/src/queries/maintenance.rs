@@ -382,10 +382,9 @@ pub fn remove_tracks_matching_paths(
     tracks: &[(i64, PathBuf)],
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
-    remove_track_requests_impl(
+    super::maintenance_delete::remove_path_requests_impl(
         conn,
-        tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
-        RemoveGuard::Any,
+        tracks.iter().map(|(id, path)| (*id, path.as_path())),
         None,
         false,
     )
@@ -395,10 +394,9 @@ pub(crate) fn remove_tracks_matching_paths_remembering_releases(
     db: &Db,
     tracks: &[(i64, PathBuf)],
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_track_requests_impl(
+    super::maintenance_delete::remove_path_requests_impl(
         db.conn(),
-        tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
-        RemoveGuard::Any,
+        tracks.iter().map(|(id, path)| (*id, path.as_path())),
         None,
         true,
     )
@@ -414,22 +412,19 @@ pub fn exclude_tracks_matching_paths(
     excluded_at: i64,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
-    remove_track_requests_impl(
+    super::maintenance_delete::remove_path_requests_impl(
         conn,
-        tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
-        RemoveGuard::Any,
+        tracks.iter().map(|(id, path)| (*id, path.as_path())),
         Some(excluded_at),
-        false,
+        true,
     )
 }
 
 /// Which rows `remove_tracks_impl`'s per-id `DELETE` is allowed to actually
 /// touch — an extra condition appended to `WHERE id = ?1`, re-checked at
 /// delete time rather than trusted from whatever snapshot the caller
-/// selected `ids` from. `Any` applies no missing/tombstone state guard and is
-/// used only by `remove_tracks_matching_paths`, which always pairs it with a
-/// mandatory `(id, path)` identity check — the id-only `Any` form is
-/// `unreachable!`. `MissingOnly` is `remove_missing_tracks`'s
+/// selected `ids` from. Path-identity deletion has its own typed entry point;
+/// `MissingOnly` is `remove_missing_tracks`'s
 /// belt-and-braces check against a row that raced back to present since the
 /// caller's selection. `TombstonedOnly` is `purge_tombstones`'s guard against the
 /// mirror race on the other side of the same problem: the scanner's
@@ -446,7 +441,6 @@ pub fn exclude_tracks_matching_paths(
 /// re-checking here, not the deadline arithmetic.
 #[derive(Clone, Copy)]
 pub(crate) enum RemoveGuard {
-    Any,
     MissingOnly,
     TombstonedOnly,
     /// Carries the deadline inputs so the delete can re-derive eligibility
@@ -470,33 +464,9 @@ pub(crate) fn remove_tracks_impl(
     ids: &[i64],
     guard: RemoveGuard,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    // Deliberately no release memory here: this shared primitive also serves
-    // scanner-driven missing cleanup and unattended auto-clean.
-    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard, None, false)
-}
-
-fn remove_track_requests_impl<'a>(
-    conn: &Connection,
-    requests: impl IntoIterator<Item = (i64, Option<&'a std::path::Path>)>,
-    guard: RemoveGuard,
-    exclusion_time: Option<i64>,
-    remember_deletion: bool,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    super::maintenance_delete::remove_track_requests_impl(
-        conn,
-        requests,
-        guard,
-        exclusion_time,
-        remember_deletion,
-    )
-}
-
-fn remove_tracks_impl_remembering_releases(
-    conn: &Connection,
-    ids: &[i64],
-    guard: RemoveGuard,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard, None, true)
+    // Every id-only caller is a missing/tombstone/auto-clean path. Deliberate
+    // deletion uses the path-identity entry point instead.
+    super::maintenance_delete::remove_id_requests_impl(conn, ids, guard)
 }
 
 /// Auto-clean's own DATABASE-ONLY removal (Finding 1, review pass on Task
@@ -660,7 +630,11 @@ pub fn undo_tombstone(db: &Db, ids: &[i64]) -> Result<usize, rusqlite::Error> {
     let sql = format!(
         "UPDATE tracks SET removed_at = NULL WHERE id IN ({placeholders}) AND removed_at IS NOT NULL"
     );
-    conn.execute(&sql, rusqlite::params_from_iter(ids.iter()))
+    let transaction = conn.unchecked_transaction()?;
+    let restored = transaction.execute(&sql, rusqlite::params_from_iter(ids.iter()))?;
+    crate::deleted_releases::apply_deleted_release_memory(&transaction)?;
+    transaction.commit()?;
+    Ok(restored)
 }
 
 /// Hard-deletes every currently-tombstoned row: the real, irreversible
@@ -711,7 +685,7 @@ pub fn purge_tombstones(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
             .collect::<Result<Vec<i64>, _>>()?;
         ids
     };
-    remove_tracks_impl_remembering_releases(conn, &ids, RemoveGuard::TombstonedOnly)
+    remove_tracks_impl(conn, &ids, RemoveGuard::TombstonedOnly)
 }
 
 /// Bare count of rows in `import_errors` (the last scan's import failures) —
