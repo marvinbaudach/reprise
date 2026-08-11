@@ -71,6 +71,13 @@ Keys are `artist_news::normalize` output. `artist_key` uses `album_artist`
 falling back to `artist`, exactly like `local_library_index`. Writes are
 `ON CONFLICT DO NOTHING`, so re-deleting keeps the original `deleted_at`.
 
+Review follow-up migration **v70** adds
+`new_releases.hidden_by_deleted_memory INTEGER NOT NULL DEFAULT 0`. Memory
+reconciliation sets that provenance bit when it hides a row and only clears
+rows carrying the bit. Existing and future manual hides therefore remain
+manual. A partial index over memory-owned rows keeps targeted undo proportional
+to the remembered rows it can actually reverse.
+
 ### 1.2 `remember_deleted_releases(conn, ids, now)`
 
 Runs inside the caller's transaction, **before** the rows are gone.
@@ -94,21 +101,23 @@ Runs inside the caller's transaction, **before** the rows are gone.
 - `album` scope hides matching rows of **any** type (a work MusicBrainz
   carries twice, as album and EP, must not survive as its EP twin).
 - `track` scope hides matching rows of type `single` only.
-- Hide through `set_release_hidden_in`, which also stamps `hidden_at`. Rows
-  already hidden stay untouched.
+- Hide through the dedicated memory-owned update, which also stamps
+  `hidden_at` and `hidden_by_deleted_memory`. Rows already hidden stay
+  untouched.
 - **Re-acquisition:** in the same pass, drop entries whose release is back in
   the library (present in `LocalLibraryIndex`) and un-hide those rows. This
-  cannot overwrite a user decision: a manual hide never writes an entry, and
-  "Show again" deletes it (1.4).
+  cannot overwrite a user decision: only rows carrying memory provenance are
+  automatically un-hidden.
 - Returns how many rows it hid, for the tests.
 
 ### 1.4 Reversal
 
 `set_release_hidden_in(conn, mbid, false)`, reached from `restore_release` and
-the view's row action, deletes the memory scopes that hid the selected row and
-un-hides every row those entries hid. Album/EP twins therefore return
-together, while an unrelated track scope remains. Re-acquisition reverses only
-the scope that returned. Hiding (`true`) writes nothing: only a deletion
+the view's row action, transactionally deletes the memory scopes that hid the
+selected row and un-hides each memory-owned row no longer covered by any
+surviving scope. Album/EP twins therefore return together, while a surviving
+track scope and manually hidden rows remain intact. Re-acquisition reverses
+only the scope that returned. Hiding (`true`) writes nothing: only a deletion
 creates memory.
 
 ### 1.5 Tests (package 1)
@@ -136,8 +145,8 @@ Depends on package 1.
 - Deliberately **not** `purge_tombstones` or the shared id-only
   `remove_tracks_impl`: those serve Missing-files cleanup and auto-clean for
   rows the scanner found gone. Leave a comment so a later reader does not
-  "fix" the omission. Undo re-applies existing memory only to reconcile a
-  returned sibling; it never creates memory.
+  "fix" the omission. Undo reconciles only the exact track ids it restored;
+  it never creates memory or runs the full-library apply pass on the UI caller.
 - Keep `maintenance.rs` under 800 lines — it is at 796. The logic lives in
   package 1's module; this package only calls it.
 
@@ -148,8 +157,11 @@ per deliberate path proves memory is written on completion.
 
 ## Package 3 — the catalog sync applies the memory (TDD, core)
 
-The refresh pipeline calls `apply_deleted_release_memory` once after every
-artist's upsert batch, inside one transaction. This catches a release the
+Each artist's upsert transaction applies existing memories to that artist's
+newly committed rows before reporting progress, so remembered gaps cannot
+flash visible. The refresh pipeline then calls
+`apply_deleted_release_memory` exactly once after the loop, including when a
+mid-loop error stops the refresh. This catches re-acquisitions and releases the
 catalog had not fetched when deletion happened without repeating full library
 and catalog scans once per artist.
 

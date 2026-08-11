@@ -84,6 +84,12 @@ other.
 `ON CONFLICT DO NOTHING`: re-deleting a release keeps the original
 `deleted_at`.
 
+Review follow-up migration **v70** adds
+`new_releases.hidden_by_deleted_memory INTEGER NOT NULL DEFAULT 0`. Only the
+memory reconciler sets this provenance bit; automatic reversal only clears
+rows carrying it, so a matching row hidden by hand stays hidden. A partial
+index over those rows keeps undo reconciliation proportional to its targets.
+
 ## Write path — where the memory is recorded
 
 At the two deliberate deletion paths, inside the transaction and before the
@@ -96,9 +102,10 @@ database rows disappear:
 
 Deliberately **not** in `purge_tombstones` or the shared id-only
 `remove_tracks_impl`: those serve Missing-files cleanup and auto-clean, which
-decision 1 excludes. Undoing a tombstone re-applies existing memory because a
-returned sibling may reacquire an album, but neither tombstoning nor purging
-writes new memory.
+decision 1 excludes. Undoing a tombstone reconciles only the exact ids restored
+by the undo because a returned sibling may reacquire an album, but neither
+tombstoning nor purging writes new memory or performs a full-library scan on
+the UI caller.
 
 Both call one shared core function so the rule exists once:
 
@@ -140,29 +147,30 @@ pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, r
   MusicBrainz carries twice, as album and EP, must not survive as its EP
   twin.
 - A `track`-scope entry hides matching rows of type `single` only.
-- Hiding reuses `set_release_hidden_in` (`artist_news_query.rs:372`), which
-  also stamps `hidden_at`. Rows already hidden are left untouched.
+- Hiding uses the dedicated memory-owned update, which stamps both `hidden_at`
+  and `hidden_by_deleted_memory`. Rows already hidden are left untouched.
 
-The deliberate deletion transaction uses a narrower hide-only pass right
-after writing, avoiding a second full library scan while still removing the
-catalog row in the same interaction. The refresh pipeline calls the full
-reconciliation once after all artists' upserts — this catches a release the
-catalog had not fetched when deletion happened without multiplying full
-library/catalog scans by the number of artists.
+The deliberate deletion transaction reuses its survivor scan and reconciles
+the catalog once, avoiding a second full library scan while still removing the
+catalog row in the same interaction. Each artist upsert transaction hides its
+newly fetched remembered rows before the progress callback can repaint. The
+refresh pipeline then calls the full reconciliation exactly once after the
+loop, even if a mid-loop error stops the refresh. This catches re-acquisitions
+without multiplying full library/catalog scans by the number of artists.
 
 **Re-acquisition:** the same pass drops entries whose release is back in the
 library (present in `LocalLibraryIndex`) and un-hides those rows. The
-`hidden` flag is provably the memory's own in that case — a manual hide
-never writes a memory entry, and "Show again" deletes it (below) — so
-clearing it cannot overwrite a user decision.
+provenance bit marks which hidden rows the memory owns, so clearing it cannot
+overwrite a user decision.
 
 ## Reversal path
 
 `set_release_hidden_in(conn, mbid, false)` — reached from both
 `restore_release` (`artist_news_history.rs:316`) and the view's per-row action
-— deletes the memory scopes that hid the selected row and un-hides every
-catalog row hidden by those same entries. Thus showing one album/EP twin also
-restores the other, while an independent track-scope memory remains intact.
+— transactionally deletes the memory scopes that hid the selected row and
+un-hides each memory-owned catalog row no longer covered by any surviving
+scope. Thus showing one album/EP twin also restores the other, while an
+independent track-scope memory and manually hidden rows remain intact.
 Re-acquisition deletes and reverses only its acquired scope. Hiding (`true`)
 writes nothing: only a deliberate deletion creates memory.
 
@@ -209,7 +217,8 @@ maintenance/trash test modules):
 - `nr_32_reacquiring_the_album_forgets_the_deletion`
 - `nr_32_reacquiring_an_album_keeps_its_absent_same_titled_single_hidden`
 - `nr_32_badge_and_popover_follow_the_memory` (NR-26/NR-29 coherence)
-- migration v69: table exists, is idempotent, empty on upgrade
+- migrations v69/v70: the memory table and hide provenance exist, upgrades are
+  idempotent, and pre-existing hidden rows remain manual
 
 GTK: `nr_32_deleted_release_memory_is_reflected_in_releases_view` proves the
 default rendered catalog omits the hidden row, and `nr_33_column_contract`
