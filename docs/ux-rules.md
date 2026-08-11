@@ -1767,7 +1767,7 @@ own statement).
   contains an episode, the Queue routes to a typed common-action menu:
   „Move to top", positional reorder, and „Remove from queue". Track- or
   podcast-specific actions never apply to a heterogeneous selection.
-  <!-- REVIEW: Regelvorschlag -->
+  <!-- REVIEW: rule proposal -->
 - **CTX-12** [active] [gtk] — If a podcast episode cannot currently be
   resolved, "Play next" and "Add to queue" stay visible but disabled.
   Activating either route revalidates every selected episode against the

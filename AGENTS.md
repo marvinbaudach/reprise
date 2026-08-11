@@ -78,7 +78,7 @@ any user-facing behavior, read the sections you work in. The contract:
   and their tests are re-pointed in the same commit.
 - If you hit a case no rule covers: do NOT decide locally. Add a
   `[planned]` draft with the next free ID in the affected section, marked
-  `<!-- REVIEW: Regelvorschlag -->`, and surface it for human review.
+  `<!-- REVIEW: rule proposal -->`, and surface it for human review.
 
 ## How to resume (the method — no special tooling required)
 
