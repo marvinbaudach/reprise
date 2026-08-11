@@ -17,7 +17,7 @@ count_matches() {
 }
 list_matches() {
   { grep -rnE --include='*.rs' "$1" "$ui" 2>/dev/null || true; } \
-    | { grep -vE '^\s*//' || true; } | head -10
+    | { grep -vE '^\s*//' || true; } | sed -n '1,10p'
 }
 
 # GP-2 — blocking calls that must not sit on the main loop.
@@ -31,7 +31,7 @@ n=$({ grep -rn --include='*.rs' -A2 'clone!(' "$ui" 2>/dev/null || true; } \
   | { grep -E '#\[strong\]' || true; } | { grep -vcE '^\s*//' || true; })
 (( n == 0 )) || report_violation GP-3 "$n clone! block(s) capture strongly:
 $({ grep -rn --include='*.rs' -A2 'clone!(' "$ui" || true; } \
-  | { grep -E '#\[strong\]' || true; } | head -10)"
+  | { grep -E '#\[strong\]' || true; } | sed -n '1,10p')"
 
 # GP-4 — unwrap() in the frontend.
 n=$(count_matches '\.unwrap\(\)')
