@@ -9,6 +9,21 @@ use crate::ui::strings;
 
 pub(super) type OnSelect = Rc<dyn Fn(&[DoctorReviewRowId], bool)>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct MasterCheckState {
+    pub(super) active: bool,
+    pub(super) inconsistent: bool,
+    pub(super) sensitive: bool,
+}
+
+pub(super) fn master_check_state(selected: usize, selectable: usize) -> MasterCheckState {
+    MasterCheckState {
+        active: selectable > 0 && selected == selectable,
+        inconsistent: selected > 0 && selected < selectable,
+        sensitive: selectable > 0,
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct ReviewColumnGroups {
     pub(super) selection: gtk4::SizeGroup,
@@ -154,8 +169,9 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
     let checkbox = gtk4::CheckButton::new();
     checkbox.set_size_request(16, 16);
     checkbox.add_css_class("doctor-album-check");
-    checkbox.set_active(selected == row_ids.len() && !row_ids.is_empty());
-    checkbox.set_inconsistent(selected > 0 && selected < row_ids.len());
+    let check_state = master_check_state(selected, total);
+    checkbox.set_active(check_state.active);
+    checkbox.set_inconsistent(check_state.inconsistent);
     checkbox.update_property(&[gtk4::accessible::Property::Label(
         &strings::doctor_change_count(row_ids.len()),
     )]);
@@ -249,6 +265,43 @@ fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn doc_3c_the_master_check_mirrors_the_visible_selection() {
+        use super::MasterCheckState;
+        assert_eq!(
+            super::master_check_state(0, 0),
+            MasterCheckState {
+                active: false,
+                inconsistent: false,
+                sensitive: false,
+            }
+        );
+        assert_eq!(
+            super::master_check_state(0, 4),
+            MasterCheckState {
+                active: false,
+                inconsistent: false,
+                sensitive: true,
+            }
+        );
+        assert_eq!(
+            super::master_check_state(2, 4),
+            MasterCheckState {
+                active: false,
+                inconsistent: true,
+                sensitive: true,
+            }
+        );
+        assert_eq!(
+            super::master_check_state(4, 4),
+            MasterCheckState {
+                active: true,
+                inconsistent: false,
+                sensitive: true,
+            }
+        );
+    }
+
     #[test]
     fn doc_9b_a_fully_deselected_album_says_none_selected() {
         assert_eq!(super::album_change_count(2, 0), "2 changes · none selected");
