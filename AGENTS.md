@@ -159,13 +159,9 @@ A change is done when all of the following hold:
    required by `docs/agents/branching.md`. If a sandbox cannot run that clean-tree
    wrapper, run its individual gates directly, record the exact unavailable check,
    and continue: an unavailable aggregate run is not itself a reason to stop.
-2. Every rule the change touches is covered by a rule-named test under
-   `crates/`, per `docs/ux-rules.md`.
-3. A rule moves from `[planned]` to `[active]` **in the same commit** that
-   proves it. Never after the fact.
-4. New behaviour that no rule covers means: add a rule, do not decide locally.
-   Add it as `[planned]` with the next free ID in the affected section and
-   mark it `<!-- REVIEW: rule proposal -->`.
+2. Every UX-rule change satisfies the single contract in "UX rules are binding"
+   above, including its rule-named coverage, status-transition, and proposal
+   requirements.
 
 Section `AI. GNOME platform conformance` binds every change to the GTK
 frontend and to the packaging metadata. Its gates are
