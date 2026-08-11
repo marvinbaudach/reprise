@@ -117,3 +117,23 @@ fn gp_4_no_unwrap_in_ui_paths() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn gp_19_comments_carry_no_model_instructions() {
+    let out = run_gate("check-ai-hygiene.sh");
+    assert!(
+        out.status.success(),
+        "check-ai-hygiene.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn gp_20_no_dead_code_without_a_reason() {
+    let out = run_gate("check-ai-hygiene.sh");
+    assert!(
+        out.status.success(),
+        "check-ai-hygiene.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
