@@ -23,6 +23,11 @@ RETRYABLE_TOOLS = frozenset(
 )
 RETRY_DELAYS_SECONDS = (0.25, 0.50)
 SUCCESS_STATUSES = frozenset({"ok", "success", "succeeded"})
+BACKGROUND_UNAVAILABLE_CODE = "background_unavailable"
+# Measured from the cua-driver 0.19.3 schemas used by the mission actions.
+# Escalation is still response-driven: these tools stay on their default
+# background route unless the driver returns BACKGROUND_UNAVAILABLE_CODE.
+DELIVERY_MODE_TOOLS = frozenset({"type_text", "press_key", "hotkey"})
 # The driver reports a failed delivery next to a normal-looking outcome instead
 # of failing the call. Measured on cua-driver 0.19.3: a type_text that fell
 # through returns {"delivery":{"mode":"background"},"effect":"unverifiable",
@@ -88,14 +93,16 @@ class CliTransport:
         self._retained_fault_lines = 0
 
     def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        request_payload = dict(payload)
         command = [
             self.driver_binary,
             tool,
-            json.dumps(payload, separators=(",", ":")),
+            json.dumps(request_payload, separators=(",", ":")),
         ]
         if self.socket_path is not None:
             command.extend(["--socket", str(self.socket_path)])
         attempt = 0
+        delivery_escalation: dict[str, str] | None = None
         while True:
             attempt += 1
             try:
@@ -130,13 +137,37 @@ class CliTransport:
             response_error = _response_error(tool, response)
             if response_error is not None:
                 self._retain_fault(tool, attempt, completed, response=response)
+                if (
+                    delivery_escalation is None
+                    and _can_retry_in_foreground(tool, request_payload, response)
+                ):
+                    delivery_escalation = {
+                        "code": BACKGROUND_UNAVAILABLE_CODE,
+                        "from": "background",
+                        "to": "foreground",
+                    }
+                    request_payload["delivery_mode"] = "foreground"
+                    command[2] = json.dumps(
+                        request_payload, separators=(",", ":")
+                    )
+                    continue
                 raise DriverError(response_error)
-            if _delivery_failure(response) is not None:
+            delivery_failure = _delivery_failure(response)
+            if delivery_failure is not None:
                 # The tool answered its contract and reported in the same
                 # breath that the input never arrived. That is evidence, not a
-                # reason to end the run: the caller reads it back through
-                # response_dispatched and draws no product verdict from it.
+                # reason to end the ordinary background route: the caller
+                # reads it through response_dispatched and draws no product
+                # verdict from it. After the one foreground escape, however,
+                # there is no further safe delivery route to try.
                 self._retain_fault(tool, attempt, completed, response=response)
+                if delivery_escalation is not None:
+                    raise DriverError(
+                        f"cua-driver {tool} foreground delivery failed: "
+                        f"{delivery_failure}"
+                    )
+            if delivery_escalation is not None:
+                return {**response, "delivery_escalation": delivery_escalation}
             return response
 
     def _run(self, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -254,6 +285,18 @@ def _human_confirmation(tool: str, stdout: str) -> Mapping[str, Any] | None:
     if _response_error(tool, confirmation) is not None:
         return None
     return confirmation
+
+
+def _can_retry_in_foreground(
+    tool: str, payload: Mapping[str, Any], response: Mapping[str, Any]
+) -> bool:
+    """Allow the one documented escape only where the tool schema accepts it."""
+
+    return (
+        tool in DELIVERY_MODE_TOOLS
+        and payload.get("delivery_mode") != "foreground"
+        and response.get("code") == BACKGROUND_UNAVAILABLE_CODE
+    )
 
 
 def _payload(response: Mapping[str, Any]) -> Mapping[str, Any]:

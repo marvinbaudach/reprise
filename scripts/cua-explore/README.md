@@ -399,9 +399,14 @@ That is the `semantic-route-unavailable` environmental finding.
 
 A driver refusal is categorically different. It is a harness contract failure,
 raises `DriverError`, aborts the action path, and never reaches the agent as an
-ineffective activation. It therefore cannot schedule a pointer retry, increment
-the three-attempt fallback counter, emit `semantic-route-unavailable`, or
-supersede the accessibility oracle.
+ineffective activation. The one bounded exception is an exact
+`background_unavailable` response from an action whose schema accepts
+`delivery_mode`: the harness retains and counts that fault, retries once with
+`delivery_mode: "foreground"`, and records the escalation in the step response.
+Every other error shell still fails closed, as does a failed foreground attempt.
+No refusal can schedule a pointer retry, increment the three-attempt fallback
+counter, emit `semantic-route-unavailable`, or supersede the accessibility
+oracle.
 
 ## When a run ends
 
@@ -419,19 +424,23 @@ as one buried every legitimate one in the sweep's failure list.
 ## Driver faults
 
 `CliTransport` retries a **read-only** call twice (250 ms, 500 ms) on invalid
-JSON or a timeout. It never retries an action: a second `click` would be a
-second user input and would falsify the run.
+JSON or a timeout. It never generically retries an action: a second `click`
+would be a second user input and would falsify the run. The sole action escape
+is the response-driven `background_unavailable` route above, which makes the
+driver's requested foreground delivery explicit rather than replaying an
+unknown failure.
 
 A response counts as a success only when it carries the payload
 `SUCCESS_CONTRACT` names for that tool - `effect` for an input action,
 `elements` for `get_window_state`, `x`/`y` for `get_cursor_position`, and so
 on. Listing the known failures was tried first and does not hold: cua-driver
 0.19.3 answers exit 0 with at least four shells that are not proven successes:
-`{"status":"refused","refusal":{...}}`, a bare
-`{"code":"background_unavailable",...}` object with neither of those keys, a
-plain human-readable line, and a normal-looking outcome carrying
-`escalation.reason == "delivery_failed"`. The first three end the call. The
-fourth answers the contract and reports in the same breath that the input never
+`{"status":"refused","refusal":{...}}`, a bare code object with neither of
+those keys, a plain human-readable line, and a normal-looking outcome carrying
+`escalation.reason == "delivery_failed"`. The first and third end the call. A
+bare `background_unavailable` code object takes only the bounded foreground
+escape described above; every other code object ends the call. The fourth
+answers the contract and reports in the same breath that the input never
 arrived: it is retained as a fault and marked undelivered, and an undelivered
 action never produces a product finding. A tool the harness calls without an
 entry in `SUCCESS_CONTRACT` fails too, rather than passing unchecked.

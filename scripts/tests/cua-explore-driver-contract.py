@@ -90,6 +90,7 @@ MEASURED_ERROR_SHELLS = {
     '"effective_scope": "window", "escalation_detail": null, '
     '"escalation_reason": null, "session": "contract-probe-69086"}',
 }
+BACKGROUND_UNAVAILABLE = MEASURED_ERROR_SHELLS["code_object"]
 
 
 def completed(stdout: str, *, returncode: int = 0, stderr: str = ""):
@@ -196,6 +197,148 @@ class SuccessContractTests(unittest.TestCase):
 
 
 class DriverRefusalContractTests(unittest.TestCase):
+    def test_background_unavailable_retries_foreground_and_retains_step_evidence(
+        self,
+    ) -> None:
+        raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        foreground = {
+            "delivery": {"mode": "foreground"},
+            "effect": "unverifiable",
+            "route": "synthetic_events",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_dir = pathlib.Path(directory)
+            transport = CommandScriptTransport(
+                [
+                    completed(json.dumps(raw)),
+                    completed(BACKGROUND_UNAVAILABLE),
+                    completed(json.dumps(foreground)),
+                    completed(json.dumps(raw)),
+                ],
+                evidence_dir=evidence_dir,
+            )
+            executor = CuaExecutor(
+                transport,
+                pid=44,
+                window_id=77,
+                session="contract",
+                fixture_tokens={"trusted": "fixture text"},
+                evidence_dir=evidence_dir,
+                settle_delays=(),
+            )
+
+            result = executor.execute(
+                TypeAction("state-1", "☆", "ax", "trusted")
+            )
+
+            self.assertTrue(result.evidence.dispatched)
+            self.assertIn(
+                "driver-transport-fault",
+                {finding.code for finding in result.findings},
+            )
+            self.assertEqual(transport.transport_faults, 1)
+            action_commands = [
+                command for command in transport.commands if command[1] == "type_text"
+            ]
+            self.assertEqual(len(action_commands), 2)
+            self.assertNotIn("delivery_mode", json.loads(action_commands[0][2]))
+            self.assertEqual(
+                json.loads(action_commands[1][2])["delivery_mode"], "foreground"
+            )
+            retained = json.loads(
+                (evidence_dir / "step-0001-result.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                retained["action_response"]["delivery_escalation"],
+                {
+                    "code": "background_unavailable",
+                    "from": "background",
+                    "to": "foreground",
+                },
+            )
+            fault = json.loads(
+                (evidence_dir / "driver-faults.jsonl").read_text(encoding="utf-8")
+            )
+            self.assertEqual(fault["response"], json.loads(BACKGROUND_UNAVAILABLE))
+
+    def test_unknown_error_envelope_still_aborts_without_foreground_retry(self) -> None:
+        raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        unknown = '{"code":"future_driver_error","detail":"not delivered"}'
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_dir = pathlib.Path(directory)
+            transport = CommandScriptTransport(
+                [completed(json.dumps(raw)), completed(unknown)],
+                evidence_dir=evidence_dir,
+            )
+            executor = CuaExecutor(
+                transport,
+                pid=44,
+                window_id=77,
+                session="contract",
+                fixture_tokens={"trusted": "fixture text"},
+                evidence_dir=evidence_dir,
+                settle_delays=(),
+            )
+
+            with self.assertRaisesRegex(DriverError, "future_driver_error"):
+                executor.execute(TypeAction("state-1", "☆", "ax", "trusted"))
+
+            self.assertEqual(
+                [command[1] for command in transport.commands],
+                ["get_window_state", "type_text"],
+            )
+            self.assertEqual(transport.transport_faults, 1)
+
+    def test_background_unavailable_escalates_other_schema_compatible_actions(
+        self,
+    ) -> None:
+        foreground = '{"effect":"unverifiable","route":"synthetic_events"}'
+        for tool, payload in (
+            ("press_key", {"key": "enter"}),
+            ("hotkey", {"keys": ["CTRL", "F"]}),
+        ):
+            with self.subTest(tool=tool), tempfile.TemporaryDirectory() as directory:
+                transport = CommandScriptTransport(
+                    [completed(BACKGROUND_UNAVAILABLE), completed(foreground)],
+                    evidence_dir=pathlib.Path(directory),
+                )
+
+                response = transport.call(tool, payload)
+
+                self.assertEqual(response["delivery_escalation"]["to"], "foreground")
+                self.assertEqual(
+                    json.loads(transport.commands[1][2])["delivery_mode"],
+                    "foreground",
+                )
+
+    def test_background_unavailable_does_not_extend_an_unsupported_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            transport = CommandScriptTransport(
+                [completed(BACKGROUND_UNAVAILABLE)],
+                evidence_dir=pathlib.Path(directory),
+            )
+
+            with self.assertRaisesRegex(DriverError, "background_unavailable"):
+                transport.call("click", {})
+
+            self.assertEqual(len(transport.commands), 1)
+
+    def test_failed_foreground_delivery_aborts_after_the_single_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            transport = CommandScriptTransport(
+                [
+                    completed(BACKGROUND_UNAVAILABLE),
+                    completed(MEASURED_SUCCESS["type_text"]),
+                ],
+                evidence_dir=pathlib.Path(directory),
+            )
+
+            with self.assertRaisesRegex(DriverError, "foreground delivery failed"):
+                transport.call("type_text", {"text": "fixture text"})
+
+            self.assertEqual(len(transport.commands), 2)
+            self.assertEqual(transport.transport_faults, 2)
+
     def test_exit_zero_snapshot_refusal_aborts_the_production_action_path(self) -> None:
         raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory() as directory:
