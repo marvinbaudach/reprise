@@ -22,6 +22,11 @@ RETRYABLE_TOOLS = frozenset(
     {"get_window_state", "get_cursor_position", "get_screen_size"}
 )
 RETRY_DELAYS_SECONDS = (0.25, 0.50)
+# M4 measured the window at 1.929 s but its first usable AT-SPI tree only at
+# 6.770 s: a 4.841 s readiness gap. These bounded 1 + 2 + 3 second waits put a
+# final snapshot attempt beyond that gap while capping added mission time at
+# six seconds for one empty get_window_state call.
+WINDOW_STATE_READINESS_RETRY_DELAYS_SECONDS = (1.0, 2.0, 3.0)
 SUCCESS_STATUSES = frozenset({"ok", "success", "succeeded"})
 BACKGROUND_UNAVAILABLE_CODE = "background_unavailable"
 # Measured from the cua-driver 0.19.3 schemas used by the mission actions.
@@ -117,6 +122,17 @@ class CliTransport:
                 self._retain_fault(tool, attempt, completed)
                 message = completed.stderr.strip() or completed.stdout.strip()
                 raise DriverError(f"cua-driver {tool} failed: {message[:500]}")
+            if not completed.stdout.strip():
+                self._retain_fault(tool, attempt, completed)
+                delays = (
+                    WINDOW_STATE_READINESS_RETRY_DELAYS_SECONDS
+                    if tool == "get_window_state"
+                    else RETRY_DELAYS_SECONDS
+                )
+                if tool in RETRYABLE_TOOLS and attempt <= len(delays):
+                    time.sleep(delays[attempt - 1])
+                    continue
+                raise DriverError(f"cua-driver {tool} returned an empty response")
             try:
                 response = json.loads(completed.stdout)
             except json.JSONDecodeError as error:

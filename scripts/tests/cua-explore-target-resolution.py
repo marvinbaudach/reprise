@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -316,6 +317,33 @@ class CliTransportRetryTests(unittest.TestCase):
         self.assertEqual(
             [record["stdout_head"] for record in self.fault_records()],
             ["one", "two", "three"],
+        )
+
+    def test_empty_window_state_exhausts_readiness_ladder_and_retains_every_attempt(
+        self,
+    ) -> None:
+        transport = ScriptedCliTransport(
+            [completed("")] * 4,
+            evidence_dir=self.evidence_dir,
+        )
+
+        with mock.patch("driver_transport.time.sleep") as sleep:
+            with self.assertRaisesRegex(DriverError, "returned an empty response"):
+                transport.call("get_window_state", {})
+
+        self.assertEqual(transport.run_count, 4)
+        self.assertEqual(transport.transport_faults, 4)
+        self.assertEqual(
+            [record["attempt"] for record in self.fault_records()],
+            [1, 2, 3, 4],
+        )
+        self.assertEqual(
+            [record["stdout_head"] for record in self.fault_records()],
+            ["", "", "", ""],
+        )
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            [1.0, 2.0, 3.0],
         )
 
     def test_input_action_is_never_retried(self) -> None:

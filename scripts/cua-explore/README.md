@@ -423,12 +423,15 @@ as one buried every legitimate one in the sweep's failure list.
 
 ## Driver faults
 
-`CliTransport` retries a **read-only** call twice (250 ms, 500 ms) on invalid
-JSON or a timeout. It never generically retries an action: a second `click`
-would be a second user input and would falsify the run. The sole action escape
-is the response-driven `background_unavailable` route above, which makes the
-driver's requested foreground delivery explicit rather than replaying an
-unknown failure.
+`CliTransport` retries a **read-only** call twice (250 ms, 500 ms) on malformed
+JSON or a timeout. An empty exit-zero `get_window_state` response is classified
+separately and gets a 1 s, 2 s, 3 s readiness ladder: the six-second bound spans
+M4's measured 4.841-second gap between a visible window and a usable AT-SPI tree
+without consuming a material share of a mission. It never generically retries
+an action: a second `click` would be a second user input and would falsify the
+run. The sole action escape is the response-driven `background_unavailable`
+route above, which makes the driver's requested foreground delivery explicit
+rather than replaying an unknown failure.
 
 A response counts as a success only when it carries the payload
 `SUCCESS_CONTRACT` names for that tool - `effect` for an input action,
@@ -448,6 +451,8 @@ entry in `SUCCESS_CONTRACT` fails too, rather than passing unchecked.
 Every failed attempt is retained in `evidence/driver-faults.jsonl` with the
 first 2000 characters of stdout and stderr. A parsed response with a refusal or
 non-success status is retained there in full even when the process exits 0.
+An exhausted empty response is reported as empty, not as invalid JSON, and all
+four attempts remain in the fault log.
 Each failure is counted in `summary.json → transport_faults` and reported once
 per run as `driver-transport-fault`. The point is the payload: one malformed
 frame killed a 20-minute run on 2026-08-10 and left nothing behind to diagnose.
