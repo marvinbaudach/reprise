@@ -108,6 +108,8 @@ mod log_capture;
 #[cfg(test)]
 mod artist_news_candidates_tests;
 #[cfg(test)]
+mod artist_news_deleted_memory_tests;
+#[cfg(test)]
 mod artist_news_parsing_tests;
 #[cfg(test)]
 mod artist_news_pipeline_tests;
