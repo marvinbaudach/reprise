@@ -380,3 +380,29 @@ fn artist_filter_is_case_insensitive_counted_and_literal() {
         1
     );
 }
+
+/// A field holding nothing but spaces is an empty field, and an empty field is
+/// no refinement at all — not a refinement matching every row that happens to
+/// contain a space. Windows and counts both have to see it that way, since the
+/// count is what tells the listener how many there are.
+#[test]
+fn a_filter_of_only_spaces_is_no_filter() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,album_artist,added_at) VALUES
+             ('/spaced','Track','Guest','Two Words','Spaced Artist',0),
+             ('/unspaced','Other','Guest','Onewordalbum','Onewordartist',0);",
+        )
+        .unwrap();
+
+    let albums = query_albums(&db, "   ", full_window()).unwrap();
+    assert_eq!(albums.rows.len(), 2);
+    assert_eq!(albums.total, query_album_count(&db, "").unwrap());
+    assert_eq!(query_album_count(&db, "   ").unwrap(), 2);
+
+    let artists = query_artists(&db, " ", full_window()).unwrap();
+    assert_eq!(artists.rows.len(), 2);
+    assert_eq!(artists.total, query_artist_count(&db, "").unwrap());
+    assert_eq!(query_artist_count(&db, " ").unwrap(), 2);
+}
