@@ -578,6 +578,7 @@ mod tests {
         let anchor = crate::ui::track_list::reload_restore::ReloadAnchor {
             selected_ids: vec![3],
             anchor: Some((3, 7.5)),
+            row_height: None,
         };
 
         let restored = surviving_delete_anchor(anchor, &[1, 2, 3, 4, 5], &[1, 2, 4, 5]);
