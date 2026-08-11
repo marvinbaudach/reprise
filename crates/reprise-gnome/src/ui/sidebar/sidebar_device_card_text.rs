@@ -88,17 +88,10 @@ fn balance_sentence(balance: &SyncBalance) -> String {
     }
 }
 
-/// A balance can carry work without a single file to copy or remove yet —
-/// only playlists rewritten, or episodes waiting on a download (`MTP-40`).
-/// Neither is one of the design's four named states, so this stays honest
-/// rather than inventing a fifth exact phrase for it.
+/// A balance can carry work without a file to copy or remove when playlist
+/// manifests will be rewritten.
 fn waiting_or_playlists_sentence(balance: &SyncBalance) -> String {
-    if balance.files_waiting_for_download > 0 {
-        return format!(
-            "{} waiting for download",
-            balance.files_waiting_for_download
-        );
-    }
+    let _ = balance;
     "Playlists updating".to_string()
 }
 
@@ -118,7 +111,6 @@ mod tests {
             bytes_to_copy,
             files_to_remove,
             bytes_freed,
-            files_waiting_for_download: 0,
             playlists_rewritten: 0,
         }
     }

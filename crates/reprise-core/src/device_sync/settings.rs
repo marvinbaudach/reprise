@@ -59,12 +59,6 @@ pub struct DeviceSettings {
     /// per-device choice, not one of 7b's global sync rules — see the
     /// module doc on `db_device_sync::migrate_v44`.
     pub sync_automatically: bool,
-    /// "Download missing files before syncing" (design 7f, `MTP-43`). The
-    /// device's own input to `preparation::plan_preparation`'s precedence —
-    /// offline and metered are decided there from live facts, never by
-    /// mutating this stored value, so the switch always reflects what the
-    /// user actually chose. Defaults to `true` (`db_device_sync::migrate_v46`).
-    pub prepare_before_sync: bool,
 }
 
 impl DeviceSettings {
@@ -83,7 +77,6 @@ impl DeviceSettings {
             // An unrememberable device must not silently auto-start on every
             // replug as though the app remembered a user choice.
             sync_automatically: false,
-            prepare_before_sync: true,
         }
     }
 }
@@ -234,7 +227,6 @@ pub fn forget_device(db: &crate::db::Db, stable_id: &str) -> Result<(), DeviceSe
         ("device_playlists", "device_serial"),
         ("device_sync_targets", "device_serial"),
         ("sync_runs", "device_serial"),
-        ("podcast_subscription_devices", "device_id"),
         ("device_settings", "device_serial"),
     ] {
         transaction.execute(
@@ -300,7 +292,6 @@ pub fn rekey_legacy_device(
         ("device_playlists", "device_serial"),
         ("device_sync_targets", "device_serial"),
         ("sync_runs", "device_serial"),
-        ("podcast_subscription_devices", "device_id"),
         ("device_settings", "device_serial"),
     ] {
         transaction.execute(
@@ -322,7 +313,7 @@ pub fn load_or_create_settings(
     let existing = conn
         .query_row(
             "SELECT device_name, selection_json, mp3_quality, transfer_profile, opus_bitrate, \
-                    remove_deleted, sync_automatically, prepare_before_sync \
+                    remove_deleted, sync_automatically \
              FROM device_settings WHERE device_serial = ?1",
             [serial],
             |row| {
@@ -334,7 +325,6 @@ pub fn load_or_create_settings(
                     row.get::<_, i64>(4)?,
                     row.get::<_, bool>(5)?,
                     row.get::<_, bool>(6)?,
-                    row.get::<_, bool>(7)?,
                 ))
             },
         )
@@ -347,7 +337,6 @@ pub fn load_or_create_settings(
         bitrate,
         remove_deleted,
         sync_automatically,
-        prepare_before_sync,
     )) = existing
     {
         let bitrate = u32::try_from(bitrate).unwrap_or(0);
@@ -359,7 +348,6 @@ pub fn load_or_create_settings(
             opus_bitrate: normalized_bitrate(bitrate),
             remove_deleted,
             sync_automatically,
-            prepare_before_sync,
         });
     }
 
@@ -390,8 +378,8 @@ pub fn save_settings(
     conn.execute(
         "INSERT INTO device_settings \
          (device_serial, device_name, selection_json, mp3_quality, transfer_profile, \
-          opus_bitrate, remove_deleted, sync_automatically, prepare_before_sync) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+          opus_bitrate, remove_deleted, sync_automatically) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
          ON CONFLICT(device_serial) DO UPDATE SET \
            device_name = excluded.device_name, \
            selection_json = excluded.selection_json, \
@@ -399,8 +387,7 @@ pub fn save_settings(
            transfer_profile = excluded.transfer_profile, \
            opus_bitrate = excluded.opus_bitrate, \
            remove_deleted = excluded.remove_deleted, \
-           sync_automatically = excluded.sync_automatically, \
-           prepare_before_sync = excluded.prepare_before_sync",
+           sync_automatically = excluded.sync_automatically",
         params![
             settings.device_serial,
             settings.device_name,
@@ -410,7 +397,6 @@ pub fn save_settings(
             settings.opus_bitrate,
             settings.remove_deleted,
             settings.sync_automatically,
-            settings.prepare_before_sync,
         ],
     )?;
     Ok(())

@@ -6,9 +6,8 @@
 
 use crate::strings::{Message, Plural};
 use reprise_core::device_sync::{
-    DeviceSessionState, MirrorBlocker, Mp3Quality, PlannedSyncPhase, PrimaryAction,
-    SyncChangeSummary, SyncPageControls, SyncPageWarning, SyncPlaylistRow, SyncStep,
-    TransferProfile,
+    DeviceSessionState, MirrorBlocker, Mp3Quality, PlannedSyncPhase, SyncChangeSummary,
+    SyncPageControls, SyncPageWarning, SyncPlaylistRow, SyncStep, TransferProfile,
 };
 
 macro_rules! N_ {
@@ -67,9 +66,7 @@ const UNAVAILABLE_WARNING: (&str, &str) = plural(
 );
 const UNSAFE_WARNING: &str = N_!("An unsafe managed path will be left untouched.");
 const CANCEL: &str = N_!("_Cancel");
-const DOWNLOAD_AND_SYNC: &str = N_!("_Download & sync");
 const SYNC_NOW: &str = N_!("_Sync now");
-const PREPARING_TITLE: &str = N_!("Step 1 of 2 · Downloading {current} of {total} · {percent}%");
 const CHECKING_TITLE: &str = N_!("Checking device…");
 const CHECKING_SUBTITLE: &str = N_!("Reading storage and preparing the mirror plan");
 const FINISHING_TITLE: &str = N_!("Finishing synchronization…");
@@ -78,11 +75,6 @@ const REMOVING_TITLE: &str = N_!("Removing · {done} of {total}");
 const CONVERTING_TITLE: &str = N_!("Converting · {done} of {total}");
 const COPYING_TITLE: &str = N_!("Copying · {done} of {total}");
 const WRITING_PLAYLISTS_TITLE: &str = N_!("Writing playlists · {done} of {total}");
-const REMOVING_TITLE_STEP_TWO: &str = N_!("Step 2 of 2 · Removing · {done} of {total}");
-const CONVERTING_TITLE_STEP_TWO: &str = N_!("Step 2 of 2 · Converting · {done} of {total}");
-const COPYING_TITLE_STEP_TWO: &str = N_!("Step 2 of 2 · Copying · {done} of {total}");
-const WRITING_PLAYLISTS_TITLE_STEP_TWO: &str =
-    N_!("Step 2 of 2 · Writing playlists · {done} of {total}");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageActionCopy {
@@ -102,15 +94,6 @@ pub enum VerifiedSyncTime {
 pub enum BlockerCopy {
     Standalone(Message),
     Reasons(Vec<Message>),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PreparationProgress {
-    pub done: usize,
-    pub total: usize,
-    pub title: String,
-    pub received_bytes: u64,
-    pub total_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -302,7 +285,7 @@ pub fn warning_summary(warnings: &[SyncPageWarning]) -> Vec<Message> {
     summary
 }
 
-pub fn action_copy(controls: SyncPageControls, action: PrimaryAction) -> PageActionCopy {
+pub fn action_copy(controls: SyncPageControls) -> PageActionCopy {
     if controls.can_cancel {
         PageActionCopy {
             label: CANCEL,
@@ -311,10 +294,7 @@ pub fn action_copy(controls: SyncPageControls, action: PrimaryAction) -> PageAct
         }
     } else {
         PageActionCopy {
-            label: match action {
-                PrimaryAction::DownloadAndSync => DOWNLOAD_AND_SYNC,
-                PrimaryAction::SyncNow => SYNC_NOW,
-            },
+            label: SYNC_NOW,
             sensitive: controls.can_start,
             destructive: false,
         }
@@ -345,48 +325,9 @@ pub fn counted(count: usize, singular: &'static str, plural: &'static str) -> Me
     }
 }
 
-pub fn progress_copy(
-    preparation: Option<&PreparationProgress>,
-    phase: &PlannedSyncPhase,
-    bytes_per_second: u64,
-    prepared_this_run: bool,
-) -> Option<ProgressCopy> {
-    if let Some(preparation) = preparation {
-        let fraction = preparation
-            .total_bytes
-            .filter(|total_bytes| *total_bytes > 0)
-            .map_or(0.0, |total_bytes| {
-                (preparation.received_bytes as f64 / total_bytes as f64).clamp(0.0, 1.0)
-            });
-        let percent = (fraction * 100.0).round() as u64;
-        return Some(ProgressCopy {
-            title: message_with_args(
-                PREPARING_TITLE,
-                vec![
-                    ("current", preparation.done.saturating_add(1).to_string()),
-                    ("total", preparation.total.to_string()),
-                    ("percent", percent.to_string()),
-                ],
-            ),
-            subtitle: ProgressSubtitle::CurrentTrack(preparation.title.clone()),
-            speed: ProgressSpeed::Unavailable,
-            fraction,
-        });
-    }
-    transfer_progress(phase, bytes_per_second, prepared_this_run)
-}
-
 pub fn transfer_progress_copy(
     phase: &PlannedSyncPhase,
     bytes_per_second: u64,
-) -> Option<ProgressCopy> {
-    transfer_progress(phase, bytes_per_second, false)
-}
-
-fn transfer_progress(
-    phase: &PlannedSyncPhase,
-    bytes_per_second: u64,
-    step_two: bool,
 ) -> Option<ProgressCopy> {
     match phase {
         PlannedSyncPhase::Idle => None,
@@ -410,15 +351,11 @@ fn transfer_progress(
             bytes_done,
             bytes_total,
         } => {
-            let title = match (step_two, step) {
-                (false, SyncStep::Removing) => REMOVING_TITLE,
-                (false, SyncStep::Transcoding) => CONVERTING_TITLE,
-                (false, SyncStep::Copying) => COPYING_TITLE,
-                (false, SyncStep::WritingPlaylists) => WRITING_PLAYLISTS_TITLE,
-                (true, SyncStep::Removing) => REMOVING_TITLE_STEP_TWO,
-                (true, SyncStep::Transcoding) => CONVERTING_TITLE_STEP_TWO,
-                (true, SyncStep::Copying) => COPYING_TITLE_STEP_TWO,
-                (true, SyncStep::WritingPlaylists) => WRITING_PLAYLISTS_TITLE_STEP_TWO,
+            let title = match step {
+                SyncStep::Removing => REMOVING_TITLE,
+                SyncStep::Transcoding => CONVERTING_TITLE,
+                SyncStep::Copying => COPYING_TITLE,
+                SyncStep::WritingPlaylists => WRITING_PLAYLISTS_TITLE,
             };
             let fraction = if *bytes_total > 0 {
                 *bytes_done as f64 / *bytes_total as f64

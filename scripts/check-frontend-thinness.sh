@@ -28,8 +28,12 @@ shared_view=crates/reprise-view/src
 # search_chip_label API; the search popover work (#385) then added the
 # commit chip. On top of both, the app-wide column editing work moved
 # layout, key and width code out of reprise-gnome into reprise-view.
+# Dropping the phone-only podcast/YouTube preparation action removed five
+# obsolete presentation lines. Removing the two-step preparation progress API
+# that went with it — PreparationProgress, progress_copy and the four
+# "Step 2 of 2" titles, none of which had a consumer left — removed 55 more.
 # This floor is the measured sum; future migration waves raise it.
-view_floor=2175
+view_floor=2115
 
 echo "== Frontend thinness =="
 
@@ -42,7 +46,7 @@ echo "== Frontend thinness =="
 # containing `Connection`; direct access to the owned connection is a
 # separate zero-tolerance ban below.
 declare -A budget=(
-  [rusqlite]=113
+  [rusqlite]=112
   [filesystem]=13
   [threads]=15
   [workers]=7

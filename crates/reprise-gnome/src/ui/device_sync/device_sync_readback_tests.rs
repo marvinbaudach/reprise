@@ -100,7 +100,7 @@ fn verified_music_size_excludes_analysis_and_metadata_inventory_entries() {
         settle().await;
 
         assert_eq!(
-            runtime.devices()[0].content_rows[0].size_on_device_bytes,
+            runtime.devices()[0].content_row.size_on_device_bytes,
             100,
             "the live content row must count music without its generated metadata"
         );

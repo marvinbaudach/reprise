@@ -10,7 +10,6 @@ use super::{EpisodeRow, PodcastKind, SubscriptionRow};
 pub use super::downloads::{
     downloaded_paths_for_subscription, set_downloaded_file, set_downloaded_path,
 };
-pub use super::phone_sync::set_enabled as set_sync_to_phone;
 pub use super::store_metadata::save_youtube_resolution;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,25 +64,13 @@ pub fn add_or_restore_with_baseline(
     Ok(subscription_id)
 }
 
-/// Inserts a subscription, or revives/updates the existing row for the
-/// same `feed_url`. Phone-sync state (`sync_to_phone` and any per-device
-/// selection, `POD-12`) is preserved only when the subscription's kind is
-/// unchanged; a kind change at the same URL is a different content type
-/// under an old sync flag, so both are cleared — this is not RSS/YouTube
-/// special-casing, it is symmetric in the direction of the change.
+/// Inserts a subscription, or revives/updates the existing row for the same
+/// `feed_url`.
 pub(crate) fn add_or_restore_in(
     conn: &Connection,
     subscription: &NewSubscription,
     now: i64,
 ) -> Result<i64, rusqlite::Error> {
-    let previous_kind: Option<String> = conn
-        .query_row(
-            "SELECT kind FROM podcast_subscriptions WHERE feed_url = ?1",
-            [&subscription.feed_url],
-            |row| row.get(0),
-        )
-        .optional()?;
-    let new_kind = kind_setting(subscription.kind);
     let subscription_id = conn.query_row(
         "INSERT INTO podcast_subscriptions
          (kind, feed_url, title, author, image_url, auto_download, added_at, removed_at)
@@ -94,14 +81,10 @@ pub(crate) fn add_or_restore_in(
            author = excluded.author,
            image_url = COALESCE(excluded.image_url, podcast_subscriptions.image_url),
            auto_download = excluded.auto_download,
-           sync_to_phone = CASE
-             WHEN excluded.kind = podcast_subscriptions.kind THEN podcast_subscriptions.sync_to_phone
-             ELSE 0
-           END,
            removed_at = NULL
          RETURNING id",
         params![
-            new_kind,
+            kind_setting(subscription.kind),
             subscription.feed_url,
             subscription.title,
             subscription.author,
@@ -111,15 +94,6 @@ pub(crate) fn add_or_restore_in(
         ],
         |row| row.get(0),
     )?;
-    let kind_changed = previous_kind
-        .as_deref()
-        .is_some_and(|kind| kind != new_kind);
-    if kind_changed {
-        conn.execute(
-            "DELETE FROM podcast_subscription_devices WHERE subscription_id = ?1",
-            [subscription_id],
-        )?;
-    }
     Ok(subscription_id)
 }
 
@@ -134,7 +108,7 @@ pub(crate) fn active_subscriptions_in(
     let mut statement = conn.prepare(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                sync_to_phone, latest_per_channel, keep_downloaded, added_at, removed_at
+                keep_downloaded, added_at, removed_at
          FROM podcast_subscriptions
          WHERE removed_at IS NULL
          ORDER BY title COLLATE NOCASE, id",
@@ -155,7 +129,7 @@ pub(crate) fn subscription_in(
     conn.query_row(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
-                sync_to_phone, latest_per_channel, keep_downloaded, added_at, removed_at
+                keep_downloaded, added_at, removed_at
          FROM podcast_subscriptions
          WHERE id = ?1",
         [id],
@@ -164,67 +138,11 @@ pub(crate) fn subscription_in(
     .optional()
 }
 
-/// `MTP-36`: every persisted per-channel override among `subscription_ids`,
-/// keyed by subscription id — a channel with no override (the common case,
-/// especially before design 6b's channel surface exists) is simply absent
-/// from the map rather than present with a placeholder, so the caller's
-/// fallback to the global default (`resolve_latest_per_channel`) is the
-/// only place "no override" is decided.
-pub fn latest_per_channel_overrides(
-    db: &Db,
-    subscription_ids: &[i64],
-) -> Result<std::collections::HashMap<i64, i64>, rusqlite::Error> {
-    let conn = db.conn();
-    latest_per_channel_overrides_in(conn, subscription_ids)
-}
-
-pub(crate) fn latest_per_channel_overrides_in(
-    conn: &Connection,
-    subscription_ids: &[i64],
-) -> Result<std::collections::HashMap<i64, i64>, rusqlite::Error> {
-    if subscription_ids.is_empty() {
-        return Ok(std::collections::HashMap::new());
-    }
-    let placeholders = (1..=subscription_ids.len())
-        .map(|i| format!("?{i}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "SELECT id, latest_per_channel FROM podcast_subscriptions
-         WHERE id IN ({placeholders}) AND latest_per_channel IS NOT NULL"
-    );
-    let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(rusqlite::params_from_iter(subscription_ids.iter()), |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    rows.collect()
-}
-
-/// `MTP-36`: sets or clears (`None`) this channel's override of the global
-/// "latest N per channel" default. No GTK surface calls this yet (design
-/// 6b's channel page has no control for it) — it exists so the persistence
-/// and the live pipeline can be tested and used independently of that UI.
-pub fn set_latest_per_channel(
-    db: &Db,
-    id: i64,
-    value: Option<i64>,
-) -> Result<bool, rusqlite::Error> {
-    let conn = db.conn();
-    Ok(conn.execute(
-        "UPDATE podcast_subscriptions
-         SET latest_per_channel = ?2
-         WHERE id = ?1 AND removed_at IS NULL",
-        params![id, value],
-    )? != 0)
-}
-
 /// `POD-5`: sets or clears (`None`) this channel's override of the global
-/// "keep N downloaded" cleanup default — same shape as
-/// [`set_latest_per_channel`] (`MTP-36`, `O-5`). No GTK surface calls this
-/// yet (design 6b's channel page has no control for it), matching how
-/// `set_latest_per_channel` itself landed: it exists so the persistence and
-/// `podcasts::downloads::enforce_cleanup` can be tested and used
-/// independently of that UI.
+/// "keep N downloaded" cleanup default. No GTK surface calls this yet
+/// (design 6b's channel page has no control for it): it exists so the
+/// persistence and `podcasts::downloads::enforce_cleanup` can be tested and
+/// used independently of that UI.
 pub fn set_keep_downloaded(db: &Db, id: i64, value: Option<i64>) -> Result<bool, rusqlite::Error> {
     let conn = db.conn();
     Ok(conn.execute(
@@ -645,11 +563,9 @@ fn subscription_from_row(row: &rusqlite::Row<'_>) -> Result<SubscriptionRow, rus
         last_fetch_at: row.get(8)?,
         last_outcome: row.get(9)?,
         auto_download: row.get(10)?,
-        sync_to_phone: row.get(11)?,
-        latest_per_channel: row.get(12)?,
-        keep_downloaded: row.get(13)?,
-        added_at: row.get(14)?,
-        removed_at: row.get(15)?,
+        keep_downloaded: row.get(11)?,
+        added_at: row.get(12)?,
+        removed_at: row.get(13)?,
     })
 }
 

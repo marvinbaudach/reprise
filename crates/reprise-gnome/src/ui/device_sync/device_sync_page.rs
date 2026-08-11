@@ -5,7 +5,7 @@ use std::rc::{Rc, Weak};
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::device_sync::{primary_action, DeviceStorageAccess, TransferProfile};
+use reprise_core::device_sync::{DeviceStorageAccess, TransferProfile};
 
 use super::device_sync_content_panel::{ContentPanel, ContentPanelActions};
 use super::device_sync_page_actions::PageActions;
@@ -51,8 +51,6 @@ struct DeviceSyncPage {
     notice_box: gtk4::Box,
     notice_title: gtk4::Label,
     notice_detail: gtk4::Label,
-    preparation_box: gtk4::Box,
-    preparation_detail: gtk4::Label,
     progress_box: gtk4::Box,
     progress_title: gtk4::Label,
     progress_detail: gtk4::Label,
@@ -147,8 +145,6 @@ impl DeviceSyncPage {
             notice_box: dashboard.notice_box,
             notice_title: dashboard.notice_title,
             notice_detail: dashboard.notice_detail,
-            preparation_box: dashboard.preparation_box,
-            preparation_detail: dashboard.preparation_detail,
             progress_box: dashboard.progress_box,
             progress_title: dashboard.progress_title,
             progress_detail: dashboard.progress_detail,
@@ -267,7 +263,6 @@ impl DeviceSyncPage {
             .set_label(&storage_summary(&device.page.storage));
         self.storage_bar.update(&device.page.storage);
         self.update_notice(device);
-        self.update_preparation(device);
         self.update_progress(progress.as_ref());
         self.update_actions(device);
         self.content_panel.update(device);
@@ -419,29 +414,6 @@ impl DeviceSyncPage {
         );
     }
 
-    /// `MTP-43`: the preparation overview — the first few episode titles
-    /// alongside the count/size line so the user knows *what* is about to
-    /// download, not just how much (`preparation_titles` counts the rest
-    /// rather than naming it). Hidden entirely for `Absent`/`NothingMissing`,
-    /// exactly like `device_sync_strings::preparation_overview` reports them.
-    fn update_preparation(&self, device: &DeviceView) {
-        let Some(summary) = device_sync_strings::preparation_overview(&device.preparation) else {
-            self.preparation_box.set_visible(false);
-            return;
-        };
-        let mut detail = summary;
-        let titles = device
-            .preparation_missing
-            .iter()
-            .map(|file| file.title.as_str())
-            .collect::<Vec<_>>();
-        if let Some(titles) = device_sync_strings::preparation_titles(&titles) {
-            detail = format!("{detail}\n{titles}");
-        }
-        self.preparation_detail.set_label(&detail);
-        self.preparation_box.set_visible(true);
-    }
-
     fn update_progress(&self, progress: Option<&(String, String, String, f64)>) {
         let Some((title, subtitle, speed, fraction)) = progress else {
             self.progress_box.set_visible(false);
@@ -455,7 +427,7 @@ impl DeviceSyncPage {
     }
 
     fn update_actions(&self, device: &DeviceView) {
-        let copy = action_copy(device.page.controls, primary_action(&device.preparation));
+        let copy = action_copy(device.page.controls);
         self.cancelling.set(copy.destructive);
         self.primary.set_label(copy.label);
         self.primary.set_sensitive(copy.sensitive);

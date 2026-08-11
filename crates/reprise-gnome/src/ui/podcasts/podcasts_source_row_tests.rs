@@ -57,7 +57,6 @@ fn render_single_group(kind: PodcastKind) -> RenderedEpisode {
             author: None,
             image_url: None,
             kind,
-            sync_to_phone: false,
             episodes: vec![episode(kind)],
         },
     };
@@ -68,8 +67,6 @@ fn render_single_group(kind: PodcastKind) -> RenderedEpisode {
         None,
         &Rc::new(RefCell::new(BTreeSet::from([1]))),
         &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        &[],
         &BTreeMap::new(),
         false,
         Connectivity::Online,
@@ -121,7 +118,6 @@ fn render_group_header(kind: PodcastKind, author: Option<&str>) -> gtk4::Widget 
             author: author.map(str::to_owned),
             image_url: None,
             kind,
-            sync_to_phone: false,
             episodes: Vec::new(),
         },
         &SourceSummary {
@@ -130,8 +126,6 @@ fn render_group_header(kind: PodcastKind, author: Option<&str>) -> gtk4::Widget 
             downloaded_bytes: 0,
             latest_published_at: None,
         },
-        &[],
-        &[],
         false,
     )
 }

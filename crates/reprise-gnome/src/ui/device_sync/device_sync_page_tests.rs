@@ -15,14 +15,11 @@ use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
 
 fn no_op_content_actions() -> ContentPanelActions {
     ContentPanelActions {
-        set_target_enabled: Rc::new(|_, _| {}),
-        set_target_cap: Rc::new(|_, _| {}),
         set_remove_deleted: Rc::new(|_| {}),
         set_sync_automatically: Rc::new(|_| {}),
-        set_prepare_before_sync: Rc::new(|_| {}),
         scan_device: Rc::new(|| {}),
-        open_folder_browser: Rc::new(|_, _| {}),
-        open_picker: Rc::new(|_, _| {}),
+        open_folder_browser: Rc::new(|_| {}),
+        open_picker: Rc::new(|_| {}),
     }
 }
 
@@ -79,7 +76,6 @@ fn device() -> DeviceView {
             opus_bitrate: 0,
             remove_deleted: false,
             sync_automatically: true,
-            prepare_before_sync: true,
         },
         sync_phase: PlannedSyncPhase::Idle,
         sync_error: None::<SyncFailure>,
@@ -89,23 +85,9 @@ fn device() -> DeviceView {
         managed_track_count: 0,
         bytes_per_second: 0,
         contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
-        content_rows: crate::ui::device_sync_runtime::empty_content_rows(),
-        category_readings: crate::ui::device_sync_runtime::empty_category_readings(),
-        youtube_bytes: 0,
-        podcast_bytes: 0,
-        youtube_selection: Default::default(),
+        content_row: crate::ui::device_sync_runtime::empty_content_row(),
+        target_reading: crate::ui::device_sync_runtime::empty_target_reading(),
         keep_smart_playlists_updated: true,
-        // `MTP-46`: these fixtures are about rendering a device that has
-        // both sources in use, so both are on.
-        enabled_sources: reprise_core::device_sync::podcasts::EnabledSyncSources {
-            rss: true,
-            youtube: true,
-        },
-        podcast_selection: Default::default(),
-        preparation: reprise_core::device_sync::PreparationPhase::Absent,
-        preparation_missing: Vec::new(),
-        preparation_run: crate::ui::device_sync_runtime::PreparationRunState::Idle,
-        prepared_this_run: false,
         page: SyncPageState {
             profile_options: TransferProfile::ALL.to_vec(),
             profile: TransferProfile::Mp3(Mp3Quality::Kbps256),
@@ -273,64 +255,17 @@ fn mtp_7_full_page_projects_complete_storage_segments() {
         Some("Select at least one playlist to synchronize.".into())
     );
     assert_eq!(
-        action_copy(
-            SyncPageControls {
-                editable: false,
-                can_start: false,
-                can_cancel: true,
-                can_eject: false,
-            },
-            reprise_core::device_sync::PrimaryAction::SyncNow,
-        ),
+        action_copy(SyncPageControls {
+            editable: false,
+            can_start: false,
+            can_cancel: true,
+            can_eject: false,
+        }),
         PageActionCopy {
             label: "_Cancel",
             sensitive: true,
             destructive: true,
         }
-    );
-}
-
-/// `MTP-43`: the primary button reads "Download & sync" exactly when
-/// `primary_action` says `DownloadAndSync`, and only while not cancelling —
-/// a cancel affordance always reads "Cancel" regardless of what would start.
-#[test]
-fn mtp_43_primary_button_reads_download_and_sync_only_for_that_primary_action() {
-    use reprise_core::device_sync::PrimaryAction;
-
-    let controls = SyncPageControls {
-        editable: true,
-        can_start: true,
-        can_cancel: false,
-        can_eject: true,
-    };
-    assert_eq!(
-        action_copy(controls, PrimaryAction::DownloadAndSync),
-        PageActionCopy {
-            label: "_Download & sync",
-            sensitive: true,
-            destructive: false,
-        }
-    );
-    assert_eq!(
-        action_copy(controls, PrimaryAction::SyncNow),
-        PageActionCopy {
-            label: "_Sync now",
-            sensitive: true,
-            destructive: false,
-        }
-    );
-    let cancelling = SyncPageControls {
-        can_cancel: true,
-        ..controls
-    };
-    assert_eq!(
-        action_copy(cancelling, PrimaryAction::DownloadAndSync),
-        PageActionCopy {
-            label: "_Cancel",
-            sensitive: true,
-            destructive: true,
-        },
-        "a run in flight always offers Cancel, never a relabeled start action"
     );
 }
 

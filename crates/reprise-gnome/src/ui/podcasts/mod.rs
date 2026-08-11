@@ -13,7 +13,6 @@ mod podcasts_callbacks;
 mod podcasts_context_menu;
 mod podcasts_context_surface;
 mod podcasts_deferred_actions;
-mod podcasts_device_sync;
 mod podcasts_dnd;
 mod podcasts_download_presentation;
 mod podcasts_empty_state;
@@ -42,13 +41,7 @@ mod youtube_channel_detail;
 pub(in crate::ui) use podcasts_callbacks::PodcastsCallbacks;
 pub(in crate::ui) use podcasts_playback::{episode_mark_from_snapshot, EpisodeMark};
 pub(in crate::ui) use podcasts_view::PodcastsView;
-// `MTP-43`: the device-sync preparation phase (E9) reuses `MTP-44`'s
-// priority lane instead of a second download path — it needs these to build
-// its own `PodcastsRequest` the same way `podcasts_view.rs` does.
-pub(in crate::ui) use podcasts_worker::{
-    podcasts_response_channel, PodcastsOperation, PodcastsPriority, PodcastsRequest,
-    PodcastsRuntime, PodcastsWorkerResult,
-};
+pub(in crate::ui) use podcasts_worker::PodcastsRuntime;
 
 pub(in crate::ui) fn install(
     conn: std::rc::Rc<reprise_core::db::Db>,

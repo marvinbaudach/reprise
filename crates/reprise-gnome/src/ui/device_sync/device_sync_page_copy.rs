@@ -1,6 +1,6 @@
 //! Pure presentation copy for the device page — split out of
 //! `device_sync_page.rs` to keep that file under the project's 800-line
-//! limit as the preparation surface (`MTP-43`) grew its own progress and
+//! limit as the preparation surface grew its own progress and
 //! button-label projections.
 //!
 //! The toolkit-free projections live in `reprise-view`. This adapter narrows
@@ -9,13 +9,13 @@
 
 use chrono::{Datelike, TimeZone, Timelike};
 use reprise_core::device_sync::{
-    MirrorBlocker, PrimaryAction, SyncChangeSummary, SyncPageControls, SyncPageWarning,
-    SyncPlaylistRow, TransferProfile,
+    MirrorBlocker, SyncChangeSummary, SyncPageControls, SyncPageWarning, SyncPlaylistRow,
+    TransferProfile,
 };
 use reprise_view::device_sync as projection;
 use reprise_view::strings::Message;
 
-use super::device_sync_runtime::{DeviceView, PlannedSyncPhase, PreparationRunState};
+use super::device_sync_runtime::{DeviceView, PlannedSyncPhase};
 use super::device_sync_strings;
 
 pub(super) use projection::PageActionCopy;
@@ -116,8 +116,8 @@ pub(super) fn warning_summary(warnings: &[SyncPageWarning]) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn action_copy(controls: SyncPageControls, action: PrimaryAction) -> PageActionCopy {
-    projection::action_copy(controls, action)
+pub(super) fn action_copy(controls: SyncPageControls) -> PageActionCopy {
+    projection::action_copy(controls)
 }
 
 pub(super) fn eject_sensitive(device: &DeviceView) -> bool {
@@ -129,32 +129,7 @@ pub(super) fn counted(count: usize, singular: &'static str, plural: &'static str
 }
 
 pub(super) fn progress_copy(device: &DeviceView) -> Option<(String, String, String, f64)> {
-    let preparation = match &device.preparation_run {
-        PreparationRunState::Idle => None,
-        PreparationRunState::Downloading {
-            done,
-            total,
-            title,
-            received_bytes,
-            total_bytes,
-        } => Some(projection::PreparationProgress {
-            done: *done,
-            total: *total,
-            title: title.clone(),
-            received_bytes: *received_bytes,
-            total_bytes: *total_bytes,
-        }),
-    };
-    if preparation.is_none() && !device.prepared_this_run {
-        return transfer_progress_copy(&device.sync_phase, device.bytes_per_second);
-    }
-    projection::progress_copy(
-        preparation.as_ref(),
-        &device.sync_phase,
-        device.bytes_per_second,
-        device.prepared_this_run,
-    )
-    .map(render_progress)
+    transfer_progress_copy(&device.sync_phase, device.bytes_per_second)
 }
 
 pub(super) fn transfer_progress_copy(
