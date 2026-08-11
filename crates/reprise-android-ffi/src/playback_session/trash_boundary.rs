@@ -17,8 +17,8 @@ pub trait TrashAction: Send + Sync {
 
 /// One requested id that did not end up deleted, and why.
 ///
-/// `uri` is empty when there was no file to point at — see
-/// [`ALREADY_GONE`], the one failure raised before anything is attempted.
+/// `uri` is empty for the internal `ALREADY_GONE` failure: the requested
+/// library row had disappeared before any deletion could be attempted.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct AndroidTrashFailure {
     pub track_id: i64,
