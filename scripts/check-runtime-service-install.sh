@@ -72,7 +72,10 @@ installed_dest() {
   # the rest of that (very long) line untouched — silently returning the
   # whole document instead of the one field wanted.
   printf '%s' "$installed" \
-    | rg --no-line-number --only-matching --replace '$1' "\"[^\"]*$source_suffix_regex\": \"([^\"]*)\"" \
+    | {
+      rg --no-line-number --only-matching --replace '$1' \
+        "\"[^\"]*$source_suffix_regex\": \"([^\"]*)\"" || true
+    } \
     | head -1
 }
 
@@ -115,9 +118,11 @@ on_search_path() {
 # metadata has to follow too. That source is the *protocol* crate: the
 # address is part of the contract, and a client must be able to learn it
 # without depending on the service.
-bus_name=$(rg --no-line-number --replace '$1' \
-  '^pub const BUS_NAME: &str = "(.*)";$' \
-  crates/reprise-runtime-protocol/src/endpoint.rs | head -1)
+bus_name=$({
+  rg --no-line-number --replace '$1' \
+    '^pub const BUS_NAME: &str = "(.*)";$' \
+    crates/reprise-runtime-protocol/src/endpoint.rs || true
+} | head -1)
 if [[ -z "$bus_name" ]]; then
   echo "cannot read BUS_NAME from the runtime service source" >&2
   exit 1
