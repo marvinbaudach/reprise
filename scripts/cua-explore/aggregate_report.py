@@ -60,6 +60,45 @@ def _oracle_totals(value: Any) -> tuple[int, int, int]:
     )
 
 
+def _geometry_parts(summary: Mapping[str, Any]) -> list[str]:
+    """Describe the run's geometry evidence rather than one snapshot of it.
+
+    A run keeps one measurement record per snapshot and per executor
+    generation, so a restart cannot hide a blind first generation behind a
+    clean second one. Runs recorded before that collector existed carry a
+    single `geometry_resolution` - the last snapshot of the last executor,
+    printed as if it spoke for the whole run. Those directories are still
+    aggregated, so that record stays readable under its old name.
+    """
+    measurements = summary.get("geometry_measurements")
+    records = (
+        [item for item in measurements if isinstance(item, Mapping)]
+        if isinstance(measurements, Sequence) and not isinstance(measurements, (str, bytes))
+        else []
+    )
+    if records:
+        trusted = sum(1 for item in records if item.get("trusted") is True)
+        parts = [f"geometry={trusted}/{len(records)} snapshots trusted"]
+        resolutions = [
+            item["resolution"]
+            for item in records
+            if isinstance(item.get("resolution"), Mapping)
+        ]
+        driver_elements = sum(_integer(item.get("driver_elements")) for item in resolutions)
+        if driver_elements:
+            resolved = sum(_integer(item.get("resolved")) for item in resolutions)
+            parts.append(f"geometry_positions={resolved}/{driver_elements}")
+        return parts
+    resolution = summary.get("geometry_resolution")
+    if isinstance(resolution, Mapping):
+        resolved = resolution.get("resolved", "?")
+        # The denominator is this one field. Summing every integer in the
+        # resolution record produced the fictitious 164/1129 night metric.
+        driver_elements = resolution.get("driver_elements", "?")
+        return [f"geometry={resolved}/{driver_elements}"]
+    return []
+
+
 def health_line(summary: Mapping[str, Any]) -> str:
     """Return the compact per-run health record used in the night report."""
     mission = str(summary.get("mission_id", "unknown"))
@@ -69,13 +108,7 @@ def health_line(summary: Mapping[str, Any]) -> str:
     abort_reason = summary.get("abort_reason")
     if abort_reason:
         parts.append(f"abort={abort_reason}")
-    resolution = summary.get("geometry_resolution")
-    if isinstance(resolution, Mapping):
-        resolved = resolution.get("resolved", "?")
-        # The denominator is this one field. Summing every integer in the
-        # resolution record produced the fictitious 164/1129 night metric.
-        driver_elements = resolution.get("driver_elements", "?")
-        parts.append(f"geometry={resolved}/{driver_elements}")
+    parts.extend(_geometry_parts(summary))
     parts.append(f"transport_faults={_integer(summary.get('transport_faults'))}")
     parts.append(
         f"unknown_actions={_unknown_action_count(summary.get('unknown_action_names'))}"

@@ -84,6 +84,33 @@ class GeometryHealthTests(unittest.TestCase):
 
         self.assertIn("geometry=7/9", health_line(summary))
 
+    def test_a_clean_restart_cannot_hide_a_blind_first_generation(self) -> None:
+        # The B3 failure scenario: generation 1 measured nothing, generation 2
+        # was clean. Reporting the last executor alone called the run healthy.
+        summary = {
+            "mission_id": "restart",
+            "seed": 11,
+            "geometry_measurements": [
+                {
+                    "generation": 1,
+                    "state_id": "launch-1-state-1",
+                    "trusted": False,
+                    "failure": "accessibility walk failed",
+                },
+                {
+                    "generation": 2,
+                    "state_id": "launch-2-state-1",
+                    "trusted": True,
+                    "resolution": {"resolved": 164, "driver_elements": 168},
+                },
+            ],
+        }
+
+        line = health_line(summary)
+
+        self.assertIn("geometry=1/2 snapshots trusted", line)
+        self.assertIn("geometry_positions=164/168", line)
+
     def test_health_reports_new_run_signals(self) -> None:
         summary = {
             **RECORDED_164_OF_168,
