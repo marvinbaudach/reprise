@@ -22,11 +22,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,8 +44,8 @@ import kotlinx.coroutines.flow.drop
 
 /**
  * One answered request for the playing track's row, carrying the id it was
- * asked for. The id is what makes a late answer harmless: it is only ever
- * shown while it is still the track the session reports as playing.
+ * asked for. The id says whether the retained row still describes the track
+ * the session reports as playing, so actions can be disabled during a change.
  */
 private data class AnsweredTrack(val id: Long, val track: LibraryTrack?)
 
@@ -414,6 +416,7 @@ internal fun BrowseScreen(
     // the composition. See [TrackLoader].
     var answeredTrack by remember { mutableStateOf<AnsweredTrack?>(null) }
     val playingTrackId = playback.currentTrackId
+    val latestPlayingTrackId by rememberUpdatedState(playingTrackId)
     LaunchedEffect(playingTrackId, playbackControls, trackArtwork) {
         surfaceState.prefetchUpcomingArtwork(playingTrackId, playbackControls, trackArtwork)
     }
@@ -421,16 +424,20 @@ internal fun BrowseScreen(
         if (playingTrackId != null) {
             trackAnalysis.prepare(playingTrackId)
             loadTrack(playingTrackId) { track ->
-                answeredTrack = AnsweredTrack(playingTrackId, track)
+                if (latestPlayingTrackId != null) {
+                    answeredTrack = AnsweredTrack(playingTrackId, track)
+                }
             }
+        } else {
+            answeredTrack = null
         }
     }
-    // Nothing is shown until the answer for *this* track arrives. Keeping the
-    // previous track on screen would be the shorter blank, but it would also be
-    // a row that answers for a track that is no longer playing — and the heart
-    // in the sheet would change it. A session that stopped therefore blanks the
-    // moment it stops, without waiting for anything.
-    val currentTrack = answeredTrack?.takeIf { it.id == playingTrackId }?.track
+    // The last answered row stays in place while a new track is being read, but
+    // its actions are disabled because it no longer answers for what is playing.
+    // A stopped session still blanks immediately: no replacement answer is due.
+    val lastAnsweredTrack = answeredTrack
+    val shownTrack = if (playingTrackId == null) null else lastAnsweredTrack?.track
+    val shownTrackIsStale = lastAnsweredTrack != null && lastAnsweredTrack.id != playingTrackId
     val summary = when (selectedTab) {
         BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
         BrowseTab.ARTISTS -> selectedArtist?.tracks
@@ -463,7 +470,7 @@ internal fun BrowseScreen(
                 bottomBar = {
                     LibraryBottomFrame(
                         surfaceLayout = surfaceLayout,
-                        currentTrack = currentTrack,
+                        currentTrack = shownTrack,
                         playback = playback,
                         selectedTab = selectedTab,
                         selectTab = ::selectDestination,
@@ -623,12 +630,12 @@ internal fun BrowseScreen(
             }
         }
         if (surfaceState.dockMode) {
-            currentTrack?.let { track ->
+            shownTrack?.let { track ->
                 DockModeSurface(track, playback, surfaceState)
             } ?: DockModeWaitingSurface()
         } else {
             AnimatedVisibility(
-                visible = nowPlayingExpanded && currentTrack != null,
+                visible = nowPlayingExpanded && playingTrackId != null,
                 modifier = nowPlayingFrameModifier,
                 enter = slideInVertically(initialOffsetY = { height -> height }) + expandVertically(
                     expandFrom = Alignment.Bottom,
@@ -637,21 +644,25 @@ internal fun BrowseScreen(
                     shrinkTowards = Alignment.Bottom,
                 ),
             ) {
-                currentTrack?.let { track ->
-                    NowPlayingSheet(
-                        track = track,
-                        playback = playback,
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        close = { surfaceState.showNowPlaying(false) },
-                    )
+                shownTrack?.let { track ->
+                    CompositionLocalProvider(
+                        LocalNowPlayingActionsEnabled provides !shownTrackIsStale,
+                    ) {
+                        NowPlayingSheet(
+                            track = track,
+                            playback = playback,
+                            surfaceLayout = surfaceLayout,
+                            surfaceState = surfaceState,
+                            close = { surfaceState.showNowPlaying(false) },
+                        )
+                    }
                 }
             }
         }
         if (
             surfaceState.dockOfferVisible &&
             surfaceLayout == SurfaceLayout.WIDE_SHORT &&
-            currentTrack != null &&
+            shownTrack != null &&
             !surfaceState.dockMode &&
             !settingsVisible
         ) {

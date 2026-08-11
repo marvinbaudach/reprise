@@ -329,22 +329,20 @@ class ComposeBehaviorTest {
 
     /**
      * The playing track's row is read off the main thread, so its answer
-     * arrives after the composition that asked for it — and it is shown only
-     * while it is still the track the session reports as playing.
+     * arrives after the composition that asked for it. The last answered row
+     * stays visible while the replacement is outstanding, then changes in
+     * place when the new answer arrives.
      *
-     * Four moments, one decision. Nothing is shown while this track's answer is
-     * outstanding: keeping the previous row would put a track on screen that is
-     * not the one playing, and the heart in the sheet would change it. An answer
-     * for the track before this one is discarded rather than shown in its
-     * place. And a session that has stopped shows nothing at all, whatever
-     * arrives afterwards — the one rule the mini player may never break.
+     * Before the first answer there is no row to retain. Once there is one, a
+     * track change keeps it in place without making it actionable. A stopped
+     * session still shows nothing, whatever arrives afterwards.
      *
      * The fake here never answers by itself, which is the point: a surface that
      * reads the row inside its own composition cannot pass this, because the
      * row only ever exists after the composition that asked for it.
      */
     @Test
-    fun theRowAppearsOnlyOnItsOwnAnswerAndNeverStandsInForAnotherTrack() {
+    fun theLastAnsweredRowStaysUntilItsReplacementAndStopStillBlanksIt() {
         val first = testTrack(rating = 2).copy(id = 830, title = "First Song")
         val second = testTrack(rating = 4).copy(
             id = 831,
@@ -408,12 +406,11 @@ class ComposeBehaviorTest {
         compose.runOnIdle {
             playback = playback.copy(currentTrackId = second.id, currentTrackUri = second.uri)
         }
-        miniPlayer().assertDoesNotExist()
+        miniPlayer().assertTextContains("First Song")
 
-        // The first track's answer arrives late — for a track that is no longer
-        // the one playing.
+        // A repeated old answer cannot dislodge the retained old row either.
         compose.runOnIdle { pending.getValue(first.id)(first) }
-        miniPlayer().assertDoesNotExist()
+        miniPlayer().assertTextContains("First Song")
 
         compose.runOnIdle { pending.getValue(second.id)(second) }
         miniPlayer().assertTextContains("Second Song")

@@ -260,7 +260,12 @@ private fun PlayedHeader(
     ) {
         Spacer(Modifier.weight(1f))
         SleepTimerControl(playback.sleepTimer)
-        FavouriteHeartButton(track, surfaceState, tag = "now-playing-heart")
+        FavouriteHeartButton(
+            track,
+            surfaceState,
+            tag = "now-playing-heart",
+            enabled = LocalNowPlayingActionsEnabled.current,
+        )
         // The fullscreen visualizer this row used to open is retired, so the
         // context menu takes the slot rather than sitting next to it.
         NowPlayingTrackContextMenu(track)
