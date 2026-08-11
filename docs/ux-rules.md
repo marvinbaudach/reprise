@@ -5346,12 +5346,11 @@ listening statistics.
   "4 channels · 41 episodes · 7 new" on YouTube. Only the leading subject
   differs; the episode and new counts stay the same quantities computed the
   same way (`podcasts_presentation::library_summary`), so both pages keep one
-  projection and one tail formatter. This settles the vocabulary against the
-  device-sync selection summary, which already reads "N of M channels
-  selected" for YouTube against "N of M shows selected" for podcasts
-  (`MTP-45`/`POD-12`) — the two lines can no longer call the same subscription
-  by two different nouns. Found by the `source-youtube` acceptance scenario,
-  which reads the header back out of the running app.
+  projection and one tail formatter. The leading subject is the vocabulary
+  every other surface on that page has to match — a show stays a show and a
+  channel stays a channel — so the same subscription is never called by two
+  different nouns within one library. Found by the `source-youtube`
+  acceptance scenario, which reads the header back out of the running app.
 - **POD-16** [replaced by POD-19] [gtk] — The status line under the Podcasts and YouTube
   libraries never renders a raw error. Its two failure states are fixed
   sentences — "Could not read your subscriptions" when the library itself
@@ -5368,7 +5367,10 @@ listening statistics.
 - **POD-17** [active] [core] — Every newly downloaded episode carries Title,
   Album (the show), Artist (the feed author, or the show when no author is
   present), Album Artist (the show), and the recording date in the file itself,
-  so a phone can name it without Reprise. The container is detected from the
+  so the library names it from the file rather than from the subscription row
+  it was downloaded through — a downloaded episode stays correctly named after
+  its feed is unsubscribed, and any other player opening the same file reads
+  the same thing. The container is detected from the
   file's bytes, never its name: the tag is written to the `.part` temporary,
   whose name an extension-based reader would reject. Tags go to the temporary
   and never to a published file because the tag library rewrites Ogg and FLAC
@@ -5381,16 +5383,17 @@ listening statistics.
   untaggable container never costs a completed download. A failed *write*
   fails the download: the file may already be truncated, so the temporary is
   deleted and the episode stays not-downloaded and retryable. Publishing it
-  instead would record the size of the wreckage as the episode's size — device
-  sync only compares the file against exactly that number, so it would agree
-  forever, while the recorded path would stop the episode from ever being
-  downloaded again. Either way only the classified reason may reach a log line
-  (`POD-13`). The size is measured after the tag write, so `downloaded_bytes`
-  always equals the published file's size; device sync rejects an episode whose
-  file and record differ, so reversing that order would silently remove every
-  tagged episode from future syncs. Every written value is capped at the byte
-  length the device path caps its components at (`MTP-47`), because the feed
-  owns these strings and nothing else bounds how much of one reaches the
+  instead would record the truncated wreckage as a finished download: the
+  recorded path stops the episode from ever being fetched again, so a file
+  that cannot play would be kept forever with no way back. Either way only the
+  classified reason may reach a log line (`POD-13`). The size is measured after
+  the tag write, so `downloaded_bytes` always equals the published file's size;
+  reversing that order would record every tagged episode short by the length of
+  its own tag, and the channel's "downloaded" storage figure — which sums
+  exactly this column — would understate the disk by that much for every
+  episode it counts. Every written value is capped at `MAX_TAG_BYTES`, the same
+  byte length the file-name sanitizer caps a path component at, because the
+  feed owns these strings and nothing else bounds how much of one reaches the
   truncate-and-rewrite. Files downloaded before this rule keep no tags;
   re-downloading is the remedy. The reclaim path deliberately does not tag
   because it is the one path that would rewrite an already-published file in
