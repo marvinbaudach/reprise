@@ -47,6 +47,43 @@ class LivePcmAudioProcessorTest {
     }
 
     @Test
+    fun throwingVisualizerConsumerCannotInterruptPcmForwarding() {
+        val processor = TeeAudioProcessor(
+            LivePcmBufferSink().apply { attach(ThrowingPcmConsumer()) },
+        )
+        val expected = stereoPcm16(
+            left = shortArrayOf(1_000, -2_000, 3_000),
+            right = shortArrayOf(-4_000, 5_000, -6_000),
+        )
+        processor.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
+
+        processor.queueInput(directBuffer(expected))
+
+        assertArrayEquals(expected, processor.output.toByteArray())
+    }
+
+    @Test
+    fun throwingVisualizerResetCannotEscapeFlushOrDetach() {
+        val consumer = ThrowingResetConsumer()
+        val sink = LivePcmBufferSink().apply { attach(consumer) }
+
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        sink.detach(consumer)
+    }
+
+    @Test
+    fun detachingVisualizerResetsItsLiveStreamBeforeRemovingIt() {
+        val consumer = RecordingPcmConsumer()
+        val sink = LivePcmBufferSink().apply { attach(consumer) }
+
+        sink.detach(consumer)
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+
+        assertEquals(1, consumer.resetCount)
+    }
+
+    @Test
     fun livePcmPlaybackExplicitlyKeepsAudioOffloadDisabled() {
         assertEquals(
             TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED,
@@ -77,6 +114,28 @@ private class RecordingPcmConsumer : LivePcmConsumer {
     override fun resetAudioStream() {
         resetCount += 1
     }
+}
+
+private class ThrowingPcmConsumer : LivePcmConsumer {
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ): Nothing = error("visualizer ingest failed")
+
+    override fun resetAudioStream() = Unit
+}
+
+private class ThrowingResetConsumer : LivePcmConsumer {
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ) = Unit
+
+    override fun resetAudioStream(): Nothing = error("visualizer reset failed")
 }
 
 private fun stereoPcm16(left: ShortArray, right: ShortArray): ByteArray {

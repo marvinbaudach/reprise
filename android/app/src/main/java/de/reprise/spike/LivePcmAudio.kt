@@ -40,27 +40,44 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink {
     }
 
     fun detach(consumer: LivePcmConsumer) {
-        if (this.consumer === consumer) this.consumer = null
+        if (this.consumer === consumer) {
+            this.consumer = null
+            resetSafely(consumer)
+        }
     }
 
     fun detachAll() {
+        val detached = consumer
         consumer = null
+        detached?.let(::resetSafely)
     }
 
     override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
         this.sampleRateHz = sampleRateHz
         this.channelCount = channelCount
         this.encoding = encoding
-        consumer?.resetAudioStream()
+        consumer?.let(::resetSafely)
     }
 
     override fun handleBuffer(buffer: ByteBuffer) {
         val target = consumer ?: return
         if (encoding != C.ENCODING_PCM_16BIT || sampleRateHz <= 0 || channelCount <= 0) return
-        val byteCount = buffer.remaining()
-        if (scratch.size < byteCount) scratch = ByteArray(byteCount)
-        buffer.get(scratch, 0, byteCount)
-        target.ingestPcm16(scratch, byteCount, sampleRateHz, channelCount)
+        try {
+            val byteCount = buffer.remaining()
+            if (scratch.size < byteCount) scratch = ByteArray(byteCount)
+            buffer.get(scratch, 0, byteCount)
+            target.ingestPcm16(scratch, byteCount, sampleRateHz, channelCount)
+        } catch (_: Throwable) {
+            // The visualizer is optional: discard this frame, never the audio.
+        }
+    }
+
+    private fun resetSafely(target: LivePcmConsumer) {
+        try {
+            target.resetAudioStream()
+        } catch (_: Throwable) {
+            // The visualizer is optional: discard its history, never the audio.
+        }
     }
 }
 
@@ -69,15 +86,22 @@ internal class LivePcmRenderersFactory(
     context: Context,
     private val processor: AudioProcessor,
 ) : DefaultRenderersFactory(context) {
-    override fun buildAudioSink(
+    public override fun buildAudioSink(
         context: Context,
         enableFloatOutput: Boolean,
         enableAudioOutputPlaybackParameters: Boolean,
-    ): AudioSink = DefaultAudioSink.Builder(context)
-        .setAudioProcessors(arrayOf(processor))
-        .setEnableFloatOutput(false)
-        .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParameters)
-        .build()
+    ): AudioSink {
+        require(!enableFloatOutput) {
+            "Live PCM visualization requires signed 16-bit audio output"
+        }
+        return DefaultAudioSink.Builder(context)
+            // Media3 prepends caller processors before SilenceSkipping and Sonic,
+            // so this tap observes audio before silence removal or speed changes.
+            .setAudioProcessors(arrayOf(processor))
+            .setEnableFloatOutput(false)
+            .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParameters)
+            .build()
+    }
 }
 
 /**
