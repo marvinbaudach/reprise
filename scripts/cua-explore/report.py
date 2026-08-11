@@ -105,8 +105,6 @@ class RunReport:
         self.workload_audits: dict[int, dict[str, Any]] = {}
         self.startup_timings: list[dict[str, Any]] = []
         self.geometry_failures: list[str] = []
-        self.geometry_calibration: dict[str, Any] | None = None
-        self.geometry_resolution: dict[str, Any] | None = None
         self.geometry_measurements: list[dict[str, Any]] = []
         self.cursor_visibility: dict[str, Any] | None = None
         self.hover_coverage: list[dict[str, Any]] = []
@@ -149,12 +147,6 @@ class RunReport:
         """Snapshots whose element positions could not be proven; oracles stayed quiet."""
         self.geometry_failures = [str(_sanitize(item)) for item in failures]
 
-    def set_geometry_calibration(self, calibration: Mapping[str, Any] | None) -> None:
-        """The measured shadow border, so the normalisation stays checkable."""
-        self.geometry_calibration = (
-            dict(_sanitize(calibration)) if calibration else None
-        )
-
     def set_hover_coverage(self, coverage: Sequence[Mapping[str, Any]] | None) -> None:
         """Per section: how many hover targets existed and how many were reached."""
         self.hover_coverage = [dict(_sanitize(item)) for item in coverage or ()]
@@ -162,10 +154,6 @@ class RunReport:
     def set_cursor_visibility(self, measurement: Mapping[str, Any] | None) -> None:
         """Whether the pointer reaches the capture, and therefore needs excluding."""
         self.cursor_visibility = dict(_sanitize(measurement)) if measurement else None
-
-    def set_geometry_resolution(self, resolution: Mapping[str, Any] | None) -> None:
-        """How many driver elements got a measured position, and why the rest did not."""
-        self.geometry_resolution = dict(_sanitize(resolution)) if resolution else None
 
     def set_geometry_measurements(
         self, measurements: Sequence[Mapping[str, Any]]
@@ -254,8 +242,6 @@ class RunReport:
                 "steps": len(self.steps),
                 "startup_timings": self.startup_timings,
                 "geometry_failures": self.geometry_failures,
-                "geometry_calibration": self.geometry_calibration,
-                "geometry_resolution": self.geometry_resolution,
                 "geometry_measurements": self.geometry_measurements,
                 "cursor_visibility": self.cursor_visibility,
                 "hover_coverage": self.hover_coverage,
@@ -363,7 +349,6 @@ class RunReport:
                 )
             lines.append("")
         measurements = summary.get("geometry_measurements") or []
-        resolution = summary.get("geometry_resolution")
         if measurements:
             lines.extend(["## Geometry", ""])
             previous_generation = object()
@@ -388,59 +373,8 @@ class RunReport:
                 if measurement.get("failure"):
                     lines.append(f"- `{state_id}` - **Untrusted:** {measurement['failure']}")
             lines.append("")
-        elif resolution:
-            lines.extend(["## Geometry", ""])
-            lines.append(
-                f"- Measured positions: {resolution.get('resolved')} of "
-                f"{resolution.get('driver_elements')} driver elements "
-                f"({resolution.get('resolved_ratio')})"
-            )
-            lines.append(
-                f"  ({resolution.get('resolved_unique')} on a unique key, "
-                f"{resolution.get('resolved_ordered')} paired in walk order "
-                f"within an equally sized group)"
-            )
-            lines.append(
-                f"- Unresolved: {resolution.get('unmatched')} without a match, "
-                f"{resolution.get('ambiguous')} ambiguous, "
-                f"{resolution.get('degenerate')} without usable bounds, "
-                f"{resolution.get('out_of_window')} outside the window"
-            )
-            violations = resolution.get("subset_violations") or 0
-            if violations:
-                lines.append(
-                    f"- **{violations} elements sit in groups where the driver "
-                    f"reports more nodes than the walk can see.** Ordered "
-                    f"pairing is refused there, and its subset argument is "
-                    f"weakened for the "
-                    f"{resolution.get('resolved_ordered')} elements it did "
-                    f"resolve elsewhere - treat those with care."
-                )
-            else:
-                lines.append(
-                    f"- No group had more driver elements than walk nodes, so "
-                    f"the subset argument behind the "
-                    f"{resolution.get('resolved_ordered')} ordered pairings "
-                    f"held everywhere it was checked."
-                )
-            unresolved = resolution.get("unresolved") or {}
-            for reason in sorted(unresolved):
-                entries = unresolved[reason]
-                if not entries:
-                    continue
-                lines.append(f"- `{reason}` ({len(entries)} shown):")
-                for entry in entries[:10]:
-                    lines.append(
-                        f"    - `{entry.get('role')}` "
-                        f"\"{entry.get('label')}\" "
-                        f"{entry.get('width')}x{entry.get('height')} "
-                        f"- {entry.get('driver_count')} driver, "
-                        f"{entry.get('candidates')} walk"
-                    )
-            lines.append("")
         if summary["geometry_failures"] and not measurements:
-            if not resolution:
-                lines.extend(["## Geometry", ""])
+            lines.extend(["## Geometry", ""])
             lines.append(
                 "Element positions could not be proven, so the position oracles "
                 "stayed silent for the affected snapshots:"

@@ -240,12 +240,17 @@ class OutcomeTests(unittest.TestCase):
 
     def test_summary_exposes_the_new_evidence_channels_even_when_empty(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            summary = report_at(pathlib.Path(directory)).write()
+            report = report_at(pathlib.Path(directory))
+            summary = report.write()
 
         self.assertEqual(summary["transport_faults"], 0)
         self.assertEqual(summary["unknown_action_names"], {})
         self.assertEqual(summary["oracle_activity"], {})
         self.assertIsNone(summary["window_setup"])
+        self.assertNotIn("geometry_resolution", summary)
+        self.assertNotIn("geometry_calibration", summary)
+        self.assertFalse(hasattr(report, "set_geometry_resolution"))
+        self.assertFalse(hasattr(report, "set_geometry_calibration"))
 
     def test_gateway_can_finish_after_an_audited_incomplete_checkpoint(self) -> None:
         mission = load_mission(
@@ -643,7 +648,8 @@ class RunPathTests(unittest.TestCase):
             measurements[0]["failure"], "generation one accessibility walk failed"
         )
         self.assertEqual(measurements[1]["resolution"]["resolved"], 2)
-        self.assertIsNone(result.summary["geometry_resolution"])
+        self.assertNotIn("geometry_resolution", result.summary)
+        self.assertNotIn("geometry_calibration", result.summary)
         self.assertIn(
             "generation one accessibility walk failed",
             result.summary["geometry_failures"][0],
