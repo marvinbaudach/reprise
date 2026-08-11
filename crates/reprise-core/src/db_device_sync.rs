@@ -299,7 +299,8 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
             .execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN sync_to_phone;")?;
     }
     if settings_prepare_before_sync {
-        transaction.execute_batch("ALTER TABLE device_settings DROP COLUMN prepare_before_sync;")?;
+        transaction
+            .execute_batch("ALTER TABLE device_settings DROP COLUMN prepare_before_sync;")?;
     }
     if subscriptions_latest_per_channel {
         transaction
