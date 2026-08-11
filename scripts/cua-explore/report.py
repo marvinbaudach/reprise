@@ -105,21 +105,47 @@ class RunReport:
         self.workload_audits: dict[int, dict[str, Any]] = {}
         self.startup_timings: list[dict[str, Any]] = []
         self.geometry_failures: list[str] = []
-        self.geometry_calibration: dict[str, Any] | None = None
-        self.geometry_resolution: dict[str, Any] | None = None
+        self.geometry_measurements: list[dict[str, Any]] = []
         self.cursor_visibility: dict[str, Any] | None = None
         self.hover_coverage: list[dict[str, Any]] = []
+        self.run_findings: list[dict[str, Any]] = []
+        self.abort_reason: str | None = None
+        self.transport_faults = 0
+        self.unknown_action_names: dict[str, int] = {}
+        self.oracle_activity: dict[str, dict[str, Any]] = {}
+        self.window_setup: dict[str, Any] | None = None
+        self.dispatch_policy: dict[str, Any] | None = None
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def add_finding(self, finding: Mapping[str, Any]) -> None:
+        self.run_findings.append(dict(_sanitize(finding)))
+
+    def set_abort_reason(self, reason: str | None) -> None:
+        self.abort_reason = str(_sanitize(reason)) if reason else None
+
+    def set_transport_faults(self, count: int) -> None:
+        self.transport_faults = max(0, int(count))
+
+    def set_unknown_action_names(self, counts: Mapping[str, int]) -> None:
+        self.unknown_action_names = {
+            str(name): int(count) for name, count in sorted(counts.items())
+        }
+
+    def set_oracle_activity(self, activity: Mapping[str, Mapping[str, Any]]) -> None:
+        self.oracle_activity = {
+            str(name): dict(_sanitize(record))
+            for name, record in sorted(activity.items())
+        }
+
+    def set_window_setup(self, record: Mapping[str, Any] | None) -> None:
+        self.window_setup = dict(_sanitize(record)) if record else None
+
+    def set_dispatch_policy(self, policy: Mapping[str, Any] | None) -> None:
+        self.dispatch_policy = dict(_sanitize(policy)) if policy else None
 
     def set_geometry_failures(self, failures: Sequence[str]) -> None:
         """Snapshots whose element positions could not be proven; oracles stayed quiet."""
         self.geometry_failures = [str(_sanitize(item)) for item in failures]
-
-    def set_geometry_calibration(self, calibration: Mapping[str, Any] | None) -> None:
-        """The measured shadow border, so the normalisation stays checkable."""
-        self.geometry_calibration = (
-            dict(_sanitize(calibration)) if calibration else None
-        )
 
     def set_hover_coverage(self, coverage: Sequence[Mapping[str, Any]] | None) -> None:
         """Per section: how many hover targets existed and how many were reached."""
@@ -129,9 +155,19 @@ class RunReport:
         """Whether the pointer reaches the capture, and therefore needs excluding."""
         self.cursor_visibility = dict(_sanitize(measurement)) if measurement else None
 
-    def set_geometry_resolution(self, resolution: Mapping[str, Any] | None) -> None:
-        """How many driver elements got a measured position, and why the rest did not."""
-        self.geometry_resolution = dict(_sanitize(resolution)) if resolution else None
+    def set_geometry_measurements(
+        self, measurements: Sequence[Mapping[str, Any]]
+    ) -> None:
+        """Retain each snapshot measurement across every executor generation."""
+        self.geometry_measurements = [
+            dict(_sanitize(measurement)) for measurement in measurements
+        ]
+        self.geometry_failures = [
+            f"Generation {measurement.get('generation')}, "
+            f"{measurement.get('state_id')}: {measurement.get('failure')}"
+            for measurement in self.geometry_measurements
+            if measurement.get("failure")
+        ]
 
     def set_startup_timings(self, timings: Sequence[Mapping[str, Any]]) -> None:
         """Measured launch cost per app start; a slow start is a product finding."""
@@ -163,7 +199,11 @@ class RunReport:
         )
 
     def write(self) -> Mapping[str, Any]:
-        findings = [finding for step in self.steps for finding in step["findings"]]
+        findings = [
+            *self.run_findings,
+            *self._silent_oracle_findings(),
+            *(finding for step in self.steps for finding in step["findings"]),
+        ]
         severity_counts = Counter(str(item.get("severity", "unknown")) for item in findings)
         code_counts = Counter(str(item.get("code", "unknown")) for item in findings)
         completed_workloads = sorted(
@@ -187,6 +227,11 @@ class RunReport:
             and audits_complete
             and finished
         )
+        outcome = (
+            "aborted"
+            if self.abort_reason is not None
+            else "complete" if mission_complete else "incomplete"
+        )
         summary = _sanitize(
             {
                 "schema_version": 1,
@@ -197,8 +242,7 @@ class RunReport:
                 "steps": len(self.steps),
                 "startup_timings": self.startup_timings,
                 "geometry_failures": self.geometry_failures,
-                "geometry_calibration": self.geometry_calibration,
-                "geometry_resolution": self.geometry_resolution,
+                "geometry_measurements": self.geometry_measurements,
                 "cursor_visibility": self.cursor_visibility,
                 "hover_coverage": self.hover_coverage,
                 "hover_candidates": sum(
@@ -207,7 +251,11 @@ class RunReport:
                 "hover_reached": sum(
                     int(item.get("hovered", 0)) for item in self.hover_coverage
                 ),
-                "geometry_trusted": not self.geometry_failures,
+                "geometry_trusted": (
+                    all(item.get("trusted") is True for item in self.geometry_measurements)
+                    if self.geometry_measurements
+                    else not self.geometry_failures
+                ),
                 "finding_counts": dict(sorted(severity_counts.items())),
                 "finding_codes": dict(sorted(code_counts.items())),
                 "required_workloads": self.required_workloads,
@@ -216,6 +264,13 @@ class RunReport:
                 "required_audits": sorted(required_audits),
                 "finished": finished,
                 "mission_complete": mission_complete,
+                "outcome": outcome,
+                "abort_reason": self.abort_reason,
+                "transport_faults": self.transport_faults,
+                "unknown_action_names": self.unknown_action_names,
+                "oracle_activity": self.oracle_activity,
+                "window_setup": self.window_setup,
+                "dispatch_policy": self.dispatch_policy,
                 "automatic_gate": False,
                 "requires_confirmation_runs": True,
             }
@@ -231,6 +286,23 @@ class RunReport:
         )
         return summary
 
+    def _silent_oracle_findings(self) -> list[dict[str, Any]]:
+        findings = []
+        for name, record in self.oracle_activity.items():
+            if int(record.get("evaluated", 0)) > 0 or record.get("superseded_by"):
+                continue
+            findings.append(
+                {
+                    "code": "oracle-never-evaluated",
+                    "severity": "warning",
+                    "confidence": 1.0,
+                    "summary": f"The declared '{name}' oracle never evaluated during this run.",
+                    "evidence": {"oracle": name},
+                    "blocks_gate": False,
+                }
+            )
+        return findings
+
     def _markdown(
         self, summary: Mapping[str, Any], findings: Sequence[Mapping[str, Any]]
     ) -> str:
@@ -241,9 +313,12 @@ class RunReport:
             f"- Seed: `{self.seed}`",
             f"- Commit: `{self.commit}`",
             f"- Actions: {summary['steps']}",
+            f"- Outcome: `{summary['outcome']}`",
             "- Status: advisory until reproduced in two fresh profiles",
             "",
         ]
+        if summary.get("abort_reason"):
+            lines.extend([f"Abort reason: {summary['abort_reason']}", ""])
         if summary.get("hover_coverage"):
             lines.extend(["## Hover coverage", ""])
             planned = next(
@@ -273,60 +348,33 @@ class RunReport:
                     f"{item.get('skipped_without_geometry')} without geometry)"
                 )
             lines.append("")
-        resolution = summary.get("geometry_resolution")
-        if resolution:
+        measurements = summary.get("geometry_measurements") or []
+        if measurements:
             lines.extend(["## Geometry", ""])
-            lines.append(
-                f"- Measured positions: {resolution.get('resolved')} of "
-                f"{resolution.get('driver_elements')} driver elements "
-                f"({resolution.get('resolved_ratio')})"
-            )
-            lines.append(
-                f"  ({resolution.get('resolved_unique')} on a unique key, "
-                f"{resolution.get('resolved_ordered')} paired in walk order "
-                f"within an equally sized group)"
-            )
-            lines.append(
-                f"- Unresolved: {resolution.get('unmatched')} without a match, "
-                f"{resolution.get('ambiguous')} ambiguous, "
-                f"{resolution.get('degenerate')} without usable bounds, "
-                f"{resolution.get('out_of_window')} outside the window"
-            )
-            violations = resolution.get("subset_violations") or 0
-            if violations:
-                lines.append(
-                    f"- **{violations} elements sit in groups where the driver "
-                    f"reports more nodes than the walk can see.** Ordered "
-                    f"pairing is refused there, and its subset argument is "
-                    f"weakened for the "
-                    f"{resolution.get('resolved_ordered')} elements it did "
-                    f"resolve elsewhere - treat those with care."
-                )
-            else:
-                lines.append(
-                    f"- No group had more driver elements than walk nodes, so "
-                    f"the subset argument behind the "
-                    f"{resolution.get('resolved_ordered')} ordered pairings "
-                    f"held everywhere it was checked."
-                )
-            unresolved = resolution.get("unresolved") or {}
-            for reason in sorted(unresolved):
-                entries = unresolved[reason]
-                if not entries:
-                    continue
-                lines.append(f"- `{reason}` ({len(entries)} shown):")
-                for entry in entries[:10]:
+            previous_generation = object()
+            for measurement in measurements:
+                generation = measurement.get("generation")
+                if generation != previous_generation:
+                    lines.extend([f"### Generation {generation}", ""])
+                    previous_generation = generation
+                state_id = measurement.get("state_id")
+                snapshot_resolution = measurement.get("resolution")
+                if snapshot_resolution:
                     lines.append(
-                        f"    - `{entry.get('role')}` "
-                        f"\"{entry.get('label')}\" "
-                        f"{entry.get('width')}x{entry.get('height')} "
-                        f"- {entry.get('driver_count')} driver, "
-                        f"{entry.get('candidates')} walk"
+                        f"- `{state_id}` - Measured positions: "
+                        f"{snapshot_resolution.get('resolved')} of "
+                        f"{snapshot_resolution.get('driver_elements')} driver elements "
+                        f"({snapshot_resolution.get('resolved_ratio')})"
                     )
+                    lines.append(
+                        f"  ({snapshot_resolution.get('resolved_unique')} on a unique key, "
+                        f"{snapshot_resolution.get('resolved_ordered')} paired in walk order)"
+                    )
+                if measurement.get("failure"):
+                    lines.append(f"- `{state_id}` - **Untrusted:** {measurement['failure']}")
             lines.append("")
-        if summary["geometry_failures"]:
-            if not resolution:
-                lines.extend(["## Geometry", ""])
+        if summary["geometry_failures"] and not measurements:
+            lines.extend(["## Geometry", ""])
             lines.append(
                 "Element positions could not be proven, so the position oracles "
                 "stayed silent for the affected snapshots:"

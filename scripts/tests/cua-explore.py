@@ -259,9 +259,27 @@ def snapshot(elements, *, state_id="state", width=1200, height=800, window=True)
     return normalize_snapshot(raw, state_id=state_id, captured_ms=0)
 
 
+SNAPSHOT_ID = "s00000001"
+
+
+def raw_snapshot(elements, *, width=800, height=600):
+    """The envelope cua-driver returns: the snapshot names itself.
+
+    Every element_token embeds that name, and the address contract refuses a
+    token it cannot check against one.
+    """
+    return {
+        "snapshot_id": SNAPSHOT_ID,
+        "screenshot_width": width,
+        "screenshot_height": height,
+        "structuredContent": {"elements": list(elements)},
+    }
+
+
 def element(index, label, role="button", x=10, y=10, w=100, h=32, **extra):
     return {
         "element_index": index,
+        "element_token": f"{SNAPSHOT_ID}:{index}",
         "label": label,
         "role": role,
         "frame": {"x": x, "y": y, "w": w, "h": h},
@@ -378,19 +396,13 @@ class SlowRoundTripTransport:
         self.calls.append(tool)
         if tool == "get_window_state":
             time.sleep(self.round_trip_seconds)
-            return {
-                "screenshot_width": 800,
-                "screenshot_height": 600,
-                "structuredContent": {
-                    "elements": [
+            return raw_snapshot([
                         driver_element(
                             0, "Reprise", "frame", 0, 0, 800, 600,
                             depth=0, parent_index=None,
                         ),
                         driver_element(4, "Music", "button", 10, 10, 90, 30),
-                    ]
-                },
-            }
+                    ])
         return {"effect": "confirmed", "verified": True}
 
     def resize_window(self, window_id, width, height):
@@ -485,7 +497,13 @@ class TimingAttributionTests(unittest.TestCase):
 
     def test_a_sample_far_above_the_steps_own_baseline_is_a_stall(self) -> None:
         codes = self._codes(
-            snapshot_ms=(472, 467, 481, 1400), sample_gaps_ms=(467, 481, 1400)
+            snapshot_ms=(472, 467, 481, 1400),
+            sample_gaps_ms=(467, 481, 1400),
+            response_gaps=(
+                {"gap_ms": 467, "app_cpu_ms": 0, "host_load_1m": 2.0},
+                {"gap_ms": 481, "app_cpu_ms": 0, "host_load_1m": 2.0},
+                {"gap_ms": 1400, "app_cpu_ms": 200, "host_load_1m": 2.0},
+            ),
         )
 
         self.assertIn("main-loop-stall", codes)
@@ -502,6 +520,9 @@ class TimingAttributionTests(unittest.TestCase):
                 snapshot_ms=(470, 1400),
                 snapshot_ms_before_first_change=0,
                 sample_gaps_ms=(1400,),
+                response_gaps=(
+                    {"gap_ms": 1400, "app_cpu_ms": 200, "host_load_1m": 2.0},
+                ),
             ),
             self.state,
             self.state,
@@ -509,7 +530,7 @@ class TimingAttributionTests(unittest.TestCase):
         )
         stall = next(item for item in findings if item.code == "main-loop-stall")
 
-        self.assertEqual(stall.evidence["excess_ms"], [930])
+        self.assertEqual(stall.evidence["gap_samples"][0]["excess_ms"], 930)
         self.assertEqual(stall.evidence["baseline_ms"], 470)
 
     def test_the_harnesss_own_waiting_is_not_missing_feedback(self) -> None:
@@ -518,7 +539,7 @@ class TimingAttributionTests(unittest.TestCase):
     def test_an_app_that_really_keeps_us_waiting_is_still_reported(self) -> None:
         # 850 ms of deliberate sleep plus 1915 ms of round-trips leaves the app
         # itself accountable for a full second here.
-        codes = self._codes(observation_ms=3800)
+        codes = self._codes(kind="type", observation_ms=3800)
 
         self.assertIn("missing-waiting-feedback", codes)
 
@@ -689,10 +710,11 @@ class UxOracleTests(unittest.TestCase):
         after = snapshot([element(2, "Refresh")], state_id="after")
 
         findings = self.engine.analyze(
-            ActionEvidence.activate(
-                "Refresh",
+            ActionEvidence(
+                kind="type",
+                target_label="Refresh",
                 effect="confirmed",
-                elapsed_ms=1400,
+                elapsed_ms=5,
                 observation_ms=1400,
                 first_change_ms=None,
             ),
@@ -924,24 +946,10 @@ class FakeTransport:
 
 
 class CuaExecutorTests(unittest.TestCase):
-    def test_action_is_bracketed_and_uses_index_from_fresh_pre_action_snapshot(self) -> None:
-        initial = {
-            "screenshot_width": 800,
-            "screenshot_height": 600,
-            "structuredContent": {"elements": [element(3, "Music")]},
-        }
-        fresh = {
-            "screenshot_width": 800,
-            "screenshot_height": 600,
-            "structuredContent": {"elements": [element(9, "Music")]},
-        }
-        after = {
-            "screenshot_width": 800,
-            "screenshot_height": 600,
-            "structuredContent": {
-                "elements": [element(12, "Music", selected=True)]
-            },
-        }
+    def test_action_is_bracketed_and_uses_token_from_fresh_pre_action_snapshot(self) -> None:
+        initial = raw_snapshot([element(3, "Music")])
+        fresh = raw_snapshot([element(9, "Music")])
+        after = raw_snapshot([element(12, "Music", selected=True)])
         transport = FakeTransport([initial, fresh, after])
         executor = CuaExecutor(
             transport, pid=44, window_id=77, session="test", settle_delays=()
@@ -965,35 +973,18 @@ class CuaExecutorTests(unittest.TestCase):
             [tool for tool, _payload in transport.calls],
             ["get_window_state", "get_window_state", "click", "get_window_state"],
         )
-        self.assertEqual(transport.calls[2][1]["element_index"], 9)
+        self.assertEqual(transport.calls[2][1]["element_token"], "s00000001:9")
+        self.assertNotIn("element_index", transport.calls[2][1])
         self.assertEqual(result.before.state_id, "state-2")
         self.assertEqual(result.after.state_id, "state-3")
 
     def test_pointer_dispatch_uses_visible_frame_center(self) -> None:
         snapshots = [
-            {
-                "screenshot_width": 800,
-                "screenshot_height": 600,
-                "structuredContent": {
-                    "elements": [element(4, "Retry", x=20, y=30, w=120, h=40)]
-                },
-            },
-            {
-                "screenshot_width": 800,
-                "screenshot_height": 600,
-                "structuredContent": {
-                    "elements": [element(5, "Retry", x=20, y=30, w=120, h=40)]
-                },
-            },
-            {
-                "screenshot_width": 800,
-                "screenshot_height": 600,
-                "structuredContent": {
-                    "elements": [
+            raw_snapshot([element(4, "Retry", x=20, y=30, w=120, h=40)]),
+            raw_snapshot([element(5, "Retry", x=20, y=30, w=120, h=40)]),
+            raw_snapshot([
                         element(6, "Retry", x=20, y=30, w=120, h=40, selected=True)
-                    ]
-                },
-            },
+                    ]),
         ]
         transport = FakeTransport(snapshots)
         executor = CuaExecutor(
@@ -1014,11 +1005,7 @@ class CuaExecutorTests(unittest.TestCase):
         self.assertEqual((click_payload["x"], click_payload["y"]), (80.0, 50.0))
 
     def test_unchanged_semantic_activation_is_classified_as_missing_handler(self) -> None:
-        unchanged = {
-            "screenshot_width": 800,
-            "screenshot_height": 600,
-            "structuredContent": {"elements": [element(4, "Retry")]},
-        }
+        unchanged = raw_snapshot([element(4, "Retry")])
         transport = FakeTransport([unchanged, unchanged])
         executor = CuaExecutor(
             transport, pid=44, window_id=77, session="test", settle_delays=()
@@ -1029,29 +1016,11 @@ class CuaExecutorTests(unittest.TestCase):
         self.assertIn("suspected-no-handler", {finding.code for finding in result.findings})
 
     def test_pointer_noop_is_probed_semantically_to_distinguish_occlusion(self) -> None:
-        before = {
-            "screenshot_width": 800,
-            "screenshot_height": 600,
-            "structuredContent": {
-                "elements": [element(4, "Retry", x=20, y=30, w=120, h=40)]
-            },
-        }
-        after_pointer = {
-            "screenshot_width": 800,
-            "screenshot_height": 600,
-            "structuredContent": {
-                "elements": [element(5, "Retry", x=20, y=30, w=120, h=40)]
-            },
-        }
-        after_ax = {
-            "screenshot_width": 800,
-            "screenshot_height": 600,
-            "structuredContent": {
-                "elements": [
+        before = raw_snapshot([element(4, "Retry", x=20, y=30, w=120, h=40)])
+        after_pointer = raw_snapshot([element(5, "Retry", x=20, y=30, w=120, h=40)])
+        after_ax = raw_snapshot([
                     element(6, "Retry", x=20, y=30, w=120, h=40, selected=True)
-                ]
-            },
-        }
+                ])
         transport = FakeTransport([before, after_pointer, after_ax])
         executor = CuaExecutor(
             transport,
@@ -1073,11 +1042,7 @@ class CuaExecutorTests(unittest.TestCase):
         self.assertIn("suspected-occlusion", {finding.code for finding in result.findings})
 
     def test_planned_settle_delay_is_not_reported_as_a_main_loop_stall(self) -> None:
-        unchanged = {
-            "screenshot_width": 800,
-            "screenshot_height": 600,
-            "structuredContent": {"elements": [element(4, "Retry")]},
-        }
+        unchanged = raw_snapshot([element(4, "Retry")])
         transport = FakeTransport([unchanged, unchanged, unchanged])
         executor = CuaExecutor(
             transport, pid=44, window_id=77, session="test", settle_delays=(0.26,)

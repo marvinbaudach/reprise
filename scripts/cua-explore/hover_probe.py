@@ -28,6 +28,7 @@ from hover_geometry import (
 from atspi_geometry import GeometryError, resolve_driver_geometry
 from hover_oracle import HOVER_CURSOR_EXCLUSION_PX, HOVER_MIN_CHANNEL_DELTA
 from pngdiff import UnmeasurableImage, UnsupportedImage, read_rgb, rect_change_ratio
+from pointer_dispatch import desktop_pointer_payload
 
 
 @dataclass(frozen=True)
@@ -230,18 +231,7 @@ def probe_hover(
         return raw, path
 
     def driver_move(x: float, y: float) -> None:
-        transport.call(
-            "move_cursor",
-            {
-                "pid": pid,
-                "window_id": window_id,
-                "session": session,
-                "scope": "desktop",
-                "probe_method": "move_cursor",
-                "x": x,
-                "y": y,
-            },
-        )
+        transport.call("move_cursor", desktop_pointer_payload(x, y))
 
     routes: list[tuple[str, Callable[[float, float], None] | None]] = [
         ("move_cursor", driver_move),
@@ -310,7 +300,7 @@ def probe_hover(
                 driver_cursor=_point(
                     transport.call(
                         "get_cursor_position",
-                        {"pid": pid, "window_id": window_id, "session": session},
+                        {},
                     )
                 ),
                 x11_cursor=x11_cursor() if x11_cursor is not None else None,
