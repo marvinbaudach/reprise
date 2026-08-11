@@ -307,4 +307,195 @@ git -C "$scope" show-ref --verify --quiet refs/heads/test/outside
 ! git -C "$standalone" show-ref \
   --verify --quiet refs/heads/worktree-stale-agent
 
+artifact_repo="$fixture/artifact-scope"
+dirty_artifact_worktree="$artifact_repo/.worktrees/dirty"
+outside_artifact_worktree="$fixture/artifact-outside"
+excluded_artifact_worktree="$artifact_repo/.worktrees/excluded"
+excluded_outside_worktree="$fixture/artifact-excluded-outside"
+active_artifact_worktree="$fixture/artifact-active"
+locked_artifact_worktree="$artifact_repo/.worktrees/locked"
+fresh_artifact_worktree="$artifact_repo/.worktrees/fresh"
+mkdir -p "$artifact_repo"
+git -C "$artifact_repo" init --initial-branch=dev --quiet
+git -C "$artifact_repo" config user.name "Worktree GC Test"
+git -C "$artifact_repo" config user.email "worktree-gc@example.invalid"
+cat > "$artifact_repo/Cargo.toml" <<'EOF'
+[package]
+name = "worktree-gc-artifact-fixture"
+version = "0.0.0"
+edition = "2024"
+EOF
+printf '/target\n/android/app/build\n/.gradle-user-home\n' \
+  > "$artifact_repo/.gitignore"
+mkdir -p "$artifact_repo/src"
+printf 'pub fn fixture() {}\n' > "$artifact_repo/src/lib.rs"
+git -C "$artifact_repo" add Cargo.toml .gitignore src/lib.rs
+git -C "$artifact_repo" commit --quiet -m "artifact fixture"
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/dirty-artifact "$dirty_artifact_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/outside-artifact "$outside_artifact_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/excluded-artifact "$excluded_artifact_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/excluded-outside "$excluded_outside_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/active-artifact "$active_artifact_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/locked-artifact "$locked_artifact_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/fresh-artifact "$fresh_artifact_worktree" dev
+git -C "$artifact_repo" worktree lock \
+  --reason "active test agent" "$locked_artifact_worktree"
+printf '// primary tracked work in progress\n' >> "$artifact_repo/src/lib.rs"
+mkdir -p "$artifact_repo/.gradle-user-home/caches"
+printf 'regenerable\n' > "$artifact_repo/.gradle-user-home/caches/artifact"
+touch --date='10 days ago' \
+  "$artifact_repo/.gradle-user-home" \
+  "$artifact_repo/.gradle-user-home/caches" \
+  "$artifact_repo/.gradle-user-home/caches/artifact"
+printf '// tracked work in progress\n' >> "$dirty_artifact_worktree/src/lib.rs"
+printf 'untracked work in progress\n' > "$dirty_artifact_worktree/notes.txt"
+mkdir -p "$dirty_artifact_worktree/target/debug"
+printf 'regenerable\n' > "$dirty_artifact_worktree/target/debug/artifact"
+mkdir -p "$dirty_artifact_worktree/android/app/build/outputs"
+printf 'regenerable\n' \
+  > "$dirty_artifact_worktree/android/app/build/outputs/artifact"
+mkdir -p "$dirty_artifact_worktree/.gradle-user-home/caches"
+printf 'regenerable\n' \
+  > "$dirty_artifact_worktree/.gradle-user-home/caches/artifact"
+touch --date='10 days ago' \
+  "$dirty_artifact_worktree/target" \
+  "$dirty_artifact_worktree/target/debug" \
+  "$dirty_artifact_worktree/target/debug/artifact" \
+  "$dirty_artifact_worktree/android/app/build" \
+  "$dirty_artifact_worktree/android/app/build/outputs" \
+  "$dirty_artifact_worktree/android/app/build/outputs/artifact" \
+  "$dirty_artifact_worktree/.gradle-user-home" \
+  "$dirty_artifact_worktree/.gradle-user-home/caches" \
+  "$dirty_artifact_worktree/.gradle-user-home/caches/artifact"
+mkdir -p "$outside_artifact_worktree/target/debug"
+printf 'regenerable\n' > "$outside_artifact_worktree/target/debug/artifact"
+touch --date='10 days ago' \
+  "$outside_artifact_worktree/target" \
+  "$outside_artifact_worktree/target/debug" \
+  "$outside_artifact_worktree/target/debug/artifact"
+mkdir -p "$excluded_artifact_worktree/target/debug"
+printf 'regenerable\n' > "$excluded_artifact_worktree/target/debug/artifact"
+mkdir -p "$excluded_outside_worktree/android/app/build/outputs"
+printf 'regenerable\n' \
+  > "$excluded_outside_worktree/android/app/build/outputs/artifact"
+touch --date='10 days ago' \
+  "$excluded_artifact_worktree/target" \
+  "$excluded_artifact_worktree/target/debug" \
+  "$excluded_artifact_worktree/target/debug/artifact" \
+  "$excluded_outside_worktree/android/app/build" \
+  "$excluded_outside_worktree/android/app/build/outputs" \
+  "$excluded_outside_worktree/android/app/build/outputs/artifact"
+mkdir -p "$active_artifact_worktree/target/debug"
+printf 'regenerable\n' > "$active_artifact_worktree/target/debug/artifact"
+mkdir -p "$locked_artifact_worktree/target/debug"
+printf 'regenerable\n' > "$locked_artifact_worktree/target/debug/artifact"
+touch --date='10 days ago' \
+  "$active_artifact_worktree/target" \
+  "$active_artifact_worktree/target/debug" \
+  "$active_artifact_worktree/target/debug/artifact" \
+  "$locked_artifact_worktree/target" \
+  "$locked_artifact_worktree/target/debug" \
+  "$locked_artifact_worktree/target/debug/artifact"
+printf '// fresh tracked work in progress\n' \
+  >> "$fresh_artifact_worktree/src/lib.rs"
+mkdir -p \
+  "$fresh_artifact_worktree/target/debug" \
+  "$fresh_artifact_worktree/android/app/build/outputs" \
+  "$fresh_artifact_worktree/.gradle-user-home/caches"
+printf 'fresh\n' > "$fresh_artifact_worktree/target/debug/artifact"
+printf 'fresh\n' \
+  > "$fresh_artifact_worktree/android/app/build/outputs/artifact"
+printf 'fresh\n' \
+  > "$fresh_artifact_worktree/.gradle-user-home/caches/artifact"
+(cd "$active_artifact_worktree" && exec sleep 30) &
+active_pid=$!
+for _ in {1..1000}; do
+  [[ $(readlink "/proc/$active_pid/cwd" 2>/dev/null || true) == \
+    "$active_artifact_worktree" ]] && break
+done
+[[ $(readlink "/proc/$active_pid/cwd") == "$active_artifact_worktree" ]]
+expected_reclaimed_kib=0
+for artifact in \
+  "$artifact_repo/.gradle-user-home" \
+  "$dirty_artifact_worktree/target" \
+  "$dirty_artifact_worktree/android/app/build" \
+  "$dirty_artifact_worktree/.gradle-user-home" \
+  "$outside_artifact_worktree/target"; do
+  artifact_kib=$(du -sk "$artifact" | cut -f1)
+  expected_reclaimed_kib=$((expected_reclaimed_kib + artifact_kib))
+done
+
+dirty_artifact_report=$(
+  REPRISE_GC_STATE_ROOT="$state_root" \
+    "$runner" sweep \
+    --scope "$artifact_repo" \
+    --exclude "$excluded_artifact_worktree" \
+    --exclude "$excluded_outside_worktree" \
+    --target-max-age-days 7 \
+    --target-min-kib 0 \
+    --apply
+)
+kill "$active_pid"
+wait "$active_pid" 2>/dev/null || true
+active_pid=
+rg -Fq "keep dirty $dirty_artifact_worktree" <<<"$dirty_artifact_report"
+rg -Fq "keep primary $artifact_repo" <<<"$dirty_artifact_report"
+rg -Fq \
+  "cleaned stale_gradle_home $artifact_repo/.gradle-user-home" \
+  <<<"$dirty_artifact_report"
+rg -Fq \
+  "cleaned stale_target $dirty_artifact_worktree/target" \
+  <<<"$dirty_artifact_report"
+rg -Fq \
+  "cleaned stale_android_build $dirty_artifact_worktree/android/app/build" \
+  <<<"$dirty_artifact_report"
+rg -Fq \
+  "cleaned stale_gradle_home $dirty_artifact_worktree/.gradle-user-home" \
+  <<<"$dirty_artifact_report"
+rg -Fq \
+  "keep outside_scope $outside_artifact_worktree" \
+  <<<"$dirty_artifact_report"
+rg -Fq \
+  "cleaned stale_target $outside_artifact_worktree/target" \
+  <<<"$dirty_artifact_report"
+[[ ! -d $dirty_artifact_worktree/target ]]
+[[ ! -d $artifact_repo/.gradle-user-home ]]
+[[ ! -d $dirty_artifact_worktree/android/app/build ]]
+[[ ! -d $dirty_artifact_worktree/.gradle-user-home ]]
+[[ ! -d $outside_artifact_worktree/target ]]
+[[ -d $outside_artifact_worktree ]]
+git -C "$artifact_repo" show-ref \
+  --verify --quiet refs/heads/test/outside-artifact
+rg -Fq "keep excluded $excluded_artifact_worktree" \
+  <<<"$dirty_artifact_report"
+rg -Fq "keep excluded $excluded_outside_worktree" \
+  <<<"$dirty_artifact_report"
+[[ -d $excluded_artifact_worktree/target ]]
+[[ -d $excluded_outside_worktree/android/app/build ]]
+git -C "$artifact_repo" show-ref \
+  --verify --quiet refs/heads/test/excluded-artifact
+git -C "$artifact_repo" show-ref \
+  --verify --quiet refs/heads/test/excluded-outside
+rg -Fq "keep active_artifacts $active_artifact_worktree" \
+  <<<"$dirty_artifact_report"
+rg -Fq "keep locked $locked_artifact_worktree" \
+  <<<"$dirty_artifact_report"
+[[ -d $active_artifact_worktree/target ]]
+[[ -d $locked_artifact_worktree/target ]]
+[[ -d $fresh_artifact_worktree/target ]]
+[[ -d $fresh_artifact_worktree/android/app/build ]]
+[[ -d $fresh_artifact_worktree/.gradle-user-home ]]
+rg -Fq '// tracked work in progress' "$dirty_artifact_worktree/src/lib.rs"
+rg -Fq '// primary tracked work in progress' "$artifact_repo/src/lib.rs"
+rg -Fq 'untracked work in progress' "$dirty_artifact_worktree/notes.txt"
+rg -Fxq "reclaimed_kib $expected_reclaimed_kib" \
+  <<<"$dirty_artifact_report"
+
 echo "Worktree GC safety: OK"

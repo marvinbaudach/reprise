@@ -9,6 +9,7 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/reprise-worktree-gc.sh sweep [--repo PATH | --scope PATH] [--apply]
+      [--exclude PATH]...
       [--target-max-age-days DAYS] [--target-min-kib KIB]
   scripts/reprise-worktree-gc.sh close --repo PATH --worktree PATH --pr NUMBER
       [--defer]
@@ -210,22 +211,17 @@ worktree_has_process() {
   return 1
 }
 
-maybe_clean_target() {
-  local path=$1
-  local classification=$2
+maybe_clean_artifact() {
+  local artifact=$1
+  local artifact_kind=$2
   local apply=$3
   local max_age_days=$4
   local min_kib=$5
-  local target="$path/target"
 
-  [[ $classification != dirty &&
-    $classification != locked &&
-    $classification != active &&
-    $classification != outside_scope ]] || return 0
-  [[ -f $path/Cargo.toml && -d $target ]] || return 0
+  [[ -d $artifact ]] || return 0
   local recent_entry
   recent_entry=$(
-    find "$target" -mindepth 1 -maxdepth 2 \
+    find "$artifact" -mindepth 1 -maxdepth 2 \
       -newermt "$max_age_days days ago" -print -quit
   )
   if [[ -n $recent_entry ]]; then
@@ -233,20 +229,49 @@ maybe_clean_target() {
   fi
 
   local size_kib
-  size_kib=$(du -sk "$target" | cut -f1)
+  size_kib=$(du -sk "$artifact" | cut -f1)
   ((size_kib >= min_kib)) || return 0
+
+  if [[ $apply == true ]]; then
+    find "$artifact" -xdev -depth -delete
+    RECLAIMED_KIB=$((RECLAIMED_KIB + size_kib))
+    echo "cleaned $artifact_kind $artifact reclaimed=${size_kib}KiB"
+  else
+    echo "candidate $artifact_kind $artifact"
+  fi
+}
+
+maybe_clean_artifacts() {
+  local path=$1
+  local locked=$2
+  local apply=$3
+  local max_age_days=$4
+  local min_kib=$5
+
+  [[ $locked == false ]] || return 0
   if worktree_has_process "$path"; then
-    echo "keep active_target $target"
+    echo "keep active_artifacts $path"
     return 0
   fi
 
-  if [[ $apply == true ]]; then
-    cargo clean --manifest-path "$path/Cargo.toml" >/dev/null 2>&1
-    RECLAIMED_KIB=$((RECLAIMED_KIB + size_kib))
-    echo "cleaned stale_target $target reclaimed=${size_kib}KiB"
-  else
-    echo "candidate stale_target $target"
-  fi
+  maybe_clean_artifact \
+    "$path/target" stale_target "$apply" "$max_age_days" "$min_kib"
+  maybe_clean_artifact \
+    "$path/android/app/build" stale_android_build \
+    "$apply" "$max_age_days" "$min_kib"
+  maybe_clean_artifact \
+    "$path/.gradle-user-home" stale_gradle_home \
+    "$apply" "$max_age_days" "$min_kib"
+}
+
+path_is_excluded() {
+  local path=$1
+  shift
+  local excluded_path
+  for excluded_path in "$@"; do
+    [[ $path != "$excluded_path" ]] || return 0
+  done
+  return 1
 }
 
 sweep_repo() {
@@ -256,6 +281,7 @@ sweep_repo() {
   local target_max_age_days=$4
   local target_min_kib=$5
   local managed_scope=$6
+  local -a excluded_paths=("${@:7}")
   local base_ref primary_path
   if ! base_ref=$(resolve_base_ref "$repo"); then
     echo "keep no_dev_ref $repo"
@@ -267,13 +293,13 @@ sweep_repo() {
   while IFS= read -r line || [[ -n $line ]]; do
     if [[ -z $line ]]; then
       if [[ -n $path ]]; then
-        if [[ $path == "$primary_path" ]]; then
+        if path_is_excluded "$path" "${excluded_paths[@]}"; then
+          echo "keep excluded $path"
+        elif [[ $path == "$primary_path" ]]; then
           echo "keep primary $path"
-          if [[ $locked == false &&
-            -z $(git -C "$path" status --porcelain --untracked-files=all) ]]; then
-            maybe_clean_target \
-              "$path" primary "$apply" "$target_max_age_days" "$target_min_kib"
-          fi
+          maybe_clean_artifacts \
+            "$path" "$locked" "$apply" \
+            "$target_max_age_days" "$target_min_kib"
         else
           classification=$(classify_worktree \
             "$repo" "$path" "$head" "$locked" "$base_ref" "$branch" \
@@ -296,8 +322,8 @@ sweep_repo() {
             fi
           else
             echo "keep $classification $path"
-            maybe_clean_target \
-              "$path" "$classification" "$apply" \
+            maybe_clean_artifacts \
+              "$path" "$locked" "$apply" \
               "$target_max_age_days" "$target_min_kib"
           fi
         fi
@@ -453,6 +479,7 @@ main() {
   local worktree=
   local pr=
   local defer=false
+  local -a excluded_paths=()
   local state_root=${REPRISE_GC_STATE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/reprise-worktree-gc}
   local target_max_age_days=7
   local target_min_kib=1048576
@@ -467,6 +494,11 @@ main() {
       --scope)
         (($# >= 2)) || die "--scope requires a path"
         scope=$2
+        shift 2
+        ;;
+      --exclude)
+        (($# >= 2)) || die "--exclude requires a path"
+        excluded_paths+=("$2")
         shift 2
         ;;
       --apply)
@@ -513,6 +545,11 @@ main() {
         die "--target-max-age-days must be a non-negative integer"
       [[ $target_min_kib =~ ^[0-9]+$ ]] ||
         die "--target-min-kib must be a non-negative integer"
+      local excluded_index
+      for excluded_index in "${!excluded_paths[@]}"; do
+        excluded_paths[$excluded_index]=$(absolute_directory \
+          "${excluded_paths[$excluded_index]}")
+      done
       if [[ $apply == true ]]; then
         mkdir -p "$state_root"
         exec 9>"$state_root/gc.lock"
@@ -527,7 +564,8 @@ main() {
           echo "repo $discovered_repo"
           sweep_repo \
             "$discovered_repo" "$apply" "$state_root" \
-            "$target_max_age_days" "$target_min_kib" "$scope"
+            "$target_max_age_days" "$target_min_kib" "$scope" \
+            "${excluded_paths[@]}"
         done < <(discover_repositories "$scope")
       else
         repo=$(absolute_directory "$repo")
@@ -536,7 +574,8 @@ main() {
         repo=$(canonical_repository_root "$repo")
         sweep_repo \
           "$repo" "$apply" "$state_root" \
-          "$target_max_age_days" "$target_min_kib" ""
+          "$target_max_age_days" "$target_min_kib" "" \
+          "${excluded_paths[@]}"
       fi
       if [[ $apply == true ]]; then
         echo "reclaimed_kib $RECLAIMED_KIB"
@@ -544,6 +583,7 @@ main() {
       ;;
     close)
       [[ -z $scope ]] || die "--scope is only valid with sweep"
+      ((${#excluded_paths[@]} == 0)) || die "--exclude is only valid with sweep"
       repo=$(absolute_directory "$repo")
       git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 ||
         die "not a Git repository: $repo"
