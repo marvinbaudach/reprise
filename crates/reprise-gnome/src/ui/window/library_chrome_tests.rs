@@ -78,11 +78,6 @@ fn doc_7c_the_doctor_uses_the_shared_window_chrome() {
         .build();
     doctor_navigation.add(&root_page);
 
-    let review_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-    let all = gtk4::Button::with_label("All");
-    let none = gtk4::Button::with_label("None");
-    review_actions.append(&all);
-    review_actions.append(&none);
     let review_page = adw::NavigationPage::builder()
         .title("Review Changes")
         .tag("library-doctor-review")
@@ -90,14 +85,7 @@ fn doc_7c_the_doctor_uses_the_shared_window_chrome() {
         .build();
 
     let chrome = build(&library_header, &content_stack, &entry, &window);
-    let doctor_chrome = wire_content_stack(
-        &chrome,
-        &content_stack,
-        &doctor_navigation,
-        &source_title,
-        &scan_button,
-    );
-    doctor_chrome.set_review_actions(&review_actions);
+    let _doctor_chrome = wire_content_stack(&chrome, &content_stack, &source_title, &scan_button);
     let decorations = crate::ui::window::window_decorations::WindowDecorations::new(
         &window,
         &library_header,
@@ -116,14 +104,10 @@ fn doc_7c_the_doctor_uses_the_shared_window_chrome() {
     assert!(!chrome.search_toggle.is_visible());
     assert!(!scan_button.is_visible());
     assert_eq!(visible_header_title(&library_header), "Library Doctor");
-    assert!(!review_actions.is_visible());
     assert_eq!(mapped_adw_header_rows(chrome.root.upcast_ref()), 1);
 
     doctor_navigation.push(&review_page);
     while gtk4::glib::MainContext::default().iteration(false) {}
-    assert!(review_actions.is_visible());
-    assert!(all.is_ancestor(&library_header));
-    assert!(none.is_ancestor(&library_header));
     assert_eq!(mapped_adw_header_rows(chrome.root.upcast_ref()), 1);
 
     window.close();

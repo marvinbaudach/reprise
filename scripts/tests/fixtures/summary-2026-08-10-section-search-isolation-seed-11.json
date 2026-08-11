@@ -1,0 +1,90 @@
+{
+  "_source": "night run 2026-08-10, section-search-isolation seed 11 (~/.cache/reprise-explore-evidence/2026-08-10/section-search-isolation-seed-11/summary.json). Geometry resolved 173 of 177 driver elements.",
+  "_note": "Shortened copy of a real summary.json: only the keys the aggregator reads are kept, every retained value is byte-identical to the recording. geometry_resolution is kept whole on purpose - its other integers are what the discarded sum-everything denominator turned into the fictitious 164/1129 night metric. The recording predates the `outcome` field, so the aggregate report reads outcome=unknown for it; do not invent one.",
+  "mission_id": "section-search-isolation",
+  "seed": 11,
+  "steps": 31,
+  "mission_complete": false,
+  "geometry_trusted": true,
+  "geometry_resolution": {
+    "ambiguous": 1,
+    "calibration": {
+      "consistent": true,
+      "frame_window_rect": [
+        -5.0,
+        -5.0,
+        1200.0,
+        800.0
+      ],
+      "size_matches_list_windows": true,
+      "window_origin_offset": [
+        5.0,
+        5.0
+      ],
+      "window_rect": [
+        200.0,
+        50.0,
+        1200.0,
+        800.0
+      ]
+    },
+    "degenerate": 0,
+    "driver_elements": 177,
+    "out_of_window": 0,
+    "resolved": 173,
+    "resolved_ordered": 111,
+    "resolved_ratio": 0.9774,
+    "resolved_unique": 62,
+    "subset_violations": 0,
+    "unmatched": 3,
+    "unresolved": {
+      "ambiguous": [
+        {
+          "candidates": 5,
+          "driver_count": 1,
+          "element_index": 1,
+          "height": 656,
+          "label": "",
+          "reason": "ambiguous",
+          "role": "group",
+          "width": 1190
+        }
+      ],
+      "unmatched": [
+        {
+          "candidates": 0,
+          "driver_count": 1,
+          "element_index": 4,
+          "height": 586,
+          "label": "",
+          "reason": "unmatched",
+          "role": "tree grid",
+          "width": 1190
+        },
+        {
+          "candidates": 0,
+          "driver_count": 1,
+          "element_index": 161,
+          "height": 555,
+          "label": "0.0",
+          "reason": "unmatched",
+          "role": "scroll bar",
+          "width": 11
+        },
+        {
+          "candidates": 0,
+          "driver_count": 1,
+          "element_index": 162,
+          "height": 555,
+          "label": "0.0",
+          "reason": "unmatched",
+          "role": "generic",
+          "width": 11
+        }
+      ]
+    },
+    "walk_nodes": 479,
+    "walk_surplus": 1,
+    "with_action": 170
+  }
+}

@@ -404,7 +404,6 @@ pub fn build(
     let doctor_chrome = super::library_chrome::wire_content_stack(
         &library_chrome,
         &content_stack,
-        &library_doctor_navigation,
         &window_title,
         &scan_button,
     );

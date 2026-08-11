@@ -2892,6 +2892,18 @@ property is set and yet nothing happens.
   conventions; one display test renders the affected surfaces under a pinned
   pattern. Design:
   `docs/superpowers/specs/2026-08-09-table-columns-and-system-dates-design.md`.
+- **STYLE-12** [active] [gtk] — **The title bar only carries what is always
+  true.** The window header holds actions whose meaning does not change with
+  the visible page: the primary menu, search, the panel toggles, global
+  status. Anything that belongs to one page — selection presets, bulk
+  actions, page-local filters — lives inside that page, near what it acts
+  on. A control that appears and disappears with navigation is
+  indistinguishable from a permanent one while it is there, and its label
+  competes with the page's own vocabulary (the case that prompted this: the
+  Library Doctor's `All` preset sat in the title bar directly above the
+  review's own `All` filter segment). Views do not push widgets into the
+  shared header; if a view seems to need it, the action is in the wrong
+  place.
 - **CONTRAST-1** [active] [gtk] — There are three central text levels:
   primary approximately 0.95 for titles and values, secondary approximately
   0.7 for artist, status, metadata, and column headers, hint approximately
@@ -3860,8 +3872,9 @@ means deterministic and high-confidence, never „without review".
 
 - **DOC-3a** [active] [core] — **Review decides per field, and everything
   reviewable starts selected.** Every concrete track/field change has its own
-  selection and arrives preselected. „All" selects every ready row, „None"
-  clears everything; neither touches a stale or conflicting row. A tie shows
+  selection and arrives preselected. The master checkbox in the column header
+  selects every ready row when it is on and clears every row when it is off;
+  neither touches a stale or conflicting row. A tie shows
   „N spellings, no clear winner — pick one" with only real candidates and
   their frequencies, with no default. Picking a candidate materializes the
   affected diffs; individual rows stay deselectable; changing the candidate
@@ -3871,6 +3884,9 @@ means deterministic and high-confidence, never „without review".
   Apply receives an immutable plan of exactly the current selection.
   *Amended 2026-08-08: `All`, `None`, and the immutable Apply plan operate on
   the filtered set described by DOC-9d.*
+  *Amended 2026-08-11: the `All`/`None` title-bar buttons became one
+  tri-state master checkbox in the review's own column header — see DOC-3c
+  and STYLE-12.*
 
 - **DOC-3b** [active] [gtk] — **One column header serves the whole page,
   wide and narrow.** The review page carries exactly one header row — Track,
@@ -3885,6 +3901,15 @@ means deterministic and high-confidence, never „without review".
   Tag Editor; Save marks affected rows stale and deselects them. *Tests:*
   `doc_3b_breakpoint_changes_layout_without_changing_row_identity`,
   `doc_3b_review_page_virtualizes_rows_without_horizontal_scroll`.
+
+- **DOC-3c** [active] [gtk] — **The master checkbox says what it covers.**
+  The review's column header carries one checkbox above the row checkboxes.
+  It is checked when every selectable row the current category filter shows
+  is selected, mixed when only some are, and unchecked when none are;
+  it is insensitive when the filter shows nothing selectable. Toggling it
+  affects exactly the rows that filter shows and never touches a stale or
+  conflicting row. It stays reachable in the narrow layout, where the column
+  titles are hidden and it is labelled instead.
 
 - **DOC-4a** [replaced by DOC-4c] [core] — **Confidence never chooses for the
   user.** Unambiguous local fixes are preselected; remote suggestions,

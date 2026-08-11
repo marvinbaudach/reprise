@@ -660,7 +660,16 @@ mod tests {
     }
 
     #[test]
-    fn nr_33_column_contract() {
+    fn nr_33_table_has_the_five_named_columns() {
+        let columns = column_contract();
+        assert_eq!(
+            &columns[1..6],
+            ["Date", "Release", "Artist", "Type", "Status"]
+        );
+    }
+
+    #[test]
+    fn nr_33_table_ends_with_the_release_link_column() {
         assert_eq!(
             column_contract(),
             ["Cover", "Date", "Release", "Artist", "Type", "Status", "Link"]

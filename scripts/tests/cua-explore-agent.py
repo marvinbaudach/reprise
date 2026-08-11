@@ -23,10 +23,15 @@ sys.path.insert(0, str(TEST_ROOT))
 from agents.budget import BudgetTooSmall, mandatory_step_count, plan_budget  # noqa: E402
 from agents.agent_core import AgentSession  # noqa: E402
 from agents.assertions import assertion_codes, batch_selection_count  # noqa: E402
+from agents.plans import _activate, _search_type  # noqa: E402
+from agents.steps import step_is_satisfied, step_to_action  # noqa: E402
 from agent_adapter import ExternalAgent, MAX_RESPONSE_BYTES  # noqa: E402
 from agents.plans import PLANNERS, build_phases  # noqa: E402
 from cua_explore_fake_world import FakeWorld, drive  # noqa: E402
-from protocol import load_mission  # noqa: E402
+from driver import CuaExecutor  # noqa: E402
+from explorer import DeterministicExplorer  # noqa: E402
+from oracles import normalize_snapshot  # noqa: E402
+from protocol import ActionGateway, load_mission  # noqa: E402
 from runner import retain_agent_notes  # noqa: E402
 from workload_audit import audit_action_workload  # noqa: E402
 
@@ -210,7 +215,259 @@ class SelectionCountAssertionTests(unittest.TestCase):
         self.assertEqual(self._codes(self._observation("Music"), None), set())
 
 
+class SectionSearchPreconditionTests(unittest.TestCase):
+    """The night run invented four scope leaks from a value nobody had typed."""
+
+    TYPED = {
+        "kind": "type",
+        "target": {"label": "Search all fields"},
+        "fixture_token": "PODCAST_ONLY_NEEDLE",
+    }
+
+    def _observation(self, entry_value, rows=("Row A", "Row B")):
+        return {
+            "schema_version": 1,
+            "state_id": "state-3",
+            "elements": [
+                {
+                    "label": "Search all fields",
+                    "role": "search box",
+                    "value": entry_value,
+                },
+                *({"label": row, "role": "row"} for row in rows),
+            ],
+        }
+
+    def _codes(self, observation, known_token_values):
+        return {
+            code
+            for code, _summary, _evidence in assertion_codes(
+                self.TYPED,
+                observation,
+                "search-Podcasts",
+                section_changed=True,
+                known_token_values=known_token_values,
+            )
+        }
+
+    def test_the_previous_sources_value_does_not_satisfy_the_precondition(self) -> None:
+        codes = self._codes(
+            self._observation("Writable Batch 0042"),
+            {"MUSIC_ONLY_NEEDLE": "Writable Batch 0042"},
+        )
+
+        self.assertIn("agent-precondition-unmet:search-Podcasts", codes)
+        self.assertNotIn("agent-search-scope-leak", codes)
+
+    def test_the_token_that_was_typed_still_produces_the_scope_leak(self) -> None:
+        codes = self._codes(
+            self._observation("Fixture Podcast Needle"),
+            {
+                "MUSIC_ONLY_NEEDLE": "Writable Batch 0042",
+                "PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle",
+            },
+        )
+
+        self.assertIn("agent-search-scope-leak", codes)
+        self.assertNotIn("agent-precondition-unmet:search-Podcasts", codes)
+
+    def test_a_first_search_without_any_learned_value_is_believed(self) -> None:
+        codes = self._codes(self._observation("Fixture Podcast Needle"), {})
+
+        self.assertIn("agent-search-scope-leak", codes)
+
+    def test_a_single_row_under_the_typed_value_asserts_nothing(self) -> None:
+        codes = self._codes(
+            self._observation(
+                "Fixture Podcast Needle", rows=("Fixture Podcast Needle",)
+            ),
+            {"PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle"},
+        )
+
+        self.assertEqual(codes, set())
+
+    def test_the_evidence_names_the_token_and_what_stood_in_the_entry(self) -> None:
+        _code, _summary, evidence = assertion_codes(
+            self.TYPED,
+            self._observation("Writable Batch 0042"),
+            "search-Podcasts",
+            section_changed=True,
+            known_token_values={"MUSIC_ONLY_NEEDLE": "Writable Batch 0042"},
+        )[0]
+
+        self.assertEqual(evidence["fixture_token"], "PODCAST_ONLY_NEEDLE")
+        self.assertEqual(evidence["entry_values"], ["Writable Batch 0042"])
+
+
 class AgentAcceptanceTests(unittest.TestCase):
+    def test_recorded_actions_choose_dispatch_and_entry_roles_stay_strict(self) -> None:
+        closed = self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
+        opened = self._recorded_observation("postfix-2026-08-10-search-open.json")
+        music, search = _activate("open-Music", "Music"), _activate("open-search", "Search all fields")
+
+        self.assertEqual(step_to_action(music, closed)[0]["dispatch"], "px")
+        self.assertEqual(step_to_action(search, closed)[0]["dispatch"], "ax")
+        explorer_action = DeterministicExplorer(
+            self._mission("first-time-exploration"), 11
+        ).propose(closed)
+        self.assertEqual((explorer_action["target"], explorer_action["dispatch"]), ({"label": "Music"}, "px"))
+        opener, type_step = _search_type("search-Music", "MUSIC_ONLY_NEEDLE")
+        self.assertFalse(step_is_satisfied(opener, closed))
+        self.assertTrue(step_is_satisfied(opener, opened))
+        self.assertIsNone(step_to_action(type_step, closed)[0])
+        action = step_to_action(type_step, opened)[0]
+        self.assertEqual(action["target"], {"label": "Search all fields"})
+        ActionGateway(self._mission("section-search-isolation")).accept(action, opened)
+
+    def test_an_unmeasured_route_is_noted_instead_of_silently_staying_semantic(self) -> None:
+        observation = self._without_geometry(
+            self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
+        )
+        session = AgentSession(seed=11, probe_ratio=0)
+
+        action = session.next_action(
+            self._agent_mission(self._mission("section-search-isolation")),
+            observation,
+            [],
+        )
+
+        self.assertEqual(action["dispatch"], "ax")
+        note = next(
+            note
+            for note in session.notes
+            if note.code.startswith("agent-dispatch-geometry-unmeasured:")
+        )
+        self.assertEqual(note.evidence["target"], action["target"]["label"])
+        self.assertEqual(note.evidence["actions"], [])
+        self.assertEqual(note.evidence["dispatch"], "ax")
+
+    def test_the_explorer_records_the_route_it_could_not_prove(self) -> None:
+        measured = self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
+        explorer = DeterministicExplorer(self._mission("first-time-exploration"), 11)
+
+        action = explorer.propose(self._without_geometry(measured))
+
+        self.assertEqual(
+            (action["target"], action["dispatch"]), ({"label": "Music"}, "ax")
+        )
+        self.assertEqual(
+            explorer.dispatch_policy["reason"], "activation-geometry-unmeasurable"
+        )
+        self.assertEqual(
+            [item["target"] for item in explorer.dispatch_policy["targets"]], ["Music"]
+        )
+
+    def test_a_measured_route_leaves_the_explorer_policy_empty(self) -> None:
+        explorer = DeterministicExplorer(self._mission("first-time-exploration"), 11)
+
+        explorer.propose(
+            self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
+        )
+
+        self.assertIsNone(explorer.dispatch_policy)
+
+    def test_semantic_retry_switches_the_run_to_pointer_dispatch_after_three(self) -> None:
+        mission = self._mission("section-search-isolation")
+        closed = self._closed_sources_observation()
+        opened = self._recorded_observation("postfix-2026-08-10-search-open.json")
+        session = AgentSession(seed=11, probe_ratio=0)
+        gateway, history, actions = ActionGateway(mission), [], []
+        observation = self._state(closed, 0, "closed")
+        for index in range(70):
+            action = session.next_action(self._agent_mission(mission), observation, history)
+            gateway.accept(action, observation)
+            actions.append(action)
+            if action["kind"] in {"finish", "complete-workload"}:
+                break
+            unchanged = (
+                action["kind"] == "activate"
+                and action.get("target", {}).get("label") == "Search all fields"
+                and action.get("dispatch") == "ax"
+            )
+            is_open = action["kind"] == "type" or (
+                action["kind"] == "activate"
+                and action.get("target", {}).get("label") == "Search all fields"
+                and action.get("dispatch") == "px"
+            )
+            next_template = opened if is_open else closed
+            signature = observation["state_signature"] if unchanged else f"changed-{index}"
+            next_observation = self._state(next_template, index + 1, signature)
+            history.append({"action": action, "finding_codes": [], "after_state": next_observation["state_id"]})
+            observation = next_observation
+            search_activations = [
+                item for item in actions
+                if item["kind"] == "activate"
+                and item.get("target", {}).get("label") == "Search all fields"
+            ]
+            if len(search_activations) >= 7:
+                break
+
+        search_routes = [item["dispatch"] for item in search_activations]
+        self.assertEqual(
+            search_routes[:6], ["ax", "px", "ax", "px", "ax", "px"], actions
+        )
+        self.assertEqual(search_routes[6], "px")
+        self.assertEqual(session.dispatch_policy["effective"], "px")
+        self.assertEqual([note.code for note in session.notes].count("semantic-route-unavailable"), 1)
+        self.assertEqual([note.code for note in session.notes].count("semantic-activation-ineffective"), 3)
+
+    def test_a_working_second_semantic_activation_keeps_semantic_dispatch(self) -> None:
+        mission, closed, opened = (
+            self._mission("section-search-isolation"),
+            self._closed_sources_observation(),
+            self._recorded_observation("postfix-2026-08-10-search-open.json"),
+        )
+        session, history = AgentSession(seed=11, probe_ratio=0), []
+        observation, semantic_attempt = self._state(closed, 0, "closed"), 0
+        for index in range(30):
+            action = session.next_action(self._agent_mission(mission), observation, history)
+            is_search_ax = action["kind"] == "activate" and action.get("target", {}).get("label") == "Search all fields" and action.get("dispatch") == "ax"
+            semantic_attempt += int(is_search_ax)
+            unchanged = is_search_ax and semantic_attempt == 1
+            is_open = action["kind"] == "type" or (action["kind"] == "activate" and action.get("target", {}).get("label") == "Search all fields" and (action.get("dispatch") == "px" or semantic_attempt == 2))
+            next_observation = self._state(opened if is_open else closed, index + 1, observation["state_signature"] if unchanged else f"changed-{index}")
+            history.append({"action": action, "finding_codes": [], "after_state": next_observation["state_id"]})
+            observation = next_observation
+            if semantic_attempt == 2:
+                session.next_action(self._agent_mission(mission), observation, history)
+                break
+        self.assertEqual(session.dispatch_policy["effective"], "ax")
+        self.assertNotIn("semantic-route-unavailable", {note.code for note in session.notes})
+
+    def test_two_ineffective_routes_do_not_schedule_a_third_attempt(self) -> None:
+        observation = self._closed_sources_observation()
+        action = {
+            "kind": "activate",
+            "target": {"label": "Search all fields"},
+            "dispatch": "ax",
+            "expect_effect": "required",
+        }
+        session = AgentSession(seed=11, probe_ratio=0)
+        session._track_activation_result(observation, observation, action, "open-search")
+        retry, context = session._pending_activation_retry
+        session._pending_activation_retry = None
+        session._activation_retry_inflight = context
+
+        session._track_activation_result(observation, observation, retry, "open-search")
+
+        self.assertIsNone(session._pending_activation_retry)
+        self.assertEqual(
+            [note.code for note in session.notes],
+            ["agent-missing-affordance:open-search"],
+        )
+
+    def test_missing_sidebar_is_named_with_the_measured_width(self) -> None:
+        mission = self._mission("section-search-isolation")
+        observation = self._recorded_observation("night-2026-08-10-music-collapsed.json")
+        session, history = AgentSession(seed=11, probe_ratio=0), []
+        for _index in range(8):
+            action = session.next_action(self._agent_mission(mission), observation, history)
+            history.append({"action": action, "finding_codes": [], "after_state": observation["state_id"]})
+            if any(note.code == "agent-sidebar-unavailable" for note in session.notes):
+                break
+        note = next(note for note in session.notes if note.code == "agent-sidebar-unavailable")
+        self.assertEqual(note.evidence["window_width"], observation["window"]["width"])
+
     def test_section_search_mission_satisfies_the_real_audit(self) -> None:
         session, actions, _traces, mission = self._run("section-search-isolation")
 
@@ -325,7 +582,9 @@ class AgentAcceptanceTests(unittest.TestCase):
         )
 
         self.assertEqual(actions[-1]["kind"], "complete-workload")
-        self.assertTrue(any(note.code.startswith("agent-missing-affordance") for note in session.notes))
+        self.assertIn("agent-sidebar-unavailable", {note.code for note in session.notes})
+        self.assertIn("agent-precondition-unmet:search-YouTube", {note.code for note in session.notes})
+        self.assertNotIn("agent-search-scope-leak", {note.code for note in session.notes})
         self.assertFalse(any(action.get("target", {}).get("label") == "YouTube" for action in actions))
         audit = audit_action_workload(0, mission.workloads[0], session.traces, mission.fixture_tokens)
         self.assertFalse(audit["route_results"]["YouTube"])
@@ -480,6 +739,43 @@ class AgentAcceptanceTests(unittest.TestCase):
             "offline-recovery",
             "large-library-stress",
         )
+
+    def _recorded_observation(self, name):
+        raw = json.loads((TEST_ROOT / "fixtures" / name).read_text(encoding="utf-8"))
+        state = normalize_snapshot(raw, state_id="recorded", captured_ms=0)
+        observation = CuaExecutor._observation(object.__new__(CuaExecutor), state)
+        projected = [item for item in state.elements if item.label]
+        for item, element in zip(observation["elements"], projected, strict=True):
+            item["actions"] = list(element.actions)
+        return observation
+
+    def _closed_sources_observation(self):
+        closed = self._recorded_observation("postfix-2026-08-10-sidebar-open.json")
+        opened = self._recorded_observation("postfix-2026-08-10-search-open.json")
+        toggle = next(item for item in closed["elements"] if item["label"] == "Search all fields")
+        opened["elements"] = [
+            item for item in opened["elements"] if item["label"] != "Search all fields"
+        ] + [toggle]
+        opened["actionable_labels"] = sorted({item["label"] for item in opened["elements"] if item["actionable"]})
+        return opened
+
+    @staticmethod
+    def _without_geometry(observation):
+        """The same recorded tree with every frame left unmeasured."""
+        return {
+            **observation,
+            "elements": [
+                {**item, "frame": {**item.get("frame", {}), "width": 0, "height": 0}}
+                for item in observation["elements"]
+            ],
+        }
+
+    @staticmethod
+    def _state(template, index, signature):
+        observation = copy.deepcopy(template)
+        observation["state_id"] = f"state-{index}"
+        observation["state_signature"] = signature
+        return observation
 
 
 class FakeWorldTests(unittest.TestCase):

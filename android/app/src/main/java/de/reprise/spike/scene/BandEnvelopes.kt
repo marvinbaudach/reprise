@@ -5,9 +5,9 @@ import kotlin.math.exp
 /** One one-pole attack/decay follower per spectrogram band. */
 class BandEnvelopes(
     bandCount: Int,
-    frameMs: Float,
-    attackMs: Float,
-    decayMs: Float,
+    private val frameMs: Float,
+    private val attackMs: Float,
+    private val decayMs: Float,
 ) {
     val values = FloatArray(bandCount)
     private val attackCoefficient = coefficient(frameMs, attackMs)
@@ -33,6 +33,26 @@ class BandEnvelopes(
             }
         }
         return changed
+    }
+
+    /**
+     * Fills [into] with the values this follower holds once [fraction] of its
+     * step towards [targets] has passed, without moving the follower itself.
+     *
+     * A one-pole's decay composes: `fraction = 1f` lands on exactly what [step]
+     * writes, and every smaller fraction sits between the current value and
+     * that one. So this reads out the curve the follower already travels
+     * between two measured frames — it invents no value beyond either end.
+     */
+    fun projectInto(into: FloatArray, targets: FloatArray, fraction: Float) {
+        val part = fraction.coerceIn(0f, 1f)
+        val attack = coefficient(frameMs * part, attackMs)
+        val decay = coefficient(frameMs * part, decayMs)
+        into.indices.forEach { band ->
+            val current = values.getOrElse(band) { 0f }
+            val target = targets.getOrElse(band) { 0f }.coerceIn(0f, 1f)
+            into[band] = current + (target - current) * if (target > current) attack else decay
+        }
     }
 
     fun adopt(raw: FloatArray): Boolean {

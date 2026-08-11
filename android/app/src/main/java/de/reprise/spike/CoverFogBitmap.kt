@@ -24,15 +24,19 @@ private const val WIDE_BLUR_RADIUS_PX = 18
 private const val TIGHT_BLUR_RADIUS_PX = 10
 private const val BOX_BLUR_PASSES = 2
 private const val RADIAL_FADE_START = 0.62f
+private const val SHIMMER_MASK_SOLID = 0.12f
+private const val SHIMMER_MASK_CLEAR = 0.68f
 private const val FOG_CROSSFADE_MS = 180
 
-/** The two textures prepared once and only transformed by the frame draw. */
+/** The fog and shimmer textures prepared once and only transformed by frame draws. */
 internal data class CoverFogBitmap(
     val wide: Bitmap,
     val tight: Bitmap,
+    val disc: Bitmap,
 ) {
     val wideImage: ImageBitmap = wide.asImageBitmap()
     val tightImage: ImageBitmap = tight.asImageBitmap()
+    val discImage: ImageBitmap = disc.asImageBitmap()
 }
 
 internal data class CoverFogTransition(
@@ -68,7 +72,7 @@ internal class CoverFogTransitionState {
 }
 
 /**
- * Crops one cover to a bounded square and prepares both fog textures.
+ * Crops one cover to a bounded square and prepares the fog and shimmer textures.
  *
  * This is deliberately Android-bitmap work rather than a Compose modifier:
  * callers run it away from the main thread once per artwork identity, while
@@ -76,9 +80,11 @@ internal class CoverFogTransitionState {
  */
 internal fun prepareCoverFogBitmap(source: Bitmap?, fallbackArgb: Int): CoverFogBitmap {
     val square = cropSquare(source, fallbackArgb)
+    val wide = repeatedBoxBlur(square, WIDE_BLUR_RADIUS_PX)
     return CoverFogBitmap(
-        wide = repeatedBoxBlur(square, WIDE_BLUR_RADIUS_PX),
+        wide = wide,
         tight = repeatedBoxBlur(square, TIGHT_BLUR_RADIUS_PX),
+        disc = applyShimmerMask(wide),
     )
 }
 
@@ -167,6 +173,38 @@ private fun radialAlpha(x: Int, y: Int): Float {
     val progress = (distance - RADIAL_FADE_START) / (1f - RADIAL_FADE_START)
     val smoothstep = progress * progress * (3f - 2f * progress)
     return 1f - smoothstep
+}
+
+/** Desktop shimmer mask: solid to 12% of radius, linear to clear at 68%. */
+internal fun shimmerMaskAlpha(radiusFraction: Float): Float {
+    if (radiusFraction <= SHIMMER_MASK_SOLID) return 1f
+    if (radiusFraction >= SHIMMER_MASK_CLEAR) return 0f
+    return (SHIMMER_MASK_CLEAR - radiusFraction) /
+        (SHIMMER_MASK_CLEAR - SHIMMER_MASK_SOLID)
+}
+
+private fun applyShimmerMask(source: Bitmap): Bitmap {
+    val pixels = IntArray(FOG_BITMAP_SIZE * FOG_BITMAP_SIZE)
+    source.getPixels(pixels, 0, FOG_BITMAP_SIZE, 0, 0, FOG_BITMAP_SIZE, FOG_BITMAP_SIZE)
+    val centre = (FOG_BITMAP_SIZE - 1) / 2f
+    val radius = FOG_BITMAP_SIZE / 2f
+    for (y in 0 until FOG_BITMAP_SIZE) {
+        val dy = y - centre
+        for (x in 0 until FOG_BITMAP_SIZE) {
+            val index = y * FOG_BITMAP_SIZE + x
+            val pixel = pixels[index]
+            val dx = x - centre
+            val distance = sqrt(dx * dx + dy * dy) / radius
+            val alpha = ((pixel ushr 24 and 0xff) * shimmerMaskAlpha(distance)).toInt()
+            pixels[index] = (alpha shl 24) or (pixel and 0x00ffffff)
+        }
+    }
+    return Bitmap.createBitmap(
+        pixels,
+        FOG_BITMAP_SIZE,
+        FOG_BITMAP_SIZE,
+        Bitmap.Config.ARGB_8888,
+    )
 }
 
 private fun repeatedBoxBlur(source: Bitmap, radius: Int): Bitmap {
