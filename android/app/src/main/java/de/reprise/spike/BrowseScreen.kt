@@ -231,7 +231,12 @@ internal fun BrowseScreen(
     }
 
     fun search(text: String) {
-        if (text != searchText) loadedTabs = emptySet()
+        // Only the tab this fills can be said to hold the refinement afterwards,
+        // so the whole set goes first and exactly one comes back. Asking whether
+        // the *text* changed would not be enough: a rescan re-enters here with
+        // the same query while handing over four freshly loaded — and unfiltered
+        // — windows that claim to be loaded already.
+        loadedTabs = emptySet()
         surfaceState.updateSearch(text)
         runCatching {
             when (selectedTab) {
@@ -253,7 +258,7 @@ internal fun BrowseScreen(
                 }
             }
         }.onSuccess {
-            loadedTabs += selectedTab
+            loadedTabs = setOf(selectedTab)
             browseError = null
         }
             .onFailure { error -> browseError = error.browseDetail("search") }
