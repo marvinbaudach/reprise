@@ -1,5 +1,7 @@
 package de.reprise.spike.scene
 
+import de.reprise.spike.VisualBassPressure
+
 /** Signal state stepped by spectrogram frames, with wall-time base drift applied separately. */
 class SceneState(
     private val frames: SpectrogramFrames,
@@ -158,6 +160,40 @@ class SceneState(
         }
     }
 
+    /** Applies the detector's real kick and held pressure without a second envelope. */
+    internal fun adoptLiveBassPressure(reading: VisualBassPressure, elapsedSeconds: Float) {
+        val kick = reading.kick.finiteUnit()
+        val pressure = reading.pressure.finiteUnit()
+        val energy = maxOf(kick, pressure)
+        val oldFogLevel = fogLevel
+        val oldBassPressure = bassPressure
+        val oldMotionLevel = motionLevel
+        val oldAngleA = fogAngleA
+        val oldAngleB = fogAngleB
+        fogLevel = pressure
+        bassPressure = kick
+        motionLevel = energy
+        if (elapsedSeconds > 0f) {
+            fogAngleA = EnergyIntegrator.wrap360(
+                fogAngleA +
+                    (FOG_BASE_DEGREES_PER_SECOND + energy * FOG_FACTOR_A * LIVE_REFERENCE_HZ) *
+                    elapsedSeconds,
+            )
+            fogAngleB = EnergyIntegrator.wrap360(
+                fogAngleB +
+                    (FOG_BASE_DEGREES_PER_SECOND_B + energy * FOG_FACTOR_B * LIVE_REFERENCE_HZ) *
+                    elapsedSeconds,
+            )
+        }
+        if (
+            fogLevel.changedFrom(oldFogLevel) || bassPressure.changedFrom(oldBassPressure) ||
+            motionLevel.changedFrom(oldMotionLevel) || fogAngleA.changedFrom(oldAngleA) ||
+            fogAngleB.changedFrom(oldAngleB)
+        ) {
+            revision += 1
+        }
+    }
+
     /** Keeps both fog layers breathing even when playback has no new signal frame. */
     fun advanceFogBy(elapsedSeconds: Float) {
         if (elapsedSeconds <= 0f) return
@@ -228,6 +264,8 @@ class SceneState(
 
     private fun Float.changedFrom(previous: Float): Boolean = toRawBits() != previous.toRawBits()
 
+    private fun Float.finiteUnit(): Float = if (isFinite()) coerceIn(0f, 1f) else 0f
+
     internal companion object {
         /**
          * How much of a gap a resume may replay: one minute of analysis at the
@@ -246,6 +284,7 @@ class SceneState(
         private const val BASS_BAND_COUNT = 7
         const val FOG_FACTOR_A = 0.9f
         const val FOG_FACTOR_B = -0.6f
+        private const val LIVE_REFERENCE_HZ = 20f
         const val FOG_BASE_DEGREES_PER_SECOND = 360f / (4f * 60f)
         const val FOG_BASE_DEGREES_PER_SECOND_B =
             FOG_BASE_DEGREES_PER_SECOND * FOG_FACTOR_B / FOG_FACTOR_A

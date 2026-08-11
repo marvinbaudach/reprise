@@ -111,9 +111,15 @@ internal fun NowPlayingScene(
     )
     val visualFrameSink = remember(visualEngine) {
         visualEngine?.let { engine ->
-            SceneFrameSink { bands ->
-                if (bands != null) engine.ingestBands(bands)
-                engine.tick()
+            object : SceneFrameSink {
+                override fun hasLiveAudio(): Boolean = engine.hasLiveAudio()
+
+                override fun bassPressure(): VisualBassPressure = engine.bassPressure()
+
+                override fun onFrame(bands: FloatArray?) {
+                    if (bands != null) engine.ingestBands(bands)
+                    engine.tick()
+                }
             }
         }
     }

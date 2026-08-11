@@ -157,6 +157,20 @@ fn stream_and_track_changes_reset_cava_and_bass_history() {
     assert_eq!(engine.bass_pressure().pressure, 0.0);
 }
 
+#[test]
+fn paused_live_audio_reports_silence_without_forgetting_the_stream() {
+    let engine = AndroidVisualEngine::new();
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    engine.set_playing(false);
+
+    assert!(engine.has_live_audio());
+    assert_eq!(engine.bass_pressure().kick, 0.0);
+    assert_eq!(engine.bass_pressure().pressure, 0.0);
+}
+
 fn shape(geom: Geom) -> Shape {
     Shape {
         geom,

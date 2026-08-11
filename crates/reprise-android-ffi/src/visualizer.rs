@@ -49,6 +49,19 @@ impl From<BassPressure> for AndroidBassPressure {
     }
 }
 
+impl AndroidBassPressure {
+    fn silent() -> Self {
+        Self {
+            level_dbfs: -140.0,
+            baseline_dbfs: -140.0,
+            impact: 0.0,
+            aura: 0.0,
+            kick: 0.0,
+            pressure: 0.0,
+        }
+    }
+}
+
 struct LiveAudioState {
     sample_rate_hz: u32,
     processor: CavaBarProcessor,
@@ -143,6 +156,9 @@ impl AndroidVisualEngine {
         let has_analysis = !bands.is_empty();
         let frame = spectrum_frame_from_bands(&bands);
         let mut state = self.lock();
+        if self.stream_reset_pending.swap(false, Ordering::AcqRel) {
+            reset_live_audio(&mut state);
+        }
         if state.has_live_audio {
             return;
         }
@@ -245,11 +261,25 @@ impl AndroidVisualEngine {
     }
 
     pub fn has_live_audio(&self) -> bool {
-        self.lock().has_live_audio
+        if self.stream_reset_pending.load(Ordering::Acquire) {
+            return false;
+        }
+        let state = self.lock();
+        !self.stream_reset_pending.load(Ordering::Acquire) && state.has_live_audio
     }
 
     pub fn bass_pressure(&self) -> AndroidBassPressure {
-        self.lock().live_pressure.into()
+        if self.stream_reset_pending.load(Ordering::Acquire) {
+            return AndroidBassPressure::silent();
+        }
+        let state = self.lock();
+        if self.stream_reset_pending.load(Ordering::Acquire) {
+            AndroidBassPressure::silent()
+        } else if state.playing {
+            state.live_pressure.into()
+        } else {
+            AndroidBassPressure::silent()
+        }
     }
 
     /// Advances the portable presentation state; `true` means it is settled.

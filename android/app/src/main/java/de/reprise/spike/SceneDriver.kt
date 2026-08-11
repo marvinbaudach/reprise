@@ -29,9 +29,13 @@ internal data class ScenePositionSample(
     val playing: Boolean,
 )
 
-/** One callback on every allowed scene frame; non-null bands mean a new analysis frame. */
+/** One callback on every allowed scene frame; non-null bands mean a fallback analysis frame. */
 internal fun interface SceneFrameSink {
     fun onFrame(bands: FloatArray?)
+
+    fun hasLiveAudio(): Boolean = false
+
+    fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT
 }
 
 /**
@@ -61,45 +65,56 @@ internal class SceneDriver(
             noteFramesWithheld()
             return false
         }
-        val sample = positionSource.current()
         val nowNanos = clock.nowNanos()
-        val positionMs = estimatedPositionMs(sample, nowNanos)
-        val frameIndex = frames.frameIndexFor(positionMs)
-        val frameFraction = frames.frameFractionFor(positionMs)
-        val newFrame = lastDrivenFrameIndex != frameIndex
+        val sink = frameSink
+        val liveAudio = sink?.hasLiveAudio() == true
         val before = state.revision
-        val analysed = frames.frameCount > 0
-        if (analysed) {
-            state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
-            state.readBassPressureAt(frameFraction)
-        }
         val previousTick = lastTickNanos
+        val elapsedSeconds = previousTick?.let { previous ->
+            (nowNanos - previous).coerceAtLeast(0) / NANOS_PER_SECOND
+        } ?: 0.0
         if (previousTick != null) {
-            val elapsedSeconds = (nowNanos - previousTick).coerceAtLeast(0) / NANOS_PER_SECOND
             state.advanceShimmerBy(elapsedSeconds)
-            if (analysed) {
-                state.advanceFogBy(elapsedSeconds.toFloat())
-            } else {
-                // No spectrogram ever arrived for this track, so there is no
-                // signal to follow. Wandering is the honest substitute: it is
-                // visibly alive without pretending to answer music it cannot
-                // hear.
-                val totalSeconds =
-                    (nowNanos - (firstTickNanos ?: nowNanos)) / NANOS_PER_SECOND
-                state.wanderTo(totalSeconds.toFloat(), elapsedSeconds.toFloat())
-            }
+        }
+        val outgoingBands = if (liveAudio) {
+            state.adoptLiveBassPressure(sink.bassPressure(), elapsedSeconds.toFloat())
+            lastDrivenFrameIndex = null
+            null
+        } else {
+            fallbackBands(nowNanos, elapsedSeconds.toFloat())
         }
         if (firstTickNanos == null) {
             firstTickNanos = nowNanos
         }
         lastTickNanos = nowNanos
         framesWithheld = false
-        lastDrivenFrameIndex = frameIndex
-        val sink = frameSink
-        sink?.onFrame(bandsForTick(analysed, newFrame, frameFraction))
-        if (sink != null) frameSinkNeedsSnapshot = false
-        lastFrameFraction = frameFraction
+        sink?.onFrame(outgoingBands)
+        if (sink != null && !liveAudio) frameSinkNeedsSnapshot = false
         return state.revision != before || sink != null
+    }
+
+    /** Reads the stored 20 Hz analysis only while decoded PCM is unavailable. */
+    private fun fallbackBands(nowNanos: Long, elapsedSeconds: Float): FloatArray? {
+        val sample = positionSource.current()
+        val positionMs = estimatedPositionMs(sample, nowNanos)
+        val frameIndex = frames.frameIndexFor(positionMs)
+        val frameFraction = frames.frameFractionFor(positionMs)
+        val newFrame = lastDrivenFrameIndex != frameIndex
+        val analysed = frames.frameCount > 0
+        if (analysed) {
+            state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
+            state.readBassPressureAt(frameFraction)
+            state.advanceFogBy(elapsedSeconds)
+        } else if (lastTickNanos != null) {
+            // No PCM and no stored analysis: visibly alive without pretending
+            // to answer music the app cannot hear.
+            val totalSeconds = (nowNanos - (firstTickNanos ?: nowNanos)) / NANOS_PER_SECOND
+            state.wanderTo(totalSeconds.toFloat(), elapsedSeconds)
+        }
+        lastDrivenFrameIndex = frameIndex
+        val bands = bandsForTick(analysed, newFrame, frameFraction)
+        lastFrameFraction = frameFraction
+        return bands
     }
 
     /**

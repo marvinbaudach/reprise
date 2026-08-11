@@ -10,6 +10,85 @@ import org.junit.Test
 
 class VisualizerSceneDriverTest {
     @Test
+    fun liveAudioMovesAnUnanalysedSceneWithoutPositionOrSmoothedBands() {
+        val frames = SpectrogramFrames(24, 20, ByteArray(0))
+        val state = SceneState(frames)
+        var nowNanos = 0L
+        val received = mutableListOf<FloatArray?>()
+        val sink = object : SceneFrameSink {
+            override fun hasLiveAudio(): Boolean = true
+
+            override fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT.copy(
+                impact = 0.72f,
+                aura = 0.44f,
+                kick = 0.81f,
+                pressure = 0.63f,
+            )
+
+            override fun onFrame(bands: FloatArray?) {
+                received += bands?.copyOf()
+            }
+        }
+        val driver = SceneDriver(
+            frames = frames,
+            state = state,
+            clock = SceneClock { nowNanos },
+            positionSource = ScenePositionSource {
+                error("live audio must not estimate a spectrogram position")
+            },
+            frameSink = sink,
+            framesAllowed = { true },
+        )
+
+        driver.tick()
+        nowNanos = 50_000_000L
+        driver.tick()
+
+        assertEquals(listOf(null, null), received)
+        assertEquals(0.63f, state.fogLevel, 0f)
+        assertEquals(0.81f, state.bassPressure, 0f)
+        assertEquals(0.81f, state.motionLevel, 0f)
+        assertTrue(state.fogAngleA > 0f)
+        assertNull(driver.lastDrivenFrameIndex)
+    }
+
+    @Test
+    fun liveAudioWinsOverStoredSpectrogramUntilThePcmStreamDisappears() {
+        val frames = SpectrogramFrames(24, 20, ByteArray(24) { 255.toByte() })
+        val state = SceneState(frames)
+        var live = true
+        val received = mutableListOf<FloatArray?>()
+        val sink = object : SceneFrameSink {
+            override fun hasLiveAudio(): Boolean = live
+            override fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT.copy(
+                kick = 0.9f,
+                pressure = 0.7f,
+            )
+
+            override fun onFrame(bands: FloatArray?) {
+                received += bands?.copyOf()
+            }
+        }
+        val driver = SceneDriver(
+            frames = frames,
+            state = state,
+            clock = SceneClock { 0L },
+            positionSource = ScenePositionSource { ScenePositionSample(0, 0, true) },
+            frameSink = sink,
+            framesAllowed = { true },
+        )
+
+        driver.tick()
+        live = false
+        driver.tick()
+
+        assertNull(received.first())
+        assertNotNull(received.last())
+        assertEquals(24, received.last()?.size)
+        assertEquals(0, driver.lastDrivenFrameIndex)
+    }
+
+    @Test
     fun theExistingDriverFeedsOneSmoothedFrameThenTicksWithoutRepeatingIt() {
         val frames = SpectrogramFrames(24, 20, ByteArray(24) { (it * 9).toByte() })
         val received = mutableListOf<FloatArray?>()
