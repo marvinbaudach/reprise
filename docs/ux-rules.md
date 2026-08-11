@@ -2546,8 +2546,7 @@ property is set and yet nothing happens.
   LocalAvailability)` yields `Playable` as soon as a file is present locally
   (the same online or offline), otherwise `NeedsNetwork` only while `Offline`.
   `deferrable_action_outcome` yields `RunsNow` when online, or when the file is
-  already present locally (phone sync of an already downloaded file — MTP is
-  local), otherwise `QueuedOffline`.
+  already present locally, otherwise `QueuedOffline`.
   `podcasts::download_state::DownloadState::local_availability` is the bridge
   from Podcasts' and YouTube's richer download state into this simple local
   signal. `Connectivity` is an explicitly set state, not an inference from a
@@ -2567,34 +2566,19 @@ property is set and yet nothing happens.
   be deferred. Connectivity is an injectable state
   (`RadioView::set_connectivity`), `Online` by default. The main-window
   composition root initializes it, both podcast views, Concerts, New Releases,
-  and phone sync from one `gio::NetworkMonitor` and updates every seam from
+  and radio from one `gio::NetworkMonitor` and updates every seam from
   `network-changed`. Returning online removes an offline-only notice; it never
   dismisses a dead-stream or other provider failure, which remains until
   playback succeeds or the user acts on it.
-- **NET-3c** [active] [core] — The runner `NET-3a` reserved this id for:
-  once connectivity is believed online, whatever is `wanted_on_device`
-  (`MTP-40`) but still missing a local file replays, in order, without a
-  second "offline queue" store — `wanted_on_device` plus each episode's own
-  download state already record what is pending, and this rule deliberately
-  does not add another. `podcasts::queued_downloads::pending_episode_ids`
-  selects those episode ids ordered ascending by id, the same order they were
-  requested in (ids are assigned in insertion order and a want is never
-  reordered); `run_queued_downloads` trusts the `Connectivity` it is given
-  (never re-deriving it) and is a no-op while offline, otherwise replaying
-  each pending episode through the exact same
-  `podcasts::pipeline::download_episode` every other download path already
-  uses. The GTK trigger is `PodcastsView::set_connectivity`, mirroring
-  `NET-3b`'s `RadioView::set_connectivity` exactly: a transition from
-  `Offline` to `Online` dispatches `PodcastsOperation::RunQueued` on the
-  existing podcast worker; manually requested downloads and Load more actions
-  use the same transition and retain their click order in a transient,
-  de-duplicated action list. A transient action leaves that list only after
-  the worker accepts it; if dispatch is temporarily refused, that action and
-  everything behind it retain their original order for a later replay. The
-  reconnect transition also removes an offline-only notice immediately,
-  without dismissing a provider-specific failure. The persistent phone-sync
-  authority remains `wanted_on_device`; no second queue table or persisted
-  truth is introduced.
+- **NET-3c** [active] [gtk] — Manually requested podcast/YouTube downloads and
+  Load more actions made while offline retain their click order in a transient,
+  de-duplicated action list. `PodcastsView::set_connectivity` replays that list
+  through the ordinary worker on the `Offline` to `Online` transition. An
+  action leaves the list only after the worker accepts it; if dispatch is
+  refused, that action and everything behind it retain their order for a later
+  replay. The reconnect transition also removes an offline-only notice without
+  dismissing a provider-specific failure. No persistent download queue or
+  phone-sync authority is involved.
   The window-level `gio::NetworkMonitor` is the sole production caller of the
   injectable seams.
 - **NET-3d** [active] [core] — One translation layer: every provider and

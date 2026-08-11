@@ -291,7 +291,7 @@ fn pod_17_a_download_whose_tag_write_fails_is_never_published() {
 }
 
 #[test]
-fn pod_17_the_date_in_the_device_path_is_the_date_in_the_file_tag() {
+fn pod_17_download_tags_recording_date_from_the_published_date() {
     use lofty::prelude::*;
 
     let db = conn();
@@ -312,13 +312,6 @@ fn pod_17_the_date_in_the_device_path_is_the_date_in_the_file_tag() {
     )
     .unwrap();
     let stored = store::episode(&db, episode_id).unwrap().unwrap();
-    crate::podcasts::phone_sync::set_device_enabled(&db, stored.subscription_id, "mtp:pixel", true)
-        .unwrap();
-
-    let candidates =
-        crate::device_sync::podcasts::query_candidates_for_device(&db, "mtp:pixel").unwrap();
-    let file_name = candidates[0].device_path.rsplit('/').next().unwrap();
-    let device_date = &file_name[..10];
     let tagged =
         lofty::read_from_path(Path::new(stored.downloaded_path.as_deref().unwrap())).unwrap();
     let tag_date = tagged
@@ -327,5 +320,5 @@ fn pod_17_the_date_in_the_device_path_is_the_date_in_the_file_tag() {
         .get_string(lofty::tag::ItemKey::RecordingDate)
         .unwrap();
 
-    assert_eq!(device_date, tag_date);
+    assert_eq!(tag_date, "2026-07-29");
 }

@@ -77,7 +77,6 @@ fn src_13_a_channel_hidden_by_mixed_facets_gives_up_the_cheapest_one_only() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![played_and_downloaded, unplayed_and_missing],
     };
     let filter = PodcastFilter {
@@ -116,7 +115,6 @@ fn src_13_a_channel_whose_episodes_all_fail_the_filter_drops_that_facet() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![first, second],
     };
     let filter = PodcastFilter {

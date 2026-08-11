@@ -217,7 +217,6 @@ fn show(subscription_id: i64, title: &str, episodes: Vec<EpisodeRow>) -> SourceG
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes,
     }
 }
@@ -361,7 +360,6 @@ fn src_5_source_summary_counts_new_downloads_and_latest_episode() {
         author: Some("Publisher".into()),
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: true,
         episodes: vec![first, second],
     };
 
@@ -397,7 +395,6 @@ fn pod_9_library_summary_counts_shows_episodes_and_new_across_all_groups() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![played, unplayed],
     };
     let group_b = SourceGroup {
@@ -406,7 +403,6 @@ fn pod_9_library_summary_counts_shows_episodes_and_new_across_all_groups() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![resuming],
     };
 
@@ -440,7 +436,6 @@ fn pod_9_filtered_children_keep_the_full_source_summary() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![played, unplayed],
     };
 

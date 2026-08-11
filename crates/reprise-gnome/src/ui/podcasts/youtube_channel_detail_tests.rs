@@ -211,7 +211,6 @@ fn pod_10_channel_projection_windows_children_but_preserves_full_summary() {
         author: None,
         image_url: None,
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes,
     };
     let rendered = RenderedSourceGroup {
@@ -249,7 +248,6 @@ fn src_12b_channel_page_select_all_stops_at_the_rendered_window() {
         author: None,
         image_url: None,
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes,
     };
     let rendered = RenderedSourceGroup {
@@ -393,7 +391,6 @@ fn src_11_channel_header_stays_on_the_fallback_when_images_are_not_allowed() {
         author: None,
         image_url: Some("https://images.test/net-1a-channel-header.jpg".into()),
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes: Vec::new(),
     };
     let rendered = RenderedSourceGroup {
@@ -502,7 +499,6 @@ fn src_14_channel_secondary_click_opens_for_one_row_or_the_three_row_selection()
             author: None,
             image_url: None,
             kind: PodcastKind::Youtube,
-            sync_to_phone: false,
             episodes,
         },
     };
@@ -576,7 +572,6 @@ fn pod_14_only_shorts_here_offers_a_way_to_reveal_them() {
         author: None,
         image_url: None,
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes: vec![episode(2, Some(60)), episode(1, Some(30))],
     };
     let rendered = RenderedSourceGroup {

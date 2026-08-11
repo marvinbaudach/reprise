@@ -64,7 +64,6 @@ mod tests {
             bytes_to_copy: 1_000,
             files_to_remove: 0,
             bytes_freed: 0,
-            files_waiting_for_download: 0,
             playlists_rewritten: 0,
         }
     }
@@ -149,7 +148,6 @@ mod tests {
             bytes_to_copy: 0,
             files_to_remove: 3,
             bytes_freed: 0,
-            files_waiting_for_download: 0,
             playlists_rewritten: 0,
         };
         assert!(should_auto_start(AutoStartFacts {

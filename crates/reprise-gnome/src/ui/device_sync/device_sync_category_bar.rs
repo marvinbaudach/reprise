@@ -37,10 +37,7 @@ fn segments(data: &CategorySegments) -> [Segment; 3] {
             fill: SegmentFill::Music,
         },
         Segment {
-            bytes: data
-                .other_bytes
-                .saturating_add(data.youtube_bytes)
-                .saturating_add(data.podcast_bytes),
+            bytes: data.other_bytes,
             fill: SegmentFill::Foreground(0.22),
         },
         Segment {
@@ -233,8 +230,6 @@ mod tests {
     fn mtp_27_storage_bar_has_music_other_and_incoming_segments() {
         let segments = segments(&CategorySegments {
             music_bytes: 10,
-            youtube_bytes: 20,
-            podcast_bytes: 30,
             other_bytes: 40,
             incoming_bytes: 50,
             ..CategorySegments::default()
@@ -244,7 +239,7 @@ mod tests {
         assert_eq!(segments.len(), 3);
         assert_eq!(segments[0].bytes, 10);
         assert_eq!(segments[0].fill, SegmentFill::Music);
-        assert_eq!(segments[1].bytes, 90);
+        assert_eq!(segments[1].bytes, 40);
         assert_eq!(
             flat_color(segments[1].fill, true, foreground),
             Some((foreground, 0.22))

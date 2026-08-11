@@ -53,14 +53,17 @@ fn browser_lists_storage_volumes_classified_internal_and_removable() {
 fn browser_lists_only_immediate_child_folders_of_a_path() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Internal/Music/Reprise")).unwrap();
-    fs::create_dir_all(temp.path().join("Internal/Music/Podcasts")).unwrap();
+    fs::create_dir_all(temp.path().join("Internal/Music/Audiobooks")).unwrap();
     fs::write(temp.path().join("Internal/Music/loose.mp3"), b"audio").unwrap();
     let internal_id = derive_storage_id("Internal");
 
     let mut folders = run(storage.list_child_folders(internal_id, "/Music")).unwrap();
     folders.sort();
 
-    assert_eq!(folders, vec!["Podcasts".to_string(), "Reprise".to_string()]);
+    assert_eq!(
+        folders,
+        vec!["Audiobooks".to_string(), "Reprise".to_string()]
+    );
 }
 
 #[test]
@@ -69,10 +72,10 @@ fn browser_creates_a_new_folder_and_rejects_a_duplicate_name() {
     fs::create_dir_all(temp.path().join("Internal/Music")).unwrap();
     let internal_id = derive_storage_id("Internal");
 
-    run(storage.create_child_folder(internal_id, "/Music", "Reprise-YouTube")).unwrap();
-    assert!(temp.path().join("Internal/Music/Reprise-YouTube").is_dir());
+    run(storage.create_child_folder(internal_id, "/Music", "Selected")).unwrap();
+    assert!(temp.path().join("Internal/Music/Selected").is_dir());
 
-    let duplicate = run(storage.create_child_folder(internal_id, "/Music", "Reprise-YouTube"));
+    let duplicate = run(storage.create_child_folder(internal_id, "/Music", "Selected"));
     assert!(matches!(duplicate, Err(DeviceIoError::FolderAlreadyExists)));
 }
 
@@ -94,16 +97,16 @@ fn browser_reports_a_distinct_error_when_a_device_refuses_creation_at_the_storag
 #[test]
 fn browser_moves_a_folder_and_its_contents_to_a_new_path_on_the_same_storage() {
     let (temp, storage) = fixture();
-    fs::create_dir_all(temp.path().join("Internal/Music/Reprise-YouTube")).unwrap();
+    fs::create_dir_all(temp.path().join("Internal/Music/Selected")).unwrap();
     fs::write(
-        temp.path().join("Internal/Music/Reprise-YouTube/song.opus"),
+        temp.path().join("Internal/Music/Selected/song.opus"),
         b"audio",
     )
     .unwrap();
     let internal_id = derive_storage_id("Internal");
 
-    run(storage.move_child_folder(internal_id, "/Music/Reprise-YouTube", "/Music/YT")).unwrap();
+    run(storage.move_child_folder(internal_id, "/Music/Selected", "/Music/YT")).unwrap();
 
-    assert!(!temp.path().join("Internal/Music/Reprise-YouTube").exists());
+    assert!(!temp.path().join("Internal/Music/Selected").exists());
     assert!(temp.path().join("Internal/Music/YT/song.opus").is_file());
 }

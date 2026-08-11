@@ -245,11 +245,21 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     assert_eq!(surface.primary.label().as_deref(), Some("_Sync now"));
     assert!(surface.primary.uses_underline());
     assert!(surface.primary.is_sensitive());
-    assert!(!surface.root_text().contains("Entire library"));
-    assert!(!surface.root_text().contains("Device files"));
-    assert!(!surface.root_text().contains("Songs"));
-    assert!(!surface.root_text().contains("ratings"));
-    assert!(!surface.root_text().contains("Remove unselected"));
+    let root_text = surface.root_text();
+    assert!(root_text.contains("Playlists"));
+    for removed in [
+        "YouTube audio",
+        "Podcast episodes",
+        "Size limit in GiB",
+        "no size limit",
+        "Entire library",
+        "Device files",
+        "Songs",
+        "ratings",
+        "Remove unselected",
+    ] {
+        assert!(!root_text.contains(removed), "removed control: {removed}");
+    }
 
     surface.profile.set_selected(2);
     surface.playlist_rows.borrow()[0].button.set_active(false);
@@ -357,8 +367,8 @@ fn device_page_sections_have_one_explicit_owner_and_order() {
 fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
     gtk4::init().expect("GTK test display");
     let mut device = device();
-    device.content_rows[0].item_count = 291;
-    device.content_rows[0].size_on_device_bytes = 1024 * 1024 * 1024;
+    device.content_row.item_count = 291;
+    device.content_row.size_on_device_bytes = 1024 * 1024 * 1024;
 
     let (surface, _root) = DeviceSyncPage::new(
         &device,
@@ -381,39 +391,6 @@ fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
     assert!(!lines.contains(&"Storage by category"));
     assert!(!lines.contains(&"Content"));
     assert!(!lines.contains(&"Next synchronization"));
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn design_2c_up_next_legend_uses_the_rows_projected_sizes() {
-    gtk4::init().expect("GTK test display");
-    let mut device = device();
-    device.content_rows[0].size_on_device_bytes = 1024 * 1024 * 1024;
-    device.category_readings[0] =
-        reprise_core::device_sync::CategoryReading::Diff(reprise_core::device_sync::CategoryDiff {
-            bytes_to_copy: 128 * 1024 * 1024,
-            ..Default::default()
-        });
-    device.content_rows[1].size_on_device_bytes = 693 * 1024 * 1024;
-    device.content_rows[2].size_on_device_bytes = 217 * 1024 * 1024;
-
-    let (surface, _root) = DeviceSyncPage::new(
-        &device,
-        PageActions {
-            set_profile: Rc::new(|_| {}),
-            set_playlist: Rc::new(|_, _| {}),
-            start: Rc::new(|| {}),
-            cancel: Rc::new(|| {}),
-            eject: Rc::new(|| {}),
-        },
-        &no_op_content_actions(),
-    );
-
-    let text = surface.root_text();
-    let lines = text.lines().collect::<Vec<_>>();
-    assert!(lines.contains(&"Music 1.1 GiB"));
-    assert!(lines.contains(&"YouTube 693.0 MiB"));
-    assert!(lines.contains(&"Podcasts 217.0 MiB"));
 }
 
 #[test]

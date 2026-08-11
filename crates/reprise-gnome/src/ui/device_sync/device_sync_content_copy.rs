@@ -24,9 +24,7 @@ pub(super) fn projected_playlist_size_bytes(
     content: &CategoryContentRow,
     reading: &CategoryReading,
 ) -> u64 {
-    let CategoryReading::Diff(diff) = reading else {
-        return content.size_on_device_bytes;
-    };
+    let CategoryReading::Diff(diff) = reading;
     content
         .size_on_device_bytes
         .saturating_add(diff.bytes_to_copy)
@@ -37,12 +35,7 @@ pub(super) fn playlist_result_text(
     content: &CategoryContentRow,
     reading: &CategoryReading,
 ) -> (String, String) {
-    let CategoryReading::Diff(diff) = reading else {
-        return (
-            device_sync_strings::category_reading_text(reading),
-            device_sync_strings::file_size(content.size_on_device_bytes),
-        );
-    };
+    let CategoryReading::Diff(diff) = reading;
     let count = content
         .item_count
         .saturating_add(diff.files_to_copy)
@@ -56,16 +49,14 @@ pub(super) fn playlist_result_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reprise_core::device_sync::{CategoryDiff, SyncTargetKind};
+    use reprise_core::device_sync::CategoryDiff;
 
     fn content() -> CategoryContentRow {
         CategoryContentRow {
-            kind: SyncTargetKind::Playlists,
             target_path: "/Music/Reprise".into(),
             target_enabled: true,
             item_count: 8,
             size_on_device_bytes: 3 * 1024 * 1024 * 1024,
-            cap_bytes: None,
         }
     }
 
@@ -84,7 +75,6 @@ mod tests {
             bytes_to_copy: 512 * 1024 * 1024,
             files_to_remove: 1,
             bytes_freed: 256 * 1024 * 1024,
-            files_waiting_for_download: 0,
             playlists_rewritten: 0,
         });
         assert_eq!(

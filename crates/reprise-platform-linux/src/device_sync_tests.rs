@@ -4,7 +4,7 @@ use std::future::Future;
 use std::rc::Rc;
 
 use gio::prelude::*;
-use reprise_core::device_sync::{DeviceStorageAccess, StorageId, SyncTarget, SyncTargetKind};
+use reprise_core::device_sync::{DeviceStorageAccess, StorageId, SyncTarget, DEFAULT_TARGET_PATH};
 use reprise_core::library::m3u::M3uEntry;
 use tempfile::TempDir;
 
@@ -25,26 +25,22 @@ pub(super) fn fixture() -> (TempDir, DeviceStorage) {
     (temp, DeviceStorage::from_root(&root))
 }
 
-/// The three named sync targets (`MTP-38`) at their design defaults —
-/// exactly the folders every `inspect` test before Design 7d relied on
-/// implicitly, now passed explicitly.
-fn default_targets() -> [SyncTarget; 3] {
-    SyncTargetKind::ALL.map(SyncTarget::default_for)
+fn default_target() -> SyncTarget {
+    SyncTarget::default()
 }
 
-fn target_at(kind: SyncTargetKind, storage_id: StorageId, path: &str) -> SyncTarget {
+fn target_at(storage_id: StorageId, path: &str) -> SyncTarget {
     SyncTarget {
-        kind,
         storage_id: Some(storage_id),
         path: path.to_string(),
-        ..SyncTarget::default_for(kind)
+        ..SyncTarget::default()
     }
 }
 
 #[test]
 fn missing_music_directory_inspects_as_empty() {
     let (_temp, storage) = fixture();
-    let inspection = run(storage.inspect(&default_targets())).unwrap();
+    let inspection = run(storage.inspect(&default_target())).unwrap();
     assert!(inspection.managed_files.is_empty());
     assert_eq!(inspection.snapshot.reprise_music_bytes, 0);
     assert_eq!(inspection.snapshot.other_music_bytes, 0);
@@ -89,7 +85,7 @@ fn inspection_aggregates_music_and_returns_every_authoritative_reprise_file() {
     )
     .unwrap();
 
-    let inspection = run(storage.inspect(&default_targets())).unwrap();
+    let inspection = run(storage.inspect(&default_target())).unwrap();
     let paths = inspection
         .managed_files
         .iter()
@@ -126,7 +122,7 @@ fn managed_readback_keeps_byte_preserved_originals_with_unlisted_extensions() {
     )
     .unwrap();
 
-    let inspection = run(storage.inspect(&default_targets())).unwrap();
+    let inspection = run(storage.inspect(&default_target())).unwrap();
     assert_eq!(
         inspection
             .managed_files
@@ -369,7 +365,7 @@ fn mtp_21_replacing_an_existing_track_publishes_it_without_leaving_a_partial() {
 
     run(storage.replace_managed(
         None,
-        SyncTargetKind::Playlists.default_path(),
+        DEFAULT_TARGET_PATH,
         &gio::File::for_path(temp.path().join("source.flac")),
         "Road/7-source.flac",
         4,
@@ -390,7 +386,7 @@ fn mtp_21_rewriting_a_playlist_replaces_it_without_leaving_a_partial() {
     let (temp, storage) = fixture();
     run(storage.replace_playlist(
         None,
-        SyncTargetKind::Playlists.default_path(),
+        DEFAULT_TARGET_PATH,
         "Road",
         b"#EXTM3U\nRoad/1-old.flac\n".to_vec(),
     ))
@@ -398,7 +394,7 @@ fn mtp_21_rewriting_a_playlist_replaces_it_without_leaving_a_partial() {
 
     run(storage.replace_playlist(
         None,
-        SyncTargetKind::Playlists.default_path(),
+        DEFAULT_TARGET_PATH,
         "Road",
         b"#EXTM3U\nRoad/2-new.flac\n".to_vec(),
     ))
@@ -526,147 +522,27 @@ fn non_mtp_root_is_used_verbatim_without_storage_resolution() {
     );
 }
 
-#[test]
-fn mtp_23_podcast_io_is_scoped_to_its_own_target_and_inspected_separately() {
-    let (temp, storage) = fixture();
-    let source_path = temp.path().join("episode.mp3");
-    fs::write(&source_path, b"podcast").unwrap();
-    fs::create_dir_all(temp.path().join("Music/Reprise/Album")).unwrap();
-    fs::write(temp.path().join("Music/Reprise/Album/track.mp3"), b"music").unwrap();
-
-    run(storage.replace_managed(
-        None,
-        "/Podcasts/Reprise",
-        &gio::File::for_path(&source_path),
-        "Show/1-Episode.mp3",
-        7,
-        &gio::Cancellable::new(),
-        |_, _| {},
-    ))
-    .unwrap();
-    assert_eq!(
-        fs::read(temp.path().join("Podcasts/Reprise/Show/1-Episode.mp3")).unwrap(),
-        b"podcast"
-    );
-    assert!(matches!(
-        run(storage.delete_managed(None, "/Podcasts/Reprise", "Music/Reprise/Album/track.mp3")),
-        Ok(false)
-    ));
-    assert!(temp.path().join("Music/Reprise/Album/track.mp3").is_file());
-
-    let contents = run(storage.inspect(&default_targets())).unwrap();
-    assert_eq!(
-        contents
-            .podcast_files
-            .iter()
-            .map(|file| file.relative_path.as_str())
-            .collect::<Vec<_>>(),
-        ["Show/1-Episode.mp3"]
-    );
-    assert!(run(storage.delete_managed(None, "/Podcasts/Reprise", "Show/1-Episode.mp3")).unwrap());
-}
-
-#[test]
-fn mtp_23_youtube_audio_io_is_scoped_to_its_own_target_and_inspected_separately() {
-    let (temp, storage) = fixture();
-    let source_path = temp.path().join("video.opus");
-    fs::write(&source_path, b"video-audio").unwrap();
-    fs::create_dir_all(temp.path().join("Music/Reprise/Album")).unwrap();
-    fs::write(temp.path().join("Music/Reprise/Album/track.mp3"), b"music").unwrap();
-    fs::write(temp.path().join("Music/loose.mp3"), b"foreign").unwrap();
-
-    run(storage.replace_managed(
-        None,
-        "/Music/Reprise-YouTube",
-        &gio::File::for_path(&source_path),
-        "Channel/1-Video.opus",
-        11,
-        &gio::Cancellable::new(),
-        |_, _| {},
-    ))
-    .unwrap();
-    assert_eq!(
-        fs::read(
-            temp.path()
-                .join("Music/Reprise-YouTube/Channel/1-Video.opus")
-        )
-        .unwrap(),
-        b"video-audio"
-    );
-
-    let contents = run(storage.inspect(&default_targets())).unwrap();
-    assert_eq!(
-        contents
-            .youtube_files
-            .iter()
-            .map(|file| file.relative_path.as_str())
-            .collect::<Vec<_>>(),
-        ["Channel/1-Video.opus"]
-    );
-    // The YouTube-audio target sits inside `Music/`, alongside the
-    // Playlists target and truly foreign files — it must count toward
-    // neither `reprise_music_bytes` nor `other_music_bytes`.
-    assert_eq!(contents.snapshot.reprise_music_bytes, 5);
-    assert_eq!(contents.snapshot.other_music_bytes, 7);
-
-    assert!(
-        run(storage.delete_managed(None, "/Music/Reprise-YouTube", "Channel/1-Video.opus"))
-            .unwrap()
-    );
-}
-
-#[test]
-fn mtp_23_podcast_partial_cleanup_cannot_touch_music_or_other_podcast_apps() {
-    let (temp, storage) = fixture();
-    for path in [
-        "Podcasts/Reprise/Show/episode.mp3.part",
-        "Music/Reprise/Album/track.mp3.part",
-        "Podcasts/Other App/episode.mp3.part",
-    ] {
-        let path = temp.path().join(path);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, b"partial").unwrap();
-    }
-
-    assert_eq!(
-        run(storage.cleanup_partials_in(None, "/Podcasts/Reprise")).unwrap(),
-        1
-    );
-    assert!(!temp
-        .path()
-        .join("Podcasts/Reprise/Show/episode.mp3.part")
-        .exists());
-    assert!(temp
-        .path()
-        .join("Music/Reprise/Album/track.mp3.part")
-        .exists());
-    assert!(temp
-        .path()
-        .join("Podcasts/Other App/episode.mp3.part")
-        .exists());
-}
-
-/// `MTP-38`/`MTP-23`, finding 1: a target repointed at a non-default
+/// `MTP-23`: a target repointed at a non-default
 /// storage (`MTP-31`'s folder browser) must have both its transfer AND its
 /// next inspection actually use that `StorageId` + path — not silently
 /// fall back to `DeviceStorage::storage_root`'s "prefer internal" guess.
 /// Before this fix, `replace_managed`/`inspect` ignored `storage_id`
 /// entirely, so a file written to an SD card landed on the default
 /// storage instead, and a rescan never recognized the SD-card folder as
-/// that category's inventory.
+/// the playlists inventory.
 #[test]
-fn mtp_38_transfer_and_inspection_route_through_a_targets_own_persisted_storage() {
+fn mtp_23_transfer_and_inspection_route_through_the_persisted_target_storage() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("SD Card")).unwrap();
     let sd_card = derive_storage_id("SD Card");
-    let source_path = temp.path().join("video.opus");
-    fs::write(&source_path, b"video-audio").unwrap();
+    let source_path = temp.path().join("track.opus");
+    fs::write(&source_path, b"track-audio").unwrap();
 
     run(storage.replace_managed(
         Some(sd_card),
-        "/Music/YT",
+        "/Music/Selected",
         &gio::File::for_path(&source_path),
-        "Channel/1-Video.opus",
+        "Artist/1-Track.opus",
         11,
         &gio::Cancellable::new(),
         |_, _| {},
@@ -677,29 +553,24 @@ fn mtp_38_transfer_and_inspection_route_through_a_targets_own_persisted_storage(
     // "prefer internal" guess `storage_root` would have picked.
     assert!(temp
         .path()
-        .join("SD Card/Music/YT/Channel/1-Video.opus")
+        .join("SD Card/Music/Selected/Artist/1-Track.opus")
         .is_file());
-    assert!(!temp.path().join("Music/Reprise-YouTube").exists());
-    assert!(!temp.path().join("Music/YT").exists());
+    assert!(!temp.path().join("Music/Selected").exists());
 
-    let targets = [
-        SyncTarget::default_for(SyncTargetKind::Playlists),
-        target_at(SyncTargetKind::YoutubeAudio, sd_card, "/Music/YT"),
-        SyncTarget::default_for(SyncTargetKind::PodcastEpisodes),
-    ];
-    let inspection = run(storage.inspect(&targets)).unwrap();
+    let target = target_at(sd_card, "/Music/Selected");
+    let inspection = run(storage.inspect(&target)).unwrap();
     assert_eq!(
         inspection
-            .youtube_files
+            .managed_files
             .iter()
             .map(|file| file.relative_path.as_str())
             .collect::<Vec<_>>(),
-        ["Channel/1-Video.opus"],
-        "the next scan must recognize the SD-card folder as YouTube-audio \
-         inventory instead of reporting the category empty"
+        ["Artist/1-Track.opus"],
+        "the next scan must recognize the selected SD-card playlists folder"
     );
 
     assert!(
-        run(storage.delete_managed(Some(sd_card), "/Music/YT", "Channel/1-Video.opus")).unwrap()
+        run(storage.delete_managed(Some(sd_card), "/Music/Selected", "Artist/1-Track.opus"))
+            .unwrap()
     );
 }

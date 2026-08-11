@@ -400,17 +400,6 @@ mod tests {
     }
 
     #[test]
-    fn mtp_36_latest_per_channel_default_clamp_floor_is_zero_not_the_documented_minimum() {
-        // Like `import_count`, 0 is a valid, meaningful value here
-        // (unlimited) — the clamp floor must not reject it back up to some
-        // positive minimum.
-        let db = db();
-        crate::library::settings::set_setting(&db, LATEST_PER_CHANNEL_DEFAULT_KEY, "0").unwrap();
-
-        assert_eq!(load(&db).unwrap().latest_per_channel_default, 0);
-    }
-
-    #[test]
     fn zero_import_count_round_trips_as_unlimited() {
         let db = db();
 

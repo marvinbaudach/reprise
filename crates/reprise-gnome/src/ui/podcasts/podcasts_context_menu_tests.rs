@@ -305,7 +305,6 @@ fn source_menu_has_no_phone_destination() {
         author: None,
         image_url: None,
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes: Vec::new(),
     };
     let menu = build_source(&group);

@@ -15,8 +15,6 @@ source "$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
 source "$repo_root/scripts/cua-e2e/scrobbling.sh"
 # shellcheck source=responsive_window.sh
 source "$repo_root/scripts/cua-e2e/responsive_window.sh"
-# `MTP-46`: the source modules and what their switches take out of the sync.
-source "$repo_root/scripts/cua-e2e/source_modules.sh"
 # What the sources actually do, offline via fixtures.
 source "$repo_root/scripts/cua-e2e/source_content.sh"
 source "$repo_root/scripts/cua-e2e/podcast_backlog.sh"
@@ -351,6 +349,13 @@ run_android_sync_page_scenario() {
     "Never synchronized"; do
     assert_snapshot_contains "$page_path" "$label"
   done
+  for removed_label in \
+    "YouTube audio" \
+    "Podcast episodes" \
+    "Size limit in GiB" \
+    "no size limit"; do
+    assert_snapshot_absent "$page_path" "$removed_label"
+  done
   assert_snapshot_absent "$page_path" "Device files"
   assert_snapshot_absent "$page_path" "Entire library"
   cua_click_label \
@@ -652,9 +657,6 @@ run_private_session() {
     responsive-window)
       run_responsive_window_scenario
       ;;
-    source-modules)
-      run_source_modules_scenario
-      ;;
     source-podcasts)
       run_source_podcasts_scenario
       ;;
@@ -757,7 +759,6 @@ case "${CUA_E2E_ONLY:-all}" in
       track-sort-playing-marker
       scrobbling
       responsive-window
-      source-modules
       source-podcasts
       source-youtube
       podcast-backlog
@@ -772,7 +773,7 @@ case "${CUA_E2E_ONLY:-all}" in
     | tag-3-multi-dialog-structure | tag-autocomplete-surface \
     | library-doctor | song-visuals \
     | track-sort-playing-marker | scrobbling | responsive-window \
-    | source-modules | source-podcasts | source-youtube | podcast-backlog \
+    | source-podcasts | source-youtube | podcast-backlog \
     | play-11-filter-clear)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;

@@ -43,7 +43,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn net_3_c_offline_actions_replay_in_click_order_without_duplicates() {
+    fn net_3c_offline_actions_replay_in_click_order_without_duplicates() {
         let mut actions = DeferredActions::default();
         actions.push(DeferredAction::Download(7));
         actions.push(DeferredAction::LoadMore {
@@ -65,7 +65,7 @@ mod tests {
     }
 
     #[test]
-    fn net_3_c_reconnect_retains_a_refused_action_and_every_action_after_it() {
+    fn net_3c_reconnect_retains_a_refused_action_and_every_action_after_it() {
         let actions = vec![
             DeferredAction::Download(7),
             DeferredAction::LoadMore {

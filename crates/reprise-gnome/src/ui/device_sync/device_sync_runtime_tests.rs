@@ -14,7 +14,7 @@ use reprise_core::device_sync::browser::{StorageKind, StorageOption};
 use reprise_core::device_sync::settings::save_settings;
 use reprise_core::device_sync::{
     DeviceSelection, DeviceSettings, DeviceStorageAccess, DeviceStorageInspection,
-    DeviceStorageSnapshot, ManagedDeviceFile, SelectionSource, StorageId, SyncTargetKind,
+    DeviceStorageSnapshot, ManagedDeviceFile, SelectionSource, StorageId,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 #[allow(unused_imports)]
@@ -34,17 +34,11 @@ mod presence_tests;
 mod remembered_tests;
 #[path = "device_sync_target_fixture.rs"]
 mod target_fixture;
-use target_fixture::{disable_auto_start, enable_device_target};
+use target_fixture::disable_auto_start;
 
 fn fixture() -> (tempfile::TempDir, Rc<Db>) {
     let temp = tempfile::tempdir().unwrap();
     let db = crate::test_db::open().unwrap();
-    // Both source modules ship off (`NET-1a`) and `MTP-46` makes an off module
-    // contribute nothing to a sync. These tests are about what a device
-    // receives once the user uses the features, so having them switched on is
-    // their precondition — `MTP-46`'s own tests are the ones that flip them.
-    reprise_core::modules::set_enabled(&db, &reprise_core::modules::PODCASTS_MODULE, true).unwrap();
-    reprise_core::modules::set_enabled(&db, &reprise_core::modules::YOUTUBE_MODULE, true).unwrap();
     for id in 1..=4 {
         let path = temp.path().join(format!("{id}.flac"));
         std::fs::write(&path, vec![id as u8; 100]).unwrap();
@@ -92,232 +86,6 @@ async fn settle() {
 }
 
 #[test]
-fn mtp_24_podcast_and_youtube_audio_are_always_copied_1_to_1_never_transcoded() {
-    run(async {
-        let (downloads, conn) = fixture();
-        // Named with a `.flac` extension on purpose: if this ever went
-        // through the music transfer-profile branch it would be flagged
-        // as lossless and transcoded. Podcast/YouTube audio must never
-        // take that branch (`MTP-24`) — it copies whatever bytes exist.
-        let episode_path = downloads.path().join("episode.flac");
-        std::fs::write(&episode_path, b"already-opus-bytes").unwrap();
-        crate::test_db::connection(&conn)
-            .execute_batch(
-                "INSERT INTO podcast_subscriptions
-                 (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
-                 VALUES (10, 'youtube', 'https://example.test/channel', 'Channel', 0, 1, 1);
-                 INSERT INTO podcast_subscription_devices (subscription_id, device_id)
-                 VALUES (10, 'a');",
-            )
-            .unwrap();
-        crate::test_db::connection(&conn)
-            .execute(
-                "INSERT INTO podcast_episodes
-                 (id, subscription_id, guid, title, audio_url, downloaded_path,
-                  downloaded_bytes, published_at, first_seen_at)
-                 VALUES (100, 10, 'yt-100', 'Video', 'https://example.test/video.webm',
-                         ?1, 18, 1785225600, 1)",
-                [episode_path.to_string_lossy().as_ref()],
-            )
-            .unwrap();
-        disable_auto_start(&conn, "a");
-        enable_device_target(&conn, "a", SyncTargetKind::YoutubeAudio);
-
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        settle().await;
-
-        runtime.sync_now("a").unwrap();
-        settle().await;
-
-        assert_eq!(
-            backend.state.managed_copies.borrow().as_slice(),
-            [(
-                "/Music/Reprise-YouTube".to_string(),
-                "Channel/2026-07-28 - Video.flac".to_string()
-            )]
-        );
-        assert!(
-            backend
-                .state
-                .planned_operations
-                .borrow()
-                .iter()
-                .all(|(_, kind)| *kind != "transcode"),
-            "podcast/YouTube audio must never be transcoded"
-        );
-    });
-}
-
-#[test]
-fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() {
-    run(async {
-        let (downloads, conn) = fixture();
-        let rss_path = downloads.path().join("rss.mp3");
-        let youtube_path = downloads.path().join("youtube.mp3");
-        std::fs::write(&rss_path, b"rss audio").unwrap();
-        std::fs::write(&youtube_path, b"youtube").unwrap();
-        crate::test_db::connection(&conn)
-            .execute_batch(
-                "INSERT INTO podcast_subscriptions
-                 (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
-                 VALUES
-                 (10, 'rss', 'https://example.test/rss', 'RSS Show', 0, 1, 1),
-                 (11, 'youtube', 'https://example.test/youtube', 'Video', 0, 1, 1);
-                 INSERT INTO podcast_subscription_devices (subscription_id, device_id)
-                 VALUES (10, 'a'), (11, 'a');",
-            )
-            .unwrap();
-        crate::test_db::connection(&conn)
-            .execute(
-                "INSERT INTO podcast_episodes
-                 (id, subscription_id, guid, title, audio_url, downloaded_path,
-                  downloaded_bytes, published_at, first_seen_at)
-                 VALUES (100, 10, 'rss-100', 'Episode', 'https://example.test/rss.mp3',
-                         ?1, 9, 1785225600, 1)",
-                [rss_path.to_string_lossy().as_ref()],
-            )
-            .unwrap();
-        crate::test_db::connection(&conn)
-            .execute(
-                "INSERT INTO podcast_episodes
-                 (id, subscription_id, guid, title, audio_url, downloaded_path,
-                  downloaded_bytes, published_at, first_seen_at)
-                 VALUES (101, 11, 'yt-101', 'Video', 'https://example.test/youtube.webm',
-                         ?1, 7, 1785225600, 1)",
-                [youtube_path.to_string_lossy().as_ref()],
-            )
-            .unwrap();
-        disable_auto_start(&conn, "a");
-        enable_device_target(&conn, "a", SyncTargetKind::PodcastEpisodes);
-        enable_device_target(&conn, "a", SyncTargetKind::YoutubeAudio);
-
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
-        backend.state.podcast_files.replace(vec![ManagedDeviceFile {
-            relative_path: "Old Show/99-Old.mp3".into(),
-            size_bytes: 4,
-        }]);
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        settle().await;
-
-        let page = runtime.devices().remove(0).page;
-        assert!(page.blockers.is_empty());
-        // Both the RSS episode (9 bytes) and the YouTube episode (7 bytes)
-        // are wanted — YouTube is no longer defensively cleared (POD-12).
-        assert_eq!(page.changes.transfer_bytes, 16);
-        assert!(page.controls.can_start);
-
-        runtime.sync_now("a").unwrap();
-        settle().await;
-
-        let mut copies = backend.state.managed_copies.borrow().clone();
-        copies.sort();
-        assert_eq!(
-            copies,
-            [
-                (
-                    "/Music/Reprise-YouTube".to_string(),
-                    "Video/2026-07-28 - Video.mp3".to_string()
-                ),
-                (
-                    "/Podcasts/Reprise".to_string(),
-                    "RSS Show/2026-07-28 - Episode.mp3".to_string()
-                ),
-            ]
-        );
-        // Audio only: a content removal is planned from the device
-        // inventory alone, so there is no library file to trace a `.lrc`
-        // back to and `LYR-7` never deletes one here.
-        assert_eq!(
-            backend.state.managed_deleted.borrow().as_slice(),
-            [(
-                "/Podcasts/Reprise".to_string(),
-                "Old Show/99-Old.mp3".to_string()
-            )]
-        );
-    });
-}
-
-#[test]
-fn mtp_36_the_persisted_latest_per_channel_actually_bounds_what_syncs() {
-    run(async {
-        let (downloads, conn) = fixture();
-        crate::test_db::connection(&conn)
-            .execute_batch(
-                "INSERT INTO podcast_subscriptions
-                 (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
-                 VALUES (10, 'youtube', 'https://example.test/channel', 'Channel', 0, 1, 1);
-                 INSERT INTO podcast_subscription_devices (subscription_id, device_id)
-                 VALUES (10, 'a');",
-            )
-            .unwrap();
-        // Eight episodes on one channel — the design's own "8 episodes,
-        // default 5" example. `downloaded_bytes` must match the file's
-        // actual size exactly, or `query_candidates_for_device` silently
-        // drops the episode as a stale/mismatched download.
-        for n in 1..=8i64 {
-            let path = downloads.path().join(format!("video-{n}.mp3"));
-            let content = format!("video-{n}");
-            std::fs::write(&path, content.as_bytes()).unwrap();
-            crate::test_db::connection(&conn)
-                .execute(
-                    "INSERT INTO podcast_episodes
-                     (id, subscription_id, guid, title, audio_url, downloaded_path,
-                      downloaded_bytes, published_at, first_seen_at)
-                     VALUES (?1, 10, ?2, ?3, 'https://example.test/video.webm', ?4, ?5, ?1, 1)",
-                    rusqlite::params![
-                        100 + n,
-                        format!("yt-{n}"),
-                        format!("Video {n}"),
-                        path.to_string_lossy().as_ref(),
-                        content.len() as i64
-                    ],
-                )
-                .unwrap();
-        }
-        disable_auto_start(&conn, "a");
-        enable_device_target(&conn, "a", SyncTargetKind::YoutubeAudio);
-
-        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        settle().await;
-
-        runtime.sync_now("a").unwrap();
-        settle().await;
-        assert_eq!(
-            backend.state.managed_copies.borrow().len(),
-            5,
-            "the global default of 5 must actually bound what gets copied to the device"
-        );
-
-        reprise_core::podcasts::store::set_latest_per_channel(&conn, 10, Some(2)).unwrap();
-        backend.state.managed_copies.borrow_mut().clear();
-        runtime.recompute_delta("a").unwrap();
-        settle().await;
-        runtime.sync_now("a").unwrap();
-        settle().await;
-        assert_eq!(
-            backend.state.managed_copies.borrow().len(),
-            2,
-            "a channel override of 2 must change what actually syncs — it beats the global default"
-        );
-
-        reprise_core::podcasts::store::set_latest_per_channel(&conn, 10, Some(0)).unwrap();
-        backend.state.managed_copies.borrow_mut().clear();
-        runtime.recompute_delta("a").unwrap();
-        settle().await;
-        runtime.sync_now("a").unwrap();
-        settle().await;
-        assert_eq!(
-            backend.state.managed_copies.borrow().len(),
-            8,
-            "an override of 0 must sync every episode — 0 means unlimited, not empty, \
-             and getting this wrong would silently stop syncing the channel"
-        );
-    });
-}
-
-#[test]
 fn mtp_31_folder_browser_lists_storages_browses_folders_and_creates_a_new_one() {
     run(async {
         let (_downloads, conn) = fixture();
@@ -336,7 +104,7 @@ fn mtp_31_folder_browser_lists_storages_browses_folders_and_creates_a_new_one() 
                 },
             ]),
         );
-        backend.set_folder_listing(StorageId(1), "/Music", &["Reprise", "Podcasts"]);
+        backend.set_folder_listing(StorageId(1), "/Music", &["Reprise", "Audiobooks"]);
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         settle().await;
 
@@ -352,20 +120,23 @@ fn mtp_31_folder_browser_lists_storages_browses_folders_and_creates_a_new_one() 
             .browse_folders("a", StorageId(1), "/Music".to_string())
             .await
             .unwrap();
-        assert_eq!(folders, vec!["Reprise".to_string(), "Podcasts".to_string()]);
+        assert_eq!(
+            folders,
+            vec!["Reprise".to_string(), "Audiobooks".to_string()]
+        );
 
         runtime
             .create_target_folder(
                 "a",
                 StorageId(1),
                 "/Music".to_string(),
-                "Reprise-YouTube".to_string(),
+                "Selected".to_string(),
             )
             .await
             .unwrap();
         assert_eq!(
             backend.created_folders(),
-            vec![(1, "/Music".to_string(), "Reprise-YouTube".to_string())],
+            vec![(1, "/Music".to_string(), "Selected".to_string())],
             "the browser's New folder action reaches the backend with the exact storage and path"
         );
     });
@@ -466,7 +237,7 @@ fn mtp_32_changing_a_target_folder_to_a_different_storage_does_not_relocate() {
 
         assert!(
             backend.moved_folders().is_empty(),
-            "a storage change must go through the copy-and-orphan path (MTP-38), not a move"
+            "a storage change must go through the copy-and-orphan path, not a move"
         );
     });
 }
@@ -518,7 +289,6 @@ fn save_road_settings(conn: &Rc<Db>, device_id: &str) {
             // tests (`device_sync_auto_start_tests.rs`) set this explicitly
             // instead of relying on this shared fixture.
             sync_automatically: false,
-            prepare_before_sync: true,
         },
     )
     .unwrap();
@@ -530,8 +300,6 @@ mod analysis_metadata_tests;
 mod auto_start_tests;
 #[path = "device_sync_compact_tests.rs"]
 mod compact_tests;
-#[path = "device_sync_content_transfer_tests.rs"]
-mod content_transfer_tests;
 #[path = "device_sync_inflight_tests.rs"]
 mod inflight_tests;
 #[path = "device_sync_listen_report_tests.rs"]
@@ -542,17 +310,11 @@ mod lyrics_sidecar_tests;
 mod picker_tests;
 #[path = "device_sync_planned_tests.rs"]
 mod planned_tests;
-#[path = "device_sync_podcast_removal_tests.rs"]
-mod podcast_removal_tests;
-#[path = "device_sync_preparation_tests.rs"]
-mod preparation_tests;
 #[path = "device_sync_readback_tests.rs"]
 mod readback_tests;
 #[path = "device_sync_run_log_tests.rs"]
 mod run_log_tests;
 #[path = "device_sync_safety_tests.rs"]
 mod safety_tests;
-#[path = "device_sync_selection_tests.rs"]
-mod selection_tests;
 #[path = "device_sync_transfer_profile_tests.rs"]
 mod transfer_profile_tests;

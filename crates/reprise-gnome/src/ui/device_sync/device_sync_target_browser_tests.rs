@@ -136,7 +136,7 @@ impl DeviceBackend for RaceBackend {
     fn inspect(
         &self,
         _root_uri: String,
-        _targets: [SyncTarget; 3],
+        _target: SyncTarget,
     ) -> BackendFuture<DeviceStorageInspection> {
         Box::pin(async { Ok(DeviceStorageInspection::default()) })
     }
@@ -205,9 +205,9 @@ fn mtp_34_a_stale_folder_listing_is_dropped_not_appended_to_a_newer_navigation()
 
         let backend = Rc::new(RaceBackend::new("race-phone"));
         backend.set_listing(StorageId(1), "/Music", &["ShouldNotAppear"]);
-        backend.set_listing(StorageId(1), "/Podcasts", &["Reprise"]);
+        backend.set_listing(StorageId(1), "/Audiobooks", &["Reprise"]);
         // Opening `/Music` is slow; the user has already moved on to
-        // `/Podcasts` by the time it would resolve.
+        // `/Audiobooks` by the time it would resolve.
         backend.set_delay("/Music", 40);
 
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
@@ -217,7 +217,7 @@ fn mtp_34_a_stale_folder_listing_is_dropped_not_appended_to_a_newer_navigation()
 
         let generation = Rc::new(Cell::new(0_u64));
         let music_result: Rc<RefCell<Option<Vec<String>>>> = Rc::new(RefCell::new(None));
-        let podcasts_result: Rc<RefCell<Option<Vec<String>>>> = Rc::new(RefCell::new(None));
+        let audiobooks_result: Rc<RefCell<Option<Vec<String>>>> = Rc::new(RefCell::new(None));
 
         // Navigation 1: `/Music` — slow, becomes stale before it resolves.
         generation.set(1);
@@ -237,41 +237,41 @@ fn mtp_34_a_stale_folder_listing_is_dropped_not_appended_to_a_newer_navigation()
             ));
         }
 
-        // A few milliseconds later the user navigates to `/Podcasts` —
+        // A few milliseconds later the user navigates to `/Audiobooks` —
         // fast, no artificial delay.
         gtk4::glib::timeout_future(Duration::from_millis(5)).await;
         generation.set(2);
         {
             let runtime = runtime.clone();
             let generation = generation.clone();
-            let podcasts_result = podcasts_result.clone();
+            let audiobooks_result = audiobooks_result.clone();
             gtk4::glib::MainContext::ref_thread_default().spawn_local(load_folders_if_current(
                 runtime,
                 "race-phone".to_string(),
                 StorageId(1),
-                "/Podcasts".to_string(),
+                "/Audiobooks".to_string(),
                 generation,
                 2,
-                move |folders| *podcasts_result.borrow_mut() = Some(folders),
+                move |folders| *audiobooks_result.borrow_mut() = Some(folders),
                 |_error| {},
             ));
         }
 
-        // Long enough for both the fast `/Podcasts` listing and the slow
+        // Long enough for both the fast `/Audiobooks` listing and the slow
         // `/Music` listing to have resolved.
         for _ in 0..30 {
             gtk4::glib::timeout_future(Duration::from_millis(2)).await;
         }
 
         assert_eq!(
-            podcasts_result.borrow().clone(),
+            audiobooks_result.borrow().clone(),
             Some(vec!["Reprise".to_string()]),
             "the current navigation's own listing must still land"
         );
         assert_eq!(
             music_result.borrow().clone(),
             None,
-            "the stale /Music listing must be dropped once /Podcasts became current, \
+            "the stale /Music listing must be dropped once /Audiobooks became current, \
              not appended under it"
         );
     });

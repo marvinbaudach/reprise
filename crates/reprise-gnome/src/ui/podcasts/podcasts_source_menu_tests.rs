@@ -11,7 +11,6 @@ fn source(kind: PodcastKind) -> SourceGroup {
         author: None,
         image_url: None,
         kind,
-        sync_to_phone: false,
         episodes: Vec::new(),
     }
 }

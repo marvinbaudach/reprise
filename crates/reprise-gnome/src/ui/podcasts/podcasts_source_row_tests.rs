@@ -57,7 +57,6 @@ fn render_single_group(kind: PodcastKind) -> RenderedEpisode {
             author: None,
             image_url: None,
             kind,
-            sync_to_phone: false,
             episodes: vec![episode(kind)],
         },
     };
@@ -119,7 +118,6 @@ fn render_group_header(kind: PodcastKind, author: Option<&str>) -> gtk4::Widget 
             author: author.map(str::to_owned),
             image_url: None,
             kind,
-            sync_to_phone: false,
             episodes: Vec::new(),
         },
         &SourceSummary {

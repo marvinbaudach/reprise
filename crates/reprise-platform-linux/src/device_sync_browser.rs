@@ -182,7 +182,7 @@ impl DeviceStorage {
     /// `pub(super)`: also the resolution primitive
     /// [`DeviceStorage::resolve_target_storage`] (parent module) and
     /// [`inspection`](super::inspection) build on, so a target's persisted
-    /// `StorageId` (`MTP-38`) is what transfers and inspection actually use,
+    /// `StorageId` (`MTP-23`) is what transfers and inspection actually use,
     /// not just what the folder browser previews (`MTP-31`).
     pub(super) async fn resolve_storage_root(
         &self,
@@ -240,7 +240,7 @@ pub(super) fn derive_storage_id(name: &str) -> StorageId {
     StorageId(hasher.finish() as u32)
 }
 
-/// Splits a device-path string (e.g. `/Music/Reprise-YouTube`, or `/` /
+/// Splits a device-path string (e.g. `/Music/Selected`, or `/` /
 /// `""` for "the storage's own root") into path components. Unlike
 /// `safe_target_components` in the parent module, an empty result is
 /// valid here — it names the storage root itself, a real, browsable

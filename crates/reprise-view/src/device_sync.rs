@@ -6,9 +6,8 @@
 
 use crate::strings::{Message, Plural};
 use reprise_core::device_sync::{
-    DeviceSessionState, MirrorBlocker, Mp3Quality, PlannedSyncPhase, PrimaryAction,
-    SyncChangeSummary, SyncPageControls, SyncPageWarning, SyncPlaylistRow, SyncStep,
-    TransferProfile,
+    DeviceSessionState, MirrorBlocker, Mp3Quality, PlannedSyncPhase, SyncChangeSummary,
+    SyncPageControls, SyncPageWarning, SyncPlaylistRow, SyncStep, TransferProfile,
 };
 
 macro_rules! N_ {
@@ -67,7 +66,6 @@ const UNAVAILABLE_WARNING: (&str, &str) = plural(
 );
 const UNSAFE_WARNING: &str = N_!("An unsafe managed path will be left untouched.");
 const CANCEL: &str = N_!("_Cancel");
-const DOWNLOAD_AND_SYNC: &str = N_!("_Download & sync");
 const SYNC_NOW: &str = N_!("_Sync now");
 const PREPARING_TITLE: &str = N_!("Step 1 of 2 · Downloading {current} of {total} · {percent}%");
 const CHECKING_TITLE: &str = N_!("Checking device…");
@@ -302,7 +300,7 @@ pub fn warning_summary(warnings: &[SyncPageWarning]) -> Vec<Message> {
     summary
 }
 
-pub fn action_copy(controls: SyncPageControls, action: PrimaryAction) -> PageActionCopy {
+pub fn action_copy(controls: SyncPageControls) -> PageActionCopy {
     if controls.can_cancel {
         PageActionCopy {
             label: CANCEL,
@@ -311,10 +309,7 @@ pub fn action_copy(controls: SyncPageControls, action: PrimaryAction) -> PageAct
         }
     } else {
         PageActionCopy {
-            label: match action {
-                PrimaryAction::DownloadAndSync => DOWNLOAD_AND_SYNC,
-                PrimaryAction::SyncNow => SYNC_NOW,
-            },
+            label: SYNC_NOW,
             sensitive: controls.can_start,
             destructive: false,
         }

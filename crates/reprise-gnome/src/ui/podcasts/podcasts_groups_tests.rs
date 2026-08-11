@@ -39,7 +39,6 @@ fn src_11_youtube_group_without_channel_artwork_uses_the_newest_episode_thumbnai
         author: None,
         image_url: None,
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes: vec![newest, older],
     };
 
@@ -56,7 +55,6 @@ fn src_11_group_artwork_prefers_its_source_and_never_borrows_for_rss() {
         author: None,
         image_url: Some("https://img.test/source.jpg".into()),
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes: vec![episode],
     };
 
@@ -78,7 +76,6 @@ fn src_5_youtube_group_title_is_vertically_centered_with_its_artwork() {
         author: None,
         image_url: None,
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes: Vec::new(),
     };
     let header = group_header(
@@ -270,7 +267,6 @@ fn src_14_grouped_secondary_click_opens_for_one_row_or_the_three_row_selection()
             author: None,
             image_url: None,
             kind: PodcastKind::Rss,
-            sync_to_phone: false,
             episodes,
         },
     };
@@ -393,7 +389,6 @@ fn collapsed_group_renders_ten_episodes_and_one_show_all_action() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes,
     };
     let rendered = RenderedSourceGroup {
@@ -451,7 +446,6 @@ fn src_5_one_expander_is_rendered_per_source_group() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: Vec::new(),
     };
     let rendered = RenderedSourceGroup {
@@ -499,7 +493,6 @@ fn src_12b_grouped_selection_survives_render_rebuild_on_the_row() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: vec![episode(None)],
     };
     let rendered = RenderedSourceGroup {
@@ -570,7 +563,6 @@ fn src_4b_the_group_header_offers_no_second_unsubscribe_control() {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: Vec::new(),
     };
     let header = group_header(
@@ -627,7 +619,6 @@ fn src_11_group_header_stays_on_the_fallback_when_images_are_not_allowed() {
         author: None,
         image_url: Some("https://images.test/net-1a-group-header.jpg".into()),
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes: Vec::new(),
     };
     let header = group_header(
@@ -756,7 +747,6 @@ fn ctx_13_the_file_snapshot_spans_the_episodes_a_collapsed_group_hides() {
             author: None,
             image_url: None,
             kind: PodcastKind::Rss,
-            sync_to_phone: false,
             episodes,
         },
     };

@@ -71,7 +71,6 @@ pub(super) fn setup(
         });
     device_sync
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
-    device_sync.bind_preparation_downloader(&podcasts);
     super::super::device_sync_smoke::arm(&device_sync);
     super::super::startup_report::mark("device sync");
 
