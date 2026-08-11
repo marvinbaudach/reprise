@@ -85,13 +85,15 @@ ALTER TABLE device_playlists
   CHECK (last_synced_at IS NULL OR last_synced_at >= 0);
 "#;
 
-// `MTP-38`: three named, per-device sync targets replacing the single
-// implicit managed folder from `78e379fd`. See
-// `device_sync::targets` for the pure model this table backs — `kind` is
-// one of `SyncTargetKind::storage_value()`, `storage_id` is an MTP
-// `StorageID` (not a path component, and never a persisted object handle —
-// handles are not stable across reconnects), `path` is the device-relative
-// target folder, and `cap_bytes` is an optional per-target size cap.
+// Historical shape only (`MTP-38`): three named, per-device sync targets
+// replacing the single implicit managed folder from `78e379fd`. It is still
+// created verbatim so a fresh database walks the same path an existing one
+// did; `migrate_v68` then reduces it to the one row per device that
+// `MTP-54` keeps. Nothing in the code reads `kind` or `cap_bytes` any more —
+// the enum behind `kind` and the per-target size cap are both gone. In the
+// surviving columns, `storage_id` is an MTP `StorageID` (not a path
+// component, and never a persisted object handle — handles are not stable
+// across reconnects) and `path` is the device-relative target folder.
 const CREATE_DEVICE_SYNC_TARGETS: &str = r#"
 CREATE TABLE IF NOT EXISTS device_sync_targets (
   device_serial TEXT NOT NULL,

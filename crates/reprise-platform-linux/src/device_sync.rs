@@ -400,10 +400,9 @@ impl DeviceStorage {
     }
 
     /// Removes transfer remnants left by a disconnect or process exit under
-    /// one sync target's folder (`target_path`, `MTP-23`). Only files below
-    /// that folder with the dedicated `.part` suffix are touched; unrelated
-    /// device content — including the other two named targets — remains
-    /// outside our ownership.
+    /// the sync target's folder (`target_path`, `MTP-23`). Only files below
+    /// that folder with the dedicated `.part` suffix are touched; every other
+    /// file on the device remains outside our ownership.
     pub async fn cleanup_partials_in(
         &self,
         storage_id: Option<StorageId>,

@@ -88,12 +88,11 @@ impl DeviceStorage {
     }
 }
 
-/// Walks one target's own folder — its resolved storage plus its literal
-/// path components (`components`, e.g. `["Podcasts", "Reprise"]`) — and
+/// Walks the target's own folder — its resolved storage plus its literal
+/// path components (`components`, e.g. `["Music", "Reprise"]`) — and
 /// returns every file `accept` keeps, keyed by its path relative to that
-/// folder. This is the one inventory primitive all three named targets
-/// (`MTP-23`) use, so each is recognized only by the storage + path it was
-/// actually written to, never by a hard-coded folder name.
+/// folder. The playlists target (`MTP-23`) is recognized only by the storage
+/// + path it was actually written to, never by a hard-coded folder name.
 async fn inspect_target_folder(
     storage: &gio::File,
     components: &[String],
