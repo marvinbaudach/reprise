@@ -296,6 +296,10 @@ class DriverRefusalContractTests(unittest.TestCase):
         for tool, payload in (
             ("press_key", {"key": "enter"}),
             ("hotkey", {"keys": ["CTRL", "F"]}),
+            # `describe` lists delivery_mode for these two as well, and a
+            # pointer action meets the same missing background backend.
+            ("click", {"element_token": "fixture-token"}),
+            ("scroll", {"element_token": "fixture-token", "direction": "down"}),
         ):
             with self.subTest(tool=tool), tempfile.TemporaryDirectory() as directory:
                 transport = CommandScriptTransport(
@@ -318,12 +322,21 @@ class DriverRefusalContractTests(unittest.TestCase):
                 evidence_dir=pathlib.Path(directory),
             )
 
+            # `describe move_cursor` lists no delivery_mode, so there is no
+            # documented escape to take and the refusal still ends the run.
             with self.assertRaisesRegex(DriverError, "background_unavailable"):
-                transport.call("click", {})
+                transport.call("move_cursor", {"scope": "desktop", "x": 1, "y": 2})
 
             self.assertEqual(len(transport.commands), 1)
 
-    def test_failed_foreground_delivery_aborts_after_the_single_retry(self) -> None:
+    def test_the_delivery_shell_survives_the_escape_without_ending_the_run(
+        self,
+    ) -> None:
+        # Measured on cua-driver 0.19.3: every type_text answers with
+        # escalation.reason "delivery_failed", a successful foreground one
+        # included - the typed marker was read back out of the accessibility
+        # tree. Aborting on it would abort on the driver's normal answer, and
+        # first-time-exploration is exactly the mission that lands here.
         with tempfile.TemporaryDirectory() as directory:
             transport = CommandScriptTransport(
                 [
@@ -333,11 +346,14 @@ class DriverRefusalContractTests(unittest.TestCase):
                 evidence_dir=pathlib.Path(directory),
             )
 
-            with self.assertRaisesRegex(DriverError, "foreground delivery failed"):
-                transport.call("type_text", {"text": "fixture text"})
+            response = transport.call("type_text", {"text": "fixture text"})
 
             self.assertEqual(len(transport.commands), 2)
             self.assertEqual(transport.transport_faults, 2)
+            self.assertEqual(response["delivery_escalation"]["to"], "foreground")
+            self.assertIn("delivery_failure", response["delivery_escalation"])
+            # The run continues, but nothing counts as delivered.
+            self.assertFalse(response_dispatched(response))
 
     def test_exit_zero_snapshot_refusal_aborts_the_production_action_path(self) -> None:
         raw = json.loads(FIXTURE.read_text(encoding="utf-8"))

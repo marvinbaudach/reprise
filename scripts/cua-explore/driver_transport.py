@@ -29,10 +29,14 @@ RETRY_DELAYS_SECONDS = (0.25, 0.50)
 WINDOW_STATE_READINESS_RETRY_DELAYS_SECONDS = (1.0, 2.0, 3.0)
 SUCCESS_STATUSES = frozenset({"ok", "success", "succeeded"})
 BACKGROUND_UNAVAILABLE_CODE = "background_unavailable"
-# Measured from the cua-driver 0.19.3 schemas used by the mission actions.
+# Measured from the cua-driver 0.19.3 schemas used by the mission actions:
+# `describe` lists delivery_mode for exactly these five. `set_value` does not
+# take it, so it stays out and a refusal there still ends the run.
 # Escalation is still response-driven: these tools stay on their default
 # background route unless the driver returns BACKGROUND_UNAVAILABLE_CODE.
-DELIVERY_MODE_TOOLS = frozenset({"type_text", "press_key", "hotkey"})
+DELIVERY_MODE_TOOLS = frozenset(
+    {"type_text", "press_key", "hotkey", "click", "scroll"}
+)
 # The driver reports a failed delivery next to a normal-looking outcome instead
 # of failing the call. Measured on cua-driver 0.19.3: a type_text that fell
 # through returns {"delivery":{"mode":"background"},"effect":"unverifiable",
@@ -172,16 +176,19 @@ class CliTransport:
             if delivery_failure is not None:
                 # The tool answered its contract and reported in the same
                 # breath that the input never arrived. That is evidence, not a
-                # reason to end the ordinary background route: the caller
-                # reads it through response_dispatched and draws no product
-                # verdict from it. After the one foreground escape, however,
-                # there is no further safe delivery route to try.
+                # reason to end the run: the caller reads it back through
+                # response_dispatched, which returns False here, and draws no
+                # product verdict from it.
+                #
+                # This holds after the foreground escape too. Measured on
+                # cua-driver 0.19.3: every type_text carries this shell, a
+                # successful foreground one included - the typed marker was
+                # read back out of the accessibility tree while the answer
+                # still said escalation.reason "delivery_failed". Ending the
+                # run here would abort on the driver's normal answer.
                 self._retain_fault(tool, attempt, completed, response=response)
                 if delivery_escalation is not None:
-                    raise DriverError(
-                        f"cua-driver {tool} foreground delivery failed: "
-                        f"{delivery_failure}"
-                    )
+                    delivery_escalation["delivery_failure"] = str(delivery_failure)
             if delivery_escalation is not None:
                 return {**response, "delivery_escalation": delivery_escalation}
             return response
