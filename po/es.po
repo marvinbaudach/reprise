@@ -1623,9 +1623,9 @@ msgstr "No hay cambios que revisar"
 msgid "Return to the results and choose another review filter."
 msgstr "Vuelve a los resultados y elige otro filtro de revisión."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:72
-msgid "None"
-msgstr "Ninguno"
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:71
+msgid "Select all visible changes"
+msgstr "Seleccionar todos los cambios visibles"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:73
 msgid "Review Tag Changes"
@@ -5208,6 +5208,7 @@ msgstr "Elegir {category}"
 msgid "Filter sync content"
 msgstr "Filtrar el contenido de sincronización"
 
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
 msgid "Select all"
 msgstr "Seleccionar todo"

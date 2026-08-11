@@ -1561,8 +1561,8 @@ msgstr ""
 msgid "Return to the results and choose another review filter."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:72
-msgid "None"
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:71
+msgid "Select all visible changes"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:73
@@ -5006,6 +5006,7 @@ msgstr ""
 msgid "Filter sync content"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
 msgid "Select all"
 msgstr ""
