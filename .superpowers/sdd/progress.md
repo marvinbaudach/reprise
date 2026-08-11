@@ -1351,3 +1351,4 @@ Task 1: complete (this commit, base a37fc4ad33, moved the Core ARGB and flat Flo
 # origin/dev display-test repairs
 
 Task display-green-1: complete (this commit, base 4f6dfc7cb2, declared Link roles once when constructing the four Now Playing metadata surfaces and the My Stats metadata label, while leaving recycled TrackCover role presentation untouched; both isolated rule-named Xvfb tests passed, format and strict locked workspace Clippy passed, and the locked workspace suite retained only the exact unchanged origin/dev CONTRAST-5 accent-foreground failure)
+Task display-green-2: complete (this commit, base 8074d81812, moved the two stale Podcast group-header assertions onto the shared SRC-16 descendant tree, proving exactly one overflow menu owns unsubscribe and image-disabled artwork stays on its fallback; both isolated rule-named Xvfb tests passed)
