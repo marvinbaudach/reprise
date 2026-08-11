@@ -290,7 +290,7 @@ lock or coordination board exists in this checkout.
 
 | Owner | Files |
 | --- | --- |
-| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/track_list/{queue_sections,track_list_model,track_list_columns,track_cover,column_layout,track_list_context_menu}.rs`, their focused tests, and cohesive new queue-row presentation/menu siblings |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/track_list/{track_list_model,track_list_columns,track_cover,column_layout,track_list_context_menu}.rs`, their focused tests, and cohesive new queue-row presentation/menu siblings |
 | episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/now_playing/up_next_panel.rs`, its focused tests, and the narrow typed projection adapter in `crates/reprise-gnome/src/ui/playback/queue_transport.rs` |
 | episodes-as-queue-citizens | Minimal append-only CTX rule draft in `docs/ux-rules.md` and `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |
@@ -314,6 +314,35 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | MPRIS episode identity/metadata, the GNOME agent-queue mirror, and their focused tests |
 | episodes-as-queue-citizens | Append-only package-5 rule, plan, and completion records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, and `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and unrelated source UI or packaging work |
+
+## Active file ownership — list geometry service
+
+Plans: `docs/plans/list-geometry-service.md`, `docs/plans/queue-section-preseed.md`
+Two tracks run in parallel from the same base commit; they share no file.
+
+**Track 1 · mechanics** — branch `feat/list-geometry-service`
+- `crates/reprise-gnome/src/ui/list_geometry.rs` (new)
+- `crates/reprise-gnome/src/ui/list_geometry_header.rs` (new)
+- `crates/reprise-gnome/src/ui/list_geometry_cache_tests.rs` (new)
+- `crates/reprise-gnome/src/ui/scroll_probe.rs`
+- `crates/reprise-gnome/src/ui/scroll_center.rs`
+- `crates/reprise-gnome/src/ui/style/{mod,tokens}.rs`
+- `crates/reprise-gnome/src/ui/track_list/queue_sections.rs`
+- `crates/reprise-gnome/src/ui/track_list/queue_section_header_display_tests.rs` (new)
+- `crates/reprise-gnome/src/ui/track_list/track_list_geometry.rs`
+- `crates/reprise-gnome/src/ui/track_list/{track_list,track_list_builder,track_list_layout}.rs`
+- `crates/reprise-gnome/src/ui/track_list/track_list_reload.rs`
+- `crates/reprise-gnome/src/ui/track_list/view_state_memory.rs`
+- `crates/reprise-gnome/src/ui/track_list/reload_restore.rs`
+- `crates/reprise-core/src/library/settings.rs`
+- `crates/reprise-core/src/library/settings_geometry.rs` (new)
+
+**Track 2 · measurement** — branch `feat/list-geometry-tests`
+- `crates/reprise-gnome/src/ui/track_list/current_track_selection/delete_follow_display_tests.rs`
+- new display-test files for the large-delete and queue-sections cases
+
+This ownership is ACTIVE. A sibling branch that edits an owned path must
+rebase onto the owning branch first, not merge past it.
 
 ## Active file ownership — multi-surface frontends
 
@@ -430,4 +459,3 @@ package.
 | 3 | PERF-5 | `crates/reprise-core/src/library/library_doctor/preferences.rs`, `crates/reprise-gnome/src/ui/library_doctor/start_page.rs` |
 | 3 | REV-2 | `crates/reprise-core/src/library/library_doctor/{review,review_tests}.rs`, `crates/reprise-gnome/src/ui/library_doctor/{review_page,review_filter_bar}.rs`, `crates/reprise-mcp/src/{doctor_dto,doctor_actions}.rs` |
 | 4 | PERF-3 | `crates/reprise-core/src/library/library_doctor/{store,scan}.rs` |
-

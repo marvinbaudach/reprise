@@ -56,6 +56,15 @@ pub(in crate::ui) const ROW_MIN_HEIGHT_STANDARD: i32 = 28;
 /// the cell content to shrink first.
 pub(in crate::ui) const ROW_MIN_HEIGHT_COMPACT: i32 = 20;
 
+/// Queue section-header content minimum height.
+///
+/// This is a floor, not a measured header height. It deliberately exceeds
+/// the measured 34 px natural height of the Play Next button row so both the
+/// button row and plain label bind to the same authored minimum. A theme or
+/// large system font may still require more space; geometry measurement must
+/// detect that instead of treating this token as truth.
+pub(in crate::ui) const SECTION_HEADER_MIN_HEIGHT: i32 = 36;
+
 /// Font size (px) applied to track-row text in the Compact density.
 pub(in crate::ui) const COMPACT_ROW_FONT_SIZE: i32 = 10;
 

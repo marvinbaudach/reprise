@@ -104,10 +104,6 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val analysis by analysisDelegate
-    private val nowPlayingViewSettings by lazy { AndroidNowPlayingViewSettings(library) }
-    private val injectedNowPlayingViewSettings by lazy {
-        InjectedNowPlayingViewSettings(getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE))
-    }
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -183,17 +179,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
-        // Deferred for the same reason as [tracks] and [analysisDelegate]: reading
-        // it opens the library, and onCreate must survive a core that will not
-        // load so that restoreLibrary can show the failure instead of crashing.
-        // The scene asks for it during composition, which is late enough.
-        val activeNowPlayingViewSettings by lazy {
-            if (surfaceProvider == null) {
-                nowPlayingViewSettings
-            } else {
-                injectedNowPlayingViewSettings
-            }
-        }
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
@@ -230,7 +215,6 @@ class MainActivity : ComponentActivity() {
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalAlbumTrackIds provides { album -> session.albumTrackIds(album) },
                             LocalTrackAnalysis provides surface.trackAnalysis,
-                            LocalNowPlayingViewSettings provides activeNowPlayingViewSettings,
                             LocalAmbientMotionController provides ambientMotion,
                         ) {
                             LibraryScreen(
@@ -243,12 +227,15 @@ class MainActivity : ComponentActivity() {
                                 rescan = surface.rescan,
                                 searchTitles = surface.searchTitles,
                                 listAlbums = surface.listAlbums,
+                                searchAlbums = surface.searchAlbums,
                                 listArtists = surface.listArtists,
+                                searchArtists = surface.searchArtists,
                                 openAlbum = surface.openAlbum,
                                 listAlbumTracks = surface.listAlbumTracks,
                                 openArtist = surface.openArtist,
                                 listArtistTracks = surface.listArtistTracks,
                                 listFavourites = surface.listFavourites,
+                                searchFavourites = surface.searchFavourites,
                                 loadTrack = surface.loadTrack,
                                 playTracks = surface.playTracks,
                                 loadPlaybackSettings = surface.loadPlaybackSettings,
@@ -287,12 +274,15 @@ class MainActivity : ComponentActivity() {
             rescan = ::rescan,
             searchTitles = { query, range -> session.searchTitles(query, range) },
             listAlbums = { range -> session.listAlbums(range) },
+            searchAlbums = { query, range -> session.searchAlbums(query, range) },
             listArtists = { range -> session.listArtists(range) },
+            searchArtists = { query, range -> session.searchArtists(query, range) },
             openAlbum = { album -> session.openAlbum(album) },
             listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
             openArtist = { artist -> session.openArtist(artist) },
             listArtistTracks = { artist, range -> session.listArtistTracks(artist, range) },
             listFavourites = { range -> session.listFavourites(range) },
+            searchFavourites = { query, range -> session.searchFavourites(query, range) },
             loadTrack = ::loadTrack,
             playTracks = ::playTracks,
             loadPlaybackSettings = ::loadPlaybackSettings,
@@ -679,12 +669,15 @@ private fun LibraryScreen(
     rescan: ((LibraryScreenState) -> Unit) -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     listAlbums: (LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
+    searchAlbums: (String, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
+    searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     openArtist: (LibraryArtist) -> ArtistTrackList,
     listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    searchFavourites: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     loadPlaybackSettings: () -> PlaybackSettingsUiState,
@@ -723,12 +716,15 @@ private fun LibraryScreen(
             rescan = { rescan { state = it } },
             searchTitles = searchTitles,
             listAlbums = listAlbums,
+            searchAlbums = searchAlbums,
             listArtists = listArtists,
+            searchArtists = searchArtists,
             openAlbum = openAlbum,
             listAlbumTracks = listAlbumTracks,
             openArtist = openArtist,
             listArtistTracks = listArtistTracks,
             listFavourites = listFavourites,
+            searchFavourites = searchFavourites,
             loadTrack = loadTrack,
             playTracks = playTracks,
             loadPlaybackSettings = loadPlaybackSettings,

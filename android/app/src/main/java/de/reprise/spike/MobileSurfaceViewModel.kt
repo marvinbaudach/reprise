@@ -56,6 +56,7 @@ internal data class LoadedLibraryWindows(
     val artists: LibraryWindow<LibraryArtist>,
     val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
     val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
+    val searchText: String = "",
     /**
      * The album the listener is standing in, if any, and the tracks of it they
      * have paged in. It is kept here rather than reopened, because reopening it
@@ -126,6 +127,7 @@ internal class MobileSurfaceViewModel : ViewModel() {
     private var previousSurfaceLayout: SurfaceLayout? = null
     private var selectedTabInitialized = false
     private var rememberSelectedTab: (BrowseTab) -> Unit = {}
+    private var prefetchedForTrackId: Long? = null
 
     fun initializeSelectedTab(initial: BrowseTab, remember: (BrowseTab) -> Unit) {
         rememberSelectedTab = remember
@@ -138,13 +140,17 @@ internal class MobileSurfaceViewModel : ViewModel() {
         if (tab == selectedTab) return
         selectedTab = tab
         if (tab != BrowseTab.QUEUE) rememberSelectedTab(tab)
-        if (tab != BrowseTab.TITLES) {
+        // A standing search follows the listener from tab to tab and filters
+        // the one they land on — closing it on the way out was the whole
+        // complaint. The queue is the exception: it is the one tab no filter
+        // reaches, so a field left open there would promise something it
+        // cannot do.
+        if (tab == BrowseTab.QUEUE) {
             searchVisible = false
         }
     }
 
     fun openSearch() {
-        selectTab(BrowseTab.TITLES)
         searchVisible = true
     }
 
@@ -158,6 +164,33 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     fun showNowPlaying(show: Boolean) {
         nowPlayingExpanded = show
+    }
+
+    /** Requests exactly the next two queue covers once for each current track. */
+    fun prefetchUpcomingArtwork(
+        currentTrackId: Long?,
+        controls: PlaybackControls,
+        artwork: TrackArtwork?,
+    ) {
+        if (currentTrackId == null || artwork == null) {
+            prefetchedForTrackId = null
+            return
+        }
+        if (prefetchedForTrackId == currentTrackId) return
+        prefetchedForTrackId = currentTrackId
+        controls.loadUpcomingTracks(LibraryWindowRange(0, 2)) { outcome ->
+            if (prefetchedForTrackId != currentTrackId) return@loadUpcomingTracks
+            outcome.getOrNull()?.rows?.take(2)?.forEach { track ->
+                artwork.prefetch(
+                    ArtworkRequest(
+                        trackUri = track.uri,
+                        size = uniffi.reprise_android_ffi.AndroidArtworkSize.NOW_PLAYING,
+                        title = track.title,
+                        artist = track.artist,
+                    ),
+                )
+            }
+        }
     }
 
     fun showSettings(show: Boolean) {
@@ -231,9 +264,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
         scrollPositions[list] = position
     }
 
-    /** The paged-in windows, while they still belong to the catalog on disk. */
+    /** Paged-in windows while both their catalog and refinement still match. */
     fun loadedWindows(shape: LibraryCatalogShape): LoadedLibraryWindows? =
-        loadedWindows.takeIf { loadedShape == shape }
+        loadedWindows?.takeIf { loadedShape == shape && it.searchText == searchText }
 
     fun keepLoadedWindows(shape: LibraryCatalogShape, windows: LoadedLibraryWindows) {
         loadedShape = shape

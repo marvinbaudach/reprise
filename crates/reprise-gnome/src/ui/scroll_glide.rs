@@ -69,12 +69,14 @@ impl ScrollGlide {
         let distance = target - current;
         let Some(widget) = self.inner.widget.upgrade() else {
             cancel_animation(&self.inner);
+            crate::ui::scroll_probe::probe("glide.no_widget", adjustment, target);
             adjustment.set_value(target);
             self.inner.last_written.set(adjustment.value());
             return;
         };
         if !motion::animations_enabled() || !should_glide(distance, adjustment.page_size()) {
             cancel_animation(&self.inner);
+            crate::ui::scroll_probe::probe("glide.instant", adjustment, target);
             adjustment.set_value(target);
             self.inner.last_written.set(adjustment.value());
             return;
@@ -103,6 +105,7 @@ impl ScrollGlide {
             // writes from a real third party cleanly. It also keeps the
             // viewport off half-pixels, which is where text renders soft.
             let value = value.round();
+            crate::ui::scroll_probe::probe("glide.frame", &adjustment_for_target, value);
             adjustment_for_target.set_value(value);
             if inner.generation.get() == generation {
                 inner.last_written.set(value);
@@ -119,6 +122,7 @@ impl ScrollGlide {
                 abort_generation(&inner, generation);
                 return;
             }
+            crate::ui::scroll_probe::probe("glide.done", &adjustment_for_done, target);
             adjustment_for_done.set_value(target);
             if inner.generation.get() != generation {
                 return;

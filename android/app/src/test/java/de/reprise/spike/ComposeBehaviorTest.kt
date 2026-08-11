@@ -25,9 +25,11 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import de.reprise.spike.ui.theme.RepriseTheme
 import org.junit.Assert.assertEquals
@@ -223,7 +225,7 @@ class ComposeBehaviorTest {
         miniPlayer.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription))
 
         miniPlayer.performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onAllNodesWithText("First Song").assertCountEquals(3)
 
         // The full-screen sheet should intercept pointer hit testing. Calling
@@ -235,7 +237,7 @@ class ComposeBehaviorTest {
         assertEquals(listOf(0, 1), playedIndices)
 
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing-transport").assertDoesNotExist()
         compose.onAllNodesWithText("Second Song").assertCountEquals(2)
     }
 
@@ -311,7 +313,7 @@ class ComposeBehaviorTest {
         val restoredMiniPlayer = compose.onNode(hasClickLabel("Open Now Playing"))
         restoredMiniPlayer.assertTextContains("Rotation Song")
         restoredMiniPlayer.performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
 
         compose.runOnIdle {
             playback = PlaybackUiState(ready = true)
@@ -321,7 +323,7 @@ class ComposeBehaviorTest {
         compose.waitForIdle()
 
         compose.onNode(hasClickLabel("Open Now Playing")).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing-transport").assertDoesNotExist()
         assertEquals(listOf(track.id, track.id), loadedIds)
     }
 
@@ -450,8 +452,8 @@ class ComposeBehaviorTest {
                 }
             }
         }
-        val collapse = compose.onNodeWithContentDescription("Collapse Now Playing")
-        val restTop = collapse.getUnclippedBoundsInRoot().top
+        val transport = compose.onNodeWithTag("now-playing-transport")
+        val restTop = transport.getUnclippedBoundsInRoot().top
 
         compose.runOnIdle {
             val dispatcher = compose.activity.onBackPressedDispatcher
@@ -461,8 +463,8 @@ class ComposeBehaviorTest {
         compose.waitForIdle()
 
         assertFalse(closed)
-        collapse.assertIsDisplayed()
-        val progressedTop = collapse.getUnclippedBoundsInRoot().top
+        transport.assertIsDisplayed()
+        val progressedTop = transport.getUnclippedBoundsInRoot().top
         // A completed drag at halfway drives roughly 39dp of the 64dp full
         // step in practice; the threshold stays well clear of both that and
         // measurement noise so it fails if the translation stops tracking
@@ -495,8 +497,8 @@ class ComposeBehaviorTest {
                 }
             }
         }
-        val collapse = compose.onNodeWithContentDescription("Collapse Now Playing")
-        val restTop = collapse.getUnclippedBoundsInRoot().top
+        val transport = compose.onNodeWithTag("now-playing-transport")
+        val restTop = transport.getUnclippedBoundsInRoot().top
 
         compose.runOnIdle {
             val dispatcher = compose.activity.onBackPressedDispatcher
@@ -504,14 +506,14 @@ class ComposeBehaviorTest {
             dispatcher.dispatchOnBackProgressed(BackEventCompat(0f, 0f, 0.5f, BackEventCompat.EDGE_LEFT))
         }
         compose.waitForIdle()
-        assertTrue(collapse.getUnclippedBoundsInRoot().top.value > restTop.value + PROGRESS_MOTION_THRESHOLD_DP)
+        assertTrue(transport.getUnclippedBoundsInRoot().top.value > restTop.value + PROGRESS_MOTION_THRESHOLD_DP)
 
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.dispatchOnBackCancelled() }
         compose.waitForIdle()
 
         assertFalse(closed)
-        collapse.assertIsDisplayed()
-        assertEquals(restTop.value, collapse.getUnclippedBoundsInRoot().top.value, 0.5f)
+        transport.assertIsDisplayed()
+        assertEquals(restTop.value, transport.getUnclippedBoundsInRoot().top.value, 0.5f)
     }
 
     @Test
@@ -715,6 +717,112 @@ class ComposeBehaviorTest {
             .assertDoesNotExist()
     }
 
+    /**
+     * A scan hands the screen a whole new catalog: four freshly read windows,
+     * none of them refined, and a `loadedTabs` that calls all four loaded. The
+     * refinement is applied again from there — but only to the tab the listener
+     * is standing in, because that is the one the search fills.
+     *
+     * Asking whether the *query* changed cannot catch this: it did not change,
+     * the library underneath it did. So every other tab has to lose its claim
+     * to be loaded, or the one they wander back to answers with the whole
+     * library while their query is still sitting in the field. That is the
+     * original complaint, arrived at by a second road.
+     */
+    @Test
+    fun aScanLeavesNoTabAnsweringWithTheWholeLibraryWhileTheQueryStands() {
+        val slowSong = testTrack(rating = 3).copy(id = 1, title = "Slow Song")
+        val loudSong = testTrack(rating = 3).copy(
+            id = 2,
+            uri = "content://provider/document/loud.flac",
+            title = "Loud Song",
+        )
+        // What the scan finds the second time round. Its only job is to change
+        // the catalog's shape, so the screen cannot take up the windows it had.
+        val foundSong = testTrack(rating = 3).copy(
+            id = 3,
+            uri = "content://provider/document/found.flac",
+            title = "Loud Song Two",
+        )
+        val slowAlbum = testAlbumNamed("Slow Album")
+        val loudAlbum = testAlbumNamed("Loud Album")
+        var songs by mutableStateOf(listOf(slowSong, loudSong))
+
+        fun matching(text: String) = songs
+            .filter { text.isBlank() || it.title.contains(text, ignoreCase = true) }
+            .let { LibraryWindow(total = it.size.toLong(), rows = it, hasMore = false) }
+
+        fun matchingAlbums(text: String) = listOf(slowAlbum, loudAlbum)
+            .filter { text.isBlank() || it.title.contains(text, ignoreCase = true) }
+            .let { LibraryWindow(total = it.size.toLong(), rows = it, hasMore = false) }
+
+        var browse by mutableStateOf(
+            LibraryScreenState.Browse(
+                titles = matching(""),
+                albums = matchingAlbums(""),
+                artists = LibraryWindow.empty(),
+            ),
+        )
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                BrowseScreen(
+                    state = browse,
+                    playback = testPlayback(positionMs = 0).copy(
+                        currentIndex = null,
+                        currentTrackId = null,
+                        currentTrackUri = null,
+                    ),
+                    playbackSettingsRevision = 0,
+                    chooseFolder = {},
+                    rescan = {},
+                    themeSelection = nocturneForTests,
+                    selectTheme = {},
+                    searchTitles = { text, _ -> matching(text) },
+                    listAlbums = { matchingAlbums("") },
+                    searchAlbums = { text, _ -> matchingAlbums(text) },
+                    listArtists = { LibraryWindow.empty() },
+                    openAlbum = { error("Album navigation is outside this test") },
+                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    loadTrack = { _, deliver -> deliver(null) },
+                    playTracks = { _, _ -> },
+                    loadPlaybackSettings = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setEqualizerEnabled = { PlaybackSettingsUiState(false, true, emptyList()) },
+                    replaceEqualizerCurve = { PlaybackSettingsUiState(false, true, emptyList()) },
+                    setGaplessEnabled = { PlaybackSettingsUiState(false, true, emptyList()) },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Search library").performClick()
+        compose.onNodeWithText("Search titles").performTextInput("slow")
+        compose.waitForIdle()
+        compose.onNodeWithText("Loud Song").assertDoesNotExist()
+
+        compose.onNodeWithText("Albums").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Slow Album").assertIsDisplayed()
+        compose.onNodeWithText("Loud Album").assertDoesNotExist()
+
+        // The scan lands while Albums is the tab on screen.
+        songs = listOf(slowSong, loudSong, foundSong)
+        browse = LibraryScreenState.Browse(
+            titles = matching(""),
+            albums = matchingAlbums(""),
+            artists = LibraryWindow.empty(),
+        )
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Titles").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Search titles").assertTextContains("slow")
+        compose.onNodeWithText("Slow Song").assertIsDisplayed()
+        compose.onNodeWithText("Loud Song").assertDoesNotExist()
+        compose.onNodeWithText("Loud Song Two").assertDoesNotExist()
+    }
+
     private fun SemanticsNodeInteraction.progress(): Float =
         fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current
 
@@ -740,6 +848,15 @@ private fun testPlayback(positionMs: Long) = PlaybackUiState(
     positionMs = positionMs,
     durationMs = 100_000,
     playPauseLabel = "Play",
+)
+
+private fun testAlbumNamed(title: String) = LibraryAlbum(
+    title = title,
+    artist = "Band",
+    representativeUri = "content://provider/document/${title.lowercase().replace(' ', '-')}.flac",
+    trackCount = 4,
+    year = 2001,
+    totalDurationMs = 900_000,
 )
 
 private fun testTrack(rating: Int) = LibraryTrack(

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,6 +15,23 @@ import kotlin.math.abs
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [26])
 class CoverFogBitmapTest {
+    @Test
+    fun pending_replacement_keeps_the_previous_fog_until_the_new_one_is_ready() {
+        val state = CoverFogTransitionState()
+        val first = prepareCoverFogBitmap(null, Color.RED)
+        val second = prepareCoverFogBitmap(null, Color.BLUE)
+
+        state.adopt(first)
+        assertSame(first, state.pending().current)
+        state.beginReplacement()
+        assertSame(first, state.pending().current)
+        state.adopt(second)
+
+        assertSame(first, state.transition(0.4f).previous)
+        assertSame(second, state.transition(0.4f).current)
+        assertEquals(0.4f, state.transition(0.4f).fraction, 0f)
+    }
+
     @Test
     fun partially_faded_rim_keeps_the_source_colour() {
         val sourceColour = Color.rgb(240, 64, 16)

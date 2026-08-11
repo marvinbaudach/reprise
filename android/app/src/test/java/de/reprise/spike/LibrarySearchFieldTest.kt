@@ -19,7 +19,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w412dp-h916dp-port")
-class TitleSearchFieldTest {
+class LibrarySearchFieldTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
 
@@ -36,7 +36,12 @@ class TitleSearchFieldTest {
         compose.setContent {
             MaterialTheme {
                 if (visible) {
-                    TitleSearchField(searchText = "", search = {}, close = { visible = false })
+                    LibrarySearchField(
+                        tab = BrowseTab.TITLES,
+                        searchText = "",
+                        search = {},
+                        close = { visible = false },
+                    )
                 }
             }
         }
@@ -52,7 +57,8 @@ class TitleSearchFieldTest {
         var closeCount = 0
         compose.setContent {
             MaterialTheme {
-                TitleSearchField(
+                LibrarySearchField(
+                    tab = BrowseTab.TITLES,
                     searchText = searchText,
                     search = { searchText = it },
                     close = { closeCount += 1 },
@@ -77,7 +83,12 @@ class TitleSearchFieldTest {
     ) {
         compose.setContent {
             MaterialTheme {
-                TitleSearchField(searchText = searchText, search = search, close = close)
+                LibrarySearchField(
+                    tab = BrowseTab.TITLES,
+                    searchText = searchText,
+                    search = search,
+                    close = close,
+                )
             }
         }
     }

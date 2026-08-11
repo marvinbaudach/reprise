@@ -14,13 +14,13 @@ class BandEnvelopeTest {
         fogDecay.step(floatArrayOf(0f))
         assertEquals(0.041f, 1f - fogDecay.values[0], 0.001f)
 
-        val burstAttack = BandEnvelopes.burst(bandCount = 1, frameRateHz = 20)
-        burstAttack.step(floatArrayOf(1f))
-        assertEquals(0.713f, burstAttack.values[0], 0.001f)
-        val burstDecay = BandEnvelopes.burst(bandCount = 1, frameRateHz = 20)
-        burstDecay.adopt(floatArrayOf(1f))
-        burstDecay.step(floatArrayOf(0f))
-        assertEquals(0.204f, 1f - burstDecay.values[0], 0.001f)
+        val motionAttack = BandEnvelopes.motion(bandCount = 1, frameRateHz = 20)
+        motionAttack.step(floatArrayOf(1f))
+        assertEquals(0.713f, motionAttack.values[0], 0.001f)
+        val motionDecay = BandEnvelopes.motion(bandCount = 1, frameRateHz = 20)
+        motionDecay.adopt(floatArrayOf(1f))
+        motionDecay.step(floatArrayOf(0f))
+        assertEquals(0.204f, 1f - motionDecay.values[0], 0.001f)
     }
 
     @Test
@@ -36,7 +36,7 @@ class BandEnvelopeTest {
     }
 
     @Test
-    fun burst_attack_and_decay_reach_their_one_time_constant_levels() {
+    fun motion_attack_and_decay_reach_their_one_time_constant_levels() {
         val attack = BandEnvelopes(
             bandCount = 1,
             frameMs = 40f,

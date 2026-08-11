@@ -103,6 +103,7 @@ class TrackContextMenuTest {
                         surfaceLayout = SurfaceLayout.STACKED,
                         surfaceState = MobileSurfaceViewModel(),
                         albums = LibraryWindow(1, listOf(album), false),
+                        searchText = "",
                         selectedAlbum = null,
                         playback = PlaybackUiState(),
                         openAlbum = {},
