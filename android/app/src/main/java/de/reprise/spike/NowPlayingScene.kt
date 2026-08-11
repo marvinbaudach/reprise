@@ -54,6 +54,7 @@ import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import de.reprise.spike.ui.theme.NowPlayingOnBackdrop
+import de.reprise.spike.ui.theme.toComposeColor
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import kotlin.math.roundToInt
@@ -292,13 +293,6 @@ private fun rememberVisualSceneEngine(
     }
     return engine
 }
-
-private fun Int.toComposeColor(): Color = Color(
-    red = (this ushr 16 and 0xff) / 255f,
-    green = (this ushr 8 and 0xff) / 255f,
-    blue = (this and 0xff) / 255f,
-    alpha = (this ushr 24 and 0xff) / 255f,
-)
 
 /** The played-view wiring kept shared with its rendered-pixel verification. */
 internal fun DrawScope.drawPlayedNowPlayingFog(
@@ -573,7 +567,11 @@ internal fun DrawScope.drawPlayedVisualizer(
     val safeOpacity = opacity.coerceIn(0f, 1f)
     val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
     clipPath(path) {
-        drawRect(Color.Black.copy(alpha = safeOpacity), topLeft = rect.topLeft, size = rect.size)
+        drawRect(
+            AmbientTrueBlack.copy(alpha = safeOpacity),
+            topLeft = rect.topLeft,
+            size = rect.size,
+        )
         drawVisualizerScene(buffer = buffer, bounds = rect, opacity = safeOpacity)
     }
 }

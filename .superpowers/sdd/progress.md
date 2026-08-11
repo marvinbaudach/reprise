@@ -1344,3 +1344,7 @@ Task cover-shimmer-opacity-correction: complete pending visual re-measurement (t
 # Android FFI scan-order gate recovery
 
 Task 1: complete (this commit, base cd4f60aae0, projected four Android browse assertions onto stable ordered fields instead of scan-assigned ids, retained Core's documented lowest-id representative semantics by accepting either member of a multi-track fixture group, and left the fixture and production scan untouched; the four failures were reproduced on a btrfs TMPDIR before the complete Android FFI suite passed at 107/0 on both tmpfs and btrfs, format, strict locked all-target workspace Clippy, the complete locked workspace suite, diff and edited-file size checks passed, live audit reported only accepted RUSTSEC-2024-0436, and no display test or merge-readiness run was started)
+
+# Android theme gate recovery
+
+Task 1: complete (this commit, base a37fc4ad33, moved the Core ARGB and flat Float visualizer conversions into the existing Android theme boundary and replaced the visualizer scrim's raw black with the exact named theme value without changing any channel, alpha or composition; the Android theme lint was observed red on exactly the three origin/dev findings before reporting `Android theme lint passed`, the fresh JDK 21 Android run passed 291 tests across 57 suites with zero failures, errors or skips, the post-rebase control passed on current origin/dev, diff and edited-file size checks passed, and no display test or merge-readiness run was started)
