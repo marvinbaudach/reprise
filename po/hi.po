@@ -2718,9 +2718,8 @@ msgid "Releases"
 msgstr "रिलीज़"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:13
-#, fuzzy
 msgid "Release"
-msgstr "रिलीज़"
+msgstr "Release"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:15
 msgid "Type"

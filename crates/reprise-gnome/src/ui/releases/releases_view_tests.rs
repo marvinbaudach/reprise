@@ -129,6 +129,44 @@ fn insert_release(conn: &Db, mbid: &str, title: &str) {
         .unwrap();
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_32_deleted_release_memory_is_reflected_in_releases_view() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    insert_release(&conn, "deleted", "Deleted Album");
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (
+               id, path, title, artist, album_artist, album, added_at
+             ) VALUES (1, '/music/deleted.flac', 'Deleted Song',
+                       'Artist', 'Artist', 'Deleted Album', 0)",
+            [],
+        )
+        .unwrap();
+    reprise_core::queries::exclude_tracks_matching_paths(
+        &conn,
+        &[(1, PathBuf::from("/music/deleted.flac"))],
+        100,
+    )
+    .unwrap();
+
+    let view = ReleasesView::new(conn.clone(), PathBuf::new());
+    let window = gtk4::Window::new();
+    window.set_default_size(900, 600);
+    window.set_child(Some(view.root()));
+    window.present();
+    view.refresh();
+    crate::ui::source_context_surface::settle_layout();
+
+    assert_eq!(view.shared.model.store().n_items(), 0);
+    assert_eq!(
+        reprise_core::artist_news::hidden_release_count(&conn).unwrap(),
+        1
+    );
+}
+
 fn descendant_with_class<T: IsA<gtk4::Widget> + Clone + 'static>(
     widget: &gtk4::Widget,
     class: &str,

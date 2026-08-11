@@ -2690,9 +2690,8 @@ msgid "Releases"
 msgstr "发行"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:13
-#, fuzzy
 msgid "Release"
-msgstr "发行"
+msgstr "Release"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:15
 msgid "Type"
