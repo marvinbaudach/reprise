@@ -486,15 +486,18 @@ impl LibraryDoctorReviewPage {
         }
 
         {
-            let callback_state = state.clone();
-            let handler = header.select_all.connect_toggled(move |button| {
-                if button.is_active() {
-                    callback_state.session.borrow_mut().all();
-                } else {
-                    callback_state.session.borrow_mut().none();
+            let handler = header.select_all.connect_toggled(glib::clone!(
+                #[weak]
+                state,
+                move |button| {
+                    if button.is_active() {
+                        state.session.borrow_mut().all();
+                    } else {
+                        state.session.borrow_mut().none();
+                    }
+                    state.refresh();
                 }
-                callback_state.refresh();
-            });
+            ));
             *state.select_all_handler.borrow_mut() = Some(handler);
         }
         let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -552,13 +555,16 @@ impl LibraryDoctorReviewPage {
     }
 
     pub(super) fn connect_apply(&self, callback: impl Fn(DoctorApplyPlan) + 'static) {
-        let state = self.state.clone();
-        self.state.apply.connect_clicked(move |_| {
-            let plan = state.session.borrow().freeze_plan();
-            if plan.tag_change_count() > 0 {
-                callback(plan);
+        self.state.apply.connect_clicked(glib::clone!(
+            #[weak(rename_to = state)]
+            self.state,
+            move |_| {
+                let plan = state.session.borrow().freeze_plan();
+                if plan.tag_change_count() > 0 {
+                    callback(plan);
+                }
             }
-        });
+        ));
     }
 
     pub(super) fn set_running(&self, running: bool) {

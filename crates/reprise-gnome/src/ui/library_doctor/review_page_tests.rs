@@ -194,6 +194,23 @@ fn doc_7c_the_review_page_carries_no_provider_toggle() {
 }
 
 #[test]
+fn review_widget_handlers_hold_review_state_weakly() {
+    let source = include_str!("review_page.rs");
+
+    assert!(source.contains(
+        "header.select_all.connect_toggled(glib::clone!(\n                #[weak]\n                state,"
+    ));
+    assert!(source.contains(
+        "self.state.apply.connect_clicked(glib::clone!(\n            #[weak(rename_to = state)]\n            self.state,"
+    ));
+    assert!(!source.contains(
+        "let callback_state = state.clone();\n            let handler = header.select_all.connect_toggled"
+    ));
+    assert!(!source
+        .contains("let state = self.state.clone();\n        self.state.apply.connect_clicked"));
+}
+
+#[test]
 fn doc_9b_every_reviewable_row_starts_selected() {
     let mut source = scan();
     let mut capped = source.proposals[0].clone();
