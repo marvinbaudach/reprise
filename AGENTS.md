@@ -169,7 +169,7 @@ frontend and to the packaging metadata. Its gates are
 and `check-ai-hygiene.sh`. They warn while a rule is `[planned]` and block
 once it is `[active]`.
 
-## File ownership — Flathub readiness
+## Active file ownership — Flathub readiness
 
 Four strands run in parallel. Do not edit files owned by another strand.
 
