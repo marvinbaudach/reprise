@@ -10,6 +10,18 @@ use super::{
 /// review row promises has to be readable inside it.
 const DESKTOP_WIDTH: i32 = 1760;
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_3b_the_column_header_and_rows_share_horizontal_alignment() {
+    gtk4::init().unwrap();
+    let header = ReviewHeader::new();
+    let row = build_row(&header.groups);
+
+    assert_eq!(header.root.margin_start(), 28);
+    assert_eq!(header.root.margin_start(), row.root.margin_start());
+    assert_eq!(header.root.margin_end(), row.root.margin_end());
+}
+
 /// A label that ellipsizes still asks for its whole text unless something caps
 /// its natural width. Bound into a horizontal size group, that request becomes
 /// the column's width for every row — and the columns to its right leave the

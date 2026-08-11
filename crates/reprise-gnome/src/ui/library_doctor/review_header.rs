@@ -83,8 +83,8 @@ pub(super) struct ReviewHeader {
 impl ReviewHeader {
     pub(super) fn new() -> Self {
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        root.set_margin_start(12);
-        root.set_margin_end(12);
+        root.set_margin_start(28);
+        root.set_margin_end(28);
         root.add_css_class("dim-label");
         let groups = ReviewColumnGroups::new();
 
