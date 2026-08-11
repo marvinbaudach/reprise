@@ -2,7 +2,7 @@
 slug: queue-section-preseed
 worktree: /home/marvin/Projects/reprise/.worktrees/list-geometry-service
 branch: feat/list-geometry-service
-phase: implemented-awaiting-display
+phase: refactored
 codex_session:
 created: 2026-08-10
 ---
@@ -88,7 +88,14 @@ must never shrink an already larger live range.
 
 This does not promise an exact first-ever restore from an empty database. It
 does ensure that the estimate cannot make the old behavior worse; a settled
-visit replaces it with measured values.
+visit is expected to replace it with measured values, but that replacement
+has not itself been exercised by a passing run — see "Verification record —
+real Xvfb acceptance run" below. As implemented and as far as this plan has
+verified, B4 is not merely a defensive edge case for a "truly cold" restore:
+it is the branch that has actually carried QUE-1's no-top-visit guarantee in
+the one real display run this plan has produced. The persisted/measured
+cache in B2/B3 remains a nice-to-have layered on top of it until a run
+demonstrates the warm-cache path.
 
 ### B5. Settled measurement remains live
 
@@ -179,6 +186,15 @@ session, `GDK_BACKEND=x11`, unset `WAYLAND_DISPLAY`, and `fakesink`, following
    sample minimum near 507. A green counterprobe means the positive test is
    insensitive and proves nothing.
 
+   Observed in the real Xvfb run: with pre-seed, `samples(... first=37454
+   min=37454 max=37454)` — the range is correct from the first sample, never
+   dips to the old anchor. Without it (`REPRISE_NO_PRESEED=1`), `samples(...
+   first=507 min=507)` — the original bug reproduces exactly. The red
+   counterprobe is what makes the green run meaningful. The same run's
+   `QUEUEPROBE preseed header_source=Some(Assumed)` line shows the passing
+   run went through the B4 fail-closed branch, not a measured cache read; see
+   "Verification record — real Xvfb acceptance run" below.
+
 3. This exact test must execute once and pass:
 
    ```text
@@ -221,8 +237,15 @@ After every Xvfb run, execute `xvfb-orphan-gc --apply`.
 
 ## Remaining risks and manual checks
 
-- A truly cold, immediate Queue restore with no persisted geometry still has
-  only a conservative lower bound. A dedicated display test may be warranted.
+- The persisted, measured header-height cache (B2/B3) has never been
+  exercised by a passing run. The one real display acceptance run went
+  through the B4 assumed-token branch instead (`header_source=Some(Assumed)`;
+  see "Verification record — real Xvfb acceptance run" below). This is not
+  the rarer "truly cold, immediate restore" corner case it was originally
+  framed as here — it is the only state this plan has actually verified. A
+  dedicated display test that populates the cache, forces a fresh restore
+  that reads it back, and confirms `header_source=Some(Measured)` is still
+  needed before B2/B3 can be called verified.
 - The 36 px token is based on the supplied 34 px measurement; uniform rendered
   height under the actual theme is unverified until the display probe runs.
 - The visible header growth requires screenshot review.
@@ -258,3 +281,56 @@ Existing unrelated gate failures remain:
   reference replaced NR-20 and NR-25; it reports no QUE-1 gap;
 - `scripts/ci-quality.sh` was not run because it necessarily executes display
   suites and also requires a clean, up-to-date integration worktree.
+
+## Verification record — real Xvfb acceptance run
+
+A later real Xvfb run closed the sandbox gap for the acceptance test and its
+required counterprobe (items 1–2 of "Required display acceptance" above),
+but not for the warm-cache path described in B2/B3.
+
+Observed, exactly as printed by the probes:
+
+```text
+QUEUEPROBE preseed header_source=Some(Assumed)
+QUEUEPROBE ... samples(... first=37454 min=37454 max=37454)
+```
+
+with pre-seed enabled — the range is correct from the first sample and never
+dips toward the old anchor. With `REPRISE_NO_PRESEED=1` the same test failed
+as required:
+
+```text
+QUEUEPROBE ... samples(... first=507 min=507)
+```
+
+reproducing the original bug exactly. This red counterprobe is what makes the
+green run meaningful: without it, a passing test would be indistinguishable
+from a test that never exercises the pre-seed path at all.
+
+The decisive line is `header_source=Some(Assumed)`. The one and only green
+acceptance run this plan has produced went through the B4 fail-closed
+assumed-token branch, not through the persisted, measured header-height cache
+described in B2/B3. No run recorded in this document — sandbox or display —
+has produced `header_source=Some(Measured)` (or equivalent) at return
+pre-seed.
+
+Consequently, read this plan with the following correction in mind:
+
+- **B4 (the assumed-token fallback) is what actually carries the feature
+  today.** It is not merely a defensive edge case for a "truly cold" restore;
+  it is the only mechanism verified, by a real display run, to make QUE-1's
+  no-top-visit guarantee hold.
+- **B2/B3 (the persisted, measured header-height cache) is a nice-to-have,
+  not load-bearing.** The design in those sections is sound and the unit
+  tests for its GTK-free pieces pass (see T2/T3 above), but the end-to-end
+  warm path — persist a settled measurement, then read it back on a later
+  restore — has never been exercised by any test run recorded in this
+  document.
+- Any sentence elsewhere in this document that reads as if the measured cache
+  was the mechanism exercised by the acceptance test should be read through
+  this correction; the acceptance evidence available today only supports the
+  assumed-token branch.
+
+A dedicated display test that forces a warm-cache read (populate the cache,
+force or simulate a fresh restore, assert `header_source=Some(Measured)`) is
+still needed before B2/B3 can be called verified.
