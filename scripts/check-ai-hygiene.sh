@@ -19,8 +19,9 @@ n=$({ grep -rnE --include='*.rs' "$banner" "$src" 2>/dev/null || true; } | wc -l
 (( n == 0 )) || report_violation GP-19 "$n banner comment block(s):
 $(grep -rnE --include='*.rs' "$banner" "$src" | head -10)"
 
-# GP-19c — emoji in comments. The range covers the pictographic planes.
-emoji='^\s*//.*[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]'
+# GP-19c — decorative emoji in comments. The listed characters document real
+# UI symbols and are not decorative prose.
+emoji='^\s*//.*(?:(?![★☆✓✕⏏🗑✦])[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}])'
 n=$({ grep -rnPc --include='*.rs' "$emoji" "$src" 2>/dev/null || true; } | awk -F: '{s+=$NF} END {print s+0}')
 (( n == 0 )) || report_violation GP-19 "$n comment(s) contain emoji:
 $(grep -rnP --include='*.rs' "$emoji" "$src" | head -10)"
