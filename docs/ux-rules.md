@@ -2347,7 +2347,7 @@ the panel).
   links rather than receiving the `Bandcamp` label. The cell tooltip exposes
   the exact selected target, and the button's accessible label matches its
   visible label.
-- **NR-31** [active] [gtk] — replaces NR-25. The gap view's fixed trailing
+- **NR-31** [replaced by NR-33] [gtk] — replaces NR-25. The gap view's fixed trailing
   action column is named `Link` and follows NR-30; its fixed cover column,
   named text columns, sorting, filters, counts, activation semantics and zero
   result recovery remain exactly as specified by NR-25.
@@ -2358,6 +2358,11 @@ the panel).
   learns of it later. Files that merely go missing never trigger this.
   Restoring the release through "Show again" forgets it, and so does
   re-acquiring it.
+- **NR-33** [active] [gtk] — replaces NR-31. The gap view's columns are
+  `Cover · Date · Release · Artist · Type · Status · Link`; the second text
+  column is named `Release` because its rows are albums, EPs and singles, not
+  songs. Sorting, filters, counts, activation semantics, the trailing action
+  column and zero-result recovery remain exactly as NR-31 specified.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
