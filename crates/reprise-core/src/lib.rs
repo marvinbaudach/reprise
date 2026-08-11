@@ -64,7 +64,6 @@ mod db_releases_view_scope;
 mod db_spectrogram;
 mod db_sync_log;
 mod db_tag_write_jobs;
-#[allow(dead_code)] // Packages 2 and 3 wire the Package 1 foundation into production paths.
 mod deleted_releases;
 pub mod device_sync;
 pub mod equalizer;

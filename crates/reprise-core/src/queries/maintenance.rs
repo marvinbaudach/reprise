@@ -4,18 +4,16 @@
 //! pure move, no behavior change.
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::db::Db;
 use crate::device_sync::SyncTrack;
-use crate::library::playlists;
 use crate::library::source::{
     LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
 };
-use crate::models::MissingReason;
 use rusqlite::{Connection, OptionalExtension};
 
-use super::clauses::{MISSING, PRESENT};
+use super::clauses::PRESENT;
 use super::TrackSummary;
 
 /// Resolves one track id to its `TrackSummary` — the queue's per-track
@@ -389,6 +387,20 @@ pub fn remove_tracks_matching_paths(
         tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
         RemoveGuard::Any,
         None,
+        false,
+    )
+}
+
+pub(crate) fn remove_tracks_matching_paths_remembering_releases(
+    db: &Db,
+    tracks: &[(i64, PathBuf)],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    remove_track_requests_impl(
+        db.conn(),
+        tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
+        RemoveGuard::Any,
+        None,
+        true,
     )
 }
 
@@ -407,6 +419,7 @@ pub fn exclude_tracks_matching_paths(
         tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
         RemoveGuard::Any,
         Some(excluded_at),
+        false,
     )
 }
 
@@ -457,103 +470,33 @@ pub(crate) fn remove_tracks_impl(
     ids: &[i64],
     guard: RemoveGuard,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard, None)
+    // Deliberately no release memory here: this shared primitive also serves
+    // scanner-driven missing cleanup and unattended auto-clean.
+    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard, None, false)
 }
 
 fn remove_track_requests_impl<'a>(
     conn: &Connection,
-    requests: impl IntoIterator<Item = (i64, Option<&'a Path>)>,
+    requests: impl IntoIterator<Item = (i64, Option<&'a std::path::Path>)>,
     guard: RemoveGuard,
     exclusion_time: Option<i64>,
+    remember_deletion: bool,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    let requests = requests.into_iter().collect::<Vec<_>>();
-    if requests.is_empty() {
-        return Ok(Vec::new());
-    }
-    // `unchecked_transaction()`: this crate's `Db` handle wraps a plain
-    // `rusqlite::Connection` without interior mutability, so the compile-time
-    // `&mut Connection` transaction guard (`Connection::transaction`) can
-    // never be obtained through it — see `docs/adr/002-core-db-handle.md`.
-    // Nesting is the risk this gives up: verified that neither
-    // `crate::library::exclusions::record_track` nor
-    // `playlists::renumber_positions` — the only two calls made against
-    // `&tx` inside this transaction — open a transaction of their own.
-    let tx = conn.unchecked_transaction()?;
-    let mut removed = Vec::with_capacity(requests.len());
-    for (id, expected_path) in requests {
-        if let (Some(excluded_at), Some(expected_path)) = (exclusion_time, expected_path) {
-            if !crate::library::exclusions::record_track(&tx, id, expected_path, excluded_at)? {
-                continue;
-            }
-        }
-        let mut stmt =
-            tx.prepare("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1")?;
-        let affected_playlists: Vec<i64> = stmt
-            .query_map(rusqlite::params![id], |r| r.get(0))?
-            .collect::<Result<_, _>>()?;
-        drop(stmt);
+    super::maintenance_delete::remove_track_requests_impl(
+        conn,
+        requests,
+        guard,
+        exclusion_time,
+        remember_deletion,
+    )
+}
 
-        let deleted = match (guard, expected_path) {
-            (RemoveGuard::Any, Some(expected_path)) => tx.execute(
-                "DELETE FROM tracks WHERE id = ?1 AND path = ?2",
-                rusqlite::params![id, expected_path.to_string_lossy()],
-            )?,
-            (RemoveGuard::Any, None) => {
-                unreachable!("RemoveGuard::Any is only ever paired with a path-identity check")
-            }
-            (RemoveGuard::MissingOnly, None) => tx.execute(
-                &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING}"),
-                rusqlite::params![id],
-            )?,
-            (RemoveGuard::TombstonedOnly, None) => tx.execute(
-                "DELETE FROM tracks WHERE id = ?1 AND removed_at IS NOT NULL",
-                rusqlite::params![id],
-            )?,
-            (
-                RemoveGuard::AutoCleanEligible {
-                    grace_period_seconds,
-                    now,
-                },
-                None,
-            ) => {
-                // Read inside this transaction, not handed down from the
-                // caller: a scan that advanced the clock between the
-                // caller's SELECT and here is exactly what this re-check
-                // exists to catch.
-                let Some(armed_at) = crate::library::settings::get_auto_clean_armed_at_in(&tx)?
-                else {
-                    // Disarmed under us. An unarmed clock makes the feature
-                    // inert everywhere else (`auto_clean_eligible` returns
-                    // nothing), so it must not delete here either.
-                    continue;
-                };
-                let deadline = super::issues::auto_clean_deadline_clause(3, 4, 5);
-                tx.execute(
-                    &format!(
-                        "DELETE FROM tracks WHERE id = ?1 AND {MISSING} \
-                         AND missing_reason = ?2 AND {deadline}"
-                    ),
-                    rusqlite::params![
-                        id,
-                        MissingReason::Deleted.as_str(),
-                        armed_at,
-                        grace_period_seconds,
-                        now
-                    ],
-                )?
-            }
-            (_, Some(_)) => unreachable!("path identity is only valid with RemoveGuard::Any"),
-        };
-        if deleted == 0 {
-            continue;
-        }
-        removed.push(id);
-        for playlist_id in affected_playlists {
-            playlists::renumber_positions(&tx, playlist_id)?;
-        }
-    }
-    tx.commit()?;
-    Ok(removed)
+fn remove_tracks_impl_remembering_releases(
+    conn: &Connection,
+    ids: &[i64],
+    guard: RemoveGuard,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard, None, true)
 }
 
 /// Auto-clean's own DATABASE-ONLY removal (Finding 1, review pass on Task
@@ -768,7 +711,7 @@ pub fn purge_tombstones(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
             .collect::<Result<Vec<i64>, _>>()?;
         ids
     };
-    remove_tracks_impl(conn, &ids, RemoveGuard::TombstonedOnly)
+    remove_tracks_impl_remembering_releases(conn, &ids, RemoveGuard::TombstonedOnly)
 }
 
 /// Bare count of rows in `import_errors` (the last scan's import failures) —
