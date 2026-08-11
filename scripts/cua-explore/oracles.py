@@ -33,6 +33,9 @@ GEOMETRY_EPSILON_PX = 6.0
 # a visible waiting state rather than silence.
 SLOW_FEEDBACK_MS = 250
 SILENT_WAIT_MS = 750
+WAITING_EXPLANATION_CODES = frozenset(
+    {"no-accessible-action", "click-no-visible-effect", "suspected-no-handler"}
+)
 
 
 def element_flag(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
@@ -209,6 +212,10 @@ class ActionEvidence:
 
     @classmethod
     def scroll(cls, direction: str, **kwargs: Any) -> "ActionEvidence":
+        # The semantic state signature deliberately excludes geometry, so a
+        # scroll can never satisfy its generic change test. Scroll behavior is
+        # judged from measured row frames by _scroll_findings instead.
+        kwargs.setdefault("expect_effect", "none")
         return cls(kind="scroll", direction=direction, **kwargs)
 
     @classmethod
@@ -434,7 +441,11 @@ class OracleEngine:
                         "The settled view still presents an offline-authored status after reconnect.",
                     )
                 )
-        findings.extend(self._timing_findings(action, (after, *settled)))
+        findings.extend(
+            self._timing_findings(
+                action, (after, *settled), prior_findings=tuple(findings)
+            )
+        )
         if action.kind == "wait" and settled:
             findings.extend(self._layout_findings((before, *settled)))
         return self._deduplicate(findings)
@@ -584,7 +595,11 @@ class OracleEngine:
         return findings
 
     def _timing_findings(
-        self, action: ActionEvidence, timeline: Sequence[Snapshot]
+        self,
+        action: ActionEvidence,
+        timeline: Sequence[Snapshot],
+        *,
+        prior_findings: Sequence[Finding] = (),
     ) -> list[Finding]:
         findings = []
         # Every raw number here is wall time that contains the harness itself:
@@ -613,14 +628,24 @@ class OracleEngine:
                 )
             )
         waiting_visible = any(self._has_waiting_state(snapshot) for snapshot in timeline)
-        harness_ms = action.settle_delay_ms + sum(action.snapshot_ms)
+        harness_ms = (
+            action.elapsed_ms + action.settle_delay_ms + sum(action.snapshot_ms)
+        )
         app_observation_ms = max(0, action.observation_ms - harness_ms)
         waited_without_feedback = (
             action.expect_effect == "required"
             and action.first_change_ms is None
             and app_observation_ms >= SILENT_WAIT_MS
         )
-        if (action.expect_status or waited_without_feedback) and not waiting_visible:
+        waiting_already_explained = any(
+            finding.code in WAITING_EXPLANATION_CODES for finding in prior_findings
+        )
+        if (
+            action.dispatched
+            and (action.expect_status or waited_without_feedback)
+            and not waiting_visible
+            and not waiting_already_explained
+        ):
             findings.append(
                 Finding(
                     "missing-waiting-feedback",

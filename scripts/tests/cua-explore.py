@@ -539,7 +539,7 @@ class TimingAttributionTests(unittest.TestCase):
     def test_an_app_that_really_keeps_us_waiting_is_still_reported(self) -> None:
         # 850 ms of deliberate sleep plus 1915 ms of round-trips leaves the app
         # itself accountable for a full second here.
-        codes = self._codes(observation_ms=3800)
+        codes = self._codes(kind="type", observation_ms=3800)
 
         self.assertIn("missing-waiting-feedback", codes)
 
@@ -710,10 +710,11 @@ class UxOracleTests(unittest.TestCase):
         after = snapshot([element(2, "Refresh")], state_id="after")
 
         findings = self.engine.analyze(
-            ActionEvidence.activate(
-                "Refresh",
+            ActionEvidence(
+                kind="type",
+                target_label="Refresh",
                 effect="confirmed",
-                elapsed_ms=1400,
+                elapsed_ms=5,
                 observation_ms=1400,
                 first_change_ms=None,
             ),

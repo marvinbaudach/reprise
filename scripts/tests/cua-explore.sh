@@ -20,6 +20,7 @@ python3 scripts/tests/cua-explore-target-resolution.py
 python3 scripts/tests/cua-explore-driver-contract.py
 python3 scripts/tests/cua-explore-capture-degradation.py
 python3 scripts/tests/cua-explore-stall-attribution.py
+python3 scripts/tests/cua-explore-timing-feedback.py
 python3 scripts/tests/cua-explore-window.py
 python3 scripts/tests/cua-explore-outcome.py
 python3 scripts/tests/cua-explore-aggregate.py
