@@ -133,7 +133,7 @@ fn v34_adds_episode_tombstones_and_dismissals_with_subscription_cascade() {
 }
 
 #[test]
-fn v40_adds_download_sizes_and_rss_phone_sync_defaults() {
+fn v40_adds_download_sizes() {
     let conn = db::open(None).unwrap();
     db::migrate_connection(&conn).unwrap();
     conn.execute(
@@ -151,13 +151,6 @@ fn v40_adds_download_sizes_and_rss_phone_sync_defaults() {
     )
     .unwrap();
 
-    let sync_to_phone = conn
-        .query_row(
-            "SELECT sync_to_phone FROM podcast_subscriptions WHERE id = 1",
-            [],
-            |row| row.get::<_, bool>(0),
-        )
-        .unwrap();
     let downloaded_bytes = conn
         .query_row(
             "SELECT downloaded_bytes FROM podcast_episodes WHERE id = 1",
@@ -166,51 +159,11 @@ fn v40_adds_download_sizes_and_rss_phone_sync_defaults() {
         )
         .unwrap();
 
-    assert!(!sync_to_phone);
     assert_eq!(downloaded_bytes, None);
-}
-
-#[test]
-fn v47_adds_a_nullable_per_channel_latest_override_defaulting_to_no_override() {
-    let conn = db::open(None).unwrap();
-    db::migrate_connection(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO podcast_subscriptions
-         (id, kind, feed_url, title, added_at)
-         VALUES (1, 'youtube', 'https://example.test/channel', 'Channel', 1)",
-        [],
-    )
-    .unwrap();
-
-    let latest_per_channel = conn
-        .query_row(
-            "SELECT latest_per_channel FROM podcast_subscriptions WHERE id = 1",
-            [],
-            |row| row.get::<_, Option<i64>>(0),
-        )
-        .unwrap();
-
-    assert_eq!(
-        latest_per_channel, None,
-        "a fresh subscription has no override — it falls back to the global default"
-    );
-
-    conn.execute(
-        "UPDATE podcast_subscriptions SET latest_per_channel = 0 WHERE id = 1",
-        [],
-    )
-    .unwrap();
-    let unlimited = conn
-        .query_row(
-            "SELECT latest_per_channel FROM podcast_subscriptions WHERE id = 1",
-            [],
-            |row| row.get::<_, Option<i64>>(0),
-        )
-        .unwrap();
-    assert_eq!(
-        unlimited,
-        Some(0),
-        "an explicit 0 must round-trip as 0 (unlimited), not collapse back to NULL (no override)"
+    assert!(
+        !has_column(&conn, "podcast_subscriptions", "sync_to_phone").unwrap(),
+        "v40's other column carried the phone-sync intent that `MTP-54` \
+         retired; migrate_v68 drops it again on the way to the current schema"
     );
 }
 
@@ -310,14 +263,6 @@ fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync(
         )
         .unwrap();
     assert_eq!(device_name, "Phone");
-    let sync_to_phone: bool = conn
-        .query_row(
-            "SELECT sync_to_phone FROM podcast_subscriptions WHERE id = 1",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(!sync_to_phone);
     assert_eq!(
         conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
@@ -578,17 +523,17 @@ fn v59_adds_nullable_media_category_without_backfilling_existing_episodes() {
 // migration here (v34, v43, v47) guards on its own column as well as on the
 // version and therefore repairs such a database on the next start. v40 guarded
 // on the version alone, so the columns stayed missing forever and every
-// subscription query failed with "no such column: sync_to_phone" — on a real
-// installation, on both the Podcasts and the YouTube page.
+// subscription query failed with "no such column" — on a real installation, on
+// both the Podcasts and the YouTube page. Repair by column stops where a later
+// migration deliberately drops one: v40's `sync_to_phone`, v46's
+// `prepare_before_sync` and v47's `latest_per_channel` are all torn down by
+// v68, so past v68 they must stay gone rather than be added back every start.
 #[test]
 fn v40_repairs_a_database_that_carries_the_version_without_the_columns() {
     let conn = db::open(None).unwrap();
     db::migrate_connection(&conn).unwrap();
-    conn.execute_batch(
-        "ALTER TABLE podcast_subscriptions DROP COLUMN sync_to_phone;
-         ALTER TABLE podcast_episodes DROP COLUMN downloaded_bytes;",
-    )
-    .unwrap();
+    conn.execute_batch("ALTER TABLE podcast_episodes DROP COLUMN downloaded_bytes;")
+        .unwrap();
     let version_before: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
@@ -600,12 +545,13 @@ fn v40_repairs_a_database_that_carries_the_version_without_the_columns() {
     db::migrate_connection(&conn).unwrap();
 
     assert!(
-        has_column(&conn, "podcast_subscriptions", "sync_to_phone").unwrap(),
+        has_column(&conn, "podcast_episodes", "downloaded_bytes").unwrap(),
         "the migration must add its own column back rather than trust the version"
     );
     assert!(
-        has_column(&conn, "podcast_episodes", "downloaded_bytes").unwrap(),
-        "the migration must add its own column back rather than trust the version"
+        !has_column(&conn, "podcast_subscriptions", "sync_to_phone").unwrap(),
+        "v40's other column must NOT be repaired past v68, which drops it: \
+         repairing by column alone would add and drop it on every start"
     );
     let version_after: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))

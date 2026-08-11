@@ -64,16 +64,10 @@ pub struct SubscriptionRow {
     pub last_fetch_at: Option<i64>,
     pub last_outcome: Option<String>,
     pub auto_download: bool,
-    /// `MTP-36`: this channel's override of the global "latest N per
-    /// channel" default, or `None` to use the default
-    /// (`podcasts::config::PodcastConfig::latest_per_channel_default`). An
-    /// explicit `Some(0)` means unlimited, not "no override".
-    pub latest_per_channel: Option<i64>,
     /// `POD-5`: this channel's override of the global "keep N downloaded"
     /// default, or `None` to use the default
     /// (`podcasts::config::PodcastConfig::keep_downloaded_default`). An
-    /// explicit `Some(0)` means unlimited, not "no override" — same shape as
-    /// `latest_per_channel` (`O-5`).
+    /// explicit `Some(0)` means unlimited, not "no override" (`O-5`).
     pub keep_downloaded: Option<i64>,
     pub added_at: i64,
     pub removed_at: Option<i64>,

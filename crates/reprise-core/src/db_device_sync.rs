@@ -190,10 +190,11 @@ pub(crate) fn migrate_v44(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
-// Design 7f (`MTP-43`): "Download missing files before syncing". Per-device,
-// beside `sync_automatically`/`remove_deleted` — the stored default is
-// always `true`; `preparation::plan_preparation` is the only place that
-// decides offline/metered overrides, never this column.
+// Historical shape only (design 7f, `MTP-43`): "Download missing files before
+// syncing", per-device beside `sync_automatically`/`remove_deleted`. Its only
+// reader was `device_sync::preparation::plan_preparation`, which decided the
+// offline/metered overrides; that module is gone with the two-step
+// preparation flow, so `migrate_v68` drops the column again.
 const ADD_PREPARE_BEFORE_SYNC: &str = r#"
 ALTER TABLE device_settings
   ADD COLUMN prepare_before_sync INTEGER NOT NULL DEFAULT 1;
@@ -201,6 +202,9 @@ ALTER TABLE device_settings
 
 pub(crate) fn migrate_v46(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 68 {
+        return Ok(());
+    }
     let has_prepare_before_sync = has_column(conn, "device_settings", "prepare_before_sync")?;
     if version >= 46 && has_prepare_before_sync {
         return Ok(());
@@ -217,9 +221,26 @@ pub(crate) fn migrate_v46(conn: &Connection) -> Result<(), rusqlite::Error> {
 /// target exactly as configured. Files already on the device are never
 /// touched; only local inventory rows under the retired target paths leave the
 /// database so Reprise no longer claims to manage them.
+///
+/// It also drops three columns whose last reader left with those targets:
+/// `podcast_subscriptions.sync_to_phone` (`MTP-40`),
+/// `device_settings.prepare_before_sync` (`MTP-43`) and
+/// `podcast_subscriptions.latest_per_channel` (`MTP-36`). Each drop is
+/// guarded by its own column the way the sibling migrations guard their
+/// additions, so a database that already ran an earlier build of v68 — the
+/// version has never shipped — is repaired on the next start instead of
+/// keeping the columns forever behind a satisfied version check.
 pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 68 {
+    let subscriptions_sync_to_phone = has_column(conn, "podcast_subscriptions", "sync_to_phone")?;
+    let settings_prepare_before_sync = has_column(conn, "device_settings", "prepare_before_sync")?;
+    let subscriptions_latest_per_channel =
+        has_column(conn, "podcast_subscriptions", "latest_per_channel")?;
+    if version >= 68
+        && !subscriptions_sync_to_phone
+        && !settings_prepare_before_sync
+        && !subscriptions_latest_per_channel
+    {
         return Ok(());
     }
     let target_has_kind = has_column(conn, "device_sync_targets", "kind")?;
@@ -273,6 +294,17 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
     if episodes_have_wanted {
         transaction.execute_batch("ALTER TABLE podcast_episodes DROP COLUMN wanted_on_device;")?;
     }
+    if subscriptions_sync_to_phone {
+        transaction
+            .execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN sync_to_phone;")?;
+    }
+    if settings_prepare_before_sync {
+        transaction.execute_batch("ALTER TABLE device_settings DROP COLUMN prepare_before_sync;")?;
+    }
+    if subscriptions_latest_per_channel {
+        transaction
+            .execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN latest_per_channel;")?;
+    }
     transaction.pragma_update(None, "user_version", 68)?;
     transaction.commit()
 }
@@ -311,6 +343,18 @@ mod tests {
                id INTEGER PRIMARY KEY,
                title TEXT NOT NULL,
                wanted_on_device INTEGER NOT NULL DEFAULT 0
+             );
+             CREATE TABLE podcast_subscriptions (
+               id INTEGER PRIMARY KEY,
+               title TEXT NOT NULL,
+               keep_downloaded INTEGER,
+               sync_to_phone INTEGER NOT NULL DEFAULT 0,
+               latest_per_channel INTEGER
+             );
+             CREATE TABLE device_settings (
+               device_serial TEXT PRIMARY KEY,
+               device_name TEXT NOT NULL,
+               prepare_before_sync INTEGER NOT NULL DEFAULT 1
              );
              CREATE TABLE device_files (
                device_serial TEXT NOT NULL,
@@ -393,6 +437,91 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, 68);
+    }
+
+    #[test]
+    fn migration_v67_to_v68_drops_the_columns_that_lost_their_last_reader() {
+        let conn = open_v67_device_sync_shape();
+        conn.execute_batch(
+            "INSERT INTO podcast_subscriptions VALUES (1, 'Show', 5, 1, 3);
+             INSERT INTO device_settings VALUES ('pixel', 'Pixel', 1);",
+        )
+        .unwrap();
+
+        migrate_v68(&conn).unwrap();
+
+        assert!(!has_column(&conn, "podcast_subscriptions", "sync_to_phone").unwrap());
+        assert!(!has_column(&conn, "device_settings", "prepare_before_sync").unwrap());
+        assert!(!has_column(&conn, "podcast_subscriptions", "latest_per_channel").unwrap());
+        let surviving: (String, Option<i64>) = conn
+            .query_row(
+                "SELECT title, keep_downloaded FROM podcast_subscriptions WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            surviving,
+            ("Show".into(), Some(5)),
+            "the desktop's own per-channel settings must survive untouched — \
+             only the phone-sync columns go"
+        );
+        let device_name: String = conn
+            .query_row("SELECT device_name FROM device_settings", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(device_name, "Pixel");
+    }
+
+    #[test]
+    fn migration_v68_repairs_a_database_that_already_ran_an_earlier_v68() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE device_sync_targets (
+               device_serial TEXT PRIMARY KEY,
+               storage_id INTEGER,
+               path TEXT NOT NULL,
+               enabled INTEGER NOT NULL DEFAULT 1
+             );
+             INSERT INTO device_sync_targets VALUES
+               ('pixel', 65537, '/Music/Reprise', 1);
+             CREATE TABLE podcast_subscriptions (
+               id INTEGER PRIMARY KEY,
+               title TEXT NOT NULL,
+               sync_to_phone INTEGER NOT NULL DEFAULT 0,
+               latest_per_channel INTEGER
+             );
+             CREATE TABLE device_settings (
+               device_serial TEXT PRIMARY KEY,
+               prepare_before_sync INTEGER NOT NULL DEFAULT 1
+             );
+             PRAGMA user_version = 68;",
+        )
+        .unwrap();
+
+        migrate_v68(&conn).unwrap();
+
+        assert!(
+            !has_column(&conn, "podcast_subscriptions", "sync_to_phone").unwrap(),
+            "v68 has never shipped, so a database that ran an earlier build of \
+             it must still lose the columns rather than keep them forever \
+             behind a satisfied version check"
+        );
+        assert!(!has_column(&conn, "device_settings", "prepare_before_sync").unwrap());
+        assert!(!has_column(&conn, "podcast_subscriptions", "latest_per_channel").unwrap());
+        let target: (Option<i64>, String, bool) = conn
+            .query_row(
+                "SELECT storage_id, path, enabled FROM device_sync_targets",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            target,
+            (Some(65537), "/Music/Reprise".into(), true),
+            "re-entering v68 must not disturb the playlists target it already settled"
+        );
     }
 
     #[test]
