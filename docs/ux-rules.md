@@ -2204,7 +2204,22 @@ the panel).
   The disclosure sits directly at the purchase link; without approval
   or a genuine purchase relation, the unchanged external MusicBrainz
   relation remains commission-free. Library data and secret keys never
-  end up in the URL. <!-- REVIEW: rule proposal -->
+  end up in the URL. Two independent gates keep this planned, checked
+  2026-08-11. First, channel approval: Amazon PartnerNet forbids
+  affiliate links „durch oder in Verbindung mit einer kundenseitigen
+  Software-Anwendung" without express prior written approval
+  (participation requirements, clause 6a), which covers an installable
+  desktop app; only a separately approved mobile application is a
+  regulated channel. Second, publisher qualification: every ticketing
+  network (Impact/Ticketmaster, Awin/Eventim, Ticketcorner,
+  Reservix/ADticket) admits publishers only with a self-controlled
+  promotional space carrying traffic — an application to
+  Ticketmaster/Impact was already rejected on that ground. Reopen only
+  with a written channel approval in hand, and prefer the mechanic where
+  the provider itself emits the tracked URL (Ticketmaster returns
+  affiliate-tagged event URLs once an Impact publisher id sits in the
+  developer account) over appending parameters ourselves.
+  <!-- REVIEW: rule proposal -->
 - **NR-20** [replaced by NR-30] [core] [gtk] — The releases table extends NR-17
   with the `Buy` column. Only when MusicBrainz supplies a genuine
   HTTP(S) relation for the release group to a `/album/…` page on
