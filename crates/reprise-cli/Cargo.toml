@@ -5,9 +5,8 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-# MIT, like reprise-core: the CLI is a first-party frontend over the MIT
-# engine and must stay redistributable outside the GPL GTK app.
-license = "MIT"
+# GPL-3.0-or-later, inherited from the workspace like every other crate.
+license.workspace = true
 
 [[bin]]
 name = "reprise-cli"

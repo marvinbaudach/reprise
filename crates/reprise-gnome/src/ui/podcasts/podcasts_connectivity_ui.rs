@@ -37,8 +37,7 @@ fn should_show_offline_notice(
 
 impl PodcastsView {
     /// Sets the one explicit connectivity seam. Reconnect drains transient
-    /// user actions in click order, then invokes the persistent
-    /// `wanted_on_device` runner.
+    /// user actions in click order.
     pub(in crate::ui) fn set_connectivity(self: &Rc<Self>, value: Connectivity) {
         let previous = self.connectivity.replace(value);
         let failure_kind = self
@@ -72,7 +71,6 @@ impl PodcastsView {
             if !remaining.is_empty() {
                 self.deferred_actions.borrow_mut().prepend(remaining);
             }
-            self.request_run_queued();
         }
     }
 

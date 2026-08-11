@@ -3,7 +3,7 @@
 //! `cargo run -p reprise-platform-linux --example probe_copy`
 
 use gio::glib;
-use reprise_core::device_sync::{SyncTarget, SyncTargetKind};
+use reprise_core::device_sync::SyncTarget;
 use reprise_platform_linux::device_sync::{DeviceMonitor, DeviceStorage};
 
 fn main() {
@@ -25,10 +25,10 @@ fn main() {
 
         let storage = DeviceStorage::from_uri(&device.root_uri);
 
-        let targets = SyncTargetKind::ALL.map(SyncTarget::default_for);
+        let target = SyncTarget::default();
 
         println!("--- inspect ---");
-        match storage.inspect(&targets).await {
+        match storage.inspect(&target).await {
             Ok(contents) => println!("inspect OK: {contents:?}"),
             Err(error) => println!("inspect ERR: {error}"),
         }

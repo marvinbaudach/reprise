@@ -11,7 +11,6 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-use reprise_core::device_sync::podcasts::PodcastSyncPlan;
 use reprise_core::device_sync::settings::{
     delete_device_file, delete_device_playlist, upsert_device_file, upsert_device_playlist,
     DeviceFileRecord, DevicePlaylistRecord,
@@ -19,7 +18,7 @@ use reprise_core::device_sync::settings::{
 use reprise_core::device_sync::sync_log::{DeviationKind, RunStart};
 use reprise_core::device_sync::{
     DeviceSyncMachine, Effect, Event, ManagedRemoval, MirrorPlan, StorageId, SyncOutcome,
-    SyncTargetKind, TransferAction, TransferOperation, TransferSource,
+    TransferAction, TransferOperation, TransferSource,
 };
 
 use super::*;
@@ -78,27 +77,8 @@ struct PlannedWork {
     persist_device_state: bool,
     initiator: SyncInitiator,
     machine: Rc<RefCell<DeviceSyncMachine>>,
-    /// The additive content plans (`MTP-23`). The machine above owns only the
-    /// music and playlist mirror; podcast episodes and YouTube audio are
-    /// diffed against their own candidate lists and run after it, because
-    /// they are not authoritative over their folders the way `MTP-17` is.
-    podcasts: PodcastSyncPlan,
-    youtube: PodcastSyncPlan,
-    /// Resolved device paths for the three named sync targets (`MTP-38`,
-    /// `MTP-23`) — loaded once per sync so every transfer, removal and
-    /// cleanup step routes through the right folder instead of a hard-coded
-    /// single managed root.
     playlists_path: String,
-    podcasts_path: String,
-    youtube_path: String,
-    /// The persisted `StorageId` each target was pointed at by the folder
-    /// browser (`MTP-31`/`MTP-32`), `None` until repointed. Carried alongside
-    /// the paths above so a transfer actually writes to the storage the user
-    /// chose rather than `DeviceStorage::storage_root`'s "prefer internal"
-    /// guess.
     playlists_storage: Option<StorageId>,
-    podcasts_storage: Option<StorageId>,
-    youtube_storage: Option<StorageId>,
     /// Interrupts the transcoder, which runs on its own thread.
     cancelled: Arc<AtomicBool>,
     /// Interrupts GIO copies.
@@ -123,37 +103,6 @@ fn transcode_profile(action: TransferAction) -> Option<TranscodeProfile> {
 
 fn blocker_message(plan: &MirrorPlan) -> String {
     format!("playlist mirror is blocked: {:?}", plan.blockers)
-}
-
-/// The resolved device path for one named sync target (`MTP-38`). Falls back
-/// to the kind's design default if somehow absent from the freshly loaded
-/// three — `load_or_create_targets` always returns all three, so this is
-/// defense in depth, never the normal path.
-fn target_path(
-    targets: &[reprise_core::device_sync::SyncTarget; 3],
-    kind: SyncTargetKind,
-) -> String {
-    targets
-        .iter()
-        .find(|target| target.kind == kind)
-        .map_or_else(
-            || kind.default_path().to_string(),
-            |target| target.path.clone(),
-        )
-}
-
-/// The resolved `StorageId` for one named sync target (`MTP-38`), the
-/// [`target_path`] counterpart: `None` both when the target has never been
-/// repointed by the folder browser and, defensively, when it is somehow
-/// absent from the freshly loaded three.
-fn target_storage(
-    targets: &[reprise_core::device_sync::SyncTarget; 3],
-    kind: SyncTargetKind,
-) -> Option<StorageId> {
-    targets
-        .iter()
-        .find(|target| target.kind == kind)
-        .and_then(|target| target.storage_id)
 }
 
 fn playlist_stem(device_path: &str, fallback: &str) -> String {
@@ -225,8 +174,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
         };
         if let Effect::Finished(outcome) = effect {
             let outcome = run_analysis_phase(&runtime, &mut work, outcome).await;
-            let mut outcome =
-                content_transfer::run_content_phase(&runtime, &mut work, outcome).await;
+            let mut outcome = outcome;
             if matches!(outcome, SyncOutcome::Completed { .. })
                 && work.initiator == SyncInitiator::Listener
             {
@@ -406,15 +354,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
 }
 
 impl DeviceSyncRuntime {
-    /// `MTP-43`: the entry point every "Sync now"/"Download & sync" click
-    /// goes through. `MTP-42`'s `primary_action` — read from the phase
-    /// `recompute_delta_silent` already keeps current, never re-derived here
-    /// — decides whether this run starts with a preparation download
-    /// (`preparation::begin_prepared_sync`) or goes straight to the
-    /// transfer machine ([`Self::start_transfer_now`]). The precondition
-    /// checks below apply to both paths and run synchronously so a busy or
-    /// disconnected device is rejected immediately, exactly as before this
-    /// split existed.
+    /// Starts a playlists synchronization immediately.
     pub fn sync_now(self: &Rc<Self>, device_id: &str) -> Result<(), SyncStartError> {
         self.start_sync(device_id, SyncInitiator::Listener)
     }
@@ -431,7 +371,7 @@ impl DeviceSyncRuntime {
         device_id: &str,
         initiator: SyncInitiator,
     ) -> Result<(), SyncStartError> {
-        let (prepare, start) = {
+        let start = {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
@@ -459,33 +399,19 @@ impl DeviceSyncRuntime {
                     "device storage is read-only".into(),
                 ));
             }
-            let prepare = preparation::should_prepare(
-                reprise_core::device_sync::primary_action(&device.preparation),
-                &device.preparation_missing,
-            )
-            .then(|| device.preparation_missing.clone());
-            let start = RunStart {
+            RunStart {
                 device_serial: device_id.to_string(),
                 device_name: device.settings.device_name.clone(),
                 transfer_profile: device.settings.profile.storage_value().to_owned(),
                 started_at: now_seconds(),
                 planned: 0,
-            };
-            (prepare, start)
+            }
         };
         let log = RunLog::open(self, &start);
-        if let Some(missing) = prepare {
-            preparation::begin_prepared_sync(self, device_id, missing, initiator, log);
-            return Ok(());
-        }
         self.start_transfer_now(device_id, initiator, log)
     }
 
-    /// The transfer-machine half of a run — unchanged from before `MTP-43`
-    /// except for its name and visibility, which widened from `pub` to
-    /// `pub(super)` so [`preparation::begin_prepared_sync`]'s async
-    /// continuation can call it directly once every preparation download has
-    /// been attempted.
+    /// Starts the transfer machine after the run log has opened.
     pub(in crate::ui::device_sync) fn start_transfer_now(
         self: &Rc<Self>,
         device_id: &str,
@@ -604,14 +530,12 @@ impl DeviceSyncRuntime {
                 device.active_initiator = Some(initiator);
                 device.sync_error = None;
                 device.mtp_rate.reset();
-                let targets = device.targets.clone();
+                let target = device.target.clone();
                 let persist_device_state = device.descriptor.persistent_id.is_some();
                 let planned = u32::try_from(
                     device.mirror_plan.copy.len()
                         + device.mirror_plan.replace.len()
-                        + device.mirror_plan.analysis_writes.len()
-                        + device.podcast_plan.to_copy.len()
-                        + device.youtube_plan.to_copy.len(),
+                        + device.mirror_plan.analysis_writes.len(),
                 )
                 .unwrap_or(u32::MAX);
                 log.set_planned(self, planned);
@@ -621,14 +545,8 @@ impl DeviceSyncRuntime {
                     persist_device_state,
                     initiator,
                     machine,
-                    podcasts: device.podcast_plan.clone(),
-                    youtube: device.youtube_plan.clone(),
-                    playlists_path: target_path(&targets, SyncTargetKind::Playlists),
-                    podcasts_path: target_path(&targets, SyncTargetKind::PodcastEpisodes),
-                    youtube_path: target_path(&targets, SyncTargetKind::YoutubeAudio),
-                    playlists_storage: target_storage(&targets, SyncTargetKind::Playlists),
-                    podcasts_storage: target_storage(&targets, SyncTargetKind::PodcastEpisodes),
-                    youtube_storage: target_storage(&targets, SyncTargetKind::YoutubeAudio),
+                    playlists_path: target.path,
+                    playlists_storage: target.storage_id,
                     cancelled,
                     cancellable,
                     transcoded: None,

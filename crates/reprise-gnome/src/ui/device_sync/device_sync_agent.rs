@@ -1,12 +1,12 @@
 //! Live, path-free bridge between the GTK-owned sync runtime and local agents.
 
 use reprise_core::agent_device_sync::{
-    AgentDeviceSyncBlocker, AgentDeviceSyncCategoryRow, AgentDeviceSyncChanges,
-    AgentDeviceSyncCommand, AgentDeviceSyncControls, AgentDeviceSyncDevice, AgentDeviceSyncPhase,
-    AgentDeviceSyncPlaylist, AgentDeviceSyncRequest, AgentDeviceSyncState, AgentDeviceSyncStorage,
+    AgentDeviceSyncBlocker, AgentDeviceSyncChanges, AgentDeviceSyncCommand,
+    AgentDeviceSyncControls, AgentDeviceSyncDevice, AgentDeviceSyncPhase, AgentDeviceSyncPlaylist,
+    AgentDeviceSyncRequest, AgentDeviceSyncState, AgentDeviceSyncStorage,
     AgentDeviceSyncStorageAccess, AgentDeviceSyncStorageComposition,
-    AgentDeviceSyncStorageKnowledge, AgentDeviceSyncStorageState, AgentDeviceSyncWarning,
-    SharedAgentDeviceSyncState,
+    AgentDeviceSyncStorageKnowledge, AgentDeviceSyncStorageState, AgentDeviceSyncTarget,
+    AgentDeviceSyncWarning, SharedAgentDeviceSyncState,
 };
 use reprise_core::device_sync::{
     DeviceStorageAccess, MirrorBlocker, SelectionSource, StorageComposition, StorageKnowledge,
@@ -195,22 +195,12 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
         bytes_total,
         bytes_per_second: device.bytes_per_second,
         current_track,
-        // Block H (MCP parity): reuses the exact `content_rows`/
-        // `category_readings` the GTK device page already renders (`MTP-38`/
-        // `MTP-22`) — no second computation.
-        categories: device
-            .content_rows
-            .into_iter()
-            .zip(device.category_readings)
-            .map(|(row, reading)| AgentDeviceSyncCategoryRow {
-                kind: row.kind,
-                target_path: row.target_path,
-                target_enabled: row.target_enabled,
-                size_on_device_bytes: row.size_on_device_bytes,
-                cap_bytes: row.cap_bytes,
-                reading,
-            })
-            .collect(),
+        target: AgentDeviceSyncTarget {
+            target_path: device.content_row.target_path,
+            target_enabled: device.content_row.target_enabled,
+            size_on_device_bytes: device.content_row.size_on_device_bytes,
+            reading: device.target_reading,
+        },
     }
 }
 

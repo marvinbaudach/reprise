@@ -1,9 +1,9 @@
-//! Category-segmented storage bar for the device view (`MTP-27`, design 7a).
+//! Storage bar for the device view (`MTP-27`).
 //!
 //! Unlike `device_sync_storage_bar::StorageBar` (Music/After-sync/Other/Free
 //! for the compact sync dialog, `MTP-7`), this bar breaks storage down by
-//! content category — Music, YouTube audio, Podcasts, Other — and gives the
-//! bytes this sync will write their own distinctly *hatched* segment rather
+//! playlist music, other occupied space and the bytes this sync will write.
+//! Incoming bytes keep their distinctly *hatched* segment rather
 //! than a plain tint, so "about to change" reads differently from "already
 //! there" at a glance. All of the segment math is
 //! `reprise_core::device_sync::device_view::project_category_segments`
@@ -13,15 +13,13 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use crate::ui::style::category_colors::music_color;
 use gtk4::prelude::*;
 use reprise_core::device_sync::device_view::CategorySegments;
-use reprise_core::device_sync::SyncTargetKind;
-
-use crate::ui::style::category_colors::category_color;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum SegmentFill {
-    Category(SyncTargetKind),
+    Music,
     Foreground(f64),
     HatchedForeground,
 }
@@ -32,19 +30,11 @@ struct Segment {
     fill: SegmentFill,
 }
 
-fn segments(data: &CategorySegments) -> [Segment; 5] {
+fn segments(data: &CategorySegments) -> [Segment; 3] {
     [
         Segment {
             bytes: data.music_bytes,
-            fill: SegmentFill::Category(SyncTargetKind::Playlists),
-        },
-        Segment {
-            bytes: data.youtube_bytes,
-            fill: SegmentFill::Category(SyncTargetKind::YoutubeAudio),
-        },
-        Segment {
-            bytes: data.podcast_bytes,
-            fill: SegmentFill::Category(SyncTargetKind::PodcastEpisodes),
+            fill: SegmentFill::Music,
         },
         Segment {
             bytes: data.other_bytes,
@@ -88,7 +78,7 @@ impl CategoryStorageBar {
             let width = f64::from(width.max(0));
             let height = f64::from(height.max(0));
 
-            // The five segments cover only what is *used*; free space has no
+            // The three segments cover only what is *used*; free space has no
             // segment. Without a track behind them a nearly empty device drew
             // a short stub floating in the card instead of a bar with room
             // left in it — which is the one thing this bar exists to show.
@@ -143,8 +133,8 @@ fn flat_color(
     foreground: gtk4::gdk::RGBA,
 ) -> Option<(gtk4::gdk::RGBA, f64)> {
     match fill {
-        SegmentFill::Category(kind) => Some((
-            gtk4::gdk::RGBA::parse(category_color(kind, is_dark))
+        SegmentFill::Music => Some((
+            gtk4::gdk::RGBA::parse(music_color(is_dark))
                 .expect("category colors must be valid #RRGGBB literals"),
             1.0,
         )),
@@ -237,25 +227,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn design_2c_categories_are_full_strength_while_other_stays_neutral() {
-        let segments = segments(&CategorySegments::default());
+    fn mtp_27_storage_bar_has_music_other_and_incoming_segments() {
+        let segments = segments(&CategorySegments {
+            music_bytes: 10,
+            other_bytes: 40,
+            incoming_bytes: 50,
+            ..CategorySegments::default()
+        });
         let foreground = gtk4::gdk::RGBA::BLACK;
 
-        for (segment, kind) in segments[..3].iter().zip(SyncTargetKind::ALL) {
-            assert_eq!(segment.fill, SegmentFill::Category(kind));
-            for is_dark in [true, false] {
-                let (color, alpha) = flat_color(segment.fill, is_dark, foreground).unwrap();
-                assert_eq!(
-                    color,
-                    gtk4::gdk::RGBA::parse(category_color(kind, is_dark)).unwrap()
-                );
-                assert_eq!(alpha, 1.0);
-            }
-        }
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0].bytes, 10);
+        assert_eq!(segments[0].fill, SegmentFill::Music);
+        assert_eq!(segments[1].bytes, 40);
         assert_eq!(
-            flat_color(segments[3].fill, true, foreground),
+            flat_color(segments[1].fill, true, foreground),
             Some((foreground, 0.22))
         );
-        assert_eq!(flat_color(segments[4].fill, true, foreground), None);
+        assert_eq!(segments[2].bytes, 50);
+        assert_eq!(flat_color(segments[2].fill, true, foreground), None);
     }
 }

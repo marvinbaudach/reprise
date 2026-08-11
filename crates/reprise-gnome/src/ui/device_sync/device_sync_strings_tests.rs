@@ -1,116 +1,5 @@
 use super::*;
 use chrono::TimeZone;
-use reprise_core::device_sync::PreparationPhase;
-
-#[test]
-fn source_off_uses_the_catalogued_global_source_copy() {
-    assert_eq!(
-        category_reading_text(&reprise_core::device_sync::CategoryReading::SourceOff),
-        "Source off"
-    );
-}
-
-#[test]
-fn design_2c_legend_uses_short_translatable_names_and_shared_size_formatting() {
-    use reprise_core::device_sync::SyncTargetKind;
-
-    assert_eq!(
-        category_legend_text(SyncTargetKind::Playlists, 1152 * 1024 * 1024),
-        "Music 1.1 GiB"
-    );
-    assert_eq!(
-        category_legend_text(SyncTargetKind::YoutubeAudio, 693 * 1024 * 1024),
-        "YouTube 693.0 MiB"
-    );
-    assert_eq!(
-        category_legend_text(SyncTargetKind::PodcastEpisodes, 217 * 1024 * 1024),
-        "Podcasts 217.0 MiB"
-    );
-}
-
-#[test]
-fn mtp_43_preparation_overview_is_absent_for_absent_and_nothing_missing() {
-    assert_eq!(preparation_overview(&PreparationPhase::Absent), None);
-    assert_eq!(
-        preparation_overview(&PreparationPhase::NothingMissing),
-        None
-    );
-}
-
-#[test]
-fn mtp_43_preparation_overview_names_files_and_size_when_offered_or_planned() {
-    assert_eq!(
-        preparation_overview(&PreparationPhase::Offered {
-            files: 2,
-            bytes: 312 * 1024 * 1024,
-        }),
-        Some("2 files to download · 312.0 MiB".to_string())
-    );
-    assert_eq!(
-        preparation_overview(&PreparationPhase::Planned {
-            files: 1,
-            bytes: 1024,
-        }),
-        Some("1 file to download · 1.0 KiB".to_string())
-    );
-}
-
-#[test]
-fn mtp_43_preparation_overview_omits_a_bogus_zero_byte_figure() {
-    assert_eq!(
-        preparation_overview(&PreparationPhase::Planned { files: 3, bytes: 0 }),
-        Some("3 files to download".to_string())
-    );
-}
-
-#[test]
-fn mtp_43_preparation_titles_name_a_few_and_count_the_rest() {
-    assert_eq!(preparation_titles(&[]), None);
-    assert_eq!(
-        preparation_titles(&["Abendrot", "Nachtwind"]),
-        Some("Abendrot, Nachtwind".to_string())
-    );
-    assert_eq!(
-        preparation_titles(&["One", "Two", "Three"]),
-        Some("One, Two, Three".to_string())
-    );
-    assert_eq!(
-        preparation_titles(&["One", "Two", "Three", "Four", "Five"]),
-        Some("One, Two, Three … and 2 more".to_string())
-    );
-}
-
-#[test]
-fn mtp_43_preparation_overview_reads_skipped_episodes_while_offline() {
-    assert_eq!(
-        preparation_overview(&PreparationPhase::SkippedOffline { files: 2 }),
-        Some("2 episodes skipped · not downloaded".to_string())
-    );
-    assert_eq!(
-        preparation_overview(&PreparationPhase::SkippedOffline { files: 1 }),
-        Some("1 episode skipped · not downloaded".to_string())
-    );
-}
-
-#[test]
-fn mtp_43_preparation_step_progress_is_always_step_one_of_two() {
-    assert_eq!(
-        preparation_step_progress(0, 2, 62),
-        "Step 1 of 2 · Downloading 1 of 2 · 62%"
-    );
-    assert_eq!(
-        preparation_step_progress(1, 2, 5),
-        "Step 1 of 2 · Downloading 2 of 2 · 5%"
-    );
-}
-
-#[test]
-fn mtp_43_two_phase_title_prefixes_the_transfer_title_as_step_two() {
-    assert_eq!(
-        two_phase_title("Copying · 3 of 10"),
-        "Step 2 of 2 · Copying · 3 of 10"
-    );
-}
 
 #[test]
 fn byte_formatting_uses_compact_binary_units() {
@@ -145,7 +34,6 @@ fn mtp_22_balance_text_matches_the_designs_exact_vocabulary() {
         bytes_to_copy: (2.6 * 1024.0 * 1024.0 * 1024.0) as u64,
         files_to_remove: 3,
         bytes_freed: 148 * 1024 * 1024,
-        files_waiting_for_download: 0,
         playlists_rewritten: 2,
     };
 
@@ -164,17 +52,10 @@ fn mtp_22_deletions_only_balance_never_claims_zero_bytes_to_copy() {
         bytes_to_copy: 0,
         files_to_remove: 3,
         bytes_freed: 148 * 1024 * 1024,
-        files_waiting_for_download: 0,
         playlists_rewritten: 0,
     };
 
     assert_eq!(balance_text(&balance), "3 to remove");
-}
-
-#[test]
-fn cap_text_names_the_cap_or_says_there_is_none() {
-    assert_eq!(cap_text(Some(8 * 1024 * 1024 * 1024)), "max 8.0 GiB");
-    assert_eq!(cap_text(None), "no size limit");
 }
 
 #[test]

@@ -48,7 +48,6 @@ fn rendered_group(kind: PodcastKind, id: i64) -> RenderedSourceGroup {
             author: Some("Publisher".into()),
             image_url: None,
             kind,
-            sync_to_phone: false,
             episodes: vec![row],
         },
     }
@@ -87,7 +86,6 @@ fn src_13_replace_returns_one_channel_widget_per_group() {
             author: Some("Publisher".into()),
             image_url: None,
             kind: PodcastKind::Rss,
-            sync_to_phone: false,
             episodes: vec![episode()],
         },
     };
@@ -103,8 +101,6 @@ fn src_13_replace_returns_one_channel_widget_per_group() {
                 BTreeSet::new()
             })),
             &Rc::new(RefCell::new(BTreeSet::new())),
-            &BTreeMap::new(),
-            &[],
             &BTreeMap::new(),
             false,
             Connectivity::Online,
@@ -179,8 +175,6 @@ fn src_16_episode_media_starts_after_group_media_in_both_source_views() {
         None,
         &Rc::new(RefCell::new(BTreeSet::from([1, 2]))),
         &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        &[],
         &BTreeMap::new(),
         false,
         Connectivity::Online,

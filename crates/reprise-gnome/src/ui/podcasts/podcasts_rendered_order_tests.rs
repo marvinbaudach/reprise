@@ -37,7 +37,6 @@ fn group(subscription_id: i64, episodes: Vec<EpisodeRow>) -> SourceGroup {
         author: None,
         image_url: None,
         kind: PodcastKind::Rss,
-        sync_to_phone: false,
         episodes,
     }
 }

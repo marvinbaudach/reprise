@@ -108,7 +108,7 @@ impl std::fmt::Display for ProtocolVersion {
 /// played by the same runtime that owns the queue — again additive.
 ///
 /// Major 3 carries the breaking queue and playback changes. On top of it,
-/// minor 1 adds [`device_sync::DeviceCategorySnapshot`] and the `categories`
+/// minor 1 added the former category snapshots and their device field
 /// field of [`device_sync::DeviceSnapshot`], which is additive: the snapshot
 /// is a dictionary, so a peer that omits the key reads as an empty list. That
 /// field replaced a separate `CategorySnapshot` D-Bus method, which the tuple

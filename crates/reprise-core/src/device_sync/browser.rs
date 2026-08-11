@@ -1,7 +1,7 @@
 //! The device folder browser (design 7d, `MTP-31`/`MTP-32`).
 //!
-//! `MTP-38`'s module docs already state the hard MTP fact this browser has
-//! to live inside: folders are object handles under a `StorageID`, and
+//! The hard MTP fact this browser lives inside is that folders are object
+//! handles under a `StorageID`, and
 //! handles are not stable across reconnects. This module never receives or
 //! produces a handle — only facts the frontend has already gathered this
 //! session ([`StorageOption`], a folder's already-listed child names) and
@@ -87,54 +87,13 @@ pub fn preview_target_folder(target: &SyncTarget, storages: &[StorageOption]) ->
     }
 }
 
-/// Design 7d's warning: does `candidate` sit at or inside the Playlists
-/// target's folder? `MTP-17` makes the Playlists target fully
-/// authoritative — it deletes anything under it that Reprise does not
-/// want — so nesting another target's folder inside it would expose that
-/// target's own files to the Playlists cleanup pass. Only compares the
-/// same storage: a path string alone means nothing across two different
-/// storages, and an unresolved Playlists target has nothing to conflict
-/// with yet.
-#[must_use]
-pub fn folder_conflicts_with_playlist_target(
-    candidate_storage: Option<StorageId>,
-    candidate_path: &str,
-    playlist_target: &SyncTarget,
-) -> bool {
-    let Some(playlist_storage) = playlist_target.storage_id else {
-        return false;
-    };
-    if candidate_storage != Some(playlist_storage) {
-        return false;
-    }
-    path_is_within(candidate_path, &playlist_target.path)
-}
-
-/// True when `candidate` is `ancestor` itself or a subfolder of it,
-/// compared component-wise (not by string prefix, so `/Music/Reprise2`
-/// does not falsely match ancestor `/Music/Reprise`).
-fn path_is_within(candidate: &str, ancestor: &str) -> bool {
-    let candidate = normalized_components(candidate);
-    let ancestor = normalized_components(ancestor);
-    ancestor.len() <= candidate.len() && candidate[..ancestor.len()] == ancestor[..]
-}
-
-fn normalized_components(path: &str) -> Vec<&str> {
-    path.split('/')
-        .filter(|component| !component.is_empty())
-        .collect()
-}
-
-/// Design 7d's "Reset to default": restores only the folder — storage and
-/// path — to `kind`'s design default. `enabled` and `cap_bytes` are
-/// untouched; they are not part of the browser's scope — `cap_bytes` is
-/// independently editable via the Content section's cap control (`MTP-37`),
-/// so a folder reset must never silently reset it too.
+/// Design 7d's "Reset to default": restores the single playlists target's
+/// folder while preserving whether synchronization is enabled.
 #[must_use]
 pub fn reset_target_folder(target: &SyncTarget) -> SyncTarget {
     SyncTarget {
         storage_id: None,
-        path: target.kind.default_path().to_string(),
+        path: super::targets::DEFAULT_TARGET_PATH.to_string(),
         ..target.clone()
     }
 }
@@ -160,7 +119,7 @@ pub enum TargetRelocation {
 }
 
 /// The pure decision behind `MTP-32`. Delegates the storage-boundary half
-/// of the question to [`target_storage_transition`] (`MTP-38`) rather than
+/// of the question to [`target_storage_transition`] rather than
 /// re-deriving it, and only adds the same-storage "is this actually a
 /// folder rename" half that target does not need to answer.
 #[must_use]
@@ -182,17 +141,6 @@ pub fn target_relocation_action(previous: &SyncTarget, next: &SyncTarget) -> Tar
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device_sync::SyncTargetKind;
-
-    fn playlists_target(storage_id: Option<StorageId>, path: &str) -> SyncTarget {
-        SyncTarget {
-            kind: SyncTargetKind::Playlists,
-            storage_id,
-            path: path.to_string(),
-            enabled: true,
-            cap_bytes: None,
-        }
-    }
 
     #[test]
     fn mtp_31_classifies_storage_by_name() {
@@ -211,16 +159,14 @@ mod tests {
     #[test]
     fn mtp_31_preview_reports_unresolved_missing_and_resolved_storage() {
         let target = SyncTarget {
-            kind: SyncTargetKind::YoutubeAudio,
             storage_id: None,
-            path: "/Music/Reprise-YouTube".to_string(),
+            path: "/Music/Reprise".to_string(),
             enabled: true,
-            cap_bytes: None,
         };
         assert_eq!(
             preview_target_folder(&target, &[]),
             TargetPreview::Unresolved {
-                path: "/Music/Reprise-YouTube".to_string()
+                path: "/Music/Reprise".to_string()
             }
         );
 
@@ -237,7 +183,7 @@ mod tests {
             preview_target_folder(&resolved, &storages),
             TargetPreview::Resolved {
                 storage_name: "Internal shared storage".to_string(),
-                path: "/Music/Reprise-YouTube".to_string(),
+                path: "/Music/Reprise".to_string(),
             }
         );
 
@@ -248,90 +194,39 @@ mod tests {
         assert_eq!(
             preview_target_folder(&missing, &storages),
             TargetPreview::StorageMissing {
-                path: "/Music/Reprise-YouTube".to_string()
+                path: "/Music/Reprise".to_string()
             }
         );
     }
 
     #[test]
-    fn mtp_31_conflict_warns_when_candidate_is_at_or_inside_the_playlist_target() {
-        let playlists = playlists_target(Some(StorageId(1)), "/Music/Reprise");
-        assert!(folder_conflicts_with_playlist_target(
-            Some(StorageId(1)),
-            "/Music/Reprise",
-            &playlists
-        ));
-        assert!(folder_conflicts_with_playlist_target(
-            Some(StorageId(1)),
-            "/Music/Reprise/Sub",
-            &playlists
-        ));
-        assert!(!folder_conflicts_with_playlist_target(
-            Some(StorageId(1)),
-            "/Music/Reprise2",
-            &playlists
-        ));
-        assert!(!folder_conflicts_with_playlist_target(
-            Some(StorageId(1)),
-            "/Music",
-            &playlists
-        ));
-    }
-
-    #[test]
-    fn mtp_31_conflict_is_false_when_playlist_target_storage_is_unresolved_or_different() {
-        let unresolved = playlists_target(None, "/Music/Reprise");
-        assert!(!folder_conflicts_with_playlist_target(
-            Some(StorageId(1)),
-            "/Music/Reprise",
-            &unresolved
-        ));
-
-        let resolved = playlists_target(Some(StorageId(1)), "/Music/Reprise");
-        assert!(!folder_conflicts_with_playlist_target(
-            Some(StorageId(2)),
-            "/Music/Reprise",
-            &resolved
-        ));
-    }
-
-    #[test]
-    fn mtp_31_reset_restores_default_path_and_clears_storage_without_touching_enabled_or_cap() {
+    fn mtp_31_reset_restores_default_path_and_clears_storage_without_enabling_sync() {
         let target = SyncTarget {
-            kind: SyncTargetKind::PodcastEpisodes,
             storage_id: Some(StorageId(9)),
             path: "/Weird/Custom/Path".to_string(),
             enabled: false,
-            cap_bytes: Some(123),
         };
         let reset = reset_target_folder(&target);
         assert_eq!(reset.storage_id, None);
-        assert_eq!(reset.path, "/Podcasts/Reprise");
+        assert_eq!(reset.path, "/Music/Reprise");
         assert!(!reset.enabled, "reset must not silently re-enable a target");
-        assert_eq!(
-            reset.cap_bytes,
-            Some(123),
-            "reset must not touch the cap — not part of the browser's scope"
-        );
     }
 
     #[test]
     fn mtp_32_relocation_moves_within_the_same_storage_and_copies_across_a_storage_change() {
         let resolved = SyncTarget {
-            kind: SyncTargetKind::YoutubeAudio,
             storage_id: Some(StorageId(1)),
-            path: "/Music/Reprise-YouTube".to_string(),
+            path: "/Music/Reprise".to_string(),
             enabled: true,
-            cap_bytes: None,
         };
         let renamed = SyncTarget {
-            path: "/Music/YT".to_string(),
+            path: "/Music/Playlists".to_string(),
             ..resolved.clone()
         };
         assert_eq!(
             target_relocation_action(&resolved, &renamed),
             TargetRelocation::MoveFolder {
-                from_path: "/Music/Reprise-YouTube".to_string()
+                from_path: "/Music/Reprise".to_string()
             }
         );
 
@@ -347,7 +242,7 @@ mod tests {
 
     #[test]
     fn mtp_32_relocation_is_unchanged_for_first_resolution_or_identical_target() {
-        let unresolved = SyncTarget::default_for(SyncTargetKind::PodcastEpisodes);
+        let unresolved = SyncTarget::default();
         let first_resolution = SyncTarget {
             storage_id: Some(StorageId(1)),
             ..unresolved.clone()

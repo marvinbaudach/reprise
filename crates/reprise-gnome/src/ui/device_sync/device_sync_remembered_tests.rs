@@ -20,9 +20,8 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
             2_400_000_000,
         )
         .unwrap();
-        let mut target = reprise_core::device_sync::load_or_create_targets(&conn, "pixel-anna")
-            .unwrap()[0]
-            .clone();
+        let mut target =
+            reprise_core::device_sync::load_or_create_target(&conn, "pixel-anna").unwrap();
         target.storage_id = Some(reprise_core::device_sync::StorageId(7));
         target.path = "/Music/Anna".into();
         reprise_core::device_sync::save_target(&conn, "pixel-anna", &target).unwrap();
@@ -48,9 +47,9 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
         );
         assert_eq!(remembered.last_sync.unwrap().timestamp(), 1_753_612_496);
         assert_eq!(remembered.size_on_device_bytes, Some(2_400_000_000));
-        assert_eq!(remembered.content_rows[0].target_path, "/Music/Anna");
+        assert_eq!(remembered.content_row.target_path, "/Music/Anna");
         assert!(
-            !reprise_core::device_sync::aggregate_balance(&remembered.category_readings).has_work(),
+            !reprise_core::device_sync::aggregate_balance(&[remembered.target_reading]).has_work(),
             "an absent device must never project a guessed diff"
         );
         assert!(!remembered.page.controls.can_start);

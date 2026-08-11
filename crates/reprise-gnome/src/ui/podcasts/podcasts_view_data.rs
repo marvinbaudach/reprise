@@ -53,7 +53,6 @@ mod tests {
             author: None,
             image_url: None,
             kind: PodcastKind::Rss,
-            sync_to_phone: false,
             episodes: ids.iter().map(|id| episode(*id, subscription_id)).collect(),
         }
     }

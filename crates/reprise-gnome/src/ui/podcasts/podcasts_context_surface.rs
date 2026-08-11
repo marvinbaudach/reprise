@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::podcasts::{EpisodeRow, SourceGroup};
 
-use super::podcasts_context_menu::{self, PodcastSyncDevice};
+use super::podcasts_context_menu;
 use super::podcasts_episode_files::EpisodePaths;
 use super::podcasts_selection::PodcastSelection;
 use crate::ui::strings;
@@ -100,27 +100,17 @@ pub(super) fn episode_menu_button(
     menu
 }
 
-pub(super) fn wire_source_header(
-    header: &impl IsA<gtk4::Widget>,
-    group: &SourceGroup,
-    devices: &[PodcastSyncDevice],
-    selected_device_ids: &[String],
-) {
+pub(super) fn wire_source_header(header: &impl IsA<gtk4::Widget>, group: &SourceGroup) {
     // input-parity: ACC-8 keyboard=source-menu-button
     let gesture = crate::ui::source_context_surface::secondary_click();
     let group = group.clone();
-    let devices = devices.to_vec();
-    let selected_device_ids = selected_device_ids.to_vec();
     gesture.connect_pressed(move |gesture, _, x, y| {
         let Some(parent) = gesture.widget() else {
             return;
         };
         gesture.set_state(gtk4::EventSequenceState::Claimed);
-        let popover = gtk4::PopoverMenu::from_model(Some(&podcasts_context_menu::build_source(
-            &group,
-            &devices,
-            &selected_device_ids,
-        )));
+        let popover =
+            gtk4::PopoverMenu::from_model(Some(&podcasts_context_menu::build_source(&group)));
         popover.set_has_arrow(false);
         popover.set_parent(&parent);
         popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
