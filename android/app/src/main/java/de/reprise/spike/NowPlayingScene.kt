@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.preferredFrameRate
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -63,6 +65,20 @@ private const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
 private const val PLAYED_CENTRE_FRACTION = 0.34f
 private const val TITLE_TO_ARTIST_GAP_DP = 6
+
+internal fun shouldRequestHighVisualizerFrameRate(
+    visualizerOpacity: Float,
+    playing: Boolean,
+): Boolean = visualizerOpacity.isFinite() && visualizerOpacity > 0f && playing
+
+internal fun requestedVisualizerFrameRateCategory(
+    visualizerOpacity: Float,
+    playing: Boolean,
+): FrameRateCategory? = if (shouldRequestHighVisualizerFrameRate(visualizerOpacity, playing)) {
+    FrameRateCategory.High
+} else {
+    null
+}
 
 @Composable
 internal fun NowPlayingScene(
@@ -136,7 +152,13 @@ internal fun NowPlayingScene(
         modifier = Modifier
             .fillMaxSize()
             .background(AmbientTrueBlack)
-            .testTag("now-playing-player"),
+            .testTag("now-playing-player")
+            .then(
+                requestedVisualizerFrameRateCategory(
+                    visualizerOpacity,
+                    playback.isPlaying,
+                )?.let { category -> Modifier.preferredFrameRate(category) } ?: Modifier,
+            ),
     ) {
         val density = LocalDensity.current
         val coverTop = maxHeight * PLAYED_CENTRE_FRACTION - (COVER_SIZE_DP / 2).dp
