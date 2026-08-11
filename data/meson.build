@@ -1,4 +1,4 @@
-app_id = 'org.reprise.Reprise'
+app_id = 'io.github.marvinbaudach.Reprise'
 
 install_data(
   app_id + '.desktop',

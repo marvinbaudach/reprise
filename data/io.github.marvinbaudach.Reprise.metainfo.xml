@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>org.reprise.Reprise</id>
+  <id>io.github.marvinbaudach.Reprise</id>
   <name>Reprise</name>
   <summary>Play and organize your local music library</summary>
   <summary xml:lang="de">Die lokale Musiksammlung abspielen und organisieren</summary>
@@ -45,7 +45,7 @@
       API-Zugangsdaten.
     </p>
   </description>
-  <launchable type="desktop-id">org.reprise.Reprise.desktop</launchable>
+  <launchable type="desktop-id">io.github.marvinbaudach.Reprise.desktop</launchable>
   <provides>
     <binary>reprise</binary>
     <mediatype>audio/mpeg</mediatype>
