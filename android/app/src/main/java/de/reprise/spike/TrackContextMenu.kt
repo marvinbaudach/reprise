@@ -5,6 +5,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -35,11 +36,41 @@ import androidx.compose.ui.unit.dp
 internal class TrackContextMenuAnchorState {
     var expanded by mutableStateOf(false)
     var touchOffset by mutableStateOf(DpOffset.Zero)
+
+    /**
+     * What the last chosen menu item answered. It lives here rather than inside
+     * [TrackContextMenu] because the row, not the menu, owns the place it can
+     * be read: see [TrackContextMenuMessage].
+     */
+    var message by mutableStateOf<TransientMessage?>(null)
     internal var heightPx = 0
+
+    fun say(text: String) {
+        message = TransientMessage(text).after(message)
+    }
 }
 
 @Composable
 internal fun rememberTrackContextMenuAnchorState() = remember { TrackContextMenuAnchorState() }
+
+/**
+ * Renders the acknowledgement [anchor] is holding, in a slot of the caller's own.
+ *
+ * It is a separate composable because neither place inside a row works. Dropped
+ * beside the row's content, it lands at TopStart of that `Box` — on top of the
+ * cover and the title, inside a clipped 72 dp `Surface`. Moved into a `Column`
+ * together with the menu, it would displace the `DropdownMenu`'s placeholder,
+ * and a popup is anchored by exactly where its placeholder sits.
+ *
+ * So the row calls this below its own content, which is the shape
+ * [FavouriteHeartButton] already uses for its failure: control first, message
+ * in a slot underneath. That matters beyond tidiness — a partial deletion
+ * ("2 of 12 could not be deleted") is reported through this same text.
+ */
+@Composable
+internal fun TrackContextMenuMessage(anchor: TrackContextMenuAnchorState) {
+    TransientMessageText(anchor.message) { anchor.message = null }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 internal fun Modifier.trackContextMenuAnchor(
@@ -145,13 +176,10 @@ internal fun TrackContextMenu(
 ) {
     val controls = LocalPlaybackControls.current
     var deleteConfirmation by remember { mutableStateOf<TrackDeletionTarget?>(null) }
-    var message by remember { mutableStateOf<TransientMessage?>(null) }
 
     fun resolvedIds(): List<Long>? = runCatching(target.resolveTrackIds)
         .onFailure { error ->
-            message = TransientMessage(
-                "Could not load the tracks: ${error.message ?: "unknown error"}",
-            ).after(message)
+            anchor.say("Could not load the tracks: ${error.message ?: "unknown error"}")
         }
         .getOrNull()
 
@@ -168,7 +196,7 @@ internal fun TrackContextMenu(
                 "Could not edit the queue: ${error.message ?: "unknown error"}"
             },
         )
-        message = TransientMessage(text).after(message)
+        anchor.say(text)
     }
 
     DropdownMenu(
@@ -209,9 +237,8 @@ internal fun TrackContextMenu(
     TrackDeletionConfirmation(
         target = deleteConfirmation,
         dismiss = { deleteConfirmation = null },
-        report = { text -> message = TransientMessage(text).after(message) },
+        report = anchor::say,
     )
-    TransientMessageText(message) { message = null }
 }
 
 @Composable
@@ -222,29 +249,34 @@ internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
     val target = remember(track.id, track.title) {
         TrackDeletionTarget(track.title, 1) { listOf(track.id) }
     }
-    Box {
-        IconButton(
-            onClick = { expanded = true },
-            modifier = Modifier.size(48.dp).testTag("now-playing-overflow"),
-        ) {
-            MaterialSymbol("more_vert", "More actions")
+    // The message needs a slot of its own, exactly as in FavouriteHeartButton
+    // next door: as a bare sibling it becomes another cell of the actions Row
+    // and squeezes the controls sideways.
+    Column {
+        Box {
+            IconButton(
+                onClick = { expanded = true },
+                modifier = Modifier.size(48.dp).testTag("now-playing-overflow"),
+            ) {
+                MaterialSymbol("more_vert", "More actions")
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Delete from device…") },
+                    onClick = {
+                        expanded = false
+                        deleteConfirmation = target
+                    },
+                )
+            }
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text("Delete from device…") },
-                onClick = {
-                    expanded = false
-                    deleteConfirmation = target
-                },
-            )
-        }
+        TrackDeletionConfirmation(
+            target = deleteConfirmation,
+            dismiss = { deleteConfirmation = null },
+            report = { text -> message = TransientMessage(text).after(message) },
+        )
+        TransientMessageText(message) { message = null }
     }
-    TrackDeletionConfirmation(
-        target = deleteConfirmation,
-        dismiss = { deleteConfirmation = null },
-        report = { text -> message = TransientMessage(text).after(message) },
-    )
-    TransientMessageText(message) { message = null }
 }
 
 @Composable
