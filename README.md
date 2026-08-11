@@ -64,22 +64,6 @@ Benchmark methods, their limits, and the accepted results are documented in
 [TESTING.md](TESTING.md) and the [engineering showcase](docs/showcase.md) —
 this README deliberately avoids numbers that would go stale.
 
-## How this is built
-
-Reprise is developed with heavy LLM assistance, and that is stated here rather
-than left to be discovered. A design is written and then deliberately attacked
-before any code exists; the implementation is delegated to a coding agent in an
-isolated worktree; the result comes back through review and the gates above,
-and a change without a failing test that motivated it does not land. The
-designs, their review rounds, and the handover notes live in `docs/plans/` —
-the process is part of the repository, not a footnote to it.
-
-What that does not change: I am the maintainer, and the decisions and the
-mistakes are mine. The engineering contracts above exist precisely because no
-part of this codebase should be trusted for who or what wrote it — it is
-trusted because a named test enforces it, and you can run every one of those
-tests yourself.
-
 ## Contributing
 
 **Pick your entry point:** pure library, scanner, queue, or playlist logic in
@@ -178,3 +162,31 @@ missing — they never fall back to the live desktop or your user profile.
 Reprise is **GPL-3.0-or-later** — every crate, from the portable engine to the
 native GTK4 frontend. See [LICENSE](LICENSE) for the full text and
 [LICENSING.md](LICENSING.md) for the rationale and the third-party notices.
+
+## How this project is built
+
+Reprise is written with AI assistance. I am saying so here rather than leaving
+it to be discovered, because the commit history says so plainly: many commits
+carry a `Co-Authored-By` trailer, and `docs/plans/` contains the working plans
+the implementation followed.
+
+What that means in practice, and what it does not mean:
+
+I design the architecture, decide what gets built, and review every change.
+Models draft implementations against plans I write and grill first. I can
+explain any part of this codebase, and I answer questions about it directly —
+if a maintainer asks why something works the way it does, they get an answer
+from me, not a summary of a summary.
+
+The project's defence against the failure mode people rightly worry about —
+plausible code nobody understands — is that nothing merges on a claim. Every
+change passes a chain of 11 gates before it can land: formatting, clippy as
+`-D warnings`, the full test suite, a dependency audit, an architecture lint
+capping file size, a frontend thinness budget, accessibility semantics, input
+parity, and a traceability gate that refuses any enforceable UX rule without a
+test named after it. There are 5,596 test functions across 897 files.
+`docs/ux-rules.md` holds 571 numbered rules; a rule only becomes enforceable in
+the same commit that proves it with a test.
+
+If you find something in here that does not hold up, open an issue. That is
+worth more to me than the benefit of the doubt.
