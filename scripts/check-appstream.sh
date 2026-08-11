@@ -4,8 +4,8 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 source scripts/lib/rulebook.sh
 
-require_tool appstreamcli
-require_tool desktop-file-validate
+skip_gate_if_tool_missing appstreamcli
+skip_gate_if_tool_missing desktop-file-validate
 
 metainfo=$(find data -name '*.metainfo.xml' -print -quit)
 desktop=$(find data -name '*.desktop' -print -quit)

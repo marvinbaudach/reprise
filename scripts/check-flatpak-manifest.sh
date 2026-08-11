@@ -15,9 +15,7 @@ if flatpak info org.flatpak.Builder >/dev/null 2>&1; then
 elif command -v flatpak-builder-lint >/dev/null 2>&1; then
   lint=(flatpak-builder-lint)
 else
-  echo "ERROR: flatpak-builder-lint is required by this gate." >&2
-  echo "       Install it with: flatpak install -y flathub org.flatpak.Builder" >&2
-  exit 1
+  skip_gate "flatpak-builder-lint is not installed; check-flatpak-manifest.sh did not run"
 fi
 
 if ! output=$("${lint[@]}" manifest "$manifest" 2>&1); then

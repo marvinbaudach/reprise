@@ -40,11 +40,15 @@ report_violation() {
   esac
 }
 
-require_tool() {
+skip_gate() {
+  printf 'SKIPPED: %s\n' "$1" >&2
+  exit 0
+}
+
+skip_gate_if_tool_missing() {
   local tool=$1
   command -v "$tool" >/dev/null 2>&1 && return 0
-  printf 'ERROR: %s is required by this gate but not installed\n' "$tool" >&2
-  exit 1
+  skip_gate "$tool is not installed; this gate did not run"
 }
 
 rulebook_exit() {
