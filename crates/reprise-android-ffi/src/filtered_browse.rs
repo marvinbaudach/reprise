@@ -74,15 +74,14 @@ impl MusicLibrary {
     /// track-number order. Albums remain grouped when their tracks share the
     /// album's year.
     pub fn list_favourites(&self, window: WindowRange) -> Result<TrackWindow, LibraryError> {
-        self.search_favourites(String::new(), window)
+        self.search_favourites("", window)
     }
 
     pub fn search_favourites(
         &self,
-        text: String,
+        text: &str,
         window: WindowRange,
     ) -> Result<TrackWindow, LibraryError> {
-        let text = text.into_boxed_str();
         filtered_track_window(
             self,
             &BrowseFilter {
@@ -90,7 +89,7 @@ impl MusicLibrary {
                 ..BrowseFilter::default()
             },
             "artist",
-            &text,
+            crate::bounded_search_text(text),
             window,
         )
     }
@@ -284,7 +283,7 @@ mod tests {
 
         let first = library
             .search_favourites(
-                "ada".to_owned(),
+                "ada",
                 WindowRange {
                     offset: 0,
                     limit: 1,
@@ -293,7 +292,7 @@ mod tests {
             .unwrap();
         let second = library
             .search_favourites(
-                "ADA".to_owned(),
+                "ADA",
                 WindowRange {
                     offset: 1,
                     limit: 1,

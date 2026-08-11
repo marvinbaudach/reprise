@@ -50,6 +50,25 @@ pub use playback_session::{
 pub use playback_settings::*;
 uniffi::setup_scaffolding!();
 
+/// The longest search text this boundary passes on.
+///
+/// Every search is typed into a phone's search field, so a few hundred
+/// characters is already far past anything a listener means by it — while the
+/// `%text%` pattern behind it costs a full scan of the table. The cut is taken
+/// on a character boundary rather than a byte one, so a clipped query is still
+/// valid UTF-8 and still means what its beginning meant.
+const MAX_SEARCH_TEXT_CHARS: usize = 256;
+
+/// Borrows the search text the queries should see: the caller's own string,
+/// clipped to [`MAX_SEARCH_TEXT_CHARS`]. Borrowed rather than copied, because
+/// every one of these calls sits in front of a keystroke.
+pub(crate) fn bounded_search_text(text: &str) -> &str {
+    match text.char_indices().nth(MAX_SEARCH_TEXT_CHARS) {
+        Some((end, _)) => &text[..end],
+        None => text,
+    }
+}
+
 #[uniffi::export]
 impl MusicLibrary {
     /// Opens the library database inside the app's private directory.
@@ -127,17 +146,16 @@ impl MusicLibrary {
     }
 
     pub fn list_albums(&self, window: WindowRange) -> Result<AlbumWindow, LibraryError> {
-        self.search_albums(String::new(), window)
+        self.search_albums("", window)
     }
 
     pub fn search_albums(
         &self,
-        text: String,
+        text: &str,
         window: WindowRange,
     ) -> Result<AlbumWindow, LibraryError> {
-        let text = text.into_boxed_str();
         let state = self.lock()?;
-        queries::query_albums(&state.db, &text, window.into())
+        queries::query_albums(&state.db, bounded_search_text(text), window.into())
             .map(AlbumWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -145,17 +163,16 @@ impl MusicLibrary {
     }
 
     pub fn list_artists(&self, window: WindowRange) -> Result<ArtistWindow, LibraryError> {
-        self.search_artists(String::new(), window)
+        self.search_artists("", window)
     }
 
     pub fn search_artists(
         &self,
-        text: String,
+        text: &str,
         window: WindowRange,
     ) -> Result<ArtistWindow, LibraryError> {
-        let text = text.into_boxed_str();
         let state = self.lock()?;
-        queries::query_artists(&state.db, &text, window.into())
+        queries::query_artists(&state.db, bounded_search_text(text), window.into())
             .map(ArtistWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -180,16 +197,19 @@ impl MusicLibrary {
 
     pub fn search_tracks(
         &self,
-        text: String,
+        text: &str,
         window: WindowRange,
     ) -> Result<TrackWindow, LibraryError> {
-        let text = text.into_boxed_str();
         let state = self.lock()?;
-        queries::query_library_metadata_text_search(&state.db, &text, window.into())
-            .map(TrackWindow::from)
-            .map_err(|error| LibraryError::Query {
-                detail: error.to_string(),
-            })
+        queries::query_library_metadata_text_search(
+            &state.db,
+            bounded_search_text(text),
+            window.into(),
+        )
+        .map(TrackWindow::from)
+        .map_err(|error| LibraryError::Query {
+            detail: error.to_string(),
+        })
     }
 
     /// Resolves local artwork lazily for one track and returns its cached

@@ -258,7 +258,7 @@ fn browse_surface_searches_album_titles_and_artists_with_exact_windows() {
 
     let first = library
         .search_albums(
-            "BLUE".into(),
+            "BLUE",
             WindowRange {
                 offset: 0,
                 limit: 1,
@@ -267,7 +267,7 @@ fn browse_surface_searches_album_titles_and_artists_with_exact_windows() {
         .unwrap();
     let second = library
         .search_albums(
-            "blue".into(),
+            "blue",
             WindowRange {
                 offset: 1,
                 limit: 1,
@@ -275,7 +275,7 @@ fn browse_surface_searches_album_titles_and_artists_with_exact_windows() {
         )
         .unwrap();
     let artist_match = library
-        .search_albums("joni mitchell".into(), full_window())
+        .search_albums("joni mitchell", full_window())
         .unwrap();
 
     assert_eq!(first.total, 2);
@@ -292,9 +292,7 @@ fn browse_surface_searches_album_titles_and_artists_with_exact_windows() {
 fn browse_surface_searches_effective_artists_with_exact_counts() {
     let (_directory, library) = browse_library();
 
-    let artists = library
-        .search_artists("JONI".into(), full_window())
-        .unwrap();
+    let artists = library.search_artists("JONI", full_window()).unwrap();
 
     assert_eq!(artists.total, 1);
     assert_eq!(artists.rows.len(), 1);
@@ -361,10 +359,7 @@ fn browse_surface_search_matches_genre_metadata_in_core_title_order() {
         .into_owned();
 
     assert_eq!(
-        library
-            .search_tracks(" folk ".into(), full_window())
-            .unwrap()
-            .rows,
+        library.search_tracks(" folk ", full_window()).unwrap().rows,
         vec![
             super::TrackRow {
                 id: 3,
@@ -396,7 +391,7 @@ fn track_window_carries_real_rating_and_play_count_without_changing_paging() {
 
     let window = library
         .search_tracks(
-            "joni mitchell".into(),
+            "joni mitchell",
             WindowRange {
                 offset: 0,
                 limit: 1,
@@ -417,7 +412,7 @@ fn browse_surface_exposes_exact_total_and_continuation() {
 
     let first = library
         .search_tracks(
-            "joni mitchell".into(),
+            "joni mitchell",
             WindowRange {
                 offset: 0,
                 limit: 1,
@@ -426,7 +421,7 @@ fn browse_surface_exposes_exact_total_and_continuation() {
         .unwrap();
     let second = library
         .search_tracks(
-            "joni mitchell".into(),
+            "joni mitchell",
             WindowRange {
                 offset: 1,
                 limit: 1,
@@ -447,7 +442,7 @@ fn browse_surface_exposes_exact_total_and_continuation() {
 fn track_identity_drives_rating_writes_and_a_missing_id_is_an_error() {
     let (_directory, library) = browse_library();
     let track = library
-        .search_tracks("A Case of You".into(), full_window())
+        .search_tracks("A Case of You", full_window())
         .unwrap()
         .rows
         .remove(0);
@@ -455,7 +450,7 @@ fn track_identity_drives_rating_writes_and_a_missing_id_is_an_error() {
     assert!(track.id > 0);
     library.set_track_rating(track.id, 5).unwrap();
     let updated = library
-        .search_tracks("A Case of You".into(), full_window())
+        .search_tracks("A Case of You", full_window())
         .unwrap()
         .rows
         .remove(0);
@@ -606,4 +601,27 @@ fn untagged_saf_track_uses_the_provider_parent_name_as_its_album() {
     assert_eq!(tracks[0].uri, BROKEN_TAGS_URI);
     assert_eq!(tracks[0].title, "broken-tags.mp3");
     assert_eq!(tracks[0].album, "Some Album");
+}
+
+/// The cut is a character one. A byte-wise slice through a multi-byte
+/// character would not merely shorten the query, it would panic — and it would
+/// do it on the one input class a search field sees constantly.
+#[test]
+fn a_search_text_is_clipped_on_a_character_boundary_and_shorter_ones_are_untouched() {
+    use super::{bounded_search_text, MAX_SEARCH_TEXT_CHARS};
+
+    assert_eq!(bounded_search_text("slowdive"), "slowdive");
+    assert_eq!(bounded_search_text(""), "");
+
+    let long_ascii = "a".repeat(MAX_SEARCH_TEXT_CHARS + 50);
+    assert_eq!(
+        bounded_search_text(&long_ascii).chars().count(),
+        MAX_SEARCH_TEXT_CHARS
+    );
+
+    // Four bytes per character: a byte-wise cut would land inside one of them.
+    let long_multibyte = "🎵".repeat(MAX_SEARCH_TEXT_CHARS + 50);
+    let clipped = bounded_search_text(&long_multibyte);
+    assert_eq!(clipped.chars().count(), MAX_SEARCH_TEXT_CHARS);
+    assert!(long_multibyte.starts_with(clipped));
 }
