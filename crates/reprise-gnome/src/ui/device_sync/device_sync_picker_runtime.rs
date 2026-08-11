@@ -1,34 +1,19 @@
-//! Database-backed inputs and writes for the three device-content pickers.
-//!
-//! The picker owns no durable selection state. Every snapshot reads the
-//! existing playlist, subscription-device, and `wanted_on_device` flags, and
-//! every save applies deltas to those same flags.
+//! Database-backed inputs and writes for the playlists device-content picker.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use reprise_core::connectivity::LocalAvailability;
 use reprise_core::device_sync::{
-    resolve_latest_per_channel, select_episodes, DeviceSelection, EpisodeSelectionCandidate,
-    EpisodeSelectionRule, MirrorPlaylistSnapshot, MirrorTrack, SelectionSource, SyncTargetKind,
-    EVERYTHING_SOURCE,
+    DeviceSelection, MirrorPlaylistSnapshot, MirrorTrack, SelectionSource, EVERYTHING_SOURCE,
 };
-use reprise_core::podcasts::{PodcastKind, SourceGroup};
 
 use super::*;
 
 pub(crate) const KEEP_SMART_UPDATED_KEY: &str = "device_sync.keep_smart_playlists_updated";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum PickerSnapshot {
-    Playlists {
-        rows: Vec<PickerPlaylistRow>,
-        keep_smart_updated: bool,
-    },
-    Episodes {
-        kind: SyncTargetKind,
-        latest_per_group: usize,
-        groups: Vec<PickerEpisodeGroup>,
-    },
+pub(crate) struct PickerSnapshot {
+    pub rows: Vec<PickerPlaylistRow>,
+    pub keep_smart_updated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,56 +26,14 @@ pub(crate) struct PickerPlaylistRow {
     pub size_bytes: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PickerEpisodeGroup {
-    pub id: i64,
-    pub name: String,
-    pub enabled: bool,
-    pub latest_override: Option<usize>,
-    pub episodes: Vec<PickerEpisodeRow>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PickerEpisodeRow {
-    pub id: i64,
-    pub title: String,
-    pub published_at: Option<i64>,
-    pub duration_secs: Option<i64>,
-    pub position_ms: i64,
-    pub size_bytes: Option<u64>,
-    pub downloaded: bool,
-    pub played: bool,
-    pub pinned: bool,
-    pub selected: bool,
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct PickerSave {
     pub playlist_changes: Vec<(SelectionSource, bool)>,
-    pub group_changes: Vec<(i64, bool)>,
-    pub episode_pin_changes: Vec<(i64, bool)>,
-    pub latest_per_channel: Option<usize>,
     pub keep_smart_updated: Option<bool>,
 }
 
 impl DeviceSyncRuntime {
-    pub(crate) fn picker_snapshot(
-        &self,
-        device_id: &str,
-        kind: SyncTargetKind,
-    ) -> Result<PickerSnapshot, String> {
-        match kind {
-            SyncTargetKind::Playlists => self.playlist_picker_snapshot(device_id),
-            SyncTargetKind::YoutubeAudio => {
-                self.episode_picker_snapshot(device_id, PodcastKind::Youtube)
-            }
-            SyncTargetKind::PodcastEpisodes => {
-                self.episode_picker_snapshot(device_id, PodcastKind::Rss)
-            }
-        }
-    }
-
-    fn playlist_picker_snapshot(&self, device_id: &str) -> Result<PickerSnapshot, String> {
+    pub(crate) fn picker_snapshot(&self, device_id: &str) -> Result<PickerSnapshot, String> {
         let device = self
             .device_states
             .borrow()
@@ -128,94 +71,9 @@ impl DeviceSyncRuntime {
         let keep_smart_updated =
             reprise_core::library::settings::get_bool(&self.conn, KEEP_SMART_UPDATED_KEY, true)
                 .map_err(|error| error.to_string())?;
-        Ok(PickerSnapshot::Playlists {
+        Ok(PickerSnapshot {
             rows,
             keep_smart_updated,
-        })
-    }
-
-    fn episode_picker_snapshot(
-        &self,
-        device_id: &str,
-        podcast_kind: PodcastKind,
-    ) -> Result<PickerSnapshot, String> {
-        let kind = match podcast_kind {
-            PodcastKind::Youtube => SyncTargetKind::YoutubeAudio,
-            PodcastKind::Rss => SyncTargetKind::PodcastEpisodes,
-        };
-        let groups = reprise_core::podcasts::query::list_source_groups(&self.conn, podcast_kind)
-            .map_err(|error| error.to_string())?;
-        let default_latest = reprise_core::podcasts::config::load(&self.conn)
-            .map_err(|error| error.to_string())?
-            .latest_per_channel_default;
-        let group_ids = groups
-            .iter()
-            .map(|group| group.subscription_id)
-            .collect::<Vec<_>>();
-        let latest_overrides =
-            reprise_core::podcasts::store::latest_per_channel_overrides(&self.conn, &group_ids)
-                .map_err(|error| error.to_string())?;
-        let enabled = enabled_group_ids(&self.conn, device_id, &groups)?;
-        let pins = episode_pins(&self.conn, &groups)?;
-        let candidates = picker_candidates(&groups, &pins);
-        let rule = match podcast_kind {
-            PodcastKind::Youtube => EpisodeSelectionRule::LatestPerChannel {
-                channel_latest: enabled
-                    .iter()
-                    .map(|group_id| {
-                        (
-                            *group_id,
-                            resolve_latest_per_channel(
-                                default_latest,
-                                latest_overrides.get(group_id).copied(),
-                            ),
-                        )
-                    })
-                    .collect(),
-            },
-            PodcastKind::Rss => EpisodeSelectionRule::UnplayedDownloadsOnly {
-                enabled_shows: enabled.clone(),
-            },
-        };
-        let selection = select_episodes(&candidates, &rule);
-        let selected = selection
-            .ready
-            .into_iter()
-            .chain(selection.waiting)
-            .collect::<HashSet<_>>();
-        let groups = groups
-            .into_iter()
-            .map(|group| PickerEpisodeGroup {
-                id: group.subscription_id,
-                name: group.title,
-                enabled: enabled.contains(&group.subscription_id),
-                latest_override: latest_overrides
-                    .get(&group.subscription_id)
-                    .and_then(|value| usize::try_from(*value).ok()),
-                episodes: group
-                    .episodes
-                    .into_iter()
-                    .map(|episode| PickerEpisodeRow {
-                        id: episode.id,
-                        title: episode.title,
-                        published_at: episode.published_at,
-                        duration_secs: episode.duration_secs,
-                        position_ms: episode.position_ms,
-                        size_bytes: episode
-                            .downloaded_bytes
-                            .and_then(|bytes| u64::try_from(bytes).ok()),
-                        downloaded: episode.downloaded_path.is_some(),
-                        played: episode.played_at.is_some(),
-                        pinned: pins.get(&episode.id).copied().unwrap_or(false),
-                        selected: selected.contains(&episode.id),
-                    })
-                    .collect(),
-            })
-            .collect();
-        Ok(PickerSnapshot::Episodes {
-            kind,
-            latest_per_group: default_latest,
-            groups,
         })
     }
 
@@ -274,26 +132,6 @@ impl DeviceSyncRuntime {
             };
             self.update_settings(settings)?;
         }
-        for (group_id, enabled) in changes.group_changes {
-            reprise_core::podcasts::phone_sync::set_device_enabled(
-                &self.conn, group_id, device_id, enabled,
-            )
-            .map_err(|error| error.to_string())?;
-        }
-        for (episode_id, pinned) in changes.episode_pin_changes {
-            reprise_core::podcasts::wanted_on_device::set_wanted_on_device(
-                &self.conn, episode_id, pinned,
-            )
-            .map_err(|error| error.to_string())?;
-        }
-        if let Some(latest) = changes.latest_per_channel {
-            reprise_core::library::settings::set_setting(
-                &self.conn,
-                reprise_core::podcasts::config::LATEST_PER_CHANNEL_DEFAULT_KEY,
-                &latest.min(100).to_string(),
-            )
-            .map_err(|error| error.to_string())?;
-        }
         if let Some(keep_updated) = changes.keep_smart_updated {
             reprise_core::library::settings::set_bool(
                 &self.conn,
@@ -319,64 +157,6 @@ fn picker_playlist_row(row: reprise_core::device_sync::SyncPlaylistRow) -> Picke
     }
 }
 
-fn enabled_group_ids(
-    db: &Db,
-    device_id: &str,
-    groups: &[SourceGroup],
-) -> Result<HashSet<i64>, String> {
-    groups
-        .iter()
-        .filter_map(|group| {
-            let result =
-                reprise_core::podcasts::phone_sync::selected_device_ids(db, group.subscription_id);
-            match result {
-                Ok(ids) => ids
-                    .iter()
-                    .any(|candidate| candidate == device_id)
-                    .then_some(Ok(group.subscription_id)),
-                Err(error) => Some(Err(error.to_string())),
-            }
-        })
-        .collect()
-}
-
-fn episode_pins(db: &Db, groups: &[SourceGroup]) -> Result<HashMap<i64, bool>, String> {
-    groups
-        .iter()
-        .flat_map(|group| group.episodes.iter())
-        .map(|episode| {
-            reprise_core::podcasts::wanted_on_device::wanted_on_device(db, episode.id)
-                .map(|wanted| (episode.id, wanted.unwrap_or(false)))
-                .map_err(|error| error.to_string())
-        })
-        .collect()
-}
-
-fn picker_candidates(
-    groups: &[SourceGroup],
-    pins: &HashMap<i64, bool>,
-) -> Vec<EpisodeSelectionCandidate> {
-    groups
-        .iter()
-        .flat_map(|group| group.episodes.iter())
-        .filter(|episode| {
-            episode.downloaded_path.is_some() || pins.get(&episode.id).copied().unwrap_or(false)
-        })
-        .map(|episode| EpisodeSelectionCandidate {
-            episode_id: episode.id,
-            group_id: episode.subscription_id,
-            published_at: episode.published_at.unwrap_or(episode.first_seen_at),
-            played: episode.played_at.is_some(),
-            local: if episode.downloaded_path.is_some() {
-                LocalAvailability::Available
-            } else {
-                LocalAvailability::Missing
-            },
-            pinned: pins.get(&episode.id).copied().unwrap_or(false),
-        })
-        .collect()
-}
-
 pub(super) fn apply_frozen_smart_snapshots(
     db: &Db,
     device_id: &str,
@@ -388,7 +168,6 @@ pub(super) fn apply_frozen_smart_snapshots(
     {
         return Ok((HashSet::new(), HashSet::new()));
     }
-
     let mut frozen = HashSet::new();
     let mut frozen_track_ids = HashSet::new();
     for source in selected {
@@ -410,13 +189,7 @@ pub(super) fn apply_frozen_smart_snapshots(
             Some(json) => serde_json::from_str::<Vec<i64>>(&json)
                 .map_err(|error| format!("invalid frozen smart-playlist snapshot: {error}"))?,
             None => {
-                let ids = live
-                    .iter()
-                    .map(|track| match track {
-                        MirrorTrack::Available(track) => track.id,
-                        MirrorTrack::Unavailable(track) => track.track_id,
-                    })
-                    .collect::<Vec<_>>();
+                let ids = live.iter().map(mirror_track_id).collect::<Vec<_>>();
                 let json = serde_json::to_string(&ids).map_err(|error| error.to_string())?;
                 reprise_core::library::settings::set_setting(db, &key, &json)
                     .map_err(|error| error.to_string())?;
@@ -435,6 +208,13 @@ pub(super) fn apply_frozen_smart_snapshots(
         frozen.insert(source.clone());
     }
     Ok((frozen, frozen_track_ids))
+}
+
+fn mirror_track_id(track: &MirrorTrack) -> i64 {
+    match track {
+        MirrorTrack::Available(track) => track.id,
+        MirrorTrack::Unavailable(track) => track.track_id,
+    }
 }
 
 fn frozen_smart_key(device_id: &str, playlist_id: i64) -> String {
@@ -467,10 +247,7 @@ fn capture_frozen_smart_snapshots(
                 snapshot
                     .entries
                     .iter()
-                    .map(|track| match track {
-                        MirrorTrack::Available(track) => track.id,
-                        MirrorTrack::Unavailable(track) => track.track_id,
-                    })
+                    .map(mirror_track_id)
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();

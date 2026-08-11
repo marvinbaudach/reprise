@@ -101,24 +101,15 @@ pub(super) async fn perform(
     match effect {
         Effect::Finished(_) => unreachable!("the driver handles Finished before calling perform"),
         Effect::CleanPartials => {
-            // One cleanup per named target (`MTP-38`): partials can be left
-            // behind in any of the three folders, and only the playlists
-            // target lives at the old single managed root.
-            let mut result = Ok(());
-            for (target_path, storage_id) in [
-                (&work.playlists_path, work.playlists_storage),
-                (&work.podcasts_path, work.podcasts_storage),
-                (&work.youtube_path, work.youtube_storage),
-            ] {
-                if let Err(error) = runtime
-                    .backend
-                    .cleanup_partials(work.root_uri.clone(), target_path.clone(), storage_id)
-                    .await
-                {
-                    tracing::warn!(device_id = work.device_id, target_path, %error, "could not clean partial sync files");
-                    result = Err(error);
-                }
-            }
+            let result = runtime
+                .backend
+                .cleanup_partials(
+                    work.root_uri.clone(),
+                    work.playlists_path.clone(),
+                    work.playlists_storage,
+                )
+                .await
+                .map(|_| ());
             Event::PartialsCleaned(result)
         }
         Effect::Transcode { index, action } => {

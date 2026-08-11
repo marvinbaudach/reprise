@@ -53,13 +53,12 @@ pub struct PodcastEpisodeDto {
     /// present on disk, its real file size — never a filesystem path.
     pub download_state: DownloadStateDto,
     /// Block H (`NET-3`/`NET-3a`): whether this episode is already playable
-    /// and transferable to a device without touching the network at all.
-    /// `available` means every local action (play, phone sync) runs now,
+    /// without touching the network at all. `available` means local actions run now,
     /// online or not; `missing` means it needs the network at some point —
     /// Reprise has no real connectivity signal today (see
     /// `reprise_core::connectivity`'s module docs), so this is the one
     /// honest, verifiable half of `NET-3` an agent can act on before
-    /// starting a download or a sync that might only get queued.
+    /// starting a download that might only get queued.
     pub local_availability: &'static str,
 }
 

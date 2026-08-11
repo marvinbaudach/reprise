@@ -6,6 +6,16 @@ Feature base: `ea1b3dc7c1`
 Integrated `dev`: `6cdb1af33e`
 As of: 2026-07-27
 
+## Status note of 2026-08-11 — playlists are the sole phone target
+
+The later three-target addendum below is retained as implementation history,
+but `MTP-54` supersedes it. Reprise now synchronizes exactly one target per
+device: the playlists target under `/Music/Reprise`. Podcast episodes and
+YouTube audio remain desktop features and downloads, but no longer have a
+phone-sync route. Per-category activation and size caps were removed with
+those targets; files already present in the former device folders are left
+untouched for manual cleanup in the device browser.
+
 ## Addendum of 2026-07-28 — three named sync targets replace the single
 ## managed folder
 

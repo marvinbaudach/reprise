@@ -273,10 +273,8 @@ fn remove_if_present(path: &Path) -> Result<(), PodcastError> {
 /// global default (`podcasts::config::PodcastConfig::keep_downloaded_default`).
 /// `None` (no persisted override for this channel) falls back to the
 /// default; an explicit override — including `0` — always wins, because `0`
-/// means unlimited for every numeric sync/cleanup setting since the owner
-/// decision of 2026-07-29 (`E-9`). Pure, same shape as `device_sync::
-/// selection::resolve_latest_per_channel` (`MTP-36`) — two quantity limits,
-/// one mental model, deliberately (`O-5`).
+/// means unlimited for every numeric cleanup setting since the owner
+/// decision of 2026-07-29 (`E-9`). Pure (`O-5`).
 #[must_use]
 pub fn resolve_keep_downloaded(default_keep: usize, channel_override: Option<i64>) -> usize {
     match channel_override {
