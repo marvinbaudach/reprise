@@ -33,6 +33,14 @@ GEOMETRY_EPSILON_PX = 6.0
 SLOW_FEEDBACK_MS = 250
 STALL_EXCESS_MS = 250
 SILENT_WAIT_MS = 750
+# Attribution is deliberately conservative. A response gap is blamed on the
+# app only when it used at least 100 ms of CPU and at least a tenth of one core
+# over the whole gap. Smaller deltas can be scheduler ticks or background noise.
+APP_BUSY_MIN_CPU_MS = 100
+APP_BUSY_MIN_CPU_SHARE = 0.10
+# A one-minute load at or above the logical CPU count means at least one runnable
+# task per CPU on average. It is only an environment hint, never a product fault.
+HOST_LOADED_PER_CPU = 1.0
 
 
 def element_flag(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
@@ -197,6 +205,7 @@ class ActionEvidence:
     settle_delay_ms: int = 0
     snapshot_ms: tuple[int, ...] = ()
     snapshot_ms_before_first_change: int = 0
+    response_gaps: tuple[Mapping[str, Any], ...] = ()
     # False when the driver accepted the call but its response does not prove
     # the input reached the app. Nothing the app did or failed to do can be
     # read out of an action that never arrived.
@@ -639,22 +648,73 @@ class OracleEngine:
         # when the UI thread is free; anything a sample spends beyond that is
         # time the main loop kept the accessibility bus waiting.
         baseline_ms = min(action.snapshot_ms) if action.snapshot_ms else 0
-        excess_ms = [
-            round(gap - baseline_ms)
-            for gap in action.sample_gaps_ms
-            if gap - baseline_ms >= STALL_EXCESS_MS
-        ]
-        if excess_ms:
+        stalled_samples = []
+        for index, gap in enumerate(action.sample_gaps_ms):
+            excess_ms = round(gap - baseline_ms)
+            if excess_ms < STALL_EXCESS_MS:
+                continue
+            measured = (
+                dict(action.response_gaps[index])
+                if index < len(action.response_gaps)
+                else {"gap_ms": gap, "app_cpu_ms": None, "host_load_1m": None}
+            )
+            measured.update({"gap_ms": gap, "excess_ms": excess_ms})
+            stalled_samples.append(measured)
+        app_busy = []
+        host_loaded = []
+        for sample in stalled_samples:
+            if sample.get("harness_fault"):
+                continue
+            gap_ms = _number(sample.get("gap_ms"))
+            cpu_ms = sample.get("app_cpu_ms")
+            app_threshold_ms = max(
+                APP_BUSY_MIN_CPU_MS, gap_ms * APP_BUSY_MIN_CPU_SHARE
+            )
+            sample["app_cpu_threshold_ms"] = round(app_threshold_ms)
+            if isinstance(cpu_ms, (int, float)) and cpu_ms >= app_threshold_ms:
+                app_busy.append(sample)
+                continue
+            load = sample.get("host_load_1m")
+            cpu_count = sample.get("host_cpu_count")
+            host_threshold = (
+                cpu_count * HOST_LOADED_PER_CPU
+                if isinstance(cpu_count, int) and cpu_count > 0
+                else None
+            )
+            sample["host_load_threshold"] = host_threshold
+            if (
+                isinstance(load, (int, float))
+                and host_threshold is not None
+                and load >= host_threshold
+            ):
+                host_loaded.append(sample)
+        if app_busy:
             findings.append(
                 Finding(
                     "main-loop-stall",
                     "warning",
                     0.8,
-                    "Observation sampling detected one or more long UI response gaps.",
+                    "Observation sampling found long response gaps while the app process was computing.",
                     {
-                        "excess_ms": excess_ms,
+                        "gap_samples": app_busy,
                         "baseline_ms": round(baseline_ms),
                         "gaps_ms": list(action.sample_gaps_ms),
+                        "attribution": "app-process-cpu",
+                    },
+                )
+            )
+        if host_loaded:
+            findings.append(
+                Finding(
+                    "environment-load-hint",
+                    "info",
+                    0.7,
+                    "Long response gaps occurred while the app was CPU-idle and the host was loaded; this is not a product finding.",
+                    {
+                        "gap_samples": host_loaded,
+                        "baseline_ms": round(baseline_ms),
+                        "gaps_ms": list(action.sample_gaps_ms),
+                        "attribution": "loaded-host",
                     },
                 )
             )

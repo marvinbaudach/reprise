@@ -497,7 +497,13 @@ class TimingAttributionTests(unittest.TestCase):
 
     def test_a_sample_far_above_the_steps_own_baseline_is_a_stall(self) -> None:
         codes = self._codes(
-            snapshot_ms=(472, 467, 481, 1400), sample_gaps_ms=(467, 481, 1400)
+            snapshot_ms=(472, 467, 481, 1400),
+            sample_gaps_ms=(467, 481, 1400),
+            response_gaps=(
+                {"gap_ms": 467, "app_cpu_ms": 0, "host_load_1m": 2.0},
+                {"gap_ms": 481, "app_cpu_ms": 0, "host_load_1m": 2.0},
+                {"gap_ms": 1400, "app_cpu_ms": 200, "host_load_1m": 2.0},
+            ),
         )
 
         self.assertIn("main-loop-stall", codes)
@@ -514,6 +520,9 @@ class TimingAttributionTests(unittest.TestCase):
                 snapshot_ms=(470, 1400),
                 snapshot_ms_before_first_change=0,
                 sample_gaps_ms=(1400,),
+                response_gaps=(
+                    {"gap_ms": 1400, "app_cpu_ms": 200, "host_load_1m": 2.0},
+                ),
             ),
             self.state,
             self.state,
@@ -521,7 +530,7 @@ class TimingAttributionTests(unittest.TestCase):
         )
         stall = next(item for item in findings if item.code == "main-loop-stall")
 
-        self.assertEqual(stall.evidence["excess_ms"], [930])
+        self.assertEqual(stall.evidence["gap_samples"][0]["excess_ms"], 930)
         self.assertEqual(stall.evidence["baseline_ms"], 470)
 
     def test_the_harnesss_own_waiting_is_not_missing_feedback(self) -> None:

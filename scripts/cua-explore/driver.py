@@ -29,6 +29,7 @@ from driver_transport import CliTransport, DriverError, Transport, response_disp
 from oracles import ActionEvidence, Finding, OracleEngine, Snapshot, normalize_snapshot
 from protocol import ContractError, SCHEMA_VERSION
 from pointer_dispatch import desktop_pointer_payload
+from process_activity import ProcessActivityProbe
 from ui_vocabulary import ACTIONABLE_ROLES, canonical_role, invocable_actions
 
 
@@ -105,6 +106,7 @@ class CuaExecutor:
     ) -> None:
         self.transport = transport
         self.pid = pid
+        self.activity_probe = ProcessActivityProbe(pid)
         self.window_id = window_id
         self.session = session
         self.state_prefix = state_prefix
@@ -120,9 +122,7 @@ class CuaExecutor:
         self.geometry_provider = geometry_provider
         self.window_origin = window_origin
         self.generation = generation
-        self.geometry_measurements = (
-            geometry_measurements if geometry_measurements is not None else []
-        )
+        self.geometry_measurements = geometry_measurements if geometry_measurements is not None else []
         self.geometry_failures: list[str] = []
         self.geometry_calibration: Any | None = None
         self.geometry_resolution: Any | None = None
@@ -132,6 +132,7 @@ class CuaExecutor:
         self._state_counter = 0
         self._step_counter = 0
         self._snapshot_durations_ms: list[int] = []
+        self._snapshot_activity: list[Mapping[str, Any]] = []
         if evidence_dir is not None:
             evidence_dir.mkdir(parents=True, exist_ok=True)
 
@@ -267,6 +268,7 @@ class CuaExecutor:
         # From here on every snapshot round-trip is harness cost inside the
         # observation window, so measure it from the same starting line.
         self._snapshot_durations_ms = []
+        self._snapshot_activity = []
         response = self._dispatch(accepted, evidence, before_raw)
         dispatched = self._confirm_dispatch(evidence, response)
         action_elapsed_ms = round((time.monotonic() - started) * 1000)
@@ -333,22 +335,15 @@ class CuaExecutor:
             observation_ms=observation_ms,
             first_change_ms=first_change_ms,
             sample_gaps_ms=tuple(sample_gaps),
-            target_has_action=(
-                self.target_carries_action(before_raw, evidence.target_label)
-                if evidence.target_label
-                else None
-            ),
+            target_has_action=self.target_carries_action(before_raw, evidence.target_label) if evidence.target_label else None,
             settle_delay_ms=round(sum(self.settle_delays) * 1000),
             snapshot_ms=tuple(self._snapshot_durations_ms),
             snapshot_ms_before_first_change=snapshot_ms_before_first_change,
+            response_gaps=tuple(self._snapshot_activity[-len(sample_gaps):]) if sample_gaps else (),
         )
-        findings = list(self.oracle_engine.analyze(
-            completed_evidence, before, after, settled=tuple(settled)
-        ))
+        findings = list(self.oracle_engine.analyze(completed_evidence, before, after, settled=tuple(settled)))
         findings.extend(self._take_harness_findings())
-        result = StepResult(
-            before, after, tuple(settled), response, completed_evidence, tuple(findings)
-        )
+        result = StepResult(before, after, tuple(settled), response, completed_evidence, tuple(findings))
         self._retain_step(result)
         return result
 
@@ -486,13 +481,17 @@ class CuaExecutor:
             payload["screenshot_out_file"] = str(self.evidence_dir / f"{stem}.png")
         captured_ms = round(time.monotonic() * 1000)
         round_trip_started = time.monotonic()
+        activity_started = self.activity_probe.start()
         raw = self.transport.call("get_window_state", payload)
         raw = {**raw, "screenshot_available": json_path is not None and raw.get("screenshot_available") is not False}
         raw = self.with_measured_geometry(raw, state_id=state_id)
         # Retained so the timing oracles can subtract the harness's own cost.
-        self._snapshot_durations_ms.append(
-            round((time.monotonic() - round_trip_started) * 1000)
-        )
+        duration_ms = round((time.monotonic() - round_trip_started) * 1000)
+        self._snapshot_durations_ms.append(duration_ms)
+        activity = self.activity_probe.finish(activity_started, gap_ms=duration_ms)
+        if raw.get("screenshot_unavailable_reason"):
+            activity = {**activity, "harness_fault": "screenshot-unavailable"}
+        self._snapshot_activity.append(activity)
         if json_path is not None:
             json_path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return raw, normalize_snapshot(raw, state_id=state_id, captured_ms=captured_ms)
