@@ -3942,7 +3942,7 @@ means deterministic and high-confidence, never „without review".
 - **DOC-3a** [active] [core] — **Review decides per field, and everything
   reviewable starts selected.** Every concrete track/field change has its own
   selection and arrives preselected. The master checkbox in the column header
-  selects every ready row when it is off and clears every row when it is on;
+  selects every ready row when it is on and clears every row when it is off;
   neither touches a stale or conflicting row. A tie shows
   „N spellings, no clear winner — pick one" with only real candidates and
   their frequencies, with no default. Picking a candidate materializes the
