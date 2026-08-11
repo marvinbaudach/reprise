@@ -9,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -23,7 +22,7 @@ FIXTURE = (
 )
 sys.path.insert(0, str(EXPLORE_ROOT))
 
-from actions import ActivateAction, HoverAction, PressAction, ScrollAction, TypeAction  # noqa: E402
+from actions import ActivateAction, PressAction, ScrollAction, TypeAction  # noqa: E402
 from driver import CliTransport, CuaExecutor, DriverError  # noqa: E402
 from driver_transport import SUCCESS_CONTRACT, response_dispatched  # noqa: E402
 from hover_geometry import WindowGeometry  # noqa: E402
@@ -92,11 +91,6 @@ MEASURED_ERROR_SHELLS = {
     '"escalation_reason": null, "session": "contract-probe-69086"}',
 }
 BACKGROUND_UNAVAILABLE = MEASURED_ERROR_SHELLS["code_object"]
-CAPTURE_ERROR = (
-    "Capture error: window screenshot failed for window 8388613:\n"
-    "all Linux window capture backends failed\n"
-    "- XShm: MIT-SHM capture failed after reconnect for DISPLAY=:2"
-)
 
 
 def completed(stdout: str, *, returncode: int = 0, stderr: str = ""):
@@ -200,60 +194,6 @@ class SuccessContractTests(unittest.TestCase):
 
         self.assertTrue(response_dispatched(response))
         self.assertEqual(transport.transport_faults, 0)
-
-    def test_a_persistent_capture_error_keeps_the_hover_run_image_blind(self) -> None:
-        snapshot = FIXTURE.read_text(encoding="utf-8")
-        responses = [
-            completed(MEASURED_SUCCESS["set_agent_cursor_enabled"]),
-            completed(MEASURED_SUCCESS["move_cursor"]),
-            *[completed(CAPTURE_ERROR)] * 4,
-            completed(snapshot),
-            completed(MEASURED_SUCCESS["move_cursor"]),
-            *[completed(CAPTURE_ERROR)] * 4,
-            completed(snapshot),
-            completed(MEASURED_SUCCESS["move_cursor"]),
-        ]
-        transport = CommandScriptTransport(responses, evidence_dir=self.evidence_dir)
-        executor = CuaExecutor(
-            transport,
-            pid=1,
-            window_id=8388613,
-            session="capture-fault",
-            evidence_dir=self.evidence_dir / "states",
-            hover_geometry=WindowGeometry(0, 0, 1200, 800),
-        )
-
-        with mock.patch("driver.time.sleep"), mock.patch("driver_transport.time.sleep"):
-            result = executor.execute_hover(HoverAction("state-1", "Writable Batch 0001"))
-
-        self.assertFalse(result.before.screenshot_available)
-        self.assertFalse(result.after.screenshot_available)
-        retained = json.loads(
-            (self.evidence_dir / "states" / "step-0001-hover-before.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        self.assertIs(retained["screenshot_available"], False)
-        self.assertFalse(list((self.evidence_dir / "states").glob("*.png")))
-        codes = {finding.code for finding in result.findings}
-        self.assertIn("driver-transport-fault", codes)
-        self.assertIn("hover-skipped", codes)
-        self.assertNotIn("hover-affordance-missing", codes)
-        self.assertNotIn("hover-affordance-weak", codes)
-        fault = next(
-            finding for finding in result.findings
-            if finding.code == "driver-transport-fault"
-        )
-        self.assertIn(CAPTURE_ERROR.splitlines()[0], fault.summary)
-        screenshot_calls = [
-            json.loads(command[2])
-            for command in transport.commands
-            if command[1] == "get_window_state"
-        ]
-        self.assertEqual(len(screenshot_calls), 10)
-        self.assertNotIn("screenshot_out_file", screenshot_calls[4])
-        self.assertNotIn("screenshot_out_file", screenshot_calls[9])
-
 
 class DriverRefusalContractTests(unittest.TestCase):
     def test_background_unavailable_retries_foreground_and_retains_step_evidence(

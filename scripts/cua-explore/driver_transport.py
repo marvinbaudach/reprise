@@ -105,9 +105,14 @@ class CliTransport:
         self._fault_finding_emitted = False
         self._retained_fault_lines = 0
         self._plain_text_fault_line: str | None = None
+        self._capture_unavailable_reason: str | None = None
 
     def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         request_payload = dict(payload)
+        capture_unavailable_reason = None
+        if tool == "get_window_state" and self._capture_unavailable_reason is not None:
+            request_payload.pop("screenshot_out_file", None)
+            capture_unavailable_reason = self._capture_unavailable_reason
         command = [
             self.driver_binary,
             tool,
@@ -117,7 +122,6 @@ class CliTransport:
             command.extend(["--socket", str(self.socket_path)])
         attempt = 0
         delivery_escalation: dict[str, str] | None = None
-        capture_unavailable_reason: str | None = None
         while True:
             attempt += 1
             try:
@@ -161,6 +165,7 @@ class CliTransport:
                     request_payload = tree_payload
                     command[2] = json.dumps(tree_payload, separators=(",", ":"))
                     capture_unavailable_reason = first_line
+                    self._capture_unavailable_reason = first_line
                     attempt = 0
                     continue
                 if tool in RETRYABLE_TOOLS and attempt <= len(RETRY_DELAYS_SECONDS):
