@@ -1,9 +1,9 @@
 # Flatpak packaging
 
-`org.reprise.Reprise.yml` is the local, reproducible development manifest. It
-uses GNOME Platform/SDK 50 and the matching stable Rust SDK extension. Cargo is
-forced offline and consumes the checksummed crate archives generated in
-`cargo-sources.json`.
+`io.github.marvinbaudach.Reprise.yml` is the local, reproducible development
+manifest. It uses GNOME Platform/SDK 50 and the matching stable Rust SDK
+extension. Cargo is forced offline and consumes the checksummed crate archives
+generated in `cargo-sources.json`.
 
 Regenerate the Cargo sources after every `Cargo.lock` change with the official
 Flatpak Builder Tools generator:
@@ -22,8 +22,8 @@ the source tree:
 
 ```sh
 flatpak-builder --user --install-deps-from=flathub --force-clean \
-  --install /tmp/reprise-flatpak-build org.reprise.Reprise.yml
-flatpak run org.reprise.Reprise
+  --install /tmp/reprise-flatpak-build io.github.marvinbaudach.Reprise.yml
+flatpak run io.github.marvinbaudach.Reprise
 ```
 
 Every static permission and why no portal replaces it:
