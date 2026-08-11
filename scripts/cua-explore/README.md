@@ -69,7 +69,8 @@ accessibility tree itself in WINDOW coordinates, starting at the frame child of
 the application - the application node carries no component interface, and
 starting there would shift both walks by one level - normalises against the
 frame node, and adds the window origin from `list_windows`. The frame node's
-own WINDOW rectangle is retained in `summary.json` as `geometry_calibration`:
+own WINDOW rectangle is retained per snapshot in `summary.json` under
+`geometry_measurements[].calibration`:
 normalising against it is right exactly when it is the same rectangle as the
 `list_windows` entry, and the sizes are the test for that. Geometry is resolved per element, not per tree: cua-driver returns one entry
 per indexed row - measured 180 against 485 nodes in the full walk, and not a
@@ -85,10 +86,12 @@ subset argument rather than on the key alone. `subset_violations` counts the
 elements in groups where the driver reports *more* nodes than the walk can see:
 those never pair, and a non-zero count is evidence against the subset argument
 everywhere else too. The
-position oracles skip untrusted elements. `summary.json` records the quota
-under `geometry_resolution` (resolved, unmatched, ambiguous, degenerate,
-outside the window) together with up to 40 unresolved elements per reason -
-each with its key and, for ambiguous ones, how many candidates the walk offers plus `geometry_calibration` and any `geometry_failures`.
+position oracles skip untrusted elements. `summary.json` records one entry per
+snapshot under `geometry_measurements`, named by executor generation and state.
+Each successful entry carries its own resolution quota (resolved, unmatched,
+ambiguous, degenerate, outside the window) and calibration; each failed entry
+names the reason. The report renders generations separately, so a clean restart
+cannot overwrite an earlier untrusted measurement.
 
 The two driver tools take pixels in different spaces, measured from their own
 schemas: `move_cursor` with `scope=desktop` takes desktop coordinates, while
@@ -174,6 +177,18 @@ means assistive technology is offered an action that goes nowhere. The pixel
 route is refused outright when the element's position was not measured, and a
 target below 8 px carries a warning rather than a silent coin toss. Retained as
 `click-probe.json` with two screenshots per route.
+
+Every element-addressed action carries the `element_token` from the exact
+`get_window_state` response that exposed its target. If a driver snapshot lacks
+that preferred handle, the harness sends `element_index` together with the same
+snapshot's `snapshot_id`; it never sends a bare index. This contract also covers
+targeted `type_text`, `press_key`, and `scroll` calls. A token whose embedded
+snapshot disagrees with the response's `snapshot_id` fails before dispatch, so
+a stale handle cannot be rewritten to look current - and so does a token from a
+response that carries no `snapshot_id` at all, because there is nothing to
+check it against. The click probe marks `dispatched` only when the returned
+action payload actually confirms dispatch; a row that was never dispatched says
+so in its note and carries no verdict about the product.
 
 Before trusting any hover verdict, settle whether a pointer move reaches the
 app at all. The probe places the pointer on one named control twice - once
@@ -305,6 +320,171 @@ agent adapter that replays a candidate sequence. Confirmation retains only the
 same evidence-bearing finding reproduced in at least two independent runs;
 minimization removes actions only while the remaining sequence stays valid and
 still reproduces the finding.
+
+## What counts as an affordance
+
+GTK4 hangs `listitem.scroll-to` on *every* row and *every* cell of a
+`GtkColumnView`, `list.select-all` on every list, and the `win.*` / `window.*` /
+`default.*` GActions on the window itself. None of those is a thing a user can
+do; they are the instructions assistive technology uses to move around. Counting
+them as affordances made all 52 table cells "actionable", and the first two
+cells sharing a label then ended the run.
+
+The rule lives in exactly one place, `ui_vocabulary.py`:
+
+- **structural** — matches `STRUCTURAL_ACTION_PREFIXES`. Never an affordance.
+- **invocable** — everything else. `MEASURED_INVOCABLE_ACTIONS` documents what
+  has actually been observed (`click`, and nothing else across 1020 recorded
+  snapshots of the 2026-08-10 night run).
+
+An **unknown** name counts as invocable — the same choice `ROLE_ALIASES` makes
+for unknown role spellings: visibly wrong beats silently blind. Every unknown
+name is counted in `summary.json` under `unknown_action_names` and raises one
+`unknown-action-name` finding per run, so the next measurement can classify it.
+`app.*` is deliberately *not* in the prefix list: it never appeared in any
+recording, and this list documents what the app emits, not what it might emit.
+
+Note that a role can still make an element actionable on its own
+(`ACTIONABLE_ROLES`). The table's column header keeps counting as a target
+because its role is `row` — what changed is the accusation: with no invocable
+action it now yields `no-accessible-action` ("there was nothing to invoke")
+instead of `suspected-no-handler` ("the app did not react").
+
+## Ambiguous accessible names
+
+Two nodes can legitimately share a name — a rating column has 27 buttons called
+`★`. Refusing to choose between them used to end the run, which cost five of
+twelve runs and roughly 4500 unspent actions in the night of 2026-08-10.
+
+For a *measurement* refusing is right: a position you cannot prove must not be
+invented, which is why `atspi_geometry` stays strict. For a *navigation* there
+is no wrong answer, only an unrecorded one. So `_target` picks the first match
+in reading order (`y`, then `x`, then `element_index`), records which one it
+took and which alternatives existed, and raises one
+`ambiguous-accessible-name` finding per name and run — a finding about the app,
+which is what a screen reader user faces too.
+
+One divergence to know about: `stable_key`'s `occurrence` counter in
+`oracles.normalize_snapshot` numbers identical labels in *column* order
+(`x`, then `y`), not reading order. Unifying the two would move every element
+identity in the harness and belongs with the optional `key` target, not here.
+
+## The mission declares its window
+
+`missions/*.json` may carry `"window": {"width": …, "height": …}`. The runner
+applies it once after every launch and restart, before the window origin is
+resolved, and measures back what the window manager granted
+(`summary.json → window_setup`). More than two pixels of drift raises
+`window-size-not-honoured` — a warning, not an abort. If the measurement itself
+fails (wmctrl gone, hung, or the window not found) the record degrades to
+`achieved: null` plus an `error`, and the same warning is raised: measuring is a
+read and gets a bounded retry, resizing is a write and never gets a second one.
+
+This exists because the window size used to be inherited from whatever the app
+defaulted to, and that default was below the width at which Reprise closes both
+side panels. Every mission that navigates the sidebar was testing a window that
+had no sidebar.
+
+`pointer-layout-reachability` declares `1200x800` on purpose: its persona is
+"impatient pointer user on a small display". It starts wide and is resized down,
+so the collapse and its undo toast are part of what that mission tests. The
+other five declare `1600x1000`.
+
+## Semantic dispatch fallback
+
+The reasoning agent switches its effective activation policy from `ax` to `px`
+only after three semantic actions were accepted by the driver, produced no
+observable effect, and the same targets then responded to pointer dispatch.
+That is the `semantic-route-unavailable` environmental finding.
+
+A driver refusal is categorically different. It is a harness contract failure,
+raises `DriverError`, aborts the action path, and never reaches the agent as an
+ineffective activation. The one bounded exception is an exact
+`background_unavailable` response from an action whose schema accepts
+`delivery_mode`: the harness retains and counts that fault, retries once with
+`delivery_mode: "foreground"`, and records the escalation in the step response.
+Every other error shell still fails closed, as does a failed foreground attempt.
+No refusal can schedule a pointer retry, increment the three-attempt fallback
+counter, emit `semantic-route-unavailable`, or supersede the accessibility
+oracle.
+
+## When a run ends
+
+| Class | Example | Behaviour | Exit |
+| --- | --- | --- | --- |
+| Observation | ambiguous label, missing section, incomplete checkpoint, driver frame that survived a retry | finding, run continues | — |
+| Incomplete | budget spent, `mission_complete: false` | full report, valid evidence | 0 |
+| Aborted | app died, driver unusable, isolation broken | report as far as it got, `abort_reason` set | 1 |
+
+The exit code answers the only question a shell can answer: did the tool work?
+Whether the *mission* reached its goal is in `summary.json → outcome` and in the
+aggregate report. An incomplete mission is a result, not a failure — treating it
+as one buried every legitimate one in the sweep's failure list.
+
+## Driver faults
+
+`CliTransport` retries a **read-only** call twice (250 ms, 500 ms) on malformed
+JSON or a timeout. An empty exit-zero `get_window_state` response is classified
+separately and gets a 1 s, 2 s, 3 s readiness ladder: the six-second bound spans
+M4's measured 4.841-second gap between a visible window and a usable AT-SPI tree
+without consuming a material share of a mission. It never generically retries
+an action: a second `click` would be a second user input and would falsify the
+run. The sole action escape is the response-driven `background_unavailable`
+route above, which makes the driver's requested foreground delivery explicit
+rather than replaying an unknown failure.
+
+A response counts as a success only when it carries the payload
+`SUCCESS_CONTRACT` names for that tool - `effect` for an input action,
+`elements` for `get_window_state`, `x`/`y` for `get_cursor_position`, and so
+on. Listing the known failures was tried first and does not hold: cua-driver
+0.19.3 answers exit 0 with at least four shells that are not proven successes:
+`{"status":"refused","refusal":{...}}`, a bare code object with neither of
+those keys, a plain human-readable line, and a normal-looking outcome carrying
+`escalation.reason == "delivery_failed"`. The first and third end the call. A
+bare `background_unavailable` code object takes only the bounded foreground
+escape described above; every other code object ends the call. The fourth
+answers the contract and reports in the same breath that the input never
+arrived: it is retained as a fault and marked undelivered, and an undelivered
+action never produces a product finding. A tool the harness calls without an
+entry in `SUCCESS_CONTRACT` fails too, rather than passing unchecked.
+
+Every failed attempt is retained in `evidence/driver-faults.jsonl` with the
+first 2000 characters of stdout and stderr. A parsed response with a refusal or
+non-success status is retained there in full even when the process exits 0.
+An exhausted empty response is reported as empty, not as invalid JSON, and all
+four attempts remain in the fault log.
+Each failure is counted in `summary.json → transport_faults` and reported once
+per run as `driver-transport-fault`. The point is the payload: one malformed
+frame killed a 20-minute run on 2026-08-10 and left nothing behind to diagnose.
+
+## Oracles that never fire
+
+`summary.json → oracle_activity` counts, per declared oracle, how often it was
+*evaluated* and how often it *fired*. An oracle that never evaluates looks
+exactly like a clean product, and nothing used to say otherwise; it now raises
+`oracle-never-evaluated`. An oracle that is legitimately superseded (the
+`ax`-only branches, once a run has switched to pointer dispatch) carries
+`superseded_by` and stays silent without complaint.
+
+## Where the fixtures come from
+
+Never hand-write a fixture. Every one of them is copied verbatim out of a real
+run, and two of them exist because hand-written ones disagreed with the driver
+three times running.
+
+There are two kinds, and mixing them up is the trap
+`cua-explore-fixture-integrity.py` guards:
+
+- **measured** (`night-2026-08-10-*`, `postfix-2026-08-10-sidebar-open`) —
+  recorded *after* `CuaExecutor.with_measured_geometry`. Exactly what `_target`,
+  `normalize_snapshot`, the explorer and the agent see. Carries `actions` and
+  real `frame` values.
+- **raw** (`hover-sweep-observe`, `postfix-2026-08-10-search-open`) — straight
+  cua-driver output. No `actions` key, every `frame.y` is 0. Good for roles and
+  labels, useless for actions.
+
+`hover-sweep-observe.json` predates action injection entirely (2026-08-07). That
+is why the ambiguity trap could pass the suite while it was killing real runs.
 
 ## Isolation and test data
 

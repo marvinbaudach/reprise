@@ -41,13 +41,16 @@ class ProbeTransport:
 
     def call(self, tool, payload):
         self.calls.append((tool, dict(payload)))
-        if tool == "move_cursor":
+        # The x11 route is faked as its own tool name: move_cursor declares
+        # additionalProperties:false, so the route cannot ride along inside the
+        # payload the harness really sends.
+        if tool in ("move_cursor", "x11-warp"):
             # Only a pointer actually inside the button counts as hovering.
             inside = (
                 TARGET_FRAME["x"] <= payload.get("x", -1) <= TARGET_FRAME["x"] + TARGET_FRAME["w"]
                 and TARGET_FRAME["y"] <= payload.get("y", -1) <= TARGET_FRAME["y"] + TARGET_FRAME["h"]
             )
-            self.hovered = payload.get("probe_method") if inside else None
+            self.hovered = tool if inside else None
             return {"ok": True}
         if tool == "get_cursor_position":
             return {"x": 290, "y": 170}
@@ -110,9 +113,7 @@ def run(transport, **overrides):
             "origin": ORIGIN,
             "label": "Add filter",
             "evidence_dir": pathlib.Path(directory),
-            "x11_move": lambda x, y: transport.call(
-                "move_cursor", {"probe_method": "x11-warp", "x": x, "y": y}
-            ),
+            "x11_move": lambda x, y: transport.call("x11-warp", {"x": x, "y": y}),
             "x11_cursor": lambda: (290.0, 170.0),
             "geometry_provider": lambda: [
                 GeometryNode("frame", "Reprise", -5, -5, 400, 300),
@@ -242,6 +243,27 @@ class ConditionalExclusionTests(unittest.TestCase):
 
 
 class HoverProbeTests(unittest.TestCase):
+    def test_move_cursor_is_sent_only_what_its_schema_or_the_driver_reads(
+        self,
+    ) -> None:
+        # move_cursor declares additionalProperties:false. `pid`/`window_id`
+        # are undeclared but load-bearing - measured on cua-driver 0.19.3, a
+        # session-scoped call without them answers desktop_escalation_required
+        # instead of moving the pointer. Anything beyond them is the harness
+        # inventing a field the driver never reads, and a schema that starts
+        # being enforced would end the run over it.
+        allowed = {"pid", "window_id", "session", "scope", "x", "y"}
+        transport = ProbeTransport()
+
+        run(transport)
+
+        payloads = [
+            payload for tool, payload in transport.calls if tool == "move_cursor"
+        ]
+        self.assertTrue(payloads)
+        for payload in payloads:
+            self.assertEqual(set(payload) - allowed, set())
+
     def test_both_dispatch_routes_are_measured(self) -> None:
         results = run(ProbeTransport())
 
