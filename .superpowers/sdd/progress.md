@@ -1348,3 +1348,6 @@ Task 1: complete (this commit, base cd4f60aae0, projected four Android browse as
 # Android theme gate recovery
 
 Task 1: complete (this commit, base a37fc4ad33, moved the Core ARGB and flat Float visualizer conversions into the existing Android theme boundary and replaced the visualizer scrim's raw black with the exact named theme value without changing any channel, alpha or composition; the Android theme lint was observed red on exactly the three origin/dev findings before reporting `Android theme lint passed`, the fresh JDK 21 Android run passed 291 tests across 57 suites with zero failures, errors or skips, the post-rebase control passed on current origin/dev, diff and edited-file size checks passed, and no display test or merge-readiness run was started)
+# origin/dev display-test repairs
+
+Task display-green-1: complete (this commit, base 4f6dfc7cb2, declared Link roles once when constructing the four Now Playing metadata surfaces and the My Stats metadata label, while leaving recycled TrackCover role presentation untouched; both isolated rule-named Xvfb tests passed, format and strict locked workspace Clippy passed, and the locked workspace suite retained only the exact unchanged origin/dev CONTRAST-5 accent-foreground failure)
