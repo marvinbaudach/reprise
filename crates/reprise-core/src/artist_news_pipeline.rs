@@ -502,6 +502,7 @@ fn sync_releases(
             ],
         )?;
     }
+    crate::deleted_releases::apply_deleted_release_memory(&transaction)?;
     transaction.commit()
 }
 
