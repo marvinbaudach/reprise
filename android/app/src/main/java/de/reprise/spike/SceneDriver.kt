@@ -29,6 +29,11 @@ internal data class ScenePositionSample(
     val playing: Boolean,
 )
 
+/** One callback on every allowed scene frame; non-null bands mean a new analysis frame. */
+internal fun interface SceneFrameSink {
+    fun onFrame(bands: FloatArray?)
+}
+
 /**
  * Converts position estimates to whole spectrogram indices and delegates all
  * signal evolution to [SceneState]. The same monotonic clock supplies elapsed
@@ -39,13 +44,17 @@ internal class SceneDriver(
     private val state: SceneState,
     private val clock: SceneClock,
     private val positionSource: ScenePositionSource,
+    frameSink: SceneFrameSink? = null,
     private val framesAllowed: () -> Boolean,
 ) {
+    private var frameSink = frameSink
+    private var frameSinkNeedsSnapshot = frameSink != null
     var lastDrivenFrameIndex: Int? = null
         private set
     private var framesWithheld = false
     private var lastTickNanos: Long? = null
     private var firstTickNanos: Long? = null
+    private var lastFrameFraction = 0f
 
     fun tick(): Boolean {
         if (!framesAllowed()) {
@@ -56,23 +65,28 @@ internal class SceneDriver(
         val nowNanos = clock.nowNanos()
         val positionMs = estimatedPositionMs(sample, nowNanos)
         val frameIndex = frames.frameIndexFor(positionMs)
+        val frameFraction = frames.frameFractionFor(positionMs)
+        val newFrame = lastDrivenFrameIndex != frameIndex
         val before = state.revision
         val analysed = frames.frameCount > 0
         if (analysed) {
             state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
+            state.readBassPressureAt(frameFraction)
         }
         val previousTick = lastTickNanos
         if (previousTick != null) {
             val elapsedSeconds = (nowNanos - previousTick).coerceAtLeast(0) / NANOS_PER_SECOND
+            state.advanceShimmerBy(elapsedSeconds)
             if (analysed) {
-                state.advanceFogBy(elapsedSeconds)
+                state.advanceFogBy(elapsedSeconds.toFloat())
             } else {
                 // No spectrogram ever arrived for this track, so there is no
                 // signal to follow. Wandering is the honest substitute: it is
                 // visibly alive without pretending to answer music it cannot
                 // hear.
-                val totalSeconds = (nowNanos - (firstTickNanos ?: nowNanos)) / NANOS_PER_SECOND
-                state.wanderTo(totalSeconds, elapsedSeconds)
+                val totalSeconds =
+                    (nowNanos - (firstTickNanos ?: nowNanos)) / NANOS_PER_SECOND
+                state.wanderTo(totalSeconds.toFloat(), elapsedSeconds.toFloat())
             }
         }
         if (firstTickNanos == null) {
@@ -81,7 +95,35 @@ internal class SceneDriver(
         lastTickNanos = nowNanos
         framesWithheld = false
         lastDrivenFrameIndex = frameIndex
-        return state.revision != before
+        val sink = frameSink
+        sink?.onFrame(bandsForTick(analysed, newFrame, frameFraction))
+        if (sink != null) frameSinkNeedsSnapshot = false
+        lastFrameFraction = frameFraction
+        return state.revision != before || sink != null
+    }
+
+    /**
+     * What this tick has to hand the visualizer, or null when it has nothing
+     * new to say.
+     *
+     * A stepped frame is passed on as it is. The two ticks that fall between
+     * two 20 Hz frames would otherwise repeat it verbatim and leave the picture
+     * standing for ~33 ms each, so they read the followers at the point the
+     * playhead has reached inside the frame instead. That reading only moves
+     * when the playhead does: a paused position keeps its fraction, sends
+     * nothing, and leaves the engine's own release to fade the bars out. Where
+     * the analysis is already as fine as the display, every tick brings a frame
+     * and this branch is never reached.
+     */
+    private fun bandsForTick(
+        analysed: Boolean,
+        newFrame: Boolean,
+        frameFraction: Float,
+    ): FloatArray? {
+        if (!analysed) return if (frameSinkNeedsSnapshot) EMPTY_BANDS else null
+        if (newFrame || frameSinkNeedsSnapshot) return state.motionBands
+        if (frameFraction == lastFrameFraction) return null
+        return state.motionBandsWithin(frameFraction)
     }
 
     /**
@@ -98,6 +140,11 @@ internal class SceneDriver(
         lastTickNanos = null
     }
 
+    fun setFrameSink(sink: SceneFrameSink?) {
+        if (sink != null && sink !== frameSink) frameSinkNeedsSnapshot = true
+        frameSink = sink
+    }
+
     private fun estimatedPositionMs(sample: ScenePositionSample, nowNanos: Long): Long {
         if (!sample.playing) return sample.positionMs.coerceAtLeast(0)
         val elapsedNanos = (nowNanos - sample.observedAtNanos).coerceAtLeast(0)
@@ -110,7 +157,8 @@ internal class SceneDriver(
         /** Measured from Media3PlaybackPort's published position interval. */
         const val measuredPositionIntervalMs = 500L
         private const val NANOS_PER_MILLISECOND = 1_000_000L
-        private const val NANOS_PER_SECOND = 1_000_000_000f
+        private const val NANOS_PER_SECOND = 1_000_000_000.0
+        private val EMPTY_BANDS = FloatArray(0)
     }
 }
 
@@ -140,10 +188,13 @@ internal fun DriveScene(
     state: SceneState,
     playback: PlaybackUiState,
     controller: AmbientMotionController,
+    frameSink: SceneFrameSink? = null,
 ): Int {
     val source = remember(state) { MutableScenePositionSource() }
     val driver = remember(frames, state) {
-        SceneDriver(frames, state, SystemSceneClock, source) { controller.sceneFramesAllowed }
+        SceneDriver(frames, state, SystemSceneClock, source) {
+            controller.sceneFramesAllowed
+        }
     }
     var drawRevision by remember(state) { mutableIntStateOf(0) }
     val positionSample = remember(state, playback.positionMs, playback.isPlaying) {
@@ -155,6 +206,7 @@ internal fun DriveScene(
     }
     SideEffect {
         source.update(positionSample)
+        driver.setFrameSink(frameSink)
     }
     DisposableEffect(controller) {
         controller.attach()
@@ -169,14 +221,16 @@ internal fun DriveScene(
         animationsEnabled,
         playback.isPlaying,
         playback.positionMs,
+        frameSink,
     ) {
         if (!runtimeActive || !animationsEnabled) {
             driver.noteFramesWithheld()
             return@LaunchedEffect
         }
-        if (frames.frameCount == 0) return@LaunchedEffect
         do {
-            if (!playback.isPlaying) delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
+            if (!playback.isPlaying || frames.frameCount == 0 && frameSink == null) {
+                delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
+            }
             withFrameNanos {
                 if (driver.tick()) drawRevision += 1
             }
