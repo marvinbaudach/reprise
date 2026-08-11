@@ -155,7 +155,10 @@ Markdown is exempt: docs are split by subject, never by line count.
 
 A change is done when all of the following hold:
 
-1. `scripts/check-merge-readiness.sh` passes.
+1. On a clean integration worktree, `scripts/check-merge-readiness.sh` passes as
+   required by `docs/agents/branching.md`. If a sandbox cannot run that clean-tree
+   wrapper, run its individual gates directly, record the exact unavailable check,
+   and continue: an unavailable aggregate run is not itself a reason to stop.
 2. Every rule the change touches is covered by a rule-named test under
    `crates/`, per `docs/ux-rules.md`.
 3. A rule moves from `[planned]` to `[active]` **in the same commit** that
