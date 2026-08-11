@@ -64,6 +64,22 @@ Benchmark methods, their limits, and the accepted results are documented in
 [TESTING.md](TESTING.md) and the [engineering showcase](docs/showcase.md) —
 this README deliberately avoids numbers that would go stale.
 
+## How this is built
+
+Reprise is developed with heavy LLM assistance, and that is stated here rather
+than left to be discovered. A design is written and then deliberately attacked
+before any code exists; the implementation is delegated to a coding agent in an
+isolated worktree; the result comes back through review and the gates above,
+and a change without a failing test that motivated it does not land. The
+designs, their review rounds, and the handover notes live in `docs/plans/` —
+the process is part of the repository, not a footnote to it.
+
+What that does not change: I am the maintainer, and the decisions and the
+mistakes are mine. The engineering contracts above exist precisely because no
+part of this codebase should be trusted for who or what wrote it — it is
+trusted because a named test enforces it, and you can run every one of those
+tests yourself.
+
 ## Contributing
 
 **Pick your entry point:** pure library, scanner, queue, or playlist logic in
