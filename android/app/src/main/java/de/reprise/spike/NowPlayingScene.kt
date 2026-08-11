@@ -159,6 +159,8 @@ internal fun NowPlayingScene(
             val fogCenter = playedCenter.copy(
                 x = size.width / 2f + horizontalOffsetPx * FOG_SWIPE_DISTANCE_FACTOR,
             )
+            // The cover and spectrum share their artwork colour, so the screen-level fog
+            // stays live through the visualizer cross-fade instead of being pinned to rest.
             drawPlayedNowPlayingFog(
                 fog = fog.previous,
                 center = fogCenter,
@@ -298,6 +300,7 @@ internal fun DrawScope.drawPlayedNowPlayingFog(
         angleA = state.fogAngleA,
         angleB = state.fogAngleB,
         fogLevel = state.fogLevel,
+        bassPressure = state.bassPressure,
         opacity = opacity,
         rotationsEnabled = rotationsEnabled,
     )

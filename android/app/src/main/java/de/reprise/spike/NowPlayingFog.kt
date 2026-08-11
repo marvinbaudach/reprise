@@ -25,8 +25,12 @@ internal object NowPlayingFogSpec {
 
     private const val WIDE_FLOOR = 0.34f
     private const val TIGHT_FLOOR = 0.14f
-    private const val FOG_LEVEL_LOW = 0.05f
-    private const val FOG_LEVEL_HIGH = 0.70f
+    private const val SWELL_LOW = 0.05f
+    private const val SWELL_HIGH = 0.70f
+    private const val PRESSURE_LOW = 0f
+    private const val PRESSURE_HIGH = 0.70f
+    private const val SWELL_WEIGHT = 0.52f
+    private const val PRESSURE_WEIGHT = 0.48f
 
     /**
      * How far the haze swells with the signal.
@@ -37,20 +41,24 @@ internal object NowPlayingFogSpec {
      */
     private const val SCALE_SWING = 0.14f
 
-    fun breathingSize(baseSizeDp: Float, fogLevel: Float): Float =
-        baseSizeDp * (1f + SCALE_SWING * fogLevel.coerceIn(0f, 1f))
+    fun breathingSize(baseSizeDp: Float, swell: Float): Float =
+        baseSizeDp * (1f + SCALE_SWING * swell.coerceIn(0f, 1f))
 
-    fun wideAlpha(fogLevel: Float, opacity: Float): Float =
-        wideOpacity * response(fogLevel, WIDE_FLOOR) * opacity
+    fun wideAlpha(swell: Float, bassPressure: Float, opacity: Float): Float =
+        wideOpacity * response(swell, bassPressure, WIDE_FLOOR) * opacity
 
-    fun tightAlpha(fogLevel: Float, opacity: Float): Float =
-        tightOpacity * response(fogLevel, TIGHT_FLOOR) * opacity
+    fun tightAlpha(swell: Float, bassPressure: Float, opacity: Float): Float =
+        tightOpacity * response(swell, bassPressure, TIGHT_FLOOR) * opacity
 
-    private fun response(fogLevel: Float, floor: Float): Float {
-        val measuredRange = FOG_LEVEL_HIGH - FOG_LEVEL_LOW
-        val normalized = ((fogLevel - FOG_LEVEL_LOW) / measuredRange).coerceIn(0f, 1f)
-        return floor + (1f - floor) * normalized
+    private fun response(swell: Float, bassPressure: Float, floor: Float): Float {
+        val normalizedSwell = normalize(swell, SWELL_LOW, SWELL_HIGH)
+        val normalizedPressure = normalize(bassPressure, PRESSURE_LOW, PRESSURE_HIGH)
+        val drive = SWELL_WEIGHT * normalizedSwell + PRESSURE_WEIGHT * normalizedPressure
+        return floor + (1f - floor) * drive.coerceIn(0f, 1f)
     }
+
+    private fun normalize(value: Float, low: Float, high: Float): Float =
+        ((value - low) / (high - low)).coerceIn(0f, 1f)
 
     /**
      * The scrim that keeps the title readable, measured from the cover centre.
@@ -75,6 +83,7 @@ internal fun DrawScope.drawNowPlayingFog(
     angleA: Float,
     angleB: Float,
     fogLevel: Float,
+    bassPressure: Float,
     opacity: Float,
     rotationsEnabled: Boolean,
 ) {
@@ -85,7 +94,7 @@ internal fun DrawScope.drawNowPlayingFog(
             center = center,
             sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.wideSizeDp, fogLevel),
             angle = if (rotationsEnabled) angleA else 0f,
-            alpha = NowPlayingFogSpec.wideAlpha(fogLevel, boundedOpacity),
+            alpha = NowPlayingFogSpec.wideAlpha(fogLevel, bassPressure, boundedOpacity),
             blendMode = BlendMode.SrcOver,
         )
         drawFogLayer(
@@ -93,7 +102,7 @@ internal fun DrawScope.drawNowPlayingFog(
             center = center,
             sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.tightSizeDp, fogLevel),
             angle = if (rotationsEnabled) angleB else 0f,
-            alpha = NowPlayingFogSpec.tightAlpha(fogLevel, boundedOpacity),
+            alpha = NowPlayingFogSpec.tightAlpha(fogLevel, bassPressure, boundedOpacity),
             blendMode = BlendMode.Screen,
         )
     }
