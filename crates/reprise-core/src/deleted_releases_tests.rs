@@ -28,6 +28,17 @@ fn insert_track(db: &crate::db::Db, id: i64, title: &str, album: &str) {
         .unwrap();
 }
 
+fn remove_from_library(db: &crate::db::Db, ids: &[i64]) {
+    let tracks = ids
+        .iter()
+        .map(|id| (*id, std::path::PathBuf::from(format!("/music/{id}.flac"))))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        crate::queries::exclude_tracks_matching_paths(db, &tracks, 100).unwrap(),
+        ids
+    );
+}
+
 #[test]
 fn nr_32_deleting_the_last_track_of_an_album_hides_its_gap() {
     let db = crate::db::Db::open_in_memory().unwrap();
@@ -35,13 +46,8 @@ fn nr_32_deleting_the_last_track_of_an_album_hides_its_gap() {
     insert_track(&db, 1, "One Album", "One Album");
     insert_track(&db, 99, "Library Anchor", "Other Album");
 
-    crate::deleted_releases::remember_deleted_releases(db.conn(), &[1], 100).unwrap();
-    db.conn()
-        .execute("DELETE FROM tracks WHERE id = 1", [])
-        .unwrap();
-    let hidden = crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap();
+    remove_from_library(&db, &[1]);
 
-    assert_eq!(hidden, 1);
     assert!(crate::artist_news::query_releases_view(
         &db,
         &crate::artist_news::ReleasesFilter::default(),
@@ -53,29 +59,29 @@ fn nr_32_deleting_the_last_track_of_an_album_hides_its_gap() {
 }
 
 #[test]
-fn nr_32_deleting_one_track_of_an_album_keeps_the_gap() {
+fn nr_32_deleting_one_track_keeps_the_album_gap_but_hides_its_single() {
     let db = crate::db::Db::open_in_memory().unwrap();
     insert_release(&db, "album", "One Album", "Album");
+    insert_release(&db, "single", "One Song", "Single");
     insert_track(&db, 1, "One Song", "One Album");
     insert_track(&db, 2, "Two Song", "One Album");
 
-    crate::deleted_releases::remember_deleted_releases(db.conn(), &[1], 100).unwrap();
-    db.conn()
-        .execute("DELETE FROM tracks WHERE id = 1", [])
-        .unwrap();
-    let hidden = crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap();
+    remove_from_library(&db, &[1]);
 
-    assert_eq!(hidden, 0);
-    assert_eq!(
-        crate::artist_news::query_releases_view(
-            &db,
-            &crate::artist_news::ReleasesFilter::default(),
-            today(),
-        )
-        .unwrap()
-        .len(),
-        1
+    let visible = crate::artist_news::query_releases_view(
+        &db,
+        &crate::artist_news::ReleasesFilter::widest(false),
+        today(),
     );
+    assert_eq!(
+        visible
+            .unwrap()
+            .into_iter()
+            .map(|release| release.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["album"]
+    );
+    assert_eq!(crate::artist_news::hidden_release_count(&db).unwrap(), 1);
 }
 
 #[test]
@@ -86,13 +92,8 @@ fn nr_32_deleted_song_hides_only_its_single_row() {
     insert_track(&db, 1, "One Song", "");
     insert_track(&db, 99, "Library Anchor", "Other Album");
 
-    crate::deleted_releases::remember_deleted_releases(db.conn(), &[1], 100).unwrap();
-    db.conn()
-        .execute("DELETE FROM tracks WHERE id = 1", [])
-        .unwrap();
-    let hidden = crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap();
+    remove_from_library(&db, &[1]);
 
-    assert_eq!(hidden, 1);
     let visible = crate::artist_news::query_releases_view(
         &db,
         &crate::artist_news::ReleasesFilter {
@@ -123,7 +124,7 @@ fn nr_32_missing_sibling_writes_no_memory() {
         .execute("UPDATE tracks SET missing_since = 50 WHERE id = 2", [])
         .unwrap();
 
-    crate::deleted_releases::remember_deleted_releases(db.conn(), &[1], 100).unwrap();
+    remove_from_library(&db, &[1]);
 
     let remembered: i64 = db
         .conn()
@@ -142,42 +143,33 @@ fn nr_32_album_memory_also_hides_the_ep_twin() {
     insert_track(&db, 1, "One Song", "Shared Work");
     insert_track(&db, 99, "Library Anchor", "Other Album");
 
-    crate::deleted_releases::remember_deleted_releases(db.conn(), &[1], 100).unwrap();
-    db.conn()
-        .execute("DELETE FROM tracks WHERE id = 1", [])
-        .unwrap();
+    remove_from_library(&db, &[1]);
 
-    assert_eq!(
-        crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap(),
-        2
-    );
     assert_eq!(crate::artist_news::hidden_release_count(&db).unwrap(), 2);
 }
 
 #[test]
-fn nr_32_show_again_forgets_the_deletion() {
+fn nr_32_show_again_forgets_the_selected_release_scope() {
     let db = crate::db::Db::open_in_memory().unwrap();
     insert_release(&db, "album", "One Album", "Album");
-    insert_track(&db, 1, "One Album", "One Album");
+    insert_track(&db, 1, "One Song", "One Album");
     insert_track(&db, 99, "Library Anchor", "Other Album");
-    crate::deleted_releases::remember_deleted_releases(db.conn(), &[1], 100).unwrap();
-    db.conn()
-        .execute("DELETE FROM tracks WHERE id = 1", [])
-        .unwrap();
-    crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap();
+    remove_from_library(&db, &[1]);
 
     crate::artist_news::set_release_hidden(&db, "album", false).unwrap();
     let hidden_again = crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap();
 
     assert_eq!(hidden_again, 0);
     assert_eq!(crate::artist_news::hidden_release_count(&db).unwrap(), 0);
-    let remembered: i64 = db
+    let remembered_scopes = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM deleted_releases", [], |row| {
-            row.get(0)
-        })
+        .prepare("SELECT scope FROM deleted_releases ORDER BY scope")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(remembered, 0);
+    assert_eq!(remembered_scopes, ["track"]);
 }
 
 #[test]
@@ -186,11 +178,7 @@ fn nr_32_reacquiring_the_album_forgets_the_deletion() {
     insert_release(&db, "album", "One Album", "Album");
     insert_track(&db, 1, "One Album", "One Album");
     insert_track(&db, 99, "Library Anchor", "Other Album");
-    crate::deleted_releases::remember_deleted_releases(db.conn(), &[1], 100).unwrap();
-    db.conn()
-        .execute("DELETE FROM tracks WHERE id = 1", [])
-        .unwrap();
-    crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap();
+    remove_from_library(&db, &[1]);
 
     insert_track(&db, 2, "One Album", "One Album");
     let hidden = crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap();
@@ -204,4 +192,114 @@ fn nr_32_reacquiring_the_album_forgets_the_deletion() {
         })
         .unwrap();
     assert_eq!(remembered, 0);
+}
+
+#[test]
+fn nr_32_reacquiring_an_album_keeps_its_absent_same_titled_single_hidden() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    insert_release(&db, "album", "Shared Title", "Album");
+    insert_release(&db, "single", "Shared Title", "Single");
+    insert_track(&db, 1, "Shared Title", "Shared Title");
+    insert_track(&db, 99, "Library Anchor", "Other Album");
+    remove_from_library(&db, &[1]);
+
+    insert_track(&db, 2, "Different Song", "Shared Title");
+    crate::deleted_releases::apply_deleted_release_memory(db.conn()).unwrap();
+
+    let visible = crate::artist_news::query_releases_view(
+        &db,
+        &crate::artist_news::ReleasesFilter::widest(false),
+        today(),
+    )
+    .unwrap();
+    assert_eq!(
+        visible
+            .into_iter()
+            .map(|release| release.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["album"]
+    );
+    let memories = db
+        .conn()
+        .prepare("SELECT scope FROM deleted_releases ORDER BY scope")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(memories, ["track"]);
+}
+
+#[test]
+fn nr_32_show_again_restores_every_row_hidden_by_the_same_album_memory() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    insert_release(&db, "album", "Shared Work", "Album");
+    insert_release(&db, "ep", "Shared Work", "EP");
+    insert_track(&db, 1, "One Song", "Shared Work");
+    insert_track(&db, 99, "Library Anchor", "Other Album");
+    remove_from_library(&db, &[1]);
+
+    crate::artist_news::set_release_hidden(&db, "album", false).unwrap();
+
+    let still_hidden = db
+        .conn()
+        .prepare("SELECT release_group_mbid FROM new_releases WHERE hidden = 1 ORDER BY 1")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(still_hidden.is_empty(), "still hidden: {still_hidden:?}");
+    let scopes = db
+        .conn()
+        .prepare("SELECT scope FROM deleted_releases ORDER BY scope")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(scopes, ["track"]);
+}
+
+#[test]
+fn deletion_memory_rejects_an_album_without_an_artist_identity() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (
+               id, path, title, artist, album_artist, album, added_at
+             ) VALUES (1, '/music/1.flac', 'Song', '', '', 'Anonymous Album', 0)",
+            [],
+        )
+        .unwrap();
+
+    remove_from_library(&db, &[1]);
+
+    assert_eq!(
+        db.conn()
+            .query_row("SELECT COUNT(*) FROM deleted_releases", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn applying_empty_memory_does_not_require_library_or_catalog_tables() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE deleted_releases (
+           artist_key TEXT NOT NULL,
+           title_key TEXT NOT NULL,
+           scope TEXT NOT NULL,
+           deleted_at INTEGER NOT NULL,
+           PRIMARY KEY (artist_key, title_key, scope)
+         );",
+    )
+    .unwrap();
+
+    assert_eq!(
+        crate::deleted_releases::apply_deleted_release_memory(&conn).unwrap(),
+        0
+    );
 }

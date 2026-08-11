@@ -1,7 +1,7 @@
 # Releases: a deleted album stays deleted
 
 Date: 2026-08-11
-Status: design approved, not yet implemented
+Status: implemented; accepted review findings applied
 Baseline: `origin/dev` @ 5995f70e77 (the working checkout is 156 commits
 behind; every line reference below is read from `origin/dev`)
 
@@ -17,10 +17,11 @@ ownership, the row returns as a gap. The catalog then advertises a record
 the listener deliberately threw away, forever, and re-advertises it on every
 badge and popover that shares the filter (NR-26, NR-29).
 
-There is no state to consult instead. "Remove from library" writes a
-tombstone (`removed_at`) purely for the ten-second undo and
-`purge_tombstones` (`queries/maintenance.rs:761`) then deletes the row for
-real; the trash path (`library/trash_tracks.rs`) removes the row outright.
+There is no state to consult instead. "Remove from library" records a scan
+exclusion and deletes the row through `exclude_tracks_matching_paths`; the
+trash path (`library/trash_tracks.rs`) removes the row after the filesystem
+action succeeds. The tombstone/`purge_tombstones` path belongs only to the
+Missing-files flow, where a removal must never be interpreted as deliberate.
 `change_log` records only `entity_id` for a deleted track, so the metadata
 needed to identify the release is gone with the row — **nothing can be
 backfilled**. The memory starts the day this ships.
@@ -36,10 +37,12 @@ song title.
    "remove from library". A file that merely goes missing (unmounted drive,
    moved folder) never writes the memory; that state is what the Missing
    view is for.
-2. **Threshold** — a release is remembered only when nothing of it is left:
-   after the deletion no track of that album remains in the library. A
-   single deleted song off an album changes nothing. For singles, which
-   NR-24 matches by song title, the deleted song itself is the unit.
+2. **Threshold** — album-scope memory is written only when nothing of the
+   album is left: after the deletion no track of that album remains in the
+   library. Deleting one song while keeping another song from the album does
+   not hide the album row. It does write track-scope memory for the deleted
+   song, so a same-titled catalog `single` is hidden; singles are matched by
+   song title under NR-24 and the deleted song itself is their unit.
 3. **Effect** — the memory sets the release `hidden`, the same state the
    Hidden chip already shows. Table, sidebar badge and Updates popover all
    exclude hidden rows already (NR-26, NR-29), so they follow with no extra
@@ -54,8 +57,8 @@ song title.
 
 ## Data — table and migration
 
-New table, created by migration **v63** (highest version on `origin/dev` is
-62 — re-check before writing the file):
+New table, created by migration **v69** (the implementation base already used
+versions through 68):
 
 ```sql
 CREATE TABLE deleted_releases (
@@ -83,16 +86,19 @@ other.
 
 ## Write path — where the memory is recorded
 
-At the two points where the deletion becomes final, never at the point where
-it is requested:
+At the two deliberate deletion paths, inside the transaction and before the
+database rows disappear:
 
 - `library::trash_tracks::trash_tracks_with` — after `trash_action`
-  succeeded and the rows are gone.
-- `queries::purge_tombstones` — when the undo window has closed. An undone
-  removal thus leaves no memory, for free.
+  succeeds.
+- `queries::exclude_tracks_matching_paths` — the user-facing "Remove from
+  library" action, together with its persistent scan exclusion.
 
-Deliberately **not** in `remove_tracks_impl`: that is also the auto-clean
-path for rows the scanner found gone, which decision 1 excludes.
+Deliberately **not** in `purge_tombstones` or the shared id-only
+`remove_tracks_impl`: those serve Missing-files cleanup and auto-clean, which
+decision 1 excludes. Undoing a tombstone re-applies existing memory because a
+returned sibling may reacquire an album, but neither tombstoning nor purging
+writes new memory.
 
 Both call one shared core function so the rule exists once:
 
@@ -119,7 +125,8 @@ decision `local_library_index` documents.
 
 ## Apply path — where the memory takes effect
 
-One function, called from two places:
+Reconciliation runs once after a complete catalog refresh, not once per
+artist, and returns immediately when the memory table is empty:
 
 ```rust
 pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, rusqlite::Error>
@@ -136,13 +143,12 @@ pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, r
 - Hiding reuses `set_release_hidden_in` (`artist_news_query.rs:372`), which
   also stamps `hidden_at`. Rows already hidden are left untouched.
 
-Called from:
-
-1. `remember_deleted_releases`, right after writing.
-2. `sync_releases` (`artist_news_pipeline.rs:463`), inside its existing
-   transaction after the upsert loop — this is what catches a release the
-   catalog had not fetched yet when the deletion happened. Without it, the
-   next MusicBrainz fetch hands the gap straight back.
+The deliberate deletion transaction uses a narrower hide-only pass right
+after writing, avoiding a second full library scan while still removing the
+catalog row in the same interaction. The refresh pipeline calls the full
+reconciliation once after all artists' upserts — this catches a release the
+catalog had not fetched when deletion happened without multiplying full
+library/catalog scans by the number of artists.
 
 **Re-acquisition:** the same pass drops entries whose release is back in the
 library (present in `LocalLibraryIndex`) and un-hides those rows. The
@@ -152,11 +158,13 @@ clearing it cannot overwrite a user decision.
 
 ## Reversal path
 
-`set_release_hidden_in(conn, mbid, false)` — the single definition of
-un-hidden, reached from both `restore_release`
-(`artist_news_history.rs:316`) and the view's per-row action — deletes every
-`deleted_releases` entry matching that row's artist and title, in both
-scopes. Hiding (`true`) writes nothing: only a deletion creates memory.
+`set_release_hidden_in(conn, mbid, false)` — reached from both
+`restore_release` (`artist_news_history.rs:316`) and the view's per-row action
+— deletes the memory scopes that hid the selected row and un-hides every
+catalog row hidden by those same entries. Thus showing one album/EP twin also
+restores the other, while an independent track-scope memory remains intact.
+Re-acquisition deletes and reverses only its acquired scope. Hiding (`true`)
+writes nothing: only a deliberate deletion creates memory.
 
 ## Column rename
 
@@ -190,19 +198,23 @@ Core (`artist_news_query_tests.rs`, `artist_news_view_tests.rs`, the
 maintenance/trash test modules):
 
 - `nr_32_deleting_the_last_track_of_an_album_hides_its_gap`
-- `nr_32_deleting_one_track_of_an_album_keeps_the_gap` (threshold)
+- `nr_32_deleting_one_track_keeps_the_album_gap_but_hides_its_single`
 - `nr_32_deleted_song_hides_only_its_single_row`
-- `nr_32_missing_file_writes_no_memory` (missing sibling survives → no entry)
+- `nr_32_missing_file_writes_no_memory` (whole missing album is purged → no entry)
 - `nr_32_undone_removal_writes_no_memory` (tombstone + undo inside the window)
-- `nr_32_memory_applies_to_a_release_fetched_later` (sync_releases path)
+- `nr_32_memory_applies_to_a_release_fetched_later` (complete refresh path)
 - `nr_32_album_memory_also_hides_the_ep_twin`
-- `nr_32_show_again_forgets_the_deletion` (unhide → next sync leaves it visible)
+- `nr_32_show_again_forgets_the_selected_release_scope`
+- `nr_32_show_again_restores_every_row_hidden_by_the_same_album_memory`
 - `nr_32_reacquiring_the_album_forgets_the_deletion`
+- `nr_32_reacquiring_an_album_keeps_its_absent_same_titled_single_hidden`
 - `nr_32_badge_and_popover_follow_the_memory` (NR-26/NR-29 coherence)
-- migration v63: table exists, is idempotent, empty on upgrade
+- migration v69: table exists, is idempotent, empty on upgrade
 
-GTK: `nr_33_column_contract` pins the header row (display test, needs an X
-server — run it isolated, do not report it green unless it ran).
+GTK: `nr_32_deleted_release_memory_is_reflected_in_releases_view` proves the
+default rendered catalog omits the hidden row, and `nr_33_column_contract`
+pins the header row. The first is a display test and needs an X server — run
+it isolated, and do not report it green unless it ran.
 
 ## Verification
 
