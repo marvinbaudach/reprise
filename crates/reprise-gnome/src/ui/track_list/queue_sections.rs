@@ -79,6 +79,11 @@ pub(crate) fn header_title(sections: &[QueueSection], start: u32) -> String {
         .map_or_else(String::new, render_message)
 }
 
+pub(in crate::ui) fn css() -> String {
+    let minimum = crate::ui::style::tokens::SECTION_HEADER_MIN_HEIGHT;
+    format!(".queue-section-header-row {{ min-height: {minimum}px; }}\n")
+}
+
 /// Installs (or removes) the Queue view's section header factory. Only the
 /// Queue source renders sections — every other source gets its factory
 /// cleared again, mirroring how `artist_master.rs` toggles its alphabet
@@ -128,6 +133,7 @@ pub(in crate::ui) fn apply_queue_header_factory(shared: &Rc<Shared>, is_queue: b
                 .css_classes(["queue-section-header", "heading"])
                 .build();
             if !is_play_next {
+                label.add_css_class("queue-section-header-row");
                 header.set_child(Some(&label));
                 return;
             }
@@ -148,6 +154,7 @@ pub(in crate::ui) fn apply_queue_header_factory(shared: &Rc<Shared>, is_queue: b
                 });
             }
             let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+            row.add_css_class("queue-section-header-row");
             row.append(&label);
             row.append(&clear);
             header.set_child(Some(&row));
@@ -237,6 +244,11 @@ mod que_10_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn queue_section_rows_have_the_measured_height_floor() {
+        assert_eq!(css(), ".queue-section-header-row { min-height: 36px; }\n");
+    }
 
     #[test]
     fn header_titles_preserve_all_three_rendered_forms() {

@@ -41,12 +41,10 @@ use gtk4::prelude::*;
 
 use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::browse_filter_count;
+use crate::ui::list_geometry::ListGeometry;
 use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
     apply_empty_state, empty_state_for_availability,
-};
-use crate::ui::track_list::track_list_geometry::{
-    remember_row_height, restore_geometry_is_ready, row_height_for_restore,
 };
 use crate::ui::track_list::track_list_model_change::ModelChange;
 use crate::ui::track_list::Shared;
@@ -54,22 +52,30 @@ use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-pub(in crate::ui) use super::track_list_geometry::row_height;
+pub(in crate::ui) fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
+    ListGeometry::for_view(column_view)
+        .live_row_height(n_rows as usize)
+        .map(crate::ui::list_geometry::RowHeight::pixels)
+}
 
-/// How many idle-callback rounds the scroll restore waits for the rebuilt
-/// list to gain usable geometry before giving up — mirrors `view_state_
-/// memory`'s identical constant (BROWSE-2), which faces the same "freshly
-/// repopulated `ColumnView` doesn't have adjustment geometry until the next
-/// allocation pass" issue.
-const SCROLL_RESTORE_MAX_ATTEMPTS: u8 = 8;
+fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
+    let n_sections = shared.queue_sections.borrow().len();
+    ListGeometry::for_view(&shared.column_view)
+        .observed_row_height(
+            &shared.conn,
+            &shared.list_geometry_cache,
+            n_rows as usize,
+            n_sections,
+        )
+        .map(crate::ui::list_geometry::RowHeight::pixels)
+}
+
 /// SEARCH-9: how many idle rounds `schedule_top_scroll_restore` re-applies its
-/// zero. Deliberately far below `SCROLL_RESTORE_MAX_ATTEMPTS`: it only has to
-/// outlast the one allocation that GTK's own scroll restore rides in on, and
-/// every extra round is a round in which the loop cannot tell a re-clamp from
-/// the user grabbing the scrollbar — and would snap a deliberate scroll back to
-/// the top. Two rounds cover the allocation with one to spare; eight would keep
-/// overriding the user for roughly the length of the nachlauf this rule set out
-/// to remove.
+/// zero. It only has to outlast the one allocation that GTK's own scroll
+/// restore rides in on, and every extra round is a round in which the loop
+/// cannot tell a re-clamp from the user grabbing the scrollbar — and would
+/// snap a deliberate scroll back to the top. Two rounds cover the allocation
+/// with one to spare.
 const TOP_RESTORE_MAX_ATTEMPTS: u8 = 2;
 const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
@@ -122,7 +128,7 @@ fn pending_reveal_anchor(shared: &Shared, old_total: u32) -> Option<(i64, f64)> 
     }
     let track_id = shared.playing_track_id.get()?;
     let adjustment = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)?;
-    let height = row_height(&shared.column_view, old_total)?;
+    let height = observed_row_height(shared, old_total)?;
     // `scroll_center::centered_scroll_value` in anchor form: the row's middle
     // on the viewport's middle is its top, minus half a viewport, plus half a
     // row.
@@ -162,7 +168,7 @@ pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
     if selected.is_empty() && scroll_value == 0.0 {
         return ReloadAnchor::default();
     }
-    let anchor = row_height(&shared.column_view, old_total).and_then(|height| {
+    let anchor = observed_row_height(shared, old_total).and_then(|height| {
         let index = (scroll_value / height).floor().max(0.0) as u32;
         shared
             .model
@@ -180,7 +186,7 @@ fn restore_reload_anchor(
     shared: &Rc<Shared>,
     captured: &ReloadAnchor,
     viewport: ReloadViewport,
-    hold: Option<AdjustmentHold>,
+    hold: Option<&AdjustmentHold>,
     resolved_ids: Option<Vec<i64>>,
 ) {
     // SEARCH-9: a new result set is read from its top. Doing this before the
@@ -206,12 +212,7 @@ fn restore_reload_anchor(
     if matches!(viewport, ReloadViewport::CenterPlayingTrack) {
         let playing_track_id = shared.playing_track_id.get();
         if playing_track_id.is_some_and(|track_id| current_ids.contains(&track_id)) {
-            schedule_centered_scroll_restore(
-                shared.column_view.clone(),
-                playing_track_id,
-                current_ids,
-                SCROLL_RESTORE_MAX_ATTEMPTS,
-            );
+            schedule_centered_scroll_restore(&shared.column_view, playing_track_id, current_ids);
             return;
         }
     }
@@ -220,13 +221,7 @@ fn restore_reload_anchor(
     // consumed anchor is taken, not copied: the next search captures its own.
     if matches!(viewport, ReloadViewport::RestorePreSearch) {
         let anchor = shared.pre_search_anchor.take();
-        schedule_scroll_restore(
-            shared.clone(),
-            anchor,
-            current_ids,
-            SCROLL_RESTORE_MAX_ATTEMPTS,
-            hold,
-        );
+        schedule_scroll_restore(shared, anchor, &current_ids, hold);
         return;
     }
 
@@ -236,13 +231,7 @@ fn restore_reload_anchor(
         return;
     }
 
-    schedule_scroll_restore(
-        shared.clone(),
-        captured.anchor,
-        current_ids,
-        SCROLL_RESTORE_MAX_ATTEMPTS,
-        hold,
-    );
+    schedule_scroll_restore(shared, captured.anchor, &current_ids, hold);
 }
 
 /// SEARCH-9: puts the viewport at the top of a freshly filtered list, and keeps
@@ -256,16 +245,15 @@ fn restore_reload_anchor(
 /// being the clamped remains of where the list stood before the query.
 ///
 /// So the zero is re-applied across idle rounds, like the anchor restore next
-/// door. Idle rather than the 16 ms timer that `schedule_centered_scroll_
-/// refinement` uses: this needs to outlast one allocation, not track a moving
-/// target, and the timer version is precisely the nachlauf SEARCH-9 set out to
-/// remove. It stops as soon as a round finds the value still at zero — at that
-/// point nothing is writing against us any more.
+/// door. This legacy SEARCH-9 path needs to outlast one allocation, not track a
+/// moving target. It stops as soon as a round finds the value still at zero —
+/// at that point nothing is writing against us any more.
 fn schedule_top_scroll_restore(column_view: gtk4::ColumnView, attempts: u8) {
     let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) else {
         return;
     };
     let already_settled = adjustment.value() == 0.0;
+    crate::ui::scroll_probe::probe("top_restore", &adjustment, 0.0);
     adjustment.set_value(0.0);
     if already_settled || attempts == 0 {
         return;
@@ -289,10 +277,9 @@ fn select_captured_ids(shared: &Shared, captured: &ReloadAnchor, current_ids: &[
 }
 
 fn schedule_centered_scroll_restore(
-    column_view: gtk4::ColumnView,
+    column_view: &gtk4::ColumnView,
     track_id: Option<i64>,
     current_ids: Vec<i64>,
-    attempts: u8,
 ) {
     let anchor = track_id.map(|track_id| (track_id, 0.0));
     let Some(position) = reload_restore::prepaint_position(anchor, &current_ids) else {
@@ -301,41 +288,47 @@ fn schedule_centered_scroll_restore(
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
     column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
-    schedule_centered_scroll_refinement(column_view, track_id, current_ids, attempts);
+    if apply_centered_scroll_refinement(column_view, track_id, &current_ids) {
+        return;
+    }
+    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(column_view) else {
+        return;
+    };
+    let weak_view = column_view.downgrade();
+    crate::ui::list_geometry_changed::on_changed_once(&adjustment, move |_| {
+        let Some(column_view) = weak_view.upgrade() else {
+            return;
+        };
+        apply_centered_scroll_refinement(&column_view, track_id, &current_ids);
+    });
 }
 
-fn schedule_centered_scroll_refinement(
-    column_view: gtk4::ColumnView,
+fn apply_centered_scroll_refinement(
+    column_view: &gtk4::ColumnView,
     track_id: Option<i64>,
-    current_ids: Vec<i64>,
-    attempts: u8,
-) {
-    gtk4::glib::idle_add_local_once(move || {
-        if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) {
-            let (upper, page) = (adjustment.upper(), adjustment.page_size());
-            if upper > page {
-                let height = upper / current_ids.len() as f64;
-                if let Some(value) = reload_restore::centered_track_scroll_target(
-                    track_id,
-                    &current_ids,
-                    height,
-                    page,
-                ) {
-                    adjustment.set_value(value);
-                }
-            }
-        }
-        if attempts > 0 {
-            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(16), move || {
-                schedule_centered_scroll_refinement(
-                    column_view,
-                    track_id,
-                    current_ids,
-                    attempts - 1,
-                );
-            });
-        }
-    });
+    current_ids: &[i64],
+) -> bool {
+    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(column_view) else {
+        return false;
+    };
+    let page = adjustment.page_size();
+    if adjustment.upper() <= page {
+        return true;
+    }
+    let Some(height) = ListGeometry::for_view(column_view)
+        .live_row_height(current_ids.len())
+        .map(crate::ui::list_geometry::RowHeight::pixels)
+    else {
+        return false;
+    };
+    let Some(value) =
+        reload_restore::centered_track_scroll_target(track_id, current_ids, height, page)
+    else {
+        return false;
+    };
+    crate::ui::scroll_probe::probe("centered_refinement", &adjustment, value);
+    adjustment.set_value(value);
+    true
 }
 
 /// START-3: selects and centers the loaded track once startup routing has
@@ -358,22 +351,16 @@ pub(in crate::ui) fn center_loaded_track(shared: &Shared) {
     };
     shared.selection.unselect_all();
     shared.selection.select_item(position as u32, false);
-    schedule_centered_scroll_restore(
-        shared.column_view.clone(),
-        Some(track_id),
-        current_ids,
-        SCROLL_RESTORE_MAX_ATTEMPTS,
-    );
+    schedule_centered_scroll_restore(&shared.column_view, Some(track_id), current_ids);
 }
 
 fn schedule_scroll_restore(
-    shared: Rc<Shared>,
+    shared: &Rc<Shared>,
     anchor: Option<(i64, f64)>,
-    current_ids: Vec<i64>,
-    attempts: u8,
-    hold: Option<AdjustmentHold>,
+    current_ids: &[i64],
+    hold: Option<&AdjustmentHold>,
 ) {
-    let Some(position) = reload_restore::prepaint_position(anchor, &current_ids) else {
+    let Some(position) = reload_restore::prepaint_position(anchor, current_ids) else {
         return;
     };
     // `items_changed(0, old, new)` resets GtkColumnView's adjustment to zero
@@ -381,22 +368,45 @@ fn schedule_scroll_restore(
     // allocation is still usable, then queue the GTK scroll before returning
     // to the main loop. `scroll_to` alone is asynchronous and can otherwise
     // leave position zero visible for a frame on a busy renderer. The idle
-    // retry below refines the result against the rebuilt allocation.
-    apply_scroll_anchor_if_allocated(&shared, anchor, &current_ids, hold.as_ref());
+    // changed subscription below refines the result against the rebuilt
+    // allocation exactly once.
+    let applied = apply_scroll_anchor_if_allocated(shared, anchor, current_ids, hold);
+    if !applied {
+        if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
+            let weak_shared = Rc::downgrade(shared);
+            let callback_ids = current_ids.to_owned();
+            let callback_hold = hold.cloned();
+            let generation = shared.model.generation();
+            // This refinement writes the adjustment, and the `changed` that
+            // wakes it can be emitted from inside GTK's allocation pass —
+            // writing there re-enters the running layout, which is what once
+            // left the track list permanently empty while the scrollbar kept
+            // full, correct geometry. `after_changed_once` steps out of the
+            // emission first, early enough to stay ahead of the next frame.
+            crate::ui::list_geometry_changed::after_changed_once(&adjustment, move || {
+                let Some(shared) = weak_shared.upgrade() else {
+                    return;
+                };
+                // A reload while this was queued means the ids below describe
+                // a list nobody is looking at any more.
+                if shared.model.generation() != generation {
+                    return;
+                }
+                super::track_list_geometry::remember_after_layout(&shared, callback_ids.len());
+                apply_scroll_anchor_if_allocated(
+                    &shared,
+                    anchor,
+                    &callback_ids,
+                    callback_hold.as_ref(),
+                );
+            });
+        }
+    }
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
     shared
         .column_view
         .scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
-    apply_scroll_anchor_if_allocated(&shared, anchor, &current_ids, hold.as_ref());
-    gtk4::glib::idle_add_local_once(move || {
-        if apply_scroll_anchor_if_allocated(&shared, anchor, &current_ids, hold.as_ref()) {
-            return;
-        }
-        if attempts > 0 {
-            schedule_scroll_restore(shared, anchor, current_ids, attempts - 1, hold);
-        }
-    });
 }
 
 fn apply_scroll_anchor_if_allocated(
@@ -408,45 +418,63 @@ fn apply_scroll_anchor_if_allocated(
     let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) else {
         return false;
     };
-    let (upper, page) = (adjustment.upper(), adjustment.page_size());
-    if upper <= page || current_ids.is_empty() {
+    crate::ui::scroll_probe::probe_rows("apply_scroll_anchor", &shared.column_view);
+    let page = adjustment.page_size();
+    if current_ids.is_empty() {
         return false;
     }
-    let Some(height) = row_height_for_restore(&shared.last_row_height, upper, current_ids.len())
+    let n_sections = shared.queue_sections.borrow().len();
+    let geometry = ListGeometry::for_view(&shared.column_view);
+    let Some(height) = geometry
+        .observed_row_height(
+            &shared.conn,
+            &shared.list_geometry_cache,
+            current_ids.len(),
+            n_sections,
+        )
+        .map(crate::ui::list_geometry::RowHeight::pixels)
     else {
         return false;
     };
     let Some(target) = reload_restore::scroll_target(anchor, current_ids, height, page) else {
         return false;
     };
-    // Teach the existing handover hold the final target. If the old bounds
-    // cannot represent it, the guarded pre-seed below makes it reachable
-    // before the queued row request can move the viewport.
+    // Teach the existing handover hold the final target.
     if let Some(hold) = hold {
         hold.set_target(target);
     }
-    let model_matches_ids = shared.model.n_items() as usize == current_ids.len();
-    let has_no_section_headers = shared.queue_sections.borrow().is_empty();
-    if !restore_geometry_is_ready(upper, current_ids.len(), height)
-        && hold.is_some()
-        && model_matches_ids
-        && has_no_section_headers
-    {
-        // The model is already exact, but GTK has not allocated it yet. Seed
-        // the uniform-list bound so the cached anchor can be painted in the
-        // first frame — GTK otherwise clamps the pending row request into the
-        // stale range and the list visits that value before the rebuilt range
-        // settles. The parity guard deliberately fails closed when the id
-        // projection is truncated or otherwise differs from the model.
-        adjustment.set_upper(current_ids.len() as f64 * height);
+    if !crate::ui::scroll_probe::preseed_suppressed() {
+        // Close the allocation window atomically: the new target and the range
+        // that can represent it become visible in one adjustment change,
+        // before GTK can clamp the target into the old model's range for a
+        // painted frame. Unknown section-header geometry fails closed.
+        geometry.configure(
+            &adjustment,
+            target,
+            &shared.conn,
+            &shared.list_geometry_cache,
+            current_ids.len(),
+            n_sections,
+        );
     }
-    if !restore_geometry_is_ready(adjustment.upper(), current_ids.len(), height) {
+    if !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections) {
         return false;
     }
-    remember_row_height(
-        &shared.column_view,
-        current_ids.len() as u32,
-        &shared.last_row_height,
+    geometry.remember_if_settled(
+        &shared.conn,
+        &shared.list_geometry_cache,
+        adjustment.upper(),
+        current_ids.len(),
+        n_sections,
+    );
+    crate::ui::scroll_probe::probe("anchor", &adjustment, target);
+    // Same rule as `ListGeometry::configure`: never write the adjustment from
+    // inside a `changed` emission, which may be running inside GTK's
+    // allocation. The signal-driven caller above defers to `HIGH_IDLE` so this
+    // holds; the direct pre-paint call comes from ordinary application code.
+    debug_assert!(
+        !crate::ui::list_geometry_changed::in_changed_emission(),
+        "scroll anchor written from inside a changed emission"
     );
     adjustment.set_value(target);
     true
@@ -578,7 +606,7 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     .filter(|adjustment| adjustment.value() > 0.0)
     .map(|adjustment| AdjustmentHold::new(&adjustment));
     run_query(shared, model_change);
-    restore_reload_anchor(shared, captured, viewport, hold.clone(), current_ids);
+    restore_reload_anchor(shared, captured, viewport, hold.as_ref(), current_ids);
     if let Some(hold) = hold {
         hold.release_after(SCROLL_ADJUSTMENT_HOLD);
     }
@@ -598,11 +626,16 @@ fn run_query_if_requested(shared: &Rc<Shared>, model_change: Option<ModelChange>
 /// handling of its own — see `reload`'s and `set_source_and_reload`'s doc
 /// comments for who wraps this and why.
 fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
-    remember_row_height(
-        &shared.column_view,
-        shared.model.n_items(),
-        &shared.last_row_height,
-    );
+    let n_sections = shared.queue_sections.borrow().len();
+    if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
+        ListGeometry::for_view(&shared.column_view).remember_if_settled(
+            &shared.conn,
+            &shared.list_geometry_cache,
+            adjustment.upper(),
+            shared.model.n_items() as usize,
+            n_sections,
+        );
+    }
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
@@ -675,6 +708,9 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     // with the viewport scrolled past the ranges' end that aborted the app
     // on the `header->widget == NULL` assertion in gtklistitemmanager.c.
     super::queue_sections::apply_queue_header_factory(shared, is_queue);
+    if is_queue {
+        super::track_list_geometry::schedule_section_measurement(shared);
+    }
 
     // Stage 3 Task 8: the ImportErrors source's rows live in `import_errors_
     // view`, not `shared.model` (which `queries.rs` always resolves to an
@@ -756,3 +792,7 @@ mod search_viewport_display_tests;
 #[cfg(test)]
 #[path = "navback_anchor_display_tests.rs"]
 mod navback_anchor_display_tests;
+
+#[cfg(test)]
+#[path = "queue_section_geometry_display_tests.rs"]
+pub(in crate::ui::track_list) mod queue_section_geometry_display_tests;
