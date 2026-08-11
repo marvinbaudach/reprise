@@ -75,8 +75,8 @@ class MobileHeaderRowTest {
 
         compose.onNodeWithTag("library-summary-search").performClick()
 
-        compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
-        compose.onNodeWithText("Search titles").assertIsDisplayed()
+        compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
+        compose.onNodeWithText("Search artists").assertIsDisplayed()
     }
 
     @Test
@@ -99,7 +99,7 @@ class MobileHeaderRowTest {
 
         compose.onNodeWithTag("library-destination-ALBUMS").performClick()
         compose.onNodeWithTag("library-page-ALBUMS").assertIsDisplayed()
-        compose.onNodeWithText("1 album").assertIsDisplayed()
+        compose.onNodeWithText("200 of 450 albums loaded").assertIsDisplayed()
 
         val albumsSearch = compose.onNodeWithTag("library-summary-search")
             .getUnclippedBoundsInRoot()

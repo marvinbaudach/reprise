@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ScenePowerGateTest {
     @Test
-    fun animations_off_suppresses_exactly_fog_rotation_bloom_and_hot_ray() {
+    fun animations_off_suppresses_fog_rotation_without_stopping_scene_frames() {
         val controller = AmbientMotionController()
         controller.attach()
         controller.runtimeChanged(
@@ -18,14 +18,11 @@ class ScenePowerGateTest {
         val power = controller.sceneRenderPower()
 
         assertFalse(power.fogRotates)
-        assertFalse(power.burstEffects.bloom)
-        assertFalse(power.burstEffects.hotRay)
-        assertTrue(power.coronaKeepsCurrentSignal)
         assertTrue(controller.sceneFramesAllowed)
     }
 
     @Test
-    fun resumed_interactive_animations_enable_all_three_effects() {
+    fun resumed_interactive_animations_enable_fog_rotation() {
         val controller = AmbientMotionController()
         controller.attach()
         controller.runtimeChanged(
@@ -37,9 +34,6 @@ class ScenePowerGateTest {
         val power = controller.sceneRenderPower()
 
         assertTrue(power.fogRotates)
-        assertTrue(power.burstEffects.bloom)
-        assertTrue(power.burstEffects.hotRay)
-        assertTrue(power.coronaKeepsCurrentSignal)
     }
 
     /**

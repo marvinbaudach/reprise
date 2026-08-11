@@ -36,12 +36,12 @@ class NowPlayingFogTest {
         }
 
         assertEquals(
-            0.89848614f,
+            0.8826338f,
             NowPlayingFogSpec.wideAlpha(fogLevel = 0.66f, opacity = 1f),
             FLOAT_TOLERANCE,
         )
         assertEquals(
-            0.5296923f,
+            0.5208923f,
             NowPlayingFogSpec.tightAlpha(fogLevel = 0.66f, opacity = 1f),
             FLOAT_TOLERANCE,
         )
@@ -52,11 +52,15 @@ class NowPlayingFogTest {
         val wideFloor = NowPlayingFogSpec.wideAlpha(fogLevel = 0f, opacity = 1f)
         val tightFloor = NowPlayingFogSpec.tightAlpha(fogLevel = 0f, opacity = 1f)
 
-        assertEquals(0.62f, wideFloor / NowPlayingFogSpec.wideOpacity, FLOAT_TOLERANCE)
-        assertEquals(0.40f, tightFloor / NowPlayingFogSpec.tightOpacity, FLOAT_TOLERANCE)
+        // The floors were lowered on 2026-08-10: at 0.62 and 0.40 the user
+        // could not tell loud from quiet at all, so the swing was widened
+        // deliberately. What still must hold is that silence is atmosphere
+        // rather than absence — the haze never disappears.
+        assertEquals(0.34f, wideFloor / NowPlayingFogSpec.wideOpacity, FLOAT_TOLERANCE)
+        assertEquals(0.14f, tightFloor / NowPlayingFogSpec.tightOpacity, FLOAT_TOLERANCE)
         assertTrue(
-            "the dominant wide fog must retain at least 55% of its peak in silence",
-            wideFloor >= NowPlayingFogSpec.wideOpacity * 0.55f,
+            "the dominant wide fog must stay visible in silence",
+            wideFloor >= NowPlayingFogSpec.wideOpacity * 0.30f,
         )
     }
 

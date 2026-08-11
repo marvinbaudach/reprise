@@ -27,7 +27,11 @@ internal interface LibrarySessionPort {
 
     fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum>
 
+    fun searchAlbums(text: String, window: LibraryWindowRange): LibraryWindow<LibraryAlbum>
+
     fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist>
+
+    fun searchArtists(text: String, window: LibraryWindowRange): LibraryWindow<LibraryArtist>
 
     fun listArtistTracks(
         artist: String,
@@ -35,6 +39,8 @@ internal interface LibrarySessionPort {
     ): LibraryWindow<LibraryTrack>
 
     fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack>
+
+    fun searchFavourites(text: String, window: LibraryWindowRange): LibraryWindow<LibraryTrack>
 
     fun listAlbumTracks(
         album: String,
@@ -126,8 +132,18 @@ internal class LibrarySession(
     fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> =
         port.listAlbums(window)
 
+    fun searchAlbums(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> = port.searchAlbums(text, window)
+
     fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> =
         port.listArtists(window)
+
+    fun searchArtists(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryArtist> = port.searchArtists(text, window)
 
     fun openAlbum(album: LibraryAlbum): AlbumTrackList = AlbumTrackList(
         album = album,
@@ -154,6 +170,11 @@ internal class LibrarySession(
 
     fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
         port.listFavourites(window)
+
+    fun searchFavourites(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = port.searchFavourites(text, window)
 
     fun trackById(trackId: Long): LibraryTrack? = port.trackById(trackId)
 

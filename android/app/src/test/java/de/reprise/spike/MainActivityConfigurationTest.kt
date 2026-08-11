@@ -24,6 +24,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import org.junit.After
@@ -96,6 +97,57 @@ class MainActivityConfigurationTest {
         compose.onNodeWithTag("library-navigation-bar").assertIsDisplayed()
         compose.onNodeWithText("Search titles").assertTextContains("rotation")
         compose.onNodeWithText("Rotation Song 1").assertIsDisplayed()
+    }
+
+    @Test
+    fun searchFiltersTheSelectedAlbumTabAndClosingItRestoresTheCatalog() {
+        // Prime Albums first: without invalidating loadedTabs, returning here
+        // after entering a query on Titles would keep this unfiltered window.
+        compose.onNodeWithText("Albums").performClick()
+        compose.onNodeWithText("Full Album 2").assertIsDisplayed()
+        compose.onNodeWithText("Titles").performClick()
+        compose.onNodeWithTag("library-summary-search").performClick()
+        compose.onNodeWithText("Search titles").performTextInput("slow")
+        compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Search albums").assertTextContains("slow")
+        compose.onNodeWithText(DEEP_ALBUM).assertIsDisplayed()
+        compose.onNodeWithText("Full Album 2").assertDoesNotExist()
+
+        // The open field owns the way out: clear the query, then close it. The
+        // summary row's magnifier is gone for as long as the field is up.
+        compose.onNodeWithTag("library-summary-search").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Clear search").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Close search").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Full Album 2").assertIsDisplayed()
+    }
+
+    @Test
+    fun filteredAlbumPaginationAndItsSearchSurviveRecreation() {
+        compose.onNodeWithText("Albums").performClick()
+        compose.onNodeWithTag("library-albums-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-albums-list").performScrollToIndex(210)
+        compose.onNodeWithText("Full Album 211").assertIsDisplayed()
+
+        compose.onNodeWithTag("library-summary-search").performClick()
+        compose.onNodeWithText("Search albums").performTextInput("full")
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-albums-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-albums-list").performScrollToIndex(210)
+        compose.onNodeWithText("Full Album 212").assertIsDisplayed()
+
+        recreateAt("w916dp-h412dp-land")
+
+        compose.onNodeWithText("Search albums").assertTextContains("full")
+        compose.onNodeWithText("Full Album 212").assertIsDisplayed()
     }
 
     /**
@@ -302,7 +354,8 @@ class MainActivityConfigurationTest {
         compose.onNodeWithTag("library-mini-player").performClick()
         compose.onNodeWithTag("now-playing-cover").assertWidthIsEqualTo(364.dp)
         compose.onNodeWithTag("now-playing-play").assertWidthIsEqualTo(80.dp)
-        compose.onNodeWithContentDescription("Collapse Now Playing").performClick()
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+        compose.waitForIdle()
 
         recreateAt("w916dp-h412dp-land")
 
@@ -407,18 +460,27 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             )
         }
 
-    /** One album, deep enough that standing in it means having paged into it. */
+    /** A paged album catalog whose first row opens a deep detail list. */
     private val albums: List<LibraryAlbum>
         get() = listOf(
             LibraryAlbum(
                 title = DEEP_ALBUM,
-                artist = "Artist 1",
+                artist = "Slowdive",
                 representativeUri = "content://provider/album/deep.flac",
                 trackCount = catalogSize.toLong(),
                 year = 1999,
                 totalDurationMs = catalogSize * 120_000L,
             ),
-        )
+        ) + (2..catalogSize).map { index ->
+            LibraryAlbum(
+                title = "Full Album $index",
+                artist = "Artist $index",
+                representativeUri = "content://provider/album/$index.flac",
+                trackCount = 1,
+                year = 2000 + index % 25,
+                totalDurationMs = 120_000,
+            )
+        }
     private val albumTracks: List<LibraryTrack>
         get() = (1..catalogSize).map { index ->
             configurationTestTrack(
@@ -565,9 +627,19 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
                     .window(range)
             },
             listAlbums = { range -> albums.window(range) },
+            searchAlbums = { query, range ->
+                albums.filter { album ->
+                    album.title.contains(query, ignoreCase = true) ||
+                        album.artist.contains(query, ignoreCase = true)
+                }.window(range)
+            },
             listArtists = { range ->
                 artistWindowRequests += range
                 artists.window(range)
+            },
+            searchArtists = { query, range ->
+                artists.filter { artist -> artist.name.contains(query, ignoreCase = true) }
+                    .window(range)
             },
             openAlbum = { album -> AlbumTrackList(album, albumTracks.window(firstLibraryWindow())) },
             listAlbumTracks = { _, range -> albumTracks.window(range) },
@@ -576,6 +648,11 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             },
             listArtistTracks = { _, range -> artistTracks.window(range) },
             listFavourites = { range -> favouriteTracks.window(range) },
+            searchFavourites = { query, range ->
+                favouriteTracks.filter { track ->
+                    track.title.contains(query, ignoreCase = true)
+                }.window(range)
+            },
             loadTrack = { id, deliver ->
                 deliver((tracks + albumTracks + artistTracks + favouriteTracks).firstOrNull {
                     it.id == id

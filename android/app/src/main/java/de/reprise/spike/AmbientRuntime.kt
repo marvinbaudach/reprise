@@ -19,17 +19,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 
 internal data class SceneRenderPower(
     val fogRotates: Boolean,
-    val burstEffects: BurstEffects,
-    val coronaKeepsCurrentSignal: Boolean = true,
 )
 
 /** Projects the shared runtime truth onto only the scene effects it may suppress. */
 internal fun AmbientMotionController.sceneRenderPower(): SceneRenderPower = SceneRenderPower(
     fogRotates = sceneAnimationsEnabled,
-    burstEffects = BurstEffects(
-        bloom = sceneAnimationsEnabled,
-        hotRay = sceneAnimationsEnabled,
-    ),
 )
 
 /** Binds ambient scheduling to the activity, screen and animator-scale truth. */

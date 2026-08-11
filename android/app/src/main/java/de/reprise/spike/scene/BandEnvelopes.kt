@@ -50,8 +50,8 @@ class BandEnvelopes(
     companion object {
         private const val FOG_ATTACK_MS = 200f
         private const val FOG_DECAY_MS = 1_200f
-        private const val BURST_ATTACK_MS = 40f
-        private const val BURST_DECAY_MS = 220f
+        private const val MOTION_ATTACK_MS = 40f
+        private const val MOTION_DECAY_MS = 220f
 
         fun fog(bandCount: Int, frameRateHz: Int): BandEnvelopes = BandEnvelopes(
             bandCount = bandCount,
@@ -60,11 +60,11 @@ class BandEnvelopes(
             decayMs = FOG_DECAY_MS,
         )
 
-        fun burst(bandCount: Int, frameRateHz: Int): BandEnvelopes = BandEnvelopes(
+        fun motion(bandCount: Int, frameRateHz: Int): BandEnvelopes = BandEnvelopes(
             bandCount = bandCount,
             frameMs = frameMs(frameRateHz),
-            attackMs = BURST_ATTACK_MS,
-            decayMs = BURST_DECAY_MS,
+            attackMs = MOTION_ATTACK_MS,
+            decayMs = MOTION_DECAY_MS,
         )
 
         private fun frameMs(frameRateHz: Int): Float {

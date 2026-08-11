@@ -33,6 +33,20 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
+internal fun BrowseTab.emptyMessage(searchText: String): String = if (searchText.isNotBlank()) {
+    "No matching ${label.lowercase()}."
+} else {
+    when (this) {
+        BrowseTab.TITLES -> "No tracks found in this folder."
+        BrowseTab.ALBUMS -> "No albums found in this folder."
+        BrowseTab.ARTISTS -> "No artists found in this folder."
+        BrowseTab.FAVOURITES -> "No favourites yet."
+        // Unreachable in practice — the queue page speaks for itself, down to
+        // its own empty state — but the tab is one of the five.
+        BrowseTab.QUEUE -> "The queue is exhausted."
+    }
+}
+
 @Composable
 internal fun TitlesTab(
     surfaceLayout: SurfaceLayout,
@@ -47,7 +61,7 @@ internal fun TitlesTab(
     Column(modifier = Modifier.fillMaxSize()) {
         if (tracks.rows.isEmpty()) {
             Text(
-                text = if (searchText.isEmpty()) "No tracks found in this folder." else "No matches.",
+                text = BrowseTab.TITLES.emptyMessage(searchText),
                 modifier = Modifier.padding(16.dp),
             )
         } else {
@@ -66,7 +80,8 @@ internal fun TitlesTab(
 }
 
 @Composable
-internal fun TitleSearchField(
+internal fun LibrarySearchField(
+    tab: BrowseTab,
     searchText: String,
     search: (String) -> Unit,
     close: () -> Unit,
@@ -81,7 +96,7 @@ internal fun TitleSearchField(
     OutlinedTextField(
         value = searchText,
         onValueChange = search,
-        label = { Text("Search titles") },
+        label = { Text("Search ${tab.label.lowercase()}") },
         leadingIcon = { MaterialSymbol("search", "") },
         trailingIcon = {
             IconButton(onClick = { if (searchText.isEmpty()) close() else search("") }) {
@@ -108,6 +123,7 @@ internal fun AlbumsTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
     albums: LibraryWindow<LibraryAlbum>,
+    searchText: String,
     selectedAlbum: AlbumTrackList?,
     playback: PlaybackUiState,
     openAlbum: (LibraryAlbum) -> Unit,
@@ -158,7 +174,7 @@ internal fun AlbumsTab(
     }
 
     if (albums.rows.isEmpty()) {
-        Text("No albums found in this folder.", modifier = Modifier.padding(16.dp))
+        Text(BrowseTab.ALBUMS.emptyMessage(searchText), modifier = Modifier.padding(16.dp))
         return
     }
     Column(modifier = Modifier.fillMaxSize()) {
@@ -178,6 +194,7 @@ internal fun ArtistsTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
     artists: LibraryWindow<LibraryArtist>,
+    searchText: String,
     selectedArtist: ArtistTrackList?,
     playback: PlaybackUiState,
     openArtist: (LibraryArtist) -> Unit,
@@ -224,7 +241,7 @@ internal fun ArtistsTab(
     }
 
     if (artists.rows.isEmpty()) {
-        Text("No artists found in this folder.", modifier = Modifier.padding(16.dp))
+        Text(BrowseTab.ARTISTS.emptyMessage(searchText), modifier = Modifier.padding(16.dp))
         return
     }
     Column(modifier = Modifier.fillMaxSize()) {
@@ -244,6 +261,7 @@ internal fun FavouritesTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
     tracks: LibraryWindow<LibraryTrack>,
+    searchText: String,
     playback: PlaybackUiState,
     lastRequestedOffset: Long?,
     play: (Int) -> Unit,
@@ -252,7 +270,7 @@ internal fun FavouritesTab(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (tracks.rows.isEmpty()) {
-            Text("No favourites yet.", modifier = Modifier.padding(16.dp))
+            Text(BrowseTab.FAVOURITES.emptyMessage(searchText), modifier = Modifier.padding(16.dp))
         } else {
             ListPlayButton(description = "Play favourites", onClick = { play(0) })
             TrackRows(
