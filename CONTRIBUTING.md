@@ -24,7 +24,7 @@ Run this before opening a pull request:
 scripts/check-merge-readiness.sh
 ```
 
-It chains every gate the project enforces: `cargo fmt --check`, clippy with
+It runs the project's chain of gates, including `cargo fmt --check`, clippy with
 `-D warnings`, the workspace test suite, a dependency audit, an architecture
 lint, a frontend thinness budget, accessibility semantics, input parity, and
 UX rule traceability.
