@@ -91,6 +91,7 @@ require_pattern 'XDG_RUNTIME_DIR' scripts/check-display-tests.sh
 require_pattern 'XDG_CONFIG_HOME' scripts/check-display-tests.sh
 require_pattern 'GIO_USE_VFS=local' scripts/check-display-tests.sh
 require_pattern 'GTK_USE_PORTAL=0' scripts/check-display-tests.sh
+require_pattern 'GSK_RENDERER=cairo' scripts/check-display-tests.sh
 require_pattern 'cleanup_worker_roots' scripts/check-display-tests.sh
 require_pattern 'if \[\[ -f \$display_test_passed \]\]' scripts/check-display-tests.sh
 require_pattern 'server-num' scripts/check-display-tests.sh
