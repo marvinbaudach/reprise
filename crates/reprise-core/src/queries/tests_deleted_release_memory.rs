@@ -150,7 +150,13 @@ fn nr_32_undo_reconciles_only_the_tracks_it_restored() {
         )
         .unwrap();
 
+    crate::deleted_releases::reset_library_hold_rows_read_count();
     assert_eq!(undo_tombstone(&db, &[2]).unwrap(), 1);
+    assert_eq!(
+        crate::deleted_releases::library_hold_rows_read_count(),
+        1,
+        "undo must read only the track row it restored"
+    );
     assert_eq!(crate::artist_news::hidden_release_count(&db).unwrap(), 0);
     assert_eq!(remembered_count(&db), 1, "the deleted song memory remains");
 }

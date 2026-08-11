@@ -7,6 +7,7 @@ use rusqlite::{Connection, OptionalExtension};
 #[cfg(test)]
 thread_local! {
     static FULL_RECONCILIATION_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static LIBRARY_HOLD_ROWS_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -17,6 +18,16 @@ pub(crate) fn reset_full_reconciliation_call_count() {
 #[cfg(test)]
 pub(crate) fn full_reconciliation_call_count() -> usize {
     FULL_RECONCILIATION_CALLS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_library_hold_rows_read_count() {
+    LIBRARY_HOLD_ROWS_READ.with(|rows| rows.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn library_hold_rows_read_count() -> usize {
+    LIBRARY_HOLD_ROWS_READ.with(std::cell::Cell::get)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -33,16 +44,19 @@ struct LibraryHoldIndex {
 }
 
 impl LibraryHoldIndex {
-    fn load(conn: &Connection, include_id: impl Fn(i64) -> bool) -> Result<Self, rusqlite::Error> {
+    fn load_full(conn: &Connection, excluded_ids: &HashSet<i64>) -> Result<Self, rusqlite::Error> {
         // A row still held in `tracks` is library presence for deletion memory,
         // even when its file is missing. Only committed removal makes it absent.
-        let mut statement =
-            conn.prepare("SELECT id, artist, album_artist, album, title, removed_at FROM tracks")?;
+        let mut statement = conn.prepare(
+            "SELECT id, artist, album_artist, album, title
+             FROM tracks WHERE removed_at IS NULL",
+        )?;
         let mut index = Self::default();
         let rows = statement.query_map([], |row| {
+            #[cfg(test)]
+            LIBRARY_HOLD_ROWS_READ.with(|rows| rows.set(rows.get() + 1));
             let id = row.get::<_, i64>(0)?;
-            let removed_at = row.get::<_, Option<i64>>(5)?;
-            if !include_id(id) || removed_at.is_some() {
+            if excluded_ids.contains(&id) {
                 return Ok(None);
             }
             let album = row.get::<_, String>(3)?;
@@ -56,15 +70,40 @@ impl LibraryHoldIndex {
         })?;
         for row in rows {
             if let Some(identity) = row? {
-                index
-                    .album_keys
-                    .insert((identity.artist_key.clone(), identity.album_key));
-                index
-                    .track_keys
-                    .insert((identity.artist_key, identity.title_key));
+                index.insert(identity);
             }
         }
         Ok(index)
+    }
+
+    fn load_ids(conn: &Connection, ids: &[i64]) -> Result<Self, rusqlite::Error> {
+        let mut statement = conn.prepare_cached(
+            "SELECT artist, album_artist, album, title
+             FROM tracks WHERE id = ?1 AND removed_at IS NULL",
+        )?;
+        let mut index = Self::default();
+        for id in ids {
+            let identity = statement
+                .query_row([id], |row| {
+                    #[cfg(test)]
+                    LIBRARY_HOLD_ROWS_READ.with(|rows| rows.set(rows.get() + 1));
+                    let album = row.get::<_, String>(2)?;
+                    let title = row.get::<_, String>(3)?;
+                    Ok(track_identity(row.get(0)?, row.get(1)?, &album, &title))
+                })
+                .optional()?;
+            if let Some(identity) = identity {
+                index.insert(identity);
+            }
+        }
+        Ok(index)
+    }
+
+    fn insert(&mut self, identity: TrackIdentity) {
+        self.album_keys
+            .insert((identity.artist_key.clone(), identity.album_key));
+        self.track_keys
+            .insert((identity.artist_key, identity.title_key));
     }
 
     fn holds(&self, memory: &DeletedReleaseMemory) -> bool {
@@ -115,7 +154,7 @@ pub(crate) fn remember_deleted_releases(
         }
     }
     drop(identity_statement);
-    let survivors = LibraryHoldIndex::load(conn, |id| !removed_ids.contains(&id))?;
+    let survivors = LibraryHoldIndex::load_full(conn, &removed_ids)?;
 
     let album_keys = selected
         .iter()
@@ -167,7 +206,7 @@ pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, r
     if memories.is_empty() {
         return Ok(0);
     }
-    let library = LibraryHoldIndex::load(conn, |_| true)?;
+    let library = LibraryHoldIndex::load_full(conn, &HashSet::new())?;
     let (acquired, remaining): (Vec<_>, Vec<_>) = memories
         .into_iter()
         .partition(|memory| library.holds(memory));
@@ -237,8 +276,7 @@ pub(crate) fn reconcile_restored_tracks(
     if restored_ids.is_empty() {
         return Ok(());
     }
-    let restored_ids = restored_ids.iter().copied().collect::<HashSet<_>>();
-    let restored = LibraryHoldIndex::load(conn, |id| restored_ids.contains(&id))?;
+    let restored = LibraryHoldIndex::load_ids(conn, restored_ids)?;
     let reconciliation = forget_acquired_memories(conn, |memory| restored.holds(memory))?;
     reconcile_forgotten_release_rows(conn, &reconciliation.forgotten, &reconciliation.remaining)?;
     Ok(())
