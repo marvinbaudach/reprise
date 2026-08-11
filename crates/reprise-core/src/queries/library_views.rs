@@ -310,6 +310,12 @@ pub(super) fn query_album_track_ids_browsed(
 /// current sort and filter: those control presentation, not PLAY-1a's queue
 /// snapshot. Legacy rows without a disc number behave as disc 1; unknown
 /// track numbers sort after numbered tracks, then path/id make ties stable.
+///
+/// Rows with a blank album are not an album, exactly as in [`query_albums`] and
+/// [`query_artist_detail_albums`]: an empty argument would otherwise collect
+/// every untagged track in the library under one name. That matters here beyond
+/// presentation, because this list is what the Android context menu offers to
+/// delete from the device.
 pub fn query_album_canonical_track_ids(
     db: &Db,
     album: &str,
@@ -317,7 +323,7 @@ pub fn query_album_canonical_track_ids(
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
     let sql = format!(
-        "SELECT id FROM tracks WHERE {PRESENT} \
+        "SELECT id FROM tracks WHERE {PRESENT} AND TRIM(album) <> '' \
          AND TRIM(album) = ?1 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE \
          ORDER BY COALESCE(disc_no, 1) ASC, \
@@ -627,6 +633,33 @@ mod tests {
         assert_eq!(
             query_album_canonical_track_ids(&db, "album", "artist").unwrap(),
             [30, 60, 20, 50, 40, 10]
+        );
+    }
+
+    #[test]
+    fn canonical_album_ids_never_collect_the_untagged_rows_under_a_blank_album() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        conn.execute_batch(
+            "INSERT INTO tracks
+               (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
+             (10,'/music/untagged-a.flac','Untagged A','Artist','','Artist',0,NULL),
+             (20,'/music/untagged-b.flac','Untagged B','Artist','   ','Artist',0,NULL),
+             (30,'/music/tagged.flac','Tagged','Artist','Album','Artist',0,NULL);",
+        )
+        .unwrap();
+
+        // This list feeds an irreversible delete, so a blank album must select
+        // nothing at all rather than every untagged track by that artist.
+        assert!(query_album_canonical_track_ids(&db, "", "artist")
+            .unwrap()
+            .is_empty());
+        assert!(query_album_canonical_track_ids(&db, "   ", "artist")
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            query_album_canonical_track_ids(&db, "Album", "artist").unwrap(),
+            [30]
         );
     }
 

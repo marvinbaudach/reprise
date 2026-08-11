@@ -70,6 +70,21 @@ class MobileSurfaceStateTest {
     }
 
     @Test
+    fun selectingQueueMovesThePagerWithoutOverwritingTheStoredLibraryDestination() {
+        val remembered = mutableListOf<BrowseTab>()
+        val state = MobileSurfaceViewModel()
+        state.initializeSelectedTab(BrowseTab.TITLES, remembered::add)
+
+        state.selectTab(BrowseTab.QUEUE)
+
+        assertEquals(BrowseTab.QUEUE, state.selectedTab)
+        assertEquals(emptyList<BrowseTab>(), remembered)
+
+        state.selectTab(BrowseTab.ALBUMS)
+        assertEquals(listOf(BrowseTab.ALBUMS), remembered)
+    }
+
+    @Test
     fun pagedInWindowsAreHandedBackOnlyWhileTheCatalogStillHasTheSameShape() {
         val state = MobileSurfaceViewModel()
         val paged = LoadedLibraryWindows(

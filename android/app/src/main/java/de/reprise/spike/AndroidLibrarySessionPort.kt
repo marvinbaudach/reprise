@@ -94,6 +94,9 @@ internal class AndroidLibrarySessionPort(
     ): LibraryWindow<LibraryTrack> =
         library.listAlbumTracks(album, albumArtist, window.toFfi()).toLibraryTracks()
 
+    override fun albumTrackIds(album: String, albumArtist: String): List<Long> =
+        library.albumTrackIds(album, albumArtist)
+
     override fun trackById(trackId: Long): LibraryTrack? =
         library.trackById(trackId)?.toLibraryTrack()
 

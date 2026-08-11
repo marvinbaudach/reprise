@@ -96,9 +96,6 @@ class MainActivityRatingTest {
         compose.onNodeWithTag("library-mini-player").performClick()
 
         val actionRow = hasTestTag("now-playing-actions")
-        val queue = compose.onNode(
-            hasContentDescription("Show queue") and hasAnyAncestor(actionRow),
-        )
         val sleep = compose.onNode(
             hasContentDescription("Set sleep timer") and hasAnyAncestor(actionRow),
         )
@@ -108,20 +105,23 @@ class MainActivityRatingTest {
         val close = compose.onNode(
             hasContentDescription("Collapse Now Playing") and hasAnyAncestor(actionRow),
         )
+        val overflow = compose.onNode(
+            hasTestTag("now-playing-overflow") and hasAnyAncestor(actionRow),
+        )
         val fullscreen = compose.onNode(
             hasContentDescription("Open fullscreen visualizer") and hasAnyAncestor(actionRow),
         )
 
-        val queueBounds = queue.getUnclippedBoundsInRoot()
         val sleepBounds = sleep.getUnclippedBoundsInRoot()
         val heartBounds = heart.getUnclippedBoundsInRoot()
         val closeBounds = close.getUnclippedBoundsInRoot()
+        val overflowBounds = overflow.getUnclippedBoundsInRoot()
         val fullscreenBounds = fullscreen.getUnclippedBoundsInRoot()
-        assertEquals(queueBounds.top.value, heartBounds.top.value, 0.5f)
-        assertTrue(closeBounds.left < queueBounds.left)
-        assertTrue(queueBounds.left < sleepBounds.left)
+        assertEquals(sleepBounds.top.value, heartBounds.top.value, 0.5f)
+        assertTrue(closeBounds.left < sleepBounds.left)
         assertTrue(sleepBounds.left < heartBounds.left)
-        assertTrue(heartBounds.left < fullscreenBounds.left)
+        assertTrue(heartBounds.left < overflowBounds.left)
+        assertTrue(overflowBounds.left < fullscreenBounds.left)
 
         heart.performClick()
         compose.waitForIdle()

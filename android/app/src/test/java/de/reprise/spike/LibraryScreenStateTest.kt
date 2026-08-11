@@ -365,6 +365,8 @@ private class RecordingLibrarySessionPort(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
 
+    override fun albumTrackIds(album: String, albumArtist: String): List<Long> = emptyList()
+
     override fun trackById(trackId: Long): LibraryTrack? = tracks.firstOrNull { it.id == trackId }
 
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? = null
