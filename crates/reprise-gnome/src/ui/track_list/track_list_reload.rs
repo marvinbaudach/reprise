@@ -212,7 +212,7 @@ fn restore_reload_anchor(
     if matches!(viewport, ReloadViewport::CenterPlayingTrack) {
         let playing_track_id = shared.playing_track_id.get();
         if playing_track_id.is_some_and(|track_id| current_ids.contains(&track_id)) {
-            schedule_centered_scroll_restore(&shared.column_view, playing_track_id, current_ids);
+            super::centered_scroll_restore::schedule(shared, playing_track_id, current_ids);
             return;
         }
     }
@@ -276,68 +276,13 @@ fn select_captured_ids(shared: &Shared, captured: &ReloadAnchor, current_ids: &[
     }
 }
 
-fn schedule_centered_scroll_restore(
-    column_view: &gtk4::ColumnView,
-    track_id: Option<i64>,
-    current_ids: Vec<i64>,
-) {
-    let anchor = track_id.map(|track_id| (track_id, 0.0));
-    let Some(position) = reload_restore::prepaint_position(anchor, &current_ids) else {
-        return;
-    };
-    let scroll = gtk4::ScrollInfo::new();
-    scroll.set_enable_vertical(true);
-    column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
-    if apply_centered_scroll_refinement(column_view, track_id, &current_ids) {
-        return;
-    }
-    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(column_view) else {
-        return;
-    };
-    let weak_view = column_view.downgrade();
-    crate::ui::list_geometry_changed::on_changed_once(&adjustment, move |_| {
-        let Some(column_view) = weak_view.upgrade() else {
-            return;
-        };
-        apply_centered_scroll_refinement(&column_view, track_id, &current_ids);
-    });
-}
-
-fn apply_centered_scroll_refinement(
-    column_view: &gtk4::ColumnView,
-    track_id: Option<i64>,
-    current_ids: &[i64],
-) -> bool {
-    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(column_view) else {
-        return false;
-    };
-    let page = adjustment.page_size();
-    if adjustment.upper() <= page {
-        return true;
-    }
-    let Some(height) = ListGeometry::for_view(column_view)
-        .live_row_height(current_ids.len())
-        .map(crate::ui::list_geometry::RowHeight::pixels)
-    else {
-        return false;
-    };
-    let Some(value) =
-        reload_restore::centered_track_scroll_target(track_id, current_ids, height, page)
-    else {
-        return false;
-    };
-    crate::ui::scroll_probe::probe("centered_refinement", &adjustment, value);
-    adjustment.set_value(value);
-    true
-}
-
 /// START-3: selects and centers the loaded track once startup routing has
 /// built the restored view.
 ///
 /// Called after `route_to_place`, which is the one moment nothing else owns
 /// A no-op when nothing is loaded or the loaded track is not part of the
 /// view, preserving that view's own selection and viewport.
-pub(in crate::ui) fn center_loaded_track(shared: &Shared) {
+pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
     let Some(track_id) = shared.playing_track_id.get() else {
         return;
     };
@@ -351,7 +296,7 @@ pub(in crate::ui) fn center_loaded_track(shared: &Shared) {
     };
     shared.selection.unselect_all();
     shared.selection.select_item(position as u32, false);
-    schedule_centered_scroll_restore(&shared.column_view, Some(track_id), current_ids);
+    super::centered_scroll_restore::schedule(shared, Some(track_id), current_ids);
 }
 
 fn schedule_scroll_restore(

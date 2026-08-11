@@ -2,6 +2,7 @@ pub(in crate::ui) mod column_header_dnd;
 pub(crate) mod column_layout;
 pub(in crate::ui) mod column_layout_editor;
 pub(in crate::ui) use reprise_view::column_widths;
+mod centered_scroll_restore;
 pub(in crate::ui) mod current_track_selection;
 pub(crate) mod diagnostic_trail;
 pub(in crate::ui) mod list_density;
