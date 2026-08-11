@@ -51,9 +51,12 @@ class NowPlayingShimmerTest {
     }
 
     @Test
-    fun shimmer_starts_at_the_wide_fog_diameter() {
-        assertEquals(NowPlayingFogSpec.wideSizeDp, NowPlayingShimmerSpec.diameterDp)
-        assertEquals(620f, NowPlayingShimmerSpec.diameterDp)
+    fun shimmer_diameter_keeps_the_desktop_520_to_168_cover_ratio() {
+        val coverDiameterDp = 272f
+        val shimmerDiameterDp = NowPlayingShimmerSpec.diameterDp(coverDiameterDp)
+
+        assertEquals(520f / 168f, shimmerDiameterDp / coverDiameterDp, FLOAT_TOLERANCE)
+        assertEquals(841.9048f, shimmerDiameterDp, FLOAT_TOLERANCE)
     }
 
     private companion object {

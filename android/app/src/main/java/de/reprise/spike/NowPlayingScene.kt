@@ -331,6 +331,7 @@ internal fun DrawScope.drawPlayedNowPlayingShimmer(
     drawNowPlayingShimmer(
         fog = fog,
         center = center,
+        coverDiameterDp = COVER_SIZE_DP.toFloat(),
         elapsedSeconds = state.shimmerElapsedSeconds,
         swell = state.fogLevel,
         bassPressure = state.bassPressure,
