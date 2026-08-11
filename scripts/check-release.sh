@@ -25,13 +25,13 @@ echo "== gettext =="
 scripts/tests/gettext-catalogs.sh
 
 echo "== Desktop metadata =="
-desktop-file-validate data/org.reprise.Reprise.desktop
+desktop-file-validate data/io.github.marvinbaudach.Reprise.desktop
 appstreamcli validate --pedantic --no-net \
   --override=cid-contains-uppercase-letter=info,url-homepage-missing=info \
-  data/org.reprise.Reprise.metainfo.xml
-xmllint --noout data/org.reprise.Reprise.metainfo.xml \
-  data/icons/hicolor/scalable/apps/org.reprise.Reprise.svg \
-  data/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg
+  data/io.github.marvinbaudach.Reprise.metainfo.xml
+xmllint --noout data/io.github.marvinbaudach.Reprise.metainfo.xml \
+  data/icons/hicolor/scalable/apps/io.github.marvinbaudach.Reprise.svg \
+  data/icons/hicolor/symbolic/apps/io.github.marvinbaudach.Reprise-symbolic.svg
 
 echo "== Logo artwork =="
 # Misst die Zeichnungen und beweist zugleich, dass jede ausgelieferte
@@ -40,19 +40,19 @@ echo "== Logo artwork =="
 bash scripts/check-logo-artwork.sh --all
 
 echo "== Flatpak manifest and Cargo sources =="
-python3 -c 'import sys, yaml; data=yaml.safe_load(open(sys.argv[1], encoding="utf-8")); assert data["app-id"] == "org.reprise.Reprise"; assert data["runtime"] == "org.gnome.Platform"; assert data["runtime-version"] == "50"; assert data["sdk"] == "org.gnome.Sdk"' org.reprise.Reprise.yml
+python3 -c 'import sys, yaml; data=yaml.safe_load(open(sys.argv[1], encoding="utf-8")); assert data["app-id"] == "io.github.marvinbaudach.Reprise"; assert data["runtime"] == "org.gnome.Platform"; assert data["runtime-version"] == "50"; assert data["sdk"] == "org.gnome.Sdk"' io.github.marvinbaudach.Reprise.yml
 jq empty flatpak/cargo-sources.json
 awk -F'"' '/^checksum = / { print $2 }' Cargo.lock | sort > "$tmp_root/lock-checksums"
 jq -r '.[] | select(.type == "archive") | .sha256' flatpak/cargo-sources.json | sort > "$tmp_root/source-checksums"
 cmp "$tmp_root/lock-checksums" "$tmp_root/source-checksums"
 test "$(rg -c '^checksum = ' Cargo.lock)" -eq "$(jq '[.[] | select(.type == "archive")] | length' flatpak/cargo-sources.json)"
-bash scripts/check-flatpak-device-permissions.sh org.reprise.Reprise.yml
+bash scripts/check-flatpak-device-permissions.sh io.github.marvinbaudach.Reprise.yml
 bash scripts/check-stem-runtime-packaging.sh
 bash scripts/check-stem-worker-isolation.sh
 if command -v flatpak-builder-lint >/dev/null; then
-  flatpak-builder-lint manifest org.reprise.Reprise.yml
+  flatpak-builder-lint manifest io.github.marvinbaudach.Reprise.yml
 elif flatpak info org.flatpak.Builder >/dev/null 2>&1; then
-  flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest org.reprise.Reprise.yml
+  flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest io.github.marvinbaudach.Reprise.yml
 else
   echo "SKIP: flatpak-builder-lint is not installed"
 fi
@@ -80,10 +80,10 @@ test -x "$tmp_root/root/usr/bin/reprise"
 test -x "$tmp_root/root/usr/libexec/reprise-worker"
 scripts/check-packaged-instrumental-e2e.sh \
   "$tmp_root/root/usr/libexec/reprise-worker"
-test -f "$tmp_root/root/usr/share/applications/org.reprise.Reprise.desktop"
-test -f "$tmp_root/root/usr/share/metainfo/org.reprise.Reprise.metainfo.xml"
-test -f "$tmp_root/root/usr/share/icons/hicolor/scalable/apps/org.reprise.Reprise.svg"
-test -f "$tmp_root/root/usr/share/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg"
+test -f "$tmp_root/root/usr/share/applications/io.github.marvinbaudach.Reprise.desktop"
+test -f "$tmp_root/root/usr/share/metainfo/io.github.marvinbaudach.Reprise.metainfo.xml"
+test -f "$tmp_root/root/usr/share/icons/hicolor/scalable/apps/io.github.marvinbaudach.Reprise.svg"
+test -f "$tmp_root/root/usr/share/icons/hicolor/symbolic/apps/io.github.marvinbaudach.Reprise-symbolic.svg"
 while IFS= read -r locale; do
   [[ -z "$locale" || "$locale" == \#* ]] && continue
   test -f "$tmp_root/root/usr/share/locale/$locale/LC_MESSAGES/reprise.mo"
