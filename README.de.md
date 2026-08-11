@@ -147,7 +147,7 @@ oder dein Benutzerprofil zurück.
 
 ## Lizenz
 
-Die portable Engine (`reprise-core`, `reprise-platform-linux`) steht unter
-**MIT**. Das native GTK4-Frontend (`reprise-gnome`) steht unter
-**GPL-3.0-or-later**. [LICENSING.md](LICENSING.md) erklärt die Gründe und
-Komponentengrenzen.
+Reprise steht durchgängig unter **GPL-3.0-or-later** — jede Crate, von der
+portablen Engine bis zum nativen GTK4-Frontend. [LICENSE](LICENSE) enthält den
+vollständigen Text, [LICENSING.md](LICENSING.md) die Gründe und die
+Drittanbieter-Hinweise.

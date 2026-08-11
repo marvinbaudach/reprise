@@ -21,7 +21,7 @@ authors = ["Marvin Baudach"]
 edition = "2021"
 # gtk-rs 0.22 and gstreamer-rs 0.25 set the current dependency floor.
 rust-version = "1.92"
-license = "MIT"
+license = "GPL-3.0-or-later"
 
 # Stage 3 Task 1: curated pedantic-lint selection, hardened to `warn` here so
 # `cargo clippy --all-targets -- -D warnings` (the gate every commit must
