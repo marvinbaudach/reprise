@@ -15,6 +15,9 @@ pub use api::*;
 #[path = "settings_column_keys.rs"]
 mod column_keys;
 pub use column_keys::*;
+#[path = "settings_geometry.rs"]
+mod geometry;
+pub use geometry::*;
 /// The settings key `ui::window`'s scan flow writes the scanned folder under,
 /// and `main.rs`/`ui::window` read at startup/after-scan to (re)start the
 /// watcher. `pub` so both call sites share the exact same literal rather than

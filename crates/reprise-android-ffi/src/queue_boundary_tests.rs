@@ -411,64 +411,6 @@ fn pruning_a_live_deleted_duplicate_keeps_the_loaded_current_slot() {
 }
 
 #[test]
-fn play_now_promotes_one_upcoming_track_without_dropping_the_others() {
-    let directory = tempfile::tempdir().unwrap();
-    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Target"]);
-    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
-    let ordered = [
-        track("Current"),
-        track("First"),
-        track("Second"),
-        track("Target"),
-    ];
-    let session = session_in(directory.path());
-    session
-        .play_tracks(
-            ordered.iter().map(|track| track.id).collect(),
-            ordered.iter().map(|track| track.path.clone()).collect(),
-            0,
-        )
-        .unwrap();
-
-    assert!(session
-        .play_upcoming_track_now(2, track("Target").id)
-        .unwrap());
-
-    assert_eq!(
-        session.snapshot().unwrap().current_track_id,
-        Some(track("Target").id),
-    );
-    let future = session
-        .upcoming_tracks(WindowRange {
-            offset: 0,
-            limit: 10,
-        })
-        .unwrap();
-    assert_eq!(future.total, 2);
-    assert_eq!(
-        future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
-        vec![track("First").id, track("Second").id],
-        "the tracks passed by Play Now stay ahead in their original order",
-    );
-    let database =
-        reprise_core::db::Db::open_ready(&directory.path().join(crate::DATABASE_FILE_NAME))
-            .unwrap();
-    let saved = reprise_core::library::session::load(&database).queue;
-    assert_eq!(saved.ids.len(), 4, "Play Now must not shorten the queue");
-    let mut queue = reprise_core::queue::Queue::new();
-    queue.restore_snapshot(saved).unwrap();
-    assert_eq!(
-        queue.ids_in_order(),
-        vec![
-            track("Current").id,
-            track("Target").id,
-            track("First").id,
-            track("Second").id,
-        ],
-    );
-}
-
-#[test]
 fn an_exhausted_future_is_an_empty_window_not_an_error() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["Only"]);

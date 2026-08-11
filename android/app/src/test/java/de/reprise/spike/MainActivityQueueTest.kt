@@ -147,7 +147,9 @@ class MainActivityQueueTest {
         compose.onNodeWithContentDescription("Show queue").assertDoesNotExist()
 
         compose.onNodeWithTag("library-mini-player").performClick()
-        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+        // Now Playing is dismissed by swiping it down rather than by a button,
+        // so the sheet's own content is what says it opened.
+        compose.onNodeWithTag("now-playing-content").assertIsDisplayed()
         compose.onNodeWithContentDescription("Show queue").assertDoesNotExist()
     }
 

@@ -11,6 +11,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
+import kotlinx.coroutines.delay
+
+internal const val PAUSED_SCENE_FRAME_INTERVAL_MS = 50L
 
 internal fun interface SceneClock {
     fun nowNanos(): Long
@@ -28,8 +31,8 @@ internal data class ScenePositionSample(
 
 /**
  * Converts position estimates to whole spectrogram indices and delegates all
- * signal evolution to [SceneState]. The clock is used only for interpolation;
- * it never enters the state mathematics.
+ * signal evolution to [SceneState]. The same monotonic clock supplies elapsed
+ * wall time for the fog's signal-independent base drift.
  */
 internal class SceneDriver(
     private val frames: SpectrogramFrames,
@@ -41,20 +44,44 @@ internal class SceneDriver(
     var lastDrivenFrameIndex: Int? = null
         private set
     private var framesWithheld = false
+    private var lastTickNanos: Long? = null
+    private var firstTickNanos: Long? = null
 
-    fun tick(transitionRunning: Boolean = false): Boolean {
+    fun tick(): Boolean {
         if (!framesAllowed()) {
             noteFramesWithheld()
             return false
         }
         val sample = positionSource.current()
-        val positionMs = estimatedPositionMs(sample, clock.nowNanos())
+        val nowNanos = clock.nowNanos()
+        val positionMs = estimatedPositionMs(sample, nowNanos)
         val frameIndex = frames.frameIndexFor(positionMs)
         val before = state.revision
-        state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
+        val analysed = frames.frameCount > 0
+        if (analysed) {
+            state.advanceTo(frameIndex, afterMissedFrames = framesWithheld)
+        }
+        val previousTick = lastTickNanos
+        if (previousTick != null) {
+            val elapsedSeconds = (nowNanos - previousTick).coerceAtLeast(0) / NANOS_PER_SECOND
+            if (analysed) {
+                state.advanceFogBy(elapsedSeconds)
+            } else {
+                // No spectrogram ever arrived for this track, so there is no
+                // signal to follow. Wandering is the honest substitute: it is
+                // visibly alive without pretending to answer music it cannot
+                // hear.
+                val totalSeconds = (nowNanos - (firstTickNanos ?: nowNanos)) / NANOS_PER_SECOND
+                state.wanderTo(totalSeconds, elapsedSeconds)
+            }
+        }
+        if (firstTickNanos == null) {
+            firstTickNanos = nowNanos
+        }
+        lastTickNanos = nowNanos
         framesWithheld = false
         lastDrivenFrameIndex = frameIndex
-        return state.revision != before || transitionRunning
+        return state.revision != before
     }
 
     /**
@@ -68,6 +95,7 @@ internal class SceneDriver(
      */
     fun noteFramesWithheld() {
         framesWithheld = true
+        lastTickNanos = null
     }
 
     private fun estimatedPositionMs(sample: ScenePositionSample, nowNanos: Long): Long {
@@ -82,6 +110,7 @@ internal class SceneDriver(
         /** Measured from Media3PlaybackPort's published position interval. */
         const val measuredPositionIntervalMs = 500L
         private const val NANOS_PER_MILLISECOND = 1_000_000L
+        private const val NANOS_PER_SECOND = 1_000_000_000f
     }
 }
 
@@ -102,9 +131,8 @@ private object SystemSceneClock : SceneClock {
 /**
  * Drives one scene and returns the draw revision Compose should observe.
  *
- * Playing animation loops only while the activity and screen admit frames.
- * Paused or system-animation-off paths take one frame to adopt the current raw
- * signal and then stop scheduling callbacks.
+ * The loop runs at display cadence while playing and at no more than 20 Hz
+ * while paused. Activity, screen and system-animation gates stop it entirely.
  */
 @Composable
 internal fun DriveScene(
@@ -112,7 +140,6 @@ internal fun DriveScene(
     state: SceneState,
     playback: PlaybackUiState,
     controller: AmbientMotionController,
-    transitionRunning: Boolean,
 ): Int {
     val source = remember(state) { MutableScenePositionSource() }
     val driver = remember(frames, state) {
@@ -142,17 +169,18 @@ internal fun DriveScene(
         animationsEnabled,
         playback.isPlaying,
         playback.positionMs,
-        transitionRunning,
     ) {
-        if (!runtimeActive) {
+        if (!runtimeActive || !animationsEnabled) {
             driver.noteFramesWithheld()
             return@LaunchedEffect
         }
+        if (frames.frameCount == 0) return@LaunchedEffect
         do {
+            if (!playback.isPlaying) delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
             withFrameNanos {
-                if (driver.tick(transitionRunning)) drawRevision += 1
+                if (driver.tick()) drawRevision += 1
             }
-        } while (animationsEnabled && (playback.isPlaying || transitionRunning))
+        } while (animationsEnabled)
     }
     return drawRevision
 }

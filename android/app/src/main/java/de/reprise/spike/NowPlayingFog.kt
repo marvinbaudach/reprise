@@ -22,10 +22,22 @@ internal object NowPlayingFogSpec {
     const val tightAngleFactor = -0.6f
     const val tightUsesScreenBlend = true
 
-    private const val WIDE_FLOOR = 0.62f
-    private const val TIGHT_FLOOR = 0.40f
+    private const val WIDE_FLOOR = 0.34f
+    private const val TIGHT_FLOOR = 0.14f
     private const val FOG_LEVEL_LOW = 0.05f
     private const val FOG_LEVEL_HIGH = 0.70f
+
+    /**
+     * How far the haze swells with the signal.
+     *
+     * Opacity alone was too quiet to notice — against a dark cover the whole
+     * range moved the picture by a tenth of a stop. Size is what the eye picks
+     * up, so the layers grow with the level as well as brighten.
+     */
+    private const val SCALE_SWING = 0.14f
+
+    fun breathingSize(baseSizeDp: Float, fogLevel: Float): Float =
+        baseSizeDp * (1f + SCALE_SWING * fogLevel.coerceIn(0f, 1f))
 
     fun wideAlpha(fogLevel: Float, opacity: Float): Float =
         wideOpacity * response(fogLevel, WIDE_FLOOR) * opacity
@@ -70,7 +82,7 @@ internal fun DrawScope.drawNowPlayingFog(
         drawFogLayer(
             image = fog.wideImage,
             center = center,
-            sizeDp = NowPlayingFogSpec.wideSizeDp,
+            sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.wideSizeDp, fogLevel),
             angle = if (rotationsEnabled) angleA else 0f,
             alpha = NowPlayingFogSpec.wideAlpha(fogLevel, boundedOpacity),
             blendMode = BlendMode.SrcOver,
@@ -78,7 +90,7 @@ internal fun DrawScope.drawNowPlayingFog(
         drawFogLayer(
             image = fog.tightImage,
             center = center,
-            sizeDp = NowPlayingFogSpec.tightSizeDp,
+            sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.tightSizeDp, fogLevel),
             angle = if (rotationsEnabled) angleB else 0f,
             alpha = NowPlayingFogSpec.tightAlpha(fogLevel, boundedOpacity),
             blendMode = BlendMode.Screen,

@@ -14,19 +14,13 @@ class SceneColourTest {
 
     @Test
     fun hue_is_independent_of_every_band_value() {
-        val silent = SceneState(
-            SpectrogramFrames(24, 20, ByteArray(24)),
-            CoreShape("Colour", "Reprise"),
-        )
-        val loud = SceneState(
-            SpectrogramFrames(24, 20, ByteArray(24) { 255.toByte() }),
-            CoreShape("Colour", "Reprise"),
-        )
+        val silent = SceneState(SpectrogramFrames(24, 20, ByteArray(24)))
+        val loud = SceneState(SpectrogramFrames(24, 20, ByteArray(24) { 255.toByte() }))
         silent.advanceTo(0)
         loud.advanceTo(0)
 
-        val silentColour = SceneColour.hsl(angleDegClockwiseFromTop = 90f, energy = silent.level)
-        val loudColour = SceneColour.hsl(angleDegClockwiseFromTop = 90f, energy = loud.level)
+        val silentColour = SceneColour.hsl(90f, silent.motionLevel)
+        val loudColour = SceneColour.hsl(90f, loud.motionLevel)
         assertEquals(silentColour.hue, loudColour.hue, 0f)
         assertEquals(0.95f, SceneColour.saturation, 0f)
         assertEquals(0.30f, silentColour.lightness, 0.0001f)

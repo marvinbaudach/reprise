@@ -1,17 +1,11 @@
 package de.reprise.spike.scene
 
-data class Transient(
-    val bandIndex: Int,
-    val excess: Float,
-)
-
-/** The deterministic scene state stepped only by consumed spectrogram frames. */
+/** Signal state stepped by spectrogram frames, with wall-time base drift applied separately. */
 class SceneState(
     private val frames: SpectrogramFrames,
-    val coreShape: CoreShape,
 ) {
     private val fogEnvelopes = BandEnvelopes.fog(frames.bandCount, frames.frameRateHz)
-    private val burstEnvelopes = BandEnvelopes.burst(frames.bandCount, frames.frameRateHz)
+    private val motionEnvelopes = BandEnvelopes.motion(frames.bandCount, frames.frameRateHz)
     private val rawBands = FloatArray(frames.bandCount)
     private val targets = FloatArray(frames.bandCount)
     private var lastFrameIndex: Int? = null
@@ -19,26 +13,21 @@ class SceneState(
     /**
      * The live follower array, handed out by reference on purpose.
      *
-     * The burst reads its band arrays once per corona stroke — 168 times per
-     * scene pass, twice that once the bloom pass is counted — so a defensive
-     * copy per read would allocate some 340 arrays per frame on the very path
-     * this class exists to feed. The contract instead: the scene is stepped and
-     * read on the main thread only, and callers treat the array as read-only.
+     * The canvas reads its band arrays repeatedly, so a defensive copy per read
+     * would allocate on the frame path this class exists to feed. The contract
+     * instead: the scene is stepped and read on the main thread only, and callers
+     * treat the array as read-only.
      * Anything that must outlive the next [advanceTo] takes its own `copyOf()`.
      */
     val fogBands: FloatArray
         get() = fogEnvelopes.values
 
-    /** The live burst follower array. See [fogBands] for the read-only contract. */
-    val burstBands: FloatArray
-        get() = burstEnvelopes.values
+    /** The fast follower bank that keeps fog rotation responsive to the music. */
+    val motionBands: FloatArray
+        get() = motionEnvelopes.values
     var fogLevel: Float = 0f
         private set
-    var level: Float = 0f
-        private set
-    var bass: Float = 0f
-        private set
-    var transient: Transient? = null
+    var motionLevel: Float = 0f
         private set
     var fogAngleA: Float = 0f
         private set
@@ -81,20 +70,52 @@ class SceneState(
         val targetIndex = frames.clampFrameIndex(frameIndex)
         readRaw(targetIndex)
         val fogChanged = fogEnvelopes.adopt(rawBands)
-        val burstChanged = burstEnvelopes.adopt(rawBands)
+        val motionChanged = motionEnvelopes.adopt(rawBands)
         val oldFogLevel = fogLevel
-        val oldLevel = level
-        val oldBass = bass
-        val oldTransient = transient
+        val oldMotionLevel = motionLevel
         fogLevel = mean(fogBands).coerceIn(0f, 1f)
-        level = mean(burstBands)
-        bass = bassMean(burstBands)
-        transient = strongestTransient(rawBands, fogBands)
+        motionLevel = mean(motionBands)
         lastFrameIndex = targetIndex
         if (
-            fogChanged || burstChanged || fogLevel.changedFrom(oldFogLevel) ||
-            level.changedFrom(oldLevel) || bass.changedFrom(oldBass) || transient != oldTransient
+            fogChanged || motionChanged || fogLevel.changedFrom(oldFogLevel) ||
+            motionLevel.changedFrom(oldMotionLevel)
         ) {
+            revision += 1
+        }
+    }
+
+    /**
+     * Drives the haze from wall time alone, for tracks the desktop never
+     * analysed.
+     *
+     * Three sine waves whose periods share no common multiple never repeat
+     * within a listening session, which is what "random" has to mean here: a
+     * new value per frame would be noise, and noise does not drift. The mix
+     * moves the fog's density and speeds its rotation up and down, so a track
+     * without analysis still looks alive rather than merely rotating.
+     */
+    fun wanderTo(totalSeconds: Float, elapsedSeconds: Float) {
+        val mix = wanderMix(totalSeconds)
+        val oldFogLevel = fogLevel
+        fogLevel = (WANDER_CENTRE + WANDER_SWING * mix).coerceIn(0f, 1f)
+        advanceFogBy(elapsedSeconds * (1f + WANDER_SPEED_SWING * mix))
+        if (fogLevel.changedFrom(oldFogLevel)) {
+            revision += 1
+        }
+    }
+
+    /** Keeps both fog layers breathing even when playback has no new signal frame. */
+    fun advanceFogBy(elapsedSeconds: Float) {
+        if (elapsedSeconds <= 0f) return
+        val oldAngleA = fogAngleA
+        val oldAngleB = fogAngleB
+        fogAngleA = EnergyIntegrator.wrap360(
+            fogAngleA + FOG_BASE_DEGREES_PER_SECOND * elapsedSeconds,
+        )
+        fogAngleB = EnergyIntegrator.wrap360(
+            fogAngleB + FOG_BASE_DEGREES_PER_SECOND_B * elapsedSeconds,
+        )
+        if (fogAngleA.changedFrom(oldAngleA) || fogAngleB.changedFrom(oldAngleB)) {
             revision += 1
         }
     }
@@ -105,22 +126,18 @@ class SceneState(
             targets[band] = Lookahead.target(frames, frameIndex, band)
         }
         val fogChanged = fogEnvelopes.step(targets)
-        val burstChanged = burstEnvelopes.step(targets)
+        val motionChanged = motionEnvelopes.step(targets)
         val oldFogLevel = fogLevel
-        val oldLevel = level
-        val oldBass = bass
-        val oldTransient = transient
+        val oldMotionLevel = motionLevel
         val oldAngleA = fogAngleA
         val oldAngleB = fogAngleB
         fogLevel = mean(fogBands).coerceIn(0f, 1f)
-        level = mean(burstBands)
-        bass = bassMean(burstBands)
-        transient = strongestTransient(rawBands, fogBands)
-        fogAngleA = EnergyIntegrator.advance(fogAngleA, level, FOG_FACTOR_A)
-        fogAngleB = EnergyIntegrator.advance(fogAngleB, level, FOG_FACTOR_B)
+        motionLevel = mean(motionBands)
+        fogAngleA = EnergyIntegrator.advance(fogAngleA, motionLevel, FOG_FACTOR_A)
+        fogAngleB = EnergyIntegrator.advance(fogAngleB, motionLevel, FOG_FACTOR_B)
         if (
-            fogChanged || burstChanged || fogLevel.changedFrom(oldFogLevel) ||
-            level.changedFrom(oldLevel) || bass.changedFrom(oldBass) || transient != oldTransient ||
+            fogChanged || motionChanged || fogLevel.changedFrom(oldFogLevel) ||
+            motionLevel.changedFrom(oldMotionLevel) ||
             fogAngleA.changedFrom(oldAngleA) || fogAngleB.changedFrom(oldAngleB)
         ) {
             revision += 1
@@ -133,29 +150,8 @@ class SceneState(
         }
     }
 
-    private fun strongestTransient(raw: FloatArray, fog: FloatArray): Transient? {
-        var strongestBand = -1
-        var strongestExcess = TRANSIENT_THRESHOLD
-        raw.indices.forEach { band ->
-            val excess = raw[band] - fog[band]
-            if (excess > strongestExcess) {
-                strongestBand = band
-                strongestExcess = excess
-            }
-        }
-        return if (strongestBand < 0) null else Transient(strongestBand, strongestExcess)
-    }
-
     private fun mean(values: FloatArray): Float =
         if (values.isEmpty()) 0f else values.sum() / values.size
-
-    private fun bassMean(values: FloatArray): Float {
-        val count = minOf(BASS_BAND_COUNT, values.size)
-        if (count == 0) return 0f
-        var sum = 0f
-        repeat(count) { sum += values[it] }
-        return sum / count
-    }
 
     private fun Float.changedFrom(previous: Float): Boolean = toRawBits() != previous.toRawBits()
 
@@ -174,9 +170,25 @@ class SceneState(
          */
         const val CATCH_UP_FRAMES = 1_200
         const val SEEK_FRAMES = 20
-        const val BASS_BAND_COUNT = 4
-        const val TRANSIENT_THRESHOLD = 0.18f
         const val FOG_FACTOR_A = 0.9f
         const val FOG_FACTOR_B = -0.6f
+        const val FOG_BASE_DEGREES_PER_SECOND = 360f / (4f * 60f)
+        const val FOG_BASE_DEGREES_PER_SECOND_B =
+            FOG_BASE_DEGREES_PER_SECOND * FOG_FACTOR_B / FOG_FACTOR_A
+
+        /** The unanalysed wander: centre density, how far it swings, how much it hurries. */
+        const val WANDER_CENTRE = 0.42f
+        const val WANDER_SWING = 0.30f
+        const val WANDER_SPEED_SWING = 0.7f
+
+        private const val TAU = 6.2831855f
+
+        /** −1..1, from three periods with no common multiple. */
+        fun wanderMix(totalSeconds: Float): Float {
+            val a = kotlin.math.sin(totalSeconds * TAU / 7.3f)
+            val b = kotlin.math.sin(totalSeconds * TAU / 11.7f + 1.7f)
+            val c = kotlin.math.sin(totalSeconds * TAU / 19.1f + 3.1f)
+            return (a * 0.5f + b * 0.33f + c * 0.17f).coerceIn(-1f, 1f)
+        }
     }
 }

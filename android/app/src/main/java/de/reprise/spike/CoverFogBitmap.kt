@@ -1,10 +1,12 @@
 package de.reprise.spike
 
 import android.graphics.Bitmap
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -22,6 +24,7 @@ private const val WIDE_BLUR_RADIUS_PX = 18
 private const val TIGHT_BLUR_RADIUS_PX = 10
 private const val BOX_BLUR_PASSES = 2
 private const val RADIAL_FADE_START = 0.62f
+private const val FOG_CROSSFADE_MS = 180
 
 /** The two textures prepared once and only transformed by the frame draw. */
 internal data class CoverFogBitmap(
@@ -30,6 +33,38 @@ internal data class CoverFogBitmap(
 ) {
     val wideImage: ImageBitmap = wide.asImageBitmap()
     val tightImage: ImageBitmap = tight.asImageBitmap()
+}
+
+internal data class CoverFogTransition(
+    val previous: CoverFogBitmap?,
+    val current: CoverFogBitmap?,
+    val fraction: Float,
+)
+
+/** Keeps the currently drawn fog while its replacement is being prepared. */
+internal class CoverFogTransitionState {
+    private var previous: CoverFogBitmap? = null
+    private var current: CoverFogBitmap? = null
+
+    fun beginReplacement() = Unit
+
+    fun adopt(next: CoverFogBitmap) {
+        if (current === next) return
+        previous = current
+        current = next
+    }
+
+    fun pending() = CoverFogTransition(previous = null, current = current, fraction = 1f)
+
+    fun transition(fraction: Float) = CoverFogTransition(
+        previous = previous,
+        current = current,
+        fraction = fraction.coerceIn(0f, 1f),
+    )
+
+    fun finish() {
+        previous = null
+    }
 }
 
 /**
@@ -51,15 +86,41 @@ internal fun prepareCoverFogBitmap(source: Bitmap?, fallbackArgb: Int): CoverFog
 internal fun rememberCoverFogBitmap(
     artwork: ImageBitmap?,
     fallback: Color,
-): CoverFogBitmap? {
+): CoverFogBitmap? = rememberCoverFogTransition(artwork, fallback).current
+
+@Composable
+internal fun rememberCoverFogTransition(
+    artwork: ImageBitmap?,
+    fallback: Color,
+    cache: ArtworkCache = SharedArtworkCache,
+): CoverFogTransition {
     val fallbackArgb = fallback.toArgb()
-    var prepared by remember(artwork, fallbackArgb) { mutableStateOf<CoverFogBitmap?>(null) }
+    val state = remember { CoverFogTransitionState() }
+    val fade = remember { Animatable(1f) }
+    var revision by remember { mutableIntStateOf(0) }
     LaunchedEffect(artwork, fallbackArgb) {
-        prepared = withContext(Dispatchers.Default) {
-            prepareCoverFogBitmap(artwork?.asAndroidBitmap(), fallbackArgb)
+        state.beginReplacement()
+        revision += 1
+        val prepared = artwork?.let(cache::fog) ?: withContext(Dispatchers.Default) {
+            prepareCoverFogBitmap(artwork?.asAndroidBitmap(), fallbackArgb).also { fog ->
+                if (artwork != null) cache.putFog(artwork, fog)
+            }
+        }
+        val hadCurrent = state.pending().current != null
+        state.adopt(prepared)
+        revision += 1
+        if (hadCurrent) {
+            fade.snapTo(0f)
+            fade.animateTo(1f, tween(FOG_CROSSFADE_MS))
+            state.finish()
+            revision += 1
+        } else {
+            fade.snapTo(1f)
         }
     }
-    return prepared
+    @Suppress("UNUSED_VARIABLE")
+    val observedRevision = revision
+    return state.transition(fade.value)
 }
 
 private fun cropSquare(source: Bitmap?, fallbackArgb: Int): Bitmap {

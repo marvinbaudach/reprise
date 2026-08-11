@@ -3,6 +3,8 @@ package de.reprise.spike
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
@@ -10,6 +12,9 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,6 +49,69 @@ private const val DESTROYED = "already been destroyed"
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class TrackArtworkTest {
+    @Test
+    fun aCachedCoverIsDeliveredSynchronouslyWithoutAnEmptyFrame() {
+        val cache = ArtworkCache()
+        val request = ArtworkRequest(
+            "content://tracks/cached",
+            AndroidArtworkSize.NOW_PLAYING,
+            title = "Cached",
+            artist = "Artist",
+        )
+        val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        val expected = ArtworkVisual(bitmap.asImageBitmap(), ambientColors = null)
+        cache.putArtwork(request, expected)
+        val artwork = TrackArtwork(resolve = { _, _ -> error("cache miss") }, cache = cache)
+        val gate = ArtworkRequestGate()
+        val admitted = gate.begin(
+            request.trackUri,
+            request.size,
+            request.title,
+            request.artist,
+        )
+        var delivered: ArtworkVisual? = null
+
+        try {
+            artwork.loadVisual(admitted, gate) { delivered = it }
+            assertSame(expected, delivered)
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun aTrackWithoutArtworkReceivesAGeneratedCoverInsteadOfTealOrNull() {
+        val answered = CountDownLatch(1)
+        val generated = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.rgb(81, 42, 65))
+        }
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            fallback = { _, _, _ -> generated },
+            onMainThread = { work -> work() },
+        )
+        val gate = ArtworkRequestGate()
+        val request = gate.begin(
+            "content://tracks/no-cover",
+            AndroidArtworkSize.NOW_PLAYING,
+            title = "No Cover",
+            artist = "Artist",
+        )
+        var delivered: ArtworkVisual? = null
+
+        try {
+            artwork.loadVisual(request, gate) {
+                delivered = it
+                answered.countDown()
+            }
+            assertTrue(answered.await(WAIT_SECONDS, TimeUnit.SECONDS))
+            assertNotNull(delivered)
+            assertNotEquals(Color.rgb(0, 150, 136), delivered?.image?.asAndroidBitmap()?.getPixel(0, 0))
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
     @Test
     fun ambientColorsComeFromBoundedSamplesOfTheAlreadyDecodedArtwork() {
         val bitmap = Bitmap.createBitmap(12, 12, Bitmap.Config.ARGB_8888)
@@ -151,9 +219,8 @@ class TrackArtworkTest {
      * This is the half that is ours. Android ends the process for an exception
      * that escapes any thread, so without the catch in `load` a cover request
      * that lost the race with teardown would not be a lost cover, it would be
-     * the crash the refusal exists to prevent. The slot is still answered —
-     * with nothing, which is what a track without a readable cover shows
-     * anyway.
+     * the crash the refusal exists to prevent. The slot is still answered with
+     * the generated cover, so a teardown race cannot reintroduce an empty frame.
      */
     @Test
     fun aReadThatFindsTheLibraryClosedIsAnsweredRatherThanEndingTheProcess() {
@@ -168,6 +235,10 @@ class TrackArtworkTest {
         val artwork = TrackArtwork(
             resolve = { _, _ -> throw IllegalStateException("MusicLibrary object has $DESTROYED") },
             decode = { _ -> null },
+            fallback = { _, _, _ ->
+                Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+            },
+            cache = ArtworkCache(),
             worker = worker,
             onMainThread = { work -> work() },
         )
@@ -186,7 +257,7 @@ class TrackArtworkTest {
                 escaped.poll(),
             )
             assertTrue("the slot has to be answered even when the read failed", reachedTheSlot)
-            assertNull("a cover that could not be read is no cover", delivered)
+            assertNotNull("a refused cover read must fall back without an empty frame", delivered)
         } finally {
             artwork.shutdown()
         }

@@ -1,10 +1,14 @@
 package de.reprise.spike
 
 import android.os.Looper
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -76,7 +80,8 @@ class MainActivityRatingTest {
         compose.waitForIdle()
 
         assertEquals(listOf(1L to 5), application.controls.ratingRequests)
-        compose.onNodeWithContentDescription("Collapse Now Playing").performClick()
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+        compose.waitForIdle()
         libraryHeart("Remove from favourites").assertIsDisplayed()
 
         recreateAt("w916dp-h412dp-land")
@@ -91,43 +96,33 @@ class MainActivityRatingTest {
     }
 
     @Test
-    fun sheetHeaderKeepsAllActionsAndTransportStaysAtTheBottom() {
+    fun sheetHeaderKeepsSleepAndHeartWithoutAQueueActionAndTransportStaysAtTheBottom() {
         publishTrack(1)
         compose.onNodeWithTag("library-mini-player").performClick()
 
         val actionRow = hasTestTag("now-playing-actions")
+        // Sleep, heart and the context menu — the collapse button gave way to
+        // the downward swipe, and the fullscreen visualizer is retired.
+        compose.onAllNodes(hasClickAction() and hasAnyAncestor(actionRow))
+            .assertCountEquals(3)
         val sleep = compose.onNode(
             hasContentDescription("Set sleep timer") and hasAnyAncestor(actionRow),
         )
         val heart = compose.onNode(
             hasTestTag("now-playing-heart") and hasAnyAncestor(actionRow),
         ).assertContentDescriptionEquals("Add to favourites")
-        val close = compose.onNode(
-            hasContentDescription("Collapse Now Playing") and hasAnyAncestor(actionRow),
-        )
         val overflow = compose.onNode(
             hasTestTag("now-playing-overflow") and hasAnyAncestor(actionRow),
-        )
-        val fullscreen = compose.onNode(
-            hasContentDescription("Open fullscreen visualizer") and hasAnyAncestor(actionRow),
         )
 
         val sleepBounds = sleep.getUnclippedBoundsInRoot()
         val heartBounds = heart.getUnclippedBoundsInRoot()
-        val closeBounds = close.getUnclippedBoundsInRoot()
         val overflowBounds = overflow.getUnclippedBoundsInRoot()
-        val fullscreenBounds = fullscreen.getUnclippedBoundsInRoot()
         assertEquals(sleepBounds.top.value, heartBounds.top.value, 0.5f)
-        assertTrue(closeBounds.left < sleepBounds.left)
         assertTrue(sleepBounds.left < heartBounds.left)
         assertTrue(heartBounds.left < overflowBounds.left)
-        assertTrue(overflowBounds.left < fullscreenBounds.left)
-
-        heart.performClick()
-        compose.waitForIdle()
-        assertEquals(listOf(1L to 5), application.controls.ratingRequests)
-        heart.assertContentDescriptionEquals("Remove from favourites")
-        compose.onNodeWithText("0 plays").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Open fullscreen visualizer").assertDoesNotExist()
 
         val transportRow = compose.onNodeWithTag("now-playing-transport")
         val transportBottom = transportRow.getUnclippedBoundsInRoot().bottom
@@ -155,6 +150,26 @@ class MainActivityRatingTest {
             "content continued below the transport row: ${laterContent.map { it.boundsInRoot }}",
             laterContent.isEmpty(),
         )
+
+        heart.performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(1L to 5), application.controls.ratingRequests)
+        compose.onNodeWithTag("now-playing-heart")
+            .assertContentDescriptionEquals("Remove from favourites")
+        compose.onNodeWithText("0 plays").assertDoesNotExist()
+    }
+
+    @Test
+    fun shuffle_mode_is_visibly_inactive_then_active_from_the_playback_snapshot() {
+        publishTrack(1)
+        compose.onNodeWithTag("library-mini-player").performClick()
+        compose.onNodeWithTag("now-playing-shuffle").assertIsNotSelected()
+
+        application.service.publish(m9bSnapshot(1).copy(shuffled = true))
+        shadowOf(Looper.getMainLooper()).idle()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("now-playing-shuffle").assertIsSelected()
     }
 
     @Test
