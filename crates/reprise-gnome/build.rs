@@ -21,6 +21,7 @@ const ACCENT_KEY: &str = "reprise_teal";
 fn main() {
     println!("cargo:rerun-if-env-changed=REPRISE_GIT_SHA");
     emit_git_rerun_paths();
+    compile_app_resources();
 
     let sha = std::env::var("REPRISE_GIT_SHA")
         .ok()
@@ -35,6 +36,36 @@ fn main() {
     println!(
         "cargo:rustc-env=REPRISE_APP_ACCENT={}",
         read_palette_color(&palette, ACCENT_KEY)
+    );
+}
+
+/// Compiles the two private UI symbolics into the binary. GTK automatically
+/// adds `<application resource base>/icons` to the icon theme search path, so
+/// keeping the hicolor-style directory below `/org/reprise/Reprise/icons`
+/// makes these behave like any other named symbolic without installing them
+/// into the user's global icon namespace.
+fn compile_app_resources() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let resource_dir = crate_dir.join("resources");
+    let manifest = resource_dir.join("reprise.gresource.xml");
+    let target = PathBuf::from(
+        std::env::var_os("OUT_DIR").expect("Cargo must provide OUT_DIR to the build script"),
+    )
+    .join("reprise.gresource");
+
+    println!("cargo:rerun-if-changed={}", resource_dir.display());
+    let output = Command::new("glib-compile-resources")
+        .args(["--sourcedir"])
+        .arg(&resource_dir)
+        .args(["--target"])
+        .arg(&target)
+        .arg(&manifest)
+        .output()
+        .unwrap_or_else(|error| panic!("cannot run glib-compile-resources: {error}"));
+    assert!(
+        output.status.success(),
+        "glib-compile-resources failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 

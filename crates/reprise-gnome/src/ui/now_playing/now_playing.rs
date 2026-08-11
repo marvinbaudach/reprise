@@ -173,23 +173,19 @@ fn build_widgets_for_session(
         up_next.widget(),
         Some(UP_NEXT_PAGE),
         &strings::text(strings::UP_NEXT),
-        "view-list-symbolic",
+        PanelTab::UpNext.icon_name(),
     );
     let lyrics_page = tab_stack.add_titled_with_icon(
         lyrics.widget(),
         Some(LYRICS_PAGE),
         &lyrics_strings::text(lyrics_strings::LYRICS),
-        "document-edit-symbolic",
+        PanelTab::Lyrics.icon_name(),
     );
     let visual_page = tab_stack.add_titled_with_icon(
         &visual_viewport,
         Some(VISUAL_PAGE),
         &strings::text(strings::VISUAL),
-        // Rising bars rather than a speaker: the tab shows what the audio
-        // looks like, not where it comes out. Adwaita has no equalizer or
-        // spectrum glyph, so the signal-strength bars stand in — the shape is
-        // exactly the visual's, only the icon name is borrowed.
-        "network-cellular-signal-excellent-symbolic",
+        PanelTab::Visual.icon_name(),
     );
     tab_stack.set_visible_child_name(session.selected.get().page_name());
     lyrics.set_tab_open(session.selected.get() == PanelTab::Lyrics);
