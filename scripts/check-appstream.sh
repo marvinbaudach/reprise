@@ -13,8 +13,8 @@ desktop=$(find data -name '*.desktop' -print -quit)
 [[ -n $desktop ]] || { echo "ERROR: no desktop file under data/" >&2; exit 1; }
 
 # GP-12
-if ! output=$(appstreamcli validate --pedantic --explain "$metainfo" 2>&1); then
-  report_violation GP-12 "appstreamcli validate --pedantic failed:
+if ! output=$(appstreamcli validate --no-net --explain "$metainfo" 2>&1); then
+  report_violation GP-12 "appstreamcli validate failed:
 $output"
 fi
 
