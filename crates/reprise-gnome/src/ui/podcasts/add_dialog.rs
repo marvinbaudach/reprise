@@ -558,8 +558,8 @@ fn preview(
                     // (`pipeline::download_episode`) and the MCP path
                     // (`source_actions::podcast_source_error`) already use, so
                     // this preview never becomes a second, drifting sanitiser.
-                    let response =
-                        podcasts::http::get(&task_url).map_err(|error| preview_error(&error))?;
+                    let response = podcasts::http::get_feed(&task_url)
+                        .map_err(|error| preview_error(&error))?;
                     let feed = podcasts::feed::parse_feed(&response.body, import_count)
                         .map_err(|error| preview_error(&error))?;
                     let count = feed.episodes.len();

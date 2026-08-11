@@ -42,6 +42,15 @@ fn refresh_failure_notice(
     })
 }
 
+fn refresh_failure_detail(failures: &[RefreshFailure]) -> String {
+    let sources = failures
+        .iter()
+        .map(|failure| format!("{} — {}", failure.title, failure.classified_cause))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("Failed sources: {sources}")
+}
+
 fn collected_failure_support(source_titles: &[String], cached_items: usize) -> Option<String> {
     const MAX_VISIBLE_SOURCE_TITLES: usize = 3;
 
@@ -113,7 +122,7 @@ impl PodcastsView {
             self.clear_fetch_failure();
             return;
         };
-        let technical_cause = format!("Failed sources: {}", notice.source_titles.join(", "));
+        let technical_cause = refresh_failure_detail(failures);
         self.show_refresh_failure(notice, technical_cause);
     }
 
@@ -244,6 +253,21 @@ mod tests {
     }
 
     #[test]
+    fn refresh_detail_names_the_classified_body_failure_without_raw_payload() {
+        let failure = RefreshFailure {
+            subscription_id: 42,
+            title: "Broken feed".to_owned(),
+            kind: SourceErrorKind::Unreachable,
+            classified_cause: "podcast source returned invalid data",
+        };
+
+        assert_eq!(
+            refresh_failure_detail(&[failure]),
+            "Failed sources: Broken feed — podcast source returned invalid data"
+        );
+    }
+
+    #[test]
     fn net_3_d_refresh_notice_preserves_each_typed_kind_and_subscription_target() {
         let cases = [
             SourceErrorKind::SourceGone,
@@ -255,6 +279,7 @@ mod tests {
                 subscription_id: 42,
                 title: "Source title".to_owned(),
                 kind: kind.clone(),
+                classified_cause: "classified reason",
             };
 
             let notice = refresh_failure_notice(Connectivity::Online, &[failure]).unwrap();
@@ -272,6 +297,7 @@ mod tests {
             subscription_id: 7,
             title: "Saved show".to_owned(),
             kind: SourceErrorKind::Unreachable,
+            classified_cause: "podcast source could not be reached",
         };
 
         let notice = refresh_failure_notice(Connectivity::Offline, &[failure]).unwrap();

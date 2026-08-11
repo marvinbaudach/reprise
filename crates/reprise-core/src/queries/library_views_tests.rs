@@ -406,3 +406,30 @@ fn a_filter_of_only_spaces_is_no_filter() {
     assert_eq!(artists.total, query_artist_count(&db, "").unwrap());
     assert_eq!(query_artist_count(&db, " ").unwrap(), 2);
 }
+
+#[test]
+fn canonical_album_ids_never_collect_the_untagged_rows_under_a_blank_album() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO tracks
+           (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
+         (10,'/music/untagged-a.flac','Untagged A','Artist','','Artist',0,NULL),
+         (20,'/music/untagged-b.flac','Untagged B','Artist','   ','Artist',0,NULL),
+         (30,'/music/tagged.flac','Tagged','Artist','Album','Artist',0,NULL);",
+    )
+    .unwrap();
+
+    // This list feeds an irreversible delete, so a blank album must select
+    // nothing at all rather than every untagged track by that artist.
+    assert!(query_album_canonical_track_ids(&db, "", "artist")
+        .unwrap()
+        .is_empty());
+    assert!(query_album_canonical_track_ids(&db, "   ", "artist")
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        query_album_canonical_track_ids(&db, "Album", "artist").unwrap(),
+        [30]
+    );
+}

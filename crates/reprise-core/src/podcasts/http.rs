@@ -68,19 +68,32 @@ pub fn user_agent() -> String {
     )
 }
 
-pub fn get(url: &str) -> Result<Response, PodcastError> {
-    get_conditional(url, None, None)
+pub fn get_feed(url: &str) -> Result<Response, PodcastError> {
+    get_feed_conditional(url, None, None)
 }
 
-pub fn get_conditional(
+pub fn get_json(url: &str) -> Result<Response, PodcastError> {
+    get_with_budget(url, None, None, http_body::MAX_JSON_RESPONSE_BYTES)
+}
+
+pub fn get_feed_conditional(
     url: &str,
     etag: Option<&str>,
     last_modified: Option<&str>,
 ) -> Result<Response, PodcastError> {
+    get_with_budget(url, etag, last_modified, http_body::MAX_FEED_RESPONSE_BYTES)
+}
+
+fn get_with_budget(
+    url: &str,
+    etag: Option<&str>,
+    last_modified: Option<&str>,
+    max_bytes: u64,
+) -> Result<Response, PodcastError> {
     respect_rate_limit();
     #[cfg(any(test, feature = "test-fixtures"))]
     if let Some(directory) = fixture_directory() {
-        return fixture_get(url, etag, last_modified, &directory);
+        return fixture_get(url, etag, last_modified, &directory, max_bytes);
     }
 
     let agent = ureq::Agent::config_builder()
@@ -104,8 +117,9 @@ pub fn get_conditional(
     }
     let response_etag = header(&response, "ETag");
     let response_last_modified = header(&response, "Last-Modified");
-    let body = http_body::read_bounded_string(response.into_body().into_reader())
-        .map_err(map_body_error)?;
+    let body =
+        http_body::read_bounded_string_with_limit(response.into_body().into_reader(), max_bytes)
+            .map_err(map_body_error)?;
     Ok(Response {
         body,
         etag: response_etag,
@@ -269,6 +283,7 @@ fn fixture_get(
     etag: Option<&str>,
     last_modified: Option<&str>,
     directory: &Path,
+    max_bytes: u64,
 ) -> Result<Response, PodcastError> {
     let route = fixture_route(url)
         .ok_or_else(|| PodcastError::Transport("no fixture route for request".to_owned()))?;
@@ -294,7 +309,8 @@ fn fixture_get(
     }
     let file =
         std::fs::File::open(path).map_err(|error| PodcastError::Transport(error.to_string()))?;
-    let body = http_body::read_bounded_string(file).map_err(map_body_error)?;
+    let body =
+        http_body::read_bounded_string_with_limit(file, max_bytes).map_err(map_body_error)?;
     Ok(Response {
         body,
         etag: stored_etag,
@@ -403,11 +419,64 @@ mod tests {
         std::fs::write(path.with_extension("etag"), "\"v1\"").unwrap();
 
         with_fixture_dir(directory.path(), || {
-            let first = get(url).unwrap();
+            let first = get_feed(url).unwrap();
             assert_eq!(first.etag.as_deref(), Some("\"v1\""));
             assert!(matches!(
-                get_conditional(url, first.etag.as_deref(), None),
+                get_feed_conditional(url, first.etag.as_deref(), None),
                 Err(PodcastError::NotModified)
+            ));
+        });
+    }
+
+    #[test]
+    fn itunes_json_rejects_body_accepted_by_feed_path() {
+        const TWO_AND_A_HALF_MIB: usize = 5 * 1024 * 1024 / 2;
+
+        let directory = tempfile::tempdir().unwrap();
+        let json_path = directory
+            .path()
+            .join(FixtureRoute::AppleSearch("oversized".to_owned()).filename());
+        let padding = "x".repeat(TWO_AND_A_HALF_MIB);
+        std::fs::write(
+            json_path,
+            format!(r#"{{"results":[],"padding":"{padding}"}}"#),
+        )
+        .unwrap();
+
+        with_fixture_dir(directory.path(), || {
+            assert!(matches!(
+                super::super::itunes::search_in_country("oversized", "US"),
+                Err(PodcastError::Body(message)) if message == "response is too large"
+            ));
+        });
+
+        let accepted_url = "https://feeds.example.test/large.xml";
+        let accepted_path = directory
+            .path()
+            .join(fixture_route(accepted_url).unwrap().filename());
+        std::fs::write(&accepted_path, vec![b'x'; TWO_AND_A_HALF_MIB]).unwrap();
+
+        with_fixture_dir(directory.path(), || {
+            assert_eq!(
+                get_feed(accepted_url).unwrap().body.len(),
+                TWO_AND_A_HALF_MIB
+            );
+        });
+
+        let rejected_url = "https://feeds.example.test/oversized.xml";
+        let rejected_path = directory
+            .path()
+            .join(fixture_route(rejected_url).unwrap().filename());
+        std::fs::write(
+            rejected_path,
+            vec![b'x'; crate::http_body::MAX_FEED_RESPONSE_BYTES as usize + 1024 * 1024],
+        )
+        .unwrap();
+
+        with_fixture_dir(directory.path(), || {
+            assert!(matches!(
+                get_feed(rejected_url),
+                Err(PodcastError::Body(message)) if message == "response is too large"
             ));
         });
     }

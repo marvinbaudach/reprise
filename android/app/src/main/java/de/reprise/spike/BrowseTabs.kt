@@ -1,7 +1,9 @@
 package de.reprise.spike
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,14 +17,19 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
@@ -34,6 +41,9 @@ internal fun BrowseTab.emptyMessage(searchText: String): String = if (searchText
         BrowseTab.ALBUMS -> "No albums found in this folder."
         BrowseTab.ARTISTS -> "No artists found in this folder."
         BrowseTab.FAVOURITES -> "No favourites yet."
+        // Unreachable in practice — the queue page speaks for itself, down to
+        // its own empty state — but the tab is one of the five.
+        BrowseTab.QUEUE -> "The queue is exhausted."
     }
 }
 
@@ -74,15 +84,36 @@ internal fun LibrarySearchField(
     tab: BrowseTab,
     searchText: String,
     search: (String) -> Unit,
+    close: () -> Unit,
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+    BackHandler(onBack = close)
     OutlinedTextField(
         value = searchText,
         onValueChange = search,
         label = { Text("Search ${tab.label.lowercase()}") },
         leadingIcon = { MaterialSymbol("search", "") },
+        trailingIcon = {
+            IconButton(onClick = { if (searchText.isEmpty()) close() else search("") }) {
+                MaterialSymbol(
+                    name = if (searchText.isEmpty()) "close" else "clear",
+                    contentDescription = if (searchText.isEmpty()) {
+                        "Close search"
+                    } else {
+                        "Clear search"
+                    },
+                )
+            }
+        },
         singleLine = true,
         modifier = Modifier
             .fillMaxWidth()
+            .focusRequester(focusRequester)
             .padding(horizontal = 16.dp, vertical = 4.dp),
     )
 }
@@ -321,14 +352,33 @@ private fun AlbumRows(
 
 @Composable
 private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
-    ListItem(
-        headlineContent = { Text(album.title) },
-        supportingContent = { Text(album.details()) },
-        trailingContent = { Text(formatDuration(album.totalDurationMs)) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { openAlbum(album) },
-    )
+    val contextMenu = rememberTrackContextMenuAnchorState()
+    val albumTrackIds = LocalAlbumTrackIds.current
+    val controls = LocalPlaybackControls.current
+    // The acknowledgement sits below the row, not inside the Box it would
+    // otherwise cover — see TrackContextMenuMessage.
+    Column {
+        Box {
+            ListItem(
+                headlineContent = { Text(album.title) },
+                supportingContent = { Text(album.details()) },
+                trailingContent = { Text(formatDuration(album.totalDurationMs)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .trackContextMenuAnchor(contextMenu) { openAlbum(album) },
+            )
+            TrackContextMenu(
+                anchor = contextMenu,
+                target = LibraryTrackMenuTarget(
+                    label = album.title,
+                    trackCount = album.trackCount,
+                    resolveTrackIds = { albumTrackIds(album) },
+                    play = { ids -> controls.playTrackIds(ids, 0) },
+                ),
+            )
+        }
+        TrackContextMenuMessage(contextMenu)
+    }
     HorizontalDivider()
 }
 

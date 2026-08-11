@@ -247,6 +247,10 @@ private fun WideShortNowPlayingContent(
                     surfaceState = surfaceState,
                     tag = "now-playing-heart",
                 )
+                // No collapse button beside it: this sheet is dismissed by
+                // swiping it down, which is what freed the slot the context
+                // menu now uses.
+                NowPlayingTrackContextMenu(track)
             }
             SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             playback.error?.let { message ->

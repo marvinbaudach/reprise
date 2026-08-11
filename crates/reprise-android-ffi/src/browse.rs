@@ -174,6 +174,22 @@ impl MusicLibrary {
                 detail: error.to_string(),
             })
     }
+
+    /// Returns every present track in one album in canonical disc/track order.
+    pub fn album_track_ids(
+        &self,
+        album: String,
+        album_artist: String,
+    ) -> Result<Vec<i64>, LibraryError> {
+        let album = album.into_boxed_str();
+        let album_artist = album_artist.into_boxed_str();
+        let state = self.lock()?;
+        queries::query_album_canonical_track_ids(&state.db, &album, &album_artist).map_err(
+            |error| LibraryError::Query {
+                detail: error.to_string(),
+            },
+        )
+    }
 }
 
 #[cfg(test)]
@@ -218,5 +234,84 @@ mod tests {
 
         assert_eq!(playing, TrackRow::from(expected));
         assert_eq!(library.track_by_id(999).unwrap(), None);
+    }
+
+    #[test]
+    fn album_track_ids_cross_the_browse_window_in_canonical_order() {
+        const TRACK_COUNT: usize = 501;
+        let directory = tempfile::tempdir().unwrap();
+        let music = directory.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../android/app/src/main/assets/sine.flac");
+        let templates = directory.path().join("templates");
+        std::fs::create_dir(&templates).unwrap();
+        let template = |track_no: u32| {
+            let path = templates.join(format!("track-{track_no}.flac"));
+            std::fs::copy(&fixture, &path).unwrap();
+            reprise_core::library::tag_edit::apply_patch_to_file(
+                &path,
+                &reprise_core::library::tag_edit::TagPatch {
+                    title: Some(format!("Track {track_no}")),
+                    artist: Some("Window Artist".into()),
+                    album: Some("Window Album".into()),
+                    album_artist: Some("Window Artist".into()),
+                    year: Some(Some(2026)),
+                    track_no: Some(Some(track_no)),
+                    genre: Some("Test".into()),
+                },
+            )
+            .unwrap();
+            path
+        };
+        let first = template(1);
+        let second = template(2);
+        for index in 0..TRACK_COUNT {
+            std::fs::copy(
+                if index % 2 == 0 { &second } else { &first },
+                music.join(format!("track-{index:03}.flac")),
+            )
+            .unwrap();
+        }
+        let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
+        let database = reprise_core::db::Db::open_migrated(Some(&database_path)).unwrap();
+        reprise_core::library::scanner::scan_folder(&database, &music).unwrap();
+        drop(database);
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+        let page = |offset| {
+            library
+                .list_album_tracks(
+                    "Window Album".into(),
+                    "Window Artist".into(),
+                    WindowRange { offset, limit: 500 },
+                )
+                .unwrap()
+        };
+        let first_page = page(0);
+        let second_page = page(500);
+        assert!(first_page.has_more);
+        let expected = first_page
+            .rows
+            .into_iter()
+            .chain(second_page.rows)
+            .map(|track| track.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            library
+                .album_track_ids("window album".into(), "window artist".into())
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            library
+                .album_track_ids("Unknown".into(), "Nobody".into())
+                .unwrap(),
+            Vec::<i64>::new()
+        );
     }
 }

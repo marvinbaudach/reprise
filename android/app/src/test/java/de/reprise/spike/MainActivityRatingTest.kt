@@ -101,20 +101,28 @@ class MainActivityRatingTest {
         compose.onNodeWithTag("library-mini-player").performClick()
 
         val actionRow = hasTestTag("now-playing-actions")
+        // Sleep, heart and the context menu — the collapse button gave way to
+        // the downward swipe, and the fullscreen visualizer is retired.
         compose.onAllNodes(hasClickAction() and hasAnyAncestor(actionRow))
-            .assertCountEquals(2)
+            .assertCountEquals(3)
         val sleep = compose.onNode(
             hasContentDescription("Set sleep timer") and hasAnyAncestor(actionRow),
         )
         val heart = compose.onNode(
             hasTestTag("now-playing-heart") and hasAnyAncestor(actionRow),
         ).assertContentDescriptionEquals("Add to favourites")
+        val overflow = compose.onNode(
+            hasTestTag("now-playing-overflow") and hasAnyAncestor(actionRow),
+        )
 
         val sleepBounds = sleep.getUnclippedBoundsInRoot()
         val heartBounds = heart.getUnclippedBoundsInRoot()
+        val overflowBounds = overflow.getUnclippedBoundsInRoot()
         assertEquals(sleepBounds.top.value, heartBounds.top.value, 0.5f)
         assertTrue(sleepBounds.left < heartBounds.left)
+        assertTrue(heartBounds.left < overflowBounds.left)
         compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Open fullscreen visualizer").assertDoesNotExist()
 
         val transportRow = compose.onNodeWithTag("now-playing-transport")
         val transportBottom = transportRow.getUnclippedBoundsInRoot().bottom

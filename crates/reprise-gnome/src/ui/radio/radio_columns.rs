@@ -295,12 +295,13 @@ fn artwork_column(
             cell.remove(&child);
         }
         let row = object.row();
-        let artwork = crate::ui::podcasts::source_image::SourceImage::new_after_startup(
-            row.favicon_url.as_deref(),
-            "audio-input-microphone-symbolic",
-            36,
-            crate::ui::podcasts::source_image::gate_open(),
-        );
+        let artwork =
+            crate::ui::podcasts::source_image::SourceImage::new_after_startup_with_initials(
+                row.favicon_url.as_deref(),
+                &row.name,
+                36,
+                crate::ui::podcasts::source_image::gate_open(),
+            );
         cell.append(artwork.widget());
     });
     let column = gtk4::ColumnViewColumn::builder()

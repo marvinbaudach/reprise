@@ -237,6 +237,7 @@ fn one_failed_subscription_does_not_block_the_next() {
             subscription_id: failed,
             title: "Show".to_owned(),
             kind: crate::source_error::SourceErrorKind::Unreachable,
+            classified_cause: "podcast source could not be reached",
         }]
     );
     assert_eq!(summary.failed, summary.failures.len());

@@ -13,9 +13,10 @@ internal fun AndroidStoredLibraryDestination.toBrowseTab(): BrowseTab = when (th
     -> BrowseTab.TITLES
 }
 
-internal fun BrowseTab.toLibraryDestinationChoice(): AndroidLibraryDestinationChoice = when (this) {
+internal fun BrowseTab.toLibraryDestinationChoice(): AndroidLibraryDestinationChoice? = when (this) {
     BrowseTab.TITLES -> AndroidLibraryDestinationChoice.TITLES
     BrowseTab.ARTISTS -> AndroidLibraryDestinationChoice.ARTISTS
     BrowseTab.ALBUMS -> AndroidLibraryDestinationChoice.ALBUMS
     BrowseTab.FAVOURITES -> AndroidLibraryDestinationChoice.FAVOURITES
+    BrowseTab.QUEUE -> null
 }

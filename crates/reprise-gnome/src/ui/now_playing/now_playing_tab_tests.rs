@@ -17,10 +17,19 @@ fn npp_14_has_three_built_in_tabs_in_order() {
 }
 
 #[test]
+fn npp_14_built_in_tabs_have_distinct_semantic_icons() {
+    assert_eq!(PanelTab::UpNext.icon_name(), "view-list-symbolic");
+    assert_eq!(PanelTab::Lyrics.icon_name(), "reprise-lyrics-symbolic");
+    assert_eq!(PanelTab::Visual.icon_name(), "reprise-visual-bars-symbolic");
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn npp_14_tabs_are_always_icon_only_with_installed_labeled_symbols() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
+    crate::register_app_resources();
     gtk4::init().unwrap();
+    crate::install_app_icon_resource_path();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content);
 
@@ -36,8 +45,8 @@ fn npp_14_tabs_are_always_icon_only_with_installed_labeled_symbols() {
     let icon_theme = gtk4::IconTheme::for_display(&gtk4::gdk::Display::default().unwrap());
     for (index, expected) in [
         ("Up Next", "view-list-symbolic"),
-        ("Lyrics", "document-edit-symbolic"),
-        ("Visuals", "network-cellular-signal-excellent-symbolic"),
+        ("Lyrics", "reprise-lyrics-symbolic"),
+        ("Visuals", "reprise-visual-bars-symbolic"),
     ]
     .into_iter()
     .enumerate()

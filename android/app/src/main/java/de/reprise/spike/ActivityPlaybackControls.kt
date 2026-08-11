@@ -4,6 +4,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+import uniffi.reprise_android_ffi.AndroidTrashReport
+import uniffi.reprise_android_ffi.TrashAction
 
 internal const val PLAYBACK_QUERIES_STOPPED = "playback controls are closing"
 
@@ -37,6 +39,8 @@ internal class ActivityPlaybackControls(
     private val connectedService: () -> ReprisePlaybackService?,
     private val postToMain: (() -> Unit) -> Unit,
     private val setFavouriteAction: (Long, Boolean, (String?) -> Unit) -> Unit,
+    private val trashAction: TrashAction,
+    private val playTrackIdsAction: (List<Long>, Int) -> Unit,
     private val queries: PlaybackQueryRunner = PlaybackQueryRunner(),
 ) : PlaybackControls {
     override fun togglePause() = command("change playback state") { togglePause() }
@@ -65,6 +69,39 @@ internal class ActivityPlaybackControls(
         window: LibraryWindowRange,
         report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
     ) = query(report) { upcomingTracks(window) }
+
+    override fun playUpcomingTrackNow(
+        position: Int,
+        expectedTrackId: Long,
+        report: (Result<Boolean>) -> Unit,
+    ) = query(report) { playUpcomingTrackNow(position, expectedTrackId) }
+
+    override fun moveUpcomingTrack(
+        fromPosition: Int,
+        expectedTrackId: Long,
+        toPosition: Int,
+        report: (Result<Boolean>) -> Unit,
+    ) = query(report) { moveUpcomingTrack(fromPosition, expectedTrackId, toPosition) }
+
+    override fun removeUpcomingTrack(
+        position: Int,
+        expectedTrackId: Long,
+        report: (Result<Boolean>) -> Unit,
+    ) = query(report) { removeUpcomingTrack(position, expectedTrackId) }
+
+    override fun queueTracksNext(trackIds: List<Long>, report: (Result<UInt>) -> Unit) =
+        query(report) { queueTracksNext(trackIds) }
+
+    override fun queueTracksLast(trackIds: List<Long>, report: (Result<UInt>) -> Unit) =
+        query(report) { queueTracksLast(trackIds) }
+
+    override fun deleteTracks(
+        trackIds: List<Long>,
+        report: (Result<AndroidTrashReport>) -> Unit,
+    ) = query(report) { trashTracks(trackIds, trashAction) }
+
+    override fun playTrackIds(trackIds: List<Long>, startIndex: Int) =
+        playTrackIdsAction(trackIds, startIndex)
 
     override fun startSleepTimer(selection: SleepTimerSelection) = command("start sleep timer") {
         startSleepTimer(selection)

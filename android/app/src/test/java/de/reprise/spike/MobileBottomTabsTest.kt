@@ -51,6 +51,7 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
         compose.onNodeWithTag("library-destination-ALBUMS").assertIsNotSelected()
         compose.onNodeWithTag("library-destination-FAVOURITES").assertIsNotSelected()
+        compose.onNodeWithTag("library-destination-QUEUE").assertIsNotSelected()
     }
 
     @Test
@@ -63,12 +64,12 @@ class MobileBottomTabsTest {
     }
 
     @Test
-    fun swipingPastTheLastDestinationStopsOnFavourites() {
-        compose.onNodeWithTag("library-destination-FAVOURITES").performClick()
+    fun swipingPastTheLastDestinationStopsOnQueue() {
+        compose.onNodeWithTag("library-destination-QUEUE").performClick()
         compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
 
-        compose.onNodeWithTag("library-page-FAVOURITES").assertIsDisplayed()
-        compose.onNodeWithTag("library-destination-FAVOURITES").assertIsSelected()
+        compose.onNodeWithTag("library-page-QUEUE").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-QUEUE").assertIsSelected()
     }
 
     @Test

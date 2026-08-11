@@ -361,6 +361,12 @@ pub(super) fn query_album_track_ids_browsed(
 /// current sort and filter: those control presentation, not PLAY-1a's queue
 /// snapshot. Legacy rows without a disc number behave as disc 1; unknown
 /// track numbers sort after numbered tracks, then path/id make ties stable.
+///
+/// Rows with a blank album are not an album, exactly as in [`query_albums`] and
+/// [`query_artist_detail_albums`]: an empty argument would otherwise collect
+/// every untagged track in the library under one name. That matters here beyond
+/// presentation, because this list is what the Android context menu offers to
+/// delete from the device.
 pub fn query_album_canonical_track_ids(
     db: &Db,
     album: &str,
@@ -368,7 +374,7 @@ pub fn query_album_canonical_track_ids(
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
     let sql = format!(
-        "SELECT id FROM tracks WHERE {PRESENT} \
+        "SELECT id FROM tracks WHERE {PRESENT} AND TRIM(album) <> '' \
          AND TRIM(album) = ?1 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE \
          ORDER BY COALESCE(disc_no, 1) ASC, \

@@ -46,6 +46,7 @@ use library_types::{ConfiguredTree, LibraryState, DATABASE_FILE_NAME};
 pub use logging::init_logging;
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
+    AndroidTrashFailure, AndroidTrashReport, TrashAction,
 };
 pub use playback_settings::*;
 uniffi::setup_scaffolding!();

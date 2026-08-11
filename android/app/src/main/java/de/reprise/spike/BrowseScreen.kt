@@ -52,6 +52,7 @@ internal enum class BrowseTab(val label: String, val symbol: String) {
     ARTISTS("Artists", "artist"),
     ALBUMS("Albums", "album"),
     FAVOURITES("Favourites", "favorite"),
+    QUEUE("Queue", "queue_music"),
 }
 
 /**
@@ -256,6 +257,10 @@ internal fun BrowseScreen(
                     visibleFavourites = window
                     favouritesRequestedOffset = null
                 }
+                // The queue is an order, not a view of the library, so there is
+                // nothing here for a filter to narrow. Selecting it closes the
+                // field — see MobileSurfaceViewModel.selectTab.
+                BrowseTab.QUEUE -> Unit
             }
         }.onSuccess {
             loadedTabs = setOf(selectedTab)
@@ -304,7 +309,7 @@ internal fun BrowseScreen(
     }
 
     LaunchedEffect(selectedTab, state, loadedTabs, searchText) {
-        if (selectedTab in loadedTabs) return@LaunchedEffect
+        if (selectedTab == BrowseTab.QUEUE || selectedTab in loadedTabs) return@LaunchedEffect
         runCatching {
             when (selectedTab) {
                 BrowseTab.TITLES -> searchTitles(searchText, firstLibraryWindow())
@@ -315,6 +320,7 @@ internal fun BrowseScreen(
                     .also { visibleAlbums = it }
                 BrowseTab.FAVOURITES -> favouritesFor(searchText, firstLibraryWindow())
                     .also { visibleFavourites = it }
+                BrowseTab.QUEUE -> Unit
             }
         }.onSuccess {
             loadedTabs = loadedTabs + selectedTab
@@ -434,6 +440,7 @@ internal fun BrowseScreen(
             ?.visibleCountLabel("track", "tracks")
             ?: visibleAlbums.visibleCountLabel("album", "albums")
         BrowseTab.FAVOURITES -> visibleFavourites.visibleCountLabel("favourite", "favourites")
+        BrowseTab.QUEUE -> "Queue"
     }
     val frameMetrics = libraryFrameMetrics(surfaceLayout)
     val nowPlayingFrameModifier = when (surfaceLayout) {
@@ -475,6 +482,7 @@ internal fun BrowseScreen(
                             tab = selectedTab,
                             searchText = searchText,
                             search = ::search,
+                            close = ::toggleSearch,
                         )
                     }
                     LibrarySummaryActions(
@@ -588,6 +596,11 @@ internal fun BrowseScreen(
                                         visibleFavourites = removal.window
                                         favouritesRequestedOffset = removal.lastRequestedOffset
                                     },
+                                )
+                                BrowseTab.QUEUE -> NowPlayingQueuePage(
+                                    playback = playback,
+                                    surfaceState = surfaceState,
+                                    surfaceLayout = surfaceLayout,
                                 )
                             }
                         }

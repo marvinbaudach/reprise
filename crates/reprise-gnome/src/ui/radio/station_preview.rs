@@ -51,6 +51,13 @@ impl StationPreview {
     }
 
     pub(super) fn with_candidate(mut self, candidate: StationCandidate) -> Self {
+        let same_uuid = self
+            .uuid
+            .as_deref()
+            .is_some_and(|uuid| uuid == candidate.uuid);
+        if !same_uuid && self.stream_url != candidate.url_resolved {
+            return self;
+        }
         self.uuid = Some(candidate.uuid);
         self.name = candidate.name;
         self.favicon_url = candidate.favicon_url;
@@ -59,6 +66,40 @@ impl StationPreview {
         self.bitrate_kbps = candidate.bitrate_kbps;
         self.country_code = candidate.country_code;
         self.votes = Some(candidate.votes);
+        self
+    }
+
+    pub(super) fn with_favicon_candidates(mut self, candidates: &[StationCandidate]) -> Self {
+        if self.favicon_url.is_some() {
+            return self;
+        }
+        if let Some(uuid) = self.uuid.as_deref() {
+            if let Some(favicon) = candidates
+                .iter()
+                .filter(|candidate| candidate.uuid == uuid)
+                .find_map(|candidate| candidate.favicon_url.clone())
+            {
+                self.favicon_url = Some(favicon);
+                return self;
+            }
+        }
+        if let Some(favicon) = candidates
+            .iter()
+            .filter(|candidate| candidate.url_resolved == self.stream_url)
+            .find_map(|candidate| candidate.favicon_url.clone())
+        {
+            self.favicon_url = Some(favicon);
+            return self;
+        }
+        let mut exact_names = candidates
+            .iter()
+            .filter(|candidate| candidate.name.trim().eq_ignore_ascii_case(self.name.trim()));
+        let Some(candidate) = exact_names.next() else {
+            return self;
+        };
+        if exact_names.next().is_none() {
+            self.favicon_url.clone_from(&candidate.favicon_url);
+        }
         self
     }
 

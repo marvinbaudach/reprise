@@ -37,7 +37,8 @@ pub const DEFAULT_YOUTUBE_IMPORT_COUNT: usize = 10;
 /// is written through. Named rather than inlined at both ends because a clamp
 /// that only one of the two sides applies is not a clamp — it is a silent
 /// rewrite of whatever the other side stored.
-pub const IMPORT_COUNT_MIN: i64 = 5;
+/// Zero means that every episode in the feed is imported.
+pub const IMPORT_COUNT_MIN: i64 = 0;
 pub const IMPORT_COUNT_MAX: i64 = 100;
 /// Same, for the YouTube per-channel count. Deliberately a different range
 /// from the RSS one: a channel's back catalogue is not a show's.
@@ -131,6 +132,7 @@ impl YoutubeBrowser {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PodcastConfig {
+    /// Episodes imported per RSS show. Zero means unlimited.
     pub import_count: usize,
     pub auto_download_default: bool,
     pub cleanup_policy: CleanupPolicy,
@@ -202,8 +204,7 @@ pub(crate) fn load_in(conn: &Connection) -> Result<PodcastConfig, rusqlite::Erro
             .unwrap_or(DEFAULT_REFRESH_HOURS)
             .clamp(1, 24),
         // `MTP-36`: 0 is a valid, meaningful value (unlimited) — the clamp
-        // floor stays 0, unlike the other counts on this page which have no
-        // "unlimited" reading.
+        // floor stays 0 because the value means unlimited.
         latest_per_channel_default: integer_setting(conn, LATEST_PER_CHANNEL_DEFAULT_KEY)?
             .unwrap_or(DEFAULT_LATEST_PER_CHANNEL as i64)
             .clamp(0, 100) as usize,
@@ -400,14 +401,22 @@ mod tests {
 
     #[test]
     fn mtp_36_latest_per_channel_default_clamp_floor_is_zero_not_the_documented_minimum() {
-        // Unlike every other count on this page, 0 is a valid, meaningful
-        // value here (unlimited) — the clamp floor must not reject it back
-        // up to some positive minimum the way `import_count`'s floor of 5
-        // would.
+        // Like `import_count`, 0 is a valid, meaningful value here
+        // (unlimited) — the clamp floor must not reject it back up to some
+        // positive minimum.
         let db = db();
         crate::library::settings::set_setting(&db, LATEST_PER_CHANNEL_DEFAULT_KEY, "0").unwrap();
 
         assert_eq!(load(&db).unwrap().latest_per_channel_default, 0);
+    }
+
+    #[test]
+    fn zero_import_count_round_trips_as_unlimited() {
+        let db = db();
+
+        set_import_count(&db, 0).unwrap();
+
+        assert_eq!(load(&db).unwrap().import_count, 0);
     }
 
     #[test]
@@ -481,7 +490,7 @@ mod tests {
         // different number, so the UI shows something nobody chose.
         let db = db();
 
-        set_import_count(&db, 4).unwrap();
+        set_import_count(&db, 0).unwrap();
         assert_eq!(load(&db).unwrap().import_count, IMPORT_COUNT_MIN as usize);
         set_import_count(&db, 1_000).unwrap();
         assert_eq!(load(&db).unwrap().import_count, IMPORT_COUNT_MAX as usize);

@@ -32,6 +32,7 @@ internal enum class LibraryListKey {
     FAVOURITES,
     ALBUM_TRACKS,
     ARTIST_TRACKS,
+    UPCOMING,
 }
 
 /**
@@ -138,7 +139,15 @@ internal class MobileSurfaceViewModel : ViewModel() {
     fun selectTab(tab: BrowseTab) {
         if (tab == selectedTab) return
         selectedTab = tab
-        rememberSelectedTab(tab)
+        if (tab != BrowseTab.QUEUE) rememberSelectedTab(tab)
+        // A standing search follows the listener from tab to tab and filters
+        // the one they land on — closing it on the way out was the whole
+        // complaint. The queue is the exception: it is the one tab no filter
+        // reaches, so a field left open there would promise something it
+        // cannot do.
+        if (tab == BrowseTab.QUEUE) {
+            searchVisible = false
+        }
     }
 
     fun openSearch() {
