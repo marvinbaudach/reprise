@@ -1,4 +1,4 @@
 [D-BUS Service]
-Name=io.github.marvinbaudach.Reprise1
+Name=io.github.marvinbaudach.Reprise.Runtime1
 Exec=@bindir@/reprise-runtime
 SystemdService=reprise-runtime.service

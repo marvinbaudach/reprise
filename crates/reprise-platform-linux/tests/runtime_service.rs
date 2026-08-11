@@ -18,7 +18,7 @@ use reprise_platform_linux::runtime_service::{
 use reprise_runtime::fakes::{FakeClock, FakeDevices, FakeLibrary, FakePlayback};
 use reprise_runtime::{Ports, Runtime};
 
-const INTERFACE: &str = "io.github.marvinbaudach.Reprise1";
+const INTERFACE: &str = "io.github.marvinbaudach.Reprise.Runtime1";
 const CAPABILITIES: [&str; 1] = ["playback:control"];
 
 /// A service running on a name nobody else uses, so a test never fights the
@@ -38,7 +38,7 @@ impl Served {
     /// client at it *before* anything answers there.
     fn name_for(label: &str) -> String {
         format!(
-            "io.github.marvinbaudach.Reprise1.test{}{label}",
+            "io.github.marvinbaudach.Reprise.Runtime1.test{}{label}",
             std::process::id()
         )
     }
@@ -211,7 +211,7 @@ fn a_foreign_protocol_major_comes_back_as_refused() {
 
     let kind = error_kind(&error);
     assert!(
-        kind.contains("io.github.marvinbaudach.Reprise1.Error.Refused"),
+        kind.contains("io.github.marvinbaudach.Reprise.Runtime1.Error.Refused"),
         "the category survives the bus: {kind}"
     );
     assert!(
@@ -232,7 +232,7 @@ fn a_command_before_the_handshake_is_unavailable_rather_than_obeyed() {
 
     let kind = error_kind(&error);
     assert!(
-        kind.contains("io.github.marvinbaudach.Reprise1.Error.Unavailable"),
+        kind.contains("io.github.marvinbaudach.Reprise.Runtime1.Error.Unavailable"),
         "{kind}"
     );
 }
@@ -250,7 +250,7 @@ fn a_rejected_command_keeps_its_category_and_its_reason() {
 
     let kind = error_kind(&error);
     assert!(
-        kind.contains("io.github.marvinbaudach.Reprise1.Error.Rejected"),
+        kind.contains("io.github.marvinbaudach.Reprise.Runtime1.Error.Rejected"),
         "{kind}"
     );
     assert!(kind.contains("rejected:unknown_repeat_mode"), "{kind}");
@@ -336,8 +336,10 @@ fn a_client_receives_the_deltas_for_its_own_session() {
 fn runtime_service_name_lives_under_the_app_id_hierarchy() {
     let name = reprise_platform_linux::runtime_service::SERVICE_NAME;
     assert!(
-        name.starts_with("io.github.marvinbaudach.Reprise"),
-        "a Flatpak may only own names under its own app ID, got {name}"
+        name.starts_with("io.github.marvinbaudach.Reprise."),
+        "a Flatpak only gets names *under* its app ID granted; a sibling one \
+         level up — the app ID with a digit glued on — is rejected by \
+         flatpak-builder-lint, got {name}"
     );
 }
 

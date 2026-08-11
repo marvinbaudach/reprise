@@ -1,4 +1,4 @@
-//! The `io.github.marvinbaudach.Reprise1` interface.
+//! The `io.github.marvinbaudach.Reprise.Runtime1` interface.
 //!
 //! Every method here is a thin translation: check nothing, decide nothing,
 //! hand the request to the thread that owns the runtime and wait for its
@@ -38,7 +38,7 @@ use super::service::Request;
 /// `Unavailable` already means; giving that its own error name would put a
 /// category on the bus that no client was told to expect.
 #[derive(Debug, zbus::DBusError)]
-#[zbus(prefix = "io.github.marvinbaudach.Reprise1.Error")]
+#[zbus(prefix = "io.github.marvinbaudach.Reprise.Runtime1.Error")]
 pub enum Error {
     /// The runtime could not be reached for this caller; reconnect.
     Unavailable(String),
@@ -121,7 +121,7 @@ impl Reprise1 {
     }
 }
 
-#[zbus::interface(name = "io.github.marvinbaudach.Reprise1")]
+#[zbus::interface(name = "io.github.marvinbaudach.Reprise.Runtime1")]
 impl Reprise1 {
     /// Completes the handshake and returns the whole runtime-bound state.
     ///

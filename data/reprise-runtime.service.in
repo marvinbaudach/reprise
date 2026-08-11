@@ -10,7 +10,7 @@ After=dbus.socket
 # Type=dbus: systemd considers the service started once it owns BusName, which
 # is exactly the Starting -> Serving transition of the plan's section 9.2.
 Type=dbus
-BusName=io.github.marvinbaudach.Reprise1
+BusName=io.github.marvinbaudach.Reprise.Runtime1
 ExecStart=@bindir@/reprise-runtime
 # Never restarted automatically. A runtime that exits has either finished its
 # idle grace (the intended end, and the bus will activate a new one on the

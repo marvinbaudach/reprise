@@ -9,10 +9,10 @@
 
 /// The well-known name the runtime owns, and the name whose activation
 /// starts it.
-pub const BUS_NAME: &str = "io.github.marvinbaudach.Reprise1";
+pub const BUS_NAME: &str = "io.github.marvinbaudach.Reprise.Runtime1";
 
 /// The object the interface lives at.
-pub const OBJECT_PATH: &str = "/io/github/marvinbaudach/Reprise1";
+pub const OBJECT_PATH: &str = "/io/github/marvinbaudach/Reprise/Runtime1";
 
 /// The interface every command and every delta belongs to.
-pub const INTERFACE_NAME: &str = "io.github.marvinbaudach.Reprise1";
+pub const INTERFACE_NAME: &str = "io.github.marvinbaudach.Reprise.Runtime1";
