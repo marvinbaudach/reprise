@@ -32,13 +32,8 @@ fake audio sink, and copied FLAC fixtures. It exercises eleven public workflows:
 6. Song Visuals exposes exactly the active Grid, Bars, Flow, and Pulse modes;
 7. a playing track remains responsive and visibly marked while 24 Title-header
    sort toggles repeatedly recycle every visible track cell;
-8. `MTP-46`: a source module switched off contributes no row to a connected
-   phone's Content section, and switching one off leaves its peer alone. This
-   one starts the app three times against a single profile and writes the
-   persisted module setting in between, because the Preferences dialog keeps
-   every page in the accessibility tree at once — a label found there says
-   nothing about the page being visible, so driving the switch itself would
-   assert against invisible widgets;
+8. the Android synchronization page exposes one playlists target and no
+   YouTube, podcast, or size-limit controls;
 9. the Podcasts source end to end and offline: with the module off its page is
    unreachable, with it on the empty state offers subscribing, and a fixture
    feed goes through the Add Podcast dialog — including the primary button
@@ -110,8 +105,7 @@ For an iterative keyboard-only retry, run
 `CUA_E2E_ONLY=populated-library scripts/cua-e2e/run.sh`; use
 `CUA_E2E_ONLY=library-doctor scripts/cua-e2e/run.sh` for the Doctor workflow,
 or `CUA_E2E_ONLY=track-sort-playing-marker scripts/cua-e2e/run.sh` for the
-repeated-sort regression, `CUA_E2E_ONLY=source-modules` for the module switches,
-`CUA_E2E_ONLY=source-podcasts` for the offline feed workflow, or
+repeated-sort regression, `CUA_E2E_ONLY=source-podcasts` for the offline feed workflow, or
 `CUA_E2E_ONLY=play-11-filter-clear scripts/cua-e2e/run.sh` for the filtered
 playback continuation.
 The default remains the complete matrix.

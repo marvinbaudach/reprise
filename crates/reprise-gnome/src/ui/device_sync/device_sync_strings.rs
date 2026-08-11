@@ -72,12 +72,14 @@ pub(super) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
 
 pub const SPACE_UNKNOWN: &str = N_!("Available space unknown");
 pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
-pub const CHANGE: &str = N_!("Change…");
-pub const CHANGE_CONTENT: &str = N_!("Change content…");
+pub const CHOOSE_CONTENT: &str = N_!("Choose…");
+pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
+pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
+pub const PLAYLISTS: &str = N_!("Playlists");
+pub const REMOVE_FROM_PHONE: &str = N_!("Remove from phone when removed from a playlist");
+pub const SYNC_AUTOMATICALLY: &str = N_!("Sync automatically when this phone connects");
 pub const TARGET_FOLDER: &str = N_!("Target folder: {path}");
-pub const CAP_IN_GIB: &str = N_!("Size limit in GiB (0 means no size limit)");
-pub const CHOOSE_CATEGORY: &str = N_!("Choose {category}");
 pub const FILTER_SYNC_CONTENT: &str = N_!("Filter sync content");
 pub const SELECT_ALL: &str = N_!("Select all");
 pub const CANCEL: &str = N_!("Cancel");
@@ -85,36 +87,11 @@ pub const SAVE: &str = N_!("Save");
 pub const EVERYTHING: &str = N_!("Everything");
 pub const SMART_PLAYLIST: &str = N_!("Smart playlist");
 pub const KEEP_SMART_PLAYLISTS_UPDATED: &str = N_!("Keep smart playlists up to date on each sync");
-pub const YOUTUBE_PICKER_RULE: &str = N_!("Per channel, sync the latest N episodes");
-pub const PODCAST_PICKER_RULE: &str = N_!("Per show, sync unplayed only");
-pub const LATEST_EPISODES_PER_CHANNEL: &str = N_!("Latest episodes per channel, 0 for unlimited");
-pub const PODCAST_REMOVAL_NOTE: &str = N_!(
-    "Once played on the phone, an episode is removed on the next sync — this is a standing rule."
-);
-pub const ON_DISK: &str = N_!("On disk");
-pub const NEEDS_DOWNLOAD: &str = N_!("Needs download");
-pub const PREPARATION_LINK: &str = N_!("Downloaded in the preparation phase");
-pub const SHOW_PREPARATION_PHASE: &str = N_!("Show the preparation phase on the device page");
-pub const SELECTED_BY_RULE: &str = N_!("Selected by the rule");
 pub const UNAVAILABLE_PLAYLIST: &str = N_!("Unavailable playlist");
-pub const DURATION_MINUTES: &str = N_!("{minutes} min");
-pub const RESUME_MINUTES: &str = N_!("{minutes} min in");
-pub const GROUP_COUNTER: &str = N_!("{selected} of {total}");
 pub const PICKER_FOOTER: &str = N_!("{selected} selected · {content} · {size}");
-pub const PICKER_NEEDS_DOWNLOAD: &str = N_!("{count} still need downloading · preparation phase");
 pub const TRACKS: &str = N_!("{count} tracks");
-pub const EPISODES: &str = N_!("{count} episodes");
-pub const UNKNOWN_SIZES: &str = N_!("+ {count} unknown sizes");
 pub const SMART_LISTS_UPDATED: &str = N_!("smart lists kept up to date");
 pub const SMART_LISTS_FROZEN: &str = N_!("smart lists keep their current contents");
-pub const ALL_EPISODES: &str = N_!("all episodes");
-pub const UNPLAYED_ONLY: &str = N_!("unplayed only");
-pub const PLAYED_ARE_REMOVED: &str = N_!("played are removed");
-pub const NOT_SYNCHRONIZED_WITH_PHONE: &str = N_!("Not synchronized with this phone");
-pub const NO_SIZE_LIMIT: &str = N_!("no size limit");
-const LEGEND_MUSIC: &str = N_!("Music");
-const LEGEND_YOUTUBE: &str = N_!("YouTube");
-const LEGEND_PODCASTS: &str = N_!("Podcasts");
 
 pub fn available_space(bytes: Option<u64>) -> String {
     bytes.map_or_else(
@@ -220,100 +197,8 @@ pub fn file_size(bytes: u64) -> String {
     format_bytes(bytes)
 }
 
-pub fn group_counter(selected: usize, total: usize) -> String {
-    formatted(
-        GROUP_COUNTER,
-        &[
-            ("selected", &selected.to_string()),
-            ("total", &total.to_string()),
-        ],
-    )
-}
-
-pub fn resume_minutes(position_ms: i64) -> String {
-    formatted(
-        RESUME_MINUTES,
-        &[("minutes", &(position_ms.max(0) / 60_000).to_string())],
-    )
-}
-
-pub fn duration_minutes(duration_secs: i64) -> String {
-    formatted(
-        DURATION_MINUTES,
-        &[(
-            "minutes",
-            &duration_secs
-                .max(0)
-                .saturating_add(59)
-                .div_euclid(60)
-                .to_string(),
-        )],
-    )
-}
-
-pub fn picker_footer(selected: usize, content: &str, size: &str) -> String {
-    formatted(
-        PICKER_FOOTER,
-        &[
-            ("selected", &selected.to_string()),
-            ("content", content),
-            ("size", size),
-        ],
-    )
-}
-
-pub fn picker_needs_download(count: usize) -> String {
-    formatted(PICKER_NEEDS_DOWNLOAD, &[("count", &count.to_string())])
-}
-
-pub fn choose_category(category: &str) -> String {
-    formatted(CHOOSE_CATEGORY, &[("category", category)])
-}
-
-pub fn picker_content(count: usize, tracks: bool) -> String {
-    formatted(
-        if tracks { TRACKS } else { EPISODES },
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn unknown_sizes(count: usize) -> String {
-    formatted(UNKNOWN_SIZES, &[("count", &count.to_string())])
-}
-
-/// Design 7a: "Playlists" / "YouTube audio" / "Podcast episodes" — the
-/// Content section and Next synchronization panel's category labels.
-pub fn category_name(kind: reprise_core::device_sync::SyncTargetKind) -> &'static str {
-    use reprise_core::device_sync::SyncTargetKind;
-    match kind {
-        SyncTargetKind::Playlists => "Playlists",
-        SyncTargetKind::YoutubeAudio => "YouTube audio",
-        SyncTargetKind::PodcastEpisodes => "Podcast episodes",
-    }
-}
-
-/// Design 2c's compact storage legend uses source identities rather than the
-/// longer content-row headings. These messages already exist elsewhere in the
-/// catalog and remain independently translated in required-complete locales.
-pub fn category_legend_text(kind: reprise_core::device_sync::SyncTargetKind, bytes: u64) -> String {
-    use reprise_core::device_sync::SyncTargetKind;
-    let name = text(match kind {
-        SyncTargetKind::Playlists => LEGEND_MUSIC,
-        SyncTargetKind::YoutubeAudio => LEGEND_YOUTUBE,
-        SyncTargetKind::PodcastEpisodes => LEGEND_PODCASTS,
-    });
-    format!("{name} {}", file_size(bytes))
-}
-
-/// The category rule's size phrase: "max 8.0 GiB" or "no size limit".
-pub fn cap_text(cap_bytes: Option<u64>) -> String {
-    cap_bytes.map_or_else(
-        || text(NO_SIZE_LIMIT),
-        |bytes| {
-            let size = file_size(bytes);
-            formatted(N_!("max {size}"), &[("size", &size)])
-        },
-    )
+pub fn picker_content(count: usize) -> String {
+    formatted(TRACKS, &[("count", &count.to_string())])
 }
 
 pub fn selected_playlists(selected: usize, total: usize) -> String {
@@ -330,42 +215,8 @@ pub fn target_folder(path: &str) -> String {
     formatted(TARGET_FOLDER, &[("path", path)])
 }
 
-pub fn selected_channels(selected: usize) -> String {
-    formatted(
-        N_!("{selected} channels"),
-        &[("selected", &selected.to_string())],
-    )
-}
-
-pub fn selected_shows(selected: usize, total: usize) -> String {
-    formatted(
-        N_!("{selected} of {total} shows"),
-        &[
-            ("selected", &selected.to_string()),
-            ("total", &total.to_string()),
-        ],
-    )
-}
-
-pub fn latest_each(count: usize) -> String {
-    formatted(N_!("latest {count} each"), &[("count", &count.to_string())])
-}
-
-pub fn category_item_count(
-    kind: reprise_core::device_sync::SyncTargetKind,
-    count: usize,
-) -> String {
-    use reprise_core::device_sync::SyncTargetKind;
-    let message = if kind == SyncTargetKind::Playlists {
-        N_!("{count} tracks")
-    } else {
-        N_!("{count} episodes")
-    };
-    formatted(message, &[("count", &count.to_string())])
-}
-
-pub fn to_download(count: usize) -> String {
-    formatted(N_!("{count} to download"), &[("count", &count.to_string())])
+pub fn music_track_count(count: usize) -> String {
+    formatted(N_!("{count} tracks"), &[("count", &count.to_string())])
 }
 
 /// `MTP-22`'s exact vocabulary for one category's `CategoryReading` — used by
@@ -374,21 +225,6 @@ pub fn to_download(count: usize) -> String {
 /// the two surfaces never drift into different wording for the same numbers.
 /// (The device page's own one-line summary is the shorter [`balance_text`],
 /// built from `plan_balance_parts`; the split is deliberate.)
-pub fn category_reading_text(reading: &reprise_core::device_sync::CategoryReading) -> String {
-    use reprise_core::device_sync::CategoryReading;
-    match reading {
-        CategoryReading::SourceOff => text(N_!("Source off")),
-        CategoryReading::UnavailableKeptOnPhone => "Unavailable, kept on phone".to_string(),
-        CategoryReading::Diff(diff) => detailed_balance_parts(
-            diff.files_to_copy,
-            diff.bytes_to_copy,
-            diff.files_to_remove,
-            diff.bytes_freed,
-            diff.playlists_rewritten,
-        ),
-    }
-}
-
 /// The compact aggregate result: "14 files to copy · 2.6 GiB · 3 to
 /// remove". Copy and removal counts stay separate.
 pub fn balance_text(balance: &reprise_core::device_sync::SyncBalance) -> String {
@@ -508,84 +344,6 @@ pub fn free_space_line(free_before_bytes: u64, free_after_bytes: u64) -> String 
 /// sidebar card is a glance surface, not a log.
 pub use super::device_sync_time_copy::{relative_time, verified_ago};
 
-/// `MTP-43`'s preparation overview: "2 files to download · 312 MiB" for
-/// `Offered`/`Planned`, "2 episodes skipped · not downloaded" for
-/// `SkippedOffline`. `None` for every other phase — including `Absent` and
-/// `NothingMissing` — so the caller knows the surface must not exist at all,
-/// not render an empty box (`MTP-42`).
-pub fn preparation_overview(phase: &reprise_core::device_sync::PreparationPhase) -> Option<String> {
-    use reprise_core::device_sync::PreparationPhase;
-    match phase {
-        PreparationPhase::Absent | PreparationPhase::NothingMissing => None,
-        PreparationPhase::SkippedOffline { files } => Some(preparation_skipped_offline(*files)),
-        PreparationPhase::Offered { files, bytes } | PreparationPhase::Planned { files, bytes } => {
-            Some(preparation_files_to_download(*files, *bytes))
-        }
-    }
-}
-
-/// "2 files to download · 312 MiB". `bytes == 0` means no source in this
-/// codebase yet persists an expected size for that episode (see
-/// `device_sync_compact::gather_missing_files`'s doc comment) — the count
-/// still shows, the byte figure is simply omitted rather than claiming
-/// "0 B".
-fn preparation_files_to_download(files: usize, bytes: u64) -> String {
-    let noun = if files == 1 { "file" } else { "files" };
-    if bytes == 0 {
-        format!("{files} {noun} to download")
-    } else {
-        format!("{files} {noun} to download · {}", file_size(bytes))
-    }
-}
-
-/// "2 episodes skipped · not downloaded" (`NET-3`/`MTP-42`'s
-/// `SkippedOffline`) — every one of these episodes stays `wanted_on_device`
-/// for the next attempt.
-fn preparation_skipped_offline(files: usize) -> String {
-    let noun = if files == 1 { "episode" } else { "episodes" };
-    format!("{files} {noun} skipped · not downloaded")
-}
-
-/// How many episode titles the preparation overview names before it starts
-/// counting. `MTP-43` wants the user to know *what* is about to download,
-/// not to read the whole queue: pasting all of them into one label grew the
-/// overview card several screens tall and pulled the page's layout with it.
-const PREPARATION_TITLE_PREVIEW: usize = 3;
-
-/// "Nachtwind, Abendrot … and 57 more" — the titles line below
-/// `preparation_files_to_download`. `None` when nothing is named, so the
-/// caller appends no empty line.
-pub fn preparation_titles(titles: &[&str]) -> Option<String> {
-    let shown = titles.len().min(PREPARATION_TITLE_PREVIEW);
-    if shown == 0 {
-        return None;
-    }
-    let named = titles[..shown].join(", ");
-    Some(match titles.len() - shown {
-        0 => named,
-        rest => format!("{named} \u{2026} and {rest} more"),
-    })
-}
-
-/// "Step 1 of 2 · Downloading 1 of 2 · 62%" — the preparation download's own
-/// progress line. Always step 1: a preparation phase only ever precedes the
-/// transfer, never follows it.
-#[cfg(test)]
-fn preparation_step_progress(current_index: usize, total: usize, percent: u64) -> String {
-    format!(
-        "Step 1 of 2 · Downloading {} of {total} · {percent}%",
-        current_index + 1
-    )
-}
-
-/// Prefixes an existing transfer-progress title with "Step 2 of 2" — used
-/// only when this run's transfer phase was actually preceded by a
-/// preparation download, never for a plain single-phase sync.
-#[cfg(test)]
-fn two_phase_title(title: &str) -> String {
-    format!("Step 2 of 2 · {title}")
-}
-
 fn format_bytes(bytes: u64) -> String {
     const KIB: f64 = 1_024.0;
     const MIB: f64 = KIB * 1_024.0;
@@ -600,21 +358,6 @@ fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{} B", bytes as u64)
     }
-}
-
-pub const CHANGE_CATEGORY: &str = N_!("Change {category}");
-pub const CHANGE_CATEGORY_CAP: &str = N_!("{category} size limit");
-
-/// Accessible name for a category row's "Change…" menu, which is visually
-/// tied to its row but reads as one of three identical buttons in the tree.
-pub fn change_category_label(kind: reprise_core::device_sync::SyncTargetKind) -> String {
-    formatted(CHANGE_CATEGORY, &[("category", category_name(kind))])
-}
-
-/// Accessible name for a category row's size-limit menu, whose visible label
-/// is the value rather than what it controls.
-pub fn change_cap_label(kind: reprise_core::device_sync::SyncTargetKind) -> String {
-    formatted(CHANGE_CATEGORY_CAP, &[("category", category_name(kind))])
 }
 
 /// `MTP-26`: the "Up next" heading row's status, one line per contents state.

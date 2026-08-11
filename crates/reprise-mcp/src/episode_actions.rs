@@ -1,11 +1,9 @@
-//! Block H-D/H-E: batch episode mutations over MCP — download, remove, and
-//! `wanted_on_device` (`MTP-40`). Every action reuses the exact core
-//! facades the GNOME channel detail and device page call:
+//! Block H-D/H-E: batch episode mutations over MCP — download and remove.
+//! Every action reuses the exact core facades the GNOME channel detail calls:
 //! `podcasts::pipeline::download_episode` (the same function the refresh
 //! pipeline's auto-download branch calls — Block H's extraction, not a
 //! second download path), `podcasts::store::tombstone_episode`/
-//! `commit_remove_episode` (`POD-6`), and `podcasts::wanted_on_device::
-//! set_wanted_on_device` (`MTP-40`).
+//! `commit_remove_episode` (`POD-6`).
 
 use std::path::Path;
 
@@ -19,15 +17,11 @@ const MAX_EPISODE_IDS: usize = 100;
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct ManageEpisodesParams {
-    /// One of: `download`, `remove`, `want_on_device`.
+    /// One of: `download`, `remove`.
     pub action: String,
     /// Episode ids from `reprise://podcasts` or `music_get_channel_detail`.
     /// At most 100 per call.
     pub episode_ids: Vec<i64>,
-    /// Required for `want_on_device`: whether these episodes should be
-    /// marked wanted on the phone (`MTP-40`). Ignored for other actions.
-    #[serde(default)]
-    pub wanted: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,8 +29,7 @@ pub struct EpisodeOutcome {
     pub episode_id: i64,
     pub ok: bool,
     /// Present when `ok` is true and the action is `download`: the
-    /// resulting state, one of `downloaded`, `failed`. Absent for `remove`
-    /// and `want_on_device`, which have no download state of their own.
+    /// resulting state, one of `downloaded`, `failed`. Absent for `remove`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub download_state: Option<&'static str>,
     /// Present only when `ok` is false — a short, path-free reason.
@@ -90,19 +83,12 @@ pub fn manage_episodes(
     let action: &'static str = match params.action.as_str() {
         "download" => "download",
         "remove" => "remove",
-        "want_on_device" => "want_on_device",
         other => {
             return Err(DataError::InvalidInput(format!(
                 "unknown episode action '{other}'"
             )))
         }
     };
-    if action == "want_on_device" && params.wanted.is_none() {
-        return Err(DataError::InvalidInput(
-            "wanted is required for want_on_device".to_owned(),
-        ));
-    }
-
     let download_root = path
         .parent()
         .unwrap_or_else(|| Path::new("."))
@@ -113,7 +99,7 @@ pub fn manage_episodes(
         .map(|&episode_id| match action {
             "download" => download_one(&db, &download_root, episode_id),
             "remove" => remove_one(&db, episode_id),
-            _ => want_on_device_one(&db, episode_id, params.wanted.unwrap_or(false)),
+            _ => unreachable!("episode action was validated above"),
         })
         .collect();
 
@@ -259,29 +245,6 @@ fn remove_one(db: &reprise_core::db::Db, episode_id: i64) -> EpisodeOutcome {
     }
 }
 
-fn want_on_device_one(db: &reprise_core::db::Db, episode_id: i64, wanted: bool) -> EpisodeOutcome {
-    match reprise_core::podcasts::wanted_on_device::set_wanted_on_device(db, episode_id, wanted) {
-        Ok(true) => EpisodeOutcome {
-            episode_id,
-            ok: true,
-            download_state: None,
-            error: None,
-        },
-        Ok(false) => EpisodeOutcome {
-            episode_id,
-            ok: false,
-            download_state: None,
-            error: Some("episode does not exist".to_owned()),
-        },
-        Err(error) => EpisodeOutcome {
-            episode_id,
-            ok: false,
-            download_state: None,
-            error: Some(error.to_string()),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,7 +346,6 @@ mod tests {
             &ManageEpisodesParams {
                 action: "remove".into(),
                 episode_ids: vec![1],
-                wanted: None,
             },
         )
         .unwrap_err();
@@ -394,50 +356,8 @@ mod tests {
         ));
     }
 
-    /// `MTP-40`: setting wanted on and off must produce genuinely different
-    /// persisted state, not just a label.
     #[test]
-    fn want_on_device_round_trips_and_the_two_states_actually_differ() {
-        let (_dir, path, episode_id) = seeded_db();
-
-        let set = manage_episodes(
-            &path,
-            true,
-            &ManageEpisodesParams {
-                action: "want_on_device".into(),
-                episode_ids: vec![episode_id],
-                wanted: Some(true),
-            },
-        )
-        .unwrap();
-        assert!(set.outcomes[0].ok);
-        let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
-        assert_eq!(
-            reprise_core::podcasts::wanted_on_device::wanted_on_device(&db, episode_id).unwrap(),
-            Some(true)
-        );
-        drop(db);
-
-        let cleared = manage_episodes(
-            &path,
-            true,
-            &ManageEpisodesParams {
-                action: "want_on_device".into(),
-                episode_ids: vec![episode_id],
-                wanted: Some(false),
-            },
-        )
-        .unwrap();
-        assert!(cleared.outcomes[0].ok);
-        let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
-        assert_eq!(
-            reprise_core::podcasts::wanted_on_device::wanted_on_device(&db, episode_id).unwrap(),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn want_on_device_requires_the_wanted_field() {
+    fn former_want_on_device_action_is_rejected() {
         let (_dir, path, episode_id) = seeded_db();
 
         let error = manage_episodes(
@@ -446,12 +366,14 @@ mod tests {
             &ManageEpisodesParams {
                 action: "want_on_device".into(),
                 episode_ids: vec![episode_id],
-                wanted: None,
             },
         )
         .unwrap_err();
 
-        assert!(matches!(error, DataError::InvalidInput(_)));
+        assert!(matches!(
+            error,
+            DataError::InvalidInput(message) if message == "unknown episode action 'want_on_device'"
+        ));
     }
 
     #[test]
@@ -464,7 +386,6 @@ mod tests {
             &ManageEpisodesParams {
                 action: "remove".into(),
                 episode_ids: vec![episode_id],
-                wanted: None,
             },
         )
         .unwrap();
@@ -486,7 +407,6 @@ mod tests {
             &ManageEpisodesParams {
                 action: "remove".into(),
                 episode_ids: vec![episode_id, 999_999],
-                wanted: None,
             },
         )
         .unwrap();
@@ -506,7 +426,6 @@ mod tests {
             &ManageEpisodesParams {
                 action: "remove".into(),
                 episode_ids: Vec::new(),
-                wanted: None,
             },
         )
         .unwrap_err();

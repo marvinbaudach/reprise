@@ -223,31 +223,6 @@ fn resubscribe_revives_existing_identity_and_history() {
 }
 
 #[test]
-fn pod_12_restoring_a_source_at_the_same_kind_preserves_phone_sync() {
-    let conn = conn();
-    let id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
-    super::super::phone_sync::set_enabled(&conn, id, true).unwrap();
-    super::super::phone_sync::set_device_enabled(&conn, id, "mtp:pixel", true).unwrap();
-
-    let restored = add_or_restore(
-        &conn,
-        &NewSubscription {
-            title: "Renamed Show".to_owned(),
-            ..subscription_draft()
-        },
-        20,
-    )
-    .unwrap();
-
-    assert_eq!(restored, id);
-    assert!(subscription(&conn, id).unwrap().unwrap().sync_to_phone);
-    assert_eq!(
-        super::super::phone_sync::selected_device_ids(&conn, id).unwrap(),
-        ["mtp:pixel".to_owned()]
-    );
-}
-
-#[test]
 fn episode_finish_marks_played_and_clears_resume_position() {
     let conn = conn();
     let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
@@ -348,59 +323,4 @@ fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
             1
         );
     }
-}
-
-#[test]
-fn mtp_36_a_fresh_channel_has_no_override_and_setting_persists_it_including_zero() {
-    let conn = conn();
-    let subscription_id = add_or_restore(
-        &conn,
-        &NewSubscription {
-            kind: PodcastKind::Youtube,
-            ..subscription_draft()
-        },
-        10,
-    )
-    .unwrap();
-
-    assert_eq!(
-        subscription(&conn, subscription_id)
-            .unwrap()
-            .unwrap()
-            .latest_per_channel,
-        None,
-        "a channel nobody has touched has no override"
-    );
-    assert!(latest_per_channel_overrides(&conn, &[subscription_id])
-        .unwrap()
-        .is_empty());
-
-    assert!(set_latest_per_channel(&conn, subscription_id, Some(2)).unwrap());
-    assert_eq!(
-        subscription(&conn, subscription_id)
-            .unwrap()
-            .unwrap()
-            .latest_per_channel,
-        Some(2)
-    );
-    assert_eq!(
-        latest_per_channel_overrides(&conn, &[subscription_id]).unwrap(),
-        std::collections::HashMap::from([(subscription_id, 2)])
-    );
-
-    // 0 must persist as 0 (unlimited), never fall back to "no override".
-    assert!(set_latest_per_channel(&conn, subscription_id, Some(0)).unwrap());
-    assert_eq!(
-        latest_per_channel_overrides(&conn, &[subscription_id]).unwrap(),
-        std::collections::HashMap::from([(subscription_id, 0)]),
-        "an explicit 0 override must still be reported, not treated as absent"
-    );
-
-    assert!(set_latest_per_channel(&conn, subscription_id, None).unwrap());
-    assert!(
-        latest_per_channel_overrides(&conn, &[subscription_id])
-            .unwrap()
-            .is_empty(),
-        "clearing the override removes it from the map again"
-    );
 }

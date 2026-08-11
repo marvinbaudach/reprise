@@ -73,7 +73,6 @@ pub fn list_source_groups(db: &Db, kind: PodcastKind) -> Result<Vec<SourceGroup>
                 author: subscription.author,
                 image_url: subscription.image_url,
                 kind: subscription.kind,
-                sync_to_phone: subscription.sync_to_phone,
                 episodes: episodes_for_subscription_in(conn, subscription.id)?,
             })
         })

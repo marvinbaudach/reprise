@@ -5,7 +5,7 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "GPL-3.0-or-later"
+license.workspace = true
 
 [[bin]]
 name = "reprise"

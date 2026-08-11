@@ -85,9 +85,8 @@ fn collect_targets(model: &gio::MenuModel, targets: &mut Vec<(String, Vec<i64>)>
 }
 
 /// Every menu entry that acts on episodes, with the episodes it acts on.
-/// The source-level entries — unsubscribe, phone sync — are excluded:
-/// their target is a `subscription_id`, which is a different thing that
-/// happens to be an `i64`.
+/// Unsubscribe is excluded because its target is a `subscription_id`, which
+/// is a different thing that happens to be an `i64`.
 fn episode_targets(menu: &gio::Menu) -> Vec<(String, Vec<i64>)> {
     let mut targets = Vec::new();
     collect_targets(menu.upcast_ref(), &mut targets);
@@ -299,73 +298,22 @@ fn pod_6_context_menu_exposes_individual_episode_removal() {
 }
 
 #[test]
-fn pod_12_youtube_exposes_phone_sync_action_just_like_rss() {
+fn source_menu_has_no_phone_destination() {
     let group = SourceGroup {
         subscription_id: 1,
         title: "Channel".into(),
         author: None,
         image_url: None,
         kind: PodcastKind::Youtube,
-        sync_to_phone: false,
         episodes: Vec::new(),
     };
-    let menu = build_source(
-        &group,
-        &[PodcastSyncDevice {
-            id: "mtp:pixel".into(),
-            name: "Pixel".into(),
-        }],
-        &[],
-    );
-    // Open channel, "Sync to <device>", and Unsubscribe.
-    assert_eq!(menu.n_items(), 3);
-}
-
-#[test]
-fn pod_12_sync_control_is_hidden_without_a_connected_device() {
-    assert_eq!(sync_control(&[], &[]), SyncControl::Hidden);
-}
-
-#[test]
-fn pod_12_one_connected_device_is_targeted_directly() {
-    let devices = [PodcastSyncDevice {
-        id: "mtp:pixel".into(),
-        name: "Pixel".into(),
-    }];
-
-    assert_eq!(
-        sync_control(&devices, &["mtp:pixel".into()]),
-        SyncControl::Direct {
-            device: devices[0].clone(),
-            selected: true,
-        }
-    );
-}
-
-#[test]
-fn pod_12_multiple_connected_devices_offer_independent_choices() {
-    let devices = [
-        PodcastSyncDevice {
-            id: "mtp:phone".into(),
-            name: "Phone".into(),
-        },
-        PodcastSyncDevice {
-            id: "mtp:tablet".into(),
-            name: "Tablet".into(),
-        },
-    ];
-
-    assert_eq!(
-        sync_control(&devices, &["mtp:tablet".into()]),
-        SyncControl::Chooser(vec![
-            DeviceSyncChoice {
-                device: devices[0].clone(),
-                selected: false,
-            },
-            DeviceSyncChoice {
-                device: devices[1].clone(),
-                selected: true,
-            },
-        ])
+    let menu = build_source(&group);
+    // Open channel and Unsubscribe. Nothing in this menu targets a phone.
+    assert_eq!(menu.n_items(), 2);
+    assert!(
+        menu_entries(&menu)
+            .iter()
+            .all(|(label, action)| !label.to_lowercase().contains("phone")
+                && !action.contains("sync"))
     );
 }

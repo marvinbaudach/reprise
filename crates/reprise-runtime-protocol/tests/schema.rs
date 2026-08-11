@@ -11,8 +11,8 @@
 
 use reprise_runtime_protocol::device_run::DeviceRunSnapshot;
 use reprise_runtime_protocol::device_sync::{
-    DeviceCategorySnapshot, DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot,
-    DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
+    DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSnapshot,
+    DeviceStorageComposition, DeviceStorageSnapshot, DeviceTargetSnapshot,
 };
 use reprise_runtime_protocol::effects::EffectsSnapshot;
 use reprise_runtime_protocol::jobs::{BatchProgress, JobSnapshot};
@@ -92,43 +92,17 @@ fn populated_device() -> DeviceSnapshot {
         },
         current_track: "Ghosts".into(),
         last_synced_at: Some(1_753_600_000),
-        categories: vec![
-            DeviceCategorySnapshot {
-                kind: "playlists".into(),
-                target_path: "/Music/Reprise".into(),
-                target_enabled: true,
-                size_on_device_bytes: 3_221_225_472,
-                cap_bytes: None,
-                reading_kind: "diff".into(),
-                files_to_copy: 14,
-                bytes_to_copy: 2_791_728_742,
-                files_to_remove: 3,
-                bytes_freed: 155_189_248,
-                files_waiting_for_download: 0,
-                playlists_rewritten: 2,
-            },
-            // The two states that are not a diff have to survive the wire as
-            // themselves (`MTP-22`): "never examined" must not arrive looking
-            // like "examined and found nothing".
-            DeviceCategorySnapshot {
-                kind: "youtube_audio".into(),
-                target_path: "/Music/Reprise-YouTube".into(),
-                target_enabled: false,
-                size_on_device_bytes: 0,
-                cap_bytes: Some(8_589_934_592),
-                reading_kind: "source_off".into(),
-                ..DeviceCategorySnapshot::default()
-            },
-            DeviceCategorySnapshot {
-                kind: "podcast_episodes".into(),
-                target_path: "/Podcasts/Reprise".into(),
-                target_enabled: true,
-                size_on_device_bytes: 1_073_741_824,
-                cap_bytes: Some(4_294_967_296),
-                reading_kind: "unavailable_kept_on_phone".into(),
-                ..DeviceCategorySnapshot::default()
-            },
-        ],
+        target: DeviceTargetSnapshot {
+            target_path: "/Music/Reprise".into(),
+            target_enabled: true,
+            size_on_device_bytes: 3_221_225_472,
+            reading_kind: "diff".into(),
+            files_to_copy: 14,
+            bytes_to_copy: 2_791_728_742,
+            files_to_remove: 3,
+            bytes_freed: 155_189_248,
+            playlists_rewritten: 2,
+        },
     }
 }
 
@@ -366,7 +340,6 @@ fn the_wire_field_names_are_the_checked_in_contract() {
         field_names(&populated_device()),
         [
             "blockers",
-            "categories",
             "changes",
             "connected",
             "controls",
@@ -379,6 +352,7 @@ fn the_wire_field_names_are_the_checked_in_contract() {
             "progress",
             "sources",
             "storage",
+            "target",
             "target_bytes",
             "unique_track_count",
             "warnings",
@@ -436,7 +410,7 @@ fn the_wire_field_names_are_the_checked_in_contract() {
 /// looks like a local filesystem path. Deliberately blunt: a false positive
 /// here means a display value contains a slash, which is worth a look.
 /// Fields whose value is a folder **on the connected phone**, not on this
-/// machine (`MTP-38`). They are absolute in the device's own namespace, so
+/// machine (`MTP-54`). They are absolute in the device's own namespace, so
 /// they start with `/` and are textually indistinguishable from a local path —
 /// but showing them is the entire point of the field, and no local filesystem
 /// location can reach them. Everything else stays under the blanket ban below.

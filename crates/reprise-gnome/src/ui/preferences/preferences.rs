@@ -141,27 +141,9 @@ pub(in crate::ui) struct PreferencesContext {
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
     pub(in crate::ui) plugin_rows: RefCell<HashMap<&'static str, glib::WeakRef<gtk4::Widget>>>,
     pub(in crate::ui) pending_plugin_targets: RefCell<Vec<&'static str>>,
-    /// `MTP-46`/`SET-4`: called after a source module's master switch is
-    /// persisted, so a device page that is already open stops offering a
-    /// source the user just switched off. Set once at window wiring, where
-    /// the device runtime exists; `None` in the tests and in any build
-    /// without device sync, where there is nothing to re-plan.
-    pub(in crate::ui) on_source_modules_changed: RefCell<Option<Rc<dyn Fn()>>>,
 }
 
 impl PreferencesContext {
-    /// `MTP-46`/`SET-4`: re-plans every connected device after a source
-    /// module's switch changed. Persisting the setting is not enough — the
-    /// device page renders from a snapshot that only a recompute refreshes,
-    /// so without this a switched-off source keeps its Content row until
-    /// something unrelated happens to trigger one.
-    pub(in crate::ui) fn notify_source_modules_changed(&self) {
-        let hook = self.on_source_modules_changed.borrow().clone();
-        if let Some(hook) = hook {
-            hook();
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
@@ -222,7 +204,6 @@ impl PreferencesContext {
             preferences_stack: RefCell::new(glib::WeakRef::new()),
             plugin_rows: RefCell::new(HashMap::new()),
             pending_plugin_targets: RefCell::new(Vec::new()),
-            on_source_modules_changed: RefCell::new(None),
         });
         let weak = Rc::downgrade(&context);
         context.scan_button.connect_sensitive_notify(move |button| {
@@ -492,7 +473,6 @@ impl PreferencesContext {
         // the switch would keep fetching for the rest of the library.
         self.lyrics_batch.recompute_enabled();
         self.sidebar.refresh(reason);
-        self.notify_source_modules_changed();
         // TODO(package-B): replace this fan-out and consumer-side database
         // re-reads with one shared enabled-state signal for contributed
         // surfaces.

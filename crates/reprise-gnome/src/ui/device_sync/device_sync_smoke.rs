@@ -83,12 +83,12 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
     fn inspect(
         &self,
         root_uri: String,
-        targets: [SyncTarget; 3],
+        target: SyncTarget,
     ) -> BackendFuture<DeviceStorageInspection> {
         Box::pin(async move {
             let storage = Self::storage(&root_uri);
             storage
-                .inspect(&targets)
+                .inspect(&target)
                 .await
                 .map_err(|error| error.to_string())
         })
