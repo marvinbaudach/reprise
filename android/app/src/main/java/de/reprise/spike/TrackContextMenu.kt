@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -31,6 +32,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import uniffi.reprise_android_ffi.AndroidTrashReport
 
 @Stable
 internal class TrackContextMenuAnchorState {
@@ -279,6 +281,39 @@ internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
     }
 }
 
+private const val TRACK_MENU_TAG = "TrackContextMenu"
+
+/**
+ * What a finished deletion says to a person.
+ *
+ * The count is the honest part and stays: a partial deletion is reported as a
+ * partial deletion, never as success. What does not belong on the screen is the
+ * reason each file gave — rusqlite and SAF phrase those for a developer
+ * ("Os { code: 13, kind: PermissionDenied … }"), and one line of a 72 dp row is
+ * the wrong place to read them. [logTrashFailures] keeps them.
+ */
+internal fun trashOutcomeMessage(report: AndroidTrashReport, requested: Int): String =
+    if (report.failures.isEmpty()) {
+        val deleted = report.removedIds.size
+        "$deleted ${if (deleted == 1) "track" else "tracks"} deleted"
+    } else {
+        "${report.failures.size} of $requested could not be deleted"
+    }
+
+/** Keeps the per-file detail the message deliberately leaves out. */
+private fun logTrashFailures(report: AndroidTrashReport) {
+    if (report.failures.isEmpty()) {
+        return
+    }
+    Log.w(
+        TRACK_MENU_TAG,
+        report.failures.joinToString(separator = "; ") { failure ->
+            // An already-gone row has no path to name.
+            "track ${failure.trackId} (${failure.uri.ifEmpty { "no file" }}): ${failure.error}"
+        },
+    )
+}
+
 @Composable
 private fun TrackDeletionConfirmation(
     target: TrackDeletionTarget?,
@@ -313,20 +348,11 @@ private fun TrackDeletionConfirmation(
                         report(
                             outcome.fold(
                                 onSuccess = { deletion ->
-                                    if (deletion.failures.isEmpty()) {
-                                        "${deletion.removedIds.size} " +
-                                            if (deletion.removedIds.size == 1) {
-                                                "track deleted"
-                                            } else {
-                                                "tracks deleted"
-                                            }
-                                    } else {
-                                        "${deletion.failures.size} of ${ids.size} could not " +
-                                            "be deleted: " +
-                                            deletion.failures.joinToString { it.error }
-                                    }
+                                    logTrashFailures(deletion)
+                                    trashOutcomeMessage(deletion, ids.size)
                                 },
                                 onFailure = { error ->
+                                    Log.w(TRACK_MENU_TAG, "Could not delete tracks", error)
                                     "Could not delete tracks: " +
                                         (error.message ?: "unknown error")
                                 },

@@ -229,6 +229,33 @@ class TrackContextMenuTest {
     }
 
     @Test
+    fun aPartialDeletionReportsItsCountWithoutQuotingTheFilesystem() {
+        val controls = RecordingContextMenuControls(
+            deletionOutcome = Result.success(
+                AndroidTrashReport(
+                    removedIds = emptyList(),
+                    failures = listOf(
+                        AndroidTrashFailure(
+                            trackId = 41,
+                            uri = "content://provider/document/41.flac",
+                            error = "Os { code: 13, kind: PermissionDenied }",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val track = configurationTestTrack(41, "Menu Song")
+        composeTitleRow(track, controls)
+
+        openTitleMenu(track.id)
+        compose.onNodeWithText("Delete from device…").performClick()
+        compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
+
+        compose.onNodeWithText("1 of 1 could not be deleted").assertIsDisplayed()
+        compose.onNodeWithText("PermissionDenied", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun stackedNowPlayingActionsExposeTheSingleDeleteMenu() {
         composeNowPlayingMenu(SurfaceLayout.STACKED)
 
