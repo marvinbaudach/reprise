@@ -70,9 +70,18 @@ fn every_band_count_reads_inside_the_slice() {
     ] {
         for output_index in [0usize, 1, SPECTRUM_BAND_COUNT / 2, SPECTRUM_BAND_COUNT - 1] {
             let (left, right, fraction) = band_neighbours(len, output_index);
-            assert!(left < len, "left {left} out of {len} bands at bar {output_index}");
-            assert!(right < len, "right {right} out of {len} bands at bar {output_index}");
-            assert!(fraction.is_finite(), "non-finite fraction at bar {output_index}");
+            assert!(
+                left < len,
+                "left {left} out of {len} bands at bar {output_index}"
+            );
+            assert!(
+                right < len,
+                "right {right} out of {len} bands at bar {output_index}"
+            );
+            assert!(
+                fraction.is_finite(),
+                "non-finite fraction at bar {output_index}"
+            );
         }
     }
 }
