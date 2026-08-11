@@ -334,7 +334,7 @@ fn a_client_receives_the_deltas_for_its_own_session() {
 
 #[test]
 fn runtime_service_name_lives_under_the_app_id_hierarchy() {
-    let name = reprise_platform_linux::runtime_service::SERVICE_NAME;
+    let name = reprise_platform_linux::runtime_service::BUS_NAME;
     assert!(
         name.starts_with("io.github.marvinbaudach.Reprise."),
         "a Flatpak only gets names *under* its app ID granted; a sibling one \

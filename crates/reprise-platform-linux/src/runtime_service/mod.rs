@@ -26,8 +26,3 @@ pub use lease::{LeaseError, RuntimeLease};
 pub use service::{
     Request, RuntimeService, ServeOptions, ServiceError, ServiceInbox, BUS_NAME, OBJECT_PATH,
 };
-
-/// The bus name of the headless runtime service. It must live under the app
-/// ID hierarchy: a Flatpak may only own names it is granted, and Flathub
-/// rejects `--own-name` entries pointing outside the app's own namespace.
-pub const SERVICE_NAME: &str = "io.github.marvinbaudach.Reprise.Runtime1";
