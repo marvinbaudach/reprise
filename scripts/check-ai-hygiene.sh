@@ -35,7 +35,10 @@ while IFS= read -r hit; do
   rest=${hit#*:}
   line=${rest%%:*}
   same_line=${hit#*:*:}
-  above=$(sed -n "$((line - 1))p" "$file")
+  above=""
+  if (( line > 1 )); then
+    above=$(sed -n "$((line - 1))p" "$file")
+  fi
   if [[ $same_line != *"//"* && $above != *"//"* ]]; then
     unexplained=$((unexplained + 1))
     printf '  %s:%s\n' "$file" "$line" >&2
