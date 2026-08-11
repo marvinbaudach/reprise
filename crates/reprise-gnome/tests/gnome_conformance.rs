@@ -87,3 +87,33 @@ fn gp_14_flatpak_manifest_passes_lint() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn gp_2_no_blocking_calls_on_the_main_thread() {
+    let out = run_gate("check-gnome-idioms.sh");
+    assert!(
+        out.status.success(),
+        "check-gnome-idioms.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn gp_3_widget_closures_capture_weakly() {
+    let out = run_gate("check-gnome-idioms.sh");
+    assert!(
+        out.status.success(),
+        "check-gnome-idioms.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn gp_4_no_unwrap_in_ui_paths() {
+    let out = run_gate("check-gnome-idioms.sh");
+    assert!(
+        out.status.success(),
+        "check-gnome-idioms.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
