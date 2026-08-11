@@ -84,7 +84,7 @@ pub fn search(terms: &str, locale: &str) -> Result<Vec<SearchResult>, PodcastErr
 }
 
 pub fn search_in_country(terms: &str, country: &str) -> Result<Vec<SearchResult>, PodcastError> {
-    parse_results(&super::http::get(&search_url(terms, country))?.body)
+    parse_results(&super::http::get_json(&search_url(terms, country))?.body)
 }
 
 pub fn parse_results(json: &str) -> Result<Vec<SearchResult>, PodcastError> {

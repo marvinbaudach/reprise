@@ -33,6 +33,14 @@ impl PanelTab {
     pub(super) fn from_page_name(name: &str) -> Option<Self> {
         PANEL_TABS.into_iter().find(|tab| tab.page_name() == name)
     }
+
+    pub(super) const fn icon_name(self) -> &'static str {
+        match self {
+            Self::UpNext => "view-list-symbolic",
+            Self::Lyrics => crate::ui::icons::LYRICS,
+            Self::Visual => crate::ui::icons::VISUAL_BARS,
+        }
+    }
 }
 
 pub(super) fn should_render_up_next(panel_visible: bool, selected_tab: PanelTab) -> bool {

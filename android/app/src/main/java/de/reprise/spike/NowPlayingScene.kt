@@ -315,7 +315,6 @@ internal fun NowPlayingScene(
 
         SceneTransport(
             playback = playback,
-            surfaceState = surfaceState,
             transition = transition,
             opacity = controlAlpha,
             leaveFullscreen = { choose(NowPlayingView.PLAYER) },
@@ -332,16 +331,6 @@ internal fun NowPlayingScene(
                 ),
         )
 
-        if (surfaceState.nowPlayingQueueVisible) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(COVER_SIZE_DP.dp)
-                    .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(18.dp)),
-            ) {
-                NowPlayingQueuePage(playback, surfaceState)
-            }
-        }
     }
 }
 
@@ -400,9 +389,9 @@ private fun PlayedHeader(
             MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
         }
         Spacer(Modifier.weight(1f))
-        QueuePageButton(surfaceState)
         SleepTimerControl(playback.sleepTimer)
         FavouriteHeartButton(track, surfaceState, tag = "now-playing-heart")
+        NowPlayingTrackContextMenu(track)
         IconButton(
             onClick = enterFullscreen,
             modifier = Modifier
@@ -539,7 +528,6 @@ private fun FullscreenProgress(
 @Composable
 private fun SceneTransport(
     playback: PlaybackUiState,
-    surfaceState: MobileSurfaceViewModel,
     transition: Float,
     opacity: Float,
     leaveFullscreen: () -> Unit,
@@ -558,16 +546,14 @@ private fun SceneTransport(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FlatSceneButton(
-                symbol = if (fullscreenControls) "queue_music" else "shuffle",
-                description = if (fullscreenControls) "Show queue" else "Toggle shuffle",
-                enabled = reachable,
-                onClick = if (fullscreenControls) {
-                    { surfaceState.showNowPlayingQueue(!surfaceState.nowPlayingQueueVisible) }
-                } else {
-                    { controls.setShuffle(!playback.shuffled) }
-                },
-            )
+            if (!fullscreenControls) {
+                FlatSceneButton(
+                    symbol = "shuffle",
+                    description = "Toggle shuffle",
+                    enabled = reachable,
+                    onClick = { controls.setShuffle(!playback.shuffled) },
+                )
+            }
             FlatSceneButton(
                 symbol = if (fullscreenControls) "shuffle" else "skip_previous",
                 description = if (fullscreenControls) "Toggle shuffle" else "Previous track",

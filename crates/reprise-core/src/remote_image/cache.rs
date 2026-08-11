@@ -9,7 +9,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
+use crate::cover_download::IMAGE_EXTS;
 
 /// Hard cap on the number of cached source-image files. Channel, show, and
 /// station artwork is small and there are only ever as many distinct images
@@ -163,6 +163,19 @@ mod tests {
         let file = dir.join(format!("{}.jpg", key_for("https://x.test/a.jpg")));
         std::fs::write(&file, b"x").unwrap();
         assert_eq!(cached_path_in(&dir, "https://x.test/a.jpg"), Some(file));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cached_path_finds_an_ico_image() {
+        let dir = tmp();
+        std::fs::create_dir_all(&dir).unwrap();
+        let url = "https://x.test/favicon.ico";
+        let file = dir.join(format!("{}.ico", key_for(url)));
+        std::fs::write(&file, b"ico").unwrap();
+
+        assert_eq!(cached_path_in(&dir, url), Some(file));
+
         std::fs::remove_dir_all(&dir).ok();
     }
 
