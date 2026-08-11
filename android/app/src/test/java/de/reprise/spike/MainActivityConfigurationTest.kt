@@ -117,7 +117,12 @@ class MainActivityConfigurationTest {
         compose.onNodeWithText(DEEP_ALBUM).assertIsDisplayed()
         compose.onNodeWithText("Full Album 2").assertDoesNotExist()
 
-        compose.onNodeWithTag("library-summary-search").performClick()
+        // The open field owns the way out: clear the query, then close it. The
+        // summary row's magnifier is gone for as long as the field is up.
+        compose.onNodeWithTag("library-summary-search").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Clear search").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Close search").performClick()
         compose.waitForIdle()
 
         compose.onNodeWithText("Full Album 2").assertIsDisplayed()

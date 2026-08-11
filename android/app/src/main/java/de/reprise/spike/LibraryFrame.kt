@@ -83,14 +83,16 @@ internal fun LibrarySummaryActions(
                 .weight(1f)
                 .testTag("library-summary-text"),
         )
-        IconButton(
-            onClick = toggleSearch,
-            modifier = Modifier.size(48.dp).testTag("library-summary-search"),
-        ) {
-            MaterialSymbol(
-                name = if (searching) "close" else "search",
-                contentDescription = if (searching) "Close search" else "Search library",
-            )
+        // Only while the field is shut. Once it is open it carries its own
+        // trailing action — clear the text, then close — and a second cross
+        // one row below it says the same thing twice.
+        if (!searching) {
+            IconButton(
+                onClick = toggleSearch,
+                modifier = Modifier.size(48.dp).testTag("library-summary-search"),
+            ) {
+                MaterialSymbol("search", "Search library")
+            }
         }
         Box {
             IconButton(
