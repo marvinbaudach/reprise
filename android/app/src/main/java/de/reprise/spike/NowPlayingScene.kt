@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -70,7 +71,8 @@ internal fun NowPlayingScene(
     horizontalOffsetPx: Float = 0f,
     previousTrack: LibraryTrack? = null,
     nextTrack: LibraryTrack? = null,
-    visualizerVisible: Boolean = false,
+    visualizerOpacity: Float = 0f,
+    onCoverBounds: (Rect) -> Unit = {},
 ) {
     val frames = rememberSpectrogram(track.id)
     val state = remember(frames) { SceneState(frames) }
@@ -101,7 +103,7 @@ internal fun NowPlayingScene(
     val motion = LocalAmbientMotionController.current
     val fallbackAccent = MaterialTheme.colorScheme.primary
     val visualEngine = rememberVisualSceneEngine(
-        enabled = visualizerVisible,
+        enabled = visualizerOpacity > 0f,
         trackId = track.id,
         playing = playback.isPlaying,
         accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
@@ -129,7 +131,18 @@ internal fun NowPlayingScene(
             .background(AmbientTrueBlack)
             .testTag("now-playing-player"),
     ) {
+        val density = LocalDensity.current
         val coverTop = maxHeight * PLAYED_CENTRE_FRACTION - (COVER_SIZE_DP / 2).dp
+        val reportedCoverBounds = with(density) {
+            playedCoverRect(
+                center = Offset(
+                    maxWidth.toPx() / 2f + horizontalOffsetPx,
+                    maxHeight.toPx() * PLAYED_CENTRE_FRACTION,
+                ),
+                side = COVER_SIZE_DP.dp.toPx(),
+            )
+        }
+        SideEffect { onCoverBounds(reportedCoverBounds) }
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -179,21 +192,22 @@ internal fun NowPlayingScene(
                     )
                 }
             }
-            if (visualEngine == null) {
-                drawPlayedCover(
-                    artwork = artwork?.image,
-                    center = playedCenter,
-                    fallback = AmbientTrueBlack,
-                    shadow = coverShadow,
-                )
-            } else {
+            drawPlayedCover(
+                artwork = artwork?.image,
+                center = playedCenter,
+                fallback = AmbientTrueBlack,
+                shadow = coverShadow,
+                opacity = 1f - visualizerOpacity,
+            )
+            if (visualEngine != null) {
                 drawPlayedVisualizer(
                     buffer = visualEngine.scene(
                         width = COVER_SIZE_DP.dp.toPx(),
                         height = COVER_SIZE_DP.dp.toPx(),
                     ),
                     center = playedCenter,
-                    shadow = coverShadow,
+                    shadow = null,
+                    opacity = visualizerOpacity,
                 )
             }
         }
@@ -481,20 +495,28 @@ internal fun DrawScope.drawPlayedCover(
     center: Offset,
     fallback: Color,
     shadow: CoverShadowBitmap?,
+    opacity: Float = 1f,
 ) {
     val side = COVER_SIZE_DP.dp.toPx()
     val rect = playedCoverRect(center, side)
     val radius = COVER_RADIUS_DP.dp.toPx()
     shadow?.let { drawCoverShadow(it, rect) }
+    if (opacity <= 0f) return
+    val safeOpacity = opacity.coerceIn(0f, 1f)
     val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
     clipPath(path) {
         if (artwork == null) {
-            drawRect(fallback, topLeft = rect.topLeft, size = rect.size)
+            drawRect(
+                color = fallback.copy(alpha = fallback.alpha * safeOpacity),
+                topLeft = rect.topLeft,
+                size = rect.size,
+            )
         } else {
             drawImage(
                 image = artwork,
                 dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
                 dstSize = IntSize(side.roundToInt(), side.roundToInt()),
+                alpha = safeOpacity,
             )
         }
     }
@@ -504,15 +526,18 @@ internal fun DrawScope.drawPlayedVisualizer(
     buffer: List<Float>,
     center: Offset,
     shadow: CoverShadowBitmap?,
+    opacity: Float = 1f,
 ) {
     val side = COVER_SIZE_DP.dp.toPx()
     val rect = playedCoverRect(center, side)
     val radius = COVER_RADIUS_DP.dp.toPx()
     shadow?.let { drawCoverShadow(it, rect) }
+    if (opacity <= 0f) return
+    val safeOpacity = opacity.coerceIn(0f, 1f)
     val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
     clipPath(path) {
-        drawRect(Color.Black, topLeft = rect.topLeft, size = rect.size)
-        drawVisualizerScene(buffer = buffer, bounds = rect)
+        drawRect(Color.Black.copy(alpha = safeOpacity), topLeft = rect.topLeft, size = rect.size)
+        drawVisualizerScene(buffer = buffer, bounds = rect, opacity = safeOpacity)
     }
 }
 

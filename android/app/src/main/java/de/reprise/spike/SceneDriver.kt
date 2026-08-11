@@ -44,9 +44,11 @@ internal class SceneDriver(
     private val state: SceneState,
     private val clock: SceneClock,
     private val positionSource: ScenePositionSource,
-    private val frameSink: SceneFrameSink? = null,
+    frameSink: SceneFrameSink? = null,
     private val framesAllowed: () -> Boolean,
 ) {
+    private var frameSink = frameSink
+    private var frameSinkNeedsSnapshot = frameSink != null
     var lastDrivenFrameIndex: Int? = null
         private set
     private var framesWithheld = false
@@ -88,14 +90,16 @@ internal class SceneDriver(
         lastTickNanos = nowNanos
         framesWithheld = false
         lastDrivenFrameIndex = frameIndex
-        frameSink?.onFrame(
+        val sink = frameSink
+        sink?.onFrame(
             when {
-                !newFrame -> null
-                analysed -> state.motionBands
-                else -> EMPTY_BANDS
+                analysed && (newFrame || frameSinkNeedsSnapshot) -> state.motionBands
+                !analysed && frameSinkNeedsSnapshot -> EMPTY_BANDS
+                else -> null
             },
         )
-        return state.revision != before || frameSink != null
+        if (sink != null) frameSinkNeedsSnapshot = false
+        return state.revision != before || sink != null
     }
 
     /**
@@ -110,6 +114,11 @@ internal class SceneDriver(
     fun noteFramesWithheld() {
         framesWithheld = true
         lastTickNanos = null
+    }
+
+    fun setFrameSink(sink: SceneFrameSink?) {
+        if (sink != null && sink !== frameSink) frameSinkNeedsSnapshot = true
+        frameSink = sink
     }
 
     private fun estimatedPositionMs(sample: ScenePositionSample, nowNanos: Long): Long {
@@ -158,8 +167,8 @@ internal fun DriveScene(
     frameSink: SceneFrameSink? = null,
 ): Int {
     val source = remember(state) { MutableScenePositionSource() }
-    val driver = remember(frames, state, frameSink) {
-        SceneDriver(frames, state, SystemSceneClock, source, frameSink) {
+    val driver = remember(frames, state) {
+        SceneDriver(frames, state, SystemSceneClock, source) {
             controller.sceneFramesAllowed
         }
     }
@@ -173,6 +182,7 @@ internal fun DriveScene(
     }
     SideEffect {
         source.update(positionSample)
+        driver.setFrameSink(frameSink)
     }
     DisposableEffect(controller) {
         controller.attach()
@@ -187,6 +197,7 @@ internal fun DriveScene(
         animationsEnabled,
         playback.isPlaying,
         playback.positionMs,
+        frameSink,
     ) {
         if (!runtimeActive || !animationsEnabled) {
             driver.noteFramesWithheld()
