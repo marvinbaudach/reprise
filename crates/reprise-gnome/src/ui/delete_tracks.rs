@@ -589,3 +589,7 @@ mod tests {
 #[cfg(test)]
 #[path = "delete_tracks_display_tests.rs"]
 mod display_tests;
+
+#[cfg(test)]
+#[path = "delete_tracks_large_block_display_tests.rs"]
+mod large_block_display_tests;

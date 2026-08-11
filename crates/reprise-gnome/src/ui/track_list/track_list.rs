@@ -122,10 +122,10 @@ pub(in crate::ui) struct Shared {
     /// Stable owner of the vertical adjustment and its allocation, retained
     /// for the row-loss dump rather than rediscovered from widget parents.
     pub(in crate::ui) scrolled: gtk4::ScrolledWindow,
-    /// Last row height measured while the adjustment and model described the
-    /// same list. A model swap can leave the old adjustment allocation paired
-    /// with the new row count until GTK's next allocation pass.
-    pub(in crate::ui) last_row_height: Cell<f64>,
+    /// Last settled row and section-header heights. A model swap can leave the
+    /// old adjustment allocation paired with the new row count until GTK's
+    /// next allocation pass, so both values come from the geometry service.
+    pub(in crate::ui) list_geometry_cache: crate::ui::list_geometry::ListGeometryCache,
     /// Track id of the currently-playing row (the now-playing marker), or
     /// `None` when nothing is playing. Every column's `connect_bind` reads
     /// this to toggle the `.now-playing` marker class on its cell, so a row

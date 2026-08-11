@@ -9,9 +9,7 @@ use reprise_core::browser::TrackFocus;
 use reprise_core::browser::{SortDirection, TrackAnchor, TrackSort, TrackViewState};
 use reprise_core::queries::BrowseFilter;
 
-use crate::ui::track_list::track_list_geometry::{
-    remember_row_height, restore_geometry_is_ready, row_height_for_restore,
-};
+use crate::ui::list_geometry::ListGeometry;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::SortState;
 
@@ -20,12 +18,6 @@ use crate::ui::track_list_sort::SortState;
 /// source switch. Restoring the first 512 of such a selection is fine; the
 /// point of BROWSE-2 is orientation, not perfect multi-selection fidelity.
 const MAX_REMEMBERED_SELECTED_IDS: usize = 512;
-
-/// How many idle-callback rounds the scroll restore waits for the rebuilt
-/// list to gain usable geometry before giving up. Each round is one main-loop
-/// iteration; a freshly repopulated `ColumnView` normally has its adjustment
-/// updated after the first allocation pass.
-const SCROLL_RESTORE_MAX_ATTEMPTS: u8 = 8;
 
 /// GTK-side representation of one complete track place.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -109,13 +101,23 @@ pub(in crate::ui) fn capture(shared: &Shared) -> SavedViewState {
     let scroll_value = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
         .map_or(0.0, |adjustment| adjustment.value());
     let total = shared.model.n_items();
-    let anchor = row_height(&shared.column_view, total).and_then(|height| {
-        let index = (scroll_value / height).floor().max(0.0) as u32;
-        shared
-            .model
-            .track_at(index)
-            .map(|track| (track.id, scroll_value - f64::from(index) * height))
-    });
+    let n_sections = shared.queue_sections.borrow().len();
+    let geometry = ListGeometry::for_view(&shared.column_view);
+    let anchor = geometry
+        .observed_row_height(
+            &shared.conn,
+            &shared.list_geometry_cache,
+            total as usize,
+            n_sections,
+        )
+        .and_then(|height| {
+            let height = height.pixels();
+            let index = (scroll_value / height).floor().max(0.0) as u32;
+            shared
+                .model
+                .track_at(index)
+                .map(|track| (track.id, scroll_value - f64::from(index) * height))
+        });
     let selection = shared.selection.selection();
     let mut selected_ids = Vec::new();
     for index in 0..selection.size() {
@@ -154,18 +156,9 @@ pub(in crate::ui) fn capture_place(shared: &Shared) -> reprise_core::browser::Br
     reprise_core::browser::BrowserPlace::tracks(collection, state)
 }
 
-fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
-    if n_rows == 0 {
-        return None;
-    }
-    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(column_view)?;
-    let upper = adjustment.upper();
-    (upper > 0.0).then(|| upper / f64::from(n_rows))
-}
-
 /// Restores a captured view state after `reload` rebuilt the model for the
 /// re-attached source: selection synchronously (the model rows exist), the
-/// scroll offset via idle retries once the rebuilt list has geometry.
+/// scroll offset once the rebuilt list reports changed geometry.
 pub(in crate::ui) fn restore(
     shared: &std::rc::Rc<Shared>,
     saved: &SavedViewState,
@@ -176,58 +169,76 @@ pub(in crate::ui) fn restore(
     for position in positions {
         shared.selection.select_item(position, false);
     }
-    restore_scroll_when_ready(
-        shared.clone(),
-        saved.anchor,
-        current_ids.to_vec(),
-        SCROLL_RESTORE_MAX_ATTEMPTS,
-    );
+    restore_scroll_when_ready(shared, saved.anchor, current_ids.to_vec());
     if matches!(saved.focus, TrackFocus::Track(_)) {
         let _ = shared.column_view.grab_focus();
     }
 }
 
-/// Applies `value` to the table's vadjustment as soon as the adjustment has
-/// usable geometry, retrying over at most `attempts` idle rounds. A list
-/// that fits its viewport entirely (upper <= page) needs no scroll at all.
+/// Applies the remembered value immediately when geometry is already usable,
+/// otherwise on the adjustment's next geometry change. A list that fits its
+/// viewport entirely needs no scroll at all.
 fn restore_scroll_when_ready(
-    shared: std::rc::Rc<Shared>,
+    shared: &std::rc::Rc<Shared>,
     anchor: Option<(i64, f64)>,
     current_ids: Vec<i64>,
-    attempts: u8,
 ) {
     if anchor.is_none() || current_ids.is_empty() {
         return;
     }
-    gtk4::glib::idle_add_local_once(move || {
-        let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
-        else {
+    if apply_restored_scroll(shared, anchor, &current_ids) {
+        return;
+    }
+    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) else {
+        return;
+    };
+    let weak_shared = std::rc::Rc::downgrade(shared);
+    crate::ui::list_geometry_changed::on_changed_once(&adjustment, move |_| {
+        let Some(shared) = weak_shared.upgrade() else {
             return;
         };
-        let (upper, page) = (adjustment.upper(), adjustment.page_size());
-        if upper > page {
-            if let Some(height) =
-                row_height_for_restore(&shared.last_row_height, upper, current_ids.len())
-            {
-                if restore_geometry_is_ready(upper, current_ids.len(), height) {
-                    remember_row_height(
-                        &shared.column_view,
-                        current_ids.len() as u32,
-                        &shared.last_row_height,
-                    );
-                    if let Some(target) =
-                        super::reload_restore::scroll_target(anchor, &current_ids, height, page)
-                    {
-                        adjustment.set_value(target);
-                    }
-                    return;
-                }
-            }
-        }
-        if attempts > 0 {
-            restore_scroll_when_ready(shared, anchor, current_ids, attempts - 1);
-        }
+        apply_restored_scroll(&shared, anchor, &current_ids);
     });
+}
+
+fn apply_restored_scroll(shared: &Shared, anchor: Option<(i64, f64)>, current_ids: &[i64]) -> bool {
+    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) else {
+        return false;
+    };
+    let (upper, page) = (adjustment.upper(), adjustment.page_size());
+    if upper <= page {
+        return true;
+    }
+    let n_sections = shared.queue_sections.borrow().len();
+    let geometry = ListGeometry::for_view(&shared.column_view);
+    let Some(height) = geometry
+        .observed_row_height(
+            &shared.conn,
+            &shared.list_geometry_cache,
+            current_ids.len(),
+            n_sections,
+        )
+        .map(crate::ui::list_geometry::RowHeight::pixels)
+    else {
+        return false;
+    };
+    if !geometry.is_settled(upper, current_ids.len(), n_sections) {
+        return false;
+    }
+    geometry.remember_if_settled(
+        &shared.conn,
+        &shared.list_geometry_cache,
+        upper,
+        current_ids.len(),
+        n_sections,
+    );
+    let Some(target) = super::reload_restore::scroll_target(anchor, current_ids, height, page)
+    else {
+        return false;
+    };
+    crate::ui::scroll_probe::probe("view_state_restore", &adjustment, target);
+    adjustment.set_value(target);
+    true
 }
 
 #[cfg(test)]
