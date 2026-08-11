@@ -26,6 +26,57 @@ struct TrackIdentity {
     title_key: String,
 }
 
+#[derive(Default)]
+struct LibraryHoldIndex {
+    album_keys: HashSet<(String, String)>,
+    track_keys: HashSet<(String, String)>,
+}
+
+impl LibraryHoldIndex {
+    fn load(conn: &Connection, include_id: impl Fn(i64) -> bool) -> Result<Self, rusqlite::Error> {
+        // A row still held in `tracks` is library presence for deletion memory,
+        // even when its file is missing. Only committed removal makes it absent.
+        let mut statement =
+            conn.prepare("SELECT id, artist, album_artist, album, title, removed_at FROM tracks")?;
+        let mut index = Self::default();
+        let rows = statement.query_map([], |row| {
+            let id = row.get::<_, i64>(0)?;
+            let removed_at = row.get::<_, Option<i64>>(5)?;
+            if !include_id(id) || removed_at.is_some() {
+                return Ok(None);
+            }
+            let album = row.get::<_, String>(3)?;
+            let title = row.get::<_, String>(4)?;
+            Ok(Some(track_identity(
+                row.get(1)?,
+                row.get(2)?,
+                &album,
+                &title,
+            )))
+        })?;
+        for row in rows {
+            if let Some(identity) = row? {
+                index
+                    .album_keys
+                    .insert((identity.artist_key.clone(), identity.album_key));
+                index
+                    .track_keys
+                    .insert((identity.artist_key, identity.title_key));
+            }
+        }
+        Ok(index)
+    }
+
+    fn holds(&self, memory: &DeletedReleaseMemory) -> bool {
+        let key = (memory.artist_key.clone(), memory.title_key.clone());
+        if memory.scope == "album" {
+            self.album_keys.contains(&key)
+        } else {
+            self.track_keys.contains(&key)
+        }
+    }
+}
+
 fn track_identity(artist: String, album_artist: String, album: &str, title: &str) -> TrackIdentity {
     let release_artist = if album_artist.trim().is_empty() {
         artist
@@ -64,28 +115,7 @@ pub(crate) fn remember_deleted_releases(
         }
     }
     drop(identity_statement);
-    // This is deliberately wider than `local_library_index`: a missing row
-    // still owns its metadata here, so an unmounted drive cannot fabricate a
-    // deletion memory. Only a row already committed to removal is excluded.
-    let mut statement = conn.prepare(
-        "SELECT id, artist, album_artist, album, title
-         FROM tracks WHERE removed_at IS NULL",
-    )?;
-    let survivors = statement
-        .query_map([], |row| {
-            let album = row.get::<_, String>(3)?;
-            let title = row.get::<_, String>(4)?;
-            Ok((
-                row.get::<_, i64>(0)?,
-                track_identity(row.get(1)?, row.get(2)?, &album, &title),
-            ))
-        })?
-        .filter_map(|row| match row {
-            Ok((id, identity)) if !removed_ids.contains(&id) => Some(Ok(identity)),
-            Ok(_) => None,
-            Err(error) => Some(Err(error)),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let survivors = LibraryHoldIndex::load(conn, |id| !removed_ids.contains(&id))?;
 
     let album_keys = selected
         .iter()
@@ -93,15 +123,17 @@ pub(crate) fn remember_deleted_releases(
         .map(|identity| (identity.artist_key.clone(), identity.album_key.clone()))
         .collect::<HashSet<_>>();
     for (artist_key, title_key) in album_keys {
-        let survives = survivors
-            .iter()
-            .any(|identity| identity.artist_key == artist_key && identity.album_key == title_key);
-        if !survives {
+        let memory = DeletedReleaseMemory {
+            artist_key,
+            title_key,
+            scope: "album".to_owned(),
+        };
+        if !survivors.holds(&memory) {
             conn.execute(
                 "INSERT INTO deleted_releases (artist_key, title_key, scope, deleted_at)
-                 VALUES (?1, ?2, 'album', ?3)
+                 VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT DO NOTHING",
-                rusqlite::params![artist_key, title_key, now],
+                rusqlite::params![memory.artist_key, memory.title_key, memory.scope, now],
             )?;
         }
     }
@@ -111,28 +143,21 @@ pub(crate) fn remember_deleted_releases(
         .map(|identity| (identity.artist_key, identity.title_key))
         .collect::<HashSet<_>>();
     for (artist_key, title_key) in track_keys {
-        let survives = survivors
-            .iter()
-            .any(|identity| identity.artist_key == artist_key && identity.title_key == title_key);
-        if !survives {
+        let memory = DeletedReleaseMemory {
+            artist_key,
+            title_key,
+            scope: "track".to_owned(),
+        };
+        if !survivors.holds(&memory) {
             conn.execute(
                 "INSERT INTO deleted_releases (artist_key, title_key, scope, deleted_at)
-                 VALUES (?1, ?2, 'track', ?3)
+                 VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT DO NOTHING",
-                rusqlite::params![artist_key, title_key, now],
+                rusqlite::params![memory.artist_key, memory.title_key, memory.scope, now],
             )?;
         }
     }
-    forget_acquired_memories(conn, |memory| {
-        survivors.iter().any(|identity| {
-            identity.artist_key == memory.artist_key
-                && if memory.scope == "album" {
-                    identity.album_key == memory.title_key
-                } else {
-                    identity.title_key == memory.title_key
-                }
-        })
-    })
+    forget_acquired_memories(conn, |memory| survivors.holds(memory))
 }
 
 pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, rusqlite::Error> {
@@ -142,18 +167,10 @@ pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, r
     if memories.is_empty() {
         return Ok(0);
     }
-    let library = crate::artist_news_query::local_library_index(conn)?;
-    let (acquired, remaining): (Vec<_>, Vec<_>) = memories.into_iter().partition(|memory| {
-        if memory.scope == "album" {
-            library
-                .album_track_counts
-                .contains_key(&(memory.artist_key.clone(), memory.title_key.clone()))
-        } else {
-            library
-                .track_titles
-                .contains(&(memory.artist_key.clone(), memory.title_key.clone()))
-        }
-    });
+    let library = LibraryHoldIndex::load(conn, |_| true)?;
+    let (acquired, remaining): (Vec<_>, Vec<_>) = memories
+        .into_iter()
+        .partition(|memory| library.holds(memory));
     delete_memories(conn, &acquired)?;
     reconcile_release_rows(conn, &acquired, &remaining, true)
 }
@@ -220,38 +237,9 @@ pub(crate) fn reconcile_restored_tracks(
     if restored_ids.is_empty() {
         return Ok(());
     }
-    let mut statement = conn.prepare_cached(
-        "SELECT artist, album_artist, album, title
-         FROM tracks WHERE id = ?1 AND removed_at IS NULL",
-    )?;
-    let identities = restored_ids
-        .iter()
-        .filter_map(|id| {
-            match statement
-                .query_row([id], |row| {
-                    let album = row.get::<_, String>(2)?;
-                    let title = row.get::<_, String>(3)?;
-                    Ok(track_identity(row.get(0)?, row.get(1)?, &album, &title))
-                })
-                .optional()
-            {
-                Ok(Some(identity)) => Some(Ok(identity)),
-                Ok(None) => None,
-                Err(error) => Some(Err(error)),
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    drop(statement);
-    let reconciliation = forget_acquired_memories(conn, |memory| {
-        identities.iter().any(|identity| {
-            identity.artist_key == memory.artist_key
-                && if memory.scope == "album" {
-                    identity.album_key == memory.title_key
-                } else {
-                    identity.title_key == memory.title_key
-                }
-        })
-    })?;
+    let restored_ids = restored_ids.iter().copied().collect::<HashSet<_>>();
+    let restored = LibraryHoldIndex::load(conn, |id| restored_ids.contains(&id))?;
+    let reconciliation = forget_acquired_memories(conn, |memory| restored.holds(memory))?;
     reconcile_forgotten_release_rows(conn, &reconciliation.forgotten, &reconciliation.remaining)?;
     Ok(())
 }

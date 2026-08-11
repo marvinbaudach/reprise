@@ -136,6 +136,104 @@ fn nr_32_missing_sibling_writes_no_memory() {
 }
 
 #[test]
+fn nr_32_missing_track_counts_as_held_in_every_memory_reconciliation_path() {
+    let deletion_db = crate::db::Db::open_in_memory().unwrap();
+    insert_track(&deletion_db, 1, "Ghost", "Ghost");
+    insert_track(&deletion_db, 2, "Ghost", "Ghost");
+    deletion_db
+        .conn()
+        .execute("UPDATE tracks SET missing_since = 50 WHERE id = 2", [])
+        .unwrap();
+
+    remove_from_library(&deletion_db, &[1]);
+
+    let deletion_memories: i64 = deletion_db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM deleted_releases", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        deletion_memories, 0,
+        "deletion must see the missing survivor"
+    );
+
+    let apply_db = crate::db::Db::open_in_memory().unwrap();
+    insert_release(&apply_db, "album", "Ghost", "Album");
+    insert_release(&apply_db, "single", "Ghost", "Single");
+    insert_track(&apply_db, 1, "Ghost", "Ghost");
+    apply_db
+        .conn()
+        .execute_batch(
+            "UPDATE tracks SET missing_since = 50 WHERE id = 1;
+             INSERT INTO deleted_releases (artist_key, title_key, scope, deleted_at)
+             VALUES ('release artist', 'ghost', 'album', 10),
+                    ('release artist', 'ghost', 'track', 10);
+             UPDATE new_releases
+             SET hidden = 1, hidden_at = 10, hidden_by_deleted_memory = 1;",
+        )
+        .unwrap();
+
+    crate::deleted_releases::apply_deleted_release_memory(apply_db.conn()).unwrap();
+
+    let applied_memories: i64 = apply_db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM deleted_releases", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        applied_memories, 0,
+        "apply must forget both acquired scopes"
+    );
+    assert_eq!(
+        crate::artist_news::hidden_release_count(&apply_db).unwrap(),
+        0
+    );
+
+    let undo_db = crate::db::Db::open_in_memory().unwrap();
+    insert_release(&undo_db, "album", "Ghost", "Album");
+    insert_release(&undo_db, "single", "Ghost", "Single");
+    insert_track(&undo_db, 1, "Ghost", "Ghost");
+    undo_db
+        .conn()
+        .execute_batch(
+            "UPDATE tracks SET missing_since = 50, removed_at = 100 WHERE id = 1;
+             INSERT INTO deleted_releases (artist_key, title_key, scope, deleted_at)
+             VALUES ('release artist', 'ghost', 'album', 10),
+                    ('release artist', 'ghost', 'track', 10);
+             UPDATE new_releases
+             SET hidden = 1, hidden_at = 10, hidden_by_deleted_memory = 1;",
+        )
+        .unwrap();
+
+    assert_eq!(crate::queries::undo_tombstone(&undo_db, &[1]).unwrap(), 1);
+
+    let undo_memories: i64 = undo_db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM deleted_releases", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(undo_memories, 0, "undo must forget both restored scopes");
+    assert_eq!(
+        crate::artist_news::hidden_release_count(&undo_db).unwrap(),
+        0
+    );
+    let missing_since: Option<i64> = undo_db
+        .conn()
+        .query_row("SELECT missing_since FROM tracks WHERE id = 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        missing_since,
+        Some(50),
+        "undo must not rewrite missing state"
+    );
+}
+
+#[test]
 fn nr_32_album_memory_also_hides_the_ep_twin() {
     let db = crate::db::Db::open_in_memory().unwrap();
     insert_release(&db, "album", "Shared Work", "Album");
