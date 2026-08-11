@@ -65,8 +65,6 @@ fn pod_25_a_query_expands_surviving_shows_without_overwriting_manual_state() {
             &expanded_sources,
             &Rc::new(RefCell::new(BTreeSet::new())),
             &BTreeMap::new(),
-            &[],
-            &BTreeMap::new(),
             false,
             Connectivity::Online,
             None,

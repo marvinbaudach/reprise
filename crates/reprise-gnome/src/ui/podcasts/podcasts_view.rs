@@ -19,7 +19,6 @@ use super::add_dialog;
 use super::podcasts_callbacks::PodcastsCallbacks;
 use super::podcasts_context_menu;
 use super::podcasts_deferred_actions::{replay_until_refused, DeferredAction, DeferredActions};
-use super::podcasts_device_sync::PodcastDeviceSyncState;
 use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
@@ -111,7 +110,6 @@ pub(in crate::ui) struct PodcastsView {
     footer_spinner: gtk4::Spinner,
     groups: RefCell<Vec<SourceGroup>>,
     rows: RefCell<Vec<EpisodeRow>>,
-    pub(super) device_sync: PodcastDeviceSyncState,
     expanded_sources: Rc<RefCell<BTreeSet<i64>>>,
     expanded_episode_sources: Rc<RefCell<BTreeSet<i64>>>,
     selection: Rc<RefCell<PodcastSelection>>,
@@ -233,7 +231,6 @@ impl PodcastsView {
             footer_spinner,
             groups: RefCell::new(Vec::new()),
             rows: RefCell::new(Vec::new()),
-            device_sync: PodcastDeviceSyncState::default(),
             expanded_sources: Rc::new(RefCell::new(BTreeSet::new())),
             expanded_episode_sources: Rc::new(RefCell::new(BTreeSet::new())),
             selection: Rc::new(RefCell::new(PodcastSelection::default())),
@@ -319,22 +316,10 @@ impl PodcastsView {
         self.toast_overlay.set(Some(overlay));
     }
 
-    pub(in crate::ui) fn bind_device_sync(
-        self: &Rc<Self>,
-        runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
-    ) {
-        super::podcasts_device_sync::bind(self, runtime);
-    }
-
     pub(in crate::ui) fn refresh(&self) {
-        let result = {
-            podcasts::query::list_source_groups(&self.conn, self.kind).and_then(|groups| {
-                let selected = PodcastDeviceSyncState::selected_for_groups(&self.conn, &groups)?;
-                Ok((groups, selected))
-            })
-        };
+        let result = podcasts::query::list_source_groups(&self.conn, self.kind);
         match result {
-            Ok((groups, selected_devices)) => {
+            Ok(groups) => {
                 let mut rows = groups
                     .iter()
                     .flat_map(|group| group.episodes.iter().cloned())
@@ -348,7 +333,6 @@ impl PodcastsView {
                     .replace(refreshed_download_states(&rows, &previous));
                 self.groups.replace(groups);
                 self.rows.replace(rows);
-                self.device_sync.replace_selected(selected_devices);
                 let last_updated = last_updated_text(&self.conn);
                 self.footer_status.set_text(&last_updated);
                 self.render();
@@ -399,8 +383,6 @@ impl PodcastsView {
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
         let selected_ids = self.selection.borrow().selected_ids();
-        let connected_devices = self.device_sync.connected();
-        let selected_devices = self.device_sync.selected();
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
@@ -417,8 +399,6 @@ impl PodcastsView {
         self.youtube_detail.update(
             &rendered_groups,
             &download_states,
-            &connected_devices,
-            &selected_devices,
             images_allowed,
             self.connectivity.get(),
             self.unavailable_episode.get(),
@@ -431,8 +411,6 @@ impl PodcastsView {
             &self.expanded_sources,
             &self.expanded_episode_sources,
             &download_states,
-            &connected_devices,
-            &selected_devices,
             images_allowed,
             self.connectivity.get(),
             self.unavailable_episode.get(),
@@ -593,7 +571,6 @@ impl PodcastsView {
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
                     Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
-                    Ok(PodcastsWorkerResult::QueueRunComplete { .. }) => {}
                     Err(error) => {
                         tracing::warn!(%error, episode_id, "podcast download failed");
                         view.set_download_state(

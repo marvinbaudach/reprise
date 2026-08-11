@@ -89,8 +89,6 @@ fn src_5_youtube_group_title_is_vertically_centered_with_its_artwork() {
             downloaded_bytes: 0,
             latest_published_at: None,
         },
-        &[],
-        &[],
         false,
     );
     let header = header.downcast::<gtk4::Box>().unwrap();
@@ -283,8 +281,6 @@ fn src_14_grouped_secondary_click_opens_for_one_row_or_the_three_row_selection()
         &Rc::new(RefCell::new(BTreeSet::from([1]))),
         &Rc::new(RefCell::new(BTreeSet::new())),
         &BTreeMap::new(),
-        &[],
-        &BTreeMap::new(),
         false,
         Connectivity::Online,
         None,
@@ -417,8 +413,6 @@ fn collapsed_group_renders_ten_episodes_and_one_show_all_action() {
         &Rc::new(RefCell::new(BTreeSet::new())),
         &Rc::new(RefCell::new(BTreeSet::new())),
         &BTreeMap::new(),
-        &[],
-        &BTreeMap::new(),
         false,
         Connectivity::Online,
         None,
@@ -476,8 +470,6 @@ fn src_5_one_expander_is_rendered_per_source_group() {
         &Rc::new(RefCell::new(BTreeSet::new())),
         &Rc::new(RefCell::new(BTreeSet::new())),
         &BTreeMap::new(),
-        &[],
-        &BTreeMap::new(),
         false,
         Connectivity::Online,
         None,
@@ -528,8 +520,6 @@ fn src_12b_grouped_selection_survives_render_rebuild_on_the_row() {
             None,
             &expanded_sources,
             &Rc::new(RefCell::new(BTreeSet::new())),
-            &BTreeMap::new(),
-            &[],
             &BTreeMap::new(),
             false,
             Connectivity::Online,
@@ -591,8 +581,6 @@ fn src_4b_the_group_header_offers_no_second_unsubscribe_control() {
             downloaded_bytes: 0,
             latest_published_at: None,
         },
-        &[],
-        &[],
         false,
     );
     let header = header.downcast::<gtk4::Box>().unwrap();
@@ -650,8 +638,6 @@ fn src_11_group_header_stays_on_the_fallback_when_images_are_not_allowed() {
             downloaded_bytes: 0,
             latest_published_at: None,
         },
-        &[],
-        &[],
         false,
     );
     let header = header.downcast::<gtk4::Box>().unwrap();

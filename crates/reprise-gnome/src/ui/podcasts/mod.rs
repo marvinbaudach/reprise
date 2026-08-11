@@ -13,7 +13,6 @@ mod podcasts_callbacks;
 mod podcasts_context_menu;
 mod podcasts_context_surface;
 mod podcasts_deferred_actions;
-mod podcasts_device_sync;
 mod podcasts_dnd;
 mod podcasts_download_presentation;
 mod podcasts_empty_state;

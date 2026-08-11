@@ -32,11 +32,11 @@ fn contains_action(menu: &gio::MenuModel, action: &str) -> bool {
 #[test]
 fn pod_10_the_source_menu_opens_the_channel_page() {
     assert!(contains_action(
-        build_source(&source(PodcastKind::Youtube), &[], &[]).upcast_ref(),
+        build_source(&source(PodcastKind::Youtube)).upcast_ref(),
         "podcasts.open-channel"
     ));
     assert!(!contains_action(
-        build_source(&source(PodcastKind::Rss), &[], &[]).upcast_ref(),
+        build_source(&source(PodcastKind::Rss)).upcast_ref(),
         "podcasts.open-channel"
     ));
 }

@@ -15,16 +15,13 @@ use reprise_core::podcasts::channel_window::{
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::EpisodeRow;
 
-use super::podcasts_context_menu::PodcastSyncDevice;
 use super::podcasts_context_surface;
 use super::podcasts_download_presentation;
 use super::podcasts_episode_files::EpisodePaths;
 use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_groups::{SelectionRowWidgets, SELECTED_ROW_CLASS};
 use super::podcasts_playback::EpisodeMark;
-use super::podcasts_presentation::{
-    duration, on_phone, relative_date, source_header, RenderedSourceGroup,
-};
+use super::podcasts_presentation::{duration, relative_date, source_header, RenderedSourceGroup};
 use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_interaction, SELECT_CHANNEL_ROW_ACTION,
 };
@@ -187,14 +184,6 @@ pub(super) struct YoutubeChannelDetail {
     /// Rebuilt with the toolbar on each `render_active`, kept so a selection
     /// change can refresh the count without rebuilding anything.
     selection_summary: RefCell<Option<SelectionSummary>>,
-    /// `POD-12` / `D3`: read-only mirror of the same per-device selection
-    /// `podcasts_groups::group_header` already shows on the channel list —
-    /// this view never decides selection itself, only displays it (`on_phone`
-    /// in `podcasts_presentation`). Writing selection stays exclusively on
-    /// the existing channel toggle (`podcasts_context_menu` /
-    /// `podcasts_device_sync::install_action`).
-    connected_devices: RefCell<Vec<PodcastSyncDevice>>,
-    selected_devices: RefCell<BTreeMap<i64, Vec<String>>>,
     /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
     /// &modules::SOURCE_IMAGES_MODULE)`, refreshed by [`Self::update`] on
     /// every render pass — this view never reads settings itself.
@@ -235,8 +224,6 @@ impl YoutubeChannelDetail {
             download_widgets: RefCell::new(BTreeMap::new()),
             selection_widgets: RefCell::new(BTreeMap::new()),
             selection_summary: RefCell::new(None),
-            connected_devices: RefCell::new(Vec::new()),
-            selected_devices: RefCell::new(BTreeMap::new()),
             images_allowed: Cell::new(false),
             connectivity: Cell::new(Connectivity::Online),
             unavailable_episode: Cell::new(None),
@@ -295,8 +282,6 @@ impl YoutubeChannelDetail {
         self: &Rc<Self>,
         groups: &[RenderedSourceGroup],
         download_states: &BTreeMap<i64, DownloadState>,
-        connected_devices: &[PodcastSyncDevice],
-        selected_devices: &BTreeMap<i64, Vec<String>>,
         images_allowed: bool,
         connectivity: Connectivity,
         unavailable_episode: Option<i64>,
@@ -304,8 +289,6 @@ impl YoutubeChannelDetail {
     ) {
         self.groups.replace(groups.to_vec());
         self.download_states.replace(download_states.clone());
-        self.connected_devices.replace(connected_devices.to_vec());
-        self.selected_devices.replace(selected_devices.clone());
         self.images_allowed.set(images_allowed);
         self.connectivity.set(connectivity);
         self.unavailable_episode.set(unavailable_episode);
@@ -508,21 +491,6 @@ impl YoutubeChannelDetail {
         // rather than push this window wider than its content width.
         title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         row.append(&title);
-        // `POD-12` / `D3`: read-only "On phone" mirror — same fact and same
-        // glyph as `podcasts_groups::group_header`'s indicator, never a
-        // second control. Selection is only ever written through the
-        // existing channel toggle (context menu / `podcasts_device_sync`).
-        let selected_device_ids = self
-            .selected_devices
-            .borrow()
-            .get(&rendered.group.subscription_id)
-            .cloned()
-            .unwrap_or_default();
-        if on_phone(&self.connected_devices.borrow(), &selected_device_ids) {
-            let sync = gtk4::Image::from_icon_name("phone-symbolic");
-            sync.set_tooltip_text(Some(&strings::text(strings::PODCAST_SYNC_PHONE)));
-            row.append(&sync);
-        }
         let unsubscribe = gtk4::Button::with_label(&strings::text(strings::PODCAST_UNSUBSCRIBE));
         unsubscribe.add_css_class("destructive-action");
         unsubscribe.set_action_name(Some("podcasts.unsubscribe"));

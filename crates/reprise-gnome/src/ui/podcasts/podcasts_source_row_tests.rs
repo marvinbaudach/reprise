@@ -69,8 +69,6 @@ fn render_single_group(kind: PodcastKind) -> RenderedEpisode {
         &Rc::new(RefCell::new(BTreeSet::from([1]))),
         &Rc::new(RefCell::new(BTreeSet::new())),
         &BTreeMap::new(),
-        &[],
-        &BTreeMap::new(),
         false,
         Connectivity::Online,
         None,
@@ -130,8 +128,6 @@ fn render_group_header(kind: PodcastKind, author: Option<&str>) -> gtk4::Widget 
             downloaded_bytes: 0,
             latest_published_at: None,
         },
-        &[],
-        &[],
         false,
     )
 }

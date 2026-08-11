@@ -144,7 +144,6 @@ impl PodcastsView {
             podcasts_context_menu::ACTION_UNSUBSCRIBE,
             PodcastsView::unsubscribe,
         );
-        super::super::podcasts_device_sync::install_action(self, &group);
         let load_more =
             gio::SimpleAction::new("load-more", Some(&<(i64, u32)>::static_variant_type()));
         let weak = Rc::downgrade(self);
