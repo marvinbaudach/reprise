@@ -27,13 +27,24 @@ fn interpolate(bands: &[f32], output_index: usize) -> f32 {
         0 => 0.0,
         1 => bands[0],
         len => {
-            let position =
-                output_index as f32 * (len - 1) as f32 / (SPECTRUM_BAND_COUNT - 1) as f32;
-            let left = position.floor() as usize;
-            let right = (left + 1).min(len - 1);
-            bands[left] + (bands[right] - bands[left]) * position.fract()
+            let (left, right, fraction) = band_neighbours(len, output_index);
+            bands[left] + (bands[right] - bands[left]) * fraction
         }
     }
+}
+
+/// Where one output bar reads from, for an input of `len` bands.
+///
+/// Split out from [`interpolate`] because this is the part that can leave the
+/// slice: it is index arithmetic, testable for any length without allocating
+/// the bands themselves. Both ends are clamped, not just the right one — for a
+/// long enough input the product below leaves f32's exact-integer range and
+/// rounds *above* `len - 1`, which put `left` one past the end.
+pub(super) fn band_neighbours(len: usize, output_index: usize) -> (usize, usize, f32) {
+    let position = output_index as f32 * (len - 1) as f32 / (SPECTRUM_BAND_COUNT - 1) as f32;
+    let left = (position.floor() as usize).min(len - 1);
+    let right = (left + 1).min(len - 1);
+    (left, right, position.fract())
 }
 
 fn bass_pressure(bands: &[f32]) -> BassPressure {
