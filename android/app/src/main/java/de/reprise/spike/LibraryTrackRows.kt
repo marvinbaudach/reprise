@@ -1,6 +1,5 @@
 package de.reprise.spike
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -68,6 +67,11 @@ internal fun TrackRows(
     val metrics = libraryFrameMetrics(surfaceLayout)
     val content = trackListContent(tracks, lastRequestedOffset)
     val anchor = surfaceState.scrollPosition(listKey).within(content.size)
+    val rowKey: (TrackListContent) -> Any = if (queueActions == null) {
+        TrackListContent::libraryRowKey
+    } else {
+        TrackListContent::queueRowKey
+    }
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
         val gridState = rememberLibraryGridState(anchor)
         ObserveLibraryGridAnchor(listKey, gridState, surfaceState)
@@ -81,7 +85,7 @@ internal fun TrackRows(
         ) {
             items(
                 items = content,
-                key = TrackListContent::stableKey,
+                key = rowKey,
                 span = { item ->
                     if (item is TrackListContent.Continuation) {
                         GridItemSpan(maxLineSpan)
@@ -117,7 +121,7 @@ internal fun TrackRows(
     ) {
         items(
             items = content,
-            key = TrackListContent::stableKey,
+            key = rowKey,
         ) { content ->
             TrackListItem(
                 content,
@@ -135,8 +139,29 @@ internal fun TrackRows(
     }
 }
 
-private fun TrackListContent.stableKey(): String = when (this) {
+/**
+ * What identifies a row to the lazy list, and why the queue answers differently.
+ *
+ * A library list holds each track once, so the uri *is* the row: it survives
+ * paging and re-sorting, and keeping it means a row keeps its item state while
+ * the window around it grows.
+ *
+ * A queue slot is not a track. `Queue::enqueue` allows duplicates by design,
+ * and "Play next" makes a second copy of one track a single tap away — at which
+ * point a uri-only key is not merely imprecise, it throws
+ * `IllegalArgumentException: Key … was already used` and takes the tab down.
+ * The queue is therefore keyed by the slot, with the uri kept alongside so a
+ * slot that changes hands does not inherit the previous occupant's row state.
+ * Its window only ever grows by appending and is reloaded whole after every
+ * edit, so the index is stable for exactly as long as the slot is.
+ */
+private fun TrackListContent.libraryRowKey(): String = when (this) {
     is TrackListContent.Row -> "track-${track.uri}"
+    is TrackListContent.Continuation -> "load-window-${request.offset}"
+}
+
+private fun TrackListContent.queueRowKey(): String = when (this) {
+    is TrackListContent.Row -> "queue-$index-${track.uri}"
     is TrackListContent.Continuation -> "load-window-${request.offset}"
 }
 
@@ -206,6 +231,7 @@ private fun LibraryTrackRow(
     play: () -> Unit,
 ) {
     var swipeOffset by remember(track.id) { mutableFloatStateOf(0f) }
+    val contextMenu = rememberTrackContextMenuAnchorState()
     val queueGesture = if (queueActions == null) {
         Modifier
     } else {
@@ -225,114 +251,141 @@ private fun LibraryTrackRow(
             )
         }
     }
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(metrics.trackRowHeightDp.dp)
-            .clipToBounds()
-            .graphicsLayer { translationX = swipeOffset }
-            .testTag(
-                if (queueActions == null) {
-                    "library-track-row-${track.id}"
-                } else {
-                    "queue-track-row-${track.id}"
-                },
-            )
-            .then(queueGesture)
-            .clickable {
-                if (queueActions == null) {
-                    play()
-                } else {
-                    queueActions.play(queuePosition, track.id)
-                }
-            },
-        color = if (presentation.isCurrent) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-        } else {
-            MaterialTheme.colorScheme.background
-        },
-    ) {
-        Box {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                TrackCover(
-                    trackUri = track.uri,
-                    size = metrics.trackCoverSizeDp,
-                    // The row is one clickable node, so anything described
-                    // below it is merged into what the row announces. A cover
-                    // saying "Album artwork" there replaces the song.
-                    decorative = true,
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = track.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (presentation.isCurrent) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onBackground
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = when (subtitle) {
-                            TrackRowSubtitle.ARTIST_AND_ALBUM -> track.details()
-                            TrackRowSubtitle.ALBUM_ONLY -> track.album.ifBlank {
-                                "Unknown album"
-                            }
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (queueActions == null) {
-                    FavouriteHeartButton(
-                        track = track,
-                        surfaceState = surfaceState,
-                        onConfirmed = { favourite -> onFavouriteChanged(track, favourite) },
-                    )
-                } else {
-                    QueueDragHandle(
-                        track = track,
-                        position = queuePosition,
-                        rowCount = queueRowCount,
-                        rowHeightDp = metrics.trackRowHeightDp,
-                        move = queueActions.move,
-                    )
-                }
-                Column(
-                    modifier = Modifier.width(48.dp),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    if (presentation.isCurrent) {
-                        PlayingBars(presentation.animateBars)
+    // The row itself is a fixed-height, clipped Surface, so the context menu's
+    // acknowledgement gets a slot under it rather than a place on top of the
+    // cover and the title. See TrackContextMenuMessage.
+    Column {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(metrics.trackRowHeightDp.dp)
+                .clipToBounds()
+                .graphicsLayer { translationX = swipeOffset }
+                .testTag(
+                    if (queueActions == null) {
+                        "library-track-row-${track.id}"
                     } else {
-                        PlayCountBadge(track.playCount)
+                        "queue-track-row-${track.id}"
+                    },
+                )
+                .then(queueGesture)
+                .trackContextMenuAnchor(contextMenu) {
+                    if (queueActions == null) {
+                        play()
+                    } else {
+                        queueActions.play(queuePosition, track.id)
                     }
-                    Text(
-                        text = formatDuration(track.durationMs),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                },
+            color = if (presentation.isCurrent) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+            } else {
+                MaterialTheme.colorScheme.background
+            },
+        ) {
+            Box {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    TrackCover(
+                        trackUri = track.uri,
+                        size = metrics.trackCoverSizeDp,
+                        // The row is one clickable node, so anything described
+                        // below it is merged into what the row announces. A cover
+                        // saying "Album artwork" there replaces the song.
+                        decorative = true,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (presentation.isCurrent) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onBackground
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = when (subtitle) {
+                                TrackRowSubtitle.ARTIST_AND_ALBUM -> track.details()
+                                TrackRowSubtitle.ALBUM_ONLY -> track.album.ifBlank {
+                                    "Unknown album"
+                                }
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (queueActions == null) {
+                        FavouriteHeartButton(
+                            track = track,
+                            surfaceState = surfaceState,
+                            onConfirmed = { favourite -> onFavouriteChanged(track, favourite) },
+                        )
+                    } else {
+                        QueueDragHandle(
+                            track = track,
+                            position = queuePosition,
+                            rowCount = queueRowCount,
+                            rowHeightDp = metrics.trackRowHeightDp,
+                            move = queueActions.move,
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.width(48.dp),
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        if (presentation.isCurrent) {
+                            PlayingBars(presentation.animateBars)
+                        } else {
+                            PlayCountBadge(track.playCount)
+                        }
+                        Text(
+                            text = formatDuration(track.durationMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                HorizontalDivider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 88.dp)
+                        .align(Alignment.BottomStart),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                if (queueActions == null) {
+                    TrackContextMenu(
+                        anchor = contextMenu,
+                        target = LibraryTrackMenuTarget(
+                            label = track.title,
+                            trackCount = 1,
+                            resolveTrackIds = { listOf(track.id) },
+                            play = { play() },
+                        ),
+                    )
+                } else {
+                    TrackContextMenu(
+                        anchor = contextMenu,
+                        target = QueueTrackMenuTarget(
+                            trackId = track.id,
+                            position = queuePosition,
+                            rowCount = queueRowCount,
+                            actions = queueActions,
+                        ),
                     )
                 }
             }
-            HorizontalDivider(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 88.dp)
-                    .align(Alignment.BottomStart),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
         }
+        TrackContextMenuMessage(contextMenu)
     }
 }
 

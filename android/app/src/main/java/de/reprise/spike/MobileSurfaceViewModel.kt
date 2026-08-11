@@ -108,8 +108,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     var nowPlayingExpanded by mutableStateOf(false)
         private set
-    var nowPlayingQueueVisible by mutableStateOf(false)
-        private set
     var settingsVisible by mutableStateOf(false)
         private set
     var dockMode by mutableStateOf(false)
@@ -139,7 +137,7 @@ internal class MobileSurfaceViewModel : ViewModel() {
     fun selectTab(tab: BrowseTab) {
         if (tab == selectedTab) return
         selectedTab = tab
-        rememberSelectedTab(tab)
+        if (tab != BrowseTab.QUEUE) rememberSelectedTab(tab)
         if (tab != BrowseTab.TITLES) {
             searchVisible = false
         }
@@ -160,11 +158,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     fun showNowPlaying(show: Boolean) {
         nowPlayingExpanded = show
-        if (!show) nowPlayingQueueVisible = false
-    }
-
-    fun showNowPlayingQueue(show: Boolean) {
-        nowPlayingQueueVisible = show
     }
 
     fun showSettings(show: Boolean) {

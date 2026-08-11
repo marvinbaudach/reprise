@@ -77,6 +77,157 @@ fn session_with_controls(directory: &Path) -> TestSessionControls {
 }
 
 #[test]
+fn explicit_enqueue_resolves_live_ids_persists_order_and_starts_nothing() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "Next", "Tail"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let (session, calls) = session_with_calls(directory.path());
+    calls.lock().unwrap().clear();
+
+    assert_eq!(
+        session
+            .queue_tracks_last(vec![track("Current").id, track("Tail").id, i64::MAX])
+            .unwrap(),
+        2,
+    );
+    assert_eq!(
+        session.queue_tracks_next(vec![track("Next").id]).unwrap(),
+        1,
+    );
+    let queued_ids = |session: &AndroidPlaybackSession| {
+        session
+            .upcoming_tracks(WindowRange {
+                offset: 0,
+                limit: 10,
+            })
+            .unwrap()
+            .rows
+            .into_iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        queued_ids(&session),
+        vec![track("Current").id, track("Next").id, track("Tail").id]
+    );
+    assert_eq!(
+        session.snapshot().unwrap().state,
+        AndroidPlaybackState::Stopped
+    );
+    assert!(!calls
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|call| matches!(call, PortCall::PlayUri(_))));
+    assert_eq!(
+        calls.lock().unwrap().last(),
+        Some(&PortCall::SetNext(Some(track("Next").path.clone())))
+    );
+
+    drop(session);
+    assert_eq!(
+        queued_ids(&session_in(directory.path())),
+        vec![track("Current").id, track("Next").id, track("Tail").id]
+    );
+}
+
+#[test]
+fn enqueueing_into_an_exhausted_session_revives_it_and_shows_the_pick() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Played", "Picked"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let (session, calls, bridge) = session_with_controls(directory.path());
+    session
+        .play_tracks(
+            vec![track("Played").id],
+            vec![track("Played").path.clone()],
+            0,
+        )
+        .unwrap();
+    bridge
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .emit(23, AndroidPlayerEvent::TrackFinished);
+    let future = |session: &AndroidPlaybackSession| {
+        session
+            .upcoming_tracks(WindowRange {
+                offset: 0,
+                limit: 10,
+            })
+            .unwrap()
+    };
+    assert_eq!(
+        session.snapshot().unwrap().state,
+        AndroidPlaybackState::Stopped,
+        "the fixture only means something while the session really is exhausted",
+    );
+    assert!(future(&session).rows.is_empty());
+    calls.lock().unwrap().clear();
+
+    assert_eq!(
+        session.queue_tracks_last(vec![track("Picked").id]).unwrap(),
+        1,
+    );
+
+    let revived = future(&session);
+    assert_eq!(revived.total, 1);
+    assert_eq!(
+        revived.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Picked").id],
+        "an explicit pick must not evaporate into a queue that ran off its end",
+    );
+    assert!(
+        !calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| matches!(call, PortCall::PlayUri(_))),
+        "reviving the queue is not permission to start playing",
+    );
+
+    drop(session);
+    assert_eq!(
+        future(&session_in(directory.path()))
+            .rows
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        vec![track("Picked").id],
+        "the revived position has to survive the process that raised it",
+    );
+}
+
+#[test]
+fn stopped_queue_view_and_play_now_share_the_current_row_offset() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
+    let (session, calls) = session_with_calls(directory.path());
+    calls.lock().unwrap().clear();
+    let ids = tracks.iter().map(|track| track.id).collect::<Vec<_>>();
+
+    assert_eq!(session.queue_tracks_last(ids.clone()).unwrap(), 3);
+    let visible = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    assert_eq!(
+        visible.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        ids
+    );
+    assert!(session.play_upcoming_track_now(0, ids[0]).unwrap());
+    assert_eq!(session.snapshot().unwrap().current_track_id, Some(ids[0]));
+    assert!(calls
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|call| matches!(call, PortCall::PlayUri(uri) if uri == &tracks[0].path)));
+}
+
+#[test]
 fn upcoming_window_excludes_the_current_track_and_counts_beyond_the_page() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
@@ -388,10 +539,10 @@ fn moving_and_removing_identity_checked_rows_changes_the_next_window() {
             limit: 10,
         })
         .unwrap();
-    assert_eq!(future.total, 2);
+    assert_eq!(future.total, 3);
     assert_eq!(
         future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
-        vec![track("Third").id, track("Second").id],
+        vec![track("Current").id, track("Third").id, track("Second").id],
     );
 }
 
@@ -533,7 +684,7 @@ fn a_fresh_session_restores_the_saved_order_and_position_paused() {
         .unwrap();
     assert_eq!(
         future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
-        vec![track("First").id, track("Second").id],
+        vec![track("Third").id, track("First").id, track("Second").id],
     );
     assert!(
         !calls
@@ -599,10 +750,10 @@ fn restore_discards_a_deleted_track_without_losing_the_surviving_queue() {
             limit: 10,
         })
         .unwrap();
-    assert_eq!(future.total, 1);
+    assert_eq!(future.total, 2);
     assert_eq!(
         future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
-        vec![track("Survivor").id],
+        vec![track("Current").id, track("Survivor").id],
     );
 }
 
