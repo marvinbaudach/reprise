@@ -1,4 +1,4 @@
-//! `org.reprise.Reprise1` — the runtime on the session bus.
+//! `io.github.marvinbaudach.Reprise1` — the runtime on the session bus.
 //!
 //! ## Thread model
 //!

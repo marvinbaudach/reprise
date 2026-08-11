@@ -30,7 +30,7 @@ fn test_client() -> RuntimeClient {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let bus_name = format!(
-        "org.reprise.Reprise1.test.runtime_session.{}.{id}",
+        "io.github.marvinbaudach.Reprise1.test.runtime_session.{}.{id}",
         std::process::id()
     );
     // `.0`: the `RuntimeEvents` half is dropped immediately. See the module

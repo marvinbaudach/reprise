@@ -46,8 +46,8 @@ runtime_service_config = configuration_data()
 runtime_service_config.set('bindir', prefix / get_option('bindir'))
 
 configure_file(
-  input: 'org.reprise.Reprise1.service.in',
-  output: 'org.reprise.Reprise1.service',
+  input: 'io.github.marvinbaudach.Reprise1.service.in',
+  output: 'io.github.marvinbaudach.Reprise1.service',
   configuration: runtime_service_config,
   install: true,
   install_dir: get_option('datadir') / 'dbus-1/services',

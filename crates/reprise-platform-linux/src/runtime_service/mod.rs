@@ -6,7 +6,7 @@
 //! Linux answers live (§9.3, §9.4):
 //!
 //! * [`lease`] — the single-owner lock under `XDG_RUNTIME_DIR`;
-//! * [`service`] — the `org.reprise.Reprise1` interface on the session bus;
+//! * [`service`] — the `io.github.marvinbaudach.Reprise1` interface on the session bus;
 //! * the activation metadata in `data/`, installed alongside the binary and
 //!   checked by `scripts/check-runtime-service-install.sh` so activation
 //!   cannot be green on a development machine and dead on a user's.
@@ -26,3 +26,8 @@ pub use lease::{LeaseError, RuntimeLease};
 pub use service::{
     Request, RuntimeService, ServeOptions, ServiceError, ServiceInbox, BUS_NAME, OBJECT_PATH,
 };
+
+/// The bus name of the headless runtime service. It must live under the app
+/// ID hierarchy: a Flatpak may only own names it is granted, and Flathub
+/// rejects `--own-name` entries pointing outside the app's own namespace.
+pub const SERVICE_NAME: &str = "io.github.marvinbaudach.Reprise1";

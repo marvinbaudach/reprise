@@ -123,6 +123,12 @@ if [[ -z "$bus_name" ]]; then
   exit 1
 fi
 
+# The activation file is named after the bus name — dbus-daemon looks it up by
+# filename — so derive both spellings here instead of repeating the name and
+# letting an app-ID change leave this check pointing at a file nobody builds.
+activation_file="$bus_name.service"
+activation_regex="/data/${bus_name//./\\.}\\.service"
+
 for prefix in "${prefixes[@]}"; do
   echo "-- prefix: $prefix --"
   build_dir=$(mktemp -d)
@@ -139,7 +145,7 @@ for prefix in "${prefixes[@]}"; do
   # Anchored on the closing quote so e.g. the binary pattern does not also
   # match the unit file, which shares its stem.
   binary=$(installed_dest "$installed" '/reprise-runtime')
-  activation=$(installed_dest "$installed" '/data/org\.reprise\.Reprise1\.service')
+  activation=$(installed_dest "$installed" "$activation_regex")
   unit=$(installed_dest "$installed" '/data/reprise-runtime\.service')
 
   for name_dest in "binary:$binary" "activation:$activation" "unit:$unit"; do
@@ -160,7 +166,7 @@ for prefix in "${prefixes[@]}"; do
   fi
 
   # The generated (not the .in) files, so substitution is what gets checked.
-  generated_activation="$build_dir/data/org.reprise.Reprise1.service"
+  generated_activation="$build_dir/data/$activation_file"
   generated_unit="$build_dir/data/reprise-runtime.service"
 
   expect "activation Name" "$(field "$generated_activation" Name)" "$bus_name"
