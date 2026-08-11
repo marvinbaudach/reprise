@@ -1367,7 +1367,9 @@ result.
   Clear and StatusPage. The panel toggle opens "Up Next" as a viewing
   surface of the same queue with sections, jump and remove. The player
   bar has no redundant queue icon. No surface maintains its own second
-  list.
+  list. Every ColumnView section header shares one uniform height; the
+  plain title row grows to the authored button-row floor rather than
+  shrinking the real Clear button's target.
 - **QUE-2** [active] [gtk] — The panel divides the future into exactly
   two conditional sections: **Next in Queue** for manually enqueued
   tracks and **Continuing from "<Album/Playlist>"** for the automatic

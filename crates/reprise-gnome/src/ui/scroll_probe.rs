@@ -1,0 +1,92 @@
+//! Environment-gated scroll diagnostics for display regressions.
+//!
+//! Names every writer of a scroll adjustment so a display run can show which
+//! one produces an intermediate value. Silent unless `REPRISE_SCROLL_PROBE`
+//! is set, so it cannot affect an ordinary run.
+
+pub(in crate::ui) fn probe(writer: &str, adjustment: &gtk4::Adjustment, value: f64) {
+    use gtk4::prelude::AdjustmentExt;
+
+    if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
+        return;
+    }
+    eprintln!(
+        "SCROLLWRITE writer={writer} want={value:.1} from={:.1} upper={:.1} page={:.1}",
+        adjustment.value(),
+        adjustment.upper(),
+        adjustment.page_size(),
+    );
+}
+
+pub(in crate::ui) fn probe_upper(writer: &str, adjustment: &gtk4::Adjustment, upper: f64) {
+    use gtk4::prelude::AdjustmentExt;
+
+    if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
+        return;
+    }
+    eprintln!(
+        "SCROLLUPPER writer={writer} want={upper:.1} from={:.1} value={:.1} page={:.1}",
+        adjustment.upper(),
+        adjustment.value(),
+        adjustment.page_size(),
+    );
+}
+
+/// Names which geometry source the pre-seed actually used. The measured run
+/// that accepted the sectioned pre-seed reported `Assumed` here, so this is
+/// the line that distinguishes a warm cache from the fail-closed fallback.
+pub(in crate::ui) fn probe_preseed_source(source: &str) {
+    if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
+        return;
+    }
+    // Keep this wording: the accepted measurement and the plan both cite
+    // `QUEUEPROBE preseed header_source=…` verbatim as their evidence line.
+    eprintln!("QUEUEPROBE preseed header_source={source}");
+}
+
+/// Lets one build run both the shipped behaviour and the experiment: with
+/// `REPRISE_NO_PRESEED` set, the restore leaves the stale allocation range in
+/// place as a counterprobe for the first-frame jump.
+pub(in crate::ui) fn preseed_suppressed() -> bool {
+    std::env::var_os("REPRISE_NO_PRESEED").is_some()
+}
+
+/// Records realized row widgets at the moment a restore runs.
+pub(in crate::ui) fn probe_rows(where_: &str, column_view: &gtk4::ColumnView) {
+    use gtk4::glib::prelude::Cast;
+
+    if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
+        return;
+    }
+    fn walk(widget: &gtk4::Widget, out: &mut Vec<(String, i32, i32)>) {
+        use gtk4::glib::prelude::ObjectExt;
+        use gtk4::prelude::WidgetExt;
+        let name = widget.type_().name().to_string();
+        if name.contains("ColumnViewRow") || name.contains("ColumnViewCell") {
+            let (min, nat, _, _) = widget.measure(gtk4::Orientation::Vertical, -1);
+            out.push((name, widget.height(), if nat > 0 { nat } else { min }));
+        }
+        let mut child = widget.first_child();
+        while let Some(node) = child {
+            walk(&node, out);
+            child = node.next_sibling();
+        }
+    }
+    let mut found = Vec::new();
+    walk(column_view.upcast_ref::<gtk4::Widget>(), &mut found);
+    let rows: Vec<_> = found
+        .iter()
+        .filter(|(name, _, _)| name.contains("ColumnViewRow"))
+        .collect();
+    eprintln!(
+        "SCROLLROWS at={where_} row_widgets={} first={:?} distinct_heights={:?}",
+        rows.len(),
+        rows.first(),
+        {
+            let mut heights: Vec<i32> = rows.iter().map(|(_, h, _)| *h).collect();
+            heights.sort_unstable();
+            heights.dedup();
+            heights.into_iter().take(6).collect::<Vec<_>>()
+        }
+    );
+}
