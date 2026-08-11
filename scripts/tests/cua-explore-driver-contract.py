@@ -24,6 +24,7 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 
 from actions import ActivateAction, PressAction, ScrollAction, TypeAction  # noqa: E402
 from driver import CliTransport, CuaExecutor, DriverError  # noqa: E402
+from driver_transport import SUCCESS_CONTRACT, response_dispatched  # noqa: E402
 from hover_geometry import WindowGeometry  # noqa: E402
 from oracles import ActionEvidence  # noqa: E402
 
@@ -33,6 +34,62 @@ REFUSAL_TEXT = (
     '"message": "click: bare element_index is not accepted in Cua Driver 0.17; '
     'pass element_token or snapshot_id with element_index"}}'
 )
+
+# Recorded from cua-driver 0.19.3 on 2026-08-10: private Xvfb, openbox,
+# at-spi-bus-launcher, `cua-driver serve --no-overlay`, a zenity dialog as the
+# target. Every string below is that driver's own stdout for the tool named in
+# the key, copied verbatim including its session ids.
+MEASURED_SUCCESS = {
+    "click": '{"delivery": {"mode": "background"}, "effect": "unverifiable", '
+    '"route": "accessibility"}',
+    # No delivery-confirmed type_text was captured: against a zenity entry the
+    # driver reported delivery_failed every single time. This is that measured
+    # answer - it satisfies the contract (it carries `effect`) and is proven
+    # undelivered further down, which is exactly the fourth shell.
+    "type_text": '{"delivery": {"mode": "foreground"}, "effect": '
+    '"unverifiable", "escalation": {"reason": "delivery_failed", "target": '
+    '"foreground"}, "route": "accessibility"}',
+    "press_key": '{"delivery": {"mode": "foreground"}, "effect": '
+    '"unverifiable", "route": "synthetic_events"}',
+    "hotkey": '{"delivery": {"mode": "foreground"}, "effect": "unverifiable", '
+    '"route": "synthetic_events"}',
+    "scroll": '{"delivery": {"mode": "foreground"}, "effect": "unverifiable", '
+    '"route": "global_input"}',
+    "move_cursor": '{"delivery": {"mode": "not_applicable"}, "effect": '
+    '"unverifiable", "route": "global_input"}',
+    # get_window_state answers with the recorded fixture next to this table.
+    "get_cursor_position": '{"source": "x11", "x": 250, "y": 250}',
+    "get_screen_size": '{"height": 1000, "scale_factor": 1.0, "width": 1600}',
+    "list_windows": '{"windows": [{"app_name": "zenity", "bounds": {"height": '
+    '260, "width": 310, "x": 645, "y": 370}, "height": 260, "is_on_screen": '
+    'true, "pid": 69213, "title": "Contract Probe", "width": 310, '
+    '"window_id": 8388613, "x": 645, "y": 370, "z_index": 0}]}',
+    "set_agent_cursor_enabled": '{"enabled": true, "session": '
+    '"contract-probe-69086"}',
+}
+
+# The shells that are not successes. Each was recorded from a real tool in the
+# same sessions, and none of them is tool-specific: the driver reuses them, so
+# every tool the harness calls has to reject every one of them. All three exit
+# 0, and only the first carries `status`/`refusal` - which is why the absence
+# of a known error marker cannot mean success.
+MEASURED_ERROR_SHELLS = {
+    # click, bare element_index
+    "refusal": REFUSAL_TEXT,
+    # press_key and hotkey against an unfocused window
+    "code_object": '{"code": "background_unavailable", "detail": "the '
+    'requested target has no focus-free input backend; the remaining '
+    'XTest/X11 route can only deliver to the globally focused widget", '
+    '"escalation": {"reason": "background input is unavailable on this '
+    'surface; retry this action with delivery_mode:\\"foreground\\".", '
+    '"recommended": "foreground"}, "suggestion": "Retry this action with '
+    'delivery_mode:\\"foreground\\"."}',
+    # get_cursor_position and move_cursor on a session-scoped call
+    "escalation_required": '{"capture_scope": "auto", "code": '
+    '"desktop_escalation_required", "desktop_unlocked": false, '
+    '"effective_scope": "window", "escalation_detail": null, '
+    '"escalation_reason": null, "session": "contract-probe-69086"}',
+}
 
 
 def completed(stdout: str, *, returncode: int = 0, stderr: str = ""):
@@ -50,6 +107,92 @@ class CommandScriptTransport(CliTransport):
     def _run(self, command):
         self.commands.append(list(command))
         return self.responses.pop(0)
+
+
+class SuccessContractTests(unittest.TestCase):
+    """Every tool the harness calls, told apart from the driver's error shells.
+
+    The old rule listed the failures it knew and passed everything else. Three
+    shells were known, a fourth existed, and a whole night of hover evidence
+    was recorded from an error object nobody counted.
+    """
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.evidence_dir = pathlib.Path(self.temporary.name)
+        self.measured = dict(MEASURED_SUCCESS)
+        self.measured["get_window_state"] = FIXTURE.read_text(encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def transport(self, *stdout: str) -> CommandScriptTransport:
+        return CommandScriptTransport(
+            [completed(item) for item in stdout], evidence_dir=self.evidence_dir
+        )
+
+    def test_the_table_covers_every_tool_the_harness_calls(self) -> None:
+        called = set()
+        for path in sorted(EXPLORE_ROOT.glob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            for chunk in source.split(".call(")[1:]:
+                name = chunk.strip().split(",")[0].strip().strip("\"'")
+                if name.isidentifier() and not name.startswith("self"):
+                    called.add(name)
+        self.assertIn("click", called)
+        self.assertIn("get_window_state", called)
+        self.assertTrue(called <= set(SUCCESS_CONTRACT), called - set(SUCCESS_CONTRACT))
+        self.assertEqual(set(self.measured), set(SUCCESS_CONTRACT))
+
+    def test_a_measured_success_passes_for_every_tool(self) -> None:
+        for tool, stdout in self.measured.items():
+            with self.subTest(tool=tool):
+                transport = self.transport(stdout)
+
+                self.assertEqual(transport.call(tool, {}), json.loads(stdout))
+
+    def test_no_error_shell_passes_for_any_tool(self) -> None:
+        for tool in SUCCESS_CONTRACT:
+            for shell, stdout in MEASURED_ERROR_SHELLS.items():
+                with self.subTest(tool=tool, shell=shell):
+                    transport = self.transport(*[stdout] * 3)
+
+                    with self.assertRaises(DriverError):
+                        transport.call(tool, {})
+
+                    self.assertGreaterEqual(transport.transport_faults, 1)
+
+    def test_a_tool_without_a_contract_cannot_pass(self) -> None:
+        transport = self.transport('{"anything": true}')
+
+        with self.assertRaisesRegex(DriverError, "no success contract"):
+            transport.call("set_value", {})
+
+    def test_a_failed_delivery_is_a_fault_and_never_counts_as_dispatched(self) -> None:
+        stdout = MEASURED_SUCCESS["type_text"]
+        transport = self.transport(stdout)
+
+        response = transport.call("type_text", {})
+
+        self.assertEqual(response, json.loads(stdout))
+        self.assertFalse(response_dispatched(response))
+        self.assertEqual(transport.transport_faults, 1)
+        record = json.loads(
+            (self.evidence_dir / "driver-faults.jsonl").read_text(encoding="utf-8")
+        )
+        self.assertEqual(record["response"], json.loads(stdout))
+
+    def test_a_delivered_action_of_the_same_shape_still_counts(self) -> None:
+        # The delivered and the undelivered answer differ in one key. A rule
+        # that reads "unverifiable" as a failure would stop the whole harness:
+        # every measured action outcome above says exactly that.
+        stdout = MEASURED_SUCCESS["click"]
+        transport = self.transport(stdout)
+
+        response = transport.call("click", {})
+
+        self.assertTrue(response_dispatched(response))
+        self.assertEqual(transport.transport_faults, 0)
 
 
 class DriverRefusalContractTests(unittest.TestCase):
@@ -191,7 +334,13 @@ class ElementAddressContractTests(unittest.TestCase):
         self.assertNotIn("element_index", payload)
 
     def test_pointer_noop_probe_uses_the_after_snapshot_element_token(self) -> None:
+        # A second get_window_state is a new generation: a new snapshot_id and
+        # a token per element that embeds it.
         after = json.loads(json.dumps(self.raw))
+        after["snapshot_id"] = "s00000009"
+        for item in after["elements"]:
+            index = str(item["element_token"]).partition(":")[2]
+            item["element_token"] = f"s00000009:{index}"
         after_target = next(
             item for item in after["elements"] if item.get("label") == "☆"
         )
@@ -251,6 +400,36 @@ class ElementAddressContractTests(unittest.TestCase):
         self.assertEqual(payload["element_index"], target["element_index"])
         self.assertEqual(payload["snapshot_id"], "s00000004")
         self.assertNotIn("element_token", payload)
+
+    def test_a_token_from_its_own_snapshot_survives_the_freshness_check(self) -> None:
+        # The fixture names its snapshot, so both halves of the check run: the
+        # token is compared against a present snapshot_id and passes. Weakening
+        # the comparison in snapshot_element_address turns this test red.
+        self.assertEqual(self.raw["snapshot_id"], "s00000004")
+        self.assertTrue(
+            self.target["element_token"].startswith(self.raw["snapshot_id"] + ":")
+        )
+        transport = self.transport(
+            [
+                completed(json.dumps(self.raw)),
+                completed('{"effect":"unverifiable","route":"accessibility"}'),
+                completed(json.dumps(self.raw)),
+            ]
+        )
+        executor = CuaExecutor(
+            transport,
+            pid=44,
+            window_id=77,
+            session="contract",
+            settle_delays=(),
+        )
+
+        executor.execute_evidence(
+            ActionEvidence.activate("☆", expect_effect="idempotent")
+        )
+
+        payload = self.click_payloads(transport)[0]
+        self.assertEqual(payload["element_token"], self.target["element_token"])
 
     def test_mismatched_snapshot_and_element_token_fail_before_dispatch(self) -> None:
         raw = json.loads(json.dumps(self.raw))
@@ -335,6 +514,35 @@ class ElementAddressContractTests(unittest.TestCase):
             "suspected-no-handler", {finding.code for finding in result.findings}
         )
         self.assertEqual(transport.transport_faults, 0)
+
+    def test_an_undelivered_click_is_never_blamed_on_the_product(self) -> None:
+        # Same unchanged snapshots as the test above; only the driver's answer
+        # differs. Booking this as delivered is what turned a driver fault into
+        # a dead-handler finding against the app.
+        transport = self.transport(
+            [
+                completed(json.dumps(self.raw)),
+                completed(MEASURED_SUCCESS["type_text"]),
+                completed(json.dumps(self.raw)),
+            ]
+        )
+        executor = CuaExecutor(
+            transport,
+            pid=44,
+            window_id=77,
+            session="contract",
+            settle_delays=(),
+        )
+
+        result = executor.execute_evidence(ActionEvidence.activate("☆"))
+
+        codes = {finding.code for finding in result.findings}
+        self.assertFalse(result.evidence.dispatched)
+        self.assertNotEqual(result.evidence.effect, "suspected_noop")
+        self.assertNotIn("suspected-no-handler", codes)
+        self.assertNotIn("click-no-visible-effect", codes)
+        self.assertIn("driver-action-undelivered", codes)
+        self.assertEqual(transport.transport_faults, 1)
 
 
 if __name__ == "__main__":

@@ -240,10 +240,13 @@ def render_click_table(results: Sequence[ClickResult]) -> str:
     lines.extend(
         [
             "",
-            "Read it like this: if neither route changes anything, the control",
-            "does nothing and that is a product fault. If only the pixel row",
-            "changes, the control works but its accessibility action is not",
-            "wired - assistive technology is offered an action that goes",
+            "Read `dispatched` first. A row with dispatched=False never",
+            "reached the app: its signature and ratio say nothing about the",
+            "product, and the note names what the driver answered instead.",
+            "Among the dispatched rows: if neither route changes anything, the",
+            "control does nothing and that is a product fault. If only the",
+            "pixel row changes, the control works but its accessibility action",
+            "is not wired - assistive technology is offered an action that goes",
             "nowhere. If only the accessibility row changes, the pixel click",
             "missed, so check the rect and the target size before concluding.",
         ]

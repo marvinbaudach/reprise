@@ -181,8 +181,11 @@ that preferred handle, the harness sends `element_index` together with the same
 snapshot's `snapshot_id`; it never sends a bare index. This contract also covers
 targeted `type_text`, `press_key`, and `scroll` calls. A token whose embedded
 snapshot disagrees with the response's `snapshot_id` fails before dispatch, so
-a stale handle cannot be rewritten to look current. The click probe marks
-`dispatched` only when the returned action payload actually confirms dispatch.
+a stale handle cannot be rewritten to look current - and so does a token from a
+response that carries no `snapshot_id` at all, because there is nothing to
+check it against. The click probe marks `dispatched` only when the returned
+action payload actually confirms dispatch; a row that was never dispatched says
+so in its note and carries no verdict about the product.
 
 Before trusting any hover verdict, settle whether a pointer move reaches the
 app at all. The probe places the pointer on one named control twice - once
@@ -415,6 +418,20 @@ as one buried every legitimate one in the sweep's failure list.
 `CliTransport` retries a **read-only** call twice (250 ms, 500 ms) on invalid
 JSON or a timeout. It never retries an action: a second `click` would be a
 second user input and would falsify the run.
+
+A response counts as a success only when it carries the payload
+`SUCCESS_CONTRACT` names for that tool - `effect` for an input action,
+`elements` for `get_window_state`, `x`/`y` for `get_cursor_position`, and so
+on. Listing the known failures was tried first and does not hold: cua-driver
+0.19.3 answers exit 0 with at least four shells that are not proven successes:
+`{"status":"refused","refusal":{...}}`, a bare
+`{"code":"background_unavailable",...}` object with neither of those keys, a
+plain human-readable line, and a normal-looking outcome carrying
+`escalation.reason == "delivery_failed"`. The first three end the call. The
+fourth answers the contract and reports in the same breath that the input never
+arrived: it is retained as a fault and marked undelivered, and an undelivered
+action never produces a product finding. A tool the harness calls without an
+entry in `SUCCESS_CONTRACT` fails too, rather than passing unchecked.
 
 Every failed attempt is retained in `evidence/driver-faults.jsonl` with the
 first 2000 characters of stdout and stderr. A parsed response with a refusal or

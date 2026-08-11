@@ -25,7 +25,6 @@ from actions import (
     TypeAction,
     WaitAction,
 )
-from driver_faults import MAX_RETAINED_FAULT_LINES
 from driver_transport import CliTransport, DriverError, Transport, response_dispatched
 from oracles import ActionEvidence, Finding, OracleEngine, Snapshot, normalize_snapshot
 from protocol import ContractError, SCHEMA_VERSION
@@ -49,11 +48,12 @@ def snapshot_element_address(
     snapshot_id = snapshot.get("snapshot_id")
     token = target.get("element_token")
     if isinstance(token, str) and token:
-        if (
-            isinstance(snapshot_id, str)
-            and snapshot_id
-            and token.partition(":")[0] != snapshot_id
-        ):
+        if not isinstance(snapshot_id, str) or not snapshot_id:
+            raise DriverError(
+                "fresh target's snapshot does not name itself, so its "
+                "element_token cannot be proven current"
+            )
+        if token.partition(":")[0] != snapshot_id:
             raise DriverError(
                 "fresh target element_token does not belong to its snapshot_id"
             )
@@ -263,6 +263,7 @@ class CuaExecutor:
         # observation window, so measure it from the same starting line.
         self._snapshot_durations_ms = []
         response = self._dispatch(accepted, evidence, before_raw)
+        dispatched = self._confirm_dispatch(evidence, response)
         action_elapsed_ms = round((time.monotonic() - started) * 1000)
         after_raw, after = self._snapshot(f"step-{self._step_counter:04}-after")
         first_change_ms = action_elapsed_ms if before.state_signature != after.state_signature else None
@@ -272,7 +273,8 @@ class CuaExecutor:
         settled = [after]
         ax_probe_changed = False
         if (
-            evidence.kind == "activate"
+            dispatched
+            and evidence.kind == "activate"
             and evidence.dispatch == "px"
             and evidence.expect_effect == "required"
             and before.state_signature == after.state_signature
@@ -310,7 +312,8 @@ class CuaExecutor:
             before.state_signature != sample.state_signature for sample in settled
         )
         if (
-            evidence.kind == "activate"
+            dispatched
+            and evidence.kind == "activate"
             and evidence.dispatch == "ax"
             and evidence.expect_effect == "required"
             and not visible_change
@@ -318,6 +321,7 @@ class CuaExecutor:
             effect = "suspected_noop"
         completed_evidence = dataclasses.replace(
             evidence,
+            dispatched=dispatched,
             effect=str(effect) if effect is not None else None,
             ax_probe_changed=ax_probe_changed,
             elapsed_ms=action_elapsed_ms,
@@ -342,6 +346,37 @@ class CuaExecutor:
         )
         self._retain_step(result)
         return result
+
+    def _confirm_dispatch(
+        self, evidence: ActionEvidence, response: Mapping[str, Any]
+    ) -> bool:
+        """Return whether the driver's answer proves the action was delivered.
+
+        Until this ran, the mission path booked every response the transport
+        did not reject as delivered. An undelivered action then looked exactly
+        like a control that ignores its own accessibility action, and the app
+        was blamed for it.
+        """
+
+        if response_dispatched(response):
+            return True
+        self._pending_findings.append(
+            Finding(
+                "driver-action-undelivered",
+                "warning",
+                0.9,
+                "The driver accepted the action but its answer does not prove "
+                "the input reached the app; no product verdict was drawn.",
+                {
+                    "kind": evidence.kind,
+                    "target": evidence.target_label,
+                    "dispatch": evidence.dispatch,
+                    "response": dict(response),
+                },
+                blocks_gate=False,
+            )
+        )
+        return False
 
     def _dispatch(
         self,

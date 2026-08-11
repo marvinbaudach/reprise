@@ -23,6 +23,38 @@ RETRYABLE_TOOLS = frozenset(
 )
 RETRY_DELAYS_SECONDS = (0.25, 0.50)
 SUCCESS_STATUSES = frozenset({"ok", "success", "succeeded"})
+# The driver reports a failed delivery next to a normal-looking outcome instead
+# of failing the call. Measured on cua-driver 0.19.3: a type_text that fell
+# through returns {"delivery":{"mode":"background"},"effect":"unverifiable",
+# "escalation":{"reason":"delivery_failed","target":"foreground"},...}.
+DELIVERY_FAILED_REASON = "delivery_failed"
+# A driver line that reads as a confirmation to a human but is not JSON.
+HUMAN_CONFIRMATION_PREFIX = "✅"
+
+# What a successful response has to carry, per tool. cua-driver has no single
+# success marker and at least three error shells - {"status":"refused",
+# "refusal":{...}}, a bare {"code":...} object, and a non-zero exit - so
+# enumerating the failures is how a fourth shell gets read as a success. A
+# response has to prove instead that it is the answer the tool promises.
+# Measured against cua-driver 0.19.3 with `describe <tool>` plus one private
+# Xvfb session per tool (2026-08-10); the errors that session produced -
+# {"code":"background_unavailable",...} for press_key/hotkey and
+# {"code":"desktop_escalation_required",...} for get_cursor_position - carry
+# neither `status` nor `refusal` and are caught by the missing payload alone.
+ACTION_OUTCOME_KEYS = frozenset({"effect"})
+SUCCESS_CONTRACT: Mapping[str, frozenset[str]] = {
+    "click": ACTION_OUTCOME_KEYS,
+    "type_text": ACTION_OUTCOME_KEYS,
+    "press_key": ACTION_OUTCOME_KEYS,
+    "hotkey": ACTION_OUTCOME_KEYS,
+    "scroll": ACTION_OUTCOME_KEYS,
+    "move_cursor": ACTION_OUTCOME_KEYS,
+    "get_window_state": frozenset({"elements"}),
+    "get_cursor_position": frozenset({"x", "y"}),
+    "get_screen_size": frozenset({"width", "height"}),
+    "list_windows": frozenset({"windows"}),
+    "set_agent_cursor_enabled": frozenset({"enabled"}),
+}
 
 
 class Transport(Protocol):
@@ -81,9 +113,10 @@ class CliTransport:
             try:
                 response = json.loads(completed.stdout)
             except json.JSONDecodeError as error:
-                if completed.stdout.strip().startswith("✅"):
-                    return {"effect": "confirmed", "verified": True}
                 self._retain_fault(tool, attempt, completed)
+                confirmation = _human_confirmation(tool, completed.stdout)
+                if confirmation is not None:
+                    return confirmation
                 if tool in RETRYABLE_TOOLS and attempt <= len(RETRY_DELAYS_SECONDS):
                     time.sleep(RETRY_DELAYS_SECONDS[attempt - 1])
                     continue
@@ -98,6 +131,12 @@ class CliTransport:
             if response_error is not None:
                 self._retain_fault(tool, attempt, completed, response=response)
                 raise DriverError(response_error)
+            if _delivery_failure(response) is not None:
+                # The tool answered its contract and reported in the same
+                # breath that the input never arrived. That is evidence, not a
+                # reason to end the run: the caller reads it back through
+                # response_dispatched and draws no product verdict from it.
+                self._retain_fault(tool, attempt, completed, response=response)
             return response
 
     def _run(self, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -201,7 +240,36 @@ class CliTransport:
         raise DriverError("wmctrl did not find the target window")
 
 
-def _response_error(tool: str, response: Mapping[str, Any]) -> str | None:
+def _human_confirmation(tool: str, stdout: str) -> Mapping[str, Any] | None:
+    """Return what a non-JSON confirmation line is worth for this tool.
+
+    The line is written for a human, so it proves nothing beyond "something
+    happened": it can stand in for an action outcome, never for a tool that
+    owes us data. Every occurrence is retained by the caller as a fault.
+    """
+
+    if not stdout.strip().startswith(HUMAN_CONFIRMATION_PREFIX):
+        return None
+    confirmation = {"effect": "unverifiable", "verified": False}
+    if _response_error(tool, confirmation) is not None:
+        return None
+    return confirmation
+
+
+def _payload(response: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return the object that carries the tool's answer.
+
+    get_window_state documents both a top-level `elements` array and the same
+    data under `structuredContent`; every other tool answers flat.
+    """
+
+    structured = response.get("structuredContent")
+    return structured if isinstance(structured, Mapping) else response
+
+
+def _rejection_error(tool: str, response: Mapping[str, Any]) -> str | None:
+    """Return the error in a response that names its own failure."""
+
     refusal = response.get("refusal")
     if refusal is not None:
         details = refusal if isinstance(refusal, Mapping) else {}
@@ -209,17 +277,62 @@ def _response_error(tool: str, response: Mapping[str, Any]) -> str | None:
         message = str(details.get("message") or refusal)
         return f"cua-driver {tool} refused [{code}]: {message}"
     status = response.get("status")
-    if status is None:
+    if status is not None and not (
+        isinstance(status, str) and status.casefold() in SUCCESS_STATUSES
+    ):
+        return f"cua-driver {tool} returned unsuccessful status: {status!r}"
+    return None
+
+
+def _delivery_failure(response: Mapping[str, Any]) -> str | None:
+    """Return the escalation a response asks for after a failed delivery.
+
+    This shell answers the tool's contract - it carries `effect` like any other
+    outcome - and says next to it that the input never arrived. It is the
+    reason the contract cannot be a list of known failures.
+    """
+
+    escalation = response.get("escalation")
+    if not isinstance(escalation, Mapping):
         return None
-    if isinstance(status, str) and status.casefold() in SUCCESS_STATUSES:
+    if str(escalation.get("reason") or "") != DELIVERY_FAILED_REASON:
         return None
-    return f"cua-driver {tool} returned unsuccessful status: {status!r}"
+    return str(escalation.get("target") or "unknown")
+
+
+def _response_error(tool: str, response: Mapping[str, Any]) -> str | None:
+    """Return why a response is not the success its tool promises, or None.
+
+    Enumerating the known error shells is what let the third one through, so
+    the rule is the other way round: a response counts as a success only when
+    it carries the payload SUCCESS_CONTRACT names for that tool.
+    """
+
+    rejection = _rejection_error(tool, response)
+    if rejection is not None:
+        return rejection
+    required = SUCCESS_CONTRACT.get(tool)
+    if required is None:
+        return (
+            f"cua-driver {tool} has no success contract; add one to "
+            "SUCCESS_CONTRACT before the harness calls it"
+        )
+    payload = _payload(response)
+    missing = sorted(key for key in required if key not in payload)
+    if missing:
+        return (
+            f"cua-driver {tool} answered without {', '.join(missing)}: "
+            f"{json.dumps(response, sort_keys=True, default=str)[:300]}"
+        )
+    return None
 
 
 def response_dispatched(response: Mapping[str, Any]) -> bool:
     """Return whether an accepted action response proves dispatch occurred."""
 
-    if _response_error("action", response) is not None:
+    if _rejection_error("action", response) is not None:
+        return False
+    if _delivery_failure(response) is not None:
         return False
     status = response.get("status")
     if isinstance(status, str) and status.casefold() in SUCCESS_STATUSES:

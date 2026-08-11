@@ -196,6 +196,10 @@ class ActionEvidence:
     settle_delay_ms: int = 0
     snapshot_ms: tuple[int, ...] = ()
     snapshot_ms_before_first_change: int = 0
+    # False when the driver accepted the call but its response does not prove
+    # the input reached the app. Nothing the app did or failed to do can be
+    # read out of an action that never arrived.
+    dispatched: bool = True
 
     @classmethod
     def activate(cls, target_label: str, **kwargs: Any) -> "ActionEvidence":
@@ -435,6 +439,11 @@ class OracleEngine:
     def _click_findings(
         self, action: ActionEvidence, before: Snapshot, after: Snapshot, changed: bool
     ) -> list[Finding]:
+        if not action.dispatched:
+            # The driver never confirmed delivery, so "no visible effect" says
+            # nothing about the product. The transport already reported the
+            # undelivered action as a harness finding.
+            return []
         if changed or action.expect_effect in {"idempotent", "none"}:
             return self._misroute_findings(action, before, after)
         if action.dispatch == "px" and action.ax_probe_changed:

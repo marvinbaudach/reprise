@@ -22,12 +22,8 @@ from cua_explore_expectations import (  # noqa: E402
     MUSIC_COLLAPSED_ACTIONABLE_COUNT_BEFORE,
     MUSIC_COLLAPSED_ACTIONABLE_LABELS,
 )
-from driver import (  # noqa: E402
-    MAX_RETAINED_FAULT_LINES,
-    CliTransport,
-    CuaExecutor,
-    DriverError,
-)
+from driver import CliTransport, CuaExecutor, DriverError  # noqa: E402
+from driver_faults import MAX_RETAINED_FAULT_LINES  # noqa: E402
 from explorer import DeterministicExplorer  # noqa: E402
 from oracles import ActionEvidence, OracleEngine, normalize_snapshot  # noqa: E402
 from protocol import ActionGateway, load_mission  # noqa: E402
@@ -349,12 +345,13 @@ class CliTransportRetryTests(unittest.TestCase):
 
     def test_read_timeout_retries_and_is_retained(self) -> None:
         timeout = subprocess.TimeoutExpired(["cua-driver"], 30, output="partial")
+        screen = '{"width": 1440, "height": 900, "scale_factor": 1.0}'
         transport = ScriptedCliTransport(
-            [timeout, completed('{"width": 1440}')],
+            [timeout, completed(screen)],
             evidence_dir=self.evidence_dir,
         )
 
-        self.assertEqual(transport.call("get_screen_size", {}), {"width": 1440})
+        self.assertEqual(transport.call("get_screen_size", {}), json.loads(screen))
         self.assertEqual(self.fault_records()[0]["stdout_head"], "partial")
 
     def test_fault_log_stops_at_the_line_cap_and_says_so(self) -> None:
@@ -376,16 +373,30 @@ class CliTransportRetryTests(unittest.TestCase):
         self.assertEqual(records[-1]["retained"], MAX_RETAINED_FAULT_LINES)
         self.assertEqual(transport.transport_faults, attempts)
 
-    def test_confirmation_glyph_compatibility_is_unchanged(self) -> None:
+    def test_a_confirmation_glyph_is_never_a_verified_outcome(self) -> None:
         transport = ScriptedCliTransport(
             [completed("✅ action completed")], evidence_dir=self.evidence_dir
         )
 
         self.assertEqual(
             transport.call("click", {}),
-            {"effect": "confirmed", "verified": True},
+            {"effect": "unverifiable", "verified": False},
         )
-        self.assertEqual(transport.transport_faults, 0)
+        self.assertEqual(transport.transport_faults, 1)
+        self.assertEqual(
+            self.fault_records()[0]["stdout_head"], "✅ action completed"
+        )
+
+    def test_a_confirmation_glyph_cannot_stand_in_for_a_snapshot(self) -> None:
+        transport = ScriptedCliTransport(
+            [completed("✅ done")] * 3, evidence_dir=self.evidence_dir
+        )
+
+        with self.assertRaisesRegex(DriverError, "invalid JSON"):
+            transport.call("get_window_state", {})
+
+        self.assertEqual(transport.run_count, 3)
+        self.assertEqual(transport.transport_faults, 3)
 
 
 if __name__ == "__main__":
