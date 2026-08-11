@@ -12,10 +12,9 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::device_sync::browser::{
-    folder_conflicts_with_playlist_target, preview_target_folder, reset_target_folder,
-    StorageOption, TargetPreview,
+    preview_target_folder, reset_target_folder, StorageOption, TargetPreview,
 };
-use reprise_core::device_sync::{StorageId, SyncTarget, SyncTargetKind};
+use reprise_core::device_sync::{StorageId, SyncTarget};
 
 use super::device_sync_runtime::DeviceSyncRuntime;
 use super::device_sync_strings;
@@ -27,31 +26,25 @@ type NavigateFn = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
 struct BrowserState {
     original: SyncTarget,
-    playlist_target: Option<SyncTarget>,
     storages: Vec<StorageOption>,
     storage: Option<StorageId>,
     path: String,
 }
 
-/// Opens the folder browser for `kind` on `device_id`, relative to
+/// Opens the playlists folder browser on `device_id`, relative to
 /// `parent`. A no-op if the device disconnected between the click and this
 /// call — there is nothing left to browse.
 pub(in crate::ui) fn present(
     parent: &impl IsA<gtk4::Widget>,
     runtime: &Rc<DeviceSyncRuntime>,
     device_id: &str,
-    kind: SyncTargetKind,
 ) {
-    let Some(original) = runtime.current_target(device_id, kind) else {
+    let Some(original) = runtime.current_target(device_id) else {
         return;
     };
-    let playlist_target = (kind != SyncTargetKind::Playlists)
-        .then(|| runtime.current_target(device_id, SyncTargetKind::Playlists))
-        .flatten();
 
     let state = Rc::new(RefCell::new(BrowserState {
         original: original.clone(),
-        playlist_target,
         storages: Vec::new(),
         storage: original.storage_id,
         path: original.path.clone(),
@@ -135,10 +128,7 @@ pub(in crate::ui) fn present(
 
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new(
-        &format!(
-            "Choose folder for {}",
-            device_sync_strings::category_name(kind)
-        ),
+        &device_sync_strings::text(device_sync_strings::CHOOSE_PLAYLIST_FOLDER),
         "",
     )));
     let toolbar = adw::ToolbarView::new();
@@ -395,7 +385,7 @@ pub(in crate::ui) fn present(
                 let state = state.borrow();
                 (state.storage, state.path.clone())
             };
-            let result = runtime.set_target_folder(&device_id, kind, storage, path);
+            let result = runtime.set_target_folder(&device_id, storage, path);
             let error_label = error_label.clone();
             let error_box = error_box.clone();
             let dialog = dialog.clone();
@@ -569,17 +559,8 @@ fn refresh_preview_and_warning(
         &candidate,
         &state.storages,
     )));
-    let conflicts = state.playlist_target.as_ref().is_some_and(|playlist| {
-        folder_conflicts_with_playlist_target(state.storage, &state.path, playlist)
-    });
-    warning_box.set_visible(conflicts);
-    if conflicts {
-        warning_label.set_label(
-            "This folder is inside the Playlists folder, which removes anything Reprise \
-             does not recognize on its own. Files copied here for this category could be \
-             deleted by a playlist sync.",
-        );
-    }
+    warning_box.set_visible(false);
+    warning_label.set_label("");
 }
 
 /// `MTP-31`: the target preview's exact copy for each resolution state.
