@@ -250,6 +250,7 @@ private fun WideShortNowPlayingContent(
                     track = track,
                     surfaceState = surfaceState,
                     tag = "now-playing-heart",
+                    enabled = LocalNowPlayingActionsEnabled.current,
                 )
                 // No collapse button beside it: this sheet is dismissed by
                 // swiping it down, which is what freed the slot the context

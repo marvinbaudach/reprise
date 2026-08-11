@@ -1,6 +1,5 @@
 package de.reprise.spike
 
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,13 +29,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal data class QueueRowActions(
@@ -230,27 +227,7 @@ private fun LibraryTrackRow(
     queueActions: QueueRowActions?,
     play: () -> Unit,
 ) {
-    var swipeOffset by remember(track.id) { mutableFloatStateOf(0f) }
     val contextMenu = rememberTrackContextMenuAnchorState()
-    val queueGesture = if (queueActions == null) {
-        Modifier
-    } else {
-        Modifier.pointerInput(track.id, queuePosition, queueRowCount) {
-            detectHorizontalDragGestures(
-                onHorizontalDrag = { change, dragAmount ->
-                    change.consume()
-                    swipeOffset += dragAmount
-                },
-                onDragCancel = { swipeOffset = 0f },
-                onDragEnd = {
-                    if (abs(swipeOffset) >= size.width * QUEUE_REMOVE_FRACTION) {
-                        queueActions.remove(queuePosition, track.id)
-                    }
-                    swipeOffset = 0f
-                },
-            )
-        }
-    }
     // The row itself is a fixed-height, clipped Surface, so the context menu's
     // acknowledgement gets a slot under it rather than a place on top of the
     // cover and the title. See TrackContextMenuMessage.
@@ -260,7 +237,6 @@ private fun LibraryTrackRow(
                 .fillMaxWidth()
                 .height(metrics.trackRowHeightDp.dp)
                 .clipToBounds()
-                .graphicsLayer { translationX = swipeOffset }
                 .testTag(
                     if (queueActions == null) {
                         "library-track-row-${track.id}"
@@ -268,7 +244,6 @@ private fun LibraryTrackRow(
                         "queue-track-row-${track.id}"
                     },
                 )
-                .then(queueGesture)
                 .trackContextMenuAnchor(contextMenu) {
                     if (queueActions == null) {
                         play()
@@ -423,8 +398,6 @@ private fun QueueDragHandle(
         MaterialSymbol("drag_handle", "Reorder ${track.title}")
     }
 }
-
-private const val QUEUE_REMOVE_FRACTION = 0.75f
 
 @Composable
 private fun PlayCountBadge(playCount: Long) {
