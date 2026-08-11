@@ -5,8 +5,8 @@ use std::cell::Cell;
 use reprise_core::library::settings::{self, ListDensity};
 
 use crate::ui::list_geometry::{
-    invalidate_row_height, remember_preferred_height, RowHeight, RowMeasurement, TrustedRowHeight,
-    INVALIDATED_ROW_HEIGHT,
+    invalidate_row_height, load_trusted_height, remember_preferred_height, RowHeight,
+    RowMeasurement, TrustedRowHeight,
 };
 
 fn minimum_height() -> RowHeight {
@@ -27,29 +27,21 @@ pub(in crate::ui) fn load_height(
     density: ListDensity,
     cache: &Cell<f64>,
 ) -> TrustedRowHeight {
-    if let Some(cached) = TrustedRowHeight::from_cache(cache.get()) {
-        return cached;
-    }
-    let invalidated = cache.get() == INVALIDATED_ROW_HEIGHT;
-    if invalidated {
-        if let Err(error) = settings::set_section_header_height(db, density, None) {
-            tracing::warn!(%error, "could not discard invalidated section-header height");
-        }
-    }
-    let persisted = if invalidated {
-        None
-    } else {
-        settings::get_section_header_height(db, density).unwrap_or_else(|error| {
-            tracing::warn!(%error, "could not load persisted section-header height");
-            None
-        })
-    };
-    let loaded = persisted.and_then(RowHeight::new).map_or_else(
-        || TrustedRowHeight::assumed(minimum_height()),
-        TrustedRowHeight::measured,
-    );
-    remember_preferred_height(cache, loaded);
-    TrustedRowHeight::from_cache(cache.get()).unwrap_or(loaded)
+    load_trusted_height(
+        cache,
+        minimum_height(),
+        || {
+            if let Err(error) = settings::set_section_header_height(db, density, None) {
+                tracing::warn!(%error, "could not discard invalidated section-header height");
+            }
+        },
+        || {
+            settings::get_section_header_height(db, density).unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not load persisted section-header height");
+                None
+            })
+        },
+    )
 }
 
 pub(in crate::ui) fn measured_height(measurement: RowMeasurement) -> Option<RowHeight> {

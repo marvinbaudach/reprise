@@ -57,6 +57,7 @@ mod library_doctor;
 mod library_views;
 pub(crate) mod link_activation;
 mod list_geometry;
+mod list_geometry_changed;
 mod list_geometry_header;
 mod lyrics;
 pub(crate) mod motion;
