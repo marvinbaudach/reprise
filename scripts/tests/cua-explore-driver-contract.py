@@ -431,6 +431,27 @@ class ElementAddressContractTests(unittest.TestCase):
         payload = self.click_payloads(transport)[0]
         self.assertEqual(payload["element_token"], self.target["element_token"])
 
+    def test_a_snapshot_that_does_not_name_itself_fails_before_dispatch(self) -> None:
+        # Without a snapshot_id there is nothing to check the token against,
+        # and a token from an older generation would go out looking current.
+        raw = json.loads(json.dumps(self.raw))
+        raw.pop("snapshot_id")
+        transport = self.transport([completed(json.dumps(raw))])
+        executor = CuaExecutor(
+            transport,
+            pid=44,
+            window_id=77,
+            session="contract",
+            settle_delays=(),
+        )
+
+        with self.assertRaisesRegex(DriverError, "does not name itself"):
+            executor.execute_evidence(
+                ActionEvidence.activate("☆", expect_effect="idempotent")
+            )
+
+        self.assertEqual(self.click_payloads(transport), [])
+
     def test_mismatched_snapshot_and_element_token_fail_before_dispatch(self) -> None:
         raw = json.loads(json.dumps(self.raw))
         raw["snapshot_id"] = "s00000009"
