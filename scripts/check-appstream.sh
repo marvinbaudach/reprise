@@ -6,6 +6,7 @@ source scripts/lib/rulebook.sh
 
 skip_gate_if_tool_missing appstreamcli
 skip_gate_if_tool_missing desktop-file-validate
+skip_gate_if_tool_missing xmllint
 
 metainfo=$(find data -name '*.metainfo.xml' -print -quit)
 desktop=$(find data -name '*.desktop' -print -quit)
@@ -24,10 +25,18 @@ if ! output=$(desktop-file-validate "$desktop" 2>&1); then
 $output"
 fi
 
-# GP-16 — read the untranslated name and summary, i.e. the elements without
-# an xml:lang attribute.
-name=$(sed -n 's|^[[:space:]]*<name>\(.*\)</name>[[:space:]]*$|\1|p' "$metainfo" | head -1)
-summary=$(sed -n 's|^[[:space:]]*<summary>\(.*\)</summary>[[:space:]]*$|\1|p' "$metainfo" | head -1)
+# GP-16 — read the untranslated top-level name and summary. A structural query
+# cannot confuse the app name with the nested developer name.
+if ! name=$(xmllint --xpath \
+  'string(/component/name[not(@xml:lang)][1])' "$metainfo" 2>/dev/null); then
+  report_violation GP-12 "xmllint could not parse $metainfo"
+  name=""
+fi
+if ! summary=$(xmllint --xpath \
+  'string(/component/summary[not(@xml:lang)][1])' "$metainfo" 2>/dev/null); then
+  report_violation GP-12 "xmllint could not parse $metainfo"
+  summary=""
+fi
 
 (( ${#name} < 15 )) || report_violation GP-16 \
   "app name \"$name\" is ${#name} characters, must be below 15"
