@@ -15,9 +15,8 @@ use reprise_core::db::Db;
 use reprise_core::{db, library};
 use tracing_subscriber::EnvFilter;
 
-/// The application identity. Everything that names the app — the GTK
-/// application ID, the desktop file, the icon, the GSettings path — derives
-/// from this one value.
+/// The canonical runtime application identity. Compile-time resources and
+/// packaging mirror this value, with focused tests guarding critical mirrors.
 pub const APP_ID: &str = "io.github.marvinbaudach.Reprise";
 
 static APP_RESOURCES_REGISTERED: OnceLock<()> = OnceLock::new();
@@ -288,7 +287,7 @@ fn main() -> glib::ExitCode {
 
 #[cfg(test)]
 mod app_identity_tests {
-    use super::APP_ID;
+    use super::{APP_ICON_RESOURCE_PATH, APP_ID};
 
     #[test]
     fn app_id_is_the_flathub_reverse_dns_form() {
@@ -309,6 +308,12 @@ mod app_identity_tests {
                 "component {part:?} contains a character Flathub rejects"
             );
         }
+    }
+
+    #[test]
+    fn app_icon_resource_path_follows_app_id() {
+        let expected_prefix = format!("/{}", APP_ID.replace('.', "/"));
+        assert_eq!(APP_ICON_RESOURCE_PATH, format!("{expected_prefix}/icons"));
     }
 }
 
