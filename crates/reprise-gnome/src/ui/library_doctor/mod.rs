@@ -146,7 +146,7 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     refresh_views: Rc<dyn Fn()>,
     sidebar: Rc<Sidebar>,
     selection_override: RefCell<Option<Vec<i64>>>,
-    doctor_chrome: Rc<crate::ui::window::library_chrome::DoctorChrome>,
+    _doctor_chrome: Rc<crate::ui::window::library_chrome::DoctorChrome>,
 }
 
 pub(in crate::ui) struct LibraryDoctorLauncher {
@@ -293,7 +293,7 @@ impl LibraryDoctorCoordinator {
                 refresh_views,
                 sidebar: sidebar.clone(),
                 selection_override: RefCell::new(None),
-                doctor_chrome,
+                _doctor_chrome: doctor_chrome,
             }
         });
         super::startup_report::mark("LibraryDoctorCoordinator::load_last_scan begin");
@@ -652,7 +652,6 @@ impl LibraryDoctorCoordinator {
                 });
             }
             self.review.borrow_mut().replace(page.clone());
-            self.doctor_chrome.set_review_actions(page.chrome_actions());
         }
         self.open_review_page();
     }

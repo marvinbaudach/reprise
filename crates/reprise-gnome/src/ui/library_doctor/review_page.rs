@@ -368,7 +368,6 @@ pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
     state: Rc<ReviewState>,
     rows: gtk4::ListView,
-    chrome_actions: gtk4::Box,
 }
 
 impl LibraryDoctorReviewPage {
@@ -535,7 +534,6 @@ impl LibraryDoctorReviewPage {
             navigation_page,
             state,
             rows,
-            chrome_actions: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
         });
         page.state.refresh();
         page
@@ -543,10 +541,6 @@ impl LibraryDoctorReviewPage {
 
     pub(super) fn navigation_page(&self) -> &adw::NavigationPage {
         &self.navigation_page
-    }
-
-    pub(super) fn chrome_actions(&self) -> &gtk4::Box {
-        &self.chrome_actions
     }
 
     pub(super) fn mark_paths_stale(&self, paths: &[PathBuf]) {
