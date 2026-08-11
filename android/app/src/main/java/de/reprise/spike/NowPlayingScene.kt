@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,7 @@ internal fun NowPlayingScene(
     horizontalOffsetPx: Float = 0f,
     previousTrack: LibraryTrack? = null,
     nextTrack: LibraryTrack? = null,
+    visualizerVisible: Boolean = false,
 ) {
     val frames = rememberSpectrogram(track.id)
     val state = remember(frames) { SceneState(frames) }
@@ -97,11 +99,27 @@ internal fun NowPlayingScene(
     val fog = rememberCoverFogTransition(artwork?.image, AmbientTrueBlack)
     val coverShadow = rememberCoverShadowBitmap()
     val motion = LocalAmbientMotionController.current
+    val fallbackAccent = MaterialTheme.colorScheme.primary
+    val visualEngine = rememberVisualSceneEngine(
+        enabled = visualizerVisible,
+        trackId = track.id,
+        playing = playback.isPlaying,
+        accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
+    )
+    val visualFrameSink = remember(visualEngine) {
+        visualEngine?.let { engine ->
+            SceneFrameSink { bands ->
+                if (bands != null) engine.ingestBands(bands)
+                engine.tick()
+            }
+        }
+    }
     val drawRevision = DriveScene(
         frames = frames,
         state = state,
         playback = playback,
         controller = motion,
+        frameSink = visualFrameSink,
     )
     val power = motion.sceneRenderPower()
 
@@ -161,12 +179,23 @@ internal fun NowPlayingScene(
                     )
                 }
             }
-            drawPlayedCover(
-                artwork = artwork?.image,
-                center = playedCenter,
-                fallback = AmbientTrueBlack,
-                shadow = coverShadow,
-            )
+            if (visualEngine == null) {
+                drawPlayedCover(
+                    artwork = artwork?.image,
+                    center = playedCenter,
+                    fallback = AmbientTrueBlack,
+                    shadow = coverShadow,
+                )
+            } else {
+                drawPlayedVisualizer(
+                    buffer = visualEngine.scene(
+                        width = COVER_SIZE_DP.dp.toPx(),
+                        height = COVER_SIZE_DP.dp.toPx(),
+                    ),
+                    center = playedCenter,
+                    shadow = coverShadow,
+                )
+            }
         }
 
         Box(
@@ -210,6 +239,36 @@ internal fun NowPlayingScene(
         )
     }
 }
+
+@Composable
+private fun rememberVisualSceneEngine(
+    enabled: Boolean,
+    trackId: Long,
+    playing: Boolean,
+    accent: Color,
+): VisualSceneEngine? {
+    val factory = LocalVisualSceneEngineFactory.current
+    val engine = remember(factory, enabled) { if (enabled) factory.create() else null }
+    DisposableEffect(engine) {
+        onDispose { engine?.close() }
+    }
+    DisposableEffect(engine, trackId) {
+        engine?.noteTrackChanged()
+        onDispose { }
+    }
+    SideEffect {
+        engine?.setPlaying(playing)
+        engine?.setAccent(accent.red, accent.green, accent.blue)
+    }
+    return engine
+}
+
+private fun Int.toComposeColor(): Color = Color(
+    red = (this ushr 16 and 0xff) / 255f,
+    green = (this ushr 8 and 0xff) / 255f,
+    blue = (this and 0xff) / 255f,
+    alpha = (this ushr 24 and 0xff) / 255f,
+)
 
 /** The played-view wiring kept shared with its rendered-pixel verification. */
 internal fun DrawScope.drawPlayedNowPlayingFog(
@@ -424,12 +483,7 @@ internal fun DrawScope.drawPlayedCover(
     shadow: CoverShadowBitmap?,
 ) {
     val side = COVER_SIZE_DP.dp.toPx()
-    val rect = Rect(
-        center.x - side / 2f,
-        center.y - side / 2f,
-        center.x + side / 2f,
-        center.y + side / 2f,
-    )
+    val rect = playedCoverRect(center, side)
     val radius = COVER_RADIUS_DP.dp.toPx()
     shadow?.let { drawCoverShadow(it, rect) }
     val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
@@ -445,6 +499,29 @@ internal fun DrawScope.drawPlayedCover(
         }
     }
 }
+
+internal fun DrawScope.drawPlayedVisualizer(
+    buffer: List<Float>,
+    center: Offset,
+    shadow: CoverShadowBitmap?,
+) {
+    val side = COVER_SIZE_DP.dp.toPx()
+    val rect = playedCoverRect(center, side)
+    val radius = COVER_RADIUS_DP.dp.toPx()
+    shadow?.let { drawCoverShadow(it, rect) }
+    val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
+    clipPath(path) {
+        drawRect(Color.Black, topLeft = rect.topLeft, size = rect.size)
+        drawVisualizerScene(buffer = buffer, bounds = rect)
+    }
+}
+
+internal fun playedCoverRect(center: Offset, side: Float): Rect = Rect(
+    center.x - side / 2f,
+    center.y - side / 2f,
+    center.x + side / 2f,
+    center.y + side / 2f,
+)
 
 /** Keeps the frame counter captured by the scene's draw lambda; the value is not drawn. */
 private fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit
