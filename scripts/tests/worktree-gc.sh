@@ -6,10 +6,32 @@ runner="$repo_root/scripts/reprise-worktree-gc.sh"
 closer="$repo_root/scripts/close-worktree.sh"
 
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/reprise-worktree-gc.XXXXXX")
+start_active_probe() {
+  local path=$1
+  (cd "$path" && exec tail -f /dev/null) &
+  active_pid=$!
+  while [[ $(readlink "/proc/$active_pid/cwd" 2>/dev/null || true) != "$path" ]]; do
+    kill -0 "$active_pid" 2>/dev/null || {
+      wait "$active_pid" 2>/dev/null || true
+      active_pid=
+      return 1
+    }
+  done
+}
+
+stop_active_probe() {
+  kill "$active_pid"
+  wait "$active_pid" 2>/dev/null || true
+  active_pid=
+}
+
 cleanup_fixture() {
   if [[ -n ${active_pid:-} ]]; then
     kill "$active_pid" 2>/dev/null || true
     wait "$active_pid" 2>/dev/null || true
+  fi
+  if [[ -n ${undeletable_artifact_dir:-} ]]; then
+    chmod u+w "$undeletable_artifact_dir" 2>/dev/null || true
   fi
   find "$fixture" -xdev -depth -delete 2>/dev/null || true
 }
@@ -43,13 +65,7 @@ printf 'unique\n' >> "$unmerged_worktree/README.md"
 git -C "$unmerged_worktree" add README.md
 git -C "$unmerged_worktree" commit --quiet -m "unique work"
 git -C "$repo" worktree lock --reason "active test agent" "$locked_worktree"
-(cd "$active_worktree" && exec sleep 30) &
-active_pid=$!
-for _ in {1..1000}; do
-  [[ $(readlink "/proc/$active_pid/cwd" 2>/dev/null || true) == "$active_worktree" ]] &&
-    break
-done
-[[ $(readlink "/proc/$active_pid/cwd") == "$active_worktree" ]]
+start_active_probe "$active_worktree"
 
 report=$(
   REPRISE_GC_STATE_ROOT="$state_root" \
@@ -90,9 +106,7 @@ git -C "$repo" show-ref --verify --quiet refs/heads/test/unmerged
 git -C "$repo" show-ref --verify --quiet refs/heads/test/locked
 git -C "$repo" show-ref --verify --quiet refs/heads/test/active
 git -C "$repo" show-ref --verify --quiet refs/heads/main
-kill "$active_pid"
-wait "$active_pid" 2>/dev/null || true
-active_pid=
+stop_active_probe
 
 fake_bin="$fixture/bin"
 mkdir -p "$fake_bin"
@@ -177,13 +191,7 @@ printf 'busy merged work\n' >> "$busy_merged_worktree/README.md"
 git -C "$busy_merged_worktree" add README.md
 git -C "$busy_merged_worktree" commit --quiet -m "busy merged work"
 busy_merged_head=$(git -C "$busy_merged_worktree" rev-parse HEAD)
-(cd "$busy_merged_worktree" && exec sleep 30) &
-active_pid=$!
-for _ in {1..1000}; do
-  [[ $(readlink "/proc/$active_pid/cwd" 2>/dev/null || true) == "$busy_merged_worktree" ]] &&
-    break
-done
-[[ $(readlink "/proc/$active_pid/cwd") == "$busy_merged_worktree" ]]
+start_active_probe "$busy_merged_worktree"
 
 busy_close_report=$(
   FAKE_GH_PROOF=$'MERGED\tdev\ttest/busy-merged\t'"$busy_merged_head" \
@@ -199,9 +207,7 @@ rg -Fq "deferred active_worktree $busy_merged_worktree" <<<"$busy_close_report"
 git -C "$repo" show-ref --verify --quiet refs/heads/test/busy-merged
 [[ $(find "$state_root/pending" -type f | wc -l) -eq 1 ]]
 
-kill "$active_pid"
-wait "$active_pid" 2>/dev/null || true
-active_pid=
+stop_active_probe
 busy_merged_report=$(
   REPRISE_GC_STATE_ROOT="$state_root" \
     "$runner" sweep --repo "$repo" --apply
@@ -308,13 +314,18 @@ git -C "$scope" show-ref --verify --quiet refs/heads/test/outside
   --verify --quiet refs/heads/worktree-stale-agent
 
 artifact_repo="$fixture/artifact-scope"
+artifact_agent_root="$fixture/artifact-agent-worktrees"
 dirty_artifact_worktree="$artifact_repo/.worktrees/dirty"
 outside_artifact_worktree="$fixture/artifact-outside"
 excluded_artifact_worktree="$artifact_repo/.worktrees/excluded"
 excluded_outside_worktree="$fixture/artifact-excluded-outside"
-active_artifact_worktree="$fixture/artifact-active"
+active_artifact_worktree="$artifact_agent_root/active"
 locked_artifact_worktree="$artifact_repo/.worktrees/locked"
 fresh_artifact_worktree="$artifact_repo/.worktrees/fresh"
+unrelated_artifact_worktree="$artifact_repo/.worktrees/unrelated"
+unresolved_artifact_worktree="$artifact_repo/.worktrees/unresolved"
+failing_artifact_worktree="$artifact_repo/.worktrees/delete-failure"
+after_failure_worktree="$artifact_repo/.worktrees/zz-after-delete-failure"
 mkdir -p "$artifact_repo"
 git -C "$artifact_repo" init --initial-branch=dev --quiet
 git -C "$artifact_repo" config user.name "Worktree GC Test"
@@ -329,7 +340,13 @@ printf '/target\n/android/app/build\n/.gradle-user-home\n' \
   > "$artifact_repo/.gitignore"
 mkdir -p "$artifact_repo/src"
 printf 'pub fn fixture() {}\n' > "$artifact_repo/src/lib.rs"
-git -C "$artifact_repo" add Cargo.toml .gitignore src/lib.rs
+mkdir -p "$artifact_repo/android/app"
+printf 'rootProject.name = "fixture"\ninclude(":app")\n' \
+  > "$artifact_repo/android/settings.gradle.kts"
+printf 'plugins {}\n' > "$artifact_repo/android/app/build.gradle.kts"
+git -C "$artifact_repo" add \
+  Cargo.toml .gitignore src/lib.rs \
+  android/settings.gradle.kts android/app/build.gradle.kts
 git -C "$artifact_repo" commit --quiet -m "artifact fixture"
 git -C "$artifact_repo" worktree add \
   --quiet -b test/dirty-artifact "$dirty_artifact_worktree" dev
@@ -337,6 +354,11 @@ git -C "$artifact_repo" worktree add \
   --quiet -b test/outside-artifact "$outside_artifact_worktree" dev
 git -C "$artifact_repo" worktree add \
   --quiet -b test/excluded-artifact "$excluded_artifact_worktree" dev
+excluded_artifact_git_dir=$(git -C "$excluded_artifact_worktree" \
+  rev-parse --path-format=absolute --git-dir)
+excluded_artifact_listed_path="$artifact_repo/.worktrees//excluded"
+printf '%s/.git\n' "$excluded_artifact_listed_path" \
+  > "$excluded_artifact_git_dir/gitdir"
 git -C "$artifact_repo" worktree add \
   --quiet -b test/excluded-outside "$excluded_outside_worktree" dev
 git -C "$artifact_repo" worktree add \
@@ -345,6 +367,15 @@ git -C "$artifact_repo" worktree add \
   --quiet -b test/locked-artifact "$locked_artifact_worktree" dev
 git -C "$artifact_repo" worktree add \
   --quiet -b test/fresh-artifact "$fresh_artifact_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/unrelated-artifact "$unrelated_artifact_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/unresolved-artifact "$unresolved_artifact_worktree" dev
+find "$unresolved_artifact_worktree" -xdev -depth -delete
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/delete-failure "$failing_artifact_worktree" dev
+git -C "$artifact_repo" worktree add \
+  --quiet -b test/after-delete-failure "$after_failure_worktree" dev
 git -C "$artifact_repo" worktree lock \
   --reason "active test agent" "$locked_artifact_worktree"
 printf '// primary tracked work in progress\n' >> "$artifact_repo/src/lib.rs"
@@ -414,25 +445,76 @@ printf 'fresh\n' \
   > "$fresh_artifact_worktree/android/app/build/outputs/artifact"
 printf 'fresh\n' \
   > "$fresh_artifact_worktree/.gradle-user-home/caches/artifact"
-(cd "$active_artifact_worktree" && exec sleep 30) &
-active_pid=$!
-for _ in {1..1000}; do
-  [[ $(readlink "/proc/$active_pid/cwd" 2>/dev/null || true) == \
-    "$active_artifact_worktree" ]] && break
-done
-[[ $(readlink "/proc/$active_pid/cwd") == "$active_artifact_worktree" ]]
+git -C "$unrelated_artifact_worktree" rm --quiet \
+  Cargo.toml android/settings.gradle.kts android/app/build.gradle.kts
+git -C "$unrelated_artifact_worktree" commit --quiet \
+  -m "remove project markers"
+mkdir -p \
+  "$unrelated_artifact_worktree/target/debug" \
+  "$unrelated_artifact_worktree/android/app/build/outputs" \
+  "$unrelated_artifact_worktree/.gradle-user-home/caches"
+printf 'unrelated\n' > "$unrelated_artifact_worktree/target/debug/artifact"
+printf 'unrelated\n' \
+  > "$unrelated_artifact_worktree/android/app/build/outputs/artifact"
+printf 'unrelated\n' \
+  > "$unrelated_artifact_worktree/.gradle-user-home/caches/artifact"
+touch --date='10 days ago' \
+  "$unrelated_artifact_worktree/target" \
+  "$unrelated_artifact_worktree/target/debug" \
+  "$unrelated_artifact_worktree/target/debug/artifact" \
+  "$unrelated_artifact_worktree/android/app/build" \
+  "$unrelated_artifact_worktree/android/app/build/outputs" \
+  "$unrelated_artifact_worktree/android/app/build/outputs/artifact" \
+  "$unrelated_artifact_worktree/.gradle-user-home" \
+  "$unrelated_artifact_worktree/.gradle-user-home/caches" \
+  "$unrelated_artifact_worktree/.gradle-user-home/caches/artifact"
+printf '// preserve failing worktree\n' >> "$failing_artifact_worktree/src/lib.rs"
+mkdir -p \
+  "$failing_artifact_worktree/target/removable" \
+  "$failing_artifact_worktree/target/restricted" \
+  "$failing_artifact_worktree/android/app/build/outputs"
+dd if=/dev/zero \
+  of="$failing_artifact_worktree/target/removable/artifact" \
+  bs=1024 count=64 status=none
+printf 'cannot remove\n' \
+  > "$failing_artifact_worktree/target/restricted/artifact"
+printf 'remove after target failure\n' \
+  > "$failing_artifact_worktree/android/app/build/outputs/artifact"
+printf '// preserve later worktree\n' >> "$after_failure_worktree/src/lib.rs"
+mkdir -p "$after_failure_worktree/target/debug"
+printf 'remove from later worktree\n' \
+  > "$after_failure_worktree/target/debug/artifact"
+touch --date='10 days ago' \
+  "$failing_artifact_worktree/target" \
+  "$failing_artifact_worktree/target/removable" \
+  "$failing_artifact_worktree/target/removable/artifact" \
+  "$failing_artifact_worktree/target/restricted" \
+  "$failing_artifact_worktree/target/restricted/artifact" \
+  "$failing_artifact_worktree/android/app/build" \
+  "$failing_artifact_worktree/android/app/build/outputs" \
+  "$failing_artifact_worktree/android/app/build/outputs/artifact" \
+  "$after_failure_worktree/target" \
+  "$after_failure_worktree/target/debug" \
+  "$after_failure_worktree/target/debug/artifact"
+failing_target_kib_before=$(du -sk "$failing_artifact_worktree/target" | cut -f1)
+undeletable_artifact_dir="$failing_artifact_worktree/target/restricted"
+chmod 555 "$undeletable_artifact_dir"
+start_active_probe "$active_artifact_worktree"
 expected_reclaimed_kib=0
 for artifact in \
   "$artifact_repo/.gradle-user-home" \
   "$dirty_artifact_worktree/target" \
   "$dirty_artifact_worktree/android/app/build" \
   "$dirty_artifact_worktree/.gradle-user-home" \
-  "$outside_artifact_worktree/target"; do
+  "$outside_artifact_worktree/target" \
+  "$failing_artifact_worktree/android/app/build" \
+  "$after_failure_worktree/target"; do
   artifact_kib=$(du -sk "$artifact" | cut -f1)
   expected_reclaimed_kib=$((expected_reclaimed_kib + artifact_kib))
 done
 
 dirty_artifact_report=$(
+  REPRISE_AGENT_WORKTREE_ROOT="$artifact_agent_root" \
   REPRISE_GC_STATE_ROOT="$state_root" \
     "$runner" sweep \
     --scope "$artifact_repo" \
@@ -442,9 +524,11 @@ dirty_artifact_report=$(
     --target-min-kib 0 \
     --apply
 )
-kill "$active_pid"
-wait "$active_pid" 2>/dev/null || true
-active_pid=
+stop_active_probe
+failing_target_kib_after=$(du -sk "$failing_artifact_worktree/target" | cut -f1)
+expected_reclaimed_kib=$((
+  expected_reclaimed_kib + failing_target_kib_before - failing_target_kib_after
+))
 rg -Fq "keep dirty $dirty_artifact_worktree" <<<"$dirty_artifact_report"
 rg -Fq "keep primary $artifact_repo" <<<"$dirty_artifact_report"
 rg -Fq \
@@ -473,7 +557,7 @@ rg -Fq \
 [[ -d $outside_artifact_worktree ]]
 git -C "$artifact_repo" show-ref \
   --verify --quiet refs/heads/test/outside-artifact
-rg -Fq "keep excluded $excluded_artifact_worktree" \
+rg -Fq "keep excluded $excluded_artifact_listed_path" \
   <<<"$dirty_artifact_report"
 rg -Fq "keep excluded $excluded_outside_worktree" \
   <<<"$dirty_artifact_report"
@@ -485,13 +569,37 @@ git -C "$artifact_repo" show-ref \
   --verify --quiet refs/heads/test/excluded-outside
 rg -Fq "keep active_artifacts $active_artifact_worktree" \
   <<<"$dirty_artifact_report"
+rg -Fq "keep active $active_artifact_worktree" \
+  <<<"$dirty_artifact_report"
+! rg -Fq "keep outside_scope $active_artifact_worktree" \
+  <<<"$dirty_artifact_report"
 rg -Fq "keep locked $locked_artifact_worktree" \
+  <<<"$dirty_artifact_report"
+rg -Fq "keep unresolved_path $unresolved_artifact_worktree" \
+  <<<"$dirty_artifact_report"
+rg -Fq \
+  "keep artifact_delete_failed $failing_artifact_worktree/target" \
+  <<<"$dirty_artifact_report"
+rg -Fq \
+  "cleaned stale_android_build $failing_artifact_worktree/android/app/build" \
+  <<<"$dirty_artifact_report"
+rg -Fq \
+  "cleaned stale_target $after_failure_worktree/target" \
   <<<"$dirty_artifact_report"
 [[ -d $active_artifact_worktree/target ]]
 [[ -d $locked_artifact_worktree/target ]]
 [[ -d $fresh_artifact_worktree/target ]]
 [[ -d $fresh_artifact_worktree/android/app/build ]]
 [[ -d $fresh_artifact_worktree/.gradle-user-home ]]
+[[ -d $unrelated_artifact_worktree/target ]]
+[[ -d $unrelated_artifact_worktree/android/app/build ]]
+[[ -d $unrelated_artifact_worktree/.gradle-user-home ]]
+[[ -d $failing_artifact_worktree/target/restricted ]]
+[[ ! -d $failing_artifact_worktree/target/removable ]]
+[[ ! -d $failing_artifact_worktree/android/app/build ]]
+[[ ! -d $after_failure_worktree/target ]]
+git -C "$artifact_repo" show-ref \
+  --verify --quiet refs/heads/test/unresolved-artifact
 rg -Fq '// tracked work in progress' "$dirty_artifact_worktree/src/lib.rs"
 rg -Fq '// primary tracked work in progress' "$artifact_repo/src/lib.rs"
 rg -Fq 'untracked work in progress' "$dirty_artifact_worktree/notes.txt"

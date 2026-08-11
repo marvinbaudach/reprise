@@ -23,10 +23,15 @@ die() {
   exit 1
 }
 
+canonical_directory() {
+  local path=$1
+  [[ -d $path ]] || return 1
+  realpath "$path"
+}
+
 absolute_directory() {
   local path=$1
-  [[ -d $path ]] || die "directory does not exist: $path"
-  realpath "$path"
+  canonical_directory "$path" || die "directory does not exist: $path"
 }
 
 canonical_repository_root() {
@@ -233,9 +238,21 @@ maybe_clean_artifact() {
   ((size_kib >= min_kib)) || return 0
 
   if [[ $apply == true ]]; then
-    find "$artifact" -xdev -depth -delete
-    RECLAIMED_KIB=$((RECLAIMED_KIB + size_kib))
-    echo "cleaned $artifact_kind $artifact reclaimed=${size_kib}KiB"
+    if find "$artifact" -xdev -depth -delete; then
+      RECLAIMED_KIB=$((RECLAIMED_KIB + size_kib))
+      echo "cleaned $artifact_kind $artifact reclaimed=${size_kib}KiB"
+    else
+      local remaining_kib=0 reclaimed_kib
+      if [[ -d $artifact ]]; then
+        if ! remaining_kib=$(du -sk "$artifact" | cut -f1); then
+          remaining_kib=$size_kib
+        fi
+      fi
+      reclaimed_kib=$((size_kib - remaining_kib))
+      ((reclaimed_kib >= 0)) || reclaimed_kib=0
+      RECLAIMED_KIB=$((RECLAIMED_KIB + reclaimed_kib))
+      echo "keep artifact_delete_failed $artifact reclaimed=${reclaimed_kib}KiB"
+    fi
   else
     echo "candidate $artifact_kind $artifact"
   fi
@@ -254,22 +271,36 @@ maybe_clean_artifacts() {
     return 0
   fi
 
-  maybe_clean_artifact \
-    "$path/target" stale_target "$apply" "$max_age_days" "$min_kib"
-  maybe_clean_artifact \
-    "$path/android/app/build" stale_android_build \
-    "$apply" "$max_age_days" "$min_kib"
-  maybe_clean_artifact \
-    "$path/.gradle-user-home" stale_gradle_home \
-    "$apply" "$max_age_days" "$min_kib"
+  if [[ -f $path/Cargo.toml ]]; then
+    maybe_clean_artifact \
+      "$path/target" stale_target "$apply" "$max_age_days" "$min_kib"
+  fi
+  if [[ -f $path/android/settings.gradle.kts &&
+    -f $path/android/app/build.gradle.kts ]]; then
+    maybe_clean_artifact \
+      "$path/android/app/build" stale_android_build \
+      "$apply" "$max_age_days" "$min_kib"
+    maybe_clean_artifact \
+      "$path/.gradle-user-home" stale_gradle_home \
+      "$apply" "$max_age_days" "$min_kib"
+  fi
 }
 
 path_is_excluded() {
   local path=$1
   shift
-  local excluded_path
+  local canonical_path excluded_path canonical_excluded_path
+  EXCLUSION_UNRESOLVED_PATH=
+  canonical_path=$(canonical_directory "$path") || {
+    EXCLUSION_UNRESOLVED_PATH=$path
+    return 2
+  }
   for excluded_path in "$@"; do
-    [[ $path != "$excluded_path" ]] || return 0
+    canonical_excluded_path=$(canonical_directory "$excluded_path") || {
+      EXCLUSION_UNRESOLVED_PATH=$excluded_path
+      return 2
+    }
+    [[ $canonical_path != "$canonical_excluded_path" ]] || return 0
   done
   return 1
 }
@@ -289,12 +320,19 @@ sweep_repo() {
   fi
   primary_path=$(absolute_directory "$repo")
 
-  local path= head= branch= locked=false line classification
+  local path= head= branch= locked=false line classification exclusion_status
   while IFS= read -r line || [[ -n $line ]]; do
     if [[ -z $line ]]; then
       if [[ -n $path ]]; then
         if path_is_excluded "$path" "${excluded_paths[@]}"; then
+          exclusion_status=0
+        else
+          exclusion_status=$?
+        fi
+        if ((exclusion_status == 0)); then
           echo "keep excluded $path"
+        elif ((exclusion_status == 2)); then
+          echo "keep unresolved_path $EXCLUSION_UNRESOLVED_PATH worktree=$path"
         elif [[ $path == "$primary_path" ]]; then
           echo "keep primary $path"
           maybe_clean_artifacts \
