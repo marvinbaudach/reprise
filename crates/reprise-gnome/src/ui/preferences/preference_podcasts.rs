@@ -14,8 +14,13 @@ use reprise_core::podcasts::config::{self, CleanupPolicy};
 
 use crate::ui::strings;
 
+const IMPORT_ALL_EPISODES: &str = "Import all episodes";
+const IMPORT_COUNT_MIN_VISIBLE: f64 = 5.0;
+
 struct PodcastPreferenceRowsInner {
     rows: Vec<gtk4::Widget>,
+    import_all: adw::SwitchRow,
+    import_count: adw::SpinRow,
 }
 
 #[derive(Clone)]
@@ -34,6 +39,23 @@ impl PodcastPreferenceRows {
         for row in &self.inner.rows {
             row.set_sensitive(enabled);
         }
+        self.inner
+            .import_count
+            .set_sensitive(enabled && !self.inner.import_all.is_active());
+    }
+}
+
+fn import_count_control_values(saved: usize) -> (bool, usize) {
+    if saved == 0 {
+        (true, config::DEFAULT_IMPORT_COUNT)
+    } else {
+        (
+            false,
+            saved.clamp(
+                IMPORT_COUNT_MIN_VISIBLE as usize,
+                config::IMPORT_COUNT_MAX as usize,
+            ),
+        )
     }
 }
 
@@ -51,16 +73,41 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRow
         keep_downloaded_default: config::DEFAULT_KEEP_DOWNLOADED,
     });
 
-    let import_count = adw::SpinRow::with_range(5.0, 100.0, 1.0);
+    let (imports_all, visible_import_count) = import_count_control_values(config.import_count);
+    let import_all = adw::SwitchRow::builder()
+        .title(strings::text(IMPORT_ALL_EPISODES))
+        .active(imports_all)
+        .build();
+    let import_count = adw::SpinRow::with_range(
+        IMPORT_COUNT_MIN_VISIBLE,
+        config::IMPORT_COUNT_MAX as f64,
+        1.0,
+    );
     import_count.set_title(&strings::text(strings::PODCAST_EPISODES_PER_SHOW));
-    import_count.set_value(config.import_count as f64);
+    import_count.set_value(visible_import_count as f64);
     {
         let conn = conn.clone();
         import_count.connect_value_notify(move |row| {
-            save_or_warn(config::set_import_count(
-                &conn,
-                row.value().round() as usize,
-            ));
+            if row.is_sensitive() {
+                save_or_warn(config::set_import_count(
+                    &conn,
+                    row.value().round() as usize,
+                ));
+            }
+        });
+    }
+    {
+        let conn = conn.clone();
+        let import_count = import_count.clone();
+        import_all.connect_active_notify(move |row| {
+            let imports_all = row.is_active();
+            import_count.set_sensitive(row.is_sensitive() && !imports_all);
+            let value = if imports_all {
+                0
+            } else {
+                import_count.value().round() as usize
+            };
+            save_or_warn(config::set_import_count(&conn, value));
         });
     }
 
@@ -98,10 +145,13 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRow
     let rows = PodcastPreferenceRows {
         inner: Rc::new(PodcastPreferenceRowsInner {
             rows: vec![
-                import_count.upcast(),
+                import_all.clone().upcast(),
+                import_count.clone().upcast(),
                 auto_download.upcast(),
                 cleanup.upcast(),
             ],
+            import_all,
+            import_count,
         }),
     };
     rows.set_sensitive(enabled);
@@ -136,6 +186,12 @@ fn save_or_warn<E: std::fmt::Display>(result: Result<(), E>) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn unlimited_import_uses_a_switch_without_rendering_zero_in_the_spin_row() {
+        assert_eq!(import_count_control_values(0), (true, 25));
+        assert_eq!(import_count_control_values(42), (false, 42));
+    }
+
     // Kept as an integration check that this page writes the settings it
     // reads back. The clamping and key spelling are core's to prove, and are
     // covered by `podcasts::config`'s own tests.
@@ -161,6 +217,39 @@ mod tests {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let rows = build(&conn, true);
-        assert_eq!(rows.inner.rows.len(), 3);
+        assert_eq!(rows.inner.rows.len(), 4);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn unlimited_import_switch_disables_a_nonzero_count_and_restores_it_when_switched_off() {
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        config::set_import_count(&conn, 42).unwrap();
+
+        let rows = build(&conn, true);
+        let import_all = rows.inner.rows[0].downcast_ref::<adw::SwitchRow>().unwrap();
+        let import_count = rows.inner.rows[1].downcast_ref::<adw::SpinRow>().unwrap();
+
+        assert!(!import_all.is_active());
+        assert!(import_count.is_sensitive());
+        assert_eq!(import_count.value(), 42.0);
+
+        import_all.set_active(true);
+        assert!(import_all.is_active());
+        assert!(!import_count.is_sensitive());
+        assert_eq!(config::load(&conn).unwrap().import_count, 0);
+
+        import_all.set_active(false);
+        assert!(import_count.is_sensitive());
+        assert_eq!(import_count.value(), 42.0);
+        assert_eq!(config::load(&conn).unwrap().import_count, 42);
+
+        config::set_import_count(&conn, 0).unwrap();
+        let reloaded = build(&conn, true);
+        let reloaded_count = reloaded.inner.rows[1]
+            .downcast_ref::<adw::SpinRow>()
+            .unwrap();
+        assert_eq!(reloaded_count.value(), config::DEFAULT_IMPORT_COUNT as f64);
     }
 }

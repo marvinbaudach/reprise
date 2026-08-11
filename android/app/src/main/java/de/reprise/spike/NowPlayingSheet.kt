@@ -66,12 +66,7 @@ internal fun NowPlayingSheet(
     PredictiveBackHandler {
         try {
             it.collect { event -> backProgress = event.progress }
-            if (surfaceState.nowPlayingQueueVisible) {
-                surfaceState.showNowPlayingQueue(false)
-                backProgress = 0f
-            } else {
-                close()
-            }
+            close()
         } catch (_: CancellationException) {
             backProgress = 0f
         }
@@ -141,17 +136,13 @@ private fun WideShortNowPlayingContent(
                 .fillMaxHeight(),
             contentAlignment = Alignment.Center,
         ) {
-            if (surfaceState.nowPlayingQueueVisible) {
-                NowPlayingQueuePage(playback, surfaceState)
-            } else {
-                TrackCover(
-                    trackUri = track.uri,
-                    size = metrics.coverSizeDp,
-                    modifier = Modifier.testTag("now-playing-cover"),
-                    artworkSize = AndroidArtworkSize.NOW_PLAYING,
-                    shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-                )
-            }
+            TrackCover(
+                trackUri = track.uri,
+                size = metrics.coverSizeDp,
+                modifier = Modifier.testTag("now-playing-cover"),
+                artworkSize = AndroidArtworkSize.NOW_PLAYING,
+                shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
+            )
         }
         Spacer(Modifier.width(24.dp))
         Column(
@@ -188,13 +179,13 @@ private fun WideShortNowPlayingContent(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                QueuePageButton(surfaceState)
                 SleepTimerControl(playback.sleepTimer)
                 FavouriteHeartButton(
                     track = track,
                     surfaceState = surfaceState,
                     tag = "now-playing-heart",
                 )
+                NowPlayingTrackContextMenu(track)
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
@@ -212,20 +203,6 @@ private fun WideShortNowPlayingContent(
             Spacer(Modifier.weight(1f))
             PlaybackActions(playback = playback, metrics = metrics, wideShort = true)
         }
-    }
-}
-
-@Composable
-internal fun QueuePageButton(surfaceState: MobileSurfaceViewModel) {
-    val visible = surfaceState.nowPlayingQueueVisible
-    IconButton(
-        onClick = { surfaceState.showNowPlayingQueue(!visible) },
-        modifier = Modifier.size(48.dp),
-    ) {
-        MaterialSymbol(
-            name = if (visible) "album" else "queue_music",
-            contentDescription = if (visible) "Show artwork" else "Show queue",
-        )
     }
 }
 

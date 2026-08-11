@@ -34,9 +34,9 @@ fastrand = "2"
 # all this task needs.
 notify = "8"
 # Pure-Rust image decode/resize for cover thumbnails (GUI-A). default-features
-# off: only the formats embedded covers / sidecars actually use. Cross-platform,
-# pulls in no gtk/gstreamer/zbus (verify with `cargo tree -p reprise-core`).
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
+# off: only the formats Reprise validates for covers and source images.
+# Cross-platform, pulls in no gtk/gstreamer/zbus (verify with `cargo tree -p reprise-core`).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "ico"] }
 # Blocking, pure-Rust HTTP client (rustls) for the opt-in cover download
 # (GUI-A2). Blocking is fine — fetches run on a dedicated worker thread, never
 # the UI thread. No async runtime, no gtk/gstreamer/zbus (verify cargo tree).

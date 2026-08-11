@@ -328,7 +328,7 @@ fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
 }
 
 @Test
-fun libraryFrameUsesTheExactTwoAMetricsAndAllFourBrowseDestinations() {
+fun libraryFrameUsesTheExactTwoAMetricsAndAllFiveBrowseDestinations() {
     assertEquals(
         LibraryFrameMetrics(
             filterChipHeightDp = 32,
@@ -340,7 +340,13 @@ fun libraryFrameUsesTheExactTwoAMetricsAndAllFourBrowseDestinations() {
         libraryFrameMetrics,
     )
     assertEquals(
-        listOf(BrowseTab.TITLES, BrowseTab.ARTISTS, BrowseTab.ALBUMS, BrowseTab.FAVOURITES),
+        listOf(
+            BrowseTab.TITLES,
+            BrowseTab.ARTISTS,
+            BrowseTab.ALBUMS,
+            BrowseTab.FAVOURITES,
+            BrowseTab.QUEUE,
+        ),
         libraryDestinations,
     )
 }
@@ -567,6 +573,9 @@ private class RecordingBrowsePort(
         operations += "album:$album:$albumArtist:${window.offset}:${window.limit}"
         return albumTracks
     }
+
+    override fun albumTrackIds(album: String, albumArtist: String): List<Long> =
+        albumTracks.rows.map(LibraryTrack::id)
 
     override fun trackById(trackId: Long): LibraryTrack? =
         titleResults.values.asSequence().flatMap { it.rows }.firstOrNull { it.id == trackId }

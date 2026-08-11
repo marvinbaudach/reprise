@@ -1,6 +1,7 @@
 use std::io::Read;
 
 pub(crate) const MAX_JSON_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
+pub(crate) const MAX_FEED_RESPONSE_BYTES: u64 = 32 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BoundedReadError {
@@ -9,12 +10,19 @@ pub(crate) enum BoundedReadError {
 }
 
 pub(crate) fn read_bounded_string(reader: impl Read) -> Result<String, BoundedReadError> {
+    read_bounded_string_with_limit(reader, MAX_JSON_RESPONSE_BYTES)
+}
+
+pub(crate) fn read_bounded_string_with_limit(
+    reader: impl Read,
+    max_bytes: u64,
+) -> Result<String, BoundedReadError> {
     let mut bytes = Vec::new();
     reader
-        .take(MAX_JSON_RESPONSE_BYTES + 1)
+        .take(max_bytes + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| BoundedReadError::Read)?;
-    if bytes.len() as u64 > MAX_JSON_RESPONSE_BYTES {
+    if bytes.len() as u64 > max_bytes {
         return Err(BoundedReadError::TooLarge);
     }
     String::from_utf8(bytes).map_err(|_| BoundedReadError::Read)

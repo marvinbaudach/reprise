@@ -16,11 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** The future-only page inside Now Playing. */
+/** The future-only page in the library's Queue destination. */
 @Composable
 internal fun NowPlayingQueuePage(
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
+    surfaceLayout: SurfaceLayout,
 ) {
     val controls = LocalPlaybackControls.current
     var tracks by remember { mutableStateOf<LibraryWindow<LibraryTrack>?>(null) }
@@ -91,7 +92,7 @@ internal fun NowPlayingQueuePage(
                 )
                 Box(modifier = Modifier.weight(1f)) {
                     TrackRows(
-                        surfaceLayout = SurfaceLayout.STACKED,
+                        surfaceLayout = surfaceLayout,
                         surfaceState = surfaceState,
                         listKey = LibraryListKey.UPCOMING,
                         tracks = checkNotNull(tracks),
