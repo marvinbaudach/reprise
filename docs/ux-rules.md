@@ -2351,6 +2351,13 @@ the panel).
   action column is named `Link` and follows NR-30; its fixed cover column,
   named text columns, sorting, filters, counts, activation semantics and zero
   result recovery remain exactly as specified by NR-25.
+- **NR-32** [active] [core] [gtk] — A release the listener deliberately deleted
+  does not return as a gap. When "move to trash" or "remove from library"
+  finally removes the last track of an album, or the song a single is matched
+  by, that release is remembered and hidden — including when the catalog only
+  learns of it later. Files that merely go missing never trigger this.
+  Restoring the release through "Show again" forgets it, and so does
+  re-acquiring it.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
