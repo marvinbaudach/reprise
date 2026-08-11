@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -95,8 +96,47 @@ class MainActivityPlayViewStabilityTest {
         compose.onNodeWithTag("library-mini-player").assertDoesNotExist()
     }
 
+    /**
+     * The dock is the play view in another shape, so it owes the same honesty:
+     * while it still shows the row answered for the previous track, its heart
+     * would write that previous track's rating.
+     */
+    @Test
+    fun theDockHeartIsAsDisabledAsTheSheetsWhileItShowsThePreviousRow() {
+        publishTrack(1)
+        recreateAt("w916dp-h412dp-land")
+        compose.onNodeWithText("Dock mode").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("dock-title").assertTextContains("Rotation Song 1")
+
+        application.deferTrack(2)
+        publishTrack(2)
+
+        compose.onNodeWithTag("dock-title").assertTextContains("Rotation Song 1")
+        compose.onNodeWithTag("dock-heart")
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .performClick()
+        assertEquals(emptyList<Pair<Long, Int>>(), application.controls.ratingRequests)
+
+        application.completeTrack(2)
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("dock-title").assertTextContains("Rotation Song 2")
+        compose.onNodeWithTag("dock-heart").assertIsEnabled().performClick()
+        assertEquals(listOf(2L to 5), application.controls.ratingRequests)
+    }
+
     private fun publishTrack(trackId: Long) {
         application.service.publish(m9bSnapshot(trackId))
+        idlePlayback()
+    }
+
+    private fun recreateAt(qualifiers: String) {
+        RuntimeEnvironment.setQualifiers(qualifiers)
+        compose.activityRule.scenario.recreate()
+        shadowOf(Looper.getMainLooper()).idle()
+        application.service.republish()
         idlePlayback()
     }
 

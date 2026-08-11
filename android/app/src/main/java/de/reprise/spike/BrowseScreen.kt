@@ -631,7 +631,11 @@ internal fun BrowseScreen(
         }
         if (surfaceState.dockMode) {
             shownTrack?.let { track ->
-                DockModeSurface(track, playback, surfaceState)
+                CompositionLocalProvider(
+                    LocalNowPlayingActionsEnabled provides !shownTrackIsStale,
+                ) {
+                    DockModeSurface(track, playback, surfaceState)
+                }
             } ?: DockModeWaitingSurface()
         } else {
             AnimatedVisibility(
