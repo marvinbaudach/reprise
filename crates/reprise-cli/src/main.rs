@@ -1,4 +1,4 @@
-//! `reprise-cli`: a headless, MIT-licensed command-line frontend over the
+//! `reprise-cli`: a headless command-line frontend over the
 //! `reprise-core` engine. It opens the same SQLite library the GTK app uses
 //! (WAL, so both can run at once), owns it through [`reprise_core::db::Db`], and
 //! drives it through core's `&Db` facades — every mutation lands in

@@ -71,3 +71,8 @@ android/app/src/main/java/uniffi/
 # Python-Bytecode der Skripte unter scripts/lib
 __pycache__/
 *.pyc
+
+# Agent-Werkzeuge und Zwischenstände dieser Maschine — nie Teil des Repos.
+.claude/
+.agents/
+.tmp/

@@ -159,6 +159,6 @@ missing — they never fall back to the live desktop or your user profile.
 
 ## License
 
-The portable engine (`reprise-core`, `reprise-platform-linux`) is **MIT**. The
-native GTK4 frontend (`reprise-gnome`) is **GPL-3.0-or-later**. See
-[LICENSING.md](LICENSING.md) for the rationale and component boundaries.
+Reprise is **GPL-3.0-or-later** — every crate, from the portable engine to the
+native GTK4 frontend. See [LICENSE](LICENSE) for the full text and
+[LICENSING.md](LICENSING.md) for the rationale and the third-party notices.
