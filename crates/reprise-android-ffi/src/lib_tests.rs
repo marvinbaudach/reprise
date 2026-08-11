@@ -320,8 +320,39 @@ fn browse_surface_gets_one_albums_tracks_in_core_order() {
         .rows;
 
     assert_eq!(
-        rows.into_iter().map(|row| row.uri).collect::<Vec<_>>(),
-        vec![first_uri, second_uri]
+        rows.into_iter()
+            .map(|row| {
+                (
+                    row.uri,
+                    row.title,
+                    row.artist,
+                    row.album,
+                    row.duration_ms,
+                    row.play_count,
+                    row.rating,
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                first_uri,
+                "All I Want".into(),
+                "Joni Mitchell".into(),
+                "Blue".into(),
+                1_160,
+                0,
+                0,
+            ),
+            (
+                second_uri,
+                "A Case of You".into(),
+                "Joni Mitchell".into(),
+                "Blue".into(),
+                1_160,
+                27,
+                4,
+            ),
+        ]
     );
 }
 
@@ -342,8 +373,39 @@ fn browse_surface_search_matches_genre_metadata_in_core_title_order() {
     let rows = library.search_tracks(" folk ", full_window()).unwrap().rows;
 
     assert_eq!(
-        rows.into_iter().map(|row| row.uri).collect::<Vec<_>>(),
-        vec![case_uri, want_uri]
+        rows.into_iter()
+            .map(|row| {
+                (
+                    row.uri,
+                    row.title,
+                    row.artist,
+                    row.album,
+                    row.duration_ms,
+                    row.play_count,
+                    row.rating,
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                case_uri,
+                "A Case of You".into(),
+                "Joni Mitchell".into(),
+                "Blue".into(),
+                1_160,
+                27,
+                4,
+            ),
+            (
+                want_uri,
+                "All I Want".into(),
+                "Joni Mitchell".into(),
+                "Blue".into(),
+                1_160,
+                0,
+                0,
+            ),
+        ]
     );
 }
 
