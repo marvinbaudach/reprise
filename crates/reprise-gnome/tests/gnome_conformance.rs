@@ -11,6 +11,15 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+fn run_gate(script: &str) -> std::process::Output {
+    let root = repo_root();
+    Command::new("bash")
+        .arg(root.join("scripts").join(script))
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|e| panic!("could not run {script}: {e}"))
+}
+
 #[test]
 fn rulebook_lib_reports_planned_rules_without_failing() {
     let root = repo_root();
@@ -36,5 +45,35 @@ fn rulebook_lib_reports_planned_rules_without_failing() {
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("warning:"),
         "a planned violation must still be reported as a warning"
+    );
+}
+
+#[test]
+fn gp_12_metainfo_passes_appstream_validation() {
+    let out = run_gate("check-appstream.sh");
+    assert!(
+        out.status.success(),
+        "check-appstream.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn gp_13_desktop_file_is_valid() {
+    let out = run_gate("check-appstream.sh");
+    assert!(
+        out.status.success(),
+        "check-appstream.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn gp_16_name_and_summary_stay_within_length_limits() {
+    let out = run_gate("check-appstream.sh");
+    assert!(
+        out.status.success(),
+        "check-appstream.sh failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }
