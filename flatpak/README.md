@@ -26,12 +26,24 @@ flatpak-builder --user --install-deps-from=flathub --force-clean \
 flatpak run org.reprise.Reprise
 ```
 
-The application receives only display, graphics, audio, network, its own MPRIS
-name, and narrow access to the desktop's existing GVfs mounts for Android MTP
-synchronization. Library access is granted by the user's folder choice through
-the desktop FileChooser/Documents portals; moving files to Trash uses the Trash
-portal inside Flatpak. There is no broad home-directory, direct-USB,
-session-bus, or system-bus access.
+Every static permission and why no portal replaces it:
+
+- `--share=ipc`, `--socket=wayland`, `--socket=fallback-x11`, `--device=dri` —
+  display and rendering; no portal covers these.
+- `--socket=pulseaudio` — audio playback; PipeWire is reached through the same
+  socket.
+- `--share=network` — cover art, lyrics from LRCLIB, podcast and radio feeds,
+  and optional scrobbling.
+- `--own-name=org.mpris.MediaPlayer2.reprise` — media keys and the lock screen.
+  MPRIS is a standardised namespace and has no portal equivalent.
+- `--talk-name=org.gtk.vfs.*` and `--filesystem=xdg-run/gvfsd` — reaching the
+  desktop's existing MTP mounts for Android synchronisation. There is no portal
+  for MTP devices.
+
+Library access is not static: it comes from the user's folder choice through
+the FileChooser and Documents portals. Moving files to the trash uses the Trash
+portal. There is no broad home directory, direct USB, session bus or system bus
+access.
 
 The runtime must provide the GStreamer Good Plug-ins used by Android MP3
 synchronization, in particular `lamemp3enc` and `id3v2mux`. Run
@@ -65,9 +77,7 @@ required, so there is deliberately no `flathub.json`.
 
 ## Verification status
 
-The manifest and every generated crate URL/checksum can be validated locally.
-This workstation has Flatpak but no `flatpak-builder` executable or GNOME 50
-SDK/runtime installed, so a full sandbox build cannot be run here without an
-external tool/runtime installation. The equivalent Meson release
-build-and-DESTDIR install is part of the release verification and remains the
-minimum offline packaging proof in that environment.
+`flatpak-builder`, `flatpak`, `appstreamcli` and `desktop-file-validate` are
+available on the development machine, so the manifest can be linted and a
+sandbox build can be run locally. The gates that cover this are
+`scripts/check-flatpak-manifest.sh` and `scripts/check-appstream.sh`.
