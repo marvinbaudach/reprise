@@ -1,8 +1,15 @@
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use reprise_core::visuals::{Fill, Geom, Rgba, Scene, Shape};
 
-use crate::visualizer::{encode_scene, AndroidVisualEngine};
+use crate::visualizer::{
+    encode_scene, AndroidVisualEngine, MonotonicClock, LIVE_AUDIO_STALE_AFTER,
+};
 
 #[test]
 fn flat_scene_layout_round_trips_every_supported_geometry() {
@@ -169,6 +176,85 @@ fn paused_live_audio_reports_silence_without_forgetting_the_stream() {
     assert!(engine.has_live_audio());
     assert_eq!(engine.bass_pressure().kick, 0.0);
     assert_eq!(engine.bass_pressure().pressure, 0.0);
+}
+
+#[test]
+fn stale_live_pcm_reopens_the_stored_spectrogram_fallback() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    assert!(engine.has_live_audio());
+
+    clock.advance(LIVE_AUDIO_STALE_AFTER);
+    assert!(!engine.has_live_audio());
+
+    let stored_bands = vec![0.35; 24];
+    engine.ingest_bands(stored_bands.clone());
+    let fallback = AndroidVisualEngine::with_clock(clock);
+    fallback.set_playing(true);
+    fallback.ingest_bands(stored_bands);
+
+    let stale_scene = decode_scene(&engine.scene(272.0, 272.0));
+    let fallback_scene = decode_scene(&fallback.scene(272.0, 272.0));
+    assert_eq!(
+        main_bar_segments(&stale_scene, 272.0),
+        main_bar_segments(&fallback_scene, 272.0),
+    );
+}
+
+#[test]
+fn ui_reads_do_not_wait_for_live_pcm_processing() {
+    let engine = Arc::new(AndroidVisualEngine::new());
+
+    let (read, worker) = engine.with_live_processor_locked_for_testing(|| {
+        let (sender, receiver) = mpsc::channel();
+        let engine = Arc::clone(&engine);
+        let worker = thread::spawn(move || {
+            sender
+                .send(engine.has_live_audio())
+                .expect("test receiver remains alive");
+        });
+        (receiver.recv_timeout(Duration::from_millis(250)), worker)
+    });
+
+    worker.join().expect("UI read worker should finish");
+    assert!(!read.expect("UI read waited for the PCM processor"));
+}
+
+#[derive(Default)]
+struct FakeMonotonicClock {
+    now_nanos: AtomicU64,
+}
+
+impl FakeMonotonicClock {
+    fn advance(&self, duration: Duration) {
+        self.now_nanos.fetch_add(
+            duration
+                .as_nanos()
+                .try_into()
+                .expect("test duration fits u64"),
+            Ordering::Relaxed,
+        );
+    }
+}
+
+impl MonotonicClock for FakeMonotonicClock {
+    fn now(&self) -> Duration {
+        Duration::from_nanos(self.now_nanos.load(Ordering::Relaxed))
+    }
+}
+
+fn main_bar_segments(scene: &Scene, height: f32) -> Vec<[f32; 4]> {
+    scene
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape.geom {
+            Geom::Rect { x, y, w, h } if y < height * 0.82 && h > 3.0 => Some([x, y, w, h]),
+            _ => None,
+        })
+        .collect()
 }
 
 fn shape(geom: Geom) -> Shape {
