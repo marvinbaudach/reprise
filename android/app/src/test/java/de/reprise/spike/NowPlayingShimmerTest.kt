@@ -38,10 +38,10 @@ class NowPlayingShimmerTest {
             opacity = 1f,
         )
 
-        assertEquals(0.34f, rest, FLOAT_TOLERANCE)
-        assertEquals(0.48f, pressure, FLOAT_TOLERANCE)
-        assertEquals(0.50f, swell, FLOAT_TOLERANCE)
-        assertEquals(0.64f, peak, FLOAT_TOLERANCE)
+        assertEquals(0.113_333f, rest, FLOAT_TOLERANCE)
+        assertEquals(0.160_000f, pressure, FLOAT_TOLERANCE)
+        assertEquals(0.166_667f, swell, FLOAT_TOLERANCE)
+        assertEquals(0.213_333f, peak, FLOAT_TOLERANCE)
         assertTrue(pressure > rest)
         assertTrue(swell > rest)
         assertEquals(rest, NowPlayingShimmerSpec.alpha(-1f, -1f, 1f), FLOAT_TOLERANCE)

@@ -14,6 +14,14 @@ internal object NowPlayingShimmerSpec {
     private const val REST_ALPHA = 0.34f
     private const val PRESSURE_ALPHA = 0.14f
     private const val SWELL_ALPHA = 0.16f
+
+    /**
+     * The phone fog spends roughly three times the alpha of the desktop bloom below this
+     * disc. Full desktop shimmer alpha lifted a measured near-white surround by 18 brightness
+     * levels, so one factor reduces every term while preserving their tuned proportions.
+     */
+    private const val PHONE_FOG_ALPHA_SCALE = 1f / 3f
+
     private const val TURN_SECONDS = 60.0
     private const val DEGREES_PER_TURN = 360.0
     private const val DESKTOP_DIAMETER_TO_COVER_RATIO = 520f / 168f
@@ -36,7 +44,7 @@ internal object NowPlayingShimmerSpec {
             REST_ALPHA +
                 PRESSURE_ALPHA * NowPlayingFogSpec.normalizedPressure(bassPressure) +
                 SWELL_ALPHA * NowPlayingFogSpec.normalizedSwell(swell)
-            ) * opacity.coerceIn(0f, 1f)
+            ) * PHONE_FOG_ALPHA_SCALE * opacity.coerceIn(0f, 1f)
 }
 
 /** Draws the already masked texture; no artwork or mask work enters a frame. */
