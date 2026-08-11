@@ -2,7 +2,7 @@
 slug: releases-deleted-memory
 worktree:
 branch:
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-08-11
 ---
