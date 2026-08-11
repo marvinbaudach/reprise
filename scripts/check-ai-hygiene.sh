@@ -11,20 +11,20 @@ src=crates
 prompt_like='^\s*//+\s*(Step [0-9]|First,|Now (we|I)|Let'"'"'s |You (should|must|can)|Note that you|As an AI|I will now|Here'"'"'s )'
 n=$({ grep -rnE --include='*.rs' "$prompt_like" "$src" 2>/dev/null || true; } | wc -l)
 (( n == 0 )) || report_violation GP-19 "$n comment(s) read as model instructions:
-$(grep -rnE --include='*.rs' "$prompt_like" "$src" | head -10)"
+$({ grep -rnE --include='*.rs' "$prompt_like" "$src" || true; } | head -10)"
 
 # GP-19b — banner comment blocks.
 banner='^\s*//\s*[=-]{10,}\s*$'
 n=$({ grep -rnE --include='*.rs' "$banner" "$src" 2>/dev/null || true; } | wc -l)
 (( n == 0 )) || report_violation GP-19 "$n banner comment block(s):
-$(grep -rnE --include='*.rs' "$banner" "$src" | head -10)"
+$({ grep -rnE --include='*.rs' "$banner" "$src" || true; } | head -10)"
 
 # GP-19c — decorative emoji in comments. The listed characters document real
 # UI symbols and are not decorative prose.
 emoji='^\s*//.*(?:(?![★☆✓✕⏏🗑✦])[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}])'
 n=$({ grep -rnPc --include='*.rs' "$emoji" "$src" 2>/dev/null || true; } | awk -F: '{s+=$NF} END {print s+0}')
 (( n == 0 )) || report_violation GP-19 "$n comment(s) contain emoji:
-$(grep -rnP --include='*.rs' "$emoji" "$src" | head -10)"
+$({ grep -rnP --include='*.rs' "$emoji" "$src" || true; } | head -10)"
 
 # GP-20 — dead-code allowances without a stated reason. A reason is a comment
 # on the same line or on the line directly above.

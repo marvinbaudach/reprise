@@ -11,8 +11,14 @@ source scripts/lib/rulebook.sh
 ui=crates/reprise-gnome/src
 [[ -d $ui ]] || { echo "ERROR: $ui does not exist" >&2; exit 1; }
 
-count_matches() { grep -rnE --include='*.rs' "$1" "$ui" 2>/dev/null | grep -vcE '^\s*//' || true; }
-list_matches()  { grep -rnE --include='*.rs' "$1" "$ui" 2>/dev/null | grep -vE '^\s*//' | head -10 || true; }
+count_matches() {
+  { grep -rnE --include='*.rs' "$1" "$ui" 2>/dev/null || true; } \
+    | { grep -vcE '^\s*//' || true; }
+}
+list_matches() {
+  { grep -rnE --include='*.rs' "$1" "$ui" 2>/dev/null || true; } \
+    | { grep -vE '^\s*//' || true; } | head -10
+}
 
 # GP-2 — blocking calls that must not sit on the main loop.
 blocking='(std::thread::sleep|\.blocking_recv\(\)|\.blocking_send\(|block_on\()'
@@ -21,10 +27,11 @@ n=$(count_matches "$blocking")
 $(list_matches "$blocking")"
 
 # GP-3 — clone! blocks that capture without #[weak] or #[weak_allow_none].
-n=$(grep -rn --include='*.rs' -A2 'clone!(' "$ui" 2>/dev/null \
-  | grep -E '#\[strong\]' | grep -vcE '^\s*//' || true)
+n=$({ grep -rn --include='*.rs' -A2 'clone!(' "$ui" 2>/dev/null || true; } \
+  | { grep -E '#\[strong\]' || true; } | { grep -vcE '^\s*//' || true; })
 (( n == 0 )) || report_violation GP-3 "$n clone! block(s) capture strongly:
-$(grep -rn --include='*.rs' -A2 'clone!(' "$ui" | grep -E '#\[strong\]' | head -10)"
+$({ grep -rn --include='*.rs' -A2 'clone!(' "$ui" || true; } \
+  | { grep -E '#\[strong\]' || true; } | head -10)"
 
 # GP-4 — unwrap() in the frontend.
 n=$(count_matches '\.unwrap\(\)')

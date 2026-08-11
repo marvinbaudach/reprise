@@ -11,7 +11,7 @@ RULEBOOK_FAIL=0
 
 rule_status() {
   local id=$1 line
-  line=$(grep -oE "^- \*\*${id}\*\* \[(active|planned|replaced)" "$RULEBOOK_DOC" | head -1)
+  line=$({ grep -oE "^- \*\*${id}\*\* \[(active|planned|replaced)" "$RULEBOOK_DOC" || true; } | head -1)
   if [[ -z $line ]]; then
     printf 'missing\n'
     return
