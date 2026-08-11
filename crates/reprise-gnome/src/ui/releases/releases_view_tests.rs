@@ -136,6 +136,7 @@ fn nr_32_deleted_release_memory_is_reflected_in_releases_view() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     insert_release(&conn, "deleted", "Deleted Album");
+    insert_release(&conn, "control", "Visible Control Album");
     crate::test_db::connection(&conn)
         .execute(
             "INSERT INTO tracks (
@@ -160,7 +161,15 @@ fn nr_32_deleted_release_memory_is_reflected_in_releases_view() {
     view.refresh();
     crate::ui::source_context_surface::settle_layout();
 
-    assert_eq!(view.shared.model.store().n_items(), 0);
+    assert_eq!(view.shared.model.store().n_items(), 1);
+    let visible = view
+        .shared
+        .model
+        .store()
+        .item(0)
+        .and_downcast::<ReleaseObject>()
+        .unwrap();
+    assert_eq!(visible.entry().release_group_mbid, "control");
     assert_eq!(
         reprise_core::artist_news::hidden_release_count(&conn).unwrap(),
         1
