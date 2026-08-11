@@ -104,6 +104,7 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val analysis by analysisDelegate
+    private val visualizerPreference = AndroidVisualizerPreference { library }
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -216,6 +217,7 @@ class MainActivity : ComponentActivity() {
                             LocalAlbumTrackIds provides { album -> session.albumTrackIds(album) },
                             LocalTrackAnalysis provides surface.trackAnalysis,
                             LocalAmbientMotionController provides ambientMotion,
+                            LocalVisualizerPreference provides visualizerPreference,
                         ) {
                             LibraryScreen(
                                 initialState = surface.initialState,

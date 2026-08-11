@@ -2,6 +2,7 @@ package de.reprise.spike
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
@@ -88,7 +89,7 @@ class CoverFogBitmapTest {
     }
 
     @Test
-    fun artwork_is_cropped_once_into_two_distinct_256_pixel_preblurred_layers() {
+    fun artwork_is_cropped_once_into_distinct_256_pixel_prepared_layers() {
         val source = Bitmap.createBitmap(8, 4, Bitmap.Config.ARGB_8888)
         for (y in 0 until source.height) {
             for (x in 0 until source.width) {
@@ -103,6 +104,39 @@ class CoverFogBitmapTest {
         assertEquals(256, fog.tight.width)
         assertEquals(256, fog.tight.height)
         assertNotEquals(fog.wide.getPixel(128, 128), fog.tight.getPixel(128, 128))
+    }
+
+    @Test
+    fun shimmer_mask_has_a_solid_core_and_falls_monotonically_to_clear() {
+        assertEquals(1f, shimmerMaskAlpha(0f), 0f)
+        assertEquals(1f, shimmerMaskAlpha(0.12f), 0f)
+        assertEquals(0f, shimmerMaskAlpha(0.68f), 0f)
+        assertEquals(0f, shimmerMaskAlpha(1f), 0f)
+
+        val falloff = (12..68).map { percent -> shimmerMaskAlpha(percent / 100f) }
+        falloff.zipWithNext().forEach { (inner, outer) ->
+            assertTrue("mask alpha must fall toward the edge: $inner then $outer", outer <= inner)
+        }
+    }
+
+    @Test
+    fun shimmer_disc_is_a_third_256_pixel_texture_baked_into_the_cached_fog() {
+        val source = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.WHITE)
+        }
+        val artwork = source.asImageBitmap()
+        val cache = ArtworkCache()
+        val prepared = prepareCoverFogBitmap(source, Color.MAGENTA)
+
+        cache.putFog(artwork, prepared)
+
+        val cached = cache.fog(artwork)
+        assertSame(prepared, cached)
+        assertSame(prepared.disc, cached?.disc)
+        assertEquals(256, prepared.disc.width)
+        assertEquals(256, prepared.disc.height)
+        assertEquals(255, Color.alpha(prepared.disc.getPixel(128, 128)))
+        assertEquals(0, Color.alpha(prepared.disc.getPixel(128 + (256 * 0.34f).toInt(), 128)))
     }
 
     @Test

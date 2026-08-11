@@ -10,6 +10,46 @@ import org.junit.Test
 
 class SceneDriverTest {
     @Test
+    fun shimmer_clock_turns_without_analysis_and_keeps_only_the_current_minute() {
+        val fixture = driverFixture(
+            sample = ScenePositionSample(positionMs = 0, observedAtNanos = 0, playing = true),
+            frames = SpectrogramFrames(24, 20, ByteArray(0)),
+        )
+        fixture.driver.tick()
+
+        fixture.clock.now = 30_000_000_000
+        fixture.driver.tick()
+        assertEquals(30.0, fixture.state.shimmerElapsedSeconds, 0.000_001)
+
+        fixture.clock.now = 60_000_000_000
+        fixture.driver.tick()
+        assertEquals(0.0, fixture.state.shimmerElapsedSeconds, 0.000_001)
+    }
+
+    @Test
+    fun driver_reads_fast_bass_pressure_at_the_display_fraction_and_pause_holds_it() {
+        val cells = ByteArray(10 * 24) { index ->
+            val frame = index / 24
+            val band = index % 24
+            if (frame == 9 && band < 7) 255.toByte() else 0
+        }
+        val fixture = driverFixture(
+            sample = ScenePositionSample(positionMs = 25, observedAtNanos = 0, playing = false),
+            frames = SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = cells),
+        )
+
+        fixture.driver.tick()
+        val halfway = fixture.state.bassPressure
+        val revision = fixture.state.revision
+        fixture.clock.now = 50_000_000
+        fixture.driver.tick()
+
+        assertTrue(halfway > 0f)
+        assertEquals(halfway.toRawBits(), fixture.state.bassPressure.toRawBits())
+        assertTrue(fixture.state.revision > revision)
+    }
+
+    @Test
     fun paused_non_empty_fog_keeps_turning_at_the_base_drift_rate() {
         val fixture = driverFixture(
             sample = ScenePositionSample(positionMs = 500, observedAtNanos = 0, playing = false),

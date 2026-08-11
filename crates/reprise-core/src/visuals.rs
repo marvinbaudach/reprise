@@ -5,11 +5,17 @@ pub mod engine;
 pub mod fallback_cover;
 pub mod modes;
 pub mod scene;
+pub mod spectrogram_frame;
 
 // Re-export public types
 pub use color::{hsla_to_rgb, hue_shift, rgb_hue};
 pub use engine::{ModeCtx, VisualEngine};
 pub use scene::{Fill, Geom, Rgba, Scene, Shape};
+pub use spectrogram_frame::spectrum_frame_from_bands;
+
+#[cfg(test)]
+#[path = "visuals/spectrogram_frame_tests.rs"]
+mod spectrogram_frame_tests;
 
 #[cfg(test)]
 mod bars_source_tests {
