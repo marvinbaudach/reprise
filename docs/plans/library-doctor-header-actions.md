@@ -2,7 +2,7 @@
 slug: library-doctor-header-actions
 worktree: /home/marvin/Projects/reprise/.worktrees/doctor-header-actions
 branch: feat/doctor-header-actions
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-11
 ---
