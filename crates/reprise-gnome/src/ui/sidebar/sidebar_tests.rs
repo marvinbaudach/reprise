@@ -6,7 +6,7 @@ use super::*;
 /// ApplicationWindow`/`Application` (the `window`/`toast_overlay` weak refs
 /// simply stay unset, which every consumer already degrades on). Display
 /// required (`gtk::ListBox`), hence only the `#[ignore]` tests below use it.
-fn test_shared() -> Rc<Shared> {
+pub(super) fn test_shared() -> Rc<Shared> {
     let conn = Rc::new(crate::test_db::open().unwrap());
     Rc::new(Shared {
         conn,
