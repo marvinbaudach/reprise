@@ -337,24 +337,29 @@ private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
     val contextMenu = rememberTrackContextMenuAnchorState()
     val albumTrackIds = LocalAlbumTrackIds.current
     val controls = LocalPlaybackControls.current
-    Box {
-        ListItem(
-            headlineContent = { Text(album.title) },
-            supportingContent = { Text(album.details()) },
-            trailingContent = { Text(formatDuration(album.totalDurationMs)) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .trackContextMenuAnchor(contextMenu) { openAlbum(album) },
-        )
-        TrackContextMenu(
-            anchor = contextMenu,
-            target = LibraryTrackMenuTarget(
-                label = album.title,
-                trackCount = album.trackCount,
-                resolveTrackIds = { albumTrackIds(album) },
-                play = { ids -> controls.playTrackIds(ids, 0) },
-            ),
-        )
+    // The acknowledgement sits below the row, not inside the Box it would
+    // otherwise cover — see TrackContextMenuMessage.
+    Column {
+        Box {
+            ListItem(
+                headlineContent = { Text(album.title) },
+                supportingContent = { Text(album.details()) },
+                trailingContent = { Text(formatDuration(album.totalDurationMs)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .trackContextMenuAnchor(contextMenu) { openAlbum(album) },
+            )
+            TrackContextMenu(
+                anchor = contextMenu,
+                target = LibraryTrackMenuTarget(
+                    label = album.title,
+                    trackCount = album.trackCount,
+                    resolveTrackIds = { albumTrackIds(album) },
+                    play = { ids -> controls.playTrackIds(ids, 0) },
+                ),
+            )
+        }
+        TrackContextMenuMessage(contextMenu)
     }
     HorizontalDivider()
 }

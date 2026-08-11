@@ -6,6 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,6 +23,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+import uniffi.reprise_android_ffi.AndroidTrashFailure
 import uniffi.reprise_android_ffi.AndroidTrashReport
 
 @RunWith(RobolectricTestRunner::class)
@@ -172,6 +175,60 @@ class TrackContextMenuTest {
     }
 
     @Test
+    fun theEnqueueAcknowledgementSitsBelowTheRowItAnswersFor() {
+        val controls = RecordingContextMenuControls()
+        val track = configurationTestTrack(41, "Menu Song")
+        composeTitleRow(track, controls)
+
+        openTitleMenu(track.id)
+        compose.onNodeWithText("Play next").performClick()
+
+        // The row is a clipped 72 dp Surface: a message dropped beside its
+        // content lands on the cover and the title instead of below the row.
+        val row = compose.onNodeWithTag("library-track-row-41").getUnclippedBoundsInRoot()
+        val message = compose.onNodeWithText("1 track queued").getUnclippedBoundsInRoot()
+        assertTrue(
+            "message at ${message.top} must clear the row ending at ${row.bottom}",
+            message.top >= row.bottom,
+        )
+    }
+
+    @Test
+    fun theNowPlayingDeletionMessageSitsBelowTheOverflowButton() {
+        val controls = RecordingContextMenuControls(
+            deletionOutcome = Result.success(
+                AndroidTrashReport(
+                    removedIds = emptyList(),
+                    failures = listOf(
+                        AndroidTrashFailure(
+                            trackId = 41,
+                            uri = "content://provider/document/41.flac",
+                            error = "Os { code: 13, kind: PermissionDenied }",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        composeNowPlayingMenu(SurfaceLayout.STACKED, controls)
+
+        compose.onNodeWithTag("now-playing-overflow").performClick()
+        compose.onNodeWithText("Delete from device…").performClick()
+        compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
+
+        // As a bare sibling the message becomes another cell of the actions
+        // Row and squeezes the controls sideways; FavouriteHeartButton next
+        // door already gives its failure a slot underneath.
+        val button = compose.onNodeWithTag("now-playing-overflow").getUnclippedBoundsInRoot()
+        val message = compose
+            .onNodeWithText("1 of 1 could not be deleted")
+            .getUnclippedBoundsInRoot()
+        assertTrue(
+            "message at ${message.top} must sit below the button ending at ${button.bottom}",
+            message.top >= button.bottom,
+        )
+    }
+
+    @Test
     fun stackedNowPlayingActionsExposeTheSingleDeleteMenu() {
         composeNowPlayingMenu(SurfaceLayout.STACKED)
 
@@ -189,12 +246,15 @@ class TrackContextMenuTest {
         compose.onNodeWithText("Delete from device…").assertIsDisplayed()
     }
 
-    private fun composeNowPlayingMenu(layout: SurfaceLayout) {
+    private fun composeNowPlayingMenu(
+        layout: SurfaceLayout,
+        controls: RecordingContextMenuControls = RecordingContextMenuControls(),
+    ) {
         val track = configurationTestTrack(41, "Now Playing Menu Song")
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(
-                    LocalPlaybackControls provides RecordingContextMenuControls(),
+                    LocalPlaybackControls provides controls,
                 ) {
                     NowPlayingSheet(
                         track = track,
@@ -237,6 +297,7 @@ class TrackContextMenuTest {
 
 private class RecordingContextMenuControls(
     private val upcoming: List<LibraryTrack> = emptyList(),
+    private val deletionOutcome: Result<AndroidTrashReport>? = null,
 ) : PlaybackControls {
     var playedIds: List<Long>? = null
     var playedStartIndex: Int? = null
@@ -294,6 +355,11 @@ private class RecordingContextMenuControls(
         report: (Result<AndroidTrashReport>) -> Unit,
     ) {
         deleted += trackIds
-        report(Result.success(AndroidTrashReport(removedIds = trackIds, failures = emptyList())))
+        report(
+            deletionOutcome
+                ?: Result.success(
+                    AndroidTrashReport(removedIds = trackIds, failures = emptyList()),
+                ),
+        )
     }
 }
