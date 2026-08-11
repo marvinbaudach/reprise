@@ -11,9 +11,10 @@ import subprocess
 import time
 from typing import Any, Iterator, Mapping, Protocol
 
-from driver import CliTransport, hover_preflight
+from driver import CliTransport, DriverError, hover_preflight
 from fixtures import FixtureError, build_plan
 from hover_geometry import WindowGeometry, resolve_window_origin
+from pointer_dispatch import desktop_pointer_payload
 
 
 FAILURE_LOG_PATTERN = re.compile(
@@ -103,17 +104,7 @@ def measure_cursor_visibility(
         return path
 
     def move(x: float, y: float) -> None:
-        transport.call(
-            "move_cursor",
-            {
-                "pid": pid,
-                "window_id": window_id,
-                "session": session,
-                "scope": "desktop",
-                "x": x,
-                "y": y,
-            },
-        )
+        transport.call("move_cursor", desktop_pointer_payload(x, y))
 
     return measure_cursor_in_screenshot(snapshot=snapshot, move=move, origin=origin)
 
@@ -157,6 +148,11 @@ def prepare_hover(
     (evidence_dir / "hover-preflight.json").write_text(
         json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    if evidence["verified"] is not True:
+        raise DriverError(
+            "hover dispatch is unsafe: the real X11 pointer did not reach "
+            "the preflight target"
+        )
     return geometry, cursor
 
 

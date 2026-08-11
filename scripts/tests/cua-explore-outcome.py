@@ -22,8 +22,9 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 
 import protocol  # noqa: E402
 import runner  # noqa: E402
+import launch  # noqa: E402
 from driver import CliTransport, DriverError  # noqa: E402
-from oracles import normalize_snapshot  # noqa: E402
+from oracles import Finding, normalize_snapshot  # noqa: E402
 from protocol import ActionGateway, load_mission  # noqa: E402
 from report import RunReport  # noqa: E402
 
@@ -35,6 +36,7 @@ ACTIVATE_OVER_PIXELS = {
     "dispatch": "px",
     "expect_effect": "required",
 }
+HOVER_TARGET = {"kind": "hover", "target": {"label": "Music"}}
 
 
 class FakeLifecycle:
@@ -78,6 +80,29 @@ class FakeExecutor:
         if self._execute is None:
             raise AssertionError("this run was not supposed to execute an action")
         return self._execute(accepted)
+
+
+class StationaryPointerTransport:
+    """A driver boundary that acknowledges moves but leaves the X11 pointer still."""
+
+    def __init__(self, **_kwargs: Any) -> None:
+        self.position = (800.0, 500.0)
+        self.calls: list[tuple[str, Mapping[str, Any]]] = []
+        self.transport_faults = 0
+
+    def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        self.calls.append((tool, dict(payload)))
+        if tool == "get_cursor_position":
+            return {"source": "x11", "x": self.position[0], "y": self.position[1]}
+        if tool == "move_cursor":
+            return {
+                "effect": "unverifiable",
+                "delivery": {"mode": "not_applicable"},
+                "route": "global_input",
+            }
+        if tool == "get_window_state":
+            return {"elements": []}
+        raise AssertionError(f"unexpected stationary-pointer tool: {tool}")
 
 
 def scripted_explorer(action: Mapping[str, Any]) -> type:
@@ -292,6 +317,10 @@ class RunPathTests(unittest.TestCase):
         budgets: Mapping[str, int],
         execute: Callable[[Any], Any] | None = None,
         monotonic: Callable[[], float] | None = None,
+        configure_mission: Callable[[dict[str, Any]], None] | None = None,
+        transport_factory: Callable[..., Any] | None = None,
+        extra_patches: Mapping[str, Any] | None = None,
+        argv_extra: tuple[str, ...] = (),
     ) -> SimpleNamespace:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -303,6 +332,8 @@ class RunPathTests(unittest.TestCase):
         )
         payload["budgets"] = dict(budgets)
         payload["workloads"] = []
+        if configure_mission is not None:
+            configure_mission(payload)
         mission_path = root / "mission.json"
         mission_path.write_text(json.dumps(payload), encoding="utf-8")
         profile_root = root / "profile"
@@ -311,11 +342,12 @@ class RunPathTests(unittest.TestCase):
             json.dumps({"profile": payload["profile"]}), encoding="utf-8"
         )
         evidence_dir = root / "evidence"
-        transports: list[CliTransport] = []
+        transports: list[Any] = []
 
-        def remember(**kwargs: Any) -> CliTransport:
+        def remember(**kwargs: Any) -> Any:
             """Build the transport exactly as the runner asks for it."""
-            transports.append(CliTransport(**kwargs))
+            factory = transport_factory or CliTransport
+            transports.append(factory(**kwargs))
             return transports[-1]
 
         executor = FakeExecutor(self.OBSERVATION, execute)
@@ -327,6 +359,7 @@ class RunPathTests(unittest.TestCase):
             "--socket", str(root / "driver.sock"),
             "--session", "outcome-test",
             "--commit", "abc123",
+            *argv_extra,
         ]
         with contextlib.ExitStack() as stack:
             for name, replacement in (
@@ -336,6 +369,8 @@ class RunPathTests(unittest.TestCase):
                 ("DeterministicExplorer", scripted_explorer(action)),
                 ("launch_executor", lambda *_a, **_k: (12, 34, 1, None, executor)),
             ):
+                stack.enter_context(mock.patch.object(runner, name, replacement))
+            for name, replacement in (extra_patches or {}).items():
                 stack.enter_context(mock.patch.object(runner, name, replacement))
             if monotonic is not None:
                 stack.enter_context(
@@ -475,6 +510,54 @@ class RunPathTests(unittest.TestCase):
         )
 
         self.assertEqual(result.summary["unknown_action_names"], {"foo.bar": 1})
+
+    def test_stationary_pointer_aborts_before_hover_can_be_blamed_on_the_product(
+        self,
+    ) -> None:
+        snapshot = self.snapshot()
+
+        def enable_hover(payload: dict[str, Any]) -> None:
+            payload["capabilities"].append("hover")
+            payload["oracles"].append("hover-affordance")
+
+        with mock.patch.object(
+            launch,
+            "measure_cursor_visibility",
+            return_value={"cursor_in_screenshot": False},
+        ):
+            result = self.drive(
+                action=HOVER_TARGET,
+                budgets={"actions": 1, "seconds": 900, "restarts": 0},
+                configure_mission=enable_hover,
+                transport_factory=StationaryPointerTransport,
+                argv_extra=("--window-origin", "0,0"),
+                execute=lambda _accepted: SimpleNamespace(
+                    before=snapshot,
+                    after=snapshot,
+                    settled=(snapshot,),
+                    evidence=SimpleNamespace(kind="hover", dispatch=None),
+                    findings=(
+                        Finding(
+                            "hover-affordance-missing",
+                            "error",
+                            1.0,
+                            "The hover target did not change.",
+                        ),
+                    ),
+                ),
+            )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.summary["outcome"], "aborted")
+        self.assertEqual(result.summary["steps"], 0)
+        self.assertNotIn("hover-affordance-missing", result.summary["finding_codes"])
+        evidence = json.loads(
+            (result.evidence_dir / "hover-preflight.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(evidence["before"], {"source": "x11", "x": 800.0, "y": 500.0})
+        self.assertNotEqual(evidence["target"], {"x": 800.0, "y": 500.0})
+        self.assertEqual(evidence["after"], evidence["before"])
+        self.assertEqual(evidence["verdict"], "pointer-did-not-reach-target")
 
 
 if __name__ == "__main__":
