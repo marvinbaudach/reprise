@@ -3350,18 +3350,6 @@ msgstr "Weitere Quellenoptionen"
 msgid "Unsubscribe"
 msgstr "Abbestellen"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:166
-msgid "Sync downloaded episodes to phone"
-msgstr "Heruntergeladene Episoden mit dem Smartphone synchronisieren"
-
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:167
-msgid "Stop syncing episodes to phone"
-msgstr "Episoden nicht mehr mit dem Smartphone synchronisieren"
-
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:168
-msgid "Sync downloaded episodes to devices"
-msgstr "Heruntergeladene Episoden mit Geräten synchronisieren"
-
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:169
 msgid "Load more"
 msgstr "Mehr laden"
@@ -3633,11 +3621,6 @@ msgstr "{genre}-Kanäle"
 msgid "Unsubscribe from “{show}”"
 msgstr "„{show}“ abbestellen"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:489
-#, rust-format
-msgid "Sync downloaded episodes to “{device}”"
-msgstr "Heruntergeladene Episoden mit „{device}“ synchronisieren"
-
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:505
 #, rust-format
 msgid "{shown} of {available} · {downloaded} downloaded · {size}"
@@ -3647,11 +3630,6 @@ msgstr "{shown} von {available} · {downloaded} heruntergeladen · {size}"
 #, rust-format
 msgid "{summary} · {count} selected"
 msgstr "{summary} · {count} ausgewählt"
-
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:527
-#, rust-format
-msgid "Stop syncing episodes to “{device}”"
-msgstr "Episoden nicht mehr mit „{device}“ synchronisieren"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:533
 #, rust-format
