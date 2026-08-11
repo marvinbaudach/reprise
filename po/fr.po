@@ -2737,9 +2737,8 @@ msgid "Releases"
 msgstr "Sorties"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:13
-#, fuzzy
 msgid "Release"
-msgstr "Sorties"
+msgstr "Release"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:15
 msgid "Type"
