@@ -14,7 +14,7 @@ from agents.budget import BudgetLedger, BudgetTooSmall, plan_budget
 from agents.plans import build_phases
 from agents.probes import initial_probe
 from agents.sequencer import Sequencer
-from agents.steps import step_to_action
+from agents.steps import step_is_satisfied, step_to_action
 from protocol import (
     ALLOWED_KEYS,
     ALLOWED_MODIFIERS,
@@ -202,9 +202,19 @@ class AgentSession:
         self.scroll_anchor: dict[str, float] = {}
         self.terminal_reason: str | None = None
         self._probe_done = False
+        self.dispatch_policy: dict[str, Any] = {
+            "declared": "ax",
+            "effective": "ax",
+            "reason": None,
+        }
+        self._pending_activation_retry: tuple[dict[str, Any], dict[str, Any]] | None = None
+        self._activation_retry_inflight: dict[str, Any] | None = None
+        self._semantic_ax_failures: list[dict[str, Any]] = []
+        self._section_changes: dict[str, bool] = {}
         if self.notes_dir is not None:
             self.notes_dir.mkdir(parents=True, exist_ok=True)
             (self.notes_dir / "agent-notes.jsonl").touch(exist_ok=True)
+            self._write_dispatch_policy()
 
     def next_action(
         self,
@@ -228,6 +238,12 @@ class AgentSession:
         if self.mission is None:
             self._initialize(mission)
         self._record_transition(observation, history)
+        if self._pending_activation_retry is not None:
+            action, context = self._pending_activation_retry
+            self._pending_activation_retry = None
+            action["state_id"] = str(observation.get("state_id", ""))
+            self._activation_retry_inflight = context
+            return self._emit(action, observation)
         if self.terminal_reason is not None:
             return self._finish(observation, self.terminal_reason)
         assert self.mission is not None and self.sequencer is not None and self.ledger is not None
@@ -270,7 +286,19 @@ class AgentSession:
             if step.kind == "hover" and "hover" not in self.mission.get("capabilities", []):
                 self.sequencer.advance_step()
                 continue
-            action, role_mismatch = step_to_action(step, observation)
+            if step_is_satisfied(step, observation):
+                self.sequencer.advance_step()
+                continue
+            force_dispatch = (
+                "px"
+                if self.dispatch_policy["effective"] == "px"
+                or self.mission.get("id") == "pointer-layout-reachability"
+                else None
+            )
+            action, role_mismatch, dispatch_note = step_to_action(
+                step, observation, force_dispatch=force_dispatch
+            )
+            self._note_unmeasured_route(step.name, dispatch_note)
             if role_mismatch:
                 self.add_note(
                     Note(
@@ -283,6 +311,9 @@ class AgentSession:
                 self.last_step_name = step.name
                 self.sequencer.advance_step()
                 return self._emit(action, observation)
+            if not step.required:
+                self.sequencer.advance_step()
+                continue
             if self._can_recover() and self.sequencer.recovery_attempts < 2:
                 self.sequencer.recovery_attempts += 1
                 return self._emit(
@@ -298,18 +329,50 @@ class AgentSession:
             if self.sequencer.alternate_index < len(step.alternates):
                 alternate = step.alternates[self.sequencer.alternate_index]
                 self.sequencer.alternate_index += 1
-                alternate_action, _mismatch = step_to_action(alternate, observation)
+                alternate_action, _mismatch, alternate_note = step_to_action(
+                    alternate, observation, force_dispatch=force_dispatch
+                )
+                self._note_unmeasured_route(alternate.name, alternate_note)
                 if alternate_action is not None:
                     self.last_step_name = alternate.name
                     return self._emit(alternate_action, observation)
+            evidence = {
+                "actionable_labels": list(observation.get("actionable_labels", []))[:40]
+            }
+            if step.missing_code == "agent-sidebar-unavailable":
+                evidence.update(
+                    {
+                        "step": step.name,
+                        "window_width": observation.get("window", {}).get("width"),
+                    }
+                )
             self.add_note(
                 Note(
-                    f"agent-missing-affordance:{step.name}",
-                    "A required GUI affordance was absent after bounded recovery.",
-                    {"actionable_labels": list(observation.get("actionable_labels", []))[:40]},
+                    step.missing_code or f"agent-missing-affordance:{step.name}",
+                    (
+                        "The requested sidebar section stayed unavailable after toggling the sidebar."
+                        if step.missing_code == "agent-sidebar-unavailable"
+                        else "A required GUI affordance was absent after bounded recovery."
+                    ),
+                    evidence,
                 )
             )
             self.sequencer.advance_step()
+
+    def _note_unmeasured_route(
+        self, step_name: str, dispatch_note: Mapping[str, Any] | None
+    ) -> None:
+        if dispatch_note is None:
+            return
+        self.add_note(
+            Note(
+                f"agent-dispatch-geometry-unmeasured:{step_name}",
+                "The target offers no invocable action, but its geometry stayed "
+                "unmeasured, so the step kept the semantic route that was measured "
+                "to dispatch without effect.",
+                dict(dispatch_note),
+            )
+        )
 
     def _initialize(self, mission: Mapping[str, Any]) -> None:
         if mission.get("schema_version") != 1:
@@ -365,6 +428,16 @@ class AgentSession:
                     finding_codes,
                 )
             )
+            self._track_activation_result(
+                self.last_observation,
+                observation,
+                self.last_action,
+                self.last_step_name,
+            )
+            # Snapshot before the learner adopts this observation: afterwards the
+            # typed token carries whatever the entry shows, which would make the
+            # assertion compare a value against itself.
+            known_token_values = dict(self.learner.values)
             if not self.learner.observe(observation, self.last_action):
                 self.add_note(
                     Note(
@@ -385,11 +458,103 @@ class AgentSession:
                 observation,
                 self.last_step_name,
                 selection_count=batch_selection_count(self.mission or {}),
+                section_changed=self._section_precondition(self.last_step_name),
+                known_token_values=known_token_values,
             ):
                 self.add_note(Note(code, summary, evidence))
         self.last_observation = observation
         self.last_action = None
         self.last_step_name = None
+
+    def _section_precondition(self, step_name: str | None) -> bool | None:
+        if step_name is None or not step_name.startswith("search-"):
+            return None
+        return self._section_changes.get(step_name.removeprefix("search-"), False)
+
+    def _remember_section_change(
+        self, step_name: str | None, target: str, changed: bool
+    ) -> None:
+        if step_name == f"open-{target}":
+            self._section_changes[target] = changed
+
+    def _track_activation_result(
+        self,
+        before: Mapping[str, Any],
+        after: Mapping[str, Any],
+        action: Mapping[str, Any],
+        step_name: str | None,
+    ) -> None:
+        if action.get("kind") != "activate" or action.get("expect_effect", "required") != "required":
+            return
+        changed = before.get("state_signature") != after.get("state_signature")
+        if self._activation_retry_inflight is not None:
+            context = self._activation_retry_inflight
+            self._activation_retry_inflight = None
+            self._remember_section_change(
+                str(context["step"]), str(context["target"]), changed
+            )
+            if not changed:
+                self.add_note(
+                    Note(
+                        f"agent-missing-affordance:{context['step']}",
+                        "Neither activation route produced an observable effect.",
+                        context,
+                    )
+                )
+                return
+            self.add_note(
+                Note(
+                    "semantic-activation-ineffective",
+                    "The first activation route had no observable effect; the alternate route worked.",
+                    context,
+                )
+            )
+            if context["first_route"] == "ax" and context["retry_route"] == "px":
+                self._semantic_ax_failures.append(context)
+                if len(self._semantic_ax_failures) == 3:
+                    self.dispatch_policy = {
+                        "declared": "ax",
+                        "effective": "px",
+                        "reason": "semantic-route-unavailable",
+                    }
+                    self._write_dispatch_policy()
+                    self.add_note(
+                        Note(
+                            "semantic-route-unavailable",
+                            "3 of 3 semantic activations had no observable effect; the same targets responded to pointer dispatch.",
+                            {"attempts": list(self._semantic_ax_failures)},
+                        )
+                    )
+            return
+        if changed:
+            self._remember_section_change(
+                step_name,
+                str(action.get("target", {}).get("label", "")),
+                True,
+            )
+            if action.get("dispatch") == "ax":
+                self._semantic_ax_failures.clear()
+            return
+        retry = dict(action)
+        retry["dispatch"] = "px" if action.get("dispatch") == "ax" else "ax"
+        label = str(action.get("target", {}).get("label", ""))
+        element = next(
+            (
+                item
+                for item in before.get("elements", [])
+                if isinstance(item, dict) and item.get("label") == label
+            ),
+            {},
+        )
+        context = {
+            "step": step_name or label,
+            "target": label,
+            "role": str(element.get("role", "")),
+            "actions": list(element.get("actions", [])),
+            "first_route": action.get("dispatch"),
+            "retry_route": retry["dispatch"],
+        }
+        self._pending_activation_retry = retry, context
 
     def _emit(
         self, action: dict[str, Any], observation: Mapping[str, Any]
@@ -632,3 +797,11 @@ class AgentSession:
                 )
                 + "\n"
             )
+
+    def _write_dispatch_policy(self) -> None:
+        if self.notes_dir is None:
+            return
+        (self.notes_dir / "dispatch-policy.json").write_text(
+            json.dumps(self.dispatch_policy, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )

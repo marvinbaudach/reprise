@@ -165,6 +165,10 @@ private fun DockTransport(
             sizeDp = DOCK_HEART_DP,
             iconSizeSp = 48,
             tag = "dock-heart",
+            // The dock shows the same row the sheet does, so it has to be as
+            // honest about it: while the row is the one answered for the
+            // previous track, a heart tap would rate that previous track.
+            enabled = LocalNowPlayingActionsEnabled.current,
         )
     }
 }

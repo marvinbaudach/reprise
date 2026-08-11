@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import android.util.Log
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,8 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -46,12 +48,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import de.reprise.spike.ui.theme.AmbientTrueBlack
+import de.reprise.spike.ui.theme.NowPlayingOnBackdrop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+import uniffi.reprise_android_ffi.AndroidStoredVisualizer
+import uniffi.reprise_android_ffi.AndroidVisualizerChoice
 
 /**
  * The one honest Android playback surface beyond the mini player.
@@ -71,6 +77,7 @@ internal fun NowPlayingSheet(
     val metrics = nowPlayingMetrics(surfaceLayout)
     val controls = LocalPlaybackControls.current
     val motion = LocalAmbientMotionController.current
+    val visualizerPreference = LocalVisualizerPreference.current
     val neighbours = rememberPlayGestureNeighbours(track, controls)
     val horizontalOffset = remember { Animatable(0f) }
     val verticalOffset = remember { Animatable(0f) }
@@ -78,6 +85,28 @@ internal fun NowPlayingSheet(
     var seekMarker by remember { mutableStateOf<String?>(null) }
     var seekMarkerRevision by remember { mutableIntStateOf(0) }
     var backProgress by remember { mutableFloatStateOf(0f) }
+    val coverBounds = remember { mutableStateOf(Rect.Zero) }
+    val visualizerVisible = remember(visualizerPreference) {
+        mutableStateOf(
+            runCatching(visualizerPreference::visualizerSetting)
+                .onFailure { error ->
+                    Log.e(NOW_PLAYING_VISUALIZER_TAG, "Could not read the visualizer choice", error)
+                }
+                .getOrDefault(AndroidStoredVisualizer.Unset)
+                .showsSpectrum(),
+        )
+    }
+    val visualizerOpacity = remember(visualizerPreference) {
+        Animatable(if (visualizerVisible.value) 1f else 0f)
+    }
+    LaunchedEffect(visualizerVisible.value, motion.sceneAnimationsEnabled) {
+        val target = if (visualizerVisible.value) 1f else 0f
+        if (motion.sceneAnimationsEnabled) {
+            visualizerOpacity.animateTo(target, tween(VISUALIZER_CROSSFADE_MS))
+        } else {
+            visualizerOpacity.snapTo(target)
+        }
+    }
     LaunchedEffect(seekMarkerRevision) {
         if (seekMarkerRevision == 0) return@LaunchedEffect
         delay(600)
@@ -122,6 +151,23 @@ internal fun NowPlayingSheet(
                     seekMarker = if (leftHalf) "−10 s" else "+10 s"
                     seekMarkerRevision += 1
                 },
+                onTap = { position ->
+                    if (!coverBounds.value.contains(position)) return@nowPlayingGestures
+                    val showSpectrum = !visualizerVisible.value
+                    runCatching {
+                        visualizerPreference.setVisualizer(
+                            if (showSpectrum) {
+                                AndroidVisualizerChoice.SPECTRUM
+                            } else {
+                                AndroidVisualizerChoice.COVER
+                            },
+                        )
+                    }.onSuccess {
+                        visualizerVisible.value = showSpectrum
+                    }.onFailure { error ->
+                        Log.e(NOW_PLAYING_VISUALIZER_TAG, "Could not save the visualizer choice", error)
+                    }
+                },
             )
             .graphicsLayer {
                 translationY = backProgress * 64.dp.toPx() + verticalOffset.value
@@ -131,7 +177,7 @@ internal fun NowPlayingSheet(
         color = if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
             MaterialTheme.colorScheme.surfaceContainer
         } else {
-            Color.Black
+            AmbientTrueBlack
         },
         shape = if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
             RoundedCornerShape(
@@ -159,16 +205,21 @@ internal fun NowPlayingSheet(
                     horizontalOffsetPx = horizontalOffset.value,
                     previousTrack = neighbours.previous,
                     nextTrack = neighbours.next,
+                    visualizerOpacity = visualizerOpacity.value,
+                    onCoverBounds = { coverBounds.value = it },
                 )
                 seekMarker?.let { marker ->
                     Text(
                         text = marker,
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
+                            .background(
+                                AmbientTrueBlack.copy(alpha = 0.72f),
+                                RoundedCornerShape(18.dp),
+                            )
                             .padding(horizontal = 18.dp, vertical = 10.dp)
                             .testTag("now-playing-seek-marker"),
-                        color = Color.White,
+                        color = NowPlayingOnBackdrop,
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
@@ -176,6 +227,9 @@ internal fun NowPlayingSheet(
         }
     }
 }
+
+internal const val VISUALIZER_CROSSFADE_MS = 220
+private const val NOW_PLAYING_VISUALIZER_TAG = "RepriseVisualizer"
 
 @Composable
 private fun WideShortNowPlayingContent(
@@ -246,6 +300,7 @@ private fun WideShortNowPlayingContent(
                     track = track,
                     surfaceState = surfaceState,
                     tag = "now-playing-heart",
+                    enabled = LocalNowPlayingActionsEnabled.current,
                 )
                 // No collapse button beside it: this sheet is dismissed by
                 // swiping it down, which is what freed the slot the context

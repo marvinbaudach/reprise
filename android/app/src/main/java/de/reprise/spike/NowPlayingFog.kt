@@ -4,12 +4,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import de.reprise.spike.ui.theme.AmbientTrueBlack
+import de.reprise.spike.ui.theme.NowPlayingClear
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -24,8 +25,12 @@ internal object NowPlayingFogSpec {
 
     private const val WIDE_FLOOR = 0.34f
     private const val TIGHT_FLOOR = 0.14f
-    private const val FOG_LEVEL_LOW = 0.05f
-    private const val FOG_LEVEL_HIGH = 0.70f
+    private const val SWELL_LOW = 0.05f
+    private const val SWELL_HIGH = 0.70f
+    private const val PRESSURE_LOW = 0f
+    private const val PRESSURE_HIGH = 0.70f
+    private const val SWELL_WEIGHT = 0.52f
+    private const val PRESSURE_WEIGHT = 0.48f
 
     /**
      * How far the haze swells with the signal.
@@ -36,20 +41,28 @@ internal object NowPlayingFogSpec {
      */
     private const val SCALE_SWING = 0.14f
 
-    fun breathingSize(baseSizeDp: Float, fogLevel: Float): Float =
-        baseSizeDp * (1f + SCALE_SWING * fogLevel.coerceIn(0f, 1f))
+    fun breathingSize(baseSizeDp: Float, swell: Float): Float =
+        baseSizeDp * (1f + SCALE_SWING * swell.coerceIn(0f, 1f))
 
-    fun wideAlpha(fogLevel: Float, opacity: Float): Float =
-        wideOpacity * response(fogLevel, WIDE_FLOOR) * opacity
+    fun wideAlpha(swell: Float, bassPressure: Float, opacity: Float): Float =
+        wideOpacity * response(swell, bassPressure, WIDE_FLOOR) * opacity
 
-    fun tightAlpha(fogLevel: Float, opacity: Float): Float =
-        tightOpacity * response(fogLevel, TIGHT_FLOOR) * opacity
+    fun tightAlpha(swell: Float, bassPressure: Float, opacity: Float): Float =
+        tightOpacity * response(swell, bassPressure, TIGHT_FLOOR) * opacity
 
-    private fun response(fogLevel: Float, floor: Float): Float {
-        val measuredRange = FOG_LEVEL_HIGH - FOG_LEVEL_LOW
-        val normalized = ((fogLevel - FOG_LEVEL_LOW) / measuredRange).coerceIn(0f, 1f)
-        return floor + (1f - floor) * normalized
+    private fun response(swell: Float, bassPressure: Float, floor: Float): Float {
+        val normalizedSwell = normalizedSwell(swell)
+        val normalizedPressure = normalizedPressure(bassPressure)
+        val drive = SWELL_WEIGHT * normalizedSwell + PRESSURE_WEIGHT * normalizedPressure
+        return floor + (1f - floor) * drive.coerceIn(0f, 1f)
     }
+
+    fun normalizedSwell(value: Float): Float = normalize(value, SWELL_LOW, SWELL_HIGH)
+
+    fun normalizedPressure(value: Float): Float = normalize(value, PRESSURE_LOW, PRESSURE_HIGH)
+
+    private fun normalize(value: Float, low: Float, high: Float): Float =
+        ((value - low) / (high - low)).coerceIn(0f, 1f)
 
     /**
      * The scrim that keeps the title readable, measured from the cover centre.
@@ -74,6 +87,7 @@ internal fun DrawScope.drawNowPlayingFog(
     angleA: Float,
     angleB: Float,
     fogLevel: Float,
+    bassPressure: Float,
     opacity: Float,
     rotationsEnabled: Boolean,
 ) {
@@ -84,7 +98,7 @@ internal fun DrawScope.drawNowPlayingFog(
             center = center,
             sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.wideSizeDp, fogLevel),
             angle = if (rotationsEnabled) angleA else 0f,
-            alpha = NowPlayingFogSpec.wideAlpha(fogLevel, boundedOpacity),
+            alpha = NowPlayingFogSpec.wideAlpha(fogLevel, bassPressure, boundedOpacity),
             blendMode = BlendMode.SrcOver,
         )
         drawFogLayer(
@@ -92,7 +106,7 @@ internal fun DrawScope.drawNowPlayingFog(
             center = center,
             sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.tightSizeDp, fogLevel),
             angle = if (rotationsEnabled) angleB else 0f,
-            alpha = NowPlayingFogSpec.tightAlpha(fogLevel, boundedOpacity),
+            alpha = NowPlayingFogSpec.tightAlpha(fogLevel, bassPressure, boundedOpacity),
             blendMode = BlendMode.Screen,
         )
     }
@@ -148,19 +162,19 @@ private fun DrawScope.fogLegibility(center: Offset, opacity: Float): FogLegibili
         key = key,
         vignette = Brush.radialGradient(
             colorStops = arrayOf(
-                0f to Color.Transparent,
-                0.58f to Color.Black.copy(alpha = 0.08f * opacity),
-                1f to Color.Black.copy(alpha = 0.88f * opacity),
+                0f to NowPlayingClear,
+                0.58f to AmbientTrueBlack.copy(alpha = 0.08f * opacity),
+                1f to AmbientTrueBlack.copy(alpha = 0.88f * opacity),
             ),
             center = center,
             radius = max(size.width, size.height) * 0.78f,
         ),
         edges = Brush.verticalGradient(
             colorStops = arrayOf(
-                0f to Color.Black.copy(alpha = 0.72f * opacity),
-                0.28f to Color.Transparent,
-                0.68f to Color.Transparent,
-                1f to Color.Black.copy(alpha = 0.82f * opacity),
+                0f to AmbientTrueBlack.copy(alpha = 0.72f * opacity),
+                0.28f to NowPlayingClear,
+                0.68f to NowPlayingClear,
+                1f to AmbientTrueBlack.copy(alpha = 0.82f * opacity),
             ),
         ),
         titleScrim = titleScrimBrush(center, opacity),
@@ -178,7 +192,7 @@ private fun DrawScope.fogLegibility(center: Offset, opacity: Float): FogLegibili
  */
 private fun DrawScope.titleScrimBrush(center: Offset, opacity: Float): Brush? {
     if (size.height <= 0f) return null
-    val peak = Color.Black.copy(alpha = NowPlayingFogSpec.titleScrimAlpha * opacity)
+    val peak = AmbientTrueBlack.copy(alpha = NowPlayingFogSpec.titleScrimAlpha * opacity)
     val fadeTop = stopAt(center, NowPlayingFogSpec.titleScrimFadeTopDp)
     val solidTop = stopAt(center, NowPlayingFogSpec.titleScrimSolidTopDp)
     val solidBottom = stopAt(center, NowPlayingFogSpec.titleScrimSolidBottomDp)
@@ -186,10 +200,10 @@ private fun DrawScope.titleScrimBrush(center: Offset, opacity: Float): Brush? {
     if (solidBottom <= solidTop) return null
     return Brush.verticalGradient(
         colorStops = arrayOf(
-            fadeTop to Color.Transparent,
+            fadeTop to NowPlayingClear,
             solidTop to peak,
             solidBottom to peak,
-            fadeBottom to Color.Transparent,
+            fadeBottom to NowPlayingClear,
         ),
     )
 }

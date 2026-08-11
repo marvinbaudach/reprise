@@ -404,7 +404,7 @@ class MainActivityConfigurationTest {
             ?: error("No progress semantics")
 }
 
-internal class ConfigurationTestApplication : Application(), MainActivitySurfaceProvider {
+internal open class ConfigurationTestApplication : Application(), MainActivitySurfaceProvider {
     // A write the fake accepts is a write the fake keeps: a rating that vanished
     // the moment it was acknowledged would make every reload path look correct
     // by having nothing to reload.

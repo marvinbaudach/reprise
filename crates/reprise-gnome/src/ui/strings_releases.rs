@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_25_release_counts_name_discography_gaps() {
+    fn release_counts_name_discography_gaps() {
         assert_eq!(release_count_line(8, 19), "8 of 19 gaps");
         assert_eq!(release_total_line(19), "19 gaps");
     }

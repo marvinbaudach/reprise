@@ -18,8 +18,8 @@ private const val NOTHING_ASKED_FOR = Long.MIN_VALUE
  * commiting underneath it — has to be retried, because otherwise a single
  * stumble leaves the playing track without a row for as long as it plays. A
  * read that keeps failing must **stop**: retrying it on a timer would lay siege
- * to the very lock the failure is about, and silence is the honest answer to a
- * failure anyway.
+ * to the very lock the failure is about. What it must not do is stop *silently*
+ * — see [TrackLoader] for why the giving up is delivered rather than kept.
  */
 private const val ATTEMPTS = 3
 
@@ -48,9 +48,13 @@ private const val FIRST_RETRY_MS = 50L
  *   thread, so a reply that arrives after the track moved on cannot become the
  *   new track's row. `BrowseScreen` keys its state on the id as well; that
  *   check is what makes a stopped session blank rather than stale.
- * - **A failure is retried, [ATTEMPTS] times at most.** A rating that fails is
- *   reported to the person who tapped it; a row that fails to load has nobody
- *   to tell, so the only way it can heal is by asking again.
+ * - **A failure is retried, [ATTEMPTS] times at most, and then answered.** A
+ *   rating that fails is reported to the person who tapped it; a row that fails
+ *   to load has nobody to tell, so the only way it can heal is by asking again.
+ *   Once the attempts are spent the empty row is delivered all the same:
+ *   "there is no row for this track" is a state the screen can act on, whereas
+ *   never answering leaves it holding the *previous* track's row with every
+ *   action on it disabled, and nothing due that would ever release it.
  * - **Teardown discards rather than drains.** A read that never finishes costs
  *   nothing, exactly as in `TrackArtwork.shutdown`, whose doc comment carries
  *   the full reasoning about why closing the handle underneath a running read
@@ -94,9 +98,7 @@ internal class TrackLoader(
                 onSuccess = { track ->
                     // The row the database returned, including "there is no
                     // such row": both are answers, and neither is retried.
-                    if (stillWanted(trackId)) {
-                        onMainThread { if (stillWanted(trackId)) deliver(track) }
-                    }
+                    answer(trackId, track, deliver)
                     true
                 },
                 onFailure = { error ->
@@ -108,7 +110,15 @@ internal class TrackLoader(
                     false
                 },
             )
-            if (answered || remaining == 0) return
+            if (answered) return
+            if (remaining == 0) {
+                // Spent, and said so. The screen keeps the previous track's row
+                // until an answer replaces it, with every action on it disabled
+                // — so a request that ends without one leaves it stuck there
+                // for as long as the track plays.
+                answer(trackId, null, deliver)
+                return
+            }
             try {
                 pauseBeforeRetry(FIRST_RETRY_MS shl attempt)
             } catch (interrupted: InterruptedException) {
@@ -116,6 +126,16 @@ internal class TrackLoader(
                 return
             }
         }
+    }
+
+    /**
+     * Hands one answer over, on the main thread and only while it is still the
+     * track being asked for — checked once before the hop and once inside it,
+     * because the track can move on while the hop is queued.
+     */
+    private fun answer(trackId: Long, track: LibraryTrack?, deliver: (LibraryTrack?) -> Unit) {
+        if (!stillWanted(trackId)) return
+        onMainThread { if (stillWanted(trackId)) deliver(track) }
     }
 
     private fun stillWanted(trackId: Long): Boolean = askedFor.get() == trackId

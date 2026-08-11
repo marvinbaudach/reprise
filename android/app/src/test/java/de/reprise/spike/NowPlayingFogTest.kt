@@ -7,10 +7,26 @@ import org.junit.Test
 class NowPlayingFogTest {
     @Test
     fun fog_alpha_answers_the_measured_p5_to_p95_energy_step() {
-        val quietWide = NowPlayingFogSpec.wideAlpha(fogLevel = 0.1308f, opacity = 1f)
-        val loudWide = NowPlayingFogSpec.wideAlpha(fogLevel = 0.6444f, opacity = 1f)
-        val quietTight = NowPlayingFogSpec.tightAlpha(fogLevel = 0.1308f, opacity = 1f)
-        val loudTight = NowPlayingFogSpec.tightAlpha(fogLevel = 0.6444f, opacity = 1f)
+        val quietWide = NowPlayingFogSpec.wideAlpha(
+            swell = 0.13082694f,
+            bassPressure = 0.00002848626f,
+            opacity = 1f,
+        )
+        val loudWide = NowPlayingFogSpec.wideAlpha(
+            swell = 0.64443964f,
+            bassPressure = 0.6560269f,
+            opacity = 1f,
+        )
+        val quietTight = NowPlayingFogSpec.tightAlpha(
+            swell = 0.13082694f,
+            bassPressure = 0.00002848626f,
+            opacity = 1f,
+        )
+        val loudTight = NowPlayingFogSpec.tightAlpha(
+            swell = 0.64443964f,
+            bassPressure = 0.6560269f,
+            opacity = 1f,
+        )
 
         assertTrue(
             "measured p5-to-p95 energy must lift effective wide alpha by at least 40%",
@@ -24,33 +40,76 @@ class NowPlayingFogTest {
 
     @Test
     fun fog_alpha_never_exceeds_the_signed_off_peak() {
-        listOf(0.70f, 1f).forEach { fogLevel ->
+        listOf(0.70f, 1f).forEach { level ->
             assertEquals(
                 0.92f.toRawBits(),
-                NowPlayingFogSpec.wideAlpha(fogLevel, opacity = 1f).toRawBits(),
+                NowPlayingFogSpec.wideAlpha(level, level, opacity = 1f).toRawBits(),
             )
             assertEquals(
                 0.55f.toRawBits(),
-                NowPlayingFogSpec.tightAlpha(fogLevel, opacity = 1f).toRawBits(),
+                NowPlayingFogSpec.tightAlpha(level, level, opacity = 1f).toRawBits(),
             )
         }
 
         assertEquals(
-            0.8826338f,
-            NowPlayingFogSpec.wideAlpha(fogLevel = 0.66f, opacity = 1f),
+            0.883915f,
+            NowPlayingFogSpec.wideAlpha(swell = 0.66f, bassPressure = 0.66f, opacity = 1f),
             FLOAT_TOLERANCE,
         )
         assertEquals(
-            0.5208923f,
-            NowPlayingFogSpec.tightAlpha(fogLevel = 0.66f, opacity = 1f),
+            0.5218903f,
+            NowPlayingFogSpec.tightAlpha(swell = 0.66f, bassPressure = 0.66f, opacity = 1f),
             FLOAT_TOLERANCE,
         )
     }
 
     @Test
+    fun a_kick_at_constant_swell_brightens_both_layers_without_pumping_their_size() {
+        val swell = 0.42f
+        val quietWide = NowPlayingFogSpec.wideAlpha(swell, bassPressure = 0f, opacity = 1f)
+        val kickWide = NowPlayingFogSpec.wideAlpha(swell, bassPressure = 0.65f, opacity = 1f)
+        val quietTight = NowPlayingFogSpec.tightAlpha(swell, bassPressure = 0f, opacity = 1f)
+        val kickTight = NowPlayingFogSpec.tightAlpha(swell, bassPressure = 0.65f, opacity = 1f)
+        val sizeBefore = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.wideSizeDp, swell)
+        val sizeAfter = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.wideSizeDp, swell)
+
+        assertTrue(kickWide - quietWide > ALPHA_QUANTIZATION_FLOOR)
+        assertTrue(kickTight - quietTight > ALPHA_QUANTIZATION_FLOOR)
+        assertEquals(sizeBefore.toRawBits(), sizeAfter.toRawBits())
+    }
+
+    @Test
+    fun pressure_and_swell_at_full_keep_the_existing_alpha_ceiling() {
+        assertEquals(
+            NowPlayingFogSpec.wideOpacity.toRawBits(),
+            NowPlayingFogSpec.wideAlpha(swell = 1f, bassPressure = 1f, opacity = 1f).toRawBits(),
+        )
+        assertEquals(
+            NowPlayingFogSpec.tightOpacity.toRawBits(),
+            NowPlayingFogSpec.tightAlpha(swell = 1f, bassPressure = 1f, opacity = 1f).toRawBits(),
+        )
+    }
+
+    @Test
+    fun pressure_and_swell_clamp_instead_of_extrapolating() {
+        fun assertClamped(alpha: (Float, Float, Float) -> Float) {
+            assertEquals(alpha(0f, 0.35f, 1f).toRawBits(), alpha(-1f, 0.35f, 1f).toRawBits())
+            assertEquals(alpha(1f, 0.35f, 1f).toRawBits(), alpha(2f, 0.35f, 1f).toRawBits())
+            assertEquals(alpha(0.35f, 0f, 1f).toRawBits(), alpha(0.35f, -1f, 1f).toRawBits())
+            assertEquals(alpha(0.35f, 1f, 1f).toRawBits(), alpha(0.35f, 2f, 1f).toRawBits())
+        }
+        assertClamped { swell, pressure, opacity ->
+            NowPlayingFogSpec.wideAlpha(swell, pressure, opacity)
+        }
+        assertClamped { swell, pressure, opacity ->
+            NowPlayingFogSpec.tightAlpha(swell, pressure, opacity)
+        }
+    }
+
+    @Test
     fun quiet_fog_keeps_the_accepted_atmosphere_floor() {
-        val wideFloor = NowPlayingFogSpec.wideAlpha(fogLevel = 0f, opacity = 1f)
-        val tightFloor = NowPlayingFogSpec.tightAlpha(fogLevel = 0f, opacity = 1f)
+        val wideFloor = NowPlayingFogSpec.wideAlpha(swell = 0f, bassPressure = 0f, opacity = 1f)
+        val tightFloor = NowPlayingFogSpec.tightAlpha(swell = 0f, bassPressure = 0f, opacity = 1f)
 
         // The floors were lowered on 2026-08-10: at 0.62 and 0.40 the user
         // could not tell loud from quiet at all, so the swing was widened
@@ -68,8 +127,8 @@ class NowPlayingFogTest {
     fun fog_alpha_is_monotonically_non_decreasing_with_energy() {
         val levels = listOf(-1f, 0f, 0.05f, 0.1308f, 0.66f, 0.70f, 1f, 2f)
 
-        assertMonotonic(levels.map { NowPlayingFogSpec.wideAlpha(it, opacity = 1f) })
-        assertMonotonic(levels.map { NowPlayingFogSpec.tightAlpha(it, opacity = 1f) })
+        assertMonotonic(levels.map { NowPlayingFogSpec.wideAlpha(it, it, opacity = 1f) })
+        assertMonotonic(levels.map { NowPlayingFogSpec.tightAlpha(it, it, opacity = 1f) })
     }
 
     @Test
@@ -131,5 +190,6 @@ class NowPlayingFogTest {
 
     private companion object {
         const val FLOAT_TOLERANCE = 0.000_001f
+        const val ALPHA_QUANTIZATION_FLOOR = 1f / 255f
     }
 }

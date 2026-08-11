@@ -7,7 +7,7 @@ pub(super) fn css() -> String {
      .reprise-radio-view .card { border-radius: 8px; padding: 12px; }\n\
      .reprise-radio-view .reprise-btn-add { border-radius: 8px; }\n\
      .reprise-radio-initials-tile { font-size: 16px; font-weight: 700; \
-       color: @accent_color; border-radius: 8px; \
+       color: @reprise_accent_text_color; border-radius: 8px; \
        background-image: linear-gradient(155deg, alpha(@accent_bg_color, 0.22), \
          alpha(@window_fg_color, 0.05)); }\n\
      .reprise-radio-chips { margin-bottom: 4px; }"
@@ -35,7 +35,7 @@ mod tests {
 
         assert!(tile.contains("font-size: 16px"));
         assert!(tile.contains("font-weight: 700"));
-        assert!(tile.contains("color: @accent_color"));
+        assert!(tile.contains("color: @reprise_accent_text_color"));
         assert!(tile.contains("linear-gradient(155deg"));
         assert!(tile.contains("alpha(@accent_bg_color, 0.22)"));
         assert!(tile.contains("alpha(@window_fg_color, 0.05)"));

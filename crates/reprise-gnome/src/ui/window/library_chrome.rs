@@ -22,12 +22,10 @@ pub(in crate::ui) struct DoctorChrome {
     root: adw::ToolbarView,
     header: adw::HeaderBar,
     content_stack: gtk4::Stack,
-    doctor_navigation: adw::NavigationView,
     source_title: adw::WindowTitle,
     doctor_title: adw::WindowTitle,
     search_toggle: gtk4::ToggleButton,
     scan_button: gtk4::Button,
-    review_actions: gtk4::Box,
 }
 
 pub(in crate::ui) struct LibraryMaintenanceActions {
@@ -72,25 +70,19 @@ pub(in crate::ui) fn build(
 pub(in crate::ui) fn wire_content_stack(
     chrome: &LibraryChrome,
     stack: &gtk4::Stack,
-    doctor_navigation: &adw::NavigationView,
     source_title: &adw::WindowTitle,
     scan_button: &gtk4::Button,
 ) -> Rc<DoctorChrome> {
     let doctor_title = adw::WindowTitle::new(&strings::text(strings::LIBRARY_DOCTOR), "");
     doctor_title.set_visible(false);
-    let review_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-    review_actions.set_visible(false);
-    chrome.header.pack_end(&review_actions);
     let coordinator = Rc::new(DoctorChrome {
         root: chrome.root.clone(),
         header: chrome.header.clone(),
         content_stack: stack.clone(),
-        doctor_navigation: doctor_navigation.clone(),
         source_title: source_title.clone(),
         doctor_title,
         search_toggle: chrome.search_toggle.clone(),
         scan_button: scan_button.clone(),
-        review_actions,
     });
     coordinator.sync();
     let weak = Rc::downgrade(&coordinator);
@@ -99,24 +91,10 @@ pub(in crate::ui) fn wire_content_stack(
             coordinator.sync();
         }
     });
-    let weak = Rc::downgrade(&coordinator);
-    doctor_navigation.connect_visible_page_notify(move |_| {
-        if let Some(coordinator) = weak.upgrade() {
-            coordinator.sync();
-        }
-    });
     coordinator
 }
 
 impl DoctorChrome {
-    pub(in crate::ui) fn set_review_actions(&self, actions: &impl IsA<gtk4::Widget>) {
-        while let Some(child) = self.review_actions.first_child() {
-            self.review_actions.remove(&child);
-        }
-        self.review_actions.append(actions);
-        self.sync();
-    }
-
     fn sync(&self) {
         let doctor_visible =
             self.content_stack.visible_child_name().as_deref() == Some("library-doctor");
@@ -130,14 +108,6 @@ impl DoctorChrome {
         } else {
             self.header.set_title_widget(Some(&self.source_title));
         }
-        let review_visible = doctor_visible
-            && self
-                .doctor_navigation
-                .visible_page()
-                .and_then(|page| page.tag())
-                .as_deref()
-                == Some("library-doctor-review");
-        self.review_actions.set_visible(review_visible);
     }
 }
 
