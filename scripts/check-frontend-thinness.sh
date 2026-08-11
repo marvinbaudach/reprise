@@ -29,9 +29,11 @@ shared_view=crates/reprise-view/src
 # commit chip. On top of both, the app-wide column editing work moved
 # layout, key and width code out of reprise-gnome into reprise-view.
 # Dropping the phone-only podcast/YouTube preparation action removed five
-# obsolete presentation lines. This floor is the measured sum; future
-# migration waves raise it.
-view_floor=2170
+# obsolete presentation lines. Removing the two-step preparation progress API
+# that went with it — PreparationProgress, progress_copy and the four
+# "Step 2 of 2" titles, none of which had a consumer left — removed 55 more.
+# This floor is the measured sum; future migration waves raise it.
+view_floor=2115
 
 echo "== Frontend thinness =="
 
