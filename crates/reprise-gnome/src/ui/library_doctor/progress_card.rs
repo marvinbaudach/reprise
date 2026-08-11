@@ -80,16 +80,11 @@ impl DoctorProgressCard {
             .xalign(0.0)
             .hexpand(true)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
-            // Ellipsizing alone lets GTK shrink this label to nothing: the card
-            // reported "Che…" for "Checking tracks…" because the percentage and
-            // a default-padded Cancel took the row's allocation first. A
-            // minimum in characters keeps the label whole and pushes the loss
-            // onto the detail line below, which is what it is there for.
-            .width_chars(crate::ui::scan_card_css::JOB_CARD_TITLE_MIN_CHARS)
             .css_classes(["scan-card-title"])
             .build();
         let percent = gtk4::Label::builder()
-            .xalign(1.0)
+            .xalign(0.0)
+            .hexpand(true)
             .css_classes(["scan-card-percent"])
             .build();
         let cancel_label = strings::text(strings::CANCEL);
@@ -99,11 +94,16 @@ impl DoctorProgressCard {
             .css_classes(["flat", "scan-card-cancel"])
             .build();
         cancel.update_property(&[gtk4::accessible::Property::Label(&cancel_label)]);
-        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
-        header.append(&spinner);
-        header.append(&title);
-        header.append(&percent);
-        header.append(&cancel);
+        let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        title_row.append(&spinner);
+        title_row.append(&title);
+        let status_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        status_row.set_margin_start(19);
+        status_row.append(&percent);
+        status_row.append(&cancel);
+        let header = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        header.append(&title_row);
+        header.append(&status_row);
         let progress = gtk4::ProgressBar::builder().hexpand(true).build();
         progress.update_property(&[gtk4::accessible::Property::Label(&strings::text(
             strings::DOCTOR_PROGRESS,
@@ -299,6 +299,29 @@ mod tests {
             "the detail line absorbs the shortfall"
         );
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn npp_1_doctor_job_card_minimum_width_fits_the_sidebar() {
+        gtk4::init().unwrap();
+        crate::ui::style::install();
+        let card = DoctorProgressCard::new();
+        card.show_scan(DoctorScanPhase::CheckingRemote, 2_177, 2_177);
+        card.detail
+            .set_label("2,177 of 2,177 checked · 0 cached · 0 unavailable");
+
+        let minimum = card.widget().measure(gtk4::Orientation::Horizontal, -1).0;
+        assert!(
+            minimum <= 232,
+            "the visible Library Doctor job card must fit inside the 240px sidebar's 232px card slot, got {minimum}px"
+        );
+        assert_eq!(card.title.ellipsize(), gtk4::pango::EllipsizeMode::End);
+        assert_eq!(card.detail.ellipsize(), gtk4::pango::EllipsizeMode::End);
+        assert_eq!(
+            card.widget().measure(gtk4::Orientation::Vertical, 232).0,
+            crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX
+        );
     }
 
     #[test]

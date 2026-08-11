@@ -16,8 +16,7 @@ const CHIP_BORDER_ALPHA: &str = "0.32";
 /// Edge-line track alpha over the named window foreground colour.
 const EDGE_TRACK_ALPHA: &str = "0.10";
 
-pub(in crate::ui) const JOB_CARD_HEIGHT_PX: i32 = 70;
-pub(in crate::ui) const JOB_CARD_TITLE_MIN_CHARS: i32 = 16;
+pub(in crate::ui) const JOB_CARD_HEIGHT_PX: i32 = 85;
 
 pub(in crate::ui) fn css() -> String {
     let spin_ms = crate::ui::motion::INDICATOR_SPIN_MS;
@@ -43,9 +42,7 @@ pub(in crate::ui) fn css() -> String {
         font-size: 11.5px;\
         color: color-mix(in srgb, currentColor 50%, transparent);\
     }}\
-    /* The cancel control is a text link, not a chunky button: in a 240px \
-       sidebar a default-padded button starves the title of its allocation \
-       until it truncates to three characters. */\
+    /* The cancel control stays a compact text link in the status row. */\
     .scan-card-cancel {{\
         font-size: 12px;\
         min-height: 0;\

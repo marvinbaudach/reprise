@@ -94,10 +94,13 @@ impl RelinkProgressView {
         let title = gtk4::Label::builder()
             .halign(gtk4::Align::Start)
             .hexpand(true)
-            .width_chars(crate::ui::scan_card_css::JOB_CARD_TITLE_MIN_CHARS)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
         title.add_css_class("scan-card-title");
-        let percent = gtk4::Label::builder().halign(gtk4::Align::End).build();
+        let percent = gtk4::Label::builder()
+            .halign(gtk4::Align::Start)
+            .hexpand(true)
+            .build();
         percent.add_css_class("scan-card-percent");
         let cancel_label = strings::issue_text(strings::CANCEL);
         let cancel = gtk4::Button::builder()
@@ -106,11 +109,16 @@ impl RelinkProgressView {
             .css_classes(["flat", "scan-card-cancel"])
             .build();
         cancel.update_property(&[gtk4::accessible::Property::Label(&cancel_label)]);
-        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
-        header.append(&spinner);
-        header.append(&title);
-        header.append(&percent);
-        header.append(&cancel);
+        let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        title_row.append(&spinner);
+        title_row.append(&title);
+        let status_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        status_row.set_margin_start(19);
+        status_row.append(&percent);
+        status_row.append(&cancel);
+        let header = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        header.append(&title_row);
+        header.append(&status_row);
 
         let progress = gtk4::ProgressBar::new();
         progress.update_property(&[gtk4::accessible::Property::Label(&strings::issue_text(
@@ -368,12 +376,40 @@ mod tests {
         );
         assert_eq!(view.inner.cancel.tooltip_text().as_deref(), Some("Cancel"));
         assert!(!view.inner.title.layout().is_ellipsized());
-        assert_eq!(view.inner.title.width_chars(), 16);
+        assert_eq!(view.inner.title.width_chars(), -1);
         assert!(view.inner.container.is_focusable());
         assert_eq!(
             view.inner.container.accessible_role(),
             gtk4::AccessibleRole::Button
         );
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn npp_1_relink_job_card_minimum_width_fits_the_sidebar() {
+        gtk4::init().unwrap();
+        crate::ui::style::install();
+        let view = RelinkProgressView::new();
+        view.start(1_204, RelinkCancellation::default());
+        view.show(876, 2_177, 1_204);
+
+        let minimum = view.widget().measure(gtk4::Orientation::Horizontal, -1).0;
+        assert!(
+            minimum <= 232,
+            "the visible Relink job card must fit inside the 240px sidebar's 232px card slot, got {minimum}px"
+        );
+        assert_eq!(
+            view.inner.title.ellipsize(),
+            gtk4::pango::EllipsizeMode::End
+        );
+        assert_eq!(
+            view.inner.detail.ellipsize(),
+            gtk4::pango::EllipsizeMode::End
+        );
+        assert_eq!(
+            view.widget().measure(gtk4::Orientation::Vertical, 232).0,
+            crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX
+        );
     }
 }

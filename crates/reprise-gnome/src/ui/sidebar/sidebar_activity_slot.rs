@@ -146,30 +146,34 @@ mod tests {
 
     use super::SidebarActivitySlot;
 
-    const JOB_CARD_HEIGHT_PX: f32 = 70.0;
-
     fn job_card(with_extra_action: bool) -> gtk4::Revealer {
-        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
         let spinner = gtk4::Spinner::new();
         spinner.add_css_class("scan-card-spinner");
-        header.append(&spinner);
+        title_row.append(&spinner);
         let title = gtk4::Label::new(Some("Checking tracks…"));
         title.set_hexpand(true);
         title.add_css_class("scan-card-title");
-        header.append(&title);
+        title_row.append(&title);
+        let status_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        status_row.set_margin_start(19);
         let percent = gtk4::Label::new(Some("45%"));
+        percent.set_hexpand(true);
         percent.add_css_class("scan-card-percent");
-        header.append(&percent);
+        status_row.append(&percent);
         if with_extra_action {
             let open = gtk4::Button::with_label("Open");
             open.add_css_class("flat");
             open.add_css_class("scan-card-compact-action");
-            header.append(&open);
+            status_row.append(&open);
         }
         let cancel = gtk4::Button::with_label("Cancel");
         cancel.add_css_class("flat");
         cancel.add_css_class("scan-card-cancel");
-        header.append(&cancel);
+        status_row.append(&cancel);
+        let header = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        header.append(&title_row);
+        header.append(&status_row);
         let body = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
         body.set_height_request(crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX);
         body.add_css_class("scan-card");
@@ -224,7 +228,10 @@ mod tests {
 
         assert_eq!(doctor_bounds.y(), relink_bounds.y());
         assert_eq!(doctor_bounds.height(), relink_bounds.height());
-        assert_eq!(doctor_bounds.height(), JOB_CARD_HEIGHT_PX);
+        assert_eq!(
+            doctor_bounds.height(),
+            crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX as f32
+        );
     }
 
     #[test]
