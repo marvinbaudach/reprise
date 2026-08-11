@@ -160,11 +160,17 @@ pub(crate) fn migrate_v40(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let has_sync_to_phone = has_column(conn, "podcast_subscriptions", "sync_to_phone")?;
     let has_downloaded_bytes = has_column(conn, "podcast_episodes", "downloaded_bytes")?;
-    if version >= 40 && has_sync_to_phone && has_downloaded_bytes {
+    // `sync_to_phone` exists only below v68, which drops it (`MTP-54`).
+    // `downloaded_bytes` outlives that, so this migration keeps repairing it
+    // by column, the way it always has — only the phone-sync half is bounded
+    // by the version, or the two migrations would add and drop the same
+    // column on every start.
+    let wants_sync_to_phone = version < 68;
+    if version >= 40 && (has_sync_to_phone || !wants_sync_to_phone) && has_downloaded_bytes {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    if !has_sync_to_phone {
+    if !has_sync_to_phone && wants_sync_to_phone {
         transaction.execute(
             "ALTER TABLE podcast_subscriptions
              ADD COLUMN sync_to_phone INTEGER NOT NULL DEFAULT 0",
@@ -216,14 +222,21 @@ pub(crate) fn migrate_v43(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
-// `MTP-36`: a channel's persisted override of the global "latest N per
-// channel" default (`podcasts::config::LATEST_PER_CHANNEL_DEFAULT_KEY`).
+// Historical shape only (`MTP-36`): a channel's persisted override of the
+// global "latest N per channel" default. `migrate_v68` drops the column
+// again — it bounded the YouTube phone-sync target, which `MTP-54` removed.
+// The global default it overrode
+// (`podcasts::config::LATEST_PER_CHANNEL_DEFAULT_KEY`) is a different,
+// still-live setting and is not affected.
 // `NULL` means "no override, use the global default" — it cannot double as
 // the sentinel for "unlimited" because the owner decision of 2026-07-29
 // (`E-9`) makes the number `0` mean unlimited for every numeric sync
 // setting, so an explicit `0` must round-trip as `0`, not as "unset".
 pub(crate) fn migrate_v47(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 68 {
+        return Ok(());
+    }
     let has_latest_per_channel = has_column(conn, "podcast_subscriptions", "latest_per_channel")?;
     if version >= 47 && has_latest_per_channel {
         return Ok(());
