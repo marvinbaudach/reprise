@@ -5754,7 +5754,9 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
   gtk4-rs book, main event loop.
 - **GP-3** [planned] [gtk] — A closure that captures a widget which itself
   stores that closure uses `glib::clone!(#[weak] …)`, never a strong capture.
-  Source: gtk4-rs book.
+  The grep gate catches explicit `#[strong]` captures. An unannotated capture
+  is implicitly strong and must be checked in review because the gate cannot
+  parse Rust macro arguments reliably. Source: gtk4-rs book.
 - **GP-4** [planned] [gtk] — No `unwrap()` in UI paths: signal handlers,
   property access, channel receives. Either `expect()` with context or the
   error is propagated.

@@ -26,7 +26,7 @@ n=$(count_matches "$blocking")
 (( n == 0 )) || report_violation GP-2 "$n blocking call(s) in $ui:
 $(list_matches "$blocking")"
 
-# GP-3 — clone! blocks that capture without #[weak] or #[weak_allow_none].
+# GP-3 — explicit #[strong] captures. The rulebook documents the grep limit.
 n=$({ grep -rn --include='*.rs' -A2 'clone!(' "$ui" 2>/dev/null || true; } \
   | { grep -E '#\[strong\]' || true; } | { grep -vcE '^\s*//' || true; })
 (( n == 0 )) || report_violation GP-3 "$n clone! block(s) capture strongly:
