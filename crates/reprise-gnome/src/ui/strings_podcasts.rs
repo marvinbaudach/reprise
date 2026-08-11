@@ -163,9 +163,6 @@ pub const PODCAST_REMOVE_EPISODE: &str = N_!("Remove episode");
 pub const PODCAST_MORE_OPTIONS: &str = N_!("More episode options");
 pub const PODCAST_MORE_SOURCE_OPTIONS: &str = N_!("More source options");
 pub const PODCAST_UNSUBSCRIBE: &str = N_!("Unsubscribe");
-pub const PODCAST_SYNC_PHONE: &str = N_!("Sync downloaded episodes to phone");
-pub const PODCAST_STOP_SYNC_PHONE: &str = N_!("Stop syncing episodes to phone");
-pub const PODCAST_SYNC_DEVICES: &str = N_!("Sync downloaded episodes to devices");
 pub const YOUTUBE_LOAD_MORE: &str = N_!("Load more");
 pub const YOUTUBE_LOADING_MORE: &str = N_!("Loading more videos…");
 pub const YOUTUBE_BACK_TO_CHANNELS: &str = N_!("Back to YouTube channels");
@@ -484,13 +481,6 @@ pub fn podcast_unsubscribe_from(show: &str) -> String {
     formatted(N_!("Unsubscribe from “{show}”"), &[("show", show)])
 }
 
-pub fn podcast_sync_device(device: &str) -> String {
-    formatted(
-        N_!("Sync downloaded episodes to “{device}”"),
-        &[("device", device)],
-    )
-}
-
 /// `POD-11`: the YouTube channel detail's header summary — the currently
 /// listed window's size, how many of the channel's episodes are downloaded,
 /// and their combined size on disk (e.g. "10 of 487 · 3 downloaded ·
@@ -519,13 +509,6 @@ pub fn podcast_summary_with_selection(summary: &str, selected: usize) -> String 
     formatted(
         N_!("{summary} · {count} selected"),
         &[("summary", summary), ("count", &selected.to_string())],
-    )
-}
-
-pub fn podcast_stop_sync_device(device: &str) -> String {
-    formatted(
-        N_!("Stop syncing episodes to “{device}”"),
-        &[("device", device)],
     )
 }
 
