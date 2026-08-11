@@ -2,7 +2,7 @@
 slug: queue-section-preseed
 worktree: /home/marvin/Projects/reprise/.worktrees/list-geometry-service
 branch: feat/list-geometry-service
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-10
 ---
