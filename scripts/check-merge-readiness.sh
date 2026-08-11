@@ -64,6 +64,10 @@ scripts/check-frontend-thinness.sh
 
 echo "== UX traceability =="
 scripts/check-ux-traceability.sh
+scripts/check-appstream.sh
+scripts/check-flatpak-manifest.sh
+scripts/check-gnome-idioms.sh
+scripts/check-ai-hygiene.sh
 
 echo "== Motion tokens =="
 scripts/check-motion-tokens.sh

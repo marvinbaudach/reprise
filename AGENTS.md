@@ -151,6 +151,36 @@ cargo tree -p reprise-core | grep -E 'gtk4|libadwaita|gstreamer|zbus'   # MUST b
 an edit would breach it, extract a cohesive sibling module — do NOT trim doc comments to fit.
 Markdown is exempt: docs are split by subject, never by line count.
 
+## Definition of Done
+
+A change is done when all of the following hold:
+
+1. `scripts/check-merge-readiness.sh` passes.
+2. Every rule the change touches is covered by a rule-named test under
+   `crates/`, per `docs/ux-rules.md`.
+3. A rule moves from `[planned]` to `[active]` **in the same commit** that
+   proves it. Never after the fact.
+4. New behaviour that no rule covers means: add a rule, do not decide locally.
+   Add it as `[planned]` with the next free ID in the affected section and
+   mark it `<!-- REVIEW: rule proposal -->`.
+
+Section `AI. GNOME platform conformance` binds every change to the GTK
+frontend and to the packaging metadata. Its gates are
+`check-appstream.sh`, `check-flatpak-manifest.sh`, `check-gnome-idioms.sh`
+and `check-ai-hygiene.sh`. They warn while a rule is `[planned]` and block
+once it is `[active]`.
+
+## File ownership — Flathub readiness
+
+Four strands run in parallel. Do not edit files owned by another strand.
+
+| Strand | Owns |
+|---|---|
+| A — rulebook and gates | `docs/ux-rules.md`, `AGENTS.md`, `RELEASING.md`, `scripts/` |
+| B — app ID and packaging | `data/`, the Flatpak manifest, `flatpak/`, `meson.build`, app-ID constants under `crates/` |
+| C — conformance audit | read-only; writes only `docs/plans/gnome-conformance.findings.md` |
+| D — project hygiene | `README.md`, `CODE_OF_CONDUCT.md`, `reprise.doap` |
+
 ## NON-NEGOTIABLE safety rules
 
 - **English everywhere** — code, comments, log/error/UI strings, commit messages, **and every
