@@ -5782,7 +5782,9 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
 ### Distribution metadata
 
 - **GP-12** [planned] [core] — The metainfo file passes
-  `appstreamcli validate --pedantic`.
+  `appstreamcli validate --no-net --explain`.
+  <!-- Keep validation offline and deterministic. Do not add --pedantic: it
+       rejects the conventional uppercase final component in GNOME app IDs. -->
 - **GP-13** [planned] [core] — The desktop file passes `desktop-file-validate`.
 - **GP-14** [planned] [core] — The Flatpak manifest passes
   `flatpak-builder-lint manifest`.
