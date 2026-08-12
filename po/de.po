@@ -936,6 +936,18 @@ msgstr "{name} exportiert"
 msgid "Could not export “{name}”"
 msgstr "„{name}“ konnte nicht exportiert werden"
 
+#: crates/reprise-gnome/src/ui/strings.rs:755
+msgid "LGPL 2.1 or later"
+msgstr "LGPL 2.1 oder neuer"
+
+#: crates/reprise-gnome/src/ui/strings.rs:756
+msgid "MIT"
+msgstr "MIT"
+
+#: crates/reprise-gnome/src/ui/strings.rs:757
+msgid "Public Domain"
+msgstr "Gemeinfrei"
+
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:7
 msgid "Reveal playing album"
 msgstr "Spielendes Album anzeigen"

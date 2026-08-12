@@ -14,17 +14,54 @@ const APPDATA_RESOURCE: &str =
     "/io/github/marvinbaudach/Reprise/io.github.marvinbaudach.Reprise.metainfo.xml";
 const ISSUE_URL: &str = "https://github.com/marvinbaudach/reprise/issues";
 const DEBUG_INFO_FILENAME: &str = "reprise-debug-info.txt";
-const LGPL_2_1_OR_LATER: &str =
-    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>";
-const MIT: &str = "<a href=\"https://spdx.org/licenses/MIT.html\">MIT</a>";
-const DEPENDENCY_LEGAL_SECTIONS: [(&str, gtk4::License, &str); 7] = [
-    ("GTK", gtk4::License::Custom, LGPL_2_1_OR_LATER),
-    ("libadwaita", gtk4::License::Custom, LGPL_2_1_OR_LATER),
-    ("GStreamer", gtk4::License::Custom, LGPL_2_1_OR_LATER),
-    ("GVfs", gtk4::License::Custom, LGPL_2_1_OR_LATER),
-    ("Lofty", gtk4::License::Custom, MIT),
-    ("CAVA", gtk4::License::Custom, MIT),
-    ("SQLite", gtk4::License::Custom, "Public Domain"),
+const LGPL_2_1_URL: &str = "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html";
+const MIT_URL: &str = "https://spdx.org/licenses/MIT.html";
+// Custom licenses avoid repeating libadwaita's warranty wording for this app
+// under every dependency. add_legal_section renders this text as Pango markup,
+// so the license links remain available despite using the custom type.
+const DEPENDENCY_LEGAL_SECTIONS: [(&str, gtk4::License, &str, Option<&str>); 7] = [
+    (
+        "GTK",
+        gtk4::License::Custom,
+        strings::LICENSE_LGPL_2_1_OR_LATER,
+        Some(LGPL_2_1_URL),
+    ),
+    (
+        "libadwaita",
+        gtk4::License::Custom,
+        strings::LICENSE_LGPL_2_1_OR_LATER,
+        Some(LGPL_2_1_URL),
+    ),
+    (
+        "GStreamer",
+        gtk4::License::Custom,
+        strings::LICENSE_LGPL_2_1_OR_LATER,
+        Some(LGPL_2_1_URL),
+    ),
+    (
+        "GVfs",
+        gtk4::License::Custom,
+        strings::LICENSE_LGPL_2_1_OR_LATER,
+        Some(LGPL_2_1_URL),
+    ),
+    (
+        "Lofty",
+        gtk4::License::Custom,
+        strings::LICENSE_MIT,
+        Some(MIT_URL),
+    ),
+    (
+        "CAVA",
+        gtk4::License::Custom,
+        strings::LICENSE_MIT,
+        Some(MIT_URL),
+    ),
+    (
+        "SQLite",
+        gtk4::License::Custom,
+        strings::LICENSE_PUBLIC_DOMAIN,
+        None,
+    ),
 ];
 
 /// The version shown in About: the crate version, plus the short git commit of
@@ -70,13 +107,22 @@ fn build_dialog_for_version(
 }
 
 fn add_legal_sections(dialog: &adw::AboutDialog) {
-    for &(name, license_type, license) in dependency_legal_sections() {
-        dialog.add_legal_section(name, None, license_type, Some(license));
+    for &(name, license_type, license_name, license_url) in &DEPENDENCY_LEGAL_SECTIONS {
+        let license = dependency_license_markup(license_name, license_url);
+        dialog.add_legal_section(name, None, license_type, Some(&license));
     }
 }
 
-fn dependency_legal_sections() -> &'static [(&'static str, gtk4::License, &'static str)] {
-    &DEPENDENCY_LEGAL_SECTIONS
+fn dependency_license_markup(license_name: &str, license_url: Option<&str>) -> String {
+    let license_name = strings::text(license_name);
+    let license_name = gtk4::glib::markup_escape_text(&license_name);
+    license_url.map_or_else(
+        || license_name.to_string(),
+        |license_url| {
+            let license_url = gtk4::glib::markup_escape_text(license_url);
+            format!("<a href=\"{license_url}\">{license_name}</a>")
+        },
+    )
 }
 
 pub(super) fn present(parent: &adw::ApplicationWindow, db: &Db, db_path: &Path) {
@@ -108,44 +154,71 @@ mod tests {
     #[test]
     fn dependency_legal_sections_use_short_named_license_links() {
         assert_eq!(
-            dependency_legal_sections(),
-            &[
+            DEPENDENCY_LEGAL_SECTIONS,
+            [
                 (
                     "GTK",
                     gtk4::License::Custom,
-                    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>",
+                    strings::LICENSE_LGPL_2_1_OR_LATER,
+                    Some(LGPL_2_1_URL),
                 ),
                 (
                     "libadwaita",
                     gtk4::License::Custom,
-                    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>",
+                    strings::LICENSE_LGPL_2_1_OR_LATER,
+                    Some(LGPL_2_1_URL),
                 ),
                 (
                     "GStreamer",
                     gtk4::License::Custom,
-                    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>",
+                    strings::LICENSE_LGPL_2_1_OR_LATER,
+                    Some(LGPL_2_1_URL),
                 ),
                 (
                     "GVfs",
                     gtk4::License::Custom,
-                    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>",
+                    strings::LICENSE_LGPL_2_1_OR_LATER,
+                    Some(LGPL_2_1_URL),
                 ),
                 (
                     "Lofty",
                     gtk4::License::Custom,
-                    "<a href=\"https://spdx.org/licenses/MIT.html\">MIT</a>",
+                    strings::LICENSE_MIT,
+                    Some(MIT_URL),
                 ),
                 (
                     "CAVA",
                     gtk4::License::Custom,
-                    "<a href=\"https://spdx.org/licenses/MIT.html\">MIT</a>",
+                    strings::LICENSE_MIT,
+                    Some(MIT_URL),
                 ),
-                ("SQLite", gtk4::License::Custom, "Public Domain"),
+                (
+                    "SQLite",
+                    gtk4::License::Custom,
+                    strings::LICENSE_PUBLIC_DOMAIN,
+                    None,
+                ),
             ]
         );
-        assert!(dependency_legal_sections()
+        assert!(DEPENDENCY_LEGAL_SECTIONS
             .iter()
-            .all(|(_, _, license)| !license.contains("warranty")));
+            .all(|(_, _, license_name, _)| !license_name.contains("warranty")));
+
+        let markup: Vec<_> = DEPENDENCY_LEGAL_SECTIONS
+            .iter()
+            .map(|(_, _, license_name, license_url)| {
+                dependency_license_markup(license_name, *license_url)
+            })
+            .collect();
+        assert_eq!(
+            markup[0],
+            "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>"
+        );
+        assert_eq!(
+            markup[4],
+            "<a href=\"https://spdx.org/licenses/MIT.html\">MIT</a>"
+        );
+        assert_eq!(markup[6], "Public Domain");
     }
 
     #[test]

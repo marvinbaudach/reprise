@@ -752,6 +752,10 @@ pub fn playlist_export_failed_toast(name: &str) -> String {
 }
 
 // Application identity and legal information shown in the native About dialog.
+pub const LICENSE_LGPL_2_1_OR_LATER: &str = N_!("LGPL 2.1 or later");
+pub const LICENSE_MIT: &str = N_!("MIT");
+pub const LICENSE_PUBLIC_DOMAIN: &str = N_!("Public Domain");
+
 // Album view (library_views/album_view.rs, album_card.rs).
 #[cfg(test)]
 mod tests {
