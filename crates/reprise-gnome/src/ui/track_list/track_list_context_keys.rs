@@ -28,24 +28,30 @@ pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &std::rc::Rc<S
 
         let menu = track_list_context_menu::build_context_menu_model(&shared);
         let popover = gtk4::PopoverMenu::from_model(Some(&menu));
-        popover.set_parent(&column_view_handle);
-        popover.set_has_arrow(false);
-        let target = gdk::Rectangle::new(
-            column_view_handle.width() / 2,
-            column_view_handle.height() / 2,
-            1,
-            1,
-        );
-        popover.set_pointing_to(Some(&target));
-        popover_lifecycle::unparent_after_actions(popover.upcast_ref());
-        let focus_guard =
-            crate::ui::transient_focus::TransientFocusGuard::capture(&column_view_handle);
-        focus_guard.restore_on_popover_close(popover.upcast_ref());
-        popover.popup();
+        present_keyboard_popover(&column_view_handle, &popover);
         tracing::debug!("track context menu opened from keyboard");
         gtk4::glib::Propagation::Stop
     });
     column_view.add_controller(controller);
+}
+
+pub(super) fn present_keyboard_popover(
+    column_view: &gtk4::ColumnView,
+    popover: &gtk4::PopoverMenu,
+) {
+    popover.set_parent(column_view);
+    popover.set_has_arrow(false);
+    let target = gdk::Rectangle::new(column_view.width() / 2, column_view.height() / 2, 1, 1);
+    popover.set_pointing_to(Some(&target));
+    popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(column_view);
+    if let Some(initial_focus) = crate::ui::transient_focus::popover_menu_initial_focus(popover) {
+        focus_guard.bind_popover(popover.upcast_ref(), &initial_focus);
+    } else {
+        tracing::warn!("track context menu has no focusable menu item");
+        focus_guard.restore_on_popover_close(popover.upcast_ref());
+    }
+    popover.popup();
 }
 
 #[cfg(test)]
