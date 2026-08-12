@@ -32,6 +32,9 @@ pub(in crate::ui) const PRIMARY_CLASS: &str = "reprise-btn-primary";
 pub(in crate::ui) const ADD_ACTION_CLASS: &str = "reprise-btn-add";
 /// Tertiary/flat entries: background hover only, deliberately no press scale.
 pub(in crate::ui) const TERTIARY_CLASS: &str = "reprise-btn-tertiary";
+/// Full-width button nested in a selectable navigation sidebar row. The row
+/// owns every visual interaction state and the sole keyboard focus stop.
+pub(in crate::ui) const SIDEBAR_ROW_ACTION_CLASS: &str = "reprise-sidebar-row-action";
 
 /// Composite widgets whose inner buttons are built by Adwaita and can never
 /// carry [`ICON_CLASS`] — the vocabulary has to reach them by selector.
@@ -240,6 +243,14 @@ pub(in crate::ui) fn css() -> String {
          {hosted_standard}\n\
          {hosted_tertiary}\n\
          {press_scale}\n\
+         /* NAV-11/ACC-3: the real button supplies the AT-SPI click action, but
+            the surrounding ListBoxRow remains the only visual and keyboard
+            interaction surface. */\n\
+         .{SIDEBAR_ROW_ACTION_CLASS},\n\
+         .{SIDEBAR_ROW_ACTION_CLASS}:hover,\n\
+         .{SIDEBAR_ROW_ACTION_CLASS}:active {{\n\
+           min-width: 0; min-height: 0; padding: 0;\n\
+           background-color: transparent; box-shadow: none; transform: none; }}\n\
          /* BTN-1: keyboard focus is its own signal, never the hover look. */\n\
          {focus_ring}"
     )
@@ -311,6 +322,34 @@ mod tests {
             vec!["background-color"],
             "hover must modulate the fill only, never tip the state display"
         );
+    }
+
+    #[test]
+    fn nav_11_sidebar_action_defers_geometry_and_visual_states_to_its_row() {
+        let css = super::css();
+        let selector = format!(".{}", super::SIDEBAR_ROW_ACTION_CLASS);
+
+        for state in [
+            selector.clone(),
+            format!("{selector}:hover"),
+            format!("{selector}:active"),
+        ] {
+            assert!(css.contains(&state), "missing sidebar button state {state}");
+        }
+        let declarations = declared_properties(&css, &format!("{selector}:active"));
+        for property in [
+            "min-width",
+            "min-height",
+            "padding",
+            "background-color",
+            "box-shadow",
+            "transform",
+        ] {
+            assert!(
+                declarations.iter().any(|declared| declared == property),
+                "sidebar action must neutralize {property}"
+            );
+        }
     }
 
     /// The property names declared in the block introduced by `selector`.

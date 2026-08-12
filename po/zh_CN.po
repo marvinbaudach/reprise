@@ -4253,6 +4253,30 @@ msgstr ""
 msgid "All results"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_filter.rs:86
+msgid "Sort"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:87
+msgid "Sort tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:88
+msgid "Sort by"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:89
+msgid "Sort direction"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:90
+msgid "Ascending"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:91
+msgid "Descending"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings_filter.rs:16
 #, rust-format
 msgid "⌕ “{query}” in settings  ×"
