@@ -546,6 +546,24 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
+    fn search_4a_radio_clear_path_removes_query_and_chip() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let bar = RadioFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+        bar.set_query("nova");
+        bar.set_committed_query("nova");
+
+        bar.layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+            .and_downcast::<gtk4::Button>()
+            .expect("Radio search chip")
+            .emit_clicked();
+
+        bar.layout.assert_search_cleared(&bar.filter().query);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn fil_2a_radio_fills_filters_count_and_clear_slots_in_order() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();

@@ -583,6 +583,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 let section_search = section_search.clone();
                 Rc::new(move || section_search.supports_search())
             },
+            clear_active_search: {
+                let section_search = section_search.clone();
+                Rc::new(move || section_search.clear_active_query())
+            },
         },
         player.clone(),
     );

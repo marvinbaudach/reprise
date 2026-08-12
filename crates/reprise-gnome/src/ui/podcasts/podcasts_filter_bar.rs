@@ -443,7 +443,7 @@ mod tests {
         }));
     }
 
-    /// UX SEARCH-14: the receipt goes away with the click that removes it.
+    /// UX SEARCH-4a: the receipt goes away with the click that removes it.
     ///
     /// The commit sink is the authority on which query gets a chip, but it
     /// answers only after a round trip through the header entry. The bar
@@ -453,7 +453,7 @@ mod tests {
     /// pumped in this test on purpose: the frame the user sees is this one.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_14_the_receipt_goes_with_the_click_not_a_turn_later() {
+    fn search_4a_podcasts_clear_path_removes_query_and_chip() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let bar =
@@ -467,14 +467,13 @@ mod tests {
             "the committed query is showing before the click"
         );
 
-        bar.apply(bar.filter().with_query(""));
+        bar.layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+            .and_downcast::<gtk4::Button>()
+            .expect("Podcasts search chip")
+            .emit_clicked();
 
-        assert!(
-            !bar.layout
-                .populated_slot_order()
-                .contains(&crate::ui::filter_bar_layout::FilterBarSlot::Search),
-            "the receipt must be gone in the same turn as the click"
-        );
+        bar.layout.assert_search_cleared(&bar.filter().query);
     }
 
     #[test]

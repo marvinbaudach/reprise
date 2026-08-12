@@ -5,6 +5,7 @@ use gtk4::prelude::*;
 use reprise_view::search_scope::SearchScope;
 
 type FocusCallback = Rc<dyn Fn() -> bool>;
+type AbortCallback = Rc<dyn Fn()>;
 
 #[derive(Clone)]
 pub(in crate::ui) struct SearchPopover {
@@ -12,6 +13,7 @@ pub(in crate::ui) struct SearchPopover {
     entry: gtk4::SearchEntry,
     scope_label: gtk4::Label,
     focus_on_close: Rc<RefCell<Option<FocusCallback>>>,
+    abort_on_escape: Rc<RefCell<Option<AbortCallback>>>,
 }
 
 #[derive(Clone)]
@@ -62,6 +64,7 @@ impl SearchPopover {
         });
 
         let focus_on_close: Rc<RefCell<Option<FocusCallback>>> = Rc::new(RefCell::new(None));
+        let abort_on_escape: Rc<RefCell<Option<AbortCallback>>> = Rc::new(RefCell::new(None));
         // SEARCH-2c: closing returns focus to the list — on *every* close path.
         // This hangs on `closed` rather than on the explicit `close()` because
         // GTK's own autohide (a click outside) never runs our close helper: it
@@ -72,13 +75,14 @@ impl SearchPopover {
             let focus_on_close = Rc::clone(&focus_on_close);
             move |_| return_focus(&focus_on_close)
         });
-        wire_entry_close(entry, &popover);
+        wire_entry_close(entry, &popover, &abort_on_escape);
 
         Self {
             popover,
             entry: entry.clone(),
             scope_label,
             focus_on_close,
+            abort_on_escape,
         }
     }
 
@@ -119,7 +123,12 @@ impl SearchPopover {
 
     #[cfg(test)]
     pub(in crate::ui) fn press_close_key(&self, key: gtk4::gdk::Key) -> gtk4::glib::Propagation {
-        handle_close_key(key, &self.downgrade())
+        handle_search_key(
+            key,
+            &self.popover.downgrade(),
+            &self.entry.downgrade(),
+            &self.abort_on_escape,
+        )
     }
 
     pub(in crate::ui) fn connect_open_changed(&self, f: impl Fn(bool) + 'static) {
@@ -131,6 +140,10 @@ impl SearchPopover {
 
     pub(in crate::ui) fn set_focus_on_close(&self, callback: FocusCallback) {
         self.focus_on_close.replace(Some(callback));
+    }
+
+    pub(in crate::ui) fn set_abort_on_escape(&self, callback: AbortCallback) {
+        self.abort_on_escape.replace(Some(callback));
     }
 
     pub(in crate::ui) fn downgrade(&self) -> WeakSearchPopover {
@@ -169,32 +182,58 @@ impl WeakSearchPopover {
     }
 }
 
-fn wire_entry_close(entry: &gtk4::SearchEntry, popover: &gtk4::Popover) {
+fn wire_entry_close(
+    entry: &gtk4::SearchEntry,
+    popover: &gtk4::Popover,
+    abort_on_escape: &Rc<RefCell<Option<AbortCallback>>>,
+) {
     let keys = gtk4::EventControllerKey::new();
     keys.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    let search = WeakSearchPopover {
-        popover: popover.downgrade(),
-        entry: entry.downgrade(),
-        scope_label: gtk4::glib::WeakRef::new(),
-    };
-    keys.connect_key_pressed(move |_, key, _, _| handle_close_key(key, &search));
+    let popover_weak = popover.downgrade();
+    let entry_weak = entry.downgrade();
+    let abort = Rc::clone(abort_on_escape);
+    keys.connect_key_pressed(move |_, key, _, _| {
+        handle_search_key(key, &popover_weak, &entry_weak, &abort)
+    });
     entry.add_controller(keys);
 
     let popover_weak = popover.downgrade();
+    let entry_weak = entry.downgrade();
+    let abort = Rc::clone(abort_on_escape);
     entry.connect_stop_search(move |_| {
+        abort_search(&entry_weak, &abort);
         close_popover(&popover_weak);
     });
 }
 
-fn handle_close_key(key: gtk4::gdk::Key, search: &WeakSearchPopover) -> gtk4::glib::Propagation {
-    if !matches!(
-        key,
-        gtk4::gdk::Key::Escape | gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter
-    ) {
-        return gtk4::glib::Propagation::Proceed;
+fn handle_search_key(
+    key: gtk4::gdk::Key,
+    popover: &gtk4::glib::WeakRef<gtk4::Popover>,
+    entry: &gtk4::glib::WeakRef<gtk4::SearchEntry>,
+    abort_on_escape: &Rc<RefCell<Option<AbortCallback>>>,
+) -> gtk4::glib::Propagation {
+    match key {
+        gtk4::gdk::Key::Escape => abort_search(entry, abort_on_escape),
+        gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter => {}
+        _ => return gtk4::glib::Propagation::Proceed,
     }
-    search.close();
+    close_popover(popover);
     gtk4::glib::Propagation::Stop
+}
+
+/// Escape uses the active section's clear path when the shell has installed
+/// one. The direct entry clear is only a lifecycle-safe fallback for isolated
+/// search widgets (including tests) whose coordinator no longer exists.
+fn abort_search(
+    entry: &gtk4::glib::WeakRef<gtk4::SearchEntry>,
+    abort_on_escape: &Rc<RefCell<Option<AbortCallback>>>,
+) {
+    let callback = abort_on_escape.borrow().clone();
+    if let Some(callback) = callback {
+        callback();
+    } else if let Some(entry) = entry.upgrade() {
+        entry.set_text("");
+    }
 }
 
 fn close_popover(popover: &gtk4::glib::WeakRef<gtk4::Popover>) {

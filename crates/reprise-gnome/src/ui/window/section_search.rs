@@ -121,6 +121,14 @@ impl SectionSearch {
             });
             search.apply_to_active(&search.entry_text());
         });
+        popover.set_abort_on_escape({
+            let weak = Rc::downgrade(&search);
+            Rc::new(move || {
+                if let Some(search) = weak.upgrade() {
+                    search.clear_active_query();
+                }
+            })
+        });
         search
     }
 
@@ -294,6 +302,20 @@ impl SectionSearch {
         // to do half of an action that also clears facets.
         self.write_entry("");
         self.apply_to_active("");
+    }
+
+    /// SEARCH-4a: the query half of the active section's existing clear path.
+    /// This is shared by the chip's × round-trip, open-popover Escape and the
+    /// window-level Escape used while only the committed chip remains.
+    pub(in crate::ui) fn clear_active_query(&self) -> bool {
+        if self.entry_text().trim().is_empty() {
+            return false;
+        }
+        self.write_entry("");
+        // SearchEntry may debounce `search-changed`; Escape must remove both
+        // the filter and committed chip in this key press, not a later turn.
+        self.apply_to_active("");
+        true
     }
 
     /// The one place this module writes the entry.

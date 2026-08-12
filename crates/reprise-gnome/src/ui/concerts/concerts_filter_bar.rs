@@ -624,6 +624,24 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
+    fn search_4a_concerts_clear_path_removes_query_and_chip() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let bar = ConcertsFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+        bar.set_query("winterthur");
+        bar.set_committed_query("winterthur");
+
+        bar.layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+            .and_downcast::<gtk4::Button>()
+            .expect("Concerts search chip")
+            .emit_clicked();
+
+        bar.layout.assert_search_cleared(&bar.query());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn conc_2_filter_header_has_fixed_height_and_disabled_radius_hint() {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());

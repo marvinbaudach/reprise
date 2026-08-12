@@ -299,6 +299,9 @@ executed its GP-9 assertions.
   instead of Escape + Alt+Left, and fail loudly rather than counting an
   un-run surface as a failed one); small for guarding the group loop so one
   failing group no longer drops the rest.
+- **Follow-up (2026-08-12):** SEARCH-4a now makes Escape clear and close in one
+  press. The evidence above remains the historical cause of this audit result;
+  it must not be read as the current product contract.
 
 **Not measured, therefore not claimed:** GP-9 for `sidebar`,
 `tracks-playlist-queue`, `issues-import`, `player-now-playing`, `device-sync`,

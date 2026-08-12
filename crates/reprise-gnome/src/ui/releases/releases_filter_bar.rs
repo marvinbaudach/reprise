@@ -515,6 +515,24 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
+    fn search_4a_releases_clear_path_removes_query_and_chip() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let bar = ReleasesFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+        bar.set_query("falling");
+        bar.set_committed_query("falling");
+
+        bar.layout
+            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+            .and_downcast::<gtk4::Button>()
+            .expect("Releases search chip")
+            .emit_clicked();
+
+        bar.layout.assert_search_cleared(&bar.query());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn nr_33_filter_header_is_permanent_and_reserves_its_height() {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
