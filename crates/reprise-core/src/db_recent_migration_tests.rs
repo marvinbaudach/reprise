@@ -379,7 +379,12 @@ fn net_2a_migration_preserves_existing_cover_usage() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(crate::library::settings::get_bool_in(
+        &conn,
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        false,
+    )
+    .unwrap());
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
@@ -395,9 +400,12 @@ fn net_2a_migration_preserves_existing_portrait_usage() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(
-        crate::modules::is_enabled_in(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap()
-    );
+    assert!(crate::library::settings::get_bool_in(
+        &conn,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+        false,
+    )
+    .unwrap());
 }
 
 #[test]
@@ -437,10 +445,12 @@ fn net_2a_migration_ignores_negative_cache_markers() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
-    assert!(
-        !crate::modules::is_enabled_in(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap()
-    );
+    for key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+    ] {
+        assert!(!crate::library::settings::get_bool_in(&conn, key, false).unwrap());
+    }
 }
 
 #[test]
@@ -467,9 +477,13 @@ fn net_2a_migration_preserves_explicit_opt_outs() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
+    for key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+    ] {
+        assert!(!crate::library::settings::get_bool_in(&conn, key, false).unwrap());
+    }
     for module in [
-        &crate::modules::COVER_DOWNLOAD_MODULE,
-        &crate::modules::ARTIST_PORTRAITS_MODULE,
         &crate::modules::ONLINE_LYRICS_MODULE,
         &crate::modules::NEW_RELEASES_MODULE,
     ] {
@@ -535,8 +549,7 @@ fn fresh_database_runs_the_new_releases_migration_sequence() {
 
     assert_new_releases_schema(&conn);
     for module in [
-        &crate::modules::COVER_DOWNLOAD_MODULE,
-        &crate::modules::ARTIST_PORTRAITS_MODULE,
+        &crate::modules::ARTWORK_MODULE,
         &crate::modules::ONLINE_LYRICS_MODULE,
         &crate::modules::NEW_RELEASES_MODULE,
     ] {
@@ -574,8 +587,9 @@ fn v11_database_runs_the_same_new_releases_migration_sequence() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(network_settings, 1);
+    assert_eq!(network_settings, 2);
     assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
+    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
 }
 
 #[test]

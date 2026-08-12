@@ -14,6 +14,10 @@
 
 use std::path::Path;
 
+pub(crate) const LEGACY_COVER_DOWNLOAD_KEY: &str = "module.cover_download.enabled";
+pub(crate) const LEGACY_ARTIST_PORTRAITS_KEY: &str = "module.artist_portraits.enabled";
+pub(crate) const LEGACY_SOURCE_IMAGES_KEY: &str = "module.source_images.enabled";
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct NetworkUseEvidence {
     subscription: bool,
@@ -43,10 +47,19 @@ fn online_gate_default(existing_database: bool, evidence: NetworkUseEvidence) ->
 /// modules default to on, so a pattern match would report every database as
 /// having used online features.
 fn any_online_module_enabled(tx: &rusqlite::Transaction<'_>) -> Result<bool, rusqlite::Error> {
-    let keys: Vec<String> = crate::modules::ONLINE_MODULES
+    let mut keys: Vec<String> = crate::modules::ONLINE_MODULES
         .iter()
         .map(|module| crate::modules::enabled_key(module))
         .collect();
+    keys.extend(
+        [
+            LEGACY_COVER_DOWNLOAD_KEY,
+            LEGACY_ARTIST_PORTRAITS_KEY,
+            LEGACY_SOURCE_IMAGES_KEY,
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    );
     let placeholders = vec!["?"; keys.len()].join(", ");
     let sql = format!(
         "SELECT EXISTS(SELECT 1 FROM settings WHERE value = '1' AND key IN ({placeholders}))"
@@ -74,12 +87,12 @@ pub(crate) fn grandfather_network_features(
         )?;
     }
     if existing_database && cache_contains_image(cover_cache, crate::cover_download::IMAGE_EXTS) {
-        enable_module_if_unset(tx, &crate::modules::COVER_DOWNLOAD_MODULE)?;
+        enable_setting_if_unset(tx, LEGACY_COVER_DOWNLOAD_KEY)?;
     }
     if existing_database
         && cache_contains_image(portrait_cache, crate::artist_portrait::cache::IMAGE_EXTS)
     {
-        enable_module_if_unset(tx, &crate::modules::ARTIST_PORTRAITS_MODULE)?;
+        enable_setting_if_unset(tx, LEGACY_ARTIST_PORTRAITS_KEY)?;
     }
     Ok(())
 }
@@ -140,6 +153,17 @@ fn enable_module_if_unset(
     tx.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, '1')",
         [crate::modules::enabled_key(module)],
+    )?;
+    Ok(())
+}
+
+fn enable_setting_if_unset(
+    tx: &rusqlite::Transaction<'_>,
+    key: &str,
+) -> Result<(), rusqlite::Error> {
+    tx.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, '1')",
+        [key],
     )?;
     Ok(())
 }

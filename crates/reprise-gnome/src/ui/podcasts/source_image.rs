@@ -3,7 +3,7 @@
 //! `favicon`) with either an icon or initials fallback.
 //!
 //! `NET-1a` / `C1`: every caller passes `images_allowed`, already computed as
-//! `online_sources::network_allowed(conn, &modules::SOURCE_IMAGES_MODULE)` at
+//! `online_sources::network_allowed(conn, &modules::ARTWORK_MODULE)` at
 //! its own call site — this widget never reads settings itself. A memory- or
 //! disk-cache hit is always shown regardless of `images_allowed` (an
 //! already-cached image is never hidden); only the network fallback on a
@@ -90,11 +90,9 @@ pub(crate) enum StartupTiming {
 /// A failed lookup counts as not allowed: refusing when unsure is the safe
 /// direction for a privacy promise (`SRC-11`).
 pub(in crate::ui) fn recompute_gate(conn: &Db) {
-    let allowed = reprise_core::online_sources::network_allowed(
-        conn,
-        &reprise_core::modules::SOURCE_IMAGES_MODULE,
-    )
-    .unwrap_or(false);
+    let allowed =
+        reprise_core::online_sources::network_allowed(conn, &reprise_core::modules::ARTWORK_MODULE)
+            .unwrap_or(false);
     GATE_OPEN.store(allowed, Ordering::Relaxed);
 }
 
@@ -658,12 +656,8 @@ mod tests {
         use std::sync::atomic::Ordering;
 
         let conn = crate::test_db::open().unwrap();
-        reprise_core::modules::set_enabled(
-            &conn,
-            &reprise_core::modules::SOURCE_IMAGES_MODULE,
-            true,
-        )
-        .unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
+            .unwrap();
         super::recompute_gate(&conn);
         assert!(
             super::GATE_OPEN.load(Ordering::SeqCst),

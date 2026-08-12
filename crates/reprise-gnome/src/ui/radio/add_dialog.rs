@@ -28,12 +28,12 @@ const CONTENT_WIDTH: i32 = 560;
 const CONTENT_HEIGHT: i32 = 620;
 
 /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
-/// &modules::SOURCE_IMAGES_MODULE)`, computed fresh at every call so each
+/// &modules::ARTWORK_MODULE)`, computed fresh at every call so each
 /// favicon tile reflects the current gate — this dialog never lets the
 /// widget read settings itself. A free function (rather than a method) so
 /// its wiring is testable without constructing the GTK dialog.
 pub(super) fn images_allowed(db: &Db) -> bool {
-    reprise_core::online_sources::network_allowed(db, &reprise_core::modules::SOURCE_IMAGES_MODULE)
+    reprise_core::online_sources::network_allowed(db, &reprise_core::modules::ARTWORK_MODULE)
         .unwrap_or(false)
 }
 

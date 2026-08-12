@@ -40,15 +40,13 @@ fn set_10_plugins_is_the_single_settings_home_in_the_design_order() {
     assert_eq!(
         plugin_ids_for_group(PluginGroup::Online),
         &[
+            "artwork",
+            "online_lyrics",
+            "concerts",
+            "new_releases",
             "youtube",
             "podcasts",
             "radio",
-            "new_releases",
-            "concerts",
-            "cover_download",
-            "artist_portraits",
-            "online_lyrics",
-            "source_images",
         ]
     );
     assert_eq!(
@@ -62,40 +60,21 @@ fn set_10_plugins_is_the_single_settings_home_in_the_design_order() {
             .copied()
             .filter(|id| plugin_uses_expander(id))
             .collect::<Vec<_>>(),
-        ["youtube", "podcasts", "radio", "new_releases", "concerts",]
+        ["concerts", "new_releases", "youtube", "podcasts", "radio",]
     );
 }
 
 #[test]
-fn set_12_provision_badges_use_the_static_group_majority_rule() {
-    use reprise_core::modules::ProvisionKind;
-
-    assert!(provision_badges_for("youtube", ONLINE_PLUGIN_IDS).is_empty());
+fn artwork_plugin_uses_the_combined_privacy_copy() {
     assert_eq!(
-        provision_badges_for("cover_download", ONLINE_PLUGIN_IDS)
-            .iter()
-            .map(|provision| provision.kind)
-            .collect::<Vec<_>>(),
-        [ProvisionKind::Extends]
-    );
-    for id in LOCAL_PLUGIN_IDS {
-        assert!(
-            !provision_badges_for(id, LOCAL_PLUGIN_IDS).is_empty(),
-            "a tied Local row must retain its badge: {id}"
-        );
-    }
-    assert_eq!(
-        provision_badge_tone(ProvisionKind::PanelTab),
-        ProvisionBadgeTone::Accent
+        plugin_title(&reprise_core::modules::ARTWORK_MODULE),
+        "Artwork"
     );
     assert_eq!(
-        provision_badge_tone(ProvisionKind::SidebarSection),
-        ProvisionBadgeTone::Accent
+        plugin_description(&reprise_core::modules::ARTWORK_MODULE),
+        "Album covers, artist portraits and source artwork · contacts MusicBrainz, coverartarchive.org, Deezer, YouTube, Apple Podcasts and image hosts"
     );
-    assert_eq!(
-        provision_badge_tone(ProvisionKind::ContextItem),
-        ProvisionBadgeTone::Neutral
-    );
+    assert!(!plugin_uses_expander("artwork"));
 }
 
 #[test]
@@ -129,16 +108,14 @@ fn all_network_plugin_rows_expose_privacy_copy() {
             "radio" => description.contains("radio-browser.info"),
             "new_releases" => description.contains("MusicBrainz"),
             "concerts" => description.contains("event providers"),
-            "cover_download" => {
-                description.contains("MusicBrainz") && description.contains("coverartarchive.org")
-            }
-            "artist_portraits" => description.contains("Deezer"),
-            "online_lyrics" => description.contains("LRCLIB"),
-            "source_images" => {
-                description.contains("YouTube")
+            "artwork" => {
+                description.contains("MusicBrainz")
+                    && description.contains("coverartarchive.org")
+                    && description.contains("Deezer")
+                    && description.contains("YouTube")
                     && description.contains("Apple Podcasts")
-                    && description.contains("radio-browser.info")
             }
+            "online_lyrics" => description.contains("LRCLIB"),
             id => panic!("online capability {id} has no privacy-copy assertion"),
         };
         assert!(
@@ -178,10 +155,8 @@ fn set_11_online_master_off_preserves_each_module_configuration() {
         (&reprise_core::modules::RADIO_MODULE, true),
         (&reprise_core::modules::NEW_RELEASES_MODULE, false),
         (&reprise_core::modules::CONCERTS_MODULE, true),
-        (&reprise_core::modules::COVER_DOWNLOAD_MODULE, false),
-        (&reprise_core::modules::ARTIST_PORTRAITS_MODULE, true),
+        (&reprise_core::modules::ARTWORK_MODULE, true),
         (&reprise_core::modules::ONLINE_LYRICS_MODULE, false),
-        (&reprise_core::modules::SOURCE_IMAGES_MODULE, true),
     ];
     for (descriptor, enabled) in configured {
         reprise_core::modules::set_enabled(&db, descriptor, enabled).unwrap();
@@ -211,7 +186,7 @@ fn set_11_collapsed_online_content_reveals_all_sources_read_only() {
     assert!(!collapsed.rows_visible);
     assert!(!collapsed.rows_sensitive);
     assert!(collapsed.disclosure_visible);
-    assert_eq!(collapsed.disclosure_label, "Show the 9 sources");
+    assert_eq!(collapsed.disclosure_label, "Show the 7 sources");
 
     let revealed = collapsed_group_state(
         CollapsiblePluginGroup::OnlineContent,
@@ -250,22 +225,89 @@ fn set_11_collapsed_online_content_reveals_all_sources_read_only() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn set_11_online_content_header_owns_the_master_switch() {
+fn set_11_online_content_starts_with_a_persistent_master_row() {
     gtk4::init().unwrap();
-    let master = gtk4::Switch::new();
-    let group = build_online_group_header(&master);
+    let master = online_master_row(false);
+    let group = online_group_with_master(&master);
+    let disclosure = adw::ActionRow::new();
+    let plugin = aligned_switch_row("Artwork", "Artwork services", true);
+    group.add(&disclosure);
+    group.add(&plugin);
+    apply_collapsed_group(
+        &[plugin.clone().upcast()],
+        &disclosure,
+        &collapsed_group_state(CollapsiblePluginGroup::OnlineContent, false, false, 1),
+    );
 
     assert_eq!(group.title(), "Online content");
+    assert!(group.description().is_none());
+    assert_eq!(master.title(), "Online content");
     assert_eq!(
-        group.description().as_deref(),
-        Some(
-            "Use online sources — off makes this a local player: nothing below runs, no requests, sidebar entries hidden."
-        )
+        master.subtitle().as_deref(),
+        Some(strings::text(strings::ONLINE_CONTENT_MASTER_DESCRIPTION).as_str())
     );
-    assert_eq!(
-        group.header_suffix().as_ref(),
-        Some(master.upcast_ref::<gtk4::Widget>())
-    );
+    assert!(master.is_visible());
+    assert!(master.is_sensitive());
+    assert!(!master.is_active());
+    master.set_active(true);
+    assert!(master.is_active());
+    assert!(!plugin.is_visible());
+    assert!(!plugin.is_sensitive());
+    assert!(master
+        .ancestor(adw::PreferencesGroup::static_type())
+        .is_some());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn plugins_switch_and_expander_switch_share_the_same_right_edge() {
+    gtk4::init().unwrap();
+    let group = adw::PreferencesGroup::new();
+    let switch_row = aligned_switch_row("Artwork", "Artwork services", false);
+    let expander = adw::ExpanderRow::builder()
+        .title("Podcasts")
+        .show_enable_switch(true)
+        .build();
+    group.add(&switch_row);
+    group.add(&expander);
+    let window = gtk4::Window::builder()
+        .default_width(640)
+        .child(&group)
+        .build();
+    window.present();
+    assert!(crate::ui::test_settle::settle_until_mapped(&window));
+
+    let switch = switch_row
+        .first_child()
+        .and_then(|root| find_descendant::<gtk4::Switch>(&root))
+        .expect("switch row must render its switch");
+    let expander_switch = expander
+        .first_child()
+        .and_then(|root| find_descendant::<gtk4::Switch>(&root))
+        .expect("expander row must render its enable switch");
+    let switch_bounds = switch.compute_bounds(&group).unwrap();
+    let expander_bounds = expander_switch.compute_bounds(&group).unwrap();
+    let switch_edge = switch_bounds.x() + switch_bounds.width();
+    let expander_edge = expander_bounds.x() + expander_bounds.width();
+
+    assert_eq!(switch_edge, expander_edge);
+    window.close();
+}
+
+fn find_descendant<T: IsA<gtk4::Widget> + gtk4::glib::types::StaticType>(
+    root: &gtk4::Widget,
+) -> Option<T> {
+    if let Ok(found) = root.clone().downcast::<T>() {
+        return Some(found);
+    }
+    let mut child = root.first_child();
+    while let Some(current) = child {
+        if let Some(found) = find_descendant::<T>(&current) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
 }
 
 #[test]

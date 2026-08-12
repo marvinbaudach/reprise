@@ -393,7 +393,7 @@ impl PodcastsView {
         // image entry point in this view instead of each one re-deriving it.
         let images_allowed = reprise_core::online_sources::network_allowed(
             &self.conn,
-            &reprise_core::modules::SOURCE_IMAGES_MODULE,
+            &reprise_core::modules::ARTWORK_MODULE,
         )
         .unwrap_or(false);
         self.youtube_detail.update(

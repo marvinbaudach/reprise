@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-12 09:41+0200\n"
+"POT-Creation-Date: 2026-08-12 11:48+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -757,7 +757,7 @@ msgid "Retry"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:563
-#: crates/reprise-gnome/src/ui/strings_news.rs:52
+#: crates/reprise-gnome/src/ui/strings_news.rs:43
 #: crates/reprise-gnome/src/ui/strings_sources.rs:19
 msgid "Dismiss"
 msgstr ""
@@ -2137,7 +2137,7 @@ msgid "Open in MusicBrainz"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:36
-#: crates/reprise-gnome/src/ui/strings_news.rs:143
+#: crates/reprise-gnome/src/ui/strings_news.rs:134
 msgid "New Releases"
 msgstr ""
 
@@ -2146,124 +2146,95 @@ msgid "Show upcoming releases and missing albums or EPs · contacts MusicBrainz"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:39
-msgid "Album Covers"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:41
-msgid ""
-"Download missing album covers · contacts MusicBrainz and coverartarchive.org"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:42
-msgid "Artist Portraits"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:43
-msgid "Show artist images · contacts Deezer"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:44
 msgid "Online Lyrics"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:46
+#: crates/reprise-gnome/src/ui/strings_news.rs:41
 msgid "Load missing lyrics · contacts LRCLIB and NetEase"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:47
-msgid "Enable album cover downloads →"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:48
-msgid "Enable artist images →"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:49
+#: crates/reprise-gnome/src/ui/strings_news.rs:42
 msgid "Enable new releases →"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:51
-msgid "Enable network features for artists (images & new releases) →"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:53
+#: crates/reprise-gnome/src/ui/strings_news.rs:44
 msgid "Artists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:54
+#: crates/reprise-gnome/src/ui/strings_news.rs:45
 msgid "Top artists only"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:55
+#: crates/reprise-gnome/src/ui/strings_news.rs:46
 msgid "All artists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:56
+#: crates/reprise-gnome/src/ui/strings_news.rs:47
 msgid "Fetch now"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:57
+#: crates/reprise-gnome/src/ui/strings_news.rs:48
 msgid "Refresh failed · showing saved releases"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:58
+#: crates/reprise-gnome/src/ui/strings_news.rs:49
 msgid "UPDATES"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:59
+#: crates/reprise-gnome/src/ui/strings_news.rs:50
 msgid "RELEASES"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:60
+#: crates/reprise-gnome/src/ui/strings_news.rs:51
 msgid "CONCERTS"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:61
+#: crates/reprise-gnome/src/ui/strings_news.rs:52
 msgid "Concerts fetch failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:62
+#: crates/reprise-gnome/src/ui/strings_news.rs:53
 msgid "Nothing new since your last look"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:63
+#: crates/reprise-gnome/src/ui/strings_news.rs:54
 msgid "Checking for new releases…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:64
+#: crates/reprise-gnome/src/ui/strings_news.rs:55
 msgid "No upcoming releases from your artists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:65
+#: crates/reprise-gnome/src/ui/strings_news.rs:56
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:105
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:205
 msgid "Updated just now"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:66
+#: crates/reprise-gnome/src/ui/strings_news.rs:57
 msgid "See all"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:67
+#: crates/reprise-gnome/src/ui/strings_news.rs:58
 #: crates/reprise-gnome/src/ui/strings_releases.rs:37
 msgid "Hide"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:72
+#: crates/reprise-gnome/src/ui/strings_news.rs:63
 #, rust-format
 msgid "{count} track selected"
 msgid_plural "{count} tracks selected"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:83
+#: crates/reprise-gnome/src/ui/strings_news.rs:74
 #, rust-format
 msgid "{count} track · {duration}"
 msgid_plural "{count} tracks · {duration}"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:94
+#: crates/reprise-gnome/src/ui/strings_news.rs:85
 #: crates/reprise-view/src/queue.rs:29
 #, rust-format
 msgid "Playing from {source} · {count} track"
@@ -2271,160 +2242,160 @@ msgid_plural "Playing from {source} · {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:103
+#: crates/reprise-gnome/src/ui/strings_news.rs:94
 #, rust-format
 msgid "{type} · {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:110
+#: crates/reprise-gnome/src/ui/strings_news.rs:101
 #, rust-format
 msgid "MusicBrainz · Updated {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:115
+#: crates/reprise-gnome/src/ui/strings_news.rs:106
 #, rust-format
 msgid "Cached · Updated {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:126
+#: crates/reprise-gnome/src/ui/strings_news.rs:117
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:109
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:132
+#: crates/reprise-gnome/src/ui/strings_news.rs:123
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:115
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:135
+#: crates/reprise-gnome/src/ui/strings_news.rs:126
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:120
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:140
+#: crates/reprise-gnome/src/ui/strings_news.rs:131
 #, rust-format
 msgid "{count} hidden · Show"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:144
+#: crates/reprise-gnome/src/ui/strings_news.rs:135
 msgid "released"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:145
+#: crates/reprise-gnome/src/ui/strings_news.rs:136
 #: crates/reprise-gnome/src/ui/strings_releases.rs:31
 msgid "In library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:146
+#: crates/reprise-gnome/src/ui/strings_news.rs:137
 msgid "Single in library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:147
+#: crates/reprise-gnome/src/ui/strings_news.rs:138
 msgid "Show in library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:148
+#: crates/reprise-gnome/src/ui/strings_news.rs:139
 msgid "Open announcement"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:149
+#: crates/reprise-gnome/src/ui/strings_news.rs:140
 msgid "Show again"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:150
+#: crates/reprise-gnome/src/ui/strings_news.rs:141
 msgid "All caught up"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:151
+#: crates/reprise-gnome/src/ui/strings_news.rs:142
 msgid "Retention: 6 months"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:157
+#: crates/reprise-gnome/src/ui/strings_news.rs:148
 #, rust-format
 msgid "in {days} d"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:163
+#: crates/reprise-gnome/src/ui/strings_news.rs:154
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:51
 #, rust-format
 msgid "{count} new"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:168
+#: crates/reprise-gnome/src/ui/strings_news.rs:159
 #, rust-format
 msgid "Show all concerts ({count}) →"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:175
+#: crates/reprise-gnome/src/ui/strings_news.rs:166
 #, rust-format
 msgid "Show all releases ({count}) →"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:182
+#: crates/reprise-gnome/src/ui/strings_news.rs:173
 msgid "unknown date"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:191
+#: crates/reprise-gnome/src/ui/strings_news.rs:182
 msgid "Checking missing album covers…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:192
+#: crates/reprise-gnome/src/ui/strings_news.rs:183
 msgid "Cover check complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:193
+#: crates/reprise-gnome/src/ui/strings_news.rs:184
 msgid "Could not check album covers"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:194
+#: crates/reprise-gnome/src/ui/strings_news.rs:185
 msgid "Checking missing lyrics…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:195
+#: crates/reprise-gnome/src/ui/strings_news.rs:186
 msgid "Lyrics check complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:196
+#: crates/reprise-gnome/src/ui/strings_news.rs:187
 msgid "Could not check lyrics"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:197
+#: crates/reprise-gnome/src/ui/strings_news.rs:188
 msgid "Analyzing library…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:198
+#: crates/reprise-gnome/src/ui/strings_news.rs:189
 msgid "Library analysis complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:199
+#: crates/reprise-gnome/src/ui/strings_news.rs:190
 msgid "Library analysis stopped"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:200
+#: crates/reprise-gnome/src/ui/strings_news.rs:191
 msgid "Could not analyze the library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:213
+#: crates/reprise-gnome/src/ui/strings_news.rs:204
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
 "unavailable"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:225
+#: crates/reprise-gnome/src/ui/strings_news.rs:216
 #, rust-format
 msgid "{analyzed} of {total} analyzed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:237
+#: crates/reprise-gnome/src/ui/strings_news.rs:228
 #, rust-format
 msgid "{analyzed} analyzed · {failed} failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:252
+#: crates/reprise-gnome/src/ui/strings_news.rs:243
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {cached} cached · {unavailable} unavailable"
@@ -2445,84 +2416,83 @@ msgid ""
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:17
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:29
-msgid "Use online sources"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:18
 #, rust-format
 msgid "Show the {count} sources"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:19
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:18
 msgid "Scrobbling · needs online sources"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:28
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:27
 msgid "Online sources"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:31
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:28
+msgid "Use online sources"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:30
 msgid ""
 "Off makes this a local player only: no requests, no downloads, nothing "
 "hidden — the three entries disappear from the sidebar."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:34
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:33
 msgid ""
 "Each block is self-contained: turning one off hides its sidebar entry and "
 "stops its requests; subscriptions and favorites are kept, not deleted."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:37
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:36
 msgid "Channels as audio episodes · channel feeds, audio via yt-dlp"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:39
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:38
 msgid "Shows as audio episodes · RSS feeds, search via Apple Podcasts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:41
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:40
 msgid "Stations and live streams · radio-browser.info directory"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:42
-msgid "Source Images"
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:41
+msgid "Artwork"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:44
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:43
 msgid ""
-"Show source artwork · contacts YouTube, Apple Podcasts, feed publishers, "
-"radio-browser.info, and image hosts"
+"Album covers, artist portraits and source artwork · contacts MusicBrainz, "
+"coverartarchive.org, Deezer, YouTube, Apple Podcasts and image hosts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:46
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:45
 msgid "Use YouTube"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:47
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:46
 msgid "Use Podcasts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:48
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:47
 msgid "Use Radio"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:50
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:49
 msgid ""
 "Reprise can now follow podcasts, YouTube channels, radio and concerts — all "
 "off by default."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:52
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:51
 msgid "Review in Preferences"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:53
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:52
 msgid "Not now"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:59
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:58
 msgid "Online sources are turned off — enable them in Preferences"
 msgstr ""
 
@@ -4313,30 +4283,6 @@ msgstr ""
 msgid "All results"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_filter.rs:86
-msgid "Sort"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_filter.rs:87
-msgid "Sort tracks"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_filter.rs:88
-msgid "Sort by"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_filter.rs:89
-msgid "Sort direction"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_filter.rs:90
-msgid "Ascending"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_filter.rs:91
-msgid "Descending"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_filter.rs:16
 #, rust-format
 msgid "⌕ “{query}” in settings  ×"
@@ -4398,6 +4344,30 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_filter.rs:83
 #, rust-format
 msgid "Show all {total} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:86
+msgid "Sort"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:87
+msgid "Sort tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:88
+msgid "Sort by"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:89
+msgid "Sort direction"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:90
+msgid "Ascending"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_filter.rs:91
+msgid "Descending"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_ai.rs:9

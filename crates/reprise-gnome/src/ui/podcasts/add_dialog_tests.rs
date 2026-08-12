@@ -496,7 +496,7 @@ fn src_5_result_rows_use_the_source_artwork_surface() {
 
 /// `SRC-11` / `NET-1a`: the helper every result and preview row in this
 /// dialog uses to gate its source image must reflect both the global
-/// online-sources switch and the Source Images module — not just one of
+/// online-sources switch and the Artwork module — not just one of
 /// them.
 #[test]
 fn src_11_add_dialog_images_allowed_is_the_net_1a_and() {
@@ -504,7 +504,7 @@ fn src_11_add_dialog_images_allowed_is_the_net_1a_and() {
     // Neither the global gate nor the module is on by default.
     assert!(!images_allowed(&conn));
 
-    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::SOURCE_IMAGES_MODULE, true)
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
         .unwrap();
     assert!(
         images_allowed(&conn),

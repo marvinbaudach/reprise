@@ -78,7 +78,7 @@ impl super::NowPlayingPanel {
             };
             let images_allowed = reprise_core::online_sources::network_allowed(
                 &self.conn,
-                &reprise_core::modules::SOURCE_IMAGES_MODULE,
+                &reprise_core::modules::ARTWORK_MODULE,
             )
             .unwrap_or(false);
             self.widgets.bloom.set_cover(None, generation);

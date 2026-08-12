@@ -5,7 +5,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::modules::{ModuleDescriptor, Provision, ProvisionKind};
+use reprise_core::modules::ModuleDescriptor;
 
 use super::{strings, PreferencesContext};
 
@@ -21,15 +21,13 @@ enum PluginGroup {
 
 const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals"];
 const ONLINE_PLUGIN_IDS: &[&str] = &[
+    "artwork",
+    "online_lyrics",
+    "concerts",
+    "new_releases",
     "youtube",
     "podcasts",
     "radio",
-    "new_releases",
-    "concerts",
-    "cover_download",
-    "artist_portraits",
-    "online_lyrics",
-    "source_images",
 ];
 const CONNECTED_PLUGIN_IDS: &[&str] = &["scrobbling"];
 
@@ -96,91 +94,12 @@ fn apply_collapsed_group(
     }
 }
 
-fn build_online_group_header(master: &gtk4::Switch) -> adw::PreferencesGroup {
-    adw::PreferencesGroup::builder()
-        .title(strings::text(strings::PLUGIN_GROUP_ONLINE_CONTENT))
-        .description(strings::text(strings::ONLINE_CONTENT_MASTER_DESCRIPTION))
-        .header_suffix(master)
-        .build()
-}
-
 fn descriptor(id: &str) -> &'static ModuleDescriptor {
     reprise_core::modules::ALL_MODULES
         .iter()
         .copied()
         .find(|descriptor| descriptor.id == id)
         .unwrap_or_else(|| panic!("unknown Plugins capability: {id}"))
-}
-
-fn provision_badges_for(id: &str, group_ids: &[&str]) -> Vec<Provision> {
-    use std::collections::BTreeMap;
-
-    let mut frequencies = BTreeMap::<Vec<ProvisionKind>, usize>::new();
-    for group_id in group_ids {
-        let mut kinds = descriptor(group_id)
-            .provides
-            .iter()
-            .map(|provision| provision.kind)
-            .collect::<Vec<_>>();
-        kinds.sort_unstable();
-        kinds.dedup();
-        *frequencies.entry(kinds).or_default() += 1;
-    }
-    let mut ranked = frequencies.into_iter().collect::<Vec<_>>();
-    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-    let winner = ranked.first().and_then(|(kinds, count)| {
-        let second = ranked.get(1).map_or(0, |(_, count)| *count);
-        (*count >= 2 && *count > second).then_some(kinds)
-    });
-    let module = descriptor(id);
-    let mut module_kinds = module
-        .provides
-        .iter()
-        .map(|provision| provision.kind)
-        .collect::<Vec<_>>();
-    module_kinds.sort_unstable();
-    module_kinds.dedup();
-    if winner.is_some_and(|winner| winner == &module_kinds) {
-        Vec::new()
-    } else {
-        module.provides.to_vec()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ProvisionBadgeTone {
-    Accent,
-    Neutral,
-}
-
-fn provision_badge_tone(kind: ProvisionKind) -> ProvisionBadgeTone {
-    if matches!(
-        kind,
-        ProvisionKind::PanelTab | ProvisionKind::SidebarSection
-    ) {
-        ProvisionBadgeTone::Accent
-    } else {
-        ProvisionBadgeTone::Neutral
-    }
-}
-
-fn provision_badges(id: &str, group_ids: &[&str]) -> gtk4::Box {
-    let badges = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-    for provision in provision_badges_for(id, group_ids) {
-        let badge = gtk4::Label::new(Some(provision.label));
-        badge.add_css_class("caption");
-        badge.add_css_class("pill");
-        if provision_badge_tone(provision.kind) == ProvisionBadgeTone::Accent {
-            badge.add_css_class("accent");
-        } else {
-            badge.add_css_class("dim-label");
-        }
-        if let Some(target) = provision.target {
-            badge.set_tooltip_text(Some(target));
-        }
-        badges.append(&badge);
-    }
-    badges
 }
 
 pub(in crate::ui) fn highlight_duration() -> std::time::Duration {
@@ -214,10 +133,8 @@ pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
         "podcasts" => strings::PODCASTS,
         "radio" => strings::RADIO,
         "library_doctor" => strings::LIBRARY_DOCTOR,
-        "cover_download" => strings::COVER_DOWNLOAD,
-        "artist_portraits" => strings::ARTIST_PORTRAITS,
+        "artwork" => strings::ARTWORK,
         "online_lyrics" => strings::ONLINE_LYRICS,
-        "source_images" => strings::SOURCE_IMAGES,
         "song_visuals" => strings::SONG_VISUALS,
         _ => return descriptor.name.to_string(),
     };
@@ -233,10 +150,8 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "youtube" => strings::ONLINE_SOURCES_YOUTUBE_SUBTITLE,
         "podcasts" => strings::ONLINE_SOURCES_PODCASTS_SUBTITLE,
         "radio" => strings::ONLINE_SOURCES_RADIO_SUBTITLE,
-        "cover_download" => strings::COVER_DOWNLOAD_DESCRIPTION,
-        "artist_portraits" => strings::ARTIST_PORTRAITS_DESCRIPTION,
+        "artwork" => strings::ARTWORK_DESCRIPTION,
         "online_lyrics" => strings::ONLINE_LYRICS_DESCRIPTION,
-        "source_images" => strings::SOURCE_IMAGES_DESCRIPTION,
         "song_visuals" => strings::SONG_VISUALS_DESCRIPTION,
         _ => return descriptor.description.to_string(),
     };
@@ -342,6 +257,42 @@ fn wire_expander(
     }
 }
 
+fn switch_alignment_placeholder() -> gtk4::Image {
+    gtk4::Image::builder()
+        .icon_name("pan-down-symbolic")
+        .opacity(0.0)
+        .can_target(false)
+        .can_focus(false)
+        .build()
+}
+
+fn aligned_switch_row(title: &str, subtitle: &str, active: bool) -> adw::SwitchRow {
+    let row = adw::SwitchRow::builder()
+        .title(title)
+        .subtitle(subtitle)
+        .use_markup(false)
+        .active(active)
+        .build();
+    row.add_suffix(&switch_alignment_placeholder());
+    row
+}
+
+fn online_master_row(active: bool) -> adw::SwitchRow {
+    aligned_switch_row(
+        &strings::text(strings::PLUGIN_GROUP_ONLINE_CONTENT),
+        &strings::text(strings::ONLINE_CONTENT_MASTER_DESCRIPTION),
+        active,
+    )
+}
+
+fn online_group_with_master(master: &adw::SwitchRow) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder()
+        .title(strings::text(strings::PLUGIN_GROUP_ONLINE_CONTENT))
+        .build();
+    group.add(master);
+    group
+}
+
 fn simple_plugin_row(
     context: &Rc<PreferencesContext>,
     descriptor: &'static ModuleDescriptor,
@@ -358,12 +309,7 @@ fn simple_plugin_row(
     };
     let active = reprise_core::modules::is_enabled(&context.conn, descriptor)
         .unwrap_or(descriptor.default_enabled);
-    let row = adw::SwitchRow::builder()
-        .title(plugin_title(descriptor))
-        .subtitle(subtitle)
-        .use_markup(false)
-        .active(active)
-        .build();
+    let row = aligned_switch_row(&plugin_title(descriptor), &subtitle, active);
     register_plugin_row(context, descriptor, &row);
     wire_switch(context, descriptor, &row);
     row
@@ -432,15 +378,8 @@ impl PreferencesContext {
             .title(strings::text(strings::PLUGIN_GROUP_LOCAL))
             .build();
         let global_enabled = reprise_core::online_sources::is_enabled(&self.conn).unwrap_or(true);
-        let online_master = gtk4::Switch::builder()
-            .active(global_enabled)
-            .tooltip_text(strings::text(strings::ONLINE_CONTENT_MASTER_ACCESSIBLE))
-            .valign(gtk4::Align::Center)
-            .build();
-        online_master.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-            strings::ONLINE_CONTENT_MASTER_ACCESSIBLE,
-        ))]);
-        let online_group = build_online_group_header(&online_master);
+        let online_master = online_master_row(global_enabled);
+        let online_group = online_group_with_master(&online_master);
         let connected_group = adw::PreferencesGroup::builder()
             .title(strings::text(strings::PLUGIN_GROUP_CONNECTED_SERVICES))
             .build();
@@ -448,12 +387,10 @@ impl PreferencesContext {
             match *id {
                 id if plugin_uses_expander(id) => {
                     let row = settings_plugin_row(self, descriptor(id));
-                    row.add_suffix(&provision_badges(id, LOCAL_PLUGIN_IDS));
                     local_group.add(&row);
                 }
                 id => {
                     let row = simple_plugin_row(self, descriptor(id));
-                    row.add_suffix(&provision_badges(id, LOCAL_PLUGIN_IDS));
                     local_group.add(&row);
                 }
             }
@@ -466,11 +403,9 @@ impl PreferencesContext {
             let descriptor = descriptor(id);
             let row = if plugin_uses_expander(id) {
                 let row = settings_plugin_row(self, descriptor);
-                row.add_suffix(&provision_badges(id, ONLINE_PLUGIN_IDS));
                 row.upcast::<gtk4::Widget>()
             } else {
                 let row = simple_plugin_row(self, descriptor);
-                row.add_suffix(&provision_badges(id, ONLINE_PLUGIN_IDS));
                 row.upcast()
             };
             online_group.add(&row);

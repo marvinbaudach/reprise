@@ -11,7 +11,7 @@
 //! injected fetch closure so its tests never touch the network.
 //!
 //! `NET-1a`: the caller supplies `allowed`, already computed as
-//! `online_sources::network_allowed(conn, &modules::SOURCE_IMAGES_MODULE)` —
+//! `online_sources::network_allowed(conn, &modules::ARTWORK_MODULE)` —
 //! this module never reads settings itself, mirroring `NET-3a`'s
 //! injected-state style rather than looking things up internally. A cache
 //! hit is returned regardless of `allowed`: NET-1a promises that turning a

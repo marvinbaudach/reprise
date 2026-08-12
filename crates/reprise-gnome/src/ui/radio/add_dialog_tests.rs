@@ -207,7 +207,7 @@ fn src_7_a_successful_radio_add_acknowledges_the_row_in_place() {
 
 /// `SRC-11` / `NET-1a`: the method both radio favicon call sites
 /// (`render_results`, `render_preview`) use to gate their source image must
-/// reflect both the global online-sources switch and the Source Images
+/// reflect both the global online-sources switch and the Artwork
 /// module.
 #[test]
 fn src_11_radio_add_dialog_images_allowed_is_the_net_1a_and() {
@@ -215,7 +215,7 @@ fn src_11_radio_add_dialog_images_allowed_is_the_net_1a_and() {
     // Neither the global gate nor the module is on by default.
     assert!(!images_allowed(&conn));
 
-    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::SOURCE_IMAGES_MODULE, true)
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
         .unwrap();
     assert!(
         images_allowed(&conn),

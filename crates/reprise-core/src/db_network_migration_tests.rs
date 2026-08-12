@@ -177,7 +177,12 @@ fn net_2a_migration_preserves_existing_cover_usage() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(crate::library::settings::get_bool_in(
+        &conn,
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        false,
+    )
+    .unwrap());
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
@@ -193,9 +198,12 @@ fn net_2a_migration_preserves_existing_portrait_usage() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(
-        crate::modules::is_enabled_in(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap()
-    );
+    assert!(crate::library::settings::get_bool_in(
+        &conn,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+        false,
+    )
+    .unwrap());
 }
 
 #[test]
@@ -231,10 +239,12 @@ fn net_2a_migration_ignores_negative_cache_markers() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
-    assert!(
-        !crate::modules::is_enabled_in(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap()
-    );
+    for key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+    ] {
+        assert!(!crate::library::settings::get_bool_in(&conn, key, false).unwrap());
+    }
 }
 
 #[test]
@@ -261,9 +271,13 @@ fn net_2a_migration_preserves_explicit_opt_outs() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
+    for key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+    ] {
+        assert!(!crate::library::settings::get_bool_in(&conn, key, false).unwrap());
+    }
     for module in [
-        &crate::modules::COVER_DOWNLOAD_MODULE,
-        &crate::modules::ARTIST_PORTRAITS_MODULE,
         &crate::modules::ONLINE_LYRICS_MODULE,
         &crate::modules::NEW_RELEASES_MODULE,
     ] {
@@ -295,6 +309,30 @@ fn net_2a_an_explicitly_enabled_online_module_is_demonstrable_use() {
             stored_online_gate(&conn).as_deref(),
             Some("1"),
             "{key} on must count as prior online use"
+        );
+    }
+}
+
+#[test]
+fn net_2a_each_legacy_artwork_module_is_still_demonstrable_use() {
+    for key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+        crate::db_grandfather::LEGACY_SOURCE_IMAGES_KEY,
+    ] {
+        let conn = open_pre_online_gate_database();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')",
+            [key],
+        )
+        .unwrap();
+
+        migrate_with_empty_caches(&conn);
+
+        assert_eq!(
+            stored_online_gate(&conn).as_deref(),
+            Some("1"),
+            "{key} on must remain evidence of prior online use"
         );
     }
 }
@@ -339,6 +377,69 @@ fn net_2a_v15_database_runs_network_grandfathering_at_v16() {
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
     assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
-    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(!crate::library::settings::get_bool_in(
+        &conn,
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        false,
+    )
+    .unwrap());
     assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
+}
+
+#[test]
+fn v71_combines_legacy_artwork_flags_conservatively_without_overwriting_a_decision() {
+    const COVER: &str = "module.cover_download.enabled";
+    const PORTRAITS: &str = "module.artist_portraits.enabled";
+    const SOURCES: &str = "module.source_images.enabled";
+    const ARTWORK: &str = "module.artwork.enabled";
+
+    for (legacy, existing_artwork, expected) in [
+        ([Some("1"), Some("1"), Some("1")], None, "1"),
+        ([Some("1"), Some("0"), Some("1")], None, "0"),
+        ([Some("1"), None, None], None, "0"),
+        ([None, None, None], None, "0"),
+        ([Some("1"), Some("1"), Some("1")], Some("0"), "0"),
+        ([Some("0"), Some("0"), Some("0")], Some("1"), "1"),
+    ] {
+        let conn = open(None).unwrap();
+        migrate_with_empty_caches(&conn);
+        for (key, value) in [COVER, PORTRAITS, SOURCES].into_iter().zip(legacy) {
+            if let Some(value) = value {
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                    rusqlite::params![key, value],
+                )
+                .unwrap();
+            }
+        }
+        if let Some(value) = existing_artwork {
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                rusqlite::params![ARTWORK, value],
+            )
+            .unwrap();
+        } else {
+            conn.execute("DELETE FROM settings WHERE key = ?1", [ARTWORK])
+                .unwrap();
+        }
+        conn.pragma_update(None, "user_version", 70).unwrap();
+
+        migrate_with_empty_caches(&conn);
+
+        let actual: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                [ARTWORK],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            actual, expected,
+            "legacy={legacy:?}, existing={existing_artwork:?}"
+        );
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 71);
+    }
 }

@@ -42,8 +42,13 @@ fn persist_module_state(
             .set_podcasts_enabled(&context.conn, enabled),
         "new_releases" => context.artist_news.set_enabled(&context.conn, enabled),
         "concerts" => context.concerts.set_enabled(&context.conn, enabled),
-        "cover_download" => context.cover_download.set_enabled(&context.conn, enabled),
-        "artist_portraits" => context.artist_portrait.set_enabled(&context.conn, enabled),
+        "artwork" => {
+            reprise_core::modules::set_enabled(&context.conn, descriptor, enabled)
+                .map_err(|error| error.to_string())?;
+            context.cover_download.recompute_enabled(&context.conn);
+            context.artist_portrait.recompute_enabled(&context.conn);
+            Ok(())
+        }
         "online_lyrics" => match &context.player {
             Some(player) => player.set_online_lyrics_enabled(enabled),
             None => reprise_core::modules::set_enabled(&context.conn, descriptor, enabled),

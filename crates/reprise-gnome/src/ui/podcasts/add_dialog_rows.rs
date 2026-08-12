@@ -145,15 +145,12 @@ pub(super) fn append_preview(
 }
 
 /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
-/// &modules::SOURCE_IMAGES_MODULE)`, computed once by each caller of
+/// &modules::ARTWORK_MODULE)`, computed once by each caller of
 /// [`candidate_row`] — this dialog never lets the widget read settings
 /// itself.
 pub(super) fn images_allowed(conn: &Db) -> bool {
-    reprise_core::online_sources::network_allowed(
-        conn,
-        &reprise_core::modules::SOURCE_IMAGES_MODULE,
-    )
-    .unwrap_or(false)
+    reprise_core::online_sources::network_allowed(conn, &reprise_core::modules::ARTWORK_MODULE)
+        .unwrap_or(false)
 }
 
 pub(super) fn candidate_row(

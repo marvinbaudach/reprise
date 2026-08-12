@@ -1,8 +1,4 @@
-//! Runtime state for the optional artist-portrait module.
-//!
-//! The former Artists grid owned portrait requests. With Album and Artist now
-//! represented by the canonical TrackList, the frontend only needs the live
-//! module setting until another visible portrait surface is introduced.
+//! Live artwork permission shared by the My Stats artist-portrait surfaces.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -19,28 +15,10 @@ impl ArtistPortraitRuntime {
             enabled: Rc::new(Cell::new(
                 reprise_core::online_sources::network_allowed_or_off(
                     conn,
-                    &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
+                    &reprise_core::modules::ARTWORK_MODULE,
                 ),
             )),
         })
-    }
-
-    pub(in crate::ui) fn set_enabled(
-        &self,
-        conn: &Db,
-        enabled: bool,
-    ) -> Result<(), rusqlite::Error> {
-        reprise_core::modules::set_enabled(
-            conn,
-            &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
-            enabled,
-        )?;
-        self.enabled
-            .set(reprise_core::online_sources::network_allowed_or_off(
-                conn,
-                &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
-            ));
-        Ok(())
     }
 
     /// `NET-1a`: re-derives `enabled` from the global online-sources gate.
@@ -48,7 +26,7 @@ impl ArtistPortraitRuntime {
         self.enabled
             .set(reprise_core::online_sources::network_allowed_or_off(
                 conn,
-                &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
+                &reprise_core::modules::ARTWORK_MODULE,
             ));
     }
 }
@@ -58,26 +36,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn runtime_reads_and_updates_the_live_module_setting() {
+    fn runtime_recomputes_the_live_artwork_setting() {
         let conn = crate::test_db::open().unwrap();
         let runtime = ArtistPortraitRuntime::setup(&conn);
         assert!(!runtime.enabled.get());
 
-        runtime.set_enabled(&conn, true).unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
+            .unwrap();
+        runtime.recompute_enabled(&conn);
 
         assert!(runtime.enabled.get());
-        assert!(reprise_core::modules::is_enabled(
-            &conn,
-            &reprise_core::modules::ARTIST_PORTRAITS_MODULE
-        )
-        .unwrap());
+        assert!(
+            reprise_core::modules::is_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE)
+                .unwrap()
+        );
     }
 
     #[test]
     fn net_1a_recompute_enabled_reflects_the_global_gate() {
         let conn = crate::test_db::open().unwrap();
         let runtime = ArtistPortraitRuntime::setup(&conn);
-        runtime.set_enabled(&conn, true).unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
+            .unwrap();
+        runtime.recompute_enabled(&conn);
         assert!(runtime.enabled.get());
 
         reprise_core::online_sources::set_enabled(&conn, false).unwrap();

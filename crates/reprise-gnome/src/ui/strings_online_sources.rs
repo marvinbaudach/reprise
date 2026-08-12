@@ -14,7 +14,6 @@ pub const PLUGIN_GROUP_CONNECTED_SERVICES: &str = N_!("Connected services");
 pub const ONLINE_CONTENT_MASTER_DESCRIPTION: &str = N_!(
     "Use online sources — off makes this a local player: nothing below runs, no requests, sidebar entries hidden."
 );
-pub const ONLINE_CONTENT_MASTER_ACCESSIBLE: &str = N_!("Use online sources");
 pub const ONLINE_CONTENT_SHOW_SOURCES: &str = N_!("Show the {count} sources");
 pub const SCROBBLING_NEEDS_ONLINE_SOURCES: &str = N_!("Scrobbling · needs online sources");
 
@@ -39,9 +38,9 @@ pub const ONLINE_SOURCES_PODCASTS_SUBTITLE: &str =
     N_!("Shows as audio episodes · RSS feeds, search via Apple Podcasts");
 pub const ONLINE_SOURCES_RADIO_SUBTITLE: &str =
     N_!("Stations and live streams · radio-browser.info directory");
-pub const SOURCE_IMAGES: &str = N_!("Source Images");
-pub const SOURCE_IMAGES_DESCRIPTION: &str = N_!(
-    "Show source artwork · contacts YouTube, Apple Podcasts, feed publishers, radio-browser.info, and image hosts"
+pub const ARTWORK: &str = N_!("Artwork");
+pub const ARTWORK_DESCRIPTION: &str = N_!(
+    "Album covers, artist portraits and source artwork · contacts MusicBrainz, coverartarchive.org, Deezer, YouTube, Apple Podcasts and image hosts"
 );
 pub const ONLINE_SOURCES_USE_YOUTUBE: &str = N_!("Use YouTube");
 pub const ONLINE_SOURCES_USE_PODCASTS: &str = N_!("Use Podcasts");
