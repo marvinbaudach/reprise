@@ -688,6 +688,10 @@ assert_log_contains_since "$MARKER" "track context menu opened from keyboard" "S
 screenshot "03-keyboard-context-menu"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/03-keyboard-context-menu.png"
 MARKER=$(log_marker)
+# Since the a11y fix the popover focuses its first item on open, so counting
+# starts at "Play next": Add to queue, Add to playlist, Edit tags…. Separators
+# are skipped by GTK, submenu rows are not.
+key "Down"
 key "Down"
 key "Down"
 key "Return"
@@ -695,7 +699,12 @@ sleep 0.4
 assert_log_contains_since "$MARKER" "tag editor presented" "keyboard context-menu navigation opened Edit tags"
 screenshot "04-keyboard-tag-editor"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/04-keyboard-tag-editor.png"
-click_at 800 466
+# Year sits in the left column of the fourth field row. Measured off
+# `04-keyboard-tag-editor.png` with animations disabled, so the dialog is at
+# its final geometry: the old (800, 466) fell in the gutter between "Album
+# artist" and "Genre", left nothing focused, and Return then simply closed the
+# dialog instead of rejecting anything.
+click_at 664 546
 key "ctrl+a"
 type_text "0"
 MARKER=$(log_marker)
@@ -710,11 +719,18 @@ sleep 0.2
 # --- Flow 3: queue reorder exposes and applies a real drop target -----------
 
 log_step "flow 3: Queue insertion target and drag reorder…"
-MARKER=$(log_marker)
+# The 1.16 s fixtures would otherwise consume up_next underneath the
+# assertions below. Assert the resulting state, not a state *change*: whether
+# anything was playing when we get here depends on the flows above, and an
+# already-idle player emits no `StateChanged` event to wait for.
 mpris_call Stop
 sleep 0.2
-assert_log_contains_since "$MARKER" "applying state change.*state=Stopped" \
-  "MPRIS Stop froze playback before Queue mutation"
+PLAYBACK_STATUS="$(mpris_property PlaybackStatus)"
+if grep -q 'Stopped' <<<"$PLAYBACK_STATUS"; then
+  log_step "MPRIS check OK: playback frozen before Queue mutation"
+else
+  log_fail "MPRIS Stop left playback running before Queue mutation (got $PLAYBACK_STATUS)"
+fi
 
 MARKER=$(log_marker)
 key "shift+F10"
@@ -735,10 +751,14 @@ sleep 0.3
 screenshot "06-queue-before-reorder"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/06-queue-before-reorder.png"
 MARKER=$(log_marker)
+# Measured from 06-queue-before-reorder.png: the Queue view carries the same
+# column header band as the library plus a "Play Next" section header, so its
+# first row sits at y=235 and the second at y=280 — not at the 106/157 of the
+# headerless layout these values predate.
 QUEUE_ROW0_TITLE_X=355
-QUEUE_ROW0_TITLE_Y=106
+QUEUE_ROW0_TITLE_Y=235
 QUEUE_ROW1_TITLE_X=355
-QUEUE_ROW1_TITLE_Y=157
+QUEUE_ROW1_TITLE_Y=280
 drag_and_hold "$QUEUE_ROW0_TITLE_X" "$QUEUE_ROW0_TITLE_Y" "$QUEUE_ROW1_TITLE_X" "$QUEUE_ROW1_TITLE_Y"
 sleep 0.4
 assert_log_contains_since "$MARKER" "reorder drop target entered.*source=queue" "held Queue drag entered a reorder target"

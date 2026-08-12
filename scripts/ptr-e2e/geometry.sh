@@ -12,8 +12,11 @@ ROW0_RATING_STAR2_X=1536
 ROW0_RATING_STAR_Y=175
 TITLE_HEADER_X=500
 COLUMN_HEADER_Y=136
-HEADER_MENU_ARTIST_X=560
-HEADER_MENU_ARTIST_Y=208
+# The column menu lists Title, Artist, Album, Year, Added at y=260, 329, 398,
+# 467, 536 with the toggle switch at x=695. The old 560/208 landed in the empty
+# strip above the first row, so nothing was ever toggled.
+HEADER_MENU_ARTIST_X=695
+HEADER_MENU_ARTIST_Y=329
 SIDEBAR_PLAYLIST_X=100
 SIDEBAR_PLAYLIST_Y=226
 SIDEBAR_PLAYLIST_DELETE_X=100
