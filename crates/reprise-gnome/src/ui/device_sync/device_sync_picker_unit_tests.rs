@@ -110,7 +110,7 @@ fn mtp_51_escape_clears_a_filter_before_the_dialog_can_close() {
 }
 
 #[test]
-#[ignore = "requires a display and xdotool; run via xvfb-run"]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mtp_51_filtered_picker_escape_leaves_the_dialog_open() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

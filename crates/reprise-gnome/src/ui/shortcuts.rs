@@ -432,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a display and xdotool; run via xvfb-run"]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn search_4a_runtime_window_escape_reaches_section_search() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
@@ -501,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a display and xdotool; run via xvfb-run"]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn search_4a_dialog_escape_wins_before_an_active_search_chip() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
