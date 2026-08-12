@@ -44,12 +44,22 @@ assert_mpris_volume() {
 
 scroll_window_relative() {
   local relative_x="$1" relative_y="$2" button="$3"
-  local geometry window_x window_y
-  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
-  window_x="$(sed -n 's/^X=//p' <<<"$geometry")"
-  window_y="$(sed -n 's/^Y=//p' <<<"$geometry")"
+  local rect window_x window_y
+  # Same absolute-rect reasoning as `click_window_relative`, and the bounds
+  # check matters most here: openbox turns a wheel step on the root window into
+  # a virtual-desktop switch, which hides the app for the rest of the run.
+  assert_point_in_window "$relative_x" "$relative_y" \
+    "scroll at ${relative_x}x${relative_y}" || return 0
+  rect="$(window_rect)"
+  window_x="$(cut -d' ' -f1 <<<"$rect")"
+  window_y="$(cut -d' ' -f2 <<<"$rect")"
   xdotool mousemove --sync "$((window_x + relative_x))" "$((window_y + relative_y))" \
-    click "$button" >/dev/null 2>&1
+    >/dev/null 2>&1
+  # Diagnostic: says out loud where the pointer actually ended up. A wheel step
+  # on the root window is silently a desktop switch, so "the volume did not
+  # change" must never be the only evidence available.
+  log_step "pointer probe: window rect=[$rect] target=$((window_x + relative_x)),$((window_y + relative_y)) landed on $(xdotool getmouselocation --shell 2>/dev/null | tr '\n' ' ')"
+  xdotool click "$button" >/dev/null 2>&1
 }
 
 select_compact_layout() {

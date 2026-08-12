@@ -318,21 +318,60 @@ click_at() {
   local x="$1" y="$2"
   xdotool mousemove --sync "$x" "$y" sleep 0.1 click 1 >/dev/null 2>&1
 }
+# On-screen rect of the app window as `X Y WIDTH HEIGHT`.
+#
+# While the window was maximized at the full 1600x900, a wrong origin made no
+# difference — every in-window offset landed on the window either way. The
+# moment Compact mode shrinks it to 580x360 it decides everything: a pointer
+# event delivered to the root window is where openbox reads a wheel step as
+# "switch virtual desktop", which is how one scroll-volume assertion turned
+# every later screenshot into a black frame showing openbox's "desktop 3"
+# indicator.
+window_rect() {
+  local geometry
+  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
+  printf '%s %s %s %s' \
+    "$(sed -n 's/^X=//p' <<<"$geometry")" \
+    "$(sed -n 's/^Y=//p' <<<"$geometry")" \
+    "$(sed -n 's/^WIDTH=//p' <<<"$geometry")" \
+    "$(sed -n 's/^HEIGHT=//p' <<<"$geometry")"
+}
+
+# Fails the check rather than the run when an offset falls outside the window:
+# a pointer event delivered to the desktop is never what a flow meant to test.
+assert_point_in_window() {
+  local relative_x="$1" relative_y="$2" description="$3"
+  local rect width height
+  rect="$(window_rect)"
+  width="$(cut -d' ' -f3 <<<"$rect")"
+  height="$(cut -d' ' -f4 <<<"$rect")"
+  if [ -z "$width" ] || [ -z "$height" ]; then
+    log_fail "$description (could not read window geometry)"
+    return 1
+  fi
+  if [ "$relative_x" -lt 0 ] || [ "$relative_x" -ge "$width" ] \
+    || [ "$relative_y" -lt 0 ] || [ "$relative_y" -ge "$height" ]; then
+    log_fail "$description (offset ${relative_x}x${relative_y} outside ${width}x${height} window)"
+    return 1
+  fi
+  return 0
+}
+
 click_window_relative() {
   local relative_x="$1" relative_y="$2" button="${3:-1}"
-  local geometry window_x window_y
-  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
-  window_x="$(sed -n 's/^X=//p' <<<"$geometry")"
-  window_y="$(sed -n 's/^Y=//p' <<<"$geometry")"
+  local rect window_x window_y
+  assert_point_in_window "$relative_x" "$relative_y" "click at ${relative_x}x${relative_y}" || return 0
+  rect="$(window_rect)"
+  window_x="$(cut -d' ' -f1 <<<"$rect")"
+  window_y="$(cut -d' ' -f2 <<<"$rect")"
   xdotool mousemove "$((window_x + relative_x))" "$((window_y + relative_y))" \
     click "$button" >/dev/null 2>&1
 }
 
 click_window_from_right() {
   local right_offset="$1" relative_y="$2" button="${3:-1}"
-  local geometry width
-  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
-  width="$(sed -n 's/^WIDTH=//p' <<<"$geometry")"
+  local width
+  width="$(cut -d' ' -f3 <<<"$(window_rect)")"
   click_window_relative "$((width - right_offset))" "$relative_y" "$button"
 }
 
