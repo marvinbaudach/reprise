@@ -15,12 +15,12 @@ use reprise_core::db::Db;
 use reprise_core::{db, library};
 use tracing_subscriber::EnvFilter;
 
-/// GNOME application ID; must match the `.desktop` file and D-Bus name used
-/// for GNOME integration. Shared with `mpris` module for MPRIS `DesktopEntry`.
-pub(crate) const APP_ID: &str = "org.reprise.Reprise";
+/// The canonical runtime application identity. Compile-time resources and
+/// packaging mirror this value, with focused tests guarding critical mirrors.
+pub const APP_ID: &str = "io.github.marvinbaudach.Reprise";
 
 static APP_RESOURCES_REGISTERED: OnceLock<()> = OnceLock::new();
-const APP_ICON_RESOURCE_PATH: &str = "/org/reprise/Reprise/icons";
+const APP_ICON_RESOURCE_PATH: &str = "/io/github/marvinbaudach/Reprise/icons";
 
 /// Registers app-private icons once for both the production application and
 /// display-backed tests. The resource prefix follows `APP_ID`, allowing
@@ -283,6 +283,38 @@ fn main() -> glib::ExitCode {
     });
 
     app.run()
+}
+
+#[cfg(test)]
+mod app_identity_tests {
+    use super::{APP_ICON_RESOURCE_PATH, APP_ID};
+
+    #[test]
+    fn app_id_is_the_flathub_reverse_dns_form() {
+        assert_eq!(APP_ID, "io.github.marvinbaudach.Reprise");
+    }
+
+    #[test]
+    fn app_id_has_between_three_and_five_components() {
+        let parts: Vec<&str> = APP_ID.split('.').collect();
+        assert!(
+            (3..=5).contains(&parts.len()),
+            "Flathub requires 3 to 5 components, got {}",
+            parts.len()
+        );
+        for part in &parts {
+            assert!(
+                part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                "component {part:?} contains a character Flathub rejects"
+            );
+        }
+    }
+
+    #[test]
+    fn app_icon_resource_path_follows_app_id() {
+        let expected_prefix = format!("/{}", APP_ID.replace('.', "/"));
+        assert_eq!(APP_ICON_RESOURCE_PATH, format!("{expected_prefix}/icons"));
+    }
 }
 
 #[cfg(test)]

@@ -221,7 +221,7 @@ mod tests {
             return;
         }
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.DecorationTest")
+            .application_id("io.github.marvinbaudach.Reprise.DecorationTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();

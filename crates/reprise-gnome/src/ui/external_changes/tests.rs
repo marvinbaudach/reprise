@@ -119,7 +119,7 @@ fn ext_1a_external_playlist_appears_in_the_sidebar_without_restart() {
 
     let conn = Rc::new(Db::open_migrated(Some(&db_path)).unwrap());
     let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.ExternalChangesTest")
+        .application_id("io.github.marvinbaudach.Reprise.ExternalChangesTest")
         .build();
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);

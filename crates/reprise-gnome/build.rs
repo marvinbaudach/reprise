@@ -41,7 +41,7 @@ fn main() {
 
 /// Compiles the two private UI symbolics into the binary. GTK automatically
 /// adds `<application resource base>/icons` to the icon theme search path, so
-/// keeping the hicolor-style directory below `/org/reprise/Reprise/icons`
+/// keeping the hicolor-style directory below `/io/github/marvinbaudach/Reprise/icons`
 /// makes these behave like any other named symbolic without installing them
 /// into the user's global icon namespace.
 fn compile_app_resources() {

@@ -1,7 +1,9 @@
 //! Secure ListenBrainz token storage in the system keyring.
 
-pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] = [
-    ("application", "org.reprise.Reprise"),
+pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] =
+    [("application", crate::APP_ID), ("service", "listenbrainz")];
+const LEGACY_ATTRIBUTES: [(&str, &str); 2] = [
+    ("application", super::LEGACY_APP_ID),
     ("service", "listenbrainz"),
 ];
 
@@ -17,13 +19,34 @@ pub(in crate::ui) enum SecretError {
 
 pub(in crate::ui) async fn load() -> Result<Option<String>, SecretError> {
     let keyring = oo7::Keyring::new().await?;
-    let Some(item) = keyring.search_items(&ATTRIBUTES).await?.into_iter().next() else {
-        return Ok(None);
-    };
+    let (item, is_legacy) =
+        if let Some(item) = keyring.search_items(&ATTRIBUTES).await?.into_iter().next() {
+            (item, false)
+        } else if let Some(item) = keyring
+            .search_items(&LEGACY_ATTRIBUTES)
+            .await?
+            .into_iter()
+            .next()
+        {
+            (item, true)
+        } else {
+            return Ok(None);
+        };
     let secret = item.secret().await?;
-    String::from_utf8(secret.as_bytes().to_vec())
-        .map(Some)
-        .map_err(SecretError::from)
+    let token = String::from_utf8(secret.as_bytes().to_vec())?;
+
+    if is_legacy {
+        if let Err(error) = keyring
+            .create_item(LABEL, &ATTRIBUTES, secret.as_bytes(), true)
+            .await
+        {
+            tracing::warn!(%error, service = "listenbrainz", "could not migrate legacy keyring item");
+        } else if let Err(error) = item.delete().await {
+            tracing::warn!(%error, service = "listenbrainz", "could not delete migrated legacy keyring item");
+        }
+    }
+
+    Ok(Some(token))
 }
 
 pub(in crate::ui) async fn save(token: &str) -> Result<(), SecretError> {
@@ -47,10 +70,7 @@ mod tests {
     fn lookup_attributes_are_stable_and_contain_no_secret() {
         assert_eq!(
             ATTRIBUTES,
-            [
-                ("application", "org.reprise.Reprise"),
-                ("service", "listenbrainz")
-            ]
+            [("application", crate::APP_ID), ("service", "listenbrainz")]
         );
         assert!(!ATTRIBUTES.iter().any(|(key, _)| *key == "token"));
     }

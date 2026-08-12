@@ -117,7 +117,8 @@ fn pod_21_external_episode_uses_the_shared_bar_identity_instead_of_idle_copy() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn pod_21_external_header_uses_episode_identity_and_source_tile() {
     gtk4::init().unwrap();
-    let (_window, panel) = super::tests::test_panel("org.reprise.Reprise.ExternalPanelHeaderTest");
+    let (_window, panel) =
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.ExternalPanelHeaderTest");
     panel.set_external_snapshot(Some(external_episode_snapshot()));
 
     assert_eq!(panel.widgets.title.text(), "External episode");
@@ -138,7 +139,8 @@ fn pod_21_external_header_uses_episode_identity_and_source_tile() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
     gtk4::init().unwrap();
-    let (_window, panel) = super::tests::test_panel("org.reprise.Reprise.ExternalLyricsTest");
+    let (_window, panel) =
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.ExternalLyricsTest");
 
     for snapshot in [
         external_episode_snapshot(),
@@ -170,7 +172,7 @@ fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
 fn ac_26_youtube_category_decides_whether_the_visual_page_stays() {
     gtk4::init().unwrap();
     let (_window, panel) =
-        super::tests::test_panel("org.reprise.Reprise.ExternalVisualVisibilityTest");
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.ExternalVisualVisibilityTest");
     panel.set_song_visuals_enabled(true);
 
     panel.set_external_snapshot(Some(external_youtube_snapshot()));
@@ -190,7 +192,7 @@ fn ac_26_youtube_category_decides_whether_the_visual_page_stays() {
 fn ac_26_an_rss_podcast_moves_the_selected_visual_tab_to_up_next() {
     gtk4::init().unwrap();
     let (_window, panel) =
-        super::tests::test_panel("org.reprise.Reprise.ExternalVisualFallbackTest");
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.ExternalVisualFallbackTest");
     panel.set_song_visuals_enabled(true);
     panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);
 
@@ -208,7 +210,7 @@ fn ac_26_an_rss_podcast_moves_the_selected_visual_tab_to_up_next() {
 fn ac_26_a_late_empty_track_update_keeps_an_external_session_loaded() {
     gtk4::init().unwrap();
     let (_window, panel) =
-        super::tests::test_panel("org.reprise.Reprise.ExternalVisualizerTrackTest");
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.ExternalVisualizerTrackTest");
     panel.set_external_snapshot(Some(external_youtube_snapshot()));
 
     panel.set_loaded_track(None);
@@ -228,7 +230,8 @@ fn ac_26_youtube_artwork_drives_the_bloom_while_an_rss_podcast_has_none() {
         reprise_core::remote_image::ImageOutcome::Fetched(_)
             | reprise_core::remote_image::ImageOutcome::Cached(_)
     ));
-    let (_window, panel) = super::tests::test_panel("org.reprise.Reprise.ExternalBloomTest");
+    let (_window, panel) =
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.ExternalBloomTest");
 
     let mut youtube = external_youtube_snapshot();
     youtube.art_url = Some(url.into());

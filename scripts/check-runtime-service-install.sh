@@ -72,7 +72,10 @@ installed_dest() {
   # the rest of that (very long) line untouched — silently returning the
   # whole document instead of the one field wanted.
   printf '%s' "$installed" \
-    | rg --no-line-number --only-matching --replace '$1' "\"[^\"]*$source_suffix_regex\": \"([^\"]*)\"" \
+    | {
+      rg --no-line-number --only-matching --replace '$1' \
+        "\"[^\"]*$source_suffix_regex\": \"([^\"]*)\"" || true
+    } \
     | head -1
 }
 
@@ -115,13 +118,21 @@ on_search_path() {
 # metadata has to follow too. That source is the *protocol* crate: the
 # address is part of the contract, and a client must be able to learn it
 # without depending on the service.
-bus_name=$(rg --no-line-number --replace '$1' \
-  '^pub const BUS_NAME: &str = "(.*)";$' \
-  crates/reprise-runtime-protocol/src/endpoint.rs | head -1)
+bus_name=$({
+  rg --no-line-number --replace '$1' \
+    '^pub const BUS_NAME: &str = "(.*)";$' \
+    crates/reprise-runtime-protocol/src/endpoint.rs || true
+} | head -1)
 if [[ -z "$bus_name" ]]; then
   echo "cannot read BUS_NAME from the runtime service source" >&2
   exit 1
 fi
+
+# The activation file is named after the bus name — dbus-daemon looks it up by
+# filename — so derive both spellings here instead of repeating the name and
+# letting an app-ID change leave this check pointing at a file nobody builds.
+activation_file="$bus_name.service"
+activation_regex="/data/${bus_name//./\\.}\\.service"
 
 for prefix in "${prefixes[@]}"; do
   echo "-- prefix: $prefix --"
@@ -139,7 +150,7 @@ for prefix in "${prefixes[@]}"; do
   # Anchored on the closing quote so e.g. the binary pattern does not also
   # match the unit file, which shares its stem.
   binary=$(installed_dest "$installed" '/reprise-runtime')
-  activation=$(installed_dest "$installed" '/data/org\.reprise\.Reprise1\.service')
+  activation=$(installed_dest "$installed" "$activation_regex")
   unit=$(installed_dest "$installed" '/data/reprise-runtime\.service')
 
   for name_dest in "binary:$binary" "activation:$activation" "unit:$unit"; do
@@ -160,7 +171,7 @@ for prefix in "${prefixes[@]}"; do
   fi
 
   # The generated (not the .in) files, so substitution is what gets checked.
-  generated_activation="$build_dir/data/org.reprise.Reprise1.service"
+  generated_activation="$build_dir/data/$activation_file"
   generated_unit="$build_dir/data/reprise-runtime.service"
 
   expect "activation Name" "$(field "$generated_activation" Name)" "$bus_name"

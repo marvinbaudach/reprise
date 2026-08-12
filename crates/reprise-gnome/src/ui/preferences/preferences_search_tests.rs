@@ -14,7 +14,7 @@ fn set_13_sidebar_counts_and_dims_without_changing_width() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.SettingsSearchSidebarTest")
+        .application_id("io.github.marvinbaudach.Reprise.SettingsSearchSidebarTest")
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.register(None::<&gio::Cancellable>).unwrap();
@@ -63,7 +63,7 @@ fn set_13_real_row_returns_to_its_exact_origin_when_search_clears() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.SettingsSearchReparentTest")
+        .application_id("io.github.marvinbaudach.Reprise.SettingsSearchReparentTest")
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.register(None::<&gio::Cancellable>).unwrap();
@@ -136,7 +136,7 @@ fn set_13_result_path_opens_its_page_and_closes_search() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.SettingsSearchPathTest")
+        .application_id("io.github.marvinbaudach.Reprise.SettingsSearchPathTest")
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.register(None::<&gio::Cancellable>).unwrap();
@@ -197,7 +197,7 @@ fn set_13_matching_reads_the_rows_current_subtitle() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.SettingsSearchLiveTextTest")
+        .application_id("io.github.marvinbaudach.Reprise.SettingsSearchLiveTextTest")
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.register(None::<&gio::Cancellable>).unwrap();
@@ -247,7 +247,7 @@ fn set_13_sidebar_counts_only_results_that_can_be_rendered() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.SettingsSearchRenderableCountTest")
+        .application_id("io.github.marvinbaudach.Reprise.SettingsSearchRenderableCountTest")
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.register(None::<&gio::Cancellable>).unwrap();

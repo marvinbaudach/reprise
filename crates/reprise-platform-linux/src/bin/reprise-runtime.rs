@@ -10,7 +10,7 @@
 //!    writer are opened, so a process that loses has never touched an effect
 //!    (§9.3);
 //! 2. build the runtime;
-//! 3. publish `org.reprise.Reprise1` and serve until idle (§9.6).
+//! 3. publish `io.github.marvinbaudach.Reprise.Runtime1` and serve until idle (§9.6).
 //!
 //! Losing at step 1 is `Refused`: exit with a structured cause, wait for
 //! nothing, restart nothing.

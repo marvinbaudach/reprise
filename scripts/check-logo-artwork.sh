@@ -212,7 +212,7 @@ check_pair_contrast() { # <small> <large> <ground> <label>
 }
 
 check_v7() {
-  local symbolic=data/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg
+  local symbolic=data/icons/hicolor/symbolic/apps/io.github.marvinbaudach.Reprise-symbolic.svg
   local shapes
   shapes=$("${measure[@]}" shape-stats "$symbolic" | awk '{print $1}')
   [[ $shapes -eq 4 ]] && ok "V7 symbolic has the four specified shapes" \
@@ -350,12 +350,12 @@ PY
 check_delivery() {
   local required size dimensions
   for size in 16 22 24 32 48 64 128 256 512; do
-    required="data/icons/hicolor/${size}x${size}/apps/org.reprise.Reprise.png"
+    required="data/icons/hicolor/${size}x${size}/apps/io.github.marvinbaudach.Reprise.png"
     [[ -f $required ]] || bad "missing hicolor stage: $required"
   done
   for required in \
-    data/icons/hicolor/scalable/apps/org.reprise.Reprise.svg \
-    data/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg \
+    data/icons/hicolor/scalable/apps/io.github.marvinbaudach.Reprise.svg \
+    data/icons/hicolor/symbolic/apps/io.github.marvinbaudach.Reprise-symbolic.svg \
     data/brand/reprise-icon.svg \
     data/brand/reprise-mark.svg data/brand/reprise-mark-light.svg \
     data/brand/reprise-mark-16.svg data/brand/reprise-mark-16-mono.svg \
@@ -363,7 +363,7 @@ check_delivery() {
     android/app/src/main/res/drawable/ic_repeat_sign.xml; do
     [[ -f $required ]] && ok "delivered: $required" || bad "missing: $required"
   done
-  if grep -q 'transform=' data/icons/hicolor/scalable/apps/org.reprise.Reprise.svg; then
+  if grep -q 'transform=' data/icons/hicolor/scalable/apps/io.github.marvinbaudach.Reprise.svg; then
     bad "shipped scalable icon rescales the specified geometry"
   else
     ok "shipped scalable icon preserves the 96-unit coordinates without transform"

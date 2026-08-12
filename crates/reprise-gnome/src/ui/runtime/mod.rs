@@ -4,7 +4,7 @@
 //! Today `PlayerController` (`ui::playback::player_controller`) owns the
 //! audio backend and both queues directly. The runtime is taking that job
 //! over: playback, the queue, background jobs, and device runs will belong
-//! to one `org.reprise.Reprise1` process, and every surface — this frontend
+//! to one `io.github.marvinbaudach.Reprise.Runtime1` process, and every surface — this frontend
 //! included — becomes a client of it (RUN-1). `crates/reprise-runtime-client`
 //! is that client's transport and its snapshot-folding mirror, written once
 //! for every surface (MCP, CLI, this one) to share; see that crate's module
