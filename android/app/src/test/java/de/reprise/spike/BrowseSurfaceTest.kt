@@ -605,6 +605,22 @@ private class RecordingBrowsePort(
         return artists
     }
 
+    override fun listArtistAlbums(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> {
+        operations += "artist-albums:$artist:${window.offset}:${window.limit}"
+        return completeWindow(emptyList())
+    }
+
+    override fun listArtistUntaggedTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "artist-untagged:$artist:${window.offset}:${window.limit}"
+        return completeWindow(emptyList())
+    }
+
     override fun listArtistTracks(
         artist: String,
         window: LibraryWindowRange,

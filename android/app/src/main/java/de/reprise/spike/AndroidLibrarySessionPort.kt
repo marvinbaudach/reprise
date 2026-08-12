@@ -88,6 +88,18 @@ internal class AndroidLibrarySessionPort(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryArtist> = library.searchArtists(text, window.toFfi()).toLibraryArtists()
 
+    override fun listArtistAlbums(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> =
+        library.listArtistAlbums(artist, window.toFfi()).toLibraryAlbums()
+
+    override fun listArtistUntaggedTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> =
+        library.listArtistUntaggedTracks(artist, window.toFfi()).toLibraryTracks()
+
     override fun listArtistTracks(
         artist: String,
         window: LibraryWindowRange,

@@ -288,6 +288,36 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
     )
     assertEquals(LibraryScreenState.Scanning(), reports.first())
 }
+
+@Test
+fun artistAlbumWindowsDelegateTheLiteralArtistAndWindow() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = emptyList(),
+    )
+    val artist = LibraryArtist(" Slowdive ", 9, 3, "content://slowdive")
+    val window = LibraryWindowRange(offset = 200, limit = 75)
+
+    LibrarySession(port).listArtistAlbums(artist, window)
+
+    assertEquals(listOf("artist-albums: Slowdive :200:75"), port.operations)
+}
+
+@Test
+fun artistUntaggedWindowsDelegateTheLiteralArtistAndWindow() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = emptyList(),
+    )
+    val artist = LibraryArtist(" Low ", 7, 2, "content://low")
+    val window = LibraryWindowRange(offset = 125, limit = 33)
+
+    LibrarySession(port).listArtistUntaggedTracks(artist, window)
+
+    assertEquals(listOf("artist-untagged: Low :125:33"), port.operations)
+}
 }
 
 private fun testTrack() = LibraryTrack(
@@ -378,6 +408,22 @@ private class RecordingLibrarySessionPort(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryArtist> {
         operations += "search-artists:$text:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
+    }
+
+    override fun listArtistAlbums(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> {
+        operations += "artist-albums:$artist:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
+    }
+
+    override fun listArtistUntaggedTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "artist-untagged:$artist:${window.offset}:${window.limit}"
         return completeTestWindow(emptyList())
     }
 

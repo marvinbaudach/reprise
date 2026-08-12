@@ -33,6 +33,16 @@ internal interface LibrarySessionPort {
 
     fun searchArtists(text: String, window: LibraryWindowRange): LibraryWindow<LibraryArtist>
 
+    fun listArtistAlbums(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum>
+
+    fun listArtistUntaggedTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack>
+
     fun listArtistTracks(
         artist: String,
         window: LibraryWindowRange,
@@ -144,6 +154,16 @@ internal class LibrarySession(
         text: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryArtist> = port.searchArtists(text, window)
+
+    fun listArtistAlbums(
+        artist: LibraryArtist,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> = port.listArtistAlbums(artist.name, window)
+
+    fun listArtistUntaggedTracks(
+        artist: LibraryArtist,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = port.listArtistUntaggedTracks(artist.name, window)
 
     fun openAlbum(album: LibraryAlbum): AlbumTrackList = AlbumTrackList(
         album = album,
