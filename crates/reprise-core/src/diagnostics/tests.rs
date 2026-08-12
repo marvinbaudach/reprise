@@ -25,7 +25,7 @@ fn complete_facts() -> DiagnosticFacts {
         db_journal_mode: Some("wal".into()),
         track_count: Some(2_165),
         db_size_bytes: Some(19_293_798),
-        libmtp_version: Some("1.1.22".into()),
+        gvfs_version: Some("1.60.2".into()),
         remembered_device_count: Some(1),
     }
 }
@@ -47,7 +47,7 @@ gtk unknown · libadwaita unknown\n\
 rust unknown · gstreamer unknown (unknown)\n\
 locale unknown\n\
 db schema unknown · unknown · unknown tracks · unknown\n\
-mtp libmtp unknown · unknown devices remembered"
+mtp gvfs unknown · unknown devices remembered"
     );
 }
 
@@ -60,7 +60,7 @@ fn empty_log_omits_the_last_warnings_block() {
     );
 
     assert!(!report.contains("last warnings"));
-    assert!(report.ends_with("mtp libmtp 1.1.22 · 1 device remembered"));
+    assert!(report.ends_with("mtp gvfs 1.60.2 · 1 device remembered"));
 }
 
 #[test]
@@ -103,6 +103,68 @@ fn rendered_events_do_not_expose_paths_uris_filenames_users_or_credentials() {
     assert!(report.contains("file://…"));
     assert!(report.contains("https://…"));
     assert!(report.contains("$USER"));
+}
+
+#[test]
+fn rendered_events_redact_every_absolute_path_without_losing_sentence_context() {
+    let mut log = DiagnosticLog::default();
+    log.push(DiagnosticEvent::new(
+        8 * 3_600 + 14 * 60 + 22,
+        DiagnosticLevel::Warn,
+        "device_sync",
+        "device path:/run/media/marvin/BACKUP_DRIVE mounted; inspected `/srv/archive/private`, then moved /var/tmp/x.mp3 to /opt/share/y.mp3 successfully",
+    ));
+
+    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
+
+    for private in [
+        "/run/media",
+        "BACKUP_DRIVE",
+        "/srv/archive",
+        "private",
+        "/var/tmp",
+        "x.mp3",
+        "/opt/share",
+        "y.mp3",
+    ] {
+        assert!(
+            !report.contains(private),
+            "report leaked {private:?}:\n{report}"
+        );
+    }
+    assert!(report.contains("path:… mounted"));
+    assert!(report.contains("inspected `…"));
+    assert!(report.contains("then moved … to … successfully"));
+}
+
+#[test]
+fn rendered_events_redact_identifying_structured_fields() {
+    let mut log = DiagnosticLog::default();
+    log.push(DiagnosticEvent::new(
+        8 * 3_600 + 14 * 60 + 22,
+        DiagnosticLevel::Warn,
+        "device_sync",
+        "device_id=0123456789ABCDEF device_serial=SERIAL-PRIVATE playlist=Roadtrip playlist_name=SecretMix user_name=private-listener track_id=42",
+    ));
+
+    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
+
+    for private in [
+        "0123456789ABCDEF",
+        "SERIAL-PRIVATE",
+        "Roadtrip",
+        "SecretMix",
+        "private-listener",
+    ] {
+        assert!(
+            !report.contains(private),
+            "report leaked {private:?}:\n{report}"
+        );
+    }
+    assert!(report.contains("device_id=$REDACTED"));
+    assert!(report.contains("playlist=$REDACTED"));
+    assert!(report.contains("user_name=$REDACTED"));
+    assert!(report.contains("track_id=42"));
 }
 
 #[test]

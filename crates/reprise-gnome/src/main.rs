@@ -96,7 +96,7 @@ fn init_logging() {
         .with_filter(filter);
     tracing_subscriber::registry()
         .with(formatting)
-        .with(ui::diagnostics::session_layer())
+        .with(ui::diagnostics::session_layer().with_filter(ui::diagnostics::session_filter()))
         .init();
 }
 

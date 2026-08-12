@@ -31,7 +31,7 @@ pub struct DiagnosticFacts {
     pub db_journal_mode: Option<String>,
     pub track_count: Option<i64>,
     pub db_size_bytes: Option<u64>,
-    pub libmtp_version: Option<String>,
+    pub gvfs_version: Option<String>,
     pub remembered_device_count: Option<usize>,
 }
 

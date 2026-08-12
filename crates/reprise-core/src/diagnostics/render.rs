@@ -53,8 +53,8 @@ pub fn render_report(
     .unwrap();
     write!(
         report,
-        "mtp libmtp {} · {}",
-        optional(&facts.libmtp_version),
+        "mtp gvfs {} · {}",
+        optional(&facts.gvfs_version),
         remembered_devices(facts.remembered_device_count)
     )
     .unwrap();

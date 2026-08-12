@@ -10,11 +10,12 @@ use gtk4::glib;
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::diagnostics::{
-    render_report, DiagnosticEvent, DiagnosticFacts, DiagnosticLevel, DiagnosticLog, PackageKind,
-    RedactionContext,
+    is_safe_structured_field, render_report, DiagnosticEvent, DiagnosticFacts, DiagnosticLevel,
+    DiagnosticLog, PackageKind, RedactionContext,
 };
 use tracing::field::{Field, Visit};
-use tracing::{Event, Level, Subscriber};
+use tracing::{Event, Level, Metadata, Subscriber};
+use tracing_subscriber::filter::{filter_fn, FilterFn};
 use tracing_subscriber::layer::{Context, Layer};
 
 type SharedDiagnosticLog = Arc<Mutex<DiagnosticLog>>;
@@ -23,6 +24,24 @@ static SESSION_LOG: OnceLock<SharedDiagnosticLog> = OnceLock::new();
 
 pub(crate) fn session_layer() -> SessionDiagnosticLayer {
     SessionDiagnosticLayer::new(session_log())
+}
+
+pub(crate) fn session_filter() -> FilterFn {
+    filter_fn(is_reprise_event)
+}
+
+fn is_reprise_event(metadata: &Metadata<'_>) -> bool {
+    const TARGET_ROOTS: &[&str] = &[
+        "reprise",
+        "reprise_core",
+        "reprise_platform_linux",
+        "reprise_runtime",
+        "reprise_runtime_client",
+        "reprise_runtime_protocol",
+        "reprise_view",
+    ];
+    let root = metadata.target().split("::").next().unwrap_or_default();
+    TARGET_ROOTS.contains(&root)
 }
 
 fn session_log() -> SharedDiagnosticLog {
@@ -103,7 +122,7 @@ fn collect_facts(db: &Db, db_path: &Path) -> DiagnosticFacts {
         db_size_bytes: std::fs::metadata(db_path)
             .ok()
             .map(|metadata| metadata.len()),
-        libmtp_version: command_output("pkg-config", &["--modversion", "libmtp"]),
+        gvfs_version: gvfs_version(),
         remembered_device_count,
     }
 }
@@ -121,6 +140,14 @@ fn locale() -> Option<String> {
     ["LC_ALL", "LC_MESSAGES", "LANG"]
         .into_iter()
         .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()))
+}
+
+fn gvfs_version() -> Option<String> {
+    ["gvfsd", "/usr/libexec/gvfsd", "/usr/lib/gvfsd"]
+        .into_iter()
+        .find_map(|program| {
+            command_output(program, &["--version"]).and_then(|output| parse_gvfs_version(&output))
+        })
 }
 
 fn command_output(program: &str, args: &[&str]) -> Option<String> {
@@ -194,6 +221,11 @@ impl EventFields {
         if field.name() == "message" {
             self.message = Some(value);
         } else {
+            let value = if is_safe_structured_field(field.name()) {
+                value
+            } else {
+                "$REDACTED".into()
+            };
             self.fields.push(format!("{}={value}", field.name()));
         }
     }
@@ -229,6 +261,13 @@ fn parse_os_release(contents: &str) -> OsRelease {
 }
 
 fn parse_gnome_version(output: &str) -> Option<String> {
+    output
+        .split_whitespace()
+        .find(|part| part.chars().next().is_some_and(|ch| ch.is_ascii_digit()))
+        .map(str::to_string)
+}
+
+fn parse_gvfs_version(output: &str) -> Option<String> {
     output
         .split_whitespace()
         .find(|part| part.chars().next().is_some_and(|ch| ch.is_ascii_digit()))

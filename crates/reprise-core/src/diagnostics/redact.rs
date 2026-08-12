@@ -78,7 +78,7 @@ fn redact_prefixed_path(input: &str, prefix: &str, replacement: &str) -> String 
         let start = cursor + relative;
         output.push_str(&input[cursor..start]);
         output.push_str(replacement);
-        cursor = span_end(input, start + prefix.len(), false);
+        cursor = span_end(input, start + prefix.len(), true);
     }
     output.push_str(&input[cursor..]);
     output
@@ -93,10 +93,17 @@ fn redact_absolute_paths(input: &str) -> String {
             break;
         };
         let start = cursor + relative;
+        if input[..start].ends_with(':') && input[start..].starts_with("//…") {
+            let end = start + "//…".len();
+            output.push_str(&input[cursor..end]);
+            cursor = end;
+            continue;
+        }
         let boundary = start == 0
-            || input[..start].chars().next_back().is_some_and(|ch| {
-                ch.is_whitespace() || matches!(ch, '=' | '(' | '[' | '{' | '"' | '\'')
-            });
+            || input[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|ch| !is_word(ch));
         if !boundary {
             output.push_str(&input[cursor..start + 1]);
             cursor = start + 1;
@@ -104,7 +111,7 @@ fn redact_absolute_paths(input: &str) -> String {
         }
         output.push_str(&input[cursor..start]);
         output.push_str(ELLIPSIS);
-        cursor = span_end(input, start + 1, false);
+        cursor = span_end(input, start + 1, true);
     }
     output
 }
@@ -134,16 +141,22 @@ fn redact_sensitive_token(token: &str) -> String {
     let key = token[..separator]
         .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
         .to_ascii_lowercase();
-    let sensitive = [
-        "password",
-        "token",
-        "secret",
-        "credential",
-        "username",
-        "api_key",
-    ]
-    .iter()
-    .any(|needle| key.contains(needle));
+    let separator_char = token[separator..].chars().next().unwrap();
+    let sensitive = if separator_char == '=' {
+        !is_safe_structured_field(&key)
+    } else {
+        [
+            "password",
+            "token",
+            "secret",
+            "credential",
+            "username",
+            "user_name",
+            "api_key",
+        ]
+        .iter()
+        .any(|needle| key.contains(needle))
+    };
     if !sensitive {
         return token.to_string();
     }
@@ -153,6 +166,21 @@ fn redact_sensitive_token(token: &str) -> String {
         "{}{}$REDACTED{whitespace}",
         &token[..separator],
         &token[separator..separator + 1]
+    )
+}
+
+pub fn is_safe_structured_field(key: &str) -> bool {
+    matches!(
+        key,
+        "track_id"
+            | "episode_id"
+            | "playlist_id"
+            | "run_id"
+            | "job_id"
+            | "position"
+            | "count"
+            | "attempt"
+            | "retry_count"
     )
 }
 
