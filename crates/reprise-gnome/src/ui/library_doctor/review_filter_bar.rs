@@ -17,30 +17,30 @@ pub(super) struct ReviewFilterBar {
     callback: RefCell<Option<OnChanged>>,
     sensitive: Cell<bool>,
     summary: gtk4::Label,
+    hint: gtk4::Label,
 }
 
 impl ReviewFilterBar {
     pub(super) fn new(categories: &[ReviewCategory]) -> Self {
         let summary = gtk4::Label::builder()
             .xalign(0.0)
-            .css_classes(["doctor-review-meta-summary"])
+            .css_classes(["doctor-review-meta-heading"])
             .build();
         let hint = gtk4::Label::builder()
-            .label(strings::doctor_preselected_hint())
             .xalign(0.0)
             .wrap(true)
             .css_classes(["doctor-review-meta-hint"])
             .build();
+        let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        copy.set_hexpand(true);
+        copy.append(&summary);
+        copy.append(&hint);
         let slot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         let initial_toggle = build_toggle(&[], "all");
         slot.append(&initial_toggle);
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
         root.add_css_class("doctor-review-meta");
-        root.append(&summary);
-        root.append(&hint);
-        let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        root.append(&spacer);
+        root.append(&copy);
         root.append(&slot);
         let bar = Self {
             root,
@@ -50,6 +50,7 @@ impl ReviewFilterBar {
             callback: RefCell::new(None),
             sensitive: Cell::new(true),
             summary,
+            hint,
         };
         bar.set_categories(categories);
         bar
@@ -90,7 +91,9 @@ impl ReviewFilterBar {
 
     pub(super) fn set_summary(&self, changes: usize, albums: usize) {
         self.summary
-            .set_label(&strings::doctor_changes_and_albums(changes, albums));
+            .set_label(&strings::doctor_fixes_ready(changes));
+        self.hint
+            .set_label(&strings::doctor_review_subtitle(albums));
     }
 
     pub(super) fn set_sensitive(&self, sensitive: bool) {

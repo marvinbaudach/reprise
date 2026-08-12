@@ -47,7 +47,7 @@ mod tests {
             "updates::release_row_actions::icon_with_fallback → web-browser-symbolic",
         ),
         (
-            "reprise-stethoscope-symbolic",
+            "reprise-first-aid-symbolic",
             "library_doctor::doctor_glyph, and sidebar_presentation::NavIcon::LibraryDoctor \
              through nav_icon's theme check, both → system-search-symbolic",
         ),

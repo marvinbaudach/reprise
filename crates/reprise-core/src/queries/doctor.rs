@@ -1,7 +1,13 @@
 use crate::db::Db;
 use crate::library_doctor::{DoctorField, ProposalSource};
 
-pub fn count_pending_doctor_findings(db: &Db) -> Result<u32, rusqlite::Error> {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DoctorFindingCounts {
+    pub ready: u32,
+    pub stale: u32,
+}
+
+pub fn count_doctor_findings(db: &Db) -> Result<DoctorFindingCounts, rusqlite::Error> {
     let scan_id = db.conn().query_row(
         "SELECT CASE WHEN last_complete_scan_id IS NULL
                        OR last_complete_scan_id = reviewed_scan_id
@@ -11,14 +17,16 @@ pub fn count_pending_doctor_findings(db: &Db) -> Result<u32, rusqlite::Error> {
         |row| row.get::<_, Option<i64>>(0),
     )?;
     let Some(scan_id) = scan_id else {
-        return Ok(0);
+        return Ok(DoctorFindingCounts::default());
     };
 
     // Both sets come from the store, which is also what `last_complete_scan`
-    // reads — so this count and the page it badges cannot disagree. They used to:
-    // this query asked the tier predicate with `stale: false` while the page
-    // asked with the track's real staleness, and one scan then reported 85 here
-    // and 200 on its own page.
+    // reads — so this query and the page use the same real staleness. They still
+    // count different states deliberately: `ready` badges fixes the page can
+    // apply now, while `stale` records findings the page must explain in words.
+    // Before real staleness reached this predicate, one scan reported 85 here
+    // and 200 on its own page; before this split, the badge instead included
+    // every stale row that the page could not apply.
     let written = crate::library_doctor::written_pairs(db.conn(), scan_id)?;
     let stale = crate::library_doctor::stale_flags(db.conn(), scan_id)?;
 
@@ -37,21 +45,30 @@ pub fn count_pending_doctor_findings(db: &Db) -> Result<u32, rusqlite::Error> {
         })?;
         Ok((row.get::<_, i64>(0)?, field, source, row.get::<_, bool>(3)?))
     })?;
-    let mut pending = 0u32;
+    let mut counts = DoctorFindingCounts::default();
     for proposal in proposals {
         let (track_id, field, source, preselected) = proposal?;
+        let is_stale = stale.get(&track_id).copied().unwrap_or(true);
         let kind = crate::library_doctor::finding_kind(
             field,
             source,
             preselected,
             written.contains(&(track_id, field)),
-            stale.get(&track_id).copied().unwrap_or(true),
+            is_stale,
         );
         if kind == crate::library_doctor::DoctorFindingKind::NeedsReview {
-            pending = pending.saturating_add(1);
+            if is_stale {
+                counts.stale = counts.stale.saturating_add(1);
+            } else {
+                counts.ready = counts.ready.saturating_add(1);
+            }
         }
     }
-    Ok(pending)
+    Ok(counts)
+}
+
+pub fn count_pending_doctor_findings(db: &Db) -> Result<u32, rusqlite::Error> {
+    Ok(count_doctor_findings(db)?.ready)
 }
 
 #[cfg(test)]
@@ -224,5 +241,22 @@ mod tests {
         seed_conflicting_change(&db, scan_id, 1);
 
         assert_eq!(super::count_pending_doctor_findings(&db).unwrap(), 0);
+    }
+
+    #[test]
+    fn doc_8a_pending_review_count_splits_ready_and_stale_findings() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let scan_id = seed_scan(&db);
+        seed_proposal(&db, scan_id, 0, 1, "musicbrainz");
+        seed_proposal(&db, scan_id, 1, 2, "musicbrainz");
+        db.conn()
+            .execute("UPDATE tracks SET file_mtime=12 WHERE id=2", [])
+            .unwrap();
+
+        let counts = super::count_doctor_findings(&db).unwrap();
+
+        assert_eq!(counts.ready, 1);
+        assert_eq!(counts.stale, 1);
+        assert_eq!(super::count_pending_doctor_findings(&db).unwrap(), 1);
     }
 }

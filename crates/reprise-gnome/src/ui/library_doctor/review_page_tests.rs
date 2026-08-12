@@ -147,6 +147,66 @@ fn album_change_scan() -> DoctorScan {
     scan
 }
 
+fn ready_and_stale_scan() -> DoctorScan {
+    let mut scan = scan();
+    let mut stale_track = scan.tracks[0].clone();
+    stale_track.reference.track_id = 8;
+    stale_track.reference.path = PathBuf::from("/tmp/doctor-review-stale.flac");
+    stale_track.stale = true;
+    scan.track_ids.push(8);
+    scan.tracks.push(stale_track);
+    let mut stale_proposal = scan.proposals[0].clone();
+    stale_proposal.track_id = 8;
+    scan.proposals.push(stale_proposal);
+    scan.checked_tracks = 2;
+    scan
+}
+
+fn seed_ready_and_stale_badge_fixture(db: &Db) {
+    let conn = crate::test_db::connection(db);
+    conn.execute(
+        "INSERT INTO library_doctor_scans \
+             (id, scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks) \
+             VALUES (1, 'whole_library', 2, 0, 2, 0)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE library_doctor_state SET last_complete_scan_id=1 WHERE singleton=1",
+        [],
+    )
+    .unwrap();
+    for (position, track_id, path, mtime) in [
+        (0, 7, "/tmp/doctor-review.flac", 1),
+        (1, 8, "/tmp/doctor-review-stale.flac", 2),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size) \
+                 VALUES (?1, ?2, 'Review track', 0, ?3, 2)",
+            rusqlite::params![track_id, path, mtime],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO library_doctor_scan_tracks \
+                 (scan_id, position, track_id, path, file_mtime, file_size, read_ok, \
+                  title, artist, album, album_artist, year, track_no, genre) \
+                 VALUES (1, ?1, ?2, ?3, 1, 2, 1, 'Review track', 'Artist', 'Album', \
+                         'Artist', 2020, 1, 'Rock')",
+            rusqlite::params![position, track_id, path],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO library_doctor_proposals \
+                 (scan_id, position, track_id, field, current_value, proposed_value, source, \
+                  confidence, preselected, problem_class, evidence_json, local_fallback_json) \
+                 VALUES (1, ?1, ?2, 'genre', 'Rock', 'Alternative', 'musicbrainz', \
+                         90, 0, 'genre_variant', '[]', 'null')",
+            rusqlite::params![position, track_id],
+        )
+        .unwrap();
+    }
+}
+
 fn conflict_scan() -> DoctorScan {
     let mut scan = scan();
     scan.proposals.clear();
@@ -239,7 +299,7 @@ fn doc_9b_every_reviewable_row_starts_selected() {
 fn doc_9b_footer_counts_the_changes_that_will_be_written() {
     let session = DoctorReviewSession::from_scan(scan(), DoctorReviewFilter::NeedsReview);
     assert_eq!(session.summary().tag_change_count, 1);
-    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 change");
+    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 fix");
 }
 
 #[test]
@@ -252,8 +312,23 @@ fn doc_9d_the_footer_states_the_scope_of_the_filter() {
     };
 
     assert_eq!(
-        review_footer_summary(summary, Some(ReviewCategory::Year)),
+        review_footer_summary(summary, Some(ReviewCategory::Year), 433),
         "27 of 390 · filtered by Year"
+    );
+}
+
+#[test]
+fn doc_9b_the_unfiltered_footer_names_selection_and_ready_inventory() {
+    let summary = reprise_core::library_doctor::DoctorReviewSummary {
+        track_count: 304,
+        file_count: 304,
+        tag_change_count: 419,
+        total_tag_change_count: 419,
+    };
+
+    assert_eq!(
+        review_footer_summary(summary, None, 433),
+        "419 of 433 selected · 304 files · undo available after"
     );
 }
 
@@ -280,6 +355,57 @@ fn doc_9d_the_header_counts_the_inventory_while_the_footer_counts_the_selection(
     assert_eq!(session.summary().tag_change_count, 0);
 }
 
+#[test]
+fn doc_8a_the_badge_and_unfiltered_review_header_count_the_same_ready_fixes() {
+    let db = crate::test_db::open().unwrap();
+    seed_ready_and_stale_badge_fixture(&db);
+    let scan = ready_and_stale_scan();
+    let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+    let rows = grouped_rows_for(&scan, &session, &HashMap::new());
+
+    let badge = reprise_core::queries::count_pending_doctor_findings(&db).unwrap();
+    let (header, _) = review_header_counts(&rows);
+
+    assert_eq!(usize::try_from(badge).unwrap(), header);
+    assert_eq!(header, 1);
+}
+
+#[test]
+fn doc_9b_stale_notice_follows_category_filter_and_is_hidden_at_zero() {
+    let mut fixture = ready_and_stale_scan();
+    fixture.proposals[0].problem_class = ProblemClass::MissingWrongYear;
+    let mut session = DoctorReviewSession::from_scan(fixture, DoctorReviewFilter::NeedsReview);
+
+    assert_eq!(
+        review_stale_notice(&session),
+        Some("1 fix is out of date — this file changed after the scan.".to_owned())
+    );
+    session.set_category_filter(Some(ReviewCategory::Year.problem_classes()));
+    assert_eq!(
+        review_stale_notice(&session),
+        None,
+        "a stale Genre fix is outside the active Year category"
+    );
+    assert_eq!(
+        review_stale_notice(&DoctorReviewSession::from_scan(
+            scan(),
+            DoctorReviewFilter::NeedsReview
+        )),
+        None
+    );
+
+    let source = include_str!("review_page.rs");
+    let filter = source
+        .find("page_content.append(&state.filter_bar.root)")
+        .unwrap();
+    let notice = source
+        .find("page_content.append(&state.stale_notice)")
+        .unwrap();
+    let header = source.find("page_content.append(&header.root)").unwrap();
+    assert!(filter < notice && notice < header);
+    assert!(source.contains("self.state.rescan.set_sensitive(!running)"));
+}
+
 /// A filter does change what is on screen, so the header follows it — and
 /// with everything inside the filter selected, header, footer and button all
 /// name the same number.
@@ -296,7 +422,7 @@ fn doc_9d_a_filtered_header_counts_only_the_filtered_rows() {
 
     assert_eq!(review_header_counts(&rows), (1, 1));
     assert_eq!(session.summary().tag_change_count, 1);
-    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 change");
+    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 fix");
 }
 
 #[test]

@@ -58,15 +58,16 @@ pub(in crate::ui) fn doctor_job_card_for_test() -> gtk4::Revealer {
     card.widget().clone()
 }
 
-/// The glyph that stands for the Library Doctor: the design's stethoscope,
-/// which the app now ships itself as
-/// `data/icons/hicolor/symbolic/apps/reprise-stethoscope-symbolic.svg`, drawn
-/// by `scripts/build-brand-assets.sh`.
+/// The glyph that stands for the Library Doctor: the first-aid kit the app
+/// ships itself as
+/// `data/icons/hicolor/symbolic/apps/reprise-first-aid-symbolic.svg`, drawn by
+/// `scripts/build-brand-assets.sh`. Its closed case and cross stay legible at
+/// 16 px, unlike the former multi-part medical glyph.
 ///
 /// Resolved here rather than at each call site, so the start page, the result
 /// card and the sidebar entry cannot end up asking for different things — they
 /// did, and both the card and the sidebar kept drawing the magnifier the
-/// stethoscope replaced. A theme without the app's icon directory in reach
+/// first-aid kit replaced. A theme without the app's icon directory in reach
 /// falls back to that magnifier; without the guard GTK would render the
 /// missing-image box instead.
 ///
@@ -74,7 +75,7 @@ pub(in crate::ui) fn doctor_job_card_for_test() -> gtk4::Revealer {
 /// through `doctor_glyph`: `NavIcon` already owns a name/fallback pair and
 /// `nav_icon` already performs this theme check, so the row joins that
 /// mechanism instead of adding a second one.
-pub(in crate::ui) const DOCTOR_GLYPH: &str = "reprise-stethoscope-symbolic";
+pub(in crate::ui) const DOCTOR_GLYPH: &str = "reprise-first-aid-symbolic";
 pub(in crate::ui) const DOCTOR_GLYPH_FALLBACK: &str = "system-search-symbolic";
 
 pub(in crate::ui) fn doctor_glyph() -> &'static str {
@@ -83,8 +84,8 @@ pub(in crate::ui) fn doctor_glyph() -> &'static str {
     })
 }
 
-pub(in crate::ui) const fn doctor_glyph_for(theme_has_stethoscope: bool) -> &'static str {
-    if theme_has_stethoscope {
+pub(in crate::ui) const fn doctor_glyph_for(theme_has_first_aid: bool) -> &'static str {
+    if theme_has_first_aid {
         DOCTOR_GLYPH
     } else {
         DOCTOR_GLYPH_FALLBACK
@@ -127,8 +128,9 @@ pub(in crate::ui) fn css() -> String {
         ".doctor-card-dashed { border: 1px dashed alpha(@borders, 0.9); border-radius: 12px; }",
         &start_page_css::css(),
         ".doctor-review-meta { padding: 12px 28px; background: color-mix(in srgb, var(--card-bg-color) 45%, var(--window-bg-color)); }",
-        ".doctor-review-meta-summary { font-size: 14px; }",
+        ".doctor-review-meta-heading { font-size: 18px; font-weight: 700; }",
         ".doctor-review-meta-hint { font-size: 13px; color: color-mix(in srgb, currentColor 45%, transparent); }",
+        ".doctor-review-stale { padding: 9px 28px; background: color-mix(in srgb, currentColor 5%, var(--window-bg-color)); border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent); }",
         ".doctor-review-footer { padding: 14px 28px; background: color-mix(in srgb, var(--card-bg-color) 55%, var(--window-bg-color)); border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent); }",
         ".doctor-review-footer-summary { font-size: 13.5px; color: color-mix(in srgb, currentColor 62%, transparent); }",
         ".doctor-review-apply { font-size: 14.5px; padding: 9px 18px; }",
@@ -501,6 +503,9 @@ impl LibraryDoctorCoordinator {
         self.running.set(true);
         self.job_kind.set(Some(DoctorJobKind::Scan));
         self.page.set_controls_locked(true);
+        if let Some(review) = self.review.borrow().as_ref() {
+            review.set_running(true);
+        }
         self.page.begin_job(DoctorJobKind::Scan, 0);
         self.progress.show_scan(
             reprise_core::library_doctor::DoctorScanPhase::ReadingTags,
@@ -607,6 +612,9 @@ impl LibraryDoctorCoordinator {
         self.running.set(false);
         self.job_kind.set(None);
         self.page.set_controls_locked(false);
+        if let Some(review) = self.review.borrow().as_ref() {
+            review.set_running(false);
+        }
         self.progress.hide();
         self.scan_controls.button.set_sensitive(true);
     }
@@ -658,6 +666,24 @@ impl LibraryDoctorCoordinator {
                 page.connect_apply(move |plan| {
                     if let Some(coordinator) = weak.upgrade() {
                         coordinator.start_apply(plan);
+                    }
+                });
+            }
+            {
+                let weak = Rc::downgrade(self);
+                let rescan_scope = scan.scope_kind.clone();
+                let rescan_track_ids = scan.track_ids.clone();
+                page.connect_rescan(move || {
+                    if let Some(coordinator) = weak.upgrade() {
+                        let choice = scope_choice(&rescan_scope);
+                        coordinator.page.set_selected_scope(choice);
+                        if choice == 2 {
+                            coordinator
+                                .selection_override
+                                .borrow_mut()
+                                .replace(rescan_track_ids.clone());
+                        }
+                        coordinator.start_scan();
                     }
                 });
             }
@@ -727,6 +753,14 @@ fn suggested_scope(view: &DoctorViewSnapshot) -> u32 {
         0
     } else {
         1
+    }
+}
+
+fn scope_choice(scope_kind: &str) -> u32 {
+    match scope_kind {
+        "current_view" => 1,
+        "selection" => 2,
+        _ => 0,
     }
 }
 
