@@ -70,6 +70,8 @@ pub(in crate::ui) fn formatted(message: &str, values: &[(&str, &str)]) -> String
 
 pub const SPACE_UNKNOWN: &str = N_!("Available space unknown");
 pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
+/// The narrow sidebar card keeps the count compact; the full-width dock below
+/// deliberately names the files in a separate translation unit.
 pub const SYNCING_FILE_COUNT: &str = N_!("Syncing · {completed} / {total}");
 pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
@@ -200,6 +202,8 @@ pub const NOT_CONNECTED: &str = N_!("Not connected");
 pub const FINISHING_SYNC: &str = N_!("Finishing synchronization…");
 pub const CHECKING_CHANGES: &str = N_!("Checking what changed…");
 const READY_TO_SYNC: &str = N_!("Ready to sync · {summary}");
+/// The full-width device-page dock can name the unit; the sidebar translation
+/// above deliberately uses the shorter slash form to survive its tighter row.
 const SYNCING_FILES: &str = N_!("Syncing · {copied} of {total} files");
 const MINUTES_LEFT: &str = N_!("{minutes} min left");
 const SECONDS_LEFT: &str = N_!("{seconds} s left");
