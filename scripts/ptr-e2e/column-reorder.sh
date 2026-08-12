@@ -12,13 +12,10 @@
 # …) depend on fixed pixel geometry (geometry.sh) that a persisted column
 # reorder would shift out from under them. Opt in via PTR_E2E_COLREORDER_ONLY.
 
-# geometry.sh's COLUMN_HEADER_Y (120) and TITLE_HEADER_X (500) predate the
-# redesign's permanent filter row and current column widths: the header row
-# now sits at ~y=140, and x=500 lands on the ARTIST header (Title spans
-# ~290..450 — measured live from a maximized 1600x900 capture). This flow
-# carries its own measured values until the harness-wide geometry
-# recalibration (tracked as follow-up in the ledger) folds them back into
-# geometry.sh.
+# geometry.sh's TITLE_HEADER_X (500) lands on the ARTIST header in the current
+# column widths (Title spans ~290..450). This drag-only flow therefore keeps
+# its separately measured Title centre and the slightly lower press point that
+# reliably engages the capture-phase drag gesture.
 COLREORDER_HEADER_Y=145
 COLREORDER_TITLE_X=385
 

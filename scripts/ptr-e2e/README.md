@@ -64,9 +64,10 @@ disk except `PTR_E2E_OUT_DIR`.
    not reliable for matching), then uses `wmctrl` and the live geometry to
    wait until it has reached the harness's fixed maximized size.
 4. Runs six pointer/keyboard flows and asserts on the app's own log:
-   - **Star-rating click**: opens row 0's compact Rating button and chooses
-     two stars in its popover, then greps for `rating changed` — proof that real
-     pointer events reached both controls and the list-cell write-back.
+   - **Star-rating click**: hovers row 0's Rating cell until its inline star
+     buttons are allocated, clicks star two, then checks both `rating changed`
+     and the scratch database — proof that real pointer input reached the
+     list-cell write-back and persisted it.
    - **Keyboard context menu**: selects a track row and presses Shift+F10,
      then navigates to Edit tags, proving the selected track's context menu
      and tag editor open without a pointer. It enters an invalid Year and

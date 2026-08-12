@@ -591,7 +591,7 @@ if [ "$PTR_E2E_COLREORDER_ONLY" = "1" ]; then
   exit 0
 fi
 
-# --- Flow 1: compact rating click reaches the real popover ------------------
+# --- Flow 1: inline rating click reaches a real star button -----------------
 
 run_rating_flow
 # --- Flow 1b: right-click headers expose column visibility ------------------
