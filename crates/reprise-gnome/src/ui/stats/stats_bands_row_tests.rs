@@ -1,9 +1,23 @@
 use super::*;
 
 use std::cell::RefCell;
+use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
+use reprise_core::artist_portrait::PortraitOutcome;
 use reprise_core::library::group_key::Group;
 use reprise_core::library::stats_screen::{RankedGroup, TopTrack};
+
+use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
+
+const TINY_PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xA8, 0xAF, 0xAF, 0x07,
+    0x00, 0x02, 0xFE, 0x01, 0x7E, 0xBA, 0x25, 0x70, 0x25, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x44, 0xAE, 0x42, 0x60, 0x82,
+];
 
 fn ranked(label: &str, ms: i64, variant_count: usize) -> RankedGroup {
     RankedGroup {
@@ -31,6 +45,72 @@ fn fixture(runners_up: usize) -> SpotlightSection {
         ][..runners_up]
             .to_vec(),
     }
+}
+
+fn cache_portrait(cache_dir: &std::path::Path, artist: &str) {
+    std::fs::create_dir_all(cache_dir).unwrap();
+    let normalized = artist
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    normalized.as_bytes().hash(&mut hasher);
+    std::fs::write(
+        cache_dir.join(format!("{:016x}.png", hasher.finish())),
+        TINY_PNG,
+    )
+    .unwrap();
+}
+
+fn pump_until(condition: impl Fn() -> bool) {
+    let context = gtk4::glib::MainContext::default();
+    for _ in 0..10_000 {
+        if condition() {
+            return;
+        }
+        while context.pending() {
+            context.iteration(false);
+        }
+        std::thread::yield_now();
+    }
+    panic!("timed out waiting for stats artwork");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_leader_and_all_four_tiles_load_artist_portraits() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    for artist in ["Lorna Shore", "Alpha", "Beta", "Gamma", "Delta"] {
+        cache_portrait(cache.path(), artist);
+    }
+    let requests = Arc::new(AtomicUsize::new(0));
+    let runtime = ArtistPortraitRuntime::for_test(true, {
+        let cache_dir = cache.path().to_path_buf();
+        let requests = requests.clone();
+        move |artist| {
+            requests.fetch_add(1, Ordering::SeqCst);
+            match reprise_core::artist_portrait::load_cached_from(artist, &cache_dir) {
+                PortraitOutcome::Found(path) => Some(path),
+                PortraitOutcome::NotFound => None,
+            }
+        }
+    });
+    let row = StatsBandsRow::new();
+    row.set_artist_portrait_runtime(&runtime);
+
+    row.set_data(&fixture(4));
+    pump_until(|| {
+        row.leader().artwork_source.get() == StatsArtworkSource::Portrait
+            && row
+                .tiles()
+                .iter()
+                .all(|tile| tile.artwork_source.get() == StatsArtworkSource::Portrait)
+    });
+
+    assert_eq!(requests.load(Ordering::SeqCst), 5);
 }
 
 #[test]

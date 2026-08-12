@@ -23,6 +23,7 @@ use super::stats_hero::StatsHero;
 use super::stats_metadata_links::{MetadataCallback, StatsMetadataTarget};
 use super::stats_songs_card::StatsSongsCard;
 use super::stats_view_widgets::card;
+use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -85,7 +86,10 @@ pub(in crate::ui) struct StatsView {
 }
 
 impl StatsView {
-    pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
+    pub(in crate::ui) fn new(
+        cover_loader: Rc<CoverLoader>,
+        artist_portrait: &Rc<ArtistPortraitRuntime>,
+    ) -> Self {
         let header = StatsHeader::new();
         let hero = StatsHero::new();
         let period_dropdown = header.period_dropdown.clone();
@@ -93,6 +97,7 @@ impl StatsView {
 
         let bands_row = StatsBandsRow::new();
         bands_row.set_cover_loader(&cover_loader);
+        bands_row.set_artist_portrait_runtime(artist_portrait);
         let genres = StatsGenreCard::new();
         let genres_section = card(genres.widget());
 
@@ -231,6 +236,14 @@ impl StatsView {
             on_unify_spellings,
             on_metadata_activate,
         }
+    }
+
+    #[cfg(test)]
+    fn new_for_test(cover_loader: Rc<CoverLoader>) -> Self {
+        let artist_portrait = ArtistPortraitRuntime::for_test(false, |_| {
+            panic!("disabled test runtime must not resolve portraits")
+        });
+        Self::new(cover_loader, &artist_portrait)
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::ScrolledWindow {
