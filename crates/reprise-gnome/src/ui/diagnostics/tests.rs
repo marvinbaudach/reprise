@@ -3,35 +3,7 @@ use std::sync::{Arc, Mutex};
 use reprise_core::diagnostics::{render_report, DiagnosticFacts, DiagnosticLog, RedactionContext};
 use tracing_subscriber::layer::{Layer, SubscriberExt};
 
-use super::{
-    parse_gnome_version, parse_gvfs_version, parse_os_release, session_filter,
-    SessionDiagnosticLayer,
-};
-
-#[test]
-fn os_release_parser_prefers_id_and_unquotes_values() {
-    let release = parse_os_release(
-        "NAME=\"Fedora Linux\"\nID=fedora\nVERSION_ID=\"43\"\nPRETTY_NAME=ignored\n",
-    );
-
-    assert_eq!(release.name.as_deref(), Some("fedora"));
-    assert_eq!(release.version.as_deref(), Some("43"));
-}
-
-#[test]
-fn gnome_version_parser_rejects_output_without_a_version() {
-    assert_eq!(
-        parse_gnome_version("GNOME Shell 49.1\n"),
-        Some("49.1".into())
-    );
-    assert_eq!(parse_gnome_version("gnome-shell unavailable"), None);
-}
-
-#[test]
-fn gvfs_version_parser_accepts_the_daemon_version_only() {
-    assert_eq!(parse_gvfs_version("gvfs 1.60.2\n"), Some("1.60.2".into()));
-    assert_eq!(parse_gvfs_version("gvfs unavailable"), None);
-}
+use super::{session_filter, SessionDiagnosticLayer};
 
 #[test]
 fn session_layer_keeps_warn_and_error_but_not_info() {

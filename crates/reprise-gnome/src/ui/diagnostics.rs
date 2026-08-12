@@ -1,18 +1,16 @@
-//! Desktop runtime-fact collection and session warning capture.
+//! Desktop diagnostic report wiring and session warning capture.
 
 use std::fmt::Debug;
 use std::path::Path;
-use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use chrono::{Local, Timelike};
-use gtk4::glib;
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::diagnostics::{
-    is_safe_structured_field, render_report, DiagnosticEvent, DiagnosticFacts, DiagnosticLevel,
-    DiagnosticLog, PackageKind, RedactionContext,
+    is_safe_structured_field, DiagnosticEvent, DiagnosticLevel, DiagnosticLog,
 };
+use reprise_platform_linux::diagnostics::DesktopDiagnosticInput;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Metadata, Subscriber};
 use tracing_subscriber::filter::{filter_fn, FilterFn};
@@ -51,48 +49,16 @@ fn session_log() -> SharedDiagnosticLog {
 }
 
 pub(crate) fn build_report(db: &Db, db_path: &Path) -> String {
-    let facts = collect_facts(db, db_path);
-    let redaction = redaction_context();
-    let log = session_log()
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    render_report(&facts, &log, &redaction)
-}
-
-fn collect_facts(db: &Db, db_path: &Path) -> DiagnosticFacts {
-    let os_release = std::fs::read_to_string("/etc/os-release")
-        .ok()
-        .map(|contents| parse_os_release(&contents))
-        .unwrap_or_default();
-    let db_facts = db.diagnostic_facts().ok();
-    let stats = reprise_core::queries::query_library_stats(db, "").ok();
-    let remembered_device_count = reprise_core::device_sync::settings::list_remembered_devices(db)
-        .ok()
-        .map(|devices| devices.len());
-
-    DiagnosticFacts {
-        version: Some(env!("CARGO_PKG_VERSION").into()),
-        git_sha: nonempty(option_env!("REPRISE_GIT_SHA")),
-        build_profile: Some(
-            if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            }
-            .into(),
-        ),
-        package: Some(if Path::new("/.flatpak-info").is_file() {
-            PackageKind::Flatpak {
-                app_id: Some(crate::APP_ID.into()),
-            }
+    let input = DesktopDiagnosticInput {
+        version: env!("CARGO_PKG_VERSION").into(),
+        git_sha: option_env!("REPRISE_GIT_SHA").map(str::to_string),
+        build_profile: if cfg!(debug_assertions) {
+            "debug"
         } else {
-            PackageKind::Native
-        }),
-        os_name: os_release.name,
-        os_version: os_release.version,
-        gnome_version: command_output("gnome-shell", &["--version"])
-            .and_then(|output| parse_gnome_version(&output)),
+            "release"
+        }
+        .into(),
+        app_id: crate::APP_ID.into(),
         display_server: gtk4::gdk::Display::default().map(|_| {
             if super::compact::compact_mode_controls::is_x11() {
                 "x11".into()
@@ -100,67 +66,25 @@ fn collect_facts(db: &Db, db_path: &Path) -> DiagnosticFacts {
                 "wayland".into()
             }
         }),
-        gtk_version: Some(format!(
+        gtk_version: format!(
             "{}.{}.{}",
             gtk4::major_version(),
             gtk4::minor_version(),
             gtk4::micro_version()
-        )),
-        libadwaita_version: Some(format!(
+        ),
+        libadwaita_version: format!(
             "{}.{}.{}",
             adw::major_version(),
             adw::minor_version(),
             adw::micro_version()
-        )),
-        rust_version: nonempty(option_env!("REPRISE_RUST_VERSION")),
-        gstreamer_version: reprise_platform_linux::diagnostics::gstreamer_version(),
-        audio_backend: reprise_platform_linux::diagnostics::active_audio_backend(),
-        locale: locale(),
-        db_schema: db_facts.as_ref().map(|facts| facts.schema_version),
-        db_journal_mode: db_facts.map(|facts| facts.journal_mode),
-        track_count: stats.map(|stats| stats.track_count),
-        db_size_bytes: std::fs::metadata(db_path)
-            .ok()
-            .map(|metadata| metadata.len()),
-        gvfs_version: gvfs_version(),
-        remembered_device_count,
-    }
-}
-
-fn redaction_context() -> RedactionContext {
-    RedactionContext {
-        music_dir: glib::user_special_dir(glib::UserDirectory::Music)
-            .map(|path| path.to_string_lossy().into_owned()),
-        home_dir: std::env::var("HOME").ok().filter(|value| !value.is_empty()),
-        username: std::env::var("USER").ok().filter(|value| !value.is_empty()),
-    }
-}
-
-fn locale() -> Option<String> {
-    ["LC_ALL", "LC_MESSAGES", "LANG"]
-        .into_iter()
-        .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()))
-}
-
-fn gvfs_version() -> Option<String> {
-    ["gvfsd", "/usr/libexec/gvfsd", "/usr/lib/gvfsd"]
-        .into_iter()
-        .find_map(|program| {
-            command_output(program, &["--version"]).and_then(|output| parse_gvfs_version(&output))
-        })
-}
-
-fn command_output(program: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(program).args(args).output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let output = String::from_utf8(output.stdout).ok()?;
-    nonempty(Some(output.trim()))
-}
-
-fn nonempty(value: Option<&str>) -> Option<String> {
-    value.filter(|value| !value.is_empty()).map(str::to_string)
+        ),
+        rust_version: option_env!("REPRISE_RUST_VERSION").map(str::to_string),
+    };
+    let log = session_log()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    reprise_platform_linux::diagnostics::build_report(db, db_path, &input, &log)
 }
 
 #[derive(Clone)]
@@ -239,39 +163,6 @@ impl Visit for EventFields {
     fn record_str(&mut self, field: &Field, value: &str) {
         self.record_value(field, value.to_string());
     }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct OsRelease {
-    name: Option<String>,
-    version: Option<String>,
-}
-
-fn parse_os_release(contents: &str) -> OsRelease {
-    let value = |key: &str| {
-        contents.lines().find_map(|line| {
-            let (name, value) = line.split_once('=')?;
-            (name == key).then(|| value.trim().trim_matches(['"', '\'']).to_string())
-        })
-    };
-    OsRelease {
-        name: value("ID"),
-        version: value("VERSION_ID"),
-    }
-}
-
-fn parse_gnome_version(output: &str) -> Option<String> {
-    output
-        .split_whitespace()
-        .find(|part| part.chars().next().is_some_and(|ch| ch.is_ascii_digit()))
-        .map(str::to_string)
-}
-
-fn parse_gvfs_version(output: &str) -> Option<String> {
-    output
-        .split_whitespace()
-        .find(|part| part.chars().next().is_some_and(|ch| ch.is_ascii_digit()))
-        .map(str::to_string)
 }
 
 #[cfg(test)]
