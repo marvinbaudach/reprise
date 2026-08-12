@@ -435,8 +435,7 @@ fn artist_album_and_untagged_windows_partition_the_artists_tracks() {
 
     let albums = query_artist_albums(&db, "Solo", full_window()).unwrap();
     let untagged = query_artist_untagged_tracks(&db, "Solo", full_window()).unwrap();
-    let artist_total = query_track_count(&db, &ViewSource::Artist("Solo".into()), "", &[])
-        .unwrap();
+    let artist_total = query_track_count(&db, &ViewSource::Artist("Solo".into()), "", &[]).unwrap();
 
     assert_eq!(
         untagged

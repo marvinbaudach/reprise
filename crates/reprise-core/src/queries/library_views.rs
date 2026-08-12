@@ -248,10 +248,7 @@ pub fn query_artist_untagged_tracks(
 
 /// Counts the exact rows returned by [`query_artist_untagged_tracks`] without
 /// materializing their track projections.
-pub fn query_artist_untagged_track_count(
-    db: &Db,
-    artist: &str,
-) -> Result<i64, rusqlite::Error> {
+pub fn query_artist_untagged_track_count(db: &Db, artist: &str) -> Result<i64, rusqlite::Error> {
     db.conn().query_row(
         &format!(
             "SELECT count(*) FROM tracks WHERE {PRESENT} \

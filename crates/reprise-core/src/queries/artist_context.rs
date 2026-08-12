@@ -81,9 +81,7 @@ mod tests {
             [],
         )
         .unwrap();
-        assert!(query_artist_album_titles(&db, "Artist")
-            .unwrap()
-            .is_empty());
+        assert!(query_artist_album_titles(&db, "Artist").unwrap().is_empty());
     }
 
     #[test]
