@@ -59,6 +59,8 @@ plate=$generated_brand/icon-plate.svg
 icon_16=$generated_brand/reprise-icon-16.svg
 mark_16_mono=$generated_brand/reprise-mark-16-mono.svg
 first_aid_symbolic=$generated_brand/reprise-first-aid-symbolic.svg
+python3 "$lib/svg_recolour.py" "$first_aid_symbolic" "$first_aid_symbolic" \
+  'currentColor=#222222'
 
 build_surface_tree() {
   local tree_root=$out
