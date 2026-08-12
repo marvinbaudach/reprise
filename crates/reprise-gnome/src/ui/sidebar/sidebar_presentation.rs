@@ -622,12 +622,68 @@ mod tests {
     /// regression rather than another getter assertion.
     #[test]
     fn nav_11_sidebar_roles_are_constructor_properties() {
-        let production = include_str!("sidebar_presentation.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let sources = sidebar_role_sources();
+        assert!(
+            sources.len() >= 20,
+            "the Sidebar role guard checked suspiciously few Rust files"
+        );
+        let checked_bytes = sources
+            .iter()
+            .map(|(_, source)| source.len())
+            .sum::<usize>();
+        assert!(
+            checked_bytes >= 200_000,
+            "the Sidebar role guard checked a suspiciously small source tree"
+        );
+        assert!(
+            sources.iter().any(|(name, source)| {
+                name == "sidebar_presentation.rs" && source.contains("fn navigation_row(")
+            }),
+            "the Sidebar role guard did not inspect navigation_row"
+        );
 
-        assert!(!production.contains("set_accessible_role"));
+        let forbidden_setter = ["set_", "accessible", "_role"].concat();
+        let offenders = sources
+            .iter()
+            .filter_map(|(name, source)| source.contains(&forbidden_setter).then_some(name))
+            .collect::<Vec<_>>();
+
+        assert!(
+            offenders.is_empty(),
+            "accessible roles must be constructor properties; post-build setters found in {offenders:?}"
+        );
+    }
+
+    fn sidebar_role_sources() -> Vec<(String, String)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/sidebar");
+        let mut pending = vec![root.clone()];
+        let mut paths = Vec::new();
+        while let Some(directory) = pending.pop() {
+            for entry in std::fs::read_dir(&directory)
+                .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()))
+            {
+                let path = entry.expect("failed to read a Sidebar source entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+                    paths.push(path);
+                }
+            }
+        }
+        paths.sort();
+        paths
+            .into_iter()
+            .map(|path| {
+                let name = path
+                    .strip_prefix(&root)
+                    .expect("Sidebar source stays below its module root")
+                    .display()
+                    .to_string();
+                let source = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+                (name, source)
+            })
+            .collect()
     }
 
     #[test]
