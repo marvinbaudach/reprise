@@ -739,7 +739,6 @@ run_private_scenario_group() {
   cua_common_run_private \
     "$0" "$scenario_group" "$CUA_E2E_SCRATCH_ROOT" "$CUA_E2E_OUT_DIR"
 }
-
 case "${CUA_E2E_ONLY:-all}" in
   all)
     scenario_groups=(
@@ -778,14 +777,15 @@ case "${CUA_E2E_ONLY:-all}" in
     exit 2
     ;;
 esac
-
 failed_groups=()
 passed_groups=0
 # Each group runs inside dbus-run-session ... "$0" --private-session, and that
 # child owns a private_session_cleanup EXIT trap. A red group therefore tears
 # down its app, D-Bus, AT-SPI and driver before the parent continues.
 for scenario_group in "${scenario_groups[@]}"; do
-  if ! run_private_scenario_group "$scenario_group"; then
+  set +e; (set -e; run_private_scenario_group "$scenario_group")
+  scenario_group_status=$?; set -e
+  if ((scenario_group_status != 0)); then
     failed_groups+=("$scenario_group")
     continue
   fi
