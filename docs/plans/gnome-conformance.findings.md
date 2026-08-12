@@ -339,3 +339,30 @@ one snapshot and is not exhaustive. One further unnamed node (role `group`, the
 content-area container) could not be attributed to a construction site,
 because every node in this run reported the same `x=80,y=0` window origin — a
 `cua-driver` artefact, not an app property, so no line is claimed for it.
+
+## Summary
+
+| Severity | Count | Estimated total effort |
+|---|---|---|
+| blocker | 1 | 1–4 h |
+| major | 5 | > 9 h, including 1–4 h shared with the blocker |
+| minor | 2 | < 2 h |
+
+**Order for Wave 2:** GP-8 comes first because the light-style Now Playing
+panel is the only blocker and leaves core content unreadable. GP-11 follows
+because its violating CSS cluster overlaps the GP-8 repair and should be fixed
+without duplicating work. GP-9 comes next because repairing the keyboard
+harness restores trustworthy coverage for the nine surfaces that were not
+measured. GP-10 then closes a small, concrete accessibility gap in the primary
+content widget. GP-5 follows as the first large architectural correction,
+moving stateful compound widgets onto the GNOME object model. GP-6 comes after
+that as the other large migration, replacing the application's general SQLite
+settings backend with GSettings while preserving the separate secret store.
+GP-7 is last because both remaining findings are minor, each estimated below
+one hour, and the window itself was measured as usable at and below the rule's
+required size.
+
+**Rules that can be made `[active]` immediately,** because the documented
+measurements show no violation: GP-1 — its manual construction-site review measured zero
+product violations; GP-3 — the Baseline gate measurement recorded zero
+`#[strong]` blocks, with zero lines in `strong.txt`.
