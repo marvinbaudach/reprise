@@ -409,11 +409,15 @@ class RecordingHoverTransport:
         self.pixel_values = list(pixel_values)
         self.fail_tool = fail_tool
         self.calls = []
+        self.cursor = (80.0, 90.0)
 
     def call(self, tool, payload):
         self.calls.append((tool, dict(payload)))
         if tool == self.fail_tool:
             raise DriverError("driver stopped")
+        if tool == "move_cursor":
+            self.cursor = float(payload["x"]), float(payload["y"])
+            return {"effect": "unverifiable", "route": "global_input"}
         if tool == "get_window_state":
             output = payload.get("screenshot_out_file")
             if output:
@@ -442,7 +446,7 @@ class RecordingHoverTransport:
                 },
             }
         if tool == "get_cursor_position":
-            return {"x": 80, "y": 90}
+            return {"source": "x11", "x": self.cursor[0], "y": self.cursor[1]}
         return {"effect": "confirmed", "verified": True}
 
     def resize_window(self, _window_id, _width, _height):
@@ -567,12 +571,20 @@ class HoverRunnerTests(unittest.TestCase):
             self.assertEqual(geometry, WindowGeometry(30, 40, 800, 600))
             # The cursor measurement runs once per launch, before any hover.
             self.assertIn("cursor_in_screenshot", cursor)
-            # The cursor probe runs first; the preflight is the tail.
+            # The cursor probe runs first; the read-move-read proof is the tail.
             self.assertEqual(
                 [tool for tool, _payload in transport.calls[-3:]],
-                ["move_cursor", "get_cursor_position", "get_window_state"],
+                ["get_cursor_position", "move_cursor", "get_cursor_position"],
             )
-            self.assertTrue((pathlib.Path(directory) / "hover-preflight.json").is_file())
+            evidence = json.loads(
+                (pathlib.Path(directory) / "hover-preflight.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertTrue(evidence["verified"])
+            self.assertEqual(evidence["tolerance_px"], 3.0)
+            move_payload = transport.calls[-2][1]
+            self.assertEqual(set(move_payload), {"scope", "x", "y"})
 
 
 class HoverCompareTests(unittest.TestCase):

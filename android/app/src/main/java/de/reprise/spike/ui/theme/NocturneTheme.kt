@@ -39,6 +39,8 @@ private val AmbientFallbackOne = Color(0xFF203C58)
 private val AmbientFallbackTwo = Color(0xFF4A275E)
 private val AmbientFallbackThree = Color(0xFF124B45)
 internal val AmbientTrueBlack = Color(0xFF000000)
+internal val NowPlayingOnBackdrop = Color(0xFFFFFFFF)
+internal val NowPlayingClear = Color(0x00000000)
 
 internal fun ambientFieldColors(artwork: AmbientArtworkColors?): List<Color> =
     artwork?.asList()?.map { argb -> Color(argb) }

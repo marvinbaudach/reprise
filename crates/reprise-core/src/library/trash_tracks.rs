@@ -72,7 +72,7 @@ where
     if trashed.is_empty() {
         return report;
     }
-    match crate::queries::remove_tracks_matching_paths(db, &trashed) {
+    match crate::queries::remove_tracks_matching_paths_remembering_releases(db, &trashed) {
         Ok(removed) => {
             for (id, path) in trashed {
                 if !removed.contains(&id) {
@@ -165,5 +165,45 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(rows, vec![(2, 0)]);
+    }
+
+    #[test]
+    fn nr_32_move_to_trash_writes_deletion_memory_on_completion() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("album.flac");
+        std::fs::write(&path, b"scratch").unwrap();
+        let db = seeded_conn(&[&path]);
+        db.conn()
+            .execute(
+                "UPDATE tracks
+                 SET title = 'Song', artist = 'Artist', album_artist = 'Artist', album = 'Album'
+                 WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO new_releases (
+                   release_group_mbid, artist_name, artist_mbid, title, release_type,
+                   first_release_date, fetched_at, first_seen
+                 ) VALUES ('release', 'Artist', 'artist-id', 'Album', 'Album',
+                           '2026-08-01', 1, 1)",
+                [],
+            )
+            .unwrap();
+
+        let report = trash_tracks_with(&db, &[(1, path.clone())], |target| {
+            std::fs::remove_file(target).map_err(|error| error.to_string())
+        });
+
+        assert_eq!(report.removed_ids, vec![1]);
+        let remembered: i64 = db
+            .conn()
+            .query_row("SELECT count(*) FROM deleted_releases", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(remembered, 2);
+        assert_eq!(crate::artist_news::hidden_release_count(&db).unwrap(), 1);
     }
 }

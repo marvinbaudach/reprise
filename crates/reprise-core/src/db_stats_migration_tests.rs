@@ -76,6 +76,8 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_current() {
                  ALTER TABLE new_releases DROP COLUMN hidden_at;
                  ALTER TABLE new_releases DROP COLUMN announce_url;
                  ALTER TABLE new_releases DROP COLUMN track_count;
+                 DROP INDEX idx_new_releases_deleted_memory_hidden;
+                 ALTER TABLE new_releases DROP COLUMN hidden_by_deleted_memory;
                  PRAGMA user_version = 16;",
             )
             .unwrap();

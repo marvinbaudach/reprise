@@ -6,6 +6,7 @@
   "mode": "first-time",
   "agent": "optional",
   "profile": "mixed-128",
+  "window": {"width": 1600, "height": 1000},
   "budgets": {"actions": 60, "seconds": 900, "restarts": 1},
   "capabilities": ["activate", "type", "press", "hotkey", "scroll", "resize", "restart", "wait", "complete-workload", "finish"],
   "fixture_tokens": {

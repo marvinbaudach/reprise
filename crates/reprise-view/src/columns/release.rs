@@ -83,9 +83,9 @@ mod tests {
         assert_eq!(ReleaseColumn::Date.pin(), None);
     }
 
-    /// NR-25: the named text columns keep their order; the cover leads them.
+    /// NR-33: the named text columns keep their order; the cover leads them.
     #[test]
-    fn nr_25_the_default_release_layout_leads_with_the_cover() {
+    fn nr_33_the_default_release_layout_leads_with_the_cover() {
         let layout = Layout::<ReleaseColumn>::default();
         assert_eq!(
             layout.order,

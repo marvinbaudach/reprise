@@ -193,10 +193,14 @@ fn restore_scroll_when_ready(
         return;
     };
     let weak_shared = std::rc::Rc::downgrade(shared);
-    crate::ui::list_geometry_changed::on_changed_once(&adjustment, move |_| {
+    let generation = shared.model.generation();
+    crate::ui::list_geometry_changed::after_changed_once(&adjustment, move || {
         let Some(shared) = weak_shared.upgrade() else {
             return;
         };
+        if shared.model.generation() != generation {
+            return;
+        }
         apply_restored_scroll(&shared, anchor, &current_ids);
     });
 }
@@ -237,6 +241,10 @@ fn apply_restored_scroll(shared: &Shared, anchor: Option<(i64, f64)>, current_id
         return false;
     };
     crate::ui::scroll_probe::probe("view_state_restore", &adjustment, target);
+    debug_assert!(
+        !crate::ui::list_geometry_changed::in_changed_emission(),
+        "view-state scroll written from inside a changed emission"
+    );
     adjustment.set_value(target);
     true
 }

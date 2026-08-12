@@ -10,7 +10,7 @@ use super::formatted;
 
 pub const RELEASES: &str = N_!("Releases");
 pub const RELEASES_DATE: &str = N_!("Date");
-pub const RELEASES_TITLE: &str = N_!("Title");
+pub const RELEASES_TITLE: &str = N_!("Release");
 pub const RELEASES_ARTIST: &str = N_!("Artist");
 pub const RELEASES_TYPE: &str = N_!("Type");
 pub const RELEASES_STATUS: &str = N_!("Status");
@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_25_release_counts_name_discography_gaps() {
+    fn release_counts_name_discography_gaps() {
         assert_eq!(release_count_line(8, 19), "8 of 19 gaps");
         assert_eq!(release_total_line(19), "19 gaps");
     }

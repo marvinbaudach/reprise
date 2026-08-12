@@ -170,7 +170,7 @@ fn nr_24_single_is_owned_through_a_matching_track_title() {
 }
 
 #[test]
-fn nr_25_default_window_hides_releases_older_than_five_years() {
+fn nr_33_default_window_hides_releases_older_than_five_years() {
     let rows = vec![
         entry(
             "recent",
@@ -197,7 +197,7 @@ fn nr_25_default_window_hides_releases_older_than_five_years() {
 }
 
 #[test]
-fn nr_25_singles_are_absent_until_their_chip_is_on() {
+fn nr_33_singles_are_absent_until_their_chip_is_on() {
     let rows = vec![entry(
         "single",
         "Single",
@@ -220,7 +220,7 @@ fn nr_25_singles_are_absent_until_their_chip_is_on() {
 }
 
 #[test]
-fn nr_25_undated_release_survives_every_window() {
+fn nr_33_undated_release_survives_every_window() {
     let rows = vec![entry(
         "undated",
         "Undated",
@@ -244,7 +244,7 @@ fn nr_25_undated_release_survives_every_window() {
 }
 
 #[test]
-fn nr_25_window_all_shows_the_full_catalog() {
+fn nr_33_window_all_shows_the_full_catalog() {
     let filter = ReleasesFilter {
         window: ReleaseWindow::All,
         ..ReleasesFilter::default()
@@ -262,7 +262,7 @@ fn nr_25_window_all_shows_the_full_catalog() {
 }
 
 #[test]
-fn nr_25_empty_type_selection_shows_every_type() {
+fn nr_33_empty_type_selection_shows_every_type() {
     let filter = ReleasesFilter {
         release_types: ReleaseTypeSelection::empty(),
         ..ReleasesFilter::default()
@@ -285,7 +285,7 @@ fn nr_25_empty_type_selection_shows_every_type() {
 }
 
 #[test]
-fn nr_25_all_selected_types_with_all_window_is_the_widest_scope() {
+fn nr_33_all_selected_types_with_all_window_is_the_widest_scope() {
     let filter = ReleasesFilter {
         release_types: ReleaseTypeSelection::all(),
         window: ReleaseWindow::All,
@@ -296,7 +296,7 @@ fn nr_25_all_selected_types_with_all_window_is_the_widest_scope() {
 }
 
 #[test]
-fn nr_25_count_line_never_exceeds_its_total() {
+fn nr_33_count_line_never_exceeds_its_total() {
     let db = crate::db::Db::open_in_memory().unwrap();
     db.conn()
         .execute(
@@ -431,7 +431,7 @@ fn duplicate_ties_prefer_a_known_count_then_the_smallest_mbid() {
 }
 
 #[test]
-fn nr_25_release_status_distinguishes_upcoming_incomplete_and_missing() {
+fn release_status_distinguishes_upcoming_incomplete_and_missing() {
     assert_eq!(
         release_status(
             &entry(
@@ -784,12 +784,12 @@ fn nr_27_the_per_artist_cap_bounds_news_not_the_catalog() {
     );
 }
 
-/// NR-25: the default view is the quiet one, and the filter row decides that
+/// NR-33: the default view is the quiet one, and the filter row decides that
 /// by comparing what it loaded against `ReleasesFilter::default()`. If a
 /// freshly installed library does not produce exactly that value, the row
 /// offers "Clear all" forever and accents a count nobody filtered.
 #[test]
-fn nr_25_a_fresh_library_loads_exactly_the_default_filter() {
+fn nr_33_a_fresh_library_loads_exactly_the_default_filter() {
     let db = crate::db::Db::open_in_memory().unwrap();
 
     let loaded = persisted_releases_filter(&db).unwrap();

@@ -32,21 +32,30 @@ scripts/reprise-worktree-gc.sh sweep \
   --scope /home/marvin/Projects/reprise
 ```
 
-`--scope` checks the canonical repository and independent Git repositories
-found below its `.worktrees/` directory. This is what lets the sweep find
-Claude worktrees nested inside an older standalone checkout. Registered
-worktrees outside the scope's `.worktrees/` directory and the configured
-central agent cache are reported but never changed by the scheduled sweep.
+`--scope` governs **removal only**. It checks the canonical repository and
+independent Git repositories found below its `.worktrees/` directory — that is
+what lets the sweep find Claude worktrees nested inside an older standalone
+checkout. Registered worktrees outside the scope's `.worktrees/` directory are
+reported as `outside_scope` and never removed.
+
+Build-artefact deletion is the other axis and is **not** bound to the scope: it
+runs in every worktree the repository reports, inside the scope or not. Pass
+`--exclude PATH` (repeatable) to take a worktree out of both axes; the timer
+uses it for the nightly source tree, whose `target/` must survive so the 04:30
+build stays incremental.
 
 Use `--apply` only after reading the report. It removes clean worktrees that
 have no commits outside `dev`, completes exact pending PR cleanups, prunes
 their Git metadata, and deletes their local topic branches. It does not delete
 remote branches.
 
-Clean retained Cargo worktrees with build output of at least 1 GiB are
-eligible for `cargo clean` after seven days without recent target activity.
-Dirty or locked worktrees and worktrees with a process using them are skipped.
-Each applied run is logged under
+Retained worktrees with build output of at least 1 GiB are eligible for
+artefact deletion after seven days without recent activity — `target/`,
+`android/app/build`, and `.gradle-user-home`. A dirty or unmerged worktree
+keeps every tracked and untracked source file and loses only those three
+directories; they are reproducible and never hold source. Only `active` and
+`locked` worktrees, worktrees with a process using them, and excluded paths are
+skipped, because a build may be running there. Each applied run is logged under
 `~/.local/state/reprise-worktree-gc/runs/`, including the reclaimed KiB total.
 
 ## Enable the weekly sweep

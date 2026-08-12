@@ -223,7 +223,7 @@ session_id="reprise-explore-$$"
   printf 'gtk_animations=%s\n' "$gtk_animations"
 } >"$output_dir/run-manifest.txt"
 
-cua_common_start_display "$output_dir" "$scratch_root" "1600x900x24"
+cua_common_start_display "$output_dir" "$scratch_root" "1920x1200x24"
 private_runtime="$scratch_root/runtime"
 private_root="$scratch_root/root-profile"
 private_args=(

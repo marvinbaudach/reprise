@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
 from atspi_geometry import GeometryError, resolve_driver_geometry
-from driver import DriverError
+from driver import DriverError, response_dispatched, snapshot_element_address
 from hover_geometry import (
     WindowGeometry,
     frame_values,
@@ -150,19 +150,7 @@ def probe_click(
         rect = to_screenshot_rect(frame, origin) if measured else None
         address: dict[str, Any] = {}
         if route == "ax":
-            index = element.get("element_index")
-            if not isinstance(index, int):
-                results.append(
-                    ClickResult(
-                        route=route,
-                        dispatched=False,
-                        stars_before=star_counts(_elements(before_raw)),
-                        stars_after=star_counts(_elements(before_raw)),
-                        note="the driver exposes no element_index for this target",
-                    )
-                )
-                continue
-            address = {"element_index": index}
+            address = dict(snapshot_element_address(before_raw, element))
         else:
             if not measured:
                 results.append(
@@ -188,7 +176,7 @@ def probe_click(
 
         before_signature = _signature(before_raw)
         stars_before = star_counts(_elements(before_raw))
-        transport.call(
+        click_response = transport.call(
             "click",
             {
                 "pid": pid,
@@ -197,6 +185,9 @@ def probe_click(
                 **address,
             },
         )
+        dispatched = response_dispatched(click_response)
+        if not dispatched:
+            note = f"{note} driver response did not confirm dispatch".strip()
         after_raw, after_path = snapshot(f"click-probe-{route}-after")
         ratio: float | None = None
         if rect is not None:
@@ -212,7 +203,7 @@ def probe_click(
         results.append(
             ClickResult(
                 route=route,
-                dispatched=True,
+                dispatched=dispatched,
                 address=address,
                 signature_changed=_signature(after_raw) != before_signature,
                 changed_ratio=ratio,
@@ -249,10 +240,13 @@ def render_click_table(results: Sequence[ClickResult]) -> str:
     lines.extend(
         [
             "",
-            "Read it like this: if neither route changes anything, the control",
-            "does nothing and that is a product fault. If only the pixel row",
-            "changes, the control works but its accessibility action is not",
-            "wired - assistive technology is offered an action that goes",
+            "Read `dispatched` first. A row with dispatched=False never",
+            "reached the app: its signature and ratio say nothing about the",
+            "product, and the note names what the driver answered instead.",
+            "Among the dispatched rows: if neither route changes anything, the",
+            "control does nothing and that is a product fault. If only the",
+            "pixel row changes, the control works but its accessibility action",
+            "is not wired - assistive technology is offered an action that goes",
             "nowhere. If only the accessibility row changes, the pixel click",
             "missed, so check the rect and the target size before concluding.",
         ]

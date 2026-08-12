@@ -17,11 +17,12 @@ use crate::ui::scan_chrome::ScanChromeView;
 use crate::ui::scan_progress::ScanProgressView;
 
 /// Floor for the counterprobe's measured displacement. The scan card really
-/// occupies 88 px under the app stylesheet at Adwaita's default font metrics;
-/// the floor sits below that so a different font size cannot make the
-/// counterprobe flaky. What it has to prove is a whole card's worth of
+/// occupies about 62 px under the app stylesheet at Adwaita's default font
+/// metrics. The Library Doctor card-family restyle removed its 8 px top margin
+/// and compacted the shared scan-card style; the floor keeps the same 8 px
+/// allowance for font metrics. What it has to prove is a whole card's worth of
 /// displacement, not one exact pixel count.
-const RETIRED_TOP_BAR_MIN_JUMP_PX: f32 = 80.0;
+const RETIRED_TOP_BAR_MIN_JUMP_PX: f32 = 54.0;
 
 /// A presented preferences dialog whose scan chrome is already running, so the
 /// chip is visible and allocated. The parent window keeps the application

@@ -1,5 +1,8 @@
 //! Shared focus lifecycle for modal dialogs and popovers.
 
+use std::cell::{Cell, RefCell};
+use std::rc::{Rc, Weak};
+
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -11,6 +14,7 @@ pub(super) struct TransientFocusGuard {
     fallback: glib::WeakRef<gtk4::Widget>,
     row: glib::WeakRef<gtk4::Widget>,
     rows_at_capture: u32,
+    row_binding: Option<Rc<RowBindingValidity>>,
 }
 
 impl TransientFocusGuard {
@@ -25,11 +29,16 @@ impl TransientFocusGuard {
             .as_ref()
             .map_or_else(|| fallback.clone(), stable_focus_target);
         let rows_at_capture = row.as_ref().and_then(|_| row_count(&invoker)).unwrap_or(0);
+        let row_binding = row
+            .as_ref()
+            .and_then(|_| view_model(&invoker))
+            .map(|model| RowBindingValidity::watch_model(&model));
         Self {
             invoker: invoker.downgrade(),
             fallback: fallback.downgrade(),
             row: row.map_or_else(glib::WeakRef::new, |row| row.downgrade()),
             rows_at_capture,
+            row_binding,
         }
     }
 
@@ -92,6 +101,17 @@ impl TransientFocusGuard {
     pub(super) fn restore(&self) {
         let guard = self.clone();
         glib::idle_add_local_once(move || {
+            // Any model mutation may rebind a recycled row widget while
+            // leaving both its WeakRef and the model cardinality unchanged.
+            // Once that happened there is no safe identity proof left; losing
+            // focus is cheaper than revealing the recycled row.
+            if guard
+                .row_binding
+                .as_ref()
+                .is_some_and(|binding| !binding.is_valid())
+            {
+                return;
+            }
             if let (Some(row), Some(invoker)) = (guard.row.upgrade(), guard.invoker.upgrade()) {
                 // `grab_focus` has to be part of the condition, not a
                 // statement before the `return`: a row that refuses focus
@@ -120,6 +140,46 @@ impl TransientFocusGuard {
                 }
             }
         });
+    }
+}
+
+struct RowBindingValidity {
+    valid: Cell<bool>,
+    model: glib::WeakRef<gtk4::gio::ListModel>,
+    handler: RefCell<Option<glib::SignalHandlerId>>,
+}
+
+impl RowBindingValidity {
+    fn watch_model(model: &gtk4::gio::ListModel) -> Rc<Self> {
+        let weak_model = model.downgrade();
+        Rc::new_cyclic(|weak_binding: &Weak<Self>| {
+            let weak_binding = weak_binding.clone();
+            let handler = model.connect_items_changed(move |_, _, _, _| {
+                if let Some(binding) = weak_binding.upgrade() {
+                    binding.valid.set(false);
+                }
+            });
+            Self {
+                valid: Cell::new(true),
+                model: weak_model,
+                handler: RefCell::new(Some(handler)),
+            }
+        })
+    }
+
+    fn is_valid(&self) -> bool {
+        self.valid.get()
+    }
+}
+
+impl Drop for RowBindingValidity {
+    fn drop(&mut self) {
+        let Some(handler) = self.handler.borrow_mut().take() else {
+            return;
+        };
+        if let Some(model) = self.model.upgrade() {
+            model.disconnect(handler);
+        }
     }
 }
 
@@ -161,7 +221,7 @@ pub(in crate::ui) fn is_row_widget_for_test(widget: &gtk4::Widget) -> bool {
 ///
 /// The list itself is not recycled and is therefore the stable fallback to
 /// remember. [`TransientFocusGuard`] separately retains the row only while
-/// the model's cardinality is unchanged, so a cardinality-changing re-query
+/// its model has emitted no mutation, so even a same-cardinality full reset
 /// cannot restore a recycled widget after rebinding it to another track.
 fn stable_focus_target(focused: &gtk4::Widget) -> gtk4::Widget {
     let mut list = None;
@@ -179,6 +239,18 @@ fn stable_focus_target(focused: &gtk4::Widget) -> gtk4::Widget {
         node = current.parent();
     }
     list.unwrap_or_else(|| focused.clone())
+}
+
+fn view_model(view: &gtk4::Widget) -> Option<gtk4::gio::ListModel> {
+    if let Some(view) = view.downcast_ref::<gtk4::ColumnView>() {
+        return view.model().map(glib::object::Cast::upcast);
+    }
+    if let Some(view) = view.downcast_ref::<gtk4::ListView>() {
+        return view.model().map(glib::object::Cast::upcast);
+    }
+    view.downcast_ref::<gtk4::GridView>()?
+        .model()
+        .map(glib::object::Cast::upcast)
 }
 
 /// How many rows `view` holds, if it is one of the list views.
@@ -278,6 +350,18 @@ fn wire_close_shortcut(dialog: &adw::Dialog) {
 mod tests {
     use gtk4::prelude::*;
     use libadwaita::prelude::*;
+
+    #[test]
+    fn a_same_cardinality_full_reset_invalidates_the_captured_row_binding() {
+        let store = gtk4::gio::ListStore::new::<gtk4::glib::BoxedAnyObject>();
+        store.append(&gtk4::glib::BoxedAnyObject::new("before"));
+        let model = store.clone().upcast::<gtk4::gio::ListModel>();
+        let binding = super::RowBindingValidity::watch_model(&model);
+
+        store.splice(0, 1, &[gtk4::glib::BoxedAnyObject::new("after")]);
+
+        assert!(!binding.is_valid());
+    }
 
     #[test]
     fn control_w_is_the_only_transient_close_shortcut() {

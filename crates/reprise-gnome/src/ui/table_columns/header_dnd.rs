@@ -90,7 +90,7 @@ const INSERT_AFTER_CLASS: &str = "reprise-col-insert-after";
 /// title, and read as far louder than intended.
 const DRAG_SOURCE_CLASS: &str = "reprise-col-drag-source";
 
-/// Column header drag-reorder visuals, installed app-wide by [`super::style`]
+/// Column header drag-reorder visuals, installed app-wide by [`super::super::style`]
 /// (`style::mod::app_css`). Mirrors the row drag-and-drop idiom this whole
 /// interaction was reworked to match: `track_list_row_interaction.rs`'s
 /// `.now-playing-leading` uses the identical `inset 2px 0 0 @accent_color`

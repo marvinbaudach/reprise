@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import os
 import pathlib
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Mapping, Sequence
 
 from actions import (
     AcceptedAction,
@@ -26,104 +25,52 @@ from actions import (
     TypeAction,
     WaitAction,
 )
+from driver_transport import CliTransport, DriverError, Transport, response_dispatched
 from oracles import ActionEvidence, Finding, OracleEngine, Snapshot, normalize_snapshot
 from protocol import ContractError, SCHEMA_VERSION
-from ui_vocabulary import ACTIONABLE_ROLES, canonical_role
+from pointer_dispatch import desktop_pointer_payload
+from process_activity import ProcessActivityProbe
+from ui_vocabulary import ACTIONABLE_ROLES, canonical_role, invocable_actions
 
 
-class DriverError(RuntimeError):
-    """The native driver or target window could not honor the bounded action."""
+HOVER_PREFLIGHT_TOLERANCE_PX = 3.0
 
 
-class Transport(Protocol):
-    def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]: ...
-    def resize_window(self, window_id: int, width: int, height: int) -> Mapping[str, Any]: ...
-    def set_connectivity(self, state: str) -> Mapping[str, Any]: ...
-    def wmctrl_geometry(self, window_id: int) -> Any: ...
+def _target_order(item: Mapping[str, Any]) -> tuple[float, float, int]:
+    frame = item.get("frame") if isinstance(item.get("frame"), dict) else {}
+    def coordinate(name: str) -> float:
+        value = frame.get(name)
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else float("inf")
+    index = item.get("element_index")
+    return coordinate("y"), coordinate("x"), index if isinstance(index, int) else 2**63
 
 
-class CliTransport:
-    """No-shell adapter for cua-driver, wmctrl, and the test connectivity file."""
+def snapshot_element_address(
+    snapshot: Mapping[str, Any], target: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    """Return an element handle bound to the snapshot that exposed it."""
 
-    def __init__(
-        self,
-        *,
-        driver_binary: str = "cua-driver",
-        socket_path: pathlib.Path | None = None,
-        connectivity_file: pathlib.Path | None = None,
-        timeout_seconds: int = 30,
-    ) -> None:
-        self.driver_binary = driver_binary
-        self.socket_path = socket_path
-        self.connectivity_file = connectivity_file
-        self.timeout_seconds = timeout_seconds
-
-    def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        command = [self.driver_binary, tool, json.dumps(payload, separators=(",", ":"))]
-        if self.socket_path is not None:
-            command.extend(["--socket", str(self.socket_path)])
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=self.timeout_seconds,
-            env={**os.environ, "CUA_DRIVER_RS_UPDATE_CHECK": "0"},
+    snapshot_id = snapshot.get("snapshot_id")
+    token = target.get("element_token")
+    if isinstance(token, str) and token:
+        if not isinstance(snapshot_id, str) or not snapshot_id:
+            raise DriverError(
+                "fresh target's snapshot does not name itself, so its "
+                "element_token cannot be proven current"
+            )
+        if token.partition(":")[0] != snapshot_id:
+            raise DriverError(
+                "fresh target element_token does not belong to its snapshot_id"
+            )
+        return {"element_token": token}
+    index = target.get("element_index")
+    if not isinstance(index, int):
+        raise DriverError("fresh target has no element_token or element_index")
+    if not isinstance(snapshot_id, str) or not snapshot_id:
+        raise DriverError(
+            "fresh target has no element_token and its snapshot has no snapshot_id"
         )
-        if completed.returncode != 0:
-            message = completed.stderr.strip() or completed.stdout.strip()
-            raise DriverError(f"cua-driver {tool} failed: {message[:500]}")
-        try:
-            response = json.loads(completed.stdout)
-        except json.JSONDecodeError:
-            if completed.stdout.strip().startswith("✅"):
-                return {"effect": "confirmed", "verified": True}
-            raise DriverError(f"cua-driver {tool} returned invalid JSON")
-        if not isinstance(response, dict):
-            raise DriverError(f"cua-driver {tool} returned a non-object response")
-        return response
-
-    def resize_window(self, window_id: int, width: int, height: int) -> Mapping[str, Any]:
-        completed = subprocess.run(
-            ["wmctrl", "-i", "-r", f"0x{window_id:x}", "-e", f"0,-1,-1,{width},{height}"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if completed.returncode != 0:
-            raise DriverError(f"wmctrl resize failed: {completed.stderr.strip()[:300]}")
-        return {"effect": "unverifiable", "verified": False}
-
-    def set_connectivity(self, state: str) -> Mapping[str, Any]:
-        if self.connectivity_file is None:
-            raise DriverError("connectivity perturbation has no private control file")
-        self.connectivity_file.write_text(state + "\n", encoding="utf-8")
-        return {"effect": "confirmed", "verified": True}
-
-    def wmctrl_geometry(self, window_id: int) -> Any:
-        from hover_geometry import WindowGeometry
-
-        completed = subprocess.run(
-            ["wmctrl", "-lG"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if completed.returncode != 0:
-            raise DriverError(f"wmctrl geometry failed: {completed.stderr.strip()[:300]}")
-        expected = f"0x{window_id:08x}".casefold()
-        for line in completed.stdout.splitlines():
-            fields = line.split(maxsplit=7)
-            if len(fields) < 6 or fields[0].casefold() != expected:
-                continue
-            try:
-                x, y, width, height = (int(value) for value in fields[2:6])
-            except ValueError as error:
-                raise DriverError("wmctrl returned invalid window geometry") from error
-            return WindowGeometry(x, y, width, height)
-        raise DriverError("wmctrl did not find the target window")
+    return {"element_index": index, "snapshot_id": snapshot_id}
 
 
 @dataclass(frozen=True)
@@ -154,9 +101,12 @@ class CuaExecutor:
         hover_geometry: Any | None = None,
         geometry_provider: Any | None = None,
         window_origin: Any | None = None,
+        generation: int | None = None,
+        geometry_measurements: list[dict[str, Any]] | None = None,
     ) -> None:
         self.transport = transport
         self.pid = pid
+        self.activity_probe = ProcessActivityProbe(pid)
         self.window_id = window_id
         self.session = session
         self.state_prefix = state_prefix
@@ -171,13 +121,18 @@ class CuaExecutor:
         # the geometry provider walks the accessibility tree for us.
         self.geometry_provider = geometry_provider
         self.window_origin = window_origin
+        self.generation = generation
+        self.geometry_measurements = geometry_measurements if geometry_measurements is not None else []
         self.geometry_failures: list[str] = []
         self.geometry_calibration: Any | None = None
         self.geometry_resolution: Any | None = None
+        self._ambiguity_notes: dict[tuple[str, str], dict[str, Any]] = {}
+        self._pending_findings: list[Finding] = []
         self._hover_cursor_disabled = False
         self._state_counter = 0
         self._step_counter = 0
         self._snapshot_durations_ms: list[int] = []
+        self._snapshot_activity: list[Mapping[str, Any]] = []
         if evidence_dir is not None:
             evidence_dir.mkdir(parents=True, exist_ok=True)
 
@@ -270,9 +225,8 @@ class CuaExecutor:
             elapsed_ms=elapsed_ms,
             observation_ms=elapsed_ms,
         )
-        findings = list(
-            self.oracle_engine.analyze(evidence, before, after, settled=(after,))
-        )
+        findings = list(self.oracle_engine.analyze(evidence, before, after, settled=(after,)))
+        findings.extend(self._take_harness_findings())
         if self.evidence_dir is None:
             hover_findings = analyze_hover(
                 pathlib.Path("missing-hover-before.png"),
@@ -280,6 +234,7 @@ class CuaExecutor:
                 target,
                 origin=self.hover_geometry,
                 exclude_cursor=self.exclude_cursor,
+                screenshots_available=before.screenshot_available and after.screenshot_available,
             )
         else:
             hover_findings = analyze_hover(
@@ -288,30 +243,17 @@ class CuaExecutor:
                 target,
                 origin=self.hover_geometry,
                 exclude_cursor=self.exclude_cursor,
+                screenshots_available=before.screenshot_available and after.screenshot_available,
             )
         findings.extend(hover_findings)
-        result = StepResult(
-            before=before,
-            after=after,
-            settled=(after,),
-            action_response=response,
-            evidence=evidence,
-            findings=tuple(findings),
-        )
+        result = StepResult(before, after, (after,), response, evidence, tuple(findings))
         self._retain_step(result)
         return result
 
     def _move_pointer(self, point: tuple[float, float]) -> Mapping[str, Any]:
         return self.transport.call(
             "move_cursor",
-            {
-                "pid": self.pid,
-                "window_id": self.window_id,
-                "session": self.session,
-                "scope": "desktop",
-                "x": point[0],
-                "y": point[1],
-            },
+            desktop_pointer_payload(*point),
         )
 
     def execute_evidence(self, action: ActionEvidence) -> StepResult:
@@ -326,7 +268,9 @@ class CuaExecutor:
         # From here on every snapshot round-trip is harness cost inside the
         # observation window, so measure it from the same starting line.
         self._snapshot_durations_ms = []
+        self._snapshot_activity = []
         response = self._dispatch(accepted, evidence, before_raw)
+        dispatched = self._confirm_dispatch(evidence, response)
         action_elapsed_ms = round((time.monotonic() - started) * 1000)
         after_raw, after = self._snapshot(f"step-{self._step_counter:04}-after")
         first_change_ms = action_elapsed_ms if before.state_signature != after.state_signature else None
@@ -336,7 +280,8 @@ class CuaExecutor:
         settled = [after]
         ax_probe_changed = False
         if (
-            evidence.kind == "activate"
+            dispatched
+            and evidence.kind == "activate"
             and evidence.dispatch == "px"
             and evidence.expect_effect == "required"
             and before.state_signature == after.state_signature
@@ -348,7 +293,7 @@ class CuaExecutor:
                     "pid": self.pid,
                     "window_id": self.window_id,
                     "session": self.session,
-                    **self._address(target, "ax"),
+                    **self._address(after_raw, target, "ax"),
                 },
             )
             response = {**response, "ax_probe": probe_response}
@@ -374,7 +319,8 @@ class CuaExecutor:
             before.state_signature != sample.state_signature for sample in settled
         )
         if (
-            evidence.kind == "activate"
+            dispatched
+            and evidence.kind == "activate"
             and evidence.dispatch == "ax"
             and evidence.expect_effect == "required"
             and not visible_change
@@ -382,37 +328,55 @@ class CuaExecutor:
             effect = "suspected_noop"
         completed_evidence = dataclasses.replace(
             evidence,
+            dispatched=dispatched,
             effect=str(effect) if effect is not None else None,
             ax_probe_changed=ax_probe_changed,
             elapsed_ms=action_elapsed_ms,
             observation_ms=observation_ms,
             first_change_ms=first_change_ms,
             sample_gaps_ms=tuple(sample_gaps),
-            target_has_action=(
-                self.target_carries_action(before_raw, evidence.target_label)
-                if evidence.target_label
-                else None
-            ),
+            target_has_action=self.target_carries_action(before_raw, evidence.target_label) if evidence.target_label else None,
             settle_delay_ms=round(sum(self.settle_delays) * 1000),
             snapshot_ms=tuple(self._snapshot_durations_ms),
             snapshot_ms_before_first_change=snapshot_ms_before_first_change,
+            response_gaps=tuple(self._snapshot_activity[-len(sample_gaps):]) if sample_gaps else (),
         )
-        findings = self.oracle_engine.analyze(
-            completed_evidence,
-            before,
-            after,
-            settled=tuple(settled),
-        )
-        result = StepResult(
-            before=before,
-            after=after,
-            settled=tuple(settled),
-            action_response=response,
-            evidence=completed_evidence,
-            findings=tuple(findings),
-        )
+        findings = list(self.oracle_engine.analyze(completed_evidence, before, after, settled=tuple(settled)))
+        findings.extend(self._take_harness_findings())
+        result = StepResult(before, after, tuple(settled), response, completed_evidence, tuple(findings))
         self._retain_step(result)
         return result
+
+    def _confirm_dispatch(
+        self, evidence: ActionEvidence, response: Mapping[str, Any]
+    ) -> bool:
+        """Return whether the driver's answer proves the action was delivered.
+
+        Until this ran, the mission path booked every response the transport
+        did not reject as delivered. An undelivered action then looked exactly
+        like a control that ignores its own accessibility action, and the app
+        was blamed for it.
+        """
+
+        if response_dispatched(response):
+            return True
+        self._pending_findings.append(
+            Finding(
+                "driver-action-undelivered",
+                "warning",
+                0.9,
+                "The driver accepted the action but its answer does not prove "
+                "the input reached the app; no product verdict was drawn.",
+                {
+                    "kind": evidence.kind,
+                    "target": evidence.target_label,
+                    "dispatch": evidence.dispatch,
+                    "response": dict(response),
+                },
+                blocks_gate=False,
+            )
+        )
+        return False
 
     def _dispatch(
         self,
@@ -425,7 +389,10 @@ class CuaExecutor:
             return self._dispatch_evidence(evidence, before_raw, base)
         if isinstance(accepted, ActivateAction):
             target = self._target(before_raw, evidence.target_label)
-            payload = {**base, **self._address(target, evidence.dispatch)}
+            payload = {
+                **base,
+                **self._address(before_raw, target, evidence.dispatch),
+            }
             return self.transport.call("click", payload)
         if isinstance(accepted, TypeAction):
             try:
@@ -433,12 +400,17 @@ class CuaExecutor:
             except KeyError as error:
                 raise DriverError(f"missing trusted fixture token: {accepted.fixture_token}") from error
             target = self._target(before_raw, accepted.target_label)
-            payload = {**base, **self._address(target, accepted.dispatch), "text": text}
+            payload = {
+                **base,
+                **self._address(before_raw, target, accepted.dispatch),
+                "text": text,
+            }
             return self.transport.call("type_text", payload)
         if isinstance(accepted, PressAction):
             payload = {**base, "key": accepted.key}
             if accepted.target_label is not None:
-                payload.update(self._address(self._target(before_raw, accepted.target_label), "ax"))
+                target = self._target(before_raw, accepted.target_label)
+                payload.update(self._address(before_raw, target, "ax"))
             return self.transport.call("press_key", payload)
         if isinstance(accepted, HotkeyAction):
             payload = {**base, "keys": list(accepted.keys)}
@@ -452,7 +424,8 @@ class CuaExecutor:
                 "by": evidence.by,
             }
             if target_label is not None:
-                payload.update(self._address(self._target(before_raw, target_label), "ax"))
+                target = self._target(before_raw, target_label)
+                payload.update(self._address(before_raw, target, "ax"))
             return self.transport.call("scroll", payload)
         if isinstance(accepted, ResizeAction):
             return self.transport.resize_window(self.window_id, accepted.width, accepted.height)
@@ -476,7 +449,8 @@ class CuaExecutor:
         if evidence.kind == "activate":
             target = self._target(before_raw, evidence.target_label)
             return self.transport.call(
-                "click", {**base, **self._address(target, evidence.dispatch)}
+                "click",
+                {**base, **self._address(before_raw, target, evidence.dispatch)},
             )
         if evidence.kind == "scroll":
             payload = {
@@ -487,7 +461,7 @@ class CuaExecutor:
             }
             if evidence.target_label is not None:
                 target = self._target(before_raw, evidence.target_label)
-                payload.update(self._address(target, "ax"))
+                payload.update(self._address(before_raw, target, "ax"))
             return self.transport.call("scroll", payload)
         if evidence.kind == "set-connectivity" and evidence.connectivity_state:
             return self.transport.set_connectivity(evidence.connectivity_state)
@@ -507,19 +481,24 @@ class CuaExecutor:
             payload["screenshot_out_file"] = str(self.evidence_dir / f"{stem}.png")
         captured_ms = round(time.monotonic() * 1000)
         round_trip_started = time.monotonic()
+        activity_started = self.activity_probe.start()
         raw = self.transport.call("get_window_state", payload)
-        raw = self.with_measured_geometry(raw)
+        raw = {**raw, "screenshot_available": json_path is not None and raw.get("screenshot_available") is not False}
+        raw = self.with_measured_geometry(raw, state_id=state_id)
         # Retained so the timing oracles can subtract the harness's own cost.
-        self._snapshot_durations_ms.append(
-            round((time.monotonic() - round_trip_started) * 1000)
-        )
+        duration_ms = round((time.monotonic() - round_trip_started) * 1000)
+        self._snapshot_durations_ms.append(duration_ms)
+        activity = self.activity_probe.finish(activity_started, gap_ms=duration_ms)
+        if raw.get("screenshot_unavailable_reason"):
+            activity = {**activity, "harness_fault": "screenshot-unavailable"}
+        self._snapshot_activity.append(activity)
         if json_path is not None:
-            json_path.write_text(
-                json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-            )
+            json_path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return raw, normalize_snapshot(raw, state_id=state_id, captured_ms=captured_ms)
 
-    def with_measured_geometry(self, raw: Mapping[str, Any]) -> Mapping[str, Any]:
+    def with_measured_geometry(
+        self, raw: Mapping[str, Any], *, state_id: str
+    ) -> Mapping[str, Any]:
         """Replace the driver's placeholder positions with measured ones."""
         origin = self.window_origin or self.hover_geometry
         if self.geometry_provider is None or origin is None:
@@ -530,24 +509,43 @@ class CuaExecutor:
         container = structured if isinstance(structured, dict) else raw
         elements = container.get("elements")
         if not isinstance(elements, list):
-            return self._untrusted(raw, "snapshot carries no element list")
+            failure = "snapshot carries no element list"
+            self.geometry_failures.append(failure)
+            self._record_geometry(state_id, trusted=False, failure=failure)
+            return self._untrusted(raw, failure)
         try:
             resolution = resolve_driver_geometry(
                 elements, self.geometry_provider(), origin
             )
         except GeometryError as error:
-            self.geometry_failures.append(str(error))
-            return self._untrusted(raw, str(error))
+            failure = str(error)
+            self.geometry_failures.append(failure)
+            self._record_geometry(state_id, trusted=False, failure=failure)
+            return self._untrusted(raw, failure)
         self.geometry_calibration = resolution.calibration
         self.geometry_resolution = resolution.as_record()
         frames = resolution.frames
         if not resolution.trusted:
-            self.geometry_failures.append(
+            failure = (
                 "no element could be matched to a measured position "
                 f"({resolution.driver_elements} driver elements, "
                 f"{resolution.walk_nodes} walk nodes)"
             )
+            self.geometry_failures.append(failure)
+            self._record_geometry(
+                state_id,
+                trusted=False,
+                failure=failure,
+                resolution=self.geometry_resolution,
+                calibration=self.geometry_calibration,
+            )
             return self._untrusted(raw, "no element resolved")
+        self._record_geometry(
+            state_id,
+            trusted=True,
+            resolution=self.geometry_resolution,
+            calibration=self.geometry_calibration,
+        )
         rebuilt = []
         for index, element in enumerate(elements):
             if not isinstance(element, dict):
@@ -579,6 +577,28 @@ class CuaExecutor:
             "structuredContent": {**structured, "elements": rebuilt},
             "geometry_trusted": True,
         }
+
+    def _record_geometry(
+        self,
+        state_id: str,
+        *,
+        trusted: bool,
+        failure: str | None = None,
+        resolution: Mapping[str, Any] | None = None,
+        calibration: Mapping[str, Any] | None = None,
+    ) -> None:
+        record: dict[str, Any] = {
+            "generation": self.generation,
+            "state_id": state_id,
+            "trusted": trusted,
+        }
+        if failure is not None:
+            record["failure"] = failure
+        if resolution is not None:
+            record["resolution"] = dict(resolution)
+        if calibration is not None:
+            record["calibration"] = dict(calibration)
+        self.geometry_measurements.append(record)
 
     @staticmethod
     def _untrusted(raw: Mapping[str, Any], note: str) -> Mapping[str, Any]:
@@ -628,14 +648,34 @@ class CuaExecutor:
         # The same label appears several times - a cell, a button and a toggle
         # button can all read "Add filter" - and only one of them carries the
         # AT-SPI action. Picking by role landed on a shell that never had one.
-        carrying = [item for item in matches if item.get("actions")]
+        carrying = [
+            item for item in matches if invocable_actions(item.get("actions", ()))
+        ]
         if len(carrying) == 1:
             return carrying[0]
         if len(carrying) > 1:
-            raise DriverError(
-                f"more than one node labelled {label!r} carries an action; "
-                "refusing to guess which one the user would mean"
-            )
+            carrying.sort(key=_target_order)
+            chosen = carrying[0]
+            role = canonical_role(str(chosen.get("role", "")))
+            key = role, label
+            if key not in self._ambiguity_notes:
+                evidence = {
+                    "target": label,
+                    "role": role,
+                    "count": len(carrying),
+                    "chosen": dict(chosen.get("frame", {})),
+                    "alternatives": [dict(item.get("frame", {})) for item in carrying[1:9]],
+                }
+                self._ambiguity_notes[key] = evidence
+                self._pending_findings.append(
+                    Finding(
+                        "ambiguous-accessible-name", "warning", 0.8,
+                        f"{len(carrying)} nodes share the accessible name '{label}'; "
+                        "assistive technology cannot tell them apart.",
+                        evidence, blocks_gate=False,
+                    )
+                )
+            return chosen
         actionable = [
             item
             for item in matches
@@ -643,28 +683,31 @@ class CuaExecutor:
         ]
         return actionable[0] if actionable else matches[0]
 
-    def target_carries_action(
-        self, raw: Mapping[str, Any], label: str | None
-    ) -> bool | None:
-        """Does any node with this label offer an action? None when unknown."""
+    def target_carries_action(self, raw: Mapping[str, Any], label: str | None) -> bool | None:
+        """Does any node with this label offer an invocable action?"""
         structured = raw.get("structuredContent")
         container = structured if isinstance(structured, dict) else raw
         elements = container.get("elements", [])
-        matches = [
-            item
-            for item in elements
-            if isinstance(item, dict) and item.get("label") == label
-        ]
+        matches = [item for item in elements if isinstance(item, dict) and item.get("label") == label]
         if not any("actions" in item for item in matches):
             return None
-        return any(item.get("actions") for item in matches)
+        return any(invocable_actions(item.get("actions", ())) for item in matches)
 
-    def _address(self, target: Mapping[str, Any], dispatch: str) -> Mapping[str, Any]:
+    def _take_harness_findings(self) -> list[Finding]:
+        findings, self._pending_findings = self._pending_findings, []
+        take_transport = getattr(self.transport, "take_findings", None)
+        if callable(take_transport):
+            findings.extend(take_transport())
+        return findings
+
+    def _address(
+        self,
+        snapshot: Mapping[str, Any],
+        target: Mapping[str, Any],
+        dispatch: str,
+    ) -> Mapping[str, Any]:
         if dispatch == "ax":
-            index = target.get("element_index")
-            if not isinstance(index, int):
-                raise DriverError("fresh target has no element_index")
-            return {"element_index": index}
+            return snapshot_element_address(snapshot, target)
         frame = target.get("frame")
         if not isinstance(frame, dict):
             raise DriverError("pointer target has no frame")
@@ -704,23 +747,51 @@ def hover_preflight(
 ) -> dict[str, Any]:
     """Verify desktop-pointer dispatch before spending a mission action budget."""
     try:
-        transport.call(
-            "move_cursor",
-            {
-                "pid": pid,
-                "window_id": window_id,
-                "session": session,
-                "scope": "desktop",
-                "x": origin.x + origin.width / 2,
-                "y": origin.y + origin.height / 2,
-            },
+        # Measured on cua-driver 0.19.3 under X11: a session-bound cursor read is
+        # confined to window scope and answers desktop_escalation_required, while
+        # the session-free form reads the real X11 pointer exactly. Escalating the
+        # session is not an option: escalation is permanent and disables the
+        # session-bound get_window_state route used by every mission snapshot.
+        before = _desktop_cursor_position(transport.call("get_cursor_position", {}))
+        candidates = (
+            (origin.x + origin.width * 0.25, origin.y + origin.height * 0.25),
+            (origin.x + origin.width * 0.75, origin.y + origin.height * 0.75),
         )
-        cursor = transport.call(
-            "get_cursor_position", {"pid": pid, "window_id": window_id, "session": session}
-        )
-        window = transport.call(
-            "get_window_state", {"pid": pid, "window_id": window_id, "session": session}
-        )
+        target = max(candidates, key=lambda point: _distance_squared(before, point))
+        transport.call("move_cursor", desktop_pointer_payload(*target))
+        after = _desktop_cursor_position(transport.call("get_cursor_position", {}))
     except (DriverError, OSError, subprocess.SubprocessError) as error:
         raise DriverError("hover dispatch is unsafe on this driver build") from error
-    return {"cursor_position": cursor, "window_state": window}
+    moved = not _points_close(before, after)
+    reached = _points_close(target, after)
+    verified = moved and reached
+    return {
+        "before": {"source": "x11", "x": before[0], "y": before[1]},
+        "target": {"x": target[0], "y": target[1]},
+        "after": {"source": "x11", "x": after[0], "y": after[1]},
+        "tolerance_px": HOVER_PREFLIGHT_TOLERANCE_PX,
+        "moved_from_before": moved,
+        "reached_target": reached,
+        "verified": verified,
+        "verdict": "pointer-reached-target" if verified else "pointer-did-not-reach-target",
+    }
+
+
+def _desktop_cursor_position(response: Mapping[str, Any]) -> tuple[float, float]:
+    if response.get("source") != "x11":
+        raise DriverError("session-free cursor read did not report the X11 pointer")
+    x, y = response.get("x"), response.get("y")
+    if not all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in (x, y)):
+        raise DriverError("session-free cursor read has no numeric position")
+    return float(x), float(y)
+
+
+def _distance_squared(left: tuple[float, float], right: tuple[float, float]) -> float:
+    return (left[0] - right[0]) ** 2 + (left[1] - right[1]) ** 2
+
+
+def _points_close(left: tuple[float, float], right: tuple[float, float]) -> bool:
+    return all(
+        abs(left_value - right_value) <= HOVER_PREFLIGHT_TOLERANCE_PX
+        for left_value, right_value in zip(left, right)
+    )
