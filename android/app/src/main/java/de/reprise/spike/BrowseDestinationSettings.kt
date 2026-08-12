@@ -6,8 +6,6 @@ import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 internal fun AndroidStoredLibraryDestination.toBrowseTab(): BrowseTab = when (this) {
     AndroidStoredLibraryDestination.Titles -> BrowseTab.TITLES
     AndroidStoredLibraryDestination.Artists -> BrowseTab.ARTISTS
-    AndroidStoredLibraryDestination.Albums,
-    AndroidStoredLibraryDestination.Favourites,
     AndroidStoredLibraryDestination.Unset,
     is AndroidStoredLibraryDestination.Unsupported,
     -> BrowseTab.TITLES

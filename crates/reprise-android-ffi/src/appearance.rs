@@ -99,8 +99,6 @@ pub enum AndroidStoredLibraryDestination {
     Unset,
     Titles,
     Artists,
-    Albums,
-    Favourites,
     Unsupported { id: String },
 }
 
@@ -110,8 +108,6 @@ impl AndroidStoredLibraryDestination {
             None => Self::Unset,
             Some("titles") => Self::Titles,
             Some("artists") => Self::Artists,
-            Some("albums") => Self::Albums,
-            Some("favourites") => Self::Favourites,
             Some(id) => Self::Unsupported { id: id.to_owned() },
         }
     }
@@ -122,8 +118,6 @@ impl AndroidStoredLibraryDestination {
 pub enum AndroidLibraryDestinationChoice {
     Titles,
     Artists,
-    Albums,
-    Favourites,
 }
 
 impl AndroidLibraryDestinationChoice {
@@ -131,8 +125,6 @@ impl AndroidLibraryDestinationChoice {
         match self {
             Self::Titles => "titles",
             Self::Artists => "artists",
-            Self::Albums => "albums",
-            Self::Favourites => "favourites",
         }
     }
 }
@@ -363,5 +355,33 @@ mod tests {
             library.library_destination_setting().unwrap(),
             AndroidStoredLibraryDestination::Artists,
         );
+    }
+
+    #[test]
+    fn removed_library_destinations_are_preserved_as_unsupported_ids() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+
+        for removed_id in ["albums", "favourites"] {
+            {
+                let state = library.lock().unwrap();
+                settings::set_setting(
+                    &state.db,
+                    super::LIBRARY_DESTINATION_SETTING_KEY,
+                    removed_id,
+                )
+                .unwrap();
+            }
+            assert_eq!(
+                library.library_destination_setting().unwrap(),
+                AndroidStoredLibraryDestination::Unsupported {
+                    id: removed_id.to_owned(),
+                },
+            );
+        }
     }
 }
