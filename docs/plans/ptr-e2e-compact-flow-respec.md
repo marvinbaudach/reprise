@@ -130,6 +130,30 @@ identified six harness defects, all repaired without changing product code:
 - cleanup reports the effective process exit status after failed checks; and
 - the duplicated Compact-route comment was removed.
 
+### Run 7 review follow-up
+
+Run 7 reached flow 6 with 30 passed checks and printed four `FAIL:` lines, but
+the closing balance reported only three. Four harness findings were repaired:
+
+- `log_fail` now appends one record to a scratch failure ledger beside
+  `app.log`; cleanup derives its balance from that file, preserves the emitted
+  harness output as `run.log`, and prints a distinct `TALLY MISMATCH` diagnostic
+  if the ledger count ever differs from the `FAIL:` count in that run log;
+- flow 5 seeds its own one-track playback context with `PlayTrackIds`, follows
+  with idempotent MPRIS `Play`, waits for `PlaybackStatus=Playing`, and unwraps
+  the gdbus variant so failures say `got Stopped` rather than
+  `got (<'Stopped'>,)`;
+- leaving Compact is recorded with its resulting Library geometry. Flow 6
+  clears and reapplies Openbox's maximized flags, waits up to nine seconds for
+  at least 1500x850, and skips all coordinate actions after one hard failure if
+  that precondition cannot be established; and
+- the app log showed the correct flow-4 order: context `track_id=3`, manual
+  `track_id=4`, manual `track_id=5`, then resumed context `track_id=2`. The
+  first explicit Next reached both short manual fixtures through gapless
+  hand-off, so the assertion now checks their dequeue/start events as one
+  ordered sequence and uses the following Next for context B. This is expected
+  product behavior, not a suspected product bug.
+
 ## Named product gaps
 
 These gaps are intentionally recorded rather than represented as red harness
@@ -153,7 +177,13 @@ Static acceptance for this implementation is:
 - menu Down counts are documented with the traversed entries;
 - Flow 4 contains no `OFFSET` identity guess;
 - Flow 4 establishes and observes its own two-item manual queue;
+- Flow 4 asserts both short manual items under one ordered event marker before
+  issuing the single Next that resumes context B;
 - Compact play/pause checks MPRIS status rather than a transition log;
+- failure accounting is file-backed and cross-checked against preserved
+  `run.log` output;
+- flow 6 performs no coordinate action unless maximized geometry reaches at
+  least 1500x850;
 - every touched shell script passes `bash -n`.
 
 The full ptr-e2e run is deliberately not part of this implementation session.

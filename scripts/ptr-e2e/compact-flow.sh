@@ -37,8 +37,8 @@ reprise_player_call() {
 assert_mpris_playback_status() {
   local expected="$1" description="$2" actual=""
   for _ in $(seq 1 20); do
-    actual="$(mpris_property PlaybackStatus)"
-    if grep -q "$expected" <<<"$actual"; then
+    actual="$(mpris_playback_status)"
+    if [ "$actual" = "$expected" ]; then
       log_step "MPRIS check OK: $description ($expected)"
       return 0
     fi
@@ -46,6 +46,10 @@ assert_mpris_playback_status() {
   done
   log_fail "$description (expected $expected, got $actual)"
   return 1
+}
+
+mpris_playback_status() {
+  mpris_property PlaybackStatus | sed -E "s/^\(<'([^']+)'>,\)$/\1/"
 }
 
 mpris_volume() {
@@ -101,9 +105,13 @@ double_click_window_relative() {
 
 run_compact_flow() {
   log_step "flow 5: native Compact card, context menu, and scroll volume…"
-  local marker position_before volume_before
+  local marker position_before volume_before compact_track_id
   local compact_rect compact_width compact_height
   local play_x metadata_x cover_x center_y
+
+  db_scalar_into compact_track_id \
+    "SELECT id FROM tracks WHERE title = 'sine_03' AND missing_since IS NULL;" \
+    'flow 5 needs its own playable sine_03 fixture' || return
 
   marker=$(log_marker)
   # There is no Compact button in the Library header — `primary_menu.rs` packs
@@ -142,11 +150,11 @@ run_compact_flow() {
   assert_point_in_window "$metadata_x" "$center_y" "derived Compact metadata point" || return
   assert_point_in_window "$cover_x" "$center_y" "derived Compact cover point" || return
 
-  # The short fixture may have stopped during earlier flows. Start or resume it
-  # first and assert the resulting public state; an idle player emits no state
-  # transition for the harness to wait on. The click then has one job: flip the
-  # observed status to Paused. If it does not, freeze playback through MPRIS so
-  # the independent scroll-position check remains diagnostically useful.
+  # The short fixture from flow 4 has stopped by now. Seed a fresh, owned
+  # playback context so this flow never depends on prior timing, then assert
+  # the public state. MPRIS Play is deliberately idempotent here: it resumes if
+  # the private command is still settling and is a no-op once Playing.
+  reprise_player_call PlayTrackIds "[$compact_track_id]"
   mpris_call Play
   if ! assert_mpris_playback_status "Playing" \
     "playback running before the derived Compact play click"; then
@@ -220,4 +228,5 @@ run_compact_flow() {
   assert_log_contains_since "$marker" \
     "window view mode changed.*mode=Library.*layout=Card" \
     "Ctrl+M restored Library View"
+  log_step "Library geometry after Compact exit: $(window_rect)"
 }

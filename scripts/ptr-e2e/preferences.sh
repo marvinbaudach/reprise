@@ -36,7 +36,10 @@ run_preferences_flow() {
   # Compact layouts can replace the mapped surface. Always address the
   # currently active Library window before opening its primary menu.
   WINDOW_ID="$(xdotool getactivewindow 2>/dev/null)"
-  maximize_window
+  if ! maximize_window; then
+    log_step "flow 6 skipped: coordinate checks require the fixed maximized Library geometry"
+    return
+  fi
   key "F10"
   sleep 0.3
 

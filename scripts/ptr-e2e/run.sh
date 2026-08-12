@@ -136,6 +136,8 @@ MUSICBRAINZ_FIXTURES="$SCRATCH_ROOT/musicbrainz"
 MUSICBRAINZ_LOG="$SCRATCH_ROOT/musicbrainz-requests.log"
 DISPLAYFD_FILE="$SCRATCH_ROOT/displayfd.txt"
 APP_LOG="$SCRATCH_ROOT/app.log"
+FAILURE_LOG="$SCRATCH_ROOT/failures.log"
+HARNESS_LOG="$SCRATCH_ROOT/run.log"
 DBUS_ADDRESS_FILE="$SCRATCH_ROOT/dbus-address.txt"
 XVFB_LOG="$SCRATCH_ROOT/xvfb.log"
 OPENBOX_LOG="$SCRATCH_ROOT/openbox.log"
@@ -148,6 +150,8 @@ mkdir -p \
   "$XDG_DATA_HOME_SCRATCH" \
   "$XDG_CACHE_HOME_SCRATCH" \
   "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0"
+: > "$FAILURE_LOG"
+: > "$HARNESS_LOG"
 
 # `gtk-enable-animations=0` is load-bearing, not cosmetic: with animations on,
 # an AdwDialog opens through a spring transition that this environment (debug
@@ -193,14 +197,26 @@ write_artist_news_fixtures
 XVFB_PID=""
 OPENBOX_PID=""
 APP_LAUNCH_PID=""
-FAILURES=0
 
-log_step() { echo "[ptr-e2e] $*"; }
-log_fail() { echo "[ptr-e2e] FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }
+log_step() {
+  local line="[ptr-e2e] $*"
+  printf '%s\n' "$line"
+  printf '%s\n' "$line" >> "$HARNESS_LOG"
+}
+
+log_fail() {
+  local line="[ptr-e2e] FAIL: $*"
+  printf '%s\n' "$*" >> "$FAILURE_LOG"
+  printf '%s\n' "$line" >&2
+  printf '%s\n' "$line" >> "$HARNESS_LOG"
+}
+
+failure_count() {
+  wc -l < "$FAILURE_LOG" 2>/dev/null || echo 0
+}
 
 cleanup() {
-  local exit_code=$? effective_exit_code
-  effective_exit_code=$(( exit_code != 0 ? exit_code : (FAILURES > 0 ? 1 : 0) ))
+  local exit_code=$? effective_exit_code failures emitted_failures mismatch=0
   log_step "cleaning up…"
   # The app was launched via `setsid`, so its PID is also its process group
   # id — killing the negative PGID takes the whole dbus-run-session/cargo/
@@ -216,18 +232,28 @@ cleanup() {
   if [ -n "$XVFB_PID" ]; then
     kill -KILL "$XVFB_PID" 2>/dev/null || true
   fi
-  # Preserved unconditionally (success or failure) so a failed run still
-  # leaves the app's stderr log behind for a human/controller to inspect —
-  # scratch dir removal below would otherwise take it with it.
-  if [ -f "$APP_LOG" ]; then
-    cp "$APP_LOG" "$PTR_E2E_OUT_DIR/app.log" 2>/dev/null || true
+  failures="$(failure_count)"
+  emitted_failures="$(grep -c 'FAIL:' "$HARNESS_LOG" 2>/dev/null || true)"
+  if [ "$failures" -ne "$emitted_failures" ]; then
+    mismatch=1
+    local mismatch_line="[ptr-e2e] TALLY MISMATCH: failure ledger has $failures line(s), emitted run log has $emitted_failures FAIL: line(s)"
+    printf '%s\n' "$mismatch_line" >&2
+    printf '%s\n' "$mismatch_line" >> "$HARNESS_LOG"
   fi
-  rm -rf "$SCRATCH_ROOT"
+  effective_exit_code=$(( exit_code != 0 ? exit_code : ((failures > 0 || mismatch != 0) ? 1 : 0) ))
   if [ "$effective_exit_code" -eq 0 ]; then
     log_step "done — all checks passed"
   else
-    log_step "done — see failures above (exit $effective_exit_code, $FAILURES failed check(s))"
+    log_step "done — see failures above (exit $effective_exit_code, $failures failed check(s))"
   fi
+  # Preserved unconditionally (success or failure) so a failed run still
+  # leaves the app and harness logs behind for diagnosis — scratch removal
+  # below would otherwise take them with it.
+  if [ -f "$APP_LOG" ]; then
+    cp "$APP_LOG" "$PTR_E2E_OUT_DIR/app.log" 2>/dev/null || true
+  fi
+  cp "$HARNESS_LOG" "$PTR_E2E_OUT_DIR/run.log" 2>/dev/null || true
+  rm -rf "$SCRATCH_ROOT"
   exit "$effective_exit_code"
 }
 trap cleanup EXIT
@@ -250,7 +276,7 @@ for _ in $(seq 1 50); do
 done
 DISPLAY_NUM="$(tr -d '[:space:]' < "$DISPLAYFD_FILE")"
 if [ -z "$DISPLAY_NUM" ]; then
-  echo "FAIL: Xvfb never reported a display number (see $XVFB_LOG)" >&2
+  log_fail "Xvfb never reported a display number (see $XVFB_LOG)"
   exit 1
 fi
 export DISPLAY=":$DISPLAY_NUM"
@@ -294,180 +320,8 @@ setsid env \
 APP_LAUNCH_PID=$!
 
 # --- Helpers -------------------------------------------------------------
-
-# Polls up to ~15s for a mapped window whose WM_CLASS contains
-# $WINDOW_CLASS_MATCH, printing its X window id on success.
-find_window() {
-  local win=""
-  for _ in $(seq 1 30); do
-    win="$(xdotool search --class "$WINDOW_CLASS_MATCH" 2>/dev/null | head -1 || true)"
-    if [ -n "$win" ]; then
-      echo "$win"
-      return 0
-    fi
-    sleep 0.5
-  done
-  return 1
-}
-
-screenshot() {
-  local name="$1"
-  scrot -o "$PTR_E2E_OUT_DIR/$name.png"
-}
-
-click_at() {
-  local x="$1" y="$2"
-  xdotool mousemove --sync "$x" "$y" sleep 0.1 click 1 >/dev/null 2>&1
-}
-# On-screen rect of the app window as `X Y WIDTH HEIGHT`.
-#
-# While the window was maximized at the full 1600x900, a wrong origin made no
-# difference — every in-window offset landed on the window either way. The
-# moment Compact mode shrinks it to 580x360 it decides everything: a pointer
-# event delivered to the root window is where openbox reads a wheel step as
-# "switch virtual desktop", which is how one scroll-volume assertion turned
-# every later screenshot into a black frame showing openbox's "desktop 3"
-# indicator.
-window_rect() {
-  local geometry
-  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
-  printf '%s %s %s %s' \
-    "$(sed -n 's/^X=//p' <<<"$geometry")" \
-    "$(sed -n 's/^Y=//p' <<<"$geometry")" \
-    "$(sed -n 's/^WIDTH=//p' <<<"$geometry")" \
-    "$(sed -n 's/^HEIGHT=//p' <<<"$geometry")"
-}
-
-# Fails the check rather than the run when an offset falls outside the window:
-# a pointer event delivered to the desktop is never what a flow meant to test.
-assert_point_in_window() {
-  local relative_x="$1" relative_y="$2" description="$3"
-  local rect width height
-  rect="$(window_rect)"
-  width="$(cut -d' ' -f3 <<<"$rect")"
-  height="$(cut -d' ' -f4 <<<"$rect")"
-  if [ -z "$width" ] || [ -z "$height" ]; then
-    log_fail "$description (could not read window geometry)"
-    return 1
-  fi
-  if [ "$relative_x" -lt 0 ] || [ "$relative_x" -ge "$width" ] \
-    || [ "$relative_y" -lt 0 ] || [ "$relative_y" -ge "$height" ]; then
-    log_fail "$description (offset ${relative_x}x${relative_y} outside ${width}x${height} window)"
-    return 1
-  fi
-  return 0
-}
-
-click_window_relative() {
-  local relative_x="$1" relative_y="$2" button="${3:-1}"
-  local rect window_x window_y
-  assert_point_in_window "$relative_x" "$relative_y" "click at ${relative_x}x${relative_y}" || return 0
-  rect="$(window_rect)"
-  window_x="$(cut -d' ' -f1 <<<"$rect")"
-  window_y="$(cut -d' ' -f2 <<<"$rect")"
-  xdotool mousemove "$((window_x + relative_x))" "$((window_y + relative_y))" \
-    click "$button" >/dev/null 2>&1
-}
-
-click_window_from_right() {
-  local right_offset="$1" relative_y="$2" button="${3:-1}"
-  local width
-  width="$(cut -d' ' -f3 <<<"$(window_rect)")"
-  click_window_relative "$((width - right_offset))" "$relative_y" "$button"
-}
-
-double_click_at() {
-  local x="$1" y="$2"
-  xdotool mousemove "$x" "$y" click --repeat 2 --delay 80 1 >/dev/null 2>&1
-}
-
-type_text() {
-  xdotool type -- "$1" >/dev/null 2>&1
-}
-
-key() {
-  xdotool key "$1" >/dev/null 2>&1
-}
-
-assert_window_within() {
-  local max_width="$1" max_height="$2" description="$3"
-  local geometry width height
-  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
-  width="$(sed -n 's/^WIDTH=//p' <<<"$geometry")"
-  height="$(sed -n 's/^HEIGHT=//p' <<<"$geometry")"
-  if [ -n "$width" ] && [ -n "$height" ] &&
-     [ "$width" -le "$max_width" ] && [ "$height" -le "$max_height" ]; then
-    log_step "window geometry OK: $description (${width}x${height})"
-  else
-    log_fail "$description exceeded ${max_width}x${max_height} (got ${width:-?}x${height:-?})"
-  fi
-}
-
-maximize_window() {
-  local geometry current_width=0 current_height=0
-  wmctrl -i -r "$WINDOW_ID" -b add,maximized_vert,maximized_horz
-  for _ in $(seq 1 30); do
-    geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
-    current_width="$(sed -n 's/^WIDTH=//p' <<<"$geometry")"
-    current_height="$(sed -n 's/^HEIGHT=//p' <<<"$geometry")"
-    if [ "${current_width:-0}" -ge 1500 ] && [ "${current_height:-0}" -ge 850 ]; then
-      sleep 0.3
-      return
-    fi
-    wmctrl -i -r "$WINDOW_ID" -b add,maximized_vert,maximized_horz
-    sleep 0.1
-  done
-  echo "FAIL: Reprise window did not reach the fixed maximized harness geometry" >&2
-  exit 1
-}
-
-drag_and_hold() {
-  local from_x="$1" from_y="$2" to_x="$3" to_y="$4"
-  xdotool mousemove "$from_x" "$from_y" mousedown 1 >/dev/null 2>&1
-  sleep 0.2
-  xdotool mousemove --sync "$((from_x + 20))" "$((from_y + 5))" >/dev/null 2>&1
-  sleep 0.2
-  xdotool mousemove --sync "$((to_x - 8))" "$to_y" >/dev/null 2>&1
-  sleep 0.2
-  xdotool mousemove --sync "$to_x" "$to_y" >/dev/null 2>&1
-}
-
-release_drag() {
-  xdotool mouseup 1 >/dev/null 2>&1
-}
-
-# Non-trivial-image check: a solid/blank capture has a standard deviation
-# near zero; a real rendered UI does not. Threshold (50) sits comfortably
-# below the ~3600 measured on a real capture at this resolution/theme and
-# comfortably above the ~0 a blank/solid capture would produce.
-assert_screenshot_not_blank() {
-  local path="$1"
-  if [ ! -s "$path" ]; then
-    log_fail "screenshot missing or empty: $path"
-    return
-  fi
-  local stddev
-  stddev="$(convert "$path" -format '%[standard-deviation]' info: 2>/dev/null || echo 0)"
-  # Integer-truncate for a portable numeric comparison (bash has no floats).
-  local stddev_int="${stddev%%.*}"
-  if [ -z "$stddev_int" ] || [ "$stddev_int" -lt 50 ]; then
-    log_fail "screenshot looks blank/solid (standard-deviation=$stddev): $path"
-  else
-    log_step "screenshot OK ($path): standard-deviation=$stddev"
-  fi
-}
-
-assert_screenshots_differ() {
-  local before="$1" after="$2" description="$3"
-  local changed
-  changed="$(compare -metric AE "$before" "$after" null: 2>&1 || true)"
-  changed="${changed%% *}"
-  if awk -v changed="${changed:-0}" 'BEGIN { exit !(changed > 100) }'; then
-    log_step "screenshot difference OK: $description ($changed pixels)"
-  else
-    log_fail "$description did not visibly change the mapped UI (${changed:-0} pixels)"
-  fi
-}
+# shellcheck source=window-helpers.sh
+source "$REPO_ROOT/scripts/ptr-e2e/window-helpers.sh"
 
 # tracing_subscriber's default formatter colors each field's key/`=`/value
 # separately with SGR escape codes even when stderr is redirected to a file
@@ -496,6 +350,31 @@ assert_log_contains_since() {
   else
     log_fail "log never showed: $description (pattern: $pattern)"
   fi
+}
+
+assert_log_sequence_since() {
+  local since_line="$1" description="$2"
+  shift 2
+  local plain remaining pattern match_line all_found
+  for _ in $(seq 1 20); do
+    plain="$(tail -n "+$((since_line + 1))" "$APP_LOG" | sed -E "$ANSI_STRIP_RE")"
+    remaining="$plain"
+    all_found=1
+    for pattern in "$@"; do
+      if ! match_line="$(grep -Ein -m1 -- "$pattern" <<<"$remaining" | cut -d: -f1)"; then
+        all_found=0
+        break
+      fi
+      remaining="$(tail -n "+$((match_line + 1))" <<<"$remaining")"
+    done
+    if [ "$all_found" -eq 1 ]; then
+      log_step "log sequence OK: $description"
+      return 0
+    fi
+    sleep 0.05
+  done
+  log_fail "log never showed in order: $description"
+  return 1
 }
 
 assert_log_absent_since() {
@@ -558,9 +437,9 @@ assert_db_query_true() {
 # reports "1 failed check" for flows that never executed — which is exactly how
 # a dropped `missing` column hid behind a suite that looked almost green.
 #
-# Assigns into a caller-named variable rather than printing: `log_fail` inside
-# a command substitution would bump `FAILURES` in a subshell, so the failure
-# would print but never reach the tally.
+# Assigns into a caller-named variable rather than printing so the scalar is
+# never confused with harness diagnostics. Failure accounting itself is
+# file-backed and therefore also survives a command substitution.
 db_scalar_into() {
   local target="$1" query="$2" description="$3" out
   printf -v "$target" '%s' ''
@@ -576,14 +455,15 @@ db_scalar_into() {
 }
 
 dismiss_onboarding_banner() {
-  local failures_before="$FAILURES"
+  local failures_before
+  failures_before="$(failure_count)"
   log_step "dismissing the online-sources onboarding banner…"
   click_at "$DISCOVERY_BANNER_NOT_NOW_X" "$DISCOVERY_BANNER_NOT_NOW_Y"
   sleep 0.5
   assert_db_value "online_sources.discovery_banner_completed" "1" \
     "online-sources onboarding banner dismissal persisted"
-  if [ "$FAILURES" -gt "$failures_before" ]; then
-    echo "FAIL: onboarding banner dismissal was not persisted; refusing to run coordinate flows" >&2
+  if [ "$(failure_count)" -gt "$failures_before" ]; then
+    log_fail "onboarding banner dismissal was not persisted; refusing to run coordinate flows"
     exit 1
   fi
   sleep 0.5
@@ -593,7 +473,7 @@ dismiss_onboarding_banner() {
 
 log_step "waiting for the Reprise window (WM_CLASS matching '$WINDOW_CLASS_MATCH')…"
 if ! WINDOW_ID="$(find_window)"; then
-  echo "FAIL: no window with WM_CLASS matching '$WINDOW_CLASS_MATCH' appeared within ~15s" >&2
+  log_fail "no window with WM_CLASS matching '$WINDOW_CLASS_MATCH' appeared within ~15s"
   echo "--- app log tail ---" >&2
   tail -n 40 "$APP_LOG" >&2 || true
   exit 1
@@ -605,10 +485,10 @@ log_step "found window $WINDOW_ID"
 # natural-size publication and can leave a 1200x800 window on this 1600x900
 # root, invalidating every fixed pointer coordinate below.
 if ! wait_for_painted_window; then
-  echo "FAIL: mapped Reprise window stayed blank for six seconds" >&2
+  log_fail "mapped Reprise window stayed blank for six seconds"
   exit 1
 fi
-maximize_window
+maximize_window || exit 1
 sleep 1
 
 # --- Row/column geometry (this harness's known limit — see README) ----------
@@ -749,8 +629,8 @@ log_step "flow 3: Queue insertion target and drag reorder…"
 # already-idle player emits no `StateChanged` event to wait for.
 mpris_call Stop
 sleep 0.2
-PLAYBACK_STATUS="$(mpris_property PlaybackStatus)"
-if grep -q 'Stopped' <<<"$PLAYBACK_STATUS"; then
+PLAYBACK_STATUS="$(mpris_playback_status)"
+if [ "$PLAYBACK_STATUS" = 'Stopped' ]; then
   log_step "MPRIS check OK: playback frozen before Queue mutation"
 else
   log_fail "MPRIS Stop left playback running before Queue mutation (got $PLAYBACK_STATUS)"
@@ -832,21 +712,16 @@ assert_log_contains_since "$MARKER" \
 
 MARKER=$(log_marker)
 mpris_call Next
-sleep 0.2
-assert_log_contains_since "$MARKER" \
+# With 1.16 s fixtures and fakesink, X can hand off gaplessly to Y before the
+# shell wakes from a fixed sleep. Assert the product sequence under one marker
+# instead of pretending each manual item belongs to a separate MPRIS click:
+# dequeue X, start X, dequeue Y, start Y.
+assert_log_sequence_since "$MARKER" \
+  "manual tracks X and Y were consumed in their queued order" \
+  "up next changed.*up_next_len=1" \
   "playback started.*track_id=$TRACK_ID_X.*from_up_next=true" \
-  "MPRIS Next consumed reordered manual track X before the context"
-assert_log_contains_since "$MARKER" "up next changed.*up_next_len=1" \
-  "visible Up Next count changed from two to one"
-
-MARKER=$(log_marker)
-mpris_call Next
-sleep 0.2
-assert_log_contains_since "$MARKER" \
-  "playback started.*track_id=$TRACK_ID_Y.*from_up_next=true" \
-  "second MPRIS Next consumed manual track Y"
-assert_log_contains_since "$MARKER" "up next changed.*up_next_len=0" \
-  "visible Up Next count changed from one to zero"
+  "up next changed.*up_next_len=0" \
+  "playback started.*track_id=$TRACK_ID_Y.*from_up_next=true"
 
 MARKER=$(log_marker)
 mpris_call Next
@@ -884,8 +759,9 @@ assert_log_absent \
 log_step "final screenshot: $PTR_E2E_OUT_DIR/24-final.png"
 log_step "app log will be preserved at: $PTR_E2E_OUT_DIR/app.log (copied by cleanup())"
 
-if [ "$FAILURES" -ne 0 ]; then
-  echo "[ptr-e2e] $FAILURES check(s) failed" >&2
+CURRENT_FAILURES="$(failure_count)"
+if [ "$CURRENT_FAILURES" -ne 0 ]; then
+  log_step "$CURRENT_FAILURES check(s) failed"
 fi
 
 # `cleanup` (EXIT trap) computes and returns the real exit code.
