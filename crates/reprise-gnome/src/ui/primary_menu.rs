@@ -51,6 +51,7 @@ pub(super) struct Callbacks {
     pub(super) on_import_playlist: Rc<dyn Fn()>,
     pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
     pub(super) on_preferences: Rc<dyn Fn()>,
+    pub(super) on_about: Rc<dyn Fn()>,
 }
 
 /// View section: mode switches and personal views.
@@ -242,12 +243,8 @@ pub(super) fn install(
 
     let about = gio::SimpleAction::new(ACTION_ABOUT, None);
     {
-        let window = window.downgrade();
-        about.connect_activate(move |_, _| {
-            if let Some(window) = window.upgrade() {
-                crate::ui::about::present(&window);
-            }
-        });
+        let cb = callbacks.on_about.clone();
+        about.connect_activate(move |_, _| cb());
     }
     window.add_action(&about);
 }

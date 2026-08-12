@@ -936,8 +936,8 @@ msgid "About Reprise"
 msgstr "À propos de Reprise"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:10
-msgid "Reprise Engine and Linux Platform"
-msgstr "Moteur Reprise et plateforme Linux"
+msgid "translator-credits"
+msgstr "Reprise contributors"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:13
 msgid "Help"

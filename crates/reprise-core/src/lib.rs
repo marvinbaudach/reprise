@@ -67,6 +67,7 @@ mod db_sync_log;
 mod db_tag_write_jobs;
 mod deleted_releases;
 pub mod device_sync;
+pub mod diagnostics;
 pub mod equalizer;
 pub mod events;
 pub mod external_link;

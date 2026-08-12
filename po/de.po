@@ -944,8 +944,8 @@ msgid "About Reprise"
 msgstr "Über Reprise"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:10
-msgid "Reprise Engine and Linux Platform"
-msgstr "Reprise-Engine und Linux-Plattform"
+msgid "translator-credits"
+msgstr "Marvin Baudach <tomateq@pm.me>"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:13
 msgid "Help"
