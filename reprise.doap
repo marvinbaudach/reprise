@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:foaf="http://xmlns.com/foaf/0.1/"
+         xmlns="http://usefulinc.com/ns/doap#">
+
+  <name xml:lang="en">Reprise</name>
+  <shortdesc xml:lang="en">Play and organize your music</shortdesc>
+  <description xml:lang="en">Reprise is a native music player for GNOME with a
+  fast, column-based library, playlists, a play queue, album covers, synchronized
+  played-track lyrics, tag editing, and MPRIS integration for media keys and the
+  lock screen. Optional ListenBrainz and Last.fm scrobbling can report completed
+  listens after explicit account setup.</description>
+
+  <homepage rdf:resource="https://marvinbaudach.github.io/reprise" />
+  <download-page rdf:resource="https://github.com/marvinbaudach/reprise/releases" />
+  <bug-database rdf:resource="https://github.com/marvinbaudach/reprise/issues" />
+
+  <programming-language>Rust</programming-language>
+  <platform>GTK4</platform>
+  <platform>libadwaita</platform>
+
+  <maintainer>
+    <foaf:Person>
+      <foaf:name>Marvin Baudach</foaf:name>
+      <foaf:mbox rdf:resource="mailto:tomateq@pm.me" />
+      <foaf:account>
+        <foaf:OnlineAccount>
+          <foaf:accountServiceHomepage rdf:resource="https://github.com" />
+          <foaf:accountName>marvinbaudach</foaf:accountName>
+        </foaf:OnlineAccount>
+      </foaf:account>
+    </foaf:Person>
+  </maintainer>
+
+</Project>
