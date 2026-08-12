@@ -20,6 +20,9 @@ internal interface LivePcmConsumer {
         channelCount: Int,
     )
 
+    /** Whether playback should run, even when Media3 is temporarily buffering. */
+    fun setPlaybackIntent(playbackIntended: Boolean)
+
     /** Drops both the CAVA processor and bass-detector history. */
     fun resetAudioStream()
 }
@@ -36,10 +39,14 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
     private var channelCount = 0
     private var encoding = C.ENCODING_INVALID
     private var scratch = ByteArray(0)
+    @Volatile
     private var playing = false
+    @Volatile
+    private var playbackIntended = false
 
     fun attach(consumer: LivePcmConsumer) {
         this.consumer = consumer
+        updatePlaybackIntentSafely(consumer, playbackIntended)
     }
 
     fun detach(consumer: LivePcmConsumer) {
@@ -83,6 +90,20 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
         if (playing == isPlaying) return
         playing = isPlaying
         if (isPlaying) consumer?.let(::resetSafely)
+    }
+
+    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        if (playbackIntended == playWhenReady) return
+        playbackIntended = playWhenReady
+        consumer?.let { updatePlaybackIntentSafely(it, playWhenReady) }
+    }
+
+    private fun updatePlaybackIntentSafely(target: LivePcmConsumer, intended: Boolean) {
+        try {
+            target.setPlaybackIntent(intended)
+        } catch (_: Throwable) {
+            // The visualizer is optional: discard its state change, never the audio.
+        }
     }
 
     private fun resetSafely(target: LivePcmConsumer) {

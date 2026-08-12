@@ -145,6 +145,7 @@ struct VisualState {
     last_live_audio_at: Option<Duration>,
     live_pressure: BassPressure,
     playing: bool,
+    playback_intended: bool,
 }
 
 /// One phone-local owner of the portable visual engine.
@@ -177,6 +178,16 @@ impl AndroidVisualEngine {
         expire_stale_live_audio(&mut state, self.clock.now());
         let has_audio = state.has_analysis || state.has_live_audio;
         state.engine.set_playing(playing && has_audio);
+    }
+
+    /// Records whether playback should be running, independently of whether
+    /// Media3 is currently producing audio while buffering or reconnecting.
+    pub fn set_playback_intended(&self, playback_intended: bool) {
+        let mut state = self.lock();
+        let stream_generation = self.current_stream_generation();
+        reconcile_stream_generation(&mut state, stream_generation);
+        state.playback_intended = playback_intended;
+        expire_stale_live_audio(&mut state, self.clock.now());
     }
 
     /// Starts a clean visual history for the next track.
@@ -386,7 +397,7 @@ fn expire_stale_live_audio(state: &mut VisualState, now: Duration) {
 
 fn live_audio_is_current(state: &VisualState, now: Duration) -> bool {
     state.has_live_audio
-        && (!state.playing
+        && (!state.playback_intended
             || state
                 .last_live_audio_at
                 .is_some_and(|last| now.saturating_sub(last) < LIVE_AUDIO_STALE_AFTER))
@@ -410,6 +421,7 @@ impl AndroidVisualEngine {
                 last_live_audio_at: None,
                 live_pressure: silent_pressure(),
                 playing: false,
+                playback_intended: false,
             }),
             live_audio: Mutex::new(None),
             stream_generation: AtomicU64::new(0),

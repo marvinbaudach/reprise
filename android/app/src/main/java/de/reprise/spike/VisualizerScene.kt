@@ -68,6 +68,9 @@ internal class NativeVisualSceneEngine(
 
     override fun ingestBands(bands: FloatArray) = native.ingestBands(bands.asList())
 
+    override fun setPlaybackIntent(playbackIntended: Boolean) =
+        native.setPlaybackIntended(playbackIntended)
+
     override fun ingestPcm16(
         bytes: ByteArray,
         byteCount: Int,

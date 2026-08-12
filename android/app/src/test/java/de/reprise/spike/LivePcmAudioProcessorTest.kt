@@ -1,6 +1,7 @@
 package de.reprise.spike
 
 import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.AudioProcessor.AudioFormat
@@ -12,6 +13,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LivePcmAudioProcessorTest {
+    @Test
+    fun playbackIntentRemainsTrueWhenIsPlayingFallsFalseForBuffering() {
+        val consumer = RecordingPcmConsumer()
+        val sink = LivePcmBufferSink().apply { attach(consumer) }
+
+        sink.onPlayWhenReadyChanged(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+        sink.onIsPlayingChanged(false)
+
+        assertEquals(listOf(false, true), consumer.playbackIntentChanges)
+    }
+
     @Test
     fun pcmArrivingAfterPlayerPauseIsDiscardedEvenAsABurst() {
         val consumer = RecordingPcmConsumer()
@@ -145,6 +157,11 @@ private class RecordingPcmConsumer : LivePcmConsumer {
     var channelCount = 0
     var resetCount = 0
     var ingestCount = 0
+    val playbackIntentChanges = mutableListOf<Boolean>()
+
+    override fun setPlaybackIntent(playbackIntended: Boolean) {
+        playbackIntentChanges += playbackIntended
+    }
 
     override fun ingestPcm16(
         bytes: ByteArray,
@@ -165,6 +182,8 @@ private class RecordingPcmConsumer : LivePcmConsumer {
 }
 
 private class ThrowingPcmConsumer : LivePcmConsumer {
+    override fun setPlaybackIntent(playbackIntended: Boolean) = Unit
+
     override fun ingestPcm16(
         bytes: ByteArray,
         byteCount: Int,
@@ -176,6 +195,8 @@ private class ThrowingPcmConsumer : LivePcmConsumer {
 }
 
 private class ThrowingResetConsumer : LivePcmConsumer {
+    override fun setPlaybackIntent(playbackIntended: Boolean) = Unit
+
     override fun ingestPcm16(
         bytes: ByteArray,
         byteCount: Int,

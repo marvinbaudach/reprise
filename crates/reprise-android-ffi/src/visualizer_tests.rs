@@ -179,18 +179,34 @@ fn paused_live_audio_reports_silence_without_forgetting_the_stream() {
 }
 
 #[test]
-fn live_pcm_staleness_pauses_with_playback_but_still_expires_while_playing() {
+fn live_pcm_staleness_pauses_while_playback_is_not_intended() {
     let clock = Arc::new(FakeMonotonicClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playback_intended(true);
     engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
     assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
 
+    engine.set_playback_intended(false);
     engine.set_playing(false);
     clock.advance(LIVE_AUDIO_STALE_AFTER + LIVE_AUDIO_STALE_AFTER);
     assert!(engine.has_live_audio());
+}
 
+#[test]
+fn live_pcm_staleness_expires_while_player_buffers_with_playback_intent() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playback_intended(true);
     engine.set_playing(true);
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    // Media3 reports isPlaying=false while buffering even though playWhenReady
+    // still carries the user's intent to play.
+    engine.set_playing(false);
+    clock.advance(LIVE_AUDIO_STALE_AFTER);
+
     assert!(!engine.has_live_audio());
 }
 
@@ -198,6 +214,7 @@ fn live_pcm_staleness_pauses_with_playback_but_still_expires_while_playing() {
 fn stale_live_pcm_reopens_the_stored_spectrogram_fallback() {
     let clock = Arc::new(FakeMonotonicClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playback_intended(true);
     engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
     assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));

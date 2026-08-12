@@ -338,6 +338,9 @@ private class LiveVisualSceneEngineLease(
         channelCount: Int,
     ) = engine.ingestPcm16(bytes, byteCount, sampleRateHz, channelCount)
 
+    override fun setPlaybackIntent(playbackIntended: Boolean) =
+        engine.setPlaybackIntent(playbackIntended)
+
     override fun resetAudioStream() = engine.resetAudioStream()
 
     override fun close() {
