@@ -10,11 +10,10 @@ pub(crate) fn migrate_v71(conn: &Connection) -> Result<(), rusqlite::Error> {
 
     let transaction = conn.unchecked_transaction()?;
     transaction.execute(
-        "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, CASE WHEN \
+        "INSERT OR IGNORE INTO settings (key, value) SELECT ?1, '1' WHERE \
          COALESCE((SELECT value FROM settings WHERE key = ?2), '0') = '1' AND \
          COALESCE((SELECT value FROM settings WHERE key = ?3), '0') = '1' AND \
-         COALESCE((SELECT value FROM settings WHERE key = ?4), '0') = '1' \
-         THEN '1' ELSE '0' END)",
+         COALESCE((SELECT value FROM settings WHERE key = ?4), '0') = '1'",
         rusqlite::params![
             crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE),
             crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,

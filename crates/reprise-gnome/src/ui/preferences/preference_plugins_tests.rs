@@ -225,6 +225,18 @@ fn set_11_collapsed_online_content_reveals_all_sources_read_only() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn plugins_alignment_placeholder_is_presentation_only() {
+    gtk4::init().unwrap();
+    let placeholder = switch_alignment_placeholder();
+
+    assert_eq!(
+        placeholder.accessible_role(),
+        gtk4::AccessibleRole::Presentation
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn set_11_online_content_starts_with_a_persistent_master_row() {
     gtk4::init().unwrap();
     let master = online_master_row(false);
