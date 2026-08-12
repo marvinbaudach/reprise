@@ -13,7 +13,7 @@ struct ReceiptHarness {
     window: gtk4::Window,
     entry: gtk4::SearchEntry,
     search: SearchPopover,
-    _coordinator: Rc<SectionSearch>,
+    coordinator: Rc<SectionSearch>,
     layout: FilterBarLayout,
     facets: gtk4::Box,
     applied: Rc<RefCell<Vec<String>>>,
@@ -63,7 +63,7 @@ impl ReceiptHarness {
             window,
             entry,
             search,
-            _coordinator: coordinator,
+            coordinator,
             layout,
             facets,
             applied,
@@ -256,7 +256,7 @@ fn search_13_closing_with_a_blank_query_commits_nothing() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_14_escape_closes_and_keeps_the_filtered_result_set() {
+fn search_14_escape_discards_while_enter_commits_the_filtered_result_set() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let harness = ReceiptHarness::new();
@@ -266,22 +266,15 @@ fn search_14_escape_closes_and_keeps_the_filtered_result_set() {
         harness.search.press_close_key(gtk4::gdk::Key::Escape),
         gtk4::glib::Propagation::Stop
     );
-    settle_until("Escape commits the receipt", || {
-        harness.search_chip().is_some()
-    });
-    assert!(!harness.search.is_open());
-    assert_eq!(
-        harness.applied.borrow().last().map(String::as_str),
-        Some("wer")
-    );
-    harness.search_chip().unwrap().emit_clicked();
-    settle_until("the receipt's clear action releases the filter", || {
+    settle_until("Escape releases the filter", || {
         harness
             .applied
             .borrow()
             .last()
             .is_some_and(String::is_empty)
     });
+    assert!(!harness.search.is_open());
+    assert!(harness.entry.text().is_empty());
     assert!(harness.search_chip().is_none());
 
     harness.open_and_type("wer");
@@ -294,6 +287,7 @@ fn search_14_escape_closes_and_keeps_the_filtered_result_set() {
     });
     assert!(!harness.search.is_open());
     assert_eq!(harness.entry.text(), "wer");
+    assert!(harness.search_chip().is_some());
 }
 
 #[test]
@@ -308,11 +302,39 @@ fn nav_6a_escape_is_consumed_before_navigation() {
         harness.search.press_close_key(gtk4::gdk::Key::Escape),
         gtk4::glib::Propagation::Stop
     );
-    assert_eq!(harness.entry.text(), "wer");
+    assert!(harness.entry.text().is_empty());
 }
 
-/// UX SEARCH-4a: the two halves this design actually rests on, neither of
-/// which `press_close_key` can reach.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_4a_closed_popover_escape_removes_the_committed_chip_and_filter() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let harness = ReceiptHarness::new();
+    harness.open_and_type("wer");
+    assert_eq!(
+        harness.search.press_close_key(gtk4::gdk::Key::Return),
+        gtk4::glib::Propagation::Stop
+    );
+    settle_until("Enter commits the search chip", || {
+        harness.search_chip().is_some()
+    });
+
+    assert!(harness.coordinator.clear_active_query());
+    settle_until("closed-popover Escape releases the filter", || {
+        harness
+            .applied
+            .borrow()
+            .last()
+            .is_some_and(String::is_empty)
+    });
+
+    assert!(harness.entry.text().is_empty());
+    assert!(harness.search_chip().is_none());
+}
+
+/// UX SEARCH-4a: the capture controller and fallback must both reach the same
+/// one-stage abort path.
 ///
 /// `press_close_key` calls the handler directly, so it proves what the handler
 /// does and nothing about whether the handler wins. Two things decide that,
@@ -321,15 +343,13 @@ fn nav_6a_escape_is_consumed_before_navigation() {
 /// 1. our key controller sits on the entry in the **capture** phase, so it
 ///    runs before `GtkSearchEntry`'s own bubble-phase key bindings, and
 /// 2. `stop-search` — the signal Escape would reach if it ever got past us —
-///    has no default handler that clears the text.
+///    also clears the query and closes the popover.
 ///
-/// Measured on GTK 4.22.4. If a future GTK starts clearing on `stop-search`,
-/// or the phase is changed to Bubble in a refactor, Escape silently becomes
-/// the old two-stage clear again and every behavioural test above still
-/// passes. This is the test that goes red instead.
+/// If the phase is changed to Bubble in a refactor, the entry or navigation
+/// can consume Escape first. This test is the structural counterproof.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_4a_escape_cannot_reach_the_entrys_own_clear() {
+fn search_4a_escape_is_captured_and_stop_search_uses_the_same_abort() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let harness = ReceiptHarness::new();
@@ -349,11 +369,16 @@ fn search_4a_escape_cannot_reach_the_entrys_own_clear() {
     );
 
     harness.entry.emit_stop_search();
-    assert_eq!(
-        harness.entry.text(),
-        "wer",
-        "GtkSearchEntry must not clear its own text on stop-search"
-    );
+    settle_until("stop-search releases the filter", || {
+        harness
+            .applied
+            .borrow()
+            .last()
+            .is_some_and(String::is_empty)
+    });
+    assert!(harness.entry.text().is_empty());
+    assert!(!harness.search.is_open());
+    assert!(harness.search_chip().is_none());
 }
 
 #[test]

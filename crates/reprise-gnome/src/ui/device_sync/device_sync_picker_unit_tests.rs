@@ -66,3 +66,62 @@ fn mtp_51_select_all_selects_every_named_playlist_without_selecting_everything()
         [false, true, true]
     );
 }
+
+#[test]
+fn mtp_51_escape_clears_a_filter_before_the_dialog_can_close() {
+    let cleared = std::cell::Cell::new(false);
+    assert_eq!(
+        picker_escape_propagation(
+            gtk4::gdk::Key::Escape,
+            gtk4::gdk::ModifierType::empty(),
+            "rock",
+            &|| cleared.set(true),
+        ),
+        gtk4::glib::Propagation::Stop
+    );
+    assert!(cleared.get());
+
+    assert_eq!(
+        picker_escape_propagation(
+            gtk4::gdk::Key::Escape,
+            gtk4::gdk::ModifierType::empty(),
+            "",
+            &|| panic!("an empty picker filter must leave Escape to the dialog"),
+        ),
+        gtk4::glib::Propagation::Proceed
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_51_filtered_picker_escape_leaves_the_dialog_open() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let parent = gtk4::Window::new();
+    parent.present();
+    let filter = gtk4::SearchEntry::new();
+    filter.set_text("rock");
+    wire_picker_filter_escape(&filter);
+    let dialog = libadwaita::Dialog::new();
+    dialog.set_child(Some(&filter));
+    dialog.present(Some(&parent));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(
+        picker_escape_propagation(
+            gtk4::gdk::Key::Escape,
+            gtk4::gdk::ModifierType::empty(),
+            filter.text().as_str(),
+            &|| filter.set_text(""),
+        ),
+        gtk4::glib::Propagation::Stop
+    );
+
+    assert!(filter.text().is_empty());
+    assert!(
+        dialog.is_visible(),
+        "clearing the filter must not close the picker"
+    );
+    dialog.force_close();
+    parent.close();
+}

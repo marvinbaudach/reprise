@@ -320,6 +320,33 @@ fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
     );
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_4a_music_clear_path_removes_query_and_chip() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = test_bar();
+    bar.set_search("falling");
+    bar.set_committed_query("falling");
+    bar.set_on_search_cleared({
+        let bar = Rc::downgrade(&bar);
+        move || {
+            if let Some(bar) = bar.upgrade() {
+                bar.set_search("");
+                bar.set_committed_query("");
+            }
+        }
+    });
+
+    bar.layout
+        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+        .and_downcast::<gtk4::Button>()
+        .expect("Music search chip")
+        .emit_clicked();
+
+    bar.layout.assert_search_cleared(&bar.search.borrow());
+}
+
 fn descendant_labels(widget: &impl IsA<gtk4::Widget>) -> Vec<String> {
     descendants::<gtk4::Label>(widget)
         .into_iter()

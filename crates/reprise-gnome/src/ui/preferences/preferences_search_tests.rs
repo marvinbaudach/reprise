@@ -10,6 +10,36 @@ use crate::ui::preferences_window::{self, PageId};
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn set_13_one_escape_clears_and_closes_settings_search() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let app = adw::Application::builder()
+        .application_id("io.github.marvinbaudach.Reprise.SettingsSearchEscapeTest")
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gio::Cancellable>).unwrap();
+    let parent = adw::ApplicationWindow::new(&app);
+    parent.present();
+    let shell = preferences_window::build(search_pages(), None, None);
+    shell.dialog.present(Some(&parent));
+    settle_layout();
+
+    shell.search.reveal();
+    shell.search.entry().set_text("cover");
+    settle_layout();
+    shell.search.entry().emit_stop_search();
+    settle_layout();
+
+    assert!(shell.search.entry().text().is_empty());
+    assert!(!shell.search.is_revealed());
+    assert!(!shell.search.entry().has_focus());
+
+    shell.dialog.force_close();
+    parent.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn set_13_sidebar_counts_and_dims_without_changing_width() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

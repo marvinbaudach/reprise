@@ -1,6 +1,7 @@
 //! Application and window keyboard shortcuts. Space toggles playback only
 //! when the focused widget does not own Space itself. The search popover owns
-//! Escape and Enter locally; Ctrl+F toggles it while preserving its query.
+//! Escape and Enter locally; a closed search chip gives unhandled Escape one
+//! window-level clear action; Ctrl+F toggles the popover.
 //!
 //! ## Shortcut wiring mechanisms
 //!
@@ -24,8 +25,10 @@
 //!   no-op action handler can return it to the focused control.
 //!
 //! - **Escape and Enter** are capture-phase entry controls installed by
-//!   `SearchPopover`. They close without changing the entry, then use the
-//!   active-content focus callback supplied here.
+//!   `SearchPopover`. Enter commits and closes; Escape clears through the
+//!   active section and closes. A bubble-phase window controller clears a
+//!   committed chip only after local dialogs, popovers, menus and views had
+//!   their chance to consume Escape.
 //!
 //! ## What's verified headlessly vs. manually
 //!
@@ -114,11 +117,13 @@ pub(in crate::ui) fn wire(
     let ShortcutHooks {
         focus_active_content,
         search_available,
+        clear_active_search,
     } = hooks;
     wire_toggle_play_pause(app, window, player);
     wire_window_lifecycle(app, window);
     search.set_focus_on_close(focus_active_content);
     wire_focus_search(app, window, search.downgrade(), search_available);
+    wire_search_escape(window, clear_active_search);
 }
 
 /// The shell decisions the shortcuts have to ask about rather than make:
@@ -127,6 +132,31 @@ pub(in crate::ui) fn wire(
 pub struct ShortcutHooks {
     pub focus_active_content: Rc<dyn Fn() -> bool>,
     pub search_available: Rc<dyn Fn() -> bool>,
+    pub clear_active_search: Rc<dyn Fn() -> bool>,
+}
+
+fn wire_search_escape(window: &adw::ApplicationWindow, clear_active_search: Rc<dyn Fn() -> bool>) {
+    let keys = gtk4::EventControllerKey::new();
+    keys.set_propagation_phase(gtk4::PropagationPhase::Bubble);
+    keys.connect_key_pressed(move |_, key, _, modifiers| {
+        handle_search_escape(key, modifiers, clear_active_search.as_ref())
+    });
+    window.add_controller(keys);
+}
+
+fn handle_search_escape(
+    key: gtk4::gdk::Key,
+    modifiers: gtk4::gdk::ModifierType,
+    clear_active_search: &dyn Fn() -> bool,
+) -> gtk4::glib::Propagation {
+    if key != gtk4::gdk::Key::Escape || !modifiers.is_empty() {
+        return gtk4::glib::Propagation::Proceed;
+    }
+    if clear_active_search() {
+        gtk4::glib::Propagation::Stop
+    } else {
+        gtk4::glib::Propagation::Proceed
+    }
 }
 
 /// Space: `win.toggle-play-pause`, dispatched by a focus-sensitive capture
@@ -289,7 +319,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_4a_escape_closes_and_keeps_the_query() {
+    fn search_4a_escape_closes_and_discards_the_query() {
         gtk4::init().unwrap();
         let lens = gtk4::ToggleButton::new();
         let entry = gtk4::SearchEntry::new();
@@ -314,9 +344,58 @@ mod tests {
             gtk4::glib::Propagation::Stop
         );
         assert!(!search.is_open());
-        assert_eq!(entry.text(), "falling");
+        assert!(entry.text().is_empty());
         assert_eq!(focus_calls.get(), 1);
         window.close();
+    }
+
+    #[test]
+    fn search_4a_closed_search_escape_consumes_only_an_active_query() {
+        let calls = std::cell::Cell::new(0);
+        assert_eq!(
+            handle_search_escape(
+                gtk4::gdk::Key::Escape,
+                gtk4::gdk::ModifierType::empty(),
+                &|| {
+                    calls.set(calls.get() + 1);
+                    true
+                },
+            ),
+            gtk4::glib::Propagation::Stop
+        );
+        assert_eq!(calls.get(), 1);
+
+        assert_eq!(
+            handle_search_escape(
+                gtk4::gdk::Key::Escape,
+                gtk4::gdk::ModifierType::empty(),
+                &|| false,
+            ),
+            gtk4::glib::Propagation::Proceed,
+            "Escape without a query or pill stays available to navigation"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_4a_window_escape_waits_for_local_escape_owners() {
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.SearchEscapePhaseTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        let window = adw::ApplicationWindow::new(&app);
+        wire_search_escape(&window, Rc::new(|| false));
+
+        let phases: Vec<_> = window
+            .observe_controllers()
+            .into_iter()
+            .flatten()
+            .filter_map(|controller| controller.downcast::<gtk4::EventControllerKey>().ok())
+            .map(|controller| controller.propagation_phase())
+            .collect();
+        assert!(phases.contains(&gtk4::PropagationPhase::Bubble));
+        assert!(!phases.contains(&gtk4::PropagationPhase::Capture));
     }
 
     #[test]

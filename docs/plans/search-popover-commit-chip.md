@@ -16,8 +16,9 @@ every keystroke as a live echo of the entry.
 
 Visual reference: `Suchfilter.dc.html` in the Claude Design project *"Suchfilter
 und Podcast-Verhalten"* (`d7706c53-fb4f-4a75-ac65-a5fec97f1b02`). Its prototype
-already models this exact behaviour with `chipMode = "on-close"` and
-`escDiscards = false`.
+originally modelled the landed behaviour with `chipMode = "on-close"` and
+`escDiscards = false`. SEARCH-4a/14 were revised on 2026-08-12: Enter still
+commits, while Escape now discards through the section's chip-clear path.
 
 ---
 
@@ -184,10 +185,10 @@ siblings; keep the existing "replaced by" convention.
   once, on close, not from the entry's `changed` signal.
 - **SEARCH-13** — Closing with an empty or whitespace-only query renders no
   chip and changes nothing.
-- **SEARCH-14** — Dismissing is not undoing. Escape, Enter, a click outside and
-  the lens all close the popover and keep both the query and the filtering
-  (SEARCH-5/6). Releasing the filter is a separate, visible act: the chip's ×
-  or "Clear all". The query stays session- and section-scoped — never written
+- **SEARCH-14** — Enter commits the query and closes. Escape clears query, chip
+  and filtering through the active section's existing clear path and closes in
+  one press. A click outside and the lens still close while keeping the query
+  (SEARCH-5/6). The query stays session- and section-scoped — never written
   to `podcasts::config::save_filter` or the radio settings keys, dropped on
   restart, never carried between sections (SEARCH-8a).
 - **SEARCH-15** — Reopening the popover while a search chip exists hides that
@@ -204,11 +205,11 @@ Four supersessions, each needing its `[replaced by …]` line kept in place:
   bottom-end under the lens, without arrow, on the chrome surface, and carries
   the entry plus one muted caption line naming the searched scope and the
   "Esc to close" hint. It reflows nothing (SEARCH-10).
-- **SEARCH-4 → SEARCH-4a** — Escape is one stage now: it closes the popover and
-  keeps the query and the filtering. Clearing from the keyboard is the entry's
-  own clear icon; clearing from the filter bar is the chip's × or "Clear all".
-  Because search hides rows rather than highlighting them, dismissing the panel
-  and undoing the filter must not be the same key.
+- **SEARCH-4 → SEARCH-4a** — Escape is one stage: it clears query, chip and
+  filtering through the active section's existing clear path and closes the
+  popover in the same press. Enter keeps its original commit-and-close
+  behaviour. With a closed popover, Escape consumes the key only when a search
+  chip is active.
 - **SEARCH-7 → SEARCH-7a** — The popover autohides. A click outside closes it
   and keeps the query, chip and accent lens per SEARCH-3/5. The held-pointer
   machinery SEARCH-7 needed is gone with the strip: a popover close inserts and
@@ -254,12 +255,11 @@ self-contained job. Put it in `search_popover.rs`, target well under 300 lines.
    - `close()`: `popdown()`. Returning focus to the list is what
      `crate::ui::shortcuts` already does elsewhere; reuse the window's
      `set_focus` path rather than inventing a second one.
-   - Escape and Enter: a `GtkEventControllerKey` on the entry — `Escape` and
-     `Return`/`KP_Enter` both call `close()` and return
-     `Propagation::Stop`. Do **not** let `GtkSearchEntry`'s built-in
-     `stop-search` clear the text: `connect_stop_search` must close, not clear.
-     This is the single most likely place to reintroduce the old two-stage Esc,
-     so it needs the SEARCH-14 test pointed straight at it.
+   - Escape and Enter: a `GtkEventControllerKey` on the entry — `Return` and
+     `KP_Enter` commit and close, while `Escape` clears through the active
+     section's chip-clear path and then closes. All return `Propagation::Stop`.
+     `connect_stop_search` must use the same Escape abort path so toolkit signal
+     order cannot change the result.
    - `connect_closed` on the popover feeds the same `open_changed(false)`
      callback as an explicit `close()`, so autohide (click outside) and Escape
      are one path. That is what makes SEARCH-7a free.
@@ -410,10 +410,9 @@ New, in `search_popover_tests.rs` unless noted:
   `FilterBarSlot::Facets` with both populated.
 - `search_13_closing_with_a_blank_query_commits_nothing` — `""` and `"   "`,
   no chip, and the facet chips are untouched.
-- `search_14_escape_closes_and_keeps_the_filtered_result_set` — Escape closes,
-  the apply sink still holds `"wer"`, the chip is there; then activate the
-  chip's × and assert the sink receives `""`. A second assertion belongs here:
-  Enter behaves the same as Escape.
+- `search_14_escape_discards_while_enter_commits_the_filtered_result_set` —
+  Escape closes with an empty apply sink and no chip; Enter closes while the
+  apply sink still holds `"wer"` and the chip is present.
 - `search_15_reopening_hides_the_chip_and_prefills_the_entry` — with a committed
   chip present, open; the search slot empties, the entry text equals the chip's
   query, and the slot still has exactly one child after closing again (not two).
@@ -426,7 +425,7 @@ Renames and rewrites of existing tests (`library_chrome_tests.rs`,
 | `search_1_idle_is_icon_not_field` | `search_1a_…` |
 | `search_2b_bar_reveals_flush_under_headerbar` | `search_2c_popover_floats_without_reflowing` |
 | `search_2b_ctrl_f_reveals_and_focuses` (shortcuts.rs) | `search_2c_ctrl_f_opens_and_focuses` |
-| `search_4_escape_clears_then_collapses` (shortcuts.rs) | `search_4a_escape_closes_and_keeps_the_query` — **semantics invert**, rewrite the body |
+| `search_4_escape_clears_then_collapses` (shortcuts.rs) | `search_4a_escape_closes_and_discards_the_query` — one press clears and closes |
 | `search_4_escape_release_wins_over_late_search_bar_reopen` (shortcuts.rs) | delete — it guards a race that only a revealed top bar had |
 | `search_4_explicit_clear_discards_the_preserved_query` | `search_4a_the_entrys_clear_icon_discards_the_query` |
 | `search_7_*` (4 tests) | replace with one `search_7a_clicking_outside_closes_and_keeps_the_filter`; the held-pointer trio dies with the strip |

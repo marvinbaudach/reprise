@@ -154,13 +154,12 @@ result.
 - **NAV-6** [replaced by NAV-6a] [e2e] — Search (Ctrl+F) filters the current
   view live; Esc clears and closes. Search never navigates on its own.
 - **NAV-6a** [active] [gtk] — Search (Ctrl+F) filters the current view live;
-  Esc closes the search popover and **keeps** the query and the filtering
-  (SEARCH-4a). Search never navigates on its own: an Esc that closes the
-  popover is consumed there and does not also travel back through the
-  navigation history. NAV-6's "Esc clears" described the two-stage Escape of
-  the old search strip and contradicted SEARCH-4a from the moment the popover
-  landed; releasing a filter is the chip's × or "Clear all", never a dismissal
-  key.
+  Enter accepts the query, while Esc clears the query and filtering and closes
+  the popover in the same key press (SEARCH-4a). Search never navigates on its
+  own: an Esc that aborts an open search is consumed there and does not also
+  travel back through the navigation history. With the popover closed, Esc
+  consumes the key only when it removes a committed search chip; otherwise it
+  remains available to local overlays and navigation.
 - **NAV-7** [replaced by NAV-15] — Hamburger menu: "Scan Library" → starts the
   scan, stays in the view (card appears). "Preferences" → Preferences
   window. "Keyboard Shortcuts" → shortcuts overlay. "About Reprise" →
@@ -978,7 +977,10 @@ result.
   operate **one** decision — they write the same flag and neither holds a copy
   of it. It offers "Everything" and "Keep smart playlists up to date on each
   sync", because a
-  smart playlist not re-evaluated at sync time freezes on the phone.
+  smart playlist not re-evaluated at sync time freezes on the phone. This
+  filter is the deliberate dialog exception to SEARCH-4a: Esc with filter text
+  clears it and keeps the unfinished picker open; Esc with an empty filter
+  retains the dialog's standard close behaviour.
 - **MTP-52** [active] [core] [gtk] — After a complete, successful device scan,
   a selected track whose recorded device path is missing from the phone is
   copied again through the ordinary transfer plan, together with its analysis
@@ -1100,8 +1102,9 @@ result.
   are neutral.
 - **SET-13** [active] [gtk] — Preferences follows the content-list search
   grammar: its header reveals one centred "Search settings" field, `Ctrl+F`
-  reveals the same field, and `Esc` first clears a query and then closes the
-  field. Matching reads each preference row's title and subtitle plus its page
+  reveals the same field, and one `Esc` clears the query and closes the field,
+  returning focus through the existing close path. Matching reads each
+  preference row's title and subtitle plus its page
   name. Search mode keeps the sidebar's width, order and height stable: "All
   results" is selected above the five pages, every page shows its hit count,
   and a page with no hits remains present at 42% opacity. The result bar uses
@@ -2003,13 +2006,17 @@ the panel).
   field, Esc collapses the bar. A query is never made invisible by
   collapsing without its chip carrying it.
 - **SEARCH-4a** [active] [gtk] — Escape is one stage: it closes the popover and
-  keeps the query and filtering. Clearing from the keyboard is the entry's own
-  clear icon; clearing from the filter bar is the chip's × or "Clear all".
-  Because search hides rows rather than highlighting them, dismissing the
-  panel and undoing the filter must not be the same key.
+  discards the query through the active section's same clear path as the search
+  chip's ×, removes the chip and filtering, and returns focus to the list in
+  the same key press. The capture-phase handler consumes that key before the
+  entry or navigation can. With the popover already closed, an unmodified Esc
+  removes a committed search chip; with no query or chip it proceeds unchanged
+  so local overlays and navigation keep precedence. Enter still accepts the
+  query and only closes the popover.
 - **SEARCH-5** [active] [gtk] — Collapsing ends only the input, not the
-  filter. Query, results, and search chip are preserved until the user
-  explicitly removes them via Esc, chip, or „Clear all".
+  filter when the collapse comes from Enter, the lens, Ctrl+F, or autohide.
+  Query, results, and search chip are preserved until the user explicitly
+  removes them via Esc, chip, or „Clear all".
 - **SEARCH-10** [active] [gtk] — Opening and closing search changes no layout.
   The search surface is a popover over the content; the header keeps its
   height, the content area keeps its allocated height, and the player bar stays
@@ -2024,10 +2031,11 @@ the panel).
   is built once, on close, not from the entry's `changed` signal.
 - **SEARCH-13** [active] [gtk] — Closing with an empty or whitespace-only query
   renders no chip and changes nothing.
-- **SEARCH-14** [active] [gtk] — Dismissing is not undoing. Escape, Enter, a
-  click outside, and the lens all close the popover and keep both the query and
-  the filtering (SEARCH-5/6). Releasing the filter is a separate, visible act:
-  the chip's × or "Clear all". The query stays session- and section-scoped: it
+- **SEARCH-14** [active] [gtk] — Enter accepts: it closes the popover and keeps
+  both query and filtering. Escape discards: it clears query, chip and
+  filtering through the same section clear path and closes in one press. A
+  click outside, Ctrl+F and the lens still dismiss without undoing
+  (SEARCH-5/6). The query stays session- and section-scoped: it
   is never written to `podcasts::config::save_filter` or the radio settings
   keys, is dropped on restart, and is never carried between sections
   (SEARCH-8a).

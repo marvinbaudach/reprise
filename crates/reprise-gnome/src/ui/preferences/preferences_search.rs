@@ -206,12 +206,8 @@ impl SettingsSearch {
             let Some(search) = search.upgrade() else {
                 return;
             };
-            if search.entry.text().is_empty() {
-                search.toggle.set_active(false);
-            } else {
-                search.entry.set_text("");
-                search.entry.grab_focus();
-            }
+            search.entry.set_text("");
+            search.toggle.set_active(false);
         });
     }
 

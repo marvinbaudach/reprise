@@ -270,6 +270,17 @@ impl FilterBarLayout {
         None
     }
 
+    /// Shared SEARCH-4a assertion used by every section's display contract:
+    /// its existing query-clear path must remove both filter state and chip.
+    #[cfg(test)]
+    pub(in crate::ui) fn assert_search_cleared(&self, query: &str) {
+        assert!(query.is_empty(), "the section remains search-filtered");
+        assert!(
+            self.slot_child(FilterBarSlot::Search).is_none(),
+            "the section keeps a search chip after clearing"
+        );
+    }
+
     #[cfg(test)]
     fn slot_widget(&self, slot: FilterBarSlot) -> gtk4::Widget {
         let mut child = self.root.first_child();

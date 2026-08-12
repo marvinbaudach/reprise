@@ -50,6 +50,7 @@ pub(super) fn present(parent: &gtk4::Widget, runtime: &Rc<DeviceSyncRuntime>, de
     filter.set_placeholder_text(Some(&device_sync_strings::text(
         device_sync_strings::FILTER_SYNC_CONTENT,
     )));
+    wire_picker_filter_escape(&filter);
     let select_all =
         gtk4::Button::with_label(&device_sync_strings::text(device_sync_strings::SELECT_ALL));
     let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
@@ -287,6 +288,39 @@ fn picker_label(text: &str) -> gtk4::Label {
     label.set_xalign(0.0);
     label.set_wrap(true);
     label
+}
+
+fn wire_picker_filter_escape(filter: &gtk4::SearchEntry) {
+    let keys = gtk4::EventControllerKey::new();
+    keys.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    let filter_weak = filter.downgrade();
+    keys.connect_key_pressed(move |_, key, _, modifiers| {
+        let query = filter_weak
+            .upgrade()
+            .map_or_else(String::new, |filter| filter.text().to_string());
+        picker_escape_propagation(key, modifiers, &query, &|| {
+            if let Some(filter) = filter_weak.upgrade() {
+                filter.set_text("");
+            }
+        })
+    });
+    filter.add_controller(keys);
+}
+
+fn picker_escape_propagation(
+    key: gtk4::gdk::Key,
+    modifiers: gtk4::gdk::ModifierType,
+    query: &str,
+    clear_filter: &dyn Fn(),
+) -> gtk4::glib::Propagation {
+    if key != gtk4::gdk::Key::Escape || !modifiers.is_empty() || query.is_empty() {
+        return gtk4::glib::Propagation::Proceed;
+    }
+    // MTP-51 is deliberately the only two-stage search: this is a dialog with
+    // no persistent filter chip, so the first Escape must reveal every choice
+    // without also dismissing an unfinished device-sync selection.
+    clear_filter();
+    gtk4::glib::Propagation::Stop
 }
 
 fn call_refresh(refresh: &RefreshFn) {
