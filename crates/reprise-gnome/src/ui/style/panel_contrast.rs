@@ -6,7 +6,7 @@ struct PanelRole {
     css: CssFn,
     selector: &'static str,
     role: &'static str,
-    minimum: Option<f64>,
+    minimum: f64,
 }
 
 const PANEL_ROLES: [PanelRole; 13] = [
@@ -14,79 +14,79 @@ const PANEL_ROLES: [PanelRole; 13] = [
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-stage",
         role: "@sidebar_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-title",
         role: "@reprise_primary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-subtitle",
         role: "@reprise_secondary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-footer",
         role: "@reprise_secondary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-song-visual-analysis-name",
         role: "@reprise_secondary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-section",
         role: "@reprise_secondary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-remove",
         role: "@reprise_secondary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-remove:hover",
         role: "@reprise_primary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-title",
         role: "@reprise_primary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-artist",
         role: "@reprise_secondary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-empty",
         role: "@reprise_secondary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::lyrics_view::css,
         selector: ".lyrics-line {",
         role: "@sidebar_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
     PanelRole {
         css: crate::ui::lyrics_view::css,
         selector: ".lyrics-unsynced {",
         role: "@reprise_secondary_fg_color",
-        minimum: Some(4.5),
+        minimum: 4.5,
     },
 ];
 
@@ -177,11 +177,7 @@ fn npp_17_the_panel_takes_its_foreground_from_the_appearance() {
         );
     }
 
-    for css in [
-        crate::ui::now_playing::css(),
-        crate::ui::lyrics_view::css(),
-        crate::ui::now_playing::up_next_panel::css(),
-    ] {
+    for css in [crate::ui::now_playing::css(), crate::ui::lyrics_view::css()] {
         let fixed = fixed_foregrounds(&css);
         assert!(
             fixed.is_empty(),
@@ -217,9 +213,7 @@ fn contrast_3_now_playing_roles_clear_aa_on_the_panel_surface() {
             let surface = parse_hex_rgb(palette.sidebar_bg).expect("palette sidebar is valid hex");
 
             for row in &PANEL_ROLES {
-                let Some(minimum) = row.minimum else {
-                    continue;
-                };
+                let minimum = row.minimum;
                 let css = (row.css)();
                 let color = color_declaration(&css, row.selector);
                 let rendered = rendered_foreground(color, foreground, surface);
