@@ -223,43 +223,6 @@ impl RatingWidget {
         self.append(&stars_box);
         self.imp().stars_box.replace(Some(stars_box));
 
-        // Temporary pointer probe: capture observes the sequence while its
-        // default NONE state leaves propagation to the target and ancestors.
-        let click = gtk4::GestureClick::builder()
-            .propagation_phase(gtk4::PropagationPhase::Capture)
-            .build();
-        let widget = self.downgrade();
-        click.connect_pressed({
-            let widget = widget.clone();
-            move |_, press_count, x, y| {
-                let Some(widget) = widget.upgrade() else {
-                    return;
-                };
-                let picked = widget.pick(x, y, gtk4::PickFlags::DEFAULT);
-                let picked_widget_type = picked
-                    .as_ref()
-                    .map_or("<none>", |picked| picked.type_().name());
-                let picked_css_name = picked.as_ref().map(|picked| picked.css_name());
-                tracing::debug!(
-                    press_count,
-                    x,
-                    y,
-                    picked_widget_type,
-                    picked_css_name = ?picked_css_name,
-                    "[DEBUG-ptr-probe] rating widget capture pressed"
-                );
-            }
-        });
-        click.connect_released(move |_, press_count, x, y| {
-            tracing::debug!(
-                press_count,
-                x,
-                y,
-                "[DEBUG-ptr-probe] rating widget capture released"
-            );
-        });
-        self.add_controller(click);
-
         // Pointer hover drives reveal + preview. The controller lives on the
         // widget itself (always present), not on the stars box (hidden while
         // unrated), so hovering an unrated cell can still reveal the stars.
@@ -325,10 +288,6 @@ impl RatingWidget {
     /// Applies the Rhythmbox clear-on-reclick rule for a click on `star`,
     /// updates the display, and reports the new value through `on_changed`.
     fn handle_star_activated(&self, star: i32) {
-        tracing::debug!(
-            star,
-            "[DEBUG-ptr-probe] rating star activation handler entered"
-        );
         let new_rating = next_rating(star, self.imp().rating.get());
         self.imp().rating.set(new_rating);
         self.refresh();
