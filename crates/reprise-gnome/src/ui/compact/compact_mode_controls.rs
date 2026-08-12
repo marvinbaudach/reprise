@@ -50,7 +50,7 @@ pub(in crate::ui) fn build_mode(
 
 /// Returns `true` if the current GDK display is X11 (always-on-top is
 /// supported). On Wayland the menu item is hidden.
-fn is_x11() -> bool {
+pub(in crate::ui) fn is_x11() -> bool {
     gtk4::gdk::Display::default()
         .and_then(|d| d.downcast::<gdk4_x11::X11Display>().ok())
         .is_some()

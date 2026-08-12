@@ -22,6 +22,13 @@ pub struct Db {
     conn: Connection,
 }
 
+/// Live SQLite facts exposed without leaking the connection across Core's API.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DbDiagnosticFacts {
+    pub schema_version: i64,
+    pub journal_mode: String,
+}
+
 impl Db {
     /// Opens the database at `path` (or an in-memory one for `None`) and
     /// applies every pending schema migration before returning.
@@ -93,6 +100,20 @@ impl Db {
     /// wrong under a test fixture or an explicitly chosen library.
     pub fn path(&self) -> Option<PathBuf> {
         db::main_path_connection(&self.conn)
+    }
+
+    /// Reads the two connection-level values used by a public debug report.
+    pub fn diagnostic_facts(&self) -> Result<DbDiagnosticFacts, rusqlite::Error> {
+        let schema_version = self
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        let journal_mode = self
+            .conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
+        Ok(DbDiagnosticFacts {
+            schema_version,
+            journal_mode,
+        })
     }
 
     /// The underlying connection.

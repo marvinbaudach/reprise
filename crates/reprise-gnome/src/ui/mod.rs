@@ -36,6 +36,7 @@ pub(crate) mod date_format;
 mod date_format_display_tests;
 pub mod delete_tracks;
 mod device_sync;
+pub(crate) mod diagnostics;
 pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
 pub(in crate::ui) mod end_of_results;

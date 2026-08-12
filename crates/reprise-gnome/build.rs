@@ -30,6 +30,7 @@ fn main() {
         .unwrap_or_default();
 
     println!("cargo:rustc-env=REPRISE_GIT_SHA={sha}");
+    println!("cargo:rustc-env=REPRISE_RUST_VERSION={}", rust_version());
 
     let palette = palette_path();
     println!("cargo:rerun-if-changed={}", palette.display());
@@ -37,6 +38,16 @@ fn main() {
         "cargo:rustc-env=REPRISE_APP_ACCENT={}",
         read_palette_color(&palette, ACCENT_KEY)
     );
+}
+
+fn rust_version() -> String {
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = Command::new(rustc).arg("--version").output().ok();
+    output
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|version| version.split_whitespace().nth(1).map(str::to_string))
+        .unwrap_or_default()
 }
 
 /// Compiles the two private UI symbolics into the binary. GTK automatically
@@ -47,6 +58,7 @@ fn main() {
 fn compile_app_resources() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let resource_dir = crate_dir.join("resources");
+    let data_dir = crate_dir.join("../../data");
     let manifest = resource_dir.join("reprise.gresource.xml");
     let target = PathBuf::from(
         std::env::var_os("OUT_DIR").expect("Cargo must provide OUT_DIR to the build script"),
@@ -54,9 +66,17 @@ fn compile_app_resources() {
     .join("reprise.gresource");
 
     println!("cargo:rerun-if-changed={}", resource_dir.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        data_dir
+            .join("io.github.marvinbaudach.Reprise.metainfo.xml")
+            .display()
+    );
     let output = Command::new("glib-compile-resources")
         .args(["--sourcedir"])
         .arg(&resource_dir)
+        .args(["--sourcedir"])
+        .arg(&data_dir)
         .args(["--target"])
         .arg(&target)
         .arg(&manifest)

@@ -251,6 +251,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             },
             on_stop_playback: stop_player,
             on_preferences: Rc::new(move || menu_preferences.present()),
+            on_about: {
+                let window = window.clone();
+                let conn = conn.clone();
+                let db_path = db_path.to_path_buf();
+                Rc::new(move || crate::ui::about::present(&window, &conn, &db_path))
+            },
         },
     );
     super::startup_report::mark("primary_menu::install");
