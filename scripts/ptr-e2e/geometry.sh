@@ -8,6 +8,10 @@ ROW0_TITLE_CELL_X=355
 ROW0_TITLE_CELL_Y=170
 ROW1_TITLE_CELL_X=355
 ROW1_TITLE_CELL_Y=221
+# Row 3 spans y 288..333 in the banner-free window; 310 is its middle, where
+# the anchor flow's own 323 sat ten pixels from the edge.
+ROW3_TITLE_CELL_X=355
+ROW3_TITLE_CELL_Y=310
 ROW0_RATING_STAR2_X=1536
 ROW0_RATING_STAR_Y=175
 TITLE_HEADER_X=500
