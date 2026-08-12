@@ -491,12 +491,41 @@ assert_db_value() {
 assert_db_query_true() {
   local query="$1" description="$2"
   local actual
-  actual="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" "$query")"
+  # A malformed query has to fail this one check, not the run: under `set -e`
+  # a non-zero sqlite3 exit aborts the whole suite mid-flow, and the closing
+  # balance line then reports one failure for a suite that never ran.
+  if ! actual="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" "$query" 2>&1)"; then
+    log_fail "$description (query failed: $actual)"
+    return
+  fi
   if [ "$actual" = "1" ]; then
     log_step "database check OK: $description"
   else
     log_fail "$description (query returned '$actual')"
   fi
+}
+
+# Reads one scalar out of the library database. Same reasoning as
+# `assert_db_query_true`: a bad query must cost one check, not the run. A bare
+# `$(sqlite3 …)` under `set -e` aborts mid-flow and the balance line then
+# reports "1 failed check" for flows that never executed — which is exactly how
+# a dropped `missing` column hid behind a suite that looked almost green.
+#
+# Assigns into a caller-named variable rather than printing: `log_fail` inside
+# a command substitution would bump `FAILURES` in a subshell, so the failure
+# would print but never reach the tally.
+db_scalar_into() {
+  local target="$1" query="$2" description="$3" out
+  printf -v "$target" '%s' ''
+  if ! out="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" "$query" 2>&1)"; then
+    log_fail "$description (query failed: $out)"
+    return 1
+  fi
+  if [ -z "$out" ]; then
+    log_fail "$description (query returned no row)"
+    return 1
+  fi
+  printf -v "$target" '%s' "$out"
 }
 
 dismiss_onboarding_banner() {
@@ -679,14 +708,18 @@ assert_log_contains_since "$MARKER" "queue reordered via drag and drop" "Queue d
 log_step "flow 4: context A → manual X → manual Y → context B…"
 click_at 80 100
 sleep 0.3
-TRACK_ID_A="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
-  'SELECT id FROM tracks WHERE missing = 0 ORDER BY id ASC LIMIT 1 OFFSET 2;')"
-TRACK_ID_X="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
-  'SELECT id FROM tracks WHERE missing = 0 ORDER BY id ASC LIMIT 1 OFFSET 1;')"
-TRACK_ID_Y="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
-  'SELECT id FROM tracks WHERE missing = 0 ORDER BY id ASC LIMIT 1 OFFSET 0;')"
-TRACK_ID_B="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
-  'SELECT id FROM tracks WHERE missing = 0 ORDER BY id ASC LIMIT 1 OFFSET 3;')"
+db_scalar_into TRACK_ID_A \
+  'SELECT id FROM tracks WHERE missing_since IS NULL ORDER BY id ASC LIMIT 1 OFFSET 2;' \
+  'flow 4 needs the third present track' || true
+db_scalar_into TRACK_ID_X \
+  'SELECT id FROM tracks WHERE missing_since IS NULL ORDER BY id ASC LIMIT 1 OFFSET 1;' \
+  'flow 4 needs the second present track' || true
+db_scalar_into TRACK_ID_Y \
+  'SELECT id FROM tracks WHERE missing_since IS NULL ORDER BY id ASC LIMIT 1 OFFSET 0;' \
+  'flow 4 needs the first present track' || true
+db_scalar_into TRACK_ID_B \
+  'SELECT id FROM tracks WHERE missing_since IS NULL ORDER BY id ASC LIMIT 1 OFFSET 3;' \
+  'flow 4 needs the fourth present track' || true
 ROW2_TITLE_Y=$((ROW0_TITLE_CELL_Y + 102))
 MARKER=$(log_marker)
 double_click_at "$ROW0_TITLE_CELL_X" "$ROW2_TITLE_Y"

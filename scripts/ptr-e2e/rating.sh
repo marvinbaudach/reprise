@@ -24,6 +24,6 @@ run_rating_flow() {
   assert_log_contains_since "$MARKER" "rating changed" \
     "inline star button delivered a rating change (track-list write-back)"
   assert_db_query_true \
-    "SELECT COUNT(*) = 1 FROM tracks WHERE title = 'sine_01' AND rating = 2 AND missing = 0;" \
+    "SELECT COUNT(*) = 1 FROM tracks WHERE title = 'sine_01' AND rating = 2 AND missing_since IS NULL;" \
     "row 0's two-star rating persisted"
 }
