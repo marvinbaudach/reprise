@@ -14,9 +14,8 @@ use reprise_view::search_scope::{self, SearchScope};
 const GENRE_KEY: &str = "radio.filter.genre";
 const COUNTRY_KEY: &str = "radio.filter.country";
 type FilterCallback = Rc<dyn Fn(RadioFilter)>;
-/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×
-/// or "Clear all" — so the header entry stops showing a query the view no
-/// longer applies.
+/// SEARCH-8a: requests the shell's shared query transition for the chip's ×,
+/// or mirrors a locally completed composite action such as "Clear all".
 type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -308,6 +307,13 @@ impl RadioFilterBar {
         *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    fn request_query_clear(&self) {
+        let callback = self.on_query_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback("");
+        }
+    }
+
     /// SEARCH-8a: this view's query, handed in by the shell.
     pub(super) fn set_query(self: &Rc<Self>, query: &str) {
         let current = self.filter();
@@ -333,10 +339,9 @@ impl RadioFilterBar {
         self.apply_internal(filter, true);
     }
 
-    /// `announce_query`: whether a query change started here (the chip's ×,
-    /// "Clear all", a relaxed jump) and therefore has to be mirrored back
-    /// into the header entry. A query arriving *from* the entry is not
-    /// echoed, or the two would ping-pong.
+    /// `announce_query`: whether a composite local action ("Clear all" or a
+    /// relaxed jump) changed the query and therefore has to mirror it into the
+    /// header entry. A query arriving *from* the entry is not echoed.
     fn apply_internal(self: &Rc<Self>, filter: RadioFilter, announce_query: bool) {
         // SEARCH-8a: only the facets are persisted; the query is transient.
         if let Err(error) = persist_filter(&self.conn, &filter) {
@@ -408,8 +413,7 @@ impl RadioFilterBar {
         self.layout
             .replace_scoped_search(SearchScope::Radio, &committed_query, move || {
                 if let Some(bar) = weak.upgrade() {
-                    let cleared = bar.filter().with_query("");
-                    bar.apply(cleared);
+                    bar.request_query_clear();
                 }
             });
         for (facet, value) in [
@@ -546,13 +550,63 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_4a_radio_clear_path_removes_query_and_chip() {
+    fn search_4a_radio_escape_and_chip_share_the_section_clear_path() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let bar = RadioFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+        let entry = gtk4::SearchEntry::new();
+        let lens = gtk4::ToggleButton::new();
+        let popover = crate::ui::window::search_popover::SearchPopover::new(&lens, &entry);
+        let search = crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &lens);
+        search.register(
+            SearchScope::Radio,
+            {
+                let bar = Rc::downgrade(&bar);
+                move |query| {
+                    if let Some(bar) = bar.upgrade() {
+                        bar.set_query(query);
+                    }
+                }
+            },
+            {
+                let bar = Rc::downgrade(&bar);
+                move |query| {
+                    if let Some(bar) = bar.upgrade() {
+                        bar.set_committed_query(query);
+                    }
+                }
+            },
+            || {},
+        );
+        search.activate(SearchScope::Radio, "Radio");
+        bar.set_on_query_changed({
+            let bar = Rc::downgrade(&bar);
+            let search = Rc::downgrade(&search);
+            move |query| {
+                let bar = bar.upgrade().expect("Radio bar still exists");
+                assert_eq!(
+                    bar.filter().query,
+                    "nova",
+                    "the chip must delegate before mutating"
+                );
+                if let Some(search) = search.upgrade() {
+                    search.set_query(SearchScope::Radio, query);
+                }
+            }
+        });
+
+        entry.set_text("nova");
         bar.set_query("nova");
         bar.set_committed_query("nova");
+        assert_eq!(
+            popover.press_close_key(gtk4::gdk::Key::Escape),
+            gtk4::glib::Propagation::Stop
+        );
+        bar.layout.assert_search_cleared(&bar.filter().query);
 
+        entry.set_text("nova");
+        bar.set_query("nova");
+        bar.set_committed_query("nova");
         bar.layout
             .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
             .and_downcast::<gtk4::Button>()

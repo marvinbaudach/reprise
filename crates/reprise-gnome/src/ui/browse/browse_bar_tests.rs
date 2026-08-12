@@ -322,22 +322,55 @@ fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_4a_music_clear_path_removes_query_and_chip() {
+fn search_4a_music_escape_and_chip_share_the_section_clear_path() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let bar = test_bar();
-    bar.set_search("falling");
-    bar.set_committed_query("falling");
+    let entry = gtk4::SearchEntry::new();
+    let lens = gtk4::ToggleButton::new();
+    let popover = crate::ui::window::search_popover::SearchPopover::new(&lens, &entry);
+    let search = crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &lens);
+    search.register(
+        reprise_view::search_scope::SearchScope::Tracks,
+        {
+            let bar = Rc::downgrade(&bar);
+            move |query| {
+                if let Some(bar) = bar.upgrade() {
+                    bar.set_search(query);
+                }
+            }
+        },
+        {
+            let bar = Rc::downgrade(&bar);
+            move |query| {
+                if let Some(bar) = bar.upgrade() {
+                    bar.set_committed_query(query);
+                }
+            }
+        },
+        || {},
+    );
     bar.set_on_search_cleared({
-        let bar = Rc::downgrade(&bar);
+        let search = Rc::downgrade(&search);
         move || {
-            if let Some(bar) = bar.upgrade() {
-                bar.set_search("");
-                bar.set_committed_query("");
+            if let Some(search) = search.upgrade() {
+                search.clear_active_query();
             }
         }
     });
 
+    entry.set_text("falling");
+    bar.set_search("falling");
+    bar.set_committed_query("falling");
+    assert_eq!(
+        popover.press_close_key(gtk4::gdk::Key::Escape),
+        gtk4::glib::Propagation::Stop
+    );
+    bar.layout.assert_search_cleared(&bar.search.borrow());
+
+    entry.set_text("falling");
+    bar.set_search("falling");
+    bar.set_committed_query("falling");
     bar.layout
         .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
         .and_downcast::<gtk4::Button>()

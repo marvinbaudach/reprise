@@ -13,9 +13,8 @@ use crate::ui::strings;
 use reprise_view::search_scope::SearchScope;
 
 type OnChanged = Rc<dyn Fn(ReleasesFilter)>;
-/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×
-/// or "Clear all" — so the header entry stops showing a query the view no
-/// longer applies.
+/// SEARCH-8a: requests the shell's shared query transition for the chip's ×,
+/// or mirrors a locally completed composite action such as "Clear all".
 type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,13 +177,20 @@ impl ReleasesFilterBar {
             return;
         }
         self.query.replace(String::new());
-        // Drop the receipt in the same turn as the query — see the note in
-        // `concerts_filter_bar::clear_query`. An empty query has no chip under
-        // either surface, so this cannot disagree with the commit sink.
+        // Clear-all/show-widest are composite local actions and rebuild
+        // immediately, so they drop the receipt with the query. The search
+        // chip delegates to the coordinator through `request_query_clear`.
         self.committed_query.replace(String::new());
         // The borrow ends on this line. Left inside the `if let` condition it
         // would live for the whole body, and a callback that touched this
         // `RefCell` would panic instead of misbehaving visibly.
+        let callback = self.on_query_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback("");
+        }
+    }
+
+    fn request_query_clear(&self) {
         let callback = self.on_query_changed.borrow().clone();
         if let Some(callback) = callback {
             callback("");
@@ -248,9 +254,7 @@ impl ReleasesFilterBar {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };
-                bar.clear_query();
-                bar.rebuild();
-                bar.notify_changed();
+                bar.request_query_clear();
             });
         for (chip, selected, label) in [
             (
@@ -515,13 +519,63 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_4a_releases_clear_path_removes_query_and_chip() {
+    fn search_4a_releases_escape_and_chip_share_the_section_clear_path() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let bar = ReleasesFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+        let entry = gtk4::SearchEntry::new();
+        let lens = gtk4::ToggleButton::new();
+        let popover = crate::ui::window::search_popover::SearchPopover::new(&lens, &entry);
+        let search = crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &lens);
+        search.register(
+            SearchScope::Releases,
+            {
+                let bar = Rc::downgrade(&bar);
+                move |query| {
+                    if let Some(bar) = bar.upgrade() {
+                        bar.set_query(query);
+                    }
+                }
+            },
+            {
+                let bar = Rc::downgrade(&bar);
+                move |query| {
+                    if let Some(bar) = bar.upgrade() {
+                        bar.set_committed_query(query);
+                    }
+                }
+            },
+            || {},
+        );
+        search.activate(SearchScope::Releases, "Releases");
+        bar.set_on_query_changed({
+            let bar = Rc::downgrade(&bar);
+            let search = Rc::downgrade(&search);
+            move |query| {
+                let bar = bar.upgrade().expect("Releases bar still exists");
+                assert_eq!(
+                    bar.query(),
+                    "falling",
+                    "the chip must delegate before mutating"
+                );
+                if let Some(search) = search.upgrade() {
+                    search.set_query(SearchScope::Releases, query);
+                }
+            }
+        });
+
+        entry.set_text("falling");
         bar.set_query("falling");
         bar.set_committed_query("falling");
+        assert_eq!(
+            popover.press_close_key(gtk4::gdk::Key::Escape),
+            gtk4::glib::Propagation::Stop
+        );
+        bar.layout.assert_search_cleared(&bar.query());
 
+        entry.set_text("falling");
+        bar.set_query("falling");
+        bar.set_committed_query("falling");
         bar.layout
             .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
             .and_downcast::<gtk4::Button>()

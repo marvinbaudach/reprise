@@ -130,9 +130,25 @@ pub(in crate::ui) fn wire(
 /// where a search close hands focus and — SEARCH-8a —
 /// whether the visible section has a list for Ctrl+F to filter at all.
 pub struct ShortcutHooks {
-    pub focus_active_content: Rc<dyn Fn() -> bool>,
-    pub search_available: Rc<dyn Fn() -> bool>,
-    pub clear_active_search: Rc<dyn Fn() -> bool>,
+    focus_active_content: Rc<dyn Fn() -> bool>,
+    search_available: Rc<dyn Fn() -> bool>,
+    clear_active_search: Rc<dyn Fn() -> bool>,
+}
+
+impl ShortcutHooks {
+    pub(in crate::ui) fn for_section_search(
+        focus_active_content: Rc<dyn Fn() -> bool>,
+        section_search: Rc<super::window::section_search::SectionSearch>,
+    ) -> Self {
+        Self {
+            focus_active_content,
+            search_available: {
+                let section_search = section_search.clone();
+                Rc::new(move || section_search.supports_search())
+            },
+            clear_active_search: Rc::new(move || section_search.clear_active_query()),
+        }
+    }
 }
 
 fn wire_search_escape(window: &adw::ApplicationWindow, clear_active_search: Rc<dyn Fn() -> bool>) {
@@ -272,7 +288,24 @@ fn wire_window_lifecycle(app: &adw::Application, window: &adw::ApplicationWindow
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libadwaita::prelude::AdwApplicationWindowExt;
+    use libadwaita::prelude::{AdwApplicationWindowExt, AdwDialogExt};
+
+    fn send_escape_key() {
+        let status = std::process::Command::new("xdotool")
+            .args(["key", "--clearmodifiers", "Escape"])
+            .status()
+            .expect("xdotool is required by the X11 display test");
+        assert!(status.success(), "xdotool could not send Escape");
+    }
+
+    fn settle_until(label: &str, condition: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !condition() {
+            while gtk4::glib::MainContext::default().iteration(false) {}
+            assert!(std::time::Instant::now() < deadline, "timed out: {label}");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
@@ -396,6 +429,156 @@ mod tests {
             .collect();
         assert!(phases.contains(&gtk4::PropagationPhase::Bubble));
         assert!(!phases.contains(&gtk4::PropagationPhase::Capture));
+    }
+
+    #[test]
+    #[ignore = "requires a display and xdotool; run via xvfb-run"]
+    fn search_4a_runtime_window_escape_reaches_section_search() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.SearchEscapeWiringTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let entry = gtk4::SearchEntry::new();
+        entry.set_search_delay(0);
+        let lens = gtk4::ToggleButton::new();
+        let popover = SearchPopover::new(&lens, &entry);
+        let section_search =
+            crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &lens);
+        let layout = crate::ui::filter_bar_layout::FilterBarLayout::new();
+        let applied = Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        section_search.register(
+            reprise_view::search_scope::SearchScope::Tracks,
+            {
+                let applied = Rc::clone(&applied);
+                move |query| applied.borrow_mut().push(query.to_owned())
+            },
+            {
+                let layout = layout.clone();
+                move |query| {
+                    layout.replace_scoped_search(
+                        reprise_view::search_scope::SearchScope::Tracks,
+                        query,
+                        || {},
+                    );
+                }
+            },
+            || {},
+        );
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&lens);
+        root.append(layout.root());
+        window.set_content(Some(&root));
+        wire(
+            &app,
+            &window,
+            &popover,
+            ShortcutHooks::for_section_search(Rc::new(|| true), section_search),
+            None,
+        );
+        window.present();
+        lens.grab_focus();
+        entry.set_text("falling");
+        settle_until("the search chip is committed", || {
+            layout
+                .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+                .is_some()
+        });
+
+        send_escape_key();
+        settle_until("window Escape clears through SectionSearch", || {
+            entry.text().is_empty()
+                && layout
+                    .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+                    .is_none()
+        });
+
+        assert_eq!(applied.borrow().last().map(String::as_str), Some(""));
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display and xdotool; run via xvfb-run"]
+    fn search_4a_dialog_escape_wins_before_an_active_search_chip() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.SearchEscapeDialogTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let entry = gtk4::SearchEntry::new();
+        entry.set_search_delay(0);
+        let lens = gtk4::ToggleButton::new();
+        let popover = SearchPopover::new(&lens, &entry);
+        let section_search =
+            crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &lens);
+        let layout = crate::ui::filter_bar_layout::FilterBarLayout::new();
+        section_search.register(
+            reprise_view::search_scope::SearchScope::Tracks,
+            |_| {},
+            {
+                let layout = layout.clone();
+                move |query| {
+                    layout.replace_scoped_search(
+                        reprise_view::search_scope::SearchScope::Tracks,
+                        query,
+                        || {},
+                    );
+                }
+            },
+            || {},
+        );
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&lens);
+        root.append(layout.root());
+        window.set_content(Some(&root));
+        wire(
+            &app,
+            &window,
+            &popover,
+            ShortcutHooks::for_section_search(Rc::new(|| true), section_search),
+            None,
+        );
+        window.present();
+        entry.set_text("falling");
+        settle_until("the search chip is committed", || {
+            layout
+                .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+                .is_some()
+        });
+
+        let dialog = adw::Dialog::new();
+        let dialog_focus = gtk4::Button::with_label("Dialog action");
+        dialog.set_child(Some(&dialog_focus));
+        dialog.present(Some(&window));
+        dialog_focus.grab_focus();
+        settle_until("the competing dialog is visible", || dialog.is_visible());
+
+        send_escape_key();
+        settle_until("the first Escape closes the dialog", || {
+            !dialog.is_visible()
+        });
+        assert_eq!(entry.text(), "falling");
+        assert!(
+            layout
+                .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+                .is_some(),
+            "the local dialog must consume Escape before the search clear"
+        );
+
+        send_escape_key();
+        settle_until("the second Escape clears the search", || {
+            entry.text().is_empty()
+                && layout
+                    .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+                    .is_none()
+        });
+        window.close();
     }
 
     #[test]

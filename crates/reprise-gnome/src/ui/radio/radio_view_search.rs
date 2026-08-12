@@ -16,8 +16,7 @@ impl RadioView {
         self.shared.filter_bar.set_committed_query(query);
     }
 
-    /// SEARCH-8a: the bar removed the query itself, so the header entry has to
-    /// follow.
+    /// SEARCH-8a: the bar requests or reports a query transition to the shell.
     pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
         self.shared.filter_bar.set_on_query_changed(callback);
     }
