@@ -18,6 +18,8 @@ pub(super) mod category_colors;
 pub(super) mod color_math;
 pub(super) mod interactions;
 pub(super) mod menus;
+#[cfg(test)]
+mod panel_contrast;
 pub(super) mod reduced_motion;
 mod text_levels;
 pub(super) mod theme;

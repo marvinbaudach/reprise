@@ -1932,7 +1932,8 @@ the panel).
   tab content → footer 10.5 px white 35%, whose content is provided by
   the active tab. No panel header: closing runs via the app-header
   toggle, a retry belongs in the tab's error state. **No volume
-  control** (P-1).
+  control** (P-1). The colour named here follows the appearance per
+  NPP-17; the strengths stay.
 - **NPP-3** [active] [gtk] — Glow instead of full tint: a radial
   gradient of the effective accent color (`@accent_color`) sits in the upper third behind
   the cover and fades down into neutral panel-dark. The reason is
@@ -1946,7 +1947,8 @@ the panel).
   line 15 px bold white with accent underline (26 × 2.5 px, centered,
   color = `@accent_color`), neighbors stepped white 45% (±1) / 32% (±2) /
   28% (further). All lines centered, 13 px, generous spacing. Whole
-  LRC lines, no karaoke word highlighting.
+  LRC lines, no karaoke word highlighting. The colour named here follows
+  the appearance per NPP-17; the strengths stay.
 - **NPP-6** [active] [gtk] — Line change: the new line fades to
   white+bold, the old one back (Micro token); at the same time the
   list slides the active line to center (Standard token,
@@ -1963,13 +1965,15 @@ the panel).
   is the only click interaction in the lyrics tab, and the text is not
   selectable. A seek — from here or from the waveform — jumps
   immediately to the new active line, without the 4-s timer from
-  NPP-7.
+  NPP-7. The colour named here follows the appearance per NPP-17; the
+  strengths stay.
 - **NPP-9** [active] [gtk] — Fallbacks without a dead end: unsynced →
   static scrollable text (white 65%), no highlight, no auto-scroll,
   footer „lyrics · tags"; no lyrics → subtle empty state without a
   search CTA; error → inline retry in the tab. Instrumental gap (> 10 s
   without a line) holds the active line and dims it to 60% instead of
-  losing the highlight.
+  losing the highlight. The colour named here follows the appearance per
+  NPP-17; the strengths stay.
 - **NPP-10** [replaced by NPP-13] — A track change is not a place
   change: cover, title block, glow, and tab content crossfade
   **together** in one transition (Standard token, MOT-5), never as a
@@ -3062,6 +3066,37 @@ property is set and yet nothing happens.
   switcher moves extension tabs beyond the fourth into an overflow menu whose
   button carries their count. No overflow control exists while four tabs are
   the only reachable registry state.
+- **NPP-17** [active] [gtk] — **The panel's text follows the appearance.**
+  No CSS the Now Playing panel installs — the stage, the head, the pill tabs,
+  the footer, the Up Next list, the lyrics view and the Song Visuals canvas —
+  paints a foreground with a fixed colour literal. Every text role takes an
+  appearance-aware colour: `@sidebar_fg_color` where the role is "the panel's
+  text at full strength", `@reprise_primary_fg_color` for titles and the active
+  state, `@reprise_secondary_fg_color` for artist lines, section headings, the
+  footer, tab labels at rest and unsynchronized lyrics. Every one of those
+  roles reaches at least 4.5:1 against `@sidebar_bg_color` in **both**
+  appearances and in every theme. Surface washes (the pill fill, the canvas
+  tint, the cover's inset hairline) take the same foreground so that they
+  lighten on a dark panel and darken on a light one. `@reprise_hint_fg_color`
+  is not available here: on the sidebar surface it reaches only 3.2:1 light /
+  4.3:1 dark.
+
+  This supersedes the word "white" in NPP-2, NPP-5, NPP-8 and NPP-9. Their
+  strength ladders, sizes and geometry stay in force exactly as written; only
+  the colour those percentages are taken *of* now follows the appearance. The
+  dimmed neighbour steps of NPP-5 are a distance cue, not readable content, and
+  are exempt from the ratio floor.
+- **NPP-18** [planned] [gtk] — The head band's text sits over artwork, so its
+  contrast is not a property of the stylesheet. Title and subtitle lie inside
+  the cover bloom (up to 37 % of the artwork) and the accent glow (up to 26 %
+  of the accent). Measured worst case over a solid cover at full bloom and full
+  glow peak, after NPP-17: title 4.88–14.7:1 light, 2.51–13.3:1 dark; subtitle
+  3.27–6.0:1 light, 2.02–7.7:1 dark. The two available levers are the bloom's
+  opacity ceiling (`cover_bloom::bloom_opacity`) and the glow's peak alpha
+  (`NOW_PLAYING_GLOW_ALPHA`), or a scrim in the panel's own surface colour
+  behind the title block. Both are changes to the app's signature effect and
+  need their own decision.
+  <!-- REVIEW: rule proposal -->
 
 ## V. My Stats
 
