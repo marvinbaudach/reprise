@@ -33,7 +33,7 @@ shared_view=crates/reprise-view/src
 # that went with it — PreparationProgress, progress_copy and the four
 # "Step 2 of 2" titles, none of which had a consumer left — removed 55 more.
 # This floor is the measured sum; future migration waves raise it.
-view_floor=2115
+view_floor=2119
 
 echo "== Frontend thinness =="
 

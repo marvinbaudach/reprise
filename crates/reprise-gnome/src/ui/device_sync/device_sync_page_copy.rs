@@ -85,7 +85,15 @@ pub(super) fn format_local_date_time(timestamp: &chrono::DateTime<chrono::Local>
 }
 
 pub(super) fn change_summary(changes: &SyncChangeSummary) -> String {
-    render_joined(&projection::change_summary(changes))
+    let summary = projection::change_summary(changes);
+    debug_assert!(
+        changes != &SyncChangeSummary::default()
+            || summary.first().is_some_and(
+                |message| message.id == super::device_sync_strings::NOTHING_TRANSFERRED_YET
+            ),
+        "the empty projection must retain the catalogued GNOME message id"
+    );
+    render_joined(&summary)
 }
 
 pub(super) fn verification_summary(device: &DeviceView) -> String {

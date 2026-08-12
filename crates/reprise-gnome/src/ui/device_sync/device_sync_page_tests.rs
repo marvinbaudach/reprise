@@ -295,6 +295,14 @@ fn full_page_summarizes_every_mirror_change_without_paths() {
 }
 
 #[test]
+fn empty_full_page_change_summary_is_one_sentence() {
+    assert_eq!(
+        change_summary(&SyncChangeSummary::default()),
+        "Nothing transferred yet."
+    );
+}
+
+#[test]
 fn mtp_7_full_page_projects_complete_storage_segments() {
     let mut after = composition(Some(48 * 1_024));
     after.reprise_music_bytes = 48 * 1_024;

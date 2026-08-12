@@ -155,7 +155,7 @@ impl OnDeviceSection {
             gtk4::Button::with_label(&device_sync_strings::text(device_sync_strings::SET_LIMIT));
         set_limit.set_sensitive(false);
         set_limit.set_tooltip_text(Some(&device_sync_strings::text(
-            device_sync_strings::NO_SIZE_LIMIT,
+            device_sync_strings::SIZE_LIMITS_NOT_IMPLEMENTED,
         )));
         let row_copy = gtk4::Box::new(gtk4::Orientation::Vertical, 3);
         row_copy.set_hexpand(true);

@@ -44,6 +44,7 @@ const PLAYLISTS_WRITTEN: (&str, &str) =
 const PLAYLISTS_REMOVED: (&str, &str) =
     plural("{count} playlist removed", "{count} playlists removed");
 const TRANSFERRED: &str = N_!("{size} transferred");
+const NOTHING_TRANSFERRED_YET: &str = N_!("Nothing transferred yet.");
 const VERIFYING_CONTENTS: &str = N_!("Verifying device contents…");
 const VERIFIED_TRACKS: (&str, &str) = plural(
     "Verified · {count} Reprise track on device",
@@ -200,6 +201,9 @@ pub fn device_last_sync_copy(
 }
 
 pub fn change_summary(changes: &SyncChangeSummary) -> Vec<Message> {
+    if changes == &SyncChangeSummary::default() {
+        return vec![message(NOTHING_TRANSFERRED_YET)];
+    }
     vec![
         count_message(NEW, changes.additions),
         count_message(UPDATED, changes.replacements),
@@ -423,6 +427,18 @@ mod tests {
     use reprise_core::device_sync::{PlannedSyncPhase, SyncStep};
 
     use super::*;
+
+    #[test]
+    fn empty_change_summary_is_one_unrendered_sentence() {
+        assert_eq!(
+            change_summary(&SyncChangeSummary::default()),
+            vec![Message {
+                id: "Nothing transferred yet.",
+                plural: None,
+                args: Vec::new(),
+            }]
+        );
+    }
 
     #[test]
     fn transfer_progress_exposes_named_fields_and_an_unrendered_message() {

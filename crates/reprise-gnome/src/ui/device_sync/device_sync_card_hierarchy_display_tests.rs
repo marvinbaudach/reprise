@@ -140,6 +140,32 @@ fn mtp_61_the_rules_block_carries_both_device_switches() {
     assert!(!settings.borrow().sync_automatically);
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn disabled_size_limit_explains_why_the_control_is_unavailable() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let (surface, _root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let set_limit = button_with_label(surface.on_device.root().upcast_ref(), "Set limit…")
+        .expect("disabled size-limit control");
+    assert!(!set_limit.is_sensitive());
+    assert_eq!(
+        set_limit.tooltip_text().as_deref(),
+        Some("Size limits are not implemented yet.")
+    );
+}
+
 fn label_with_text(widget: &gtk4::Widget, text: &str) -> Option<gtk4::Widget> {
     if widget
         .clone()
@@ -173,6 +199,22 @@ fn switches(widget: &gtk4::Widget, found: &mut Vec<gtk4::Switch>) {
         switches(&current, found);
         child = current.next_sibling();
     }
+}
+
+fn button_with_label(widget: &gtk4::Widget, label: &str) -> Option<gtk4::Button> {
+    if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
+        if button.label().as_deref() == Some(label) {
+            return Some(button);
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = button_with_label(&current, label) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
 }
 
 fn separator_count(widget: &gtk4::Widget) -> usize {

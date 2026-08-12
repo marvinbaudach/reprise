@@ -395,7 +395,9 @@ pub const ON_THIS_DEVICE: &str = N_!("On this device");
 pub const CHECK_AGAIN: &str = N_!("Check again");
 pub const REVIEW_PLAYLISTS_ABOVE: &str = N_!("Review playlists above");
 pub const SET_LIMIT: &str = N_!("Set limit…");
-pub const NO_SIZE_LIMIT: &str = N_!("No size limit");
+pub const SIZE_LIMITS_NOT_IMPLEMENTED: &str = N_!("Size limits are not implemented yet.");
+/// Catalog extraction marker for the matching shared-view `Message` id.
+pub const NOTHING_TRANSFERRED_YET: &str = N_!("Nothing transferred yet.");
 pub const RULES_FOR_THIS_PHONE: &str = N_!("Rules for this phone");
 const LEGACY_MEDIA_NOTICE: &str =
     N_!("Podcast and YouTube files are no longer synced and were left untouched outside {path}.");
