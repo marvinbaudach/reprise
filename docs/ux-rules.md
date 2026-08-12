@@ -522,6 +522,7 @@ result.
 - **MTP-7** [active] [gtk] — The device page presents fully known
   storage as a theme-colored segment bar of Music, planned after-sync
   growth, Other, and Free; the same values remain available as text.
+  The planned-growth segment is hatched so it reads as not yet written.
   With incomplete or inconsistent capacity, the bar disappears, and the
   text states "unknown" instead of inventing proportions.
 - **MTP-8** [active] [gtk] — The device page offers exactly three
@@ -999,6 +1000,23 @@ result.
   per device — the playlists target under `/Music/Reprise` (`MTP-17`). There
   is no per-category selection, no size cap, and no automatic accumulation
   from subscriptions; what reaches a phone is what the user put in a playlist.
+  A device that previously had a podcast or YouTube target gets one dismissible
+  notice that those files were left untouched outside `/Music/Reprise`.
+- **MTP-60** [active] [gtk] — A pending or running synchronization lives in a
+  full-width docked bar at the bottom of the device page. The bar is inside the
+  window but outside the scroll view, so it neither scrolls away nor covers the
+  player bar. It remains present while ready, running, finishing, or failed and
+  is the only place a run failure is shown. Ready offers "Sync now" with the
+  pending scope; running shows the file count, current title, transfer rate,
+  remaining time, progress, and a primary "Cancel" action. Changing status
+  text never moves the bar's controls.
+- **MTP-61** [active] [gtk] — The lower device-page section is named "On this
+  device" and is a balance, not a second selection surface. It shows Reprise
+  music, hatched growth for this run, Other, and Free; the playlist, track, and
+  size balance; folder, smart-list policy, and size-limit controls; and "Rules
+  for this phone" switches for removing locally deleted music and syncing
+  automatically on connection. Playlist selection exists only in the upper
+  card; this section reports its result and links back to it.
 
 ## F. Settings & modals
 

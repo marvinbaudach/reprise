@@ -23,9 +23,7 @@ const RENAME_REQUIRES_DURABLE_IDENTITY: &str = N_!(
 pub const LOCAL_DEVICE_NAME: &str = N_!("Local device name");
 pub const RENAME: &str = N_!("Rename");
 pub const FORGET_DEVICE: &str = N_!("Forget device");
-pub const MUSIC_TRANSFER_PROFILE_HEADING: &str = N_!("Music · Opus 160 kbit/s");
-pub const UP_NEXT: &str = N_!("Up next");
-pub const RESCAN: &str = N_!("Rescan");
+pub const MUSIC_TRANSFER_PROFILE_HEADING: &str = N_!("Music transfer profile");
 pub(super) const VERIFIED_AGO: &str = N_!("verified {time}");
 pub(super) const JUST_NOW: &str = N_!("just now");
 pub(super) const MINUTES_AGO: &str = N_!("{minutes} min ago");
@@ -72,14 +70,12 @@ pub(super) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
 
 pub const SPACE_UNKNOWN: &str = N_!("Available space unknown");
 pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
-pub const CHOOSE_CONTENT: &str = N_!("Choose…");
 pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
 pub const PLAYLISTS: &str = N_!("Playlists");
 pub const REMOVE_FROM_PHONE: &str = N_!("Remove from phone when removed from a playlist");
 pub const SYNC_AUTOMATICALLY: &str = N_!("Sync automatically when this phone connects");
-pub const TARGET_FOLDER: &str = N_!("Target folder: {path}");
 pub const FILTER_SYNC_CONTENT: &str = N_!("Filter sync content");
 pub const SELECT_ALL: &str = N_!("Select all");
 pub const CANCEL: &str = N_!("Cancel");
@@ -90,8 +86,6 @@ pub const KEEP_SMART_PLAYLISTS_UPDATED: &str = N_!("Keep smart playlists up to d
 pub const UNAVAILABLE_PLAYLIST: &str = N_!("Unavailable playlist");
 pub const PICKER_FOOTER: &str = N_!("{selected} selected · {content} · {size}");
 pub const TRACKS: &str = N_!("{count} tracks");
-pub const SMART_LISTS_UPDATED: &str = N_!("smart lists kept up to date");
-pub const SMART_LISTS_FROZEN: &str = N_!("smart lists keep their current contents");
 
 pub fn available_space(bytes: Option<u64>) -> String {
     bytes.map_or_else(
@@ -201,25 +195,67 @@ pub fn picker_content(count: usize) -> String {
     formatted(TRACKS, &[("count", &count.to_string())])
 }
 
-pub fn selected_playlists(selected: usize, total: usize) -> String {
+pub const NOT_CONNECTED: &str = N_!("Not connected");
+pub const FINISHING_SYNC: &str = N_!("Finishing synchronization…");
+pub const CHECKING_CHANGES: &str = N_!("Checking what changed…");
+const READY_TO_SYNC: &str = N_!("Ready to sync · {summary}");
+const SYNCING_FILES: &str = N_!("Syncing · {copied} of {total} files");
+const MINUTES_LEFT: &str = N_!("{minutes} min left");
+const SECONDS_LEFT: &str = N_!("{seconds} s left");
+const AUTO_SYNC_ON: &str = N_!("Automatic sync is on");
+const AUTO_SYNC_OFF: &str = N_!("Automatic sync is off");
+const INSPECTION_FAILED: &str = N_!("Could not inspect device storage: {error}");
+
+pub fn ready_to_sync(summary: &str) -> String {
+    formatted(READY_TO_SYNC, &[("summary", summary)])
+}
+
+pub fn syncing_files(copied: usize, total: usize) -> String {
     formatted(
-        N_!("{selected} of {total} playlists"),
+        SYNCING_FILES,
         &[
-            ("selected", &selected.to_string()),
+            ("copied", &copied.to_string()),
             ("total", &total.to_string()),
         ],
     )
 }
 
-pub fn target_folder(path: &str) -> String {
-    formatted(TARGET_FOLDER, &[("path", path)])
+pub fn rate_and_remaining(bytes_per_second: u64, remaining: Option<std::time::Duration>) -> String {
+    let mut parts = Vec::new();
+    if bytes_per_second > 0 {
+        parts.push(format!("{}/s", file_size(bytes_per_second)));
+    }
+    if let Some(remaining) = remaining {
+        let seconds = remaining.as_secs().max(1);
+        if seconds >= 60 {
+            let minutes = seconds.div_ceil(60);
+            parts.push(formatted(
+                MINUTES_LEFT,
+                &[("minutes", &minutes.to_string())],
+            ));
+        } else {
+            parts.push(formatted(
+                SECONDS_LEFT,
+                &[("seconds", &seconds.to_string())],
+            ));
+        }
+    }
+    parts.join(" · ")
+}
+
+pub fn remembered_auto_sync(enabled: bool) -> String {
+    text(if enabled { AUTO_SYNC_ON } else { AUTO_SYNC_OFF })
+}
+
+pub fn inspection_failed(error: &str) -> String {
+    formatted(INSPECTION_FAILED, &[("error", error)])
 }
 
 pub fn music_track_count(count: usize) -> String {
     formatted(N_!("{count} tracks"), &[("count", &count.to_string())])
 }
 
-/// `MTP-22`'s exact vocabulary for one category's `CategoryReading` — used by
+/// `MTP-22`'s exact vocabulary for the music target's `MusicReading` — used by
 /// the "Up next" card's per-category row and, through the shared
 /// [`detailed_balance_parts`], by the sidebar card's full-balance tooltip, so
 /// the two surfaces never drift into different wording for the same numbers.
@@ -320,26 +356,6 @@ fn counted_files(count: usize) -> String {
     }
 }
 
-/// Design 2c: "175.0 → 172.4 GiB free". Collapses to a
-/// single figure when this sync would not move the free-space needle at
-/// all, so a device with nothing pending never shows a pointless arrow to
-/// the same number.
-pub fn free_space_line(free_before_bytes: u64, free_after_bytes: u64) -> String {
-    if free_before_bytes == free_after_bytes {
-        let size = file_size(free_before_bytes);
-        return formatted(N_!("{size} free"), &[("size", &size)]);
-    }
-    let before = file_size(free_before_bytes);
-    let after = file_size(free_after_bytes);
-    let before = before
-        .strip_suffix(after.split_once(' ').map_or("", |(_, unit)| unit))
-        .map_or(before.as_str(), str::trim_end);
-    formatted(
-        N_!("{before} → {after} free"),
-        &[("before", before), ("after", &after)],
-    )
-}
-
 /// Design 7c: "synced 12 min ago". Coarse buckets are deliberate — the
 /// sidebar card is a glance surface, not a log.
 pub use super::device_sync_time_copy::{relative_time, verified_ago};
@@ -370,6 +386,78 @@ pub const CONTENTS_VERIFYING_DETAIL: &str =
     N_!("Reading storage over MTP — this can take a moment.");
 pub const CONTENTS_VERIFIED: &str = N_!("Device contents verified");
 pub const CONTENTS_NOT_VERIFIABLE: &str = N_!("Could not verify device contents");
+pub const ON_THIS_DEVICE: &str = N_!("On this device");
+pub const CHECK_AGAIN: &str = N_!("Check again");
+pub const REVIEW_PLAYLISTS_ABOVE: &str = N_!("Review playlists above");
+pub const SET_LIMIT: &str = N_!("Set limit…");
+pub const NO_SIZE_LIMIT: &str = N_!("No size limit");
+pub const RULES_FOR_THIS_PHONE: &str = N_!("Rules for this phone");
+const LEGACY_MEDIA_NOTICE: &str =
+    N_!("Podcast and YouTube files are no longer synced and were left untouched outside {path}.");
+pub const DISMISS: &str = N_!("Dismiss");
+pub const SYNC_NOW_MNEMONIC: &str = N_!("_Sync now");
+pub const CANCEL_MNEMONIC: &str = N_!("_Cancel");
+const DEVICE_POLICY_SMART: &str = N_!("Folder {path} · Smart lists stay current · no size limit");
+const DEVICE_POLICY_FROZEN: &str =
+    N_!("Folder {path} · Smart lists keep their current contents · no size limit");
+const STORAGE_LEGEND: &str =
+    N_!("Reprise music {music} · this run +{this_run} · Other {other} · {free} free");
+const STORAGE_INSUFFICIENT: &str = N_!("Not enough space · {free} free · {shortfall} more needed");
+
+pub fn legacy_media_notice(path: &str) -> String {
+    formatted(LEGACY_MEDIA_NOTICE, &[("path", path)])
+}
+
+pub fn device_balance(playlists: usize, tracks: &str, size: &str) -> String {
+    plural(
+        "{playlists} playlist · {tracks} · {size}",
+        "{playlists} playlists · {tracks} · {size}",
+        playlists,
+        &[
+            ("playlists", &playlists.to_string()),
+            ("tracks", tracks),
+            ("size", size),
+        ],
+    )
+}
+
+fn plural(singular: &str, plural: &str, count: usize, values: &[(&str, &str)]) -> String {
+    let count = u32::try_from(count).unwrap_or(u32::MAX);
+    crate::i18n::format_message(&crate::i18n::ngettext(singular, plural, count), values)
+}
+
+pub fn device_policy(path: &str, smart_lists_stay_current: bool) -> String {
+    formatted(
+        if smart_lists_stay_current {
+            DEVICE_POLICY_SMART
+        } else {
+            DEVICE_POLICY_FROZEN
+        },
+        &[("path", path)],
+    )
+}
+
+pub fn storage_legend(music: u64, this_run: u64, other: u64, free: u64) -> String {
+    formatted(
+        STORAGE_LEGEND,
+        &[
+            ("music", &file_size(music)),
+            ("this_run", &file_size(this_run)),
+            ("other", &file_size(other)),
+            ("free", &file_size(free)),
+        ],
+    )
+}
+
+pub fn insufficient_storage(free: u64, shortfall: u64) -> String {
+    formatted(
+        STORAGE_INSUFFICIENT,
+        &[
+            ("free", &file_size(free)),
+            ("shortfall", &file_size(shortfall)),
+        ],
+    )
+}
 
 #[cfg(test)]
 #[path = "device_sync_strings_tests.rs"]

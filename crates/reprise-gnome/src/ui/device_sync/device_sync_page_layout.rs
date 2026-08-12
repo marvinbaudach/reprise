@@ -4,13 +4,13 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::device_sync::TransferProfile;
 
+use super::device_sync_dock::DeviceSyncDock;
+use super::device_sync_playlist_card::PlaylistCard;
 use super::device_sync_runtime::DeviceView;
 use super::device_sync_storage_bar::StorageBar;
 
 pub(super) const MUSIC_TRANSFER_PROFILE_HEADING: &str =
     super::device_sync_strings::MUSIC_TRANSFER_PROFILE_HEADING;
-
-const OVERVIEW_WIDTH_CHARS: i32 = 42;
 
 /// The width the content column clamps to — and, because `elide` keeps the
 /// hero shrinkable, also a ceiling the page never *demands*. The two are the
@@ -19,38 +19,31 @@ const OVERVIEW_WIDTH_CHARS: i32 = 42;
 pub(super) const CONTENT_MAX_WIDTH: i32 = 1_120;
 
 pub(super) struct DeviceDashboard {
-    pub(super) root: gtk4::ScrolledWindow,
+    pub(super) root: gtk4::Box,
+    pub(super) scroller: gtk4::ScrolledWindow,
+    pub(super) dock: DeviceSyncDock,
     /// The complete vertical page column. Its direct children are owned here:
-    /// hero, playlist/overview body, and [`Self::up_next`].
+    /// hero, playlist/cards body, and [`Self::on_device`].
     /// The caller only fills the two section containers.
     pub(super) content: gtk4::Box,
-    /// The heading row that accepts the Content panel's verification controls.
-    pub(super) up_next_heading: gtk4::Box,
-    /// Holds the externally owned Content panel below its "Up next" heading.
-    pub(super) up_next: gtk4::Box,
+    /// Holds the externally owned "On this device" section.
+    pub(super) on_device: gtk4::Box,
     pub(super) device_name: gtk4::Button,
     pub(super) connection: gtk4::Label,
     pub(super) device_last_sync: gtk4::Label,
     pub(super) profile: gtk4::DropDown,
-    pub(super) playlist_list: gtk4::ListBox,
-    pub(super) playlist_summary: gtk4::Label,
     pub(super) changes: gtk4::Label,
     pub(super) storage_name: gtk4::Label,
     pub(super) storage_summary: gtk4::Label,
     pub(super) storage_bar: StorageBar,
-    pub(super) notice_box: gtk4::Box,
-    pub(super) notice_title: gtk4::Label,
-    pub(super) notice_detail: gtk4::Label,
-    pub(super) progress_box: gtk4::Box,
-    pub(super) progress_title: gtk4::Label,
-    pub(super) progress_detail: gtk4::Label,
-    pub(super) progress_speed: gtk4::Label,
-    pub(super) progress_bar: gtk4::ProgressBar,
-    pub(super) primary: gtk4::Button,
     pub(super) eject: gtk4::Button,
 }
 
-pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashboard {
+pub(super) fn build(
+    device: &DeviceView,
+    profile_labels: &[&str],
+    playlist_card: &PlaylistCard,
+) -> DeviceDashboard {
     let device_name = gtk4::Button::with_label(&device.name);
     device_name.add_css_class("flat");
     device_name.add_css_class("title-1");
@@ -95,11 +88,8 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
         .icon_name("media-eject-symbolic")
         .label("Eject")
         .build();
-    let primary = gtk4::Button::with_mnemonic("_Sync now");
-    primary.add_css_class("suggested-action");
     let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     actions.set_valign(gtk4::Align::Center);
-    actions.append(&primary);
     actions.append(&eject);
     hero_top.append(&actions);
 
@@ -116,27 +106,9 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     hero_content.append(&storage);
     let hero = card(&hero_content);
 
-    let playlist_title = label("Playlists", "title-2");
-    let playlist_summary = label("", "dim-label");
-    playlist_summary.set_halign(gtk4::Align::End);
-    let playlist_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    playlist_header.append(&playlist_title);
-    playlist_summary.set_hexpand(true);
-    playlist_header.append(&playlist_summary);
-    let playlist_list = gtk4::ListBox::new();
-    playlist_list.set_show_separators(true);
-    playlist_list.set_selection_mode(gtk4::SelectionMode::None);
-    let playlist_content = card_content();
-    playlist_content.set_spacing(12);
-    playlist_content.append(&playlist_header);
-    playlist_content.append(&playlist_list);
-    let playlists = card(&playlist_content);
-    playlists.set_hexpand(true);
-
-    let overview_title = label("Sync overview", "title-2");
     let profile_title = label(
         &super::device_sync_strings::text(MUSIC_TRANSFER_PROFILE_HEADING),
-        "heading",
+        "title-2",
     );
     let profile_model = gtk4::StringList::new(profile_labels);
     let profile = gtk4::DropDown::builder()
@@ -149,7 +121,6 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
         "dim-label",
     );
     policy.set_wrap(true);
-    constrain_overview_width(&policy);
 
     // Deliberately not "Next synchronization" — that title now belongs to
     // the Content panel's cross-category diff (`MTP-22`/`MTP-37`) appended
@@ -158,66 +129,33 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     // implying it is the complete picture.
     let changes_heading = label("Playlist changes", "heading");
     let changes = detail_label();
-    constrain_overview_width(&changes);
 
-    let notice_title = label("", "heading");
-    let notice_detail = detail_label();
-    constrain_overview_width(&notice_detail);
-    let notice_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-    notice_box.add_css_class("error");
-    notice_box.set_visible(false);
-    notice_box.append(&notice_title);
-    notice_box.append(&notice_detail);
+    let profile_content = card_content();
+    profile_content.append(&profile_title);
+    profile_content.append(&profile);
+    profile_content.append(&policy);
+    let profile_card = card(&profile_content);
+    profile_card.set_hexpand(true);
+    let changes_content = card_content();
+    changes_content.append(&changes_heading);
+    changes_content.append(&changes);
+    let changes_card = card(&changes_content);
+    changes_card.set_hexpand(true);
+    let card_pair = adw::WrapBox::new();
+    card_pair.set_child_spacing(24);
+    card_pair.set_line_spacing(16);
+    card_pair.set_natural_line_length(760);
+    card_pair.set_wrap_policy(adw::WrapPolicy::Natural);
+    card_pair.set_justify(adw::JustifyMode::Fill);
+    card_pair.set_justify_last_line(true);
+    card_pair.append(&profile_card);
+    card_pair.append(&changes_card);
 
-    let progress_title = label("", "heading");
-    let progress_detail = detail_label();
-    constrain_overview_width(&progress_detail);
-    let speed_title = label("Transfer speed", "dim-label");
-    let progress_speed = label("—", "dim-label");
-    progress_speed.set_xalign(1.0);
-    progress_speed.set_width_chars(10);
-    progress_speed.add_css_class("numeric");
-    let speed_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    speed_title.set_hexpand(true);
-    speed_row.append(&speed_title);
-    speed_row.append(&progress_speed);
-    let progress_bar = gtk4::ProgressBar::new();
-    progress_bar.set_show_text(false);
-    progress_bar.update_property(&[gtk4::accessible::Property::Label(
-        "Synchronization progress",
-    )]);
-    let progress_box = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-    progress_box.set_visible(false);
-    progress_box.append(&progress_title);
-    progress_box.append(&progress_detail);
-    progress_box.append(&speed_row);
-    progress_box.append(&progress_bar);
+    let body = gtk4::Box::new(gtk4::Orientation::Vertical, 24);
+    body.append(playlist_card.root());
+    body.append(&card_pair);
 
-    let overview_content = card_content();
-    overview_content.append(&overview_title);
-    overview_content.append(&profile_title);
-    overview_content.append(&profile);
-    overview_content.append(&policy);
-    overview_content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
-    overview_content.append(&changes_heading);
-    overview_content.append(&changes);
-    overview_content.append(&notice_box);
-    overview_content.append(&progress_box);
-    let overview = card(&overview_content);
-    overview.set_size_request(340, -1);
-
-    let body = gtk4::Box::new(gtk4::Orientation::Horizontal, 24);
-    body.append(&playlists);
-    body.append(&overview);
-
-    let up_next_title = label(
-        &super::device_sync_strings::text(super::device_sync_strings::UP_NEXT),
-        "title-2",
-    );
-    let up_next_heading = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    up_next_heading.append(&up_next_title);
-    let up_next = gtk4::Box::new(gtk4::Orientation::Vertical, 9);
-    up_next.append(&up_next_heading);
+    let on_device = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
 
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 24);
     content.set_margin_top(28);
@@ -226,43 +164,41 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     content.set_margin_end(32);
     content.append(&hero);
     content.append(&body);
-    content.append(&up_next);
+    content.append(&on_device);
 
     let clamp = adw::Clamp::builder()
         .maximum_size(CONTENT_MAX_WIDTH)
         .tightening_threshold(900)
         .child(&content)
         .build();
-    let root = gtk4::ScrolledWindow::builder()
+    let scroller = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .child(&clamp)
         .build();
+    scroller.set_vexpand(true);
+    let dock = DeviceSyncDock::new();
+    dock.root().set_hexpand(true);
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.append(&scroller);
+    root.append(dock.root());
     root.add_css_class("reprise-device-dashboard");
+    debug_assert_eq!(scroller.parent().as_ref(), Some(root.upcast_ref()));
+    debug_assert_eq!(dock.root().parent().as_ref(), Some(root.upcast_ref()));
 
     DeviceDashboard {
         root,
+        scroller,
+        dock,
         content,
-        up_next_heading,
-        up_next,
+        on_device,
         device_name,
         connection,
         device_last_sync,
         profile,
-        playlist_list,
-        playlist_summary,
         changes,
         storage_name,
         storage_summary,
         storage_bar,
-        notice_box,
-        notice_title,
-        notice_detail,
-        progress_box,
-        progress_title,
-        progress_detail,
-        progress_speed,
-        progress_bar,
-        primary,
         eject,
     }
 }
@@ -309,11 +245,6 @@ fn detail_label() -> gtk4::Label {
     label.set_wrap(true);
     label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
     label
-}
-
-fn constrain_overview_width(label: &gtk4::Label) {
-    label.set_width_chars(OVERVIEW_WIDTH_CHARS);
-    label.set_max_width_chars(OVERVIEW_WIDTH_CHARS);
 }
 
 pub(super) fn profile_labels(label: impl Fn(TransferProfile) -> &'static str) -> [&'static str; 3] {

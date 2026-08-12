@@ -402,6 +402,35 @@ pub fn save_settings(
     Ok(())
 }
 
+pub fn legacy_media_notice_pending(
+    db: &crate::db::Db,
+    serial: &str,
+) -> Result<bool, rusqlite::Error> {
+    db.conn().query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM device_sync_legacy_notices
+           WHERE device_serial = ?1 AND NOT dismissed
+         )",
+        [serial],
+        |row| row.get(0),
+    )
+}
+
+pub fn dismiss_legacy_media_notice(
+    db: &crate::db::Db,
+    serial: &str,
+    rememberable: bool,
+) -> Result<(), rusqlite::Error> {
+    if !rememberable {
+        return Ok(());
+    }
+    db.conn().execute(
+        "UPDATE device_sync_legacy_notices SET dismissed = 1 WHERE device_serial = ?1",
+        [serial],
+    )?;
+    Ok(())
+}
+
 pub fn load_device_files(
     db: &crate::db::Db,
     serial: &str,
@@ -695,4 +724,26 @@ fn decode_source_columns(kind: &str, id: i64) -> Result<SelectionSource, rusqlit
         }
     };
     Ok(source)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unrememberable_device_cannot_persist_legacy_notice_dismissal() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO device_sync_legacy_notices (device_serial) VALUES ('phone')",
+                [],
+            )
+            .unwrap();
+
+        dismiss_legacy_media_notice(&db, "phone", false).unwrap();
+        assert!(legacy_media_notice_pending(&db, "phone").unwrap());
+
+        dismiss_legacy_media_notice(&db, "phone", true).unwrap();
+        assert!(!legacy_media_notice_pending(&db, "phone").unwrap());
+    }
 }

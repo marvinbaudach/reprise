@@ -81,7 +81,7 @@ pub struct DeviceSyncBalanceDto {
     pub files_to_remove: u64,
     pub bytes_freed: u64,
     pub playlists_rewritten: u64,
-    /// Same rule as `CategoryDiff::has_work`/`SyncBalance::has_work`: file
+    /// Same rule as `MusicDiff::has_work`/`SyncBalance::has_work`: file
     /// counts decide, bytes never do — a deletions-only sync with 0 bytes
     /// moved must still read as work pending (design 7c).
     pub has_work: bool,

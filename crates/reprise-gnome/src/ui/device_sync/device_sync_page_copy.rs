@@ -9,16 +9,12 @@
 
 use chrono::{Datelike, TimeZone, Timelike};
 use reprise_core::device_sync::{
-    MirrorBlocker, SyncChangeSummary, SyncPageControls, SyncPageWarning, SyncPlaylistRow,
-    TransferProfile,
+    MirrorBlocker, SyncChangeSummary, SyncPageWarning, SyncPlaylistRow, TransferProfile,
 };
 use reprise_view::device_sync as projection;
 use reprise_view::strings::Message;
 
 use super::device_sync_runtime::{DeviceView, PlannedSyncPhase};
-use super::device_sync_strings;
-
-pub(super) use projection::PageActionCopy;
 
 fn borrowed<'a>(args: &'a [(&'static str, String)]) -> Vec<(&'static str, &'a str)> {
     args.iter()
@@ -116,41 +112,12 @@ pub(super) fn warning_summary(warnings: &[SyncPageWarning]) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn action_copy(controls: SyncPageControls) -> PageActionCopy {
-    projection::action_copy(controls)
-}
-
 pub(super) fn eject_sensitive(device: &DeviceView) -> bool {
     projection::eject_sensitive(device.page.controls, device.connected, &device.sync_phase)
 }
 
 pub(super) fn counted(count: usize, singular: &'static str, plural: &'static str) -> String {
     render(&projection::counted(count, singular, plural))
-}
-
-pub(super) fn progress_copy(device: &DeviceView) -> Option<(String, String, String, f64)> {
-    transfer_progress_copy(&device.sync_phase, device.bytes_per_second)
-}
-
-pub(super) fn transfer_progress_copy(
-    phase: &PlannedSyncPhase,
-    bytes_per_second: u64,
-) -> Option<(String, String, String, f64)> {
-    projection::transfer_progress_copy(phase, bytes_per_second).map(render_progress)
-}
-
-fn render_progress(copy: projection::ProgressCopy) -> (String, String, String, f64) {
-    let subtitle = match copy.subtitle {
-        projection::ProgressSubtitle::Message(message) => render(&message),
-        projection::ProgressSubtitle::CurrentTrack(title) => title,
-    };
-    let speed = match copy.speed {
-        projection::ProgressSpeed::Unavailable => "—".into(),
-        projection::ProgressSpeed::BytesPerSecond(bytes) => {
-            format!("{}/s", device_sync_strings::file_size(bytes))
-        }
-    };
-    (render(&copy.title), subtitle, speed, copy.fraction)
 }
 
 #[cfg(test)]

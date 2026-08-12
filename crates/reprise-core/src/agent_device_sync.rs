@@ -2,7 +2,7 @@
 
 use std::sync::{mpsc, Arc, Mutex};
 
-use crate::device_sync::{CategoryReading, SelectionSource, TransferProfile};
+use crate::device_sync::{MusicReading, SelectionSource, TransferProfile};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentDeviceSyncState {
@@ -38,7 +38,7 @@ pub struct AgentDeviceSyncTarget {
     pub target_path: String,
     pub target_enabled: bool,
     pub size_on_device_bytes: u64,
-    pub reading: CategoryReading,
+    pub reading: MusicReading,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,7 +262,7 @@ mod tests {
                     target_path: "/Music/Reprise".into(),
                     target_enabled: true,
                     size_on_device_bytes: 42,
-                    reading: CategoryReading::Diff(crate::device_sync::CategoryDiff {
+                    reading: MusicReading::Diff(crate::device_sync::MusicDiff {
                         files_to_copy: 3,
                         bytes_to_copy: 900,
                         files_to_remove: 1,
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(device.target.target_path, "/Music/Reprise");
         assert_eq!(
             device.target.reading,
-            CategoryReading::Diff(crate::device_sync::CategoryDiff {
+            MusicReading::Diff(crate::device_sync::MusicDiff {
                 files_to_copy: 3,
                 bytes_to_copy: 900,
                 files_to_remove: 1,
