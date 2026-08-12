@@ -287,7 +287,6 @@ private fun gesturePlayback() = PlaybackUiState(
     currentTrackUri = "content://provider/document/song.flac",
     positionMs = 20_000,
     durationMs = 100_000,
-    playPauseLabel = "Play",
 )
 
 private fun gestureTrack() = LibraryTrack(

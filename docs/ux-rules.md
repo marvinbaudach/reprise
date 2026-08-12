@@ -3557,17 +3557,7 @@ STYLE-1).
 - **AC-7** [replaced by AC-10]
 - **AC-8** [replaced by AC-11]
 - **AC-10** [replaced by AC-19]
-- **AC-11** [active] [gtk] — Continuous motion exists only with the
-  Visual tab visible and only as long as the player holds a track at
-  all. Ongoing playback shows the audio-reactive bars. Pause and Stop
-  let the live bars decay and hand over to a resting breathing motion: a
-  flat wave, tapering off at both edges, of at most 10% bar height, that
-  travels across the width once every six seconds and is redrawn at rest
-  at roughly 30 Hz instead of the full render rate. Without a loaded
-  track, the surface stays empty and without a tick callback;
-  `gtk-enable-animations=false` shows the resting wave as a static image.
-  This is the audio-functional exception for continuous motion permitted
-  in MOT-2.
+- **AC-11** [replaced by AC-27]
 - **AC-19** [replaced by AC-20]
 - **AC-20** [replaced by AC-21]
 - **AC-21** [replaced by AC-22]
@@ -3586,10 +3576,10 @@ STYLE-1).
   64 frequency-dependent, finely segmented neon columns one to one, with
   the existing cyan-to-magenta gradient, reflections, glow, and slowly
   falling peak caps. Under render load, "latest wins" applies strictly;
-  old impulses are not carried over into newer CAVA frames. Pause and
-  Stop may only apply a visual dampening for the decay required by
-  AC-11; the resting wave defined there then only fills in what the live
-  bars leave free, and changes neither CAVA values nor peak caps.
+  old impulses are not carried over into newer CAVA frames. A loaded,
+  paused scene follows AC-27: only its display projection breathes, while
+  the last CAVA values remain intact and the peak caps keep their normal
+  independent decay.
   The glow layer behind the columns is never derived from the CAVA
   bands. Auto-sensitivity keeps re-normalizing those, so a quiet sung
   passage climbs to the same band values as a drop and the glow would
@@ -3755,6 +3745,32 @@ STYLE-1).
   episode ends, the plugin's own setting decides again. One predicate decides
   the category, `ExternalPlaybackSnapshot::carries_music`; no surface
   re-derives it from the media variant.
+
+- **AC-27** [active] [core] [gtk] — **A loaded live scene breathes through pause and stop.**
+  Ongoing playback shows the audio-reactive bars. A real user pause or stop
+  while the track remains loaded retains the last live band distribution and
+  smoothly blends its display, without a frame-zero jump, into a low resting
+  shape: a 10% floor plus 20% of each retained band and an
+  eight-percentage-point travelling-wave amplitude. For
+  the 0.2-to-0.9 acceptance distribution, every band spans 16 percentage
+  points over a full period, and the resulting display range is 6% to 36%.
+  Three crests carry different phases across the field, so the motion travels
+  instead of pulsing in unison while each field third averages nearly one full
+  wave. Throughout the period, the mean of the lower field third stays below
+  the mean of the upper field third by at least nine percentage points for that
+  acceptance distribution. The wave repeatedly returns near its starting
+  values instead of drifting toward zero. The unchanged Bars renderer keeps
+  the cyan-to-magenta band gradient. Resume makes the retained live values
+  authoritative immediately, before another audio frame arrives.
+  Buffering with play intent remains live, and a track boundary still clears
+  the previous distribution. A loaded scene without a live distribution uses
+  the existing generic resting wave; without a loaded track the surface
+  releases to empty and its tick callback stops. The portable engine advances
+  from monotonic elapsed time and completes one cycle in six seconds regardless
+  of redraw cadence. Android's reduced paused redraw and the desktop's roughly
+  30 Hz idle redraw therefore change only sampling smoothness, never wave
+  speed. With animations disabled, the resting scene is a static image. This
+  is the audio-functional exception for continuous motion permitted in MOT-2.
 
 ## Y. Library Doctor / Tag Cleanup
 

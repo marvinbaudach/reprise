@@ -407,7 +407,7 @@ private fun PlaybackActions(
                 .background(MaterialTheme.colorScheme.primary),
         ) {
             MaterialSymbol(
-                name = if (playback.isPlaying) "pause" else "play_arrow",
+                name = playback.playPauseSymbol,
                 contentDescription = playback.playPauseLabel,
                 tint = MaterialTheme.colorScheme.onPrimary,
                 sizeSp = 40,

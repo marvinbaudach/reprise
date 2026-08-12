@@ -311,16 +311,19 @@ impl SessionInner {
     }
 
     fn start_current(&self) -> Result<(), AndroidPlaybackError> {
+        let backend = self.backend()?;
         let (uri, next_uri) = {
-            let state = self.lock()?;
+            let mut state = self.lock()?;
             let uri = state
                 .current_uri()
                 .ok_or(AndroidPlaybackError::InvalidRequest {
                     detail: "the Core queue has no current track".to_owned(),
                 })?;
-            (uri, state.next_uri())
+            let next_uri = state.next_uri();
+            // `play_uri` may synchronously publish this stream's first event.
+            state.current_loaded = true;
+            (uri, next_uri)
         };
-        let backend = self.backend()?;
         if let Err(error) = backend.play_uri(&uri) {
             let detail = error.to_string();
             if let Ok(mut state) = self.state.lock() {
@@ -334,7 +337,6 @@ impl SessionInner {
         {
             let mut state = self.lock()?;
             state.stream = backend.current_generation();
-            state.current_loaded = true;
         }
         backend.set_next(next_uri.as_deref());
         self.notify();
@@ -419,9 +421,19 @@ impl SessionInner {
                     state.current_loaded = false;
                     (FollowUp::Stop, None, None)
                 }
-                PlayerEvent::Buffering { .. }
-                | PlayerEvent::StreamTags { .. }
-                | PlayerEvent::Spectrum(_) => (FollowUp::None, None, None),
+                PlayerEvent::Buffering { .. } => {
+                    // Buffering describes only a stream that is still loaded.
+                    // Queue exhaustion and errors both clear `current_loaded`,
+                    // so a callback already in flight cannot revive their
+                    // terminal Stopped snapshot.
+                    if state.current_loaded {
+                        state.snapshot.state = AndroidPlaybackState::Buffering;
+                    }
+                    (FollowUp::None, None, None)
+                }
+                PlayerEvent::StreamTags { .. } | PlayerEvent::Spectrum(_) => {
+                    (FollowUp::None, None, None)
+                }
             }
         };
 

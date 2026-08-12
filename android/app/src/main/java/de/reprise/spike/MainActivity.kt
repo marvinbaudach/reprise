@@ -143,10 +143,14 @@ class MainActivity : ComponentActivity() {
     private var playbackBound = false
     private val playbackState = mutableStateOf(PlaybackUiState())
     private val playbackSettingsRevision = mutableStateOf(0L)
+    private val visualSceneEngineFactory = mutableStateOf<VisualSceneEngineFactory>(
+        NativeVisualSceneEngineFactory,
+    )
     private val playbackConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val service = (binder as ReprisePlaybackService.LocalBinder).service()
             playbackService = service
+            visualSceneEngineFactory.value = service.visualSceneEngineFactory()
             service.attachObserver { snapshot ->
                 runOnUiThread {
                     playbackState.value = snapshot.toUiState().copy(
@@ -166,6 +170,7 @@ class MainActivity : ComponentActivity() {
 
         override fun onServiceDisconnected(name: ComponentName) {
             playbackService = null
+            visualSceneEngineFactory.value = NativeVisualSceneEngineFactory
             playbackState.value = PlaybackUiState()
             playbackSettingsRevision.value += 1L
         }
@@ -218,6 +223,7 @@ class MainActivity : ComponentActivity() {
                             LocalTrackAnalysis provides surface.trackAnalysis,
                             LocalAmbientMotionController provides ambientMotion,
                             LocalVisualizerPreference provides visualizerPreference,
+                            LocalVisualSceneEngineFactory provides visualSceneEngineFactory.value,
                         ) {
                             LibraryScreen(
                                 initialState = surface.initialState,
@@ -381,6 +387,7 @@ class MainActivity : ComponentActivity() {
         playbackService?.detachSettingsObserver()
         playbackService?.detachSleepTimerObserver()
         playbackService = null
+        visualSceneEngineFactory.value = NativeVisualSceneEngineFactory
         if (playbackBound) {
             unbindService(playbackConnection)
             playbackBound = false

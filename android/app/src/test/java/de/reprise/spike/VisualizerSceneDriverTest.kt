@@ -1,5 +1,7 @@
 package de.reprise.spike
 
+import androidx.compose.ui.graphics.Color
+import androidx.media3.common.Player
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
 import org.junit.Assert.assertEquals
@@ -7,8 +9,133 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
+import uniffi.reprise_android_ffi.AndroidPlaybackState
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 class VisualizerSceneDriverTest {
+    @Test
+    fun bufferingWithPlayIntentKeepsTheLiveEngineBassAndHighFrameRateActive() {
+        val media3State = media3PlaybackState(
+            isPlaying = false,
+            playWhenReady = true,
+            playbackState = Player.STATE_BUFFERING,
+        )
+        val playback = AndroidPlaybackSnapshot(
+            state = media3State,
+            currentIndex = 0UL,
+            currentTrackId = 7L,
+            currentTrackUri = "content://provider/song.flac",
+            positionMs = 1_000L,
+            durationMs = 180_000L,
+            automaticAdvanceCount = 0UL,
+            shuffled = false,
+            repeat = AndroidRepeatMode.OFF,
+            error = null,
+        ).toUiState()
+        val engine = BufferingPathEngine()
+        updateVisualSceneEngine(engine, playback, Color.Cyan)
+        val frames = SpectrogramFrames(24, 20, ByteArray(0))
+        val scene = SceneState(frames)
+        val driver = SceneDriver(
+            frames = frames,
+            state = scene,
+            clock = SceneClock { 0L },
+            positionSource = ScenePositionSource {
+                error("live buffering audio must not read the stored playhead")
+            },
+            frameSink = visualSceneFrameSink(engine),
+            framesAllowed = { true },
+        )
+
+        driver.tick()
+
+        assertEquals(AndroidPlaybackState.BUFFERING, playback.state)
+        assertTrue(engine.isPlaybackActive)
+        assertEquals(0.63f, scene.fogLevel, 0f)
+        assertEquals(0.81f, scene.bassPressure, 0f)
+        assertNotNull(requestedVisualizerFrameRateCategory(1f, playback.visualizerActive))
+    }
+
+    @Test
+    fun liveAudioMovesAnUnanalysedSceneWithoutPositionOrSmoothedBands() {
+        val frames = SpectrogramFrames(24, 20, ByteArray(0))
+        val state = SceneState(frames)
+        var nowNanos = 0L
+        val received = mutableListOf<FloatArray?>()
+        val sink = object : SceneFrameSink {
+            override fun hasLiveAudio(): Boolean = true
+
+            override fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT.copy(
+                impact = 0.72f,
+                aura = 0.44f,
+                kick = 0.81f,
+                pressure = 0.63f,
+            )
+
+            override fun onFrame(bands: FloatArray?) {
+                received += bands?.copyOf()
+            }
+        }
+        val driver = SceneDriver(
+            frames = frames,
+            state = state,
+            clock = SceneClock { nowNanos },
+            positionSource = ScenePositionSource {
+                error("live audio must not estimate a spectrogram position")
+            },
+            frameSink = sink,
+            framesAllowed = { true },
+        )
+
+        driver.tick()
+        nowNanos = 50_000_000L
+        driver.tick()
+
+        assertEquals(listOf(null, null), received)
+        assertEquals(0.63f, state.fogLevel, 0f)
+        assertEquals(0.81f, state.bassPressure, 0f)
+        assertEquals(0.81f, state.motionLevel, 0f)
+        assertTrue(state.fogAngleA > 0f)
+        assertNull(driver.lastDrivenFrameIndex)
+    }
+
+    @Test
+    fun liveAudioWinsOverStoredSpectrogramUntilThePcmStreamDisappears() {
+        val frames = SpectrogramFrames(24, 20, ByteArray(24) { 255.toByte() })
+        val state = SceneState(frames)
+        var live = true
+        val received = mutableListOf<FloatArray?>()
+        val sink = object : SceneFrameSink {
+            override fun hasLiveAudio(): Boolean = live
+            override fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT.copy(
+                kick = 0.9f,
+                pressure = 0.7f,
+            )
+
+            override fun onFrame(bands: FloatArray?) {
+                received += bands?.copyOf()
+            }
+        }
+        val driver = SceneDriver(
+            frames = frames,
+            state = state,
+            clock = SceneClock { 0L },
+            positionSource = ScenePositionSource { ScenePositionSample(0, 0, true) },
+            frameSink = sink,
+            framesAllowed = { true },
+        )
+
+        driver.tick()
+        live = false
+        driver.tick()
+
+        assertNull(received.first())
+        assertNotNull(received.last())
+        assertEquals(24, received.last()?.size)
+        assertEquals(0, driver.lastDrivenFrameIndex)
+    }
+
     @Test
     fun theExistingDriverFeedsOneSmoothedFrameThenTicksWithoutRepeatingIt() {
         val frames = SpectrogramFrames(24, 20, ByteArray(24) { (it * 9).toByte() })
@@ -157,6 +284,39 @@ class VisualizerSceneDriverTest {
         assertTrue(state.fogAngleA > angleBeforeSwitch)
         assertEquals(1, driver.lastDrivenFrameIndex)
     }
+}
+
+private class BufferingPathEngine : VisualSceneEngine {
+    var isPlaybackActive = false
+
+    override fun setAccent(red: Float, green: Float, blue: Float) = Unit
+
+    override fun setPlaying(playing: Boolean) {
+        isPlaybackActive = playing
+    }
+
+    override fun noteTrackChanged() = Unit
+
+    override fun ingestBands(bands: FloatArray) = Unit
+
+    override fun hasLiveAudio(): Boolean = true
+
+    override fun bassPressure(): VisualBassPressure = if (isPlaybackActive) {
+        VisualBassPressure.SILENT.copy(
+            impact = 0.72f,
+            aura = 0.44f,
+            kick = 0.81f,
+            pressure = 0.63f,
+        )
+    } else {
+        VisualBassPressure.SILENT
+    }
+
+    override fun tick() = Unit
+
+    override fun scene(width: Float, height: Float): List<Float> = emptyList()
+
+    override fun close() = Unit
 }
 
 private const val NANOS_PER_MILLISECOND = 1_000_000L

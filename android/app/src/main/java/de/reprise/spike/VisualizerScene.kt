@@ -18,8 +18,30 @@ internal interface VisualSceneEngine : AutoCloseable {
     fun setPlaying(playing: Boolean)
     fun noteTrackChanged()
     fun ingestBands(bands: FloatArray)
+    fun hasLiveAudio(): Boolean = false
+    fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT
     fun tick()
     fun scene(width: Float, height: Float): List<Float>
+}
+
+internal data class VisualBassPressure(
+    val levelDbfs: Float,
+    val baselineDbfs: Float,
+    val impact: Float,
+    val aura: Float,
+    val kick: Float,
+    val pressure: Float,
+) {
+    companion object {
+        val SILENT = VisualBassPressure(
+            levelDbfs = -140f,
+            baselineDbfs = -140f,
+            impact = 0f,
+            aura = 0f,
+            kick = 0f,
+            pressure = 0f,
+        )
+    }
 }
 
 internal fun interface VisualSceneEngineFactory {
@@ -30,13 +52,13 @@ internal val LocalVisualSceneEngineFactory = staticCompositionLocalOf<VisualScen
     NativeVisualSceneEngineFactory
 }
 
-private object NativeVisualSceneEngineFactory : VisualSceneEngineFactory {
+internal object NativeVisualSceneEngineFactory : VisualSceneEngineFactory {
     override fun create(): VisualSceneEngine = NativeVisualSceneEngine(AndroidVisualEngine())
 }
 
-private class NativeVisualSceneEngine(
+internal class NativeVisualSceneEngine(
     private val native: AndroidVisualEngine,
-) : VisualSceneEngine {
+) : VisualSceneEngine, LivePcmConsumer {
     override fun setAccent(red: Float, green: Float, blue: Float) =
         native.setAccent(red, green, blue)
 
@@ -45,6 +67,40 @@ private class NativeVisualSceneEngine(
     override fun noteTrackChanged() = native.noteTrackChanged()
 
     override fun ingestBands(bands: FloatArray) = native.ingestBands(bands.asList())
+
+    override fun setPlaybackIntent(playbackIntended: Boolean) =
+        native.setPlaybackIntended(playbackIntended)
+
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ) {
+        native.ingestPcmI16(
+            bytes,
+            byteCount.toUInt(),
+            sampleRateHz.toUInt(),
+            channelCount.toUInt(),
+        )
+    }
+
+    override fun resetAudioStream() = native.resetAudioStream()
+
+    override fun resetAudioHistory() = native.resetAudioHistory()
+
+    override fun hasLiveAudio(): Boolean = native.hasLiveAudio()
+
+    override fun bassPressure(): VisualBassPressure = native.bassPressure().let { pressure ->
+        VisualBassPressure(
+            levelDbfs = pressure.levelDbfs,
+            baselineDbfs = pressure.baselineDbfs,
+            impact = pressure.impact,
+            aura = pressure.aura,
+            kick = pressure.kick,
+            pressure = pressure.pressure,
+        )
+    }
 
     override fun tick() {
         native.tick()

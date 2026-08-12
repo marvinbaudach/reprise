@@ -1,5 +1,6 @@
 package de.reprise.spike.scene
 
+import de.reprise.spike.VisualBassPressure
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -7,6 +8,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SceneStateTest {
+    @Test
+    fun liveBassPressureDrivesFogWithoutStoredBandFollowers() {
+        val state = SceneState(
+            SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = byteArrayOf()),
+        )
+        val pressure = VisualBassPressure.SILENT.copy(
+            impact = 0.7f,
+            aura = 0.4f,
+            kick = 0.85f,
+            pressure = 0.6f,
+        )
+
+        state.adoptLiveBassPressure(pressure, elapsedSeconds = 0.05f)
+
+        assertEquals(0.6f, state.fogLevel, 0f)
+        assertEquals(0.85f, state.bassPressure, 0f)
+        assertEquals(0.85f, state.motionLevel, 0f)
+        assertTrue(state.motionBands.all { it == 0f })
+        assertTrue(state.fogAngleA > 0f)
+        assertTrue(state.fogAngleB > 350f)
+    }
+
     @Test
     fun bass_pressure_is_the_fast_follower_mean_over_the_first_seven_bands() {
         val cells = ByteArray(10 * 24) { index ->

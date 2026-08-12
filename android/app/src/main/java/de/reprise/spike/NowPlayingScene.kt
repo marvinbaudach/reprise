@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.preferredFrameRate
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -63,6 +65,20 @@ private const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
 private const val PLAYED_CENTRE_FRACTION = 0.34f
 private const val TITLE_TO_ARTIST_GAP_DP = 6
+
+internal fun shouldRequestHighVisualizerFrameRate(
+    visualizerOpacity: Float,
+    playing: Boolean,
+): Boolean = visualizerOpacity.isFinite() && visualizerOpacity > 0f && playing
+
+internal fun requestedVisualizerFrameRateCategory(
+    visualizerOpacity: Float,
+    playing: Boolean,
+): FrameRateCategory? = if (shouldRequestHighVisualizerFrameRate(visualizerOpacity, playing)) {
+    FrameRateCategory.High
+} else {
+    null
+}
 
 @Composable
 internal fun NowPlayingScene(
@@ -106,17 +122,10 @@ internal fun NowPlayingScene(
     val visualEngine = rememberVisualSceneEngine(
         enabled = visualizerOpacity > 0f,
         trackId = track.id,
-        playing = playback.isPlaying,
+        playback = playback,
         accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
     )
-    val visualFrameSink = remember(visualEngine) {
-        visualEngine?.let { engine ->
-            SceneFrameSink { bands ->
-                if (bands != null) engine.ingestBands(bands)
-                engine.tick()
-            }
-        }
-    }
+    val visualFrameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
     val drawRevision = DriveScene(
         frames = frames,
         state = state,
@@ -130,7 +139,13 @@ internal fun NowPlayingScene(
         modifier = Modifier
             .fillMaxSize()
             .background(AmbientTrueBlack)
-            .testTag("now-playing-player"),
+            .testTag("now-playing-player")
+            .then(
+                requestedVisualizerFrameRateCategory(
+                    visualizerOpacity,
+                    playback.visualizerActive,
+                )?.let { category -> Modifier.preferredFrameRate(category) } ?: Modifier,
+            ),
     ) {
         val density = LocalDensity.current
         val coverTop = maxHeight * PLAYED_CENTRE_FRACTION - (COVER_SIZE_DP / 2).dp
@@ -275,7 +290,7 @@ internal fun NowPlayingScene(
 private fun rememberVisualSceneEngine(
     enabled: Boolean,
     trackId: Long,
-    playing: Boolean,
+    playback: PlaybackUiState,
     accent: Color,
 ): VisualSceneEngine? {
     val factory = LocalVisualSceneEngineFactory.current
@@ -288,11 +303,31 @@ private fun rememberVisualSceneEngine(
         onDispose { }
     }
     SideEffect {
-        engine?.setPlaying(playing)
-        engine?.setAccent(accent.red, accent.green, accent.blue)
+        engine?.let { updateVisualSceneEngine(it, playback, accent) }
     }
     return engine
 }
+
+internal fun updateVisualSceneEngine(
+    engine: VisualSceneEngine,
+    playback: PlaybackUiState,
+    accent: Color,
+) {
+    engine.setPlaying(playback.visualizerActive)
+    engine.setAccent(accent.red, accent.green, accent.blue)
+}
+
+internal fun visualSceneFrameSink(engine: VisualSceneEngine): SceneFrameSink =
+    object : SceneFrameSink {
+        override fun hasLiveAudio(): Boolean = engine.hasLiveAudio()
+
+        override fun bassPressure(): VisualBassPressure = engine.bassPressure()
+
+        override fun onFrame(bands: FloatArray?) {
+            if (bands != null) engine.ingestBands(bands)
+            engine.tick()
+        }
+    }
 
 /** The played-view wiring kept shared with its rendered-pixel verification. */
 internal fun DrawScope.drawPlayedNowPlayingFog(
@@ -513,7 +548,7 @@ private fun ScenePauseButton(
             .background(MaterialTheme.colorScheme.primary),
     ) {
         MaterialSymbol(
-            name = if (playback.isPlaying) "pause" else "play_arrow",
+            name = playback.playPauseSymbol,
             contentDescription = playback.playPauseLabel,
             tint = NowPlayingOnBackdrop,
             sizeSp = 40,
