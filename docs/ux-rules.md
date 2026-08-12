@@ -4136,7 +4136,10 @@ means deterministic and high-confidence, never „without review".
   tag-write job wrote leaves the finding set — until an Undo puts the journal
   row back to `reverted`, which makes it a finding again. There is exactly one
   predicate for this (`library_doctor::finding_kind`), asked with the track's
-  real staleness, and the sidebar count and the result page both read it. They
+  real staleness, and the sidebar count and the result page both read it. The
+  sidebar badge counts only Ready fixes the review page can apply now. Stale
+  findings never inflate that number; the review page names their count once in
+  an out-of-date notice and offers the same-scope scan path. They
   used to disagree: the count asked with `stale: false` while the pages asked
   with the real value, so a restart turned every fix the quiet job had just
   written into a review row — our own write moves the file's mtime, a moved
@@ -4149,6 +4152,8 @@ means deterministic and high-confidence, never „without review".
   `doc_8a_quiet_fixes_produce_one_undo_toast_and_review_findings_produce_none`,
   `doc_8a_pending_review_count_excludes_everything_already_written_for_that_scan`,
   `doc_8a_pending_review_count_is_zero_once_the_scan_is_marked_reviewed`,
+  `doc_8a_pending_review_count_splits_ready_and_stale_findings`,
+  `doc_8a_the_badge_and_unfiltered_review_header_count_the_same_ready_fixes`,
   `doc_8a_conflicts_alone_do_not_produce_a_pending_count`,
   `doc_8a_auto_tier_write_conflict_does_not_produce_a_pending_count`,
   `doc_8a_done_marks_the_scan_reviewed_and_clears_the_sidebar_entry`,
@@ -4283,6 +4288,8 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_every_section_boundary_binds_a_non_empty_header`,
   `doc_9b_an_album_wide_change_renders_all_n_tracks_italic_and_muted`,
   `doc_9b_a_recycled_row_loses_the_italic_style_again`,
+  `doc_9b_stale_notice_is_unfiltered_and_hidden_at_zero`,
+  `doc_9b_the_unfiltered_footer_names_selection_and_ready_inventory`,
   `doc_9b_every_count_on_the_review_page_inflects`.
   *Amended 2026-08-08: “every reviewable row starts selected” means every Ready
   row except the two cases excluded by DOC-4c.*

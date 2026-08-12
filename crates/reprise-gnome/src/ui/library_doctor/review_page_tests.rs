@@ -299,7 +299,7 @@ fn doc_9b_every_reviewable_row_starts_selected() {
 fn doc_9b_footer_counts_the_changes_that_will_be_written() {
     let session = DoctorReviewSession::from_scan(scan(), DoctorReviewFilter::NeedsReview);
     assert_eq!(session.summary().tag_change_count, 1);
-    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 change");
+    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 fix");
 }
 
 #[test]
@@ -415,7 +415,7 @@ fn doc_9d_a_filtered_header_counts_only_the_filtered_rows() {
 
     assert_eq!(review_header_counts(&rows), (1, 1));
     assert_eq!(session.summary().tag_change_count, 1);
-    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 change");
+    assert_eq!(strings::doctor_apply_changes(1), "Apply 1 fix");
 }
 
 #[test]

@@ -286,8 +286,8 @@ pub fn doctor_scan_facts(scope: &str, remote: &str, skipped: Option<usize>) -> S
 pub fn doctor_apply_changes(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        "Apply {count} change",
-        "Apply {count} changes",
+        "Apply {count} fix",
+        "Apply {count} fixes",
         count,
         &[("count", &count_text)],
     )
