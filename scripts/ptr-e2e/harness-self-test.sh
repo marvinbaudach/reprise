@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # shellcheck source=harness-helpers.sh
 source "$REPO_ROOT/scripts/ptr-e2e/harness-helpers.sh"
+# shellcheck source=preferences.sh
+source "$REPO_ROOT/scripts/ptr-e2e/preferences.sh"
 
 TEST_ROOT="$(mktemp -d /tmp/reprise-ptr-e2e-self-test.XXXXXX)"
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
@@ -114,15 +116,36 @@ assert_equal 4 "$(grep -Fc 'key "Down"' <<<"$PREFERENCES_FLOW_SOURCE" || true)" 
 assert_equal 1 "$(grep -Fc 'screenshot "17-main-menu-closed"' \
   <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
   "Preferences captures the main menu before F10 opens it"
-assert_equal 1 "$(grep -Fc 'assert_screenshots_differ \' \
+assert_equal 2 "$(grep -Fc 'assert_screenshots_differ \' \
   <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
-  "Preferences proves the focused-menu capture differs from the closed menu"
+  "Preferences proves both menu opening and dialog presentation visually"
 assert_equal 1 "$(grep -Fc '17-main-menu-closed.png' \
   <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
   "Preferences uses the closed-menu capture as the comparison baseline"
-assert_equal 1 "$(grep -Fc '17-main-menu-preferences-focused.png' \
+assert_equal 2 "$(grep -Fc '17-main-menu-preferences-focused.png' \
   <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
-  "Preferences compares the focused-menu capture"
+  "Preferences compares the focused-menu capture before and after Return"
+assert_equal 1 "$(grep -Fc 'preferences dialog presented' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences waits for the AdwDialog presentation log"
+assert_equal 0 "$(grep -Fc 'preferences window presented' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences does not wait for the retired window presentation log"
+assert_equal 0 "$(grep -Fc 'find_preferences_window' \
+  "$REPO_ROOT/scripts/ptr-e2e/preferences.sh" || true)" \
+  "Preferences does not search for a nonexistent transient window"
+assert_equal 0 "$(grep -Ec 'preference_window|preferences_width|getwindowgeometry' \
+  "$REPO_ROOT/scripts/ptr-e2e/preferences.sh" || true)" \
+  "Preferences contains no remaining transient-window geometry assumption"
+assert_equal 1 "$(grep -Fc 'preferences_dialog_rect' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences derives its hosted dialog rectangle from the main window"
+assert_equal 10 "$(grep -Fc 'click_preferences_dialog_relative' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences routes every retained page and control click through the dialog"
+assert_equal 2 "$(grep -Fc '18-preferences-appearance.png' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences compares and validates the hosted dialog capture"
 PREFERENCES_CLOSED_LINE="$(grep -nF 'screenshot "17-main-menu-closed"' \
   <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
 PREFERENCES_F10_LINE="$(grep -nF 'key "F10"' \
@@ -130,17 +153,39 @@ PREFERENCES_F10_LINE="$(grep -nF 'key "F10"' \
 PREFERENCES_FOCUSED_LINE="$(grep -nF 'screenshot "17-main-menu-preferences-focused"' \
   <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
 PREFERENCES_COMPARE_LINE="$(grep -nF 'assert_screenshots_differ \' \
-  <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+  <<<"$PREFERENCES_FLOW_SOURCE" | head -1 | cut -d: -f1)"
 PREFERENCES_RETURN_LINE="$(grep -nF 'key "Return"' \
   <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+PREFERENCES_DIALOG_LOG_LINE="$(grep -nF '"preferences dialog presented"' \
+  <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+PREFERENCES_DIALOG_SCREENSHOT_LINE="$(grep -nF 'screenshot "18-preferences-appearance"' \
+  <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+PREFERENCES_DIALOG_COMPARE_LINE="$(grep -nF 'assert_screenshots_differ \' \
+  <<<"$PREFERENCES_FLOW_SOURCE" | tail -1 | cut -d: -f1)"
 PREFERENCES_FLOW_ORDER_OK=0
 if [ "$PREFERENCES_CLOSED_LINE" -lt "$PREFERENCES_F10_LINE" ] \
   && [ "$PREFERENCES_F10_LINE" -lt "$PREFERENCES_FOCUSED_LINE" ] \
   && [ "$PREFERENCES_FOCUSED_LINE" -lt "$PREFERENCES_COMPARE_LINE" ] \
-  && [ "$PREFERENCES_COMPARE_LINE" -lt "$PREFERENCES_RETURN_LINE" ]; then
+  && [ "$PREFERENCES_COMPARE_LINE" -lt "$PREFERENCES_RETURN_LINE" ] \
+  && [ "$PREFERENCES_RETURN_LINE" -lt "$PREFERENCES_DIALOG_LOG_LINE" ] \
+  && [ "$PREFERENCES_DIALOG_LOG_LINE" -lt "$PREFERENCES_DIALOG_SCREENSHOT_LINE" ] \
+  && [ "$PREFERENCES_DIALOG_SCREENSHOT_LINE" -lt "$PREFERENCES_DIALOG_COMPARE_LINE" ]; then
   PREFERENCES_FLOW_ORDER_OK=1
 fi
 assert_equal 1 "$PREFERENCES_FLOW_ORDER_OK" \
-  "Preferences proves the menu opened before activating its focused item"
+  "Preferences proves the menu opened, then the hosted dialog replaced it"
+
+window_rect() {
+  printf '20 40 1600 900'
+}
+PREFERENCES_CLICK_LOG="$TEST_ROOT/preferences-click.log"
+click_at() {
+  printf '%s %s\n' "$1" "$2" > "$PREFERENCES_CLICK_LOG"
+}
+assert_equal "440 150 760 680" "$(preferences_dialog_rect)" \
+  "Preferences centers its authored dialog rectangle within the host window"
+click_preferences_dialog_relative "440 150 760 680" 70 151
+assert_equal "510 301" "$(cat "$PREFERENCES_CLICK_LOG")" \
+  "Preferences translates dialog-relative clicks to host-screen coordinates"
 
 printf 'harness self-test passed\n'

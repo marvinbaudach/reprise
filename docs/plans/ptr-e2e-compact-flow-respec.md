@@ -189,6 +189,25 @@ complete counts are trustworthy. Both failures had one harness cause:
   blank. The float-safe screenshot helper from the run-6 repair supplies the
   comparison.
 
+### Run 10 review follow-up
+
+Run 10 completed all nine flows with 38 passed and the same two failed checks.
+Its focused-menu capture confirmed that the run-9 navigation repair selected
+Preferences correctly. Both remaining failures came from the harness retaining
+the pre-`AdwDialog` surface model:
+
+- the product has logged `preferences dialog presented` since Preferences
+  moved into the main window, while flow 6 still waited for `preferences
+  window presented`. The wait now matches the emitted message;
+- an `AdwDialog` does not create a second X11 toplevel, so searching for an
+  active transient could never succeed. The flow now pairs the presentation
+  log with an `assert_screenshots_differ` comparison between the focused menu
+  immediately before Return and the presented dialog immediately afterward;
+- every retained page and control check now uses the authored 760x680 dialog
+  rectangle centered within the maximized Library window. The previous
+  transient-window origin and width queries were removed, but no downstream
+  page, persistence, or reachability check was dropped.
+
 ## Named product gaps
 
 These gaps are intentionally recorded rather than represented as red harness
@@ -221,6 +240,10 @@ Static acceptance for this implementation is:
 - fewer started flows than the selected route expects force a failing exit;
 - flow 6 performs no coordinate action unless maximized geometry reaches at
   least 1500x850;
+- flow 6 waits for `preferences dialog presented`, proves the hosted dialog
+  visibly replaced the focused primary menu, contains no Preferences transient
+  lookup, and derives every retained control coordinate from the centered
+  760x680 dialog rectangle;
 - the display-free harness accounting self-test passes;
 - every touched shell script passes `bash -n`.
 
