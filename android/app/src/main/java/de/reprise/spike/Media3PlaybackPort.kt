@@ -71,6 +71,10 @@ internal class Media3PlaybackPort(
             }
         }
 
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            emitState()
+        }
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 return
