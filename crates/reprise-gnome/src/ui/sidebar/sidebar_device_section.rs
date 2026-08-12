@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
-use super::sidebar_device_card::{menu, CardRegistry, DeviceCard, OpenCallback};
+use super::sidebar_device_card::{menu, CancelCallback, CardRegistry, DeviceCard, OpenCallback};
 use crate::ui::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
 
 const ARROW_CLOSED: &str = "pan-end-symbolic";
@@ -41,7 +41,6 @@ impl DeviceSection {
 
         let label = gtk4::Label::new(Some("DEVICES"));
         label.add_css_class("caption");
-        label.add_css_class("dim-label");
         label.set_xalign(0.0);
         label.set_hexpand(true);
         let arrow = gtk4::Image::from_icon_name(ARROW_CLOSED);
@@ -130,7 +129,7 @@ pub(super) fn bind(runtime: &Rc<DeviceSyncRuntime>, on_open: OpenCallback) -> gt
 /// connects or disconnects changes which half of the section it belongs to,
 /// and the card travels rather than being rebuilt — rebuilding is what used
 /// to destroy a card between a click's press and release.
-fn place(card: &gtk4::Button, target: &gtk4::Box) {
+fn place(card: &gtk4::Overlay, target: &gtk4::Box) {
     if card.parent().as_ref() == Some(target.upcast_ref::<gtk4::Widget>()) {
         return;
     }
@@ -138,7 +137,7 @@ fn place(card: &gtk4::Button, target: &gtk4::Box) {
     target.append(card);
 }
 
-fn detach(card: &gtk4::Button) {
+fn detach(card: &gtk4::Overlay) {
     if let Some(parent) = card.parent().and_downcast::<gtk4::Box>() {
         parent.remove(card);
     }
@@ -177,9 +176,13 @@ fn render(
         match registry.get(&device.id) {
             Some(card) => card.update(device),
             None => {
-                let card = DeviceCard::new(device, on_open);
-                menu::wire(card.root(), runtime, &device.id);
-                card.update(device);
+                let cancel_runtime = runtime.clone();
+                let on_cancel: CancelCallback =
+                    Rc::new(move |device_id| cancel_runtime.cancel_current(&device_id));
+                let card = DeviceCard::new(device, on_open, &on_cancel);
+                for target in card.context_menu_targets() {
+                    menu::wire(target, runtime, &device.id);
+                }
                 registry.insert(device.id.clone(), card);
             }
         }

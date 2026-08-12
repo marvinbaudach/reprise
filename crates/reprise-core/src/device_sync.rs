@@ -43,13 +43,6 @@ pub use browser::{
     classify_storage_kind, preview_target_folder, reset_target_folder, target_relocation_action,
     StorageKind, StorageOption, TargetPreview, TargetRelocation,
 };
-pub use music_diff::{aggregate_balance, MusicDiff, MusicReading, SyncBalance};
-// Plan B owns one same-wave sidebar test that still imports these names.
-// Remove these aliases when that branch rebases and adopts the music terms.
-#[doc(hidden)]
-pub type CategoryDiff = MusicDiff;
-#[doc(hidden)]
-pub type CategoryReading = MusicReading;
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
 pub use device_presence::{
     project_device_presence, project_device_sessions, remembered_device_status,
@@ -70,6 +63,7 @@ pub use mirror::{
     MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack, MirrorWarning, PlaylistWrite,
     UnavailableTrack,
 };
+pub use music_diff::{aggregate_balance, MusicDiff, MusicReading, SyncBalance};
 pub use page::{
     project_sync_page, SyncChangeSummary, SyncPageControls, SyncPageInput, SyncPageProjection,
     SyncPageState, SyncPageWarning, SyncPlaylistRow,
