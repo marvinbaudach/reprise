@@ -12,8 +12,7 @@ run_selection_anchor_flow() {
   # range origin. Pure/display seams separately prove the no-user-anchor
   # fallback; this flow's unique job is to prove that real pointer delivery
   # reaches the capture-phase cell gesture before GTK's row machinery.
-  xdotool mousemove "$ROW1_TITLE_CELL_X" "$ROW1_TITLE_CELL_Y" \
-    click --repeat 2 --delay 80 1
+  double_click_at "$ROW1_TITLE_CELL_X" "$ROW1_TITLE_CELL_Y"
   sleep 1
   screenshot "02-playing-row-1"
 

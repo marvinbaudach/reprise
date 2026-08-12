@@ -125,12 +125,14 @@ pub(in crate::ui) fn wire_cell_selection(
             return;
         };
         gesture.set_state(gtk4::EventSequenceState::Claimed);
-        let (op, next) = resolve(
-            live_anchor_state(&shared),
-            playing_anchor(&shared),
-            target,
-            mode,
-        );
+        let state = live_anchor_state(&shared);
+        // Guard the playing fallback because it queries the full visible table.
+        let playing = state
+            .anchor
+            .is_none()
+            .then(|| playing_anchor(&shared))
+            .flatten();
+        let (op, next) = resolve(state, playing, target, mode);
         apply(&shared, op);
         store_anchor_state(&shared, next);
     });
@@ -149,6 +151,12 @@ pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
             return gtk4::glib::Propagation::Proceed;
         };
         let state = live_anchor_state(&shared_for_keys);
+        // Guard the playing fallback because it queries the full visible table.
+        let playing = state
+            .anchor
+            .is_none()
+            .then(|| playing_anchor(&shared_for_keys))
+            .flatten();
         let mode = if modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK) {
             SelectMode::RangeAdditive
         } else {
@@ -156,11 +164,7 @@ pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         };
         // Without a cursor, keyboard extension starts where pointer extension
         // would start too.
-        let Some(origin) = state
-            .cursor
-            .or(state.anchor)
-            .or_else(|| playing_anchor(&shared_for_keys))
-        else {
+        let Some(origin) = state.cursor.or(state.anchor).or(playing) else {
             return gtk4::glib::Propagation::Proceed;
         };
         let n_items = shared_for_keys.model.n_items();
@@ -177,7 +181,7 @@ pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         let Some(target) = anchored_at(&shared_for_keys, position) else {
             return gtk4::glib::Propagation::Proceed;
         };
-        let (op, next) = resolve(state, playing_anchor(&shared_for_keys), target, mode);
+        let (op, next) = resolve(state, playing, target, mode);
         apply(&shared_for_keys, op);
         store_anchor_state(&shared_for_keys, next);
         if matches!(intent, KeyIntent::Extend(_)) {
@@ -193,16 +197,11 @@ pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         shared
             .selection
             .connect_selection_changed(move |selection, _, _| {
-                let mut only = None;
-                for position in 0..selection.n_items() {
-                    if selection.is_selected(position) {
-                        if only.is_some() {
-                            return;
-                        }
-                        only = Some(position);
-                    }
+                let selected = selection.selection();
+                if selected.size() != 1 {
+                    return;
                 }
-                let Some(position) = only else { return };
+                let position = selected.nth(0);
                 let Some(anchored) = anchored_at(&shared_for_sync, position) else {
                     return;
                 };
