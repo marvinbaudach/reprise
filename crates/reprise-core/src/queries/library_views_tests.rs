@@ -421,6 +421,111 @@ fn artist_album_window_sorts_newest_then_title_and_unknown_year_last() {
 }
 
 #[test]
+fn artist_album_and_untagged_windows_partition_the_artists_tracks() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (id,path,title,artist,album,album_artist,track_no,added_at) VALUES
+             (1,'/album-a','Album A','Solo','Album','Solo',1,0),
+             (2,'/album-b','Album B','Solo','Album','Solo',2,0),
+             (3,'/other-a','Other A','Solo','','Solo',NULL,0),
+             (4,'/other-b','Other B','Solo','   ','Solo',NULL,0);",
+        )
+        .unwrap();
+
+    let albums = query_artist_albums(&db, "Solo", full_window()).unwrap();
+    let untagged = query_artist_untagged_tracks(&db, "Solo", full_window()).unwrap();
+    let artist_total = query_track_count(&db, &ViewSource::Artist("Solo".into()), "", &[])
+        .unwrap();
+
+    assert_eq!(
+        untagged
+            .rows
+            .iter()
+            .map(|track| track.id)
+            .collect::<Vec<_>>(),
+        [3, 4]
+    );
+    assert_eq!(
+        albums
+            .rows
+            .iter()
+            .map(|album| album.track_count)
+            .sum::<i64>()
+            + untagged.total,
+        artist_total
+    );
+}
+
+#[test]
+fn artist_untagged_window_treats_empty_and_whitespace_album_tags_as_blank() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (id,path,title,artist,album,album_artist,added_at) VALUES
+             (1,'/empty','Empty','Solo','','Solo',0),
+             (2,'/spaces','Spaces','Solo','   ','Solo',0);",
+        )
+        .unwrap();
+
+    let untagged = query_artist_untagged_tracks(&db, "Solo", full_window()).unwrap();
+
+    assert_eq!(untagged.total, 2);
+    assert_eq!(
+        untagged
+            .rows
+            .iter()
+            .map(|track| track.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Empty", "Spaces"]
+    );
+}
+
+#[test]
+fn artist_untagged_window_matches_the_exact_artist_not_a_name_prefix() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (id,path,title,artist,album,album_artist,added_at) VALUES
+             (1,'/bad','Bad track','Bad','','Bad',0),
+             (2,'/bad-religion','Bad Religion track','Bad Religion','','Bad Religion',0);",
+        )
+        .unwrap();
+
+    let untagged = query_artist_untagged_tracks(&db, "Bad", full_window()).unwrap();
+
+    assert_eq!(untagged.total, 1);
+    assert_eq!(untagged.rows[0].title, "Bad track");
+}
+
+#[test]
+fn artist_untagged_window_reports_the_full_total_beyond_the_page() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (id,path,title,artist,album,album_artist,added_at) VALUES
+             (1,'/a','A','Solo','','Solo',0),
+             (2,'/b','B','Solo','','Solo',0),
+             (3,'/c','C','Solo','','Solo',0);",
+        )
+        .unwrap();
+
+    let untagged = query_artist_untagged_tracks(
+        &db,
+        "Solo",
+        WindowRange {
+            offset: 0,
+            limit: 2,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(untagged.total, 3);
+    assert_eq!(untagged.rows.len(), 2);
+    assert!(untagged.has_more);
+}
+
+#[test]
 fn album_filter_matches_titles_and_effective_artists_with_exact_counts() {
     let db = seeded_library();
 

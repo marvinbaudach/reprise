@@ -9,7 +9,7 @@ use super::clauses::{
     filter_clause, like_pattern, order_clause, row_to_id, row_to_track, track_projection, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
-use super::{browse::browse_clause, BrowseFilter, WindowRange, MAX_WINDOW_LIMIT};
+use super::{browse::browse_clause, BrowseFilter, TrackWindow, WindowRange, MAX_WINDOW_LIMIT};
 
 pub(crate) const EFFECTIVE_ALBUM_ARTIST: &str =
     "CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END";
@@ -209,6 +209,54 @@ pub fn query_artist_album_count(db: &Db, artist: &str) -> Result<i64, rusqlite::
                SELECT 1 FROM tracks WHERE {selection} \
                GROUP BY LOWER(TRIM(album)) \
              )"
+        ),
+        rusqlite::params![artist.trim()],
+        |row| row.get(0),
+    )
+}
+
+/// Returns one counted, bounded window of an artist's present tracks whose
+/// album tag is blank after trimming.
+pub fn query_artist_untagged_tracks(
+    db: &Db,
+    artist: &str,
+    window: WindowRange,
+) -> Result<TrackWindow, rusqlite::Error> {
+    let total = query_artist_untagged_track_count(db, artist)?;
+    let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let projection = track_projection("", true);
+    let sql = format!(
+        "SELECT {projection} FROM tracks WHERE {PRESENT} \
+         AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE \
+         AND TRIM(album) = '' \
+         ORDER BY title COLLATE NOCASE ASC, path COLLATE NOCASE ASC, id ASC \
+         LIMIT ?1 OFFSET ?2"
+    );
+    let mut statement = db.conn().prepare(&sql)?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![limit, window.offset, artist.trim()],
+            row_to_track,
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(TrackWindow {
+        total,
+        has_more: super::surface_browse::has_more(total, window, rows.len()),
+        rows,
+    })
+}
+
+/// Counts the exact rows returned by [`query_artist_untagged_tracks`] without
+/// materializing their track projections.
+pub fn query_artist_untagged_track_count(
+    db: &Db,
+    artist: &str,
+) -> Result<i64, rusqlite::Error> {
+    db.conn().query_row(
+        &format!(
+            "SELECT count(*) FROM tracks WHERE {PRESENT} \
+             AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+             AND TRIM(album) = ''"
         ),
         rusqlite::params![artist.trim()],
         |row| row.get(0),
