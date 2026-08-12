@@ -920,6 +920,18 @@ msgstr ""
 msgid "Could not export “{name}”"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings.rs:755
+msgid "LGPL 2.1 or later"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:756
+msgid "MIT"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:757
+msgid "Public Domain"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:7
 msgid "Reveal playing album"
 msgstr ""

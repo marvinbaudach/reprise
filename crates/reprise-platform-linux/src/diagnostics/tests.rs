@@ -41,11 +41,27 @@ fn linux_report_collection_keeps_frontend_runtime_facts() {
 #[test]
 fn os_release_parser_prefers_id_and_unquotes_values() {
     let release = parse_os_release(
-        "NAME=\"Fedora Linux\"\nID=fedora\nVERSION_ID=\"43\"\nPRETTY_NAME=ignored\n",
+        "NAME=\"Fedora Linux\"\nID=fedora\nVERSION_ID=\"43\"\nBUILD_ID=Rawhide\nPRETTY_NAME=ignored\n",
     );
 
     assert_eq!(release.name.as_deref(), Some("fedora"));
     assert_eq!(release.version.as_deref(), Some("43"));
+}
+
+#[test]
+fn os_release_parser_uses_build_id_when_version_id_is_missing() {
+    let release = parse_os_release("ID=manjaro\nBUILD_ID=rolling\n");
+
+    assert_eq!(release.name.as_deref(), Some("manjaro"));
+    assert_eq!(release.version.as_deref(), Some("rolling"));
+}
+
+#[test]
+fn os_release_parser_uses_build_id_when_version_id_is_empty() {
+    let release = parse_os_release("ID=manjaro\nVERSION_ID=\"\"\nBUILD_ID=rolling\n");
+
+    assert_eq!(release.name.as_deref(), Some("manjaro"));
+    assert_eq!(release.version.as_deref(), Some("rolling"));
 }
 
 #[test]
