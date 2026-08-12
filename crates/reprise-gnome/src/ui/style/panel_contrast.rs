@@ -10,7 +10,7 @@ struct PanelRole {
     minimum: Option<f64>,
 }
 
-const PANEL_ROLES: [PanelRole; 10] = [
+const PANEL_ROLES: [PanelRole; 13] = [
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-stage",
@@ -40,10 +40,31 @@ const PANEL_ROLES: [PanelRole; 10] = [
         minimum: Some(4.5),
     },
     PanelRole {
+        css: crate::ui::now_playing::css,
+        selector: ".reprise-song-visual-analysis-name",
+        role: "@reprise_secondary_fg_color",
+        alpha: SECONDARY_TEXT_ALPHA,
+        minimum: Some(4.5),
+    },
+    PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-section",
         role: "@reprise_secondary_fg_color",
         alpha: SECONDARY_TEXT_ALPHA,
+        minimum: Some(4.5),
+    },
+    PanelRole {
+        css: crate::ui::now_playing::up_next_panel::css,
+        selector: ".reprise-up-next-remove",
+        role: "@reprise_secondary_fg_color",
+        alpha: SECONDARY_TEXT_ALPHA,
+        minimum: Some(4.5),
+    },
+    PanelRole {
+        css: crate::ui::now_playing::up_next_panel::css,
+        selector: ".reprise-up-next-remove:hover",
+        role: "@reprise_primary_fg_color",
+        alpha: PRIMARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
