@@ -31,4 +31,9 @@ SIDEBAR_QUEUE_Y=150
 PRIMARY_MENU_FROM_RIGHT=186
 INFO_TOGGLE_FROM_RIGHT=222
 SEARCH_TOGGLE_FROM_RIGHT=262
-COMPACT_BUTTON_FROM_RIGHT=302
+# `compact_player_layouts.rs` builds one 430x76 mini card. Compact points are
+# derived from the live window rect; only the widget-edge offsets stay fixed.
+COMPACT_CARD_MAX_WIDTH=430
+COMPACT_CARD_MAX_HEIGHT=76
+COMPACT_COVER_CENTER_X=34
+COMPACT_PLAY_BUTTON_FROM_RIGHT=32
