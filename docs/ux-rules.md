@@ -250,6 +250,15 @@ result.
   `nav_16_only_optional_module_rows_offer_turn_off`,
   `nav_16_turn_off_dispatches_the_clicked_module_once`,
   `nav_16_secondary_click_turns_off_the_row_and_falls_back_to_music`.
+- **NAV-17** [active] [gtk] — **A Shift selection starts at an anchor, not at
+  the beginning of the list.** The user sets the anchor with the last click
+  without Shift. If no such anchor exists after a fresh load, sort change, or
+  filter change, the playing track's row takes its place when that row is
+  present in the current track source. If neither exists, Shift+click selects
+  exactly the clicked row instead of stretching from the start of the list. A
+  range never moves the anchor; the next input starts from it again. The
+  playing track remains passive: it receives neither selection nor keyboard
+  focus, and playback still moves nothing, preserving NAV-10b.
 
 ## C. Playback, queue, shuffle, filter
 

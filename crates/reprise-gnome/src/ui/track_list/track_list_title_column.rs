@@ -68,6 +68,7 @@ pub(in crate::ui) fn append_title_column(
             &shared,
             &column_view_for_setup,
         );
+        super::track_list_selection_input::wire_cell_selection(&row, item, &shared);
         track_list_dnd::wire_row_dnd(&row, item, &shared);
         item.set_child(Some(&row));
         list_density::inherit(&column_view_for_setup, &row);

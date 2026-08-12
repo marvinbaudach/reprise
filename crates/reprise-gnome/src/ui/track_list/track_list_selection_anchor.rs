@@ -12,13 +12,13 @@
 //! closely related to `podcasts_selection::apply_select`, which applies the
 //! same anchor discipline to episode rows.
 
-// Task 1 establishes the tested seam before Tasks 2-4 wire its production
-// consumers.
-#![cfg_attr(not(test), allow(dead_code))]
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SelectMode {
+    // Kept in the resolver's complete operation vocabulary; GTK performs
+    // non-Shift selection directly while the capture seam only observes it.
+    #[allow(dead_code)]
     Only,
+    #[allow(dead_code)]
     Toggle,
     Range,
     RangeAdditive,
@@ -132,7 +132,6 @@ pub(super) fn anchored_at(shared: &Shared, position: u32) -> Option<Anchored> {
 /// Resolves the playing track as a fallback anchor at input time and never
 /// stores it. That preserves NAV-10b: playback writes no selection state and
 /// therefore cannot move the anchor behind the user's back.
-#[cfg_attr(test, allow(dead_code))]
 pub(super) fn playing_anchor(shared: &Shared) -> Option<Anchored> {
     let track_id = shared.playing_track_id.get()?;
     let ids = shared.current_view_ids();

@@ -297,6 +297,7 @@ pub(in crate::ui) fn append_column(
             &shared,
             &column_view_for_setup,
         );
+        super::track_list_selection_input::wire_cell_selection(&label, item, &shared);
         // Stage 3 Task 6: drag-source (fill a playlist / reorder) and
         // drop-target (reorder) — see `ui::track_list_dnd`'s doc comment.
         track_list_dnd::wire_row_dnd(&label, item, &shared);
@@ -434,6 +435,7 @@ pub(in crate::ui) fn append_cover_column(
             cover.set_placeholder();
             let album_link = arm_cover_album_link(&cover);
             track_list_context_menu::wire_context_menu_gesture(&cover, item, &shared, &column_view);
+            super::track_list_selection_input::wire_cell_selection(&cover, item, &shared);
             track_list_dnd::wire_row_dnd(&cover, item, &shared);
             cell_states.borrow_mut().insert(
                 item.as_ptr() as usize,
