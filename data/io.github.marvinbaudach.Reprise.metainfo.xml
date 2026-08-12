@@ -92,6 +92,24 @@
     <control>pointing</control>
   </recommends>
   <update_contact>tomateq_AT_pm.me</update_contact>
+  <screenshots>
+    <screenshot type="default">
+      <image type="source" width="1000" height="700">https://raw.githubusercontent.com/marvinbaudach/reprise/main/data/screenshots/library.png</image>
+      <caption>Browse your whole library in one sortable track table</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1000" height="700">https://raw.githubusercontent.com/marvinbaudach/reprise/main/data/screenshots/now-playing.png</image>
+      <caption>See what is playing, with cover art and a live visualizer</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1000" height="700">https://raw.githubusercontent.com/marvinbaudach/reprise/main/data/screenshots/queue.png</image>
+      <caption>Queue tracks and reorder them as you listen</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1000" height="700">https://raw.githubusercontent.com/marvinbaudach/reprise/main/data/screenshots/dark.png</image>
+      <caption>Follows the system light and dark style</caption>
+    </screenshot>
+  </screenshots>
   <releases>
     <release version="0.1.1" date="2026-07-25" type="stable">
       <description>
