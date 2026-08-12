@@ -219,6 +219,8 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     assert!(css.contains("radial-gradient"));
     assert!(css.contains("alpha(@reprise_player_accent, 0.26)"));
     assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
+    assert!(css.contains(".reprise-now-playing-head { padding: 22px 18px 0; }"));
+    assert!(css.contains(".reprise-now-playing-metadata { padding: 0 18px 16px; }"));
     assert!(css.contains("border-radius: 12px"));
     assert!(css.contains("font-size: 15px"));
     assert!(css.contains("font-size: 12px"));
@@ -308,6 +310,37 @@ fn head_and_pill_match_the_21a_structure() {
         Some("reprise-visual-bars-symbolic")
     );
     assert!(widgets.footer.has_css_class("reprise-now-playing-footer"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn head_band_keeps_metadata_below_the_artwork_overlay() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = test_widgets(&content, true);
+
+    assert_eq!(
+        widgets.artwork_band.height_request(),
+        tokens::NOW_PLAYING_ARTWORK_BAND
+    );
+    assert!(!widgets.artwork_band.can_target());
+    assert_eq!(widgets.head.valign(), gtk4::Align::Start);
+    assert_eq!(
+        widgets.head.parent().as_ref(),
+        Some(widgets.artwork_overlay.upcast_ref())
+    );
+    assert_eq!(
+        widgets.artwork_overlay.parent().as_ref(),
+        Some(widgets.head_column.upcast_ref())
+    );
+    assert_eq!(
+        widgets.metadata.parent().as_ref(),
+        Some(widgets.head_column.upcast_ref())
+    );
+    assert_eq!(
+        widgets.artwork_overlay.next_sibling().as_ref(),
+        Some(widgets.metadata.upcast_ref())
+    );
 }
 
 #[test]
