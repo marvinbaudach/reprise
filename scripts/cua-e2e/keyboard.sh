@@ -53,6 +53,10 @@ reset_surface_baseline() {
   if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
     return 0
   fi
+  reset_surface_clear_filters "$pid" "$window_id" "$stem" 1 || true
+  if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
+    return 0
+  fi
   local attempt
   for attempt in 1 2 3 4; do
     cua_hotkey "$pid" "$window_id" "$stem-reset-back-$attempt" alt left || return 1
@@ -61,9 +65,35 @@ reset_surface_baseline() {
     fi
   done
 
+  reset_surface_clear_filters "$pid" "$window_id" "$stem" 2 || true
+  if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
+    return 0
+  fi
+
   echo "reset before '$stem' did not restore the TrackList baseline; the previous" >&2
-  echo "surface left state behind that this scenario cannot run against" >&2
+  echo "surface left state behind that this scenario cannot run against; evidence: $CUA_E2E_OUT_DIR/$stem-reset-state.json" >&2
+  echo "[cua-keyboard] reset before '$stem' failed; evidence: $CUA_E2E_OUT_DIR/$stem-reset-state.json"
   return 1
+}
+
+reset_surface_clear_filters() {
+  local pid=$1 window_id=$2 stem=$3 pass=$4 state_path
+
+  state_path=$(cua_snapshot "$pid" "$window_id" "$stem-reset-filters-$pass") || return 1
+  if ! snapshot_exposes_label "$state_path" "Clear all ×"; then
+    return 0
+  fi
+
+  # Escape keeps the query by design since SEARCH-4a, while Alt+Left is a
+  # navigation action. The visible Clear all control drops search and filter
+  # chips together, so reach it by keyboard and activate it with Enter.
+  cua_focus_label_via_tab \
+    "$pid" "$window_id" "Clear all ×" "$stem-reset-clear-focus-$pass" >/dev/null \
+    || return 1
+  cua_press_key_focused \
+    "$pid" "$window_id" enter "$stem-reset-clear-activate-$pass" || return 1
+  cua_wait_for_label_absent \
+    "$pid" "$window_id" "Clear all ×" "$stem-reset-clear-absent-$pass" >/dev/null
 }
 
 reset_surface_is_at_baseline() {
@@ -247,7 +277,7 @@ keyboard_compact_minimal() {
 }
 
 check_manifest() {
-  local surface scenario
+  local surface scenario claimed_groups
   local count=0
   declare -A seen=()
 
@@ -261,6 +291,17 @@ check_manifest() {
     fi
     if [[ -n "${seen[$surface]:-}" ]]; then
       echo "keyboard manifest contains duplicate surface: $surface" >&2
+      return 1
+    fi
+    claimed_groups=0
+    if CUA_E2E_KEYBOARD_GROUP=primary surface_in_group "$surface"; then
+      claimed_groups=$((claimed_groups + 1))
+    fi
+    if CUA_E2E_KEYBOARD_GROUP=secondary surface_in_group "$surface"; then
+      claimed_groups=$((claimed_groups + 1))
+    fi
+    if ((claimed_groups != 1)); then
+      echo "keyboard manifest surface must belong to exactly one group: $surface" >&2
       return 1
     fi
     seen[$surface]=1
@@ -318,16 +359,21 @@ run_manifest() {
   # surfaces pass, and it hid genuine failures for a long time: while the
   # app-shell Escape defect stood, `sidebar` onwards had never run once, so
   # "one failure" read as the whole story when it was the first of an unknown
-  # number. Same rule the Rust display runner follows (see RELEASING.md).
+  # number. Counting an un-run surface as failed hid the same thing one level
+  # down: on 2026-08-12, `failed: 4` meant four surfaces were never tested, not
+  # four defects. Same rule the Rust display runner follows (see RELEASING.md).
   local -a failed=()
+  local -a not_exercised=()
   local passed=0
+  local selected=0
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
     surface_in_group "$surface" || continue
+    selected=$((selected + 1))
     echo "[cua-keyboard] $surface"
     if ! reset_surface_baseline "$pid" "$window_id" "$surface"; then
       echo "[cua-keyboard] $surface: reset failed, surface not exercised" >&2
-      failed+=("$surface (reset)")
+      not_exercised+=("$surface")
       continue
     fi
     if "$scenario" "$pid" "$window_id"; then
@@ -337,9 +383,20 @@ run_manifest() {
     fi
   done <"$manifest"
 
-  echo "[cua-keyboard] surfaces passed: $passed, failed: ${#failed[@]}"
+  echo "[cua-keyboard] surfaces passed: $passed, failed: ${#failed[@]}, not exercised: ${#not_exercised[@]}"
+  if ((selected == 0)); then
+    echo "[cua-keyboard] no keyboard surfaces were selected" >&2
+    return 1
+  fi
   if ((${#failed[@]} > 0)); then
     printf '[cua-keyboard] FAILED surface: %s\n' "${failed[@]}" >&2
+  fi
+  if ((${#not_exercised[@]} > 0)); then
+    printf '[cua-keyboard] NOT EXERCISED surface: %s\n' "${not_exercised[@]}" >&2
+  fi
+  # A harness that cannot reach a surface is a red run; it is not a verdict
+  # about the app, so failed and not-exercised outcomes remain distinct.
+  if ((${#failed[@]} > 0 || ${#not_exercised[@]} > 0)); then
     return 1
   fi
 }
