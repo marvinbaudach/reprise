@@ -252,4 +252,90 @@ hard-coded declarations concentrate in five files:
   reason. Brand colours from `palette.toml`, the animations and the glow
   gradients qualify and are **not** findings; a plain `color: #ffffff` on body
   text does not.
-- **Effort estimate:** mittel (1–4 h), shared with the GP-8 blocker above
+- **Effort estimate:** medium (1–4 h), shared with the GP-8 blocker above
+
+### GP-9 — The rule has no working evidence, and the suite says otherwise
+
+The repository already carries a keyboard-only surface inventory
+(`scripts/cua-e2e/keyboard.sh` with `scripts/cua-e2e/keyboard-surfaces.tsv`,
+**10** surfaces). It was run against the release build:
+`CUA_E2E_PROFILE=release CUA_E2E_ONLY=populated-library scripts/cua-e2e/run.sh`.
+Evidence: `/tmp/reprise-cua-e2e/run-20260812T050653Z-1266041` (413 files).
+
+Result line: `surfaces passed: 1, failed: 4`. Of ten surfaces, **one** actually
+executed its GP-9 assertions.
+
+| Surface | What happened |
+|---|---|
+| `app-shell` | **passed** — search open, type, `No results`, Escape, focus not left on the `GtkText` |
+| `sidebar`, `tracks-playlist-queue`, `issues-import`, `player-now-playing` | counted as failures, but the scenario function never ran |
+| `device-sync`, `preferences`, `modals`, `stats`, `compact-minimal` | never started |
+
+- **Severity:** major
+- **Locations:**
+  - `scripts/cua-e2e/keyboard.sh:29` (`reset_surface_baseline`)
+  - `scripts/cua-e2e/keyboard.sh:328` (the `continue` that records `"<surface> (reset)"` as a failure)
+  - `scripts/cua-e2e/run.sh` (the scenario-group loop, under `set -euo pipefail`)
+- **Observation:** the four "failures" are not app defects. For each of them the
+  evidence directory contains **only** the `*-reset-*` files and no
+  `acc-<surface>-*` files at all, so `reset_surface_baseline` returned non-zero
+  before the surface was ever exercised. The cause is documented in the script
+  itself: since SEARCH-4a, Escape closes the search popover but *keeps* its
+  query (`keyboard.sh:32-34`), and `keyboard_app_shell` leaves the view
+  filtered to `"nomatch"`. The reset then tries Escape twice and Alt+Left,
+  none of which clears a filter — the visible, accessible-named `Clear all ×`
+  control is never used. Each of the four `*-reset-state.json` files still
+  carries the chip `⌕ "nomatch" in track, artist and album ×`.
+  Separately, because the scenario-group loop in `run.sh` is not guarded, the
+  non-zero return of `populated-library` aborted the script under `set -e`
+  before `populated-library-secondary` ran, silently dropping the remaining
+  five surfaces from the run.
+- **Why it violates the rule:** GP-9 cannot be evidenced today. Worse than a
+  gap, the suite reports "failed" for surfaces it never tested, so the number
+  reads as a verdict about the app when it is a verdict about the harness. No
+  focus loss, no focus trap and no keyboard-unreachable element was observed —
+  because for nine of ten surfaces nothing was observed at all.
+- **Effort estimate:** small (< 1 h) for the reset (use the `Clear all` action
+  instead of Escape + Alt+Left, and fail loudly rather than counting an
+  un-run surface as a failed one); small for guarding the group loop so one
+  failing group no longer drops the rest.
+
+**Not measured, therefore not claimed:** GP-9 for `sidebar`,
+`tracks-playlist-queue`, `issues-import`, `player-now-playing`, `device-sync`,
+`preferences`, `modals`, `stats` and `compact-minimal` — zero assertions ran.
+The known focus-trap suspicion about the sidebar rows is **still open**; this
+run did not touch it.
+
+### GP-10 — The main track list has no accessible name
+
+Measured from the richest window-state snapshot the run captured
+(`populated-missing-4.json`: main track list, sidebar, player bar and the
+Missing-files banner): **47 AT-SPI nodes, 9 with an empty name, 0 reporting
+0x0 extents while visible.**
+
+Six of the nine empty names are `grid cell` nodes in the Album column for
+fixture tracks that carry no album tag — the cell text matches the absent data,
+which is not a markup defect and is not counted. One is the `ListView` GTK
+builds inside `GtkColumnView`, which Reprise does not construct.
+
+- **Severity:** major
+- **Locations:**
+  - `crates/reprise-gnome/src/ui/track_list/track_list_builder.rs:44` (the `ColumnView::builder()` call)
+  - `crates/reprise-gnome/src/ui/track_list/track_list_keyboard_reorder.rs:167` (the only `update_property` on that widget — `KeyShortcuts`, never `Label`)
+- **Observation:** the application's primary content widget, a
+  `gtk4::ColumnView` with AT-SPI role `tree grid`, exposes an empty accessible
+  name. A screen-reader user who lands on it hears only its role.
+- **Why it violates the rule:** GP-10 requires every interface element to
+  expose a descriptive accessible name, and this is the element the app is
+  mostly *about*.
+- **Effort estimate:** small (< 1 h) — a single
+  `update_property(&[Property::Label(…)])`, the pattern already used at
+  `crates/reprise-gnome/src/ui/stats/stats_songs_card.rs:110`.
+
+**Not measured, therefore not claimed:** the accessible tree of every dialog
+and transient — Preferences, Help, Library Doctor, the tag editor and the
+device-sync page were never opened in this run. The 0x0-extent check rests on
+one snapshot and is not exhaustive. One further unnamed node (role `group`, the
+content-area container) could not be attributed to a construction site,
+because every node in this run reported the same `x=80,y=0` window origin — a
+`cua-driver` artefact, not an app property, so no line is claimed for it.
