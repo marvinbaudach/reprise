@@ -15,9 +15,8 @@ use crate::ui::style::buttons;
 use reprise_view::search_scope::SearchScope;
 
 type OnChanged = Rc<dyn Fn(PodcastFilter)>;
-/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×, or a
-/// jump that had to relax the search to reach its episode. The shell listens
-/// so the header entry stops showing a query the view no longer applies.
+/// SEARCH-8a: requests the shell's shared query transition for the chip's ×,
+/// or mirrors a locally completed jump that had to relax the search.
 type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 pub(super) struct PodcastsFilterBar {
@@ -140,6 +139,13 @@ impl PodcastsFilterBar {
         *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    fn request_query_clear(&self) {
+        let callback = self.on_query_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback("");
+        }
+    }
+
     /// SEARCH-8a: the view's query, handed in by the shell as the user
     /// types. A no-op for an unchanged query so a re-entry into the section
     /// does not re-render the whole list.
@@ -227,10 +233,9 @@ impl PodcastsFilterBar {
         self.apply_internal(filter, true);
     }
 
-    /// `announce_query`: whether a query change originated here (chip ×,
-    /// "Clear all", a jump that relaxed the search) and therefore has to be
-    /// mirrored back into the header entry. A query arriving *from* the entry
-    /// must not be echoed, or the two would ping-pong.
+    /// `announce_query`: whether a composite local action ("Clear all" or a
+    /// relaxed jump) changed the query and therefore has to mirror it into the
+    /// header entry. A query arriving *from* the entry is not echoed.
     fn apply_internal(self: &Rc<Self>, filter: PodcastFilter, announce_query: bool) {
         let previous = self.filter.replace(filter.clone());
         // SEARCH-8a: only the facets are persisted, and only when they
@@ -307,8 +312,7 @@ impl PodcastsFilterBar {
         self.layout
             .replace_scoped_search(self.scope(), &committed_query, move || {
                 if let Some(bar) = weak.upgrade() {
-                    let cleared = bar.filter().with_query("");
-                    bar.apply(cleared);
+                    bar.request_query_clear();
                 }
             });
         self.chips.set_visible(self.chips.first_child().is_some());
@@ -453,11 +457,53 @@ mod tests {
     /// pumped in this test on purpose: the frame the user sees is this one.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_4a_podcasts_clear_path_removes_query_and_chip() {
+    fn search_4a_podcasts_escape_and_chip_share_the_section_clear_path() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let bar =
             PodcastsFilterBar::new(Rc::new(crate::test_db::open().unwrap()), PodcastKind::Rss);
+        let entry = gtk4::SearchEntry::new();
+        let lens = gtk4::ToggleButton::new();
+        let popover = crate::ui::window::search_popover::SearchPopover::new(&lens, &entry);
+        let search = crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &lens);
+        search.register(
+            SearchScope::Podcasts,
+            {
+                let bar = Rc::downgrade(&bar);
+                move |query| {
+                    if let Some(bar) = bar.upgrade() {
+                        bar.set_query(query);
+                    }
+                }
+            },
+            {
+                let bar = Rc::downgrade(&bar);
+                move |query| {
+                    if let Some(bar) = bar.upgrade() {
+                        bar.set_committed_query(query);
+                    }
+                }
+            },
+            || {},
+        );
+        search.activate(SearchScope::Podcasts, "Podcasts");
+        bar.set_on_query_changed({
+            let bar = Rc::downgrade(&bar);
+            let search = Rc::downgrade(&search);
+            move |query| {
+                let bar = bar.upgrade().expect("Podcasts bar still exists");
+                assert_eq!(
+                    bar.filter().query,
+                    "falling",
+                    "the chip must delegate before mutating"
+                );
+                if let Some(search) = search.upgrade() {
+                    search.set_query(SearchScope::Podcasts, query);
+                }
+            }
+        });
+
+        entry.set_text("falling");
         bar.set_query("falling");
         bar.set_committed_query("falling");
         assert!(
@@ -466,7 +512,15 @@ mod tests {
                 .contains(&crate::ui::filter_bar_layout::FilterBarSlot::Search),
             "the committed query is showing before the click"
         );
+        assert_eq!(
+            popover.press_close_key(gtk4::gdk::Key::Escape),
+            gtk4::glib::Propagation::Stop
+        );
+        bar.layout.assert_search_cleared(&bar.filter().query);
 
+        entry.set_text("falling");
+        bar.set_query("falling");
+        bar.set_committed_query("falling");
         bar.layout
             .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
             .and_downcast::<gtk4::Button>()

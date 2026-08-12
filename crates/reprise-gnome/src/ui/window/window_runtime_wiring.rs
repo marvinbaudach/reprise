@@ -449,11 +449,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     }
     window.add_action(&clear_all);
     {
-        let inner = track_list.clone();
-        let entry = search_entry.clone();
+        let section_search = section_search.clone();
         track_list.set_on_search_cleared(move || {
-            inner.set_filter("");
-            entry.set_text("");
+            section_search.clear_active_query();
         });
     }
     {
@@ -575,19 +573,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         app,
         window,
         search,
-        super::shortcuts::ShortcutHooks {
+        super::shortcuts::ShortcutHooks::for_section_search(
             focus_active_content,
-            // SEARCH-8a: Ctrl+F is a no-op where the visible section has no
-            // list to filter.
-            search_available: {
-                let section_search = section_search.clone();
-                Rc::new(move || section_search.supports_search())
-            },
-            clear_active_search: {
-                let section_search = section_search.clone();
-                Rc::new(move || section_search.clear_active_query())
-            },
-        },
+            section_search.clone(),
+        ),
         player.clone(),
     );
 

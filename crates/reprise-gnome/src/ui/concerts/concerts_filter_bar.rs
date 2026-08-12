@@ -16,9 +16,8 @@ const FACET_PAGE: &str = "facets";
 const VALUE_PAGE: &str = "values";
 
 type OnChanged = Rc<dyn Fn(ConcertFilter)>;
-/// SEARCH-8a: fired when the bar itself changes the query — the chip's ×
-/// or "Clear all" — so the header entry stops showing a query the view no
-/// longer applies.
+/// SEARCH-8a: requests the shell's shared query transition for the chip's ×,
+/// or mirrors a locally completed composite action such as "Clear all".
 type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -286,15 +285,19 @@ impl ConcertsFilterBar {
             return;
         }
         self.query.replace(String::new());
-        // Drop the receipt in the same turn as the query. The commit sink is
-        // still the authority for *which* query gets a chip, but it only
-        // answers after a round trip through the header entry, and the caller
-        // below rebuilds immediately — reading a committed query that is about
-        // to be empty redraws the very chip the user just clicked away. An
-        // empty query has no chip under either surface, so clearing here
-        // cannot disagree with the sink.
+        // Clear all is a composite local action and rebuilds immediately, so
+        // it drops the receipt in the same turn as the query. The search chip
+        // itself does not use this helper: it requests the coordinator's
+        // shared clear path through `request_query_clear` below.
         self.committed_query.replace(String::new());
         if let Some(callback) = self.on_query_changed.borrow().clone() {
+            callback("");
+        }
+    }
+
+    fn request_query_clear(&self) {
+        let callback = self.on_query_changed.borrow().clone();
+        if let Some(callback) = callback {
             callback("");
         }
     }
@@ -359,12 +362,7 @@ impl ConcertsFilterBar {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };
-                bar.clear_query();
-                bar.rebuild();
-                let callback = bar.on_changed.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(bar.filter());
-                }
+                bar.request_query_clear();
             });
         for facet in facets {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip_label(&filter, facet)));
@@ -624,13 +622,63 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_4a_concerts_clear_path_removes_query_and_chip() {
+    fn search_4a_concerts_escape_and_chip_share_the_section_clear_path() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let bar = ConcertsFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+        let entry = gtk4::SearchEntry::new();
+        let lens = gtk4::ToggleButton::new();
+        let popover = crate::ui::window::search_popover::SearchPopover::new(&lens, &entry);
+        let search = crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &lens);
+        search.register(
+            SearchScope::Concerts,
+            {
+                let bar = Rc::downgrade(&bar);
+                move |query| {
+                    if let Some(bar) = bar.upgrade() {
+                        bar.set_query(query);
+                    }
+                }
+            },
+            {
+                let bar = Rc::downgrade(&bar);
+                move |query| {
+                    if let Some(bar) = bar.upgrade() {
+                        bar.set_committed_query(query);
+                    }
+                }
+            },
+            || {},
+        );
+        search.activate(SearchScope::Concerts, "Concerts");
+        bar.set_on_query_changed({
+            let bar = Rc::downgrade(&bar);
+            let search = Rc::downgrade(&search);
+            move |query| {
+                let bar = bar.upgrade().expect("Concerts bar still exists");
+                assert_eq!(
+                    bar.query(),
+                    "winterthur",
+                    "the chip must delegate before mutating"
+                );
+                if let Some(search) = search.upgrade() {
+                    search.set_query(SearchScope::Concerts, query);
+                }
+            }
+        });
+
+        entry.set_text("winterthur");
         bar.set_query("winterthur");
         bar.set_committed_query("winterthur");
+        assert_eq!(
+            popover.press_close_key(gtk4::gdk::Key::Escape),
+            gtk4::glib::Propagation::Stop
+        );
+        bar.layout.assert_search_cleared(&bar.query());
 
+        entry.set_text("winterthur");
+        bar.set_query("winterthur");
+        bar.set_committed_query("winterthur");
         bar.layout
             .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
             .and_downcast::<gtk4::Button>()

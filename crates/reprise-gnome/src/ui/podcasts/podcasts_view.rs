@@ -284,9 +284,8 @@ impl PodcastsView {
         self.filter_bar.set_committed_query(query);
     }
 
-    /// SEARCH-8a: the reverse direction — the bar removed the query itself
-    /// (its × or a jump that had to relax it), so the header entry has to
-    /// follow.
+    /// SEARCH-8a: the reverse direction — the bar requests its × transition or
+    /// reports a local jump that had to relax search.
     pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
         self.filter_bar.set_on_query_changed(callback);
     }

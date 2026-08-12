@@ -272,17 +272,22 @@ impl SectionSearch {
         }
     }
 
-    /// A view removed its own query (the chip's ×, or a jump that had to
-    /// relax the search to reach its row). The entry follows so the two never
-    /// disagree about what is filtered.
+    /// A view requests a query change. Empty requests — including the chip's
+    /// × and a jump that has to relax search — enter the same synchronous
+    /// clear path as Escape; non-empty requests only mirror into the entry.
     pub(in crate::ui) fn set_query(self: &Rc<Self>, scope: SearchScope, query: &str) {
         if self.active.get() != scope {
             return;
         }
-        if self.entry_text().trim() == query.trim() {
+        let query = query.trim();
+        if query.is_empty() {
+            self.clear_active_query();
             return;
         }
-        self.write_entry(query.trim());
+        if self.entry_text().trim() == query {
+            return;
+        }
+        self.write_entry(query);
     }
 
     /// FIL-2a: "Clear all" belongs to the view it was clicked in — it drops
@@ -304,9 +309,9 @@ impl SectionSearch {
         self.apply_to_active("");
     }
 
-    /// SEARCH-4a: the query half of the active section's existing clear path.
-    /// This is shared by the chip's × round-trip, open-popover Escape and the
-    /// window-level Escape used while only the committed chip remains.
+    /// SEARCH-4a: the single active-section query clear entry point, shared by
+    /// the chip's × request, open-popover Escape and window-level Escape while
+    /// only the committed chip remains.
     pub(in crate::ui) fn clear_active_query(&self) -> bool {
         if self.entry_text().trim().is_empty() {
             return false;
