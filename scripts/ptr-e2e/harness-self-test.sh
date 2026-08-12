@@ -83,4 +83,25 @@ assert_equal \
   "$(harness_balance_message 1 0 4 9)" \
   "the closing balance exposes incomplete coverage"
 
+: > "$FAILURE_LOG"
+printf '%s\n' \
+  'up next changed up_next_len=2' \
+  'playback started track_id=4 gapless=true from_up_next=true' \
+  'up next changed up_next_len=0' \
+  'playback started track_id=5 gapless=false from_up_next=true' \
+  > "$APP_LOG"
+assert_manual_queue_consumption_since 0 4 5
+assert_equal 0 "$(wc -l < "$FAILURE_LOG")" \
+  "manual queue playback accepts 2 to 0 while preserving X before Y"
+
+: > "$FAILURE_LOG"
+printf '%s\n' \
+  'up next changed up_next_len=0' \
+  'playback started track_id=5 gapless=true from_up_next=true' \
+  'playback started track_id=4 gapless=false from_up_next=true' \
+  > "$APP_LOG"
+assert_manual_queue_consumption_since 0 4 5
+assert_equal 1 "$(wc -l < "$FAILURE_LOG")" \
+  "manual queue playback still rejects Y before X"
+
 printf 'harness self-test passed\n'

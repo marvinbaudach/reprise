@@ -154,6 +154,23 @@ the closing balance reported only three. Four harness findings were repaired:
   ordered sequence and uses the following Next for context B. This is expected
   product behavior, not a suspected product bug.
 
+### Run 8 review follow-up
+
+Run 8 stopped inside flow 4 with 24 passed checks and one recorded failure;
+flows 4b, 5, and 6 never started. Three further harness defects were repaired:
+
+- ordered log assertions now record a failed check and return success like the
+  other assertion helpers, so a plain call under `set -e` cannot abort the
+  remaining flows; every other helper added in the run-6 and run-7 rounds was
+  audited, and its non-zero result is used only behind explicit control flow;
+- every route declares its expected flow count and records each flow start. The
+  closing balance always states both counts, and fewer started flows force a
+  failing exit even when the failure ledger and emitted `FAIL:` lines agree;
+- flow 4 no longer requires an intermediate `up_next_len=1`. It proves that
+  manual X starts before manual Y and independently proves that Up Next reaches
+  zero, matching the measured `2 → 0` queue publication without weakening the
+  queued playback order.
+
 ## Named product gaps
 
 These gaps are intentionally recorded rather than represented as red harness
@@ -177,19 +194,23 @@ Static acceptance for this implementation is:
 - menu Down counts are documented with the traversed entries;
 - Flow 4 contains no `OFFSET` identity guess;
 - Flow 4 establishes and observes its own two-item manual queue;
-- Flow 4 asserts both short manual items under one ordered event marker before
-  issuing the single Next that resumes context B;
+- Flow 4 asserts both short manual starts under one ordered event marker,
+  confirms that Up Next ends empty without requiring an intermediate length,
+  and only then issues the single Next that resumes context B;
 - Compact play/pause checks MPRIS status rather than a transition log;
 - failure accounting is file-backed and cross-checked against preserved
-  `run.log` output;
+  `run.log` output, and the closing balance states started and expected flows;
+- fewer started flows than the selected route expects force a failing exit;
 - flow 6 performs no coordinate action unless maximized geometry reaches at
   least 1500x850;
+- the display-free harness accounting self-test passes;
 - every touched shell script passes `bash -n`.
 
 The full ptr-e2e run is deliberately not part of this implementation session.
 It needs Xvfb, Openbox, and a built debug binary and is run separately by the
 caller. That run must still confirm that the suite reaches its final balance
-line and that the reported failure count equals `grep -c 'FAIL:'`.
+line, reports `9 of 9 flows ran`, and reports the same failure count as
+`grep -c 'FAIL:'`.
 
 ## Follow-up instrumentation cleanup
 

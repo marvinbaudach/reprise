@@ -86,3 +86,14 @@ assert_log_sequence_since() {
   # return success so a plain call under `set -e` cannot truncate the suite.
   return 0
 }
+
+assert_manual_queue_consumption_since() {
+  local since_line="$1" track_id_x="$2" track_id_y="$3"
+  assert_log_sequence_since "$since_line" \
+    "manual tracks X and Y were consumed in their queued order" \
+    "playback started.*track_id=$track_id_x.*from_up_next=true" \
+    "playback started.*track_id=$track_id_y.*from_up_next=true"
+  assert_log_sequence_since "$since_line" \
+    "manual playback emptied Up Next" \
+    "up next changed.*up_next_len=0"
+}

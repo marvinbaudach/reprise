@@ -693,13 +693,11 @@ mpris_call Next
 # With 1.16 s fixtures and fakesink, X can hand off gaplessly to Y before the
 # shell wakes from a fixed sleep. Assert the product sequence under one marker
 # instead of pretending each manual item belongs to a separate MPRIS click:
-# dequeue X, start X, dequeue Y, start Y.
-assert_log_sequence_since "$MARKER" \
-  "manual tracks X and Y were consumed in their queued order" \
-  "up next changed.*up_next_len=1" \
-  "playback started.*track_id=$TRACK_ID_X.*from_up_next=true" \
-  "up next changed.*up_next_len=0" \
-  "playback started.*track_id=$TRACK_ID_Y.*from_up_next=true"
+# start X, start Y, and finish with an empty manual queue. The short fixtures
+# can consume both entries before the queue publishes an intermediate length,
+# so `up_next_len=1` is not part of the product contract.
+assert_manual_queue_consumption_since \
+  "$MARKER" "$TRACK_ID_X" "$TRACK_ID_Y"
 
 MARKER=$(log_marker)
 mpris_call Next
