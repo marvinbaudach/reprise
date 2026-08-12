@@ -18,25 +18,18 @@ pub fn render_report(
     writeln!(report, "reprise {version} ({git_sha}, {profile})").unwrap();
     writeln!(report, "{}", package_line(facts.package.as_ref())).unwrap();
     let os_name = optional(&facts.os_name);
-    let gnome_version = optional(&facts.gnome_version);
-    let display_server = optional(&facts.display_server);
-    if let Some(os_version) = facts
+    let os_version = facts
         .os_version
         .as_deref()
         .filter(|value| !value.is_empty())
-    {
-        writeln!(
-            report,
-            "os {os_name} {os_version} · gnome {gnome_version} · {display_server}"
-        )
-        .unwrap();
-    } else {
-        writeln!(
-            report,
-            "os {os_name} · gnome {gnome_version} · {display_server}"
-        )
-        .unwrap();
-    }
+        .map_or_else(String::new, |version| format!(" {version}"));
+    let gnome_version = optional(&facts.gnome_version);
+    let display_server = optional(&facts.display_server);
+    writeln!(
+        report,
+        "os {os_name}{os_version} · gnome {gnome_version} · {display_server}"
+    )
+    .unwrap();
     writeln!(
         report,
         "gtk {} · libadwaita {}",
@@ -79,11 +72,16 @@ pub fn render_report(
             let seconds = seconds % 60;
             let target = redact_log_message(&event.target, redaction);
             let target = final_target_segment(&target);
+            let target = if target.is_empty() {
+                String::new()
+            } else {
+                format!("{target}: ")
+            };
             let message = redact_log_message(&event.message, redaction);
             let _level = event.level;
             write!(
                 report,
-                "{hours:02}:{minutes:02}:{seconds:02} {target}: {message}"
+                "{hours:02}:{minutes:02}:{seconds:02} {target}{message}"
             )
             .unwrap();
             if index + 1 < log.len().min(RENDERED_EVENT_LIMIT) {
@@ -95,7 +93,7 @@ pub fn render_report(
 }
 
 fn final_target_segment(target: &str) -> &str {
-    target.rsplit("::").next().unwrap_or(target)
+    target.rsplit("::").next().unwrap()
 }
 
 fn optional(value: &Option<String>) -> &str {

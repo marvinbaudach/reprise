@@ -214,8 +214,8 @@ fn rendered_events_use_only_the_final_target_segment() {
     assert_eq!(
         lines,
         [
-            "00:00:03 : trailing separator",
-            "00:00:02 : empty target",
+            "00:00:03 trailing separator",
+            "00:00:02 empty target",
             "00:00:01 scanner: plain target",
             "00:00:00 track_list_menu_smoke: nested target",
         ]
