@@ -28,6 +28,7 @@ pub(super) fn link(
     callback: &MetadataCallback,
 ) -> gtk4::Label {
     let label = gtk4::Label::new(Some(text));
+    label.set_accessible_role(gtk4::AccessibleRole::Link);
     label.set_halign(gtk4::Align::Start);
     label.set_xalign(0.0);
     label.add_css_class("stats-metadata-link");

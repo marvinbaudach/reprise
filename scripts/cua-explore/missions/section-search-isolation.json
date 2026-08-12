@@ -6,6 +6,7 @@
   "mode": "adversarial",
   "agent": "required",
   "profile": "mixed-sources-128",
+  "window": {"width": 1600, "height": 1000},
   "budgets": {"actions": 80, "seconds": 900, "restarts": 1},
   "capabilities": ["activate", "hover", "type", "press", "hotkey", "scroll", "restart", "wait", "complete-workload", "finish"],
   "fixture_tokens": {

@@ -8,7 +8,7 @@ from typing import Any, Mapping
 from agents.sequencer import Phase
 from agents.steps import Step
 from agents.vocabulary import BUTTON_MATCHER, LabelMatcher, ROW_MATCHER
-from ui_vocabulary import ENTRY_ROLES, SEARCH_ENTRY_LABEL
+from ui_vocabulary import BUTTON_ROLES, ENTRY_ROLES, SEARCH_ENTRY_LABEL
 
 
 def _activate(
@@ -17,13 +17,12 @@ def _activate(
     *,
     atomic: bool = False,
     token_hint: str | None = None,
-    dispatch: str = "ax",
 ) -> Step:
     return Step(
         name,
         "activate",
         LabelMatcher(exact=(label,)),
-        {"dispatch": dispatch, "expect_effect": "required"},
+        {"dispatch": "auto", "expect_effect": "required"},
         atomic_with_next=atomic,
         token_hint=token_hint,
     )
@@ -33,8 +32,48 @@ def _type(name: str, label: str, token: str) -> Step:
     return Step(
         name,
         "type",
-        LabelMatcher(exact=(label,), roles=tuple(sorted(ENTRY_ROLES))),
+        LabelMatcher(
+            exact=(label,), roles=tuple(sorted(ENTRY_ROLES)), strict_roles=True
+        ),
         {"fixture_token": token},
+        missing_code=f"agent-entry-role-missing:{name}",
+    )
+
+
+def _search_type(name: str, token: str) -> tuple[Step, Step]:
+    entry = LabelMatcher(
+        exact=(SEARCH_ENTRY_LABEL,),
+        roles=tuple(sorted(ENTRY_ROLES)),
+        strict_roles=True,
+    )
+    opener = Step(
+        f"open-{name}",
+        "activate",
+        LabelMatcher(
+            exact=(SEARCH_ENTRY_LABEL,),
+            roles=tuple(sorted(BUTTON_ROLES)),
+            strict_roles=True,
+        ),
+        {"dispatch": "auto", "expect_effect": "required"},
+        required=False,
+        skip_when=entry,
+    )
+    return opener, _type(name, SEARCH_ENTRY_LABEL, token)
+
+
+def _section_activate(name: str, label: str, **kwargs: Any) -> Step:
+    toggle = _activate(f"toggle-sidebar-for-{name}", "Toggle sidebar")
+    step = _activate(name, label, **kwargs)
+    return Step(
+        step.name,
+        step.kind,
+        step.matcher,
+        step.fields,
+        alternates=(toggle,),
+        required=step.required,
+        atomic_with_next=step.atomic_with_next,
+        token_hint=step.token_hint,
+        missing_code="agent-sidebar-unavailable",
     )
 
 
@@ -47,18 +86,16 @@ def plan_section_search(workload: Mapping[str, Any], index: int, rng: random.Ran
     for source, token in workload.get("route_tokens", {}).items():
         steps.extend(
             [
-                _activate(
+                _section_activate(
                     f"park-before-{source}",
                     "Queue",
-                    dispatch=rng.choice(("ax", "px")),
                 ),
-                _activate(
+                _section_activate(
                     f"open-{source}",
                     str(source),
-                    dispatch=rng.choice(("ax", "px")),
                 ),
                 _hover(f"hover-sample-{source}"),
-                _type(f"search-{source}", SEARCH_ENTRY_LABEL, str(token)),
+                *_search_type(f"search-{source}", str(token)),
                 Step(
                     f"clear-search-{source}",
                     "press",
@@ -68,7 +105,7 @@ def plan_section_search(workload: Mapping[str, Any], index: int, rng: random.Ran
             ]
         )
     for source in workload.get("unsupported", []):
-        steps.append(_activate(f"unsupported-{source}", str(source)))
+        steps.append(_section_activate(f"unsupported-{source}", str(source)))
     return Phase("section-search", index, tuple(steps), order_locked=True)
 
 
@@ -82,7 +119,7 @@ def plan_restart(workload: Mapping[str, Any], index: int, rng: random.Random) ->
                 fields={"connectivity": str(workload["connectivity"])},
             )
         )
-        steps.append(_activate("open-radio-offline", "Radio"))
+        steps.append(_section_activate("open-radio-offline", "Radio"))
         steps.append(
             Step(
                 "wait-for-offline-status",
@@ -92,10 +129,10 @@ def plan_restart(workload: Mapping[str, Any], index: int, rng: random.Random) ->
         )
     else:
         section = str(workload.get("section", "Music"))
-        steps.append(_activate("restart-section", section))
+        steps.append(_section_activate("restart-section", section))
         token = workload.get("search_token")
         if token:
-            steps.append(_type("restart-search", SEARCH_ENTRY_LABEL, str(token)))
+            steps.extend(_search_type("restart-search", str(token)))
     steps.append(
         Step(
             "restart-app",
@@ -114,11 +151,10 @@ def plan_offline_transition(
     rng.shuffle(online_sources)
     token_by_source = workload.get("source_tokens", {})
     steps = [
-        _activate(
+        _section_activate(
             f"online-{source}",
             source,
             token_hint=str(token_by_source.get(source, "")),
-            dispatch=rng.choice(("ax", "px")),
         )
         for source in online_sources
     ]
@@ -135,11 +171,10 @@ def plan_offline_transition(
         Step("go-offline", "set-connectivity", fields={"connectivity": "offline"})
     )
     steps.extend(
-        _activate(
+        _section_activate(
             f"offline-{source}",
             source,
             token_hint=str(token_by_source.get(source, "")),
-            dispatch=rng.choice(("ax", "px")),
         )
         for source in sources
     )
@@ -155,11 +190,10 @@ def plan_offline_transition(
         Step("go-online", "set-connectivity", fields={"connectivity": "online"})
     )
     steps.extend(
-        _activate(
+        _section_activate(
             f"recovery-{source}",
             source,
             token_hint=str(token_by_source.get(source, "")),
-            dispatch=rng.choice(("ax", "px")),
         )
         for source in sources
     )
@@ -176,7 +210,7 @@ def plan_batch_edit(workload: Mapping[str, Any], index: int, rng: random.Random)
         "batch-edit",
         index,
         (
-            _type("find-writable-batch", SEARCH_ENTRY_LABEL, "WRITABLE_BATCH"),
+            *_search_type("find-writable-batch", "WRITABLE_BATCH"),
             Step("focus-first-row", "activate", ROW_MATCHER, {"dispatch": "ax"}),
             Step("anchor-down", "scroll", fields={"direction": "down", "amount": 1, "by": "page"}),
             Step("anchor-up-before-edit", "scroll", fields={"direction": "up", "amount": 1, "by": "page"}),

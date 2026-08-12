@@ -17,7 +17,10 @@ from ui_vocabulary import (
     OFFLINE_WORDS,
     WINDOW_ROLES,
     canonical_role,
+    invocable_actions as classify_invocable_actions,
+    unknown_action_names as classify_unknown_action_names,
 )
+from stall_attribution import response_gap_findings
 
 
 GEOMETRY_EPSILON_PX = 6.0
@@ -29,8 +32,10 @@ GEOMETRY_EPSILON_PX = 6.0
 # step's own baseline. 750 ms is the point at which an operation owes the user
 # a visible waiting state rather than silence.
 SLOW_FEEDBACK_MS = 250
-STALL_EXCESS_MS = 250
 SILENT_WAIT_MS = 750
+WAITING_EXPLANATION_CODES = frozenset(
+    {"no-accessible-action", "click-no-visible-effect", "suspected-no-handler"}
+)
 
 
 def element_flag(element: Mapping[str, Any], key: str, default: bool = False) -> bool:
@@ -97,8 +102,12 @@ class Element:
     geometry_trusted: bool = True
 
     @property
+    def invocable_actions(self) -> tuple[str, ...]:
+        return classify_invocable_actions(self.actions)
+
+    @property
     def actionable(self) -> bool:
-        return bool(self.actions) or self.role in ACTIONABLE_ROLES
+        return bool(self.invocable_actions) or self.role in ACTIONABLE_ROLES
 
 
 @dataclass(frozen=True)
@@ -112,6 +121,7 @@ class Snapshot:
     raw_signature: str
     window_frame: Frame | None = None
     geometry_trusted: bool = True
+    screenshot_available: bool = True
 
     @property
     def viewport(self) -> Frame | None:
@@ -134,6 +144,18 @@ class Snapshot:
     def actionable_labels(self) -> tuple[str, ...]:
         return tuple(
             sorted({element.label for element in self.elements if element.actionable and element.label})
+        )
+
+    @property
+    def unknown_action_names(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {
+                    name
+                    for element in self.elements
+                    for name in classify_unknown_action_names(element.actions)
+                }
+            )
         )
 
     @property
@@ -171,12 +193,18 @@ class ActionEvidence:
     connectivity_state: str | None = None
     sample_gaps_ms: tuple[int, ...] = ()
     # Harness cost, so the timing oracles can subtract themselves out.
-    # True when the resolved target really offers an AT-SPI action, False when
-    # no node with that label offers one, None when no walk was available.
+    # True when the resolved target really offers an invocable AT-SPI action,
+    # False when no node with that label offers one, None when no walk was
+    # available.
     target_has_action: bool | None = None
     settle_delay_ms: int = 0
     snapshot_ms: tuple[int, ...] = ()
     snapshot_ms_before_first_change: int = 0
+    response_gaps: tuple[Mapping[str, Any], ...] = ()
+    # False when the driver accepted the call but its response does not prove
+    # the input reached the app. Nothing the app did or failed to do can be
+    # read out of an action that never arrived.
+    dispatched: bool = True
 
     @classmethod
     def activate(cls, target_label: str, **kwargs: Any) -> "ActionEvidence":
@@ -184,6 +212,10 @@ class ActionEvidence:
 
     @classmethod
     def scroll(cls, direction: str, **kwargs: Any) -> "ActionEvidence":
+        # The semantic state signature deliberately excludes geometry, so a
+        # scroll can never satisfy its generic change test. Scroll behavior is
+        # judged from measured row frames by _scroll_findings instead.
+        kwargs.setdefault("expect_effect", "none")
         return cls(kind="scroll", direction=direction, **kwargs)
 
     @classmethod
@@ -291,14 +323,32 @@ def normalize_snapshot(
         raw_signature=hashlib.sha256(signature_payload).hexdigest(),
         window_frame=_root_window_frame(root_candidates),
         geometry_trusted=raw.get("geometry_trusted") is not False,
+        screenshot_available=raw.get("screenshot_available") is not False,
     )
 
 
 class OracleEngine:
     """Classifies observable anomalies without turning heuristics into CI gates."""
 
+    def __init__(self) -> None:
+        self._reported_unknown_actions: set[str] = set()
+
     def inspect_snapshot(self, snapshot: Snapshot) -> list[Finding]:
         findings = []
+        for name in snapshot.unknown_action_names:
+            if name in self._reported_unknown_actions:
+                continue
+            self._reported_unknown_actions.add(name)
+            findings.append(
+                Finding(
+                    "unknown-action-name",
+                    "warning",
+                    0.8,
+                    f"The unclassified accessibility action '{name}' is treated as invocable.",
+                    {"action_name": name},
+                    blocks_gate=False,
+                )
+            )
         if snapshot.degraded:
             findings.append(
                 Finding(
@@ -391,7 +441,11 @@ class OracleEngine:
                         "The settled view still presents an offline-authored status after reconnect.",
                     )
                 )
-        findings.extend(self._timing_findings(action, (after, *settled)))
+        findings.extend(
+            self._timing_findings(
+                action, (after, *settled), prior_findings=tuple(findings)
+            )
+        )
         if action.kind == "wait" and settled:
             findings.extend(self._layout_findings((before, *settled)))
         return self._deduplicate(findings)
@@ -399,6 +453,11 @@ class OracleEngine:
     def _click_findings(
         self, action: ActionEvidence, before: Snapshot, after: Snapshot, changed: bool
     ) -> list[Finding]:
+        if not action.dispatched:
+            # The driver never confirmed delivery, so "no visible effect" says
+            # nothing about the product. The transport already reported the
+            # undelivered action as a harness finding.
+            return []
         if changed or action.expect_effect in {"idempotent", "none"}:
             return self._misroute_findings(action, before, after)
         if action.dispatch == "px" and action.ax_probe_changed:
@@ -536,7 +595,11 @@ class OracleEngine:
         return findings
 
     def _timing_findings(
-        self, action: ActionEvidence, timeline: Sequence[Snapshot]
+        self,
+        action: ActionEvidence,
+        timeline: Sequence[Snapshot],
+        *,
+        prior_findings: Sequence[Finding] = (),
     ) -> list[Finding]:
         findings = []
         # Every raw number here is wall time that contains the harness itself:
@@ -565,14 +628,24 @@ class OracleEngine:
                 )
             )
         waiting_visible = any(self._has_waiting_state(snapshot) for snapshot in timeline)
-        harness_ms = action.settle_delay_ms + sum(action.snapshot_ms)
+        harness_ms = (
+            action.elapsed_ms + action.settle_delay_ms + sum(action.snapshot_ms)
+        )
         app_observation_ms = max(0, action.observation_ms - harness_ms)
         waited_without_feedback = (
             action.expect_effect == "required"
             and action.first_change_ms is None
             and app_observation_ms >= SILENT_WAIT_MS
         )
-        if (action.expect_status or waited_without_feedback) and not waiting_visible:
+        waiting_already_explained = any(
+            finding.code in WAITING_EXPLANATION_CODES for finding in prior_findings
+        )
+        if (
+            action.dispatched
+            and (action.expect_status or waited_without_feedback)
+            and not waiting_visible
+            and not waiting_already_explained
+        ):
             findings.append(
                 Finding(
                     "missing-waiting-feedback",
@@ -588,29 +661,17 @@ class OracleEngine:
                     },
                 )
             )
-        # The cheapest snapshot of this same step is what a round-trip costs
-        # when the UI thread is free; anything a sample spends beyond that is
-        # time the main loop kept the accessibility bus waiting.
-        baseline_ms = min(action.snapshot_ms) if action.snapshot_ms else 0
-        excess_ms = [
-            round(gap - baseline_ms)
-            for gap in action.sample_gaps_ms
-            if gap - baseline_ms >= STALL_EXCESS_MS
-        ]
-        if excess_ms:
-            findings.append(
-                Finding(
-                    "main-loop-stall",
-                    "warning",
-                    0.8,
-                    "Observation sampling detected one or more long UI response gaps.",
-                    {
-                        "excess_ms": excess_ms,
-                        "baseline_ms": round(baseline_ms),
-                        "gaps_ms": list(action.sample_gaps_ms),
-                    },
-                )
+        # The cheapest snapshot is the step's own free-main-loop baseline.
+        # Classification keeps blocking and unmeasurable gaps as product
+        # suspicions instead of silently dropping uncertainty.
+        findings.extend(
+            Finding(**record)
+            for record in response_gap_findings(
+                sample_gaps_ms=action.sample_gaps_ms,
+                snapshot_ms=action.snapshot_ms,
+                response_gaps=action.response_gaps,
             )
+        )
         return findings
 
     def _has_waiting_state(self, snapshot: Snapshot) -> bool:

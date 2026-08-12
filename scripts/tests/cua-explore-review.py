@@ -81,8 +81,9 @@ class WaitingAndLayoutReviewTests(unittest.TestCase):
         state = snapshot([element(1, "Refresh")])
 
         findings = OracleEngine().analyze(
-            ActionEvidence.activate(
-                "Refresh",
+            ActionEvidence(
+                kind="type",
+                target_label="Refresh",
                 elapsed_ms=12,
                 observation_ms=1_200,
                 first_change_ms=None,

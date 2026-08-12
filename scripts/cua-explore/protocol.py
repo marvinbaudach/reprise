@@ -110,6 +110,7 @@ MISSION_FIELDS = {
     "mode",
     "agent",
     "profile",
+    "window",
     "budgets",
     "capabilities",
     "fixture_tokens",
@@ -122,6 +123,15 @@ MISSION_FIELDS = {
 
 class ContractError(ValueError):
     """The agent or mission crossed the explicitly bounded contract."""
+
+
+class BudgetExhausted(ContractError):
+    """The action or time budget ran out.
+
+    E6 calls this a regular ending, not a violation: the run stays incomplete
+    but the tool worked. It stays a `ContractError` so every existing caller
+    keeps catching it; only the runner tells the two apart.
+    """
 
 
 def _object(value: Any, name: str) -> Mapping[str, Any]:
@@ -165,6 +175,7 @@ class Mission:
     mode: str
     agent: str
     profile: str
+    window: Mapping[str, int] | None
     budgets: Budgets
     capabilities: frozenset[str]
     fixture_tokens: Mapping[str, str]
@@ -182,6 +193,17 @@ def _parse_budgets(raw: Any) -> Budgets:
         seconds=_integer(value.get("seconds"), "budgets.seconds", 10, 7_200),
         restarts=_integer(value.get("restarts"), "budgets.restarts", 0, 10),
     )
+
+
+def _parse_window(raw: Any) -> Mapping[str, int] | None:
+    if raw is None:
+        return None
+    value = _object(raw, "window")
+    _reject_unknown(value, {"width", "height"}, "window")
+    return {
+        "width": _integer(value.get("width"), "window.width", 600, 3_840),
+        "height": _integer(value.get("height"), "window.height", 400, 2_160),
+    }
 
 
 def _parse_string_set(raw: Any, name: str, allowed: set[str]) -> frozenset[str]:
@@ -377,6 +399,7 @@ def load_mission(path: pathlib.Path | str) -> Mission:
         mode=mode,
         agent=agent,
         profile=profile,
+        window=_parse_window(value.get("window")),
         budgets=_parse_budgets(value.get("budgets")),
         capabilities=capabilities,
         fixture_tokens=fixture_tokens,
@@ -396,14 +419,15 @@ class ActionGateway:
         self._accepted_actions = 0
         self._accepted_restarts = 0
         self._completed_workloads: set[int] = set()
+        self._incomplete_workloads: set[int] = set()
 
     def accept(
         self, raw: Mapping[str, Any], observation: Mapping[str, Any]
     ) -> AcceptedAction:
         if self._accepted_actions >= self.mission.budgets.actions:
-            raise ContractError("action budget exhausted")
+            raise BudgetExhausted("action budget exhausted")
         if time.monotonic() - self._started > self.mission.budgets.seconds:
-            raise ContractError("time budget exhausted")
+            raise BudgetExhausted("time budget exhausted")
         value = _object(raw, "action")
         if value.get("schema_version") != SCHEMA_VERSION:
             raise ContractError(f"action schema_version must be {SCHEMA_VERSION}")
@@ -418,7 +442,11 @@ class ActionGateway:
             raise ContractError(f"unknown action kind: {kind}")
         action = parser(value, observation)
         if isinstance(action, FinishAction) and self.mission.workloads:
-            missing = sorted(set(range(len(self.mission.workloads))) - self._completed_workloads)
+            missing = sorted(
+                set(range(len(self.mission.workloads)))
+                - self._completed_workloads
+                - self._incomplete_workloads
+            )
             diagnostic_abort = action.reason.startswith(
                 ("agent-contract-mismatch:", "agent-internal-error:")
             )
@@ -436,6 +464,14 @@ class ActionGateway:
         if workload_index in self._completed_workloads:
             raise ContractError("workload checkpoint was already recorded")
         self._completed_workloads.add(workload_index)
+
+    def record_incomplete_workload(self, workload_index: int) -> None:
+        """Allow a later finish while keeping this checkpoint unconfirmed."""
+        if not 0 <= workload_index < len(self.mission.workloads):
+            raise ContractError("workload index is out of range")
+        if workload_index in self._completed_workloads:
+            raise ContractError("completed workload cannot become incomplete")
+        self._incomplete_workloads.add(workload_index)
 
     def _target(self, value: Mapping[str, Any], observation: Mapping[str, Any]) -> str:
         target = _object(value.get("target"), "target")

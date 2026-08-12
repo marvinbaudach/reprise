@@ -87,6 +87,7 @@ mod issues;
 mod library;
 pub(crate) mod library_views;
 mod maintenance;
+mod maintenance_delete;
 mod maintenance_missing;
 mod playlist;
 mod queue;
@@ -161,6 +162,7 @@ pub use import_errors::{
 // `query_missing_groups` above.
 pub use import_errors::{count_import_errors_active, count_new_import_errors};
 pub use library_views::*;
+pub(crate) use maintenance::remove_tracks_matching_paths_remembering_releases;
 pub use maintenance::{
     exclude_tracks_matching_paths, filter_present, purge_tombstones, query_has_live_tracks,
     query_import_error_count, query_live_track_ids, query_live_track_paths,
@@ -734,6 +736,8 @@ pub fn query_visible_track_ids_browsed(
 mod tests;
 #[cfg(test)]
 mod tests_auto_clean;
+#[cfg(test)]
+mod tests_deleted_release_memory;
 #[cfg(test)]
 mod tests_genre_scope;
 #[cfg(test)]

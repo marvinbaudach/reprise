@@ -84,6 +84,7 @@ fn build_widgets_for_session(
         .width_request(tokens::NOW_PLAYING_COVER_SIZE)
         .height_request(tokens::NOW_PLAYING_COVER_SIZE)
         .build();
+    cover.set_accessible_role(gtk4::AccessibleRole::Link);
     cover.add_css_class("reprise-now-playing-cover");
     CoverLoader::set_placeholder(&cover);
     let outgoing_cover = gtk4::Image::builder()
@@ -118,6 +119,7 @@ fn build_widgets_for_session(
         .wrap(true)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
+    title.set_accessible_role(gtk4::AccessibleRole::Link);
     title.add_css_class("reprise-now-playing-title");
     let artist = gtk4::Label::builder()
         .xalign(0.5)
@@ -125,6 +127,7 @@ fn build_widgets_for_session(
         .wrap(true)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
+    artist.set_accessible_role(gtk4::AccessibleRole::Link);
     artist.add_css_class("reprise-now-playing-subtitle");
     let album = gtk4::Label::builder()
         .xalign(0.5)
@@ -132,6 +135,7 @@ fn build_widgets_for_session(
         .wrap(true)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
+    album.set_accessible_role(gtk4::AccessibleRole::Link);
     album.add_css_class("reprise-now-playing-subtitle");
 
     let metadata = gtk4::Box::new(gtk4::Orientation::Vertical, 2);

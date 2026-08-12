@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import java.util.Optional
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -159,17 +160,20 @@ class TrackLoaderTest {
     }
 
     /**
-     * A read that keeps failing stops asking.
+     * A read that keeps failing stops asking — and answers with no row.
      *
      * The retry above is bounded on purpose, and this is the bound. A read that
      * fails permanently — a closed handle, a database that is gone — would
-     * otherwise lay siege to the very lock the failure is about, and silence is
-     * the honest answer to a failure anyway.
+     * otherwise lay siege to the very lock the failure is about. Giving up
+     * *without* an answer is no better: the screen keeps the row it last got,
+     * disabled because it answers for the previous track, and with no answer
+     * due it stays stuck there. "No row for this track" is a state it can act
+     * on.
      */
     @Test
-    fun aReadThatKeepsFailingStopsAskingInsteadOfBesiegingTheLock() {
+    fun aReadThatKeepsFailingStopsAskingAndAnswersWithNoRow() {
         val attempts = AtomicInteger()
-        val answers = AtomicInteger()
+        val answers = LinkedBlockingQueue<Optional<LibraryTrack>>()
         val waits = LinkedBlockingQueue<Long>()
         val loader = TrackLoader(
             read = { _ ->
@@ -181,7 +185,7 @@ class TrackLoaderTest {
         )
 
         try {
-            loader.load(830) { answers.incrementAndGet() }
+            loader.load(830) { track -> answers.put(Optional.ofNullable(track)) }
 
             val waited = listOf(
                 waits.poll(WAIT_SECONDS, TimeUnit.SECONDS),
@@ -193,7 +197,66 @@ class TrackLoaderTest {
                 waits.poll(SILENCE_MILLIS, TimeUnit.MILLISECONDS),
             )
             assertEquals(3, attempts.get())
-            assertEquals("a failure is silence, not an empty row delivered", 0, answers.get())
+            assertEquals(
+                "the spent request says so rather than leaving the screen waiting",
+                Optional.empty<LibraryTrack>(),
+                answers.poll(WAIT_SECONDS, TimeUnit.SECONDS),
+            )
+            assertNull(
+                "and says it once",
+                answers.poll(SILENCE_MILLIS, TimeUnit.MILLISECONDS),
+            )
+        } finally {
+            loader.shutdown()
+        }
+    }
+
+    /**
+     * Giving up is still an answer for *one* track: a request that ran out of
+     * attempts while the session moved on must not blank the row belonging to
+     * the track now playing.
+     */
+    @Test
+    fun aSpentRequestStaysSilentOnceAnotherTrackHasBeenAskedFor() {
+        val attempts = AtomicInteger()
+        val lastReadStarted = CountDownLatch(1)
+        val releaseLastRead = CountDownLatch(1)
+        val answers = LinkedBlockingQueue<Optional<LibraryTrack>>()
+        val loader = TrackLoader(
+            read = { trackId ->
+                if (trackId == 830L) {
+                    // Held open on the last attempt, so the track can move on
+                    // between the final failure and the answer it would give.
+                    if (attempts.incrementAndGet() == 3) {
+                        lastReadStarted.countDown()
+                        releaseLastRead.await(WAIT_SECONDS, TimeUnit.SECONDS)
+                    }
+                    throw IllegalStateException("database is busy")
+                }
+                trackWithId(trackId)
+            },
+            onMainThread = { work -> work() },
+            pauseBeforeRetry = { },
+        )
+
+        try {
+            loader.load(830) { track -> answers.put(Optional.ofNullable(track)) }
+            assertTrue(
+                "the failing read must reach its last attempt",
+                lastReadStarted.await(WAIT_SECONDS, TimeUnit.SECONDS),
+            )
+
+            loader.load(831) { track -> answers.put(Optional.ofNullable(track)) }
+            releaseLastRead.countDown()
+
+            assertEquals(
+                Optional.of(trackWithId(831)),
+                answers.poll(WAIT_SECONDS, TimeUnit.SECONDS),
+            )
+            assertNull(
+                "a superseded request may not blank the row it no longer answers for",
+                answers.poll(SILENCE_MILLIS, TimeUnit.MILLISECONDS),
+            )
         } finally {
             loader.shutdown()
         }
