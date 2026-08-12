@@ -334,8 +334,11 @@ fn navigation_row(child: &gtk4::Box, label: &str) -> gtk4::ListBoxRow {
         .accessible_role(gtk4::AccessibleRole::ListItem)
         .build();
     row.update_property(&[gtk4::accessible::Property::Label(label)]);
-    let activated_row = row.clone();
+    let activated_row = row.downgrade();
     button.connect_clicked(move |_| {
+        let Some(activated_row) = activated_row.upgrade() else {
+            return;
+        };
         activated_row.grab_focus();
         activated_row.activate();
     });
@@ -582,6 +585,35 @@ mod tests {
         assert!(!header.is_activatable());
         assert!(!header.is_focusable());
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_11_navigation_action_does_not_retain_its_row() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let (row_weak, button_weak) = {
+            let content = row_box();
+            let row = navigation_row(&content, "Queue");
+            let button = row
+                .child()
+                .expect("a navigation row has an action child")
+                .downcast::<gtk4::Button>()
+                .expect("the navigation action is a real GtkButton");
+            (row.downgrade(), button.downgrade())
+        };
+
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(
+            row_weak.upgrade().is_none(),
+            "the navigation action retained its discarded row"
+        );
+        assert!(
+            button_weak.upgrade().is_none(),
+            "the discarded row retained its navigation action"
+        );
     }
 
     /// GTK 4.22 only exports an accessible role to AT-SPI when it is a
