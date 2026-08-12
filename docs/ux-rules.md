@@ -1767,7 +1767,7 @@ own statement).
   contains an episode, the Queue routes to a typed common-action menu:
   „Move to top", positional reorder, and „Remove from queue". Track- or
   podcast-specific actions never apply to a heterogeneous selection.
-  <!-- REVIEW: Regelvorschlag -->
+  <!-- REVIEW: rule proposal -->
 - **CTX-12** [active] [gtk] — If a podcast episode cannot currently be
   resolved, "Play next" and "Add to queue" stay visible but disabled.
   Activating either route revalidates every selected episode against the
@@ -5749,3 +5749,84 @@ provision badges — and that behaviour is still live, now under `SET-12`.
 
 If a case comes up during testing that no rule covers: add a rule
 (process rules above), do not decide locally.
+
+## AI. GNOME platform conformance
+
+Rules in this section come from published GNOME and Flathub criteria. Each
+rule names its source so a reviewer can check the claim. They exist to keep
+Reprise submittable to Flathub and, later, to GNOME Circle.
+
+### Platform idioms
+
+- **GP-1** [planned] [gtk] — Icon-only buttons carry an accessible label via
+  `GTK_ACCESSIBLE_PROPERTY_LABEL`. When a button has no tooltip, it also
+  carries `GTK_ACCESSIBLE_PROPERTY_DESCRIPTION`. Source: developer.gnome.org,
+  accessibility coding guidelines.
+- **GP-2** [planned] [gtk] — No blocking I/O on the main thread. UI-adjacent
+  asynchronous work runs through `glib::spawn_future_local`; CPU-bound work
+  runs through `gio::spawn_blocking` and reports back over a channel. Source:
+  gtk4-rs book, main event loop.
+- **GP-3** [planned] [gtk] — A closure that captures a widget which itself
+  stores that closure uses `glib::clone!(#[weak] …)`, never a strong capture.
+  The grep gate catches explicit `#[strong]` captures. An unannotated capture
+  is implicitly strong and must be checked in review because the gate cannot
+  parse Rust macro arguments reliably. Source: gtk4-rs book.
+- **GP-4** [planned] [gtk] — No `unwrap()` in UI paths: signal handlers,
+  property access, channel receives. Either `expect()` with context or the
+  error is propagated.
+- **GP-5** [planned] [gtk] — Widgets that hold state, override virtual
+  functions, or expose properties or signals are GObject subclasses, not
+  ad-hoc structs. Source: gtk4-rs book, GObject subclassing.
+- **GP-6** [planned] [core] — User-facing settings live in a GSettings schema,
+  not in a hand-rolled configuration file. Source: gtk4-rs book, settings.
+
+### Human interface guidelines
+
+- **GP-7** [planned] [e2e] — The window stays usable at 1024x600, the smallest
+  display size GNOME requires every app to support. Source: HIG, adaptive.
+- **GP-8** [planned] [e2e] — Light, dark and follow-system are all supported;
+  light is the default. Source: HIG, UI styling.
+- **GP-9** [planned] [e2e] — Every interactive element is reachable by
+  keyboard, tab order follows the widget tree, and a control's label precedes
+  it in focus order. Source: HIG, keyboard.
+- **GP-10** [planned] [gtk] — Every interface element exposes a descriptive
+  accessible name. Source: HIG, accessibility.
+- **GP-11** [planned] [gtk] — Styling uses libadwaita style classes and colour
+  variables. Bespoke CSS is the exception and carries a stated reason. Source:
+  HIG, UI styling.
+
+### Distribution metadata
+
+- **GP-12** [planned] [core] — The metainfo file passes
+  `appstreamcli validate --no-net --explain`.
+  <!-- Keep validation offline and deterministic. Do not add --pedantic: it
+       rejects the conventional uppercase final component in GNOME app IDs. -->
+- **GP-13** [planned] [core] — The desktop file passes `desktop-file-validate`.
+- **GP-14** [planned] [core] — The Flatpak manifest passes
+  `flatpak-builder-lint manifest`.
+- **GP-15** [planned] [manual] — Static sandbox permissions stay at the
+  absolute minimum. Where an XDG portal exists, the portal is used instead of
+  a static permission, and every remaining static permission is justified in
+  `flatpak/README.md`. Source: Flathub requirements.
+- **GP-16** [planned] [core] — App name is shorter than 15 characters and the
+  summary is at most 35 characters, in sentence case, without a trailing
+  period, and without repeating the app name. Source: Flathub quality
+  guidelines.
+- **GP-17** [planned] [manual] — At least one English screenshot. Window
+  1000x700 or smaller, 2000x1400 for HiDPI. Native decoration, no desktop
+  wallpaper. Every screenshot carries a one-line caption without a trailing
+  period. Source: Flathub quality guidelines.
+- **GP-18** [planned] [manual] — Every release carries release notes with real
+  content, never "bug fixes and performance improvements". Source: Flathub
+  quality guidelines.
+
+### Provenance hygiene
+
+These four points are, verbatim, the rejection reasons the GNOME Circle
+committee published on 2026-05-29.
+
+- **GP-19** [planned] [core] — No comments that read as instructions to a
+  model, no banner comment blocks drawn from repeated `=` or `-`, no emoji in
+  comments.
+- **GP-20** [planned] [core] — No dead code: no unused items, and no
+  `#[allow(dead_code)]` without a stated reason on the same or preceding line.
