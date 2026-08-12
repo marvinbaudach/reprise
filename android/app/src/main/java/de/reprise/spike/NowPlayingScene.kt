@@ -122,7 +122,7 @@ internal fun NowPlayingScene(
     val visualEngine = rememberVisualSceneEngine(
         enabled = visualizerOpacity > 0f,
         trackId = track.id,
-        playing = playback.visualizerActive,
+        playback = playback,
         accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
     )
     val visualFrameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
@@ -290,7 +290,7 @@ internal fun NowPlayingScene(
 private fun rememberVisualSceneEngine(
     enabled: Boolean,
     trackId: Long,
-    playing: Boolean,
+    playback: PlaybackUiState,
     accent: Color,
 ): VisualSceneEngine? {
     val factory = LocalVisualSceneEngineFactory.current
@@ -303,17 +303,17 @@ private fun rememberVisualSceneEngine(
         onDispose { }
     }
     SideEffect {
-        engine?.let { updateVisualSceneEngine(it, playing, accent) }
+        engine?.let { updateVisualSceneEngine(it, playback, accent) }
     }
     return engine
 }
 
 internal fun updateVisualSceneEngine(
     engine: VisualSceneEngine,
-    playing: Boolean,
+    playback: PlaybackUiState,
     accent: Color,
 ) {
-    engine.setPlaying(playing)
+    engine.setPlaying(playback.visualizerActive)
     engine.setAccent(accent.red, accent.green, accent.blue)
 }
 
@@ -548,7 +548,7 @@ private fun ScenePauseButton(
             .background(MaterialTheme.colorScheme.primary),
     ) {
         MaterialSymbol(
-            name = if (playback.isPlaying) "pause" else "play_arrow",
+            name = playback.playPauseSymbol,
             contentDescription = playback.playPauseLabel,
             tint = NowPlayingOnBackdrop,
             sizeSp = 40,

@@ -177,6 +177,12 @@ impl AndroidVisualEngine {
             .set_accent((finite_unit(red), finite_unit(green), finite_unit(blue)));
     }
 
+    /// Sets whether the visual scene should keep evolving instead of releasing.
+    ///
+    /// Kotlin must pass its snapshot-derived `visualizerActive` signal here:
+    /// true for both Playing and Buffering, false for Paused and Stopped. Raw
+    /// Media3 `isPlaying` is deliberately wrong because it drops while a
+    /// play-intended stream buffers.
     pub fn set_playing(&self, playing: bool) {
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
@@ -187,8 +193,12 @@ impl AndroidVisualEngine {
         state.engine.set_playing(playing && has_audio);
     }
 
-    /// Records whether playback should be running, independently of whether
-    /// Media3 is currently producing audio while buffering or reconnecting.
+    /// Records Media3's raw `playWhenReady` intent for live-PCM freshness.
+    ///
+    /// Unlike [`Self::set_playing`], this input comes directly from the audio
+    /// sink's Player listener rather than the Android playback snapshot. It
+    /// decides whether staleness time continues while Media3 is not producing
+    /// PCM; it does not drive the visual scene's play/release state.
     pub fn set_playback_intended(&self, playback_intended: bool) {
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();

@@ -194,8 +194,9 @@ private object SystemSceneClock : SceneClock {
 /**
  * Drives one scene and returns the draw revision Compose should observe.
  *
- * The loop runs at display cadence while playing and at no more than 20 Hz
- * while paused. Activity, screen and system-animation gates stop it entirely.
+ * The loop runs at display cadence while playback has visual intent (Playing
+ * or Buffering) and at no more than 20 Hz otherwise. Activity, screen and
+ * system-animation gates stop it entirely.
  */
 @Composable
 internal fun DriveScene(

@@ -34,7 +34,7 @@ class VisualizerSceneDriverTest {
             error = null,
         ).toUiState()
         val engine = BufferingPathEngine()
-        updateVisualSceneEngine(engine, playback.visualizerActive, Color.Cyan)
+        updateVisualSceneEngine(engine, playback, Color.Cyan)
         val frames = SpectrogramFrames(24, 20, ByteArray(0))
         val scene = SceneState(frames)
         val driver = SceneDriver(

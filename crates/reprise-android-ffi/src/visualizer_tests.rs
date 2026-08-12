@@ -202,8 +202,9 @@ fn live_pcm_staleness_expires_while_player_buffers_with_playback_intent() {
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
     assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
 
-    // The Android surface now projects buffering intent as active visualizer
-    // playback even though Media3's raw isPlaying value is false.
+    // The engine has no Buffering state of its own. This isolates the generic
+    // 500 ms expiry while playback intent and visual evolution remain active;
+    // Kotlin separately owns the Buffering-to-active projection.
     assert!(engine.bass_pressure().pressure > 0.0);
     clock.advance(LIVE_AUDIO_STALE_AFTER);
 

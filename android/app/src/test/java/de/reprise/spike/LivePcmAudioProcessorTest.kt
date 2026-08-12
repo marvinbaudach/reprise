@@ -85,7 +85,7 @@ class LivePcmAudioProcessorTest {
 
         try {
             bufferedRender.join(1_000)
-            assertFalse("buffered PCM waited behind the reset", bufferedRender.isAlive)
+            assertFalse("paused PCM was not discarded before the reset lock", bufferedRender.isAlive)
         } finally {
             consumer.allowResetToFinish.countDown()
             resumeThread.join()

@@ -12,7 +12,6 @@ internal data class PlaybackUiState(
     val currentTrackUri: String? = null,
     val positionMs: Long = 0,
     val durationMs: Long = 0,
-    val playPauseLabel: String = "Play",
     val shuffled: Boolean = false,
     val repeat: AndroidRepeatMode = AndroidRepeatMode.OFF,
     val error: String? = null,
@@ -22,9 +21,19 @@ internal data class PlaybackUiState(
 internal val PlaybackUiState.isPlaying: Boolean
     get() = state == AndroidPlaybackState.PLAYING
 
+/** Whether the play/pause control currently performs and presents Pause. */
+internal val PlaybackUiState.playPauseShowsPause: Boolean
+    get() = state.hasPlayIntent
+
+internal val PlaybackUiState.playPauseSymbol: String
+    get() = if (playPauseShowsPause) "pause" else "play_arrow"
+
+internal val PlaybackUiState.playPauseLabel: String
+    get() = if (playPauseShowsPause) "Pause" else "Play"
+
 /** Playback intent used only by continuously animated visual presentation. */
 internal val PlaybackUiState.visualizerActive: Boolean
-    get() = state == AndroidPlaybackState.PLAYING || state == AndroidPlaybackState.BUFFERING
+    get() = state.hasPlayIntent
 
 internal val PlaybackUiState.progressFraction: Float
     get() = if (durationMs > 0) {
@@ -41,14 +50,10 @@ internal fun AndroidPlaybackSnapshot.toUiState(): PlaybackUiState = PlaybackUiSt
     currentTrackUri = currentTrackUri,
     positionMs = positionMs,
     durationMs = durationMs,
-    playPauseLabel = if (
-        state == AndroidPlaybackState.PLAYING || state == AndroidPlaybackState.BUFFERING
-    ) {
-        "Pause"
-    } else {
-        "Play"
-    },
     shuffled = shuffled,
     repeat = repeat,
     error = error,
 )
+
+private val AndroidPlaybackState.hasPlayIntent: Boolean
+    get() = this == AndroidPlaybackState.PLAYING || this == AndroidPlaybackState.BUFFERING

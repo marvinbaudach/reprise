@@ -844,7 +844,6 @@ private fun testPlayback(positionMs: Long) = PlaybackUiState(
     currentTrackUri = "content://provider/document/song.flac",
     positionMs = positionMs,
     durationMs = 100_000,
-    playPauseLabel = "Play",
 )
 
 private fun testAlbumNamed(title: String) = LibraryAlbum(
