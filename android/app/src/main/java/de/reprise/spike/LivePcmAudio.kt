@@ -2,6 +2,7 @@ package de.reprise.spike
 
 import android.content.Context
 import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -27,13 +28,14 @@ internal interface LivePcmConsumer {
  * output path to [TeeAudioProcessor]. No work is done while no visualizer is
  * attached.
  */
-internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink {
+internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Listener {
     @Volatile
     private var consumer: LivePcmConsumer? = null
     private var sampleRateHz = 0
     private var channelCount = 0
     private var encoding = C.ENCODING_INVALID
     private var scratch = ByteArray(0)
+    private var playing = false
 
     fun attach(consumer: LivePcmConsumer) {
         this.consumer = consumer
@@ -59,7 +61,9 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink {
         consumer?.let(::resetSafely)
     }
 
+    @Synchronized
     override fun handleBuffer(buffer: ByteBuffer) {
+        if (!playing) return
         val target = consumer ?: return
         if (encoding != C.ENCODING_PCM_16BIT || sampleRateHz <= 0 || channelCount <= 0) return
         try {
@@ -70,6 +74,11 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink {
         } catch (_: Throwable) {
             // The visualizer is optional: discard this frame, never the audio.
         }
+    }
+
+    @Synchronized
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        playing = isPlaying
     }
 
     private fun resetSafely(target: LivePcmConsumer) {

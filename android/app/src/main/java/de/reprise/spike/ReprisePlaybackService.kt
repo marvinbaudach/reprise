@@ -90,6 +90,7 @@ open class ReprisePlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+        player.addListener(livePcmSink)
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
             .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())

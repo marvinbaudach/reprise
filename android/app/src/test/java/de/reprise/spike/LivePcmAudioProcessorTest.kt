@@ -13,6 +13,26 @@ import org.junit.Test
 
 class LivePcmAudioProcessorTest {
     @Test
+    fun pcmArrivingAfterPlayerPauseIsDiscardedEvenAsABurst() {
+        val consumer = RecordingPcmConsumer()
+        val sink = LivePcmBufferSink().apply { attach(consumer) }
+        val pcm = stereoPcm16(
+            left = shortArrayOf(1_000, -2_000, 3_000),
+            right = shortArrayOf(-4_000, 5_000, -6_000),
+        )
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        sink.onIsPlayingChanged(true)
+        sink.handleBuffer(directBuffer(pcm))
+
+        sink.onIsPlayingChanged(false)
+        repeat(3) {
+            sink.handleBuffer(directBuffer(pcm))
+        }
+
+        assertEquals(1, consumer.ingestCount)
+    }
+
+    @Test
     fun processorCopiesPcmBitForBitWhilePublishingTheSameBufferWithoutAnalysis() {
         val consumer = RecordingPcmConsumer()
         val sink = LivePcmBufferSink().apply { attach(consumer) }
@@ -25,6 +45,7 @@ class LivePcmAudioProcessorTest {
 
         processor.configure(format)
         processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
+        sink.onIsPlayingChanged(true)
         processor.queueInput(directBuffer(expected))
 
         assertArrayEquals(expected, processor.output.toByteArray())
@@ -48,15 +69,15 @@ class LivePcmAudioProcessorTest {
 
     @Test
     fun throwingVisualizerConsumerCannotInterruptPcmForwarding() {
-        val processor = TeeAudioProcessor(
-            LivePcmBufferSink().apply { attach(ThrowingPcmConsumer()) },
-        )
+        val sink = LivePcmBufferSink().apply { attach(ThrowingPcmConsumer()) }
+        val processor = TeeAudioProcessor(sink)
         val expected = stereoPcm16(
             left = shortArrayOf(1_000, -2_000, 3_000),
             right = shortArrayOf(-4_000, 5_000, -6_000),
         )
         processor.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
         processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
+        sink.onIsPlayingChanged(true)
 
         processor.queueInput(directBuffer(expected))
 
@@ -98,6 +119,7 @@ private class RecordingPcmConsumer : LivePcmConsumer {
     var sampleRateHz = 0
     var channelCount = 0
     var resetCount = 0
+    var ingestCount = 0
 
     override fun ingestPcm16(
         bytes: ByteArray,
@@ -105,6 +127,7 @@ private class RecordingPcmConsumer : LivePcmConsumer {
         sampleRateHz: Int,
         channelCount: Int,
     ) {
+        ingestCount += 1
         this.bytes = bytes.copyOf()
         this.byteCount = byteCount
         this.sampleRateHz = sampleRateHz
