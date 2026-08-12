@@ -32,8 +32,15 @@ internal enum class LibraryListKey {
     FAVOURITES,
     ALBUM_TRACKS,
     ARTIST_ALBUMS,
+    ARTIST_SEARCH_ALBUMS,
     ARTIST_TRACKS,
     UPCOMING,
+}
+
+internal enum class OpenAlbumOrigin {
+    ALBUMS,
+    ARTIST_SEARCH,
+    ARTIST_DETAIL,
 }
 
 /**
@@ -66,6 +73,7 @@ internal data class LoadedLibraryWindows(
      */
     val openAlbum: AlbumTrackList?,
     val openArtist: ArtistTrackList? = null,
+    val openAlbumOrigin: OpenAlbumOrigin? = null,
 )
 
 /**
@@ -272,6 +280,7 @@ internal class MobileSurfaceViewModel : ViewModel() {
             ?.let { windows ->
                 if (
                     selectedTab == BrowseTab.ARTISTS &&
+                    windows.openAlbumOrigin == OpenAlbumOrigin.ARTIST_DETAIL &&
                     windows.openAlbum != null &&
                     windows.openArtist == null
                 ) {

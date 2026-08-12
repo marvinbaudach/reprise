@@ -76,7 +76,7 @@ class MobileHeaderRowTest {
         compose.onNodeWithTag("library-summary-search").performClick()
 
         compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
-        compose.onNodeWithText("Search artists").assertIsDisplayed()
+        compose.onNodeWithText("Search albums and artists").assertIsDisplayed()
     }
 
     @Test

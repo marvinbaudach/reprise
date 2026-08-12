@@ -169,6 +169,7 @@ internal fun LibraryListKey.testTag(): String = when (this) {
     LibraryListKey.FAVOURITES -> "library-favourites-list"
     LibraryListKey.ALBUM_TRACKS -> "library-album-tracks-list"
     LibraryListKey.ARTIST_ALBUMS -> "library-artist-albums-list"
+    LibraryListKey.ARTIST_SEARCH_ALBUMS -> "library-artist-search-albums-list"
     LibraryListKey.ARTIST_TRACKS -> "library-artist-tracks-list"
     LibraryListKey.UPCOMING -> "now-playing-queue"
 }

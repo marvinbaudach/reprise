@@ -203,11 +203,35 @@ class MobileSurfaceStateTest {
             artists = LibraryWindow.empty(),
             openAlbum = AlbumTrackList(album, LibraryWindow.empty()),
             openArtist = null,
+            openAlbumOrigin = OpenAlbumOrigin.ARTIST_DETAIL,
         )
 
         state.keepLoadedWindows(shape, restored)
 
         assertNull(state.loadedWindows(shape)?.openAlbum)
+    }
+
+    @Test
+    fun directArtistSearchAlbumRestoreDoesNotRequireAnArtistPage() {
+        val state = MobileSurfaceViewModel()
+        state.initializeSelectedTab(BrowseTab.ARTISTS) {}
+        val shape = LibraryCatalogShape(titles = 0, albums = 1, artists = 1)
+        val album = AlbumTrackList(
+            album = LibraryAlbum("Hey What", "Low", "content://hey-what", 2, 2021, 120_000),
+            tracks = LibraryWindow.empty(),
+        )
+        val restored = LoadedLibraryWindows(
+            titles = LibraryWindow.empty(),
+            albums = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+            openAlbum = album,
+            openArtist = null,
+            openAlbumOrigin = OpenAlbumOrigin.ARTIST_SEARCH,
+        )
+
+        state.keepLoadedWindows(shape, restored)
+
+        assertEquals(album, state.loadedWindows(shape)?.openAlbum)
     }
 
     @Test

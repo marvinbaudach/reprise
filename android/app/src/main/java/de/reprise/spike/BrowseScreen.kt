@@ -137,6 +137,7 @@ internal fun BrowseScreen(
     }
     var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var selectedArtist by remember(state) { mutableStateOf(restored?.openArtist) }
+    var openAlbumOrigin by remember(state) { mutableStateOf(restored?.openAlbumOrigin) }
     var browseError by remember(state) { mutableStateOf(state.message) }
     var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumsRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
@@ -223,6 +224,17 @@ internal fun BrowseScreen(
         playTracks(selection) { message -> browseError = message }
     }
 
+    fun openAlbumDetail(album: LibraryAlbum, origin: OpenAlbumOrigin) {
+        runCatching { openAlbum(album) }
+            .onSuccess { detail ->
+                selectedAlbum = detail
+                openAlbumOrigin = origin
+                albumRequestedOffset = null
+                browseError = null
+            }
+            .onFailure { error -> browseError = error.browseDetail("open the album") }
+    }
+
     fun albumsFor(text: String, request: LibraryWindowRange) = if (text.isBlank()) {
         listAlbums(request)
     } else {
@@ -259,9 +271,11 @@ internal fun BrowseScreen(
                     visibleAlbums = window
                     albumsRequestedOffset = null
                 }
-                BrowseTab.ARTISTS -> artistsFor(text, firstLibraryWindow()).also { window ->
-                    visibleArtists = window
+                BrowseTab.ARTISTS -> {
+                    visibleArtists = artistsFor(text, firstLibraryWindow())
+                    if (text.isNotBlank()) visibleAlbums = searchAlbums(text, firstLibraryWindow())
                     artistsRequestedOffset = null
+                    albumsRequestedOffset = null
                 }
                 BrowseTab.FAVOURITES -> favouritesFor(text, firstLibraryWindow()).also { window ->
                     visibleFavourites = window
@@ -305,6 +319,7 @@ internal fun BrowseScreen(
         searchText = searchText,
         openAlbum = selectedAlbum,
         openArtist = selectedArtist,
+        openAlbumOrigin = openAlbumOrigin,
     )
     SideEffect { surfaceState.keepLoadedWindows(shape, loaded) }
 
@@ -324,8 +339,12 @@ internal fun BrowseScreen(
             when (selectedTab) {
                 BrowseTab.TITLES -> searchTitles(searchText, firstLibraryWindow())
                     .also { visibleTitles = it }
-                BrowseTab.ARTISTS -> artistsFor(searchText, firstLibraryWindow())
-                    .also { visibleArtists = it }
+                BrowseTab.ARTISTS -> {
+                    visibleArtists = artistsFor(searchText, firstLibraryWindow())
+                    if (searchText.isNotBlank()) {
+                        visibleAlbums = searchAlbums(searchText, firstLibraryWindow())
+                    }
+                }
                 BrowseTab.ALBUMS -> albumsFor(searchText, firstLibraryWindow())
                     .also { visibleAlbums = it }
                 BrowseTab.FAVOURITES -> favouritesFor(searchText, firstLibraryWindow())
@@ -462,7 +481,9 @@ internal fun BrowseScreen(
     val shownTrackIsStale = lastAnsweredTrack != null && lastAnsweredTrack.id != playingTrackId
     val summary = when (selectedTab) {
         BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
-        BrowseTab.ARTISTS -> selectedArtist?.tracks
+        BrowseTab.ARTISTS -> selectedAlbum?.tracks
+            ?.visibleCountLabel("track", "tracks")
+            ?: selectedArtist?.tracks
             ?.visibleCountLabel("track", "tracks")
             ?: visibleArtists.visibleCountLabel("artist", "artists")
         BrowseTab.ALBUMS -> selectedAlbum?.tracks
@@ -559,17 +580,7 @@ internal fun BrowseScreen(
                                     searchText = searchText,
                                     selectedAlbum = selectedAlbum,
                                     playback = playback,
-                                    openAlbum = { album ->
-                                        runCatching { openAlbum(album) }
-                                            .onSuccess { detail ->
-                                                selectedAlbum = detail
-                                                albumRequestedOffset = null
-                                                browseError = null
-                                            }
-                                            .onFailure { error ->
-                                                browseError = error.browseDetail("open the album")
-                                            }
-                                    },
+                                    openAlbum = { album -> openAlbumDetail(album, OpenAlbumOrigin.ALBUMS) },
                                     closeAlbum = { selectedAlbum = null },
                                     play = { index ->
                                         selectedAlbum?.let { play(it.playbackSelection(index)) }
@@ -583,9 +594,10 @@ internal fun BrowseScreen(
                                     surfaceLayout = surfaceLayout,
                                     surfaceState = surfaceState,
                                     artists = visibleArtists,
+                                    albumResults = visibleAlbums,
                                     searchText = searchText,
                                     selectedArtist = selectedArtist,
-                                    selectedAlbum = selectedAlbum,
+                                    selectedAlbum = selectedAlbum.takeIf { openAlbumOrigin != OpenAlbumOrigin.ALBUMS },
                                     playback = playback,
                                     openArtist = { artist ->
                                         runCatching { openArtist(artist) }
@@ -600,15 +612,12 @@ internal fun BrowseScreen(
                                             }
                                     },
                                     openAlbum = { album ->
-                                        runCatching { openAlbum(album) }
-                                            .onSuccess { detail ->
-                                                selectedAlbum = detail
-                                                albumRequestedOffset = null
-                                                browseError = null
-                                            }
-                                            .onFailure { error ->
-                                                browseError = error.browseDetail("open the album")
-                                            }
+                                        val origin = if (selectedArtist == null) {
+                                            OpenAlbumOrigin.ARTIST_SEARCH
+                                        } else {
+                                            OpenAlbumOrigin.ARTIST_DETAIL
+                                        }
+                                        openAlbumDetail(album, origin)
                                     },
                                     closeArtist = {
                                         selectedAlbum = null
@@ -625,10 +634,18 @@ internal fun BrowseScreen(
                                     },
                                     lastRequestedOffset = artistsRequestedOffset,
                                     artistRequestedOffset = artistRequestedOffset,
-                                    artistAlbumsRequestedOffset = artistAlbumsRequestedOffset,
+                                    artistAlbumsRequestedOffset = if (selectedArtist == null) {
+                                        albumsRequestedOffset
+                                    } else {
+                                        artistAlbumsRequestedOffset
+                                    },
                                     loadMoreArtists = ::loadMoreArtists,
                                     loadMoreArtistTracks = ::loadMoreArtistTracks,
-                                    loadMoreArtistAlbums = ::loadMoreArtistAlbums,
+                                    loadMoreArtistAlbums = if (selectedArtist == null) {
+                                        ::loadMoreAlbums
+                                    } else {
+                                        ::loadMoreArtistAlbums
+                                    },
                                     loadMoreAlbumTracks = ::loadMoreAlbumTracks,
                                 )
                                 BrowseTab.FAVOURITES -> FavouritesTab(

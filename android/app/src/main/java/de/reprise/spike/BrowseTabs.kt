@@ -96,7 +96,15 @@ internal fun LibrarySearchField(
     OutlinedTextField(
         value = searchText,
         onValueChange = search,
-        label = { Text("Search ${tab.label.lowercase()}") },
+        label = {
+            Text(
+                if (tab == BrowseTab.ARTISTS) {
+                    "Search albums and artists"
+                } else {
+                    "Search ${tab.label.lowercase()}"
+                },
+            )
+        },
         leadingIcon = { MaterialSymbol("search", "") },
         trailingIcon = {
             IconButton(onClick = { if (searchText.isEmpty()) close() else search("") }) {
@@ -194,6 +202,7 @@ internal fun ArtistsTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
     artists: LibraryWindow<LibraryArtist>,
+    albumResults: LibraryWindow<LibraryAlbum> = LibraryWindow.empty(),
     searchText: String,
     selectedArtist: ArtistTrackList?,
     selectedAlbum: AlbumTrackList? = null,
@@ -212,25 +221,25 @@ internal fun ArtistsTab(
     loadMoreArtistAlbums: (LibraryWindowRange) -> Unit = {},
     loadMoreAlbumTracks: (LibraryWindowRange) -> Unit = {},
 ) {
+    if (selectedAlbum != null) {
+        AlbumsTab(
+            surfaceLayout = surfaceLayout,
+            surfaceState = surfaceState,
+            albums = LibraryWindow.empty(),
+            searchText = "",
+            selectedAlbum = selectedAlbum,
+            playback = playback,
+            openAlbum = {},
+            closeAlbum = closeAlbum,
+            play = playAlbum,
+            albumsRequestedOffset = null,
+            albumRequestedOffset = null,
+            loadMoreAlbums = {},
+            loadMoreAlbumTracks = loadMoreAlbumTracks,
+        )
+        return
+    }
     if (selectedArtist != null) {
-        if (selectedAlbum != null) {
-            AlbumsTab(
-                surfaceLayout = surfaceLayout,
-                surfaceState = surfaceState,
-                albums = LibraryWindow.empty(),
-                searchText = "",
-                selectedAlbum = selectedAlbum,
-                playback = playback,
-                openAlbum = {},
-                closeAlbum = closeAlbum,
-                play = playAlbum,
-                albumsRequestedOffset = null,
-                albumRequestedOffset = null,
-                loadMoreAlbums = {},
-                loadMoreAlbumTracks = loadMoreAlbumTracks,
-            )
-            return
-        }
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
@@ -288,6 +297,53 @@ internal fun ArtistsTab(
                         play = play,
                         loadMore = loadMoreArtistTracks,
                         subtitle = TrackRowSubtitle.ALBUM_ONLY,
+                    )
+                }
+            }
+        }
+        return
+    }
+
+    if (searchText.isNotBlank()) {
+        val hasAlbums = albumResults.rows.isNotEmpty()
+        val hasArtists = artists.rows.isNotEmpty()
+        if (!hasAlbums && !hasArtists) {
+            Text("No matching albums or artists.", modifier = Modifier.padding(16.dp))
+            return
+        }
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (hasAlbums) {
+                Text(
+                    "Albums",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    AlbumRows(
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
+                        albums = albumResults,
+                        requestedOffset = artistAlbumsRequestedOffset,
+                        openAlbum = openAlbum,
+                        loadMore = loadMoreArtistAlbums,
+                        key = LibraryListKey.ARTIST_SEARCH_ALBUMS,
+                    )
+                }
+            }
+            if (hasArtists) {
+                Text(
+                    "Artists",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    ArtistRows(
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
+                        artists = artists,
+                        requestedOffset = lastRequestedOffset,
+                        openArtist = openArtist,
+                        loadMore = loadMoreArtists,
                     )
                 }
             }
