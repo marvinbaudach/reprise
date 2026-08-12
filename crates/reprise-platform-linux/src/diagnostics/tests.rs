@@ -57,6 +57,14 @@ fn os_release_parser_uses_build_id_when_version_id_is_missing() {
 }
 
 #[test]
+fn os_release_parser_uses_build_id_when_version_id_is_empty() {
+    let release = parse_os_release("ID=manjaro\nVERSION_ID=\"\"\nBUILD_ID=rolling\n");
+
+    assert_eq!(release.name.as_deref(), Some("manjaro"));
+    assert_eq!(release.version.as_deref(), Some("rolling"));
+}
+
+#[test]
 fn gnome_version_parser_rejects_output_without_a_version() {
     assert_eq!(
         parse_gnome_version("GNOME Shell 49.1\n"),
