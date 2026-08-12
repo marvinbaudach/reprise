@@ -39,12 +39,20 @@ run_preferences_flow() {
   maximize_window
   click_window_from_right "$PRIMARY_MENU_FROM_RIGHT" 28
   sleep 0.3
-  screenshot "17-main-menu"
-  assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/17-main-menu.png"
 
   local marker preference_window width
   marker=$(log_marker)
+  # `primary_menu.rs` orders the focusable entries as Compact Mode (focused
+  # when opened), Edit Column Layout, Library Doctor, Import Playlist, then
+  # Preferences. From Home that makes Preferences exactly four Down steps;
+  # section separators do not take focus.
   key "Home"
+  key "Down"
+  key "Down"
+  key "Down"
+  key "Down"
+  screenshot "17-main-menu-preferences-focused"
+  assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/17-main-menu-preferences-focused.png"
   key "Return"
   sleep 0.8
   assert_log_contains_since "$marker" "preferences window presented" \
