@@ -301,11 +301,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bloom_falloff_is_gone_at_the_artwork_band_boundary() {
-        assert_eq!(
-            bloom_falloff(BLOOM_HEIGHT, BLOOM_FULL_STRENGTH_Y, BLOOM_HEIGHT),
-            0.0
-        );
+    fn npp_18_bloom_falloff_is_full_then_monotonic_and_clamped_to_the_band() {
+        let full = BLOOM_FULL_STRENGTH_Y;
+        let band = BLOOM_HEIGHT;
+
+        assert_eq!(bloom_falloff(-20.0, full, band), 1.0);
+        assert_eq!(bloom_falloff(full, full, band), 1.0);
+        assert_eq!(bloom_falloff((full + band) / 2.0, full, band), 0.5);
+        assert_eq!(bloom_falloff(band, full, band), 0.0);
+        assert_eq!(bloom_falloff(band + 20.0, full, band), 0.0);
+
+        let samples = (0..=10)
+            .map(|step| bloom_falloff(full + (band - full) * f64::from(step) / 10.0, full, band))
+            .collect::<Vec<_>>();
+        assert!(samples.windows(2).all(|pair| pair[0] >= pair[1]));
     }
 
     #[test]

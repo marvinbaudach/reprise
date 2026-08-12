@@ -3123,17 +3123,10 @@ property is set and yet nothing happens.
   the colour those percentages are taken *of* now follows the appearance. The
   dimmed neighbour steps of NPP-5 are a distance cue, not readable content, and
   are exempt from the ratio floor.
-- **NPP-18** [planned] [gtk] — The head band's text sits over artwork, so its
-  contrast is not a property of the stylesheet. Title and subtitle lie inside
-  the cover bloom (up to 37 % of the artwork) and the accent glow (up to 26 %
-  of the accent). Measured worst case over a solid cover at full bloom and full
-  glow peak, after NPP-17: title 4.88–14.7:1 light, 2.51–13.3:1 dark; subtitle
-  3.27–6.0:1 light, 2.02–7.7:1 dark. The two available levers are the bloom's
-  opacity ceiling (`cover_bloom::bloom_opacity`) and the glow's peak alpha
-  (`NOW_PLAYING_GLOW_ALPHA`), or a scrim in the panel's own surface colour
-  behind the title block. Both are changes to the app's signature effect and
-  need their own decision.
-  <!-- REVIEW: rule proposal -->
+- **NPP-18** [active] [gtk] — Body text never lies over artwork. On any surface
+  that places cover art near type, every reacting cover-derived layer ends
+  above the text block and fades to zero before that boundary. The text remains
+  on the flat surface whose contrast is owned by the stylesheet.
 
 ## V. My Stats
 

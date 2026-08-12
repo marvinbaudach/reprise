@@ -306,4 +306,20 @@ mod tests {
         // 520 px against the mockup's 168 px cover.
         assert!((SHIMMER_DIAMETER_PER_COVER - 520.0 / 168.0).abs() < 1e-9);
     }
+
+    #[test]
+    fn npp_18_shimmer_mask_is_clear_before_the_artwork_band_ends() {
+        let radius = SHIMMER_DIAMETER_PER_COVER * f64::from(tokens::NOW_PLAYING_COVER_SIZE) / 2.0;
+        let clear_edge = SHIMMER_CENTRE_Y + SHIMMER_MASK_CLEAR * radius;
+
+        assert_eq!(shimmer_mask(SHIMMER_MASK_CLEAR), 0.0);
+        assert!(
+            clear_edge <= SHIMMER_BAND_HEIGHT,
+            "the shimmer clears at y={clear_edge:.1}, after the {SHIMMER_BAND_HEIGHT:.1}px band"
+        );
+        assert_eq!(
+            SHIMMER_BAND_HEIGHT,
+            f64::from(tokens::NOW_PLAYING_ARTWORK_BAND)
+        );
+    }
 }

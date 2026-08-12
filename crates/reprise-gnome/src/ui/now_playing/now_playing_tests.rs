@@ -314,7 +314,7 @@ fn head_and_pill_match_the_21a_structure() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn head_band_keeps_metadata_below_the_artwork_overlay() {
+fn npp_18_head_band_keeps_body_text_outside_every_artwork_layer() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
@@ -325,6 +325,22 @@ fn head_band_keeps_metadata_below_the_artwork_overlay() {
     );
     assert!(!widgets.artwork_band.can_target());
     assert_eq!(widgets.head.valign(), gtk4::Align::Start);
+    let artwork_children = std::iter::successors(
+        widgets.artwork_overlay.first_child(),
+        gtk4::prelude::WidgetExt::next_sibling,
+    )
+    .collect::<Vec<_>>();
+    assert_eq!(
+        artwork_children,
+        [
+            widgets.artwork_band.clone().upcast::<gtk4::Widget>(),
+            widgets.bloom.widget().clone().upcast::<gtk4::Widget>(),
+            widgets.shimmer.widget().clone().upcast::<gtk4::Widget>(),
+            widgets.head.clone().upcast::<gtk4::Widget>(),
+        ],
+        "the artwork overlay must contain only its geometry, bloom, shimmer, and cover head"
+    );
+    assert!(!artwork_children.contains(&widgets.metadata.clone().upcast::<gtk4::Widget>()));
     assert_eq!(
         widgets.head.parent().as_ref(),
         Some(widgets.artwork_overlay.upcast_ref())
@@ -341,6 +357,7 @@ fn head_band_keeps_metadata_below_the_artwork_overlay() {
         widgets.artwork_overlay.next_sibling().as_ref(),
         Some(widgets.metadata.upcast_ref())
     );
+    assert!(widgets.metadata.next_sibling().is_none());
 }
 
 #[test]
