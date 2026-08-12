@@ -16,6 +16,14 @@ pub(in crate::ui) use missing_view::{
     bulk_cleanup_kind, purge_startup_tombstones, MissingFilesView,
 };
 
+#[cfg(test)]
+pub(in crate::ui) fn relink_job_card_for_test() -> gtk4::Revealer {
+    let view = missing_progress::RelinkProgressView::new();
+    assert!(view.start(1_204, missing_progress::RelinkCancellation::default()));
+    view.show(876, 2_177, 1_204);
+    view.widget().clone()
+}
+
 /// Structural styles shared by every issue-card consumer.
 pub(in crate::ui) fn css() -> String {
     use super::style::tokens::RADIUS_SURFACE;
