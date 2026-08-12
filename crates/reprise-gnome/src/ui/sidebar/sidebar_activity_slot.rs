@@ -145,57 +145,79 @@ mod tests {
     use gtk4::prelude::*;
 
     use super::SidebarActivitySlot;
+    use crate::ui::scan::scan_progress::ScanProgressView;
 
-    fn job_card(with_extra_action: bool) -> gtk4::Revealer {
-        let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
-        let spinner = gtk4::Spinner::new();
-        spinner.add_css_class("scan-card-spinner");
-        title_row.append(&spinner);
-        let title = gtk4::Label::new(Some("Checking tracks…"));
-        title.set_hexpand(true);
-        title.add_css_class("scan-card-title");
-        title_row.append(&title);
-        let status_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
-        status_row.set_margin_start(19);
-        let percent = gtk4::Label::new(Some("45%"));
-        percent.set_hexpand(true);
-        percent.add_css_class("scan-card-percent");
-        status_row.append(&percent);
-        if with_extra_action {
-            let open = gtk4::Button::with_label("Open");
-            open.add_css_class("flat");
-            open.add_css_class("scan-card-compact-action");
-            status_row.append(&open);
+    #[derive(Clone, Copy)]
+    enum JobCardKind {
+        Scan,
+        Doctor,
+        Relink,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct HeaderGeometry {
+        title_spacing: i32,
+        status_spacing: i32,
+        status_margin_start: i32,
+    }
+
+    struct JobCardMeasurement {
+        bounds: gtk4::graphene::Rect,
+        header: HeaderGeometry,
+        minimum_width: i32,
+        requested_height: i32,
+    }
+
+    fn scan_job_card() -> gtk4::Revealer {
+        let view = ScanProgressView::new();
+        view.show_batch(
+            "Lyrics batch check complete",
+            "2,177 of 2,177 checked · 0 downloaded · 0 unavailable",
+            1.0,
+        );
+        view.widget().clone()
+    }
+
+    fn header_geometry(card: &gtk4::Revealer) -> HeaderGeometry {
+        let body = card
+            .child()
+            .expect("job card must have a body")
+            .downcast::<gtk4::Box>()
+            .expect("job card body must be a box");
+        let header = body
+            .first_child()
+            .expect("job card must have a header")
+            .downcast::<gtk4::Box>()
+            .expect("job card header must be a box");
+        let title_row = header
+            .first_child()
+            .expect("job card header must have a title row")
+            .downcast::<gtk4::Box>()
+            .expect("job card title row must be a box");
+        let status_row = title_row
+            .next_sibling()
+            .expect("job card header must have a status row")
+            .downcast::<gtk4::Box>()
+            .expect("job card status row must be a box");
+
+        HeaderGeometry {
+            title_spacing: title_row.spacing(),
+            status_spacing: status_row.spacing(),
+            status_margin_start: status_row.margin_start(),
         }
-        let cancel = gtk4::Button::with_label("Cancel");
-        cancel.add_css_class("flat");
-        cancel.add_css_class("scan-card-cancel");
-        status_row.append(&cancel);
-        let header = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        header.append(&title_row);
-        header.append(&status_row);
-        let body = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
-        body.set_height_request(crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX);
-        body.add_css_class("scan-card");
-        body.append(&header);
-        body.append(&gtk4::ProgressBar::new());
-        let detail = gtk4::Label::new(Some("742/1,648 tracks"));
-        detail.add_css_class("scan-card-detail");
-        body.append(&detail);
-        gtk4::Revealer::builder()
-            .transition_type(gtk4::RevealerTransitionType::None)
-            .child(&body)
-            .build()
     }
 
     fn pump() {
         while gtk4::glib::MainContext::default().iteration(false) {}
     }
 
-    fn measured_job_card(with_extra_action: bool) -> gtk4::graphene::Rect {
+    fn measured_job_card(kind: JobCardKind, card: &gtk4::Revealer) -> JobCardMeasurement {
         let slot = SidebarActivitySlot::new();
-        let card = job_card(with_extra_action);
-        slot.set_doctor_card(&card);
+        match kind {
+            JobCardKind::Scan => slot.set_scan_card(card),
+            JobCardKind::Doctor => slot.set_doctor_card(card),
+            JobCardKind::Relink => slot.set_relink_card(card),
+        }
         let region = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         region.set_size_request(240, 470);
         region.append(slot.progress_widget());
@@ -212,8 +234,17 @@ mod tests {
             .unwrap()
             .compute_bounds(&window)
             .expect("job card must be allocated");
+        let measurement = JobCardMeasurement {
+            bounds,
+            header: header_geometry(card),
+            minimum_width: card.measure(gtk4::Orientation::Horizontal, -1).0,
+            requested_height: card
+                .child()
+                .expect("job card must have a body")
+                .height_request(),
+        };
         window.close();
-        bounds
+        measurement
     }
 
     #[test]
@@ -223,14 +254,41 @@ mod tests {
             return;
         }
         crate::ui::style::install_css_string_for_test(&crate::ui::scan_card_css::css());
-        let doctor_bounds = measured_job_card(false);
-        let relink_bounds = measured_job_card(true);
+        let scan = measured_job_card(JobCardKind::Scan, &scan_job_card());
+        let doctor = measured_job_card(
+            JobCardKind::Doctor,
+            &crate::ui::library_doctor::doctor_job_card_for_test(),
+        );
+        let relink = measured_job_card(
+            JobCardKind::Relink,
+            &crate::ui::issues::relink_job_card_for_test(),
+        );
 
-        assert_eq!(doctor_bounds.y(), relink_bounds.y());
-        assert_eq!(doctor_bounds.height(), relink_bounds.height());
+        let dock_bottom = doctor.bounds.y() + doctor.bounds.height();
+        for measurement in [&scan, &doctor, &relink] {
+            assert_eq!(
+                measurement.bounds.y() + measurement.bounds.height(),
+                dock_bottom
+            );
+            assert_eq!(measurement.bounds.width(), doctor.bounds.width());
+            assert_eq!(
+                measurement.requested_height,
+                crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX
+            );
+            assert!(
+                measurement.minimum_width <= 232,
+                "every job card must fit inside the 240px sidebar's 232px card slot, got {}px",
+                measurement.minimum_width
+            );
+            assert_eq!(measurement.header, doctor.header);
+        }
         assert_eq!(
-            doctor_bounds.height(),
-            crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX as f32
+            doctor.header,
+            HeaderGeometry {
+                title_spacing: 7,
+                status_spacing: 7,
+                status_margin_start: 19,
+            }
         );
     }
 

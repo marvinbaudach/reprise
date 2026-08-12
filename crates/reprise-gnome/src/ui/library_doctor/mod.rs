@@ -47,6 +47,17 @@ use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
 
+#[cfg(test)]
+pub(in crate::ui) fn doctor_job_card_for_test() -> gtk4::Revealer {
+    let card = DoctorProgressCard::new();
+    card.show_scan(
+        reprise_core::library_doctor::DoctorScanPhase::CheckingRemote,
+        876,
+        2_177,
+    );
+    card.widget().clone()
+}
+
 /// The glyph that stands for the Library Doctor: the design's stethoscope,
 /// which the app now ships itself as
 /// `data/icons/hicolor/symbolic/apps/reprise-stethoscope-symbolic.svg`, drawn

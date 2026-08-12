@@ -190,11 +190,11 @@ impl ScanProgressView {
         // the old 16-character title floor wider than the fixed sidebar; with
         // the controls below, the title remains distinguishable without making
         // the card dictate NPP-1 geometry.
-        let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
         title_row.append(&spinner);
         title_row.append(&title);
-        let status_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        status_row.set_margin_start(18);
+        let status_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        status_row.set_margin_start(19);
         status_row.append(&percent);
         status_row.append(&cancel);
         let header = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
