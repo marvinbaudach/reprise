@@ -17,15 +17,26 @@ pub fn render_report(
     let profile = optional(&facts.build_profile);
     writeln!(report, "reprise {version} ({git_sha}, {profile})").unwrap();
     writeln!(report, "{}", package_line(facts.package.as_ref())).unwrap();
-    writeln!(
-        report,
-        "os {} {} · gnome {} · {}",
-        optional(&facts.os_name),
-        optional(&facts.os_version),
-        optional(&facts.gnome_version),
-        optional(&facts.display_server)
-    )
-    .unwrap();
+    let os_name = optional(&facts.os_name);
+    let gnome_version = optional(&facts.gnome_version);
+    let display_server = optional(&facts.display_server);
+    if let Some(os_version) = facts
+        .os_version
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        writeln!(
+            report,
+            "os {os_name} {os_version} · gnome {gnome_version} · {display_server}"
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            report,
+            "os {os_name} · gnome {gnome_version} · {display_server}"
+        )
+        .unwrap();
+    }
     writeln!(
         report,
         "gtk {} · libadwaita {}",

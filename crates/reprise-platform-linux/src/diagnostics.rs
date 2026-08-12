@@ -143,7 +143,9 @@ fn parse_os_release(contents: &str) -> OsRelease {
     };
     OsRelease {
         name: value("ID"),
-        version: value("VERSION_ID"),
+        version: value("VERSION_ID")
+            .filter(|version| !version.is_empty())
+            .or_else(|| value("BUILD_ID").filter(|version| !version.is_empty())),
     }
 }
 

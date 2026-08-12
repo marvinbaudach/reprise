@@ -42,7 +42,7 @@ fn missing_facts_render_as_unknown_in_every_fixed_slot() {
         report,
         "reprise unknown (unknown, unknown)\n\
 unknown\n\
-os unknown unknown · gnome unknown · unknown\n\
+os unknown · gnome unknown · unknown\n\
 gtk unknown · libadwaita unknown\n\
 rust unknown · gstreamer unknown (unknown)\n\
 locale unknown\n\
@@ -61,6 +61,21 @@ fn empty_log_omits_the_last_warnings_block() {
 
     assert!(!report.contains("last warnings"));
     assert!(report.ends_with("mtp gvfs 1.60.2 · 1 device remembered"));
+}
+
+#[test]
+fn missing_distribution_version_omits_only_its_token() {
+    let mut facts = complete_facts();
+    facts.os_version = None;
+
+    let report = render_report(
+        &facts,
+        &DiagnosticLog::default(),
+        &RedactionContext::default(),
+    );
+
+    assert!(report.contains("\nos fedora · gnome 49 · wayland\n"));
+    assert!(!report.contains("os fedora unknown"));
 }
 
 #[test]
