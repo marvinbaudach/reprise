@@ -149,9 +149,16 @@ mkdir -p \
   "$XDG_CACHE_HOME_SCRATCH" \
   "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0"
 
+# `gtk-enable-animations=0` is load-bearing, not cosmetic: with animations on,
+# an AdwDialog opens through a spring transition that this environment (debug
+# build on llvmpipe) renders so slowly that the screenshot 400 ms after
+# `present()` catches the dialog scaled down and at a few percent opacity — it
+# reads as "the dialog never painted" while it is merely still arriving. Off,
+# every dialog is at its final geometry and opacity the moment it maps.
 cat > "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0/settings.ini" <<'EOF'
 [Settings]
 gtk-icon-theme-name=Papirus-Dark
+gtk-enable-animations=0
 EOF
 
 if [ "$PTR_E2E_COMPACT_SEEK_ONLY" = "1" ]; then
