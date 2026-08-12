@@ -53,7 +53,7 @@ reset_surface_baseline() {
   if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
     return 0
   fi
-  reset_surface_clear_filters "$pid" "$window_id" "$stem" || true
+  reset_surface_clear_filters "$pid" "$window_id" "$stem" 1 || true
   if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
     return 0
   fi
@@ -65,7 +65,7 @@ reset_surface_baseline() {
     fi
   done
 
-  reset_surface_clear_filters "$pid" "$window_id" "$stem" || true
+  reset_surface_clear_filters "$pid" "$window_id" "$stem" 2 || true
   if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
     return 0
   fi
@@ -77,9 +77,9 @@ reset_surface_baseline() {
 }
 
 reset_surface_clear_filters() {
-  local pid=$1 window_id=$2 stem=$3 state_path
+  local pid=$1 window_id=$2 stem=$3 pass=$4 state_path
 
-  state_path=$(cua_snapshot "$pid" "$window_id" "$stem-reset-filters") || return 1
+  state_path=$(cua_snapshot "$pid" "$window_id" "$stem-reset-filters-$pass") || return 1
   if ! snapshot_exposes_label "$state_path" "Clear all ×"; then
     return 0
   fi
@@ -88,10 +88,10 @@ reset_surface_clear_filters() {
   # navigation action. The visible Clear all control drops search and filter
   # chips together, so reach it by keyboard and activate it with Enter.
   cua_focus_label_via_tab \
-    "$pid" "$window_id" "Clear all ×" "$stem-reset-clear-focus" >/dev/null \
+    "$pid" "$window_id" "Clear all ×" "$stem-reset-clear-focus-$pass" >/dev/null \
     || return 1
   cua_press_key_focused \
-    "$pid" "$window_id" enter "$stem-reset-clear-activate"
+    "$pid" "$window_id" enter "$stem-reset-clear-activate-$pass"
 }
 
 reset_surface_is_at_baseline() {
