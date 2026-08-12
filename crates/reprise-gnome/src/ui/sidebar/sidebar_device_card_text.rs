@@ -20,7 +20,7 @@ use crate::ui::device_sync_strings;
 
 /// `MTP-63`: which contrast step a device card carries. The step decides
 /// ground, edge, and how far the status line falls off against the name —
-/// never the name's own colour, which is full strength on every step.
+/// without ever applying blanket opacity to the card.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CardEmphasis {
     /// A sync of this device is running: accent edge, tinted ground.
@@ -48,6 +48,50 @@ pub(super) fn is_syncing(device: &DeviceView) -> bool {
         device.sync_phase,
         PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
     )
+}
+
+/// `MTP-63`: the syncing card's status line — file counts, not a percentage.
+/// The percentage keeps its own fixed-width slot so the count cannot shove it.
+#[must_use]
+pub(super) fn syncing_file_count(completed: usize, total: usize) -> String {
+    let completed =
+        reprise_core::format::format_thousands(i64::try_from(completed).unwrap_or(i64::MAX));
+    let total = reprise_core::format::format_thousands(i64::try_from(total).unwrap_or(i64::MAX));
+    crate::i18n::format_message(
+        &device_sync_strings::text(device_sync_strings::SYNCING_FILE_COUNT),
+        &[("completed", &completed), ("total", &total)],
+    )
+}
+
+pub(super) fn css() -> String {
+    ".device-card { min-height: 0; padding: 0; border-radius: 14px; border: 1px solid transparent; background-color: transparent; }\n\
+     .device-card-remembered { background-color: transparent; border-color: alpha(@window_fg_color, 0.09); }\n\
+     .device-card-connected { background-color: alpha(@window_fg_color, 0.07); border-color: alpha(@window_fg_color, 0.10); }\n\
+     .device-card-active { background-color: alpha(@accent_color, 0.10); border-color: alpha(@accent_color, 0.55); box-shadow: 0 6px 18px alpha(#000000, 0.45); }\n\
+     .device-card-remembered:hover { background-color: alpha(@window_fg_color, 0.04); border-color: alpha(@window_fg_color, 0.14); }\n\
+     .device-card-connected:hover { background-color: alpha(@window_fg_color, 0.10); border-color: alpha(@window_fg_color, 0.16); }\n\
+     .device-card-active:hover { background-color: alpha(@accent_color, 0.16); border-color: alpha(@accent_color, 0.75); }\n\
+     .device-card:focus-visible { box-shadow: inset 0 0 0 2px alpha(@window_fg_color, 0.32); }\n\
+     .device-card-icon { border-radius: 13px; background-color: transparent; }\n\
+     .device-card-remembered .device-card-icon { background-color: alpha(@window_fg_color, 0.035); }\n\
+     .device-card-connected .device-card-icon { background-color: alpha(@window_fg_color, 0.075); }\n\
+     .device-card-active .device-card-icon { background-color: alpha(@accent_color, 0.20); }\n\
+     .device-card-glyph { color: alpha(@window_fg_color, 0.82); }\n\
+     .device-card-title { font-size: 13.5px; }\n\
+     .device-card-remembered .device-card-title { color: alpha(@window_fg_color, 0.62); }\n\
+     .device-card-detail { font-size: 11.5px; color: alpha(@window_fg_color, 0.55); }\n\
+     .device-card-active .device-card-detail { color: @reprise_accent_text_color; font-feature-settings: \"tnum\"; }\n\
+     .device-card-active .device-card-glyph { color: @reprise_accent_text_color; }\n\
+     .device-card-percent { font-size: 11.5px; font-feature-settings: \"tnum\"; color: alpha(@window_fg_color, 0.45); }\n\
+     .device-card-cancel { min-width: 28px; min-height: 28px; padding: 0; color: @reprise_accent_text_color; background-color: alpha(@accent_color, 0.20); }\n\
+     .device-card-cancel:hover { background-color: alpha(@accent_color, 0.30); }\n\
+     .device-card-progress { min-height: 3px; }\n\
+     .device-card-progress trough { min-height: 3px; border-radius: 2px; background-color: alpha(#ffffff, 0.12); }\n\
+     .device-card-progress progress { min-height: 3px; border-radius: 2px; background-color: @accent_color; }\n\
+     .device-section-heading { min-height: 0; padding: 0 8px; color: alpha(@window_fg_color, 0.72); background: none; box-shadow: none; border: none; }\n\
+     .device-section-heading:hover { background-color: alpha(@window_fg_color, 0.05); }\n\
+     .device-section-heading:disabled { background: none; opacity: 1; }"
+        .to_string()
 }
 
 /// `MTP-29`: the card's leading sentence — exactly one of design 7c's four
@@ -258,5 +302,13 @@ mod tests {
         assert_eq!(card_emphasis(&active), CardEmphasis::Active);
         assert_eq!(card_emphasis(&connected), CardEmphasis::Connected);
         assert_eq!(card_emphasis(&remembered), CardEmphasis::Remembered);
+    }
+
+    #[test]
+    fn mtp_63_the_card_states_the_file_count_while_syncing() {
+        let status = syncing_file_count(214, 1_047);
+
+        assert!(status.contains("214"));
+        assert!(status.contains("1,047"));
     }
 }

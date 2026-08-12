@@ -553,7 +553,7 @@ result.
   verified sync time". A timestamp is only stored after a successful
   device readback; failed or only partially published runs do not
   overwrite it.
-- **MTP-13** [active] [gtk] — The entire device card is exactly one
+- **MTP-13** [replaced by MTP-64] — The entire device card is exactly one
   native keyboard and pointer entry point into a non-modal full device
   page in the main window and does not start a sync directly. The
   primary menu item opens the same page for one device, and a compact
@@ -1017,14 +1017,28 @@ result.
   for this phone" switches for removing locally deleted music and syncing
   automatically on connection. Playlist selection exists only in the upper
   card; this section reports its result and links back to it.
-- **MTP-63** [planned] [gtk] — The sidebar device card carries three distinct
-  contrast steps. The device name keeps its own legible text role; the status
-  line carries the quieter or accented state treatment. A running sync has an
-  accent edge and tinted ground, its file count and progress on their own row,
-  and a Cancel button in the card. A connected idle device has a solid neutral
-  surface and edge. A remembered disconnected device has no surface, only a
-  hairline edge. The Devices heading is one step brighter than the other
-  sidebar section headings.
+- **MTP-63** [active] [gtk] — The sidebar device card carries three distinct
+  contrast steps, without dimming the entire card. A running sync has an accent
+  edge, tinted ground, accent icon chip, an accent status row with the file
+  count "x / y", a separate progress line, and a Cancel button in the card. A
+  connected idle device keeps the device name at full strength on a solid
+  neutral surface with a neutral edge and dims only its status line. A
+  remembered disconnected device has no surface, only a hairline edge, and
+  reduces the title and status separately. The contrast between active and
+  remembered is the primary information. The Devices heading is one step
+  brighter than the other sidebar section headings.
+- **MTP-64** [active] [gtk] — The entire device card is one native keyboard and
+  pointer entry point into a non-modal full device page in the main window and
+  does not start a sync directly; exclusively while a sync of this device is
+  running, it carries a second entry point, the Cancel button. The button is
+  not a descendant of the card surface but a sibling in an overlay, so the
+  card surface itself remains exactly one target. The primary menu item opens
+  the same page for one device, and a compact selection first for multiple
+  devices. The page contains no song or device file list, and the transfer
+  profile as its only setting; it shows every playlist with a visible,
+  markup-safe name, selection, last verified sync, and the target size
+  projected for the active profile, as well as, during a running sync, a
+  progress bar and current smoothed MTP transfer rate.
 
 ## F. Settings & modals
 

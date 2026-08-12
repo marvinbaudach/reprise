@@ -19,6 +19,10 @@ fn select_playlist(device: &mut DeviceView) {
     }];
 }
 
+fn no_cancel() -> CancelCallback {
+    Rc::new(|_| {})
+}
+
 fn diff(
     files_to_copy: usize,
     bytes_to_copy: u64,
@@ -116,7 +120,10 @@ fn mtp_50_remembered_card_is_dimmed_has_no_diff_and_exposes_local_memory_actions
 
     assert_eq!(card_subtitle(&device), "Not connected · synced 3 days ago");
     assert!(idle_tooltip(&device).is_none());
-    assert!(css().contains(".device-card.remembered-device { opacity: 0.58; }"));
+    assert!(css().contains(
+        ".device-card-remembered .device-card-title { color: alpha(@window_fg_color, 0.62); }"
+    ));
+    assert!(!css().contains("opacity: 0.58"));
     let menu_source = include_str!("../device_sync/device_sync_card_menu.rs");
     assert!(menu_source.contains("BUTTON_SECONDARY"));
     assert!(menu_source.contains("FORGET_DEVICE"));
@@ -129,7 +136,7 @@ fn css_covers_the_sync_card_vocabulary() {
     let css = css();
     for marker in [
         ".device-card {",
-        ".device-card:hover",
+        ".device-card-active:hover",
         ".device-card:focus-visible",
         ".device-card-icon",
         ".device-card-glyph",
@@ -144,6 +151,56 @@ fn css_covers_the_sync_card_vocabulary() {
         !css.contains("#1CA98F"),
         "the accent must come from the shared style source, not a literal"
     );
+}
+
+#[test]
+fn mtp_63_every_emphasis_step_has_its_own_ground_and_edge() {
+    let css = css();
+    let rule = |selector: &str| {
+        css.split_once(selector)
+            .and_then(|(_, rest)| rest.split_once('}'))
+            .map_or_else(|| panic!("missing CSS rule: {selector}"), |(body, _)| body)
+    };
+
+    let remembered = rule(".device-card-remembered {");
+    assert!(remembered.contains("background-color: transparent"));
+    assert!(remembered.contains("border-color: alpha(@window_fg_color, 0.09)"));
+
+    let connected = rule(".device-card-connected {");
+    assert!(connected.contains("background-color: alpha(@window_fg_color, 0.07)"));
+    assert!(connected.contains("border-color: alpha(@window_fg_color, 0.10)"));
+
+    let active = rule(".device-card-active {");
+    assert!(active.contains("background-color: alpha(@accent_color, 0.10)"));
+    assert!(active.contains("border-color: alpha(@accent_color, 0.55)"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_63_the_cancel_button_exists_only_while_this_device_syncs() {
+    gtk4::init().unwrap();
+    let on_open: OpenCallback = Rc::new(|_, _| {});
+    let cancelled = Rc::new(RefCell::new(Vec::new()));
+    let cancelled_for_callback = cancelled.clone();
+    let on_cancel: CancelCallback = Rc::new(move |id| cancelled_for_callback.borrow_mut().push(id));
+    let card = DeviceCard::new(&view(PlannedSyncPhase::Idle), &on_open, &on_cancel);
+
+    let active = view(PlannedSyncPhase::Finishing);
+    card.update(&active);
+    assert!(card.cancel_button.is_visible());
+    assert_eq!(card.suffix_stack.margin_end(), 34);
+    card.cancel_button.emit_clicked();
+    assert_eq!(cancelled.borrow().as_slice(), ["pixel"]);
+
+    card.update(&view(PlannedSyncPhase::Idle));
+    assert!(!card.cancel_button.is_visible());
+    assert_eq!(card.suffix_stack.margin_end(), 0);
+
+    let mut remembered = view(PlannedSyncPhase::Idle);
+    remembered.connected = false;
+    remembered.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+    card.update(&remembered);
+    assert!(!card.cancel_button.is_visible());
 }
 
 #[test]
@@ -166,6 +223,79 @@ fn css_parses_in_gtk_without_dropping_declarations() {
         errors.is_empty(),
         "GTK reported CSS parsing errors: {errors:?}"
     );
+}
+
+#[test]
+#[ignore = "visual fixture; run via the isolated Xvfb screenshot command"]
+fn device_card_contrast_ladder_visual_fixture() {
+    gtk4::init().unwrap();
+    let is_dark = std::env::var("REPRISE_SMOKE_DARK").as_deref() == Ok("1");
+    crate::ui::style::install_css_string_for_test(&format!(
+        "{}\n{}",
+        crate::ui::style::theme::theme_css(
+            crate::ui::style::theme::Theme::DEFAULT,
+            is_dark,
+            crate::ui::style::accent::AccentSource::App,
+        ),
+        css()
+    ));
+
+    let column = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    column.set_margin_top(18);
+    column.set_margin_bottom(18);
+    column.set_margin_start(18);
+    column.set_margin_end(18);
+    let heading = gtk4::Label::new(Some("DEVICES"));
+    heading.add_css_class("caption");
+    heading.add_css_class("device-section-heading");
+    heading.set_xalign(0.0);
+    column.append(&heading);
+
+    let mut active = view(PlannedSyncPhase::Syncing {
+        step: SyncStep::Copying,
+        done: 214,
+        total: 1047,
+        current_track: "Immortal — Lorna Shore".into(),
+        bytes_done: 214,
+        bytes_total: 1047,
+    });
+    active.name = "Pixel 8 · syncing".into();
+    let mut connected = view(PlannedSyncPhase::Idle);
+    connected.id = "connected".into();
+    connected.name = "Walkman · connected".into();
+    connected.memory_status = Some("Up to date · synced 12 min ago".into());
+    let mut remembered = view(PlannedSyncPhase::Idle);
+    remembered.id = "remembered".into();
+    remembered.name = "Old phone · remembered".into();
+    remembered.connected = false;
+    remembered.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+
+    let on_open: OpenCallback = Rc::new(|_, _| {});
+    let cards = [active, connected, remembered]
+        .iter()
+        .map(|device| {
+            let card = DeviceCard::new(device, &on_open, &no_cancel());
+            card.update(device);
+            column.append(card.root());
+            card
+        })
+        .collect::<Vec<_>>();
+    let window = gtk4::Window::builder()
+        .title("Reprise device card contrast ladder")
+        .default_width(360)
+        .default_height(390)
+        .child(&column)
+        .build();
+    window.present();
+    let hold_ms = std::env::var("REPRISE_SMOKE_HOLD_MS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(250);
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(hold_ms),
+    ));
+    window.close();
+    drop(cards);
 }
 
 #[test]
@@ -233,7 +363,7 @@ fn mtp_29_a_lone_no_playlists_selected_blocker_does_not_read_as_needs_attention(
 }
 
 #[test]
-fn mtp_13_sidebar_device_card_delegates_to_the_main_window_page() {
+fn mtp_64_sidebar_device_card_delegates_to_the_main_window_page() {
     let source = include_str!("sidebar.rs");
     assert!(source.contains("on_open: Rc<dyn Fn(String, String)>"));
     assert!(!source.contains("device_sync_dialog::present"));
@@ -269,7 +399,7 @@ fn syncing_title_is_explicit() {
 }
 
 #[test]
-fn mtp_13_sidebar_device_card_has_no_direct_sync_action() {
+fn mtp_64_sidebar_device_card_has_no_direct_sync_action() {
     let direct_sync_action = ["app", "sync-device"].join(".");
 
     assert!(!include_str!("sidebar_device_card.rs").contains(&direct_sync_action));
@@ -284,9 +414,9 @@ fn device_card_open_is_a_native_keyboard_action() {
     let on_open: OpenCallback = Rc::new(move |id, name| {
         opened_for_callback.borrow_mut().replace((id, name));
     });
-    let card = DeviceCard::new(&view(PlannedSyncPhase::Idle), &on_open);
-    assert!(card.root.is_focusable());
-    card.root.emit_clicked();
+    let card = DeviceCard::new(&view(PlannedSyncPhase::Idle), &on_open, &no_cancel());
+    assert!(card.surface.is_focusable());
+    card.surface.emit_clicked();
     assert_eq!(
         opened.borrow().as_ref(),
         Some(&("pixel".to_owned(), "Pixel 8".to_owned()))
@@ -311,7 +441,7 @@ fn mot_7_disabled_animations_apply_progress_and_state_changes_immediately() {
         bytes_total: 100,
     });
     let on_open: OpenCallback = Rc::new(|_, _| {});
-    let card = DeviceCard::new(&device, &on_open);
+    let card = DeviceCard::new(&device, &on_open, &no_cancel());
 
     card.update(&device);
 
@@ -345,7 +475,7 @@ fn enabled_animations_interpolate_progress_to_the_latest_fraction() {
     settings.set_gtk_enable_animations(true);
     let idle = view(PlannedSyncPhase::Idle);
     let on_open: OpenCallback = Rc::new(|_, _| {});
-    let card = DeviceCard::new(&idle, &on_open);
+    let card = DeviceCard::new(&idle, &on_open, &no_cancel());
     assert!(card.root.settings().is_gtk_enable_animations());
     let window = gtk4::Window::new();
     window.set_child(Some(&card.root));
@@ -382,7 +512,7 @@ fn mot_2_device_background_surfaces_only_crossfade_in_place() {
     gtk4::init().unwrap();
     let device = view(PlannedSyncPhase::Idle);
     let on_open: OpenCallback = Rc::new(|_, _| {});
-    let card = DeviceCard::new(&device, &on_open);
+    let card = DeviceCard::new(&device, &on_open, &no_cancel());
 
     assert_eq!(
         card.indicator.transition_type(),

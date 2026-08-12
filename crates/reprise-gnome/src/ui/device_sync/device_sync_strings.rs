@@ -70,6 +70,7 @@ pub(super) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
 
 pub const SPACE_UNKNOWN: &str = N_!("Available space unknown");
 pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
+pub const SYNCING_FILE_COUNT: &str = N_!("Syncing · {completed} / {total}");
 pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
