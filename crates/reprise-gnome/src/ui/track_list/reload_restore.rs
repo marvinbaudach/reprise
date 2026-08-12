@@ -28,6 +28,8 @@
 
 use std::collections::HashSet;
 
+use crate::ui::list_geometry::RowHeight;
+
 /// Snapshot needed to restore selection + scroll position across a
 /// `reload()` model swap. `anchor` is the track id currently anchoring the
 /// viewport's top edge, paired with its pixel offset *into* that row (i.e.
@@ -38,15 +40,27 @@ use std::collections::HashSet;
 pub(in crate::ui) struct ReloadAnchor {
     pub selected_ids: Vec<i64>,
     pub anchor: Option<(i64, f64)>,
+    /// The exact pre-swap row height used to derive `anchor`. Restore must use
+    /// the same scale rather than reinterpret its offset through a new cache.
+    pub row_height: Option<RowHeight>,
 }
 
 /// Pure constructor: bundles already-extracted primitives into a
 /// `ReloadAnchor`. See the module doc for why this doesn't take `Shared`/GTK
 /// types directly.
 pub(in crate::ui) fn capture(selected_ids: Vec<i64>, anchor: Option<(i64, f64)>) -> ReloadAnchor {
+    capture_with_row_height(selected_ids, anchor, None)
+}
+
+pub(in crate::ui) fn capture_with_row_height(
+    selected_ids: Vec<i64>,
+    anchor: Option<(i64, f64)>,
+    row_height: Option<RowHeight>,
+) -> ReloadAnchor {
     ReloadAnchor {
         selected_ids,
         anchor,
+        row_height: anchor.and(row_height),
     }
 }
 
@@ -97,6 +111,24 @@ pub(in crate::ui) fn prepaint_position(
     let (anchor_id, _) = anchor?;
     let position = current_ids.iter().position(|&id| id == anchor_id)?;
     u32::try_from(position).ok()
+}
+
+/// Selects the row at the viewport's lower edge for a `scroll_to(...NONE...)`
+/// guard. Asking GTK for the top anchor itself bottom-aligns that row and
+/// shifts the value by almost one page; asking for the last visible row makes
+/// the already-applied precise target satisfy GTK's visibility request.
+pub(in crate::ui) fn prepaint_guard_position(
+    anchor: Option<(i64, f64)>,
+    current_ids: &[i64],
+    row_height: f64,
+    viewport_height: f64,
+) -> Option<u32> {
+    let target = scroll_target(anchor, current_ids, row_height, viewport_height)?;
+    let past_last = ((target + viewport_height) / row_height).ceil() as usize;
+    let last = past_last
+        .checked_sub(1)?
+        .min(current_ids.len().saturating_sub(1));
+    u32::try_from(last).ok()
 }
 
 /// Computes the scroll offset that keeps the anchor row at the same
@@ -152,6 +184,7 @@ pub(in crate::ui) fn reanchor_on_track(
     };
     let position_delta = anchor_position as f64 - track_position as f64;
     opened.anchor = Some((track_id, position_delta.mul_add(row_height, anchor_offset)));
+    opened.row_height = RowHeight::new(row_height);
     opened
 }
 
@@ -189,6 +222,7 @@ mod tests {
         let anchor = ReloadAnchor {
             selected_ids: vec![7, 3, 11],
             anchor: Some((7, 0.5)),
+            row_height: None,
         };
         assert!(!is_noop(&anchor));
     }
@@ -211,16 +245,28 @@ mod tests {
     }
 
     #[test]
+    fn browse_11_prepaint_guard_names_the_last_row_at_the_precise_viewport() {
+        let current_ids = (0_i64..776).collect::<Vec<_>>();
+
+        assert_eq!(
+            prepaint_guard_position(Some((394, -1.0)), &current_ids, 34.0, 239.0),
+            Some(400)
+        );
+    }
+
+    #[test]
     fn tag_1_reanchoring_on_an_edited_row_preserves_its_screen_offset() {
         let opened = ReloadAnchor {
             selected_ids: vec![7],
             anchor: Some((20, 4.0)),
+            row_height: RowHeight::new(20.0),
         };
         let old_ids = vec![10, 20, 30, 40, 50];
 
         let reanchored = reanchor_on_track(opened, 40, &old_ids, 20.0);
 
         assert_eq!(reanchored.anchor, Some((40, -36.0)));
+        assert_eq!(reanchored.row_height, RowHeight::new(20.0));
         assert_eq!(
             scroll_target(reanchored.anchor, &old_ids, 20.0, 40.0),
             Some(24.0),
@@ -318,6 +364,7 @@ mod tests {
         let anchor = ReloadAnchor {
             selected_ids: vec![1, 2],
             anchor: Some((1, 3.0)),
+            row_height: None,
         };
         assert_eq!(capture(vec![1, 2], Some((1, 3.0))), anchor);
     }

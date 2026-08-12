@@ -6,7 +6,7 @@
 //! Linux answers live (§9.3, §9.4):
 //!
 //! * [`lease`] — the single-owner lock under `XDG_RUNTIME_DIR`;
-//! * [`service`] — the `org.reprise.Reprise1` interface on the session bus;
+//! * [`service`] — the `io.github.marvinbaudach.Reprise.Runtime1` interface on the session bus;
 //! * the activation metadata in `data/`, installed alongside the binary and
 //!   checked by `scripts/check-runtime-service-install.sh` so activation
 //!   cannot be green on a development machine and dead on a user's.

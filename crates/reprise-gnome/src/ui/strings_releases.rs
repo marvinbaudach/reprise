@@ -10,7 +10,7 @@ use super::formatted;
 
 pub const RELEASES: &str = N_!("Releases");
 pub const RELEASES_DATE: &str = N_!("Date");
-pub const RELEASES_TITLE: &str = N_!("Title");
+pub const RELEASES_TITLE: &str = N_!("Release");
 pub const RELEASES_ARTIST: &str = N_!("Artist");
 pub const RELEASES_TYPE: &str = N_!("Type");
 pub const RELEASES_STATUS: &str = N_!("Status");

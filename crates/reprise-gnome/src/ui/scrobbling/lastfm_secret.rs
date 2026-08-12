@@ -4,10 +4,10 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] = [
-    ("application", "org.reprise.Reprise"),
-    ("service", "lastfm"),
-];
+pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] =
+    [("application", crate::APP_ID), ("service", "lastfm")];
+const LEGACY_ATTRIBUTES: [(&str, &str); 2] =
+    [("application", super::LEGACY_APP_ID), ("service", "lastfm")];
 
 const LABEL: &str = "Reprise Last.fm credentials";
 
@@ -41,13 +41,34 @@ pub(in crate::ui) enum SecretError {
 
 pub(in crate::ui) async fn load() -> Result<Option<LastFmCredentials>, SecretError> {
     let keyring = oo7::Keyring::new().await?;
-    let Some(item) = keyring.search_items(&ATTRIBUTES).await?.into_iter().next() else {
-        return Ok(None);
-    };
+    let (item, is_legacy) =
+        if let Some(item) = keyring.search_items(&ATTRIBUTES).await?.into_iter().next() {
+            (item, false)
+        } else if let Some(item) = keyring
+            .search_items(&LEGACY_ATTRIBUTES)
+            .await?
+            .into_iter()
+            .next()
+        {
+            (item, true)
+        } else {
+            return Ok(None);
+        };
     let secret = item.secret().await?;
-    serde_json::from_slice(secret.as_bytes())
-        .map(Some)
-        .map_err(SecretError::from)
+    let credentials = serde_json::from_slice(secret.as_bytes())?;
+
+    if is_legacy {
+        if let Err(error) = keyring
+            .create_item(LABEL, &ATTRIBUTES, secret.as_bytes(), true)
+            .await
+        {
+            tracing::warn!(%error, service = "lastfm", "could not migrate legacy keyring item");
+        } else if let Err(error) = item.delete().await {
+            tracing::warn!(%error, service = "lastfm", "could not delete migrated legacy keyring item");
+        }
+    }
+
+    Ok(Some(credentials))
 }
 
 pub(in crate::ui) async fn store(credentials: &LastFmCredentials) -> Result<(), SecretError> {
@@ -81,10 +102,7 @@ mod tests {
     fn attributes_are_stable_and_contain_no_credentials() {
         assert_eq!(
             ATTRIBUTES,
-            [
-                ("application", "org.reprise.Reprise"),
-                ("service", "lastfm")
-            ]
+            [("application", crate::APP_ID), ("service", "lastfm")]
         );
         let serialized = format!("{ATTRIBUTES:?}");
         for secret in ["api-key", "shared-secret", "session-key"] {

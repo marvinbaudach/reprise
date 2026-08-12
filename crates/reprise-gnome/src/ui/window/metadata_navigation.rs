@@ -257,7 +257,7 @@ mod tests {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.ScopeTitleTest")
+            .application_id("io.github.marvinbaudach.Reprise.ScopeTitleTest")
             .build();
         app.register(None::<&gtk4::gio::Cancellable>).unwrap();
         let window = adw::ApplicationWindow::new(&app);
@@ -307,7 +307,7 @@ mod tests {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.ScopeSurvivesRefreshTest")
+            .application_id("io.github.marvinbaudach.Reprise.ScopeSurvivesRefreshTest")
             .build();
         app.register(None::<&gtk4::gio::Cancellable>).unwrap();
         let window = adw::ApplicationWindow::new(&app);
@@ -373,7 +373,7 @@ mod tests {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.ScopeChipTest")
+            .application_id("io.github.marvinbaudach.Reprise.ScopeChipTest")
             .build();
         app.register(None::<&gtk4::gio::Cancellable>).unwrap();
         let window = adw::ApplicationWindow::new(&app);
@@ -438,7 +438,7 @@ mod tests {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.RecentScopeChipTest")
+            .application_id("io.github.marvinbaudach.Reprise.RecentScopeChipTest")
             .build();
         app.register(None::<&gtk4::gio::Cancellable>).unwrap();
         let window = adw::ApplicationWindow::new(&app);

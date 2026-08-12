@@ -510,7 +510,6 @@ msgid " · "
 msgstr " · "
 
 #: crates/reprise-gnome/src/ui/strings.rs:377
-#: crates/reprise-gnome/src/ui/strings_releases.rs:13
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:165
 msgid "Title"
 msgstr "Titre"
@@ -2741,6 +2740,10 @@ msgstr "{radius} km"
 #: crates/reprise-gnome/src/ui/strings_releases.rs:11
 msgid "Releases"
 msgstr "Sorties"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:13
+msgid "Release"
+msgstr "Release"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:15
 msgid "Type"

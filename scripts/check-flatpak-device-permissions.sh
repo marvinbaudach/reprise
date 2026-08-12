@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-manifest=${1:-org.reprise.Reprise.yml}
+manifest=${1:-io.github.marvinbaudach.Reprise.yml}
 
 require_once() {
   local permission=$1

@@ -392,7 +392,7 @@ mod tests {
     fn library_root_is_mounted_before_full_geometry_is_requested() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.RestoreOrderTest")
+            .application_id("io.github.marvinbaudach.Reprise.RestoreOrderTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();

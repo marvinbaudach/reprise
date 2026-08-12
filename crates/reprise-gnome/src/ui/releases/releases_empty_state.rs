@@ -55,7 +55,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_31_gaps_beyond_the_window_offer_show_all() {
+    fn nr_33_gaps_beyond_the_window_offer_show_all() {
         let filter = ReleasesFilter::default();
         assert!(releases_scope_is_filtered(&filter, ""));
         assert_eq!(

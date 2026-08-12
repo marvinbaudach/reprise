@@ -19,7 +19,7 @@ source "$repo_root/scripts/cua-e2e/responsive_window.sh"
 source "$repo_root/scripts/cua-e2e/source_content.sh"
 source "$repo_root/scripts/cua-e2e/podcast_backlog.sh"
 source "$repo_root/scripts/cua-e2e/filter_clear_playback.sh"
-APP_ID=org.reprise.Reprise
+APP_ID=io.github.marvinbaudach.Reprise
 WINDOW_CLASS_MATCH=reprise
 CUA_E2E_PROFILE="${CUA_E2E_PROFILE:-debug}"
 CUA_E2E_OUT_DIR="${CUA_E2E_OUT_DIR:-/tmp/reprise-cua-e2e}"

@@ -314,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_31_activation_uses_restore_or_external_release_link() {
+    fn nr_33_activation_uses_restore_or_external_release_link() {
         let hidden = entry("2026-01-01", LibraryPresence::Complete, true);
         assert_eq!(
             releases_row_action(&hidden, today()),

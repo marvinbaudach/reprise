@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-manifest = yaml.safe_load(Path("org.reprise.Reprise.yml").read_text(encoding="utf-8"))
+manifest = yaml.safe_load(Path("io.github.marvinbaudach.Reprise.yml").read_text(encoding="utf-8"))
 modules = manifest["modules"]
 runtime_index = next(
     (index for index, module in enumerate(modules) if module.get("name") == "onnxruntime"),
@@ -45,7 +45,7 @@ assert source == {
 commands = "\n".join(runtime["build-commands"])
 assert "libonnxruntime.so.1.22.0" in commands
 assert "/app/lib/reprise" in commands
-assert "/app/share/licenses/org.reprise.Reprise/onnxruntime" in commands
+assert "/app/share/licenses/io.github.marvinbaudach.Reprise/onnxruntime" in commands
 PY
 
 # Only the worker build passes the bundled runtime through. The GTK build is

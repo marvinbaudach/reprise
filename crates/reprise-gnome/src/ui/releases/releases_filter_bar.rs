@@ -196,7 +196,7 @@ impl ReleasesFilterBar {
         self.rebuild();
     }
 
-    /// NR-31/FIL-2a: takes the filter row back to its default and clears this
+    /// NR-33/FIL-2a: takes the filter row back to its default and clears this
     /// section's transient search query.
     ///
     /// Back to *default*, not to the widest scope: since the default is itself
@@ -479,7 +479,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nr_31_type_toggles_are_independent_and_empty_means_every_type() {
+    fn nr_33_type_toggles_are_independent_and_empty_means_every_type() {
         let selection = ReleaseTypeSelection::default();
         let selection = toggle_type(selection, TypeChip::Album, false);
         let selection = toggle_type(selection, TypeChip::Ep, false);
@@ -515,7 +515,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_31_filter_header_is_permanent_and_reserves_its_height() {
+    fn nr_33_filter_header_is_permanent_and_reserves_its_height() {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ReleasesFilterBar::new(conn);

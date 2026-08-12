@@ -179,6 +179,8 @@ run_display_test() {
     echo "== display test: $test =="
     # Set XDG roots before dbus-run-session so D-Bus-activated Portal and
     # AT-SPI services inherit the worker isolation too.
+    # Xvfb has no usable GPU here. Force Cairo so a failed Vulkan probe cannot
+    # consume an animation's timing window before the first assertion.
     # xvfb-run can return non-zero after the test process succeeded when its
     # cleanup races an already-exited Xvfb process. The marker is written only
     # after cargo reports success, so it remains the authoritative test result.
@@ -188,6 +190,7 @@ run_display_test() {
         XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
         TMPDIR="$tmp_home" \
         GIO_USE_VFS=local GTK_USE_PORTAL=0 \
+        GSK_RENDERER=cairo \
         GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
         DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
         dbus-run-session -- xvfb-run --server-num="$server_num" \

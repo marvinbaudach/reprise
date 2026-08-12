@@ -17,11 +17,12 @@ use crate::ui::scan_chrome::ScanChromeView;
 use crate::ui::scan_progress::ScanProgressView;
 
 /// Floor for the counterprobe's measured displacement. The scan card really
-/// occupies 88 px under the app stylesheet at Adwaita's default font metrics;
-/// the floor sits below that so a different font size cannot make the
-/// counterprobe flaky. What it has to prove is a whole card's worth of
+/// occupies about 62 px under the app stylesheet at Adwaita's default font
+/// metrics. The Library Doctor card-family restyle removed its 8 px top margin
+/// and compacted the shared scan-card style; the floor keeps the same 8 px
+/// allowance for font metrics. What it has to prove is a whole card's worth of
 /// displacement, not one exact pixel count.
-const RETIRED_TOP_BAR_MIN_JUMP_PX: f32 = 80.0;
+const RETIRED_TOP_BAR_MIN_JUMP_PX: f32 = 54.0;
 
 /// A presented preferences dialog whose scan chrome is already running, so the
 /// chip is visible and allocated. The parent window keeps the application
@@ -166,7 +167,8 @@ fn fb_9_counterprobe_legacy_toolbar_status_moves_the_content() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn fb_9_chip_end_inset_is_measured_from_the_header_title_buttons() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
-    let dialog = ChromeDialog::present("org.reprise.Reprise.PreferencesChromeInsetTest");
+    let dialog =
+        ChromeDialog::present("io.github.marvinbaudach.Reprise.PreferencesChromeInsetTest");
     let header = dialog.header();
 
     let strip = header_end_strip(&header)
@@ -189,7 +191,8 @@ fn fb_9_chip_end_inset_is_measured_from_the_header_title_buttons() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn fb_9_chip_recenters_when_a_text_scale_change_grows_the_header() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
-    let dialog = ChromeDialog::present("org.reprise.Reprise.PreferencesChromeRescaleTest");
+    let dialog =
+        ChromeDialog::present("io.github.marvinbaudach.Reprise.PreferencesChromeRescaleTest");
     let header = dialog.header();
     let settled_height = header.height();
     let settled_margin = dialog.chip().margin_top();

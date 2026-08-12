@@ -1,0 +1,38 @@
+app-id: io.github.marvinbaudach.Reprise
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: reprise
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --socket=pulseaudio
+  - --share=network
+  - --own-name=org.mpris.MediaPlayer2.reprise
+  - --talk-name=org.gtk.vfs.*
+  - --filesystem=xdg-run/gvfsd
+
+# The stems separation feature needs onnxruntime, which is only available as a
+# prebuilt x86_64 binary. Flathub requires builds from source and Circle
+# requires both x86_64 and aarch64, so the Flatpak ships without it. The Rust
+# side dlopens the library at runtime and degrades to "feature unavailable"
+# when it is absent; AUR, COPR and local builds keep the feature.
+modules:
+  - name: reprise
+    buildsystem: meson
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/reprise/cargo
+        CARGO_NET_OFFLINE: 'true'
+    config-opts:
+      - -Dprofile=release
+    sources:
+      - type: dir
+        path: .
+      - flatpak/cargo-sources.json

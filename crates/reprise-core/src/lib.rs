@@ -40,6 +40,7 @@ mod db_ai_jobs;
 mod db_artist_news_fetch;
 mod db_change_log;
 mod db_concerts;
+mod db_deleted_releases;
 mod db_device_sync;
 mod db_drop_audio_analysis_mix;
 mod db_drop_sound_features;
@@ -63,6 +64,7 @@ mod db_releases_view_scope;
 mod db_spectrogram;
 mod db_sync_log;
 mod db_tag_write_jobs;
+mod deleted_releases;
 pub mod device_sync;
 pub mod equalizer;
 pub mod events;
@@ -106,6 +108,8 @@ mod log_capture;
 #[cfg(test)]
 mod artist_news_candidates_tests;
 #[cfg(test)]
+mod artist_news_deleted_memory_tests;
+#[cfg(test)]
 mod artist_news_parsing_tests;
 #[cfg(test)]
 mod artist_news_pipeline_tests;
@@ -115,5 +119,7 @@ mod artist_news_progress_tests;
 mod artist_news_query_tests;
 #[cfg(test)]
 mod artist_news_view_tests;
+#[cfg(test)]
+mod deleted_releases_tests;
 #[cfg(test)]
 mod fingerprint_tests;

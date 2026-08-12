@@ -374,14 +374,61 @@ pub(crate) fn set_release_hidden_in(
     release_group_mbid: &str,
     hidden: bool,
 ) -> Result<(), rusqlite::Error> {
+    if !hidden {
+        let transaction = conn.unchecked_transaction()?;
+        for mbid in crate::deleted_releases::forget_deleted_release_memory(
+            &transaction,
+            release_group_mbid,
+        )? {
+            update_release_hidden_in(&transaction, &mbid, false)?;
+        }
+        return transaction.commit();
+    }
+    update_release_hidden_in(conn, release_group_mbid, true)
+}
+
+pub(crate) fn update_release_hidden_in(
+    conn: &Connection,
+    release_group_mbid: &str,
+    hidden: bool,
+) -> Result<(), rusqlite::Error> {
     conn.execute(
         "UPDATE new_releases
             SET hidden = ?1,
-                hidden_at = CASE WHEN ?1 = 1 THEN strftime('%s', 'now') ELSE NULL END
+                hidden_at = CASE WHEN ?1 = 1 THEN strftime('%s', 'now') ELSE NULL END,
+                hidden_by_deleted_memory = 0
           WHERE release_group_mbid = ?2",
         rusqlite::params![i64::from(hidden), release_group_mbid],
     )?;
     Ok(())
+}
+
+pub(crate) fn hide_release_by_deleted_memory_in(
+    conn: &Connection,
+    release_group_mbid: &str,
+) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE new_releases
+            SET hidden = 1,
+                hidden_at = strftime('%s', 'now'),
+                hidden_by_deleted_memory = 1
+          WHERE release_group_mbid = ?1 AND hidden = 0",
+        [release_group_mbid],
+    )? > 0)
+}
+
+pub(crate) fn unhide_release_by_deleted_memory_in(
+    conn: &Connection,
+    release_group_mbid: &str,
+) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE new_releases
+            SET hidden = 0,
+                hidden_at = NULL,
+                hidden_by_deleted_memory = 0
+          WHERE release_group_mbid = ?1 AND hidden_by_deleted_memory = 1",
+        [release_group_mbid],
+    )? > 0)
 }
 
 pub fn mark_releases_seen(

@@ -78,7 +78,7 @@ any user-facing behavior, read the sections you work in. The contract:
   and their tests are re-pointed in the same commit.
 - If you hit a case no rule covers: do NOT decide locally. Add a
   `[planned]` draft with the next free ID in the affected section, marked
-  `<!-- REVIEW: Regelvorschlag -->`, and surface it for human review.
+  `<!-- REVIEW: rule proposal -->`, and surface it for human review.
 
 ## How to resume (the method — no special tooling required)
 
@@ -150,6 +150,35 @@ cargo tree -p reprise-core | grep -E 'gtk4|libadwaita|gstreamer|zbus'   # MUST b
 **File-size rule:** every *code* file created or substantially edited ends **< 800 lines**. If
 an edit would breach it, extract a cohesive sibling module — do NOT trim doc comments to fit.
 Markdown is exempt: docs are split by subject, never by line count.
+
+## Definition of Done
+
+A change is done when all of the following hold:
+
+1. On a clean integration worktree, `scripts/check-merge-readiness.sh` passes as
+   required by `docs/agents/branching.md`. If a sandbox cannot run that clean-tree
+   wrapper, run its individual gates directly, record the exact unavailable check,
+   and continue: an unavailable aggregate run is not itself a reason to stop.
+2. Every UX-rule change satisfies the single contract in "UX rules are binding"
+   above, including its rule-named coverage, status-transition, and proposal
+   requirements.
+
+Section `AI. GNOME platform conformance` binds every change to the GTK
+frontend and to the packaging metadata. Its gates are
+`check-appstream.sh`, `check-flatpak-manifest.sh`, `check-gnome-idioms.sh`
+and `check-ai-hygiene.sh`. They warn while a rule is `[planned]` and block
+once it is `[active]`.
+
+## Active file ownership — Flathub readiness
+
+Four strands run in parallel. Do not edit files owned by another strand.
+
+| Strand | Owns |
+|---|---|
+| A — rulebook and gates | `docs/ux-rules.md`, `AGENTS.md`, `RELEASING.md`, `scripts/` |
+| B — app ID and packaging | `data/`, the Flatpak manifest, `flatpak/`, `meson.build`, app-ID constants under `crates/` |
+| C — conformance audit | read-only; writes only `docs/plans/gnome-conformance.findings.md` |
+| D — project hygiene | `README.md`, `CODE_OF_CONDUCT.md`, `reprise.doap` |
 
 ## NON-NEGOTIABLE safety rules
 

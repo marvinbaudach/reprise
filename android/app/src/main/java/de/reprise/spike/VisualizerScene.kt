@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.runtime.staticCompositionLocalOf
+import de.reprise.spike.ui.theme.spectralColour
 import uniffi.reprise_android_ffi.AndroidVisualEngine
 
 internal interface VisualSceneEngine : AutoCloseable {
@@ -172,10 +173,10 @@ private class FlatSceneCursor(private val values: List<Float>) {
     fun header(opacity: Float): FlatShapeHeader? {
         if (!hasFinite(HEADER_SCALAR_COUNT)) return invalidateWithNull()
         val kind = values[index].toInt()
-        val color = Color(
-            red = values[index + 1].coerceIn(0f, 1f),
-            green = values[index + 2].coerceIn(0f, 1f),
-            blue = values[index + 3].coerceIn(0f, 1f),
+        val color = spectralColour(
+            red = values[index + 1],
+            green = values[index + 2],
+            blue = values[index + 3],
             alpha = values[index + 4].coerceIn(0f, 1f) * opacity.coerceIn(0f, 1f),
         )
         val width = values[index + 5].coerceAtLeast(0f)

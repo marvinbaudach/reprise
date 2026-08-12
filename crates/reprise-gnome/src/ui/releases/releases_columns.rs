@@ -660,25 +660,25 @@ mod tests {
     }
 
     #[test]
-    fn nr_31_table_has_the_five_named_columns() {
+    fn nr_33_table_has_the_five_named_columns() {
         let columns = column_contract();
         assert_eq!(
             &columns[1..6],
-            ["Date", "Title", "Artist", "Type", "Status"]
+            ["Date", "Release", "Artist", "Type", "Status"]
         );
     }
 
     #[test]
-    fn nr_31_table_ends_with_the_release_link_column() {
+    fn nr_33_table_ends_with_the_release_link_column() {
         assert_eq!(
             column_contract(),
-            ["Cover", "Date", "Title", "Artist", "Type", "Status", "Link"]
+            ["Cover", "Date", "Release", "Artist", "Type", "Status", "Link"]
         );
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_31_release_link_cell_binds_and_clears_the_visible_affordance() {
+    fn nr_33_release_link_cell_binds_and_clears_the_visible_affordance() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let store = gtk4::gio::ListStore::new::<ReleaseObject>();
