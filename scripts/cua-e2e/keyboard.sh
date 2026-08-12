@@ -275,7 +275,7 @@ keyboard_compact_minimal() {
 }
 
 check_manifest() {
-  local surface scenario
+  local surface scenario claimed_groups
   local count=0
   declare -A seen=()
 
@@ -289,6 +289,17 @@ check_manifest() {
     fi
     if [[ -n "${seen[$surface]:-}" ]]; then
       echo "keyboard manifest contains duplicate surface: $surface" >&2
+      return 1
+    fi
+    claimed_groups=0
+    if CUA_E2E_KEYBOARD_GROUP=primary surface_in_group "$surface"; then
+      claimed_groups=$((claimed_groups + 1))
+    fi
+    if CUA_E2E_KEYBOARD_GROUP=secondary surface_in_group "$surface"; then
+      claimed_groups=$((claimed_groups + 1))
+    fi
+    if ((claimed_groups != 1)); then
+      echo "keyboard manifest surface must belong to exactly one group: $surface" >&2
       return 1
     fi
     seen[$surface]=1
@@ -352,9 +363,11 @@ run_manifest() {
   local -a failed=()
   local -a not_exercised=()
   local passed=0
+  local selected=0
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
     surface_in_group "$surface" || continue
+    selected=$((selected + 1))
     echo "[cua-keyboard] $surface"
     if ! reset_surface_baseline "$pid" "$window_id" "$surface"; then
       echo "[cua-keyboard] $surface: reset failed, surface not exercised" >&2
@@ -369,6 +382,10 @@ run_manifest() {
   done <"$manifest"
 
   echo "[cua-keyboard] surfaces passed: $passed, failed: ${#failed[@]}, not exercised: ${#not_exercised[@]}"
+  if ((selected == 0)); then
+    echo "[cua-keyboard] no keyboard surfaces were selected" >&2
+    return 1
+  fi
   if ((${#failed[@]} > 0)); then
     printf '[cua-keyboard] FAILED surface: %s\n' "${failed[@]}" >&2
   fi
