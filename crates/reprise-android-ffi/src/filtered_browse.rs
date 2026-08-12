@@ -1,47 +1,9 @@
 //! Named filtered track windows for the Android library boundary.
 
 use reprise_core::browser::SortDirection;
-use reprise_core::queries::{
-    self, BrowseFilter, LibraryTrackOrder, LibraryTrackRequest, LibraryTrackScope,
-};
-use reprise_core::view_source::ViewSource;
+use reprise_core::queries::{self, LibraryTrackOrder, LibraryTrackRequest, LibraryTrackScope};
 
-use crate::{AlbumWindow, LibraryError, MusicLibrary, TrackRow, TrackWindow, WindowRange};
-
-fn filtered_track_window(
-    library: &MusicLibrary,
-    browse: &BrowseFilter,
-    sort_field: &str,
-    filter: &str,
-    window: WindowRange,
-) -> Result<TrackWindow, LibraryError> {
-    let state = library.lock()?;
-    let total =
-        queries::query_track_count_browsed(&state.db, &ViewSource::Library, filter, browse, &[])
-            .map_err(|error| LibraryError::Query {
-                detail: error.to_string(),
-            })?;
-    let rows = queries::query_track_window_browsed(
-        &state.db,
-        &ViewSource::Library,
-        sort_field,
-        "asc",
-        filter,
-        browse,
-        window.offset,
-        window.limit,
-        &[],
-    )
-    .map_err(|error| LibraryError::Query {
-        detail: error.to_string(),
-    })?;
-    let returned = i64::try_from(rows.len()).unwrap_or(i64::MAX);
-    Ok(TrackWindow {
-        total,
-        has_more: window.offset.max(0).saturating_add(returned) < total,
-        rows: rows.into_iter().map(TrackRow::from).collect(),
-    })
-}
+use crate::{AlbumWindow, LibraryError, MusicLibrary, TrackWindow, WindowRange};
 
 #[uniffi::export]
 impl MusicLibrary {
@@ -98,30 +60,6 @@ impl MusicLibrary {
         .map_err(|error| LibraryError::Query {
             detail: error.to_string(),
         })
-    }
-
-    /// Returns present tracks rated exactly five in artist, year, album, and
-    /// track-number order. Albums remain grouped when their tracks share the
-    /// album's year.
-    pub fn list_favourites(&self, window: WindowRange) -> Result<TrackWindow, LibraryError> {
-        self.search_favourites("", window)
-    }
-
-    pub fn search_favourites(
-        &self,
-        text: &str,
-        window: WindowRange,
-    ) -> Result<TrackWindow, LibraryError> {
-        filtered_track_window(
-            self,
-            &BrowseFilter {
-                rating: Some("5".to_owned()),
-                ..BrowseFilter::default()
-            },
-            "artist",
-            crate::bounded_search_text(text),
-            window,
-        )
     }
 }
 
@@ -358,96 +296,5 @@ mod tests {
         assert_eq!(bela.total, 0);
         assert!(bela.rows.is_empty());
         assert!(!bela.has_more);
-    }
-
-    #[test]
-    fn favourites_are_exactly_fives_in_artist_album_track_order() {
-        let (_directory, library) = filtered_library();
-
-        let window = library
-            .list_favourites(WindowRange {
-                offset: 0,
-                limit: 2,
-            })
-            .unwrap();
-
-        assert_eq!(window.total, 3);
-        assert!(window.has_more);
-        assert!(window.rows.iter().all(|track| track.rating == 5));
-        assert_eq!(
-            window
-                .rows
-                .iter()
-                .map(|track| (
-                    track.artist.as_str(),
-                    track.album.as_str(),
-                    track.title.as_str()
-                ))
-                .collect::<Vec<_>>(),
-            [(" aDa ", "Alpha", "Omega"), ("Ada", "Zulu", "Gamma")]
-        );
-        assert!(window.rows.iter().all(|track| track.title != "Beta"));
-    }
-
-    #[test]
-    fn favourite_search_keeps_the_filter_count_and_window_in_step() {
-        let (_directory, library) = filtered_library();
-
-        let first = library
-            .search_favourites(
-                "ada",
-                WindowRange {
-                    offset: 0,
-                    limit: 1,
-                },
-            )
-            .unwrap();
-        let second = library
-            .search_favourites(
-                "ADA",
-                WindowRange {
-                    offset: 1,
-                    limit: 1,
-                },
-            )
-            .unwrap();
-
-        assert_eq!(first.total, 2);
-        assert_eq!(first.rows.len(), 1);
-        assert!(first.has_more);
-        assert_eq!(second.total, 2);
-        assert_eq!(second.rows.len(), 1);
-        assert!(!second.has_more);
-        assert!(first
-            .rows
-            .iter()
-            .chain(&second.rows)
-            .all(|track| track.rating == 5));
-    }
-
-    #[test]
-    fn empty_favourites_are_an_empty_window_not_an_error() {
-        let (_directory, library) = filtered_library();
-        for track in library
-            .list_tracks(WindowRange {
-                offset: 0,
-                limit: 20,
-            })
-            .unwrap()
-            .rows
-        {
-            library.set_track_rating(track.id, 0).unwrap();
-        }
-
-        let window = library
-            .list_favourites(WindowRange {
-                offset: 0,
-                limit: 2,
-            })
-            .unwrap();
-
-        assert_eq!(window.total, 0);
-        assert!(window.rows.is_empty());
-        assert!(!window.has_more);
     }
 }

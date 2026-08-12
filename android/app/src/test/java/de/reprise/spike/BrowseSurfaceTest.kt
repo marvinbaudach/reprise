@@ -566,11 +566,6 @@ private class RecordingBrowsePort(
         return titleResults[text] ?: completeWindow(emptyList())
     }
 
-    override fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> {
-        operations += "albums:${window.offset}:${window.limit}"
-        return albums
-    }
-
     override fun searchAlbums(
         text: String,
         window: LibraryWindowRange,
@@ -614,19 +609,6 @@ private class RecordingBrowsePort(
     ): LibraryWindow<LibraryTrack> {
         operations += "artist:$artist:${window.offset}:${window.limit}"
         return artistTracks
-    }
-
-    override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> {
-        operations += "favourites:${window.offset}:${window.limit}"
-        return completeWindow(emptyList())
-    }
-
-    override fun searchFavourites(
-        text: String,
-        window: LibraryWindowRange,
-    ): LibraryWindow<LibraryTrack> {
-        operations += "search-favourites:$text:${window.offset}:${window.limit}"
-        return completeWindow(emptyList())
     }
 
     override fun listAlbumTracks(

@@ -337,7 +337,6 @@ private class RecordingLibrarySessionPort(
     private val readable: Boolean,
     private val tracks: List<LibraryTrack>,
     private val artistTracks: List<LibraryTrack> = emptyList(),
-    private val favouriteTracks: List<LibraryTrack> = emptyList(),
 ) : LibrarySessionPort {
     private var remembered = rememberedTreeUri
     val configuredUris = mutableListOf<String>()
@@ -378,11 +377,6 @@ private class RecordingLibrarySessionPort(
         operations += "search:$text:${window.offset}:${window.limit}"
         listCalls += 1
         return completeTestWindow(tracks)
-    }
-
-    override fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> {
-        operations += "albums:${window.offset}:${window.limit}"
-        return completeTestWindow(emptyList())
     }
 
     override fun searchAlbums(
@@ -428,19 +422,6 @@ private class RecordingLibrarySessionPort(
     ): LibraryWindow<LibraryTrack> {
         operations += "artist:$artist:${window.offset}:${window.limit}"
         return completeTestWindow(artistTracks)
-    }
-
-    override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> {
-        operations += "favourites:${window.offset}:${window.limit}"
-        return completeTestWindow(favouriteTracks)
-    }
-
-    override fun searchFavourites(
-        text: String,
-        window: LibraryWindowRange,
-    ): LibraryWindow<LibraryTrack> {
-        operations += "search-favourites:$text:${window.offset}:${window.limit}"
-        return completeTestWindow(favouriteTracks)
     }
 
     override fun listAlbumTracks(

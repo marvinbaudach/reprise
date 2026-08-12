@@ -150,10 +150,6 @@ impl MusicLibrary {
             })
     }
 
-    pub fn list_albums(&self, window: WindowRange) -> Result<AlbumWindow, LibraryError> {
-        self.search_albums("", window)
-    }
-
     pub fn search_albums(
         &self,
         text: &str,
