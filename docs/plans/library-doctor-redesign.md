@@ -1101,7 +1101,7 @@ does not appear in `crates/reprise-gnome/src` at all). Build it in full, as §F 
 
 `summary_page.rs` is 554 lines today and does four jobs. Split it:
 
-- **`start_page.rs`** — the pre-scan surface. Stethoscope icon, `DOCTOR_START_HEADING`,
+- **`start_page.rs`** — the pre-scan surface. First-aid-kit icon, `DOCTOR_START_HEADING`,
   `DOCTOR_START_BODY`; `Scope` as an `adw::ToggleGroup` with three `adw::Toggle`s (verified
   available in libadwaita 0.9.2 with the `v1_9` feature already enabled), replacing the
   `adw::ComboRow` at `summary_page.rs:152`; the remote card built from

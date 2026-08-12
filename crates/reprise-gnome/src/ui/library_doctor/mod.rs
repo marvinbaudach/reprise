@@ -58,15 +58,16 @@ pub(in crate::ui) fn doctor_job_card_for_test() -> gtk4::Revealer {
     card.widget().clone()
 }
 
-/// The glyph that stands for the Library Doctor: the design's stethoscope,
-/// which the app now ships itself as
-/// `data/icons/hicolor/symbolic/apps/reprise-stethoscope-symbolic.svg`, drawn
-/// by `scripts/build-brand-assets.sh`.
+/// The glyph that stands for the Library Doctor: the first-aid kit the app
+/// ships itself as
+/// `data/icons/hicolor/symbolic/apps/reprise-first-aid-symbolic.svg`, drawn by
+/// `scripts/build-brand-assets.sh`. Its closed case and cross stay legible at
+/// 16 px, unlike the former multi-part medical glyph.
 ///
 /// Resolved here rather than at each call site, so the start page, the result
 /// card and the sidebar entry cannot end up asking for different things — they
 /// did, and both the card and the sidebar kept drawing the magnifier the
-/// stethoscope replaced. A theme without the app's icon directory in reach
+/// first-aid kit replaced. A theme without the app's icon directory in reach
 /// falls back to that magnifier; without the guard GTK would render the
 /// missing-image box instead.
 ///
@@ -74,7 +75,7 @@ pub(in crate::ui) fn doctor_job_card_for_test() -> gtk4::Revealer {
 /// through `doctor_glyph`: `NavIcon` already owns a name/fallback pair and
 /// `nav_icon` already performs this theme check, so the row joins that
 /// mechanism instead of adding a second one.
-pub(in crate::ui) const DOCTOR_GLYPH: &str = "reprise-stethoscope-symbolic";
+pub(in crate::ui) const DOCTOR_GLYPH: &str = "reprise-first-aid-symbolic";
 pub(in crate::ui) const DOCTOR_GLYPH_FALLBACK: &str = "system-search-symbolic";
 
 pub(in crate::ui) fn doctor_glyph() -> &'static str {
@@ -83,8 +84,8 @@ pub(in crate::ui) fn doctor_glyph() -> &'static str {
     })
 }
 
-pub(in crate::ui) const fn doctor_glyph_for(theme_has_stethoscope: bool) -> &'static str {
-    if theme_has_stethoscope {
+pub(in crate::ui) const fn doctor_glyph_for(theme_has_first_aid: bool) -> &'static str {
+    if theme_has_first_aid {
         DOCTOR_GLYPH
     } else {
         DOCTOR_GLYPH_FALLBACK

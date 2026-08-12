@@ -62,7 +62,7 @@ applied card    flex row, gap 16, padding 18px 20px, radius --radius-md,
 
 review card     same padding/radius/background,
                 box-shadow 0 0 0 1px accent@45%          ← accent border
-  icon          20×20, colour accent (full), glyph = stethoscope
+  icon          20×20, colour accent (full), glyph = first-aid kit
   heading       16px/500   "88 changes need your eye"
   lines         13.5px, text@62%: one per category, then "across 31 albums"
   action        btn-primary, align-self flex-start   "Review 88 changes"
@@ -92,7 +92,7 @@ brief overrides that** (§C-2): the running page is progress only.
 ### Mockup frame 3b — measured
 
 No job card (scan finished). Sidebar `ISSUES` holds `Missing files` **and** a
-Library-Doctor row: accent-tinted background, 1px accent inset border, stethoscope
+Library-Doctor row: accent-tinted background, 1px accent inset border, first-aid kit
 glyph, label `Library Doctor`, trailing count `88` in accent. A pill toast bottom-centre:
 `1,017 tags fixed` + `Undo` + `✕`.
 
@@ -272,7 +272,7 @@ Per-card differences:
 | Card | Surface | Icon | Action |
 | --- | --- | --- | --- |
 | applied | plain `.card` | check, accent-tinted | `Undo`, plain button |
-| review | `.card` + `.doctor-card-accent` (1px accent inset border) | stethoscope, accent | `Review {n} changes`, `.suggested-action` |
+| review | `.card` + `.doctor-card-accent` (1px accent inset border) | first-aid kit, accent | `Review {n} changes`, `.suggested-action` |
 | conflicts | **no** `.card` — `.doctor-conflicts-dashed` only, no fill | warning, muted | **none** |
 
 - `.doctor-card-accent` is a new rule in `library_doctor::css()`:
@@ -286,7 +286,7 @@ Per-card differences:
   `text_levels.rs` already offers; do not invent a font size.
 - **icons**: use the glyph the app already ships. The sidebar's `NavIcon::LibraryDoctor`
   is `system-search-symbolic` (`sidebar_presentation.rs:49`); use the *same* icon for
-  the review card so the page and the sidebar entry agree, unless a stethoscope
+  the review card so the page and the sidebar entry agree, unless a first-aid-kit
   symbolic actually ships with the app — check `crates/reprise-gnome/**/icons` and the
   brand assets first and say in the result summary which you used. Applied card:
   `emblem-ok-symbolic`. Conflicts card: `dialog-warning-symbolic`.

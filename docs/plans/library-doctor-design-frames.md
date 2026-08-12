@@ -90,7 +90,7 @@ rounded, drop shadow):
 3. "Rescan Library" (plain row).
 4. **"Library Doctor"** — this row is visually distinguished from its
    neighbors: accent-tinted background, a thin accent border, and an
-   accent-colored stethoscope icon. This is the row the frame exists to
+   accent-colored first-aid-kit icon. This is the row the frame exists to
    point at.
 5. Divider.
 6. "Preferences" — "Ctrl+," right-aligned.
@@ -119,7 +119,7 @@ permanent sidebar entry to highlight).
 **Main content**, left-aligned column, max width 620px, generous outer
 padding (56px top/bottom margin region, 64px sides):
 
-1. Stethoscope icon (accent color), 30×30, sitting above the heading with a
+1. First-aid-kit icon (accent color), 30×30, sitting above the heading with a
    16px gap under it.
 2. Heading: **"Check your library"**
 3. Body paragraph: *"Reprise fixes what is unambiguous — stray spaces,
@@ -205,7 +205,7 @@ sidebar, inside an accent-tinted rounded box with a thin accent border:
    medium weight) · two sub-lines underneath, **"96 stray spaces and
    casing corrections"** and **"415 MusicBrainz IDs filled in"** · an
    **"Undo" secondary button, disabled**, top-right of the block.
-4. **Block 2** (card, same dimmed treatment): stethoscope icon in a muted
+4. **Block 2** (card, same dimmed treatment): first-aid-kit icon in a muted
    (not accent) tone here · **"39 changes waiting for you"** (16px,
    medium) · one sub-line, **"across 14 albums so far"** · a
    **"Review" primary button, disabled** (note: no count in the label
@@ -274,7 +274,7 @@ badge visible in this particular sidebar snippet.
    **"809 MusicBrainz IDs filled in — no visible change to your tags"** ·
    an **"Undo" secondary button** (enabled now).
 4. **Block 2 — needs review** (card with a full accent-colored outline
-   ring, i.e. visually the most emphasized of the three): stethoscope icon
+   ring, i.e. visually the most emphasized of the three): first-aid-kit icon
    in full accent (not muted, unlike the equivalent block in Frame 3) ·
    **"88 changes need your eye"** (16px, medium) · three sub-lines,
    **"64 casing and whitespace Reprise would not risk on its own"**,
