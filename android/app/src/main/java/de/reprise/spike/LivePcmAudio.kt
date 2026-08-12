@@ -90,8 +90,13 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (playing == isPlaying) return
-        playing = isPlaying
-        if (isPlaying) consumer?.let(::resetHistorySafely)
+        if (!isPlaying) {
+            playing = false
+            return
+        }
+        consumer?.let(::resetHistorySafely)
+        // Volatile publication opens ingest only after the reset returned.
+        playing = true
     }
 
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {

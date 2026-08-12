@@ -10,9 +10,12 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,20 +35,66 @@ class LivePcmAudioProcessorTest {
             sink.onIsPlayingChanged(true)
         }
         assertTrue(consumer.resetEntered.await(1, TimeUnit.SECONDS))
+        val renderFinished = CountDownLatch(1)
         val renderThread = thread(name = "pcm-render") {
-            sink.handleBuffer(directBuffer(pcm))
+            try {
+                sink.handleBuffer(directBuffer(pcm))
+            } finally {
+                renderFinished.countDown()
+            }
         }
 
         try {
             assertTrue(
-                "render thread waited for the application-thread reset",
-                consumer.ingestEntered.await(1, TimeUnit.SECONDS),
+                "render thread waited for the application-thread reset to finish",
+                renderFinished.await(1, TimeUnit.SECONDS),
+            )
+            assertFalse(
+                "PCM crossed the resume boundary before its history was reset",
+                consumer.ingestEntered.await(100, TimeUnit.MILLISECONDS),
             )
         } finally {
             consumer.allowResetToFinish.countDown()
             resumeThread.join()
             renderThread.join()
         }
+    }
+
+    @Test
+    fun noFrameAfterResumeCanObserveThePreviousCavaHistory() {
+        val consumer = HistoryBoundaryConsumer()
+        val sink = LivePcmBufferSink()
+        val pcm = stereoPcm16(
+            left = shortArrayOf(1_000, -2_000, 3_000),
+            right = shortArrayOf(-4_000, 5_000, -6_000),
+        )
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        sink.attach(consumer)
+        sink.onIsPlayingChanged(true)
+        sink.handleBuffer(directBuffer(pcm))
+        sink.onIsPlayingChanged(false)
+        consumer.expectResumeReset()
+
+        val resumeThread = thread(name = "resume-reset") {
+            sink.onIsPlayingChanged(true)
+        }
+        assertTrue(consumer.resetEntered.await(1, TimeUnit.SECONDS))
+        val bufferedRender = thread(name = "buffered-pcm-render") {
+            sink.handleBuffer(directBuffer(pcm))
+        }
+
+        try {
+            bufferedRender.join(1_000)
+            assertFalse("buffered PCM waited behind the reset", bufferedRender.isAlive)
+        } finally {
+            consumer.allowResetToFinish.countDown()
+            resumeThread.join()
+            bufferedRender.join()
+        }
+        sink.handleBuffer(directBuffer(pcm))
+
+        assertFalse(consumer.ingestedBeforeReset.get())
+        assertEquals(2, consumer.ingestCount.get())
     }
 
     @Test
@@ -276,6 +325,44 @@ private class BlockingResetConsumer : LivePcmConsumer {
         channelCount: Int,
     ) {
         ingestEntered.countDown()
+    }
+
+    override fun resetAudioStream() = Unit
+}
+
+private class HistoryBoundaryConsumer : LivePcmConsumer {
+    val resetEntered = CountDownLatch(1)
+    val allowResetToFinish = CountDownLatch(1)
+    val ingestedBeforeReset = AtomicBoolean(false)
+    val ingestCount = AtomicInteger(0)
+    private val resetCompleted = AtomicBoolean(true)
+    private val blockReset = AtomicBoolean(false)
+
+    fun expectResumeReset() {
+        resetCompleted.set(false)
+        blockReset.set(true)
+    }
+
+    override fun setPlaybackIntent(playbackIntended: Boolean) = Unit
+
+    override fun resetAudioHistory() {
+        if (!blockReset.get()) {
+            resetCompleted.set(true)
+            return
+        }
+        resetEntered.countDown()
+        allowResetToFinish.await()
+        resetCompleted.set(true)
+    }
+
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ) {
+        if (!resetCompleted.get()) ingestedBeforeReset.set(true)
+        ingestCount.incrementAndGet()
     }
 
     override fun resetAudioStream() = Unit
