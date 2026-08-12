@@ -215,6 +215,9 @@ failure_count() {
   wc -l < "$FAILURE_LOG" 2>/dev/null || echo 0
 }
 
+# shellcheck source=harness-helpers.sh
+source "$REPO_ROOT/scripts/ptr-e2e/harness-helpers.sh"
+
 cleanup() {
   local exit_code=$? effective_exit_code failures emitted_failures mismatch=0
   log_step "cleaning up…"
@@ -329,8 +332,6 @@ source "$REPO_ROOT/scripts/ptr-e2e/window-helpers.sh"
 # a naive `grep "state=Playing"` never matches the raw log. Every log check
 # strips ANSI escapes first so patterns can be written in plain,
 # human-readable form.
-ANSI_STRIP_RE='s/\x1b\[[0-9;]*[a-zA-Z]//g'
-
 # Current line count of the app log — used as a "since" marker so a check
 # only looks at NEW log activity produced by the action just taken, not at
 # the whole log. This matters for flow 2: "Playing" appears once when
@@ -350,31 +351,6 @@ assert_log_contains_since() {
   else
     log_fail "log never showed: $description (pattern: $pattern)"
   fi
-}
-
-assert_log_sequence_since() {
-  local since_line="$1" description="$2"
-  shift 2
-  local plain remaining pattern match_line all_found
-  for _ in $(seq 1 20); do
-    plain="$(tail -n "+$((since_line + 1))" "$APP_LOG" | sed -E "$ANSI_STRIP_RE")"
-    remaining="$plain"
-    all_found=1
-    for pattern in "$@"; do
-      if ! match_line="$(grep -Ein -m1 -- "$pattern" <<<"$remaining" | cut -d: -f1)"; then
-        all_found=0
-        break
-      fi
-      remaining="$(tail -n "+$((match_line + 1))" <<<"$remaining")"
-    done
-    if [ "$all_found" -eq 1 ]; then
-      log_step "log sequence OK: $description"
-      return 0
-    fi
-    sleep 0.05
-  done
-  log_fail "log never showed in order: $description"
-  return 1
 }
 
 assert_log_absent_since() {
