@@ -636,6 +636,12 @@ sleep 0.2
 
 log_step "flow 3: Queue insertion target and drag reorder…"
 MARKER=$(log_marker)
+mpris_call Stop
+sleep 0.2
+assert_log_contains_since "$MARKER" "applying state change.*state=Stopped" \
+  "MPRIS Stop froze playback before Queue mutation"
+
+MARKER=$(log_marker)
 key "shift+F10"
 key "Down"
 key "Return"

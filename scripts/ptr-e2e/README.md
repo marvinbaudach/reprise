@@ -72,13 +72,15 @@ disk except `PTR_E2E_OUT_DIR`.
      then navigates to Edit tags, proving the selected track's context menu
      and tag editor open without a pointer. It enters an invalid Year and
      verifies Enter rejects it instead of applying or closing the dialog.
-   - **Manual Up Next and drag reorder**: adds two tracks through the keyboard
-     menu, proves the visible count reaches one and then two, opens Queue,
-     holds a real drag over the second row, captures the active insertion
-     target, and verifies release applies the reorder. A Library activation
-     then establishes context A; private-bus MPRIS Next calls consume manual
-     X and Y in reordered order, drive the visible count from two to one to
-     zero, and finally resume context B.
+   - **Manual Up Next and drag reorder**: first issues private-bus MPRIS Stop
+     and requires a fresh stopped-state log, then adds two tracks through the
+     keyboard menu. With playback unable to consume the short fixtures under
+     the assertions, it proves the visible count reaches one and then two,
+     opens Queue, holds a real drag over the second row, captures the active
+     insertion target, and verifies release applies the reorder. A Library
+     activation then establishes context A; private-bus MPRIS Next calls
+     consume manual X and Y in reordered order, drive the visible count from
+     two to one to zero, and finally resume context B.
    - **Space toggles play/pause**: while that real fakesink playback is live,
      presses Space twice and asserts `state=Paused` then `state=Playing` —
      proof a physical keypress reached the window-level action, not just that
