@@ -168,6 +168,46 @@ fn rendered_events_redact_identifying_structured_fields() {
 }
 
 #[test]
+fn rendered_events_use_only_the_final_target_segment() {
+    let mut log = DiagnosticLog::default();
+    for (seconds, target, message) in [
+        (
+            0,
+            "reprise::ui::track_list::track_list_menu_smoke",
+            "nested target",
+        ),
+        (1, "scanner", "plain target"),
+        (2, "", "empty target"),
+        (3, "device_sync::", "trailing separator"),
+    ] {
+        log.push(DiagnosticEvent::new(
+            seconds,
+            DiagnosticLevel::Warn,
+            target,
+            message,
+        ));
+    }
+
+    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
+    let lines: Vec<_> = report
+        .split("last warnings\n")
+        .nth(1)
+        .unwrap()
+        .lines()
+        .collect();
+
+    assert_eq!(
+        lines,
+        [
+            "00:00:03 : trailing separator",
+            "00:00:02 : empty target",
+            "00:00:01 scanner: plain target",
+            "00:00:00 track_list_menu_smoke: nested target",
+        ]
+    );
+}
+
+#[test]
 fn overflowing_log_keeps_capacity_and_renders_latest_ten_newest_first() {
     let mut log = DiagnosticLog::default();
     for sequence in 0..DIAGNOSTIC_EVENT_CAPACITY + 5 {

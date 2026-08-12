@@ -67,6 +67,7 @@ pub fn render_report(
             let minutes = seconds % 3_600 / 60;
             let seconds = seconds % 60;
             let target = redact_log_message(&event.target, redaction);
+            let target = final_target_segment(&target);
             let message = redact_log_message(&event.message, redaction);
             let _level = event.level;
             write!(
@@ -80,6 +81,10 @@ pub fn render_report(
         }
     }
     report
+}
+
+fn final_target_segment(target: &str) -> &str {
+    target.rsplit("::").next().unwrap_or(target)
 }
 
 fn optional(value: &Option<String>) -> &str {
