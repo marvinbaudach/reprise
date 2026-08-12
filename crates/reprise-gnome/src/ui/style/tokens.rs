@@ -172,7 +172,10 @@ pub(in crate::ui) const NOW_PLAYING_COVER_SIZE: i32 = 168;
 /// reaches zero at y = 277 (SHIMMER_CENTRE_Y + 0.68 × disc radius), so the band
 /// contains that falloff completely.
 pub(in crate::ui) const NOW_PLAYING_ARTWORK_BAND: i32 = 280;
-pub(in crate::ui) const NOW_PLAYING_GLOW_ALPHA: &str = "0.26";
+/// Peak alpha of the accent glow. At 0.15 the subtitle clears 4.5:1 over the
+/// panel surface plus glow for both pure-white and pure-black accents, making
+/// the cap safe for any accent colour. The 0.17 boundary leaves no margin.
+pub(in crate::ui) const NOW_PLAYING_GLOW_ALPHA: &str = "0.15";
 pub(in crate::ui) const NOW_PLAYING_PILL_RADIUS: &str = "99px";
 pub(in crate::ui) const NOW_PLAYING_PILL_BG_ALPHA: &str = "0.06";
 pub(in crate::ui) const NOW_PLAYING_PILL_ACTIVE_ALPHA: &str = "0.14";

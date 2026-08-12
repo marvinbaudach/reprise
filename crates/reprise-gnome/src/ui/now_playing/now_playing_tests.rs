@@ -217,7 +217,7 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     assert!(!css.contains("background-color: #17191c"));
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient"));
-    assert!(css.contains("alpha(@reprise_player_accent, 0.26)"));
+    assert!(css.contains("alpha(@reprise_player_accent, 0.15)"));
     assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
     assert!(css.contains(".reprise-now-playing-head { padding: 22px 18px 0; }"));
     assert!(css.contains(".reprise-now-playing-metadata { padding: 0 18px 16px; }"));

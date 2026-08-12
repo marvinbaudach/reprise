@@ -4,9 +4,9 @@ use super::*;
 fn ac_24_static_ellipse_dims_so_the_bloom_can_carry_the_movement() {
     // Both layers animating at once stacks two brightnesses and is instantly
     // too much: the ellipse stays put at a lower alpha, the bloom moves.
-    assert_eq!(crate::ui::style::tokens::NOW_PLAYING_GLOW_ALPHA, "0.26");
+    assert_eq!(crate::ui::style::tokens::NOW_PLAYING_GLOW_ALPHA, "0.15");
     let css = crate::ui::now_playing::surface_css::css();
-    assert!(css.contains("0.26"));
+    assert!(css.contains("0.15"));
     // The idle rule (no track at all) is untouched: with no cover there is no
     // bloom either, so the panel must still go dark.
     assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
