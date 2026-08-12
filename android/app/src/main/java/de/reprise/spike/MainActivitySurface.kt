@@ -29,6 +29,11 @@ internal data class MainActivitySurfaceDependencies(
     },
     val listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
         { _, _ -> LibraryWindow.empty() },
+    val listArtistAlbums: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryAlbum> =
+        { _, _ -> LibraryWindow.empty() },
+    val listArtistUntaggedTracks:
+        (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
+        { _, _ -> LibraryWindow.empty() },
     val listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
         { LibraryWindow.empty() },
     val searchFavourites: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =

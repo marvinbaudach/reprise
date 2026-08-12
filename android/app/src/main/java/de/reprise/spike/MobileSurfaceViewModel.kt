@@ -31,6 +31,7 @@ internal enum class LibraryListKey {
     ARTISTS,
     FAVOURITES,
     ALBUM_TRACKS,
+    ARTIST_ALBUMS,
     ARTIST_TRACKS,
     UPCOMING,
 }
@@ -266,7 +267,19 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     /** Paged-in windows while both their catalog and refinement still match. */
     fun loadedWindows(shape: LibraryCatalogShape): LoadedLibraryWindows? =
-        loadedWindows?.takeIf { loadedShape == shape && it.searchText == searchText }
+        loadedWindows
+            ?.takeIf { loadedShape == shape && it.searchText == searchText }
+            ?.let { windows ->
+                if (
+                    selectedTab == BrowseTab.ARTISTS &&
+                    windows.openAlbum != null &&
+                    windows.openArtist == null
+                ) {
+                    windows.copy(openAlbum = null)
+                } else {
+                    windows
+                }
+            }
 
     fun keepLoadedWindows(shape: LibraryCatalogShape, windows: LoadedLibraryWindows) {
         loadedShape = shape

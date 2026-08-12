@@ -45,15 +45,17 @@ class MainActivityMusicPathsTest {
     }
 
     @Test
-    fun artistTileOpensOnlyThatArtistsAlbumOrderedTracksAndSurvivesRecreate() {
+    fun artistTileOpensItsAlbumsAndNestedAlbumSurvivesRecreate() {
         compose.onNodeWithText("Artists").performClick()
         compose.onAllNodesWithText("Artist 1")[0].performClick()
 
         compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
-        assertAbove("Artist One · First Album", "Artist One · Second Album")
-        compose.onNodeWithText("First Album").assertIsDisplayed()
+        assertAbove("First Album", "Second Album")
         compose.onNodeWithText("Artist 1 • First Album").assertDoesNotExist()
         compose.onNodeWithText("Someone Else · Album").assertDoesNotExist()
+        compose.onNodeWithText("First Album").performClick()
+        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithText("Artist One · First Album").assertIsDisplayed()
 
         compose.activityRule.scenario.recreate()
         shadowOf(Looper.getMainLooper()).idle()
@@ -61,8 +63,8 @@ class MainActivityMusicPathsTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
 
-        compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
-        assertAbove("Artist One · First Album", "Artist One · Second Album")
+        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithText("Artist One · First Album").assertIsDisplayed()
     }
 
     @Test
@@ -80,11 +82,12 @@ class MainActivityMusicPathsTest {
         compose.onNodeWithContentDescription("Back to albums").performClick()
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithText("Artist 1").performClick()
-        compose.onNodeWithContentDescription("Play Artist 1").performClick()
+        compose.onNodeWithText("First Album").performClick()
+        compose.onNodeWithContentDescription("Play First Album").performClick()
 
         assertEquals("Artist One · First Album", application.currentQueue.first().title)
         assertEquals(0, application.currentQueueIndex)
-        assertEquals(2, application.currentQueue.size)
+        assertEquals(1, application.currentQueue.size)
     }
 
     @Test

@@ -242,6 +242,8 @@ class MainActivity : ComponentActivity() {
                                 listAlbumTracks = surface.listAlbumTracks,
                                 openArtist = surface.openArtist,
                                 listArtistTracks = surface.listArtistTracks,
+                                listArtistAlbums = surface.listArtistAlbums,
+                                listArtistUntaggedTracks = surface.listArtistUntaggedTracks,
                                 listFavourites = surface.listFavourites,
                                 searchFavourites = surface.searchFavourites,
                                 loadTrack = surface.loadTrack,
@@ -289,6 +291,10 @@ class MainActivity : ComponentActivity() {
             listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
             openArtist = { artist -> session.openArtist(artist) },
             listArtistTracks = { artist, range -> session.listArtistTracks(artist, range) },
+            listArtistAlbums = { artist, range -> session.listArtistAlbums(artist, range) },
+            listArtistUntaggedTracks = { artist, range ->
+                session.listArtistUntaggedTracks(artist, range)
+            },
             listFavourites = { range -> session.listFavourites(range) },
             searchFavourites = { query, range -> session.searchFavourites(query, range) },
             loadTrack = ::loadTrack,
@@ -685,6 +691,9 @@ private fun LibraryScreen(
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     openArtist: (LibraryArtist) -> ArtistTrackList,
     listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    listArtistAlbums: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
+    listArtistUntaggedTracks:
+        (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     searchFavourites: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
@@ -732,6 +741,8 @@ private fun LibraryScreen(
             listAlbumTracks = listAlbumTracks,
             openArtist = openArtist,
             listArtistTracks = listArtistTracks,
+            listArtistAlbums = listArtistAlbums,
+            listArtistUntaggedTracks = listArtistUntaggedTracks,
             listFavourites = listFavourites,
             searchFavourites = searchFavourites,
             loadTrack = loadTrack,

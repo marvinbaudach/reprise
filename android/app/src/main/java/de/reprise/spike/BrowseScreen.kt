@@ -89,6 +89,11 @@ internal fun BrowseScreen(
     },
     listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
         { _, _ -> LibraryWindow.empty() },
+    listArtistAlbums: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryAlbum> =
+        { _, _ -> LibraryWindow.empty() },
+    listArtistUntaggedTracks:
+        (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
+        { _, _ -> LibraryWindow.empty() },
     listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
         { LibraryWindow.empty() },
     searchFavourites: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
@@ -139,6 +144,9 @@ internal fun BrowseScreen(
     var favouritesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
     var artistRequestedOffset by remember(state, selectedArtist?.artist) {
+        mutableStateOf<Long?>(null)
+    }
+    var artistAlbumsRequestedOffset by remember(state, selectedArtist?.artist) {
         mutableStateOf<Long?>(null)
     }
     val nowPlayingExpanded = surfaceState.nowPlayingExpanded
@@ -379,14 +387,28 @@ internal fun BrowseScreen(
 
     fun loadMoreArtistTracks(request: LibraryWindowRange) {
         val detail = selectedArtist ?: return
-        if (detail.tracks.nextRequest(artistRequestedOffset) != request) return
+        if (detail.untaggedTracks.nextRequest(artistRequestedOffset) != request) return
         artistRequestedOffset = request.offset
-        runCatching { listArtistTracks(detail.artist, request) }
+        runCatching { listArtistUntaggedTracks(detail.artist, request) }
             .onSuccess { continuation ->
-                selectedArtist = detail.copy(tracks = detail.tracks.append(continuation))
+                selectedArtist = detail.copy(
+                    untaggedTracks = detail.untaggedTracks.append(continuation),
+                )
                 browseError = null
             }
-            .onFailure { error -> browseError = error.browseDetail("load more artist tracks") }
+            .onFailure { error -> browseError = error.browseDetail("load more other titles") }
+    }
+
+    fun loadMoreArtistAlbums(request: LibraryWindowRange) {
+        val detail = selectedArtist ?: return
+        if (detail.albums.nextRequest(artistAlbumsRequestedOffset) != request) return
+        artistAlbumsRequestedOffset = request.offset
+        runCatching { listArtistAlbums(detail.artist, request) }
+            .onSuccess { continuation ->
+                selectedArtist = detail.copy(albums = detail.albums.append(continuation))
+                browseError = null
+            }
+            .onFailure { error -> browseError = error.browseDetail("load more artist albums") }
     }
 
     fun loadMoreFavourites(request: LibraryWindowRange) {
@@ -405,8 +427,8 @@ internal fun BrowseScreen(
             (selectedAlbum != null || selectedArtist != null),
     ) {
         when {
-            selectedArtist != null -> selectedArtist = null
             selectedAlbum != null -> selectedAlbum = null
+            selectedArtist != null -> selectedArtist = null
         }
     }
 
@@ -563,26 +585,51 @@ internal fun BrowseScreen(
                                     artists = visibleArtists,
                                     searchText = searchText,
                                     selectedArtist = selectedArtist,
+                                    selectedAlbum = selectedAlbum,
                                     playback = playback,
                                     openArtist = { artist ->
                                         runCatching { openArtist(artist) }
                                             .onSuccess { detail ->
                                                 selectedArtist = detail
                                                 artistRequestedOffset = null
+                                                artistAlbumsRequestedOffset = null
                                                 browseError = null
                                             }
                                             .onFailure { error ->
                                                 browseError = error.browseDetail("open the artist")
                                             }
                                     },
-                                    closeArtist = { selectedArtist = null },
+                                    openAlbum = { album ->
+                                        runCatching { openAlbum(album) }
+                                            .onSuccess { detail ->
+                                                selectedAlbum = detail
+                                                albumRequestedOffset = null
+                                                browseError = null
+                                            }
+                                            .onFailure { error ->
+                                                browseError = error.browseDetail("open the album")
+                                            }
+                                    },
+                                    closeArtist = {
+                                        selectedAlbum = null
+                                        selectedArtist = null
+                                    },
+                                    closeAlbum = { selectedAlbum = null },
                                     play = { index ->
-                                        selectedArtist?.let { play(it.playbackSelection(index)) }
+                                        selectedArtist?.let {
+                                            play(PlaybackSelection(it.untaggedTracks.rows, index))
+                                        }
+                                    },
+                                    playAlbum = { index ->
+                                        selectedAlbum?.let { play(it.playbackSelection(index)) }
                                     },
                                     lastRequestedOffset = artistsRequestedOffset,
                                     artistRequestedOffset = artistRequestedOffset,
+                                    artistAlbumsRequestedOffset = artistAlbumsRequestedOffset,
                                     loadMoreArtists = ::loadMoreArtists,
                                     loadMoreArtistTracks = ::loadMoreArtistTracks,
+                                    loadMoreArtistAlbums = ::loadMoreArtistAlbums,
+                                    loadMoreAlbumTracks = ::loadMoreAlbumTracks,
                                 )
                                 BrowseTab.FAVOURITES -> FavouritesTab(
                                     surfaceLayout = surfaceLayout,

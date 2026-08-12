@@ -185,6 +185,32 @@ class MobileSurfaceStateTest {
     }
 
     @Test
+    fun artistAlbumRestoreDropsAnAlbumWhoseArtistIsMissing() {
+        val state = MobileSurfaceViewModel()
+        state.initializeSelectedTab(BrowseTab.ARTISTS) {}
+        val shape = LibraryCatalogShape(titles = 0, albums = 1, artists = 1)
+        val album = LibraryAlbum(
+            title = "Hey What",
+            artist = "Low",
+            representativeUri = "content://hey-what",
+            trackCount = 2,
+            year = 2021,
+            totalDurationMs = 120_000,
+        )
+        val restored = LoadedLibraryWindows(
+            titles = LibraryWindow.empty(),
+            albums = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+            openAlbum = AlbumTrackList(album, LibraryWindow.empty()),
+            openArtist = null,
+        )
+
+        state.keepLoadedWindows(shape, restored)
+
+        assertNull(state.loadedWindows(shape)?.openAlbum)
+    }
+
+    @Test
     fun anAnchorBeyondTheLoadedRowsOpensAtTheTopRatherThanOnTheLastOne() {
         val deep = LibraryScrollPosition(firstVisibleItemIndex = 210, itemOffsetFraction = 0.4f)
 

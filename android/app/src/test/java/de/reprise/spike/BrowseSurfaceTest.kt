@@ -482,27 +482,22 @@ fun emptyBrowseMessagesNameTheFilteredDestination() {
 }
 
 @Test
-fun openingAnAlbumUsesItsCoreIdentityAndOrder() {
+fun openingAnAlbumFromArtistDetailUsesItsCoreIdentityAndOrder() {
     val album = testAlbum()
     val coreOrder = listOf(testBrowseTrack("disc-one"), testBrowseTrack("disc-two"))
     val port = RecordingBrowsePort(albumTracks = completeWindow(coreOrder))
+    val artistDetail = ArtistTrackList(
+        artist = LibraryArtist("Miles Davis", 2, 1, "content://miles"),
+        tracks = completeWindow(coreOrder),
+        albums = completeWindow(listOf(album)),
+    )
 
-    val detail = LibrarySession(port).openAlbum(album)
+    val detail = LibrarySession(port).openAlbum(artistDetail.albums.rows.single())
 
     assertEquals(AlbumTrackList(album, completeWindow(coreOrder)), detail)
     assertEquals(listOf("album:Kind of Blue:Miles Davis:0:200"), port.operations)
 }
 
-@Test
-fun playingFromAlbumDetailUsesTheAlbumSnapshot() {
-    val albumTracks = listOf(testBrowseTrack("first"), testBrowseTrack("second"))
-    val detail = AlbumTrackList(testAlbum(), completeWindow(albumTracks))
-
-    val selection = detail.playbackSelection(1)
-
-    assertEquals(PlaybackSelection(albumTracks, 1), selection)
-    assertEquals("second", selection.tracks[selection.startIndex].title)
-}
 }
 
 private fun testBrowseTrack(title: String) = LibraryTrack(

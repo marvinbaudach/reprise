@@ -196,16 +196,41 @@ internal fun ArtistsTab(
     artists: LibraryWindow<LibraryArtist>,
     searchText: String,
     selectedArtist: ArtistTrackList?,
+    selectedAlbum: AlbumTrackList? = null,
     playback: PlaybackUiState,
     openArtist: (LibraryArtist) -> Unit,
+    openAlbum: (LibraryAlbum) -> Unit = {},
     closeArtist: () -> Unit,
+    closeAlbum: () -> Unit = {},
     play: (Int) -> Unit,
+    playAlbum: (Int) -> Unit = {},
     lastRequestedOffset: Long?,
     artistRequestedOffset: Long?,
+    artistAlbumsRequestedOffset: Long? = null,
     loadMoreArtists: (LibraryWindowRange) -> Unit,
     loadMoreArtistTracks: (LibraryWindowRange) -> Unit,
+    loadMoreArtistAlbums: (LibraryWindowRange) -> Unit = {},
+    loadMoreAlbumTracks: (LibraryWindowRange) -> Unit = {},
 ) {
     if (selectedArtist != null) {
+        if (selectedAlbum != null) {
+            AlbumsTab(
+                surfaceLayout = surfaceLayout,
+                surfaceState = surfaceState,
+                albums = LibraryWindow.empty(),
+                searchText = "",
+                selectedAlbum = selectedAlbum,
+                playback = playback,
+                openAlbum = {},
+                closeAlbum = closeAlbum,
+                play = playAlbum,
+                albumsRequestedOffset = null,
+                albumRequestedOffset = null,
+                loadMoreAlbums = {},
+                loadMoreAlbumTracks = loadMoreAlbumTracks,
+            )
+            return
+        }
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
@@ -217,24 +242,54 @@ internal fun ArtistsTab(
                 MaterialSymbol("arrow_back", "Back to artists")
                 Text(selectedArtist.artist.name, style = MaterialTheme.typography.titleLarge)
             }
-            if (selectedArtist.tracks.rows.isEmpty()) {
+            val hasAlbums = selectedArtist.albums.rows.isNotEmpty()
+            val hasOtherTitles = selectedArtist.untaggedTracks.rows.isNotEmpty()
+            if (!hasAlbums && !hasOtherTitles) {
                 Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
-            } else {
-                ListPlayButton(
-                    description = "Play ${selectedArtist.artist.name}",
-                    onClick = { play(0) },
+            }
+            if (hasAlbums) {
+                val orderedAlbums = selectedArtist.albums.copy(
+                    rows = selectedArtist.albums.rows.sortedWith(
+                        compareByDescending<LibraryAlbum> { it.year }
+                            .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title.trim() },
+                    ),
                 )
-                TrackRows(
-                    surfaceLayout = surfaceLayout,
-                    surfaceState = surfaceState,
-                    listKey = LibraryListKey.ARTIST_TRACKS,
-                    tracks = selectedArtist.tracks,
-                    playback = playback,
-                    lastRequestedOffset = artistRequestedOffset,
-                    play = play,
-                    loadMore = loadMoreArtistTracks,
-                    subtitle = TrackRowSubtitle.ALBUM_ONLY,
+                Text(
+                    "Albums",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
+                Box(modifier = Modifier.weight(1f)) {
+                    AlbumRows(
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
+                        albums = orderedAlbums,
+                        requestedOffset = artistAlbumsRequestedOffset,
+                        openAlbum = openAlbum,
+                        loadMore = loadMoreArtistAlbums,
+                        key = LibraryListKey.ARTIST_ALBUMS,
+                    )
+                }
+            }
+            if (hasOtherTitles) {
+                Text(
+                    "Other titles",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    TrackRows(
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
+                        listKey = LibraryListKey.ARTIST_TRACKS,
+                        tracks = selectedArtist.untaggedTracks,
+                        playback = playback,
+                        lastRequestedOffset = artistRequestedOffset,
+                        play = play,
+                        loadMore = loadMoreArtistTracks,
+                        subtitle = TrackRowSubtitle.ALBUM_ONLY,
+                    )
+                }
             }
         }
         return
@@ -309,8 +364,8 @@ private fun AlbumRows(
     requestedOffset: Long?,
     openAlbum: (LibraryAlbum) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
+    key: LibraryListKey = LibraryListKey.ALBUMS,
 ) {
-    val key = LibraryListKey.ALBUMS
     val anchor = surfaceState.scrollPosition(key).within(albums.itemCount(requestedOffset))
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
         val metrics = libraryFrameMetrics(surfaceLayout)
@@ -322,7 +377,7 @@ private fun AlbumRows(
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
                 metrics.listColumnGapDp.dp,
             ),
-            modifier = Modifier.fillMaxSize().testTag("library-albums-list"),
+            modifier = Modifier.fillMaxSize().testTag(key.testTag()),
         ) {
             gridItems(
                 items = albums.rows,
@@ -341,7 +396,7 @@ private fun AlbumRows(
     ObserveLibraryListAnchor(key, listState, surfaceState)
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().testTag("library-albums-list"),
+        modifier = Modifier.fillMaxSize().testTag(key.testTag()),
     ) {
         items(albums.rows, key = { album -> "${album.artist}\u0000${album.title}" }) { album ->
             AlbumRow(album, openAlbum)

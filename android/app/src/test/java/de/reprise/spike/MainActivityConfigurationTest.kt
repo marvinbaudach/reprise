@@ -500,6 +500,24 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 album = "Second Album",
             ),
         )
+    private val artistAlbums: List<LibraryAlbum>
+        get() = artistTracks.mapIndexed { index, track ->
+            LibraryAlbum(
+                title = track.album,
+                artist = track.artist,
+                representativeUri = track.uri,
+                trackCount = 1,
+                year = 2025 - index,
+                totalDurationMs = track.durationMs,
+            )
+        }
+
+    private fun tracksFor(album: LibraryAlbum): List<LibraryTrack> =
+        if (album.artist == "Artist 1") {
+            artistTracks.filter { track -> track.album == album.title }
+        } else {
+            albumTracks
+        }
     private val seededFavouriteTracks = listOf(
         configurationTestTrack(
             FAVOURITE_TRACK_ID_BASE + 1,
@@ -641,12 +659,18 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 artists.filter { artist -> artist.name.contains(query, ignoreCase = true) }
                     .window(range)
             },
-            openAlbum = { album -> AlbumTrackList(album, albumTracks.window(firstLibraryWindow())) },
-            listAlbumTracks = { _, range -> albumTracks.window(range) },
+            openAlbum = { album -> AlbumTrackList(album, tracksFor(album).window(firstLibraryWindow())) },
+            listAlbumTracks = { album, range -> tracksFor(album).window(range) },
             openArtist = { artist ->
-                ArtistTrackList(artist, artistTracks.window(firstLibraryWindow()))
+                ArtistTrackList(
+                    artist = artist,
+                    tracks = artistTracks.window(firstLibraryWindow()),
+                    albums = artistAlbums.window(firstLibraryWindow()),
+                )
             },
             listArtistTracks = { _, range -> artistTracks.window(range) },
+            listArtistAlbums = { _, range -> artistAlbums.window(range) },
+            listArtistUntaggedTracks = { _, _ -> LibraryWindow.empty() },
             listFavourites = { range -> favouriteTracks.window(range) },
             searchFavourites = { query, range ->
                 favouriteTracks.filter { track ->
