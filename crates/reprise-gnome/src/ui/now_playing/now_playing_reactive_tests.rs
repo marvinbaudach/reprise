@@ -21,7 +21,8 @@ fn ac_24_bloom_sits_behind_the_cover_inside_the_head_overlay() {
     let (_window, panel) =
         super::tests::test_panel("io.github.marvinbaudach.Reprise.NowPlayingReactiveBloomTest");
     let bloom = panel.bloom_widget();
-    // Behind the head (cover + title) and above the panel background.
+    // Behind the cover inside the artwork band and above the panel background.
+    // The metadata now starts below that band (NPP-18).
     assert!(bloom.is_ancestor(panel.stage_for_test()));
     assert!(!bloom.can_target());
 }

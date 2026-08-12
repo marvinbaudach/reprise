@@ -29,8 +29,8 @@ const SHIMMER_OPACITY_PER_SWELL: f64 = 0.16;
 const SHIMMER_DIAMETER_PER_COVER: f64 = 520.0 / 168.0;
 /// Centre of the disc, measured down from the top of the band.
 const SHIMMER_CENTRE_Y: f64 = 100.0;
-/// The mockup clips the disc to this band from the top of the panel head.
-const SHIMMER_BAND_HEIGHT: f64 = 340.0;
+/// The disc is clipped to the same artwork band as the cover and bloom.
+const SHIMMER_BAND_HEIGHT: f64 = tokens::NOW_PLAYING_ARTWORK_BAND as f64;
 /// One turn a minute.
 const SHIMMER_TURN_S: f64 = 60.0;
 /// `radial-gradient(circle closest-side, #000 12%, transparent 68%)`.

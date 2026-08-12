@@ -24,12 +24,15 @@ use gtk4::prelude::*;
 use reprise_core::playback::PlaybackState;
 
 use super::cover_bloom_area::BloomArea;
-use crate::ui::cover_glow;
+use crate::ui::{cover_glow, style::tokens};
 
 type OnFrame = Rc<dyn Fn(i64)>;
-/// Height of the bloom band, from the top of the head overlay: enough for the
-/// cover and the title block, stopping short of the tabs.
-pub(super) const BLOOM_HEIGHT: f64 = 330.0;
+/// Height of the bloom band. It ends where the title block begins, so the
+/// cover-derived light cannot paint behind text.
+pub(super) const BLOOM_HEIGHT: f64 = tokens::NOW_PLAYING_ARTWORK_BAND as f64;
+/// The cover begins 22 px from the band's top and remains at full bloom
+/// strength through its bottom edge.
+pub(super) const BLOOM_FULL_STRENGTH_Y: f64 = 22.0 + tokens::NOW_PLAYING_COVER_SIZE as f64;
 /// Width as a share of the panel width. The overflow is clipped by the panel.
 pub(super) const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 
@@ -50,6 +53,19 @@ pub(super) fn bloom_opacity(pressure: f64, swell: f64) -> f64 {
     REST_OPACITY
         + OPACITY_PER_PRESSURE * pressure.clamp(0.0, 1.0)
         + OPACITY_PER_SWELL * swell.clamp(0.0, 1.0)
+}
+
+/// Vertical alpha ramp of the bloom: 1.0 above `full`, 0.0 at `band`, linear
+/// in between. The band's bottom edge is where the title block begins, so the
+/// bloom is gone before it instead of being hard-clipped there.
+pub(super) fn bloom_falloff(y: f64, full: f64, band: f64) -> f64 {
+    if y <= full {
+        return 1.0;
+    }
+    if y >= band {
+        return 0.0;
+    }
+    (band - y) / (band - full)
 }
 
 pub(super) fn bloom_scale(swell: f64) -> f64 {
@@ -283,6 +299,14 @@ impl CoverBloom {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bloom_falloff_is_gone_at_the_artwork_band_boundary() {
+        assert_eq!(
+            bloom_falloff(BLOOM_HEIGHT, BLOOM_FULL_STRENGTH_Y, BLOOM_HEIGHT),
+            0.0
+        );
+    }
 
     #[test]
     fn ac_24_bloom_adds_a_swell_on_top_of_a_pressure_bed() {
