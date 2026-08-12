@@ -703,18 +703,41 @@ assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/04-keyboard-tag-editor.png"
 # `04-keyboard-tag-editor.png` with animations disabled, so the dialog is at
 # its final geometry: the old (800, 466) fell in the gutter between "Album
 # artist" and "Genre", left nothing focused, and Return then simply closed the
-# dialog instead of rejecting anything.
+# dialog instead of exercising the Year field.
+db_scalar_into YEAR_BEFORE \
+  "SELECT COALESCE(CAST(year AS TEXT), '<null>') FROM tracks WHERE title = 'sine_01' AND missing_since IS NULL;" \
+  'invalid-Year check needs the selected track year' || true
+db_scalar_into TAG_WRITE_JOBS_BEFORE \
+  'SELECT COUNT(*) FROM tag_write_jobs;' \
+  'invalid-Year check needs the initial tag-write job count' || true
 click_at 664 546
 key "ctrl+a"
 type_text "0"
 MARKER=$(log_marker)
+# Return follows TAG-8's field chain; Ctrl+Return then tries the Save shortcut.
+# The invalid number never entered the dirty session, so Save remains disabled
+# and the save-time validator is not invoked. This is current product behavior,
+# not the clearer invalid-input explanation the product still needs.
 key "Return"
+key "ctrl+Return"
 sleep 0.3
-assert_log_contains_since "$MARKER" "tag editor rejected an invalid year or track number" "invalid Year plus Enter was rejected without applying"
-screenshot "05-invalid-year-rejected"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/05-invalid-year-rejected.png"
+assert_log_absent_since "$MARKER" "tag editor rejected an invalid year or track number" \
+  "save-time validation while invalid Year left Save disabled"
+assert_db_query_true \
+  "SELECT COALESCE(CAST(year AS TEXT), '<null>') = '$YEAR_BEFORE' FROM tracks WHERE title = 'sine_01' AND missing_since IS NULL;" \
+  "invalid Year left the selected track year unchanged"
+assert_db_query_true \
+  "SELECT COUNT(*) = $TAG_WRITE_JOBS_BEFORE FROM tag_write_jobs;" \
+  "invalid Year left the tag-write job count unchanged"
+screenshot "05-invalid-year-dialog-open"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/05-invalid-year-dialog-open.png"
 key "Escape"
 sleep 0.2
+screenshot "05b-library-after-invalid-year-dismiss"
+assert_screenshots_differ \
+  "$PTR_E2E_OUT_DIR/05-invalid-year-dialog-open.png" \
+  "$PTR_E2E_OUT_DIR/05b-library-after-invalid-year-dismiss.png" \
+  "invalid Year kept the tag editor open until explicit Escape"
 
 # --- Flow 3: queue reorder exposes and applies a real drop target -----------
 
