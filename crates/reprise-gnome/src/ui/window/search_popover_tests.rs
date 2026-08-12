@@ -9,6 +9,27 @@ use super::SearchPopover;
 use crate::ui::filter_bar_layout::{FilterBarLayout, FilterBarSlot};
 use crate::ui::window::section_search::SectionSearch;
 
+#[test]
+fn search_4a_modified_escape_proceeds_without_aborting_search() {
+    let aborted = Rc::new(std::cell::Cell::new(false));
+    let abort_on_escape: Rc<RefCell<Option<super::AbortCallback>>> = Rc::new(RefCell::new(Some({
+        let aborted = Rc::clone(&aborted);
+        Rc::new(move || aborted.set(true))
+    })));
+
+    assert_eq!(
+        super::handle_search_key(
+            gtk4::gdk::Key::Escape,
+            gtk4::gdk::ModifierType::CONTROL_MASK,
+            &gtk4::glib::WeakRef::new(),
+            &gtk4::glib::WeakRef::new(),
+            &abort_on_escape,
+        ),
+        gtk4::glib::Propagation::Proceed
+    );
+    assert!(!aborted.get(), "Ctrl+Escape must preserve the active query");
+}
+
 struct ReceiptHarness {
     window: gtk4::Window,
     entry: gtk4::SearchEntry,
