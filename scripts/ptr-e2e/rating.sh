@@ -7,13 +7,14 @@ run_rating_flow() {
   screenshot "01-initial-track-list"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/01-initial-track-list.png"
 
-  # Closing Information exposes every fixed-width track column. Enter row 0's
-  # Rating cell without clicking: its motion controller reveals the inline
-  # buttons, which need a short settle before the pointer can press star 2.
-  # No Information toggle here any more. INFO_TOGGLE_FROM_RIGHT=222 resolves to
-  # x=1378, which is the main menu button (x≈1373) in the current header bar —
-  # the click opened that menu, whose autohide popover then covered the right
-  # half of the table and swallowed the star click as a click-outside dismissal.
+  # Information is already closed in this fixture, exposing every fixed-width
+  # track column. Enter row 0's Rating cell without clicking: its motion
+  # controller reveals the inline buttons, which need a short settle before the
+  # pointer can press star 2. There is no Information toggle any more; its
+  # retired offset resolved to the
+  # main menu button in the current header bar, whose autohide popover then
+  # covered the right half of the table and swallowed the star click as a
+  # click-outside dismissal.
   # The panel it was meant to close is not open in this fixture profile anyway:
   # 01-initial-track-list.png already shows every column through Rating.
   xdotool mousemove --sync "$ROW0_RATING_STAR2_X" "$ROW0_RATING_STAR_Y" \

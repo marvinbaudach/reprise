@@ -199,7 +199,8 @@ log_step() { echo "[ptr-e2e] $*"; }
 log_fail() { echo "[ptr-e2e] FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }
 
 cleanup() {
-  local exit_code=$?
+  local exit_code=$? effective_exit_code
+  effective_exit_code=$(( exit_code != 0 ? exit_code : (FAILURES > 0 ? 1 : 0) ))
   log_step "cleaning up…"
   # The app was launched via `setsid`, so its PID is also its process group
   # id — killing the negative PGID takes the whole dbus-run-session/cargo/
@@ -222,12 +223,12 @@ cleanup() {
     cp "$APP_LOG" "$PTR_E2E_OUT_DIR/app.log" 2>/dev/null || true
   fi
   rm -rf "$SCRATCH_ROOT"
-  if [ "$exit_code" -eq 0 ] && [ "$FAILURES" -eq 0 ]; then
+  if [ "$effective_exit_code" -eq 0 ]; then
     log_step "done — all checks passed"
   else
-    log_step "done — see failures above (exit $exit_code, $FAILURES failed check(s))"
+    log_step "done — see failures above (exit $effective_exit_code, $FAILURES failed check(s))"
   fi
-  exit $(( exit_code != 0 ? exit_code : (FAILURES > 0 ? 1 : 0) ))
+  exit "$effective_exit_code"
 }
 trap cleanup EXIT
 
@@ -461,7 +462,7 @@ assert_screenshots_differ() {
   local changed
   changed="$(compare -metric AE "$before" "$after" null: 2>&1 || true)"
   changed="${changed%% *}"
-  if [ "${changed:-0}" -gt 100 ]; then
+  if awk -v changed="${changed:-0}" 'BEGIN { exit !(changed > 100) }'; then
     log_step "screenshot difference OK: $description ($changed pixels)"
   else
     log_fail "$description did not visibly change the mapped UI (${changed:-0} pixels)"
@@ -797,10 +798,8 @@ assert_log_contains_since "$MARKER" "queue reordered via drag and drop" "Queue d
 log_step "flow 4: context A → manual X → manual Y → context B…"
 click_at 80 100
 sleep 0.3
-# Flow 3 queued sine_01 then sine_02 and dragged the first row below the
-# second, so the actual manual order is sine_02 then sine_01. Bind every
-# expectation to those fixture titles; database id order is unrelated to the
-# queue order this flow is proving.
+# Bind every expectation to fixture titles; database id order is unrelated to
+# the queue order this flow is proving.
 db_scalar_into TRACK_ID_A \
   "SELECT id FROM tracks WHERE title = 'sine_03' AND missing_since IS NULL;" \
   'flow 4 needs context track sine_03' || true
@@ -813,6 +812,16 @@ db_scalar_into TRACK_ID_Y \
 db_scalar_into TRACK_ID_B \
   "SELECT id FROM tracks WHERE title = 'sine_04' AND missing_since IS NULL;" \
   'flow 4 needs next context track sine_04' || true
+# Flow 3 exercises UI queueing and drag reorder, but flow 4 owns the playback
+# state it asserts. Clear any residue, then establish X and Y in the exact order
+# this flow consumes through the app's private, scratch-bus control surface.
+reprise_player_call QueueClear
+sleep 0.2
+MARKER=$(log_marker)
+reprise_player_call QueueAddLast "[$TRACK_ID_X, $TRACK_ID_Y]"
+sleep 0.2
+assert_log_contains_since "$MARKER" "up next changed.*up_next_len=2" \
+  "flow 4 established two manual tracks before context playback"
 ROW2_TITLE_Y=$((ROW0_TITLE_CELL_Y + 102))
 MARKER=$(log_marker)
 double_click_at "$ROW0_TITLE_CELL_X" "$ROW2_TITLE_Y"

@@ -3,6 +3,7 @@
 MPRIS_BUS_NAME="org.mpris.MediaPlayer2.reprise"
 MPRIS_OBJECT_PATH="/org/mpris/MediaPlayer2"
 MPRIS_PLAYER_INTERFACE="org.mpris.MediaPlayer2.Player"
+REPRISE_PLAYER_INTERFACE="org.reprise.Player1"
 
 mpris_property() {
   local property="$1"
@@ -21,6 +22,30 @@ mpris_call() {
     --dest "$MPRIS_BUS_NAME" \
     --object-path "$MPRIS_OBJECT_PATH" \
     --method "$MPRIS_PLAYER_INTERFACE.$method" >/dev/null
+}
+
+reprise_player_call() {
+  local method="$1"
+  shift
+  gdbus call \
+    --address "$(<"$DBUS_ADDRESS_FILE")" \
+    --dest "$MPRIS_BUS_NAME" \
+    --object-path "$MPRIS_OBJECT_PATH" \
+    --method "$REPRISE_PLAYER_INTERFACE.$method" "$@" >/dev/null
+}
+
+assert_mpris_playback_status() {
+  local expected="$1" description="$2" actual=""
+  for _ in $(seq 1 20); do
+    actual="$(mpris_property PlaybackStatus)"
+    if grep -q "$expected" <<<"$actual"; then
+      log_step "MPRIS check OK: $description ($expected)"
+      return 0
+    fi
+    sleep 0.05
+  done
+  log_fail "$description (expected $expected, got $actual)"
+  return 1
 }
 
 mpris_volume() {
@@ -83,8 +108,8 @@ run_compact_flow() {
   marker=$(log_marker)
   # There is no Compact button in the Library header — `primary_menu.rs` packs
   # "Compact Mode" as the first entry of the first menu section and the header
-  # deliberately carries no duplicate control. The old
-  # The old header coordinate landed on empty space, and the follow-up click
+  # deliberately carries no duplicate control. The old header coordinate
+  # landed on empty space, and the follow-up click
   # then hit the *minimise* button, which unmapped the window and turned every
   # later screenshot into a black frame.
   # F10 plus Return walks the only route a user has, without a single pixel
@@ -117,11 +142,23 @@ run_compact_flow() {
   assert_point_in_window "$metadata_x" "$center_y" "derived Compact metadata point" || return
   assert_point_in_window "$cover_x" "$center_y" "derived Compact cover point" || return
 
-  marker=$(log_marker)
+  # The short fixture may have stopped during earlier flows. Start or resume it
+  # first and assert the resulting public state; an idle player emits no state
+  # transition for the harness to wait on. The click then has one job: flip the
+  # observed status to Paused. If it does not, freeze playback through MPRIS so
+  # the independent scroll-position check remains diagnostically useful.
+  mpris_call Play
+  if ! assert_mpris_playback_status "Playing" \
+    "playback running before the derived Compact play click"; then
+    return
+  fi
   click_window_relative "$play_x" "$center_y"
-  sleep 0.2
-  assert_log_contains_since "$marker" "applying state change.*state=Paused" \
-    "derived Compact play button paused playback before scroll-volume assertions"
+  if ! assert_mpris_playback_status "Paused" \
+    "derived Compact play button flipped PlaybackStatus to Paused"; then
+    mpris_call Pause
+    assert_mpris_playback_status "Paused" \
+      "MPRIS Pause froze playback for scroll-volume assertions" || return
+  fi
   volume_before="$(mpris_volume)"
   position_before="$(mpris_position)"
   scroll_window_relative "$metadata_x" "$center_y" 5

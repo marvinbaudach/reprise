@@ -37,7 +37,7 @@ run_preferences_flow() {
   # currently active Library window before opening its primary menu.
   WINDOW_ID="$(xdotool getactivewindow 2>/dev/null)"
   maximize_window
-  click_window_from_right "$PRIMARY_MENU_FROM_RIGHT" 28
+  key "F10"
   sleep 0.3
 
   local marker preference_window width

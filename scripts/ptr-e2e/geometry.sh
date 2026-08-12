@@ -28,9 +28,10 @@ SIDEBAR_QUEUE_Y=150
 # Search is now a compact header toggle instead of a 300px entry. The end
 # controls stay right-anchored; record every slot explicitly so future pointer
 # recalibration cannot accidentally target the revealed second top bar.
-PRIMARY_MENU_FROM_RIGHT=186
-INFO_TOGGLE_FROM_RIGHT=222
-SEARCH_TOGGLE_FROM_RIGHT=262
+PRIMARY_MENU_FROM_RIGHT=227
+SEARCH_TOGGLE_FROM_RIGHT=186
+# The current header has no Information toggle, so there is deliberately no
+# INFO_TOGGLE_FROM_RIGHT constant to inherit as a stale pointer target.
 # `compact_player_layouts.rs` builds one 430x76 mini card. Compact points are
 # derived from the live window rect; only the widget-edge offsets stay fixed.
 COMPACT_CARD_MAX_WIDTH=430

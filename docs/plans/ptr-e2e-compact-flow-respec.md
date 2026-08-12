@@ -94,10 +94,12 @@ Preferences item, and only then presses Return.
 ### Package C: queue identity
 
 Flow 3 queues `sine_01` and `sine_02`, then drags the first below the second.
-Flow 4 now queries ids by those fixture titles rather than guessing with table
-offsets. Its expected sequence is context `sine_03`, manual `sine_02`, manual
-`sine_01`, then context `sine_04`. The Up Next count assertions now share that
-same observed queue identity.
+Flow 4 independently clears that residue and establishes its own manual order
+through the private scratch-bus control surface. It queries ids by fixture title
+rather than guessing with table offsets, adds `sine_02` then `sine_01`, and
+requires `up_next_len=2` before the first MPRIS Next. Its expected sequence is
+therefore context `sine_03`, manual `sine_02`, manual `sine_01`, then context
+`sine_04`, regardless of what an earlier flow left behind.
 
 ### Package D: current invalid-Year behavior
 
@@ -109,6 +111,24 @@ The harness now records the selected track's year and the tag-write job count,
 tries Return followed by Ctrl+Return, proves both database values are
 unchanged, and confirms that the dialog remains until explicit Escape by
 comparing the open-dialog and post-Escape captures.
+
+### Run 6 review follow-up
+
+Run 6 reached the end with 34 passed and 9 failed checks. The measured failures
+identified six harness defects, all repaired without changing product code:
+
+- screenshot AE metrics now use a float-safe `awk` threshold, so anti-aliased
+  values such as `23166.7` no longer invert a visible-change verdict;
+- Preferences opens the primary menu with F10, while the documented header
+  offsets now place Main menu at 227 px and Search at 186 px from the right;
+  the removed Information control has no retained constant;
+- flow 4 clears inherited queue state, adds its own two manual tracks, and
+  observes `up_next_len=2` before consuming either one;
+- Compact playback is first established as Playing, and the derived button is
+  judged by the resulting MPRIS `PlaybackStatus=Paused`, not by requiring a new
+  transition log from a fixture that may already be idle;
+- cleanup reports the effective process exit status after failed checks; and
+- the duplicated Compact-route comment was removed.
 
 ## Named product gaps
 
@@ -132,6 +152,8 @@ Static acceptance for this implementation is:
 - every pointer point in `compact-flow.sh` uses `assert_point_in_window`;
 - menu Down counts are documented with the traversed entries;
 - Flow 4 contains no `OFFSET` identity guess;
+- Flow 4 establishes and observes its own two-item manual queue;
+- Compact play/pause checks MPRIS status rather than a transition log;
 - every touched shell script passes `bash -n`.
 
 The full ptr-e2e run is deliberately not part of this implementation session.
