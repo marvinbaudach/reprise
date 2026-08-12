@@ -13,13 +13,15 @@ use reprise_core::device_sync::{
 use super::*;
 use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
 
-fn no_op_content_actions() -> ContentPanelActions {
-    ContentPanelActions {
+fn no_op_content_actions() -> OnDeviceActions {
+    OnDeviceActions {
         set_remove_deleted: Rc::new(|_| {}),
         set_sync_automatically: Rc::new(|_| {}),
         scan_device: Rc::new(|| {}),
         open_folder_browser: Rc::new(|_| {}),
-        open_picker: Rc::new(|_| {}),
+        open_playlist_picker: Rc::new(|_| {}),
+        dismiss_legacy_media_notice: Rc::new(|| {}),
+        legacy_media_notice_pending: Rc::new(|| false),
     }
 }
 
@@ -133,10 +135,45 @@ fn mtp_8_full_page_names_each_modern_transfer_profile() {
 }
 
 #[test]
+fn mtp_60_the_dock_reads_in_every_state() {
+    use crate::ui::device_sync::device_sync_dock::DockReading;
+
+    let idle = DockReading::for_device(&device());
+
+    let mut running_device = device();
+    running_device.sync_phase = PlannedSyncPhase::Syncing {
+        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        done: 214,
+        total: 1_047,
+        current_track: "Immortal — Lorna Shore".into(),
+        bytes_done: 214,
+        bytes_total: 1_047,
+    };
+    running_device.bytes_per_second = 64 * 1_024 * 1_024;
+    let running = DockReading::for_device(&running_device);
+
+    let mut finishing_device = device();
+    finishing_device.sync_phase = PlannedSyncPhase::Finishing;
+    let finishing = DockReading::for_device(&finishing_device);
+
+    let mut failed_device = device();
+    failed_device.sync_error = Some(SyncFailure {
+        message: "The phone stopped responding.".into(),
+        failed_tracks: Vec::new(),
+    });
+    let failed = DockReading::for_device(&failed_device);
+
+    assert!(matches!(idle, DockReading::Idle { .. }));
+    assert!(matches!(running, DockReading::Running { .. }));
+    assert!(matches!(finishing, DockReading::Finishing { .. }));
+    assert!(matches!(failed, DockReading::Failed { .. }));
+}
+
+#[test]
 fn mtp_24_transfer_profile_heading_names_its_music_only_scope() {
     assert_eq!(
         super::device_sync_page_layout::MUSIC_TRANSFER_PROFILE_HEADING,
-        "Music · Opus 160 kbit/s"
+        "Music transfer profile"
     );
 }
 
@@ -181,28 +218,6 @@ fn mtp_12_playlist_copy_reports_its_last_verified_sync_time() {
 }
 
 #[test]
-fn mtp_15_copy_progress_separates_the_live_mtp_rate_from_track_text() {
-    let phase = PlannedSyncPhase::Syncing {
-        step: crate::ui::device_sync_runtime::SyncStep::Copying,
-        done: 1,
-        total: 2,
-        current_track: "Immortal — Lorna Shore".into(),
-        bytes_done: 50,
-        bytes_total: 100,
-    };
-
-    assert_eq!(
-        transfer_progress_copy(&phase, 2 * 1_024 * 1_024),
-        Some((
-            "Copying · 1 of 2".into(),
-            "Immortal — Lorna Shore".into(),
-            "2.0 MiB/s".into(),
-            0.5,
-        ))
-    );
-}
-
-#[test]
 fn full_page_summarizes_every_mirror_change_without_paths() {
     let summary = change_summary(&SyncChangeSummary {
         additions: 2,
@@ -243,7 +258,7 @@ fn mtp_7_full_page_projects_complete_storage_segments() {
         Some(
             crate::ui::device_sync::device_sync_storage_bar::StorageSegments {
                 music: 48 * 1_024,
-                after_sync: 16 * 1_024,
+                this_run: 16 * 1_024,
                 other: 16 * 1_024,
                 free: 48 * 1_024,
                 total: 128 * 1_024,
@@ -253,19 +268,6 @@ fn mtp_7_full_page_projects_complete_storage_segments() {
     assert_eq!(
         blocker_summary(&[MirrorBlocker::NoPlaylistsSelected]),
         Some("Select at least one playlist to synchronize.".into())
-    );
-    assert_eq!(
-        action_copy(SyncPageControls {
-            editable: false,
-            can_start: false,
-            can_cancel: true,
-            can_eject: false,
-        }),
-        PageActionCopy {
-            label: "_Cancel",
-            sensitive: true,
-            destructive: true,
-        }
     );
 }
 
@@ -375,7 +377,7 @@ fn mtp_7_storage_segments_never_invent_unknown_capacity_or_negative_growth() {
         Some(
             crate::ui::device_sync::device_sync_storage_bar::StorageSegments {
                 music: 32 * 1_024,
-                after_sync: 0,
+                this_run: 0,
                 other: 16 * 1_024,
                 free: 80 * 1_024,
                 total: 128 * 1_024,
@@ -406,6 +408,33 @@ fn mtp_7_storage_segments_never_invent_unknown_capacity_or_negative_growth() {
         crate::ui::device_sync::device_sync_storage_bar::segments(&projection),
         None
     );
+}
+
+#[test]
+fn mtp_61_the_storage_bar_marks_this_run_as_hatched() {
+    let mut after = composition(Some(48 * 1_024));
+    after.reprise_music_bytes = 48 * 1_024;
+    let mut projection = DeviceStorageProjection {
+        target_name: Some("Internal storage".into()),
+        access: DeviceStorageAccess::Writable,
+        current: composition(Some(64 * 1_024)),
+        after_sync: Some(after),
+        transfer_bytes: 16 * 1_024,
+        state: StorageProjectionState::Fits,
+    };
+
+    let segments = crate::ui::device_sync::device_sync_storage_bar::segments(&projection)
+        .expect("complete projection");
+    assert_eq!(
+        segments.hatched_segment_class(),
+        Some("device-storage-this-run-hatched")
+    );
+
+    projection.after_sync.as_mut().unwrap().reprise_music_bytes = 32 * 1_024;
+    projection.after_sync.as_mut().unwrap().free_bytes = Some(64 * 1_024);
+    let segments = crate::ui::device_sync::device_sync_storage_bar::segments(&projection)
+        .expect("complete projection without growth");
+    assert_eq!(segments.hatched_segment_class(), None);
 }
 
 #[test]

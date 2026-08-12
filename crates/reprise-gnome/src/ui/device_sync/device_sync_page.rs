@@ -1,86 +1,87 @@
 //! Full-page per-device surface for Android playlist mirroring.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::{Rc, Weak};
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::device_sync::{DeviceStorageAccess, TransferProfile};
+use reprise_core::device_sync::TransferProfile;
 
-use super::device_sync_content_panel::{ContentPanel, ContentPanelActions};
+use super::device_sync_on_device::{OnDeviceActions, OnDeviceSection};
 use super::device_sync_page_actions::PageActions;
 use super::device_sync_page_copy::{
-    action_copy, blocker_summary, change_summary, counted, device_last_sync_copy, eject_sensitive,
-    playlist_subtitle, profile_label, progress_copy, warning_summary,
+    change_summary, device_last_sync_copy, eject_sensitive, profile_label,
 };
 // Only named directly by this module's own `#[cfg(test)]` child (below) —
 // a plain `cargo build` never compiles that module, so these would
 // otherwise warn as unused.
 #[cfg(test)]
 use super::device_sync_page_copy::{
-    format_local_date_time, transfer_progress_copy, verification_summary, PageActionCopy,
+    blocker_summary, format_local_date_time, playlist_subtitle, verification_summary,
+    warning_summary,
 };
 use super::device_sync_page_layout;
+use super::device_sync_page_layout::DeviceDashboard;
+use super::device_sync_playlist_card::{PlaylistCard, PlaylistCardActions};
+use super::device_sync_remembered;
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
-use super::device_sync_storage_bar::StorageBar;
-use super::device_sync_storage_copy::{storage_access_notice, storage_summary};
+#[cfg(test)]
+use super::device_sync_storage_copy::storage_access_notice;
+use super::device_sync_storage_copy::storage_summary;
 use super::device_sync_strings;
-
-#[derive(Clone)]
-struct PlaylistRowWidgets {
-    source: reprise_core::device_sync::SelectionSource,
-    button: gtk4::ToggleButton,
-    title: gtk4::Label,
-    subtitle: gtk4::Label,
-    indicator: gtk4::Label,
-}
 
 struct DeviceSyncPage {
     root: gtk4::glib::WeakRef<gtk4::Stack>,
-    device_name: gtk4::Button,
-    connection: gtk4::Label,
-    device_last_sync: gtk4::Label,
-    profile: gtk4::DropDown,
-    playlist_list: gtk4::ListBox,
-    playlist_summary: gtk4::Label,
-    playlist_rows: RefCell<Vec<PlaylistRowWidgets>>,
-    changes: gtk4::Label,
-    storage_name: gtk4::Label,
-    storage_summary: gtk4::Label,
-    storage_bar: StorageBar,
-    notice_box: gtk4::Box,
-    notice_title: gtk4::Label,
-    notice_detail: gtk4::Label,
-    progress_box: gtk4::Box,
-    progress_title: gtk4::Label,
-    progress_detail: gtk4::Label,
-    progress_speed: gtk4::Label,
-    progress_bar: gtk4::ProgressBar,
-    primary: gtk4::Button,
-    eject: gtk4::Button,
-    content_panel: ContentPanel,
+    dashboard: DeviceDashboard,
+    playlist_card: Rc<PlaylistCard>,
+    on_device: OnDeviceSection,
     updating: Rc<Cell<bool>>,
-    cancelling: Rc<Cell<bool>>,
-    actions: PageActions,
 }
 
 impl DeviceSyncPage {
     fn new(
         device: &DeviceView,
         actions: PageActions,
-        content_actions: &ContentPanelActions,
+        on_device_actions: &OnDeviceActions,
     ) -> (Rc<Self>, gtk4::Stack) {
+        let PageActions {
+            set_profile,
+            set_playlist,
+            start,
+            cancel,
+            eject,
+        } = actions;
         let labels = device_sync_page_layout::profile_labels(profile_label);
-        let dashboard = device_sync_page_layout::build(device, &labels);
+        let playlist_card = Rc::new(PlaylistCard::new(PlaylistCardActions {
+            set_playlist,
+            open_picker: on_device_actions.open_playlist_picker.clone(),
+        }));
+        let dashboard = device_sync_page_layout::build(device, &labels, &playlist_card);
+        debug_assert!(dashboard.scroller.vexpands());
         dashboard
             .eject
             .set_tooltip_text(Some(&device_sync_strings::eject_tooltip(false)));
-        let content_panel = ContentPanel::new(content_actions);
-        dashboard.up_next_heading.append(content_panel.header());
-        dashboard.up_next.append(content_panel.root());
+        let review_playlists = {
+            let scroller = dashboard.scroller.clone();
+            let playlist_card = playlist_card.clone();
+            Rc::new(move || {
+                if let Some(bounds) = playlist_card.root().compute_bounds(&scroller) {
+                    let adjustment = scroller.vadjustment();
+                    let maximum =
+                        (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+                    adjustment.set_value(
+                        (adjustment.value() + f64::from(bounds.y()))
+                            .clamp(adjustment.lower(), maximum),
+                    );
+                }
+                playlist_card.focus_first();
+            }) as Rc<dyn Fn()>
+        };
+        let on_device = OnDeviceSection::new(on_device_actions, review_playlists);
+        dashboard.on_device.append(on_device.root());
         debug_assert_eq!(
             dashboard.content.last_child(),
-            Some(dashboard.up_next.clone().upcast()),
+            Some(dashboard.on_device.clone().upcast()),
             "the dashboard owns the complete section order"
         );
 
@@ -99,7 +100,6 @@ impl DeviceSyncPage {
         let updating = Rc::new(Cell::new(false));
         {
             let updating = updating.clone();
-            let set_profile = actions.set_profile.clone();
             dashboard.profile.connect_selected_notify(move |row| {
                 if updating.get() {
                     return;
@@ -111,51 +111,17 @@ impl DeviceSyncPage {
                 set_profile(profile);
             });
         }
-        let cancelling = Rc::new(Cell::new(false));
+        dashboard.dock.connect_actions(start, cancel);
         {
-            let cancelling = cancelling.clone();
-            let start = actions.start.clone();
-            let cancel = actions.cancel.clone();
-            dashboard.primary.connect_clicked(move |_| {
-                if cancelling.get() {
-                    cancel();
-                } else {
-                    start();
-                }
-            });
-        }
-        {
-            let eject_action = actions.eject.clone();
-            dashboard.eject.connect_clicked(move |_| eject_action());
+            dashboard.eject.connect_clicked(move |_| eject());
         }
 
         let surface = Rc::new(Self {
             root: root_ref,
-            device_name: dashboard.device_name,
-            connection: dashboard.connection,
-            device_last_sync: dashboard.device_last_sync,
-            profile: dashboard.profile,
-            playlist_list: dashboard.playlist_list,
-            playlist_summary: dashboard.playlist_summary,
-            playlist_rows: RefCell::new(Vec::new()),
-            changes: dashboard.changes,
-            storage_name: dashboard.storage_name,
-            storage_summary: dashboard.storage_summary,
-            storage_bar: dashboard.storage_bar,
-            notice_box: dashboard.notice_box,
-            notice_title: dashboard.notice_title,
-            notice_detail: dashboard.notice_detail,
-            progress_box: dashboard.progress_box,
-            progress_title: dashboard.progress_title,
-            progress_detail: dashboard.progress_detail,
-            progress_speed: dashboard.progress_speed,
-            progress_bar: dashboard.progress_bar,
-            primary: dashboard.primary,
-            eject: dashboard.eject,
-            content_panel,
+            dashboard,
+            playlist_card,
+            on_device,
             updating,
-            cancelling,
-            actions,
         });
         surface.update(device);
         // The widget tree owns its controller, while the controller keeps only
@@ -169,64 +135,69 @@ impl DeviceSyncPage {
     }
 
     fn update(&self, device: &DeviceView) {
-        let progress = progress_copy(device);
         self.updating.set(true);
-        self.device_name.set_label(&device.name);
-        self.device_name.set_sensitive(device.rememberable);
+        self.dashboard.device_name.set_label(&device.name);
+        self.dashboard
+            .device_name
+            .set_sensitive(device.rememberable);
         // The name itself leads, because it is what an ellipsized title hides;
         // the action or the reason it is unavailable follows on its own line.
         if device.rememberable {
             let action = device_sync_strings::text(device_sync_strings::RENAME_DEVICE);
-            self.device_name
+            self.dashboard
+                .device_name
                 .set_tooltip_text(Some(&format!("{}\n{action}", device.name)));
-            self.device_name
+            self.dashboard
+                .device_name
                 .update_property(&[gtk4::accessible::Property::Label(&action)]);
         } else {
             let reason = device_sync_strings::rename_requires_durable_identity();
-            self.device_name
+            self.dashboard
+                .device_name
                 .set_tooltip_text(Some(&format!("{}\n{reason}", device.name)));
             // A disabled button that still announces "Rename device" tells a
             // screen-reader user the state but not the reason.
-            self.device_name
+            self.dashboard
+                .device_name
                 .update_property(&[gtk4::accessible::Property::Label(&reason)]);
         }
-        self.connection.remove_css_class("success");
-        self.connection.remove_css_class("warning");
-        self.connection.remove_css_class("dim-label");
+        self.dashboard.connection.remove_css_class("success");
+        self.dashboard.connection.remove_css_class("warning");
+        self.dashboard.connection.remove_css_class("dim-label");
         match &device.session_state {
             reprise_core::device_sync::DeviceSessionState::Active => {
                 if let Some(status) = &device.memory_status {
-                    self.connection.set_label(status);
-                    self.connection.add_css_class("warning");
+                    self.dashboard.connection.set_label(status);
+                    self.dashboard.connection.add_css_class("warning");
                 } else {
-                    self.connection.set_label("MTP connected");
-                    self.connection.add_css_class("success");
+                    self.dashboard.connection.set_label("MTP connected");
+                    self.dashboard.connection.add_css_class("success");
                 }
             }
             reprise_core::device_sync::DeviceSessionState::Inert { active_device_name } => {
-                self.connection
+                self.dashboard
+                    .connection
                     .set_label(&device_sync_strings::inert_device_status(
                         active_device_name,
                     ));
-                self.connection.add_css_class("warning");
+                self.dashboard.connection.add_css_class("warning");
             }
             reprise_core::device_sync::DeviceSessionState::Remembered => {
-                self.connection
-                    .set_label(&reprise_core::device_sync::remembered_device_status(
+                self.dashboard.connection.set_label(
+                    &reprise_core::device_sync::remembered_device_status(
                         device.last_sync,
                         chrono::Utc::now(),
-                    ));
-                self.connection.add_css_class("dim-label");
+                    ),
+                );
+                self.dashboard.connection.add_css_class("dim-label");
             }
         }
-        self.device_last_sync
+        self.dashboard
+            .device_last_sync
             .set_label(&device_last_sync_copy(device));
         if let Some(root) = self.root.upgrade() {
             root.set_visible_child_name(
-                if device.connected
-                    || device.session_state
-                        == reprise_core::device_sync::DeviceSessionState::Remembered
-                {
+                if device_sync_remembered::apply(&self.dashboard, device) {
                     "connected"
                 } else {
                     "disconnected"
@@ -237,21 +208,15 @@ impl DeviceSyncPage {
             .iter()
             .position(|profile| profile == &device.page.profile)
             .unwrap_or(0);
-        self.profile.set_selected(selected as u32);
-        self.profile.set_sensitive(device.page.controls.editable);
-        self.update_playlists(device);
-        self.playlist_summary.set_label(&format!(
-            "{} · {} on device",
-            counted(
-                device.page.unique_track_count,
-                "unique track",
-                "unique tracks"
-            ),
-            device_sync_strings::file_size(device.page.target_bytes)
-        ));
-        self.changes
+        self.dashboard.profile.set_selected(selected as u32);
+        self.dashboard
+            .profile
+            .set_sensitive(device.page.controls.editable);
+        self.playlist_card.update(device);
+        self.dashboard
+            .changes
             .set_label(&change_summary(&device.page.changes));
-        self.storage_name.set_label(
+        self.dashboard.storage_name.set_label(
             device
                 .page
                 .storage
@@ -259,196 +224,23 @@ impl DeviceSyncPage {
                 .as_deref()
                 .unwrap_or("Device storage"),
         );
-        self.storage_summary
+        self.dashboard
+            .storage_summary
             .set_label(&storage_summary(&device.page.storage));
-        self.storage_bar.update(&device.page.storage);
-        self.update_notice(device);
-        self.update_progress(progress.as_ref());
+        self.dashboard.storage_bar.update(&device.page.storage);
         self.update_actions(device);
-        self.content_panel.update(device);
+        self.on_device.update(device);
         self.updating.set(false);
     }
 
-    fn update_playlists(&self, device: &DeviceView) {
-        let sources = device
-            .page
-            .playlists
-            .iter()
-            .map(|playlist| playlist.source.clone())
-            .collect::<Vec<_>>();
-        let existing_rows = self
-            .playlist_rows
-            .borrow()
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>();
-        let current = existing_rows
-            .iter()
-            .map(|row| row.source.clone())
-            .collect::<Vec<_>>();
-        if sources != current {
-            let focused = existing_rows
-                .iter()
-                .enumerate()
-                .find(|(_, row)| row.button.is_focus() || row.button.has_focus())
-                .map(|(index, row)| (index, row.source.clone()));
-            let old_rows = self
-                .playlist_rows
-                .borrow_mut()
-                .drain(..)
-                .map(|row| row.button)
-                .collect::<Vec<_>>();
-            for row in old_rows {
-                self.playlist_list.remove(&row);
-            }
-            for playlist in &device.page.playlists {
-                let button = gtk4::ToggleButton::new();
-                button.add_css_class("flat");
-                button.set_hexpand(true);
-                let indicator = gtk4::Label::new(Some("☐"));
-                indicator.add_css_class("title-3");
-                let title = gtk4::Label::new(None);
-                title.set_xalign(0.0);
-                let subtitle = gtk4::Label::new(None);
-                subtitle.add_css_class("dim-label");
-                subtitle.set_xalign(0.0);
-                subtitle.set_wrap(true);
-                let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-                labels.set_hexpand(true);
-                labels.append(&title);
-                labels.append(&subtitle);
-                let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-                content.set_margin_top(10);
-                content.set_margin_bottom(10);
-                content.set_margin_start(12);
-                content.set_margin_end(12);
-                content.append(&indicator);
-                content.append(&labels);
-                button.set_child(Some(&content));
-                let source = playlist.source.clone();
-                let updating = self.updating.clone();
-                let set_playlist = self.actions.set_playlist.clone();
-                button.connect_toggled(move |button| {
-                    if !updating.get() {
-                        set_playlist(source.clone(), button.is_active());
-                    }
-                });
-                self.playlist_list.append(&button);
-                self.playlist_rows.borrow_mut().push(PlaylistRowWidgets {
-                    source: playlist.source.clone(),
-                    button,
-                    title,
-                    subtitle,
-                    indicator,
-                });
-            }
-            if let Some((old_index, focused_source)) = focused {
-                let rebuilt_rows = self
-                    .playlist_rows
-                    .borrow()
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                let target = rebuilt_rows
-                    .iter()
-                    .find(|row| row.source == focused_source)
-                    .or_else(|| {
-                        rebuilt_rows.get(old_index.min(rebuilt_rows.len().saturating_sub(1)))
-                    });
-                if let Some(row) = target {
-                    row.button.grab_focus();
-                }
-            }
-        }
-        let rows = self
-            .playlist_rows
-            .borrow()
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>();
-        for (row, playlist) in rows.iter().zip(&device.page.playlists) {
-            let name = playlist.name.as_deref().unwrap_or("Unavailable playlist");
-            row.title.set_label(name);
-            row.subtitle.set_label(&playlist_subtitle(playlist));
-            row.button.set_active(playlist.selected);
-            row.indicator
-                .set_label(if playlist.selected { "☑" } else { "☐" });
-            row.button
-                .update_property(&[gtk4::accessible::Property::Label(name)]);
-            row.button.set_sensitive(device.page.controls.editable);
-        }
-    }
-
-    fn update_notice(&self, device: &DeviceView) {
-        let mut notices = Vec::new();
-        if let Some(blocker) = blocker_summary(&device.page.blockers) {
-            notices.push(blocker);
-        }
-        if let Some(access_notice) = storage_access_notice(device.page.storage.access) {
-            notices.push(access_notice);
-        }
-        notices.extend(warning_summary(&device.page.warnings));
-        if let Some(error) = &device.scan_error {
-            notices.push(format!("Could not inspect device storage: {error}"));
-        }
-        if let Some(error) = &device.sync_error {
-            notices.push(error.message.clone());
-        }
-        self.notice_box.set_visible(!notices.is_empty());
-        let storage_blocks = device.page.storage.access == DeviceStorageAccess::ReadOnly;
-        self.notice_title
-            .set_label(if !device.page.blockers.is_empty() || storage_blocks {
-                "Synchronization blocked"
-            } else {
-                "Attention"
-            });
-        self.notice_detail.set_label(&notices.join("\n"));
-        self.notice_box.remove_css_class("error");
-        self.notice_box.remove_css_class("warning");
-        self.notice_box.add_css_class(
-            if !device.page.blockers.is_empty() || storage_blocks || device.sync_error.is_some() {
-                "error"
-            } else {
-                "warning"
-            },
-        );
-    }
-
-    fn update_progress(&self, progress: Option<&(String, String, String, f64)>) {
-        let Some((title, subtitle, speed, fraction)) = progress else {
-            self.progress_box.set_visible(false);
-            return;
-        };
-        self.progress_title.set_label(title);
-        self.progress_detail.set_label(subtitle);
-        self.progress_speed.set_label(speed);
-        self.progress_box.set_visible(true);
-        self.progress_bar.set_fraction(*fraction);
-    }
-
     fn update_actions(&self, device: &DeviceView) {
-        let copy = action_copy(device.page.controls);
-        self.cancelling.set(copy.destructive);
-        self.primary.set_label(copy.label);
-        self.primary.set_sensitive(copy.sensitive);
-        self.primary.remove_css_class("suggested-action");
-        self.primary.remove_css_class("destructive-action");
-        self.primary.add_css_class(if copy.destructive {
-            "destructive-action"
-        } else {
-            "suggested-action"
-        });
-        self.eject.set_sensitive(eject_sensitive(device));
-        self.eject
+        self.dashboard.dock.update(device);
+        self.dashboard.eject.set_sensitive(eject_sensitive(device));
+        self.dashboard
+            .eject
             .set_tooltip_text(Some(&device_sync_strings::eject_tooltip(
-                !self.eject.is_sensitive(),
+                !self.dashboard.eject.is_sensitive(),
             )));
-    }
-
-    fn show_disconnected(&self) {
-        if let Some(root) = self.root.upgrade() {
-            root.set_visible_child_name("disconnected");
-        }
     }
 
     #[cfg(test)]
@@ -488,8 +280,8 @@ fn page_state_callback(
         };
         if let Some(device) = state.devices.iter().find(|device| device.id == device_id) {
             surface.update(device);
-        } else {
-            surface.show_disconnected();
+        } else if let Some(root) = surface.root.upgrade() {
+            root.set_visible_child_name("disconnected");
         }
     })
 }
@@ -510,14 +302,17 @@ pub(in crate::ui) fn open(
     let (surface, root) = DeviceSyncPage::new(
         &device,
         PageActions::for_runtime(runtime, device_id),
-        &ContentPanelActions::for_runtime(runtime, device_id),
+        &OnDeviceActions::for_runtime(runtime, device_id),
     );
     {
         let runtime = runtime.clone();
         let device_id = device_id.to_string();
-        surface.device_name.connect_clicked(move |button| {
-            super::device_sync_rename::prompt(button, &runtime, &device_id);
-        });
+        surface
+            .dashboard
+            .device_name
+            .connect_clicked(move |button| {
+                super::device_sync_rename::prompt(button, &runtime, &device_id);
+            });
     }
     if let Some(previous) = content_stack.child_by_name("device-sync") {
         content_stack.remove(&previous);
@@ -531,18 +326,19 @@ pub(in crate::ui) fn open(
     ));
     subscription.retain_for_widget(&root);
     let focus = surface
-        .playlist_rows
-        .borrow()
-        .iter()
-        .find(|row| row.button.is_sensitive())
-        .map(|row| row.button.clone().upcast::<gtk4::Widget>())
+        .playlist_card
+        .focus_widget()
         .or_else(|| {
-            surface
-                .primary
-                .is_sensitive()
-                .then(|| surface.primary.clone().upcast::<gtk4::Widget>())
+            surface.dashboard.dock.primary.is_sensitive().then(|| {
+                surface
+                    .dashboard
+                    .dock
+                    .primary
+                    .clone()
+                    .upcast::<gtk4::Widget>()
+            })
         })
-        .unwrap_or_else(|| surface.eject.clone().upcast::<gtk4::Widget>());
+        .unwrap_or_else(|| surface.dashboard.eject.clone().upcast::<gtk4::Widget>());
     crate::ui::window::content_stack::show_page(content_stack, "device-sync");
     gtk4::glib::idle_add_local_once(move || {
         focus.grab_focus();

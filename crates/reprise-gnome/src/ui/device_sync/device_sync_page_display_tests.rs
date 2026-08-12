@@ -13,6 +13,71 @@ const PROBE_WINDOW_WIDTH: i32 = 968;
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn mtp_60_the_sync_bar_is_not_inside_the_scrollview() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let (surface, _root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let mut ancestor = surface
+        .dashboard
+        .dock
+        .primary
+        .clone()
+        .upcast::<gtk4::Widget>()
+        .parent();
+    while let Some(widget) = ancestor {
+        assert!(
+            !widget.is::<gtk4::ScrolledWindow>(),
+            "the docked sync bar must be a sibling of the scroller, not its descendant"
+        );
+        ancestor = widget.parent();
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_60_a_failed_run_is_read_only_in_the_dock() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let mut failed = device();
+    failed.sync_error = Some(SyncFailure {
+        message: "The phone stopped responding.".into(),
+        failed_tracks: Vec::new(),
+    });
+    let (surface, _root) = DeviceSyncPage::new(
+        &failed,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    assert_eq!(
+        surface
+            .root_text()
+            .matches("The phone stopped responding.")
+            .count(),
+        1,
+        "a failed run must not be duplicated in a page notice"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mtp_14_full_page_uses_a_device_dashboard_instead_of_preferences_chrome() {
     gtk4::init().expect("GTK test display");
     let (surface, root) = DeviceSyncPage::new(
@@ -45,12 +110,12 @@ fn mtp_14_full_page_uses_a_device_dashboard_instead_of_preferences_chrome() {
         .expect("device sync history");
     let storage = text.find("Internal storage").expect("device storage");
     let playlists = text.find("Playlists").expect("playlist workspace");
-    let overview = text.find("Sync overview").expect("sync overview");
+    let dock = text.find("Ready to sync").expect("docked sync status");
     assert!(identity < connection);
     assert!(connection < last_sync);
     assert!(last_sync < storage);
     assert!(storage < playlists);
-    assert!(identity < overview);
+    assert!(identity < dock);
     assert!(
         !text.contains("Last synchronization"),
         "the header owns device sync history; the overview must not duplicate it"
@@ -59,16 +124,18 @@ fn mtp_14_full_page_uses_a_device_dashboard_instead_of_preferences_chrome() {
         count_descendants::<adw::PreferencesPage>(root.upcast_ref()),
         0
     );
-    assert_eq!(surface.playlist_rows.borrow().len(), 1);
+    assert_eq!(surface.playlist_card.rows.borrow().len(), 1);
     assert_eq!(
-        surface.playlist_rows.borrow()[0].button.accessible_role(),
+        surface.playlist_card.rows.borrow()[0]
+            .button
+            .accessible_role(),
         gtk4::AccessibleRole::ToggleButton
     );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn mtp_15_sync_status_text_does_not_resize_the_playlist_workspace() {
+fn mtp_60_sync_status_text_does_not_resize_the_playlist_workspace() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().expect("GTK test display");
     let mut device = device();
@@ -93,7 +160,7 @@ fn mtp_15_sync_status_text_does_not_resize_the_playlist_workspace() {
     );
     let window = gtk4::Window::new();
     window.set_default_size(PROBE_WINDOW_WIDTH, 800);
-    // Pin the toplevel so this MTP-15 probe measures column behaviour, not
+    // Pin the toplevel so this MTP-60 probe measures dock behaviour, not
     // post-present window settlement. With fresh XDG roots the window/root
     // shrank from 881 to 873 px while the overview card stayed at 414 px, so
     // the playlist allocation alone fell from 343 to 335 px between phases.
@@ -108,9 +175,11 @@ fn mtp_15_sync_status_text_does_not_resize_the_playlist_workspace() {
     gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
         std::time::Duration::from_millis(50),
     ));
-    let converting_width = surface.playlist_list.width();
+    let converting_width = surface.playlist_card.list.width();
     let converting_status_width = surface
-        .progress_detail
+        .dashboard
+        .dock
+        .detail
         .measure(gtk4::Orientation::Horizontal, -1)
         .1;
 
@@ -127,26 +196,28 @@ fn mtp_15_sync_status_text_does_not_resize_the_playlist_workspace() {
     gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
         std::time::Duration::from_millis(50),
     ));
-    let copying_width = surface.playlist_list.width();
+    let copying_width = surface.playlist_card.list.width();
     let copying_status_width = surface
-        .progress_detail
+        .dashboard
+        .dock
+        .detail
         .measure(gtk4::Orientation::Horizontal, -1)
         .1;
 
     assert_eq!(
         copying_width, converting_width,
-        "dynamic status copy must wrap inside a stable overview column"
+        "dynamic status copy must not resize the playlist workspace"
     );
     assert_eq!(
         copying_status_width, converting_status_width,
-        "dynamic status copy must not change the overview's natural width"
+        "dynamic status copy must not change the dock's natural width"
     );
     window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn mtp_15_playlist_and_sync_overview_cards_share_the_same_edges() {
+fn transfer_profile_and_playlist_changes_are_peer_cards_below_the_playlist_card() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().expect("GTK test display");
     let (_surface, root) = DeviceSyncPage::new(
@@ -160,43 +231,43 @@ fn mtp_15_playlist_and_sync_overview_cards_share_the_same_edges() {
         },
         &no_op_content_actions(),
     );
-    let window = gtk4::Window::new();
-    window.set_default_size(PROBE_WINDOW_WIDTH, 800);
-    window.set_child(Some(&root));
-    window.present();
-    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
-        std::time::Duration::from_millis(50),
-    ));
-
-    fn collect_cards(widget: &gtk4::Widget, cards: &mut Vec<gtk4::Widget>) {
-        if widget.has_css_class("card") {
-            cards.push(widget.clone());
+    fn label_with_text(widget: &gtk4::Widget, text: &str) -> Option<gtk4::Widget> {
+        if widget
+            .clone()
+            .downcast::<gtk4::Label>()
+            .is_ok_and(|label| label.text() == text)
+        {
+            return Some(widget.clone());
         }
         let mut child = widget.first_child();
         while let Some(current) = child {
-            collect_cards(&current, cards);
+            if let Some(found) = label_with_text(&current, text) {
+                return Some(found);
+            }
             child = current.next_sibling();
         }
+        None
     }
 
-    let mut cards = Vec::new();
-    collect_cards(root.upcast_ref(), &mut cards);
-    assert_eq!(
-        cards.len(),
-        4,
-        "hero, playlist workspace, sync overview and the content panel must be cards"
+    fn card_ancestor(widget: &gtk4::Widget) -> gtk4::Widget {
+        std::iter::successors(widget.parent(), gtk4::prelude::WidgetExt::parent)
+            .find(|ancestor| ancestor.has_css_class("card"))
+            .expect("label must belong to a card")
+    }
+
+    let profile = label_with_text(root.upcast_ref(), "Music transfer profile")
+        .expect("transfer profile heading");
+    let changes =
+        label_with_text(root.upcast_ref(), "Playlist changes").expect("playlist changes heading");
+    let profile_card = card_ancestor(&profile);
+    let changes_card = card_ancestor(&changes);
+    assert_ne!(
+        profile_card, changes_card,
+        "the two readings must be separate equally sized cards"
     );
-    let body = cards[1].parent().expect("shared dashboard body");
-    assert_eq!(cards[2].parent().as_ref(), Some(&body));
-    let playlist = cards[1].compute_bounds(&body).expect("playlist bounds");
-    let overview = cards[2].compute_bounds(&body).expect("overview bounds");
-    assert_eq!(playlist.y(), overview.y(), "top edges must align");
-    assert_eq!(
-        playlist.height(),
-        overview.height(),
-        "bottom edges must align"
-    );
-    window.close();
+    let pair = profile_card.parent().expect("responsive card pair");
+    assert!(pair.is::<adw::WrapBox>());
+    assert_eq!(changes_card.parent().as_ref(), Some(&pair));
 }
 
 #[test]
@@ -232,26 +303,32 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
 
     assert_eq!(root.visible_child_name().as_deref(), Some("connected"));
     assert_eq!(
-        surface.profile.model().map(|model| model.n_items()),
+        surface
+            .dashboard
+            .profile
+            .model()
+            .map(|model| model.n_items()),
         Some(3)
     );
-    assert_eq!(surface.profile.selected(), 1);
-    assert_eq!(surface.playlist_rows.borrow().len(), 1);
+    assert_eq!(surface.dashboard.profile.selected(), 1);
+    assert_eq!(surface.playlist_card.rows.borrow().len(), 1);
     assert_eq!(
-        surface.playlist_rows.borrow()[0].title.label(),
+        surface.playlist_card.rows.borrow()[0].title.label(),
         "Lorna Shore & Similar"
     );
-    assert!(!surface.playlist_rows.borrow()[0].title.uses_markup());
-    assert_eq!(surface.primary.label().as_deref(), Some("_Sync now"));
-    assert!(surface.primary.uses_underline());
-    assert!(surface.primary.is_sensitive());
+    assert!(!surface.playlist_card.rows.borrow()[0].title.uses_markup());
+    assert_eq!(
+        surface.dashboard.dock.primary.label().as_deref(),
+        Some("_Sync now")
+    );
+    assert!(surface.dashboard.dock.primary.uses_underline());
+    assert!(surface.dashboard.dock.primary.is_sensitive());
     let root_text = surface.root_text();
     assert!(root_text.contains("Playlists"));
     for removed in [
         "YouTube audio",
         "Podcast episodes",
         "Size limit in GiB",
-        "no size limit",
         "Entire library",
         "Device files",
         "Songs",
@@ -261,9 +338,11 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
         assert!(!root_text.contains(removed), "removed control: {removed}");
     }
 
-    surface.profile.set_selected(2);
-    surface.playlist_rows.borrow()[0].button.set_active(false);
-    surface.primary.emit_clicked();
+    surface.dashboard.profile.set_selected(2);
+    surface.playlist_card.rows.borrow()[0]
+        .button
+        .set_active(false);
+    surface.dashboard.dock.primary.emit_clicked();
     assert_eq!(*profile_events.borrow(), [TransferProfile::Original]);
     assert_eq!(
         *playlist_events.borrow(),
@@ -281,9 +360,15 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     };
     device.bytes_per_second = 2 * 1_024 * 1_024;
     surface.update(&device);
-    assert_eq!(surface.progress_detail.label(), "Immortal — Lorna Shore");
-    assert_eq!(surface.progress_speed.label(), "2.0 MiB/s");
-    assert_eq!(surface.progress_bar.fraction(), 0.5);
+    assert_eq!(
+        surface.dashboard.dock.detail.label(),
+        "Immortal — Lorna Shore"
+    );
+    assert_eq!(
+        surface.dashboard.dock.metrics.label(),
+        "2.0 MiB/s · 1 s left"
+    );
+    assert_eq!(surface.dashboard.dock.progress.fraction(), 0.5);
 
     device.page.controls = SyncPageControls {
         editable: false,
@@ -292,9 +377,16 @@ fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
         can_eject: false,
     };
     surface.update(&device);
-    surface.primary.emit_clicked();
-    assert_eq!(surface.primary.label().as_deref(), Some("_Cancel"));
-    assert!(surface.primary.has_css_class("destructive-action"));
+    surface.dashboard.dock.primary.emit_clicked();
+    assert_eq!(
+        surface.dashboard.dock.primary.label().as_deref(),
+        Some("_Cancel")
+    );
+    assert!(surface
+        .dashboard
+        .dock
+        .primary
+        .has_css_class("destructive-action"));
     assert_eq!(*cancels.borrow(), 1);
 
     let weak_surface = Rc::downgrade(&surface);
@@ -332,14 +424,14 @@ fn device_page_sections_have_one_explicit_owner_and_order() {
         &no_op_content_actions(),
     );
 
-    let up_next = surface
-        .content_panel
+    let on_device = surface
+        .on_device
         .root()
         .parent()
-        .expect("the content panel must belong to the Up next section");
-    let content = up_next
+        .expect("the balance must belong to the On this device section");
+    let content = on_device
         .parent()
-        .expect("Up next must belong to the content column");
+        .expect("On this device must belong to the content column");
     let children = std::iter::successors(
         content.first_child(),
         gtk4::prelude::WidgetExt::next_sibling,
@@ -348,23 +440,23 @@ fn device_page_sections_have_one_explicit_owner_and_order() {
     assert_eq!(
         children.len(),
         3,
-        "the content column must contain only hero, body and Up next"
+        "the content column must contain only hero, body and On this device"
     );
     assert_eq!(
         content.last_child(),
-        Some(up_next.clone()),
-        "Up next must remain the page's final section"
+        Some(on_device.clone()),
+        "On this device must remain the page's final section"
     );
     assert_eq!(
-        surface.content_panel.root().parent().as_ref(),
-        Some(&up_next),
-        "the content panel belongs inside the explicit Up next section"
+        surface.on_device.root().parent().as_ref(),
+        Some(&on_device),
+        "the balance belongs inside the explicit On this device section"
     );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
+fn mtp_61_on_this_device_reads_as_one_balance_without_nested_section_headings() {
     gtk4::init().expect("GTK test display");
     let mut device = device();
     device.content_row.item_count = 291;
@@ -384,13 +476,129 @@ fn up_next_card_uses_one_row_per_source_without_nested_section_headings() {
 
     let text = surface.root_text();
     let lines = text.lines().collect::<Vec<_>>();
-    assert!(lines.contains(&"1 of 1 playlists · smart lists kept up to date"));
-    assert!(lines.contains(&"291 tracks"));
-    assert!(lines.contains(&"1.0 GiB"));
-    assert!(lines.contains(&"Nothing to transfer"));
+    assert!(lines.contains(&"1 playlist · 291 tracks · 1.0 GiB"));
+    assert!(lines.contains(&"Folder /Music/Reprise · Smart lists stay current · no size limit"));
     assert!(!lines.contains(&"Storage by category"));
     assert!(!lines.contains(&"Content"));
     assert!(!lines.contains(&"Next synchronization"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_61_on_this_device_offers_no_playlist_selection() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let (surface, _root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+
+    let text = surface.root_text();
+    assert!(text.contains("On this device"));
+    assert!(text.contains("Review playlists above"));
+    assert!(!text.contains("Choose…"));
+    assert!(!text.contains("Change…"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_61_the_rules_block_carries_both_device_switches() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let settings = Rc::new(RefCell::new(device().settings));
+    let content_actions = OnDeviceActions {
+        set_remove_deleted: {
+            let settings = settings.clone();
+            Rc::new(move |value| settings.borrow_mut().remove_deleted = value)
+        },
+        set_sync_automatically: {
+            let settings = settings.clone();
+            Rc::new(move |value| settings.borrow_mut().sync_automatically = value)
+        },
+        scan_device: Rc::new(|| {}),
+        open_folder_browser: Rc::new(|_| {}),
+        open_playlist_picker: Rc::new(|_| {}),
+        dismiss_legacy_media_notice: Rc::new(|| {}),
+        legacy_media_notice_pending: Rc::new(|| false),
+    };
+    let (surface, _root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &content_actions,
+    );
+
+    let text = surface.root_text();
+    assert!(text.contains("Rules for this phone"));
+    assert!(text.contains("Remove from phone when deleted here"));
+    assert!(text.contains("Sync automatically when this phone connects"));
+    fn switches(widget: &gtk4::Widget, found: &mut Vec<gtk4::Switch>) {
+        if let Ok(switch) = widget.clone().downcast::<gtk4::Switch>() {
+            found.push(switch);
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            switches(&current, found);
+            child = current.next_sibling();
+        }
+    }
+    let mut rules = Vec::new();
+    switches(surface.on_device.root().upcast_ref(), &mut rules);
+    assert_eq!(rules.len(), 2);
+    rules[0].set_active(true);
+    rules[1].set_active(false);
+    assert!(settings.borrow().remove_deleted);
+    assert!(!settings.borrow().sync_automatically);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_54_retired_media_notice_is_scoped_and_dismissible() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let dismissed = Rc::new(Cell::new(false));
+    let content_actions = OnDeviceActions {
+        set_remove_deleted: Rc::new(|_| {}),
+        set_sync_automatically: Rc::new(|_| {}),
+        scan_device: Rc::new(|| {}),
+        open_folder_browser: Rc::new(|_| {}),
+        open_playlist_picker: Rc::new(|_| {}),
+        dismiss_legacy_media_notice: {
+            let dismissed = dismissed.clone();
+            Rc::new(move || dismissed.set(true))
+        },
+        legacy_media_notice_pending: Rc::new(|| true),
+    };
+    let (surface, _root) = DeviceSyncPage::new(
+        &device(),
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &content_actions,
+    );
+
+    assert!(surface.on_device.legacy_notice.is_revealed());
+    surface
+        .on_device
+        .legacy_notice
+        .emit_by_name::<()>("button-clicked", &[]);
+    assert!(dismissed.get());
 }
 
 #[test]
@@ -411,8 +619,12 @@ fn unrememberable_device_disables_hero_rename_with_the_identity_explanation() {
         &no_op_content_actions(),
     );
 
-    assert!(!surface.device_name.is_sensitive());
-    let tooltip = surface.device_name.tooltip_text().unwrap_or_default();
+    assert!(!surface.dashboard.device_name.is_sensitive());
+    let tooltip = surface
+        .dashboard
+        .device_name
+        .tooltip_text()
+        .unwrap_or_default();
     assert!(tooltip.contains("no durable identity"));
     assert!(tooltip.contains("per-device settings cannot be kept between connections"));
     assert!(!tooltip.contains("history"));

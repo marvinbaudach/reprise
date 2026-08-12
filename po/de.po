@@ -6175,3 +6175,110 @@ msgstr "Separate Titelleiste"
 #~ msgid_plural "{count} items added to queue"
 #~ msgstr[0] "{count} Eintrag zur Warteschlange hinzugefügt"
 #~ msgstr[1] "{count} Einträge zur Warteschlange hinzugefügt"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Music transfer profile"
+msgstr "Übertragungsprofil für Musik"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Remove from phone when deleted here"
+msgstr "Vom Handy entfernen, wenn hier gelöscht"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Finishing synchronization…"
+msgstr "Synchronisierung wird abgeschlossen…"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Checking what changed…"
+msgstr "Änderungen werden geprüft…"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Ready to sync · {summary}"
+msgstr "Bereit zum Synchronisieren · {summary}"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Syncing · {copied} of {total} files"
+msgstr "Synchronisiere · {copied} von {total} Dateien"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "{minutes} min left"
+msgstr "Noch {minutes} Min."
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "{seconds} s left"
+msgstr "Noch {seconds} Sek."
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Automatic sync is on"
+msgstr "Automatische Synchronisierung ist aktiviert"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Automatic sync is off"
+msgstr "Automatische Synchronisierung ist deaktiviert"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Could not inspect device storage: {error}"
+msgstr "Gerätespeicher konnte nicht geprüft werden: {error}"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "On this device"
+msgstr "Auf diesem Gerät"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Check again"
+msgstr "Erneut prüfen"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Review playlists above"
+msgstr "Playlists oben überprüfen"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Set limit…"
+msgstr "Limit festlegen…"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "No size limit"
+msgstr "Kein Größenlimit"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Rules for this phone"
+msgstr "Regeln für dieses Handy"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Podcast and YouTube files are no longer synced and were left untouched outside /Music/Reprise."
+msgstr "Podcast- und YouTube-Dateien werden nicht mehr synchronisiert und blieben außerhalb von /Music/Reprise unverändert."
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Folder {path} · Smart lists stay current · no size limit"
+msgstr "Ordner {path} · Intelligente Listen bleiben aktuell · kein Größenlimit"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Folder {path} · Smart lists keep their current contents · no size limit"
+msgstr "Ordner {path} · Intelligente Listen behalten ihren Inhalt · kein Größenlimit"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Reprise music {music} · this run +{this_run} · Other {other} · {free} free"
+msgstr "Reprise-Musik {music} · dieser Lauf +{this_run} · Anderes {other} · {free} frei"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "{playlists} playlist · {tracks} · {size}"
+msgid_plural "{playlists} playlists · {tracks} · {size}"
+msgstr[0] "{playlists} Playlist · {tracks} · {size}"
+msgstr[1] "{playlists} Playlists · {tracks} · {size}"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "_Sync now"
+msgstr "Jetzt _synchronisieren"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "_Cancel"
+msgstr "_Abbrechen"

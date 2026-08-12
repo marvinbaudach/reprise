@@ -402,6 +402,31 @@ pub fn save_settings(
     Ok(())
 }
 
+pub fn legacy_media_notice_pending(
+    db: &crate::db::Db,
+    serial: &str,
+) -> Result<bool, rusqlite::Error> {
+    db.conn().query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM device_sync_legacy_notices
+           WHERE device_serial = ?1 AND NOT dismissed
+         )",
+        [serial],
+        |row| row.get(0),
+    )
+}
+
+pub fn dismiss_legacy_media_notice(
+    db: &crate::db::Db,
+    serial: &str,
+) -> Result<(), rusqlite::Error> {
+    db.conn().execute(
+        "UPDATE device_sync_legacy_notices SET dismissed = 1 WHERE device_serial = ?1",
+        [serial],
+    )?;
+    Ok(())
+}
+
 pub fn load_device_files(
     db: &crate::db::Db,
     serial: &str,

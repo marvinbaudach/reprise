@@ -1,30 +1,15 @@
 //! Pure copy projection for the device page's single playlists target.
 
 use reprise_core::device_sync::device_view::CategoryContentRow;
-use reprise_core::device_sync::{summarize_playlist_selection, CategoryReading};
+use reprise_core::device_sync::MusicReading;
 
 use super::device_sync_strings;
 
-pub(super) fn playlist_rule_text(
-    playlists: &[reprise_core::device_sync::SyncPlaylistRow],
-    unique_track_count: usize,
-    keep_smart_updated: bool,
-) -> String {
-    let summary = summarize_playlist_selection(playlists, unique_track_count);
-    let count = device_sync_strings::selected_playlists(summary.selected, summary.available_total);
-    let smart = device_sync_strings::text(if keep_smart_updated {
-        device_sync_strings::SMART_LISTS_UPDATED
-    } else {
-        device_sync_strings::SMART_LISTS_FROZEN
-    });
-    format!("{count} · {smart}")
-}
-
 pub(super) fn projected_playlist_size_bytes(
     content: &CategoryContentRow,
-    reading: &CategoryReading,
+    reading: &MusicReading,
 ) -> u64 {
-    let CategoryReading::Diff(diff) = reading;
+    let MusicReading::Diff(diff) = reading;
     content
         .size_on_device_bytes
         .saturating_add(diff.bytes_to_copy)
@@ -33,9 +18,9 @@ pub(super) fn projected_playlist_size_bytes(
 
 pub(super) fn playlist_result_text(
     content: &CategoryContentRow,
-    reading: &CategoryReading,
+    reading: &MusicReading,
 ) -> (String, String) {
-    let CategoryReading::Diff(diff) = reading;
+    let MusicReading::Diff(diff) = reading;
     let count = content
         .item_count
         .saturating_add(diff.files_to_copy)
@@ -49,7 +34,7 @@ pub(super) fn playlist_result_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reprise_core::device_sync::CategoryDiff;
+    use reprise_core::device_sync::MusicDiff;
 
     fn content() -> CategoryContentRow {
         CategoryContentRow {
@@ -61,16 +46,8 @@ mod tests {
     }
 
     #[test]
-    fn mtp_51_playlist_rule_has_one_selection_summary_and_no_cap() {
-        let text = playlist_rule_text(&[], 0, true);
-        assert_eq!(text, "0 of 0 playlists · smart lists kept up to date");
-        assert!(!text.contains("size"));
-        assert!(!text.contains("limit"));
-    }
-
-    #[test]
     fn mtp_22_playlist_result_projects_the_same_diff_into_count_and_size() {
-        let reading = CategoryReading::Diff(CategoryDiff {
+        let reading = MusicReading::Diff(MusicDiff {
             files_to_copy: 3,
             bytes_to_copy: 512 * 1024 * 1024,
             files_to_remove: 1,

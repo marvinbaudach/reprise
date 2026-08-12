@@ -15,7 +15,6 @@ use crate::library::m3u::{M3uEntry, M3uExportEntry};
 pub mod analysis_sidecar;
 pub mod auto_start;
 pub mod browser;
-pub mod category_diff;
 pub mod delta;
 pub mod device_presence;
 pub mod device_view;
@@ -25,6 +24,7 @@ pub mod m3u;
 pub mod machine;
 pub mod mirror;
 pub mod mobile_import;
+pub mod music_diff;
 pub mod page;
 pub mod profile;
 pub mod sanitize;
@@ -43,7 +43,13 @@ pub use browser::{
     classify_storage_kind, preview_target_folder, reset_target_folder, target_relocation_action,
     StorageKind, StorageOption, TargetPreview, TargetRelocation,
 };
-pub use category_diff::{aggregate_balance, CategoryDiff, CategoryReading, SyncBalance};
+pub use music_diff::{aggregate_balance, MusicDiff, MusicReading, SyncBalance};
+// Plan B owns one same-wave sidebar test that still imports these names.
+// Remove these aliases when that branch rebases and adopts the music terms.
+#[doc(hidden)]
+pub type CategoryDiff = MusicDiff;
+#[doc(hidden)]
+pub type CategoryReading = MusicReading;
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
 pub use device_presence::{
     project_device_presence, project_device_sessions, remembered_device_status,
@@ -51,7 +57,7 @@ pub use device_presence::{
 };
 pub use device_view::{
     category_bytes, project_category_content_row, project_category_segments,
-    project_contents_state, project_device_category_reading, CategoryContentRow, CategorySegments,
+    project_contents_state, project_device_music_reading, CategoryContentRow, CategorySegments,
     DeviceContentsState,
 };
 pub use machine::{

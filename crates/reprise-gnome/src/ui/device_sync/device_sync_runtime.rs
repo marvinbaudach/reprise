@@ -13,17 +13,16 @@ use gtk4::gio::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::device_view::{
-    project_category_content_row, project_contents_state, project_device_category_reading,
+    project_category_content_row, project_contents_state, project_device_music_reading,
 };
 use reprise_core::device_sync::settings::{
     forget_device, mark_device_playlists_synced, record_device_verification,
 };
 use reprise_core::device_sync::sync_log;
 use reprise_core::device_sync::{
-    aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
-    DeviceSelection, DeviceSessionState, DeviceSettings, DeviceStorageInspection,
-    DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, SelectionSource, StorageId,
-    SyncPageState, SyncTarget,
+    aggregate_balance, should_auto_start, AutoStartFacts, DeviceSelection, DeviceSessionState,
+    DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan,
+    MusicDiff, MusicReading, SelectionSource, StorageId, SyncPageState, SyncTarget,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
@@ -149,7 +148,7 @@ impl DeviceState {
         let target_reading = if self.session_state.shows_diff() {
             self.target_reading()
         } else {
-            project_device_category_reading(CategoryDiff::default())
+            project_device_music_reading(MusicDiff::default())
         };
         let content_row = project_category_content_row(
             &self.target,
@@ -195,8 +194,8 @@ impl DeviceState {
         self.is_active() || self.sync_phase == PlannedSyncPhase::Finishing
     }
 
-    fn target_reading(&self) -> CategoryReading {
-        project_device_category_reading(CategoryDiff::from_mirror_plan(&self.mirror_plan))
+    fn target_reading(&self) -> MusicReading {
+        project_device_music_reading(MusicDiff::from_mirror_plan(&self.mirror_plan))
     }
 }
 
@@ -296,6 +295,21 @@ impl DeviceSyncRuntime {
 
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
         self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal, false);
+    }
+
+    pub fn dismiss_legacy_media_notice(&self, device_id: &str) {
+        if let Err(error) =
+            reprise_core::device_sync::settings::dismiss_legacy_media_notice(&self.conn, device_id)
+        {
+            tracing::warn!(%error, "could not dismiss the retired media-sync notice");
+            return;
+        }
+        self.notify();
+    }
+
+    pub fn legacy_media_notice_pending(&self, device_id: &str) -> bool {
+        reprise_core::device_sync::settings::legacy_media_notice_pending(&self.conn, device_id)
+            .unwrap_or(false)
     }
 
     /// Same as [`Self::refresh_contents`], except this refresh is the first

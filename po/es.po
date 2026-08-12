@@ -6178,3 +6178,110 @@ msgstr "Barra de título independiente"
 #~ msgid_plural "{count} items added to queue"
 #~ msgstr[0] "Se añadió {count} elemento a la cola"
 #~ msgstr[1] "Se añadieron {count} elementos a la cola"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Music transfer profile"
+msgstr "Music transfer profile"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Remove from phone when deleted here"
+msgstr "Remove from phone when deleted here"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Finishing synchronization…"
+msgstr "Finishing synchronization…"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Checking what changed…"
+msgstr "Checking what changed…"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Ready to sync · {summary}"
+msgstr "Ready to sync · {summary}"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Syncing · {copied} of {total} files"
+msgstr "Syncing · {copied} of {total} files"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "{minutes} min left"
+msgstr "{minutes} min left"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "{seconds} s left"
+msgstr "{seconds} s left"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Automatic sync is on"
+msgstr "Automatic sync is on"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Automatic sync is off"
+msgstr "Automatic sync is off"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Could not inspect device storage: {error}"
+msgstr "Could not inspect device storage: {error}"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "On this device"
+msgstr "On this device"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Check again"
+msgstr "Check again"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Review playlists above"
+msgstr "Review playlists above"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Set limit…"
+msgstr "Set limit…"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "No size limit"
+msgstr "No size limit"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Rules for this phone"
+msgstr "Rules for this phone"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Podcast and YouTube files are no longer synced and were left untouched outside /Music/Reprise."
+msgstr "Podcast and YouTube files are no longer synced and were left untouched outside /Music/Reprise."
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Folder {path} · Smart lists stay current · no size limit"
+msgstr "Folder {path} · Smart lists stay current · no size limit"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Folder {path} · Smart lists keep their current contents · no size limit"
+msgstr "Folder {path} · Smart lists keep their current contents · no size limit"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "Reprise music {music} · this run +{this_run} · Other {other} · {free} free"
+msgstr "Reprise music {music} · this run +{this_run} · Other {other} · {free} free"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+#, rust-format
+msgid "{playlists} playlist · {tracks} · {size}"
+msgid_plural "{playlists} playlists · {tracks} · {size}"
+msgstr[0] "{playlists} playlist · {tracks} · {size}"
+msgstr[1] "{playlists} playlists · {tracks} · {size}"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "_Sync now"
+msgstr "_Sync now"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "_Cancel"
+msgstr "_Cancel"

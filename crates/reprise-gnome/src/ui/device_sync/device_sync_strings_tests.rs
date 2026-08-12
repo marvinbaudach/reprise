@@ -59,16 +59,6 @@ fn mtp_22_deletions_only_balance_never_claims_zero_bytes_to_copy() {
 }
 
 #[test]
-fn free_space_line_shows_the_arrow_only_when_this_sync_moves_the_needle() {
-    const GIB: u64 = 1024 * 1024 * 1024;
-    assert_eq!(
-        free_space_line(175 * GIB, (172.4 * GIB as f64) as u64),
-        "175.0 → 172.4 GiB free"
-    );
-    assert_eq!(free_space_line(64 * GIB, 64 * GIB), "64.0 GiB free");
-}
-
-#[test]
 fn relative_time_buckets_minutes_hours_and_days() {
     let now = chrono::Utc.with_ymd_and_hms(2026, 7, 28, 12, 0, 0).unwrap();
     assert_eq!(

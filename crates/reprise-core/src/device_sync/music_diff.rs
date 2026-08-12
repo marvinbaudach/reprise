@@ -1,10 +1,10 @@
-//! Playlist synchronization diff and overall balance (`MTP-22`).
+//! Music synchronization diff and overall balance (`MTP-22`).
 
 use super::mirror::MirrorPlan;
 
-/// The single target's diff, counted independently in both directions.
+/// The single music target's diff, counted independently in both directions.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CategoryDiff {
+pub struct MusicDiff {
     pub files_to_copy: usize,
     pub bytes_to_copy: u64,
     pub files_to_remove: usize,
@@ -13,7 +13,7 @@ pub struct CategoryDiff {
     pub playlists_rewritten: usize,
 }
 
-impl CategoryDiff {
+impl MusicDiff {
     #[must_use]
     pub fn has_work(&self) -> bool {
         self.files_to_copy > 0 || self.files_to_remove > 0 || self.playlists_rewritten > 0
@@ -31,15 +31,15 @@ impl CategoryDiff {
     }
 }
 
-/// `MTP-22`: the reading for the device's single playlists target.
+/// `MTP-22`: the reading for the device's single music target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CategoryReading {
-    Diff(CategoryDiff),
+pub enum MusicReading {
+    Diff(MusicDiff),
 }
 
-impl Default for CategoryReading {
+impl Default for MusicReading {
     fn default() -> Self {
-        Self::Diff(CategoryDiff::default())
+        Self::Diff(MusicDiff::default())
     }
 }
 
@@ -62,10 +62,10 @@ impl SyncBalance {
 }
 
 #[must_use]
-pub fn aggregate_balance(readings: &[CategoryReading]) -> SyncBalance {
+pub fn aggregate_balance(readings: &[MusicReading]) -> SyncBalance {
     let mut balance = SyncBalance::default();
     for reading in readings {
-        let CategoryReading::Diff(diff) = reading;
+        let MusicReading::Diff(diff) = reading;
         balance.files_to_copy += diff.files_to_copy;
         balance.bytes_to_copy = balance.bytes_to_copy.saturating_add(diff.bytes_to_copy);
         balance.files_to_remove += diff.files_to_remove;
@@ -79,8 +79,8 @@ pub fn aggregate_balance(readings: &[CategoryReading]) -> SyncBalance {
 mod tests {
     use super::*;
 
-    fn diff(copy: usize, copy_bytes: u64, remove: usize, freed: u64) -> CategoryDiff {
-        CategoryDiff {
+    fn diff(copy: usize, copy_bytes: u64, remove: usize, freed: u64) -> MusicDiff {
+        MusicDiff {
             files_to_copy: copy,
             bytes_to_copy: copy_bytes,
             files_to_remove: remove,
@@ -92,12 +92,12 @@ mod tests {
     #[test]
     fn mtp_22_a_deletions_only_diff_remains_visible_even_when_it_frees_zero_bytes() {
         assert!(diff(0, 0, 3, 0).has_work());
-        assert!(!CategoryDiff::default().has_work());
+        assert!(!MusicDiff::default().has_work());
     }
 
     #[test]
     fn mtp_22_the_single_target_reading_projects_an_exact_balance() {
-        let reading = CategoryReading::Diff(diff(14, 2_600, 3, 148));
+        let reading = MusicReading::Diff(diff(14, 2_600, 3, 148));
         assert_eq!(
             aggregate_balance(&[reading]),
             SyncBalance {
