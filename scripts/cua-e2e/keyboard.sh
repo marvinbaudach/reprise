@@ -71,7 +71,7 @@ reset_surface_baseline() {
   fi
 
   echo "reset before '$stem' did not restore the TrackList baseline; the previous" >&2
-  echo "surface left state behind that this scenario cannot run against" >&2
+  echo "surface left state behind that this scenario cannot run against; evidence: $CUA_E2E_OUT_DIR/$stem-reset-state.json" >&2
   echo "[cua-keyboard] reset before '$stem' failed; evidence: $CUA_E2E_OUT_DIR/$stem-reset-state.json"
   return 1
 }
