@@ -19,7 +19,7 @@ fn ac_24_bloom_sits_behind_the_cover_inside_the_head_overlay() {
         return;
     }
     let (_window, panel) =
-        super::tests::test_panel("org.reprise.Reprise.NowPlayingReactiveBloomTest");
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.NowPlayingReactiveBloomTest");
     let bloom = panel.bloom_widget();
     // Behind the head (cover + title) and above the panel background.
     assert!(bloom.is_ancestor(panel.stage_for_test()));
@@ -32,7 +32,8 @@ fn ac_24_the_panel_head_looks_the_same_whichever_tab_is_open() {
     if gtk4::init().is_err() {
         return;
     }
-    let (_window, panel) = super::tests::test_panel("org.reprise.Reprise.NowPlayingShimmerPinTest");
+    let (_window, panel) =
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.NowPlayingShimmerPinTest");
     panel.set_transient_visibility(true);
     panel.set_song_visuals_enabled(true);
     panel.widgets.shimmer.set_light(0.8, 0.7);
@@ -58,7 +59,8 @@ fn ac_26_song_visuals_follow_music_instead_of_the_external_source() {
     if gtk4::init().is_err() {
         return;
     }
-    let (_window, panel) = super::tests::test_panel("org.reprise.Reprise.NowPlayingPodcastVisuals");
+    let (_window, panel) =
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.NowPlayingPodcastVisuals");
     panel.set_transient_visibility(true);
     panel.set_song_visuals_enabled(true);
     panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);

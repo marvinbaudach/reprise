@@ -250,7 +250,7 @@ mod tests {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.SearchShortcutTest")
+            .application_id("io.github.marvinbaudach.Reprise.SearchShortcutTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
@@ -463,7 +463,7 @@ mod tests {
     fn acc_4a_space_uses_capture_controller_so_local_controls_keep_the_key() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
-            .application_id("org.reprise.Reprise.ShortcutTest")
+            .application_id("io.github.marvinbaudach.Reprise.ShortcutTest")
             .build();
         let window = adw::ApplicationWindow::new(&app);
 

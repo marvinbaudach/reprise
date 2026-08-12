@@ -72,7 +72,7 @@ build_surface_tree() {
   python3 "$lib/compose_icon.py" "$plate" "$mark" "$icon" --native
 
   mkdir -p "$icons/scalable/apps"
-  cp "$icon" "$icons/scalable/apps/org.reprise.Reprise.svg"
+  cp "$icon" "$icons/scalable/apps/io.github.marvinbaudach.Reprise.svg"
   # Every stage from 22px up comes from the 96-unit drawing. 16px comes from
   # its own grid-aligned source: rasterising the 96-unit mark that small turns
   # the dots into two specks below the noise floor, and no amount of scaling
@@ -80,14 +80,14 @@ build_surface_tree() {
   for size in 22 24 32 48 64 128 256 512; do
     mkdir -p "$icons/${size}x${size}/apps"
     rsvg-convert -w "$size" -h "$size" "$icon" \
-      -o "$icons/${size}x${size}/apps/org.reprise.Reprise.png"
+      -o "$icons/${size}x${size}/apps/io.github.marvinbaudach.Reprise.png"
   done
   mkdir -p "$icons/16x16/apps"
   rsvg-convert -w 16 -h 16 "$icon_16" \
-    -o "$icons/16x16/apps/org.reprise.Reprise.png"
+    -o "$icons/16x16/apps/io.github.marvinbaudach.Reprise.png"
   mkdir -p "$icons/symbolic/apps"
   python3 "$lib/svg_recolour.py" "$mark_mono" \
-    "$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg" \
+    "$icons/symbolic/apps/io.github.marvinbaudach.Reprise-symbolic.svg" \
     'currentColor=#222222'
   cp "$stethoscope_symbolic" \
     "$icons/symbolic/apps/reprise-stethoscope-symbolic.svg"

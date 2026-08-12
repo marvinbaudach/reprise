@@ -24,7 +24,7 @@
 #      number and reports it back to us. Two concurrent runs of this script
 #      can never collide.
 #
-#   2. "Window not found by NAME." The app's WM_CLASS is `org.reprise.Reprise`
+#   2. "Window not found by NAME." The app's WM_CLASS is `io.github.marvinbaudach.Reprise`
 #      (the GApplication id), but window managers/toolkits are free to fold
 #      that into a shorter class string (observed: `reprise.reprise`) and the
 #      title bar text is the human-readable app name, not the id. Matching by
@@ -108,7 +108,7 @@ source "$REPO_ROOT/scripts/ptr-e2e/compact-seek.sh"
 # shellcheck source=search-chip.sh
 source "$REPO_ROOT/scripts/ptr-e2e/search-chip.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
-APP_ID="org.reprise.Reprise"
+APP_ID="io.github.marvinbaudach.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
 # variant observed (the app id itself, and toolkit-folded forms such as
 # `reprise.reprise`) — see lesson 2 above.

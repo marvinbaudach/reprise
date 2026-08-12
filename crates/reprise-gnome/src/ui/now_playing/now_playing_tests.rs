@@ -100,7 +100,7 @@ fn npp_1_panel_remains_300_px_when_text_is_scaled() {
     let previous_dpi = settings.property::<i32>("gtk-xft-dpi");
     settings.set_property("gtk-xft-dpi", 144 * 1024);
 
-    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingScaledWidthTest");
+    let (window, panel) = test_panel("io.github.marvinbaudach.Reprise.NowPlayingScaledWidthTest");
     panel.retain_for_window(&window);
     panel.widgets.column.set_visible(true);
     window.set_default_size(1200, 800);
@@ -128,7 +128,7 @@ fn npp_1_panel_remains_300_px_when_text_is_scaled() {
 fn npp_1_full_size_cover_cannot_resize_the_fixed_sidebar() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingCoverWidthTest");
+    let (window, panel) = test_panel("io.github.marvinbaudach.Reprise.NowPlayingCoverWidthTest");
     panel.retain_for_window(&window);
     window.set_default_size(1200, 800);
     window.present();
@@ -163,7 +163,7 @@ fn npp_1_full_size_cover_cannot_resize_the_fixed_sidebar() {
 fn npp_1_long_queue_source_cannot_resize_the_fixed_sidebar() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingSourceWidthTest");
+    let (window, panel) = test_panel("io.github.marvinbaudach.Reprise.NowPlayingSourceWidthTest");
     panel.retain_for_window(&window);
     crate::test_db::connection(&panel.conn)
         .execute(
@@ -374,7 +374,7 @@ fn ac_23_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn idle_uses_a_placeholder_cover_without_the_accent_glow() {
     gtk4::init().unwrap();
-    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingIdleTest");
+    let (window, panel) = test_panel("io.github.marvinbaudach.Reprise.NowPlayingIdleTest");
     panel.retain_for_window(&window);
     let settings = gtk4::Settings::default().unwrap();
     let animations_were_enabled = settings.is_gtk_enable_animations();
@@ -426,7 +426,7 @@ fn npp_4_tab_persists_in_session() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn loaded_and_idle_tracks_render_from_the_player_context() {
     gtk4::init().unwrap();
-    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingContextTest");
+    let (window, panel) = test_panel("io.github.marvinbaudach.Reprise.NowPlayingContextTest");
     panel.retain_for_window(&window);
     let settings = gtk4::Settings::default().unwrap();
     let animations_were_enabled = settings.is_gtk_enable_animations();
@@ -452,7 +452,7 @@ fn loaded_and_idle_tracks_render_from_the_player_context() {
 fn browse_4_now_playing_metadata_exposes_track_album_and_artist_links() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let (_window, panel) = test_panel("org.reprise.Reprise.NowPlayingRevealLinkTest");
+    let (_window, panel) = test_panel("io.github.marvinbaudach.Reprise.NowPlayingRevealLinkTest");
 
     for surface in [
         panel.widgets.cover.clone().upcast::<gtk4::Widget>(),
@@ -477,7 +477,7 @@ fn browse_4_now_playing_metadata_exposes_track_album_and_artist_links() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
     gtk4::init().unwrap();
-    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingOwnerTest");
+    let (window, panel) = test_panel("io.github.marvinbaudach.Reprise.NowPlayingOwnerTest");
     panel.retain_for_window(&window);
     let weak = Rc::downgrade(&panel);
     let toggle = panel.toggle_button();
@@ -515,7 +515,7 @@ fn npp_13_cold_cover_resolves_before_the_outgoing_cover_fades() {
         worker,
     });
     let (window, panel) = test_panel_with_cover_loader(
-        "org.reprise.Reprise.NowPlayingCoverTransitionTest",
+        "io.github.marvinbaudach.Reprise.NowPlayingCoverTransitionTest",
         cover_loader,
     );
     panel.retain_for_window(&window);
