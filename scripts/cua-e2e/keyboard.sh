@@ -346,8 +346,11 @@ run_manifest() {
   # surfaces pass, and it hid genuine failures for a long time: while the
   # app-shell Escape defect stood, `sidebar` onwards had never run once, so
   # "one failure" read as the whole story when it was the first of an unknown
-  # number. Same rule the Rust display runner follows (see RELEASING.md).
+  # number. Counting an un-run surface as failed hid the same thing one level
+  # down: on 2026-08-12, `failed: 4` meant four surfaces were never tested, not
+  # four defects. Same rule the Rust display runner follows (see RELEASING.md).
   local -a failed=()
+  local -a not_exercised=()
   local passed=0
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
@@ -355,7 +358,7 @@ run_manifest() {
     echo "[cua-keyboard] $surface"
     if ! reset_surface_baseline "$pid" "$window_id" "$surface"; then
       echo "[cua-keyboard] $surface: reset failed, surface not exercised" >&2
-      failed+=("$surface (reset)")
+      not_exercised+=("$surface")
       continue
     fi
     if "$scenario" "$pid" "$window_id"; then
@@ -365,9 +368,16 @@ run_manifest() {
     fi
   done <"$manifest"
 
-  echo "[cua-keyboard] surfaces passed: $passed, failed: ${#failed[@]}"
+  echo "[cua-keyboard] surfaces passed: $passed, failed: ${#failed[@]}, not exercised: ${#not_exercised[@]}"
   if ((${#failed[@]} > 0)); then
     printf '[cua-keyboard] FAILED surface: %s\n' "${failed[@]}" >&2
+  fi
+  if ((${#not_exercised[@]} > 0)); then
+    printf '[cua-keyboard] NOT EXERCISED surface: %s\n' "${not_exercised[@]}" >&2
+  fi
+  # A harness that cannot reach a surface is a red run; it is not a verdict
+  # about the app, so failed and not-exercised outcomes remain distinct.
+  if ((${#failed[@]} > 0 || ${#not_exercised[@]} > 0)); then
     return 1
   fi
 }
