@@ -185,7 +185,7 @@ pub(super) struct YoutubeChannelDetail {
     /// change can refresh the count without rebuilding anything.
     selection_summary: RefCell<Option<SelectionSummary>>,
     /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
-    /// &modules::SOURCE_IMAGES_MODULE)`, refreshed by [`Self::update`] on
+    /// &modules::ARTWORK_MODULE)`, refreshed by [`Self::update`] on
     /// every render pass — this view never reads settings itself.
     images_allowed: Cell<bool>,
     connectivity: Cell<Connectivity>,

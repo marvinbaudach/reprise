@@ -70,17 +70,15 @@ pub fn set_enabled(db: &crate::db::Db, value: bool) -> Result<(), rusqlite::Erro
     })
 }
 
-fn first_enable_source_defaults() -> [(&'static ModuleDescriptor, bool); 9] {
+fn first_enable_source_defaults() -> [(&'static ModuleDescriptor, bool); 7] {
     [
         (&modules::NEW_RELEASES_MODULE, false),
         (&modules::CONCERTS_MODULE, false),
         (&modules::PODCASTS_MODULE, false),
         (&modules::YOUTUBE_MODULE, false),
         (&modules::RADIO_MODULE, true),
-        (&modules::COVER_DOWNLOAD_MODULE, false),
-        (&modules::ARTIST_PORTRAITS_MODULE, false),
+        (&modules::ARTWORK_MODULE, false),
         (&modules::ONLINE_LYRICS_MODULE, false),
-        (&modules::SOURCE_IMAGES_MODULE, false),
     ]
 }
 
@@ -148,7 +146,7 @@ mod tests {
     #[test]
     fn net_1a_network_allowed_is_an_and_of_global_and_module() {
         let db = migrated_db();
-        let module = &modules::COVER_DOWNLOAD_MODULE;
+        let module = &modules::ARTWORK_MODULE;
 
         // Neither the global gate nor the module is on by default for a
         // network module such as cover download.
@@ -187,6 +185,12 @@ mod tests {
         // modules — a stored value is the user's own choice and survives
         // (`net_2a_a_first_enable_never_overwrites_a_module_the_user_already_decided`).
         let db = migrated_db();
+        db.conn()
+            .execute(
+                "DELETE FROM settings WHERE key = ?1",
+                [modules::enabled_key(&modules::ARTWORK_MODULE)],
+            )
+            .unwrap();
         for module in modules::ONLINE_MODULES {
             assert!(
                 settings::get_setting_in(db.conn(), &modules::enabled_key(module))
@@ -207,10 +211,8 @@ mod tests {
             &modules::PODCASTS_MODULE,
             &modules::YOUTUBE_MODULE,
             &modules::RADIO_MODULE,
-            &modules::COVER_DOWNLOAD_MODULE,
-            &modules::ARTIST_PORTRAITS_MODULE,
+            &modules::ARTWORK_MODULE,
             &modules::ONLINE_LYRICS_MODULE,
-            &modules::SOURCE_IMAGES_MODULE,
         ] {
             assert!(
                 settings::get_setting_in(db.conn(), &modules::enabled_key(module))
@@ -228,10 +230,8 @@ mod tests {
             &modules::CONCERTS_MODULE,
             &modules::PODCASTS_MODULE,
             &modules::YOUTUBE_MODULE,
-            &modules::COVER_DOWNLOAD_MODULE,
-            &modules::ARTIST_PORTRAITS_MODULE,
+            &modules::ARTWORK_MODULE,
             &modules::ONLINE_LYRICS_MODULE,
-            &modules::SOURCE_IMAGES_MODULE,
         ] {
             assert!(
                 !modules::is_enabled(&db, module).unwrap(),

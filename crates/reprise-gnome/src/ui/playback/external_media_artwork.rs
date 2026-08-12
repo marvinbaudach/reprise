@@ -14,7 +14,7 @@ impl PlayerController {
         let size = self.bar.cover_image().pixel_size().max(1);
         let images_allowed = reprise_core::online_sources::network_allowed(
             &self.conn,
-            &reprise_core::modules::SOURCE_IMAGES_MODULE,
+            &reprise_core::modules::ARTWORK_MODULE,
         )
         .unwrap_or(false);
         crate::ui::podcasts::source_image::load_into_image(

@@ -134,22 +134,13 @@ pub const LIBRARY_DOCTOR_MODULE: ModuleDescriptor = ModuleDescriptor {
     provides: &[provision!(Window, "Library Doctor", "Application window")],
 };
 
-pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "cover_download",
-    name: "Cover Download",
-    description: "Download missing album covers from online services",
+pub const ARTWORK_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "artwork",
+    name: "Artwork",
+    description: "Load album covers, artist portraits, and source artwork from online services",
     default_enabled: false,
     applies_live: true,
-    provides: &[provision!(Extends, "Cover Download", "Album artwork")],
-};
-
-pub const ARTIST_PORTRAITS_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "artist_portraits",
-    name: "Artist Portraits",
-    description: "Download artist portraits from online services",
-    default_enabled: false,
-    applies_live: true,
-    provides: &[provision!(Extends, "Artist Portraits", "Artist artwork")],
+    provides: &[provision!(Extends, "Artwork", "Library and source artwork")],
 };
 
 pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -159,18 +150,6 @@ pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: false,
     applies_live: true,
     provides: &[provision!(Extends, "Online Lyrics", "Lyrics")],
-};
-
-/// `C1`/`SRC-11`: channel, show and station artwork (YouTube thumbnails,
-/// iTunes `artworkUrl600`, radio-browser favicons) for the podcast, YouTube
-/// and radio library views and their Add dialogs.
-pub const SOURCE_IMAGES_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "source_images",
-    name: "Source Images",
-    description: "Download channel, show, and station artwork for Podcasts, YouTube, and Radio",
-    default_enabled: false,
-    applies_live: true,
-    provides: &[provision!(Extends, "Source Images", "Online sources")],
 };
 
 pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -191,10 +170,8 @@ pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &PODCASTS_MODULE,
     &YOUTUBE_MODULE,
     &RADIO_MODULE,
-    &COVER_DOWNLOAD_MODULE,
-    &ARTIST_PORTRAITS_MODULE,
+    &ARTWORK_MODULE,
     &ONLINE_LYRICS_MODULE,
-    &SOURCE_IMAGES_MODULE,
     &LISTENBRAINZ_MODULE,
     &LASTFM_MODULE,
 ];
@@ -212,10 +189,8 @@ pub const ONLINE_MODULES: &[&ModuleDescriptor] = &[
     &PODCASTS_MODULE,
     &YOUTUBE_MODULE,
     &RADIO_MODULE,
-    &COVER_DOWNLOAD_MODULE,
-    &ARTIST_PORTRAITS_MODULE,
+    &ARTWORK_MODULE,
     &ONLINE_LYRICS_MODULE,
-    &SOURCE_IMAGES_MODULE,
     &LISTENBRAINZ_MODULE,
     &LASTFM_MODULE,
 ];
@@ -295,10 +270,8 @@ mod tests {
     }
 
     #[test]
-    fn all_modules_includes_opt_in_cover_download() {
-        assert!(ALL_MODULES
-            .iter()
-            .any(|module| module.id == "cover_download"));
+    fn all_modules_includes_opt_in_artwork() {
+        assert!(ALL_MODULES.iter().any(|module| module.id == "artwork"));
     }
 
     #[test]
@@ -404,34 +377,27 @@ mod tests {
     }
 
     #[test]
-    fn all_modules_includes_opt_in_artist_portraits() {
-        assert!(ALL_MODULES
-            .iter()
-            .any(|module| module.id == "artist_portraits"));
-    }
-
-    #[test]
-    fn src_11_all_modules_includes_opt_in_source_images() {
+    fn artwork_has_one_namespaced_live_opt_in() {
         let db = migrated_db();
-        assert!(ALL_MODULES
-            .iter()
-            .any(|module| module.id == "source_images"));
+        assert_eq!(enabled_key(&ARTWORK_MODULE), "module.artwork.enabled");
+        const {
+            assert!(!ARTWORK_MODULE.default_enabled);
+            assert!(ARTWORK_MODULE.applies_live);
+        }
+        assert!(!is_enabled(&db, &ARTWORK_MODULE).unwrap());
         assert_eq!(
-            enabled_key(&SOURCE_IMAGES_MODULE),
-            "module.source_images.enabled"
+            ALL_MODULES
+                .iter()
+                .filter(|registered| registered.id == ARTWORK_MODULE.id)
+                .count(),
+            1
         );
-        assert!(!is_enabled(&db, &SOURCE_IMAGES_MODULE).unwrap());
     }
 
     #[test]
     fn network_modules_default_off_and_apply_live() {
         let db = migrated_db();
-        for module in [
-            &COVER_DOWNLOAD_MODULE,
-            &ARTIST_PORTRAITS_MODULE,
-            &ONLINE_LYRICS_MODULE,
-            &SOURCE_IMAGES_MODULE,
-        ] {
+        for module in [&ARTWORK_MODULE, &ONLINE_LYRICS_MODULE] {
             assert!(!module.default_enabled, "{} must be opt-in", module.id);
             assert!(module.applies_live, "{} must apply live", module.id);
             assert!(!is_enabled(&db, module).unwrap());

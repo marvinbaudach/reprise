@@ -70,7 +70,7 @@ struct GroupRenderContext<'a> {
     expanded_episode_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
     download_states: &'a BTreeMap<i64, DownloadState>,
     /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
-    /// &modules::SOURCE_IMAGES_MODULE)`, computed once per render pass by
+    /// &modules::ARTWORK_MODULE)`, computed once per render pass by
     /// the caller — this module never reads settings itself.
     images_allowed: bool,
     connectivity: Connectivity,

@@ -43,7 +43,7 @@ pub(in crate::ui) fn setup(conn: &Db) -> CoverDownloadRuntime {
         enabled: Rc::new(Cell::new(
             reprise_core::online_sources::network_allowed_or_off(
                 conn,
-                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+                &reprise_core::modules::ARTWORK_MODULE,
             ),
         )),
         worker: spawn(conn.path()),
@@ -59,24 +59,6 @@ pub(in crate::ui) fn setup_for_test() -> CoverDownloadRuntime {
 }
 
 impl CoverDownloadRuntime {
-    pub(in crate::ui) fn set_enabled(
-        &self,
-        conn: &Db,
-        enabled: bool,
-    ) -> Result<(), rusqlite::Error> {
-        reprise_core::modules::set_enabled(
-            conn,
-            &reprise_core::modules::COVER_DOWNLOAD_MODULE,
-            enabled,
-        )?;
-        self.enabled
-            .set(reprise_core::online_sources::network_allowed_or_off(
-                conn,
-                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
-            ));
-        Ok(())
-    }
-
     /// `NET-1a`: re-derives `enabled` from the global online-sources gate —
     /// called after the gate toggles on the Online sources page, so a
     /// module that is itself on still stops immediately when the gate goes
@@ -85,7 +67,7 @@ impl CoverDownloadRuntime {
         self.enabled
             .set(reprise_core::online_sources::network_allowed_or_off(
                 conn,
-                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+                &reprise_core::modules::ARTWORK_MODULE,
             ));
     }
 
@@ -255,12 +237,8 @@ mod tests {
             "the one SELECT this worker runs must still work"
         );
         assert!(
-            reprise_core::modules::set_enabled(
-                &db,
-                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
-                true
-            )
-            .is_err(),
+            reprise_core::modules::set_enabled(&db, &reprise_core::modules::ARTWORK_MODULE, true)
+                .is_err(),
             "a background worker that only reads must be unable to write"
         );
     }
@@ -291,12 +269,8 @@ mod tests {
     #[test]
     fn net_1a_recompute_enabled_reflects_the_global_gate() {
         let conn = crate::test_db::open().unwrap();
-        reprise_core::modules::set_enabled(
-            &conn,
-            &reprise_core::modules::COVER_DOWNLOAD_MODULE,
-            true,
-        )
-        .unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
+            .unwrap();
         let runtime = setup(&conn);
         assert!(runtime.enabled.get());
 
@@ -313,18 +287,19 @@ mod tests {
     }
 
     #[test]
-    fn runtime_reads_and_updates_the_live_module_setting() {
+    fn runtime_recomputes_the_live_artwork_setting() {
         let conn = crate::test_db::open().unwrap();
         let runtime = setup(&conn);
         assert!(!runtime.enabled.get());
 
-        runtime.set_enabled(&conn, true).unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
+            .unwrap();
+        runtime.recompute_enabled(&conn);
         assert!(runtime.enabled.get());
-        assert!(reprise_core::modules::is_enabled(
-            &conn,
-            &reprise_core::modules::COVER_DOWNLOAD_MODULE
-        )
-        .unwrap());
+        assert!(
+            reprise_core::modules::is_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE)
+                .unwrap()
+        );
     }
 
     #[test]
