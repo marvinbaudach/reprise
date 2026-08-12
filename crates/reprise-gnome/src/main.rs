@@ -13,7 +13,9 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::{db, library};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 /// The canonical runtime application identity. Compile-time resources and
 /// packaging mirror this value, with focused tests guarding critical mirrors.
@@ -89,9 +91,12 @@ pub(crate) const SMOKE_MPRIS_BUS_ENV_VAR: &str = "REPRISE_SMOKE_MPRIS_BUS_NAME";
 fn init_logging() {
     let filter = EnvFilter::try_from_env("REPRISE_LOG")
         .unwrap_or_else(|_| EnvFilter::new("info,lofty=error"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    let formatting = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
+        .with_filter(filter);
+    tracing_subscriber::registry()
+        .with(formatting)
+        .with(ui::diagnostics::session_layer().with_filter(ui::diagnostics::session_filter()))
         .init();
 }
 

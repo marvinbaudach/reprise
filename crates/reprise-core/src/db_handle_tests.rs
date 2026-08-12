@@ -43,6 +43,16 @@ fn path_reports_the_file_the_handle_is_attached_to() {
     assert_eq!(db.path().as_deref(), Some(file.as_path()));
 }
 
+#[test]
+fn diagnostic_facts_report_the_live_schema_and_journal_mode() {
+    let db = Db::open_in_memory().unwrap();
+
+    let facts = db.diagnostic_facts().unwrap();
+
+    assert_eq!(facts.schema_version, db::SUPPORTED_SCHEMA_VERSION);
+    assert_eq!(facts.journal_mode, "memory");
+}
+
 /// Opening is fallible and the failure must surface as an error, not a panic:
 /// `main.rs` turns this into a user-visible message, and a worker thread that
 /// cannot open its own connection has to be able to give up quietly.

@@ -920,7 +920,7 @@ msgid "About Reprise"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:10
-msgid "Reprise Engine and Linux Platform"
+msgid "translator-credits"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:13

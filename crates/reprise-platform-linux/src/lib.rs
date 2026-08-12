@@ -9,6 +9,7 @@
 mod crossfade;
 pub mod device_sync;
 pub mod device_transfer;
+pub mod diagnostics;
 pub mod fingerprint;
 mod gapless;
 pub mod location;

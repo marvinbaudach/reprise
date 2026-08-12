@@ -7,7 +7,7 @@ macro_rules! N_ {
 pub const REVEAL_PLAYING_ALBUM: &str = N_!("Reveal playing album");
 
 pub const ABOUT_REPRISE: &str = N_!("About Reprise");
-pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linux Platform");
+pub const TRANSLATOR_CREDITS: &str = N_!("translator-credits");
 
 // Native offline Help dialog and its keyboard shortcut descriptions.
 pub const HELP: &str = N_!("Help");

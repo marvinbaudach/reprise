@@ -928,8 +928,8 @@ msgid "About Reprise"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:10
-msgid "Reprise Engine and Linux Platform"
-msgstr ""
+msgid "translator-credits"
+msgstr "Reprise contributors"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:13
 msgid "Help"
