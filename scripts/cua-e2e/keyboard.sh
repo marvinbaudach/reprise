@@ -91,7 +91,9 @@ reset_surface_clear_filters() {
     "$pid" "$window_id" "Clear all ×" "$stem-reset-clear-focus-$pass" >/dev/null \
     || return 1
   cua_press_key_focused \
-    "$pid" "$window_id" enter "$stem-reset-clear-activate-$pass"
+    "$pid" "$window_id" enter "$stem-reset-clear-activate-$pass" || return 1
+  cua_wait_for_label_absent \
+    "$pid" "$window_id" "Clear all ×" "$stem-reset-clear-absent-$pass" >/dev/null
 }
 
 reset_surface_is_at_baseline() {
