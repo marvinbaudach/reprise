@@ -156,23 +156,189 @@ fn css_covers_the_sync_card_vocabulary() {
 #[test]
 fn mtp_63_every_emphasis_step_has_its_own_ground_and_edge() {
     let css = css();
-    let rule = |selector: &str| {
+    assert!(
+        !css.contains('#'),
+        "device-card structural CSS must use theme roles, never color literals"
+    );
+
+    let rule = |selector: &str| -> String {
         css.split_once(selector)
             .and_then(|(_, rest)| rest.split_once('}'))
-            .map_or_else(|| panic!("missing CSS rule: {selector}"), |(body, _)| body)
+            .map_or_else(
+                || panic!("missing CSS rule: {selector}"),
+                |(body, _)| body.to_owned(),
+            )
+    };
+    let property = |body: &str, name: &str| -> String {
+        body.split(';')
+            .find_map(|declaration| {
+                let (property, value) = declaration.split_once(':')?;
+                (property.trim() == name).then(|| value.trim().to_owned())
+            })
+            .unwrap_or_else(|| panic!("missing {name} in {body}"))
+    };
+    let parse = |hex: &str| -> [u8; 3] {
+        let hex = hex.trim().strip_prefix('#').expect("color starts with #");
+        [0, 2, 4].map(|offset| {
+            u8::from_str_radix(&hex[offset..offset + 2], 16).expect("hexadecimal color channel")
+        })
+    };
+    let composite = |foreground: [u8; 3], background: [u8; 3], alpha: f64| {
+        [0, 1, 2].map(|index| {
+            (f64::from(foreground[index]) * alpha + f64::from(background[index]) * (1.0 - alpha))
+                .round() as u8
+        })
+    };
+    let contrast = |first: [u8; 3], second: [u8; 3]| {
+        let luminance = |color: [u8; 3]| {
+            let linear = |channel: u8| {
+                let channel = f64::from(channel) / 255.0;
+                if channel <= 0.04045 {
+                    channel / 12.92
+                } else {
+                    ((channel + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * linear(color[0]) + 0.7152 * linear(color[1]) + 0.0722 * linear(color[2])
+        };
+        let first = luminance(first);
+        let second = luminance(second);
+        (first.max(second) + 0.05) / (first.min(second) + 0.05)
+    };
+    let alpha = |value: &str| {
+        value
+            .trim_end_matches(')')
+            .rsplit_once(',')
+            .unwrap_or_else(|| panic!("alpha color expected: {value}"))
+            .1
+            .trim()
+            .parse::<f64>()
+            .expect("alpha is a decimal fraction")
     };
 
     let remembered = rule(".device-card-remembered {");
-    assert!(remembered.contains("background-color: transparent"));
-    assert!(remembered.contains("border-color: alpha(@window_fg_color, 0.09)"));
-
     let connected = rule(".device-card-connected {");
-    assert!(connected.contains("background-color: alpha(@window_fg_color, 0.07)"));
-    assert!(connected.contains("border-color: alpha(@window_fg_color, 0.10)"));
-
     let active = rule(".device-card-active {");
-    assert!(active.contains("background-color: alpha(@accent_color, 0.10)"));
-    assert!(active.contains("border-color: alpha(@accent_color, 0.55)"));
+    assert_eq!(property(&remembered, "background-color"), "transparent");
+
+    for theme in crate::ui::style::theme::Theme::all() {
+        for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
+            let sidebar = parse(palette.sidebar_bg);
+            let foreground = parse(palette.fg);
+            let accent = parse(crate::ui::style::accent::APP_ACCENT);
+            let theme_css = crate::ui::style::theme::theme_css(
+                theme,
+                is_dark,
+                crate::ui::style::accent::AccentSource::App,
+            );
+            let accent_edge = theme_css
+                .lines()
+                .find_map(|line| {
+                    line.trim()
+                        .strip_prefix("@define-color reprise_accent_text_color ")
+                        .map(|value| parse(value.trim_end_matches(';')))
+                })
+                .expect("theme defines the contrast-checked accent role");
+
+            let remembered_edge = composite(
+                foreground,
+                sidebar,
+                alpha(&property(&remembered, "border-color")),
+            );
+            let connected_ground = composite(
+                foreground,
+                sidebar,
+                alpha(&property(&connected, "background-color")),
+            );
+            let connected_edge = composite(
+                foreground,
+                connected_ground,
+                alpha(&property(&connected, "border-color")),
+            );
+            let active_ground = composite(
+                accent,
+                sidebar,
+                alpha(&property(&active, "background-color")),
+            );
+            let active_edge = match property(&active, "border-color").as_str() {
+                "@reprise_accent_text_color" => accent_edge,
+                value if value.starts_with("alpha(@accent_color,") => {
+                    composite(accent, active_ground, alpha(value))
+                }
+                value => panic!("unsupported active edge: {value}"),
+            };
+
+            for (step, edge, ground) in [
+                ("remembered", remembered_edge, sidebar),
+                ("connected", connected_edge, connected_ground),
+                ("active", active_edge, active_ground),
+            ] {
+                let ratio = contrast(edge, ground);
+                assert!(
+                    ratio >= 3.0,
+                    "{theme:?} {} {step} edge reaches only {ratio:.2}:1",
+                    if is_dark { "dark" } else { "light" }
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn device_card_secondary_copy_and_disabled_heading_keep_their_authored_contrast() {
+    let css = css();
+
+    assert!(css.contains(
+        ".device-card-detail { font-size: 11.5px; color: @reprise_secondary_fg_color; }"
+    ));
+    assert!(css.contains(".device-section-heading:disabled { background: none; filter: none; }"));
+}
+
+#[test]
+fn accent_text_surfaces_stay_inside_the_contrast_checked_tint_ceiling() {
+    let css = css();
+    let background_alpha = |selector: &str| {
+        let body = css
+            .split_once(selector)
+            .and_then(|(_, rest)| rest.split_once('}'))
+            .map_or_else(|| panic!("missing rule {selector}"), |(body, _)| body);
+        body.split(';')
+            .find_map(|declaration| {
+                let (property, value) = declaration.split_once(':')?;
+                if property.trim() != "background-color" {
+                    return None;
+                }
+                value
+                    .trim()
+                    .strip_prefix("alpha(@accent_color,")?
+                    .trim_end_matches(')')
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+            })
+            .unwrap_or_else(|| panic!("missing accent background in {selector}"))
+    };
+    let active_ground = background_alpha(".device-card-active {");
+    let active_hover_ground = background_alpha(".device-card-active:hover {");
+    let checked_ceiling: f64 = crate::ui::style::tokens::CHIP_BG_HOVER_ALPHA
+        .parse()
+        .expect("shared tint ceiling is numeric");
+
+    for (selector, parent_tint) in [
+        (
+            ".device-card-active .device-card-icon {",
+            active_hover_ground,
+        ),
+        (".device-card-cancel {", active_ground),
+        (".device-card-cancel:hover {", active_ground),
+    ] {
+        let overlay = background_alpha(selector);
+        let effective = parent_tint + overlay * (1.0 - parent_tint);
+        assert!(
+            effective <= checked_ceiling,
+            "{selector} produces an effective {effective:.3} tint above the checked {checked_ceiling:.3} ceiling"
+        );
+    }
 }
 
 #[test]
@@ -188,7 +354,7 @@ fn mtp_63_the_cancel_button_exists_only_while_this_device_syncs() {
     let active = view(PlannedSyncPhase::Finishing);
     card.update(&active);
     assert!(card.cancel_button.is_visible());
-    assert_eq!(card.suffix_stack.margin_end(), 34);
+    assert_eq!(card.suffix_stack.margin_end(), ACTIVE_SUFFIX_RESERVATION);
     card.cancel_button.emit_clicked();
     assert_eq!(cancelled.borrow().as_slice(), ["pixel"]);
 
@@ -230,8 +396,13 @@ fn css_parses_in_gtk_without_dropping_declarations() {
 fn device_card_contrast_ladder_visual_fixture() {
     gtk4::init().unwrap();
     let is_dark = std::env::var("REPRISE_SMOKE_DARK").as_deref() == Ok("1");
+    libadwaita::StyleManager::default().set_color_scheme(if is_dark {
+        libadwaita::ColorScheme::ForceDark
+    } else {
+        libadwaita::ColorScheme::ForceLight
+    });
     crate::ui::style::install_css_string_for_test(&format!(
-        "{}\n{}",
+        "{}\n{}\n.device-card-fixture {{ background-color: @sidebar_bg_color; color: @window_fg_color; }}",
         crate::ui::style::theme::theme_css(
             crate::ui::style::theme::Theme::DEFAULT,
             is_dark,
@@ -241,6 +412,7 @@ fn device_card_contrast_ladder_visual_fixture() {
     ));
 
     let column = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    column.add_css_class("device-card-fixture");
     column.set_margin_top(18);
     column.set_margin_bottom(18);
     column.set_margin_start(18);
@@ -403,6 +575,74 @@ fn mtp_64_sidebar_device_card_has_no_direct_sync_action() {
     let direct_sync_action = ["app", "sync-device"].join(".");
 
     assert!(!include_str!("sidebar_device_card.rs").contains(&direct_sync_action));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mtp_64_cancel_is_an_overlay_sibling_and_both_buttons_are_context_targets() {
+    gtk4::init().unwrap();
+    let on_open: OpenCallback = Rc::new(|_, _| {});
+    let card = DeviceCard::new(&view(PlannedSyncPhase::Finishing), &on_open, &no_cancel());
+
+    assert_eq!(card.surface.parent().as_ref(), Some(card.root.upcast_ref()));
+    assert_eq!(
+        card.cancel_button.parent().as_ref(),
+        Some(card.root.upcast_ref())
+    );
+    let surface: gtk4::Widget = card.surface.clone().upcast();
+    let mut ancestor = card.cancel_button.parent();
+    while let Some(widget) = ancestor {
+        assert_ne!(
+            widget, surface,
+            "Cancel must never descend from the card surface"
+        );
+        ancestor = widget.parent();
+    }
+
+    let targets = card.context_menu_targets();
+    assert_eq!(targets.len(), 2);
+    assert_eq!(targets[0], &card.surface);
+    assert_eq!(targets[1], &card.cancel_button);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn constructed_card_already_projects_its_emphasis_and_cancel_geometry() {
+    gtk4::init().unwrap();
+    let on_open: OpenCallback = Rc::new(|_, _| {});
+    let card = DeviceCard::new(&view(PlannedSyncPhase::Finishing), &on_open, &no_cancel());
+
+    assert!(card.surface.has_css_class("device-card-active"));
+    assert!(card.cancel_button.is_visible());
+    assert_eq!(card.cancel_button.width_request(), CANCEL_BUTTON_SIZE);
+    assert_eq!(card.cancel_button.height_request(), CANCEL_BUTTON_SIZE);
+    assert_eq!(card.cancel_button.margin_end(), CANCEL_BUTTON_MARGIN_END);
+    assert_eq!(card.suffix_stack.margin_end(), ACTIVE_SUFFIX_RESERVATION);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn cancel_focus_returns_to_the_card_surface_when_cancel_disappears() {
+    gtk4::init().unwrap();
+    let active = view(PlannedSyncPhase::Finishing);
+    let on_open: OpenCallback = Rc::new(|_, _| {});
+    let card = DeviceCard::new(&active, &on_open, &no_cancel());
+    let window = gtk4::Window::builder().child(card.root()).build();
+    window.present();
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(20),
+    ));
+
+    assert!(card.cancel_button.grab_focus());
+    while gtk4::glib::MainContext::default().pending() {
+        gtk4::glib::MainContext::default().iteration(false);
+    }
+    assert!(card.cancel_button.has_focus());
+    card.update(&view(PlannedSyncPhase::Idle));
+
+    assert!(card.surface.has_focus());
+    assert!(!card.cancel_button.is_visible());
+    window.close();
 }
 
 #[test]

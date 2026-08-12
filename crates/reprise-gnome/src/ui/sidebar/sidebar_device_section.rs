@@ -180,8 +180,9 @@ fn render(
                 let on_cancel: CancelCallback =
                     Rc::new(move |device_id| cancel_runtime.cancel_current(&device_id));
                 let card = DeviceCard::new(device, on_open, &on_cancel);
-                menu::wire(card.surface(), runtime, &device.id);
-                card.update(device);
+                for target in card.context_menu_targets() {
+                    menu::wire(target, runtime, &device.id);
+                }
                 registry.insert(device.id.clone(), card);
             }
         }

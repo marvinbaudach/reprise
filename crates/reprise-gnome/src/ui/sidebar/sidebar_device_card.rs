@@ -18,6 +18,10 @@ pub(super) mod menu;
 pub(super) type OpenCallback = Rc<dyn Fn(String, String)>;
 pub(super) type CancelCallback = Rc<dyn Fn(String)>;
 
+const CANCEL_BUTTON_SIZE: i32 = 28;
+const CANCEL_BUTTON_MARGIN_END: i32 = 5;
+const ACTIVE_SUFFIX_RESERVATION: i32 = CANCEL_BUTTON_SIZE + CANCEL_BUTTON_MARGIN_END + 1;
+
 /// Live card widgets, keyed by device id, so a state update can refresh them
 /// in place. Rebuilding the section on every update destroyed the card
 /// between a click's press and release — during a sync `notify` fires on
@@ -51,10 +55,11 @@ impl DeviceCard {
         &self.root
     }
 
-    /// The one navigation target inside the overlay. Context-menu wiring stays
-    /// on this surface; the Cancel button is its sibling, never its child.
-    pub(super) fn surface(&self) -> &gtk4::Button {
-        &self.surface
+    /// Both overlay siblings own the same local-memory context actions. The
+    /// second target matters while Cancel occupies the card's top-right hit
+    /// area or holds keyboard focus.
+    pub(super) fn context_menu_targets(&self) -> [&gtk4::Button; 2] {
+        [&self.surface, &self.cancel_button]
     }
 
     pub(super) fn new(
@@ -183,10 +188,11 @@ impl DeviceCard {
             .build();
         cancel_button.add_css_class("device-card-cancel");
         cancel_button.add_css_class("circular");
+        cancel_button.set_size_request(CANCEL_BUTTON_SIZE, CANCEL_BUTTON_SIZE);
         cancel_button.set_halign(gtk4::Align::End);
         cancel_button.set_valign(gtk4::Align::Start);
         cancel_button.set_margin_top(5);
-        cancel_button.set_margin_end(5);
+        cancel_button.set_margin_end(CANCEL_BUTTON_MARGIN_END);
         cancel_button.set_tooltip_text(Some(&device_sync_strings::text(
             device_sync_strings::CANCEL,
         )));
@@ -212,7 +218,7 @@ impl DeviceCard {
             open_callback(id.clone(), name);
         });
 
-        Self {
+        let card = Self {
             root,
             surface,
             cancel_button,
@@ -229,7 +235,9 @@ impl DeviceCard {
             progress,
             progress_generation: Rc::new(Cell::new(0)),
             open_name,
-        }
+        };
+        card.update(device);
+        card
     }
 
     pub(super) fn update(&self, device: &DeviceView) {
@@ -250,12 +258,15 @@ impl DeviceCard {
             sidebar_device_card_text::card_emphasis(device),
             sidebar_device_card_text::CardEmphasis::Active
         );
+        if !active && self.cancel_button.has_focus() {
+            self.surface.grab_focus();
+        }
         self.cancel_button.set_visible(active);
         // The overlay button owns the top-right corner. Reserve that corner
         // only while it exists so the fixed-width percentage never sits
         // beneath it and idle chevrons retain their normal alignment.
         self.suffix_stack
-            .set_margin_end(if active { 34 } else { 0 });
+            .set_margin_end(if active { ACTIVE_SUFFIX_RESERVATION } else { 0 });
         self.name.set_text(&card_title(device));
         self.surface
             .update_property(&[gtk4::accessible::Property::Label(
@@ -287,11 +298,9 @@ impl DeviceCard {
             }
             DetailMode::Progress => {
                 let detail = match &device.sync_phase {
-                    PlannedSyncPhase::Syncing { done, total, .. } => {
-                        sidebar_device_card_text::syncing_file_count(
-                            *done as usize,
-                            *total as usize,
-                        )
+                    PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing => {
+                        sidebar_device_card_text::syncing_file_count(device)
+                            .unwrap_or_else(|| card_subtitle(device))
                     }
                     _ => card_subtitle(device),
                 };

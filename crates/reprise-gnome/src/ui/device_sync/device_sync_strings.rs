@@ -64,7 +64,7 @@ pub fn eject_tooltip(syncing: bool) -> String {
     })
 }
 
-pub(super) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
+pub(in crate::ui) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
     crate::i18n::format_message(&text(message), values)
 }
 
