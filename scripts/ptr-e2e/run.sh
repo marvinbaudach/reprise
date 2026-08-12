@@ -774,18 +774,22 @@ assert_log_contains_since "$MARKER" "queue reordered via drag and drop" "Queue d
 log_step "flow 4: context A → manual X → manual Y → context B…"
 click_at 80 100
 sleep 0.3
+# Flow 3 queued sine_01 then sine_02 and dragged the first row below the
+# second, so the actual manual order is sine_02 then sine_01. Bind every
+# expectation to those fixture titles; database id order is unrelated to the
+# queue order this flow is proving.
 db_scalar_into TRACK_ID_A \
-  'SELECT id FROM tracks WHERE missing_since IS NULL ORDER BY id ASC LIMIT 1 OFFSET 2;' \
-  'flow 4 needs the third present track' || true
+  "SELECT id FROM tracks WHERE title = 'sine_03' AND missing_since IS NULL;" \
+  'flow 4 needs context track sine_03' || true
 db_scalar_into TRACK_ID_X \
-  'SELECT id FROM tracks WHERE missing_since IS NULL ORDER BY id ASC LIMIT 1 OFFSET 1;' \
-  'flow 4 needs the second present track' || true
+  "SELECT id FROM tracks WHERE title = 'sine_02' AND missing_since IS NULL;" \
+  'flow 4 needs first manual track sine_02' || true
 db_scalar_into TRACK_ID_Y \
-  'SELECT id FROM tracks WHERE missing_since IS NULL ORDER BY id ASC LIMIT 1 OFFSET 0;' \
-  'flow 4 needs the first present track' || true
+  "SELECT id FROM tracks WHERE title = 'sine_01' AND missing_since IS NULL;" \
+  'flow 4 needs second manual track sine_01' || true
 db_scalar_into TRACK_ID_B \
-  'SELECT id FROM tracks WHERE missing_since IS NULL ORDER BY id ASC LIMIT 1 OFFSET 3;' \
-  'flow 4 needs the fourth present track' || true
+  "SELECT id FROM tracks WHERE title = 'sine_04' AND missing_since IS NULL;" \
+  'flow 4 needs next context track sine_04' || true
 ROW2_TITLE_Y=$((ROW0_TITLE_CELL_Y + 102))
 MARKER=$(log_marker)
 double_click_at "$ROW0_TITLE_CELL_X" "$ROW2_TITLE_Y"
