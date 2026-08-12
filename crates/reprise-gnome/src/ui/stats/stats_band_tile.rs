@@ -8,11 +8,12 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen::RankedGroup;
 
+use super::stats_artwork::{StatsArtworkRequest, StatsArtworkSource};
 use super::stats_view_widgets::label;
+use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -35,7 +36,9 @@ pub(super) struct StatsBandTile {
     current_artist: Rc<RefCell<String>>,
     current_key: Rc<RefCell<String>>,
     cover_loader: Rc<RefCell<Option<Rc<CoverLoader>>>>,
+    artist_portrait: Rc<RefCell<Option<Rc<ArtistPortraitRuntime>>>>,
     cover_generation: Rc<Cell<u64>>,
+    pub(super) artwork_source: Rc<Cell<StatsArtworkSource>>,
 }
 
 impl StatsBandTile {
@@ -137,7 +140,9 @@ impl StatsBandTile {
             current_artist,
             current_key,
             cover_loader: Rc::new(RefCell::new(None)),
+            artist_portrait: Rc::new(RefCell::new(None)),
             cover_generation: Rc::new(Cell::new(0)),
+            artwork_source: Rc::new(Cell::new(StatsArtworkSource::Initials)),
         }
     }
 
@@ -151,6 +156,10 @@ impl StatsBandTile {
 
     pub(super) fn set_cover_loader(&self, loader: Rc<CoverLoader>) {
         *self.cover_loader.borrow_mut() = Some(loader);
+    }
+
+    pub(super) fn set_artist_portrait_runtime(&self, runtime: Rc<ArtistPortraitRuntime>) {
+        *self.artist_portrait.borrow_mut() = Some(runtime);
     }
 
     pub(super) fn set_data(&self, rank: usize, ranked: &RankedGroup, leader_ms: i64) {
@@ -176,7 +185,7 @@ impl StatsBandTile {
                 .then(|| strings::spellings_merged_hint(group.variant_count))
                 .as_deref(),
         );
-        self.load_cover(&ranked.representative_track_path);
+        self.load_artwork(&group.label, &ranked.representative_track_path);
     }
 
     /// Hides the tile. The row has a fixed five slots, so a library with
@@ -186,37 +195,26 @@ impl StatsBandTile {
         self.cover_generation
             .set(self.cover_generation.get().wrapping_add(1));
         self.picture.set_paintable(gtk4::gdk::Paintable::NONE);
+        self.artwork_source.set(StatsArtworkSource::Initials);
         self.root.set_visible(false);
         self.current_artist.borrow_mut().clear();
         self.current_key.borrow_mut().clear();
     }
 
-    fn load_cover(&self, path: &str) {
+    fn load_artwork(&self, artist: &str, path: &str) {
         let token = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(token);
-        self.picture.set_paintable(gtk4::gdk::Paintable::NONE);
-        self.picture.set_visible(false);
-        self.initials.set_visible(true);
-        let Some(loader) = self.cover_loader.borrow().clone() else {
-            return;
-        };
-        let picture = self.picture.clone();
-        let initials = self.initials.clone();
-        let cover_generation = self.cover_generation.clone();
-        loader.load_into_picture(
-            &self.picture,
-            path,
-            ThumbnailSize::Portrait,
+        super::stats_artwork::load(StatsArtworkRequest {
+            picture: &self.picture,
+            fallback: &self.initials,
+            artist,
+            track_path: path,
             token,
-            &self.cover_generation,
-            move |loaded| {
-                if cover_generation.get() != token {
-                    return;
-                }
-                picture.set_visible(loaded);
-                initials.set_visible(!loaded);
-            },
-        );
+            current: &self.cover_generation,
+            portrait: self.artist_portrait.borrow().clone(),
+            cover: self.cover_loader.borrow().clone(),
+            source: self.artwork_source.clone(),
+        });
     }
 }
 

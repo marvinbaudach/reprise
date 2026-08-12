@@ -6,7 +6,7 @@ fn stats_unify_wiring_resolves_artist_and_genre_group_ids() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    let view = StatsView::new(loader);
+    let view = StatsView::new_for_test(loader);
     for (id, artist, genre) in [
         (1, "Lorna Shore", "Metal"),
         (2, "lorna shore ", "Metal"),

@@ -58,7 +58,11 @@ pub fn load_cached(name: &str) -> PortraitOutcome {
     load_cached_from(name, &cache::cache_dir())
 }
 
-pub(crate) fn load_cached_from(name: &str, dir: &Path) -> PortraitOutcome {
+/// Resolves an already-downloaded portrait from an explicit cache directory.
+///
+/// Frontend tests use this variant with a temporary directory so portrait
+/// rendering never consults the user's cache or contacts the network.
+pub fn load_cached_from(name: &str, dir: &Path) -> PortraitOutcome {
     let name = name.trim();
     if name.is_empty() {
         return PortraitOutcome::NotFound;

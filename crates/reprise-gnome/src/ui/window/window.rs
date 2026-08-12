@@ -250,7 +250,8 @@ pub fn build(
     // START-3 depends on this listener existing before `session_restore::restore_runtime`
     // in `window_runtime_wiring`, or its restored-track marker notification is lost.
     super::current_track_selection::wire(player.as_ref(), &track_list);
-    let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
+    let stats_view =
+        super::stats_view::StatsView::new(track_list.shared_cover_loader(), &artist_portrait);
     stats_view.wire_year_selector(conn);
     super::startup_report::mark("stats");
     let content_stack = super::content_stack::build();

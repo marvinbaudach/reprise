@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 fn view_and_conn() -> (StatsView, Rc<Db>) {
     let conn = Rc::new(crate::test_db::open().unwrap());
     let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    (StatsView::new(loader), conn)
+    (StatsView::new_for_test(loader), conn)
 }
 
 #[test]

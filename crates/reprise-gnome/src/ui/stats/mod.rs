@@ -1,3 +1,4 @@
+mod stats_artwork;
 pub(in crate::ui) mod stats_band_card;
 mod stats_band_tile;
 pub(in crate::ui) mod stats_bands_row;

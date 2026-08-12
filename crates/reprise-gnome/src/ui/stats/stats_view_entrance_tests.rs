@@ -7,7 +7,7 @@ fn view_and_conn() -> (StatsView, Rc<Db>) {
     crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
     let conn = Rc::new(crate::test_db::open().unwrap());
     let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    (StatsView::new(loader), conn)
+    (StatsView::new_for_test(loader), conn)
 }
 
 fn presented_entrance() -> (StatsView, Rc<Db>, adw::Window) {
