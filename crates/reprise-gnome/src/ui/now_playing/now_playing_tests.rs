@@ -238,11 +238,11 @@ fn npp_11_now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
 
     assert!(css.contains(".reprise-now-playing-tabs"));
     assert!(css.contains("border-radius: 99px"));
-    assert!(css.contains("alpha(#ffffff, 0.06)"));
-    assert!(css.contains("alpha(#ffffff, 0.14)"));
+    assert!(css.contains("alpha(@sidebar_fg_color, 0.06)"));
+    assert!(css.contains("alpha(@sidebar_fg_color, 0.14)"));
     assert!(css.contains(".reprise-now-playing-footer"));
     assert!(css.contains("font-size: 10.5px"));
-    assert!(css.contains("alpha(#ffffff, 0.35)"));
+    assert!(css.contains("color: @reprise_secondary_fg_color"));
 }
 
 #[test]

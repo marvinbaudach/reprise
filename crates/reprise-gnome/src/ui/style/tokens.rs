@@ -168,19 +168,14 @@ pub(in crate::ui) const DIALOG_CARD_ALPHA: &str = "0.07";
 
 pub(in crate::ui) const NOW_PLAYING_COVER_SIZE: i32 = 168;
 pub(in crate::ui) const NOW_PLAYING_GLOW_ALPHA: &str = "0.26";
-pub(in crate::ui) const NOW_PLAYING_SUBTITLE_ALPHA: &str = "0.55";
 pub(in crate::ui) const NOW_PLAYING_PILL_RADIUS: &str = "99px";
 pub(in crate::ui) const NOW_PLAYING_PILL_BG_ALPHA: &str = "0.06";
 pub(in crate::ui) const NOW_PLAYING_PILL_ACTIVE_ALPHA: &str = "0.14";
-pub(in crate::ui) const NOW_PLAYING_FOOTER_ALPHA: &str = "0.35";
 pub(in crate::ui) const NOW_PLAYING_TITLE_SIZE: &str = "15px";
 pub(in crate::ui) const NOW_PLAYING_SUBTITLE_SIZE: &str = "12px";
 pub(in crate::ui) const NOW_PLAYING_FOOTER_SIZE: &str = "10.5px";
 pub(in crate::ui) const NOW_PLAYING_QUEUE_COVER_SIZE: i32 = 32;
 pub(in crate::ui) const NOW_PLAYING_QUEUE_TITLE_SIZE: &str = "13.5px";
-
-// Muted secondary-text alpha shared by compact metadata surfaces.
-pub(in crate::ui) const MUTED_TEXT_ALPHA: &str = "0.45";
 
 #[cfg(test)]
 mod tests {
