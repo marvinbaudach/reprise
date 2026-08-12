@@ -12,6 +12,7 @@ mod render;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::prelude::*;
 use reprise_core::playback::{BassPressure, PlaybackState, SpectrumFrame};
@@ -94,7 +95,7 @@ impl SongVisualizer {
     }
 
     /// Whether the player holds a track at all. A loaded but resting track
-    /// breathes (AC-11); an empty player keeps the canvas empty.
+    /// breathes (AC-27); an empty player keeps the canvas empty.
     pub(in crate::ui) fn set_has_track(&self, has_track: bool) {
         self.engine.borrow_mut().set_has_track(has_track);
         if !motion::animations_enabled() {
@@ -173,12 +174,9 @@ impl SongVisualizer {
         let readout = self.readout.clone();
         let swell = self.swell.clone();
         let slot = self.tick_id.clone();
-        // Decouple the sim's advance from the render frame rate: each engine
-        // tick is a fixed 1/60 s step, but the frame clock slows to the render
-        // rate when the canvas can't keep up — so at, say, 20 fps we advance
-        // ~3 steps per frame to keep the animation at real-time speed instead
-        // of running in slow motion. Capped so a hitch never spirals into a
-        // burst of catch-up work.
+        // Decouple the simulation from the render frame rate. The portable
+        // engine consumes GTK's monotonic elapsed time directly, so a reduced
+        // cadence or a missed frame changes smoothness, never wave speed.
         let last_frame_us = Cell::new(0i64);
         let id = self.area.add_tick_callback(move |_, frame_clock| {
             if !panel_active.get() || !motion::animations_enabled() {
@@ -188,8 +186,7 @@ impl SongVisualizer {
             let now = frame_clock.frame_time();
             let previous = last_frame_us.get();
             // The idle breath is slow by design — redrawing it at the full
-            // render rate would burn frames for motion nobody can see. The
-            // fixed engine step below keeps it real-time regardless.
+            // render rate would burn frames for motion nobody can see.
             if playback.get() != PlaybackState::Playing
                 && previous != 0
                 && now - previous < IDLE_FRAME_INTERVAL_US
@@ -197,15 +194,16 @@ impl SongVisualizer {
                 return gtk4::glib::ControlFlow::Continue;
             }
             last_frame_us.set(now);
-            let steps = if previous == 0 {
-                1
+            let elapsed = if previous == 0 {
+                Duration::from_micros(16_667)
             } else {
-                (((now - previous) as f64 / 16_667.0).round() as i32).clamp(1, 4)
+                // A frame-clock regression is treated as zero elapsed time;
+                // the signed delta cannot be represented as a Duration.
+                Duration::from_micros(
+                    u64::try_from(now.saturating_sub(previous)).unwrap_or_default(),
+                )
             };
-            let mut settled = true;
-            for _ in 0..steps {
-                settled = engine.borrow_mut().tick();
-            }
+            let settled = engine.borrow_mut().advance_by(elapsed);
             // Also refreshed here, so the readout follows the release once
             // playback stops and no further frames arrive.
             readout.update(engine.borrow().bass_pressure(), swell.get());

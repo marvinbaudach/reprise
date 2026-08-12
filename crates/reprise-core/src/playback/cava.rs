@@ -136,33 +136,46 @@ impl CavaBarProcessor {
 
     /// Adds normalized mono PCM samples and returns one CAVA band value per bar.
     pub fn process(&mut self, mono_samples: &[f32]) -> Vec<f32> {
+        let mut bars = vec![0.0; self.config.bar_count];
+        self.process_into(mono_samples, &mut bars);
+        bars
+    }
+
+    /// Adds normalized mono PCM samples into caller-owned bar storage.
+    ///
+    /// Audio-thread integrations can retain this storage between buffers and
+    /// avoid allocating one vector for every spectrum frame.
+    pub fn process_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) {
+        assert_eq!(
+            bars.len(),
+            self.config.bar_count,
+            "CAVA output must match its configured bar count"
+        );
         let signal_present = self.push_samples(mono_samples);
         self.main_fft
             .process(&self.input_buffer[..self.main_fft.len()]);
         self.bass_fft.process(&self.input_buffer);
 
-        let mut bars: Vec<f32> = self
-            .band_plan
-            .bands()
-            .iter()
+        for ((target, band), equalizer) in bars
+            .iter_mut()
+            .zip(self.band_plan.bands().iter())
             .zip(self.equalizer.iter())
-            .map(|(band, equalizer)| {
-                let workspace = if band.use_bass_fft {
-                    &self.bass_fft
-                } else {
-                    &self.main_fft
-                };
-                workspace.band_magnitude_sum(band.bins()) * equalizer * CAVA_FIXED_POINT_SCALE
-            })
-            .collect();
+        {
+            let workspace = if band.use_bass_fft {
+                &self.bass_fft
+            } else {
+                &self.main_fft
+            };
+            *target =
+                workspace.band_magnitude_sum(band.bins()) * equalizer * CAVA_FIXED_POINT_SCALE;
+        }
         let new_samples = mono_samples.len().min(self.input_buffer.len());
         self.smoother.apply(
-            &mut bars,
+            bars,
             new_samples,
             self.config.sample_rate_hz,
             signal_present,
         );
-        bars
     }
 
     /// Clears all buffered audio, smoothing history, and dynamic gain state.

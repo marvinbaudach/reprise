@@ -8,7 +8,9 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
@@ -18,6 +20,7 @@ import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.AndroidTrashReport
+import uniffi.reprise_android_ffi.AndroidVisualEngine
 import uniffi.reprise_android_ffi.TrashAction
 
 /** Owns Media3 for background playback, notifications and external controls. */
@@ -31,6 +34,8 @@ open class ReprisePlaybackService : MediaSessionService() {
     private var latestPlaybackSnapshot: AndroidPlaybackSnapshot? = null
     private lateinit var sleepTimer: SleepTimerController
     private val localBinder = LocalBinder()
+    private val livePcmSink = LivePcmBufferSink()
+    private var liveVisualEngine: NativeVisualSceneEngine? = null
 
     /**
      * The core's own callback, and the one place that learns playback has run
@@ -67,7 +72,10 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this)
+        val player = ExoPlayer.Builder(
+            this,
+            LivePcmRenderersFactory(this, TeeAudioProcessor(livePcmSink)),
+        )
             // Media3 defaults both of these off, and the device confirms it:
             // while a track was playing, the system's audio focus stack was
             // empty. Without focus the app talks over other players, keeps
@@ -83,7 +91,16 @@ open class ReprisePlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
-        val port = Media3PlaybackPort(player) { settingsObserver?.invoke() }
+        // Keep this listener ahead of Media3PlaybackPort: on resume it resets
+        // the PCM history and advances the native stream generation before the
+        // port publishes PLAYING through Core and Compose calls setPlaying.
+        val port = createAfterLivePcmListener(player, livePcmSink) {
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
+                .build()
+            Media3PlaybackPort(player) { settingsObserver?.invoke() }
+        }
         playbackPort = port
         sleepTimer = SleepTimerController(
             handler = Handler(Looper.getMainLooper()),
@@ -146,8 +163,19 @@ open class ReprisePlaybackService : MediaSessionService() {
         mediaSession = null
         playbackPort?.release()
         playbackPort = null
+        livePcmSink.detachAll()
+        liveVisualEngine?.close()
+        liveVisualEngine = null
         super.onDestroy()
     }
+
+    internal fun visualSceneEngineFactory(): VisualSceneEngineFactory =
+        VisualSceneEngineFactory {
+            val engine = liveVisualEngine ?: NativeVisualSceneEngine(AndroidVisualEngine()).also {
+                liveVisualEngine = it
+            }
+            LiveVisualSceneEngineLease(engine, livePcmSink)
+        }
 
     internal fun attachObserver(observer: (AndroidPlaybackSnapshot) -> Unit) {
         this.observer = observer
@@ -297,6 +325,42 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     internal companion object {
         const val LOCAL_BIND_ACTION = "org.reprise.BIND_PLAYBACK"
+    }
+}
+
+internal fun <T> createAfterLivePcmListener(
+    player: Player,
+    livePcmSink: LivePcmBufferSink,
+    create: () -> T,
+): T {
+    player.addListener(livePcmSink)
+    return create()
+}
+
+private class LiveVisualSceneEngineLease(
+    private val engine: NativeVisualSceneEngine,
+    private val sink: LivePcmBufferSink,
+) : VisualSceneEngine by engine, LivePcmConsumer {
+    init {
+        sink.attach(this)
+    }
+
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ) = engine.ingestPcm16(bytes, byteCount, sampleRateHz, channelCount)
+
+    override fun setPlaybackIntent(playbackIntended: Boolean) =
+        engine.setPlaybackIntent(playbackIntended)
+
+    override fun resetAudioStream() = engine.resetAudioStream()
+
+    override fun resetAudioHistory() = engine.resetAudioHistory()
+
+    override fun close() {
+        sink.detach(this)
     }
 }
 

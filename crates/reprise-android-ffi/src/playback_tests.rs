@@ -750,3 +750,25 @@ fn playback_event_bridge_delivers_ordered_core_events_with_production_generation
         PlayerEvent::Error(message) if message == "decoder failed"
     ));
 }
+
+#[test]
+fn media3_buffering_survives_the_core_event_bridge_in_the_android_snapshot() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(vec![7], vec!["content://provider/song.flac".to_owned()], 0)
+        .unwrap();
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::StateChanged {
+            state: AndroidPlaybackState::Buffering,
+        },
+    );
+
+    assert_eq!(
+        fixture.session.snapshot().unwrap().state,
+        AndroidPlaybackState::Buffering,
+    );
+}

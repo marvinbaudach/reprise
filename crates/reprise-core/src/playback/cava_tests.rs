@@ -207,6 +207,19 @@ fn hostile_pcm_and_high_resolution_always_return_finite_bounded_bars() {
 }
 
 #[test]
+fn caller_owned_output_matches_the_allocating_compatibility_path() {
+    let input = sine_chunk(2_000.0, 0);
+    let mut allocating = CavaBarProcessor::new(CavaConfig::new(44_100, 64)).unwrap();
+    let mut caller_owned = CavaBarProcessor::new(CavaConfig::new(44_100, 64)).unwrap();
+    let expected = allocating.process(&input);
+    let mut actual = [f32::NAN; 64];
+
+    caller_owned.process_into(&input, &mut actual);
+
+    assert_eq!(actual.as_slice(), expected);
+}
+
+#[test]
 fn reset_restores_a_fresh_processor_state() {
     let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
     let mut fresh = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();

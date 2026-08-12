@@ -17,6 +17,10 @@ mod test_support;
 mod tests;
 
 #[cfg(test)]
+#[path = "playback_terminal_event_tests.rs"]
+mod terminal_event_tests;
+
+#[cfg(test)]
 #[path = "queue_boundary_tests.rs"]
 mod queue_boundary_tests;
 
@@ -38,6 +42,8 @@ type EventHandler = dyn Fn(StreamEvent) + Send + Sync + 'static;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum AndroidPlaybackState {
     Playing,
+    /// Media3 still has play intent but is temporarily not producing audio.
+    Buffering,
     Paused,
     Stopped,
 }
@@ -247,8 +253,11 @@ impl PlaybackEventBridge {
 
 impl From<AndroidPlaybackState> for PlaybackState {
     fn from(state: AndroidPlaybackState) -> Self {
+        // This projection is used for synchronous playback-command results.
+        // `Media3PlaybackPort.togglePause()` returns only Playing or Paused;
+        // asynchronous Buffering crosses through `AndroidPlayerEvent` below.
         match state {
-            AndroidPlaybackState::Playing => Self::Playing,
+            AndroidPlaybackState::Playing | AndroidPlaybackState::Buffering => Self::Playing,
             AndroidPlaybackState::Paused => Self::Paused,
             AndroidPlaybackState::Stopped => Self::Stopped,
         }
@@ -268,6 +277,12 @@ impl From<PlaybackState> for AndroidPlaybackState {
 impl From<AndroidPlayerEvent> for PlayerEvent {
     fn from(event: AndroidPlayerEvent) -> Self {
         match event {
+            AndroidPlayerEvent::StateChanged {
+                state: AndroidPlaybackState::Buffering,
+            } => Self::Buffering {
+                percent: 0,
+                buffered_ms: None,
+            },
             AndroidPlayerEvent::StateChanged { state } => Self::StateChanged(state.into()),
             AndroidPlayerEvent::Position {
                 position_ms,

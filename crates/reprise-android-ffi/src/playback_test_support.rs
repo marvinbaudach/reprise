@@ -2,8 +2,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::playback::{
-    AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState, AndroidTransitionMode,
-    PlaybackEventBridge,
+    AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState, AndroidPlayerEvent,
+    AndroidTransitionMode, PlaybackEventBridge,
 };
 use crate::{
     AndroidEqualizerPoint, AndroidEqualizerSnapshot, AndroidPlaybackListener,
@@ -28,6 +28,9 @@ pub(super) enum PortCall {
     CurrentGeneration,
 }
 
+pub(super) const SYNCHRONOUS_BUFFERING_URI: &str = "test://synchronous-buffering";
+pub(super) const FAILING_PLAY_URI: &str = "test://play-uri-failure";
+
 pub(super) struct RecordingPort {
     pub(super) calls: Arc<Mutex<Vec<PortCall>>>,
     pub(super) bridge: Arc<Mutex<Option<Arc<PlaybackEventBridge>>>>,
@@ -49,8 +52,25 @@ impl AndroidPlaybackPort for RecordingPort {
     }
 
     fn play_uri(&self, uri: String) -> Result<(), AndroidPlaybackError> {
+        let emits_buffering = uri == SYNCHRONOUS_BUFFERING_URI;
+        let fails = uri == FAILING_PLAY_URI;
         self.record(PortCall::PlayUri(uri));
-        Ok(())
+        if emits_buffering {
+            let bridge = self.bridge.lock().unwrap().clone().unwrap();
+            bridge.emit(
+                23,
+                AndroidPlayerEvent::StateChanged {
+                    state: AndroidPlaybackState::Buffering,
+                },
+            );
+        }
+        if fails {
+            Err(AndroidPlaybackError::Backend {
+                detail: "play_uri failed".to_owned(),
+            })
+        } else {
+            Ok(())
+        }
     }
 
     fn toggle_pause(&self) -> Result<AndroidPlaybackState, AndroidPlaybackError> {

@@ -149,7 +149,7 @@ private fun DockTransport(
             controls.previous()
         }
         DockTransportButton(
-            symbol = if (playback.isPlaying) "pause" else "play_arrow",
+            symbol = playback.playPauseSymbol,
             description = playback.playPauseLabel,
             size = DOCK_PLAY_DP,
             tag = "dock-play",

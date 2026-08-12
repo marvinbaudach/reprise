@@ -101,6 +101,25 @@ fun pausedPlaybackOffersPlayOnTheSurface() {
 }
 
 @Test
+fun bufferingPlaybackOffersOnePauseSymbolAndLabel() {
+    val state = AndroidPlaybackSnapshot(
+        state = AndroidPlaybackState.BUFFERING,
+        currentIndex = 0u,
+        currentTrackId = 41,
+        currentTrackUri = "content://provider/playing.flac",
+        positionMs = 0,
+        durationMs = 0,
+        automaticAdvanceCount = 0u,
+        shuffled = false,
+        repeat = AndroidRepeatMode.OFF,
+        error = null,
+    ).toUiState()
+
+    assertEquals("pause", state.playPauseSymbol)
+    assertEquals("Pause", state.playPauseLabel)
+}
+
+@Test
 fun applicationLooperDispatchRunsInlineOnItsOwningThread() {
     var postCount = 0
     val dispatch = ApplicationLooperDispatch(
