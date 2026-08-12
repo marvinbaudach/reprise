@@ -183,7 +183,7 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_11_loading_a_track_reaches_the_engine_and_rests_the_canvas_alive() {
+fn ac_27_loading_a_track_reaches_the_engine_and_rests_the_canvas_alive() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
     let bar_shapes = |visualizer: &SongVisualizer| {

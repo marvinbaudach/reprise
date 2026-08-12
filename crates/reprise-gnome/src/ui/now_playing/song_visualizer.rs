@@ -94,7 +94,7 @@ impl SongVisualizer {
     }
 
     /// Whether the player holds a track at all. A loaded but resting track
-    /// breathes (AC-11); an empty player keeps the canvas empty.
+    /// breathes (AC-27); an empty player keeps the canvas empty.
     pub(in crate::ui) fn set_has_track(&self, has_track: bool) {
         self.engine.borrow_mut().set_has_track(has_track);
         if !motion::animations_enabled() {

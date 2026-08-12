@@ -1,8 +1,8 @@
 //! Portable scene adapter for already-smoothed CAVA bars.
 //!
 //! Signal processing ends at [`SpectrumFrame`]. This module deliberately does
-//! not remap, normalize, or ease live bar heights a second time; it only keeps
-//! the visual peak caps, presentation-only bass glow, and pause/stop fade
+//! not remap or normalize live bar heights a second time; it only keeps the
+//! visual peak caps, presentation-only bass glow, and paused resting motion
 //! required by the UI contract.
 
 use crate::playback::{BassPressure, SpectrumFrame, SPECTRUM_BAND_COUNT};
@@ -12,7 +12,7 @@ use super::modes;
 use super::scene::{Fill, Geom, Rgba, Scene, Shape};
 
 const PEAK_DECAY: f32 = 0.018;
-const STOP_RELEASE: f32 = 0.12;
+const NO_TRACK_RELEASE: f32 = 0.12;
 const SETTLE_EPSILON: f32 = 0.002;
 const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 /// Per-tick release of the glow layer once playback stops.
@@ -30,8 +30,14 @@ const IDLE_FLOOR: f32 = 0.012;
 const IDLE_BREATH_RATIO: f32 = 1.5;
 /// How much of the wave the breath takes away at its lowest point.
 const IDLE_BREATH_DEPTH: f32 = 0.3;
-/// Fade-in per tick once playback stops (≈0.4 s to full amplitude).
+/// Fade-in per tick once playback pauses (≈0.4 s to full amplitude).
 const IDLE_FADE_IN: f32 = 0.04;
+/// Last-live-shape floor while playback rests.
+const PAUSED_LIVE_FLOOR: f32 = 0.10;
+/// How much of the last live band distribution remains in the resting shape.
+const PAUSED_LIVE_SHAPE: f32 = 0.14;
+/// Height of the travelling wave layered onto the retained live shape.
+const PAUSED_LIVE_WAVE: f32 = 0.04;
 
 /// Borrowed render inputs for the Bars scene builder.
 pub struct ModeCtx<'a> {
@@ -60,7 +66,7 @@ pub struct VisualEngine {
     bands_current: [f32; SPECTRUM_BAND_COUNT],
     bands_peaks: [f32; SPECTRUM_BAND_COUNT],
     /// What the scene draws: the live bars, lifted by the idle wave whenever a
-    /// track is loaded but not playing (AC-11).
+    /// track is loaded but not playing (AC-27).
     display_bands: [f32; SPECTRUM_BAND_COUNT],
     /// The absolute bass measurement the glow layer draws from (AC-23). The
     /// engine never derives it from the bars, which CAVA keeps re-normalizing.
@@ -71,6 +77,7 @@ pub struct VisualEngine {
     glow: f32,
     playing: bool,
     has_track: bool,
+    retain_paused_live_shape: bool,
     idle_phase: f32,
     idle_amp: f32,
     accent: (f32, f32, f32),
@@ -92,13 +99,14 @@ impl VisualEngine {
             glow: 0.0,
             playing: false,
             has_track: false,
+            retain_paused_live_shape: true,
             idle_phase: 0.0,
             idle_amp: 0.0,
             accent: (0.5, 0.5, 0.5),
         }
     }
 
-    /// Enables live frames or begins the visual-only stop fade.
+    /// Switches immediately between live authority and the paused projection.
     pub fn set_playing(&mut self, playing: bool) {
         self.playing = playing;
         if playing {
@@ -108,13 +116,21 @@ impl VisualEngine {
     }
 
     /// Whether a track is loaded at all. Without one there is nothing to keep
-    /// alive, so the canvas rests fully empty (AC-11).
+    /// alive, so the canvas rests fully empty (AC-27).
     pub fn set_has_track(&mut self, has_track: bool) {
         self.has_track = has_track;
         if !has_track {
             self.idle_amp = 0.0;
             self.idle_phase = 0.0;
         }
+        self.refresh_display_bands();
+    }
+
+    /// Selects whether a non-playing scene may derive its rest shape from the
+    /// current bands. Live CAVA clients keep the default; stored-analysis
+    /// adapters disable it so their existing generic fallback stays intact.
+    pub fn set_retain_paused_live_shape(&mut self, retain: bool) {
+        self.retain_paused_live_shape = retain;
         self.refresh_display_bands();
     }
 
@@ -139,9 +155,33 @@ impl VisualEngine {
         self.idle_amp * envelope * breath * (IDLE_FLOOR + (IDLE_PEAK - IDLE_FLOOR) * wave)
     }
 
-    /// Live bars win; the idle wave only lifts whatever they leave empty.
+    fn has_live_shape(&self) -> bool {
+        self.bands_current.iter().any(|band| *band > 0.0)
+    }
+
+    fn paused_live_band(&self, band: usize) -> f32 {
+        let across = band as f32 / SPECTRUM_BAND_COUNT as f32;
+        let wave = (std::f32::consts::TAU * (across - self.idle_phase)).sin();
+        PAUSED_LIVE_FLOOR + PAUSED_LIVE_SHAPE * self.bands_current[band] + PAUSED_LIVE_WAVE * wave
+    }
+
+    /// Live bars hand over smoothly to a resting shape derived from their last
+    /// distribution. With no live shape, the generic idle wave remains.
     fn refresh_display_bands(&mut self) {
-        let bands = std::array::from_fn(|band| self.bands_current[band].max(self.idle_band(band)));
+        if !self.idle_active() {
+            self.display_bands = self.bands_current;
+            return;
+        }
+        let has_live_shape = self.retain_paused_live_shape && self.has_live_shape();
+        let blend = self.idle_amp * self.idle_amp * (3.0 - 2.0 * self.idle_amp);
+        let bands = std::array::from_fn(|band| {
+            let resting = if has_live_shape {
+                self.paused_live_band(band)
+            } else {
+                self.idle_band(band)
+            };
+            self.bands_current[band] + (resting - self.bands_current[band]) * blend
+        });
         self.display_bands = bands;
     }
 
@@ -177,17 +217,17 @@ impl VisualEngine {
         self.refresh_display_bands();
     }
 
-    /// Advances peak caps, fades the live bars out once playback stops, and
-    /// keeps the idle wave travelling while a loaded track rests (AC-11).
+    /// Advances peak caps and keeps the resting wave travelling while a loaded
+    /// track is not playing (AC-27).
     pub fn tick(&mut self) -> bool {
         let mut settled = true;
         if self.idle_active() {
             self.idle_phase = (self.idle_phase + 1.0 / IDLE_PERIOD_TICKS).fract();
             self.idle_amp = (self.idle_amp + IDLE_FADE_IN).min(1.0);
         }
-        if !self.playing {
+        if !self.playing && !self.has_track {
             for bar in &mut self.bands_current {
-                *bar += (0.0 - *bar) * STOP_RELEASE;
+                *bar += (0.0 - *bar) * NO_TRACK_RELEASE;
                 if *bar < SETTLE_EPSILON {
                     *bar = 0.0;
                 }
@@ -209,11 +249,12 @@ impl VisualEngine {
             }
         }
         for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
-            *peak = (*peak - PEAK_DECAY).max(*current);
+            let floor = if self.playing { *current } else { 0.0 };
+            *peak = (*peak - PEAK_DECAY).max(floor);
             if *peak < SETTLE_EPSILON {
                 *peak = 0.0;
             }
-            settled &= (*peak - *current).abs() < SETTLE_EPSILON;
+            settled &= (*peak - floor).abs() < SETTLE_EPSILON;
         }
         self.refresh_display_bands();
         settled && !self.playing && !self.idle_active()
@@ -321,6 +362,111 @@ mod tests {
         engine.set_playing(true);
         engine.ingest(&SpectrumFrame::from_cava_bars(bars).with_bass_pressure(pressure));
         engine
+    }
+
+    fn paused_live_engine() -> VisualEngine {
+        let bars = std::array::from_fn(|index| 0.2 + index as f32 * 0.7 / 63.0);
+        let mut engine = engine_with(bars, BassPressure::silent());
+        engine.set_has_track(true);
+        engine.set_playing(false);
+        engine
+    }
+
+    #[test]
+    fn ac_27_paused_live_bands_keep_moving_inside_the_resting_range() {
+        let mut engine = paused_live_engine();
+        let live = engine.bands_current;
+        assert_eq!(engine.display_bands, live, "pause introduced a jump");
+        engine.tick();
+        assert!(
+            engine
+                .display_bands
+                .iter()
+                .zip(live)
+                .all(|(paused, live)| (paused - live).abs() < 0.01),
+            "the resting shape did not fade in softly"
+        );
+        for _ in 1..120 {
+            engine.tick();
+        }
+
+        let mut previous = engine.display_bands;
+        let mut changed_samples = 0;
+        for _ in 0..8 {
+            for _ in 0..30 {
+                engine.tick();
+            }
+            let current = engine.display_bands;
+            assert!(
+                current.iter().all(|band| (0.05..=0.32).contains(band)),
+                "paused live bands left the resting range: {current:?}"
+            );
+            changed_samples += usize::from(current != previous);
+            previous = current;
+        }
+
+        assert_eq!(changed_samples, 8, "the paused live scene stopped moving");
+    }
+
+    #[test]
+    fn ac_27_paused_live_bands_return_near_their_start_instead_of_drifting() {
+        let mut engine = paused_live_engine();
+        for _ in 0..120 {
+            engine.tick();
+        }
+        let starting = engine.display_bands[17];
+        let mut was_near = true;
+        let mut returns = 0;
+
+        for _ in 0..(IDLE_PERIOD_TICKS as usize * 3) {
+            engine.tick();
+            let is_near = (engine.display_bands[17] - starting).abs() < 0.0015;
+            if is_near && !was_near {
+                returns += 1;
+            }
+            was_near = is_near;
+        }
+
+        assert!(
+            returns >= 5,
+            "paused band drifted instead of returning, saw {returns} returns"
+        );
+    }
+
+    #[test]
+    fn ac_27_paused_live_bands_move_out_of_phase() {
+        let mut engine = paused_live_engine();
+        for _ in 0..120 {
+            engine.tick();
+        }
+        let before = engine.display_bands;
+
+        engine.tick();
+
+        let low_delta = engine.display_bands[8] - before[8];
+        let high_delta = engine.display_bands[40] - before[40];
+        assert!(
+            low_delta.abs() > 0.0001 && high_delta.abs() > 0.0001,
+            "chosen bands did not move clearly: {low_delta}, {high_delta}"
+        );
+        assert!(
+            low_delta.signum() != high_delta.signum(),
+            "paused bands moved in sync: {low_delta}, {high_delta}"
+        );
+    }
+
+    #[test]
+    fn ac_27_resumed_live_bands_take_over_before_another_ingest() {
+        let mut engine = paused_live_engine();
+        let live = engine.bands_current;
+        for _ in 0..180 {
+            engine.tick();
+        }
+        assert_ne!(engine.display_bands, live);
+
+        engine.set_playing(true);
+
+        assert_eq!(engine.display_bands, live);
     }
 
     /// A stage light: the hit throws it to full, then it falls.
@@ -475,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_11_continuous_motion_ceases_without_a_loaded_track() {
+    fn ac_27_continuous_motion_ceases_without_a_loaded_track() {
         let mut engine = lively_engine();
         assert!(!engine.tick());
         engine.set_playing(false);
@@ -484,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_11_idle_breathing_keeps_a_loaded_track_alive_while_stopped() {
+    fn ac_27_idle_breathing_keeps_a_loaded_track_alive_while_stopped() {
         let mut engine = lively_engine();
         engine.set_has_track(true);
         engine.set_playing(false);
@@ -504,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_11_idle_breathing_stays_a_low_resting_wave() {
+    fn ac_27_idle_breathing_stays_a_low_resting_wave() {
         let mut engine = VisualEngine::new();
         engine.set_has_track(true);
         for _ in 0..400 {
@@ -518,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_11_playback_takes_over_from_the_idle_wave_immediately() {
+    fn ac_27_playback_takes_over_from_the_idle_wave_immediately() {
         let mut engine = VisualEngine::new();
         engine.set_has_track(true);
         for _ in 0..200 {
@@ -532,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_11_disabled_animations_show_the_resting_wave_without_motion() {
+    fn ac_27_disabled_animations_show_the_resting_wave_without_motion() {
         let mut engine = VisualEngine::new();
         engine.set_has_track(true);
         engine.snap_to_static();

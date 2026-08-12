@@ -27,6 +27,9 @@ const RADIAL_GLOW_KIND: f32 = 2.0;
 const RECORD_PREFIX_LEN: usize = 8;
 const MAX_PCM_CHANNEL_COUNT: usize = 32;
 pub(crate) const LIVE_AUDIO_STALE_AFTER: Duration = Duration::from_millis(500);
+/// Paused scenes render at 20 Hz; three fixed simulation steps preserve the
+/// portable engine's 60 Hz timing without redrawing at playback cadence.
+const PAUSED_VISUAL_TICK_STEPS: usize = 3;
 
 pub(crate) trait MonotonicClock: Send + Sync {
     fn now(&self) -> Duration;
@@ -244,6 +247,7 @@ impl AndroidVisualEngine {
         if state.has_live_audio {
             return;
         }
+        state.engine.set_retain_paused_live_shape(false);
         state.engine.set_has_track(true);
         let playing = state.playing;
         state.engine.set_playing(playing && has_analysis);
@@ -301,6 +305,7 @@ impl AndroidVisualEngine {
         }
         reconcile_stream_generation(&mut state, stream_generation);
 
+        state.engine.set_retain_paused_live_shape(true);
         state.engine.set_has_track(true);
         let playing = state.playing;
         state.engine.set_playing(playing);
@@ -366,7 +371,17 @@ impl AndroidVisualEngine {
 
     /// Advances the portable presentation state; `true` means it is settled.
     pub fn tick(&self) -> bool {
-        self.lock().engine.tick()
+        let mut state = self.lock();
+        let steps = if state.playing {
+            1
+        } else {
+            PAUSED_VISUAL_TICK_STEPS
+        };
+        let mut settled = false;
+        for _ in 0..steps {
+            settled = state.engine.tick();
+        }
+        settled
     }
 
     /// Returns the scene in the flat format documented by this module.
@@ -393,6 +408,7 @@ fn reset_live_presentation(state: &mut VisualState, stream_generation: u64) {
     state.has_live_audio = false;
     state.last_live_audio_at = None;
     state.live_pressure = silent_pressure();
+    state.engine.set_retain_paused_live_shape(false);
     state
         .engine
         .set_playing(state.playing && state.has_analysis);

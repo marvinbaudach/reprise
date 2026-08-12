@@ -179,6 +179,60 @@ fn paused_live_audio_reports_silence_without_forgetting_the_stream() {
 }
 
 #[test]
+fn paused_scene_keeps_the_sixty_hertz_wave_period_at_the_reduced_frame_rate() {
+    let engine = AndroidVisualEngine::new();
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    engine.set_playing(false);
+    for _ in 0..60 {
+        engine.tick();
+    }
+    let start = main_bar_segment_counts(&decode_scene(&engine.scene(272.0, 272.0)), 272.0);
+
+    // Android deliberately redraws a paused scene at 20 Hz. One hundred and
+    // twenty frames are therefore six seconds, the portable wave period.
+    for _ in 0..120 {
+        engine.tick();
+    }
+    let after_one_period =
+        main_bar_segment_counts(&decode_scene(&engine.scene(272.0, 272.0)), 272.0);
+
+    assert_eq!(
+        start, after_one_period,
+        "paused Android wave missed its six-second return"
+    );
+}
+
+#[test]
+fn paused_stored_analysis_keeps_the_existing_generic_fallback() {
+    let stored = AndroidVisualEngine::new();
+    stored.ingest_bands(
+        (0..64)
+            .map(|index| 0.2 + index as f32 * 0.7 / 63.0)
+            .collect(),
+    );
+    let generic = AndroidVisualEngine::new();
+    generic.ingest_bands(Vec::new());
+
+    for _ in 0..60 {
+        stored.tick();
+        generic.tick();
+    }
+
+    let stored_scene = stored.scene(272.0, 272.0);
+    let generic_scene = generic.scene(272.0, 272.0);
+    assert_eq!(stored_scene.len(), generic_scene.len());
+    assert!(
+        stored_scene
+            .iter()
+            .zip(generic_scene)
+            .all(|(stored, generic)| (stored - generic).abs() < 0.00001),
+        "stored analysis replaced the generic paused fallback"
+    );
+}
+
+#[test]
 fn live_pcm_staleness_pauses_while_playback_is_not_intended() {
     let clock = Arc::new(FakeMonotonicClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());
@@ -333,6 +387,14 @@ fn main_bar_segments(scene: &Scene, height: f32) -> Vec<[f32; 4]> {
             _ => None,
         })
         .collect()
+}
+
+fn main_bar_segment_counts(scene: &Scene, height: f32) -> Vec<(i32, usize)> {
+    let mut counts = std::collections::BTreeMap::new();
+    for [x, ..] in main_bar_segments(scene, height) {
+        *counts.entry((x * 100.0).round() as i32).or_insert(0) += 1;
+    }
+    counts.into_iter().collect()
 }
 
 fn shape(geom: Geom) -> Shape {
