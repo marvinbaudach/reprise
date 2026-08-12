@@ -61,7 +61,7 @@ impl NavIcon {
 
     pub(in crate::ui) const fn fallback_icon_name(self) -> &'static str {
         match self {
-            // The app ships the stethoscope itself, so a theme without the
+            // The app ships the first-aid kit itself, so a theme without the
             // app's icon directory in reach steps down to the magnifier — the
             // same step `library_doctor::doctor_glyph` takes for the start page
             // and the result card.
@@ -98,8 +98,15 @@ pub(in crate::ui) struct IssueRowPresentation {
 pub(in crate::ui) fn issue_row_presentation(new_count: u32, icon: NavIcon) -> IssueRowPresentation {
     IssueRowPresentation {
         badge: nonzero_count(i64::from(new_count)),
-        attention: new_count > 0 && matches!(icon, NavIcon::ImportErrors | NavIcon::LibraryDoctor),
+        attention: new_count > 0 && matches!(icon, NavIcon::ImportErrors),
     }
+}
+
+fn issue_row_tooltip(presentation: IssueRowPresentation, icon: NavIcon) -> Option<String> {
+    (icon == NavIcon::LibraryDoctor)
+        .then_some(presentation.badge?)
+        .and_then(|count| usize::try_from(count).ok())
+        .map(strings::doctor_fixes_ready)
 }
 
 pub(in crate::ui) fn build_nav_row(
@@ -192,7 +199,9 @@ pub(in crate::ui) fn build_issue_nav_row(
         hbox.append(&badge);
     }
 
-    navigation_row(&hbox, title)
+    let row = navigation_row(&hbox, title);
+    row.set_tooltip_text(issue_row_tooltip(presentation, icon).as_deref());
+    row
 }
 
 fn header_label(text: &str) -> gtk4::Label {
@@ -433,12 +442,16 @@ mod tests {
 
     /// The sidebar entry and the two doctor surfaces have to ask for one
     /// glyph. They did not: the start page and the result card resolved the
-    /// shipped stethoscope through `library_doctor::doctor_glyph`, while this
+    /// shipped first-aid kit through `library_doctor::doctor_glyph`, while this
     /// row still named the magnifier that glyph replaced. Asserting against
     /// that same resolution — both of its answers — is what keeps them
     /// together, because `nav_icon` performs the identical theme check.
     #[test]
     fn the_library_doctor_row_asks_for_the_same_glyph_as_the_doctor_surfaces() {
+        assert_eq!(
+            NavIcon::LibraryDoctor.icon_name(),
+            "reprise-first-aid-symbolic"
+        );
         assert_eq!(
             NavIcon::LibraryDoctor.icon_name(),
             crate::ui::library_doctor::doctor_glyph_for(true)
@@ -479,6 +492,20 @@ mod tests {
                 badge: Some(2),
                 attention: false,
             }
+        );
+        assert_eq!(
+            issue_row_presentation(433, NavIcon::LibraryDoctor),
+            IssueRowPresentation {
+                badge: Some(433),
+                attention: false,
+            }
+        );
+        assert_eq!(
+            issue_row_tooltip(
+                issue_row_presentation(433, NavIcon::LibraryDoctor),
+                NavIcon::LibraryDoctor
+            ),
+            Some("433 fixes ready".to_owned())
         );
     }
 

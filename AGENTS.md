@@ -475,7 +475,7 @@ package.
 | 1 | NAV-1 | `crates/reprise-gnome/src/ui/library_doctor/mod.rs`, `crates/reprise-gnome/src/ui/window/{window,window_runtime_wiring,library_shell,content_stack,library_chrome}.rs` |
 | 1 | CARD-1 | `crates/reprise-gnome/src/ui/library_doctor/progress_card.rs`, `crates/reprise-gnome/src/ui/sidebar/{sidebar_activity_slot,sidebar_issues_section}.rs`, `crates/reprise-gnome/src/ui/issues/missing_progress.rs`, and the existing `scan-card*` stylesheet rules |
 | 1 | REV-1 | `crates/reprise-gnome/src/ui/library_doctor/review_page.rs` |
-| 1 | START-1 | `crates/reprise-gnome/src/ui/library_doctor/start_page.rs` and the stethoscope SVG in `assets/icons/**` |
+| 1 | START-1 | `crates/reprise-gnome/src/ui/library_doctor/start_page.rs` and the first-aid-kit SVG in `assets/icons/**` |
 | 2 | MATCH-3 | `crates/reprise-core/src/library/library_doctor/{scan,store}.rs`, `crates/reprise-core/src/library/library_doctor/remote/orchestrator.rs`, `crates/reprise-core/src/{db_library_doctor,db}.rs` |
 | 2 | MATCH-5 | `crates/reprise-core/src/library/library_doctor/remote/{arbitration,album_match}.rs` |
 | 2 | PERF-2 | `crates/reprise-core/src/library/library_doctor/remote/{cache,cache_tests}.rs` |

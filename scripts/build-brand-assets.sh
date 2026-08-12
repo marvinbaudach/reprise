@@ -58,7 +58,9 @@ mark_mono=$generated_brand/reprise-mark-mono.svg
 plate=$generated_brand/icon-plate.svg
 icon_16=$generated_brand/reprise-icon-16.svg
 mark_16_mono=$generated_brand/reprise-mark-16-mono.svg
-stethoscope_symbolic=$generated_brand/reprise-stethoscope-symbolic.svg
+first_aid_symbolic=$generated_brand/reprise-first-aid-symbolic.svg
+python3 "$lib/svg_recolour.py" "$first_aid_symbolic" "$first_aid_symbolic" \
+  'currentColor=#222222'
 
 build_surface_tree() {
   local tree_root=$out
@@ -89,8 +91,8 @@ build_surface_tree() {
   python3 "$lib/svg_recolour.py" "$mark_mono" \
     "$icons/symbolic/apps/io.github.marvinbaudach.Reprise-symbolic.svg" \
     'currentColor=#222222'
-  cp "$stethoscope_symbolic" \
-    "$icons/symbolic/apps/reprise-stethoscope-symbolic.svg"
+  cp "$first_aid_symbolic" \
+    "$icons/symbolic/apps/reprise-first-aid-symbolic.svg"
 
   mkdir -p "$android/drawable"
   python3 "$lib/svg_to_vectordrawable.py" "$mark" \

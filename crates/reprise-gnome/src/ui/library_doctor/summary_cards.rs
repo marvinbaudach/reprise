@@ -19,7 +19,7 @@ const ICON_PIXEL_SIZE: i32 = 20;
 
 pub(super) struct CardContent<'a> {
     pub(super) icon_name: &'a str,
-    /// `accent` for the review card's stethoscope, `dim-label` for the muted
+    /// `accent` for the review card's first-aid kit, `dim-label` for the muted
     /// warning, `None` for the applied card's check.
     pub(super) icon_class: Option<&'a str>,
     pub(super) heading: String,
@@ -200,7 +200,7 @@ mod tests {
 
     /// The card leads with the doctor's own glyph, resolved by the same guard
     /// the start page uses — never a name of its own. It named one, and kept
-    /// drawing the magnifier that the shipped stethoscope replaced.
+    /// drawing the magnifier that the shipped first-aid kit replaced.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn doc_9a_the_review_card_leads_with_the_doctors_own_glyph() {
@@ -230,12 +230,12 @@ mod tests {
         );
 
         // And what the guard resolves, once the shipped icon directory is in
-        // reach, is the stethoscope — so the fallback really is a fallback.
+        // reach, is the first-aid kit — so the fallback really is a fallback.
         let theme = gtk4::IconTheme::for_display(&display);
         theme.add_search_path(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/icons"),
         );
-        assert_eq!(super::super::doctor_glyph(), "reprise-stethoscope-symbolic");
+        assert_eq!(super::super::doctor_glyph(), "reprise-first-aid-symbolic");
     }
 
     #[test]
