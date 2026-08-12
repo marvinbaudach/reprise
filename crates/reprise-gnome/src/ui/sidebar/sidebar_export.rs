@@ -156,6 +156,24 @@ fn confirm_delete(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
         &strings::text(strings::PLAYLIST_DELETE_RESPONSE),
     );
     dialog.set_response_appearance(RESPONSE_DELETE, adw::ResponseAppearance::Destructive);
+    dialog.connect_map(|_| {
+        tracing::debug!(
+            dialog = "playlist-delete",
+            "[DEBUG-ptr-probe] playlist delete dialog mapped"
+        );
+    });
+    dialog.connect_unmap(|_| {
+        tracing::debug!(
+            dialog = "playlist-delete",
+            "[DEBUG-ptr-probe] playlist delete dialog unmapped"
+        );
+    });
+    dialog.connect_closed(|_| {
+        tracing::debug!(
+            dialog = "playlist-delete",
+            "[DEBUG-ptr-probe] playlist delete dialog closed"
+        );
+    });
 
     let shared = shared.clone();
     let playlist_name = playlist_name.to_string();

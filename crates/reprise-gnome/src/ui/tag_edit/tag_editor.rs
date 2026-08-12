@@ -199,7 +199,32 @@ pub(in crate::ui) fn present(
 
     let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
     focus_guard.bind_dialog(&form.dialog, &form.title_row);
+    form.dialog.connect_map(|_| {
+        tracing::debug!(
+            dialog = "tag-editor",
+            "[DEBUG-ptr-probe] tag editor dialog mapped"
+        );
+    });
+    form.dialog.connect_unmap(|_| {
+        tracing::debug!(
+            dialog = "tag-editor",
+            "[DEBUG-ptr-probe] tag editor dialog unmapped"
+        );
+    });
+    form.dialog.connect_closed(|_| {
+        tracing::debug!(
+            dialog = "tag-editor",
+            "[DEBUG-ptr-probe] tag editor dialog closed"
+        );
+    });
     form.dialog.present(Some(parent));
+    tracing::debug!(
+        dialog = "tag-editor",
+        visible = form.dialog.is_visible(),
+        has_root = form.dialog.root().is_some(),
+        has_native = form.dialog.native().is_some(),
+        "[DEBUG-ptr-probe] tag editor dialog state after present"
+    );
     tracing::debug!(
         track_count,
         is_multi = mode.is_multi(),
