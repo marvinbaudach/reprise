@@ -53,6 +53,20 @@ class Media3PlaybackPortTest {
         )
         port.release()
     }
+
+    @Test
+    fun togglePauseReturnsTheRequestedIntentOutcomeRatherThanTransientBuffering() {
+        val fake = CallbackPlayer(
+            playbackState = Player.STATE_BUFFERING,
+            playWhenReady = true,
+        )
+        val port = Media3PlaybackPort(fake.player) {}
+
+        assertEquals(AndroidPlaybackState.PAUSED, port.togglePause())
+        assertEquals(AndroidPlaybackState.PLAYING, port.togglePause())
+
+        port.release()
+    }
 }
 
 private class CallbackPlayer(
@@ -72,6 +86,8 @@ private class CallbackPlayer(
             "getIsPlaying" -> false
             "getPlayWhenReady" -> playWhenReady
             "getPlaybackState" -> playbackState
+            "pause" -> playWhenReady = false
+            "play" -> playWhenReady = true
             else -> callbackPlayerDefault(method.returnType)
         }
     } as Player

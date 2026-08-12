@@ -17,6 +17,10 @@ mod test_support;
 mod tests;
 
 #[cfg(test)]
+#[path = "playback_terminal_event_tests.rs"]
+mod terminal_event_tests;
+
+#[cfg(test)]
 #[path = "queue_boundary_tests.rs"]
 mod queue_boundary_tests;
 
@@ -249,6 +253,9 @@ impl PlaybackEventBridge {
 
 impl From<AndroidPlaybackState> for PlaybackState {
     fn from(state: AndroidPlaybackState) -> Self {
+        // This projection is used for synchronous playback-command results.
+        // `Media3PlaybackPort.togglePause()` returns only Playing or Paused;
+        // asynchronous Buffering crosses through `AndroidPlayerEvent` below.
         match state {
             AndroidPlaybackState::Playing | AndroidPlaybackState::Buffering => Self::Playing,
             AndroidPlaybackState::Paused => Self::Paused,

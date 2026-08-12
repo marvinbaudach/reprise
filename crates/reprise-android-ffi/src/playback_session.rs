@@ -420,7 +420,13 @@ impl SessionInner {
                     (FollowUp::Stop, None, None)
                 }
                 PlayerEvent::Buffering { .. } => {
-                    state.snapshot.state = AndroidPlaybackState::Buffering;
+                    // Buffering describes only a stream that is still loaded.
+                    // Queue exhaustion and errors both clear `current_loaded`,
+                    // so a callback already in flight cannot revive their
+                    // terminal Stopped snapshot.
+                    if state.current_loaded {
+                        state.snapshot.state = AndroidPlaybackState::Buffering;
+                    }
                     (FollowUp::None, None, None)
                 }
                 PlayerEvent::StreamTags { .. } | PlayerEvent::Spectrum(_) => {
