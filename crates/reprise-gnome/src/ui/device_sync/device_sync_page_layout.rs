@@ -109,7 +109,7 @@ pub(super) fn build(
 
     let profile_title = label(
         &super::device_sync_strings::text(MUSIC_TRANSFER_PROFILE_HEADING),
-        "title-2",
+        "heading",
     );
     let profile_model = gtk4::StringList::new(profile_labels);
     let profile = gtk4::DropDown::builder()

@@ -199,25 +199,21 @@ impl OnDeviceSection {
             },
         );
 
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
-        content.set_margin_top(16);
-        content.set_margin_bottom(16);
-        content.set_margin_start(18);
-        content.set_margin_end(18);
-        content.append(storage_bar.widget());
-        content.prepend(&legacy_notice);
-        content.append(&storage_legend);
-        content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
-        content.append(&inventory);
-        content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
-        content.append(&rules_title);
-        content.append(&switch_row(&remove_deleted.0, &remove_deleted.1));
-        content.append(&switch_row(&sync_automatically.0, &sync_automatically.1));
-        let card = libadwaita::Bin::builder().child(&content).build();
-        card.add_css_class("card");
+        let balance_content = card_content();
+        balance_content.append(&legacy_notice);
+        balance_content.append(storage_bar.widget());
+        balance_content.append(&storage_legend);
+        balance_content.append(&inventory);
+        let balance_card = card(&balance_content);
+        let rules_content = card_content();
+        rules_content.append(&rules_title);
+        rules_content.append(&switch_row(&remove_deleted.0, &remove_deleted.1));
+        rules_content.append(&switch_row(&sync_automatically.0, &sync_automatically.1));
+        let rules_card = card(&rules_content);
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 9);
         root.append(&header);
-        root.append(&card);
+        root.append(&balance_card);
+        root.append(&rules_card);
 
         Self {
             root,
@@ -273,6 +269,21 @@ impl OnDeviceSection {
         );
         self.updating.set(false);
     }
+}
+
+fn card_content() -> gtk4::Box {
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
+    content.set_margin_top(16);
+    content.set_margin_bottom(16);
+    content.set_margin_start(18);
+    content.set_margin_end(18);
+    content
+}
+
+fn card(child: &impl IsA<gtk4::Widget>) -> libadwaita::Bin {
+    let card = libadwaita::Bin::builder().child(child).build();
+    card.add_css_class("card");
+    card
 }
 
 pub(super) fn storage_legend(device: &DeviceView) -> String {
