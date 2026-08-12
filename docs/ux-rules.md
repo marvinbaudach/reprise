@@ -4001,10 +4001,11 @@ means deterministic and high-confidence, never „without review".
   counts changes because that is what review decides. Completion names
   updated tracks and collected errors once, never per file. The remote toggle
   and selection remain locked during a write.
-  One job is one card, and its label stays readable: the title keeps a
-  legible minimum width and the detail line absorbs any shortfall, rather than
-  the title truncating to a few characters and making two different jobs look
-  like duplicates of each other. *Tests:*
+  One job is one card, and its label stays readable: the title owns a row with
+  the spinner, while percentage and Cancel sit in a second row below it. The
+  title and detail both ellipsize without imposing a minimum width on the
+  fixed sidebar, rather than making two different jobs look like duplicates
+  of each other. *Tests:*
   `doc_5c_the_card_label_stays_whole_at_sidebar_width`,
   `doc_5c_progress_uses_tracks_as_the_primary_currency`,
   `doc_5c_every_count_on_the_write_progress_inflects`.
@@ -4026,7 +4027,8 @@ means deterministic and high-confidence, never „without review".
   type the same height and position; it never overlaps a navigation row. The
   flat card body is one button leading to that job's page. `Cancel` is inside
   the body but never activates navigation. The title receives the remaining
-  width, while the detail line owns any ellipsis. *Tests:*
+  full first row after the spinner, while percentage and Cancel share the
+  second row and the detail line owns any remaining ellipsis. *Tests:*
   `doc_5c_a_visible_job_card_never_overlaps_a_navigation_row`,
   `doc_5e_every_job_card_docks_at_the_same_place_and_height`,
   `doc_5e_the_card_body_activates_and_cancel_does_not`,

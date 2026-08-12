@@ -9,6 +9,7 @@ use reprise_core::library::settings::PlayerBarPosition;
 use super::*;
 use crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::scan::scan_progress::ScanProgressView;
+use crate::ui::sidebar_presentation;
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
@@ -94,6 +95,48 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
         (scanner_bottom - root.height() as f32).abs() < 1.0,
         "scanner bottom={scanner_bottom}, root height={}",
         root.height()
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_1_visible_job_card_keeps_the_real_split_sidebar_at_240px() {
+    libadwaita::init().unwrap();
+    crate::ui::style::install();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let window = adw::ApplicationWindow::builder()
+        .default_width(1200)
+        .default_height(800)
+        .build();
+    let sidebar = Sidebar::new(conn, &window, || 0);
+    let scanner = ScanProgressView::new();
+    scanner.show_batch(
+        "Lyrics batch check complete",
+        "2,177 of 2,177 checked · 0 downloaded · 0 unavailable",
+        1.0,
+    );
+    sidebar.append_scan_card(scanner.widget());
+    let page = adw::NavigationPage::builder()
+        .title("Library")
+        .child(sidebar.widget())
+        .build();
+    let content = adw::NavigationView::new();
+    let split = adw::OverlaySplitView::builder()
+        .sidebar(&page)
+        .content(&content)
+        .collapsed(false)
+        .show_sidebar(true)
+        .build();
+    sidebar_presentation::style_overlay_split_view(&split);
+    window.set_content(Some(&split));
+    window.present();
+    drain_display_events();
+
+    assert_eq!(
+        page.width(),
+        240,
+        "a visible job card must not override the split view's fixed sidebar width"
     );
     window.close();
 }
