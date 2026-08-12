@@ -17,6 +17,7 @@ pub(super) const MUSIC_TRANSFER_PROFILE_HEADING: &str =
 /// same number on purpose: a minimum above the clamp is precisely what
 /// pushes the now-playing column out of the window (`NPP-1`).
 pub(super) const CONTENT_MAX_WIDTH: i32 = 1_120;
+pub(super) const CONTENT_HORIZONTAL_MARGIN: i32 = 32;
 
 pub(super) struct DeviceDashboard {
     pub(super) root: gtk4::Box,
@@ -160,8 +161,8 @@ pub(super) fn build(
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 24);
     content.set_margin_top(28);
     content.set_margin_bottom(28);
-    content.set_margin_start(32);
-    content.set_margin_end(32);
+    content.set_margin_start(CONTENT_HORIZONTAL_MARGIN);
+    content.set_margin_end(CONTENT_HORIZONTAL_MARGIN);
     content.append(&hero);
     content.append(&body);
     content.append(&on_device);

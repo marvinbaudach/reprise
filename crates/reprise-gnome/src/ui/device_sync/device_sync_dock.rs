@@ -13,6 +13,7 @@ use reprise_core::device_sync::{
 use super::device_sync_page_copy::{
     blocker_summary, device_last_sync_copy, profile_label, warning_summary,
 };
+use super::device_sync_page_layout::{CONTENT_HORIZONTAL_MARGIN, CONTENT_MAX_WIDTH};
 use super::device_sync_runtime::DeviceView;
 use super::device_sync_storage_copy::storage_access_notice;
 use super::device_sync_strings;
@@ -142,12 +143,17 @@ impl DeviceSyncDock {
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 7);
         content.set_margin_top(12);
         content.set_margin_bottom(12);
-        content.set_margin_start(18);
-        content.set_margin_end(18);
+        content.set_margin_start(CONTENT_HORIZONTAL_MARGIN);
+        content.set_margin_end(CONTENT_HORIZONTAL_MARGIN);
         content.append(&top);
         content.append(&progress);
-        let root = adw::Bin::builder().child(&content).build();
-        root.add_css_class("card");
+        let clamp = adw::Clamp::builder()
+            .maximum_size(CONTENT_MAX_WIDTH)
+            .tightening_threshold(900)
+            .child(&content)
+            .build();
+        let root = adw::Bin::builder().child(&clamp).build();
+        root.add_css_class("reprise-device-sync-dock");
 
         Self {
             root,
@@ -263,6 +269,14 @@ impl DeviceSyncDock {
         ));
         self.primary.add_css_class("suggested-action");
     }
+}
+
+pub(super) fn css() -> String {
+    ".reprise-device-sync-dock {\n\
+       background-color: @headerbar_bg_color;\n\
+       border-top: 1px solid alpha(@window_fg_color, 0.12);\n\
+     }"
+    .to_string()
 }
 
 fn idle_summary(device: &DeviceView) -> String {

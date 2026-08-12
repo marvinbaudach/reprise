@@ -1054,6 +1054,12 @@ result.
   markup-safe name, selection, last verified sync, and the target size
   projected for the active profile, as well as, during a running sync, a
   progress bar and current smoothed MTP transfer rate.
+- **MTP-65** [active] [gtk] — The device page's two horizontal bars begin at
+  the same edge as their content and each owns a distinct surface: the sync
+  dock clamps its content like the cards and separates itself from the player
+  bar with a visible top edge; the discovery strip keeps left-aligned copy and
+  both actions inside one padded toolbar and separates itself from the sidebar
+  with a visible bottom edge.
 
 ## F. Settings & modals
 

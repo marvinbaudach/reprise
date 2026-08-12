@@ -114,6 +114,8 @@ fn app_css() -> String {
         super::playing_marker::css(),
         super::cover_lift::css(),
         super::sidebar_device_card::css(),
+        super::device_sync::dock_css(),
+        super::online_discovery_banner::css(),
         super::source_context_surface::css(),
         super::list_density::css(),
         super::track_list::queue_sections::css(),

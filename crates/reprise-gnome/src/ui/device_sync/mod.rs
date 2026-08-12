@@ -21,6 +21,10 @@ mod device_sync_target_browser;
 mod device_sync_time_copy;
 mod device_sync_verification_copy;
 
+pub(super) fn dock_css() -> String {
+    device_sync_dock::css()
+}
+
 #[cfg(test)]
 mod device_sync_rate_tests;
 #[cfg(test)]

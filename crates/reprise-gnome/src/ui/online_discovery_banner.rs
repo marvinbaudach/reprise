@@ -4,7 +4,6 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
 
@@ -39,7 +38,9 @@ fn persist_completed(db: &Db, completed: &Cell<bool>) -> bool {
 pub(in crate::ui) struct OnlineDiscoveryBanner {
     root: gtk4::Box,
     #[cfg(test)]
-    banner: adw::Banner,
+    label: gtk4::Label,
+    #[cfg(test)]
+    review: gtk4::Button,
     #[cfg(test)]
     dismiss: gtk4::Button,
 }
@@ -66,29 +67,35 @@ pub(in crate::ui) fn build(
     let body = strings::text(strings::ONLINE_DISCOVERY_BANNER_BODY);
     let review = strings::text(strings::ONLINE_DISCOVERY_REVIEW);
     let not_now = strings::text(strings::ONLINE_DISCOVERY_NOT_NOW);
-    let banner = adw::Banner::new(&body);
-    banner.set_use_markup(false);
-    banner.set_button_label(Some(&review));
-    banner.set_hexpand(true);
+    let label = gtk4::Label::new(Some(&body));
+    label.set_xalign(0.0);
+    label.set_wrap(true);
+    label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+    label.set_hexpand(true);
     let dismiss = gtk4::Button::with_label(&not_now);
     dismiss.set_valign(gtk4::Align::Center);
-    dismiss.set_margin_end(12);
+    dismiss.add_css_class("flat");
+    let review = gtk4::Button::with_label(&review);
+    review.set_valign(gtk4::Align::Center);
+    review.add_css_class("suggested-action");
 
-    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     root.set_hexpand(true);
-    root.append(&banner);
+    root.add_css_class("toolbar");
+    root.add_css_class("reprise-online-discovery-strip");
+    root.append(&label);
     root.append(&dismiss);
+    root.append(&review);
 
     let completed = Rc::new(Cell::new(false));
-    banner.connect_button_clicked({
+    review.connect_clicked({
         let db = db.clone();
         let completed = completed.clone();
         let root = root.clone();
-        move |banner| {
+        move |_| {
             if !persist_completed(&db, &completed) {
                 return;
             }
-            banner.set_revealed(false);
             root.set_visible(false);
             on_review();
         }
@@ -96,24 +103,31 @@ pub(in crate::ui) fn build(
     dismiss.connect_clicked({
         let db = db.clone();
         let completed = completed.clone();
-        let banner = banner.clone();
         let root = root.clone();
         move |_| {
             if !persist_completed(&db, &completed) {
                 return;
             }
-            banner.set_revealed(false);
             root.set_visible(false);
         }
     });
-    banner.set_revealed(true);
     Some(OnlineDiscoveryBanner {
         root,
         #[cfg(test)]
-        banner,
+        label,
+        #[cfg(test)]
+        review,
         #[cfg(test)]
         dismiss,
     })
+}
+
+pub(super) fn css() -> String {
+    ".reprise-online-discovery-strip {\n\
+       background-color: @headerbar_bg_color;\n\
+       border-bottom: 1px solid alpha(@window_fg_color, 0.12);\n\
+     }"
+    .to_string()
 }
 
 #[cfg(test)]
@@ -139,6 +153,52 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
+    fn mtp_65_discovery_strip_owns_left_aligned_copy_both_actions_and_its_edge() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().expect("GTK test display");
+        let db = Rc::new(Db::open_in_memory().unwrap());
+        let strip = build(&db, || {}).expect("fresh disabled database shows discovery");
+        let root = strip.widget();
+
+        assert!(root.has_css_class("toolbar"));
+        assert!(root.has_css_class("reprise-online-discovery-strip"));
+        let children =
+            std::iter::successors(root.first_child(), gtk4::prelude::WidgetExt::next_sibling)
+                .collect::<Vec<_>>();
+        assert_eq!(children.len(), 3, "copy and both actions share one strip");
+        let copy = children[0]
+            .clone()
+            .downcast::<gtk4::Label>()
+            .expect("leftmost child is the discovery copy");
+        assert_eq!(copy.text(), BODY);
+        assert_eq!(copy.xalign(), 0.0);
+        assert!(copy.wraps());
+        let action_labels = children[1..]
+            .iter()
+            .map(|child| {
+                child
+                    .clone()
+                    .downcast::<gtk4::Button>()
+                    .expect("right-side strip child is a button")
+                    .label()
+                    .expect("discovery action label")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(action_labels, ["Not now", "Review in Preferences"]);
+
+        let css = crate::ui::style::app_css_for_test();
+        let rule = css
+            .split(".reprise-online-discovery-strip {")
+            .nth(1)
+            .and_then(|tail| tail.split('}').next())
+            .expect("the installed stylesheet must own the discovery strip surface");
+        assert!(rule.contains("background-color: @headerbar_bg_color"));
+        assert!(rule.contains("border-bottom: 1px solid alpha(@window_fg_color"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn net_4_discovery_banner_persists_review_and_dismiss_actions_before_hiding() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         if gtk4::init().is_err() {
@@ -152,17 +212,15 @@ mod tests {
             move || reviewed.set(true)
         })
         .expect("fresh disabled database shows discovery");
-        assert_eq!(banner.banner.title(), BODY);
+        assert_eq!(banner.label.text(), BODY);
         assert_eq!(
-            banner.banner.button_label().as_deref(),
+            banner.review.label().as_deref(),
             Some("Review in Preferences")
         );
-        assert!(banner.banner.is_revealed());
         assert_eq!(banner.dismiss.label().as_deref(), Some("Not now"));
 
-        banner.banner.emit_by_name::<()>("button-clicked", &[]);
+        banner.review.emit_clicked();
         assert!(reviewed.get());
-        assert!(!banner.banner.is_revealed());
         assert!(!banner.widget().is_visible());
         assert!(settings::get_online_discovery_banner_completed(&review_db).unwrap());
         assert!(build(&review_db, || {}).is_none());
@@ -170,7 +228,6 @@ mod tests {
         let dismiss_db = Rc::new(Db::open_in_memory().unwrap());
         let banner = build(&dismiss_db, || {}).expect("second fresh database shows discovery");
         banner.dismiss.emit_clicked();
-        assert!(!banner.banner.is_revealed());
         assert!(!banner.widget().is_visible());
         assert!(settings::get_online_discovery_banner_completed(&dismiss_db).unwrap());
     }
