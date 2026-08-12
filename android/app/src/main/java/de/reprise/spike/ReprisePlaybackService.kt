@@ -90,6 +90,9 @@ open class ReprisePlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+        // Keep this listener ahead of Media3PlaybackPort: on resume it resets
+        // the PCM history and advances the native stream generation before the
+        // port publishes PLAYING through Core and Compose calls setPlaying.
         player.addListener(livePcmSink)
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
@@ -342,6 +345,8 @@ private class LiveVisualSceneEngineLease(
         engine.setPlaybackIntent(playbackIntended)
 
     override fun resetAudioStream() = engine.resetAudioStream()
+
+    override fun resetAudioHistory() = engine.resetAudioHistory()
 
     override fun close() {
         sink.detach(this)

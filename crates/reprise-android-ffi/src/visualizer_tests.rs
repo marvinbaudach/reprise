@@ -211,6 +211,36 @@ fn live_pcm_staleness_expires_while_player_buffers_with_playback_intent() {
 }
 
 #[test]
+fn resume_history_reset_preserves_live_scene_until_pcm_restarts_or_expires() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playback_intended(true);
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    engine.set_playback_intended(false);
+    engine.set_playing(false);
+    let paused_scene = engine.scene(272.0, 272.0);
+    clock.advance(LIVE_AUDIO_STALE_AFTER + LIVE_AUDIO_STALE_AFTER);
+
+    // Media3 publishes playWhenReady before isPlaying on a real resume.
+    engine.set_playback_intended(true);
+    engine.reset_audio_history();
+    engine.set_playing(true);
+
+    assert!(engine.has_live_audio());
+    assert_eq!(engine.scene(272.0, 272.0), paused_scene);
+    assert!(engine
+        .live_bands_for_testing()
+        .iter()
+        .all(|band| *band == 0.0));
+
+    clock.advance(LIVE_AUDIO_STALE_AFTER);
+    assert!(!engine.has_live_audio());
+}
+
+#[test]
 fn stale_live_pcm_reopens_the_stored_spectrogram_fallback() {
     let clock = Arc::new(FakeMonotonicClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());

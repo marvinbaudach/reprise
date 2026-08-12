@@ -87,6 +87,8 @@ internal class NativeVisualSceneEngine(
 
     override fun resetAudioStream() = native.resetAudioStream()
 
+    override fun resetAudioHistory() = native.resetAudioHistory()
+
     override fun hasLiveAudio(): Boolean = native.hasLiveAudio()
 
     override fun bassPressure(): VisualBassPressure = native.bassPressure().let { pressure ->

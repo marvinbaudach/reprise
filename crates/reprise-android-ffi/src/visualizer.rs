@@ -186,8 +186,13 @@ impl AndroidVisualEngine {
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
         reconcile_stream_generation(&mut state, stream_generation);
+        let resumed = playback_intended && !state.playback_intended;
         state.playback_intended = playback_intended;
-        expire_stale_live_audio(&mut state, self.clock.now());
+        let now = self.clock.now();
+        if resumed && state.has_live_audio {
+            state.last_live_audio_at = Some(now);
+        }
+        expire_stale_live_audio(&mut state, now);
     }
 
     /// Starts a clean visual history for the next track.
@@ -297,6 +302,21 @@ impl AndroidVisualEngine {
             let stream_generation = self.current_stream_generation();
             reset_live_presentation(&mut state, stream_generation);
         }
+    }
+
+    /// Drops decoder history on resume without discarding the last live scene.
+    pub fn reset_audio_history(&self) {
+        // The display lock is taken before the generation changes so a later
+        // reconciliation cannot mistake this history-only reset for a stream
+        // boundary. PCM publication uses try_lock and drops rather than waits.
+        let mut state = self.lock();
+        let stream_generation = self.advance_stream_generation();
+        if let Some(mut live_audio) = self.try_lock_live_audio() {
+            reset_live_processor(&mut live_audio, stream_generation);
+        }
+        state.stream_generation = stream_generation;
+        state.last_live_audio_at = state.has_live_audio.then(|| self.clock.now());
+        state.live_pressure = silent_pressure();
     }
 
     pub fn has_live_audio(&self) -> bool {

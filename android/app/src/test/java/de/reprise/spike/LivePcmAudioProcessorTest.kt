@@ -8,11 +8,46 @@ import androidx.media3.common.audio.AudioProcessor.AudioFormat
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LivePcmAudioProcessorTest {
+    @Test
+    fun resumeResetNeverHoldsTheMonitorNeededByTheRenderThread() {
+        val consumer = BlockingResetConsumer()
+        val sink = LivePcmBufferSink()
+        val pcm = stereoPcm16(
+            left = shortArrayOf(1_000, -2_000, 3_000),
+            right = shortArrayOf(-4_000, 5_000, -6_000),
+        )
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        sink.attach(consumer)
+
+        val resumeThread = thread(name = "resume-reset") {
+            sink.onIsPlayingChanged(true)
+        }
+        assertTrue(consumer.resetEntered.await(1, TimeUnit.SECONDS))
+        val renderThread = thread(name = "pcm-render") {
+            sink.handleBuffer(directBuffer(pcm))
+        }
+
+        try {
+            assertTrue(
+                "render thread waited for the application-thread reset",
+                consumer.ingestEntered.await(1, TimeUnit.SECONDS),
+            )
+        } finally {
+            consumer.allowResetToFinish.countDown()
+            resumeThread.join()
+            renderThread.join()
+        }
+    }
+
     @Test
     fun playbackIntentRemainsTrueWhenIsPlayingFallsFalseForBuffering() {
         val consumer = RecordingPcmConsumer()
@@ -59,10 +94,12 @@ class LivePcmAudioProcessorTest {
 
         sink.onIsPlayingChanged(false)
         sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
-        assertEquals(1, consumer.resetCount)
+        assertEquals(0, consumer.resetCount)
+        assertEquals(1, consumer.historyResetCount)
 
         sink.onIsPlayingChanged(true)
-        assertEquals(2, consumer.resetCount)
+        assertEquals(0, consumer.resetCount)
+        assertEquals(2, consumer.historyResetCount)
         sink.handleBuffer(directBuffer(pcm))
         assertEquals(2, consumer.ingestCount)
     }
@@ -87,7 +124,8 @@ class LivePcmAudioProcessorTest {
         assertArrayEquals(expected, consumer.bytes.copyOf(consumer.byteCount))
         assertEquals(48_000, consumer.sampleRateHz)
         assertEquals(2, consumer.channelCount)
-        assertEquals(1, consumer.resetCount)
+        assertEquals(0, consumer.resetCount)
+        assertEquals(1, consumer.historyResetCount)
     }
 
     @Test
@@ -101,7 +139,8 @@ class LivePcmAudioProcessorTest {
         processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
         processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
 
-        assertEquals(3, consumer.resetCount)
+        assertEquals(2, consumer.resetCount)
+        assertEquals(1, consumer.historyResetCount)
     }
 
     @Test
@@ -156,6 +195,7 @@ private class RecordingPcmConsumer : LivePcmConsumer {
     var sampleRateHz = 0
     var channelCount = 0
     var resetCount = 0
+    var historyResetCount = 0
     var ingestCount = 0
     val playbackIntentChanges = mutableListOf<Boolean>()
 
@@ -179,10 +219,16 @@ private class RecordingPcmConsumer : LivePcmConsumer {
     override fun resetAudioStream() {
         resetCount += 1
     }
+
+    override fun resetAudioHistory() {
+        historyResetCount += 1
+    }
 }
 
 private class ThrowingPcmConsumer : LivePcmConsumer {
     override fun setPlaybackIntent(playbackIntended: Boolean) = Unit
+
+    override fun resetAudioHistory() = Unit
 
     override fun ingestPcm16(
         bytes: ByteArray,
@@ -197,6 +243,8 @@ private class ThrowingPcmConsumer : LivePcmConsumer {
 private class ThrowingResetConsumer : LivePcmConsumer {
     override fun setPlaybackIntent(playbackIntended: Boolean) = Unit
 
+    override fun resetAudioHistory(): Nothing = error("visualizer history reset failed")
+
     override fun ingestPcm16(
         bytes: ByteArray,
         byteCount: Int,
@@ -205,6 +253,30 @@ private class ThrowingResetConsumer : LivePcmConsumer {
     ) = Unit
 
     override fun resetAudioStream(): Nothing = error("visualizer reset failed")
+}
+
+private class BlockingResetConsumer : LivePcmConsumer {
+    val resetEntered = CountDownLatch(1)
+    val allowResetToFinish = CountDownLatch(1)
+    val ingestEntered = CountDownLatch(1)
+
+    override fun setPlaybackIntent(playbackIntended: Boolean) = Unit
+
+    override fun resetAudioHistory() {
+        resetEntered.countDown()
+        allowResetToFinish.await()
+    }
+
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ) {
+        ingestEntered.countDown()
+    }
+
+    override fun resetAudioStream() = Unit
 }
 
 private fun stereoPcm16(left: ShortArray, right: ShortArray): ByteArray {

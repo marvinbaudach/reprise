@@ -23,6 +23,9 @@ internal interface LivePcmConsumer {
     /** Whether playback should run, even when Media3 is temporarily buffering. */
     fun setPlaybackIntent(playbackIntended: Boolean)
 
+    /** Drops filter history while retaining the last published live scene. */
+    fun resetAudioHistory()
+
     /** Drops both the CAVA processor and bass-detector history. */
     fun resetAudioStream()
 }
@@ -85,11 +88,10 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
         }
     }
 
-    @Synchronized
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (playing == isPlaying) return
         playing = isPlaying
-        if (isPlaying) consumer?.let(::resetSafely)
+        if (isPlaying) consumer?.let(::resetHistorySafely)
     }
 
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -103,6 +105,14 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
             target.setPlaybackIntent(intended)
         } catch (_: Throwable) {
             // The visualizer is optional: discard its state change, never the audio.
+        }
+    }
+
+    private fun resetHistorySafely(target: LivePcmConsumer) {
+        try {
+            target.resetAudioHistory()
+        } catch (_: Throwable) {
+            // The visualizer is optional: discard its history, never the audio.
         }
     }
 
