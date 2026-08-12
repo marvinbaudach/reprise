@@ -39,6 +39,9 @@ struct ReviewState {
     selection: gtk4::SingleSelection,
     content: gtk4::Stack,
     filter_bar: ReviewFilterBar,
+    stale_notice: gtk4::Box,
+    stale_notice_label: gtk4::Label,
+    rescan: gtk4::Button,
     apply: gtk4::Button,
     change_summary: gtk4::Label,
     select_all: gtk4::CheckButton,
@@ -64,11 +67,16 @@ impl ReviewState {
             session.set_category_filter(None);
         }
         self.filter_bar.set_categories(&categories);
+        let stale_notice = review_stale_notice(&session);
+        let ready_count = review_ready_count(&session);
         let objects = grouped_rows_for(&self.scan, &session, &self.outcomes.borrow())
             .into_iter()
             .map(|row| glib::BoxedAnyObject::new(row).upcast::<glib::Object>())
             .collect::<Vec<_>>();
         drop(session);
+        self.stale_notice.set_visible(stale_notice.is_some());
+        self.stale_notice_label
+            .set_label(stale_notice.as_deref().unwrap_or_default());
         self.store.splice(0, self.store.n_items(), &objects);
         self.refresh_conflicts();
         self.filter.changed(gtk4::FilterChange::Different);
@@ -82,8 +90,11 @@ impl ReviewState {
         self.apply
             .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
         self.apply.set_sensitive(summary.tag_change_count > 0);
-        self.change_summary
-            .set_label(&review_footer_summary(summary, self.category.get()));
+        self.change_summary.set_label(&review_footer_summary(
+            summary,
+            self.category.get(),
+            ready_count,
+        ));
         self.refresh_filter_summary();
         self.refresh_master_check();
     }
@@ -297,12 +308,30 @@ fn review_header_counts(rows: &[ReviewRowModel]) -> (usize, usize) {
     (changes, albums)
 }
 
+fn review_stale_notice(session: &DoctorReviewSession) -> Option<String> {
+    let count = session
+        .rows()
+        .iter()
+        .filter(|row| row.state == DoctorReviewRowState::Stale)
+        .count();
+    (count > 0).then(|| strings::doctor_stale_notice(count))
+}
+
+fn review_ready_count(session: &DoctorReviewSession) -> usize {
+    session
+        .rows()
+        .iter()
+        .filter(|row| row.state == DoctorReviewRowState::Ready)
+        .count()
+}
+
 fn review_footer_summary(
     summary: reprise_core::library_doctor::DoctorReviewSummary,
     category: Option<ReviewCategory>,
+    ready_count: usize,
 ) -> String {
     category.map_or_else(
-        || strings::doctor_apply_summary(summary.tag_change_count, summary.file_count),
+        || strings::doctor_apply_summary(summary.tag_change_count, ready_count, summary.file_count),
         |category| {
             strings::doctor_filter_scope(
                 summary.tag_change_count,
@@ -412,6 +441,19 @@ impl LibraryDoctorReviewPage {
             .build();
         let header = ReviewHeader::new();
         let filter_bar = ReviewFilterBar::new(&categories);
+        let stale_notice_label = gtk4::Label::builder()
+            .xalign(0.0)
+            .hexpand(true)
+            .wrap(true)
+            .build();
+        let rescan = gtk4::Button::builder()
+            .label(strings::text(strings::DOCTOR_SCAN_AGAIN))
+            .css_classes(["flat"])
+            .build();
+        let stale_notice = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        stale_notice.add_css_class("doctor-review-stale");
+        stale_notice.append(&stale_notice_label);
+        stale_notice.append(&rescan);
         let empty = adw::StatusPage::builder()
             .icon_name(crate::ui::icons::DONE)
             .title(strings::text(strings::DOCTOR_NO_CHANGES))
@@ -451,6 +493,9 @@ impl LibraryDoctorReviewPage {
             selection,
             content,
             filter_bar,
+            stale_notice,
+            stale_notice_label,
+            rescan,
             apply,
             change_summary,
             select_all: header.select_all.clone(),
@@ -502,6 +547,7 @@ impl LibraryDoctorReviewPage {
         }
         let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         page_content.append(&state.filter_bar.root);
+        page_content.append(&state.stale_notice);
         page_content.append(&header.root);
         page_content.append(&state.content);
         page_content.append(&footer);
@@ -567,11 +613,16 @@ impl LibraryDoctorReviewPage {
         ));
     }
 
+    pub(super) fn connect_rescan(&self, callback: impl Fn() + 'static) {
+        self.state.rescan.connect_clicked(move |_| callback());
+    }
+
     pub(super) fn set_running(&self, running: bool) {
         self.state.controls_locked.set(running);
         self.rows.set_sensitive(!running);
         self.state.select_all.set_sensitive(!running);
         self.state.filter_bar.set_sensitive(!running);
+        self.state.rescan.set_sensitive(!running);
         if running {
             self.state.apply.set_sensitive(false);
         } else {

@@ -357,8 +357,31 @@ pub fn doctor_all_tracks(count: usize) -> String {
     )
 }
 
-pub fn doctor_preselected_hint() -> String {
-    N_!("Everything here is preselected. Uncheck what you disagree with.").to_owned()
+pub fn doctor_fixes_ready(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} fix ready",
+        "{count} fixes ready",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_review_subtitle(albums: usize) -> String {
+    formatted(
+        N_!("Across {albums} · everything is preselected, uncheck what you disagree with"),
+        &[("albums", &doctor_album_count(albums))],
+    )
+}
+
+pub fn doctor_stale_notice(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} fix is out of date — this file changed after the scan.",
+        "{count} fixes are out of date — these files changed after the scan.",
+        count,
+        &[("count", &count_text)],
+    )
 }
 
 /// The review header and the post-apply card: two counts, two plural forms,
@@ -457,26 +480,22 @@ pub fn doctor_review_row_description(
     )
 }
 
-/// The review footer. Two counts and a promise: the counts inflect on their
-/// own, the promise stays one translatable clause.
-pub fn doctor_apply_summary(changes: usize, files: usize) -> String {
+/// The review footer. Three counts and a promise: every number passes through
+/// its own plural lookup before the translated sentence skeleton joins them.
+pub fn doctor_apply_summary(selected: usize, ready: usize, files: usize) -> String {
     formatted(
-        N_!("{changes} · {files} · undo available after"),
+        N_!("{selected} of {ready} selected · {files} · undo available after"),
         &[
-            ("changes", &doctor_tag_change_count(changes)),
+            ("selected", &doctor_composed_count(selected)),
+            ("ready", &doctor_composed_count(ready)),
             ("files", &doctor_file_count(files)),
         ],
     )
 }
 
-fn doctor_tag_change_count(count: usize) -> String {
+fn doctor_composed_count(count: usize) -> String {
     let count_text = count.to_string();
-    plural(
-        "{count} tag change",
-        "{count} tag changes",
-        count,
-        &[("count", &count_text)],
-    )
+    plural("{count}", "{count}", count, &[("count", &count_text)])
 }
 
 fn doctor_file_count(count: usize) -> String {
@@ -632,15 +651,33 @@ mod tests {
     /// into a string German cannot follow.
     #[test]
     fn doc_9b_every_count_on_the_review_page_inflects() {
+        assert_eq!(doctor_fixes_ready(1), "1 fix ready");
+        assert_eq!(doctor_fixes_ready(4), "4 fixes ready");
+        assert_eq!(
+            doctor_review_subtitle(1),
+            "Across 1 album · everything is preselected, uncheck what you disagree with"
+        );
+        assert_eq!(
+            doctor_review_subtitle(3),
+            "Across 3 albums · everything is preselected, uncheck what you disagree with"
+        );
+        assert_eq!(
+            doctor_stale_notice(1),
+            "1 fix is out of date — this file changed after the scan."
+        );
+        assert_eq!(
+            doctor_stale_notice(4),
+            "4 fixes are out of date — these files changed after the scan."
+        );
         assert_eq!(doctor_changes_and_albums(1, 1), "1 change · 1 album");
         assert_eq!(doctor_changes_and_albums(2, 3), "2 changes · 3 albums");
         assert_eq!(
-            doctor_apply_summary(1, 1),
-            "1 tag change · 1 file · undo available after"
+            doctor_apply_summary(1, 1, 1),
+            "1 of 1 selected · 1 file · undo available after"
         );
         assert_eq!(
-            doctor_apply_summary(4, 3),
-            "4 tag changes · 3 files · undo available after"
+            doctor_apply_summary(4, 7, 3),
+            "4 of 7 selected · 3 files · undo available after"
         );
         assert_eq!(doctor_change_count(1), "1 change");
         assert_eq!(doctor_change_count(2), "2 changes");

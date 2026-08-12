@@ -98,8 +98,15 @@ pub(in crate::ui) struct IssueRowPresentation {
 pub(in crate::ui) fn issue_row_presentation(new_count: u32, icon: NavIcon) -> IssueRowPresentation {
     IssueRowPresentation {
         badge: nonzero_count(i64::from(new_count)),
-        attention: new_count > 0 && matches!(icon, NavIcon::ImportErrors | NavIcon::LibraryDoctor),
+        attention: new_count > 0 && matches!(icon, NavIcon::ImportErrors),
     }
+}
+
+fn issue_row_tooltip(presentation: IssueRowPresentation, icon: NavIcon) -> Option<String> {
+    (icon == NavIcon::LibraryDoctor)
+        .then_some(presentation.badge?)
+        .and_then(|count| usize::try_from(count).ok())
+        .map(strings::doctor_fixes_ready)
 }
 
 pub(in crate::ui) fn build_nav_row(
@@ -190,7 +197,9 @@ pub(in crate::ui) fn build_issue_nav_row(
         hbox.append(&badge);
     }
 
-    navigation_row(&hbox, title)
+    let row = navigation_row(&hbox, title);
+    row.set_tooltip_text(issue_row_tooltip(presentation, icon).as_deref());
+    row
 }
 
 fn header_label(text: &str) -> gtk4::Label {
@@ -436,6 +445,20 @@ mod tests {
                 badge: Some(2),
                 attention: false,
             }
+        );
+        assert_eq!(
+            issue_row_presentation(433, NavIcon::LibraryDoctor),
+            IssueRowPresentation {
+                badge: Some(433),
+                attention: false,
+            }
+        );
+        assert_eq!(
+            issue_row_tooltip(
+                issue_row_presentation(433, NavIcon::LibraryDoctor),
+                NavIcon::LibraryDoctor
+            ),
+            Some("433 fixes ready".to_owned())
         );
     }
 

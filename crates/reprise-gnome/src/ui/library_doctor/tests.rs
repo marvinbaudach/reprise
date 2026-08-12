@@ -72,6 +72,13 @@ fn doc_2a_scope_choice_freezes_the_requested_input_shape() {
 }
 
 #[test]
+fn review_rescan_restores_the_scanned_scope_choice() {
+    assert_eq!(super::scope_choice("whole_library"), 0);
+    assert_eq!(super::scope_choice("current_view"), 1);
+    assert_eq!(super::scope_choice("selection"), 2);
+}
+
+#[test]
 fn doc_7c_entry_scope_defaults_to_library_and_suggests_filtered_view() {
     assert_eq!(super::suggested_scope(&snapshot()), 0);
 
