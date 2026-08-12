@@ -393,13 +393,23 @@ fn v71_combines_legacy_artwork_flags_conservatively_without_overwriting_a_decisi
     const SOURCES: &str = "module.source_images.enabled";
     const ARTWORK: &str = "module.artwork.enabled";
 
-    for (legacy, existing_artwork, expected) in [
-        ([Some("1"), Some("1"), Some("1")], None, "1"),
-        ([Some("1"), Some("0"), Some("1")], None, "0"),
-        ([Some("1"), None, None], None, "0"),
-        ([None, None, None], None, "0"),
-        ([Some("1"), Some("1"), Some("1")], Some("0"), "0"),
-        ([Some("0"), Some("0"), Some("0")], Some("1"), "1"),
+    for (legacy, existing_artwork, expected_stored, expected_enabled) in [
+        ([Some("1"), Some("1"), Some("1")], None, Some("1"), true),
+        ([Some("1"), Some("0"), Some("1")], None, None, false),
+        ([Some("1"), None, None], None, None, false),
+        ([None, None, None], None, None, false),
+        (
+            [Some("1"), Some("1"), Some("1")],
+            Some("0"),
+            Some("0"),
+            false,
+        ),
+        (
+            [Some("0"), Some("0"), Some("0")],
+            Some("1"),
+            Some("1"),
+            true,
+        ),
     ] {
         let conn = open(None).unwrap();
         migrate_with_empty_caches(&conn);
@@ -426,15 +436,22 @@ fn v71_combines_legacy_artwork_flags_conservatively_without_overwriting_a_decisi
 
         migrate_with_empty_caches(&conn);
 
-        let actual: String = conn
+        let actual: Option<String> = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?1",
                 [ARTWORK],
                 |row| row.get(0),
             )
+            .optional()
             .unwrap();
         assert_eq!(
-            actual, expected,
+            actual.as_deref(),
+            expected_stored,
+            "legacy={legacy:?}, existing={existing_artwork:?}"
+        );
+        assert_eq!(
+            crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap(),
+            expected_enabled,
             "legacy={legacy:?}, existing={existing_artwork:?}"
         );
         let version: i64 = conn

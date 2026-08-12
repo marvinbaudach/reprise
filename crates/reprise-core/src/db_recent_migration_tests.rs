@@ -587,7 +587,7 @@ fn v11_database_runs_the_same_new_releases_migration_sequence() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(network_settings, 2);
+    assert_eq!(network_settings, 1);
     assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
     assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
 }

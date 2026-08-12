@@ -260,6 +260,7 @@ fn wire_expander(
 fn switch_alignment_placeholder() -> gtk4::Image {
     gtk4::Image::builder()
         .icon_name("pan-down-symbolic")
+        .accessible_role(gtk4::AccessibleRole::Presentation)
         .opacity(0.0)
         .can_target(false)
         .can_focus(false)
