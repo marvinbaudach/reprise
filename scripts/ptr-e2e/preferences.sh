@@ -40,22 +40,25 @@ run_preferences_flow() {
     log_step "flow 6 skipped: coordinate checks require the fixed maximized Library geometry"
     return
   fi
+  screenshot "17-main-menu-closed"
   key "F10"
   sleep 0.3
 
   local marker preference_window width
   marker=$(log_marker)
-  # `primary_menu.rs` orders the focusable entries as Compact Mode (focused
-  # when opened), Edit Column Layout, Library Doctor, Import Playlist, then
-  # Preferences. From Home that makes Preferences exactly four Down steps;
-  # section separators do not take focus.
-  key "Home"
+  # The popover opens with Compact Mode focused, so there is deliberately no
+  # Home press here: Home is not a no-op and costs one menu-navigation step.
+  # Four Down presses traverse Edit Column Layout, Library Doctor, Import
+  # Playlist, then Preferences; section separators do not take focus.
   key "Down"
   key "Down"
   key "Down"
   key "Down"
   screenshot "17-main-menu-preferences-focused"
-  assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/17-main-menu-preferences-focused.png"
+  assert_screenshots_differ \
+    "$PTR_E2E_OUT_DIR/17-main-menu-closed.png" \
+    "$PTR_E2E_OUT_DIR/17-main-menu-preferences-focused.png" \
+    "F10 visibly opened the primary menu before Preferences activation"
   key "Return"
   sleep 0.8
   assert_log_contains_since "$marker" "preferences window presented" \

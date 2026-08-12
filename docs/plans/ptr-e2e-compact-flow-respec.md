@@ -88,8 +88,10 @@ focusable entries as:
 4. Import Playlist
 5. Preferences
 
-Flow 6 now starts from Home, sends four Down presses, captures the focused
-Preferences item, and only then presses Return.
+Flow 6 relies on the popover's initial Compact Mode focus, deliberately sends
+no Home press, sends four Down presses, captures the focused Preferences item,
+and only then presses Return. Home is not a no-op in this popover: pressing it
+costs one navigation step.
 
 ### Package C: queue identity
 
@@ -170,6 +172,22 @@ flows 4b, 5, and 6 never started. Three further harness defects were repaired:
   manual X starts before manual Y and independently proves that Up Next reaches
   zero, matching the measured `2 → 0` queue publication without weakening the
   queued playback order.
+
+### Run 9 review follow-up
+
+Run 9 completed all nine flows with 38 passed and two failed checks. The flow
+coverage line and failure ledger agreed, making this the first branch run whose
+complete counts are trustworthy. Both failures had one harness cause:
+
+- the primary popover already focuses Compact Mode when F10 opens it. The
+  extra Home press consumed one navigation step, so four Down presses stopped
+  on Import Playlist instead of Preferences. Flow 6 now omits Home and retains
+  the four Down presses;
+- the focused-menu screenshot remains immediately before Return, but its check
+  now compares it against a capture taken before F10. This proves that the
+  primary menu visibly opened instead of merely proving the capture was not
+  blank. The float-safe screenshot helper from the run-6 repair supplies the
+  comparison.
 
 ## Named product gaps
 

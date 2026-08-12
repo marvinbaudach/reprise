@@ -104,4 +104,43 @@ assert_manual_queue_consumption_since 0 4 5
 assert_equal 1 "$(wc -l < "$FAILURE_LOG")" \
   "manual queue playback still rejects Y before X"
 
+PREFERENCES_FLOW_SOURCE="$(sed -n \
+  '/^run_preferences_flow() {$/,/^}$/p' \
+  "$REPO_ROOT/scripts/ptr-e2e/preferences.sh")"
+assert_equal 0 "$(grep -Fc 'key "Home"' <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences navigation does not spend a menu step on Home"
+assert_equal 4 "$(grep -Fc 'key "Down"' <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences navigation takes four Down steps from Compact Mode"
+assert_equal 1 "$(grep -Fc 'screenshot "17-main-menu-closed"' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences captures the main menu before F10 opens it"
+assert_equal 1 "$(grep -Fc 'assert_screenshots_differ \' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences proves the focused-menu capture differs from the closed menu"
+assert_equal 1 "$(grep -Fc '17-main-menu-closed.png' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences uses the closed-menu capture as the comparison baseline"
+assert_equal 1 "$(grep -Fc '17-main-menu-preferences-focused.png' \
+  <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
+  "Preferences compares the focused-menu capture"
+PREFERENCES_CLOSED_LINE="$(grep -nF 'screenshot "17-main-menu-closed"' \
+  <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+PREFERENCES_F10_LINE="$(grep -nF 'key "F10"' \
+  <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+PREFERENCES_FOCUSED_LINE="$(grep -nF 'screenshot "17-main-menu-preferences-focused"' \
+  <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+PREFERENCES_COMPARE_LINE="$(grep -nF 'assert_screenshots_differ \' \
+  <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+PREFERENCES_RETURN_LINE="$(grep -nF 'key "Return"' \
+  <<<"$PREFERENCES_FLOW_SOURCE" | cut -d: -f1)"
+PREFERENCES_FLOW_ORDER_OK=0
+if [ "$PREFERENCES_CLOSED_LINE" -lt "$PREFERENCES_F10_LINE" ] \
+  && [ "$PREFERENCES_F10_LINE" -lt "$PREFERENCES_FOCUSED_LINE" ] \
+  && [ "$PREFERENCES_FOCUSED_LINE" -lt "$PREFERENCES_COMPARE_LINE" ] \
+  && [ "$PREFERENCES_COMPARE_LINE" -lt "$PREFERENCES_RETURN_LINE" ]; then
+  PREFERENCES_FLOW_ORDER_OK=1
+fi
+assert_equal 1 "$PREFERENCES_FLOW_ORDER_OK" \
+  "Preferences proves the menu opened before activating its focused item"
+
 printf 'harness self-test passed\n'
