@@ -5,6 +5,8 @@
 //! visual peak caps, presentation-only bass glow, and paused resting motion
 //! required by the UI contract.
 
+use std::time::Duration;
+
 use crate::playback::{BassPressure, SpectrumFrame, SPECTRUM_BAND_COUNT};
 
 use super::color::hue_shift;
@@ -17,6 +19,8 @@ const SETTLE_EPSILON: f32 = 0.002;
 const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
 /// Per-tick release of the glow layer once playback stops.
 const GLOW_RELEASE: f32 = 0.06;
+/// Fixed-step rate retained by [`VisualEngine::tick`].
+const SIMULATION_TICKS_PER_SECOND: f32 = 60.0;
 /// Ticks for one full travel of the idle wave (60 Hz → six seconds).
 const IDLE_PERIOD_TICKS: f32 = 360.0;
 /// Crests visible across the canvas width at any moment.
@@ -38,6 +42,8 @@ const PAUSED_LIVE_FLOOR: f32 = 0.10;
 const PAUSED_LIVE_SHAPE: f32 = 0.20;
 /// Height of the travelling wave layered onto the retained live shape.
 const PAUSED_LIVE_WAVE: f32 = 0.08;
+/// Full travelling crests across the field, so each field third averages one.
+const PAUSED_LIVE_WAVE_COUNT: f32 = 3.0;
 
 /// Borrowed render inputs for the Bars scene builder.
 pub struct ModeCtx<'a> {
@@ -161,7 +167,8 @@ impl VisualEngine {
 
     fn paused_live_band(&self, band: usize) -> f32 {
         let across = band as f32 / SPECTRUM_BAND_COUNT as f32;
-        let wave = (std::f32::consts::TAU * (across - self.idle_phase)).sin();
+        let wave =
+            (std::f32::consts::TAU * (across * PAUSED_LIVE_WAVE_COUNT - self.idle_phase)).sin();
         PAUSED_LIVE_FLOOR + PAUSED_LIVE_SHAPE * self.bands_current[band] + PAUSED_LIVE_WAVE * wave
     }
 
@@ -217,17 +224,30 @@ impl VisualEngine {
         self.refresh_display_bands();
     }
 
-    /// Advances peak caps and keeps the resting wave travelling while a loaded
-    /// track is not playing (AC-27).
+    /// Advances presentation state by real elapsed time.
+    ///
+    /// Frontends call this at their own redraw cadence. The elapsed duration,
+    /// rather than the number of rendered frames, keeps AC-27's resting wave
+    /// on the same six-second clock under load and at reduced frame rates.
+    pub fn advance_by(&mut self, elapsed: Duration) -> bool {
+        self.advance_ticks(elapsed.as_secs_f32() * SIMULATION_TICKS_PER_SECOND)
+    }
+
+    /// Advances one legacy 60 Hz simulation step.
     pub fn tick(&mut self) -> bool {
+        self.advance_ticks(1.0)
+    }
+
+    fn advance_ticks(&mut self, elapsed_ticks: f32) -> bool {
         let mut settled = true;
         if self.idle_active() {
-            self.idle_phase = (self.idle_phase + 1.0 / IDLE_PERIOD_TICKS).fract();
-            self.idle_amp = (self.idle_amp + IDLE_FADE_IN).min(1.0);
+            self.idle_phase = (self.idle_phase + elapsed_ticks / IDLE_PERIOD_TICKS).fract();
+            self.idle_amp = (self.idle_amp + IDLE_FADE_IN * elapsed_ticks).min(1.0);
         }
         if !self.playing && !self.has_track {
+            let release = 1.0 - (1.0 - NO_TRACK_RELEASE).powf(elapsed_ticks);
             for bar in &mut self.bands_current {
-                *bar += (0.0 - *bar) * NO_TRACK_RELEASE;
+                *bar += (0.0 - *bar) * release;
                 if *bar < SETTLE_EPSILON {
                     *bar = 0.0;
                 }
@@ -237,20 +257,20 @@ impl VisualEngine {
         // The stage light falls on every frame, playing or not: the attack
         // lands in `ingest`, the decay belongs to the render clock. Without a
         // fall here the light would simply latch on at the first hit.
-        self.glow = (self.glow - GLOW_RELEASE).max(0.0);
+        self.glow = (self.glow - GLOW_RELEASE * elapsed_ticks).max(0.0);
         settled &= self.glow == 0.0;
         if !self.playing {
             // No fresh measurements arrive once playback stops, so the two
             // detector readings are released here as well rather than waiting
             // for a frame that never comes.
             for value in [&mut self.pressure.impact, &mut self.pressure.aura] {
-                *value = (*value - GLOW_RELEASE).max(0.0);
+                *value = (*value - GLOW_RELEASE * elapsed_ticks).max(0.0);
                 settled &= *value == 0.0;
             }
         }
         for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
             let floor = if self.playing { *current } else { 0.0 };
-            *peak = (*peak - PEAK_DECAY).max(floor);
+            *peak = (*peak - PEAK_DECAY * elapsed_ticks).max(floor);
             if *peak < SETTLE_EPSILON {
                 *peak = 0.0;
             }
@@ -431,31 +451,6 @@ mod tests {
             assert!(
                 span > 0.14,
                 "paused band {band} moved through only {span} ({minimum}..={maximum})"
-            );
-        }
-    }
-
-    #[test]
-    fn ac_27_paused_live_wave_never_overturns_the_retained_shape() {
-        let mut engine = paused_live_engine();
-        for _ in 0..120 {
-            engine.tick();
-        }
-        const LOW_BAND: usize = 0;
-        const HIGH_BAND: usize = 50;
-
-        for tick in 0..IDLE_PERIOD_TICKS as usize {
-            engine.tick();
-            let low = engine.display_bands[LOW_BAND];
-            let high = engine.display_bands[HIGH_BAND];
-            assert!(
-                high > low,
-                "retained bands swapped at tick {tick}: high {high}, low {low}"
-            );
-            let endpoint_gap = engine.display_bands[63] - engine.display_bands[0];
-            assert!(
-                endpoint_gap > 0.08,
-                "retained endpoint gap fell below the wave amplitude: {endpoint_gap}"
             );
         }
     }
@@ -758,3 +753,6 @@ mod tests {
         assert_eq!((ctx.width, ctx.height), (548.0, 300.0));
     }
 }
+
+#[cfg(test)]
+mod engine_timing_tests;

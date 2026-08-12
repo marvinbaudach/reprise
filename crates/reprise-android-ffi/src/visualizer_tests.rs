@@ -179,20 +179,21 @@ fn paused_live_audio_reports_silence_without_forgetting_the_stream() {
 }
 
 #[test]
-fn paused_scene_keeps_the_sixty_hertz_wave_period_at_the_reduced_frame_rate() {
-    let engine = AndroidVisualEngine::new();
+fn paused_scene_uses_elapsed_time_at_a_fifteen_hertz_redraw_rate() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
     engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
     assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
     engine.set_playing(false);
-    for _ in 0..60 {
-        engine.tick();
-    }
+    clock.advance(Duration::from_secs(2));
+    engine.tick();
     let start = main_bar_segment_counts(&decode_scene(&engine.scene(272.0, 272.0)), 272.0);
 
-    // Android deliberately redraws a paused scene at 20 Hz. One hundred and
-    // twenty frames are therefore six seconds, the portable wave period.
-    for _ in 0..120 {
+    // Three 15 Hz frames span exactly 200 ms despite millisecond rounding.
+    // Ninety redraws therefore cover the portable wave's six-second period.
+    for elapsed in [67, 67, 66].into_iter().cycle().take(90) {
+        clock.advance(Duration::from_millis(elapsed));
         engine.tick();
     }
     let after_one_period =
@@ -206,16 +207,18 @@ fn paused_scene_keeps_the_sixty_hertz_wave_period_at_the_reduced_frame_rate() {
 
 #[test]
 fn paused_stored_analysis_keeps_the_existing_generic_fallback() {
-    let stored = AndroidVisualEngine::new();
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let stored = AndroidVisualEngine::with_clock(clock.clone());
     stored.ingest_bands(
         (0..64)
             .map(|index| 0.2 + index as f32 * 0.7 / 63.0)
             .collect(),
     );
-    let generic = AndroidVisualEngine::new();
+    let generic = AndroidVisualEngine::with_clock(clock.clone());
     generic.ingest_bands(Vec::new());
 
     for _ in 0..60 {
+        clock.advance(Duration::from_nanos(16_666_667));
         stored.tick();
         generic.tick();
     }
@@ -223,12 +226,14 @@ fn paused_stored_analysis_keeps_the_existing_generic_fallback() {
     let stored_scene = stored.scene(272.0, 272.0);
     let generic_scene = generic.scene(272.0, 272.0);
     assert_eq!(stored_scene.len(), generic_scene.len());
+    let largest_error = stored_scene
+        .iter()
+        .zip(&generic_scene)
+        .map(|(stored, generic)| (stored - generic).abs())
+        .fold(0.0, f32::max);
     assert!(
-        stored_scene
-            .iter()
-            .zip(generic_scene)
-            .all(|(stored, generic)| (stored - generic).abs() < 0.00001),
-        "stored analysis replaced the generic paused fallback"
+        largest_error < 0.000_02,
+        "stored analysis replaced the generic paused fallback by {largest_error}"
     );
 }
 

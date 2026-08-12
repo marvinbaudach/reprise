@@ -27,9 +27,6 @@ const RADIAL_GLOW_KIND: f32 = 2.0;
 const RECORD_PREFIX_LEN: usize = 8;
 const MAX_PCM_CHANNEL_COUNT: usize = 32;
 pub(crate) const LIVE_AUDIO_STALE_AFTER: Duration = Duration::from_millis(500);
-/// Paused scenes render at 20 Hz; three fixed simulation steps preserve the
-/// portable engine's 60 Hz timing without redrawing at playback cadence.
-const PAUSED_VISUAL_TICK_STEPS: usize = 3;
 
 pub(crate) trait MonotonicClock: Send + Sync {
     fn now(&self) -> Duration;
@@ -149,6 +146,7 @@ struct VisualState {
     live_pressure: BassPressure,
     playing: bool,
     playback_intent: PlaybackIntent,
+    last_visual_tick_at: Duration,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -190,8 +188,12 @@ impl AndroidVisualEngine {
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
         reconcile_stream_generation(&mut state, stream_generation);
+        let now = self.clock.now();
+        if state.playing != playing {
+            state.last_visual_tick_at = now;
+        }
         state.playing = playing;
-        expire_stale_live_audio(&mut state, self.clock.now());
+        expire_stale_live_audio(&mut state, now);
         let has_audio = state.has_analysis || state.has_live_audio;
         state.engine.set_playing(playing && has_audio);
     }
@@ -230,6 +232,7 @@ impl AndroidVisualEngine {
         let stream_generation = self.current_stream_generation();
         state.engine.note_track_changed();
         state.engine.set_has_track(false);
+        state.last_visual_tick_at = self.clock.now();
         state.has_ingested = false;
         state.has_analysis = false;
         reset_live_presentation(&mut state, stream_generation);
@@ -369,19 +372,14 @@ impl AndroidVisualEngine {
         }
     }
 
-    /// Advances the portable presentation state; `true` means it is settled.
+    /// Advances the portable presentation state by monotonic elapsed time;
+    /// `true` means it is settled.
     pub fn tick(&self) -> bool {
         let mut state = self.lock();
-        let steps = if state.playing {
-            1
-        } else {
-            PAUSED_VISUAL_TICK_STEPS
-        };
-        let mut settled = false;
-        for _ in 0..steps {
-            settled = state.engine.tick();
-        }
-        settled
+        let now = self.clock.now();
+        let elapsed = now.saturating_sub(state.last_visual_tick_at);
+        state.last_visual_tick_at = now;
+        state.engine.advance_by(elapsed)
     }
 
     /// Returns the scene in the flat format documented by this module.
@@ -468,6 +466,7 @@ impl Default for AndroidVisualEngine {
 
 impl AndroidVisualEngine {
     fn with_monotonic_clock(clock: Arc<dyn MonotonicClock>) -> Self {
+        let now = clock.now();
         Self {
             state: Mutex::new(VisualState {
                 engine: VisualEngine::new(),
@@ -479,6 +478,7 @@ impl AndroidVisualEngine {
                 live_pressure: silent_pressure(),
                 playing: false,
                 playback_intent: PlaybackIntent::Unknown,
+                last_visual_tick_at: now,
             }),
             live_audio: Mutex::new(None),
             stream_generation: AtomicU64::new(0),

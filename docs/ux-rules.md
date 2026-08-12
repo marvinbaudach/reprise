@@ -3752,26 +3752,24 @@ STYLE-1).
   frame-zero jump, into a low resting shape: a 10% floor plus 20% of each
   retained band and an eight-percentage-point travelling-wave amplitude. For
   the 0.2-to-0.9 acceptance distribution, every band spans 16 percentage
-  points over a full period. Its retained endpoints differ by 14 percentage
-  points before modulation and stay about 13.2 to 14.8 percentage points apart
-  through every phase, always more than the eight-point wave amplitude; the
-  resulting display range is 6% to 36%. The bands carry different phases
-  across the field, so the motion travels instead of pulsing in unison,
-  completes one cycle in six
-  seconds, never overturns the retained high-to-low order, and repeatedly
-  returns near its starting values instead of drifting toward zero. The
-  unchanged Bars renderer keeps the cyan-to-magenta band gradient. Resume
-  makes the retained live values authoritative immediately, before another
-  audio frame arrives.
+  points over a full period, and the resulting display range is 6% to 36%.
+  Three crests carry different phases across the field, so the motion travels
+  instead of pulsing in unison while each field third averages nearly one full
+  wave. Throughout the period, the mean of the lower field third stays below
+  the mean of the upper field third by at least nine percentage points for that
+  acceptance distribution. The wave repeatedly returns near its starting
+  values instead of drifting toward zero. The unchanged Bars renderer keeps
+  the cyan-to-magenta band gradient. Resume makes the retained live values
+  authoritative immediately, before another audio frame arrives.
   Buffering with play intent remains live, and a track boundary still clears
   the previous distribution. A loaded scene without a live distribution uses
   the existing generic resting wave; without a loaded track the surface
-  releases to empty and its tick callback stops. Android's paused 20 Hz redraw
-  advances three fixed simulation steps per frame, while the desktop's 30 Hz
-  redraw retains its existing catch-up steps, so both preserve the portable
-  60 Hz, six-second period. With animations disabled, the resting scene is a
-  static image. This is the audio-functional exception for continuous motion
-  permitted in MOT-2.
+  releases to empty and its tick callback stops. The portable engine advances
+  from monotonic elapsed time and completes one cycle in six seconds regardless
+  of redraw cadence. Android's reduced paused redraw and the desktop's roughly
+  30 Hz idle redraw therefore change only sampling smoothness, never wave
+  speed. With animations disabled, the resting scene is a static image. This
+  is the audio-functional exception for continuous motion permitted in MOT-2.
 
 ## Y. Library Doctor / Tag Cleanup
 
