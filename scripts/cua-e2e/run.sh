@@ -677,12 +677,10 @@ run_private_session() {
   esac
   echo "[cua-e2e] private scenario group passed: $private_group"
 }
-
 if [[ "${1:-}" == "--private-session" ]]; then
   run_private_session
   exit 0
 fi
-
 for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg gdbus gnome-keyring-daemon import jq python3 rg sqlite3 timeout wmctrl; do
   required_command "$command"
 done
@@ -690,7 +688,6 @@ if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
   echo "AT-SPI bus launcher is unavailable: /usr/lib/at-spi-bus-launcher" >&2
   exit 2
 fi
-
 # `test-fixtures` routes the podcast and radio HTTP clients at a directory of
 # files instead of the network. The feature is inert without the matching
 # environment variables — `reprise-gnome/Cargo.toml` documents it as existing
@@ -711,7 +708,6 @@ if [[ ! -x "$CUA_E2E_BIN_PATH" ]]; then
   echo "build Reprise first: cargo build${CUA_E2E_PROFILE/release/ --release}" >&2
   exit 2
 fi
-
 CUA_E2E_SCRATCH_ROOT=$(mktemp -d /tmp/reprise-cua-e2e.XXXXXX)
 export CUA_E2E_SCRATCH_ROOT CUA_E2E_BIN_PATH
 output_root=$CUA_E2E_OUT_DIR
@@ -783,7 +779,21 @@ case "${CUA_E2E_ONLY:-all}" in
     ;;
 esac
 
+failed_groups=()
+passed_groups=0
+# Each group runs inside dbus-run-session ... "$0" --private-session, and that
+# child owns a private_session_cleanup EXIT trap. A red group therefore tears
+# down its app, D-Bus, AT-SPI and driver before the parent continues.
 for scenario_group in "${scenario_groups[@]}"; do
-  run_private_scenario_group "$scenario_group"
+  if ! run_private_scenario_group "$scenario_group"; then
+    failed_groups+=("$scenario_group")
+    continue
+  fi
+  passed_groups=$((passed_groups + 1))
 done
-echo "[cua-e2e] all acceptance scenarios passed"
+if ((${#failed_groups[@]} > 0)); then
+  echo "[cua-e2e] scenario groups passed: $passed_groups, failed: ${#failed_groups[@]}"
+  printf '[cua-e2e] FAILED scenario group: %s\n' "${failed_groups[@]}" >&2
+  exit 1
+fi
+echo "[cua-e2e] all acceptance scenarios passed ($passed_groups scenario groups)"
