@@ -553,7 +553,7 @@ fn add_issue_row(
         .push((row, source, title.to_string()));
 }
 
-fn add_issue_action_row(
+pub(super) fn add_issue_action_row(
     shared: &Rc<Shared>,
     title: &str,
     count: u32,
@@ -567,24 +567,9 @@ fn add_issue_action_row(
     row.set_focusable(true);
     // input-parity: ACC-8 keyboard=issue-action-row-enter
     row.connect_activate(move |row| activate_issue_action(row, action));
-    // …and once more for the pointer. `GtkListBoxRow::activate` fires for
-    // keyboard activation; a single click makes the *list box* emit
-    // `row-activated` instead, and this row has no `ViewSource` for the box's
-    // own handler to act on. Measured on 2026-08-07: clicking the Library
-    // Doctor entry only focused it while Enter opened the review, and a click
-    // on a neighbouring row navigated fine — so the row, not the click, was
-    // the problem.
-    // input-parity: ACC-8 keyboard=issue-action-row-enter
-    let click = gtk4::GestureClick::new();
-    click.connect_released(move |gesture, _, _, _| {
-        if gesture.current_button() != 1 {
-            return;
-        }
-        if let Some(row) = gesture.widget().and_downcast::<gtk4::ListBoxRow>() {
-            activate_issue_action(&row, action);
-        }
-    });
-    row.add_controller(click);
+    // Pointer and assistive-technology activation arrive through the real
+    // button built by `build_issue_nav_row`; it activates this same row signal
+    // and therefore shares the keyboard path above.
     shared.issues_listbox.append(&row);
     remember_issue_focus_entry(&shared.issues_listbox, &row);
 }

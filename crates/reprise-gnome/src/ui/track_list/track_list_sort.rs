@@ -78,12 +78,41 @@ pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &R
         let shared = shared.clone();
         cv_sorter.connect_primary_sort_order_notify(move |s| on_sorter_changed(&shared, s));
     }
+    {
+        let weak = Rc::downgrade(shared);
+        shared
+            .browse_bar
+            .set_on_sort_changed(move |field, direction| {
+                let Some(shared) = weak.upgrade() else {
+                    return;
+                };
+                let Some(column) = column_for_sort_field(&shared.column_view, &field) else {
+                    tracing::warn!(field, "track list: sort menu field has no column");
+                    return;
+                };
+                let order = if direction == "desc" {
+                    gtk4::SortType::Descending
+                } else {
+                    gtk4::SortType::Ascending
+                };
+                sort_by_column(&shared.column_view, &column, order);
+            });
+    }
+    {
+        let weak = Rc::downgrade(shared);
+        shared.browse_bar.set_on_sort_open(move || {
+            let Some(shared) = weak.upgrade() else {
+                return;
+            };
+            let sort = shared.sort.borrow().clone();
+            shared.browse_bar.sync_sort(&sort.field, &sort.dir);
+        });
+    }
+    let sort = shared.sort.borrow().clone();
+    shared.browse_bar.sync_sort(&sort.field, &sort.dir);
 }
 
 fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
-    if shared.restoring_view.get() {
-        return;
-    }
     let Some(column) = sorter.primary_sort_column() else {
         return;
     };
@@ -99,6 +128,10 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
         field: id.to_string(),
         dir: dir.to_string(),
     };
+    shared.browse_bar.sync_sort(&new_sort.field, &new_sort.dir);
+    if shared.restoring_view.get() {
+        return;
+    }
 
     // A single header click can fire both `primary-sort-column-notify` and
     // `primary-sort-order-notify` (e.g. switching to a new column changes
@@ -111,6 +144,17 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
 
     *shared.sort.borrow_mut() = new_sort;
     reload(shared);
+}
+
+fn column_for_sort_field(view: &gtk4::ColumnView, field: &str) -> Option<gtk4::ColumnViewColumn> {
+    ColumnId::from_sort_field(field)?;
+    let columns = view.columns();
+    (0..columns.n_items()).find_map(|index| {
+        columns
+            .item(index)
+            .and_downcast::<gtk4::ColumnViewColumn>()
+            .filter(|column| column.id().as_deref() == Some(field))
+    })
 }
 
 /// Mirrors `queries.rs`'s `"playlist_order"` `SORT_WHITELIST` sentinel (see
@@ -376,5 +420,86 @@ mod restored_sort_tests {
                 dir: "asc".into(),
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod sort_menu_display_tests {
+    use std::cell::Cell;
+
+    use super::*;
+    use crate::ui::track_list::TrackList;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sort_menu_and_header_use_the_same_state_and_reload_path() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let reloads = Rc::new(Cell::new(0));
+        let track_list = TrackList::new(
+            Rc::new(crate::test_db::open().unwrap()),
+            Box::new(|_, _, _, _| {}),
+            {
+                let reloads = reloads.clone();
+                move |_, _, _, _| reloads.set(reloads.get() + 1)
+            },
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder().child(track_list.widget()).build();
+        window.present();
+        let initial_reloads = reloads.get();
+
+        track_list
+            .shared
+            .browse_bar
+            .activate_sort_field_for_test("title");
+        assert_eq!(
+            *track_list.shared.sort.borrow(),
+            SortState {
+                field: "title".into(),
+                dir: "asc".into(),
+            }
+        );
+        assert_eq!(reloads.get(), initial_reloads + 1);
+
+        track_list
+            .shared
+            .browse_bar
+            .activate_sort_direction_for_test("desc");
+        assert_eq!(
+            *track_list.shared.sort.borrow(),
+            SortState {
+                field: "title".into(),
+                dir: "desc".into(),
+            }
+        );
+        assert_eq!(reloads.get(), initial_reloads + 2);
+
+        let artist = column_for_field(&track_list.shared.column_view, "artist");
+        sort_by_column(
+            &track_list.shared.column_view,
+            &artist,
+            gtk4::SortType::Ascending,
+        );
+        assert_eq!(
+            track_list.shared.browse_bar.sort_state_for_test(),
+            ("artist".to_string(), "asc".to_string()),
+            "a real header sort must update both menu marks"
+        );
+        assert_eq!(reloads.get(), initial_reloads + 3);
+        window.close();
+    }
+
+    fn column_for_field(view: &gtk4::ColumnView, field: &str) -> gtk4::ColumnViewColumn {
+        let columns = view.columns();
+        (0..columns.n_items())
+            .find_map(|index| {
+                columns
+                    .item(index)
+                    .and_downcast::<gtk4::ColumnViewColumn>()
+                    .filter(|column| column.id().as_deref() == Some(field))
+            })
+            .unwrap_or_else(|| panic!("missing sortable column {field}"))
     }
 }

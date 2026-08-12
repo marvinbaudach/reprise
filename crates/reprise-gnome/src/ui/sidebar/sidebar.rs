@@ -569,5 +569,9 @@ mod resolve_select_source_tests;
 mod sidebar_layout_tests;
 
 #[cfg(test)]
+#[path = "sidebar_a11y_tests.rs"]
+mod sidebar_a11y_tests;
+
+#[cfg(test)]
 #[path = "sidebar_queue_count_tests.rs"]
 mod sidebar_queue_count_tests;
