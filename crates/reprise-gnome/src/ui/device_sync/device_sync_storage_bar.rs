@@ -6,6 +6,8 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::device_sync::{DeviceStorageProjection, StorageProjectionState};
 
+/// Test-visible marker for the segment drawn with Cairo below; the class is
+/// not a styling contract because GTK CSS cannot address part of a drawing.
 const THIS_RUN_HATCHED_CLASS: &str = "device-storage-this-run-hatched";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,17 +31,13 @@ pub(super) fn segments(projection: &DeviceStorageProjection) -> Option<StorageSe
     }
     let after = projection.after_sync.as_ref()?;
     let total = after.total_bytes.filter(|total| *total > 0)?;
-    let current_music = projection
-        .current
-        .reprise_music_bytes
-        .checked_add(projection.current.other_music_bytes)?;
     let after_music = after
         .reprise_music_bytes
         .checked_add(after.other_music_bytes)?;
     let other = after.other_used_bytes?;
     let free = after.free_bytes?;
-    let music = current_music.min(after_music);
-    let this_run = after_music.saturating_sub(current_music);
+    let this_run = projection.transfer_bytes;
+    let music = after_music.checked_sub(this_run)?;
     let represented = music
         .checked_add(this_run)?
         .checked_add(other)?
@@ -74,12 +72,16 @@ impl StorageBar {
                 return;
             };
             let foreground = widget.color();
+            let music = gtk4::gdk::RGBA::parse(crate::ui::style::category_colors::music_color(
+                libadwaita::StyleManager::default().is_dark(),
+            ))
+            .expect("category colors must be valid #RRGGBB literals");
             let accent = crate::ui::style::accent::accent_rgba();
             let width = f64::from(width.max(0));
             let height = f64::from(height.max(0));
             let mut x = 0.0;
             for (bytes, color, alpha, hatched) in [
-                (segments.music, foreground, 0.82, false),
+                (segments.music, music, 1.0, false),
                 (segments.this_run, accent, 0.42, true),
                 (segments.other, foreground, 0.28, false),
                 (segments.free, foreground, 0.10, false),

@@ -4895,17 +4895,8 @@ msgstr ""
 msgid "Forget device"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:26
-msgid "Music · Opus 160 kbit/s"
-msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:27
-msgid "Up next"
-msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:28
-msgid "Rescan"
-msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:29
 #, rust-format
@@ -4944,9 +4935,6 @@ msgstr ""
 msgid "Synchronization Progress"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:75
-msgid "Choose…"
-msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:76
 msgid "Choose playlists"
@@ -4968,10 +4956,6 @@ msgstr ""
 msgid "Sync automatically when this phone connects"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
-#, rust-format
-msgid "Target folder: {path}"
-msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:83
 msgid "Filter sync content"
@@ -4998,13 +4982,7 @@ msgstr ""
 msgid "{selected} selected · {content} · {size}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:93
-msgid "smart lists kept up to date"
-msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:94
-msgid "smart lists keep their current contents"
-msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:101
 #, rust-format
@@ -5042,10 +5020,6 @@ msgstr ""
 msgid "~{seconds} s left"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:206
-#, rust-format
-msgid "{selected} of {total} playlists"
-msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:250
 #, rust-format
@@ -5066,10 +5040,6 @@ msgstr ""
 msgid "Nothing to transfer"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:338
-#, rust-format
-msgid "{before} → {after} free"
-msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:365
 msgid "Device contents never verified"
@@ -5402,9 +5372,6 @@ msgstr ""
 msgid "Music transfer profile"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
-msgid "Remove from phone when deleted here"
-msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
 msgid "Finishing synchronization…"
@@ -5471,9 +5438,6 @@ msgstr ""
 msgid "Rules for this phone"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
-msgid "Podcast and YouTube files are no longer synced and were left untouched outside /Music/Reprise."
-msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
 #, rust-format
@@ -5502,4 +5466,14 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
 msgid "_Cancel"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:396
+#, rust-format
+msgid "Podcast and YouTube files are no longer synced and were left untouched outside {path}."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:407
+#, rust-format
+msgid "Not enough space · {free} free · {shortfall} more needed"
 msgstr ""

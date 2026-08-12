@@ -126,7 +126,7 @@ The pure core layer owns the platform-neutral contracts:
 - `device_sync/podcasts.rs`: the sync plan for podcast episodes and
   YouTube audio tracks — both via the same `build_plan`, distinguished only
   by `PodcastSyncSource` and target cap.
-- `device_sync/category_diff.rs`: the per-category readable diff projection
+- `device_sync/music_diff.rs`: the per-category readable diff projection
   for the device dashboard (`MTP-45`/`MTP-22`), a pure display translation
   without transfer logic of its own.
 

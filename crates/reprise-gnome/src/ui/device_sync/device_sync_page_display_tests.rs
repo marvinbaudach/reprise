@@ -74,6 +74,16 @@ fn mtp_60_a_failed_run_is_read_only_in_the_dock() {
         1,
         "a failed run must not be duplicated in a page notice"
     );
+    assert!(surface.dashboard.dock.title.has_css_class("error"));
+    assert_eq!(
+        surface.dashboard.dock.title.tooltip_text().as_deref(),
+        Some("The phone stopped responding.")
+    );
+    failed.sync_error = None;
+    failed.page.warnings = vec![SyncPageWarning::UnavailableNotOnDevice { track_id: 7 }];
+    surface.update(&failed);
+    assert!(surface.dashboard.dock.title.has_css_class("warning"));
+    assert!(!surface.dashboard.dock.title.has_css_class("error"));
 }
 
 #[test]
@@ -212,12 +222,39 @@ fn mtp_60_sync_status_text_does_not_resize_the_playlist_workspace() {
         copying_status_width, converting_status_width,
         "dynamic status copy must not change the dock's natural width"
     );
+
+    device.sync_error = Some(SyncFailure {
+        message: "The first exceptionally detailed synchronization failure keeps explaining itself until the device status is fully understood by the user.".repeat(3),
+        failed_tracks: Vec::new(),
+    });
+    surface.update(&device);
+    let first_title_width = surface
+        .dashboard
+        .dock
+        .title
+        .measure(gtk4::Orientation::Horizontal, -1)
+        .1;
+    device.sync_error = Some(SyncFailure {
+        message: "A different and substantially longer failure still belongs inside exactly the same fixed synchronization dock without imposing its natural text width on the page.".repeat(6),
+        failed_tracks: Vec::new(),
+    });
+    surface.update(&device);
+    let second_title_width = surface
+        .dashboard
+        .dock
+        .title
+        .measure(gtk4::Orientation::Horizontal, -1)
+        .1;
+    assert_eq!(
+        second_title_width, first_title_width,
+        "ellipsized dock titles must keep one bounded natural width"
+    );
     window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn transfer_profile_and_playlist_changes_are_peer_cards_below_the_playlist_card() {
+fn mtp_60_playlist_and_sync_overview_cards_share_the_same_edges() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().expect("GTK test display");
     let (_surface, root) = DeviceSyncPage::new(
@@ -268,6 +305,34 @@ fn transfer_profile_and_playlist_changes_are_peer_cards_below_the_playlist_card(
     let pair = profile_card.parent().expect("responsive card pair");
     assert!(pair.is::<adw::WrapBox>());
     assert_eq!(changes_card.parent().as_ref(), Some(&pair));
+    let window = gtk4::Window::new();
+    window.set_default_size(PROBE_WINDOW_WIDTH, 800);
+    window.set_child(Some(&root));
+    window.present();
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(50),
+    ));
+    let profile_bounds = profile_card.compute_bounds(&pair).expect("profile bounds");
+    let changes_bounds = changes_card.compute_bounds(&pair).expect("changes bounds");
+    if profile_bounds.y() == changes_bounds.y() {
+        assert_eq!(
+            profile_bounds.height(),
+            changes_bounds.height(),
+            "side-by-side overview cards must share top and bottom edges"
+        );
+    } else {
+        assert_eq!(
+            profile_bounds.x(),
+            changes_bounds.x(),
+            "stacked overview cards must share their left edge"
+        );
+        assert_eq!(
+            profile_bounds.width(),
+            changes_bounds.width(),
+            "stacked overview cards must share their right edge"
+        );
+    }
+    window.close();
 }
 
 #[test]
@@ -542,7 +607,7 @@ fn mtp_61_the_rules_block_carries_both_device_switches() {
 
     let text = surface.root_text();
     assert!(text.contains("Rules for this phone"));
-    assert!(text.contains("Remove from phone when deleted here"));
+    assert!(text.contains("Remove from phone when removed from a playlist"));
     assert!(text.contains("Sync automatically when this phone connects"));
     fn switches(widget: &gtk4::Widget, found: &mut Vec<gtk4::Switch>) {
         if let Ok(switch) = widget.clone().downcast::<gtk4::Switch>() {
@@ -569,6 +634,7 @@ fn mtp_54_retired_media_notice_is_scoped_and_dismissible() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().expect("GTK test display");
     let dismissed = Rc::new(Cell::new(false));
+    let pending_reads = Rc::new(Cell::new(0));
     let content_actions = OnDeviceActions {
         set_remove_deleted: Rc::new(|_| {}),
         set_sync_automatically: Rc::new(|_| {}),
@@ -579,7 +645,13 @@ fn mtp_54_retired_media_notice_is_scoped_and_dismissible() {
             let dismissed = dismissed.clone();
             Rc::new(move || dismissed.set(true))
         },
-        legacy_media_notice_pending: Rc::new(|| true),
+        legacy_media_notice_pending: {
+            let reads = pending_reads.clone();
+            Rc::new(move || {
+                reads.set(reads.get() + 1);
+                true
+            })
+        },
     };
     let (surface, _root) = DeviceSyncPage::new(
         &device(),
@@ -594,6 +666,12 @@ fn mtp_54_retired_media_notice_is_scoped_and_dismissible() {
     );
 
     assert!(surface.on_device.legacy_notice.is_revealed());
+    surface.update(&device());
+    assert_eq!(
+        pending_reads.get(),
+        1,
+        "the durable notice state must be read once per page session, not on every update tick"
+    );
     surface
         .on_device
         .legacy_notice

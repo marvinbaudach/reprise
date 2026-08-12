@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::device_sync::{aggregate_balance, DeviceSessionState, PlannedSyncPhase};
+use reprise_core::device_sync::{
+    aggregate_balance, DeviceSessionState, DeviceStorageAccess, PlannedSyncPhase,
+};
 
 use super::device_sync_page_copy::{
     blocker_summary, device_last_sync_copy, profile_label, warning_summary,
@@ -19,7 +21,7 @@ use super::device_sync_strings;
 /// remembered placeholder that Plan E will complete.
 pub(super) struct DeviceSyncDock {
     root: adw::Bin,
-    title: gtk4::Label,
+    pub(super) title: gtk4::Label,
     pub(super) detail: gtk4::Label,
     pub(super) metrics: gtk4::Label,
     pub(super) progress: gtk4::ProgressBar,
@@ -104,6 +106,9 @@ impl DockReading {
 impl DeviceSyncDock {
     pub(super) fn new() -> Self {
         let title = label("", "heading");
+        title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        title.set_width_chars(40);
+        title.set_max_width_chars(40);
         let detail = label("", "dim-label");
         detail.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         detail.set_width_chars(32);
@@ -176,6 +181,8 @@ impl DeviceSyncDock {
             .set(matches!(reading, DockReading::Running { .. }));
         self.primary.remove_css_class("suggested-action");
         self.primary.remove_css_class("destructive-action");
+        self.title.remove_css_class("error");
+        self.title.remove_css_class("warning");
         match reading {
             DockReading::Idle { summary, can_start } => {
                 self.title.set_label(&summary);
@@ -238,6 +245,14 @@ impl DeviceSyncDock {
                 self.primary.set_visible(false);
             }
         }
+        let notices = notice_messages(device);
+        self.title
+            .set_tooltip_text((!notices.is_empty()).then(|| notices.join("\n")).as_deref());
+        if has_error_notice(device) {
+            self.title.add_css_class("error");
+        } else if !device.page.warnings.is_empty() {
+            self.title.add_css_class("warning");
+        }
     }
 
     fn set_sync_action(&self, sensitive: bool) {
@@ -251,21 +266,37 @@ impl DeviceSyncDock {
 }
 
 fn idle_summary(device: &DeviceView) -> String {
-    if let Some(blocker) = blocker_summary(&device.page.blockers) {
-        return blocker;
-    }
-    if let Some(notice) = storage_access_notice(device.page.storage.access) {
-        return notice;
-    }
-    if let Some(error) = &device.scan_error {
-        return device_sync_strings::inspection_failed(error);
-    }
-    let warnings = warning_summary(&device.page.warnings);
-    if !warnings.is_empty() {
-        return warnings.join(" · ");
+    let notices = notice_messages(device);
+    if !notices.is_empty() {
+        return notices.join(" · ");
     }
     let balance = aggregate_balance(std::slice::from_ref(&device.target_reading));
     device_sync_strings::ready_to_sync(&device_sync_strings::balance_text(&balance))
+}
+
+fn notice_messages(device: &DeviceView) -> Vec<String> {
+    let mut notices = Vec::new();
+    if let Some(blocker) = blocker_summary(&device.page.blockers) {
+        notices.push(blocker);
+    }
+    if let Some(access) = storage_access_notice(device.page.storage.access) {
+        notices.push(access);
+    }
+    notices.extend(warning_summary(&device.page.warnings));
+    if let Some(error) = &device.scan_error {
+        notices.push(device_sync_strings::inspection_failed(error));
+    }
+    if let Some(error) = &device.sync_error {
+        notices.push(error.message.clone());
+    }
+    notices
+}
+
+fn has_error_notice(device: &DeviceView) -> bool {
+    !device.page.blockers.is_empty()
+        || device.page.storage.access == DeviceStorageAccess::ReadOnly
+        || device.scan_error.is_some()
+        || device.sync_error.is_some()
 }
 
 fn remaining(bytes_done: u64, bytes_total: u64, bytes_per_second: u64) -> Option<Duration> {

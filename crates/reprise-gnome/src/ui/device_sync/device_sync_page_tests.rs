@@ -170,6 +170,64 @@ fn mtp_60_the_dock_reads_in_every_state() {
 }
 
 #[test]
+fn mtp_60_idle_dock_keeps_every_blocker_warning_and_scan_failure() {
+    use crate::ui::device_sync::device_sync_dock::DockReading;
+
+    let mut affected = device();
+    affected.page.blockers = vec![MirrorBlocker::NoPlaylistsSelected];
+    affected.page.storage.access = DeviceStorageAccess::ReadOnly;
+    affected.page.warnings = vec![
+        SyncPageWarning::UnavailableNotOnDevice { track_id: 7 },
+        SyncPageWarning::UnavailableNotOnDevice { track_id: 8 },
+    ];
+    affected.scan_error = Some("The MTP scan stopped early.".into());
+
+    let DockReading::Idle { summary, .. } =
+        crate::ui::device_sync::device_sync_dock::DockReading::for_device(&affected)
+    else {
+        panic!("idle device must keep an idle dock reading");
+    };
+    for message in [
+        "Select at least one playlist to synchronize.",
+        "The selected device storage is read-only.",
+        "2 tracks will be skipped because they are unavailable and not already on the device.",
+        "Could not inspect device storage: The MTP scan stopped early.",
+    ] {
+        assert!(summary.contains(message), "missing dock message: {message}");
+    }
+}
+
+#[test]
+fn mtp_60_copy_progress_separates_the_live_mtp_rate_from_track_text() {
+    use crate::ui::device_sync::device_sync_dock::DockReading;
+
+    let mut copying = device();
+    copying.sync_phase = PlannedSyncPhase::Syncing {
+        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        done: 1,
+        total: 2,
+        current_track: "Immortal — Lorna Shore".into(),
+        bytes_done: 50,
+        bytes_total: 100,
+    };
+    copying.bytes_per_second = 2 * 1_024 * 1_024;
+
+    let DockReading::Running {
+        current_track,
+        bytes_per_second,
+        ..
+    } = DockReading::for_device(&copying)
+    else {
+        panic!("copying device must have a running dock reading");
+    };
+    assert_eq!(current_track.as_deref(), Some("Immortal — Lorna Shore"));
+    assert_eq!(
+        device_sync_strings::rate_and_remaining(bytes_per_second, None),
+        "2.0 MiB/s"
+    );
+}
+
+#[test]
 fn mtp_24_transfer_profile_heading_names_its_music_only_scope() {
     assert_eq!(
         super::device_sync_page_layout::MUSIC_TRANSFER_PROFILE_HEADING,
@@ -433,8 +491,26 @@ fn mtp_61_the_storage_bar_marks_this_run_as_hatched() {
     projection.after_sync.as_mut().unwrap().reprise_music_bytes = 32 * 1_024;
     projection.after_sync.as_mut().unwrap().free_bytes = Some(64 * 1_024);
     let segments = crate::ui::device_sync::device_sync_storage_bar::segments(&projection)
-        .expect("complete projection without growth");
-    assert_eq!(segments.hatched_segment_class(), None);
+        .expect("complete projection after a deleting run");
+    assert_eq!(segments.this_run, 16 * 1_024);
+    assert_eq!(
+        segments.hatched_segment_class(),
+        Some("device-storage-this-run-hatched")
+    );
+}
+
+#[test]
+fn mtp_61_known_insufficient_storage_never_claims_that_space_is_unknown() {
+    let mut device = device();
+    device.page.storage.state = StorageProjectionState::Insufficient {
+        shortfall_bytes: 32 * 1_024,
+    };
+    device.page.storage.after_sync = None;
+
+    assert_eq!(
+        storage_legend(&device),
+        "Not enough space · 64.0 KiB free · 32.0 KiB more needed"
+    );
 }
 
 #[test]

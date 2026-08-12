@@ -116,6 +116,7 @@ impl PlaylistCard {
                 button.set_hexpand(true);
                 let indicator = gtk4::Label::new(Some("☐"));
                 indicator.add_css_class("title-3");
+                indicator.add_css_class(crate::ui::style::category_colors::music_css_class());
                 let title = gtk4::Label::new(None);
                 title.set_xalign(0.0);
                 let subtitle = gtk4::Label::new(None);
@@ -189,8 +190,9 @@ impl PlaylistCard {
     }
 
     pub(super) fn focus_first(&self) {
-        if let Some(row) = self.rows.borrow().first() {
-            row.button.grab_focus();
+        let first = self.rows.borrow().first().map(|row| row.button.clone());
+        if let Some(button) = first {
+            button.grab_focus();
         }
     }
 

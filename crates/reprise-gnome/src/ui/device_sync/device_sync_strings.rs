@@ -74,7 +74,7 @@ pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
 pub const PLAYLISTS: &str = N_!("Playlists");
-pub const REMOVE_FROM_PHONE: &str = N_!("Remove from phone when deleted here");
+pub const REMOVE_FROM_PHONE: &str = N_!("Remove from phone when removed from a playlist");
 pub const SYNC_AUTOMATICALLY: &str = N_!("Sync automatically when this phone connects");
 pub const FILTER_SYNC_CONTENT: &str = N_!("Filter sync content");
 pub const SELECT_ALL: &str = N_!("Select all");
@@ -392,9 +392,8 @@ pub const REVIEW_PLAYLISTS_ABOVE: &str = N_!("Review playlists above");
 pub const SET_LIMIT: &str = N_!("Set limit…");
 pub const NO_SIZE_LIMIT: &str = N_!("No size limit");
 pub const RULES_FOR_THIS_PHONE: &str = N_!("Rules for this phone");
-pub const LEGACY_MEDIA_NOTICE: &str = N_!(
-    "Podcast and YouTube files are no longer synced and were left untouched outside /Music/Reprise."
-);
+const LEGACY_MEDIA_NOTICE: &str =
+    N_!("Podcast and YouTube files are no longer synced and were left untouched outside {path}.");
 pub const DISMISS: &str = N_!("Dismiss");
 pub const SYNC_NOW_MNEMONIC: &str = N_!("_Sync now");
 pub const CANCEL_MNEMONIC: &str = N_!("_Cancel");
@@ -403,6 +402,11 @@ const DEVICE_POLICY_FROZEN: &str =
     N_!("Folder {path} · Smart lists keep their current contents · no size limit");
 const STORAGE_LEGEND: &str =
     N_!("Reprise music {music} · this run +{this_run} · Other {other} · {free} free");
+const STORAGE_INSUFFICIENT: &str = N_!("Not enough space · {free} free · {shortfall} more needed");
+
+pub fn legacy_media_notice(path: &str) -> String {
+    formatted(LEGACY_MEDIA_NOTICE, &[("path", path)])
+}
 
 pub fn device_balance(playlists: usize, tracks: &str, size: &str) -> String {
     plural(
@@ -441,6 +445,16 @@ pub fn storage_legend(music: u64, this_run: u64, other: u64, free: u64) -> Strin
             ("this_run", &file_size(this_run)),
             ("other", &file_size(other)),
             ("free", &file_size(free)),
+        ],
+    )
+}
+
+pub fn insufficient_storage(free: u64, shortfall: u64) -> String {
+    formatted(
+        STORAGE_INSUFFICIENT,
+        &[
+            ("free", &file_size(free)),
+            ("shortfall", &file_size(shortfall)),
         ],
     )
 }

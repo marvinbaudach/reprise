@@ -4,7 +4,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::device_sync::summarize_playlist_selection;
+use reprise_core::device_sync::{summarize_playlist_selection, StorageProjectionState};
 
 use super::device_sync_content_copy::playlist_result_text;
 use super::device_sync_runtime::{DeviceSyncRuntime, DeviceView};
@@ -88,7 +88,7 @@ pub(super) struct OnDeviceSection {
     root: gtk4::Box,
     verification_title: gtk4::Label,
     pub(super) legacy_notice: libadwaita::Banner,
-    legacy_notice_pending: Rc<dyn Fn() -> bool>,
+    legacy_notice_pending: Rc<Cell<bool>>,
     check_button: gtk4::Button,
     storage_bar: StorageBar,
     storage_legend: gtk4::Label,
@@ -122,15 +122,19 @@ impl OnDeviceSection {
         header.append(&check_button);
 
         let storage_bar = StorageBar::new();
-        let legacy_notice = libadwaita::Banner::new(&device_sync_strings::text(
-            device_sync_strings::LEGACY_MEDIA_NOTICE,
-        ));
+        let legacy_notice = libadwaita::Banner::new("");
+        let legacy_notice_pending = Rc::new(Cell::new((actions.legacy_media_notice_pending)()));
         legacy_notice.set_button_label(Some(&device_sync_strings::text(
             device_sync_strings::DISMISS,
         )));
         {
             let dismiss = actions.dismiss_legacy_media_notice.clone();
-            legacy_notice.connect_button_clicked(move |_| dismiss());
+            let pending = legacy_notice_pending.clone();
+            legacy_notice.connect_button_clicked(move |banner| {
+                pending.set(false);
+                banner.set_revealed(false);
+                dismiss();
+            });
         }
         let storage_legend = detail("");
         let balance = label("", "heading");
@@ -219,7 +223,7 @@ impl OnDeviceSection {
             root,
             verification_title,
             legacy_notice,
-            legacy_notice_pending: actions.legacy_media_notice_pending.clone(),
+            legacy_notice_pending,
             check_button,
             storage_bar,
             storage_legend,
@@ -241,7 +245,11 @@ impl OnDeviceSection {
             verification_copy(&device.contents_state, device.last_sync, chrono::Utc::now());
         self.verification_title.set_label(&verification);
         self.legacy_notice
-            .set_revealed((self.legacy_notice_pending)());
+            .set_title(&device_sync_strings::legacy_media_notice(
+                &device.content_row.target_path,
+            ));
+        self.legacy_notice
+            .set_revealed(self.legacy_notice_pending.get());
         self.check_button.set_sensitive(can_scan);
         self.storage_bar.update(&device.page.storage);
         self.storage_legend.set_label(&storage_legend(device));
@@ -267,7 +275,13 @@ impl OnDeviceSection {
     }
 }
 
-fn storage_legend(device: &DeviceView) -> String {
+pub(super) fn storage_legend(device: &DeviceView) -> String {
+    if let StorageProjectionState::Insufficient { shortfall_bytes } = device.page.storage.state {
+        let Some(free_bytes) = device.page.storage.current.free_bytes else {
+            return device_sync_strings::text(device_sync_strings::SPACE_UNKNOWN);
+        };
+        return device_sync_strings::insufficient_storage(free_bytes, shortfall_bytes);
+    }
     let Some(segments) = segments(&device.page.storage) else {
         return device_sync_strings::text(device_sync_strings::SPACE_UNKNOWN);
     };

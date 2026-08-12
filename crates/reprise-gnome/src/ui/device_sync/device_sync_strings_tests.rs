@@ -21,6 +21,14 @@ fn device_open_action_names_its_target() {
 }
 
 #[test]
+fn retired_media_notice_names_the_configured_target_folder() {
+    assert_eq!(
+        legacy_media_notice("/Audio/Reprise"),
+        "Podcast and YouTube files are no longer synced and were left untouched outside /Audio/Reprise."
+    );
+}
+
+#[test]
 fn track_progress_keeps_both_counts_visible() {
     assert_eq!(track_progress(2, 5), "2 of 5 tracks");
 }

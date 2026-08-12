@@ -7,6 +7,8 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::device_sync::TransferProfile;
 
+#[cfg(test)]
+use super::device_sync_on_device::storage_legend;
 use super::device_sync_on_device::{OnDeviceActions, OnDeviceSection};
 use super::device_sync_page_actions::PageActions;
 use super::device_sync_page_copy::{
