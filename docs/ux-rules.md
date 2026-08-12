@@ -3749,13 +3749,20 @@ STYLE-1).
 - **AC-27** [active] [core] [gtk] — **A loaded live scene breathes through pause.**
   Ongoing playback shows the audio-reactive bars. A real user pause retains
   the last live band distribution and smoothly blends its display, without a
-  frame-zero jump, into a low resting shape: a 10% floor plus 14% of each
-  retained band and a four-percentage-point travelling wave. The bands carry
-  different phases across the field, so the motion travels instead of pulsing
-  in unison, completes one cycle in six seconds, and repeatedly returns near
-  its starting values instead of drifting toward zero. The unchanged Bars
-  renderer keeps the cyan-to-magenta band gradient. Resume makes the retained
-  live values authoritative immediately, before another audio frame arrives.
+  frame-zero jump, into a low resting shape: a 10% floor plus 20% of each
+  retained band and an eight-percentage-point travelling-wave amplitude. For
+  the 0.2-to-0.9 acceptance distribution, every band spans 16 percentage
+  points over a full period. Its retained endpoints differ by 14 percentage
+  points before modulation and stay about 13.2 to 14.8 percentage points apart
+  through every phase, always more than the eight-point wave amplitude; the
+  resulting display range is 6% to 36%. The bands carry different phases
+  across the field, so the motion travels instead of pulsing in unison,
+  completes one cycle in six
+  seconds, never overturns the retained high-to-low order, and repeatedly
+  returns near its starting values instead of drifting toward zero. The
+  unchanged Bars renderer keeps the cyan-to-magenta band gradient. Resume
+  makes the retained live values authoritative immediately, before another
+  audio frame arrives.
   Buffering with play intent remains live, and a track boundary still clears
   the previous distribution. A loaded scene without a live distribution uses
   the existing generic resting wave; without a loaded track the surface

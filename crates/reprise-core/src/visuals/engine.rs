@@ -35,9 +35,9 @@ const IDLE_FADE_IN: f32 = 0.04;
 /// Last-live-shape floor while playback rests.
 const PAUSED_LIVE_FLOOR: f32 = 0.10;
 /// How much of the last live band distribution remains in the resting shape.
-const PAUSED_LIVE_SHAPE: f32 = 0.14;
+const PAUSED_LIVE_SHAPE: f32 = 0.20;
 /// Height of the travelling wave layered onto the retained live shape.
-const PAUSED_LIVE_WAVE: f32 = 0.04;
+const PAUSED_LIVE_WAVE: f32 = 0.08;
 
 /// Borrowed render inputs for the Bars scene builder.
 pub struct ModeCtx<'a> {
@@ -398,7 +398,7 @@ mod tests {
             }
             let current = engine.display_bands;
             assert!(
-                current.iter().all(|band| (0.05..=0.32).contains(band)),
+                current.iter().all(|band| (0.04..=0.38).contains(band)),
                 "paused live bands left the resting range: {current:?}"
             );
             changed_samples += usize::from(current != previous);
@@ -406,6 +406,58 @@ mod tests {
         }
 
         assert_eq!(changed_samples, 8, "the paused live scene stopped moving");
+    }
+
+    #[test]
+    fn ac_27_paused_live_bands_cover_a_clearly_visible_range() {
+        let mut engine = paused_live_engine();
+        for _ in 0..120 {
+            engine.tick();
+        }
+        let checked_bands = [0, 8, 17, 31, 40, 63];
+        let mut minima = [f32::INFINITY; 6];
+        let mut maxima = [f32::NEG_INFINITY; 6];
+
+        for _ in 0..IDLE_PERIOD_TICKS as usize {
+            engine.tick();
+            for (sample, band) in checked_bands.into_iter().enumerate() {
+                minima[sample] = minima[sample].min(engine.display_bands[band]);
+                maxima[sample] = maxima[sample].max(engine.display_bands[band]);
+            }
+        }
+
+        for ((band, minimum), maximum) in checked_bands.into_iter().zip(minima).zip(maxima) {
+            let span = maximum - minimum;
+            assert!(
+                span > 0.14,
+                "paused band {band} moved through only {span} ({minimum}..={maximum})"
+            );
+        }
+    }
+
+    #[test]
+    fn ac_27_paused_live_wave_never_overturns_the_retained_shape() {
+        let mut engine = paused_live_engine();
+        for _ in 0..120 {
+            engine.tick();
+        }
+        const LOW_BAND: usize = 0;
+        const HIGH_BAND: usize = 50;
+
+        for tick in 0..IDLE_PERIOD_TICKS as usize {
+            engine.tick();
+            let low = engine.display_bands[LOW_BAND];
+            let high = engine.display_bands[HIGH_BAND];
+            assert!(
+                high > low,
+                "retained bands swapped at tick {tick}: high {high}, low {low}"
+            );
+            let endpoint_gap = engine.display_bands[63] - engine.display_bands[0];
+            assert!(
+                endpoint_gap > 0.08,
+                "retained endpoint gap fell below the wave amplitude: {endpoint_gap}"
+            );
+        }
     }
 
     #[test]
