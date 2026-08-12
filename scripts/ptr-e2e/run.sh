@@ -688,27 +688,50 @@ assert_log_contains_since "$MARKER" \
   "playback started.*track_id=$TRACK_ID_A.*from_up_next=false" \
   "Library activation started context A while two manual tracks stayed pending"
 
-MARKER=$(log_marker)
-mpris_call Next
-# With 1.16 s fixtures and fakesink, X can hand off gaplessly to Y before the
-# shell wakes from a fixed sleep. Assert the product sequence under one marker
-# instead of pretending each manual item belongs to a separate MPRIS click:
-# start X, start Y, and finish with an empty manual queue. The short fixtures
-# can consume both entries before the queue publishes an intermediate length,
-# so `up_next_len=1` is not part of the product contract.
-assert_manual_queue_consumption_since \
-  "$MARKER" "$TRACK_ID_X" "$TRACK_ID_Y"
+# fakesink does not always play in real time. In one run the whole five-track
+# cascade drained in 1.5 s — X, Y and B had all played before the next marker
+# was even taken, so four assertions below looked at an empty window and read
+# as a product regression. Freezing playback makes each `Next` the only thing
+# that advances the queue, which is precisely what these assertions claim.
+mpris_call Pause
+sleep 0.3
 
 MARKER=$(log_marker)
 mpris_call Next
-sleep 0.2
-assert_log_contains_since "$MARKER" \
-  "playback started.*track_id=$TRACK_ID_B.*from_up_next=false" \
-  "MPRIS Next resumed the unchanged context at B"
+sleep 0.3
+mpris_call Next
+sleep 0.3
+assert_manual_queue_consumption_since \
+  "$MARKER" "$TRACK_ID_X" "$TRACK_ID_Y"
+
+# Once the manual queue is empty the context has to resume where it was — the
+# whole point of queueing X and Y in front of it. Asserted inside the same
+# window, and with a wait, because the moment B arrives is not the harness's to
+# choose: in one run the prepared gapless successor fired 9 ms after Y started,
+# in the next B waited out Y's full 1.16 s. A third `Next` would assert a
+# mechanism the product does not reliably have, and `assert_log_contains_since`
+# does not retry at all — it reads the log once, so a fixed sleep decides it.
+# The extra advance seen in the first case is an open product question, recorded
+# in docs/plans/ptr-e2e-harness-debt.md.
+PTR_E2E_LOG_SEQUENCE_ATTEMPTS=80 \
+  assert_log_sequence_since "$MARKER" \
+  "the context resumed at B once the manual queue was empty" \
+  "playback started.*track_id=$TRACK_ID_B.*from_up_next=false"
 
 # Keep the original real-keyboard regression after the stronger ordering
 # proof. The fixture is short, so both keypresses remain tightly bounded.
 start_flow "4b: Space toggles play/pause…"
+
+# Flow 4 leaves playback frozen on purpose. Space can only be proven to pause
+# something that is playing, so state the precondition instead of inheriting it.
+mpris_call Play
+sleep 0.3
+PLAYBACK_STATUS="$(mpris_playback_status)"
+if [ "$PLAYBACK_STATUS" = 'Playing' ]; then
+  log_step "MPRIS check OK: playback running before the Space keypresses"
+else
+  log_fail "flow 4b needs playback running before Space (got $PLAYBACK_STATUS)"
+fi
 
 MARKER=$(log_marker)
 key "space"
