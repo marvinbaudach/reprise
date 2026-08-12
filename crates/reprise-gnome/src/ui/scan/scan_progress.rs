@@ -9,10 +9,6 @@ use reprise_core::library::scanner::ScanProgress;
 
 use super::strings;
 
-/// A legible floor for the card's title, in characters. Ellipsizing alone lets
-/// the row's other children shrink the label to nothing.
-const TITLE_MIN_CHARS: i32 = 16;
-
 pub(super) const PULSE_INTERVAL: Duration = Duration::from_millis(100);
 pub(super) const PULSE_STEP: f64 = 0.08;
 pub(super) const MIN_VISIBLE_TIME: Duration = Duration::from_millis(700);
@@ -175,18 +171,13 @@ impl ScanProgressView {
             .halign(gtk4::Align::Start)
             .hexpand(true)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
-            // …but ellipsize with no floor lets the row's other children shrink
-            // this label to a few characters, which is how two different job
-            // cards both ended up reading "Che…" and looked like duplicates of
-            // each other. Keep a legible minimum; the detail line absorbs the
-            // shortfall, which is what its own ellipsis is for.
-            .width_chars(TITLE_MIN_CHARS)
             .build();
         title.add_css_class("scan-card-title");
 
         let percent = gtk4::Label::builder()
             .label("")
-            .halign(gtk4::Align::End)
+            .halign(gtk4::Align::Start)
+            .hexpand(true)
             .build();
         percent.add_css_class("scan-card-percent");
 
@@ -195,11 +186,20 @@ impl ScanProgressView {
         cancel.add_css_class("scan-card-cancel");
         cancel.set_visible(false);
 
-        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        header.append(&spinner);
-        header.append(&title);
-        header.append(&percent);
-        header.append(&cancel);
+        // The title owns its row. Keeping percentage and Cancel beside it made
+        // the old 16-character title floor wider than the fixed sidebar; with
+        // the controls below, the title remains distinguishable without making
+        // the card dictate NPP-1 geometry.
+        let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        title_row.append(&spinner);
+        title_row.append(&title);
+        let status_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+        status_row.set_margin_start(19);
+        status_row.append(&percent);
+        status_row.append(&cancel);
+        let header = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        header.append(&title_row);
+        header.append(&status_row);
 
         let progress = gtk4::ProgressBar::builder().hexpand(true).build();
         progress.update_property(&[gtk4::accessible::Property::Label(&strings::text(
@@ -216,6 +216,7 @@ impl ScanProgressView {
         detail.add_css_class("scan-card-detail");
 
         let container = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        container.set_height_request(crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX);
         container.add_css_class("scan-card");
         container.append(&header);
         container.append(&progress);
@@ -755,3 +756,7 @@ mod tests {
         settings.set_gtk_enable_animations(previous);
     }
 }
+
+#[cfg(test)]
+#[path = "scan_progress_display_tests.rs"]
+mod scan_progress_display_tests;
