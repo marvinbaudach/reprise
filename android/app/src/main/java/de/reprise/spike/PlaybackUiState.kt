@@ -22,6 +22,10 @@ internal data class PlaybackUiState(
 internal val PlaybackUiState.isPlaying: Boolean
     get() = state == AndroidPlaybackState.PLAYING
 
+/** Playback intent used only by continuously animated visual presentation. */
+internal val PlaybackUiState.visualizerActive: Boolean
+    get() = state == AndroidPlaybackState.PLAYING || state == AndroidPlaybackState.BUFFERING
+
 internal val PlaybackUiState.progressFraction: Float
     get() = if (durationMs > 0) {
         (positionMs.toDouble() / durationMs.toDouble()).coerceIn(0.0, 1.0).toFloat()
@@ -37,7 +41,13 @@ internal fun AndroidPlaybackSnapshot.toUiState(): PlaybackUiState = PlaybackUiSt
     currentTrackUri = currentTrackUri,
     positionMs = positionMs,
     durationMs = durationMs,
-    playPauseLabel = if (state == AndroidPlaybackState.PLAYING) "Pause" else "Play",
+    playPauseLabel = if (
+        state == AndroidPlaybackState.PLAYING || state == AndroidPlaybackState.BUFFERING
+    ) {
+        "Pause"
+    } else {
+        "Play"
+    },
     shuffled = shuffled,
     repeat = repeat,
     error = error,

@@ -202,9 +202,23 @@ fn live_pcm_staleness_expires_while_player_buffers_with_playback_intent() {
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
     assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
 
-    // Media3 reports isPlaying=false while buffering even though playWhenReady
-    // still carries the user's intent to play.
-    engine.set_playing(false);
+    // The Android surface now projects buffering intent as active visualizer
+    // playback even though Media3's raw isPlaying value is false.
+    assert!(engine.bass_pressure().pressure > 0.0);
+    clock.advance(LIVE_AUDIO_STALE_AFTER);
+
+    assert!(!engine.has_live_audio());
+    assert_eq!(engine.bass_pressure().pressure, 0.0);
+}
+
+#[test]
+fn live_pcm_staleness_expires_when_playback_intent_was_never_reported() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
     clock.advance(LIVE_AUDIO_STALE_AFTER);
 
     assert!(!engine.has_live_audio());

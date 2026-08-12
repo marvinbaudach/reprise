@@ -227,12 +227,11 @@ internal class Media3PlaybackPort(
     }
 
     private fun emitState() {
-        val state = when {
-            player.isPlaying -> AndroidPlaybackState.PLAYING
-            player.playbackState == Player.STATE_IDLE ||
-                player.playbackState == Player.STATE_ENDED -> AndroidPlaybackState.STOPPED
-            else -> AndroidPlaybackState.PAUSED
-        }
+        val state = media3PlaybackState(
+            isPlaying = player.isPlaying,
+            playWhenReady = player.playWhenReady,
+            playbackState = player.playbackState,
+        )
         if (state != lastState) {
             lastState = state
             emit(AndroidPlayerEvent.StateChanged(state))
@@ -242,6 +241,18 @@ internal class Media3PlaybackPort(
     private fun emit(event: AndroidPlayerEvent) {
         eventBridge?.emit(generation, event)
     }
+}
+
+internal fun media3PlaybackState(
+    isPlaying: Boolean,
+    playWhenReady: Boolean,
+    playbackState: Int,
+): AndroidPlaybackState = when {
+    isPlaying -> AndroidPlaybackState.PLAYING
+    playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED ->
+        AndroidPlaybackState.STOPPED
+    playbackState == Player.STATE_BUFFERING && playWhenReady -> AndroidPlaybackState.BUFFERING
+    else -> AndroidPlaybackState.PAUSED
 }
 
 /**

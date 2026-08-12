@@ -53,10 +53,12 @@ class LivePcmAudioProcessorTest {
         val consumer = RecordingPcmConsumer()
         val sink = LivePcmBufferSink().apply { attach(consumer) }
 
+        assertTrue(consumer.playbackIntentChanges.isEmpty())
+
         sink.onPlayWhenReadyChanged(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
         sink.onIsPlayingChanged(false)
 
-        assertEquals(listOf(false, true), consumer.playbackIntentChanges)
+        assertEquals(listOf(true), consumer.playbackIntentChanges)
     }
 
     @Test

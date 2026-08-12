@@ -230,11 +230,12 @@ internal fun DriveScene(
 
     val runtimeActive = controller.sceneFramesAllowed
     val animationsEnabled = controller.sceneAnimationsEnabled
+    val visualizerActive = playback.visualizerActive
     LaunchedEffect(
         driver,
         runtimeActive,
         animationsEnabled,
-        playback.isPlaying,
+        visualizerActive,
         playback.positionMs,
         frameSink,
     ) {
@@ -243,7 +244,7 @@ internal fun DriveScene(
             return@LaunchedEffect
         }
         do {
-            if (!playback.isPlaying || frames.frameCount == 0 && frameSink == null) {
+            if (!visualizerActive || frames.frameCount == 0 && frameSink == null) {
                 delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
             }
             withFrameNanos {

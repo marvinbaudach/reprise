@@ -419,9 +419,13 @@ impl SessionInner {
                     state.current_loaded = false;
                     (FollowUp::Stop, None, None)
                 }
-                PlayerEvent::Buffering { .. }
-                | PlayerEvent::StreamTags { .. }
-                | PlayerEvent::Spectrum(_) => (FollowUp::None, None, None),
+                PlayerEvent::Buffering { .. } => {
+                    state.snapshot.state = AndroidPlaybackState::Buffering;
+                    (FollowUp::None, None, None)
+                }
+                PlayerEvent::StreamTags { .. } | PlayerEvent::Spectrum(_) => {
+                    (FollowUp::None, None, None)
+                }
             }
         };
 

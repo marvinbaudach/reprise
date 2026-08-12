@@ -122,23 +122,10 @@ internal fun NowPlayingScene(
     val visualEngine = rememberVisualSceneEngine(
         enabled = visualizerOpacity > 0f,
         trackId = track.id,
-        playing = playback.isPlaying,
+        playing = playback.visualizerActive,
         accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
     )
-    val visualFrameSink = remember(visualEngine) {
-        visualEngine?.let { engine ->
-            object : SceneFrameSink {
-                override fun hasLiveAudio(): Boolean = engine.hasLiveAudio()
-
-                override fun bassPressure(): VisualBassPressure = engine.bassPressure()
-
-                override fun onFrame(bands: FloatArray?) {
-                    if (bands != null) engine.ingestBands(bands)
-                    engine.tick()
-                }
-            }
-        }
-    }
+    val visualFrameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
     val drawRevision = DriveScene(
         frames = frames,
         state = state,
@@ -156,7 +143,7 @@ internal fun NowPlayingScene(
             .then(
                 requestedVisualizerFrameRateCategory(
                     visualizerOpacity,
-                    playback.isPlaying,
+                    playback.visualizerActive,
                 )?.let { category -> Modifier.preferredFrameRate(category) } ?: Modifier,
             ),
     ) {
@@ -316,11 +303,31 @@ private fun rememberVisualSceneEngine(
         onDispose { }
     }
     SideEffect {
-        engine?.setPlaying(playing)
-        engine?.setAccent(accent.red, accent.green, accent.blue)
+        engine?.let { updateVisualSceneEngine(it, playing, accent) }
     }
     return engine
 }
+
+internal fun updateVisualSceneEngine(
+    engine: VisualSceneEngine,
+    playing: Boolean,
+    accent: Color,
+) {
+    engine.setPlaying(playing)
+    engine.setAccent(accent.red, accent.green, accent.blue)
+}
+
+internal fun visualSceneFrameSink(engine: VisualSceneEngine): SceneFrameSink =
+    object : SceneFrameSink {
+        override fun hasLiveAudio(): Boolean = engine.hasLiveAudio()
+
+        override fun bassPressure(): VisualBassPressure = engine.bassPressure()
+
+        override fun onFrame(bands: FloatArray?) {
+            if (bands != null) engine.ingestBands(bands)
+            engine.tick()
+        }
+    }
 
 /** The played-view wiring kept shared with its rendered-pixel verification. */
 internal fun DrawScope.drawPlayedNowPlayingFog(

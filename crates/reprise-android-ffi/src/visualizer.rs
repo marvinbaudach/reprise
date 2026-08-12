@@ -145,7 +145,14 @@ struct VisualState {
     last_live_audio_at: Option<Duration>,
     live_pressure: BassPressure,
     playing: bool,
-    playback_intended: bool,
+    playback_intent: PlaybackIntent,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PlaybackIntent {
+    Unknown,
+    Playing,
+    Paused,
 }
 
 /// One phone-local owner of the portable visual engine.
@@ -186,8 +193,12 @@ impl AndroidVisualEngine {
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
         reconcile_stream_generation(&mut state, stream_generation);
-        let resumed = playback_intended && !state.playback_intended;
-        state.playback_intended = playback_intended;
+        let resumed = playback_intended && state.playback_intent != PlaybackIntent::Playing;
+        state.playback_intent = if playback_intended {
+            PlaybackIntent::Playing
+        } else {
+            PlaybackIntent::Paused
+        };
         let now = self.clock.now();
         if resumed && state.has_live_audio {
             state.last_live_audio_at = Some(now);
@@ -417,7 +428,7 @@ fn expire_stale_live_audio(state: &mut VisualState, now: Duration) {
 
 fn live_audio_is_current(state: &VisualState, now: Duration) -> bool {
     state.has_live_audio
-        && (!state.playback_intended
+        && (state.playback_intent == PlaybackIntent::Paused
             || state
                 .last_live_audio_at
                 .is_some_and(|last| now.saturating_sub(last) < LIVE_AUDIO_STALE_AFTER))
@@ -441,7 +452,7 @@ impl AndroidVisualEngine {
                 last_live_audio_at: None,
                 live_pressure: silent_pressure(),
                 playing: false,
-                playback_intended: false,
+                playback_intent: PlaybackIntent::Unknown,
             }),
             live_audio: Mutex::new(None),
             stream_generation: AtomicU64::new(0),

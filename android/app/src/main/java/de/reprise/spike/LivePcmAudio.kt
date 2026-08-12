@@ -45,11 +45,11 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
     @Volatile
     private var playing = false
     @Volatile
-    private var playbackIntended = false
+    private var playbackIntended: Boolean? = null
 
     fun attach(consumer: LivePcmConsumer) {
         this.consumer = consumer
-        updatePlaybackIntentSafely(consumer, playbackIntended)
+        playbackIntended?.let { updatePlaybackIntentSafely(consumer, it) }
     }
 
     fun detach(consumer: LivePcmConsumer) {
