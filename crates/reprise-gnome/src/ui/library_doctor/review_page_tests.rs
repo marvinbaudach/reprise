@@ -371,13 +371,20 @@ fn doc_8a_the_badge_and_unfiltered_review_header_count_the_same_ready_fixes() {
 }
 
 #[test]
-fn doc_9b_stale_notice_is_unfiltered_and_hidden_at_zero() {
-    let session =
-        DoctorReviewSession::from_scan(ready_and_stale_scan(), DoctorReviewFilter::NeedsReview);
+fn doc_9b_stale_notice_follows_category_filter_and_is_hidden_at_zero() {
+    let mut fixture = ready_and_stale_scan();
+    fixture.proposals[0].problem_class = ProblemClass::MissingWrongYear;
+    let mut session = DoctorReviewSession::from_scan(fixture, DoctorReviewFilter::NeedsReview);
 
     assert_eq!(
         review_stale_notice(&session),
         Some("1 fix is out of date — this file changed after the scan.".to_owned())
+    );
+    session.set_category_filter(Some(ReviewCategory::Year.problem_classes()));
+    assert_eq!(
+        review_stale_notice(&session),
+        None,
+        "a stale Genre fix is outside the active Year category"
     );
     assert_eq!(
         review_stale_notice(&DoctorReviewSession::from_scan(

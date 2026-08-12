@@ -312,6 +312,7 @@ fn review_stale_notice(session: &DoctorReviewSession) -> Option<String> {
     let count = session
         .rows()
         .iter()
+        .filter(|row| session.category_filter_matches(row.problem_class))
         .filter(|row| row.state == DoctorReviewRowState::Stale)
         .count();
     (count > 0).then(|| strings::doctor_stale_notice(count))
