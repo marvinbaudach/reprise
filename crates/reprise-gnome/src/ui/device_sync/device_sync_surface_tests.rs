@@ -54,7 +54,7 @@ fn mtp_1_connected_devices_appear_without_automatic_navigation() {
 }
 
 #[test]
-fn mtp_13_device_entry_points_route_to_a_non_modal_main_window_page() {
+fn mtp_64_device_entry_points_route_to_a_non_modal_main_window_page() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let sidebar = ui_source("sidebar/sidebar.rs");
     let launcher = ui_source("device_sync/device_sync_launcher.rs");

@@ -13,9 +13,124 @@
 
 use chrono::{DateTime, Utc};
 use reprise_core::device_sync::device_view::DeviceContentsState;
-use reprise_core::device_sync::SyncBalance;
+use reprise_core::device_sync::{DeviceSessionState, SyncBalance};
 
+use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncStep};
 use crate::ui::device_sync_strings;
+
+/// `MTP-63`: which contrast step a device card carries. The step decides
+/// ground, edge, and how far the status line falls off against the name —
+/// without ever applying blanket opacity to the card.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CardEmphasis {
+    /// A sync of this device is running: accent edge, tinted ground.
+    Active,
+    /// Connected and idle: solid ground, neutral edge.
+    Connected,
+    /// Remembered but not connected: no ground, contrast-bearing hairline edge.
+    Remembered,
+}
+
+#[must_use]
+pub(super) fn card_emphasis(device: &DeviceView) -> CardEmphasis {
+    if device.session_state == DeviceSessionState::Remembered {
+        CardEmphasis::Remembered
+    } else if is_syncing(device) {
+        CardEmphasis::Active
+    } else {
+        CardEmphasis::Connected
+    }
+}
+
+#[must_use]
+pub(super) fn is_syncing(device: &DeviceView) -> bool {
+    device.connected
+        && matches!(
+            device.sync_phase,
+            PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
+        )
+}
+
+/// `MTP-63`: the syncing card's status line — one run-wide file ordinal, not
+/// the current machine step's zero-based index. The percentage keeps its own
+/// fixed-width slot so the count cannot shove it.
+#[must_use]
+pub(super) fn syncing_file_count(device: &DeviceView) -> Option<String> {
+    let changes = &device.page.changes;
+    let transfers = changes.additions.saturating_add(changes.replacements);
+    let playlist_files = changes
+        .playlist_writes
+        .saturating_add(changes.playlist_removals);
+    let planned_total = transfers
+        .saturating_add(playlist_files)
+        .saturating_add(changes.removals);
+    if device.sync_phase == PlannedSyncPhase::Finishing {
+        return (planned_total > 0)
+            .then(|| format_syncing_file_count(planned_total, planned_total));
+    }
+    let PlannedSyncPhase::Syncing {
+        step, done, total, ..
+    } = &device.sync_phase
+    else {
+        return None;
+    };
+    let local_total = *total as usize;
+    if local_total == 0 {
+        return None;
+    }
+
+    let offset = match step {
+        SyncStep::Transcoding | SyncStep::Copying => 0,
+        SyncStep::WritingPlaylists => transfers,
+        SyncStep::Removing => transfers.saturating_add(playlist_files),
+    };
+    let run_total = planned_total.max(offset.saturating_add(local_total));
+    let current = offset
+        .saturating_add((*done as usize).min(local_total.saturating_sub(1)))
+        .saturating_add(1)
+        .min(run_total);
+    Some(format_syncing_file_count(current, run_total))
+}
+
+fn format_syncing_file_count(current: usize, total: usize) -> String {
+    let current = current.to_string();
+    let total = total.to_string();
+    device_sync_strings::formatted(
+        device_sync_strings::SYNCING_FILE_COUNT,
+        &[("completed", &current), ("total", &total)],
+    )
+}
+
+pub(super) fn css() -> String {
+    ".device-card { min-height: 0; padding: 0; border-radius: 14px; border: 1px solid transparent; background-color: transparent; }\n\
+     .device-card-remembered { background-color: transparent; border-color: alpha(@window_fg_color, 0.55); }\n\
+     .device-card-connected { background-color: alpha(@window_fg_color, 0.07); border-color: alpha(@window_fg_color, 0.65); }\n\
+     .device-card-active { background-color: alpha(@accent_color, 0.10); border-color: @reprise_accent_text_color; }\n\
+     .device-card-remembered:hover { background-color: alpha(@window_fg_color, 0.04); border-color: alpha(@window_fg_color, 0.62); }\n\
+     .device-card-connected:hover { background-color: alpha(@window_fg_color, 0.10); border-color: alpha(@window_fg_color, 0.72); }\n\
+     .device-card-active:hover { background-color: alpha(@accent_color, 0.16); border-color: @reprise_accent_text_color; }\n\
+     .device-card:focus-visible { box-shadow: inset 0 0 0 2px alpha(@window_fg_color, 0.32); }\n\
+     .device-card-icon { border-radius: 13px; background-color: transparent; }\n\
+     .device-card-remembered .device-card-icon { background-color: alpha(@window_fg_color, 0.035); }\n\
+     .device-card-connected .device-card-icon { background-color: alpha(@window_fg_color, 0.075); }\n\
+     .device-card-active .device-card-icon { background-color: alpha(@accent_color, 0.02); }\n\
+     .device-card-glyph { color: alpha(@window_fg_color, 0.82); }\n\
+     .device-card-title { font-size: 13.5px; }\n\
+     .device-card-remembered .device-card-title { color: alpha(@window_fg_color, 0.62); }\n\
+     .device-card-detail { font-size: 11.5px; color: @reprise_secondary_fg_color; }\n\
+     .device-card-active .device-card-detail { color: @reprise_accent_text_color; font-feature-settings: \"tnum\"; }\n\
+     .device-card-active .device-card-glyph { color: @reprise_accent_text_color; }\n\
+     .device-card-percent { font-size: 11.5px; font-feature-settings: \"tnum\"; color: alpha(@window_fg_color, 0.45); }\n\
+     .device-card-cancel { padding: 0; color: @reprise_accent_text_color; background-color: alpha(@accent_color, 0.04); }\n\
+     .device-card-cancel:hover { background-color: alpha(@accent_color, 0.08); }\n\
+     .device-card-progress { min-height: 3px; }\n\
+     .device-card-progress trough { min-height: 3px; border-radius: 2px; background-color: alpha(@window_fg_color, 0.12); }\n\
+     .device-card-progress progress { min-height: 3px; border-radius: 2px; background-color: @accent_color; }\n\
+     .device-section-heading { min-height: 0; padding: 0 8px; color: alpha(@window_fg_color, 0.72); background: none; box-shadow: none; border: none; }\n\
+     .device-section-heading:hover { background-color: alpha(@window_fg_color, 0.05); }\n\
+     .device-section-heading:disabled { background: none; filter: none; }"
+        .to_string()
+}
 
 /// `MTP-29`: the card's leading sentence — exactly one of design 7c's four
 /// states:
@@ -98,6 +213,8 @@ fn waiting_or_playlists_sentence(balance: &SyncBalance) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::device_sync_runtime::PlannedSyncPhase;
+    use crate::ui::sidebar::sidebar_device_card::tests::view;
     use chrono::TimeZone;
 
     fn balance(
@@ -211,5 +328,114 @@ mod tests {
             !remembered_sentence(Some(last_verified), now()).contains(&tooltip_text(&copy_balance)),
             "an absent card must never present a stale copy/remove balance"
         );
+    }
+
+    #[test]
+    fn mtp_63_the_card_emphasis_separates_active_connected_and_remembered() {
+        let active = view(PlannedSyncPhase::Finishing);
+        let connected = view(PlannedSyncPhase::Idle);
+        let mut remembered = view(PlannedSyncPhase::Idle);
+        remembered.connected = false;
+        remembered.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+
+        assert_eq!(card_emphasis(&active), CardEmphasis::Active);
+        assert_eq!(card_emphasis(&connected), CardEmphasis::Connected);
+        assert_eq!(card_emphasis(&remembered), CardEmphasis::Remembered);
+    }
+
+    #[test]
+    fn mtp_63_the_card_states_monotonic_run_progress_across_sync_phases() {
+        let mut device = view(PlannedSyncPhase::Syncing {
+            step: crate::ui::device_sync_runtime::SyncStep::Copying,
+            done: 1_046,
+            total: 1_047,
+            current_track: "Last transfer".into(),
+            bytes_done: 1,
+            bytes_total: 1,
+        });
+        device.page.changes.additions = 1_047;
+        device.page.changes.playlist_writes = 3;
+        device.page.changes.removals = 12;
+
+        assert_eq!(
+            syncing_file_count(&device).as_deref(),
+            Some("Syncing · 1047 / 1062")
+        );
+
+        device.sync_phase = PlannedSyncPhase::Syncing {
+            step: crate::ui::device_sync_runtime::SyncStep::WritingPlaylists,
+            done: 0,
+            total: 3,
+            current_track: "Road".into(),
+            bytes_done: 1,
+            bytes_total: 1,
+        };
+        assert_eq!(
+            syncing_file_count(&device).as_deref(),
+            Some("Syncing · 1048 / 1062")
+        );
+
+        device.sync_phase = PlannedSyncPhase::Syncing {
+            step: crate::ui::device_sync_runtime::SyncStep::Removing,
+            done: 11,
+            total: 12,
+            current_track: "old.mp3".into(),
+            bytes_done: 1,
+            bytes_total: 1,
+        };
+        assert_eq!(
+            syncing_file_count(&device).as_deref(),
+            Some("Syncing · 1062 / 1062")
+        );
+
+        device.sync_phase = PlannedSyncPhase::Finishing;
+        assert_eq!(
+            syncing_file_count(&device).as_deref(),
+            Some("Syncing · 1062 / 1062")
+        );
+    }
+
+    #[test]
+    fn syncing_file_count_clamps_inconsistent_progress_and_never_states_zero_of_zero() {
+        let mut device = view(PlannedSyncPhase::Syncing {
+            step: crate::ui::device_sync_runtime::SyncStep::Removing,
+            done: 9,
+            total: 3,
+            current_track: "old.mp3".into(),
+            bytes_done: 0,
+            bytes_total: 0,
+        });
+
+        assert_eq!(
+            syncing_file_count(&device).as_deref(),
+            Some("Syncing · 3 / 3")
+        );
+
+        device.sync_phase = PlannedSyncPhase::Syncing {
+            step: crate::ui::device_sync_runtime::SyncStep::Removing,
+            done: 0,
+            total: 0,
+            current_track: String::new(),
+            bytes_done: 0,
+            bytes_total: 0,
+        };
+        assert_eq!(syncing_file_count(&device), None);
+    }
+
+    #[test]
+    fn disconnected_syncing_state_keeps_remembered_presentation() {
+        let mut remembered = view(PlannedSyncPhase::Syncing {
+            step: crate::ui::device_sync_runtime::SyncStep::Copying,
+            done: 0,
+            total: 1,
+            current_track: "Track".into(),
+            bytes_done: 0,
+            bytes_total: 1,
+        });
+        remembered.connected = false;
+        remembered.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+
+        assert!(!is_syncing(&remembered));
+        assert_eq!(card_emphasis(&remembered), CardEmphasis::Remembered);
     }
 }

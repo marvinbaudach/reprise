@@ -337,7 +337,7 @@ fn mtp_60_playlist_and_sync_overview_cards_share_the_same_edges() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn mtp_13_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
+fn mtp_64_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     gtk4::init().expect("GTK test display");
     let profile_events = Rc::new(RefCell::new(Vec::new()));
     let playlist_events = Rc::new(RefCell::new(Vec::new()));

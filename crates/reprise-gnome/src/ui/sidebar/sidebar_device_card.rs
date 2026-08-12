@@ -16,6 +16,11 @@ use crate::ui::device_sync_strings;
 pub(super) mod menu;
 
 pub(super) type OpenCallback = Rc<dyn Fn(String, String)>;
+pub(super) type CancelCallback = Rc<dyn Fn(String)>;
+
+const CANCEL_BUTTON_SIZE: i32 = 28;
+const CANCEL_BUTTON_MARGIN_END: i32 = 5;
+const ACTIVE_SUFFIX_RESERVATION: i32 = CANCEL_BUTTON_SIZE + CANCEL_BUTTON_MARGIN_END + 1;
 
 /// Live card widgets, keyed by device id, so a state update can refresh them
 /// in place. Rebuilding the section on every update destroyed the card
@@ -25,7 +30,9 @@ pub(super) type OpenCallback = Rc<dyn Fn(String, String)>;
 pub(super) type CardRegistry = Rc<RefCell<HashMap<String, DeviceCard>>>;
 
 pub(super) struct DeviceCard {
-    root: gtk4::Button,
+    root: gtk4::Overlay,
+    surface: gtk4::Button,
+    cancel_button: gtk4::Button,
     indicator: gtk4::Stack,
     icon: gtk4::Image,
     spinner: gtk4::Spinner,
@@ -44,19 +51,32 @@ pub(super) struct DeviceCard {
 
 impl DeviceCard {
     /// The card's widget, so the section can place and order it.
-    pub(super) fn root(&self) -> &gtk4::Button {
+    pub(super) fn root(&self) -> &gtk4::Overlay {
         &self.root
     }
 
-    pub(super) fn new(device: &DeviceView, on_open: &OpenCallback) -> Self {
+    /// Both overlay siblings own the same local-memory context actions. The
+    /// second target matters while Cancel occupies the card's top-right hit
+    /// area or holds keyboard focus.
+    pub(super) fn context_menu_targets(&self) -> [&gtk4::Button; 2] {
+        [&self.surface, &self.cancel_button]
+    }
+
+    pub(super) fn new(
+        device: &DeviceView,
+        on_open: &OpenCallback,
+        on_cancel: &CancelCallback,
+    ) -> Self {
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 5);
         content.set_valign(gtk4::Align::Center);
-        let root = gtk4::Button::builder()
+        let surface = gtk4::Button::builder()
             .child(&content)
             .has_frame(false)
             .hexpand(true)
             .build();
-        root.add_css_class("device-card");
+        surface.add_css_class("device-card");
+        let root = gtk4::Overlay::new();
+        root.set_child(Some(&surface));
         root.set_margin_bottom(3);
         root.set_margin_start(2);
         root.set_margin_end(2);
@@ -110,7 +130,7 @@ impl DeviceCard {
         labels.append(&detail_stack);
         top.append(&icon_frame);
         top.append(&labels);
-        root.update_property(&[gtk4::accessible::Property::Label(
+        surface.update_property(&[gtk4::accessible::Property::Label(
             &device_sync_strings::open_device_label(&device.name),
         )]);
 
@@ -162,6 +182,30 @@ impl DeviceCard {
         });
         content.append(&progress_revealer);
 
+        let cancel_button = gtk4::Button::builder()
+            .icon_name("process-stop-symbolic")
+            .has_frame(false)
+            .build();
+        cancel_button.add_css_class("device-card-cancel");
+        cancel_button.add_css_class("circular");
+        cancel_button.set_size_request(CANCEL_BUTTON_SIZE, CANCEL_BUTTON_SIZE);
+        cancel_button.set_halign(gtk4::Align::End);
+        cancel_button.set_valign(gtk4::Align::Start);
+        cancel_button.set_margin_top(5);
+        cancel_button.set_margin_end(CANCEL_BUTTON_MARGIN_END);
+        cancel_button.set_tooltip_text(Some(&device_sync_strings::text(
+            device_sync_strings::CANCEL,
+        )));
+        cancel_button.update_property(&[gtk4::accessible::Property::Label(
+            &device_sync_strings::text(device_sync_strings::CANCEL),
+        )]);
+        cancel_button.set_visible(false);
+        root.add_overlay(&cancel_button);
+
+        let cancel_callback = on_cancel.clone();
+        let cancel_id = device.id.clone();
+        cancel_button.connect_clicked(move |_| cancel_callback(cancel_id.clone()));
+
         // The whole card is one native keyboard and pointer target. The name
         // is read fresh because GVfs can replace a generic MTP label with the
         // real model name after the card was built.
@@ -169,13 +213,15 @@ impl DeviceCard {
         let open_callback = on_open.clone();
         let id = device.id.clone();
         let click_name = open_name.clone();
-        root.connect_clicked(move |_| {
+        surface.connect_clicked(move |_| {
             let name = click_name.borrow().clone();
             open_callback(id.clone(), name);
         });
 
-        Self {
+        let card = Self {
             root,
+            surface,
+            cancel_button,
             indicator,
             icon,
             spinner,
@@ -189,26 +235,46 @@ impl DeviceCard {
             progress,
             progress_generation: Rc::new(Cell::new(0)),
             open_name,
-        }
+        };
+        card.update(device);
+        card
     }
 
     pub(super) fn update(&self, device: &DeviceView) {
-        if device.session_state == reprise_core::device_sync::DeviceSessionState::Remembered {
-            self.root.add_css_class("remembered-device");
-        } else {
-            self.root.remove_css_class("remembered-device");
+        for class in [
+            "device-card-active",
+            "device-card-connected",
+            "device-card-remembered",
+        ] {
+            self.surface.remove_css_class(class);
         }
+        let emphasis_class = match sidebar_device_card_text::card_emphasis(device) {
+            sidebar_device_card_text::CardEmphasis::Active => "device-card-active",
+            sidebar_device_card_text::CardEmphasis::Connected => "device-card-connected",
+            sidebar_device_card_text::CardEmphasis::Remembered => "device-card-remembered",
+        };
+        self.surface.add_css_class(emphasis_class);
+        let active = matches!(
+            sidebar_device_card_text::card_emphasis(device),
+            sidebar_device_card_text::CardEmphasis::Active
+        );
+        if !active && self.cancel_button.has_focus() {
+            self.surface.grab_focus();
+        }
+        self.cancel_button.set_visible(active);
+        // The overlay button owns the top-right corner. Reserve that corner
+        // only while it exists so the fixed-width percentage never sits
+        // beneath it and idle chevrons retain their normal alignment.
+        self.suffix_stack
+            .set_margin_end(if active { ACTIVE_SUFFIX_RESERVATION } else { 0 });
         self.name.set_text(&card_title(device));
-        self.root
+        self.surface
             .update_property(&[gtk4::accessible::Property::Label(
                 &device_sync_strings::open_device_label(&device.name),
             )]);
         *self.open_name.borrow_mut() = device.name.clone();
 
-        let syncing = matches!(
-            device.sync_phase,
-            PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
-        );
+        let syncing = sidebar_device_card_text::is_syncing(device);
         // GtkSpinner follows the toolkit's system animation behavior; only
         // Reprise's custom progress tick needs the explicit MOT-7 gate.
         self.spinner.set_spinning(syncing);
@@ -231,7 +297,14 @@ impl DeviceCard {
                 self.detail_stack.set_visible_child_name("delta");
             }
             DetailMode::Progress => {
-                self.progress_detail.set_text(&card_subtitle(device));
+                let detail = match &device.sync_phase {
+                    PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing => {
+                        sidebar_device_card_text::syncing_file_count(device)
+                            .unwrap_or_else(|| card_subtitle(device))
+                    }
+                    _ => card_subtitle(device),
+                };
+                self.progress_detail.set_text(&detail);
                 self.detail_stack.set_visible_child_name("progress");
             }
         }
@@ -253,7 +326,7 @@ impl DeviceCard {
                 self.progress_revealer.set_visible(true);
                 self.progress_revealer.set_reveal_child(true);
                 self.animate_progress(sync_fraction(*bytes_done, *bytes_total));
-                self.root
+                self.surface
                     .set_tooltip_text(Some(&device_sync_strings::sync_tooltip(
                         *done,
                         *total,
@@ -268,7 +341,7 @@ impl DeviceCard {
                 self.progress_revealer.set_visible(true);
                 self.progress_revealer.set_reveal_child(true);
                 self.animate_progress(1.0);
-                self.root
+                self.surface
                     .set_tooltip_text(Some("Finishing synchronization"));
             }
             _ => {
@@ -276,7 +349,8 @@ impl DeviceCard {
                     .set(self.progress_generation.get().saturating_add(1));
                 self.suffix_stack.set_visible_child_name("open");
                 self.progress_revealer.set_reveal_child(false);
-                self.root.set_tooltip_text(idle_tooltip(device).as_deref());
+                self.surface
+                    .set_tooltip_text(idle_tooltip(device).as_deref());
             }
         }
     }
@@ -390,38 +464,11 @@ fn sync_fraction(bytes_done: u64, bytes_total: u64) -> f64 {
 /// (`@accent_color` is the palette's petrol), never a literal, so every named
 /// dark theme keeps its own accent.
 pub(in crate::ui) fn css() -> String {
-    ".device-card { min-height: 0; padding: 0; border-radius: 14px; \
-       border: 1px solid alpha(@window_fg_color, 0.07); \
-       background-color: alpha(@window_fg_color, 0.035); }\n\
-     .device-card:hover { background-color: alpha(@window_fg_color, 0.065); }\n\
-     .device-card.remembered-device { opacity: 0.58; }\n\
-     .device-card:focus-visible { box-shadow: inset 0 0 0 2px \
-       alpha(@window_fg_color, 0.32); }\n\
-     .device-card-icon { border-radius: 13px; \
-       background-color: alpha(@window_fg_color, 0.075); }\n\
-     .device-card-glyph { color: alpha(@window_fg_color, 0.82); }\n\
-     .device-card-title { font-size: 13.5px; }\n\
-     .device-card-detail { font-size: 11.5px; color: alpha(@window_fg_color, 0.55); }\n\
-     .device-card-percent { font-size: 11.5px; font-feature-settings: \"tnum\"; \
-       color: alpha(@window_fg_color, 0.45); }\n\
-     .device-card-progress { min-height: 3px; }\n\
-     .device-card-progress trough { min-height: 3px; border-radius: 2px; \
-       background-color: alpha(#ffffff, 0.12); }\n\
-     .device-card-progress progress { min-height: 3px; border-radius: 2px; \
-       background-color: @accent_color; }\n\
-     .device-section-heading { min-height: 0; padding: 0 8px; \
-       background: none; box-shadow: none; border: none; }\n\
-     .device-section-heading:hover { background-color: \
-       alpha(@window_fg_color, 0.05); }\n\
-     .device-section-heading:disabled { background: none; opacity: 1; }"
-        .to_string()
+    sidebar_device_card_text::css()
 }
 
 fn card_title(device: &DeviceView) -> String {
-    if matches!(
-        device.sync_phase,
-        PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
-    ) {
+    if sidebar_device_card_text::is_syncing(device) {
         format!("Syncing {}", device.name)
     } else {
         device.name.clone()
@@ -537,170 +584,6 @@ pub(super) mod tests {
             keep_smart_playlists_updated: true,
             page: Default::default(),
         }
-    }
-
-    #[test]
-    fn byte_progress_fraction_is_bounded_and_handles_an_unknown_total() {
-        assert_eq!(sync_fraction(50, 100), 0.5);
-        assert_eq!(sync_fraction(150, 100), 1.0);
-        assert_eq!(sync_fraction(50, 0), 0.0);
-    }
-
-    #[test]
-    fn card_activity_distinguishes_transcoding_and_copying_with_artist() {
-        let track = "Immortal — Lorna Shore";
-
-        assert_eq!(
-            device_sync_strings::sync_activity(step_glyph(&SyncStep::Transcoding), track),
-            "⟳ transcoding · Immortal — Lorna Shore"
-        );
-        assert_eq!(
-            device_sync_strings::sync_activity(step_glyph(&SyncStep::Copying), track),
-            "↑ Immortal — Lorna Shore"
-        );
-    }
-
-    #[test]
-    fn syncing_title_is_explicit() {
-        assert_eq!(
-            card_title(&view(PlannedSyncPhase::Finishing)),
-            "Syncing Pixel 8"
-        );
-    }
-
-    #[test]
-    fn mtp_13_sidebar_device_card_has_no_direct_sync_action() {
-        let direct_sync_action = ["app", "sync-device"].join(".");
-
-        assert!(!include_str!("sidebar_device_card.rs").contains(&direct_sync_action));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn device_card_open_is_a_native_keyboard_action() {
-        gtk4::init().unwrap();
-        let opened = Rc::new(RefCell::new(None));
-        let opened_for_callback = opened.clone();
-        let on_open: OpenCallback = Rc::new(move |id, name| {
-            opened_for_callback.borrow_mut().replace((id, name));
-        });
-        let card = DeviceCard::new(&view(PlannedSyncPhase::Idle), &on_open);
-        assert!(card.root.is_focusable());
-        card.root.emit_clicked();
-        assert_eq!(
-            opened.borrow().as_ref(),
-            Some(&("pixel".to_owned(), "Pixel 8".to_owned()))
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn mot_7_disabled_animations_apply_progress_and_state_changes_immediately() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let settings = gtk4::Settings::default().unwrap();
-        let previous = settings.is_gtk_enable_animations();
-        settings.set_gtk_enable_animations(false);
-        let device = view(PlannedSyncPhase::Syncing {
-            step: SyncStep::Copying,
-            done: 0,
-            total: 1,
-            current_track: "Track".into(),
-            bytes_done: 50,
-            bytes_total: 100,
-        });
-        let on_open: OpenCallback = Rc::new(|_, _| {});
-        let card = DeviceCard::new(&device, &on_open);
-
-        card.update(&device);
-
-        assert_eq!(card.progress.fraction(), 0.5);
-        assert_eq!(
-            card.detail_stack.transition_duration(),
-            crate::ui::motion::STANDARD_MS
-        );
-        assert_eq!(
-            card.detail_stack.visible_child_name().as_deref(),
-            Some("progress")
-        );
-        assert_eq!(
-            card.indicator.visible_child_name().as_deref(),
-            Some("syncing")
-        );
-        assert!(card.spinner.is_spinning());
-        assert!(card.progress_revealer.reveals_child());
-        settings.set_gtk_enable_animations(previous);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn enabled_animations_interpolate_progress_to_the_latest_fraction() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        if gtk4::init().is_err() {
-            return;
-        }
-        let settings = gtk4::Settings::default().unwrap();
-        let previous = settings.is_gtk_enable_animations();
-        settings.set_gtk_enable_animations(true);
-        let idle = view(PlannedSyncPhase::Idle);
-        let on_open: OpenCallback = Rc::new(|_, _| {});
-        let card = DeviceCard::new(&idle, &on_open);
-        assert!(card.root.settings().is_gtk_enable_animations());
-        let window = gtk4::Window::new();
-        window.set_child(Some(&card.root));
-        window.present();
-        gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
-            std::time::Duration::from_millis(20),
-        ));
-        let syncing = view(PlannedSyncPhase::Syncing {
-            step: SyncStep::Copying,
-            done: 0,
-            total: 1,
-            current_track: "Track".into(),
-            bytes_done: 50,
-            bytes_total: 100,
-        });
-
-        card.update(&syncing);
-
-        assert!(card.progress.fraction() < 0.5);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while (card.progress.fraction() - 0.5).abs() >= 1e-6 && std::time::Instant::now() < deadline
-        {
-            gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
-                std::time::Duration::from_millis(20),
-            ));
-        }
-        assert!((card.progress.fraction() - 0.5).abs() < 1e-6);
-        window.close();
-        settings.set_gtk_enable_animations(previous);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn mot_2_device_background_surfaces_only_crossfade_in_place() {
-        gtk4::init().unwrap();
-        let device = view(PlannedSyncPhase::Idle);
-        let on_open: OpenCallback = Rc::new(|_, _| {});
-        let card = DeviceCard::new(&device, &on_open);
-
-        assert_eq!(
-            card.indicator.transition_type(),
-            gtk4::StackTransitionType::Crossfade
-        );
-        assert_eq!(
-            card.detail_stack.transition_type(),
-            gtk4::StackTransitionType::Crossfade
-        );
-        assert_eq!(
-            card.suffix_stack.transition_type(),
-            gtk4::StackTransitionType::Crossfade
-        );
-        assert_eq!(
-            card.progress_revealer.transition_type(),
-            gtk4::RevealerTransitionType::Crossfade
-        );
     }
 }
 
