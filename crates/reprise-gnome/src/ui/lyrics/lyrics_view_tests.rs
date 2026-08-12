@@ -150,7 +150,7 @@ fn lyr_5_source_labels_cover_every_provider_and_body_kind() {
     );
     assert_eq!(active_line_alpha(1_000, 11_000), 100);
     assert_eq!(active_line_alpha(1_000, 11_001), 60);
-    assert!(css().contains("color: alpha(#ffffff, 0.65)"));
+    assert!(css().contains("color: @reprise_secondary_fg_color"));
 }
 
 #[test]

@@ -706,7 +706,7 @@ pub(in crate::ui) fn lyrics_footer(hit: &LyricsHit) -> &'static str {
 ///   the user is reading — the opposite of what a hover highlight should do.
 pub(in crate::ui) fn css() -> String {
     format!(
-        ".{LINE_CLASS} {{ font-size: 13px; color: #ffffff; \
+        ".{LINE_CLASS} {{ font-size: 13px; color: @sidebar_fg_color; \
            transition: opacity {micro_ms}ms {micro_easing}; }}\n\
          .{LINE_DISTANT_CLASS} {{ opacity: 0.28; }}\n\
          .{LINE_NEAR_CLASS} {{ opacity: 0.32; }}\n\
@@ -714,14 +714,14 @@ pub(in crate::ui) fn css() -> String {
          .{ACTIVE_LINE_CLASS} {{ opacity: 1; }}\n\
          .{LINE_CLASS}:not(.{UNSYNCED_CLASS}):not(.{ACTIVE_LINE_CLASS}):hover \
            {{ opacity: 0.65; }}\n\
-         .{ACTIVE_LINE_CLASS} label {{ font-size: 15px; font-weight: 700; color: #ffffff; }}\n\
+         .{ACTIVE_LINE_CLASS} label {{ font-size: 15px; font-weight: 700; color: @sidebar_fg_color; }}\n\
          .{LINE_GAP_CLASS} {{ opacity: 0.60; }}\n\
          .{LINE_UNDERLINE_CLASS} {{ min-width: 26px; min-height: 2.5px; \
            background-color: @reprise_player_accent; opacity: 0; \
            box-shadow: 0 0 8px alpha(@reprise_player_accent, 0.55); \
            transition: opacity {micro_ms}ms {micro_easing}; }}\n\
          .{ACTIVE_LINE_CLASS} .{LINE_UNDERLINE_CLASS} {{ opacity: 1; }}\n\
-         .{UNSYNCED_CLASS} {{ font-size: 13px; color: alpha(#ffffff, 0.65); }}\n\
+         .{UNSYNCED_CLASS} {{ font-size: 13px; color: @reprise_secondary_fg_color; }}\n\
          .{INLINE_RETRY_CLASS} {{ padding: 4px 10px; min-height: 0; }}",
         micro_ms = crate::ui::motion::MICRO_MS,
         micro_easing = crate::ui::motion::MICRO_CSS_EASING,
