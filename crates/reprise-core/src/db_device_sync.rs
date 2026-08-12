@@ -250,6 +250,7 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
     let target_has_kind = has_column(conn, "device_sync_targets", "kind")?;
+    let repairing_earlier_v68 = version >= 68 && !target_has_kind && !legacy_notice_exists;
     let inventory_has_path = has_column(conn, "device_files", "device_path")?;
     let episodes_have_wanted = has_column(conn, "podcast_episodes", "wanted_on_device")?;
     let transaction = conn.unchecked_transaction()?;
@@ -259,6 +260,12 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
            dismissed INTEGER NOT NULL DEFAULT 0
          );",
     )?;
+    if repairing_earlier_v68 {
+        transaction.execute_batch(
+            "INSERT OR IGNORE INTO device_sync_legacy_notices (device_serial)
+             SELECT device_serial FROM device_sync_targets;",
+        )?;
+    }
     if target_has_kind {
         transaction.execute_batch(
             "INSERT OR IGNORE INTO device_sync_legacy_notices (device_serial)
@@ -323,7 +330,7 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
         transaction
             .execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN latest_per_channel;")?;
     }
-    transaction.pragma_update(None, "user_version", 68)?;
+    transaction.pragma_update(None, "user_version", version.max(68))?;
     transaction.commit()
 }
 
@@ -466,6 +473,19 @@ mod tests {
     }
 
     #[test]
+    fn migration_v68_never_lowers_a_newer_schema_version() {
+        let conn = open_v67_device_sync_shape();
+        conn.pragma_update(None, "user_version", 70).unwrap();
+
+        migrate_v68(&conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 70);
+    }
+
+    #[test]
     fn migration_v67_to_v68_drops_the_columns_that_lost_their_last_reader() {
         let conn = open_v67_device_sync_shape();
         conn.execute_batch(
@@ -547,6 +567,17 @@ mod tests {
             target,
             (Some(65537), "/Music/Reprise".into(), true),
             "re-entering v68 must not disturb the playlists target it already settled"
+        );
+        let notice_pending: bool = conn
+            .query_row(
+                "SELECT NOT dismissed FROM device_sync_legacy_notices WHERE device_serial = 'pixel'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            notice_pending,
+            "repairing an earlier v68 must make the retired-media notice reachable"
         );
     }
 

@@ -419,7 +419,11 @@ pub fn legacy_media_notice_pending(
 pub fn dismiss_legacy_media_notice(
     db: &crate::db::Db,
     serial: &str,
+    rememberable: bool,
 ) -> Result<(), rusqlite::Error> {
+    if !rememberable {
+        return Ok(());
+    }
     db.conn().execute(
         "UPDATE device_sync_legacy_notices SET dismissed = 1 WHERE device_serial = ?1",
         [serial],
@@ -720,4 +724,26 @@ fn decode_source_columns(kind: &str, id: i64) -> Result<SelectionSource, rusqlit
         }
     };
     Ok(source)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unrememberable_device_cannot_persist_legacy_notice_dismissal() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO device_sync_legacy_notices (device_serial) VALUES ('phone')",
+                [],
+            )
+            .unwrap();
+
+        dismiss_legacy_media_notice(&db, "phone", false).unwrap();
+        assert!(legacy_media_notice_pending(&db, "phone").unwrap());
+
+        dismiss_legacy_media_notice(&db, "phone", true).unwrap();
+        assert!(!legacy_media_notice_pending(&db, "phone").unwrap());
+    }
 }

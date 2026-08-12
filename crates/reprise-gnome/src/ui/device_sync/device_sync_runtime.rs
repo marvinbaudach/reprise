@@ -298,9 +298,17 @@ impl DeviceSyncRuntime {
     }
 
     pub fn dismiss_legacy_media_notice(&self, device_id: &str) {
-        if let Err(error) =
-            reprise_core::device_sync::settings::dismiss_legacy_media_notice(&self.conn, device_id)
-        {
+        let rememberable = self
+            .device_states
+            .borrow()
+            .iter()
+            .find(|device| device.descriptor.id == device_id)
+            .is_some_and(|device| device.descriptor.persistent_id.is_some());
+        if let Err(error) = reprise_core::device_sync::settings::dismiss_legacy_media_notice(
+            &self.conn,
+            device_id,
+            rememberable,
+        ) {
             tracing::warn!(%error, "could not dismiss the retired media-sync notice");
             return;
         }
@@ -308,8 +316,15 @@ impl DeviceSyncRuntime {
     }
 
     pub fn legacy_media_notice_pending(&self, device_id: &str) -> bool {
-        reprise_core::device_sync::settings::legacy_media_notice_pending(&self.conn, device_id)
-            .unwrap_or(false)
+        match reprise_core::device_sync::settings::legacy_media_notice_pending(
+            &self.conn, device_id,
+        ) {
+            Ok(pending) => pending,
+            Err(error) => {
+                tracing::warn!(%error, "could not read the retired media-sync notice");
+                false
+            }
+        }
     }
 
     /// Same as [`Self::refresh_contents`], except this refresh is the first
