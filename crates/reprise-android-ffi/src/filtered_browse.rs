@@ -6,7 +6,7 @@ use reprise_core::queries::{
 };
 use reprise_core::view_source::ViewSource;
 
-use crate::{LibraryError, MusicLibrary, TrackRow, TrackWindow, WindowRange};
+use crate::{AlbumWindow, LibraryError, MusicLibrary, TrackRow, TrackWindow, WindowRange};
 
 fn filtered_track_window(
     library: &MusicLibrary,
@@ -45,6 +45,36 @@ fn filtered_track_window(
 
 #[uniffi::export]
 impl MusicLibrary {
+    /// Returns one artist's albums in newest-first order.
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns exported strings.
+    pub fn list_artist_albums(
+        &self,
+        artist: String,
+        window: WindowRange,
+    ) -> Result<AlbumWindow, LibraryError> {
+        let state = self.lock()?;
+        queries::query_artist_albums(&state.db, artist.as_str(), window.into())
+            .map(AlbumWindow::from)
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+
+    /// Returns one artist's present tracks with no album tag.
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns exported strings.
+    pub fn list_artist_untagged_tracks(
+        &self,
+        artist: String,
+        window: WindowRange,
+    ) -> Result<TrackWindow, LibraryError> {
+        let state = self.lock()?;
+        queries::query_artist_untagged_tracks(&state.db, artist.as_str(), window.into())
+            .map(TrackWindow::from)
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+
     /// Returns one artist's present tracks in album and track-number order.
     pub fn list_artist_tracks(
         &self,
@@ -111,6 +141,7 @@ mod tests {
             ("other.flac", "Other", "Bela", "Bela", "Middle", 1),
             ("alpha-1.flac", "Omega", " aDa ", " ADA ", "Alpha", 1),
             ("zulu-1.flac", "Alpha", "Ada", "Ada", "Zulu", 1),
+            ("loose.flac", "Loose", "Ada", "Ada", "", 0),
         ] {
             let path = music.join(name);
             std::fs::copy(&fixture, &path).unwrap();
@@ -178,7 +209,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(ada.track_count, 4);
+        assert_eq!(ada.track_count, 5);
         assert_eq!(window.total, ada.track_count);
         assert_eq!(window.rows.len() as i64, window.total);
         assert!(!window.has_more);
@@ -193,6 +224,7 @@ mod tests {
                 ))
                 .collect::<Vec<_>>(),
             [
+                ("Ada", "", "Loose"),
                 (" aDa ", "Alpha", "Omega"),
                 ("Guest", "Alpha", "Beta"),
                 ("Ada", "Zulu", "Alpha"),
@@ -222,7 +254,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(window.total, 4);
+        assert_eq!(window.total, 5);
         assert_eq!(window.rows.len(), 2);
         assert!(window.has_more);
     }
@@ -246,6 +278,86 @@ mod tests {
             assert!(window.rows.is_empty());
             assert!(!window.has_more);
         }
+    }
+
+    #[test]
+    fn artist_album_windows_keep_the_artist_filter_total_and_page_in_step() {
+        let (_directory, library) = filtered_library();
+
+        let window = library
+            .list_artist_albums(
+                "Ada".to_owned(),
+                WindowRange {
+                    offset: 0,
+                    limit: 1,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(window.total, 2);
+        assert_eq!(window.rows.len(), 1);
+        assert!(window.has_more);
+        assert_eq!(window.rows[0].album, "Alpha");
+        assert!(window
+            .rows
+            .iter()
+            .all(|album| album.album_artist.trim().eq_ignore_ascii_case("Ada")));
+    }
+
+    #[test]
+    fn unknown_artists_are_empty_album_windows_not_errors() {
+        let (_directory, library) = filtered_library();
+
+        let window = library
+            .list_artist_albums(
+                "Nobody".to_owned(),
+                WindowRange {
+                    offset: 0,
+                    limit: 2,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(window.total, 0);
+        assert!(window.rows.is_empty());
+        assert!(!window.has_more);
+    }
+
+    #[test]
+    fn artist_untagged_windows_return_only_loose_tracks_and_empty_cleanly() {
+        let (_directory, library) = filtered_library();
+
+        let ada = library
+            .list_artist_untagged_tracks(
+                "Ada".to_owned(),
+                WindowRange {
+                    offset: 0,
+                    limit: 20,
+                },
+            )
+            .unwrap();
+        let bela = library
+            .list_artist_untagged_tracks(
+                "Bela".to_owned(),
+                WindowRange {
+                    offset: 0,
+                    limit: 20,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(ada.total, 1);
+        assert_eq!(
+            ada.rows
+                .iter()
+                .map(|track| (track.title.as_str(), track.album.as_str()))
+                .collect::<Vec<_>>(),
+            [("Loose", "")]
+        );
+        assert!(!ada.has_more);
+        assert_eq!(bela.total, 0);
+        assert!(bela.rows.is_empty());
+        assert!(!bela.has_more);
     }
 
     #[test]
