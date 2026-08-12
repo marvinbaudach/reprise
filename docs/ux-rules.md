@@ -572,7 +572,7 @@ result.
   compact secondary overview. Locally known playlists appear and stay
   selectable while Reprise is still checking the MTP storage; only the
   sync start waits for this check.
-- **MTP-15** [active] [gtk] — The playlist workspace and sync overview
+- **MTP-15** [replaced by MTP-60/MTP-63] — The playlist workspace and sync overview
   have the same stable top and bottom card edges independent of delta,
   track, and speed text; changing status text wraps within a bounded
   overview width and does not shift any column. The current MTP
@@ -1008,8 +1008,12 @@ result.
   player bar. It remains present while ready, running, finishing, or failed and
   is the only place a run failure is shown. Ready offers "Sync now" with the
   pending scope; running shows the file count, current title, transfer rate,
-  remaining time, progress, and a primary "Cancel" action. Changing status
-  text never moves the bar's controls.
+  remaining time, progress, and a primary "Cancel" action. The playlist
+  workspace and sync overview keep stable top and bottom card edges independent
+  of delta, track, and speed text. Changing status text stays within a bounded
+  dock width and never moves the bar's controls or resizes the workspace. During
+  copying, the current track and MTP transfer rate occupy separate labeled
+  lines.
 - **MTP-61** [active] [gtk] — The lower device-page section is named "On this
   device" and is a balance, not a second selection surface. It shows Reprise
   music, hatched growth for this run, Other, and Free; the playlist, track, and
@@ -1026,7 +1030,9 @@ result.
   remembered disconnected device has no surface, only a hairline edge, and
   reduces the title and status separately. The contrast between active and
   remembered is the primary information. The Devices heading is one step
-  brighter than the other sidebar section headings.
+  brighter than the other sidebar section headings. The status starts with the
+  free device storage during Checking, Sync, and Finishing, early enough that
+  ellipsizing never hides it.
 - **MTP-64** [active] [gtk] — The entire device card is one native keyboard and
   pointer entry point into a non-modal full device page in the main window and
   does not start a sync directly; exclusively while a sync of this device is

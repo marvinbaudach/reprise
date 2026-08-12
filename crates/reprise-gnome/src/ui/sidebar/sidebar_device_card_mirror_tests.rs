@@ -61,7 +61,7 @@ fn card_detail_mode_only_distinguishes_delta_and_progress() {
 }
 
 #[test]
-fn mtp_15_sidebar_keeps_free_space_visible_during_sync() {
+fn mtp_63_sidebar_keeps_free_space_visible_during_sync() {
     let mut copying = view(PlannedSyncPhase::Syncing {
         step: SyncStep::Copying,
         done: 1,
