@@ -76,11 +76,22 @@ run_compact_flow() {
   local header_button_y=28 marker position_before volume_before
 
   marker=$(log_marker)
-  click_window_from_right "$COMPACT_BUTTON_FROM_RIGHT" "$header_button_y"
+  # There is no Compact button in the Library header — `primary_menu.rs` packs
+  # "Compact Mode" as the first entry of the first menu section and the header
+  # deliberately carries no duplicate control. The old
+  # `click_window_from_right $COMPACT_BUTTON_FROM_RIGHT` landed on empty header
+  # space, and the follow-up click then hit the *minimise* button, which
+  # unmapped the window and turned every later screenshot into a black frame.
+  # F10 plus Return walks the only route a user has, without a single pixel
+  # coordinate.
+  key "F10"
+  sleep 0.3
+  screenshot "07b-primary-menu"
+  key "Return"
   sleep 0.4
   assert_log_contains_since "$marker" \
     "window view mode changed.*mode=Compact.*layout=Card" \
-    "full-header button entered Compact Card"
+    "primary-menu Compact Mode entered Compact Card"
   assert_window_within 580 360 "Card compact geometry after leaving maximized Library"
   screenshot "08-compact-card"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-compact-card.png"
