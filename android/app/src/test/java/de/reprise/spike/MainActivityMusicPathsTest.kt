@@ -71,8 +71,7 @@ class MainActivityMusicPathsTest {
     fun listPlayButtonsReplaceTheQueueAndStartAtTheFirstTrack() {
         application.replaceQueue(listOf(configurationTestTrack(99, "Old Queue Track")))
 
-        compose.onNodeWithText("Albums").performClick()
-        compose.onNodeWithText("Deep Album").performClick()
+        openDeepAlbum()
         compose.onNodeWithContentDescription("Play Deep Album").performClick()
 
         assertEquals("Album Song 1", application.currentQueue.first().title)
@@ -80,8 +79,6 @@ class MainActivityMusicPathsTest {
         assertEquals(200, application.currentQueue.size)
 
         compose.onNodeWithContentDescription("Back to albums").performClick()
-        compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithText("Artist 1").performClick()
         compose.onNodeWithText("First Album").performClick()
         compose.onNodeWithContentDescription("Play First Album").performClick()
 
@@ -91,34 +88,8 @@ class MainActivityMusicPathsTest {
     }
 
     @Test
-    fun favouritesKeepTheBoundaryOrderAndExplainAnEmptyList() {
-        compose.onNodeWithText("Favourites").performClick()
-
-        assertAbove("Alpha Artist · First Record", "Alpha Artist · Second Record")
-        assertAbove("Alpha Artist · Second Record", "Zulu Artist · Last Record")
-        compose.onNodeWithText("Not Hearted").assertDoesNotExist()
-
-        compose.onNodeWithContentDescription("Play favourites").performClick()
-        assertEquals("Alpha Artist · First Record", application.currentQueue.first().title)
-        assertEquals(0, application.currentQueueIndex)
-
-        application.favouritesEmpty = true
-        // This fixture change stands in for a rescan, so change the catalog
-        // shape too and make the replacement activity take up the fresh state.
-        application.catalogSize += 1
-        compose.activityRule.scenario.recreate()
-        shadowOf(Looper.getMainLooper()).idle()
-        application.service.republish()
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.waitForIdle()
-
-        compose.onNodeWithText("No favourites yet.").assertIsDisplayed()
-    }
-
-    @Test
     fun backClosesTheTopSurfaceThenOpenAlbumAndArtistWithoutLeavingTheActivity() {
-        compose.onNodeWithText("Albums").performClick()
-        compose.onNodeWithText("Deep Album").performClick()
+        openDeepAlbum()
         compose.waitForIdle()
         compose.activityRule.scenario.recreate()
         shadowOf(Looper.getMainLooper()).idle()
@@ -145,8 +116,8 @@ class MainActivityMusicPathsTest {
         assertEquals(Lifecycle.State.RESUMED, compose.activityRule.scenario.state)
         compose.onNodeWithContentDescription("Back to albums").assertDoesNotExist()
         compose.onNodeWithText("Deep Album").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to artists").performClick()
 
-        compose.onNodeWithText("Artists").performClick()
         compose.onAllNodesWithText("Artist 1")[0].performClick()
         compose.waitForIdle()
         compose.activityRule.scenario.recreate()
@@ -162,6 +133,12 @@ class MainActivityMusicPathsTest {
         assertEquals(Lifecycle.State.RESUMED, compose.activityRule.scenario.state)
         compose.onNodeWithContentDescription("Back to artists").assertDoesNotExist()
         compose.onAllNodesWithText("Artist 1")[0].assertIsDisplayed()
+    }
+
+    private fun openDeepAlbum() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.onNodeWithText("Deep Album").performClick()
     }
 
     private fun assertAbove(upperText: String, lowerText: String) {

@@ -124,12 +124,10 @@ internal class LibrarySession(
             browseState(message)
         }.getOrElse {
             LibraryScreenState.Browse(
-                LibraryWindow.empty(),
-                LibraryWindow.empty(),
-                LibraryWindow.empty(),
-                LibraryWindow.empty(),
-                message,
-                treeUri,
+                titles = LibraryWindow.empty(),
+                artists = LibraryWindow.empty(),
+                message = message,
+                folderUri = treeUri,
             )
         }
     }
@@ -261,21 +259,12 @@ internal class LibrarySession(
             } else {
                 LibraryWindow.empty()
             },
-            albums = if (selectedTab == null || selectedTab == BrowseTab.ALBUMS) {
-                port.listAlbums(firstLibraryWindow())
-            } else {
-                LibraryWindow.empty()
-            },
             artists = if (selectedTab == null || selectedTab == BrowseTab.ARTISTS) {
                 port.listArtists(firstLibraryWindow())
             } else {
                 LibraryWindow.empty()
             },
-            favourites = if (selectedTab == null || selectedTab == BrowseTab.FAVOURITES) {
-                port.listFavourites(firstLibraryWindow())
-            } else {
-                LibraryWindow.empty()
-            },
+            albumCount = port.searchAlbums("", LibraryWindowRange(offset = 0, limit = 1)).total,
             message = message,
             folderUri = port.rememberedTreeUri(),
             loadedTabs = selectedTab?.let(::setOf) ?: BrowseTab.entries.toSet(),

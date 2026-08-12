@@ -97,9 +97,8 @@ internal sealed interface LibraryScreenState {
      */
     data class Browse(
         val titles: LibraryWindow<LibraryTrack>,
-        val albums: LibraryWindow<LibraryAlbum>,
         val artists: LibraryWindow<LibraryArtist>,
-        val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
+        val albumCount: Long = 0,
         val message: String? = null,
         val folderUri: String? = null,
         val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),

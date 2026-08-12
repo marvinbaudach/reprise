@@ -337,7 +337,7 @@ fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
 }
 
 @Test
-fun libraryFrameUsesTheExactTwoAMetricsAndAllFiveBrowseDestinations() {
+fun libraryFrameUsesTheExactTwoAMetricsAndThreeBrowseDestinations() {
     assertEquals(
         LibraryFrameMetrics(
             filterChipHeightDp = 32,
@@ -352,8 +352,6 @@ fun libraryFrameUsesTheExactTwoAMetricsAndAllFiveBrowseDestinations() {
         listOf(
             BrowseTab.TITLES,
             BrowseTab.ARTISTS,
-            BrowseTab.ALBUMS,
-            BrowseTab.FAVOURITES,
             BrowseTab.QUEUE,
         ),
         libraryDestinations,
@@ -421,9 +419,7 @@ fun restoringLibraryLoadsOnlyTheDefaultDestinationThroughTheCorePort() {
     assertEquals(
         LibraryScreenState.Browse(
             titles = titleWindow,
-            albums = LibraryWindow.empty(),
             artists = LibraryWindow.empty(),
-            favourites = LibraryWindow.empty(),
             folderUri = "content://provider/tree/Music",
             loadedTabs = setOf(BrowseTab.TITLES),
         ),
@@ -434,6 +430,7 @@ fun restoringLibraryLoadsOnlyTheDefaultDestinationThroughTheCorePort() {
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "search::0:200",
+            "search-albums::0:1",
         ),
         port.operations,
     )
@@ -461,13 +458,11 @@ fun browseSearchesDelegateLiteralTextAndWindowToTheirPortMethods() {
 
     session.searchAlbums(" slow ", window)
     session.searchArtists(" slow ", window)
-    session.searchFavourites(" slow ", window)
 
     assertEquals(
         listOf(
             "search-albums: slow :200:75",
             "search-artists: slow :200:75",
-            "search-favourites: slow :200:75",
         ),
         port.operations,
     )
@@ -476,9 +471,7 @@ fun browseSearchesDelegateLiteralTextAndWindowToTheirPortMethods() {
 @Test
 fun emptyBrowseMessagesNameTheFilteredDestination() {
     assertEquals("No matching titles.", BrowseTab.TITLES.emptyMessage("slow"))
-    assertEquals("No matching albums.", BrowseTab.ALBUMS.emptyMessage("slow"))
     assertEquals("No matching artists.", BrowseTab.ARTISTS.emptyMessage("slow"))
-    assertEquals("No matching favourites.", BrowseTab.FAVOURITES.emptyMessage("slow"))
 }
 
 @Test
@@ -539,7 +532,6 @@ private class RecordingBrowsePort(
     private val albums: LibraryWindow<LibraryAlbum> = completeWindow(emptyList()),
     private val artists: LibraryWindow<LibraryArtist> = completeWindow(emptyList()),
     private val artistTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
-    private val favourites: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
     private val albumTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
     private val artwork: Map<String, String?> = emptyMap(),
     private val whileResolvingArtwork: (String) -> Unit = {},
@@ -626,7 +618,7 @@ private class RecordingBrowsePort(
 
     override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> {
         operations += "favourites:${window.offset}:${window.limit}"
-        return favourites
+        return completeWindow(emptyList())
     }
 
     override fun searchFavourites(
@@ -634,7 +626,7 @@ private class RecordingBrowsePort(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> {
         operations += "search-favourites:$text:${window.offset}:${window.limit}"
-        return favourites
+        return completeWindow(emptyList())
     }
 
     override fun listAlbumTracks(

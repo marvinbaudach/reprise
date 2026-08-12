@@ -27,9 +27,7 @@ internal fun surfaceLayoutFor(windowSizeClass: WindowSizeClass): SurfaceLayout =
 
 internal enum class LibraryListKey {
     TITLES,
-    ALBUMS,
     ARTISTS,
-    FAVOURITES,
     ALBUM_TRACKS,
     ARTIST_ALBUMS,
     ARTIST_SEARCH_ALBUMS,
@@ -38,7 +36,6 @@ internal enum class LibraryListKey {
 }
 
 internal enum class OpenAlbumOrigin {
-    ALBUMS,
     ARTIST_SEARCH,
     ARTIST_DETAIL,
 }
@@ -60,9 +57,8 @@ internal enum class OpenAlbumOrigin {
  */
 internal data class LoadedLibraryWindows(
     val titles: LibraryWindow<LibraryTrack>,
-    val albums: LibraryWindow<LibraryAlbum>,
     val artists: LibraryWindow<LibraryArtist>,
-    val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
+    val artistSearchAlbums: LibraryWindow<LibraryAlbum> = LibraryWindow.empty(),
     val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
     val searchText: String = "",
     /**
@@ -88,13 +84,11 @@ internal data class LoadedLibraryWindows(
  */
 internal data class LibraryCatalogShape(
     val titles: Long,
-    val albums: Long,
     val artists: Long,
 )
 
 internal fun LibraryScreenState.Browse.catalogShape() = LibraryCatalogShape(
     titles = titles.total,
-    albums = albums.total,
     artists = artists.total,
 )
 

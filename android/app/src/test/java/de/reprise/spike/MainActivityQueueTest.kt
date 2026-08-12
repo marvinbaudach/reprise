@@ -142,7 +142,7 @@ class MainActivityQueueTest {
         compose.onNodeWithTag("queue-track-row-501").performTouchInput { swipeRight() }
         compose.waitForIdle()
 
-        compose.onNodeWithTag("library-destination-FAVOURITES").assertIsSelected()
+        compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
         assertEquals(emptyList<Pair<Int, Long>>(), application.controls.removeUpcomingRequests)
         assertEquals(listOf(501L, 502L, 503L), upcomingIds())
     }

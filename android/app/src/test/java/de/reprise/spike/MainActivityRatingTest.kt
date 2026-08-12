@@ -59,17 +59,15 @@ class MainActivityRatingTest {
         assertEquals(5, application.trackRatings[1L])
         assertEquals(emptyList<LibraryTrack>(), application.currentQueue)
 
-        compose.onNodeWithText("Favourites").performClick()
-        favouriteTrack().assertIsDisplayed()
         libraryHeart("Remove from favourites").performClick()
         compose.waitForIdle()
 
         assertEquals(listOf(1L to 5, 1L to 0), application.controls.ratingRequests)
         assertEquals(0, application.trackRatings[1L])
-        favouriteTrack().assertDoesNotExist()
+        libraryHeart("Add to favourites").assertIsDisplayed()
 
         recreate()
-        favouriteTrack().assertDoesNotExist()
+        libraryHeart("Add to favourites").assertIsDisplayed()
     }
 
     @Test
@@ -194,11 +192,6 @@ class MainActivityRatingTest {
                 ),
         )
             .assertContentDescriptionEquals(description)
-
-    private fun favouriteTrack() = compose.onNode(
-        hasTestTag("library-track-row-1") and
-            hasAnyAncestor(hasTestTag("library-page-FAVOURITES")),
-    )
 
     private fun publishTrack(trackId: Long) {
         application.service.publish(m9bSnapshot(trackId))

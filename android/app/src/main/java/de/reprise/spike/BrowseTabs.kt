@@ -38,11 +38,8 @@ internal fun BrowseTab.emptyMessage(searchText: String): String = if (searchText
 } else {
     when (this) {
         BrowseTab.TITLES -> "No tracks found in this folder."
-        BrowseTab.ALBUMS -> "No albums found in this folder."
         BrowseTab.ARTISTS -> "No artists found in this folder."
-        BrowseTab.FAVOURITES -> "No favourites yet."
-        // Unreachable in practice — the queue page speaks for itself, down to
-        // its own empty state — but the tab is one of the five.
+        // Unreachable in practice — the queue page speaks for itself.
         BrowseTab.QUEUE -> "The queue is exhausted."
     }
 }
@@ -130,70 +127,46 @@ internal fun LibrarySearchField(
 internal fun AlbumsTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
-    albums: LibraryWindow<LibraryAlbum>,
-    searchText: String,
-    selectedAlbum: AlbumTrackList?,
+    selectedAlbum: AlbumTrackList,
     playback: PlaybackUiState,
-    openAlbum: (LibraryAlbum) -> Unit,
     closeAlbum: () -> Unit,
     play: (Int) -> Unit,
-    albumsRequestedOffset: Long?,
-    albumRequestedOffset: Long?,
-    loadMoreAlbums: (LibraryWindowRange) -> Unit,
     loadMoreAlbumTracks: (LibraryWindowRange) -> Unit,
 ) {
-    if (selectedAlbum != null) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = closeAlbum)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MaterialSymbol("arrow_back", "Back to albums")
-                Text(selectedAlbum.album.title, style = MaterialTheme.typography.titleLarge)
-            }
-            Text(
-                selectedAlbum.album.artist,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            if (selectedAlbum.tracks.rows.isEmpty()) {
-                Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
-            } else {
-                ListPlayButton(
-                    description = "Play ${selectedAlbum.album.title}",
-                    onClick = { play(0) },
-                )
-                TrackRows(
-                    surfaceLayout = surfaceLayout,
-                    surfaceState = surfaceState,
-                    listKey = LibraryListKey.ALBUM_TRACKS,
-                    tracks = selectedAlbum.tracks,
-                    playback = playback,
-                    lastRequestedOffset = albumRequestedOffset,
-                    play = play,
-                    loadMore = loadMoreAlbumTracks,
-                )
-            }
-        }
-        return
-    }
-
-    if (albums.rows.isEmpty()) {
-        Text(BrowseTab.ALBUMS.emptyMessage(searchText), modifier = Modifier.padding(16.dp))
-        return
-    }
     Column(modifier = Modifier.fillMaxSize()) {
-        AlbumRows(
-            surfaceLayout = surfaceLayout,
-            surfaceState = surfaceState,
-            albums = albums,
-            requestedOffset = albumsRequestedOffset,
-            openAlbum = openAlbum,
-            loadMore = loadMoreAlbums,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = closeAlbum)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MaterialSymbol("arrow_back", "Back to albums")
+            Text(selectedAlbum.album.title, style = MaterialTheme.typography.titleLarge)
+        }
+        Text(
+            selectedAlbum.album.artist,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
         )
+        if (selectedAlbum.tracks.rows.isEmpty()) {
+            Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
+        } else {
+            ListPlayButton(
+                description = "Play ${selectedAlbum.album.title}",
+                onClick = { play(0) },
+            )
+            TrackRows(
+                surfaceLayout = surfaceLayout,
+                surfaceState = surfaceState,
+                listKey = LibraryListKey.ALBUM_TRACKS,
+                tracks = selectedAlbum.tracks,
+                playback = playback,
+                lastRequestedOffset = null,
+                play = play,
+                loadMore = loadMoreAlbumTracks,
+            )
+        }
     }
 }
 
@@ -225,16 +198,10 @@ internal fun ArtistsTab(
         AlbumsTab(
             surfaceLayout = surfaceLayout,
             surfaceState = surfaceState,
-            albums = LibraryWindow.empty(),
-            searchText = "",
             selectedAlbum = selectedAlbum,
             playback = playback,
-            openAlbum = {},
             closeAlbum = closeAlbum,
             play = playAlbum,
-            albumsRequestedOffset = null,
-            albumRequestedOffset = null,
-            loadMoreAlbums = {},
             loadMoreAlbumTracks = loadMoreAlbumTracks,
         )
         return
@@ -368,40 +335,6 @@ internal fun ArtistsTab(
 }
 
 @Composable
-internal fun FavouritesTab(
-    surfaceLayout: SurfaceLayout,
-    surfaceState: MobileSurfaceViewModel,
-    tracks: LibraryWindow<LibraryTrack>,
-    searchText: String,
-    playback: PlaybackUiState,
-    lastRequestedOffset: Long?,
-    play: (Int) -> Unit,
-    loadMore: (LibraryWindowRange) -> Unit,
-    removeFavourite: (LibraryTrack) -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (tracks.rows.isEmpty()) {
-            Text(BrowseTab.FAVOURITES.emptyMessage(searchText), modifier = Modifier.padding(16.dp))
-        } else {
-            ListPlayButton(description = "Play favourites", onClick = { play(0) })
-            TrackRows(
-                surfaceLayout = surfaceLayout,
-                surfaceState = surfaceState,
-                listKey = LibraryListKey.FAVOURITES,
-                tracks = tracks,
-                playback = playback,
-                lastRequestedOffset = lastRequestedOffset,
-                play = play,
-                loadMore = loadMore,
-                onFavouriteChanged = { track, favourite ->
-                    if (!favourite) removeFavourite(track)
-                },
-            )
-        }
-    }
-}
-
-@Composable
 private fun ListPlayButton(description: String, onClick: () -> Unit) {
     Button(
         onClick = onClick,
@@ -420,7 +353,7 @@ private fun AlbumRows(
     requestedOffset: Long?,
     openAlbum: (LibraryAlbum) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
-    key: LibraryListKey = LibraryListKey.ALBUMS,
+    key: LibraryListKey,
 ) {
     val anchor = surfaceState.scrollPosition(key).within(albums.itemCount(requestedOffset))
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {

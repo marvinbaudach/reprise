@@ -18,7 +18,6 @@ internal data class MainActivitySurfaceDependencies(
     val chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     val rescan: ((LibraryScreenState) -> Unit) -> Unit,
     val searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    val listAlbums: (LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     val searchAlbums: (String, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     val listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     val searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
@@ -33,10 +32,6 @@ internal data class MainActivitySurfaceDependencies(
         { _, _ -> LibraryWindow.empty() },
     val listArtistUntaggedTracks:
         (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
-        { _, _ -> LibraryWindow.empty() },
-    val listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
-        { LibraryWindow.empty() },
-    val searchFavourites: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
         { _, _ -> LibraryWindow.empty() },
     val loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
     val playTracks: (PlaybackSelection, (String) -> Unit) -> Unit = { _, _ -> },

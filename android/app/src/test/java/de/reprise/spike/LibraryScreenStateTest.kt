@@ -180,9 +180,7 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
     assertEquals(
         LibraryScreenState.Browse(
             titles = LibraryWindow.empty(),
-            albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
-            favourites = LibraryWindow.empty(),
             folderUri = "content://provider/tree/Music",
             loadedTabs = setOf(BrowseTab.ARTISTS),
         ),
@@ -194,6 +192,7 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "artists:0:200",
+            "search-albums::0:1",
         ),
         port.operations,
     )
@@ -231,7 +230,6 @@ fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
     assertEquals(
         LibraryScreenState.Browse(
             titles = completeTestWindow(listOf(testTrack())),
-            albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
             folderUri = "content://provider/tree/Music",
         ),
@@ -245,9 +243,8 @@ fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
             "configure:content://provider/tree/Music",
             "scan",
             "search::0:200",
-            "albums:0:200",
             "artists:0:200",
-            "favourites:0:200",
+            "search-albums::0:1",
         ),
         port.operations,
     )
@@ -268,7 +265,6 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
     assertEquals(
         LibraryScreenState.Browse(
             titles = completeTestWindow(listOf(testTrack())),
-            albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
             folderUri = "content://provider/tree/Music",
         ),
@@ -280,9 +276,8 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
             "configure:content://provider/tree/Music",
             "scan",
             "search::0:200",
-            "albums:0:200",
             "artists:0:200",
-            "favourites:0:200",
+            "search-albums::0:1",
         ),
         port.operations,
     )
