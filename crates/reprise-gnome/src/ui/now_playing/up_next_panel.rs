@@ -689,25 +689,23 @@ fn autoscroll_value(
 }
 
 pub(in crate::ui) fn css() -> String {
-    use crate::ui::style::tokens::{
-        MUTED_TEXT_ALPHA, NOW_PLAYING_QUEUE_TITLE_SIZE, RADIUS_SURFACE,
-    };
+    use crate::ui::style::tokens::{NOW_PLAYING_QUEUE_TITLE_SIZE, RADIUS_SURFACE};
     format!(
         ".reprise-up-next-list {{ padding: 0 12px; }}\n\
          .reprise-up-next-section {{ \
-           color: alpha(#ffffff, {MUTED_TEXT_ALPHA}); padding: 12px 6px 5px; }}\n\
+           color: @reprise_secondary_fg_color; padding: 12px 6px 5px; }}\n\
          .reprise-up-next-row {{ \
            background: transparent; border: none; box-shadow: none; \
            padding: 5px 6px; }}\n\
          /* Hover, press and focus come from `style::buttons` (BTN-4). */\n\
-         .reprise-up-next-remove {{ color: alpha(#ffffff, {MUTED_TEXT_ALPHA}); }}\n\
-         .reprise-up-next-remove:hover {{ color: #ffffff; }}\n\
+         .reprise-up-next-remove {{ color: @reprise_secondary_fg_color; }}\n\
+         .reprise-up-next-remove:hover {{ color: @reprise_primary_fg_color; }}\n\
          .reprise-up-next-cover {{ border-radius: {RADIUS_SURFACE}; }}\n\
          .reprise-up-next-title {{ \
-           color: #ffffff; font-size: {NOW_PLAYING_QUEUE_TITLE_SIZE}; }}\n\
+           color: @reprise_primary_fg_color; font-size: {NOW_PLAYING_QUEUE_TITLE_SIZE}; }}\n\
          .reprise-up-next-artist {{ \
-           color: alpha(#ffffff, {MUTED_TEXT_ALPHA}); font-size: 11.5px; }}\n\
-         .reprise-up-next-empty {{ color: alpha(#ffffff, {MUTED_TEXT_ALPHA}); }}"
+           color: @reprise_secondary_fg_color; font-size: 11.5px; }}\n\
+         .reprise-up-next-empty {{ color: @reprise_secondary_fg_color; }}"
     )
 }
 

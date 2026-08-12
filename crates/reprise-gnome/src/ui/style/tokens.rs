@@ -177,9 +177,6 @@ pub(in crate::ui) const NOW_PLAYING_FOOTER_SIZE: &str = "10.5px";
 pub(in crate::ui) const NOW_PLAYING_QUEUE_COVER_SIZE: i32 = 32;
 pub(in crate::ui) const NOW_PLAYING_QUEUE_TITLE_SIZE: &str = "13.5px";
 
-// Muted secondary-text alpha shared by compact metadata surfaces.
-pub(in crate::ui) const MUTED_TEXT_ALPHA: &str = "0.45";
-
 #[cfg(test)]
 mod tests {
     use super::*;

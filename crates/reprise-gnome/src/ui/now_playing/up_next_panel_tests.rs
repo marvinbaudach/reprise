@@ -204,6 +204,14 @@ fn row_css_and_metrics_match_the_compact_21a_spec() {
     assert_eq!(crate::ui::style::tokens::NOW_PLAYING_QUEUE_COVER_SIZE, 32);
     assert!(css.contains(".reprise-up-next-row"));
     assert!(css.contains("font-size: 13.5px"));
+    assert!(css.contains(
+        ".reprise-up-next-title { \
+           color: @reprise_primary_fg_color"
+    ));
+    assert!(css.contains(
+        ".reprise-up-next-artist { \
+           color: @reprise_secondary_fg_color"
+    ));
     assert!(!css.contains("reorder"));
     assert!(!css.contains("context-menu"));
 }
