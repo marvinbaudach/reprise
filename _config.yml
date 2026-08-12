@@ -1,0 +1,54 @@
+# GitHub Pages configuration.
+#
+# Pages serves https://marvinbaudach.github.io/reprise/ from the `main` branch
+# root and renders README.md as the landing page. That URL is the homepage
+# advertised in data/*.metainfo.xml and reprise.doap, so the build has to stay
+# green.
+#
+# Without this file the build fails. Jekyll expands Liquid ({{ ... }} and
+# {% ... %}) before Markdown, in every file it renders — including inside fenced
+# code blocks. Measured on 2026-08-11 against main: four tracked Markdown files
+# contain such sequences, and one of them is enough to abort the whole build:
+#
+#   Liquid syntax error (line 284): Variable '{{ border: 1px solid
+#   @reprise_player_accent; \ border-radius: {edge_radius}' was not properly
+#   terminated with regexp: /\}\}/ in docs/plans/edge-light-and-shimmer.md
+#
+# The exclusions below serve two purposes at once: they remove every file that
+# breaks the parser, and they keep the repository's internal working notes —
+# plans, handovers, review findings — from being published as a browsable
+# website. Those files stay readable on GitHub; they just are not a web page.
+#
+# Kept deliberately, because README.md links to them: AGENTS.md,
+# docs/agents/, docs/assets/, docs/showcase.md, docs/ux-rules.md,
+# flatpak/README.md, LICENSING.md, README.de.md, TESTING.md.
+
+title: Reprise
+description: A native GTK4 music player for GNOME, written in Rust
+
+exclude:
+  # Contains Liquid sequences that abort the build. RELEASING.md is linked from
+  # README.md, so that one link does not resolve on the rendered site; it still
+  # works on GitHub, which is where release instructions are read.
+  - RELEASING.md
+  - docs/automation/
+  - docs/plans/
+
+  # Internal working notes. Public on GitHub, but not a published web page.
+  - docs/superpowers/
+  - .pipeline-codex.md
+
+  # Source trees and build inputs. Nothing here renders as a page, and copying
+  # them into the site only slows the build down.
+  - android/
+  - build-aux/
+  - crates/
+  - data/
+  - LICENSES/
+  - po/
+  - scripts/
+  - target/
+  - Cargo.lock
+  - Cargo.toml
+  - meson.build
+  - meson_options.txt
