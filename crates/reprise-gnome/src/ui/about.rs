@@ -14,6 +14,18 @@ const APPDATA_RESOURCE: &str =
     "/io/github/marvinbaudach/Reprise/io.github.marvinbaudach.Reprise.metainfo.xml";
 const ISSUE_URL: &str = "https://github.com/marvinbaudach/reprise/issues";
 const DEBUG_INFO_FILENAME: &str = "reprise-debug-info.txt";
+const LGPL_2_1_OR_LATER: &str =
+    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>";
+const MIT: &str = "<a href=\"https://spdx.org/licenses/MIT.html\">MIT</a>";
+const DEPENDENCY_LEGAL_SECTIONS: [(&str, gtk4::License, &str); 7] = [
+    ("GTK", gtk4::License::Custom, LGPL_2_1_OR_LATER),
+    ("libadwaita", gtk4::License::Custom, LGPL_2_1_OR_LATER),
+    ("GStreamer", gtk4::License::Custom, LGPL_2_1_OR_LATER),
+    ("GVfs", gtk4::License::Custom, LGPL_2_1_OR_LATER),
+    ("Lofty", gtk4::License::Custom, MIT),
+    ("CAVA", gtk4::License::Custom, MIT),
+    ("SQLite", gtk4::License::Custom, "Public Domain"),
+];
 
 /// The version shown in About: the crate version, plus the short git commit of
 /// this build when one was embedded at build time (nightly dev builds set
@@ -58,12 +70,13 @@ fn build_dialog_for_version(
 }
 
 fn add_legal_sections(dialog: &adw::AboutDialog) {
-    for name in ["GTK", "libadwaita", "GStreamer", "GVfs"] {
-        dialog.add_legal_section(name, None, gtk4::License::Lgpl21, None);
+    for &(name, license_type, license) in dependency_legal_sections() {
+        dialog.add_legal_section(name, None, license_type, Some(license));
     }
-    dialog.add_legal_section("Lofty", None, gtk4::License::MitX11, None);
-    dialog.add_legal_section("CAVA", None, gtk4::License::MitX11, None);
-    dialog.add_legal_section("SQLite", None, gtk4::License::Custom, Some("Public Domain"));
+}
+
+fn dependency_legal_sections() -> &'static [(&'static str, gtk4::License, &'static str)] {
+    &DEPENDENCY_LEGAL_SECTIONS
 }
 
 pub(super) fn present(parent: &adw::ApplicationWindow, db: &Db, db_path: &Path) {
@@ -90,6 +103,49 @@ mod tests {
         );
         assert_eq!(version_string_from("0.1.1", None), "0.1.1");
         assert_eq!(version_string_from("0.1.1", Some("")), "0.1.1");
+    }
+
+    #[test]
+    fn dependency_legal_sections_use_short_named_license_links() {
+        assert_eq!(
+            dependency_legal_sections(),
+            &[
+                (
+                    "GTK",
+                    gtk4::License::Custom,
+                    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>",
+                ),
+                (
+                    "libadwaita",
+                    gtk4::License::Custom,
+                    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>",
+                ),
+                (
+                    "GStreamer",
+                    gtk4::License::Custom,
+                    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>",
+                ),
+                (
+                    "GVfs",
+                    gtk4::License::Custom,
+                    "<a href=\"https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html\">LGPL 2.1 or later</a>",
+                ),
+                (
+                    "Lofty",
+                    gtk4::License::Custom,
+                    "<a href=\"https://spdx.org/licenses/MIT.html\">MIT</a>",
+                ),
+                (
+                    "CAVA",
+                    gtk4::License::Custom,
+                    "<a href=\"https://spdx.org/licenses/MIT.html\">MIT</a>",
+                ),
+                ("SQLite", gtk4::License::Custom, "Public Domain"),
+            ]
+        );
+        assert!(dependency_legal_sections()
+            .iter()
+            .all(|(_, _, license)| !license.contains("warranty")));
     }
 
     #[test]
