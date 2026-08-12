@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension};
 
 /// Returns the distinct, non-empty local albums credited either directly to
 /// `artist` or through the album-artist field. Missing tracks are ignored.
-pub fn query_artist_albums(db: &Db, artist: &str) -> Result<Vec<String>, rusqlite::Error> {
+pub fn query_artist_album_titles(db: &Db, artist: &str) -> Result<Vec<String>, rusqlite::Error> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT MIN(TRIM(album))
@@ -66,7 +66,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            query_artist_albums(&db, "THE BAND").unwrap(),
+            query_artist_album_titles(&db, "THE BAND").unwrap(),
             ["First", "Second"]
         );
     }
@@ -81,7 +81,9 @@ mod tests {
             [],
         )
         .unwrap();
-        assert!(query_artist_albums(&db, "Artist").unwrap().is_empty());
+        assert!(query_artist_album_titles(&db, "Artist")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

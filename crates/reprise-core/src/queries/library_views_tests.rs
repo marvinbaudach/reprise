@@ -28,6 +28,14 @@ fn full_window() -> WindowRange {
 }
 
 #[test]
+fn shared_artist_album_selection_keeps_the_desktop_where_clause_byte_identical() {
+    assert_eq!(
+        artist_albums_selection(1),
+        "missing_since IS NULL AND removed_at IS NULL AND TRIM(album) <> '' AND CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END = ?1 COLLATE NOCASE"
+    );
+}
+
+#[test]
 fn artist_and_album_counts_match_the_grouped_summaries() {
     let db = seeded_library();
     // These fixture-sized windows include every grouped summary, while
@@ -300,6 +308,115 @@ fn artist_albums_are_newest_first() {
     assert_eq!(
         albums.iter().map(|a| a.album.as_str()).collect::<Vec<_>>(),
         vec!["New", "Old"]
+    );
+}
+
+#[test]
+fn artist_album_window_matches_the_exact_artist_not_a_name_prefix() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,album_artist,year,added_at) VALUES
+             ('/bad','Track','Bad','The Gray Race','Bad',1996,0),
+             ('/bad-religion','Track','Bad Religion','Suffer','Bad Religion',1988,0);",
+        )
+        .unwrap();
+
+    let albums = query_artist_albums(&db, "Bad", full_window()).unwrap();
+
+    assert_eq!(albums.total, 1);
+    assert_eq!(
+        albums
+            .rows
+            .iter()
+            .map(|album| album.album.as_str())
+            .collect::<Vec<_>>(),
+        ["The Gray Race"]
+    );
+}
+
+#[test]
+fn artist_album_count_and_full_window_agree() {
+    let db = seeded_library();
+
+    let albums = query_artist_albums(&db, "Solo", full_window()).unwrap();
+
+    assert_eq!(query_artist_album_count(&db, "Solo").unwrap(), 1);
+    assert_eq!(albums.total, 1);
+    assert_eq!(albums.rows.len(), 1);
+}
+
+#[test]
+fn artist_album_window_reports_the_full_total_beyond_the_page() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,album_artist,year,added_at) VALUES
+             ('/first','First','Solo','First','Solo',2024,0),
+             ('/second','Second','Solo','Second','Solo',2023,0);",
+        )
+        .unwrap();
+
+    let albums = query_artist_albums(
+        &db,
+        "Solo",
+        WindowRange {
+            offset: 0,
+            limit: 1,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(albums.total, 2);
+    assert_eq!(albums.rows.len(), 1);
+    assert!(albums.has_more);
+}
+
+#[test]
+fn artist_album_window_excludes_blank_album_tags() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,album_artist,year,added_at) VALUES
+             ('/blank','Blank','Solo','','Solo',2024,0),
+             ('/spaces','Spaces','Solo','   ','Solo',2024,0),
+             ('/album','Album','Solo','Named','Solo',2024,0);",
+        )
+        .unwrap();
+
+    let albums = query_artist_albums(&db, "Solo", full_window()).unwrap();
+
+    assert_eq!(albums.total, 1);
+    assert_eq!(albums.rows[0].album, "Named");
+}
+
+#[test]
+fn artist_album_window_sorts_newest_then_title_and_unknown_year_last() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,album_artist,year,added_at) VALUES
+             ('/zed','Zed','Solo','Zed','Solo',2024,0),
+             ('/alpha','Alpha','Solo','Alpha','Solo',2024,0),
+             ('/old','Old','Solo','Old','Solo',2010,0),
+             ('/unknown','Unknown','Solo','Unknown','Solo',0,0);",
+        )
+        .unwrap();
+
+    let albums = query_artist_albums(&db, "Solo", full_window()).unwrap();
+
+    assert_eq!(
+        albums
+            .rows
+            .iter()
+            .map(|album| (album.album.as_str(), album.year))
+            .collect::<Vec<_>>(),
+        [
+            ("Alpha", Some(2024)),
+            ("Zed", Some(2024)),
+            ("Old", Some(2010)),
+            ("Unknown", None),
+        ]
     );
 }
 
