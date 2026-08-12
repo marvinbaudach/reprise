@@ -99,7 +99,7 @@ wait_for_painted_window() {
 
 run_artist_news_flow() {
   local requests_before_reopen
-  log_step "flow 0: Artist News opt-in, stale-selection guard, reopen and privacy…"
+  start_flow "0: Artist News opt-in, stale-selection guard, reopen and privacy…"
   screenshot "00-before-artist-news-opt-in"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/00-before-artist-news-opt-in.png"
   if [ "$(fixture_request_count)" -ne 0 ]; then

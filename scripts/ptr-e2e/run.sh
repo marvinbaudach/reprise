@@ -137,6 +137,7 @@ MUSICBRAINZ_LOG="$SCRATCH_ROOT/musicbrainz-requests.log"
 DISPLAYFD_FILE="$SCRATCH_ROOT/displayfd.txt"
 APP_LOG="$SCRATCH_ROOT/app.log"
 FAILURE_LOG="$SCRATCH_ROOT/failures.log"
+FLOW_LOG="$SCRATCH_ROOT/flows.log"
 HARNESS_LOG="$SCRATCH_ROOT/run.log"
 DBUS_ADDRESS_FILE="$SCRATCH_ROOT/dbus-address.txt"
 XVFB_LOG="$SCRATCH_ROOT/xvfb.log"
@@ -151,6 +152,7 @@ mkdir -p \
   "$XDG_CACHE_HOME_SCRATCH" \
   "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0"
 : > "$FAILURE_LOG"
+: > "$FLOW_LOG"
 : > "$HARNESS_LOG"
 
 # `gtk-enable-animations=0` is load-bearing, not cosmetic: with animations on,
@@ -217,9 +219,10 @@ failure_count() {
 
 # shellcheck source=harness-helpers.sh
 source "$REPO_ROOT/scripts/ptr-e2e/harness-helpers.sh"
+EXPECTED_FLOW_COUNT="$(expected_flow_count)"
 
 cleanup() {
-  local exit_code=$? effective_exit_code failures emitted_failures mismatch=0
+  local exit_code=$? effective_exit_code failures emitted_failures flows_started mismatch=0
   log_step "cleaning up…"
   # The app was launched via `setsid`, so its PID is also its process group
   # id — killing the negative PGID takes the whole dbus-run-session/cargo/
@@ -236,6 +239,7 @@ cleanup() {
     kill -KILL "$XVFB_PID" 2>/dev/null || true
   fi
   failures="$(failure_count)"
+  flows_started="$(flow_started_count)"
   emitted_failures="$(grep -c 'FAIL:' "$HARNESS_LOG" 2>/dev/null || true)"
   if [ "$failures" -ne "$emitted_failures" ]; then
     mismatch=1
@@ -243,12 +247,10 @@ cleanup() {
     printf '%s\n' "$mismatch_line" >&2
     printf '%s\n' "$mismatch_line" >> "$HARNESS_LOG"
   fi
-  effective_exit_code=$(( exit_code != 0 ? exit_code : ((failures > 0 || mismatch != 0) ? 1 : 0) ))
-  if [ "$effective_exit_code" -eq 0 ]; then
-    log_step "done — all checks passed"
-  else
-    log_step "done — see failures above (exit $effective_exit_code, $failures failed check(s))"
-  fi
+  effective_exit_code="$(harness_effective_exit_code \
+    "$exit_code" "$failures" "$mismatch" "$flows_started" "$EXPECTED_FLOW_COUNT")"
+  log_step "$(harness_balance_message \
+    "$effective_exit_code" "$failures" "$flows_started" "$EXPECTED_FLOW_COUNT")"
   # Preserved unconditionally (success or failure) so a failed run still
   # leaves the app and harness logs behind for diagnosis — scratch removal
   # below would otherwise take them with it.
@@ -536,7 +538,7 @@ run_playlist_delete_flow
 if [ "$PTR_E2E_PLAYLIST_DELETE_ONLY" = "1" ]; then exit 0; fi
 # --- Flow 2: keyboard opens the selected row's context menu -----------------
 
-log_step "flow 2: Shift+F10 opens the track context menu…"
+start_flow "2: Shift+F10 opens the track context menu…"
 click_at "$ROW0_TITLE_CELL_X" "$ROW0_TITLE_CELL_Y"
 MARKER=$(log_marker)
 key "shift+F10"
@@ -598,7 +600,7 @@ assert_screenshots_differ \
 
 # --- Flow 3: queue reorder exposes and applies a real drop target -----------
 
-log_step "flow 3: Queue insertion target and drag reorder…"
+start_flow "3: Queue insertion target and drag reorder…"
 # The 1.16 s fixtures would otherwise consume up_next underneath the
 # assertions below. Assert the resulting state, not a state *change*: whether
 # anything was playing when we get here depends on the flows above, and an
@@ -651,7 +653,7 @@ assert_log_contains_since "$MARKER" "queue reordered via drag and drop" "Queue d
 
 # --- Flow 4: manual Up Next interrupts and resumes one playback context -----
 
-log_step "flow 4: context A → manual X → manual Y → context B…"
+start_flow "4: context A → manual X → manual Y → context B…"
 click_at 80 100
 sleep 0.3
 # Bind every expectation to fixture titles; database id order is unrelated to
@@ -708,7 +710,7 @@ assert_log_contains_since "$MARKER" \
 
 # Keep the original real-keyboard regression after the stronger ordering
 # proof. The fixture is short, so both keypresses remain tightly bounded.
-log_step "flow 4b: Space toggles play/pause…"
+start_flow "4b: Space toggles play/pause…"
 
 MARKER=$(log_marker)
 key "space"

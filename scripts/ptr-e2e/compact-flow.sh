@@ -104,7 +104,7 @@ double_click_window_relative() {
 }
 
 run_compact_flow() {
-  log_step "flow 5: native Compact card, context menu, and scroll volume…"
+  start_flow "5: native Compact card, context menu, and scroll volume…"
   local marker position_before volume_before compact_track_id
   local compact_rect compact_width compact_height
   local play_x metadata_x cover_x center_y

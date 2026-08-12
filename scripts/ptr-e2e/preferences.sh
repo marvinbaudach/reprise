@@ -31,7 +31,7 @@ preferences_width() {
 }
 
 run_preferences_flow() {
-  log_step "flow 6: Preferences page sidebar, cards, and Library Window controls…"
+  start_flow "6: Preferences page sidebar, cards, and Library Window controls…"
 
   # Compact layouts can replace the mapped surface. Always address the
   # currently active Library window before opening its primary menu.

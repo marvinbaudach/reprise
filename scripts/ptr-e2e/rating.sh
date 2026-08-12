@@ -3,7 +3,7 @@
 # Drives the inline Rating cell through real pointer input. Helpers and
 # geometry variables are supplied by run.sh before this function is called.
 run_rating_flow() {
-  log_step "flow 1: inline star-rating field…"
+  start_flow "1: inline star-rating field…"
   screenshot "01-initial-track-list"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/01-initial-track-list.png"
 

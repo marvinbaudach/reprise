@@ -3,7 +3,7 @@
 # Drives GtkColumnViewColumn's native header menu through real secondary
 # clicks. Helpers and geometry variables are supplied by run.sh.
 run_column_header_menu_flow() {
-  log_step "flow 1b: right-click column visibility menu…"
+  start_flow "1b: right-click column visibility menu…"
 
   MARKER=$(log_marker)
   click_window_relative "$TITLE_HEADER_X" "$COLUMN_HEADER_Y" 3

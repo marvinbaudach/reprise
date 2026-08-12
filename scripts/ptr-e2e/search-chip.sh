@@ -43,7 +43,7 @@ search_chip_split_click() {
 }
 
 run_search_chip_flow() {
-  log_step "flow sc: the search chip's × takes one click…"
+  start_flow "sc: the search chip's × takes one click…"
   key "ctrl+f"
   sleep 0.6
   screenshot "sc-01-strip-open"

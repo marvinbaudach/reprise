@@ -75,7 +75,7 @@ assert_single_persist_line_since() {
 }
 
 run_column_reorder_flow() {
-  log_step "flow: header drag reorders columns, plain click still sorts…"
+  start_flow "column-reorder: header drag reorders columns, plain click still sorts…"
 
   # --- Plain click still sorts (reimplemented activate_sort) --------------
   # Run BEFORE any drag mutates header geometry, at the Title header's
