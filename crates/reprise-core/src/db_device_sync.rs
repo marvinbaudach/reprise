@@ -236,18 +236,42 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
     let settings_prepare_before_sync = has_column(conn, "device_settings", "prepare_before_sync")?;
     let subscriptions_latest_per_channel =
         has_column(conn, "podcast_subscriptions", "latest_per_channel")?;
+    let legacy_notice_exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'device_sync_legacy_notices')",
+        [],
+        |row| row.get(0),
+    )?;
     if version >= 68
         && !subscriptions_sync_to_phone
         && !settings_prepare_before_sync
         && !subscriptions_latest_per_channel
+        && legacy_notice_exists
     {
         return Ok(());
     }
     let target_has_kind = has_column(conn, "device_sync_targets", "kind")?;
+    let repairing_earlier_v68 = version >= 68 && !target_has_kind && !legacy_notice_exists;
     let inventory_has_path = has_column(conn, "device_files", "device_path")?;
     let episodes_have_wanted = has_column(conn, "podcast_episodes", "wanted_on_device")?;
     let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(
+        "CREATE TABLE IF NOT EXISTS device_sync_legacy_notices (
+           device_serial TEXT PRIMARY KEY,
+           dismissed INTEGER NOT NULL DEFAULT 0
+         );",
+    )?;
+    if repairing_earlier_v68 {
+        transaction.execute_batch(
+            "INSERT OR IGNORE INTO device_sync_legacy_notices (device_serial)
+             SELECT device_serial FROM device_sync_targets;",
+        )?;
+    }
     if target_has_kind {
+        transaction.execute_batch(
+            "INSERT OR IGNORE INTO device_sync_legacy_notices (device_serial)
+             SELECT DISTINCT device_serial FROM device_sync_targets
+             WHERE kind IN ('youtube_audio', 'podcast_episodes');",
+        )?;
         if inventory_has_path {
             transaction.execute_batch(
                 r#"
@@ -306,7 +330,7 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
         transaction
             .execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN latest_per_channel;")?;
     }
-    transaction.pragma_update(None, "user_version", 68)?;
+    transaction.pragma_update(None, "user_version", version.max(68))?;
     transaction.commit()
 }
 
@@ -370,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_v67_to_v68_keeps_only_the_playlist_target_and_its_inventory() {
+    fn mtp_54_migration_keeps_music_and_records_the_one_time_legacy_media_notice() {
         let conn = open_v67_device_sync_shape();
         conn.execute_batch(
             "INSERT INTO device_sync_targets VALUES
@@ -397,6 +421,14 @@ mod tests {
             )
             .unwrap();
         assert_eq!(target, (Some(65537), "/Music/My Reprise".into(), true));
+        let notice_pending: bool = conn
+            .query_row(
+                "SELECT NOT dismissed FROM device_sync_legacy_notices WHERE device_serial = 'pixel'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(notice_pending);
         let target_columns = conn
             .prepare("PRAGMA table_info(device_sync_targets)")
             .unwrap()
@@ -438,6 +470,19 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, 68);
+    }
+
+    #[test]
+    fn migration_v68_never_lowers_a_newer_schema_version() {
+        let conn = open_v67_device_sync_shape();
+        conn.pragma_update(None, "user_version", 70).unwrap();
+
+        migrate_v68(&conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 70);
     }
 
     #[test]
@@ -522,6 +567,17 @@ mod tests {
             target,
             (Some(65537), "/Music/Reprise".into(), true),
             "re-entering v68 must not disturb the playlists target it already settled"
+        );
+        let notice_pending: bool = conn
+            .query_row(
+                "SELECT NOT dismissed FROM device_sync_legacy_notices WHERE device_serial = 'pixel'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            notice_pending,
+            "repairing an earlier v68 must make the retired-media notice reachable"
         );
     }
 

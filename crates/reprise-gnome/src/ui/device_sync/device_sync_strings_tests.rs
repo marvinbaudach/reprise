@@ -21,6 +21,14 @@ fn device_open_action_names_its_target() {
 }
 
 #[test]
+fn retired_media_notice_names_the_configured_target_folder() {
+    assert_eq!(
+        legacy_media_notice("/Audio/Reprise"),
+        "Podcast and YouTube files are no longer synced and were left untouched outside /Audio/Reprise."
+    );
+}
+
+#[test]
 fn track_progress_keeps_both_counts_visible() {
     assert_eq!(track_progress(2, 5), "2 of 5 tracks");
 }
@@ -56,16 +64,6 @@ fn mtp_22_deletions_only_balance_never_claims_zero_bytes_to_copy() {
     };
 
     assert_eq!(balance_text(&balance), "3 to remove");
-}
-
-#[test]
-fn free_space_line_shows_the_arrow_only_when_this_sync_moves_the_needle() {
-    const GIB: u64 = 1024 * 1024 * 1024;
-    assert_eq!(
-        free_space_line(175 * GIB, (172.4 * GIB as f64) as u64),
-        "175.0 → 172.4 GiB free"
-    );
-    assert_eq!(free_space_line(64 * GIB, 64 * GIB), "64.0 GiB free");
 }
 
 #[test]

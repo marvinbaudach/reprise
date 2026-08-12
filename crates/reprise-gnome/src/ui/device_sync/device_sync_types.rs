@@ -165,16 +165,16 @@ pub struct DeviceView {
     /// ever been successfully inspected this session.
     pub contents_state: reprise_core::device_sync::device_view::DeviceContentsState,
     pub content_row: reprise_core::device_sync::device_view::CategoryContentRow,
-    pub target_reading: reprise_core::device_sync::CategoryReading,
+    pub target_reading: reprise_core::device_sync::MusicReading,
     /// Whether selected smart playlists follow their live definition.
     pub keep_smart_playlists_updated: bool,
 }
 
 /// Test-only "nothing known yet" baseline for the playlists target.
 #[cfg(test)]
-pub(in crate::ui) fn empty_target_reading() -> reprise_core::device_sync::CategoryReading {
-    reprise_core::device_sync::device_view::project_device_category_reading(
-        reprise_core::device_sync::CategoryDiff::default(),
+pub(in crate::ui) fn empty_target_reading() -> reprise_core::device_sync::MusicReading {
+    reprise_core::device_sync::device_view::project_device_music_reading(
+        reprise_core::device_sync::MusicDiff::default(),
     )
 }
 

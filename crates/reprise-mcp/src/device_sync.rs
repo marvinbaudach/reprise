@@ -232,9 +232,9 @@ fn balance_dto(target: &DeviceTargetSnapshot) -> DeviceSyncBalanceDto {
     }
 }
 
-fn decode_reading(target: &DeviceTargetSnapshot) -> reprise_core::device_sync::CategoryReading {
-    use reprise_core::device_sync::{CategoryDiff, CategoryReading};
-    CategoryReading::Diff(CategoryDiff {
+fn decode_reading(target: &DeviceTargetSnapshot) -> reprise_core::device_sync::MusicReading {
+    use reprise_core::device_sync::{MusicDiff, MusicReading};
+    MusicReading::Diff(MusicDiff {
         files_to_copy: target.files_to_copy as usize,
         bytes_to_copy: target.bytes_to_copy,
         files_to_remove: target.files_to_remove as usize,

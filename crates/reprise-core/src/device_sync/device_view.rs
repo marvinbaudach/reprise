@@ -17,7 +17,7 @@
 //! ## What is reused, not recomputed
 //!
 //! Every byte and file count here comes from the existing engines:
-//! [`super::category_diff::CategoryDiff`]/[`super::category_diff::SyncBalance`]
+//! [`super::music_diff::MusicDiff`]/[`super::music_diff::SyncBalance`]
 //! (`MTP-22`) for the diff, and the existing target inventory list
 //! (`super::storage::DeviceStorageInspection::managed_files`) for what is
 //! already on the device. This
@@ -28,8 +28,8 @@
 //! silently implied by internal scan bookkeeping and never shown to the
 //! user at all.
 
-use super::category_diff::{CategoryDiff, CategoryReading};
 use super::mirror::ManagedDeviceFile;
+use super::music_diff::{MusicDiff, MusicReading};
 use super::storage::DeviceStorageSnapshot;
 use super::targets::SyncTarget;
 
@@ -176,8 +176,8 @@ pub fn project_category_content_row(
 
 /// `MTP-37`: the single playlists target's computed reading.
 #[must_use]
-pub const fn project_device_category_reading(diff: CategoryDiff) -> CategoryReading {
-    CategoryReading::Diff(diff)
+pub const fn project_device_music_reading(diff: MusicDiff) -> MusicReading {
+    MusicReading::Diff(diff)
 }
 
 #[cfg(test)]
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn mtp_51_an_enabled_target_reads_its_computed_diff() {
-        let diff = CategoryDiff {
+        let diff = MusicDiff {
             files_to_copy: 14,
             bytes_to_copy: 2,
             files_to_remove: 3,
@@ -322,9 +322,6 @@ mod tests {
             playlists_rewritten: 2,
         };
 
-        assert_eq!(
-            project_device_category_reading(diff),
-            CategoryReading::Diff(diff)
-        );
+        assert_eq!(project_device_music_reading(diff), MusicReading::Diff(diff));
     }
 }

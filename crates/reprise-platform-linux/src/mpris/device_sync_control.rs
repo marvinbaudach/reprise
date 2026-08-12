@@ -10,7 +10,7 @@ use reprise_core::agent_device_sync::{
     AgentDeviceSyncStorageKnowledge, AgentDeviceSyncStorageState, AgentDeviceSyncWarning,
     SharedAgentDeviceSyncState,
 };
-use reprise_core::device_sync::{CategoryReading, SelectionSource, TransferProfile};
+use reprise_core::device_sync::{MusicReading, SelectionSource, TransferProfile};
 
 use reprise_runtime_protocol::device_sync::{
     DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot, DeviceSourceSelection,
@@ -136,7 +136,7 @@ fn device_snapshot(device: AgentDeviceSyncDevice) -> DeviceSnapshot {
 fn target_snapshot(
     target: reprise_core::agent_device_sync::AgentDeviceSyncTarget,
 ) -> DeviceTargetSnapshot {
-    let CategoryReading::Diff(diff) = target.reading;
+    let MusicReading::Diff(diff) = target.reading;
     DeviceTargetSnapshot {
         target_path: target.target_path,
         target_enabled: target.target_enabled,
@@ -415,7 +415,7 @@ mod tests {
     /// The single playlists target carries its `MTP-22` diff over the wire.
     #[test]
     fn mtp_22_target_snapshot_preserves_the_playlist_diff() {
-        use reprise_core::device_sync::{CategoryDiff, CategoryReading};
+        use reprise_core::device_sync::{MusicDiff, MusicReading};
 
         let state = Arc::new(Mutex::new(AgentDeviceSyncState {
             devices: vec![AgentDeviceSyncDevice {
@@ -424,7 +424,7 @@ mod tests {
                     target_path: "/Music/Reprise".into(),
                     target_enabled: true,
                     size_on_device_bytes: 42,
-                    reading: CategoryReading::Diff(CategoryDiff {
+                    reading: MusicReading::Diff(MusicDiff {
                         files_to_copy: 3,
                         bytes_to_copy: 900,
                         files_to_remove: 1,

@@ -12,7 +12,7 @@
 //! the answer — the same discipline `resume_planned` already uses to avoid
 //! re-entering GTK while holding a `RefCell` borrow.
 
-use super::category_diff::SyncBalance;
+use super::music_diff::SyncBalance;
 
 /// Every fact [`should_auto_start`] needs. Flat and `Copy` on purpose: the
 /// caller builds one of these from a single, short-lived borrow of device
@@ -36,8 +36,8 @@ pub struct AutoStartFacts {
     pub device_connected: bool,
     /// The device already has a sync active or finishing.
     pub device_busy: bool,
-    /// The projected balance across all three sync targets, reused as-is
-    /// from `category_diff::aggregate_balance` — never re-derived here.
+    /// The projected balance for the music target, reused as-is from
+    /// `music_diff::aggregate_balance` — never re-derived here.
     pub balance: SyncBalance,
 }
 

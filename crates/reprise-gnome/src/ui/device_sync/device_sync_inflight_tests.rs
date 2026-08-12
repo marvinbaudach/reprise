@@ -145,7 +145,7 @@ fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
 }
 
 #[test]
-fn mtp_15_every_copy_restarts_the_transfer_rate_baseline() {
+fn mtp_60_every_copy_restarts_the_transfer_rate_baseline() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1, 2]);
