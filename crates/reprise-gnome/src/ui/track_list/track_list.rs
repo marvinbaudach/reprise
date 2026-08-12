@@ -126,6 +126,9 @@ pub(in crate::ui) struct Shared {
     /// old adjustment allocation paired with the new row count until GTK's
     /// next allocation pass, so both values come from the geometry service.
     pub(in crate::ui) list_geometry_cache: crate::ui::list_geometry::ListGeometryCache,
+    /// NAV-17: the track list's own selection anchor. This is a `Cell` because
+    /// `AnchorState` is `Copy`, so no borrow can span a GTK callback chain.
+    pub(super) selection_anchor: Cell<super::track_list_selection_anchor::AnchorState>,
     /// Track id of the currently-playing row (the now-playing marker), or
     /// `None` when nothing is playing. Every column's `connect_bind` reads
     /// this to toggle the `.now-playing` marker class on its cell, so a row
