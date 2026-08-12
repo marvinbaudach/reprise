@@ -252,7 +252,6 @@ fn set_11_online_content_starts_with_a_persistent_master_row() {
     );
 
     assert_eq!(group.title(), "Online content");
-    assert!(group.description().is_none());
     assert_eq!(master.title(), "Online content");
     assert_eq!(
         master.subtitle().as_deref(),

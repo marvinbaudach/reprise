@@ -63,20 +63,6 @@ fn cache_portrait(cache_dir: &std::path::Path, artist: &str) {
     .unwrap();
 }
 
-fn pump_until(condition: impl Fn() -> bool) {
-    let context = gtk4::glib::MainContext::default();
-    for _ in 0..10_000 {
-        if condition() {
-            return;
-        }
-        while context.pending() {
-            context.iteration(false);
-        }
-        std::thread::yield_now();
-    }
-    panic!("timed out waiting for stats artwork");
-}
-
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn the_leader_and_all_four_tiles_load_artist_portraits() {
@@ -102,13 +88,16 @@ fn the_leader_and_all_four_tiles_load_artist_portraits() {
     row.set_artist_portrait_runtime(&runtime);
 
     row.set_data(&fixture(4));
-    pump_until(|| {
-        row.leader().artwork_source.get() == StatsArtworkSource::Portrait
-            && row
-                .tiles()
-                .iter()
-                .all(|tile| tile.artwork_source.get() == StatsArtworkSource::Portrait)
-    });
+    assert!(
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            row.leader().artwork_source.get() == StatsArtworkSource::Portrait
+                && row
+                    .tiles()
+                    .iter()
+                    .all(|tile| tile.artwork_source.get() == StatsArtworkSource::Portrait)
+        },),
+        "timed out waiting for stats artwork"
+    );
 
     assert_eq!(requests.load(Ordering::SeqCst), 5);
 }

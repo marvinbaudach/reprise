@@ -377,20 +377,6 @@ mod tests {
         .unwrap();
     }
 
-    fn pump_until(condition: impl Fn() -> bool) {
-        let context = gtk4::glib::MainContext::default();
-        for _ in 0..10_000 {
-            if condition() {
-                return;
-            }
-            while context.pending() {
-                context.iteration(false);
-            }
-            std::thread::yield_now();
-        }
-        panic!("timed out waiting for stats artwork");
-    }
-
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn artist_portrait_is_shown_before_the_album_cover() {
@@ -403,7 +389,13 @@ mod tests {
         card.set_artist_portrait_runtime(runtime);
 
         card.set_data(&fixture(1));
-        pump_until(|| card.artwork_source.get() == StatsArtworkSource::Portrait);
+        assert!(
+            crate::ui::test_settle::settle_until(
+                crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                || card.artwork_source.get() == StatsArtworkSource::Portrait,
+            ),
+            "timed out waiting for stats artwork"
+        );
 
         assert_eq!(requests.load(Ordering::SeqCst), 1);
         assert!(card.picture.is_visible());
@@ -429,7 +421,13 @@ mod tests {
         data.artist.representative_track_path = track.to_string_lossy().into_owned();
 
         card.set_data(&data);
-        pump_until(|| card.artwork_source.get() == StatsArtworkSource::Cover);
+        assert!(
+            crate::ui::test_settle::settle_until(
+                crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                || card.artwork_source.get() == StatsArtworkSource::Cover,
+            ),
+            "timed out waiting for stats artwork"
+        );
 
         assert_eq!(requests.load(Ordering::SeqCst), 1);
         assert!(card.picture.is_visible());
@@ -447,7 +445,13 @@ mod tests {
         card.set_artist_portrait_runtime(runtime);
 
         card.set_data(&fixture(1));
-        pump_until(|| card.artwork_source.get() == StatsArtworkSource::Initials);
+        assert!(
+            crate::ui::test_settle::settle_until(
+                crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                || card.artwork_source.get() == StatsArtworkSource::Initials,
+            ),
+            "timed out waiting for stats artwork"
+        );
 
         assert_eq!(requests.load(Ordering::SeqCst), 1);
         assert!(!card.picture.is_visible());
