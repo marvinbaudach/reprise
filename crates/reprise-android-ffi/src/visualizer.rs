@@ -173,8 +173,8 @@ impl AndroidVisualEngine {
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
         reconcile_stream_generation(&mut state, stream_generation);
-        expire_stale_live_audio(&mut state, self.clock.now());
         state.playing = playing;
+        expire_stale_live_audio(&mut state, self.clock.now());
         let has_audio = state.has_analysis || state.has_live_audio;
         state.engine.set_playing(playing && has_audio);
     }
@@ -290,20 +290,22 @@ impl AndroidVisualEngine {
 
     pub fn has_live_audio(&self) -> bool {
         let stream_generation = self.current_stream_generation();
-        let state = self.lock();
+        let mut state = self.lock();
+        expire_stale_live_audio(&mut state, self.clock.now());
         self.current_stream_generation() == stream_generation
             && state.stream_generation == stream_generation
-            && live_audio_is_current(&state, self.clock.now())
+            && state.has_live_audio
     }
 
     pub fn bass_pressure(&self) -> AndroidBassPressure {
         let stream_generation = self.current_stream_generation();
-        let state = self.lock();
+        let mut state = self.lock();
+        expire_stale_live_audio(&mut state, self.clock.now());
         if self.current_stream_generation() != stream_generation
             || state.stream_generation != stream_generation
         {
             AndroidBassPressure::silent()
-        } else if state.playing && live_audio_is_current(&state, self.clock.now()) {
+        } else if state.playing && state.has_live_audio {
             state.live_pressure.into()
         } else {
             AndroidBassPressure::silent()
@@ -384,9 +386,10 @@ fn expire_stale_live_audio(state: &mut VisualState, now: Duration) {
 
 fn live_audio_is_current(state: &VisualState, now: Duration) -> bool {
     state.has_live_audio
-        && state
-            .last_live_audio_at
-            .is_some_and(|last| now.saturating_sub(last) < LIVE_AUDIO_STALE_AFTER)
+        && (!state.playing
+            || state
+                .last_live_audio_at
+                .is_some_and(|last| now.saturating_sub(last) < LIVE_AUDIO_STALE_AFTER))
 }
 
 impl Default for AndroidVisualEngine {

@@ -20,6 +20,7 @@ internal interface LivePcmConsumer {
         channelCount: Int,
     )
 
+    /** Drops both the CAVA processor and bass-detector history. */
     fun resetAudioStream()
 }
 
@@ -54,11 +55,12 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
         detached?.let(::resetSafely)
     }
 
+    @Synchronized
     override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
         this.sampleRateHz = sampleRateHz
         this.channelCount = channelCount
         this.encoding = encoding
-        consumer?.let(::resetSafely)
+        if (playing) consumer?.let(::resetSafely)
     }
 
     @Synchronized
@@ -78,7 +80,9 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
 
     @Synchronized
     override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (playing == isPlaying) return
         playing = isPlaying
+        if (isPlaying) consumer?.let(::resetSafely)
     }
 
     private fun resetSafely(target: LivePcmConsumer) {

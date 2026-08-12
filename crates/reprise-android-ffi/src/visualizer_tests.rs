@@ -179,6 +179,22 @@ fn paused_live_audio_reports_silence_without_forgetting_the_stream() {
 }
 
 #[test]
+fn live_pcm_staleness_pauses_with_playback_but_still_expires_while_playing() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    engine.set_playing(false);
+    clock.advance(LIVE_AUDIO_STALE_AFTER + LIVE_AUDIO_STALE_AFTER);
+    assert!(engine.has_live_audio());
+
+    engine.set_playing(true);
+    assert!(!engine.has_live_audio());
+}
+
+#[test]
 fn stale_live_pcm_reopens_the_stored_spectrogram_fallback() {
     let clock = Arc::new(FakeMonotonicClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());

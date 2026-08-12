@@ -33,6 +33,29 @@ class LivePcmAudioProcessorTest {
     }
 
     @Test
+    fun resumingAfterPausedFlushResetsHistoryBeforePcmRestarts() {
+        val consumer = RecordingPcmConsumer()
+        val sink = LivePcmBufferSink()
+        val pcm = stereoPcm16(
+            left = shortArrayOf(1_000, -2_000, 3_000),
+            right = shortArrayOf(-4_000, 5_000, -6_000),
+        )
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        sink.attach(consumer)
+        sink.onIsPlayingChanged(true)
+        sink.handleBuffer(directBuffer(pcm))
+
+        sink.onIsPlayingChanged(false)
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+        assertEquals(1, consumer.resetCount)
+
+        sink.onIsPlayingChanged(true)
+        assertEquals(2, consumer.resetCount)
+        sink.handleBuffer(directBuffer(pcm))
+        assertEquals(2, consumer.ingestCount)
+    }
+
+    @Test
     fun processorCopiesPcmBitForBitWhilePublishingTheSameBufferWithoutAnalysis() {
         val consumer = RecordingPcmConsumer()
         val sink = LivePcmBufferSink().apply { attach(consumer) }
@@ -56,15 +79,17 @@ class LivePcmAudioProcessorTest {
     }
 
     @Test
-    fun everyMedia3FlushResetsTheAttachedLiveProcessor() {
+    fun everyMedia3FlushWhilePlayingResetsTheAttachedLiveProcessor() {
         val consumer = RecordingPcmConsumer()
-        val processor = TeeAudioProcessor(LivePcmBufferSink().apply { attach(consumer) })
+        val sink = LivePcmBufferSink().apply { attach(consumer) }
+        val processor = TeeAudioProcessor(sink)
         processor.configure(AudioFormat(44_100, 1, C.ENCODING_PCM_16BIT))
+        sink.onIsPlayingChanged(true)
 
         processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
         processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
 
-        assertEquals(2, consumer.resetCount)
+        assertEquals(3, consumer.resetCount)
     }
 
     @Test
