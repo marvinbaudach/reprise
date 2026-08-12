@@ -178,9 +178,11 @@ pub(in crate::ui) fn build_issue_nav_row(
     hbox.append(&nav_icon(icon));
 
     if presentation.attention {
-        let dot = gtk4::Label::new(Some("●"));
+        let dot = gtk4::Label::builder()
+            .label("●")
+            .accessible_role(gtk4::AccessibleRole::Presentation)
+            .build();
         dot.add_css_class("warning");
-        dot.set_accessible_role(gtk4::AccessibleRole::Presentation);
         hbox.append(&dot);
     }
 
@@ -203,11 +205,13 @@ pub(in crate::ui) fn build_issue_nav_row(
 }
 
 fn header_label(text: &str) -> gtk4::Label {
-    let label = gtk4::Label::new(Some(text));
-    label.set_xalign(0.0);
+    let label = gtk4::Label::builder()
+        .label(text)
+        .xalign(0.0)
+        .accessible_role(gtk4::AccessibleRole::Heading)
+        .build();
     label.add_css_class("caption-heading");
     label.add_css_class("reprise-text-secondary");
-    label.set_accessible_role(gtk4::AccessibleRole::Heading);
     label.set_margin_start(ROW_HORIZONTAL_MARGIN);
     label.set_margin_end(ROW_HORIZONTAL_MARGIN);
     label.set_margin_top(14);
@@ -222,8 +226,8 @@ pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4:
         .selectable(false)
         .activatable(false)
         .focusable(false)
+        .accessible_role(gtk4::AccessibleRole::Presentation)
         .build();
-    row.set_accessible_role(gtk4::AccessibleRole::Presentation);
     listbox.append(&row);
     row
 }
@@ -253,8 +257,8 @@ pub(in crate::ui) fn append_header_with_action(
         .selectable(false)
         .activatable(false)
         .focusable(false)
+        .accessible_role(gtk4::AccessibleRole::Presentation)
         .build();
-    row.set_accessible_role(gtk4::AccessibleRole::Presentation);
     listbox.append(&row);
     button
 }
@@ -266,10 +270,12 @@ pub(in crate::ui) fn build_editable_playlist_row(
     let hbox = row_box();
     hbox.append(&nav_icon(NavIcon::Playlist));
 
-    let editor = gtk4::EditableLabel::new(title);
-    editor.set_halign(gtk4::Align::Fill);
-    editor.set_hexpand(true);
-    editor.set_accessible_role(gtk4::AccessibleRole::TextBox);
+    let editor = gtk4::EditableLabel::builder()
+        .text(title)
+        .halign(gtk4::Align::Fill)
+        .hexpand(true)
+        .accessible_role(gtk4::AccessibleRole::TextBox)
+        .build();
     editor.update_property(&[gtk4::accessible::Property::Label(
         &crate::ui::strings::text(crate::ui::strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER),
     )]);
@@ -284,7 +290,7 @@ pub(in crate::ui) fn build_editable_playlist_row(
         hbox.append(&count_label);
     }
 
-    (navigation_row(&hbox, title), editor)
+    (editable_navigation_row(&hbox, title), editor)
 }
 
 pub(in crate::ui) fn problem_header() -> gtk4::Label {
@@ -316,13 +322,50 @@ fn row_box() -> gtk4::Box {
 }
 
 fn navigation_row(child: &gtk4::Box, label: &str) -> gtk4::ListBoxRow {
+    let button = gtk4::Button::builder()
+        .child(child)
+        .has_frame(false)
+        .focusable(false)
+        .focus_on_click(false)
+        .hexpand(true)
+        .halign(gtk4::Align::Fill)
+        .build();
+    button.add_css_class("flat");
+    button.add_css_class(crate::ui::style::buttons::SIDEBAR_ROW_ACTION_CLASS);
+    crate::ui::style::buttons::arm_cursor(&button);
+    button.update_property(&[gtk4::accessible::Property::Label(label)]);
+
+    let row = gtk4::ListBoxRow::builder()
+        .child(&button)
+        .selectable(true)
+        .activatable(true)
+        .focusable(true)
+        .accessible_role(gtk4::AccessibleRole::ListItem)
+        .build();
+    row.update_property(&[gtk4::accessible::Property::Label(label)]);
+    let activated_row = row.downgrade();
+    button.connect_clicked(move |_| {
+        let Some(activated_row) = activated_row.upgrade() else {
+            return;
+        };
+        activated_row.grab_focus();
+        activated_row.activate();
+    });
+    row
+}
+
+/// The temporary inline playlist editor is already the one local control in
+/// its row. Wrapping an editable text box in a button would create nested
+/// interactive widgets and a second command, so it keeps the list-item row
+/// semantics until the edit rebuilds into a regular navigation button.
+fn editable_navigation_row(child: &gtk4::Box, label: &str) -> gtk4::ListBoxRow {
     let row = gtk4::ListBoxRow::builder()
         .child(child)
         .selectable(true)
         .activatable(true)
         .focusable(true)
+        .accessible_role(gtk4::AccessibleRole::ListItem)
         .build();
-    row.set_accessible_role(gtk4::AccessibleRole::ListItem);
     row.update_property(&[gtk4::accessible::Property::Label(label)]);
     row
 }
@@ -481,11 +524,21 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn nav_11_sidebar_entries_are_named_actions_and_sections_are_headings() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let listbox = gtk4::ListBox::new();
         let header = append_header(&listbox, "SMART");
         let nav_row = build_nav_row("My Stats", None, NavIcon::MyStats);
         listbox.append(&nav_row);
+        let issue_row = build_issue_nav_row(
+            "Missing files",
+            issue_row_presentation(2, NavIcon::Missing),
+            NavIcon::Missing,
+        );
+        listbox.append(&issue_row);
+        let window = gtk4::Window::builder().child(&listbox).build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert!(gtk4::test_accessible_has_role(
             &nav_row,
@@ -496,6 +549,47 @@ mod tests {
             gtk4::AccessibleProperty::Label
         ));
         assert!(nav_row.is_activatable());
+
+        let action = nav_row
+            .child()
+            .expect("a navigation row has an action child")
+            .downcast::<gtk4::Button>()
+            .expect("a navigation row's action is a real GtkButton");
+        assert!(gtk4::test_accessible_has_role(
+            &action,
+            gtk4::AccessibleRole::Button
+        ));
+        assert!(gtk4::test_accessible_has_property(
+            &action,
+            gtk4::AccessibleProperty::Label
+        ));
+        let content = action
+            .child()
+            .expect("the button carries the existing row content")
+            .downcast::<gtk4::Box>()
+            .unwrap();
+        let visible_name = content
+            .first_child()
+            .and_then(|widget| widget.next_sibling())
+            .and_downcast::<gtk4::Label>()
+            .expect("the row title stays inside the action");
+        assert_eq!(visible_name.text(), "My Stats");
+        assert!(nav_row.is_focusable());
+        assert!(
+            !action.is_focusable(),
+            "the list row owns the single tab stop"
+        );
+
+        let issue_action = issue_row
+            .child()
+            .unwrap()
+            .downcast::<gtk4::Button>()
+            .expect("problem rows use the same real action widget");
+        assert!(gtk4::test_accessible_has_property(
+            &issue_action,
+            gtk4::AccessibleProperty::Label
+        ));
+        assert!(!issue_action.is_focusable());
 
         let activated = std::rc::Rc::new(std::cell::Cell::new(false));
         listbox.connect_row_activated({
@@ -517,6 +611,106 @@ mod tests {
         ));
         assert!(!header.is_activatable());
         assert!(!header.is_focusable());
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_11_navigation_action_does_not_retain_its_row() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let (row_weak, button_weak) = {
+            let content = row_box();
+            let row = navigation_row(&content, "Queue");
+            let button = row
+                .child()
+                .expect("a navigation row has an action child")
+                .downcast::<gtk4::Button>()
+                .expect("the navigation action is a real GtkButton");
+            (row.downgrade(), button.downgrade())
+        };
+
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(
+            row_weak.upgrade().is_none(),
+            "the navigation action retained its discarded row"
+        );
+        assert!(
+            button_weak.upgrade().is_none(),
+            "the discarded row retained its navigation action"
+        );
+    }
+
+    /// GTK 4.22 only exports an accessible role to AT-SPI when it is a
+    /// constructor property. A post-build setter changes the local getter but
+    /// leaves the bus node at its original role, so this is a source-structure
+    /// regression rather than another getter assertion.
+    #[test]
+    fn nav_11_sidebar_roles_are_constructor_properties() {
+        let sources = sidebar_role_sources();
+        assert!(
+            sources.len() >= 20,
+            "the Sidebar role guard checked suspiciously few Rust files"
+        );
+        let checked_bytes = sources
+            .iter()
+            .map(|(_, source)| source.len())
+            .sum::<usize>();
+        assert!(
+            checked_bytes >= 200_000,
+            "the Sidebar role guard checked a suspiciously small source tree"
+        );
+        assert!(
+            sources.iter().any(|(name, source)| {
+                name == "sidebar_presentation.rs" && source.contains("fn navigation_row(")
+            }),
+            "the Sidebar role guard did not inspect navigation_row"
+        );
+
+        let forbidden_setter = ["set_", "accessible", "_role"].concat();
+        let offenders = sources
+            .iter()
+            .filter_map(|(name, source)| source.contains(&forbidden_setter).then_some(name))
+            .collect::<Vec<_>>();
+
+        assert!(
+            offenders.is_empty(),
+            "accessible roles must be constructor properties; post-build setters found in {offenders:?}"
+        );
+    }
+
+    fn sidebar_role_sources() -> Vec<(String, String)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/sidebar");
+        let mut pending = vec![root.clone()];
+        let mut paths = Vec::new();
+        while let Some(directory) = pending.pop() {
+            for entry in std::fs::read_dir(&directory)
+                .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()))
+            {
+                let path = entry.expect("failed to read a Sidebar source entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+                    paths.push(path);
+                }
+            }
+        }
+        paths.sort();
+        paths
+            .into_iter()
+            .map(|path| {
+                let name = path
+                    .strip_prefix(&root)
+                    .expect("Sidebar source stays below its module root")
+                    .display()
+                    .to_string();
+                let source = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+                (name, source)
+            })
+            .collect()
     }
 
     #[test]
@@ -526,8 +720,9 @@ mod tests {
             return;
         }
         let row = build_nav_row("Queue", Some(1_674), NavIcon::Queue);
-        let child = row.child().unwrap();
-        let icon = child
+        let button = row.child().unwrap().downcast::<gtk4::Button>().unwrap();
+        let content = button.child().unwrap().downcast::<gtk4::Box>().unwrap();
+        let icon = content
             .first_child()
             .unwrap()
             .downcast::<gtk4::Image>()

@@ -391,3 +391,44 @@ fn rebuilding_chips_keeps_the_persistent_filter_button_in_its_slot() {
     ));
     assert!(!bar.add_filter.is_focusable());
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn sort_control_is_a_named_menu_button_matching_the_filter_action() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = test_bar();
+    let sort = bar.sort_button();
+
+    assert!(
+        sort.is_focusable(),
+        "the assistive sort action is a tab stop"
+    );
+    assert!(sort.menu_model().is_some());
+    assert!(gtk4::test_accessible_has_property(
+        sort,
+        gtk4::AccessibleProperty::Label
+    ));
+    assert!(sort.has_css_class("pill"));
+    assert!(sort.has_css_class(filter_bar_layout::ADD_FILTER_CSS_CLASS));
+    assert_eq!(sort.parent(), bar.add_filter.parent());
+    assert_eq!(
+        descendant_labels(sort),
+        vec![
+            "Sort",
+            "Title",
+            "Track",
+            "Artist",
+            "Album",
+            "Genre",
+            "Year",
+            "Added",
+            "Length",
+            "Rating",
+            "Plays",
+            "Ascending",
+            "Descending",
+        ],
+        "every menu entry has a localized, spoken label"
+    );
+}

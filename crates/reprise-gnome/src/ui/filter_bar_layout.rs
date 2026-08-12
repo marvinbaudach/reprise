@@ -33,6 +33,19 @@ pub(in crate::ui) enum FilterBarSlot {
 }
 
 impl FilterBarSlot {
+    #[cfg(test)]
+    // Keep every new variant here; Rust cannot prove enum-array completeness.
+    const ALL: [Self; 8] = [
+        Self::Place,
+        Self::Search,
+        Self::Facets,
+        Self::AddFilter,
+        Self::Spacer,
+        Self::Count,
+        Self::ClearAll,
+        Self::TrailingAction,
+    ];
+
     fn name(self) -> &'static str {
         match self {
             Self::Place => PLACE_SLOT_NAME,
@@ -215,19 +228,10 @@ impl FilterBarLayout {
         let mut child = self.root.first_child();
         while let Some(widget) = child {
             let name = widget.widget_name();
-            let slot = [
-                FilterBarSlot::Place,
-                FilterBarSlot::Search,
-                FilterBarSlot::Facets,
-                FilterBarSlot::AddFilter,
-                FilterBarSlot::Spacer,
-                FilterBarSlot::Count,
-                FilterBarSlot::ClearAll,
-                FilterBarSlot::TrailingAction,
-            ]
-            .into_iter()
-            .find(|slot| name == slot.name())
-            .expect("every direct child is a named filter-bar slot");
+            let slot = FilterBarSlot::ALL
+                .into_iter()
+                .find(|slot| name == slot.name())
+                .expect("every direct child is a named filter-bar slot");
             order.push(slot);
             child = widget.next_sibling();
         }
@@ -240,10 +244,18 @@ impl FilterBarLayout {
         slot: FilterBarSlot,
         widget: &impl IsA<gtk4::Widget>,
     ) -> bool {
-        widget
-            .as_ref()
-            .parent()
-            .is_some_and(|parent| parent.widget_name() == slot.name())
+        let mut ancestor = widget.as_ref().parent();
+        while let Some(parent) = ancestor {
+            let name = parent.widget_name();
+            if FilterBarSlot::ALL
+                .into_iter()
+                .any(|candidate| name == candidate.name())
+            {
+                return name == slot.name();
+            }
+            ancestor = parent.parent();
+        }
+        false
     }
 
     #[cfg(test)]
