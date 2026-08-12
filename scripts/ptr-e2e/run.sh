@@ -640,14 +640,14 @@ key "shift+F10"
 key "Down"
 key "Return"
 sleep 0.2
-assert_log_contains_since "$MARKER" "tracks added to queue.*queue_len=1" "keyboard context menu added the first track to Queue"
+assert_log_contains_since "$MARKER" "items added to queue.*queue_len=1" "keyboard context menu added the first track to Queue"
 click_at "$ROW1_TITLE_CELL_X" "$ROW1_TITLE_CELL_Y"
 MARKER=$(log_marker)
 key "shift+F10"
 key "Down"
 key "Return"
 sleep 0.2
-assert_log_contains_since "$MARKER" "tracks added to queue.*queue_len=2" "keyboard context menu added the second track to Queue"
+assert_log_contains_since "$MARKER" "items added to queue.*queue_len=2" "keyboard context menu added the second track to Queue"
 assert_log_contains_since "$MARKER" "sidebar refresh.*up next changed" "Queue mutation refreshed the sidebar count"
 click_at "$SIDEBAR_QUEUE_X" "$SIDEBAR_QUEUE_Y"
 sleep 0.3
