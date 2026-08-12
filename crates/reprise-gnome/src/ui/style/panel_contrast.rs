@@ -6,7 +6,6 @@ struct PanelRole {
     css: CssFn,
     selector: &'static str,
     role: &'static str,
-    alpha: f64,
     minimum: Option<f64>,
 }
 
@@ -15,94 +14,128 @@ const PANEL_ROLES: [PanelRole; 13] = [
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-stage",
         role: "@sidebar_fg_color",
-        alpha: 1.0,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-title",
         role: "@reprise_primary_fg_color",
-        alpha: PRIMARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-subtitle",
         role: "@reprise_secondary_fg_color",
-        alpha: SECONDARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-footer",
         role: "@reprise_secondary_fg_color",
-        alpha: SECONDARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-song-visual-analysis-name",
         role: "@reprise_secondary_fg_color",
-        alpha: SECONDARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-section",
         role: "@reprise_secondary_fg_color",
-        alpha: SECONDARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-remove",
         role: "@reprise_secondary_fg_color",
-        alpha: SECONDARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-remove:hover",
         role: "@reprise_primary_fg_color",
-        alpha: PRIMARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-title",
         role: "@reprise_primary_fg_color",
-        alpha: PRIMARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-artist",
         role: "@reprise_secondary_fg_color",
-        alpha: SECONDARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::now_playing::up_next_panel::css,
         selector: ".reprise-up-next-empty",
         role: "@reprise_secondary_fg_color",
-        alpha: SECONDARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::lyrics_view::css,
         selector: ".lyrics-line {",
         role: "@sidebar_fg_color",
-        alpha: 1.0,
         minimum: Some(4.5),
     },
     PanelRole {
         css: crate::ui::lyrics_view::css,
         selector: ".lyrics-unsynced {",
         role: "@reprise_secondary_fg_color",
-        alpha: SECONDARY_TEXT_ALPHA,
         minimum: Some(4.5),
     },
 ];
+
+fn rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
+    css.split(selector)
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .unwrap_or_else(|| panic!("no rules for {selector}"))
+}
+
+fn color_declaration<'a>(css: &'a str, selector: &str) -> &'a str {
+    rule_body(css, selector)
+        .split(';')
+        .find_map(|declaration| {
+            let (property, value) = declaration.split_once(':')?;
+            let property = property.trim().rsplit([' ', '\n', '\t']).next()?;
+            (property == "color").then(|| value.trim())
+        })
+        .unwrap_or_else(|| panic!("no color declaration for {selector}"))
+}
+
+fn rendered_foreground(value: &str, foreground: [u8; 3], surface: [u8; 3]) -> [u8; 3] {
+    use super::color_math::{composite, parse_hex_rgb};
+
+    match value {
+        "@sidebar_fg_color" => foreground,
+        "@reprise_primary_fg_color" => composite(foreground, surface, PRIMARY_TEXT_ALPHA),
+        "@reprise_secondary_fg_color" => composite(foreground, surface, SECONDARY_TEXT_ALPHA),
+        literal => {
+            if let Some(rgb) = parse_hex_rgb(literal) {
+                return rgb;
+            }
+            let arguments = literal
+                .strip_prefix("alpha(")
+                .and_then(|value| value.strip_suffix(')'))
+                .unwrap_or_else(|| panic!("unsupported color declaration: {literal}"));
+            let (color, alpha) = arguments
+                .split_once(',')
+                .unwrap_or_else(|| panic!("invalid alpha color declaration: {literal}"));
+            let color = parse_hex_rgb(color.trim())
+                .unwrap_or_else(|| panic!("unsupported alpha color in declaration: {literal}"));
+            let alpha = alpha
+                .trim()
+                .parse()
+                .unwrap_or_else(|_| panic!("invalid alpha in color declaration: {literal}"));
+            composite(color, surface, alpha)
+        }
+    }
+}
 
 fn fixed_foregrounds(css: &str) -> Vec<String> {
     css.split(['{', '}', ';'])
@@ -158,11 +191,7 @@ fn npp_17_the_panel_takes_its_foreground_from_the_appearance() {
 
     for row in &PANEL_ROLES {
         let css = (row.css)();
-        let rules = css
-            .split(row.selector)
-            .nth(1)
-            .and_then(|rest| rest.split('}').next())
-            .unwrap_or_else(|| panic!("no rules for {}", row.selector));
+        let rules = rule_body(&css, row.selector);
         assert!(
             rules.contains(row.role),
             "{} does not consume {}: {rules}",
@@ -179,7 +208,7 @@ fn npp_17_the_panel_takes_its_foreground_from_the_appearance() {
 
 #[test]
 fn contrast_3_now_playing_roles_clear_aa_on_the_panel_surface() {
-    use super::color_math::{composite, contrast_ratio, parse_hex_rgb};
+    use super::color_math::{contrast_ratio, parse_hex_rgb};
     use super::theme::Theme;
 
     for theme in Theme::all() {
@@ -191,7 +220,9 @@ fn contrast_3_now_playing_roles_clear_aa_on_the_panel_surface() {
                 let Some(minimum) = row.minimum else {
                     continue;
                 };
-                let rendered = composite(foreground, surface, row.alpha);
+                let css = (row.css)();
+                let color = color_declaration(&css, row.selector);
+                let rendered = rendered_foreground(color, foreground, surface);
                 let ratio = contrast_ratio(rendered, surface);
                 assert!(
                     ratio >= minimum,
