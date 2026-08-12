@@ -710,7 +710,7 @@ class ComposeBehaviorTest {
     }
 
     /**
-     * A scan hands the screen a whole new catalog: four freshly read windows,
+     * A scan hands the screen a whole new catalog: freshly read windows,
      * none of them refined, and a `loadedTabs` that calls all four loaded. The
      * refinement is applied again from there — but only to the tab the listener
      * is standing in, because that is the one the search fills.

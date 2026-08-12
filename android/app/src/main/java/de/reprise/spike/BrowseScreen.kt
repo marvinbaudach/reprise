@@ -276,8 +276,8 @@ internal fun BrowseScreen(
     }
 
     // What is on screen is what a replacement activity has to be able to put
-    // back. Handed over from the composition itself rather than from each of
-    // the five places that change a window, so the two cannot drift apart.
+    // back. Handed over from the composition itself rather than from each
+    // place that changes a window, so the two cannot drift apart.
     //
     // Assembled *here*, in this function's own scope, and not inside the effect
     // below: a state value read only from an inner lambda invalidates only that

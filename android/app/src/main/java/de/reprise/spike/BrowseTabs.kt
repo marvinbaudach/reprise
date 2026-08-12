@@ -124,7 +124,7 @@ internal fun LibrarySearchField(
 }
 
 @Composable
-internal fun AlbumsTab(
+internal fun AlbumDetailPage(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
     selectedAlbum: AlbumTrackList,
@@ -195,7 +195,7 @@ internal fun ArtistsTab(
     loadMoreAlbumTracks: (LibraryWindowRange) -> Unit = {},
 ) {
     if (selectedAlbum != null) {
-        AlbumsTab(
+        AlbumDetailPage(
             surfaceLayout = surfaceLayout,
             surfaceState = surfaceState,
             selectedAlbum = selectedAlbum,

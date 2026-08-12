@@ -1,5 +1,16 @@
 # The bar at the bottom starts working, and the screen swipes
 
+## Current surface (2026-08-13)
+
+The four-destination layout implemented by this plan has since been superseded.
+The Android library now has three destinations, in order: **Titles, Artists,
+Queue**. Albums are reached from an artist page or from album results in Artists
+search. Favourite marking remains available on track rows, the dock and Now
+Playing, but there is no separate Favourites list.
+
+The rest of this document records the earlier bottom-tabs implementation and is
+retained as historical design evidence.
+
 Measured on the owner's phone this evening, from the running app.
 
 ## What is there today
