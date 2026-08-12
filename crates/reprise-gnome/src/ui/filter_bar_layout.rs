@@ -240,10 +240,26 @@ impl FilterBarLayout {
         slot: FilterBarSlot,
         widget: &impl IsA<gtk4::Widget>,
     ) -> bool {
-        widget
-            .as_ref()
-            .parent()
-            .is_some_and(|parent| parent.widget_name() == slot.name())
+        let mut ancestor = widget.as_ref().parent();
+        while let Some(parent) = ancestor {
+            let name = parent.widget_name();
+            if [
+                PLACE_SLOT_NAME,
+                SEARCH_SLOT_NAME,
+                FACETS_SLOT_NAME,
+                ADD_FILTER_SLOT_NAME,
+                SPACER_SLOT_NAME,
+                COUNT_SLOT_NAME,
+                CLEAR_ALL_SLOT_NAME,
+                TRAILING_ACTION_SLOT_NAME,
+            ]
+            .contains(&name.as_str())
+            {
+                return name == slot.name();
+            }
+            ancestor = parent.parent();
+        }
+        false
     }
 
     #[cfg(test)]
