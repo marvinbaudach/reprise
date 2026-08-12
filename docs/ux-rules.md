@@ -1093,7 +1093,7 @@ result.
   header, which never disappears, and offers "Show the N sources"; revealing
   it shows every source read-only. Connected services collapses the same way
   and is labelled "Scrobbling · needs online sources".
-- **SET-12** [active] [gtk] — Replaces `SIM-8`, which stated the same thing
+- **SET-12** [replaced by SET-14] [gtk] — Replaces `SIM-8`, which stated the same thing
   inside a module that no longer exists: plugin provision badges are derived
   from the static registry, never from current enable state. A provision-kind
   set is the unbadged group norm only when it occurs at least twice and
@@ -1114,6 +1114,10 @@ result.
   path; its origin parent and index are recorded before any matching control
   moves so clearing restores every control to its exact place. Activating the
   path closes search, opens that page and focuses the restored control.
+- **SET-14** [active] [gtk] — Every row on the Plugins page places its enable
+  switch on the same right edge. A non-expandable switch row reserves the
+  expander arrow's trailing slot even though the row does not open, so its
+  switch stays aligned with the switch of a row that exposes child settings.
 
 ## G. Feedback vocabulary
 
@@ -4979,7 +4983,8 @@ listening statistics.
   block; it never masquerades as "nothing subscribed yet".
 - **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
   `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
-  through a module of their own (`module.source_images.enabled`) and are
+  through the shared Artwork module (`module.artwork.enabled`, which also
+  covers album covers and artist portraits) and are
   subject to `NET-1a`: a cache hit is always shown, regardless of the gate — a
   cache miss triggers a fetch only when the global gate **and** the module are
   both active, otherwise the surface's source fallback stays, never an error
@@ -5709,7 +5714,9 @@ Sound Similarity was removed on 2026-08-07 because its nearest matches were
 audibly unrelated while reporting 100% similarity. The rules stay here in full
 as append-only history; the separate spectrogram feature is unchanged. SIM-8
 was the only one of them that governed behaviour outside this module — plugin
-provision badges — and that behaviour is still live, now under `SET-12`.
+provision badges. Those badges are no longer live: the provision-pill UI was
+removed. Its replacement chain now continues through `SET-12` to `SET-14`,
+the active Plugins-row alignment guarantee.
 
 - **SIM-1** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — A sound profile lives in its own versioned cache
   and follows the spectrogram's source-identity invalidation and track
@@ -5745,7 +5752,9 @@ provision badges — and that behaviour is still live, now under `SET-12`.
   often than the runner-up; otherwise every row is badged. Panel-tab and
   sidebar-section badges use the accent, while all other kinds are neutral.
   The rule was never specific to Sound Similarity and outlived it; `SET-12`
-  restates it where the plugin list is governed.
+  restated it where the plugin list is governed. When the provision pills were
+  removed, `SET-12` was replaced by `SET-14`; this historical chain remains
+  intact while the active guarantee now governs Plugins-row switch alignment.
 - **SIM-9** [replaced by nothing — the Sound Similarity module was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — The comparison carries how a track is produced
   *and* how it moves, both derived from the stored spectrogram alone. Band
   means and per-band positive flux stay L2-normalized and are compared with

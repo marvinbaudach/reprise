@@ -271,7 +271,7 @@ fn set_11_online_content_starts_with_a_persistent_master_row() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn plugins_switch_and_expander_switch_share_the_same_right_edge() {
+fn set_14_plugin_switches_share_the_same_right_edge_across_row_types() {
     gtk4::init().unwrap();
     let group = adw::PreferencesGroup::new();
     let switch_row = aligned_switch_row("Artwork", "Artwork services", false);
