@@ -125,9 +125,14 @@ run_preferences_flow() {
   click_preferences_dialog_relative "$dialog_rect" "$SWITCH_X" "$SWITCH_FILTER_Y"
   sleep 0.2
   assert_db_value "ui.browse_visible" "0" "Layout switch hid the filter bar"
+  # Show Information Panel is the odd one out: it defaults to FALSE
+  # (reprise-core `get_info_panel_visible_in`), so this row starts off while its
+  # three neighbours start on — `19-preferences-layout.png` shows it before any
+  # click. The click therefore SHOWS the panel; demanding "0" would demand a
+  # toggle that never had anything to hide.
   click_preferences_dialog_relative "$dialog_rect" "$SWITCH_X" "$SWITCH_INFO_Y"
   sleep 0.2
-  assert_db_value "ui.info_panel_visible" "0" "Layout switch hid the information panel"
+  assert_db_value "ui.info_panel_visible" "1" "Layout switch showed the information panel"
   click_preferences_dialog_relative "$dialog_rect" "$SWITCH_X" "$SWITCH_STATUS_Y"
   sleep 0.2
   assert_db_value "ui.status_visible" "0" "Layout switch hid the status line"

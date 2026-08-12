@@ -89,7 +89,14 @@ assert_log_sequence_since() {
 
 assert_manual_queue_consumption_since() {
   local since_line="$1" track_id_x="$2" track_id_y="$3"
-  assert_log_sequence_since "$since_line" \
+  # Y only starts once X has played out: the handoff is the natural gapless one,
+  # not a second `Next`. With ~1.16 s fixtures the second line therefore arrives
+  # ~1.16 s after the first (measured 12.08.2026: 20:31:10.671 -> 20:31:11.827),
+  # while the shared default budget is 20 * 0.05 s = 1.0 s. That near-miss is
+  # what made this check flaky — green in runs 9 and 10, red in 11. The wait
+  # grows, the assertion does not shrink.
+  PTR_E2E_LOG_SEQUENCE_ATTEMPTS=60 \
+    assert_log_sequence_since "$since_line" \
     "manual tracks X and Y were consumed in their queued order" \
     "playback started.*track_id=$track_id_x.*from_up_next=true" \
     "playback started.*track_id=$track_id_y.*from_up_next=true"
