@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.session.MediaSession
@@ -93,12 +94,13 @@ open class ReprisePlaybackService : MediaSessionService() {
         // Keep this listener ahead of Media3PlaybackPort: on resume it resets
         // the PCM history and advances the native stream generation before the
         // port publishes PLAYING through Core and Compose calls setPlaying.
-        player.addListener(livePcmSink)
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
-            .build()
-        val port = Media3PlaybackPort(player) { settingsObserver?.invoke() }
+        val port = createAfterLivePcmListener(player, livePcmSink) {
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
+                .build()
+            Media3PlaybackPort(player) { settingsObserver?.invoke() }
+        }
         playbackPort = port
         sleepTimer = SleepTimerController(
             handler = Handler(Looper.getMainLooper()),
@@ -324,6 +326,15 @@ open class ReprisePlaybackService : MediaSessionService() {
     internal companion object {
         const val LOCAL_BIND_ACTION = "org.reprise.BIND_PLAYBACK"
     }
+}
+
+internal fun <T> createAfterLivePcmListener(
+    player: Player,
+    livePcmSink: LivePcmBufferSink,
+    create: () -> T,
+): T {
+    player.addListener(livePcmSink)
+    return create()
 }
 
 private class LiveVisualSceneEngineLease(

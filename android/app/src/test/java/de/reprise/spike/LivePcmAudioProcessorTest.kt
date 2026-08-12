@@ -46,7 +46,7 @@ class LivePcmAudioProcessorTest {
 
         try {
             assertTrue(
-                "render thread waited for the application-thread reset to finish",
+                "render thread did not finish while the application-thread reset was blocked",
                 renderFinished.await(1, TimeUnit.SECONDS),
             )
             assertFalse(
@@ -216,8 +216,47 @@ class LivePcmAudioProcessorTest {
         val consumer = ThrowingResetConsumer()
         val sink = LivePcmBufferSink().apply { attach(consumer) }
 
+        sink.onIsPlayingChanged(true)
         sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
         sink.detach(consumer)
+
+        assertEquals(1, consumer.historyResetAttempts)
+        assertEquals(2, consumer.streamResetAttempts)
+    }
+
+    @Test
+    fun throwingVisualizerHistoryResetCannotEscapeResumeOrPcmForwarding() {
+        val consumer = ThrowingHistoryConsumer()
+        val sink = LivePcmBufferSink().apply { attach(consumer) }
+        val pcm = stereoPcm16(
+            left = shortArrayOf(1_000, -2_000, 3_000),
+            right = shortArrayOf(-4_000, 5_000, -6_000),
+        )
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+
+        sink.onIsPlayingChanged(true)
+        sink.handleBuffer(directBuffer(pcm))
+
+        assertEquals(1, consumer.historyResetAttempts)
+        assertEquals(1, consumer.ingestCount)
+    }
+
+    @Test
+    fun throwingPlaybackIntentCannotEscapeListenerOrPcmForwarding() {
+        val consumer = ThrowingPlaybackIntentConsumer()
+        val sink = LivePcmBufferSink().apply { attach(consumer) }
+        val pcm = stereoPcm16(
+            left = shortArrayOf(1_000, -2_000, 3_000),
+            right = shortArrayOf(-4_000, 5_000, -6_000),
+        )
+        sink.flush(48_000, 2, C.ENCODING_PCM_16BIT)
+
+        sink.onPlayWhenReadyChanged(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+        sink.onIsPlayingChanged(true)
+        sink.handleBuffer(directBuffer(pcm))
+
+        assertEquals(1, consumer.intentAttempts)
+        assertEquals(1, consumer.ingestCount)
     }
 
     @Test
@@ -292,9 +331,15 @@ private class ThrowingPcmConsumer : LivePcmConsumer {
 }
 
 private class ThrowingResetConsumer : LivePcmConsumer {
+    var historyResetAttempts = 0
+    var streamResetAttempts = 0
+
     override fun setPlaybackIntent(playbackIntended: Boolean) = Unit
 
-    override fun resetAudioHistory(): Nothing = error("visualizer history reset failed")
+    override fun resetAudioHistory(): Nothing {
+        historyResetAttempts += 1
+        error("visualizer history reset failed")
+    }
 
     override fun ingestPcm16(
         bytes: ByteArray,
@@ -303,7 +348,56 @@ private class ThrowingResetConsumer : LivePcmConsumer {
         channelCount: Int,
     ) = Unit
 
-    override fun resetAudioStream(): Nothing = error("visualizer reset failed")
+    override fun resetAudioStream(): Nothing {
+        streamResetAttempts += 1
+        error("visualizer reset failed")
+    }
+}
+
+private class ThrowingHistoryConsumer : LivePcmConsumer {
+    var historyResetAttempts = 0
+    var ingestCount = 0
+
+    override fun setPlaybackIntent(playbackIntended: Boolean) = Unit
+
+    override fun resetAudioHistory(): Nothing {
+        historyResetAttempts += 1
+        error("visualizer history reset failed")
+    }
+
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ) {
+        ingestCount += 1
+    }
+
+    override fun resetAudioStream() = Unit
+}
+
+private class ThrowingPlaybackIntentConsumer : LivePcmConsumer {
+    var intentAttempts = 0
+    var ingestCount = 0
+
+    override fun setPlaybackIntent(playbackIntended: Boolean): Nothing {
+        intentAttempts += 1
+        error("visualizer playback intent failed")
+    }
+
+    override fun resetAudioHistory() = Unit
+
+    override fun ingestPcm16(
+        bytes: ByteArray,
+        byteCount: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+    ) {
+        ingestCount += 1
+    }
+
+    override fun resetAudioStream() = Unit
 }
 
 private class BlockingResetConsumer : LivePcmConsumer {
