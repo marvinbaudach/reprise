@@ -306,6 +306,46 @@ executed its GP-9 assertions.
 The known focus-trap suspicion about the sidebar rows is **still open**; this
 run did not touch it.
 
+#### Measured after the harness repair, 2026-08-12
+
+`docs/plans/keyboard-sweep-reset-and-reporting.md` repaired the reset and the
+group loop. Re-run against the release build, twice, same result:
+
+```
+[cua-keyboard] surfaces passed: 5, failed: 0, not exercised: 0
+```
+
+Evidence: `/tmp/reprise-cua-e2e/run-20260812T074043Z-2749161`. The count is not
+the claim — the evidence files are. `sidebar`, `tracks-playlist-queue`,
+`issues-import` and `player-now-playing` now carry 94, 80, 202 and 185
+`acc-<surface>-*` files respectively, where the 2026-08-12 05:06 run had **zero**
+for all four. **GP-9 holds for the five `primary` surfaces:** no focus loss, no
+focus trap, no keyboard-unreachable element, and Space keeps routing to the
+global control (`acc-4a`, six alternations).
+
+The sidebar focus-trap suspicion is thereby **closed for the tab order**:
+`keyboard_sidebar` reached `Music` by Tab and moved to `Queue` by Down, with
+focus evidence for both.
+
+**Still not claimed:** the five `secondary` surfaces — `device-sync`,
+`preferences`, `modals`, `stats`, `compact-minimal`. The group now starts (that
+was the loop defect) but dies on its first snapshot with
+`the private AT-SPI bridge is unavailable`, preceded by `A connection to the bus
+can't be made`. Run in isolation with `CUA_E2E_ONLY=populated-library-secondary`
+it fails identically, so this is a standalone defect of the private session
+lifecycle, not cross-group interference and not a product finding. It was
+invisible until the group loop was guarded.
+
+**One more thing became visible:** `play-2-doubleclick-row`, the step after the
+sweep in `populated-library`, fails with `CUA action did not land cleanly`. It
+had never been reached before, because the sweep aborted the scenario at its
+second surface. It is a pointer action immediately following ~570 driver calls,
+which matches the documented cua-driver 0.8 listener loss that the secondary
+group exists to work around.
+
+Both are harness defects and both need their own strand. Neither is evidence
+about the application.
+
 ### GP-10 — The main track list has no accessible name
 
 Measured from the richest window-state snapshot the run captured
