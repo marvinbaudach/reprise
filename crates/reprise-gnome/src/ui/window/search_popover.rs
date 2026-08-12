@@ -125,6 +125,7 @@ impl SearchPopover {
     pub(in crate::ui) fn press_close_key(&self, key: gtk4::gdk::Key) -> gtk4::glib::Propagation {
         handle_search_key(
             key,
+            gtk4::gdk::ModifierType::empty(),
             &self.popover.downgrade(),
             &self.entry.downgrade(),
             &self.abort_on_escape,
@@ -192,8 +193,8 @@ fn wire_entry_close(
     let popover_weak = popover.downgrade();
     let entry_weak = entry.downgrade();
     let abort = Rc::clone(abort_on_escape);
-    keys.connect_key_pressed(move |_, key, _, _| {
-        handle_search_key(key, &popover_weak, &entry_weak, &abort)
+    keys.connect_key_pressed(move |_, key, _, modifiers| {
+        handle_search_key(key, modifiers, &popover_weak, &entry_weak, &abort)
     });
     entry.add_controller(keys);
 
@@ -208,12 +209,16 @@ fn wire_entry_close(
 
 fn handle_search_key(
     key: gtk4::gdk::Key,
+    modifiers: gtk4::gdk::ModifierType,
     popover: &gtk4::glib::WeakRef<gtk4::Popover>,
     entry: &gtk4::glib::WeakRef<gtk4::SearchEntry>,
     abort_on_escape: &Rc<RefCell<Option<AbortCallback>>>,
 ) -> gtk4::glib::Propagation {
     match key {
-        gtk4::gdk::Key::Escape => abort_search(entry, abort_on_escape),
+        gtk4::gdk::Key::Escape if modifiers.is_empty() => {
+            abort_search(entry, abort_on_escape);
+        }
+        gtk4::gdk::Key::Escape => return gtk4::glib::Propagation::Proceed,
         gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter => {}
         _ => return gtk4::glib::Propagation::Proceed,
     }
