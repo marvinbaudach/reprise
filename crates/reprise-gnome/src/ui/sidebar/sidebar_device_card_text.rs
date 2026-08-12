@@ -13,9 +13,42 @@
 
 use chrono::{DateTime, Utc};
 use reprise_core::device_sync::device_view::DeviceContentsState;
-use reprise_core::device_sync::SyncBalance;
+use reprise_core::device_sync::{DeviceSessionState, SyncBalance};
 
+use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase};
 use crate::ui::device_sync_strings;
+
+/// `MTP-63`: which contrast step a device card carries. The step decides
+/// ground, edge, and how far the status line falls off against the name —
+/// never the name's own colour, which is full strength on every step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CardEmphasis {
+    /// A sync of this device is running: accent edge, tinted ground.
+    Active,
+    /// Connected and idle: solid ground, neutral edge.
+    Connected,
+    /// Remembered but not connected: no ground, hairline edge.
+    Remembered,
+}
+
+#[must_use]
+pub(super) fn card_emphasis(device: &DeviceView) -> CardEmphasis {
+    if is_syncing(device) {
+        CardEmphasis::Active
+    } else if device.session_state == DeviceSessionState::Remembered {
+        CardEmphasis::Remembered
+    } else {
+        CardEmphasis::Connected
+    }
+}
+
+#[must_use]
+pub(super) fn is_syncing(device: &DeviceView) -> bool {
+    matches!(
+        device.sync_phase,
+        PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
+    )
+}
 
 /// `MTP-29`: the card's leading sentence — exactly one of design 7c's four
 /// states:
@@ -98,6 +131,8 @@ fn waiting_or_playlists_sentence(balance: &SyncBalance) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::device_sync_runtime::PlannedSyncPhase;
+    use crate::ui::sidebar::sidebar_device_card::tests::view;
     use chrono::TimeZone;
 
     fn balance(
@@ -211,5 +246,17 @@ mod tests {
             !remembered_sentence(Some(last_verified), now()).contains(&tooltip_text(&copy_balance)),
             "an absent card must never present a stale copy/remove balance"
         );
+    }
+
+    #[test]
+    fn mtp_63_the_card_emphasis_separates_active_connected_and_remembered() {
+        let active = view(PlannedSyncPhase::Finishing);
+        let connected = view(PlannedSyncPhase::Idle);
+        let mut remembered = view(PlannedSyncPhase::Idle);
+        remembered.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+
+        assert_eq!(card_emphasis(&active), CardEmphasis::Active);
+        assert_eq!(card_emphasis(&connected), CardEmphasis::Connected);
+        assert_eq!(card_emphasis(&remembered), CardEmphasis::Remembered);
     }
 }

@@ -1017,6 +1017,14 @@ result.
   for this phone" switches for removing locally deleted music and syncing
   automatically on connection. Playlist selection exists only in the upper
   card; this section reports its result and links back to it.
+- **MTP-63** [planned] [gtk] — The sidebar device card carries three distinct
+  contrast steps. The device name keeps its own legible text role; the status
+  line carries the quieter or accented state treatment. A running sync has an
+  accent edge and tinted ground, its file count and progress on their own row,
+  and a Cancel button in the card. A connected idle device has a solid neutral
+  surface and edge. A remembered disconnected device has no surface, only a
+  hairline edge. The Devices heading is one step brighter than the other
+  sidebar section headings.
 
 ## F. Settings & modals
 

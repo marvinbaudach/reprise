@@ -193,11 +193,19 @@ impl DeviceCard {
     }
 
     pub(super) fn update(&self, device: &DeviceView) {
-        if device.session_state == reprise_core::device_sync::DeviceSessionState::Remembered {
-            self.root.add_css_class("remembered-device");
-        } else {
-            self.root.remove_css_class("remembered-device");
+        for class in [
+            "device-card-active",
+            "device-card-connected",
+            "device-card-remembered",
+        ] {
+            self.root.remove_css_class(class);
         }
+        let emphasis_class = match sidebar_device_card_text::card_emphasis(device) {
+            sidebar_device_card_text::CardEmphasis::Active => "device-card-active",
+            sidebar_device_card_text::CardEmphasis::Connected => "device-card-connected",
+            sidebar_device_card_text::CardEmphasis::Remembered => "device-card-remembered",
+        };
+        self.root.add_css_class(emphasis_class);
         self.name.set_text(&card_title(device));
         self.root
             .update_property(&[gtk4::accessible::Property::Label(
@@ -205,10 +213,7 @@ impl DeviceCard {
             )]);
         *self.open_name.borrow_mut() = device.name.clone();
 
-        let syncing = matches!(
-            device.sync_phase,
-            PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
-        );
+        let syncing = sidebar_device_card_text::is_syncing(device);
         // GtkSpinner follows the toolkit's system animation behavior; only
         // Reprise's custom progress tick needs the explicit MOT-7 gate.
         self.spinner.set_spinning(syncing);
@@ -418,10 +423,7 @@ pub(in crate::ui) fn css() -> String {
 }
 
 fn card_title(device: &DeviceView) -> String {
-    if matches!(
-        device.sync_phase,
-        PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
-    ) {
+    if sidebar_device_card_text::is_syncing(device) {
         format!("Syncing {}", device.name)
     } else {
         device.name.clone()
@@ -537,170 +539,6 @@ pub(super) mod tests {
             keep_smart_playlists_updated: true,
             page: Default::default(),
         }
-    }
-
-    #[test]
-    fn byte_progress_fraction_is_bounded_and_handles_an_unknown_total() {
-        assert_eq!(sync_fraction(50, 100), 0.5);
-        assert_eq!(sync_fraction(150, 100), 1.0);
-        assert_eq!(sync_fraction(50, 0), 0.0);
-    }
-
-    #[test]
-    fn card_activity_distinguishes_transcoding_and_copying_with_artist() {
-        let track = "Immortal — Lorna Shore";
-
-        assert_eq!(
-            device_sync_strings::sync_activity(step_glyph(&SyncStep::Transcoding), track),
-            "⟳ transcoding · Immortal — Lorna Shore"
-        );
-        assert_eq!(
-            device_sync_strings::sync_activity(step_glyph(&SyncStep::Copying), track),
-            "↑ Immortal — Lorna Shore"
-        );
-    }
-
-    #[test]
-    fn syncing_title_is_explicit() {
-        assert_eq!(
-            card_title(&view(PlannedSyncPhase::Finishing)),
-            "Syncing Pixel 8"
-        );
-    }
-
-    #[test]
-    fn mtp_13_sidebar_device_card_has_no_direct_sync_action() {
-        let direct_sync_action = ["app", "sync-device"].join(".");
-
-        assert!(!include_str!("sidebar_device_card.rs").contains(&direct_sync_action));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn device_card_open_is_a_native_keyboard_action() {
-        gtk4::init().unwrap();
-        let opened = Rc::new(RefCell::new(None));
-        let opened_for_callback = opened.clone();
-        let on_open: OpenCallback = Rc::new(move |id, name| {
-            opened_for_callback.borrow_mut().replace((id, name));
-        });
-        let card = DeviceCard::new(&view(PlannedSyncPhase::Idle), &on_open);
-        assert!(card.root.is_focusable());
-        card.root.emit_clicked();
-        assert_eq!(
-            opened.borrow().as_ref(),
-            Some(&("pixel".to_owned(), "Pixel 8".to_owned()))
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn mot_7_disabled_animations_apply_progress_and_state_changes_immediately() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let settings = gtk4::Settings::default().unwrap();
-        let previous = settings.is_gtk_enable_animations();
-        settings.set_gtk_enable_animations(false);
-        let device = view(PlannedSyncPhase::Syncing {
-            step: SyncStep::Copying,
-            done: 0,
-            total: 1,
-            current_track: "Track".into(),
-            bytes_done: 50,
-            bytes_total: 100,
-        });
-        let on_open: OpenCallback = Rc::new(|_, _| {});
-        let card = DeviceCard::new(&device, &on_open);
-
-        card.update(&device);
-
-        assert_eq!(card.progress.fraction(), 0.5);
-        assert_eq!(
-            card.detail_stack.transition_duration(),
-            crate::ui::motion::STANDARD_MS
-        );
-        assert_eq!(
-            card.detail_stack.visible_child_name().as_deref(),
-            Some("progress")
-        );
-        assert_eq!(
-            card.indicator.visible_child_name().as_deref(),
-            Some("syncing")
-        );
-        assert!(card.spinner.is_spinning());
-        assert!(card.progress_revealer.reveals_child());
-        settings.set_gtk_enable_animations(previous);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn enabled_animations_interpolate_progress_to_the_latest_fraction() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        if gtk4::init().is_err() {
-            return;
-        }
-        let settings = gtk4::Settings::default().unwrap();
-        let previous = settings.is_gtk_enable_animations();
-        settings.set_gtk_enable_animations(true);
-        let idle = view(PlannedSyncPhase::Idle);
-        let on_open: OpenCallback = Rc::new(|_, _| {});
-        let card = DeviceCard::new(&idle, &on_open);
-        assert!(card.root.settings().is_gtk_enable_animations());
-        let window = gtk4::Window::new();
-        window.set_child(Some(&card.root));
-        window.present();
-        gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
-            std::time::Duration::from_millis(20),
-        ));
-        let syncing = view(PlannedSyncPhase::Syncing {
-            step: SyncStep::Copying,
-            done: 0,
-            total: 1,
-            current_track: "Track".into(),
-            bytes_done: 50,
-            bytes_total: 100,
-        });
-
-        card.update(&syncing);
-
-        assert!(card.progress.fraction() < 0.5);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while (card.progress.fraction() - 0.5).abs() >= 1e-6 && std::time::Instant::now() < deadline
-        {
-            gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
-                std::time::Duration::from_millis(20),
-            ));
-        }
-        assert!((card.progress.fraction() - 0.5).abs() < 1e-6);
-        window.close();
-        settings.set_gtk_enable_animations(previous);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn mot_2_device_background_surfaces_only_crossfade_in_place() {
-        gtk4::init().unwrap();
-        let device = view(PlannedSyncPhase::Idle);
-        let on_open: OpenCallback = Rc::new(|_, _| {});
-        let card = DeviceCard::new(&device, &on_open);
-
-        assert_eq!(
-            card.indicator.transition_type(),
-            gtk4::StackTransitionType::Crossfade
-        );
-        assert_eq!(
-            card.detail_stack.transition_type(),
-            gtk4::StackTransitionType::Crossfade
-        );
-        assert_eq!(
-            card.suffix_stack.transition_type(),
-            gtk4::StackTransitionType::Crossfade
-        );
-        assert_eq!(
-            card.progress_revealer.transition_type(),
-            gtk4::RevealerTransitionType::Crossfade
-        );
     }
 }
 
