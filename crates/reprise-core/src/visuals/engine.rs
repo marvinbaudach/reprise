@@ -166,6 +166,8 @@ impl VisualEngine {
     }
 
     fn paused_live_band(&self, band: usize) -> f32 {
+        // Deliberately stop at 63/64: unlike the tapered generic idle wave,
+        // this untapered field must not duplicate its first phase at the edge.
         let across = band as f32 / SPECTRUM_BAND_COUNT as f32;
         let wave =
             (std::f32::consts::TAU * (across * PAUSED_LIVE_WAVE_COUNT - self.idle_phase)).sin();

@@ -197,6 +197,8 @@ impl SongVisualizer {
             let elapsed = if previous == 0 {
                 Duration::from_micros(16_667)
             } else {
+                // A frame-clock regression is treated as zero elapsed time;
+                // the signed delta cannot be represented as a Duration.
                 Duration::from_micros(
                     u64::try_from(now.saturating_sub(previous)).unwrap_or_default(),
                 )

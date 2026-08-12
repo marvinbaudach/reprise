@@ -138,6 +138,7 @@ impl LiveAudioState {
 
 struct VisualState {
     engine: VisualEngine,
+    engine_playing: bool,
     stream_generation: u64,
     has_ingested: bool,
     has_analysis: bool,
@@ -147,6 +148,16 @@ struct VisualState {
     playing: bool,
     playback_intent: PlaybackIntent,
     last_visual_tick_at: Duration,
+}
+
+impl VisualState {
+    fn set_engine_playing(&mut self, playing: bool, now: Duration) {
+        if self.engine_playing != playing {
+            self.engine_playing = playing;
+            self.last_visual_tick_at = now;
+        }
+        self.engine.set_playing(playing);
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -187,15 +198,12 @@ impl AndroidVisualEngine {
     pub fn set_playing(&self, playing: bool) {
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
-        reconcile_stream_generation(&mut state, stream_generation);
         let now = self.clock.now();
-        if state.playing != playing {
-            state.last_visual_tick_at = now;
-        }
+        reconcile_stream_generation(&mut state, stream_generation, now);
         state.playing = playing;
         expire_stale_live_audio(&mut state, now);
         let has_audio = state.has_analysis || state.has_live_audio;
-        state.engine.set_playing(playing && has_audio);
+        state.set_engine_playing(playing && has_audio, now);
     }
 
     /// Records Media3's raw `playWhenReady` intent for live-PCM freshness.
@@ -207,14 +215,14 @@ impl AndroidVisualEngine {
     pub fn set_playback_intended(&self, playback_intended: bool) {
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
-        reconcile_stream_generation(&mut state, stream_generation);
+        let now = self.clock.now();
+        reconcile_stream_generation(&mut state, stream_generation, now);
         let resumed = playback_intended && state.playback_intent != PlaybackIntent::Playing;
         state.playback_intent = if playback_intended {
             PlaybackIntent::Playing
         } else {
             PlaybackIntent::Paused
         };
-        let now = self.clock.now();
         if resumed && state.has_live_audio {
             state.last_live_audio_at = Some(now);
         }
@@ -232,10 +240,11 @@ impl AndroidVisualEngine {
         let stream_generation = self.current_stream_generation();
         state.engine.note_track_changed();
         state.engine.set_has_track(false);
-        state.last_visual_tick_at = self.clock.now();
+        let now = self.clock.now();
+        state.last_visual_tick_at = now;
         state.has_ingested = false;
         state.has_analysis = false;
-        reset_live_presentation(&mut state, stream_generation);
+        reset_live_presentation(&mut state, stream_generation, now);
     }
 
     /// Installs one already-smoothed spectrogram frame.
@@ -245,15 +254,16 @@ impl AndroidVisualEngine {
         let frame = spectrum_frame_from_bands(&bands);
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
-        reconcile_stream_generation(&mut state, stream_generation);
-        expire_stale_live_audio(&mut state, self.clock.now());
+        let now = self.clock.now();
+        reconcile_stream_generation(&mut state, stream_generation, now);
+        expire_stale_live_audio(&mut state, now);
         if state.has_live_audio {
             return;
         }
         state.engine.set_retain_paused_live_shape(false);
         state.engine.set_has_track(true);
         let playing = state.playing;
-        state.engine.set_playing(playing && has_analysis);
+        state.set_engine_playing(playing && has_analysis, now);
         state.engine.ingest(&frame);
         state.has_ingested = true;
         state.has_analysis = has_analysis;
@@ -306,16 +316,17 @@ impl AndroidVisualEngine {
         if self.current_stream_generation() != stream_generation {
             return false;
         }
-        reconcile_stream_generation(&mut state, stream_generation);
+        let now = self.clock.now();
+        reconcile_stream_generation(&mut state, stream_generation, now);
 
         state.engine.set_retain_paused_live_shape(true);
         state.engine.set_has_track(true);
         let playing = state.playing;
-        state.engine.set_playing(playing);
+        state.set_engine_playing(playing, now);
         state.engine.ingest(&frame);
         state.has_ingested = true;
         state.has_live_audio = true;
-        state.last_live_audio_at = Some(self.clock.now());
+        state.last_live_audio_at = Some(now);
         state.live_pressure = pressure;
         true
     }
@@ -329,7 +340,7 @@ impl AndroidVisualEngine {
         }
         if let Some(mut state) = self.try_lock() {
             let stream_generation = self.current_stream_generation();
-            reset_live_presentation(&mut state, stream_generation);
+            reset_live_presentation(&mut state, stream_generation, self.clock.now());
         }
     }
 
@@ -401,20 +412,18 @@ fn silent_pressure() -> BassPressure {
     BassPressureDetector::new(1).observe(&[])
 }
 
-fn reset_live_presentation(state: &mut VisualState, stream_generation: u64) {
+fn reset_live_presentation(state: &mut VisualState, stream_generation: u64, now: Duration) {
     state.stream_generation = stream_generation;
     state.has_live_audio = false;
     state.last_live_audio_at = None;
     state.live_pressure = silent_pressure();
     state.engine.set_retain_paused_live_shape(false);
-    state
-        .engine
-        .set_playing(state.playing && state.has_analysis);
+    state.set_engine_playing(state.playing && state.has_analysis, now);
 }
 
-fn reconcile_stream_generation(state: &mut VisualState, stream_generation: u64) {
+fn reconcile_stream_generation(state: &mut VisualState, stream_generation: u64, now: Duration) {
     if state.stream_generation != stream_generation {
-        reset_live_presentation(state, stream_generation);
+        reset_live_presentation(state, stream_generation, now);
     }
 }
 
@@ -446,7 +455,7 @@ fn live_processor_for_stream(
 
 fn expire_stale_live_audio(state: &mut VisualState, now: Duration) {
     if state.has_live_audio && !live_audio_is_current(state, now) {
-        reset_live_presentation(state, state.stream_generation);
+        reset_live_presentation(state, state.stream_generation, now);
     }
 }
 
@@ -470,6 +479,7 @@ impl AndroidVisualEngine {
         Self {
             state: Mutex::new(VisualState {
                 engine: VisualEngine::new(),
+                engine_playing: false,
                 stream_generation: 0,
                 has_ingested: false,
                 has_analysis: false,

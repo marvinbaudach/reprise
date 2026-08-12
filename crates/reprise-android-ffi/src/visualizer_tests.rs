@@ -165,6 +165,32 @@ fn stream_and_track_changes_reset_cava_and_bass_history() {
 }
 
 #[test]
+fn stream_generation_reset_starts_idle_fade_and_phase_at_zero_after_a_time_gap() {
+    let delayed_clock = Arc::new(FakeMonotonicClock::default());
+    let delayed = AndroidVisualEngine::with_clock(delayed_clock.clone());
+    delayed.set_playing(true);
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
+    assert!(delayed.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    delayed_clock.advance(Duration::from_secs(2));
+    delayed.reset_audio_stream();
+    delayed.tick();
+
+    let immediate_clock = Arc::new(FakeMonotonicClock::default());
+    let immediate = AndroidVisualEngine::with_clock(immediate_clock);
+    immediate.set_playing(true);
+    assert!(immediate.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    immediate.reset_audio_stream();
+    immediate.tick();
+
+    assert_eq!(
+        delayed.scene(272.0, 272.0),
+        immediate.scene(272.0, 272.0),
+        "pre-reset playing time advanced the idle fade or phase"
+    );
+}
+
+#[test]
 fn paused_live_audio_reports_silence_without_forgetting_the_stream() {
     let engine = AndroidVisualEngine::new();
     engine.set_playing(true);
@@ -188,7 +214,7 @@ fn paused_scene_uses_elapsed_time_at_a_fifteen_hertz_redraw_rate() {
     engine.set_playing(false);
     clock.advance(Duration::from_secs(2));
     engine.tick();
-    let start = main_bar_segment_counts(&decode_scene(&engine.scene(272.0, 272.0)), 272.0);
+    let start = engine.scene(272.0, 272.0);
 
     // Three 15 Hz frames span exactly 200 ms despite millisecond rounding.
     // Ninety redraws therefore cover the portable wave's six-second period.
@@ -196,12 +222,17 @@ fn paused_scene_uses_elapsed_time_at_a_fifteen_hertz_redraw_rate() {
         clock.advance(Duration::from_millis(elapsed));
         engine.tick();
     }
-    let after_one_period =
-        main_bar_segment_counts(&decode_scene(&engine.scene(272.0, 272.0)), 272.0);
+    let after_one_period = engine.scene(272.0, 272.0);
 
-    assert_eq!(
-        start, after_one_period,
-        "paused Android wave missed its six-second return"
+    assert_eq!(start.len(), after_one_period.len());
+    let largest_error = start
+        .iter()
+        .zip(after_one_period)
+        .map(|(before, after)| (before - after).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        largest_error < 0.000_1,
+        "paused Android scene missed its six-second return by {largest_error}"
     );
 }
 
@@ -392,14 +423,6 @@ fn main_bar_segments(scene: &Scene, height: f32) -> Vec<[f32; 4]> {
             _ => None,
         })
         .collect()
-}
-
-fn main_bar_segment_counts(scene: &Scene, height: f32) -> Vec<(i32, usize)> {
-    let mut counts = std::collections::BTreeMap::new();
-    for [x, ..] in main_bar_segments(scene, height) {
-        *counts.entry((x * 100.0).round() as i32).or_insert(0) += 1;
-    }
-    counts.into_iter().collect()
 }
 
 fn shape(geom: Geom) -> Shape {

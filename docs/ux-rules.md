@@ -3746,11 +3746,12 @@ STYLE-1).
   the category, `ExternalPlaybackSnapshot::carries_music`; no surface
   re-derives it from the media variant.
 
-- **AC-27** [active] [core] [gtk] — **A loaded live scene breathes through pause.**
-  Ongoing playback shows the audio-reactive bars. A real user pause retains
-  the last live band distribution and smoothly blends its display, without a
-  frame-zero jump, into a low resting shape: a 10% floor plus 20% of each
-  retained band and an eight-percentage-point travelling-wave amplitude. For
+- **AC-27** [active] [core] [gtk] — **A loaded live scene breathes through pause and stop.**
+  Ongoing playback shows the audio-reactive bars. A real user pause or stop
+  while the track remains loaded retains the last live band distribution and
+  smoothly blends its display, without a frame-zero jump, into a low resting
+  shape: a 10% floor plus 20% of each retained band and an
+  eight-percentage-point travelling-wave amplitude. For
   the 0.2-to-0.9 acceptance distribution, every band spans 16 percentage
   points over a full period, and the resulting display range is 6% to 36%.
   Three crests carry different phases across the field, so the motion travels
