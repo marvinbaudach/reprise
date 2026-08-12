@@ -168,11 +168,9 @@ pub(in crate::ui) const DIALOG_CARD_ALPHA: &str = "0.07";
 
 pub(in crate::ui) const NOW_PLAYING_COVER_SIZE: i32 = 168;
 pub(in crate::ui) const NOW_PLAYING_GLOW_ALPHA: &str = "0.26";
-pub(in crate::ui) const NOW_PLAYING_SUBTITLE_ALPHA: &str = "0.55";
 pub(in crate::ui) const NOW_PLAYING_PILL_RADIUS: &str = "99px";
 pub(in crate::ui) const NOW_PLAYING_PILL_BG_ALPHA: &str = "0.06";
 pub(in crate::ui) const NOW_PLAYING_PILL_ACTIVE_ALPHA: &str = "0.14";
-pub(in crate::ui) const NOW_PLAYING_FOOTER_ALPHA: &str = "0.35";
 pub(in crate::ui) const NOW_PLAYING_TITLE_SIZE: &str = "15px";
 pub(in crate::ui) const NOW_PLAYING_SUBTITLE_SIZE: &str = "12px";
 pub(in crate::ui) const NOW_PLAYING_FOOTER_SIZE: &str = "10.5px";

@@ -411,14 +411,14 @@ pub(in crate::ui) fn css() -> String {
     ".reprise-song-visuals { margin: 0 18px 12px; }\n\
      .reprise-song-visual-canvas {\
        color: @reprise_player_accent;\
-       background-color: alpha(#ffffff, 0.025);\
+       background-color: alpha(@sidebar_fg_color, 0.025);\
        border: 1px solid alpha(@reprise_player_accent, 0.14);\
        border-radius: 24px;\
      }\n\
      .reprise-song-visual-analysis { padding: 0 2px; }\n\
      .reprise-song-visual-analysis-name {\
        font-size: 0.78rem;\
-       opacity: 0.5;\
+       color: @reprise_secondary_fg_color;\
      }\n\
      .reprise-song-visual-analysis-value {\
        font-size: 0.86rem;\
