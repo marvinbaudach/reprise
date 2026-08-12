@@ -583,10 +583,14 @@ fn src_4b_the_group_header_offers_no_second_unsubscribe_control() {
     assert!(buttons
         .iter()
         .all(|button| button.action_name().as_deref() != Some("podcasts.unsubscribe")));
-    assert!(header
-        .last_child()
-        .and_downcast::<gtk4::MenuButton>()
-        .is_some());
+    let menus = descendants(header.upcast_ref())
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::MenuButton>().ok())
+        .collect::<Vec<_>>();
+    assert_eq!(menus.len(), 1, "the source header has one overflow menu");
+    assert!(menus[0]
+        .menu_model()
+        .is_some_and(|model| menu_has_action(&model, "podcasts.unsubscribe")));
     assert_eq!(
         context_gesture(header.upcast_ref()).propagation_phase(),
         gtk4::PropagationPhase::Capture,
@@ -632,9 +636,9 @@ fn src_11_group_header_stays_on_the_fallback_when_images_are_not_allowed() {
         false,
     );
     let header = header.downcast::<gtk4::Box>().unwrap();
-    let artwork = header
-        .first_child()
-        .and_downcast::<gtk4::Stack>()
+    let artwork = descendants(header.upcast_ref())
+        .into_iter()
+        .find_map(|widget| widget.downcast::<gtk4::Stack>().ok())
         .expect("source image stack");
     assert_eq!(artwork.visible_child_name().as_deref(), Some("fallback"));
 }

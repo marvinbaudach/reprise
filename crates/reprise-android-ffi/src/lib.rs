@@ -33,6 +33,9 @@ pub mod source;
 mod source_error;
 mod source_names;
 mod track_analysis;
+mod visualizer;
+#[cfg(test)]
+mod visualizer_tests;
 pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
@@ -49,6 +52,7 @@ pub use playback_session::{
     AndroidTrashFailure, AndroidTrashReport, TrashAction,
 };
 pub use playback_settings::*;
+pub use visualizer::*;
 uniffi::setup_scaffolding!();
 
 /// The longest search text this boundary passes on.

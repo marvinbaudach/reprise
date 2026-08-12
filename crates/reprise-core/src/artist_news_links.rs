@@ -168,7 +168,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_20_bandcamp_purchase_url_accepts_only_real_bandcamp_hosts() {
+    fn nr_30_bandcamp_purchase_url_accepts_only_real_bandcamp_hosts() {
         for candidate in [
             "https://oceansleeper.bandcamp.com/album/maybe-death-is-all-i-need",
             "https://bandcamp.com/album/example",

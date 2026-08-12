@@ -22,9 +22,26 @@ class SpectrogramFrames(
 
     fun frameIndexFor(positionMs: Long): Int {
         if (frameCount == 0) return 0
-        val raw = floor(positionMs.coerceAtLeast(0).toDouble() * frameRateHz / 1_000.0)
+        val raw = floor(framePosition(positionMs))
         return raw.coerceAtMost((frameCount - 1).toDouble()).toInt()
     }
+
+    /**
+     * How far the playhead stands inside the frame [frameIndexFor] reports, as
+     * a 0..1 fraction of one frame.
+     *
+     * Zero on the last frame and past the end of the analysis: there is no
+     * measured frame left to travel towards, so nothing may move.
+     */
+    fun frameFractionFor(positionMs: Long): Float {
+        if (frameCount == 0) return 0f
+        val raw = framePosition(positionMs)
+        if (raw >= (frameCount - 1).toDouble()) return 0f
+        return (raw - floor(raw)).toFloat()
+    }
+
+    private fun framePosition(positionMs: Long): Double =
+        positionMs.coerceAtLeast(0).toDouble() * frameRateHz / 1_000.0
 
     fun band(frameIndex: Int, band: Int): Int {
         if (frameCount == 0) return 0

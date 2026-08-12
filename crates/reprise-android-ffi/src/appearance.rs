@@ -308,11 +308,22 @@ mod tests {
             },
         );
         library
-            .set_visualizer(AndroidVisualizerChoice::Ambient)
+            .set_visualizer(AndroidVisualizerChoice::Spectrum)
             .unwrap();
         assert_eq!(
             library.visualizer_setting().unwrap(),
-            AndroidStoredVisualizer::Ambient,
+            AndroidStoredVisualizer::Spectrum,
+        );
+        drop(library);
+
+        let reopened = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            reopened.visualizer_setting().unwrap(),
+            AndroidStoredVisualizer::Spectrum,
         );
     }
 

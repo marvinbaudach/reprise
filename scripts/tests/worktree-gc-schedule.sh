@@ -15,7 +15,7 @@ guide="$repo_root/docs/automation/worktree-cleanup.md"
 
 rg -Fq 'Type=oneshot' "$service"
 rg -Fq 'REPRISE_GC_STATE_ROOT=%h/.local/state/reprise-worktree-gc' "$service"
-rg -Fq 'ExecStart=%h/.local/libexec/reprise-worktree-gc sweep --scope /home/marvin/Projects/reprise --apply --target-max-age-days 7 --target-min-kib 1048576' "$service"
+rg -Fq 'ExecStart=%h/.local/libexec/reprise-worktree-gc sweep --scope /home/marvin/Projects/reprise --exclude %h/.cache/reprise-nightly/src --apply --target-max-age-days 7 --target-min-kib 1048576' "$service"
 ! rg -Fq 'ExecStart=/home/marvin/Projects/reprise/scripts/reprise-worktree-gc.sh' "$service"
 rg -Fq 'OnCalendar=Sun *-*-* 04:15:00' "$timer"
 rg -Fq 'Persistent=true' "$timer"

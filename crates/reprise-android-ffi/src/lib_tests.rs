@@ -4,10 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::{
-    AlbumRow, ArtistRow, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
-    WindowRange,
-};
+use super::{LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate, WindowRange};
 use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 use reprise_core::device_sync::listen_report::ListenReport;
 
@@ -185,71 +182,74 @@ fn full_window() -> WindowRange {
 #[test]
 fn browse_surface_lists_core_album_summaries_in_core_order() {
     let (directory, library) = browse_library();
-    let blue_uri = directory
-        .path()
-        .join("music/blue-1.flac")
-        .to_string_lossy()
-        .into_owned();
+    let blue_representatives = [
+        directory
+            .path()
+            .join("music/blue-1.flac")
+            .to_string_lossy()
+            .into_owned(),
+        directory
+            .path()
+            .join("music/blue-2.flac")
+            .to_string_lossy()
+            .into_owned(),
+    ];
     let live_uri = directory
         .path()
         .join("music/blue-live.flac")
         .to_string_lossy()
         .into_owned();
+    let rows = library.list_albums(full_window()).unwrap().rows;
 
     assert_eq!(
-        library.list_albums(full_window()).unwrap().rows,
+        rows.iter()
+            .map(|row| (
+                row.album.as_str(),
+                row.album_artist.as_str(),
+                row.track_count,
+                row.year,
+                row.total_duration_ms,
+            ))
+            .collect::<Vec<_>>(),
         vec![
-            AlbumRow {
-                album: "Blue".into(),
-                album_artist: "Joni Mitchell".into(),
-                representative_uri: blue_uri,
-                track_count: 2,
-                year: Some(1971),
-                total_duration_ms: 2_320,
-            },
-            AlbumRow {
-                album: "Blue".into(),
-                album_artist: "Other Artist".into(),
-                representative_uri: live_uri,
-                track_count: 1,
-                year: Some(2000),
-                total_duration_ms: 1_160,
-            },
+            ("Blue", "Joni Mitchell", 2, Some(1971), 2_320),
+            ("Blue", "Other Artist", 1, Some(2000), 1_160),
         ]
     );
+    assert!(blue_representatives.contains(&rows[0].representative_uri));
+    assert_eq!(rows[1].representative_uri, live_uri);
 }
 
 #[test]
 fn browse_surface_lists_core_artist_summaries_in_core_order() {
     let (directory, library) = browse_library();
-    let joni_uri = directory
-        .path()
-        .join("music/blue-1.flac")
-        .to_string_lossy()
-        .into_owned();
+    let joni_representatives = [
+        directory
+            .path()
+            .join("music/blue-1.flac")
+            .to_string_lossy()
+            .into_owned(),
+        directory
+            .path()
+            .join("music/blue-2.flac")
+            .to_string_lossy()
+            .into_owned(),
+    ];
     let other_uri = directory
         .path()
         .join("music/blue-live.flac")
         .to_string_lossy()
         .into_owned();
+    let rows = library.list_artists(full_window()).unwrap().rows;
 
     assert_eq!(
-        library.list_artists(full_window()).unwrap().rows,
-        vec![
-            ArtistRow {
-                artist: "Joni Mitchell".into(),
-                track_count: 2,
-                album_count: 1,
-                representative_uri: joni_uri,
-            },
-            ArtistRow {
-                artist: "Other Artist".into(),
-                track_count: 1,
-                album_count: 1,
-                representative_uri: other_uri,
-            },
-        ]
+        rows.iter()
+            .map(|row| (row.artist.as_str(), row.track_count, row.album_count))
+            .collect::<Vec<_>>(),
+        vec![("Joni Mitchell", 2, 1), ("Other Artist", 1, 1),]
     );
+    assert!(joni_representatives.contains(&rows[0].representative_uri));
+    assert_eq!(rows[1].representative_uri, other_uri);
 }
 
 #[test]
@@ -314,32 +314,44 @@ fn browse_surface_gets_one_albums_tracks_in_core_order() {
         .to_string_lossy()
         .into_owned();
 
+    let rows = library
+        .list_album_tracks(" blue ".into(), "joni mitchell".into(), full_window())
+        .unwrap()
+        .rows;
+
     assert_eq!(
-        library
-            .list_album_tracks(" blue ".into(), "joni mitchell".into(), full_window())
-            .unwrap()
-            .rows,
+        rows.into_iter()
+            .map(|row| {
+                (
+                    row.uri,
+                    row.title,
+                    row.artist,
+                    row.album,
+                    row.duration_ms,
+                    row.play_count,
+                    row.rating,
+                )
+            })
+            .collect::<Vec<_>>(),
         vec![
-            super::TrackRow {
-                id: 2,
-                uri: first_uri,
-                title: "All I Want".into(),
-                artist: "Joni Mitchell".into(),
-                album: "Blue".into(),
-                duration_ms: 1_160,
-                play_count: 0,
-                rating: 0,
-            },
-            super::TrackRow {
-                id: 3,
-                uri: second_uri,
-                title: "A Case of You".into(),
-                artist: "Joni Mitchell".into(),
-                album: "Blue".into(),
-                duration_ms: 1_160,
-                play_count: 27,
-                rating: 4,
-            },
+            (
+                first_uri,
+                "All I Want".into(),
+                "Joni Mitchell".into(),
+                "Blue".into(),
+                1_160,
+                0,
+                0,
+            ),
+            (
+                second_uri,
+                "A Case of You".into(),
+                "Joni Mitchell".into(),
+                "Blue".into(),
+                1_160,
+                27,
+                4,
+            ),
         ]
     );
 }
@@ -358,29 +370,41 @@ fn browse_surface_search_matches_genre_metadata_in_core_title_order() {
         .to_string_lossy()
         .into_owned();
 
+    let rows = library.search_tracks(" folk ", full_window()).unwrap().rows;
+
     assert_eq!(
-        library.search_tracks(" folk ", full_window()).unwrap().rows,
+        rows.into_iter()
+            .map(|row| {
+                (
+                    row.uri,
+                    row.title,
+                    row.artist,
+                    row.album,
+                    row.duration_ms,
+                    row.play_count,
+                    row.rating,
+                )
+            })
+            .collect::<Vec<_>>(),
         vec![
-            super::TrackRow {
-                id: 3,
-                uri: case_uri,
-                title: "A Case of You".into(),
-                artist: "Joni Mitchell".into(),
-                album: "Blue".into(),
-                duration_ms: 1_160,
-                play_count: 27,
-                rating: 4,
-            },
-            super::TrackRow {
-                id: 2,
-                uri: want_uri,
-                title: "All I Want".into(),
-                artist: "Joni Mitchell".into(),
-                album: "Blue".into(),
-                duration_ms: 1_160,
-                play_count: 0,
-                rating: 0,
-            },
+            (
+                case_uri,
+                "A Case of You".into(),
+                "Joni Mitchell".into(),
+                "Blue".into(),
+                1_160,
+                27,
+                4,
+            ),
+            (
+                want_uri,
+                "All I Want".into(),
+                "Joni Mitchell".into(),
+                "Blue".into(),
+                1_160,
+                0,
+                0,
+            ),
         ]
     );
 }

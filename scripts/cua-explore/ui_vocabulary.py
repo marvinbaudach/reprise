@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Any, Mapping
 
 
 CANONICAL_ROW_ROLE = "row"
@@ -35,6 +35,15 @@ ROLE_ALIASES: Mapping[str, str] = {
     "grouping": "group",
     "scrollbar": "scroll bar",
 }
+
+# Measured over all 1020 recorded snapshots of the 2026-08-10 exploratory run
+# (GTK 4.22, Reprise edd458e8df): 27 distinct action names, exactly one of them
+# invocable. Structural means assistive technology may call it, but it is not a
+# user affordance - GTK4 puts listitem.scroll-to on every row and cell of a
+# ColumnView, list.select-all on every list, and the win.*/window.*/default.*
+# GActions on the window itself.
+STRUCTURAL_ACTION_PREFIXES = ("listitem.", "list.", "win.", "window.", "default.")
+MEASURED_INVOCABLE_ACTIONS = frozenset({"click"})
 
 # Only the spellings that really denote a row - ROLE_ALIASES also carries
 # button, cell and window variants now, and folding those in here would have
@@ -102,6 +111,44 @@ def canonical_role(role: str) -> str:
     """Return the stable role spelling used by every harness consumer."""
     normalized = str(role or "unknown").strip().casefold()
     return ROLE_ALIASES.get(normalized, normalized)
+
+
+def _action_tokens(names: Any) -> tuple[str, ...]:
+    """Fold whatever an element carries under "actions" onto comparable tokens.
+
+    Two measured defects meet here. An element with `"actions": null` reaches
+    `driver._target` through `.get("actions", ())` - the default never fires,
+    and iterating None raised a TypeError that ended the run. And
+    `oracles.normalize_snapshot` lowercases the names while
+    `atspi_geometry._action_names` hands them through verbatim, so the same
+    node was classified twice under two spellings.
+    """
+    if names is None:
+        return ()
+    # A lone string is one action name, not a sequence of characters.
+    if isinstance(names, (str, bytes)):
+        names = (names,)
+    try:
+        return tuple(str(name).strip().casefold() for name in names)
+    except TypeError:
+        return ()
+
+
+def is_structural_action(name: str) -> bool:
+    return str(name).strip().casefold().startswith(STRUCTURAL_ACTION_PREFIXES)
+
+
+def invocable_actions(names: Any) -> tuple[str, ...]:
+    """Keep measured invocable and unknown names visible to the harness."""
+    return tuple(name for name in _action_tokens(names) if not is_structural_action(name))
+
+
+def unknown_action_names(names: Any) -> tuple[str, ...]:
+    return tuple(
+        name
+        for name in _action_tokens(names)
+        if not is_structural_action(name) and name not in MEASURED_INVOCABLE_ACTIONS
+    )
 
 
 def is_row(role: str) -> bool:

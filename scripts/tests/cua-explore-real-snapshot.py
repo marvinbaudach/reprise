@@ -390,12 +390,56 @@ class RecordedActionTargetTests(unittest.TestCase):
 
         self.assertTrue(executor.target_carries_action(raw, "Add filter"))
 
-    def test_two_action_bearing_nodes_are_refused_rather_than_guessed(self) -> None:
+    def test_two_action_bearing_nodes_are_chosen_in_reading_order_and_reported(
+        self,
+    ) -> None:
+        """An ambiguous name is a finding about the app, not a reason to die.
+
+        This used to assert the opposite: two nodes carrying an action made
+        `_target` throw, and the run ended. That cost five of twelve runs in the
+        night of 2026-08-10 - roughly 4500 unspent actions - to avoid choosing
+        between two stars in a rating column. A screen reader user faces the
+        very same ambiguity, so the honest answer is to take one, write down
+        which one and which alternatives existed, and keep going.
+        """
         transport, executor = self._executor({3: ("click",), 4: ("click",)})
         raw = transport.call("get_window_state", {})
 
-        with self.assertRaisesRegex(Exception, "more than one"):
-            executor._target(raw, "Add filter")
+        chosen = executor._target(raw, "Add filter")
+
+        matches = [
+            item
+            for item in raw["elements"]
+            if item.get("label") == "Add filter" and item.get("actions")
+        ]
+        first_in_reading_order = min(
+            matches,
+            key=lambda item: (
+                item["frame"]["y"],
+                item["frame"]["x"],
+                item["element_index"],
+            ),
+        )
+        self.assertEqual(chosen["element_index"], first_in_reading_order["element_index"])
+
+        findings = [
+            finding
+            for finding in executor._take_harness_findings()
+            if finding.code == "ambiguous-accessible-name"
+        ]
+        self.assertEqual(len(findings), 1, "one finding per ambiguous name and run")
+        self.assertEqual(findings[0].evidence["count"], len(matches))
+
+        executor._target(raw, "Add filter")
+        self.assertEqual(
+            [
+                finding
+                for finding in executor._take_harness_findings()
+                if finding.code == "ambiguous-accessible-name"
+            ],
+            [],
+            "27 stars must not become 27 findings",
+        )
 
 
 class NoAccessibleActionFindingTests(unittest.TestCase):

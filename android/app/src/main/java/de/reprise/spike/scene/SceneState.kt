@@ -8,6 +8,7 @@ class SceneState(
     private val motionEnvelopes = BandEnvelopes.motion(frames.bandCount, frames.frameRateHz)
     private val rawBands = FloatArray(frames.bandCount)
     private val targets = FloatArray(frames.bandCount)
+    private val projectedMotion = FloatArray(frames.bandCount)
     private var lastFrameIndex: Int? = null
 
     /**
@@ -27,11 +28,15 @@ class SceneState(
         get() = motionEnvelopes.values
     var fogLevel: Float = 0f
         private set
+    var bassPressure: Float = 0f
+        private set
     var motionLevel: Float = 0f
         private set
     var fogAngleA: Float = 0f
         private set
     var fogAngleB: Float = 0f
+        private set
+    var shimmerElapsedSeconds: Double = 0.0
         private set
     var revision: Int = 0
         private set
@@ -72,16 +77,63 @@ class SceneState(
         val fogChanged = fogEnvelopes.adopt(rawBands)
         val motionChanged = motionEnvelopes.adopt(rawBands)
         val oldFogLevel = fogLevel
+        val oldBassPressure = bassPressure
         val oldMotionLevel = motionLevel
         fogLevel = mean(fogBands).coerceIn(0f, 1f)
+        bassPressure = bassMean(motionBands)
         motionLevel = mean(motionBands)
         lastFrameIndex = targetIndex
         if (
             fogChanged || motionChanged || fogLevel.changedFrom(oldFogLevel) ||
+            bassPressure.changedFrom(oldBassPressure) ||
             motionLevel.changedFrom(oldMotionLevel)
         ) {
             revision += 1
         }
+    }
+
+    /**
+     * Reads the motion followers [frameFraction] of their way into the step
+     * towards the next measured frame, without stepping anything.
+     *
+     * The analysis runs at 20 Hz against a display asking for three pictures per
+     * frame, so a consumer handed [motionBands] alone sees the same numbers for
+     * ~33 ms at a time. Both ends here are measured: the followers stand on the
+     * frame the playhead is in, the target belongs to the frame after it, and
+     * the reading is the follower's own curve between the two. A fraction of 1
+     * is exactly what the next [advanceTo] will produce, so the reading never
+     * runs ahead of the music.
+     *
+     * Fog is deliberately left out: its angles integrate whole frames, and
+     * reading between them must not lend them a second step. The array is
+     * handed out by reference under the same read-only contract as [motionBands]
+     * and is overwritten by the next call.
+     */
+    fun motionBandsWithin(frameFraction: Float): FloatArray {
+        if (lastFrameIndex == null || frames.frameCount == 0) return motionBands
+        projectMotionWithin(frameFraction)
+        return projectedMotion
+    }
+
+    /** Reads the fast bass followers between measured frames without integrating fog angles. */
+    fun readBassPressureAt(frameFraction: Float): Float {
+        if (lastFrameIndex == null || frames.frameCount == 0) return bassPressure
+        projectMotionWithin(frameFraction)
+        val next = bassMean(projectedMotion)
+        if (next.changedFrom(bassPressure)) {
+            bassPressure = next
+            revision += 1
+        }
+        return bassPressure
+    }
+
+    private fun projectMotionWithin(frameFraction: Float) {
+        val currentIndex = checkNotNull(lastFrameIndex)
+        val nextIndex = frames.clampFrameIndex(currentIndex + 1)
+        targets.indices.forEach { band ->
+            targets[band] = Lookahead.target(frames, nextIndex, band)
+        }
+        motionEnvelopes.projectInto(projectedMotion, targets, frameFraction)
     }
 
     /**
@@ -97,9 +149,11 @@ class SceneState(
     fun wanderTo(totalSeconds: Float, elapsedSeconds: Float) {
         val mix = wanderMix(totalSeconds)
         val oldFogLevel = fogLevel
+        val oldBassPressure = bassPressure
         fogLevel = (WANDER_CENTRE + WANDER_SWING * mix).coerceIn(0f, 1f)
+        bassPressure = 0f
         advanceFogBy(elapsedSeconds * (1f + WANDER_SPEED_SWING * mix))
-        if (fogLevel.changedFrom(oldFogLevel)) {
+        if (fogLevel.changedFrom(oldFogLevel) || bassPressure.changedFrom(oldBassPressure)) {
             revision += 1
         }
     }
@@ -120,6 +174,14 @@ class SceneState(
         }
     }
 
+    /** Advances the artwork disc from unscaled wall time, independent of fog energy. */
+    fun advanceShimmerBy(elapsedSeconds: Double) {
+        if (elapsedSeconds <= 0.0) return
+        val previous = shimmerElapsedSeconds
+        shimmerElapsedSeconds = (shimmerElapsedSeconds + elapsedSeconds) % SHIMMER_TURN_SECONDS
+        if (shimmerElapsedSeconds != previous) revision += 1
+    }
+
     private fun step(frameIndex: Int) {
         readRaw(frameIndex)
         targets.indices.forEach { band ->
@@ -128,15 +190,18 @@ class SceneState(
         val fogChanged = fogEnvelopes.step(targets)
         val motionChanged = motionEnvelopes.step(targets)
         val oldFogLevel = fogLevel
+        val oldBassPressure = bassPressure
         val oldMotionLevel = motionLevel
         val oldAngleA = fogAngleA
         val oldAngleB = fogAngleB
         fogLevel = mean(fogBands).coerceIn(0f, 1f)
+        bassPressure = bassMean(motionBands)
         motionLevel = mean(motionBands)
         fogAngleA = EnergyIntegrator.advance(fogAngleA, motionLevel, FOG_FACTOR_A)
         fogAngleB = EnergyIntegrator.advance(fogAngleB, motionLevel, FOG_FACTOR_B)
         if (
             fogChanged || motionChanged || fogLevel.changedFrom(oldFogLevel) ||
+            bassPressure.changedFrom(oldBassPressure) ||
             motionLevel.changedFrom(oldMotionLevel) ||
             fogAngleA.changedFrom(oldAngleA) || fogAngleB.changedFrom(oldAngleB)
         ) {
@@ -152,6 +217,14 @@ class SceneState(
 
     private fun mean(values: FloatArray): Float =
         if (values.isEmpty()) 0f else values.sum() / values.size
+
+    private fun bassMean(values: FloatArray): Float {
+        val count = values.size.coerceAtMost(BASS_BAND_COUNT)
+        if (count == 0) return 0f
+        var total = 0f
+        repeat(count) { band -> total += values[band] }
+        return (total / count).coerceIn(0f, 1f)
+    }
 
     private fun Float.changedFrom(previous: Float): Boolean = toRawBits() != previous.toRawBits()
 
@@ -170,11 +243,13 @@ class SceneState(
          */
         const val CATCH_UP_FRAMES = 1_200
         const val SEEK_FRAMES = 20
+        private const val BASS_BAND_COUNT = 7
         const val FOG_FACTOR_A = 0.9f
         const val FOG_FACTOR_B = -0.6f
         const val FOG_BASE_DEGREES_PER_SECOND = 360f / (4f * 60f)
         const val FOG_BASE_DEGREES_PER_SECOND_B =
             FOG_BASE_DEGREES_PER_SECOND * FOG_FACTOR_B / FOG_FACTOR_A
+        private const val SHIMMER_TURN_SECONDS = 60.0
 
         /** The unanalysed wander: centre density, how far it swings, how much it hurries. */
         const val WANDER_CENTRE = 0.42f

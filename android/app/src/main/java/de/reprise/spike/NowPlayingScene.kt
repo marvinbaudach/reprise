@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +52,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
+import de.reprise.spike.ui.theme.AmbientTrueBlack
+import de.reprise.spike.ui.theme.NowPlayingOnBackdrop
+import de.reprise.spike.ui.theme.toComposeColor
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import kotlin.math.roundToInt
@@ -67,6 +72,8 @@ internal fun NowPlayingScene(
     horizontalOffsetPx: Float = 0f,
     previousTrack: LibraryTrack? = null,
     nextTrack: LibraryTrack? = null,
+    visualizerOpacity: Float = 0f,
+    onCoverBounds: (Rect) -> Unit = {},
 ) {
     val frames = rememberSpectrogram(track.id)
     val state = remember(frames) { SceneState(frames) }
@@ -92,24 +99,51 @@ internal fun NowPlayingScene(
             neighbour.artist,
         )
     }
-    val fog = rememberCoverFogTransition(artwork?.image, Color.Black)
+    val fog = rememberCoverFogTransition(artwork?.image, AmbientTrueBlack)
     val coverShadow = rememberCoverShadowBitmap()
     val motion = LocalAmbientMotionController.current
+    val fallbackAccent = MaterialTheme.colorScheme.primary
+    val visualEngine = rememberVisualSceneEngine(
+        enabled = visualizerOpacity > 0f,
+        trackId = track.id,
+        playing = playback.isPlaying,
+        accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
+    )
+    val visualFrameSink = remember(visualEngine) {
+        visualEngine?.let { engine ->
+            SceneFrameSink { bands ->
+                if (bands != null) engine.ingestBands(bands)
+                engine.tick()
+            }
+        }
+    }
     val drawRevision = DriveScene(
         frames = frames,
         state = state,
         playback = playback,
         controller = motion,
+        frameSink = visualFrameSink,
     )
     val power = motion.sceneRenderPower()
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(AmbientTrueBlack)
             .testTag("now-playing-player"),
     ) {
+        val density = LocalDensity.current
         val coverTop = maxHeight * PLAYED_CENTRE_FRACTION - (COVER_SIZE_DP / 2).dp
+        val reportedCoverBounds = with(density) {
+            playedCoverRect(
+                center = Offset(
+                    maxWidth.toPx() / 2f + horizontalOffsetPx,
+                    maxHeight.toPx() * PLAYED_CENTRE_FRACTION,
+                ),
+                side = COVER_SIZE_DP.dp.toPx(),
+            )
+        }
+        SideEffect { onCoverBounds(reportedCoverBounds) }
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -118,7 +152,7 @@ internal fun NowPlayingScene(
             // Capturing the frame counter is what makes Compose re-run this lambda once
             // per scene frame; the value itself has nothing to contribute to the drawing.
             observeSceneFrame(drawRevision)
-            drawRect(Color.Black)
+            drawRect(AmbientTrueBlack)
             val playedCenter = Offset(
                 size.width / 2f + horizontalOffsetPx,
                 size.height * PLAYED_CENTRE_FRACTION,
@@ -126,6 +160,8 @@ internal fun NowPlayingScene(
             val fogCenter = playedCenter.copy(
                 x = size.width / 2f + horizontalOffsetPx * FOG_SWIPE_DISTANCE_FACTOR,
             )
+            // The cover and spectrum share their artwork colour, so the screen-level fog
+            // stays live through the visualizer cross-fade instead of being pinned to rest.
             drawPlayedNowPlayingFog(
                 fog = fog.previous,
                 center = fogCenter,
@@ -140,12 +176,26 @@ internal fun NowPlayingScene(
                 opacity = fog.fraction,
                 rotationsEnabled = power.fogRotates,
             )
+            drawPlayedNowPlayingShimmer(
+                fog = fog.previous,
+                center = fogCenter,
+                state = state,
+                opacity = 1f - fog.fraction,
+                rotationsEnabled = power.fogRotates,
+            )
+            drawPlayedNowPlayingShimmer(
+                fog = fog.current,
+                center = fogCenter,
+                state = state,
+                opacity = fog.fraction,
+                rotationsEnabled = power.fogRotates,
+            )
             if (horizontalOffsetPx > 0f) {
                 previousArtwork?.image?.let { neighbour ->
                     drawPlayedCover(
                         artwork = neighbour,
                         center = playedCenter.copy(x = playedCenter.x - size.width),
-                        fallback = Color.Black,
+                        fallback = AmbientTrueBlack,
                         shadow = coverShadow,
                     )
                 }
@@ -154,7 +204,7 @@ internal fun NowPlayingScene(
                     drawPlayedCover(
                         artwork = neighbour,
                         center = playedCenter.copy(x = playedCenter.x + size.width),
-                        fallback = Color.Black,
+                        fallback = AmbientTrueBlack,
                         shadow = coverShadow,
                     )
                 }
@@ -162,9 +212,21 @@ internal fun NowPlayingScene(
             drawPlayedCover(
                 artwork = artwork?.image,
                 center = playedCenter,
-                fallback = Color.Black,
+                fallback = AmbientTrueBlack,
                 shadow = coverShadow,
+                opacity = 1f - visualizerOpacity,
             )
+            if (visualEngine != null) {
+                drawPlayedVisualizer(
+                    buffer = visualEngine.scene(
+                        width = COVER_SIZE_DP.dp.toPx(),
+                        height = COVER_SIZE_DP.dp.toPx(),
+                    ),
+                    center = playedCenter,
+                    shadow = null,
+                    opacity = visualizerOpacity,
+                )
+            }
         }
 
         Box(
@@ -209,6 +271,29 @@ internal fun NowPlayingScene(
     }
 }
 
+@Composable
+private fun rememberVisualSceneEngine(
+    enabled: Boolean,
+    trackId: Long,
+    playing: Boolean,
+    accent: Color,
+): VisualSceneEngine? {
+    val factory = LocalVisualSceneEngineFactory.current
+    val engine = remember(factory, enabled) { if (enabled) factory.create() else null }
+    DisposableEffect(engine) {
+        onDispose { engine?.close() }
+    }
+    DisposableEffect(engine, trackId) {
+        engine?.noteTrackChanged()
+        onDispose { }
+    }
+    SideEffect {
+        engine?.setPlaying(playing)
+        engine?.setAccent(accent.red, accent.green, accent.blue)
+    }
+    return engine
+}
+
 /** The played-view wiring kept shared with its rendered-pixel verification. */
 internal fun DrawScope.drawPlayedNowPlayingFog(
     fog: CoverFogBitmap?,
@@ -223,6 +308,27 @@ internal fun DrawScope.drawPlayedNowPlayingFog(
         angleA = state.fogAngleA,
         angleB = state.fogAngleB,
         fogLevel = state.fogLevel,
+        bassPressure = state.bassPressure,
+        opacity = opacity,
+        rotationsEnabled = rotationsEnabled,
+    )
+}
+
+/** The cover-disc wiring shared with its deterministic renderer tests. */
+internal fun DrawScope.drawPlayedNowPlayingShimmer(
+    fog: CoverFogBitmap?,
+    center: Offset,
+    state: SceneState,
+    opacity: Float,
+    rotationsEnabled: Boolean,
+) {
+    drawNowPlayingShimmer(
+        fog = fog,
+        center = center,
+        coverDiameterDp = COVER_SIZE_DP.toFloat(),
+        elapsedSeconds = state.shimmerElapsedSeconds,
+        swell = state.fogLevel,
+        bassPressure = state.bassPressure,
         opacity = opacity,
         rotationsEnabled = rotationsEnabled,
     )
@@ -258,7 +364,12 @@ private fun PlayedHeader(
     ) {
         Spacer(Modifier.weight(1f))
         SleepTimerControl(playback.sleepTimer)
-        FavouriteHeartButton(track, surfaceState, tag = "now-playing-heart")
+        FavouriteHeartButton(
+            track,
+            surfaceState,
+            tag = "now-playing-heart",
+            enabled = LocalNowPlayingActionsEnabled.current,
+        )
         // The fullscreen visualizer this row used to open is retired, so the
         // context menu takes the slot rather than sitting next to it.
         NowPlayingTrackContextMenu(track)
@@ -289,7 +400,7 @@ private fun SceneTitle(
                 lineHeight = 29.sp,
                 fontWeight = FontWeight.SemiBold,
             ),
-            color = Color.White,
+            color = NowPlayingOnBackdrop,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -298,7 +409,7 @@ private fun SceneTitle(
         Text(
             text = track.artist.ifBlank { "Unknown artist" },
             style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Light),
-            color = Color.White.copy(alpha = 0.62f),
+            color = NowPlayingOnBackdrop.copy(alpha = 0.62f),
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -381,7 +492,7 @@ private fun FlatSceneButton(
             tint = if (active) {
                 MaterialTheme.colorScheme.onSecondaryContainer
             } else {
-                Color.White
+                NowPlayingOnBackdrop
             },
         )
     }
@@ -404,7 +515,7 @@ private fun ScenePauseButton(
         MaterialSymbol(
             name = if (playback.isPlaying) "pause" else "play_arrow",
             contentDescription = playback.playPauseLabel,
-            tint = Color.White,
+            tint = NowPlayingOnBackdrop,
             sizeSp = 40,
         )
     }
@@ -415,29 +526,62 @@ internal fun DrawScope.drawPlayedCover(
     center: Offset,
     fallback: Color,
     shadow: CoverShadowBitmap?,
+    opacity: Float = 1f,
 ) {
     val side = COVER_SIZE_DP.dp.toPx()
-    val rect = Rect(
-        center.x - side / 2f,
-        center.y - side / 2f,
-        center.x + side / 2f,
-        center.y + side / 2f,
-    )
+    val rect = playedCoverRect(center, side)
     val radius = COVER_RADIUS_DP.dp.toPx()
     shadow?.let { drawCoverShadow(it, rect) }
+    if (opacity <= 0f) return
+    val safeOpacity = opacity.coerceIn(0f, 1f)
     val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
     clipPath(path) {
         if (artwork == null) {
-            drawRect(fallback, topLeft = rect.topLeft, size = rect.size)
+            drawRect(
+                color = fallback.copy(alpha = fallback.alpha * safeOpacity),
+                topLeft = rect.topLeft,
+                size = rect.size,
+            )
         } else {
             drawImage(
                 image = artwork,
                 dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
                 dstSize = IntSize(side.roundToInt(), side.roundToInt()),
+                alpha = safeOpacity,
             )
         }
     }
 }
+
+internal fun DrawScope.drawPlayedVisualizer(
+    buffer: List<Float>,
+    center: Offset,
+    shadow: CoverShadowBitmap?,
+    opacity: Float = 1f,
+) {
+    val side = COVER_SIZE_DP.dp.toPx()
+    val rect = playedCoverRect(center, side)
+    val radius = COVER_RADIUS_DP.dp.toPx()
+    shadow?.let { drawCoverShadow(it, rect) }
+    if (opacity <= 0f) return
+    val safeOpacity = opacity.coerceIn(0f, 1f)
+    val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
+    clipPath(path) {
+        drawRect(
+            AmbientTrueBlack.copy(alpha = safeOpacity),
+            topLeft = rect.topLeft,
+            size = rect.size,
+        )
+        drawVisualizerScene(buffer = buffer, bounds = rect, opacity = safeOpacity)
+    }
+}
+
+internal fun playedCoverRect(center: Offset, side: Float): Rect = Rect(
+    center.x - side / 2f,
+    center.y - side / 2f,
+    center.x + side / 2f,
+    center.y + side / 2f,
+)
 
 /** Keeps the frame counter captured by the scene's draw lambda; the value is not drawn. */
 private fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit

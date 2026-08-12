@@ -35,7 +35,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nr_25_releases_empty_state_matrix_has_one_next_step() {
+    fn fil_6_releases_empty_state_matrix_has_one_next_step() {
         assert_eq!(
             releases_empty_state_for(1, false, true),
             ReleasesEmptyState::List
@@ -55,7 +55,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_25_gaps_beyond_the_window_offer_show_all() {
+    fn nr_33_gaps_beyond_the_window_offer_show_all() {
         let filter = ReleasesFilter::default();
         assert!(releases_scope_is_filtered(&filter, ""));
         assert_eq!(
