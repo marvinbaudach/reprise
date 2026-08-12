@@ -53,6 +53,10 @@ reset_surface_baseline() {
   if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
     return 0
   fi
+  reset_surface_clear_filters "$pid" "$window_id" "$stem" || true
+  if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
+    return 0
+  fi
   local attempt
   for attempt in 1 2 3 4; do
     cua_hotkey "$pid" "$window_id" "$stem-reset-back-$attempt" alt left || return 1
@@ -61,9 +65,33 @@ reset_surface_baseline() {
     fi
   done
 
+  reset_surface_clear_filters "$pid" "$window_id" "$stem" || true
+  if reset_surface_is_at_baseline "$pid" "$window_id" "$stem"; then
+    return 0
+  fi
+
   echo "reset before '$stem' did not restore the TrackList baseline; the previous" >&2
   echo "surface left state behind that this scenario cannot run against" >&2
+  echo "[cua-keyboard] reset before '$stem' failed; evidence: $CUA_E2E_OUT_DIR/$stem-reset-state.json"
   return 1
+}
+
+reset_surface_clear_filters() {
+  local pid=$1 window_id=$2 stem=$3 state_path
+
+  state_path=$(cua_snapshot "$pid" "$window_id" "$stem-reset-filters") || return 1
+  if ! snapshot_exposes_label "$state_path" "Clear all ×"; then
+    return 0
+  fi
+
+  # Escape keeps the query by design since SEARCH-4a, while Alt+Left is a
+  # navigation action. The visible Clear all control drops search and filter
+  # chips together, so reach it by keyboard and activate it with Enter.
+  cua_focus_label_via_tab \
+    "$pid" "$window_id" "Clear all ×" "$stem-reset-clear-focus" >/dev/null \
+    || return 1
+  cua_press_key_focused \
+    "$pid" "$window_id" enter "$stem-reset-clear-activate"
 }
 
 reset_surface_is_at_baseline() {
