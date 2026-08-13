@@ -410,9 +410,9 @@ fn src_11_channel_header_stays_on_the_fallback_when_images_are_not_allowed() {
         .build_header(&rendered)
         .downcast::<gtk4::Box>()
         .unwrap();
-    let artwork = header
-        .first_child()
-        .and_then(|back| back.next_sibling())
+    let artwork = descendants(header.upcast_ref())
+        .into_iter()
+        .find(|widget| widget.has_css_class("reprise-source-image"))
         .and_downcast::<gtk4::Stack>()
         .expect("source image stack");
     assert_eq!(artwork.visible_child_name().as_deref(), Some("fallback"));
