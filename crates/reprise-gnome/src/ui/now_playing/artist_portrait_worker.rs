@@ -123,6 +123,10 @@ impl ArtistPortraitRuntime {
             let Some((name, still_visible, on_ready)) = next else {
                 return;
             };
+            if !self.is_enabled() {
+                on_ready(None);
+                continue;
+            }
             if !still_visible() {
                 on_ready(None);
                 continue;
@@ -222,5 +226,37 @@ mod tests {
 
         assert_eq!(resolver_calls.load(Ordering::SeqCst), 0);
         assert_eq!(&*result.borrow(), &[None]);
+    }
+
+    #[test]
+    fn stats_23_disabling_portraits_drains_the_queue_without_resolving() {
+        let resolver_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let runtime = ArtistPortraitRuntime::for_test(true, {
+            let resolver_calls = resolver_calls.clone();
+            move |_| {
+                resolver_calls.fetch_add(1, Ordering::SeqCst);
+                None
+            }
+        });
+        runtime.in_flight.set(MAX_IN_FLIGHT);
+        let result = Rc::new(RefCell::new(Vec::new()));
+
+        for artist in ["Former leader", "Former runner-up"] {
+            runtime.request(artist.to_string(), {
+                let result = result.clone();
+                move |path| result.borrow_mut().push(path)
+            });
+        }
+        assert_eq!(runtime.queue.borrow().len(), 2);
+
+        runtime.worker_enabled.store(false, Ordering::Relaxed);
+        runtime.enabled.set(false);
+        runtime.in_flight.set(0);
+        runtime.pump();
+
+        assert_eq!(resolver_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(runtime.in_flight.get(), 0);
+        assert!(runtime.queue.borrow().is_empty());
+        assert_eq!(&*result.borrow(), &[None, None]);
     }
 }
