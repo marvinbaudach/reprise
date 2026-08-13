@@ -476,6 +476,7 @@ impl YoutubeChannelDetail {
             "video-x-generic-symbolic",
             48,
             self.images_allowed.get(),
+            reprise_core::remote_image::CacheScope::Persistent,
         );
         row.append(image.widget());
         let source = source_header(

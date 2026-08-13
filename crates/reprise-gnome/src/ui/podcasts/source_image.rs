@@ -15,36 +15,31 @@
 //!
 //! The background artwork workers do not simply reuse the `images_allowed`
 //! value a caller passed when a task was queued: that value can go stale if
-//! the gate is switched off while the task is still sitting in the queue
-//! (queue depth up to [`ARTWORK_QUEUE_LIMIT`], drained by only
-//! [`ARTWORK_WORKERS`] threads). Instead every fresh value is published to
+//! the gate is switched off while the task is still sitting in the queue.
+//! Instead every fresh value is published to
 //! [`GATE_OPEN`], and the worker re-reads it immediately before calling
 //! `resolve` — see that constant's doc comment for why this shape was chosen
 //! over a per-task snapshot or a DB read from the worker thread.
 
-use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
+use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
 
 use gtk4::prelude::*;
 use reprise_core::db::Db;
-use reprise_core::remote_image::ImageOutcome;
+use reprise_core::remote_image::CacheScope;
 
 #[path = "source_artwork_queue.rs"]
 mod source_artwork_queue;
 #[path = "source_image_fallback.rs"]
 mod source_image_fallback;
+#[path = "source_image_texture.rs"]
+mod source_image_texture;
 
-const CACHE_LIMIT: usize = 128;
-const ARTWORK_QUEUE_LIMIT: usize = 64;
-const ARTWORK_WORKERS: usize = 4;
-
-thread_local! {
-    static TEXTURE_CACHE: RefCell<VecDeque<(String, i32, i32, gtk4::gdk::Texture)>> =
-        const { RefCell::new(VecDeque::new()) };
-}
+pub(super) use source_image_texture::remember_texture;
+use source_image_texture::{
+    cached_texture, cached_texture_at_any_size, decode_pixels, memory_texture, DecodedPixels,
+};
 
 /// The most recently observed `images_allowed` gate state, shared across the
 /// worker threads below.
@@ -63,13 +58,15 @@ thread_local! {
 /// task happened to capture when it was built. A task queued while the gate
 /// was open therefore still gets refused if the gate has since closed.
 ///
-/// The worker queue stays bounded. If it is full, the GTK thread keeps the
-/// request in an asynchronous send until capacity frees instead of blocking
-/// or discarding the visible row's only attempt.
+/// The worker queue is unbounded and coalesces matching in-flight URLs, so
+/// rendering a large source cannot discard a visible row's only attempt.
 ///
 /// Starts `false` so a failed/unknown gate state (nothing has published a
 /// value yet) counts as not-allowed, per `NET-1a`.
 static GATE_OPEN: AtomicBool = AtomicBool::new(false);
+
+#[cfg(test)]
+static GATE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Clone, Copy)]
 pub(crate) enum StartupTiming {
@@ -77,13 +74,85 @@ pub(crate) enum StartupTiming {
     AfterQuiet,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ArtworkRequest<'a> {
+    primary_url: Option<&'a str>,
+    fallback_url: Option<&'a str>,
+    dimensions: (i32, i32),
+    images_allowed: bool,
+    cache_scope: CacheScope,
+    startup_timing: StartupTiming,
+}
+
+impl<'a> ArtworkRequest<'a> {
+    pub(crate) fn new(
+        primary_url: Option<&'a str>,
+        fallback_url: Option<&'a str>,
+        dimensions: (i32, i32),
+        images_allowed: bool,
+        cache_scope: CacheScope,
+        startup_timing: StartupTiming,
+    ) -> Self {
+        Self {
+            primary_url,
+            fallback_url,
+            dimensions,
+            images_allowed,
+            cache_scope,
+            startup_timing,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtworkStage {
+    Fallback,
+    Primary,
+}
+
+fn artwork_chain(
+    primary_url: Option<&str>,
+    fallback_url: Option<&str>,
+) -> Vec<(ArtworkStage, String)> {
+    let primary = primary_url.and_then(validated_url);
+    let fallback = fallback_url
+        .and_then(validated_url)
+        .filter(|fallback| Some(fallback) != primary.as_ref());
+    let mut chain = Vec::with_capacity(2);
+    if let Some(fallback) = fallback {
+        chain.push((ArtworkStage::Fallback, fallback));
+    }
+    if let Some(primary) = primary {
+        chain.push((ArtworkStage::Primary, primary));
+    }
+    chain
+}
+
+fn may_publish_artwork(
+    stage: ArtworkStage,
+    generation: u64,
+    current: &Cell<u64>,
+    primary_visible: &Cell<bool>,
+) -> bool {
+    if current.get() != generation {
+        return false;
+    }
+    match stage {
+        ArtworkStage::Fallback => !primary_visible.get(),
+        ArtworkStage::Primary => {
+            primary_visible.set(true);
+            true
+        }
+    }
+}
+
 /// `NET-1a` / `SET-4`: re-publishes the gate from settings when the setting
 /// itself changes, rather than waiting for the next queued image.
 ///
-/// Publishing only from `queue_artwork` is not enough on its own: it makes the
+/// Publishing only from the artwork queue is not enough on its own: it makes the
 /// flag depend on somebody rendering another uncached image. Switch the gate
 /// off from Preferences — a page that shows no source artwork at all — while a
-/// full queue is still draining, and nothing would call `queue_artwork`, so the
+/// queue is still draining, and nothing would submit more artwork, so the
 /// stale `true` would survive and the queued tasks would keep fetching. That is
 /// exactly the leak the atomic exists to close, one step removed.
 ///
@@ -116,14 +185,18 @@ impl SourceImage {
         fallback_icon: &str,
         size: i32,
         images_allowed: bool,
+        cache_scope: CacheScope,
     ) -> SourceImage {
         Self::new_with_dimensions(
-            image_url,
+            ArtworkRequest::new(
+                image_url,
+                None,
+                (size, size),
+                images_allowed,
+                cache_scope,
+                StartupTiming::Immediate,
+            ),
             fallback_icon,
-            size,
-            size,
-            images_allowed,
-            StartupTiming::Immediate,
         )
     }
 
@@ -137,54 +210,31 @@ impl SourceImage {
     /// would take a queue slot and a worker, and both would ask the same
     /// third-party host for the same image. One load, two consumers.
     pub(crate) fn new_observed(
-        image_url: Option<&str>,
+        request: ArtworkRequest<'_>,
         fallback_icon: &str,
-        size: i32,
-        images_allowed: bool,
-        defer_for_startup: bool,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) -> SourceImage {
+        let (width, height) = request.dimensions;
         let image = Self::build(
             source_image_fallback::Fallback::Icon(fallback_icon),
-            size,
-            size,
+            width,
+            height,
         );
-        image.set_url(
-            image_url,
-            size,
-            size,
-            images_allowed,
-            if defer_for_startup {
-                StartupTiming::AfterQuiet
-            } else {
-                StartupTiming::Immediate
-            },
-            on_texture,
-        );
+        image.set_urls(request, on_texture);
         image
     }
 
     pub(crate) fn new_with_dimensions(
-        image_url: Option<&str>,
+        request: ArtworkRequest<'_>,
         fallback_icon: &str,
-        width: i32,
-        height: i32,
-        images_allowed: bool,
-        startup_timing: StartupTiming,
     ) -> SourceImage {
+        let (width, height) = request.dimensions;
         let image = Self::build(
             source_image_fallback::Fallback::Icon(fallback_icon),
             width,
             height,
         );
-        image.set_url(
-            image_url,
-            width,
-            height,
-            images_allowed,
-            startup_timing,
-            |_| {},
-        );
+        image.set_urls(request, |_| {});
         image
     }
 
@@ -240,13 +290,9 @@ impl SourceImage {
         &self.root
     }
 
-    fn set_url(
+    fn set_urls(
         &self,
-        image_url: Option<&str>,
-        width: i32,
-        height: i32,
-        images_allowed: bool,
-        startup_timing: StartupTiming,
+        request: ArtworkRequest<'_>,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) {
         let generation = self.generation.get().wrapping_add(1);
@@ -255,28 +301,47 @@ impl SourceImage {
         self.artwork.set_paintable(gtk4::gdk::Paintable::NONE);
         let weak_root = self.root.downgrade();
         let weak_artwork = self.artwork.downgrade();
-        load_texture(
-            image_url,
-            (width, height),
-            images_allowed,
-            startup_timing,
-            generation,
-            &self.generation,
-            move |texture| {
-                // The observer runs even if the widget itself is already gone:
-                // it feeds a different surface, whose own generation check
-                // decides whether the texture is still wanted.
-                on_texture(&texture);
-                let Some(root) = weak_root.upgrade() else {
-                    return;
-                };
-                let Some(artwork) = weak_artwork.upgrade() else {
-                    return;
-                };
-                artwork.set_paintable(Some(&texture));
-                root.set_visible_child(&artwork);
-            },
-        );
+        load_texture_chain(request, generation, &self.generation, move |texture| {
+            // The observer runs even if the widget itself is already gone:
+            // it feeds a different surface, whose own generation check
+            // decides whether the texture is still wanted.
+            on_texture(&texture);
+            let Some(root) = weak_root.upgrade() else {
+                return;
+            };
+            let Some(artwork) = weak_artwork.upgrade() else {
+                return;
+            };
+            artwork.set_paintable(Some(&texture));
+            root.set_visible_child(&artwork);
+        });
+    }
+}
+
+fn load_texture_chain(
+    request: ArtworkRequest<'_>,
+    generation: u64,
+    current: &Rc<Cell<u64>>,
+    on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
+) {
+    let primary_visible = Rc::new(Cell::new(false));
+    let on_ready: Rc<dyn Fn(gtk4::gdk::Texture)> = Rc::new(on_ready);
+    for (stage, url) in artwork_chain(request.primary_url, request.fallback_url) {
+        let primary_visible = primary_visible.clone();
+        let current_for_callback = current.clone();
+        let on_ready = on_ready.clone();
+        if stage == ArtworkStage::Fallback {
+            if let Some(texture) = cached_texture_at_any_size(&url, request.cache_scope) {
+                if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
+                    on_ready(texture);
+                }
+            }
+        }
+        load_texture(Some(&url), request, generation, current, move |texture| {
+            if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
+                on_ready(texture);
+            }
+        });
     }
 }
 
@@ -284,21 +349,19 @@ impl SourceImage {
 /// hands the finished texture to a generation-safe caller.
 fn load_texture(
     image_url: Option<&str>,
-    dimensions: (i32, i32),
-    images_allowed: bool,
-    startup_timing: StartupTiming,
+    request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
     on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
 ) {
-    let (width, height) = dimensions;
+    let (width, height) = request.dimensions;
     if current.get() != generation {
         return;
     }
     let Some(url) = image_url.and_then(validated_url) else {
         return;
     };
-    if let Some(texture) = cached_texture(&url, width, height) {
+    if let Some(texture) = cached_texture(&url, width, height, request.cache_scope) {
         on_ready(texture);
         return;
     }
@@ -308,16 +371,13 @@ fn load_texture(
     // Publish at registration time, before the startup gate can delay this
     // task. A later Preferences change can therefore close `GATE_OPEN` while
     // the task waits, and the worker's fetch-time read below remains final.
-    GATE_OPEN.store(images_allowed, Ordering::Relaxed);
+    GATE_OPEN.store(request.images_allowed, Ordering::Relaxed);
     let current = current.clone();
     let start = move || {
         if current.get() != generation {
             return;
         }
-        let Some(receiver) = queue_artwork(url.clone(), width, height) else {
-            tracing::warn!(%url, "source artwork worker queue is unavailable");
-            return;
-        };
+        let receiver = source_artwork_queue::queue(url.clone(), width, height, request.cache_scope);
         gtk4::glib::spawn_future_local(async move {
             let pixels = match receiver.recv().await {
                 Ok(Some(pixels)) => pixels,
@@ -333,11 +393,11 @@ fn load_texture(
                 return;
             }
             let texture = memory_texture(pixels);
-            remember_texture(url, width, height, texture.clone());
+            remember_texture(url, width, height, request.cache_scope, texture.clone());
             on_ready(texture);
         });
     };
-    match startup_timing {
+    match request.startup_timing {
         StartupTiming::Immediate => start(),
         StartupTiming::AfterQuiet => crate::ui::startup_quiet::run_after_quiet(start),
     }
@@ -348,10 +408,7 @@ fn load_texture(
 /// invalidates any older decode before it can repaint the player bar.
 pub(crate) fn load_into_image(
     image: &gtk4::Image,
-    image_url: Option<&str>,
-    dimensions: (i32, i32),
-    images_allowed: bool,
-    defer_for_startup: bool,
+    request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
 ) {
@@ -360,176 +417,11 @@ pub(crate) fn load_into_image(
     }
     crate::ui::cover_loader::CoverLoader::set_placeholder(image);
     let weak_image = image.downgrade();
-    load_texture(
-        image_url,
-        dimensions,
-        images_allowed,
-        if defer_for_startup {
-            StartupTiming::AfterQuiet
-        } else {
-            StartupTiming::Immediate
-        },
-        generation,
-        current,
-        move |texture| {
-            let Some(image) = weak_image.upgrade() else {
-                return;
-            };
-            image.set_paintable(Some(&texture));
-        },
-    );
-}
-
-struct ArtworkTask {
-    url: String,
-    width: i32,
-    height: i32,
-    response: async_channel::Sender<Option<DecodedPixels>>,
-}
-
-struct DecodedPixels {
-    bytes: Vec<u8>,
-    width: i32,
-    height: i32,
-    rowstride: usize,
-    has_alpha: bool,
-}
-
-/// Runs one queued task against the CURRENT gate state — read via
-/// [`GATE_OPEN`] at the moment of the call, not any value the caller might
-/// have captured earlier — and against the on-disk cache, which is always
-/// consulted regardless of the gate (`SRC-11`). `fetch` is injected so tests
-/// can exercise this without ever making a real network request.
-fn process_task(task: &ArtworkTask, fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>) {
-    let allowed = GATE_OPEN.load(Ordering::Relaxed);
-    let outcome = reprise_core::remote_image::resolve(Some(&task.url), allowed, fetch);
-    let pixels = match outcome {
-        ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => {
-            match decode_pixels(&path, task.width, task.height) {
-                Ok(pixels) => Some(pixels),
-                Err(error) => {
-                    tracing::debug!(
-                        %error,
-                        url = %task.url,
-                        path = %path.display(),
-                        "source artwork could not be decoded"
-                    );
-                    None
-                }
-            }
-        }
-        ImageOutcome::NotAllowed | ImageOutcome::NoUrl | ImageOutcome::FetchFailed => None,
-    };
-    let _ = task.response.send_blocking(pixels);
-}
-
-fn queue_artwork(
-    url: String,
-    width: i32,
-    height: i32,
-) -> Option<async_channel::Receiver<Option<DecodedPixels>>> {
-    static QUEUE: OnceLock<async_channel::Sender<ArtworkTask>> = OnceLock::new();
-    let queue = QUEUE.get_or_init(|| {
-        let (sender, receiver) = async_channel::bounded::<ArtworkTask>(ARTWORK_QUEUE_LIMIT);
-        for index in 0..ARTWORK_WORKERS {
-            let receiver = receiver.clone();
-            if let Err(error) = std::thread::Builder::new()
-                .name(format!("reprise-source-artwork-{index}"))
-                .spawn(move || {
-                    while let Ok(task) = receiver.recv_blocking() {
-                        process_task(&task, &mut |url| {
-                            reprise_core::podcasts::source_artwork::fetch(url)
-                                .map_err(|error| error.to_string())
-                        });
-                    }
-                })
-            {
-                tracing::warn!(%error, "could not start source artwork worker");
-            }
-        }
-        sender
-    });
-    let (response, receiver) = async_channel::bounded(1);
-    source_artwork_queue::submit(
-        queue.clone(),
-        ArtworkTask {
-            url: url.clone(),
-            width,
-            height,
-            response,
-        },
-        url,
-    )
-    .then_some(())?;
-    Some(receiver)
-}
-
-fn decode_pixels(
-    path: &std::path::Path,
-    width: i32,
-    height: i32,
-) -> Result<DecodedPixels, gtk4::glib::Error> {
-    let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(
-        path,
-        width.saturating_mul(2),
-        height.saturating_mul(2),
-        true,
-    )?;
-    let bytes = pixbuf.read_pixel_bytes();
-    Ok(DecodedPixels {
-        bytes: bytes.as_ref().to_vec(),
-        width: pixbuf.width(),
-        height: pixbuf.height(),
-        rowstride: pixbuf.rowstride() as usize,
-        has_alpha: pixbuf.has_alpha(),
-    })
-}
-
-fn memory_texture(pixels: DecodedPixels) -> gtk4::gdk::Texture {
-    let format = if pixels.has_alpha {
-        gtk4::gdk::MemoryFormat::R8g8b8a8
-    } else {
-        gtk4::gdk::MemoryFormat::R8g8b8
-    };
-    let bytes = gtk4::glib::Bytes::from_owned(pixels.bytes);
-    gtk4::gdk::MemoryTexture::new(
-        pixels.width,
-        pixels.height,
-        format,
-        &bytes,
-        pixels.rowstride,
-    )
-    .upcast()
-}
-
-fn cached_texture(url: &str, width: i32, height: i32) -> Option<gtk4::gdk::Texture> {
-    TEXTURE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let index = cache
-            .iter()
-            .position(|(cached, cached_width, cached_height, _)| {
-                cached == url && *cached_width == width && *cached_height == height
-            })?;
-        let entry = cache.remove(index)?;
-        let texture = entry.3.clone();
-        cache.push_front(entry);
-        Some(texture)
-    })
-}
-
-pub(super) fn remember_texture(url: String, width: i32, height: i32, texture: gtk4::gdk::Texture) {
-    TEXTURE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some(index) = cache
-            .iter()
-            .position(|(cached, cached_width, cached_height, _)| {
-                cached == &url && *cached_width == width && *cached_height == height
-            })
-        {
-            cache.remove(index);
-        }
-        cache.push_front((url, width, height, texture));
-        cache.truncate(CACHE_LIMIT);
+    load_texture_chain(request, generation, current, move |texture| {
+        let Some(image) = weak_image.upgrade() else {
+            return;
+        };
+        image.set_paintable(Some(&texture));
     });
 }
 
@@ -539,10 +431,6 @@ fn validated_url(value: &str) -> Option<String> {
     let valid_scheme = matches!(uri.scheme().as_str(), "http" | "https");
     (valid_scheme && uri.host().is_some()).then(|| value.to_owned())
 }
-
-#[cfg(test)]
-#[path = "source_image_worker_tests.rs"]
-mod worker_tests;
 
 #[cfg(test)]
 mod tests {
@@ -576,55 +464,113 @@ mod tests {
         assert_eq!(super::validated_url("not a URL"), None);
     }
 
-    /// `NET-1a` / `SRC-11`: a task queued while the gate was open must still
-    /// be refused if the gate has closed by the time a worker actually picks
-    /// it up — the decision has to use the CURRENT gate state, not one
-    /// captured when the row was built. No display, no thread pool, and no
-    /// real network call needed: `process_task` is the exact code the worker
-    /// threads run, called here directly with an injected `fetch` so a stale
-    /// decision would show up as a real (test-failing) call rather than
-    /// requiring a live socket. `fetch` returns `Err` rather than image
-    /// bytes so a stale-gate failure never writes into the shared on-disk
-    /// cache — this test only asserts whether `fetch` was invoked at all.
     #[test]
-    fn src_11_worker_uses_the_gate_state_current_at_fetch_time_not_the_one_queued_with() {
-        use std::sync::atomic::Ordering;
-
-        // A URL this test owns, guaranteed not to be cached from any other
-        // test/run: the on-disk cache is real and shared (see other
-        // `src_11_*` tests in `remote_image`), so reusing a URL used
-        // elsewhere could make this test observe a stale cache hit instead
-        // of exercising the gate decision it targets.
-        let url = "https://images.test/src-11-net-1a-stale-gate-unique-marker.png";
-
-        // The row was built while "Use online sources" was on...
-        super::GATE_OPEN.store(true, Ordering::SeqCst);
-        let (response, receiver) = async_channel::bounded(1);
-        let task = super::ArtworkTask {
-            url: url.into(),
-            width: 40,
-            height: 40,
-            response,
-        };
-        // ...but the user switches it off again before this task, still
-        // sitting in the queue, is actually dequeued and processed.
-        super::GATE_OPEN.store(false, Ordering::SeqCst);
-
-        let mut fetch_called = false;
-        super::process_task(&task, &mut |_| {
-            fetch_called = true;
-            Err("must not be called".into())
+    fn src_11_transient_memory_texture_does_not_bypass_persistent_storage() {
+        let url = "https://images.test/src-11-memory-scope-boundary.png".to_owned();
+        let texture = super::memory_texture(super::DecodedPixels {
+            bytes: vec![0, 0, 0],
+            width: 1,
+            height: 1,
+            rowstride: 3,
+            has_alpha: false,
         });
+        super::remember_texture(
+            url.clone(),
+            40,
+            40,
+            reprise_core::remote_image::CacheScope::Transient,
+            texture,
+        );
 
-        assert!(
-            !fetch_called,
-            "the worker must not fetch once the gate has closed, even though \
-             it was open when the task was queued"
-        );
-        assert!(
-            matches!(receiver.try_recv(), Ok(None)),
-            "a refused, uncached task resolves to no image, never an error image"
-        );
+        assert!(super::cached_texture(
+            &url,
+            40,
+            40,
+            reprise_core::remote_image::CacheScope::Persistent,
+        )
+        .is_none());
+        assert!(super::cached_texture(
+            &url,
+            40,
+            40,
+            reprise_core::remote_image::CacheScope::Transient,
+        )
+        .is_some());
+        assert!(super::cached_texture_at_any_size(
+            &url,
+            reprise_core::remote_image::CacheScope::Transient,
+        )
+        .is_some());
+        assert!(super::cached_texture_at_any_size(
+            &url,
+            reprise_core::remote_image::CacheScope::Persistent,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn src_11_failed_episode_artwork_keeps_the_show_fallback() {
+        let current = std::cell::Cell::new(7);
+        let primary_visible = std::cell::Cell::new(false);
+
+        assert!(super::may_publish_artwork(
+            super::ArtworkStage::Fallback,
+            7,
+            &current,
+            &primary_visible,
+        ));
+        assert!(!primary_visible.get());
+    }
+
+    #[test]
+    fn src_11_missing_artwork_chain_keeps_the_source_glyph() {
+        assert!(super::artwork_chain(None, None).is_empty());
+    }
+
+    #[test]
+    fn src_11_episode_artwork_replaces_the_show_fallback() {
+        let current = std::cell::Cell::new(9);
+        let primary_visible = std::cell::Cell::new(false);
+
+        assert!(super::may_publish_artwork(
+            super::ArtworkStage::Fallback,
+            9,
+            &current,
+            &primary_visible,
+        ));
+        assert!(super::may_publish_artwork(
+            super::ArtworkStage::Primary,
+            9,
+            &current,
+            &primary_visible,
+        ));
+        assert!(primary_visible.get());
+        assert!(!super::may_publish_artwork(
+            super::ArtworkStage::Fallback,
+            9,
+            &current,
+            &primary_visible,
+        ));
+    }
+
+    #[test]
+    fn src_11_recycled_row_rejects_both_artwork_stages() {
+        let current = std::cell::Cell::new(12);
+        let primary_visible = std::cell::Cell::new(false);
+
+        assert!(!super::may_publish_artwork(
+            super::ArtworkStage::Fallback,
+            11,
+            &current,
+            &primary_visible,
+        ));
+        assert!(!super::may_publish_artwork(
+            super::ArtworkStage::Primary,
+            11,
+            &current,
+            &primary_visible,
+        ));
+        assert!(!primary_visible.get());
     }
 
     /// A real 1x1 truecolor PNG, small enough to inline and valid enough for
@@ -637,24 +583,15 @@ mod tests {
         0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ];
 
-    /// `SRC-11`: "ein Cache-Treffer wird immer gezeigt, unabhängig vom Riegel".
-    /// The rule is binding, so this asserts the composed behaviour, not just
-    /// `remote_image::resolve` in isolation: an earlier session's download
-    /// must still appear with the gate closed, because showing a file that is
-    /// already on disk costs no request. A widget that returns before it ever
-    /// consults the cache would satisfy every other `src_11_*` test here —
-    /// with an empty cache the fallback looks identical either way — and
-    /// still break the promise on the next restart.
-    /// `NET-1a` / `SRC-11`: switching the gate off must take effect for tasks
-    /// that are ALREADY queued, even when nothing enqueues another image
-    /// afterwards. Preferences shows no source artwork, so turning the switch
-    /// off there is exactly the case where no further `queue_artwork` call
-    /// happens — publishing the gate only from that function left a stale
-    /// `true` alive and the draining queue kept fetching.
+    /// Preferences shows no source artwork, so switching the setting off must
+    /// publish the closed gate without waiting for a further enqueue.
     #[test]
     fn src_11_turning_the_setting_off_closes_the_gate_without_a_further_enqueue() {
         use std::sync::atomic::Ordering;
 
+        let _gate = super::GATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let conn = crate::test_db::open().unwrap();
         reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
             .unwrap();
@@ -665,36 +602,29 @@ mod tests {
         );
 
         // The user switches the global master off from Preferences. No image
-        // is rendered there, so nothing calls `queue_artwork`.
+        // is rendered there, so nothing submits more artwork.
         reprise_core::online_sources::set_enabled(&conn, false).unwrap();
         super::recompute_gate(&conn);
 
-        let (response, _receiver) = async_channel::bounded(1);
-        let task = super::ArtworkTask {
-            url: "https://images.test/src-11-gate-closed-from-preferences.png".into(),
-            width: 40,
-            height: 40,
-            response,
-        };
-        let mut fetch_called = false;
-        super::process_task(&task, &mut |_| {
-            fetch_called = true;
-            Err("must not be called".into())
-        });
         assert!(
-            !fetch_called,
-            "a queued task must not fetch after the setting was switched off"
+            !super::GATE_OPEN.load(Ordering::SeqCst),
+            "Preferences must publish the closed gate immediately"
         );
     }
 
+    /// `SRC-11`: a cache hit is always shown, independently of the gate.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_11_a_cached_image_is_shown_even_with_the_gate_closed() {
         gtk4::init().unwrap();
         let url = "https://images.test/src-11-cached.png";
         // Populate the cache through the public core path, with the gate open.
-        let outcome =
-            reprise_core::remote_image::resolve(Some(url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+        let outcome = reprise_core::remote_image::resolve(
+            Some(url),
+            reprise_core::remote_image::CacheScope::Persistent,
+            true,
+            &mut |_| Ok(TINY_PNG.to_vec()),
+        );
         assert!(
             matches!(
                 outcome,
@@ -706,8 +636,13 @@ mod tests {
 
         // Now the gate is closed. No request may happen — and no image may be
         // hidden either.
-        let image =
-            super::SourceImage::new(Some(url), "audio-input-microphone-symbolic", 40, false);
+        let image = super::SourceImage::new(
+            Some(url),
+            "audio-input-microphone-symbolic",
+            40,
+            false,
+            reprise_core::remote_image::CacheScope::Persistent,
+        );
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while image.widget().visible_child_name().as_deref() != Some("artwork") {
@@ -729,6 +664,7 @@ mod tests {
             "audio-input-microphone-symbolic",
             40,
             false,
+            reprise_core::remote_image::CacheScope::Persistent,
         );
         assert_eq!(
             image.widget().visible_child_name().as_deref(),
@@ -740,7 +676,13 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_11_no_url_stays_on_the_fallback_regardless_of_the_gate() {
         gtk4::init().unwrap();
-        let image = super::SourceImage::new(None, "audio-input-microphone-symbolic", 40, true);
+        let image = super::SourceImage::new(
+            None,
+            "audio-input-microphone-symbolic",
+            40,
+            true,
+            reprise_core::remote_image::CacheScope::Persistent,
+        );
         assert_eq!(
             image.widget().visible_child_name().as_deref(),
             Some("fallback")
@@ -755,11 +697,28 @@ mod tests {
 
         gtk4::init().unwrap();
         let url = "https://images.test/play-10-player-bar.png";
-        reprise_core::remote_image::resolve(Some(url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+        reprise_core::remote_image::resolve(
+            Some(url),
+            reprise_core::remote_image::CacheScope::Persistent,
+            true,
+            &mut |_| Ok(TINY_PNG.to_vec()),
+        );
         let image = gtk4::Image::new();
         let current = Rc::new(Cell::new(1));
 
-        super::load_into_image(&image, Some(url), (56, 56), false, false, 1, &current);
+        super::load_into_image(
+            &image,
+            super::ArtworkRequest::new(
+                Some(url),
+                None,
+                (56, 56),
+                false,
+                reprise_core::remote_image::CacheScope::Persistent,
+                super::StartupTiming::Immediate,
+            ),
+            1,
+            &current,
+        );
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while image.paintable().is_none() {

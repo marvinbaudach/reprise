@@ -16,15 +16,18 @@ pub(super) fn episode_thumbnail(
     };
     let (width, height) = crate::ui::source_row::media_size(shape);
     let source = super::source_image::SourceImage::new_with_dimensions(
-        row.image_url.as_deref().or(row.show_image_url.as_deref()),
+        super::source_image::ArtworkRequest::new(
+            row.image_url.as_deref(),
+            row.show_image_url.as_deref(),
+            (width, height),
+            images_allowed,
+            reprise_core::remote_image::CacheScope::Persistent,
+            super::source_image::StartupTiming::AfterQuiet,
+        ),
         match row.kind {
             PodcastKind::Rss => "audio-input-microphone-symbolic",
             PodcastKind::Youtube => "video-x-generic-symbolic",
         },
-        width,
-        height,
-        images_allowed,
-        super::source_image::StartupTiming::AfterQuiet,
     );
     source
         .widget()

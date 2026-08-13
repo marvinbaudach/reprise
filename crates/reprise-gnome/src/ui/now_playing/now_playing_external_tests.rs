@@ -30,6 +30,7 @@ pub(super) fn external_episode_snapshot(
             duration_ms: Some(180_000),
         },
         art_url: Some("https://images.test/show.jpg".into()),
+        fallback_art_url: None,
         can_go_previous: true,
         can_go_next: false,
         stream_tags: StreamTags::default(),
@@ -58,6 +59,7 @@ pub(super) fn external_radio_snapshot(
             uuid: None,
         },
         art_url: Some("https://images.test/radio.jpg".into()),
+        fallback_art_url: None,
         can_go_previous: false,
         can_go_next: false,
         stream_tags: StreamTags::default(),
@@ -223,8 +225,12 @@ fn ac_26_a_late_empty_track_update_keeps_an_external_session_loaded() {
 fn ac_26_youtube_artwork_drives_the_bloom_while_an_rss_podcast_has_none() {
     gtk4::init().unwrap();
     let url = "https://images.test/ac-26-youtube-bloom.png";
-    let outcome =
-        reprise_core::remote_image::resolve(Some(url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+    let outcome = reprise_core::remote_image::resolve(
+        Some(url),
+        reprise_core::remote_image::CacheScope::Persistent,
+        true,
+        &mut |_| Ok(TINY_PNG.to_vec()),
+    );
     assert!(matches!(
         outcome,
         reprise_core::remote_image::ImageOutcome::Fetched(_)
@@ -255,7 +261,12 @@ fn ac_26_youtube_artwork_drives_the_bloom_while_an_rss_podcast_has_none() {
     assert!(!panel.widgets.bloom.has_cover_for_test());
 
     let stale_url = "https://images.test/ac-26-stale-youtube-bloom.png";
-    reprise_core::remote_image::resolve(Some(stale_url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+    reprise_core::remote_image::resolve(
+        Some(stale_url),
+        reprise_core::remote_image::CacheScope::Persistent,
+        true,
+        &mut |_| Ok(TINY_PNG.to_vec()),
+    );
     let mut stale_youtube = external_youtube_snapshot();
     stale_youtube.art_url = Some(stale_url.into());
     panel.set_external_snapshot(Some(stale_youtube));

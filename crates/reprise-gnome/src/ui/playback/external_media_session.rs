@@ -12,8 +12,8 @@ use crate::ui::player_controller::PlayerController;
 
 use super::external_media::media_from_episode;
 use super::external_media_state::{
-    ExternalMedia, ExternalPlaybackState, ExternalSession, NeighbourContext, PodcastOrigin,
-    PodcastPhase, PodcastSession, ResumePolicy,
+    episode_artwork_urls, ExternalMedia, ExternalPlaybackState, ExternalSession, NeighbourContext,
+    PodcastOrigin, PodcastPhase, PodcastSession, ResumePolicy,
 };
 
 type RestoredResumeRequest = (ExternalMedia, Option<NeighbourContext>, PodcastOrigin);
@@ -37,6 +37,7 @@ fn restored_session(
         ),
     };
     let position_ms = episode.position_ms.max(0);
+    let (art_url, fallback_art_url) = episode_artwork_urls(episode);
     Some(PodcastSession {
         media: media_from_episode(episode),
         neighbours,
@@ -45,10 +46,8 @@ fn restored_session(
         kind: episode.kind,
         media_category: episode.media_category.clone(),
         published_at: episode.published_at,
-        art_url: episode
-            .image_url
-            .clone()
-            .or_else(|| episode.show_image_url.clone()),
+        art_url,
+        fallback_art_url,
         phase: PodcastPhase::Paused,
         restored: true,
         origin,
@@ -246,6 +245,37 @@ mod tests {
         let snapshot = state.snapshot().unwrap();
         assert!(snapshot.restored);
         assert_eq!(snapshot.podcast_phase, Some(PodcastPhase::Paused));
+    }
+
+    #[test]
+    fn src_11_source_image_restore_keeps_episode_then_show_artwork() {
+        let saved = SessionEpisode {
+            episode_id: 7,
+            origin: SessionEpisodeOrigin::Direct,
+            neighbour_episode_ids: vec![7],
+        };
+        let mut episode = episode();
+        episode.image_url = Some("https://images.test/episode.jpg".into());
+
+        let session = restored_session(&saved, &episode, &[]).unwrap();
+        assert_eq!(
+            session.art_url.as_deref(),
+            Some("https://images.test/episode.jpg")
+        );
+        assert_eq!(
+            session.fallback_art_url.as_deref(),
+            Some("https://images.test/show.jpg")
+        );
+
+        let state = ExternalPlaybackState {
+            session: Some(ExternalSession::Podcast(session)),
+            ..ExternalPlaybackState::default()
+        };
+        let snapshot = state.snapshot().unwrap();
+        assert_eq!(
+            snapshot.fallback_art_url.as_deref(),
+            Some("https://images.test/show.jpg")
+        );
     }
 
     #[test]

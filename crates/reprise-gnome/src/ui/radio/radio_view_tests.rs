@@ -21,6 +21,7 @@ fn rad_1_table_projects_only_connected_radio_snapshots() {
             uuid: None,
         },
         art_url: None,
+        fallback_art_url: None,
         can_go_previous: false,
         can_go_next: false,
         stream_tags: StreamTags {
@@ -85,6 +86,7 @@ fn connected_snapshot(station_id: i64, title: &str) -> ExternalPlaybackSnapshot 
             uuid: None,
         },
         art_url: None,
+        fallback_art_url: None,
         can_go_previous: false,
         can_go_next: false,
         stream_tags: StreamTags {

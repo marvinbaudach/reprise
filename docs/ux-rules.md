@@ -5093,25 +5093,56 @@ listening statistics.
 - **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
   `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
   through the shared Artwork module (`module.artwork.enabled`, which also
-  covers album covers and artist portraits) and are
+  covers album covers and artist portraits). On upgrade, an absent unified
+  setting inherits consent once when any retired artwork setting
+  (`module.cover_download.enabled`, `module.artist_portraits.enabled`, or
+  `module.source_images.enabled`) is explicitly on; all-off or absent legacy
+  settings stay off, and an existing unified setting always wins. Schema v72
+  applies that same rule to databases already stamped by the faulty v71: only
+  an absent unified row plus at least one enabled retired row is repaired;
+  every existing `0` or `1` remains untouched. Whenever either migration
+  actually enables Artwork, Reprise records that inherited consent and shows
+  one dismissible Library banner: "Reprise merged the separate image modules
+  into Artwork. It now loads album covers, artist portraits, and images for
+  podcasts, YouTube, and radio." "Review Artwork Settings" opens Plugins and
+  highlights Artwork; "Dismiss" closes it. The notice is consumed before
+  either action hides it, never returns after either action, and never appears
+  when the unified gate was untouched. Artwork is
   subject to `NET-1a`: a cache hit is always shown, regardless of the gate — a
   cache miss triggers a fetch only when the global gate **and** the module are
   both active, otherwise the surface's source fallback stays, never an error
   image (`RAD-7` defines the radio list's initials fallback). The pure fetch
   and cache policy lives, testable without a display, in
   `reprise_core::remote_image` (no gtk4/libadwaita/gstreamer/zbus); decoding
-  and display stay in the GNOME crate. The on-disk cache is limited to
-  `MAX_CACHE_ENTRIES` (300) entries and, when exceeded, deterministically
-  clears the files untouched for longest first — unlike the unbounded,
-  permanent cover-art cache. Episode images follow the same rule: a stored
-  provider URL wins, and when a YouTube episode has none, the read projection
-  derives `https://i.ytimg.com/vi/<video-id>/hqdefault.jpg` from its durable
-  video id without persisting a second value, while RSS never receives a
-  derived YouTube URL. When a YouTube channel itself has no image, its library
-  group header shows the newest episode's image; RSS group headers never borrow
-  an episode image. Every caller (podcast library view, YouTube channel detail,
-  all three add dialogs) computes the gate itself at its own connection rather
-  than relying on an upstream checkpoint — the lesson from `T6-G1-gap`: a
+  and display stay in the GNOME crate. The caller selects one of two bounded
+  on-disk stores: persistent artwork for subscriptions, favourites, library
+  rows and playback holds at most 1,000 files; transient search results and
+  pre-add previews hold at most 200. Each store independently and
+  deterministically clears the files untouched for longest first. The legacy
+  shared `remote-images` store is removed on first access and is never
+  recreated. In-memory textures retain the same scope boundary, so a transient
+  hit cannot bypass persistent storage. Every valid display request is admitted
+  to an unbounded worker queue rather than dropped for lack of capacity;
+  matching in-flight URLs share one network fetch across cache scopes, populate
+  every waiter's selected store from the resolved local file, and fan the result
+  out to every waiter. The current gate is still read immediately before that
+  resolve, not when the waiter joined. Episode images follow the
+  same rule: a stored provider URL wins, and when a YouTube episode has none,
+  the read projection derives
+  `https://i.ytimg.com/vi/<video-id>/hqdefault.jpg` from its durable video id
+  without persisting a second value, while RSS never receives a derived YouTube
+  URL. An episode row publishes an already-cached show/channel image first,
+  replaces it when its episode image arrives, and keeps the show/channel image
+  when the episode image is absent or fails; only a source with neither usable
+  image stays on its glyph. Both stages use the same row generation, so a
+  recycled row cannot accept either image from its predecessor. The same chain
+  applies to YouTube channel detail and playback artwork, but not to MPRIS,
+  which continues to project one URL. When a YouTube channel itself has no
+  image, its library group header shows the newest episode's image; RSS group
+  headers never borrow an episode image. Every caller (podcast library view,
+  YouTube channel detail, all three add dialogs) computes the gate and selects
+  the cache scope itself at its own connection rather than relying on an
+  upstream checkpoint or URL heuristic — the lesson from `T6-G1-gap`: a
   privacy promise in UI copy needs a test per call path, not per feature.
 - **SRC-12** [replaced by SRC-12a] [gtk] — Episodes can be selected in bulk in both the
   grouped library view and the channel detail view, with one shared set of

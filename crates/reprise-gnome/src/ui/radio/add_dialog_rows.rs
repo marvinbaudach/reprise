@@ -37,6 +37,7 @@ pub(super) fn candidate_row(
         "network-wireless-symbolic",
         40,
         images_allowed(conn),
+        reprise_core::remote_image::CacheScope::Transient,
     );
     let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     copy.set_hexpand(true);

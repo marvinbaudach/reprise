@@ -2,28 +2,71 @@
 //!
 //! Callers must run this off the UI thread.
 
+use std::fmt;
 use std::io::Read;
-use std::net::{IpAddr, ToSocketAddrs};
+use std::net::IpAddr;
 use std::time::Duration;
+
+use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
+use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
 
 use super::PodcastError;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_IMAGE_BYTES: usize = 4 * 1024 * 1024;
 
+#[derive(Debug)]
+struct NonPublicAddress;
+
+impl fmt::Display for NonPublicAddress {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("source artwork resolved to a non-public address")
+    }
+}
+
+impl std::error::Error for NonPublicAddress {}
+
+#[derive(Debug)]
+struct PublicOnlyResolver<R> {
+    inner: R,
+}
+
+impl<R: Resolver> Resolver for PublicOnlyResolver<R> {
+    fn resolve(
+        &self,
+        uri: &ureq::http::Uri,
+        config: &ureq::config::Config,
+        timeout: NextTimeout,
+    ) -> Result<ResolvedSocketAddrs, ureq::Error> {
+        let addresses = self.inner.resolve(uri, config, timeout)?;
+        if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
+            return Err(ureq::Error::Other(Box::new(NonPublicAddress)));
+        }
+        Ok(addresses)
+    }
+}
+
 pub fn fetch(url: &str) -> Result<Vec<u8>, PodcastError> {
     let url = validate_remote_url(url)?;
-    validate_resolved_host(&url)?;
-    let response = ureq::Agent::config_builder()
+    fetch_with_resolver(&url, DefaultResolver::default())
+}
+
+fn fetch_with_resolver(url: &url::Url, resolver: impl Resolver) -> Result<Vec<u8>, PodcastError> {
+    let config = ureq::Agent::config_builder()
         .timeout_global(Some(HTTP_TIMEOUT))
         .user_agent(super::http::user_agent())
         .http_status_as_error(false)
         .max_redirects(0)
-        .build()
-        .new_agent()
-        .get(url.as_str())
-        .call()
-        .map_err(classify_transport)?;
+        .proxy(None)
+        .build();
+    let response = ureq::Agent::with_parts(
+        config,
+        DefaultConnector::default(),
+        PublicOnlyResolver { inner: resolver },
+    )
+    .get(url.as_str())
+    .call()
+    .map_err(classify_transport)?;
     let status = response.status().as_u16();
     if !(200..300).contains(&status) {
         return Err(PodcastError::HttpStatus(status));
@@ -58,28 +101,6 @@ fn validate_remote_url(value: &str) -> Result<url::Url, PodcastError> {
         ));
     }
     Ok(url)
-}
-
-fn validate_resolved_host(url: &url::Url) -> Result<(), PodcastError> {
-    let host = url
-        .host()
-        .ok_or_else(|| PodcastError::Parse("source artwork host is missing".into()))?;
-    let url::Host::Domain(host) = host else {
-        return Ok(());
-    };
-    let port = url
-        .port_or_known_default()
-        .ok_or_else(|| PodcastError::Parse("source artwork port is missing".into()))?;
-    let addresses = (host, port)
-        .to_socket_addrs()
-        .map_err(|error| PodcastError::Transport(error.to_string()))?
-        .collect::<Vec<_>>();
-    if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
-        return Err(PodcastError::Parse(
-            "source artwork resolved to a non-public address".into(),
-        ));
-    }
-    Ok(())
 }
 
 fn is_public_ip(ip: IpAddr) -> bool {
@@ -129,6 +150,9 @@ fn read_bounded(mut reader: impl Read) -> Result<Vec<u8>, PodcastError> {
 
 fn classify_transport(error: ureq::Error) -> PodcastError {
     match error {
+        ureq::Error::Other(error) if error.is::<NonPublicAddress>() => {
+            PodcastError::Parse("source artwork resolved to a non-public address".into())
+        }
         ureq::Error::Timeout(_) => PodcastError::Timeout,
         other if other.to_string().to_ascii_lowercase().contains("timeout") => {
             PodcastError::Timeout
@@ -139,7 +163,31 @@ fn classify_transport(error: ureq::Error) -> PodcastError {
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
     use super::*;
+
+    #[derive(Debug)]
+    struct FixedResolver {
+        address: SocketAddr,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl ureq::unversioned::resolver::Resolver for FixedResolver {
+        fn resolve(
+            &self,
+            _uri: &ureq::http::Uri,
+            _config: &ureq::config::Config,
+            _timeout: ureq::unversioned::transport::NextTimeout,
+        ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let mut addresses = self.empty();
+            addresses.push(self.address);
+            Ok(addresses)
+        }
+    }
 
     #[test]
     fn source_artwork_rejects_local_and_oversized_inputs() {
@@ -151,5 +199,24 @@ mod tests {
 
         let oversized = std::io::repeat(1).take((MAX_IMAGE_BYTES + 1) as u64);
         assert!(read_bounded(oversized).is_err());
+    }
+
+    #[test]
+    fn source_artwork_connect_refuses_a_private_resolver_answer() {
+        let url = validate_remote_url("http://artwork.example.test/image.jpg").unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let resolver = FixedResolver {
+            address: "127.0.0.1:80".parse().unwrap(),
+            calls: calls.clone(),
+        };
+
+        let result = fetch_with_resolver(&url, resolver);
+
+        assert!(matches!(
+            result,
+            Err(PodcastError::Parse(message))
+                if message == "source artwork resolved to a non-public address"
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
