@@ -83,13 +83,6 @@ pub fn show_all_tracks_label(total: &str) -> String {
     super::formatted(N_!("Show all {total} tracks"), &[("total", total)])
 }
 
-pub const SORT: &str = N_!("Sort");
-pub const SORT_TRACKS: &str = N_!("Sort tracks");
-pub const SORT_BY: &str = N_!("Sort by");
-pub const SORT_DIRECTION: &str = N_!("Sort direction");
-pub const SORT_ASCENDING: &str = N_!("Ascending");
-pub const SORT_DESCENDING: &str = N_!("Descending");
-
 #[cfg(test)]
 mod tests {
     use super::*;
