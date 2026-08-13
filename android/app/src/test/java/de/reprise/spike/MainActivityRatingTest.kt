@@ -66,8 +66,15 @@ class MainActivityRatingTest {
         assertEquals(0, application.trackRatings[1L])
         libraryHeart("Add to favourites").assertIsDisplayed()
 
+        application.trackRatings[2L] = 5
+        application.catalogSize += 1
         recreate()
-        libraryHeart("Add to favourites").assertIsDisplayed()
+        compose.onNode(
+            hasTestTag(TRACK_HEART_TAG) and
+                hasContentDescription("Remove from favourites") and
+                hasAnyAncestor(hasTestTag("library-track-row-2")) and
+                hasAnyAncestor(hasTestTag("library-page-TITLES")),
+        ).assertIsDisplayed()
     }
 
     @Test
