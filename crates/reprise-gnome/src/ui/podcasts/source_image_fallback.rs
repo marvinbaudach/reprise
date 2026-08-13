@@ -74,13 +74,14 @@ impl super::SourceImage {
     ) -> Self {
         let image = Self::build(fallback, size, size);
         image.set_urls(
-            image_url,
-            None,
-            size,
-            size,
-            images_allowed,
-            cache_scope,
-            super::StartupTiming::AfterQuiet,
+            super::ArtworkRequest::new(
+                image_url,
+                None,
+                (size, size),
+                images_allowed,
+                cache_scope,
+                super::StartupTiming::AfterQuiet,
+            ),
             |_| {},
         );
         image

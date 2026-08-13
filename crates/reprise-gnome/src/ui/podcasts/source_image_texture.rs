@@ -9,8 +9,16 @@ use reprise_core::remote_image::CacheScope;
 
 const CACHE_LIMIT: usize = 128;
 
+struct TextureCacheEntry {
+    url: String,
+    width: i32,
+    height: i32,
+    cache_scope: CacheScope,
+    texture: gtk4::gdk::Texture,
+}
+
 thread_local! {
-    static TEXTURE_CACHE: RefCell<VecDeque<(String, i32, i32, CacheScope, gtk4::gdk::Texture)>> =
+    static TEXTURE_CACHE: RefCell<VecDeque<TextureCacheEntry>> =
         const { RefCell::new(VecDeque::new()) };
 }
 
@@ -68,17 +76,14 @@ pub(super) fn cached_texture(
 ) -> Option<gtk4::gdk::Texture> {
     TEXTURE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        let index =
-            cache
-                .iter()
-                .position(|(cached, cached_width, cached_height, cached_scope, _)| {
-                    cached == url
-                        && *cached_width == width
-                        && *cached_height == height
-                        && *cached_scope == cache_scope
-                })?;
+        let index = cache.iter().position(|entry| {
+            entry.url == url
+                && entry.width == width
+                && entry.height == height
+                && entry.cache_scope == cache_scope
+        })?;
         let entry = cache.remove(index)?;
-        let texture = entry.4.clone();
+        let texture = entry.texture.clone();
         cache.push_front(entry);
         Some(texture)
     })
@@ -90,11 +95,11 @@ pub(super) fn cached_texture_at_any_size(
 ) -> Option<gtk4::gdk::Texture> {
     TEXTURE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        let index = cache.iter().position(|(cached, _, _, cached_scope, _)| {
-            cached == url && *cached_scope == cache_scope
-        })?;
+        let index = cache
+            .iter()
+            .position(|entry| entry.url == url && entry.cache_scope == cache_scope)?;
         let entry = cache.remove(index)?;
-        let texture = entry.4.clone();
+        let texture = entry.texture.clone();
         cache.push_front(entry);
         Some(texture)
     })
@@ -109,19 +114,21 @@ pub(in crate::ui::podcasts) fn remember_texture(
 ) {
     TEXTURE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if let Some(index) =
-            cache
-                .iter()
-                .position(|(cached, cached_width, cached_height, cached_scope, _)| {
-                    cached == &url
-                        && *cached_width == width
-                        && *cached_height == height
-                        && *cached_scope == cache_scope
-                })
-        {
+        if let Some(index) = cache.iter().position(|entry| {
+            entry.url == url
+                && entry.width == width
+                && entry.height == height
+                && entry.cache_scope == cache_scope
+        }) {
             cache.remove(index);
         }
-        cache.push_front((url, width, height, cache_scope, texture));
+        cache.push_front(TextureCacheEntry {
+            url,
+            width,
+            height,
+            cache_scope,
+            texture,
+        });
         cache.truncate(CACHE_LIMIT);
     });
 }

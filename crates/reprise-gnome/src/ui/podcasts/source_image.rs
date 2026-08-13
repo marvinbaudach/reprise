@@ -74,6 +74,36 @@ pub(crate) enum StartupTiming {
     AfterQuiet,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ArtworkRequest<'a> {
+    primary_url: Option<&'a str>,
+    fallback_url: Option<&'a str>,
+    dimensions: (i32, i32),
+    images_allowed: bool,
+    cache_scope: CacheScope,
+    startup_timing: StartupTiming,
+}
+
+impl<'a> ArtworkRequest<'a> {
+    pub(crate) fn new(
+        primary_url: Option<&'a str>,
+        fallback_url: Option<&'a str>,
+        dimensions: (i32, i32),
+        images_allowed: bool,
+        cache_scope: CacheScope,
+        startup_timing: StartupTiming,
+    ) -> Self {
+        Self {
+            primary_url,
+            fallback_url,
+            dimensions,
+            images_allowed,
+            cache_scope,
+            startup_timing,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ArtworkStage {
     Fallback,
@@ -158,14 +188,15 @@ impl SourceImage {
         cache_scope: CacheScope,
     ) -> SourceImage {
         Self::new_with_dimensions(
-            image_url,
-            None,
+            ArtworkRequest::new(
+                image_url,
+                None,
+                (size, size),
+                images_allowed,
+                cache_scope,
+                StartupTiming::Immediate,
+            ),
             fallback_icon,
-            size,
-            size,
-            images_allowed,
-            cache_scope,
-            StartupTiming::Immediate,
         )
     }
 
@@ -179,62 +210,31 @@ impl SourceImage {
     /// would take a queue slot and a worker, and both would ask the same
     /// third-party host for the same image. One load, two consumers.
     pub(crate) fn new_observed(
-        image_url: Option<&str>,
-        fallback_image_url: Option<&str>,
+        request: ArtworkRequest<'_>,
         fallback_icon: &str,
-        size: i32,
-        images_allowed: bool,
-        cache_scope: CacheScope,
-        defer_for_startup: bool,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) -> SourceImage {
+        let (width, height) = request.dimensions;
         let image = Self::build(
             source_image_fallback::Fallback::Icon(fallback_icon),
-            size,
-            size,
+            width,
+            height,
         );
-        image.set_urls(
-            image_url,
-            fallback_image_url,
-            size,
-            size,
-            images_allowed,
-            cache_scope,
-            if defer_for_startup {
-                StartupTiming::AfterQuiet
-            } else {
-                StartupTiming::Immediate
-            },
-            on_texture,
-        );
+        image.set_urls(request, on_texture);
         image
     }
 
     pub(crate) fn new_with_dimensions(
-        image_url: Option<&str>,
-        fallback_image_url: Option<&str>,
+        request: ArtworkRequest<'_>,
         fallback_icon: &str,
-        width: i32,
-        height: i32,
-        images_allowed: bool,
-        cache_scope: CacheScope,
-        startup_timing: StartupTiming,
     ) -> SourceImage {
+        let (width, height) = request.dimensions;
         let image = Self::build(
             source_image_fallback::Fallback::Icon(fallback_icon),
             width,
             height,
         );
-        image.set_urls(
-            image_url,
-            fallback_image_url,
-            width,
-            height,
-            images_allowed,
-            cache_scope,
-            startup_timing,
-            |_| {},
-        );
+        image.set_urls(request, |_| {});
         image
     }
 
@@ -292,13 +292,7 @@ impl SourceImage {
 
     fn set_urls(
         &self,
-        image_url: Option<&str>,
-        fallback_image_url: Option<&str>,
-        width: i32,
-        height: i32,
-        images_allowed: bool,
-        cache_scope: CacheScope,
-        startup_timing: StartupTiming,
+        request: ArtworkRequest<'_>,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) {
         let generation = self.generation.get().wrapping_add(1);
@@ -307,71 +301,47 @@ impl SourceImage {
         self.artwork.set_paintable(gtk4::gdk::Paintable::NONE);
         let weak_root = self.root.downgrade();
         let weak_artwork = self.artwork.downgrade();
-        load_texture_chain(
-            image_url,
-            fallback_image_url,
-            (width, height),
-            images_allowed,
-            cache_scope,
-            startup_timing,
-            generation,
-            &self.generation,
-            move |texture| {
-                // The observer runs even if the widget itself is already gone:
-                // it feeds a different surface, whose own generation check
-                // decides whether the texture is still wanted.
-                on_texture(&texture);
-                let Some(root) = weak_root.upgrade() else {
-                    return;
-                };
-                let Some(artwork) = weak_artwork.upgrade() else {
-                    return;
-                };
-                artwork.set_paintable(Some(&texture));
-                root.set_visible_child(&artwork);
-            },
-        );
+        load_texture_chain(request, generation, &self.generation, move |texture| {
+            // The observer runs even if the widget itself is already gone:
+            // it feeds a different surface, whose own generation check
+            // decides whether the texture is still wanted.
+            on_texture(&texture);
+            let Some(root) = weak_root.upgrade() else {
+                return;
+            };
+            let Some(artwork) = weak_artwork.upgrade() else {
+                return;
+            };
+            artwork.set_paintable(Some(&texture));
+            root.set_visible_child(&artwork);
+        });
     }
 }
 
 fn load_texture_chain(
-    primary_url: Option<&str>,
-    fallback_url: Option<&str>,
-    dimensions: (i32, i32),
-    images_allowed: bool,
-    cache_scope: CacheScope,
-    startup_timing: StartupTiming,
+    request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
     on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
 ) {
     let primary_visible = Rc::new(Cell::new(false));
     let on_ready: Rc<dyn Fn(gtk4::gdk::Texture)> = Rc::new(on_ready);
-    for (stage, url) in artwork_chain(primary_url, fallback_url) {
+    for (stage, url) in artwork_chain(request.primary_url, request.fallback_url) {
         let primary_visible = primary_visible.clone();
         let current_for_callback = current.clone();
         let on_ready = on_ready.clone();
         if stage == ArtworkStage::Fallback {
-            if let Some(texture) = cached_texture_at_any_size(&url, cache_scope) {
+            if let Some(texture) = cached_texture_at_any_size(&url, request.cache_scope) {
                 if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
                     on_ready(texture);
                 }
             }
         }
-        load_texture(
-            Some(&url),
-            dimensions,
-            images_allowed,
-            cache_scope,
-            startup_timing,
-            generation,
-            current,
-            move |texture| {
-                if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
-                    on_ready(texture);
-                }
-            },
-        );
+        load_texture(Some(&url), request, generation, current, move |texture| {
+            if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
+                on_ready(texture);
+            }
+        });
     }
 }
 
@@ -379,22 +349,19 @@ fn load_texture_chain(
 /// hands the finished texture to a generation-safe caller.
 fn load_texture(
     image_url: Option<&str>,
-    dimensions: (i32, i32),
-    images_allowed: bool,
-    cache_scope: CacheScope,
-    startup_timing: StartupTiming,
+    request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
     on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
 ) {
-    let (width, height) = dimensions;
+    let (width, height) = request.dimensions;
     if current.get() != generation {
         return;
     }
     let Some(url) = image_url.and_then(validated_url) else {
         return;
     };
-    if let Some(texture) = cached_texture(&url, width, height, cache_scope) {
+    if let Some(texture) = cached_texture(&url, width, height, request.cache_scope) {
         on_ready(texture);
         return;
     }
@@ -404,13 +371,13 @@ fn load_texture(
     // Publish at registration time, before the startup gate can delay this
     // task. A later Preferences change can therefore close `GATE_OPEN` while
     // the task waits, and the worker's fetch-time read below remains final.
-    GATE_OPEN.store(images_allowed, Ordering::Relaxed);
+    GATE_OPEN.store(request.images_allowed, Ordering::Relaxed);
     let current = current.clone();
     let start = move || {
         if current.get() != generation {
             return;
         }
-        let receiver = source_artwork_queue::queue(url.clone(), width, height, cache_scope);
+        let receiver = source_artwork_queue::queue(url.clone(), width, height, request.cache_scope);
         gtk4::glib::spawn_future_local(async move {
             let pixels = match receiver.recv().await {
                 Ok(Some(pixels)) => pixels,
@@ -426,11 +393,11 @@ fn load_texture(
                 return;
             }
             let texture = memory_texture(pixels);
-            remember_texture(url, width, height, cache_scope, texture.clone());
+            remember_texture(url, width, height, request.cache_scope, texture.clone());
             on_ready(texture);
         });
     };
-    match startup_timing {
+    match request.startup_timing {
         StartupTiming::Immediate => start(),
         StartupTiming::AfterQuiet => crate::ui::startup_quiet::run_after_quiet(start),
     }
@@ -441,12 +408,7 @@ fn load_texture(
 /// invalidates any older decode before it can repaint the player bar.
 pub(crate) fn load_into_image(
     image: &gtk4::Image,
-    image_url: Option<&str>,
-    fallback_image_url: Option<&str>,
-    dimensions: (i32, i32),
-    images_allowed: bool,
-    cache_scope: CacheScope,
-    defer_for_startup: bool,
+    request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
 ) {
@@ -455,26 +417,12 @@ pub(crate) fn load_into_image(
     }
     crate::ui::cover_loader::CoverLoader::set_placeholder(image);
     let weak_image = image.downgrade();
-    load_texture_chain(
-        image_url,
-        fallback_image_url,
-        dimensions,
-        images_allowed,
-        cache_scope,
-        if defer_for_startup {
-            StartupTiming::AfterQuiet
-        } else {
-            StartupTiming::Immediate
-        },
-        generation,
-        current,
-        move |texture| {
-            let Some(image) = weak_image.upgrade() else {
-                return;
-            };
-            image.set_paintable(Some(&texture));
-        },
-    );
+    load_texture_chain(request, generation, current, move |texture| {
+        let Some(image) = weak_image.upgrade() else {
+            return;
+        };
+        image.set_paintable(Some(&texture));
+    });
 }
 
 fn validated_url(value: &str) -> Option<String> {
@@ -643,7 +591,7 @@ mod tests {
 
         let _gate = super::GATE_TEST_LOCK
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let conn = crate::test_db::open().unwrap();
         reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
             .unwrap();
@@ -760,12 +708,14 @@ mod tests {
 
         super::load_into_image(
             &image,
-            Some(url),
-            None,
-            (56, 56),
-            false,
-            reprise_core::remote_image::CacheScope::Persistent,
-            false,
+            super::ArtworkRequest::new(
+                Some(url),
+                None,
+                (56, 56),
+                false,
+                reprise_core::remote_image::CacheScope::Persistent,
+                super::StartupTiming::Immediate,
+            ),
             1,
             &current,
         );

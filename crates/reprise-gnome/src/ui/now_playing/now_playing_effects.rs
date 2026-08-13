@@ -100,13 +100,22 @@ impl super::NowPlayingPanel {
                 }
             });
             let source_image = crate::ui::podcasts::source_image::SourceImage::new_observed(
-                external.art_url.as_deref(),
-                external.fallback_art_url.as_deref(),
+                crate::ui::podcasts::source_image::ArtworkRequest::new(
+                    external.art_url.as_deref(),
+                    external.fallback_art_url.as_deref(),
+                    (
+                        tokens::NOW_PLAYING_COVER_SIZE,
+                        tokens::NOW_PLAYING_COVER_SIZE,
+                    ),
+                    images_allowed,
+                    reprise_core::remote_image::CacheScope::Persistent,
+                    if external.restored {
+                        crate::ui::podcasts::source_image::StartupTiming::AfterQuiet
+                    } else {
+                        crate::ui::podcasts::source_image::StartupTiming::Immediate
+                    },
+                ),
                 fallback_icon,
-                tokens::NOW_PLAYING_COVER_SIZE,
-                images_allowed,
-                reprise_core::remote_image::CacheScope::Persistent,
-                external.restored,
                 move |texture| {
                     if let Some(observer) = observer.as_ref() {
                         observer(texture);

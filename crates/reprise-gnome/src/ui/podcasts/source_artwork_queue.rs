@@ -40,7 +40,7 @@ impl ArtworkQueue {
                 .name(format!("reprise-source-artwork-{index}"))
                 .spawn(move || {
                     while let Ok(job) = receiver.recv_blocking() {
-                        process_job(&pending, job, &mut |url| {
+                        process_job(&pending, &job, &mut |url| {
                             reprise_core::podcasts::source_artwork::fetch(url)
                                 .map_err(|error| error.to_string())
                         });
@@ -72,7 +72,7 @@ impl ArtworkQueue {
             let mut pending = self
                 .pending
                 .lock()
-                .unwrap_or_else(|error| error.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             match pending.get_mut(&key) {
                 Some(waiters) => {
                     waiters.push(waiter);
@@ -119,10 +119,10 @@ pub(super) fn queue(
 /// out to every waiter that joined while the job was queued or running.
 fn process_job(
     pending: &Pending,
-    key: ArtworkKey,
+    key: &ArtworkKey,
     fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
 ) {
-    let requested_scopes = requested_scopes(pending, &key);
+    let requested_scopes = requested_scopes(pending, key);
     let cached = requested_scopes.into_iter().find_map(|scope| {
         let mut must_not_fetch = |_: &str| Err("cache-only lookup must not fetch".to_string());
         match reprise_core::remote_image::resolve(Some(&key.url), scope, false, &mut must_not_fetch)
@@ -136,7 +136,7 @@ fn process_job(
     });
     let resolve_scope = cached
         .as_ref()
-        .map_or_else(|| preferred_scope(pending, &key), |(scope, _)| *scope);
+        .map_or_else(|| preferred_scope(pending, key), |(scope, _)| *scope);
     let allowed = super::GATE_OPEN.load(std::sync::atomic::Ordering::Relaxed);
     let path = match cached {
         Some((_, path)) => Some(path),
@@ -151,8 +151,10 @@ fn process_job(
 
     loop {
         let waiters = {
-            let mut pending = pending.lock().unwrap_or_else(|error| error.into_inner());
-            let Some(waiters) = pending.get_mut(&key) else {
+            let mut pending = pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(waiters) = pending.get_mut(key) else {
                 return;
             };
             std::mem::take(waiters)
@@ -185,16 +187,20 @@ fn process_job(
             let _ = waiter.response.send_blocking(pixels);
         }
 
-        let mut pending = pending.lock().unwrap_or_else(|error| error.into_inner());
-        if pending.get(&key).is_some_and(Vec::is_empty) {
-            pending.remove(&key);
+        let mut pending = pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if pending.get(key).is_some_and(Vec::is_empty) {
+            pending.remove(key);
             return;
         }
     }
 }
 
 fn requested_scopes(pending: &Pending, key: &ArtworkKey) -> Vec<CacheScope> {
-    let pending = pending.lock().unwrap_or_else(|error| error.into_inner());
+    let pending = pending
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let Some(waiters) = pending.get(key) else {
         return vec![CacheScope::Persistent];
     };
@@ -222,7 +228,7 @@ fn preferred_scope(pending: &Pending, key: &ArtworkKey) -> CacheScope {
 fn finish_without_image(pending: &Pending, key: &ArtworkKey) {
     let waiters = pending
         .lock()
-        .unwrap_or_else(|error| error.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(key)
         .unwrap_or_default();
     for waiter in waiters {
@@ -257,7 +263,7 @@ mod tests {
     fn src_11_many_concurrent_requests_all_receive_a_result() {
         let _gate = super::super::GATE_TEST_LOCK
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         super::super::GATE_OPEN.store(true, std::sync::atomic::Ordering::SeqCst);
         let (queue, jobs) = super::ArtworkQueue::test_queue();
         let results = Arc::new(Mutex::new(Vec::new()));
@@ -280,7 +286,7 @@ mod tests {
 
         assert_eq!(jobs.len(), 160);
         while let Ok(job) = jobs.try_recv() {
-            super::process_job(&queue.pending, job, &mut |_| Ok(TINY_PNG.to_vec()));
+            super::process_job(&queue.pending, &job, &mut |_| Ok(TINY_PNG.to_vec()));
         }
         let results = results.lock().unwrap();
         assert_eq!(results.len(), 160);
@@ -293,7 +299,7 @@ mod tests {
     fn src_11_duplicate_url_across_scopes_fetches_once_and_answers_every_waiter() {
         let _gate = super::super::GATE_TEST_LOCK
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         super::super::GATE_OPEN.store(true, std::sync::atomic::Ordering::SeqCst);
         let (queue, jobs) = super::ArtworkQueue::test_queue();
         let url = unique_url("shared");
@@ -302,7 +308,8 @@ mod tests {
 
         let mut fetches = 0;
         let mut second = None;
-        super::process_job(&queue.pending, jobs.try_recv().unwrap(), &mut |_| {
+        let job = jobs.try_recv().unwrap();
+        super::process_job(&queue.pending, &job, &mut |_| {
             fetches += 1;
             second = Some(queue.submit(url.clone(), 80, 80, CacheScope::Transient));
             Ok(TINY_PNG.to_vec())
@@ -333,7 +340,7 @@ mod tests {
     fn src_11_secondary_scope_cache_hit_is_shown_with_the_gate_closed() {
         let _gate = super::super::GATE_TEST_LOCK
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (queue, jobs) = super::ArtworkQueue::test_queue();
         let url = unique_url("cross-scope-cached");
         let cached = reprise_core::remote_image::resolve(
@@ -351,7 +358,8 @@ mod tests {
         let transient = queue.submit(url.clone(), 40, 40, CacheScope::Transient);
         super::super::GATE_OPEN.store(false, std::sync::atomic::Ordering::SeqCst);
         let mut fetch_called = false;
-        super::process_job(&queue.pending, jobs.try_recv().unwrap(), &mut |_| {
+        let job = jobs.try_recv().unwrap();
+        super::process_job(&queue.pending, &job, &mut |_| {
             fetch_called = true;
             Err("must not fetch".into())
         });
@@ -377,7 +385,7 @@ mod tests {
 
         let _gate = super::super::GATE_TEST_LOCK
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (queue, jobs) = super::ArtworkQueue::test_queue();
         super::super::GATE_OPEN.store(true, Ordering::SeqCst);
         let result = queue.submit(
@@ -389,7 +397,8 @@ mod tests {
         super::super::GATE_OPEN.store(false, Ordering::SeqCst);
 
         let mut fetch_called = false;
-        super::process_job(&queue.pending, jobs.try_recv().unwrap(), &mut |_| {
+        let job = jobs.try_recv().unwrap();
+        super::process_job(&queue.pending, &job, &mut |_| {
             fetch_called = true;
             Err("must not fetch".into())
         });
