@@ -1,6 +1,6 @@
 ---
 slug: podcast-youtube-tab-open-fetch
-worktree: /home/marvin/Projects/reprise-podcast-youtube-tab-open-fetch
+worktree: ~/Projects/reprise-podcast-youtube-tab-open-fetch
 branch: feature/podcast-youtube-tab-open-fetch
 phase: planned
 codex_session:
@@ -46,7 +46,7 @@ nehmen:
 
 ```bash
 git fetch origin dev
-git worktree add /home/marvin/Projects/reprise-podcast-youtube-tab-open-fetch -b feature/podcast-youtube-tab-open-fetch origin/dev
+git worktree add ~/Projects/reprise-podcast-youtube-tab-open-fetch -b feature/podcast-youtube-tab-open-fetch origin/dev
 ```
 
 ---

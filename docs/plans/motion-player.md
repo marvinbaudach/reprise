@@ -1,12 +1,14 @@
 ---
 slug: motion-player
-worktree: /home/marvin/Projects/reprise/.worktrees/transitions
+worktree: ~/Projects/reprise/.worktrees/transitions
 branch: feat/motion-player
 phase: shipped
 codex_session:
 created: 2026-07-18
 ---
 # MOT-5 player motion (follow-up branch) — implementation plan
+
+This shipped plan is retained because tracked files still reference it as durable documentation.
 
 **Status:** grilled 2026-07-18, ready for /code (Phase A)
 **Branch:** feat/motion-player (on origin/main `3d878d4`)

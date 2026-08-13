@@ -207,7 +207,7 @@ Two consequences worth stating plainly:
   head, and there is no such pull request any more.
 - **Local worktree cleanup is verified and deferred when necessary.** After a
   squash merge, run
-  `scripts/close-worktree.sh --repo /home/marvin/Projects/reprise --worktree <path> --pr <number>`.
+  `scripts/close-worktree.sh --repo ~/Projects/reprise --worktree <path> --pr <number>`.
   It checks that GitHub reports the PR merged into `dev`, that its source branch
   and head match the clean local worktree exactly, and that the worktree is not
   locked. If any process still uses the worktree as its current directory, the

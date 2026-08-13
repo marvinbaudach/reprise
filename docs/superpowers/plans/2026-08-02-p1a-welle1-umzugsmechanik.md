@@ -1,6 +1,6 @@
 ---
 slug: p1a-welle1-umzugsmechanik
-worktree: /home/marvin/Projects/reprise-p1a-welle1-umzugsmechanik
+worktree: ~/Projects/reprise-p1a-welle1-umzugsmechanik
 branch: feature/p1a-welle1-umzugsmechanik
 phase: refactored
 codex_session:

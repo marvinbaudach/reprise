@@ -1,6 +1,6 @@
 ---
 slug: activation-latency
-worktree: /home/marvin/Projects/reprise-activation
+worktree: ~/Projects/reprise-activation
 branch: perf/activation-latency
 phase: refactored
 codex_session:

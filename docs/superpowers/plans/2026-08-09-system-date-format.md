@@ -1,6 +1,6 @@
 ---
 slug: system-date-format
-worktree: /home/marvin/Projects/reprise-system-date-format
+worktree: ~/Projects/reprise-system-date-format
 branch: feature/system-date-format
 phase: planned
 codex_session:

@@ -1,6 +1,6 @@
 ---
 slug: about-dialog-libadwaita-standard
-worktree: /home/marvin/Projects/reprise-about-dialog-libadwaita-standard
+worktree: ~/Projects/reprise-about-dialog-libadwaita-standard
 branch: feature/about-dialog-libadwaita-standard
 phase: planned
 codex_session:

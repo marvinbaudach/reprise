@@ -1,6 +1,6 @@
 ---
 slug: podcast-activity-and-charts-chip
-worktree: /home/marvin/Projects/reprise-podcast-activity-and-charts-chip
+worktree: ~/Projects/reprise-podcast-activity-and-charts-chip
 branch: feature/podcast-activity-and-charts-chip
 phase: planned
 codex_session:

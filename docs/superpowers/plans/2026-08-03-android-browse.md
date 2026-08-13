@@ -1,6 +1,6 @@
 ---
 slug: android-browse
-worktree: /home/marvin/Projects/reprise-android-browse
+worktree: ~/Projects/reprise-android-browse
 branch: feature/android-browse
 phase: planned
 codex_session:

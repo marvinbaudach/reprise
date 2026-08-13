@@ -9,7 +9,7 @@ deterministic JVM evidence separate from emulator or physical-device evidence.
 The focused automated suite is run with:
 
 ```bash
-export ANDROID_HOME=/home/marvin/.local/share/android-sdk
+export ANDROID_HOME=~/.local/share/android-sdk
 export CARGO_BUILD_JOBS=4
 scripts/verify-now-playing-scene.sh
 ```

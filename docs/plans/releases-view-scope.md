@@ -1,6 +1,6 @@
 ---
 slug: releases-view-scope
-worktree: /home/marvin/Projects/reprise-releases-view-scope
+worktree: ~/Projects/reprise-releases-view-scope
 branch: feature/releases-view-scope
 phase: refactored
 codex_session:

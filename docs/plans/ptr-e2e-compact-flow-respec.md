@@ -1,6 +1,6 @@
 ---
 slug: ptr-e2e-compact-flow-respec
-worktree: /home/marvin/Projects/reprise-ptr-e2e-harness-debt
+worktree: ~/Projects/reprise-ptr-e2e-harness-debt
 branch: feature/ptr-e2e-harness-debt
 phase: refactored
 codex_session:

@@ -1,6 +1,6 @@
 ---
 slug: p1a-welle2-lyrics
-worktree: /home/marvin/Projects/reprise-p1a-welle2-lyrics
+worktree: ~/Projects/reprise-p1a-welle2-lyrics
 branch: feature/p1a-welle2-lyrics
 phase: refactored
 codex_session:

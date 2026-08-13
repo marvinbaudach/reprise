@@ -1,6 +1,6 @@
 ---
 slug: p1a-welle4-waveform
-worktree: /home/marvin/Projects/reprise-p1a-welle4-waveform
+worktree: ~/Projects/reprise-p1a-welle4-waveform
 branch: feature/p1a-welle4-waveform
 phase: refactored
 codex_session:

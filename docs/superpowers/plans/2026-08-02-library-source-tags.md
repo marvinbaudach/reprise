@@ -1,6 +1,6 @@
 ---
 slug: library-source-tags
-worktree: /home/marvin/Projects/reprise-library-source-tags
+worktree: ~/Projects/reprise-library-source-tags
 branch: feature/library-source-tags
 phase: planned
 codex_session:

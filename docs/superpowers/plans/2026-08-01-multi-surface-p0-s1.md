@@ -1,6 +1,6 @@
 ---
 slug: multi-surface-p0-s1
-worktree: /home/marvin/Projects/reprise/.worktrees/multi-surface
+worktree: ~/Projects/reprise/.worktrees/multi-surface
 branch: feature/multi-surface-frontends
 phase: reviewed
 codex_session:

@@ -1,6 +1,6 @@
 ---
 slug: library-source-residence
-worktree: /home/marvin/Projects/reprise-libsource
+worktree: ~/Projects/reprise-libsource
 branch: feature/library-source-residence
 phase: planned
 codex_session:

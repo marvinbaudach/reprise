@@ -1,6 +1,6 @@
 ---
 slug: now-playing-scene
-worktree: /home/marvin/Projects/reprise-now-playing-scene
+worktree: ~/Projects/reprise-now-playing-scene
 branch: feature/now-playing-scene
 phase: planned
 codex_session:
