@@ -22,7 +22,6 @@ fn test_empty_queue_operations() {
     let mut q = Queue::new();
     assert_eq!(q.advance_auto(), None);
     assert_eq!(q.next_manual(), None);
-    assert_eq!(q.previous(), None);
 }
 
 // Test 2: set_tracks with valid start_index
@@ -120,29 +119,6 @@ fn test_repeat_one_next_manual() {
     assert_eq!(q.next_manual(), Some(30)); // Move past One
     assert_eq!(q.current(), Some(30));
     assert_eq!(q.next_manual(), None);
-}
-
-// Test 6: previous() behavior
-#[test]
-fn test_previous_at_first() {
-    let mut q = Queue::new();
-    q.set_tracks(vec![10, 20, 30], 0);
-
-    assert_eq!(q.previous(), Some(10)); // Stay at first
-    assert_eq!(q.current(), Some(10));
-}
-
-#[test]
-fn test_previous_mid_queue() {
-    let mut q = Queue::new();
-    q.set_tracks(vec![10, 20, 30], 2);
-
-    assert_eq!(q.current(), Some(30));
-    assert_eq!(q.previous(), Some(20));
-    assert_eq!(q.current(), Some(20));
-    assert_eq!(q.previous(), Some(10));
-    assert_eq!(q.current(), Some(10));
-    assert_eq!(q.previous(), Some(10));
 }
 
 // Test 7: Shuffle with current track staying current
@@ -597,9 +573,9 @@ fn test_shuffle_sticky_then_disable() {
     );
 }
 
-// Fix 2: previous() after exhaustion (pos == None)
+// A history target can restore the queue cursor after exhaustion.
 #[test]
-fn test_previous_after_exhaustion_non_empty() {
+fn jump_to_last_order_position_after_exhaustion_resumes_the_last_track() {
     let mut q = Queue::new();
     q.set_tracks(vec![10, 20, 30], 0);
     q.set_repeat(Repeat::Off);
@@ -610,24 +586,13 @@ fn test_previous_after_exhaustion_non_empty() {
     q.advance_auto(); // -> None (exhausted)
     assert_eq!(q.current(), None);
 
-    // previous() should resume at the LAST track of the current order
-    let result = q.previous();
+    let result = q.jump_to_order_position(q.len() - 1);
     assert_eq!(
         result,
         Some(30),
-        "previous() after exhaustion should resume at the last track"
+        "a recorded last-position target should resume the last track"
     );
     assert_eq!(q.current(), Some(30));
-}
-
-#[test]
-fn test_previous_after_exhaustion_empty_queue() {
-    let mut q = Queue::new();
-    q.set_tracks(vec![], 0);
-    assert_eq!(q.current(), None);
-
-    // previous() on empty queue should return None
-    assert_eq!(q.previous(), None);
 }
 
 // Fix 5: Strengthen shuffle-visits-all test to check strict property
