@@ -132,6 +132,43 @@ impl StatsSnapshot {
         sort_tracks(&mut tracks, sort_by);
         tracks
     }
+
+    /// The artist ranking under the chosen metric. The bands row reads this
+    /// rather than `spotlight.also`, which stops after four runners-up
+    /// (STATS-23).
+    pub fn top_artists_sorted(&self, sort_by: SortBy) -> Vec<RankedGroup> {
+        let mut artists = self.top_artists.clone();
+        artists.sort_by(|left, right| {
+            match sort_by {
+                SortBy::Plays => right
+                    .group
+                    .plays
+                    .cmp(&left.group.plays)
+                    .then_with(|| right.group.ms.cmp(&left.group.ms)),
+                SortBy::Time => right
+                    .group
+                    .ms
+                    .cmp(&left.group.ms)
+                    .then_with(|| right.group.plays.cmp(&left.group.plays)),
+            }
+            // The label breaks the last tie so the row order is stable across
+            // renders — a ranking that reshuffles on redraw reads as broken.
+            .then_with(|| left.group.label.cmp(&right.group.label))
+        });
+        artists
+    }
+
+    /// One artist's share of all artist listening, against the same population
+    /// `spotlight` divides by: tracks whose artist tag is empty are no artist
+    /// and must not shrink everyone else's share.
+    pub fn artist_share_percent(&self, artist: &RankedGroup) -> i64 {
+        let denominator = self
+            .top_artists
+            .iter()
+            .map(|entry| entry.group.ms)
+            .sum::<i64>();
+        percent(artist.group.ms, denominator)
+    }
 }
 
 /// Computes one owned, side-effect-free snapshot from the selected period.
@@ -550,3 +587,7 @@ mod hero_tests;
 #[cfg(test)]
 #[path = "stats_snapshot_genre_tests.rs"]
 mod genre_tests;
+
+#[cfg(test)]
+#[path = "stats_snapshot_artist_ranking_tests.rs"]
+mod artist_ranking_tests;
