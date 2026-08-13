@@ -259,9 +259,43 @@ fn rendered_rows(column_view: &gtk4::ColumnView) -> Vec<(String, f32)> {
     rows
 }
 
-/// The rendered height of a track row and section header, measured from the
-/// widget tree rather than from the geometry cache.
-fn rendered_band_heights(column_view: &gtk4::ColumnView) -> Option<(f32, f32)> {
+#[derive(Default)]
+struct RenderedBandSamples {
+    rows: Vec<f32>,
+    headers: Vec<f32>,
+}
+
+impl RenderedBandSamples {
+    fn has_both_bands(&self) -> bool {
+        !self.rows.is_empty() && !self.headers.is_empty()
+    }
+
+    fn uniform_heights(&self) -> Option<(f32, f32)> {
+        fn uniform(values: &[f32]) -> Option<f32> {
+            let first = *values.first()?;
+            values
+                .iter()
+                .all(|value| (*value - first).abs() < 0.5)
+                .then_some(first)
+        }
+
+        Some((uniform(&self.rows)?, uniform(&self.headers)?))
+    }
+
+    fn report(&self) -> String {
+        format!(
+            "bands(rows={} headers={} row_samples={:?} header_samples={:?})",
+            self.rows.len(),
+            self.headers.len(),
+            self.rows.iter().take(4).collect::<Vec<_>>(),
+            self.headers.iter().take(4).collect::<Vec<_>>(),
+        )
+    }
+}
+
+/// Rendered track-row and section-header heights, measured from the widget
+/// tree rather than from the geometry cache.
+fn rendered_band_samples(column_view: &gtk4::ColumnView) -> RenderedBandSamples {
     fn collect(
         widget: &gtk4::Widget,
         column_view: &gtk4::ColumnView,
@@ -291,14 +325,6 @@ fn rendered_band_heights(column_view: &gtk4::ColumnView) -> Option<(f32, f32)> {
         }
     }
 
-    fn uniform(values: &[f32]) -> Option<f32> {
-        let first = *values.first()?;
-        values
-            .iter()
-            .all(|value| (*value - first).abs() < 0.5)
-            .then_some(first)
-    }
-
     let mut headers = Vec::new();
     let mut rows = Vec::new();
     collect(
@@ -307,7 +333,15 @@ fn rendered_band_heights(column_view: &gtk4::ColumnView) -> Option<(f32, f32)> {
         &mut headers,
         &mut rows,
     );
-    Some((uniform(&rows)?, uniform(&headers)?))
+    RenderedBandSamples { rows, headers }
+}
+
+struct QueueTopFixture {
+    track_list: TrackList,
+    sectioned: SectionedTrackModel,
+    window: gtk4::Window,
+    queue_ranges: Vec<(u32, u32)>,
+    headers: Vec<String>,
 }
 
 struct DeepQueueFixture {
@@ -318,11 +352,10 @@ struct DeepQueueFixture {
     captured_queue: BrowserPlace,
     captured_anchor: TrackAnchor,
     headers: Vec<String>,
-    rendered_band_heights: (f32, f32),
     rows_before: Vec<(String, f32)>,
 }
 
-impl DeepQueueFixture {
+impl QueueTopFixture {
     fn new() -> Self {
         let (track_list, sectioned, window) = sectioned_track_list();
         let queue = queue_model();
@@ -342,8 +375,24 @@ impl DeepQueueFixture {
             headers.iter().any(|title| title == "Play Next"),
             "precondition: the queue renders its section headers; got {headers:?}"
         );
-        let rendered_band_heights = rendered_band_heights(&track_list.shared.column_view)
-            .expect("the Queue top must expose uniform allocated row and header bands");
+
+        Self {
+            track_list,
+            sectioned,
+            window,
+            queue_ranges,
+            headers,
+        }
+    }
+
+    fn capture_deep(self) -> DeepQueueFixture {
+        let Self {
+            track_list,
+            sectioned,
+            window,
+            queue_ranges,
+            headers,
+        } = self;
 
         let adjustment = track_list.shared.column_view.vadjustment().unwrap();
         track_list.shared.column_view.scroll_to(
@@ -362,7 +411,7 @@ impl DeepQueueFixture {
             .expect("a deep queue viewport must capture an anchor");
         let rows_before = rendered_rows(&track_list.shared.column_view);
 
-        Self {
+        DeepQueueFixture {
             track_list,
             sectioned,
             window,
@@ -370,9 +419,14 @@ impl DeepQueueFixture {
             captured_queue,
             captured_anchor,
             headers,
-            rendered_band_heights,
             rows_before,
         }
+    }
+}
+
+impl DeepQueueFixture {
+    fn new() -> Self {
+        QueueTopFixture::new().capture_deep()
     }
 
     fn visit_filtered_library(&self) {
@@ -405,7 +459,23 @@ impl DeepQueueFixture {
 fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let fixture = DeepQueueFixture::new();
+    let queue_top = QueueTopFixture::new();
+    let mut band_samples = RenderedBandSamples::default();
+    let bands_settled =
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            band_samples = rendered_band_samples(&queue_top.track_list.shared.column_view);
+            band_samples.has_both_bands()
+        });
+    let band_report = band_samples.report();
+    assert!(
+        bands_settled,
+        "the allocated Queue top did not expose both rendered bands; {band_report}"
+    );
+    let rendered_band_heights = band_samples.uniform_heights().unwrap_or_else(|| {
+        panic!("the allocated Queue top did not expose uniform rendered bands; {band_report}")
+    });
+    eprintln!("BANDPROBE {band_report}");
+    let fixture = queue_top.capture_deep();
     let adjustment = fixture.track_list.shared.column_view.vadjustment().unwrap();
     fixture.visit_filtered_library();
 
@@ -423,7 +493,7 @@ fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
     sampler.remove();
 
     let restored_ids = fixture.track_list.shared.current_view_ids();
-    let (row_height, header_height) = fixture.rendered_band_heights;
+    let (row_height, header_height) = rendered_band_heights;
     let row_height = f64::from(row_height);
     let header_height = f64::from(header_height);
     let measured_content =
@@ -431,7 +501,8 @@ fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
     assert!(
         (measured_content - adjustment.upper()).abs() < row_height,
         "geometry precondition failed: rendered Queue bands imply {measured_content}, \
-         but the adjustment upper is {}; this is a geometry finding, not necessarily an anchor defect",
+         but the adjustment upper is {}; this is a geometry finding, not necessarily an anchor defect; \
+         {band_report}",
         adjustment.upper()
     );
     let anchor_position = restored_ids
@@ -471,7 +542,7 @@ fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
     eprintln!(
         "QUEUEPROBE headers={:?} rows={} row_h={row_height:.1} header_h={header_height:.1} \
          headers_above={headers_above} anchor=({}, {:.1}) y_before={y_before:?} \
-         y_after={y_after:?} expected={expected:.0} final={:.0} {sample_report}",
+         y_after={y_after:?} expected={expected:.0} final={:.0} {band_report} {sample_report}",
         fixture.headers,
         restored_ids.len(),
         fixture.captured_anchor.track_id,
