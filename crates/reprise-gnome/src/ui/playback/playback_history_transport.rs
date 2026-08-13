@@ -45,6 +45,7 @@ pub(in crate::ui) fn entry_for(
 ) -> HistoryEntry {
     HistoryEntry {
         item,
+        replay_uri: None,
         context_pos: (!from_up_next)
             .then(|| context.current_order_position())
             .flatten(),

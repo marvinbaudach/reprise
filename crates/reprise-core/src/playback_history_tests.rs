@@ -6,6 +6,7 @@ use super::*;
 fn entry(id: i64, pos: usize) -> HistoryEntry {
     HistoryEntry {
         item: QueueItem::Track(id),
+        replay_uri: None,
         context_pos: Some(pos),
         sequence: (1, 1),
         from_up_next: false,
@@ -15,6 +16,7 @@ fn entry(id: i64, pos: usize) -> HistoryEntry {
 fn queued(id: i64) -> HistoryEntry {
     HistoryEntry {
         item: QueueItem::Track(id),
+        replay_uri: None,
         context_pos: None,
         sequence: (1, 1),
         from_up_next: true,
@@ -24,7 +26,7 @@ fn queued(id: i64) -> HistoryEntry {
 fn played(entries: &[HistoryEntry]) -> PlaybackHistory {
     let mut history = PlaybackHistory::default();
     for held in entries {
-        history.record(*held);
+        history.record(held.clone());
     }
     history
 }
@@ -94,6 +96,19 @@ fn play_14_forward_returns_to_the_track_the_jump_left() {
 }
 
 #[test]
+fn play_14_history_carries_the_replay_uri_with_the_entry() {
+    let mut first = entry(10, 0);
+    first.replay_uri = Some("content://track/10".to_owned());
+    let mut second = entry(20, 1);
+    second.replay_uri = Some("content://track/20".to_owned());
+    let mut history = played(&[first, second]);
+
+    let target = history.step_back().expect("first entry");
+
+    assert_eq!(target.replay_uri.as_deref(), Some("content://track/10"));
+}
+
+#[test]
 fn play_14_a_new_track_after_a_back_jump_drops_the_forward_side() {
     let mut history = played(&[entry(10, 0), entry(20, 1)]);
     history.step_back();
@@ -104,11 +119,24 @@ fn play_14_a_new_track_after_a_back_jump_drops_the_forward_side() {
 }
 
 #[test]
+fn play_14_replaying_the_current_entry_does_not_displace_real_history() {
+    let mut history = played(&[entry(10, 0), entry(20, 1)]);
+
+    for _ in 0..(HISTORY_CAPACITY + 1) {
+        history.record(entry(20, 1));
+    }
+
+    assert_eq!(history.back_len(), 1);
+    assert_eq!(history.step_back(), Some(entry(10, 0)));
+}
+
+#[test]
 fn play_14_episodes_travel_the_history_like_tracks() {
     let mut history = PlaybackHistory::default();
     history.record(entry(10, 0));
     history.record(HistoryEntry {
         item: QueueItem::Episode(5),
+        replay_uri: None,
         context_pos: None,
         sequence: (1, 1),
         from_up_next: true,
@@ -144,4 +172,13 @@ fn play_14_the_history_is_capped_and_cut_at_the_front() {
         history.current().map(|held| held.item),
         Some(QueueItem::Track(49))
     );
+}
+
+#[test]
+fn history_stacks_support_constant_time_front_eviction() {
+    fn assert_vec_deque<T>(_: &std::collections::VecDeque<T>) {}
+
+    let history = PlaybackHistory::default();
+    assert_vec_deque(&history.back);
+    assert_vec_deque(&history.forward);
 }

@@ -146,7 +146,7 @@ impl SessionState {
 
     fn current_uri(&self) -> Option<String> {
         if let Some(target) = self.history.presented() {
-            return Some(target.uri.clone());
+            return target.replay_uri.clone();
         }
         self.queue
             .current()
@@ -210,7 +210,7 @@ impl SessionState {
 
     fn current_track_id(&self) -> Option<i64> {
         if let Some(target) = self.history.presented() {
-            return target.entry.item.track_id();
+            return target.item.track_id();
         }
         self.queue.current()
     }
@@ -220,7 +220,7 @@ impl SessionState {
         let identity = self
             .history
             .presented()
-            .and_then(|target| target.entry.item.track_id().map(|id| (id, &target.uri)))
+            .and_then(|target| target.item.track_id().zip(target.replay_uri.as_ref()))
             .or_else(|| {
                 self.queue.current().and_then(|track_id| {
                     self.track_index(track_id)

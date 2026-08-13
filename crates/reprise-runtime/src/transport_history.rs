@@ -40,6 +40,7 @@ impl HistoryState {
 fn entry_for(queue: &Queue, track_id: i64, source: Source) -> HistoryEntry {
     HistoryEntry {
         item: QueueItem::Track(track_id),
+        replay_uri: None,
         context_pos: (source == Source::Context)
             .then(|| queue.current_order_position())
             .flatten(),

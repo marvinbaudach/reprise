@@ -6,70 +6,42 @@
 
 use reprise_core::playback::PlaybackBackend;
 use reprise_core::playback_history::{
-    resolve_previous, HistoryEntry, PlaybackHistory, PreviousAction, HISTORY_CAPACITY,
+    resolve_previous, HistoryEntry, PlaybackHistory, PreviousAction,
 };
 use reprise_core::queue::Queue;
 use reprise_core::up_next::QueueItem;
 
 use super::{AndroidPlaybackError, AndroidPlaybackState, SessionInner, SessionState};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct HistoryTarget {
-    pub(super) entry: HistoryEntry,
-    pub(super) uri: String,
-}
-
 #[derive(Debug, Default)]
 pub(super) struct HistoryState {
     history: PlaybackHistory,
     navigating: bool,
-    back_uris: Vec<String>,
-    forward_uris: Vec<String>,
-    current_uri: Option<String>,
-    presented: Option<HistoryTarget>,
+    presented: Option<HistoryEntry>,
 }
 
 impl HistoryState {
-    fn note(&mut self, entry: HistoryEntry, uri: String) {
+    fn note(&mut self, entry: HistoryEntry) {
         if std::mem::take(&mut self.navigating) {
             return;
         }
-        self.presented = None;
-        self.forward_uris.clear();
-        if let Some(previous) = self.current_uri.replace(uri) {
-            self.back_uris.push(previous);
-            if self.back_uris.len() > HISTORY_CAPACITY {
-                let overflow = self.back_uris.len() - HISTORY_CAPACITY;
-                self.back_uris.drain(0..overflow);
-            }
+        if self.history.current().as_ref() == Some(&entry) {
+            return;
         }
+        self.presented = None;
         self.history.record(entry);
     }
 
-    fn step_back_for_navigation(&mut self) -> Option<HistoryTarget> {
+    fn step_back_for_navigation(&mut self) -> Option<HistoryEntry> {
         let entry = self.history.step_back()?;
-        let uri = self
-            .back_uris
-            .pop()
-            .expect("playback history and its URI payload diverged");
-        if let Some(leaving) = self.current_uri.replace(uri.clone()) {
-            self.forward_uris.push(leaving);
-        }
         self.navigating = true;
-        Some(HistoryTarget { entry, uri })
+        Some(entry)
     }
 
-    fn step_forward_for_navigation(&mut self) -> Option<HistoryTarget> {
+    fn step_forward_for_navigation(&mut self) -> Option<HistoryEntry> {
         let entry = self.history.step_forward()?;
-        let uri = self
-            .forward_uris
-            .pop()
-            .expect("playback history and its URI payload diverged");
-        if let Some(leaving) = self.current_uri.replace(uri.clone()) {
-            self.back_uris.push(leaving);
-        }
         self.navigating = true;
-        Some(HistoryTarget { entry, uri })
+        Some(entry)
     }
 
     fn cancel_navigation(&mut self) {
@@ -80,18 +52,19 @@ impl HistoryState {
         self.presented = None;
     }
 
-    pub(super) fn presented(&self) -> Option<&HistoryTarget> {
+    pub(super) fn presented(&self) -> Option<&HistoryEntry> {
         self.presented.as_ref()
     }
 
-    fn present(&mut self, target: HistoryTarget) {
+    fn present(&mut self, target: HistoryEntry) {
         self.presented = Some(target);
     }
 }
 
-fn entry_for(queue: &Queue, track_id: i64) -> HistoryEntry {
+fn entry_for(queue: &Queue, track_id: i64, replay_uri: String) -> HistoryEntry {
     HistoryEntry {
         item: QueueItem::Track(track_id),
+        replay_uri: Some(replay_uri),
         context_pos: queue.current_order_position(),
         sequence: queue.sequence_identity(),
         from_up_next: false,
@@ -106,19 +79,19 @@ impl SessionState {
         let Some(uri) = self.current_uri() else {
             return;
         };
-        let entry = entry_for(&self.queue, track_id);
-        self.history.note(entry, uri);
+        let entry = entry_for(&self.queue, track_id, uri);
+        self.history.note(entry);
     }
 
-    fn history_back_target(&mut self) -> Option<HistoryTarget> {
+    fn history_back_target(&mut self) -> Option<HistoryEntry> {
         self.history.step_back_for_navigation()
     }
 
-    fn history_forward_target(&mut self) -> Option<HistoryTarget> {
+    fn history_forward_target(&mut self) -> Option<HistoryEntry> {
         self.history.step_forward_for_navigation()
     }
 
-    fn adopt_history_target(&mut self, target: HistoryTarget) {
+    fn adopt_history_target(&mut self, target: HistoryEntry) {
         self.history.present(target);
         self.snapshot.current_index = None;
         self.snapshot.position_ms = 0;
@@ -167,9 +140,9 @@ impl SessionInner {
         Ok(true)
     }
 
-    fn adopt_target(&self, state: &mut SessionState, target: HistoryTarget) {
+    fn adopt_target(&self, state: &mut SessionState, target: HistoryEntry) {
         let sequence = state.queue.sequence_identity();
-        if let Some(position) = target.entry.playhead_in(sequence) {
+        if let Some(position) = target.playhead_in(sequence) {
             state.queue.jump_to_order_position(position);
             state.adopt_current();
             state.history.present(target);
@@ -203,21 +176,37 @@ impl SessionInner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::playback_history::HISTORY_CAPACITY;
+
+    #[test]
+    fn play_14_android_keeps_replay_uris_in_the_core_history_entry_only() {
+        let source = include_str!("history.rs");
+        for parallel_field in [
+            ["back", "_uris: Vec"].concat(),
+            ["forward", "_uris: Vec"].concat(),
+            ["current", "_uri: Option"].concat(),
+        ] {
+            assert!(
+                !source.contains(&parallel_field),
+                "parallel URI history field remains: {parallel_field}"
+            );
+        }
+    }
 
     #[test]
     fn play_14_a_history_navigation_start_is_not_recorded_again() {
         let mut queue = Queue::new();
         queue.set_tracks(vec![10, 20], 0);
         let mut state = HistoryState::default();
-        state.note(entry_for(&queue, 10), "content://track/10".into());
+        state.note(entry_for(&queue, 10, "content://track/10".into()));
         queue.jump_to_order_position(1);
-        state.note(entry_for(&queue, 20), "content://track/20".into());
+        state.note(entry_for(&queue, 20, "content://track/20".into()));
 
         let target = state
             .step_back_for_navigation()
             .expect("the first track is behind the current one");
-        assert_eq!(target.entry.item, QueueItem::Track(10));
-        state.note(entry_for(&queue, 10), target.uri);
+        assert_eq!(target.item, QueueItem::Track(10));
+        state.note(target);
 
         assert!(!state.navigating, "the navigation marker is one-shot");
         assert_eq!(state.history.back_len(), 0);
@@ -230,14 +219,18 @@ mod tests {
         for track_id in 0..(HISTORY_CAPACITY as i64 + 50) {
             let mut queue = Queue::new();
             queue.set_tracks(vec![track_id], 0);
-            state.note(
-                entry_for(&queue, track_id),
+            state.note(entry_for(
+                &queue,
+                track_id,
                 format!("content://track/{track_id}"),
-            );
+            ));
         }
 
-        assert_eq!(state.back_uris.len(), HISTORY_CAPACITY);
-        assert_eq!(state.current_uri.as_deref(), Some("content://track/249"));
+        assert_eq!(state.history.back_len(), HISTORY_CAPACITY);
+        assert_eq!(
+            state.history.current().and_then(|entry| entry.replay_uri),
+            Some("content://track/249".into())
+        );
         for _ in 0..HISTORY_CAPACITY {
             assert!(state.step_back_for_navigation().is_some());
             state.navigating = false;
@@ -251,24 +244,30 @@ mod tests {
         let mut state = HistoryState::default();
         for (position, track_id) in [10, 20, 30].into_iter().enumerate() {
             queue.jump_to_order_position(position);
-            state.note(
-                entry_for(&queue, track_id),
+            state.note(entry_for(
+                &queue,
+                track_id,
                 format!("content://track/{track_id}"),
-            );
+            ));
         }
         let target = state.step_back_for_navigation().expect("20 is behind 30");
-        state.note(target.entry, target.uri);
+        state.note(target.clone());
+        state.note(target);
 
         queue.jump_to_order_position(3);
-        state.note(entry_for(&queue, 99), "content://track/99".into());
+        state.note(entry_for(&queue, 99, "content://track/99".into()));
 
         assert_eq!(
-            state.step_back_for_navigation().map(|target| target.uri),
+            state
+                .step_back_for_navigation()
+                .and_then(|target| target.replay_uri),
             Some("content://track/20".into())
         );
         state.navigating = false;
         assert_eq!(
-            state.step_back_for_navigation().map(|target| target.uri),
+            state
+                .step_back_for_navigation()
+                .and_then(|target| target.replay_uri),
             Some("content://track/10".into())
         );
     }
@@ -278,18 +277,40 @@ mod tests {
         let mut queue = Queue::new();
         queue.set_tracks(vec![10, 20, 10], 0);
         let mut state = HistoryState::default();
-        state.note(entry_for(&queue, 10), "content://first/10".into());
+        state.note(entry_for(&queue, 10, "content://first/10".into()));
         queue.jump_to_order_position(1);
-        state.note(entry_for(&queue, 20), "content://track/20".into());
+        state.note(entry_for(&queue, 20, "content://track/20".into()));
         queue.jump_to_order_position(2);
-        state.note(entry_for(&queue, 10), "content://second/10".into());
+        state.note(entry_for(&queue, 10, "content://second/10".into()));
 
         let middle = state.step_back_for_navigation().expect("20 is behind 10");
-        assert_eq!(middle.uri, "content://track/20");
+        assert_eq!(middle.replay_uri.as_deref(), Some("content://track/20"));
         state.navigating = false;
         let first = state
             .step_back_for_navigation()
             .expect("the first 10 remains");
-        assert_eq!(first.uri, "content://first/10");
+        assert_eq!(first.replay_uri.as_deref(), Some("content://first/10"));
+    }
+
+    #[test]
+    fn play_14_repeat_one_does_not_displace_androids_real_history() {
+        let mut queue = Queue::new();
+        queue.set_tracks(vec![10, 20], 0);
+        let mut state = HistoryState::default();
+        state.note(entry_for(&queue, 10, "content://track/10".into()));
+        queue.jump_to_order_position(1);
+        state.note(entry_for(&queue, 20, "content://track/20".into()));
+        queue.set_repeat(reprise_core::queue::Repeat::One);
+
+        for _ in 0..(reprise_core::playback_history::HISTORY_CAPACITY + 1) {
+            assert_eq!(queue.advance_auto(), Some(20));
+            state.note(entry_for(&queue, 20, "content://track/20".into()));
+        }
+
+        assert_eq!(state.history.back_len(), 1);
+        assert_eq!(
+            state.step_back_for_navigation().map(|entry| entry.item),
+            Some(QueueItem::Track(10))
+        );
     }
 }

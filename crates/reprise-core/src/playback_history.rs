@@ -20,6 +20,8 @@
 //! every application start. It is pure and GUI-free so every surface shares
 //! the same semantics.
 
+use std::collections::VecDeque;
+
 use crate::up_next::QueueItem;
 
 /// Above this position, Previous seeks to the start of the current item
@@ -29,9 +31,12 @@ pub const PREVIOUS_RESTART_THRESHOLD_MS: i64 = 3_000;
 /// Maximum number of entries retained on the backward stack.
 pub const HISTORY_CAPACITY: usize = 200;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HistoryEntry {
     pub item: QueueItem,
+    /// Surface-specific replay locator. Android stores its content URI here;
+    /// surfaces that resolve stable IDs at playback time leave it empty.
+    pub replay_uri: Option<String>,
     /// The context playhead when this entry played. `None` for anything that
     /// played beside the context, including Up Next and episodes.
     pub context_pos: Option<usize>,
@@ -52,42 +57,44 @@ impl HistoryEntry {
 
 #[derive(Clone, Debug, Default)]
 pub struct PlaybackHistory {
-    back: Vec<HistoryEntry>,
-    forward: Vec<HistoryEntry>,
+    back: VecDeque<HistoryEntry>,
+    forward: VecDeque<HistoryEntry>,
     current: Option<HistoryEntry>,
 }
 
 impl PlaybackHistory {
     /// Records an ordinary transition and discards any forward branch.
     pub fn record(&mut self, entry: HistoryEntry) {
+        if self.current.as_ref() == Some(&entry) {
+            return;
+        }
         self.forward.clear();
         if let Some(previous) = self.current.replace(entry) {
-            self.back.push(previous);
+            self.back.push_back(previous);
             if self.back.len() > HISTORY_CAPACITY {
-                let overflow = self.back.len() - HISTORY_CAPACITY;
-                self.back.drain(0..overflow);
+                self.back.pop_front();
             }
         }
     }
 
     pub fn step_back(&mut self) -> Option<HistoryEntry> {
-        let target = self.back.pop()?;
-        if let Some(leaving) = self.current.replace(target) {
-            self.forward.push(leaving);
+        let target = self.back.pop_back()?;
+        if let Some(leaving) = self.current.replace(target.clone()) {
+            self.forward.push_back(leaving);
         }
         Some(target)
     }
 
     pub fn step_forward(&mut self) -> Option<HistoryEntry> {
-        let target = self.forward.pop()?;
-        if let Some(leaving) = self.current.replace(target) {
-            self.back.push(leaving);
+        let target = self.forward.pop_back()?;
+        if let Some(leaving) = self.current.replace(target.clone()) {
+            self.back.push_back(leaving);
         }
         Some(target)
     }
 
     pub fn peek_back(&self) -> Option<HistoryEntry> {
-        self.back.last().copied()
+        self.back.back().cloned()
     }
 
     pub fn can_go_forward(&self) -> bool {
@@ -95,7 +102,7 @@ impl PlaybackHistory {
     }
 
     pub fn current(&self) -> Option<HistoryEntry> {
-        self.current
+        self.current.clone()
     }
 
     pub fn back_len(&self) -> usize {
@@ -109,7 +116,7 @@ impl PlaybackHistory {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PreviousAction {
     /// Seek to the beginning without restarting playback.
     RestartCurrent,
