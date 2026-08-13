@@ -86,6 +86,11 @@ pub struct ListenEventSnapshot {
 pub struct RankedGroup {
     pub group: Group,
     pub representative_track_path: String,
+    /// Up to three cover candidates, most-played album first. The view walks
+    /// them until one resolves to artwork: the most-played album is the right
+    /// answer, but an album without a cover must not leave the card blank while
+    /// the runner-up carries one (STATS-23).
+    pub cover_candidates: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +107,10 @@ pub(crate) struct NamedRow {
     pub ms: i64,
     pub last_played_at: i64,
     pub path: String,
+    /// The album this aggregate row belongs to, empty where the query cannot
+    /// name one. Covers are chosen per album, so a row without one falls into a
+    /// single bucket per group — which is what every row did before STATS-23.
+    pub album: String,
 }
 
 #[derive(Debug, Clone)]
@@ -119,7 +128,6 @@ pub(crate) struct AlbumRow {
 #[derive(Debug, Clone)]
 pub(crate) struct TrackAggregate {
     pub track: TopTrack,
-    pub effective_artist: String,
 }
 
 /// `tracks.artist_mbid` is keyed to the raw `artist` column, but the stats
@@ -236,15 +244,17 @@ pub(crate) fn artist_rows(
 ) -> Result<Vec<NamedRow>, rusqlite::Error> {
     // Grouped one level finer than the fold needs, because MBID eligibility is
     // a per-row question (see `eligible_artist_mbid`) and SQLite cannot answer
-    // it: its `lower()` folds no diacritics. Rust decides, then folds.
+    // it: its `lower()` folds no diacritics. Rust decides, then folds. The album
+    // also stays in the group so cover candidates can be ranked per album.
     let sql = format!(
         "SELECT {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, le.artist, le.album_artist, \
                 NULLIF(TRIM(le.artist_mbid), ''), COUNT(le.id), \
-                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(le.path) \
+                COALESCE(SUM({CLAMPED_MS}), 0), MAX(le.played_at), MIN(le.path), \
+                le.album \
          FROM listen_events le \
          WHERE le.played_at >= ?1 AND le.played_at < ?2 \
            AND TRIM({RAW_EFFECTIVE_ALBUM_ARTIST}) <> '' \
-         GROUP BY raw, le.artist, le.album_artist, le.artist_mbid"
+         GROUP BY raw, le.artist, le.album_artist, le.artist_mbid, le.album"
     );
     let mut statement = conn.prepare(&sql)?;
     let rows = statement
@@ -260,6 +270,7 @@ pub(crate) fn artist_rows(
                 ms: row.get(5)?,
                 last_played_at: row.get(6)?,
                 path: row.get(7)?,
+                album: row.get(8)?,
             })
         })?
         .collect();
@@ -311,6 +322,7 @@ pub(crate) fn genre_artist_rows(
                     ms: row.get(6)?,
                     last_played_at: row.get(7)?,
                     path: row.get(8)?,
+                    album: String::new(),
                 },
             })
         })?
@@ -343,6 +355,7 @@ pub(crate) fn album_rows(
                     ms: row.get(4)?,
                     last_played_at: row.get(5)?,
                     path: row.get(6)?,
+                    album: row.get(0)?,
                 },
             })
         })?
@@ -389,7 +402,6 @@ pub(crate) fn track_rows(
                     total_ms: row.get(5)?,
                     track_path: row.get(6)?,
                 },
-                effective_artist: row.get(7)?,
             })
         })?
         .collect();
@@ -491,6 +503,18 @@ pub(crate) fn key_resolver(rows: &[NamedRow]) -> KeyResolver {
     }))
 }
 
+/// How many albums a group offers as cover candidates. The view walks the list
+/// until one resolves; three is enough to cover an unillustrated favourite
+/// without making the walk visible.
+const COVER_CANDIDATE_LIMIT: usize = 3;
+
+#[derive(Clone, Debug)]
+struct AlbumCandidate {
+    plays: i64,
+    ms: i64,
+    path: String,
+}
+
 pub(crate) fn ranked_groups(rows: &[NamedRow]) -> Vec<RankedGroup> {
     let inputs = rows
         .iter()
@@ -504,20 +528,63 @@ pub(crate) fn ranked_groups(rows: &[NamedRow]) -> Vec<RankedGroup> {
         })
         .collect::<Vec<_>>();
     let resolver = key_resolver(rows);
-    let mut paths = HashMap::<String, String>::new();
-    for row in rows {
-        let path = paths
-            .entry(resolver.key_for(&row.raw))
-            .or_insert_with(|| row.path.clone());
-        if row.path < *path {
-            *path = row.path.clone();
+
+    // Covers are chosen per album, not per aggregate row: one album can arrive
+    // split across several spellings or MBIDs, and the cover question is about
+    // the album, not about the spelling (STATS-23).
+    let mut albums = HashMap::<(String, String), AlbumCandidate>::new();
+    for row in rows
+        .iter()
+        .filter(|row| !normalize_group_key(&row.raw).is_empty())
+    {
+        let entry = albums
+            .entry((resolver.key_for(&row.raw), normalize_group_key(&row.album)))
+            .or_insert_with(|| AlbumCandidate {
+                plays: 0,
+                ms: 0,
+                path: row.path.clone(),
+            });
+        entry.plays += row.plays;
+        entry.ms += row.ms;
+        if row.path < entry.path {
+            entry.path = row.path.clone();
         }
     }
+
+    let mut by_key = HashMap::<String, Vec<AlbumCandidate>>::new();
+    for ((key, _album), candidate) in albums {
+        by_key.entry(key).or_default().push(candidate);
+    }
+    for candidates in by_key.values_mut() {
+        // Most played first; ties fall to listening time and then to the path,
+        // so the same library always shows the same cover.
+        candidates.sort_by(|left, right| {
+            right
+                .plays
+                .cmp(&left.plays)
+                .then_with(|| right.ms.cmp(&left.ms))
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        candidates.truncate(COVER_CANDIDATE_LIMIT);
+    }
+
     fold_groups(&inputs)
         .into_iter()
-        .map(|group| RankedGroup {
-            representative_track_path: paths.get(&group.key).cloned().unwrap_or_default(),
-            group,
+        .map(|group| {
+            let paths = by_key
+                .get(&group.key)
+                .map(|candidates| {
+                    candidates
+                        .iter()
+                        .map(|candidate| candidate.path.clone())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            RankedGroup {
+                representative_track_path: paths.first().cloned().unwrap_or_default(),
+                cover_candidates: paths,
+                group,
+            }
         })
         .collect()
 }
@@ -538,6 +605,7 @@ fn query_named_rows(
                 ms: row.get(3)?,
                 last_played_at: row.get(4)?,
                 path: row.get(5)?,
+                album: String::new(),
             })
         })?
         .collect();

@@ -219,7 +219,9 @@ pub(in crate::ui) fn css() -> String {
            transition: background-color {transition}; }}\n\
          .stats-top-track-row:hover {{ \
            background-color: alpha(currentColor, {hover_alpha}); }}\n\
-         .stats-top-track-row:focus-visible {{ outline: 2px solid @accent_color; }}",
+         .stats-top-track-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
+         .stats-artist-row {{ padding: 0; }}\n\
+         .stats-bands-card {{ padding: 8px; }}",
         radius = tokens::RADIUS_SURFACE,
         border_alpha = tokens::SURFACE_BORDER_ALPHA,
         hover_alpha = tokens::BTN_HOVER_ALPHA,

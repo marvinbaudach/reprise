@@ -195,7 +195,7 @@ fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
     );
     assert_eq!(view.render.header.root.opacity(), 1.0);
     assert_eq!(view.render.hero.root.opacity(), 1.0);
-    assert_eq!(view.render.bands_row.widget().opacity(), 1.0);
+    assert_eq!(view.render.bands_card.widget().opacity(), 1.0);
     assert_eq!(view.render.songs_section.opacity(), 1.0);
 
     wait_for(300);
