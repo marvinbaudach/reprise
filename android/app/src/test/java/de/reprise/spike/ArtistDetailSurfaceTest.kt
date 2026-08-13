@@ -57,9 +57,9 @@ class ArtistDetailSurfaceTest {
         showArtist(
             artistDetail(
                 albums = listOf(
-                    album("Old", 2010),
-                    album("Zed", 2024),
                     album("Alpha", 2024),
+                    album("Zed", 2024),
+                    album("Old", 2010),
                 ),
             ),
         )

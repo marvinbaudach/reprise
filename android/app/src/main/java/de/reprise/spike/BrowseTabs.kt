@@ -224,16 +224,10 @@ internal fun ArtistsTab(
                 Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
             }
             if (hasAlbums) {
-                val orderedAlbums = selectedArtist.albums.copy(
-                    rows = selectedArtist.albums.rows.sortedWith(
-                        compareByDescending<LibraryAlbum> { it.year }
-                            .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title.trim() },
-                    ),
-                )
                 ArtistDetailSections(
                     surfaceLayout = surfaceLayout,
                     surfaceState = surfaceState,
-                    albums = orderedAlbums,
+                    albums = selectedArtist.albums,
                     untaggedTracks = selectedArtist.untaggedTracks,
                     playback = playback,
                     albumsRequestedOffset = artistAlbumsRequestedOffset,
