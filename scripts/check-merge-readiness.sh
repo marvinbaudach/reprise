@@ -101,18 +101,8 @@ env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
   REPRISE_AUDIO_SINK=fakesink \
   cargo test --locked -p reprise-platform-linux -- --test-threads=1
 
-echo "== Rule-named display tests =="
-scripts/check-display-tests.sh --rule-named
-
-# The MOT section of docs/ux-rules.md is Phase 2, so the motion tests carry no
-# active/committed rule prefix yet and --rule-named filters them all out. Run
-# them explicitly so the Phase 1 gate actually exercises the motion behaviour
-# instead of silently skipping every #[ignore]d motion test.
-echo "== Motion display tests =="
-scripts/check-display-tests.sh --motion
-
-echo "== CSS parse display tests =="
-scripts/check-display-tests.sh --css
+echo "== All ignored display tests =="
+scripts/check-display-tests.sh
 
 # The runtime service's own tests need a session bus. A private one, so they
 # never touch the developer's running Reprise.
