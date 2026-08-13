@@ -5093,7 +5093,11 @@ listening statistics.
 - **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
   `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
   through the shared Artwork module (`module.artwork.enabled`, which also
-  covers album covers and artist portraits) and are
+  covers album covers and artist portraits). On upgrade, an absent unified
+  setting inherits consent once when any retired artwork setting
+  (`module.cover_download.enabled`, `module.artist_portraits.enabled`, or
+  `module.source_images.enabled`) is explicitly on; all-off or absent legacy
+  settings stay off, and an existing unified setting always wins. Artwork is
   subject to `NET-1a`: a cache hit is always shown, regardless of the gate — a
   cache miss triggers a fetch only when the global gate **and** the module are
   both active, otherwise the surface's source fallback stays, never an error

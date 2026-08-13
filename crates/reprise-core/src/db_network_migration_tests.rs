@@ -68,6 +68,16 @@ fn first_enable_completed(conn: &Connection) -> bool {
     .unwrap()
 }
 
+fn stored_artwork_setting(conn: &Connection) -> Option<String> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        [crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE)],
+        |row| row.get(0),
+    )
+    .optional()
+    .unwrap()
+}
+
 #[test]
 fn net_2a_fresh_database_migration_stores_the_master_off() {
     let conn = open(None).unwrap();
@@ -387,76 +397,99 @@ fn net_2a_v15_database_runs_network_grandfathering_at_v16() {
 }
 
 #[test]
-fn v71_combines_legacy_artwork_flags_conservatively_without_overwriting_a_decision() {
-    const COVER: &str = "module.cover_download.enabled";
-    const PORTRAITS: &str = "module.artist_portraits.enabled";
-    const SOURCES: &str = "module.source_images.enabled";
+fn src_11_v71_inherits_consent_from_one_legacy_artwork_module() {
     const ARTWORK: &str = "module.artwork.enabled";
 
-    for (legacy, existing_artwork, expected_stored, expected_enabled) in [
-        ([Some("1"), Some("1"), Some("1")], None, Some("1"), true),
-        ([Some("1"), Some("0"), Some("1")], None, None, false),
-        ([Some("1"), None, None], None, None, false),
-        ([None, None, None], None, None, false),
-        (
-            [Some("1"), Some("1"), Some("1")],
-            Some("0"),
-            Some("0"),
-            false,
-        ),
-        (
-            [Some("0"), Some("0"), Some("0")],
-            Some("1"),
-            Some("1"),
-            true,
-        ),
+    for legacy_key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+        crate::db_grandfather::LEGACY_SOURCE_IMAGES_KEY,
     ] {
         let conn = open(None).unwrap();
         migrate_with_empty_caches(&conn);
-        for (key, value) in [COVER, PORTRAITS, SOURCES].into_iter().zip(legacy) {
-            if let Some(value) = value {
-                conn.execute(
-                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-                    rusqlite::params![key, value],
-                )
-                .unwrap();
-            }
-        }
-        if let Some(value) = existing_artwork {
-            conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-                rusqlite::params![ARTWORK, value],
-            )
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')",
+            [legacy_key],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM settings WHERE key = ?1", [ARTWORK])
             .unwrap();
-        } else {
-            conn.execute("DELETE FROM settings WHERE key = ?1", [ARTWORK])
-                .unwrap();
-        }
         conn.pragma_update(None, "user_version", 70).unwrap();
 
         migrate_with_empty_caches(&conn);
 
-        let actual: Option<String> = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                [ARTWORK],
-                |row| row.get(0),
-            )
-            .optional()
-            .unwrap();
-        assert_eq!(
-            actual.as_deref(),
-            expected_stored,
-            "legacy={legacy:?}, existing={existing_artwork:?}"
-        );
-        assert_eq!(
-            crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap(),
-            expected_enabled,
-            "legacy={legacy:?}, existing={existing_artwork:?}"
-        );
-        let version: i64 = conn
-            .query_row("PRAGMA user_version", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, 71);
+        assert_eq!(stored_artwork_setting(&conn).as_deref(), Some("1"));
+        assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
     }
+}
+
+#[test]
+fn src_11_v71_all_legacy_artwork_modules_off_stays_off() {
+    let conn = open(None).unwrap();
+    migrate_with_empty_caches(&conn);
+    for legacy_key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+        crate::db_grandfather::LEGACY_SOURCE_IMAGES_KEY,
+    ] {
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '0')",
+            [legacy_key],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "DELETE FROM settings WHERE key = ?1",
+        [crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE)],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 70).unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_artwork_setting(&conn), None);
+    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
+}
+
+#[test]
+fn src_11_v71_without_legacy_artwork_rows_stays_off() {
+    let conn = open(None).unwrap();
+    migrate_with_empty_caches(&conn);
+    for key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY.to_owned(),
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY.to_owned(),
+        crate::db_grandfather::LEGACY_SOURCE_IMAGES_KEY.to_owned(),
+        crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE),
+    ] {
+        conn.execute("DELETE FROM settings WHERE key = ?1", [key])
+            .unwrap();
+    }
+    conn.pragma_update(None, "user_version", 70).unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_artwork_setting(&conn), None);
+    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
+}
+
+#[test]
+fn src_11_v71_manual_artwork_disable_survives_a_second_migration_run() {
+    let conn = open(None).unwrap();
+    migrate_with_empty_caches(&conn);
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')",
+        [crate::db_grandfather::LEGACY_SOURCE_IMAGES_KEY],
+    )
+    .unwrap();
+    let artwork_key = crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE);
+    conn.execute("DELETE FROM settings WHERE key = ?1", [&artwork_key])
+        .unwrap();
+    conn.pragma_update(None, "user_version", 70).unwrap();
+    migrate_with_empty_caches(&conn);
+    crate::library::settings::set_bool_in(&conn, &artwork_key, false).unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_artwork_setting(&conn).as_deref(), Some("0"));
+    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
 }
