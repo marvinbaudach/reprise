@@ -285,18 +285,19 @@ private fun LibraryTrackRow(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
-                            text = when (subtitle) {
-                                TrackRowSubtitle.ARTIST_AND_ALBUM -> track.details()
-                                TrackRowSubtitle.ALBUM_ONLY -> track.album.ifBlank {
-                                    "Unknown album"
-                                }
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        val subtitleText = when (subtitle) {
+                            TrackRowSubtitle.ARTIST_AND_ALBUM -> track.details()
+                            TrackRowSubtitle.ALBUM_ONLY -> track.album.ifBlank { null }
+                        }
+                        if (subtitleText != null) {
+                            Text(
+                                text = subtitleText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                     if (queueActions == null) {
                         FavouriteHeartButton(
