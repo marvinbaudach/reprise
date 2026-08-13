@@ -101,6 +101,8 @@ source "$REPO_ROOT/scripts/ptr-e2e/column-header-menu.sh"
 source "$REPO_ROOT/scripts/ptr-e2e/playlist-delete.sh"
 # shellcheck source=preferences.sh
 source "$REPO_ROOT/scripts/ptr-e2e/preferences.sh"
+# shellcheck source=selection-anchor.sh
+source "$REPO_ROOT/scripts/ptr-e2e/selection-anchor.sh"
 # shellcheck source=column-reorder.sh
 source "$REPO_ROOT/scripts/ptr-e2e/column-reorder.sh"
 # shellcheck source=compact-seek.sh
@@ -528,6 +530,10 @@ fi
 # --- Flow 1: inline rating click reaches a real star button -----------------
 
 run_rating_flow
+# --- Flow 1a: Shift click reaches the capture-phase cell gesture ------------
+
+run_selection_anchor_flow
+
 # --- Flow 1b: right-click headers expose column visibility ------------------
 
 run_column_header_menu_flow

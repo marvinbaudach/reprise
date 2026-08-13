@@ -60,6 +60,8 @@ pub(in crate::ui) mod track_list_queue_menu;
 pub(in crate::ui) mod track_list_reload;
 pub(in crate::ui) mod track_list_rescan;
 pub(in crate::ui) mod track_list_row_interaction;
+pub(in crate::ui) mod track_list_selection_anchor;
+pub(in crate::ui) mod track_list_selection_input;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
 pub(crate) mod track_list_title_column;

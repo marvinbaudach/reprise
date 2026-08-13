@@ -43,6 +43,7 @@ pub(in crate::ui) fn append_rating_column(
                 &shared,
                 &column_view,
             );
+            super::track_list_selection_input::wire_cell_selection(&rating_widget, item, &shared);
             track_list_dnd::wire_row_dnd(&rating_widget, item, &shared);
             item.set_child(Some(&rating_widget));
             list_density::inherit(&column_view, &rating_widget);

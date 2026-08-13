@@ -426,6 +426,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
     column_view.insert_action_group(ACTION_GROUP_NAME, Some(&action_group));
     super::track_list_context_keys::wire(column_view, shared);
     super::track_list_keyboard_reorder::wire(column_view, shared);
+    super::track_list_selection_input::wire(column_view, shared);
 }
 
 /// Opens the row context menu for a secondary click at widget-local `(x,
