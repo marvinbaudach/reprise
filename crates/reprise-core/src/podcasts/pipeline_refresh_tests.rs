@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use super::*;
+use super::{RefreshRequest as R, *};
 use crate::podcasts::store::{self, NewSubscription};
 
 #[derive(Default)]
@@ -137,16 +137,17 @@ fn first_fetch_backlog_is_not_new_and_next_refresh_marks_only_new_arrivals() {
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let failed = refresh_to_root(&conn, &feed, &FakeYoutube, 5, true, directory.path()).unwrap();
+    let failed =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 5, R::force(), directory.path()).unwrap();
     assert_eq!(failed.failures.len(), 1);
 
-    refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
     let backlog = super::super::query::episodes_for_subscription(&conn, id).unwrap();
     assert_eq!(backlog.len(), 15);
     assert!(backlog.iter().all(|episode| !episode.is_new));
     assert!(backlog.iter().all(|episode| episode.first_seen_at == 1));
 
-    refresh_to_root(&conn, &feed, &FakeYoutube, 20, true, directory.path()).unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 20, R::force(), directory.path()).unwrap();
     let refreshed = super::super::query::episodes_for_subscription(&conn, id).unwrap();
     assert_eq!(refreshed.iter().filter(|episode| episode.is_new).count(), 1);
     assert_eq!(
@@ -171,7 +172,8 @@ fn conditional_cycle_stores_headers_then_only_bumps_not_modified_state() {
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let first = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let first =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
     assert_eq!(first.refreshed, 1);
     assert_eq!(first.episodes_inserted, 1);
     let stored = store::subscription(&conn, id).unwrap().unwrap();
@@ -179,7 +181,8 @@ fn conditional_cycle_stores_headers_then_only_bumps_not_modified_state() {
     assert_eq!(stored.etag.as_deref(), Some("\"v1\""));
     assert_eq!(stored.last_fetch_at, Some(10));
 
-    let second = refresh_to_root(&conn, &feed, &FakeYoutube, 20, true, directory.path()).unwrap();
+    let second =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 20, R::force(), directory.path()).unwrap();
     assert_eq!(second.not_modified, 1);
     let stored = store::subscription(&conn, id).unwrap().unwrap();
     assert_eq!(stored.last_fetch_at, Some(20));
@@ -201,11 +204,13 @@ fn future_only_baseline_skips_known_guids_and_keeps_importing_new_ones() {
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let first = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let first =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
     assert_eq!(first.episodes_inserted, 0);
     assert_eq!(super::super::query::count_unplayed(&conn).unwrap(), 0);
 
-    let second = refresh_to_root(&conn, &feed, &FakeYoutube, 20, true, directory.path()).unwrap();
+    let second =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 20, R::force(), directory.path()).unwrap();
     assert_eq!(second.episodes_inserted, 1);
     assert_eq!(super::super::query::count_unplayed(&conn).unwrap(), 1);
     assert_eq!(
@@ -228,7 +233,8 @@ fn one_failed_subscription_does_not_block_the_next() {
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let summary =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
 
     assert_eq!(summary.attempted, 2);
     assert_eq!(
@@ -273,7 +279,8 @@ fn net_3d_retryable_refresh_waits_without_delaying_failure_state_and_success_res
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let failed = refresh_to_root(&conn, &feed, &FakeYoutube, 10, false, directory.path()).unwrap();
+    let failed =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::due(), directory.path()).unwrap();
     assert_eq!(failed.attempted, 1);
     assert_eq!(failed.failures.len(), 1);
     let stored = store::subscription(&conn, id).unwrap().unwrap();
@@ -283,18 +290,20 @@ fn net_3d_retryable_refresh_waits_without_delaying_failure_state_and_success_res
         "a retryable failure must keep the prior successful-fetch clock due"
     );
 
-    let waiting = refresh_to_root(&conn, &feed, &FakeYoutube, 11, false, directory.path()).unwrap();
+    let waiting =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 11, R::due(), directory.path()).unwrap();
     assert_eq!(waiting.attempted, 0);
 
     let recovered =
-        refresh_to_root(&conn, &feed, &FakeYoutube, 12, false, directory.path()).unwrap();
+        refresh_to_root(&conn, &feed, &FakeYoutube, 12, R::due(), directory.path()).unwrap();
     assert_eq!(recovered.attempted, 1);
     assert_eq!(recovered.refreshed, 1);
     let stored = store::subscription(&conn, id).unwrap().unwrap();
     assert_eq!(stored.last_outcome.as_deref(), Some("ok"));
     assert_eq!(stored.last_fetch_at, Some(12));
 
-    let reset = refresh_to_root(&conn, &feed, &FakeYoutube, 13, false, directory.path()).unwrap();
+    let reset =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 13, R::due(), directory.path()).unwrap();
     assert_eq!(reset.attempted, 0);
 }
 
@@ -315,7 +324,7 @@ fn net_3d_background_attempts_stop_after_the_shared_cap() {
 
     for now in [100, 102, 106, 114] {
         let summary =
-            refresh_to_root(&conn, &feed, &FakeYoutube, now, false, directory.path()).unwrap();
+            refresh_to_root(&conn, &feed, &FakeYoutube, now, R::due(), directory.path()).unwrap();
         assert_eq!(summary.attempted, 1, "expected an attempt at {now}");
         assert_eq!(summary.failures.len(), 1);
     }
@@ -328,7 +337,7 @@ fn net_3d_background_attempts_stop_after_the_shared_cap() {
         "exhaustion must return the source to its normal refresh interval"
     );
     let stopped =
-        refresh_to_root(&conn, &feed, &FakeYoutube, 115, false, directory.path()).unwrap();
+        refresh_to_root(&conn, &feed, &FakeYoutube, 115, R::due(), directory.path()).unwrap();
     assert_eq!(stopped.attempted, 0);
 }
 
@@ -342,7 +351,8 @@ fn auto_download_is_capped_at_three_new_episodes_per_run() {
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let summary =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
 
     assert_eq!(summary.downloads_completed, 3);
     assert_eq!(feed.downloads.borrow().len(), 3);
@@ -370,7 +380,7 @@ fn pod_7_auto_download_reports_episode_states_during_refresh() {
         &feed,
         &FakeYoutube,
         10,
-        true,
+        R::force(),
         directory.path(),
         &mut |episode_id, state| events.push((episode_id, state)),
     )
@@ -404,7 +414,7 @@ fn download_episode_downloads_a_specific_episode_by_id_and_persists_its_size() {
         ..FakeFeed::default()
     };
     let directory = tempfile::tempdir().unwrap();
-    refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
     let episode_id = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].id;
     assert!(
         feed.downloads.borrow().is_empty(),
@@ -491,7 +501,7 @@ fn download_episode_is_idempotent_and_does_not_redownload_an_existing_file() {
         ..FakeFeed::default()
     };
     let directory = tempfile::tempdir().unwrap();
-    refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
     let episode_id = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].id;
     download_episode(
         &conn,
@@ -559,7 +569,8 @@ fn existing_guid_keyed_file_is_reclaimed_without_downloading_again() {
     super::super::downloads::prepare_destination(&existing).unwrap();
     std::fs::write(&existing, b"orphan").unwrap();
 
-    let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let summary =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
 
     assert_eq!(summary.downloads_completed, 0);
     assert!(feed.downloads.borrow().is_empty());
@@ -580,7 +591,8 @@ fn failed_download_does_not_leave_a_reclaimable_partial_file() {
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let summary =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
 
     assert_eq!(summary.downloads_failed, 1);
     let episode = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].clone();
@@ -605,7 +617,8 @@ fn net_1a_disabled_podcasts_module_skips_rss_refresh_without_fetching() {
     let feed = FakeFeed::default(); // no responses queued: fetch() would panic/underflow if called
     let directory = tempfile::tempdir().unwrap();
 
-    let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let summary =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
 
     assert_eq!(summary.failures.len(), 1);
     assert_eq!(
@@ -629,7 +642,8 @@ fn net_1a_global_gate_off_blocks_rss_refresh_even_with_podcasts_on() {
     let feed = FakeFeed::default();
     let directory = tempfile::tempdir().unwrap();
 
-    let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let summary =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
 
     assert_eq!(summary.failures.len(), 1);
     assert_eq!(
@@ -681,7 +695,15 @@ fn pod_13_a_failed_download_never_leaks_the_raw_provider_message_into_state_or_l
         responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
         ..FakeFeed::default()
     };
-    refresh_to_root(&conn, &seed_feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    refresh_to_root(
+        &conn,
+        &seed_feed,
+        &FakeYoutube,
+        10,
+        R::force(),
+        directory.path(),
+    )
+    .unwrap();
     let episode_id = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].id;
 
     let logs = CapturedLogs::default();

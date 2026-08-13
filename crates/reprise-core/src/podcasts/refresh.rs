@@ -1,9 +1,58 @@
 //! Pure podcast refresh scheduling policy.
+//!
+//! Scheduled refreshes use an hour interval plus deterministic jitter so
+//! clients spread background work over time. A tab-open refresh instead uses
+//! an exact seconds interval without jitter because the user initiated it.
 
 use super::config::DEFAULT_REFRESH_HOURS;
+use super::PodcastKind;
 
 const SECONDS_PER_HOUR: i64 = 60 * 60;
 const MAX_JITTER_SECONDS: i64 = SECONDS_PER_HOUR;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefreshPolicy {
+    Due,
+    StaleFor { seconds: i64 },
+    Force,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RefreshRequest {
+    pub policy: RefreshPolicy,
+    pub kind: Option<PodcastKind>,
+}
+
+impl RefreshRequest {
+    #[must_use]
+    pub const fn force() -> Self {
+        Self {
+            policy: RefreshPolicy::Force,
+            kind: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn due() -> Self {
+        Self {
+            policy: RefreshPolicy::Due,
+            kind: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn stale_for(seconds: i64, kind: Option<PodcastKind>) -> Self {
+        Self {
+            policy: RefreshPolicy::StaleFor { seconds },
+            kind,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_kind(self, kind: Option<PodcastKind>) -> Self {
+        Self { kind, ..self }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RefreshRetry {
@@ -71,6 +120,15 @@ pub fn refresh_due_with_hours(
 }
 
 #[must_use]
+pub fn refresh_due_after_seconds(last_fetch_at: Option<i64>, now: i64, seconds: i64) -> bool {
+    let Some(last_fetch_at) = last_fetch_at else {
+        return true;
+    };
+    let elapsed = now.saturating_sub(last_fetch_at);
+    elapsed >= 0 && elapsed >= seconds
+}
+
+#[must_use]
 pub fn jitter_seconds(seed: &str) -> i64 {
     let hash = crate::artist_news_refresh::fnv1a_64(seed.as_bytes());
     (hash % (MAX_JITTER_SECONDS as u64 + 1)) as i64
@@ -89,6 +147,45 @@ pub fn should_auto_refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_due_after_seconds_treats_a_never_fetched_subscription_as_due() {
+        assert!(refresh_due_after_seconds(None, 100_000, 900));
+    }
+
+    #[test]
+    fn refresh_due_after_seconds_has_an_exact_boundary_and_no_jitter() {
+        let now = 100_000;
+        assert!(!refresh_due_after_seconds(Some(now - 899), now, 900));
+        assert!(refresh_due_after_seconds(Some(now - 900), now, 900));
+    }
+
+    #[test]
+    fn refresh_due_after_seconds_refuses_a_clock_that_moved_backwards() {
+        assert!(!refresh_due_after_seconds(Some(100_001), 100_000, 900));
+    }
+
+    #[test]
+    fn refresh_request_constructors_carry_policy_and_scope() {
+        assert_eq!(
+            RefreshRequest::force(),
+            RefreshRequest {
+                policy: RefreshPolicy::Force,
+                kind: None,
+            }
+        );
+        assert_eq!(
+            RefreshRequest::due(),
+            RefreshRequest {
+                policy: RefreshPolicy::Due,
+                kind: None,
+            }
+        );
+        assert_eq!(
+            RefreshRequest::stale_for(900, Some(PodcastKind::Rss)).kind,
+            Some(PodcastKind::Rss)
+        );
+    }
 
     #[test]
     fn refresh_due_uses_interval_and_clamped_jitter() {

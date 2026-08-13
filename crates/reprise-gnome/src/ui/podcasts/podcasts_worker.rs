@@ -9,9 +9,17 @@ use reprise_core::podcasts;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum PodcastsOperation {
-    Refresh { force: bool },
-    LoadMore { subscription_id: i64, end: usize },
-    Download { episode_id: i64 },
+    Refresh {
+        policy: podcasts::refresh::RefreshPolicy,
+        kind: Option<podcasts::PodcastKind>,
+    },
+    LoadMore {
+        subscription_id: i64,
+        end: usize,
+    },
+    Download {
+        episode_id: i64,
+    },
 }
 
 pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsOperation) -> u64 {
@@ -240,7 +248,7 @@ fn process_request(
         return;
     };
     match request.operation {
-        PodcastsOperation::Refresh { force } => {
+        PodcastsOperation::Refresh { policy, kind } => {
             let result = podcasts::config::load(conn)
                 .map_err(|error| error.to_string())
                 .and_then(|config| {
@@ -251,7 +259,7 @@ fn process_request(
                         &podcasts::pipeline::HttpFeedFetcher,
                         &ytdlp,
                         chrono::Utc::now().timestamp(),
-                        force,
+                        podcasts::refresh::RefreshRequest { policy, kind },
                         &mut |episode_id, state| {
                             send_response(
                                 request,

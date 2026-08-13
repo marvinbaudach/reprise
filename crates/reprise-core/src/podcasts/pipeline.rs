@@ -13,6 +13,7 @@ use crate::{db::Db, source_error::SourceErrorKind};
 use super::download_state::{DownloadProgress, DownloadState};
 use super::feed::{ParsedEpisode, ParsedFeed};
 use super::http::Response;
+use super::refresh::{RefreshPolicy, RefreshRequest};
 use super::store::FetchSuccess;
 use super::{PodcastError, PodcastKind, SubscriptionRow};
 
@@ -243,7 +244,7 @@ pub fn refresh(
     feed_fetcher: &dyn FeedFetcher,
     youtube_fetcher: &dyn YoutubeFetcher,
     now: i64,
-    force: bool,
+    request: RefreshRequest,
 ) -> Result<RefreshSummary, PipelineError> {
     let conn = db.conn();
     refresh_to_root_with_download_progress(
@@ -251,7 +252,7 @@ pub fn refresh(
         feed_fetcher,
         youtube_fetcher,
         now,
-        force,
+        request,
         &super::downloads::default_download_root(),
         &mut |_, _| {},
     )
@@ -262,7 +263,7 @@ pub fn refresh_with_download_progress(
     feed_fetcher: &dyn FeedFetcher,
     youtube_fetcher: &dyn YoutubeFetcher,
     now: i64,
-    force: bool,
+    request: RefreshRequest,
     on_download: &mut dyn FnMut(i64, DownloadState),
 ) -> Result<RefreshSummary, PipelineError> {
     let conn = db.conn();
@@ -271,7 +272,7 @@ pub fn refresh_with_download_progress(
         feed_fetcher,
         youtube_fetcher,
         now,
-        force,
+        request,
         &super::downloads::default_download_root(),
         on_download,
     )
@@ -282,7 +283,7 @@ pub fn refresh_to_root(
     feed_fetcher: &dyn FeedFetcher,
     youtube_fetcher: &dyn YoutubeFetcher,
     now: i64,
-    force: bool,
+    request: RefreshRequest,
     download_root: &Path,
 ) -> Result<RefreshSummary, PipelineError> {
     let conn = db.conn();
@@ -291,7 +292,7 @@ pub fn refresh_to_root(
         feed_fetcher,
         youtube_fetcher,
         now,
-        force,
+        request,
         download_root,
         &mut |_, _| {},
     )
@@ -324,7 +325,7 @@ fn refresh_to_root_with_download_progress(
     feed_fetcher: &dyn FeedFetcher,
     youtube_fetcher: &dyn YoutubeFetcher,
     now: i64,
-    force: bool,
+    request: RefreshRequest,
     download_root: &Path,
     on_download: &mut dyn FnMut(i64, DownloadState),
 ) -> Result<RefreshSummary, PipelineError> {
@@ -335,11 +336,16 @@ fn refresh_to_root_with_download_progress(
     let subscriptions = super::store::active_subscriptions_in(conn)?;
     let mut summary = RefreshSummary::default();
     for subscription in subscriptions {
+        if let Some(kind) = request.kind {
+            if subscription.kind != kind {
+                continue;
+            }
+        }
         let retry_key = RetryKey {
             connection: std::ptr::from_ref(conn).addr(),
             subscription_id: subscription.id,
         };
-        if !force {
+        if !matches!(request.policy, RefreshPolicy::Force) {
             let retry = if subscription.last_outcome.as_deref() == Some("failed") {
                 pending_retry(retry_key)
             } else {
@@ -347,13 +353,21 @@ fn refresh_to_root_with_download_progress(
                 None
             };
             let due = retry.map_or_else(
-                || {
-                    super::refresh::refresh_due_with_hours(
+                || match request.policy {
+                    RefreshPolicy::Due => super::refresh::refresh_due_with_hours(
                         subscription.last_fetch_at,
                         now,
                         config.refresh_hours,
                         jitter,
-                    )
+                    ),
+                    RefreshPolicy::StaleFor { seconds } => {
+                        super::refresh::refresh_due_after_seconds(
+                            subscription.last_fetch_at,
+                            now,
+                            seconds,
+                        )
+                    }
+                    RefreshPolicy::Force => true,
                 },
                 |retry| retry.is_due(now),
             );
@@ -450,7 +464,7 @@ fn refresh_to_root_with_download_progress(
                     %error,
                     "podcast refresh failed"
                 );
-                let retry = if force {
+                let retry = if matches!(request.policy, RefreshPolicy::Force) {
                     None
                 } else {
                     super::refresh::next_retry(&error, previous_attempt(retry_key), now)
@@ -637,6 +651,10 @@ mod youtube_tests;
 #[cfg(test)]
 #[path = "pipeline_refresh_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pipeline_refresh_policy_tests.rs"]
+mod refresh_policy_tests;
 
 #[cfg(test)]
 #[path = "pipeline_tag_tests.rs"]
