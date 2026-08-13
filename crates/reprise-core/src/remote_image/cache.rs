@@ -1,9 +1,10 @@
-//! Bounded on-disk cache for remote source images (`C1`).
+//! Bounded on-disk caches for remote source images (`C1`).
 //!
 //! Positive entries are `<key>.<ext>` files under the XDG cache. Unlike the
 //! permanent, unbounded album-cover download cache (`cover_download`), this
-//! cache is capped at `MAX_CACHE_ENTRIES` files: once a new write would
-//! exceed the cap, the least-recently-modified files are evicted first.
+//! Persistent library artwork and transient discovery artwork live in
+//! separate directories with separate caps. Once a new write would exceed a
+//! scope's cap, the least-recently-modified files are evicted first.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -11,16 +12,25 @@ use std::time::SystemTime;
 
 use crate::cover_download::IMAGE_EXTS;
 
-/// Hard cap on the number of cached source-image files. Channel, show, and
-/// station artwork is small and there are only ever as many distinct images
-/// as there are subscriptions/favorites plus a handful of recent search
-/// results — 300 files is generous headroom while keeping the cache
-/// genuinely bounded, which the plan requires and the permanent cover-art
-/// cache deliberately does not do.
-pub(crate) const MAX_CACHE_ENTRIES: usize = 300;
+use super::CacheScope;
 
-pub(crate) fn cache_dir() -> PathBuf {
-    crate::cover::cache_dir().join("remote-images")
+pub(crate) fn cache_dir(scope: CacheScope) -> PathBuf {
+    cache_dir_with_root(&crate::cover::cache_dir(), scope)
+}
+
+fn cache_dir_with_root(root: &Path, scope: CacheScope) -> PathBuf {
+    remove_legacy_cache(root);
+    root.join(match scope {
+        CacheScope::Persistent => "remote-images-persistent",
+        CacheScope::Transient => "remote-images-transient",
+    })
+}
+
+fn remove_legacy_cache(root: &Path) {
+    let legacy = root.join("remote-images");
+    if legacy.exists() {
+        let _ = std::fs::remove_dir_all(legacy);
+    }
 }
 
 pub(crate) fn key_for(url: &str) -> String {
@@ -57,8 +67,14 @@ fn touch(path: &Path) {
 }
 
 /// Writes `bytes` atomically (temp file + rename), replaces any stale
-/// extension for the same key, then enforces [`MAX_CACHE_ENTRIES`].
-pub(crate) fn store_image(dir: &Path, url: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
+/// extension for the same key, then enforces the selected scope's limit.
+pub(crate) fn store_image(
+    dir: &Path,
+    url: &str,
+    bytes: &[u8],
+    ext: &str,
+    limit: usize,
+) -> Option<PathBuf> {
     std::fs::create_dir_all(dir).ok()?;
     let key = key_for(url);
     let output = dir.join(format!("{key}.{ext}"));
@@ -76,7 +92,7 @@ pub(crate) fn store_image(dir: &Path, url: &str, bytes: &[u8], ext: &str) -> Opt
             let _ = std::fs::remove_file(dir.join(format!("{key}.{old_extension}")));
         }
     }
-    enforce_bound(dir, MAX_CACHE_ENTRIES);
+    enforce_bound(dir, limit);
     Some(output)
 }
 
@@ -150,9 +166,70 @@ mod tests {
     }
 
     #[test]
-    fn cache_dir_is_under_the_shared_cover_cache_dir() {
-        assert!(cache_dir().starts_with(crate::cover::cache_dir()));
-        assert!(cache_dir().ends_with("remote-images"));
+    fn src_11_cache_scopes_have_separate_directories_and_limits() {
+        let root = tmp();
+
+        let persistent = cache_dir_with_root(&root, super::super::CacheScope::Persistent);
+        let transient = cache_dir_with_root(&root, super::super::CacheScope::Transient);
+
+        assert_eq!(persistent, root.join("remote-images-persistent"));
+        assert_eq!(transient, root.join("remote-images-transient"));
+        assert_ne!(persistent, transient);
+        assert_eq!(super::super::CacheScope::Persistent.entry_limit(), 1_000);
+        assert_eq!(super::super::CacheScope::Transient.entry_limit(), 200);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn src_11_transient_eviction_never_removes_a_persistent_image() {
+        let root = tmp();
+        let persistent = cache_dir_with_root(&root, super::super::CacheScope::Persistent);
+        let transient = cache_dir_with_root(&root, super::super::CacheScope::Transient);
+        let subscribed = store_image(
+            &persistent,
+            "https://x.test/subscribed.jpg",
+            b"p",
+            "jpg",
+            super::super::CacheScope::Persistent.entry_limit(),
+        )
+        .unwrap();
+        let oldest_result =
+            store_image(&transient, "https://x.test/result-1.jpg", b"1", "jpg", 1).unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let newest_result =
+            store_image(&transient, "https://x.test/result-2.jpg", b"2", "jpg", 1).unwrap();
+
+        enforce_bound(&transient, 1);
+
+        assert!(subscribed.exists());
+        assert!(!oldest_result.exists());
+        assert!(newest_result.exists());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn src_11_legacy_shared_cache_is_removed_and_never_recreated() {
+        let root = tmp();
+        let legacy = root.join("remote-images");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("old.jpg"), b"old").unwrap();
+
+        let persistent = cache_dir_with_root(&root, super::super::CacheScope::Persistent);
+        assert!(!legacy.exists());
+        store_image(
+            &persistent,
+            "https://x.test/current.jpg",
+            b"new",
+            "jpg",
+            super::super::CacheScope::Persistent.entry_limit(),
+        )
+        .unwrap();
+        let transient = cache_dir_with_root(&root, super::super::CacheScope::Transient);
+
+        assert!(!legacy.exists());
+        assert!(persistent.ends_with("remote-images-persistent"));
+        assert!(transient.ends_with("remote-images-transient"));
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
@@ -182,8 +259,8 @@ mod tests {
     #[test]
     fn store_image_publishes_atomically_and_replaces_older_formats() {
         let dir = tmp();
-        let old = store_image(&dir, "https://x.test/a.jpg", b"old", "jpg").unwrap();
-        let current = store_image(&dir, "https://x.test/a.jpg", b"new", "png").unwrap();
+        let old = store_image(&dir, "https://x.test/a.jpg", b"old", "jpg", 300).unwrap();
+        let current = store_image(&dir, "https://x.test/a.jpg", b"new", "png", 300).unwrap();
 
         assert_eq!(cached_path_in(&dir, "https://x.test/a.jpg"), Some(current));
         assert!(!old.exists());
@@ -216,12 +293,12 @@ mod tests {
     fn src_11_evicts_the_oldest_file_on_disk_once_the_bound_is_exceeded() {
         let dir = tmp();
         std::fs::create_dir_all(&dir).unwrap();
-        let oldest = store_image(&dir, "https://x.test/1.jpg", b"1", "jpg").unwrap();
+        let oldest = store_image(&dir, "https://x.test/1.jpg", b"1", "jpg", 300).unwrap();
         // Force distinct mtimes so ordering is deterministic on fast filesystems.
         std::thread::sleep(Duration::from_millis(10));
-        let _middle = store_image(&dir, "https://x.test/2.jpg", b"2", "jpg").unwrap();
+        let _middle = store_image(&dir, "https://x.test/2.jpg", b"2", "jpg", 300).unwrap();
         std::thread::sleep(Duration::from_millis(10));
-        let _newest = store_image(&dir, "https://x.test/3.jpg", b"3", "jpg").unwrap();
+        let _newest = store_image(&dir, "https://x.test/3.jpg", b"3", "jpg", 300).unwrap();
 
         enforce_bound(&dir, 2);
 
@@ -240,11 +317,11 @@ mod tests {
     fn src_11_a_cache_hit_counts_as_touching_the_entry() {
         let dir = tmp();
         std::fs::create_dir_all(&dir).unwrap();
-        let oldest = store_image(&dir, "https://x.test/1.jpg", b"1", "jpg").unwrap();
+        let oldest = store_image(&dir, "https://x.test/1.jpg", b"1", "jpg", 300).unwrap();
         std::thread::sleep(Duration::from_millis(10));
-        let middle = store_image(&dir, "https://x.test/2.jpg", b"2", "jpg").unwrap();
+        let middle = store_image(&dir, "https://x.test/2.jpg", b"2", "jpg", 300).unwrap();
         std::thread::sleep(Duration::from_millis(10));
-        let _newest = store_image(&dir, "https://x.test/3.jpg", b"3", "jpg").unwrap();
+        let _newest = store_image(&dir, "https://x.test/3.jpg", b"3", "jpg", 300).unwrap();
         std::thread::sleep(Duration::from_millis(10));
 
         // "View" the oldest-written entry through the same lookup `resolve`

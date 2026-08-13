@@ -39,6 +39,7 @@ mod tests {
                 queue
                     .try_send(super::super::ArtworkTask {
                         url: "https://images.test/first.png".into(),
+                        cache_scope: reprise_core::remote_image::CacheScope::Persistent,
                         width: 40,
                         height: 40,
                         response: first_response,
@@ -51,6 +52,7 @@ mod tests {
                         queue,
                         super::super::ArtworkTask {
                             url: "https://images.test/second.png".into(),
+                            cache_scope: reprise_core::remote_image::CacheScope::Persistent,
                             width: 40,
                             height: 40,
                             response: second_response,

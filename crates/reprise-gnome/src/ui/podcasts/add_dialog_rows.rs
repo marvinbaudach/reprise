@@ -172,6 +172,7 @@ pub(super) fn candidate_row(
         },
         40,
         images_allowed,
+        reprise_core::remote_image::CacheScope::Transient,
     );
     row.append(image.widget());
     let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 2);

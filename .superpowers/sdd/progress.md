@@ -1504,3 +1504,7 @@ Task T5: complete (commit 7e14e82789, base 83c567a492, shared scoped refresh acc
 Task T6: complete (commit bb9dcba8e5, base 7e14e82789, added the silent five-gate tab-open preflight and a drop-guarded refresh-button feedback lifetime covering every future exit)
 Task T7: complete (commit 5647b40004, base bb9dcba8e5, requested scoped stale refreshes after the existing Podcasts and YouTube database reload routes; no direct library-shell routing test exists)
 Task T8: complete (this commit, base 5647b40004, added the non-rule-named refresh-button display regression and ran its exact full path under Xvfb with one passing test)
+
+# Source artwork cache recovery
+
+Task P2: complete (this commit, base f8871fa502, split remote source images into caller-selected persistent and transient stores capped at 1000 and 200 entries, removed the legacy shared store idempotently, preserved deterministic touched-first eviction and gate-independent cache hits, and kept transient textures from bypassing persistent storage through the in-memory LRU; `cargo test -p reprise-core remote_image` passed 18 tests and `cargo test -p reprise-gnome --bin reprise source_image` passed 8 with 5 display tests ignored in an isolated worktree-local XDG profile; no display test, window, app, Android tool, emulator, device, real data, network fetch, push, repository lock, coordination board, sibling worktree or path outside this worktree was touched)

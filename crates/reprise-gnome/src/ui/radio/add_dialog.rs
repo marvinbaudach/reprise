@@ -699,6 +699,7 @@ impl RadioAddDialog {
             "network-wireless-symbolic",
             40,
             images_allowed(&self.conn),
+            reprise_core::remote_image::CacheScope::Transient,
         );
         let name = gtk4::Label::new(Some(&preview.name));
         name.set_xalign(0.0);

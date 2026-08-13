@@ -44,6 +44,7 @@ impl super::SourceImage {
             Fallback::Icon(fallback_icon),
             size,
             images_allowed,
+            reprise_core::remote_image::CacheScope::Persistent,
         )
     }
 
@@ -60,6 +61,7 @@ impl super::SourceImage {
             Fallback::Initials(label),
             size,
             images_allowed,
+            reprise_core::remote_image::CacheScope::Persistent,
         )
     }
 
@@ -68,6 +70,7 @@ impl super::SourceImage {
         fallback: Fallback<'_>,
         size: i32,
         images_allowed: bool,
+        cache_scope: reprise_core::remote_image::CacheScope,
     ) -> Self {
         let image = Self::build(fallback, size, size);
         image.set_url(
@@ -75,6 +78,7 @@ impl super::SourceImage {
             size,
             size,
             images_allowed,
+            cache_scope,
             super::StartupTiming::AfterQuiet,
             |_| {},
         );

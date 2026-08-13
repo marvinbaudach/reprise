@@ -22,29 +22,27 @@
 //! `resolve` — see that constant's doc comment for why this shape was chosen
 //! over a per-task snapshot or a DB read from the worker thread.
 
-use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
+use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use gtk4::prelude::*;
 use reprise_core::db::Db;
-use reprise_core::remote_image::ImageOutcome;
+use reprise_core::remote_image::{CacheScope, ImageOutcome};
 
 #[path = "source_artwork_queue.rs"]
 mod source_artwork_queue;
 #[path = "source_image_fallback.rs"]
 mod source_image_fallback;
+#[path = "source_image_texture.rs"]
+mod source_image_texture;
 
-const CACHE_LIMIT: usize = 128;
+pub(super) use source_image_texture::remember_texture;
+use source_image_texture::{cached_texture, decode_pixels, memory_texture, DecodedPixels};
+
 const ARTWORK_QUEUE_LIMIT: usize = 64;
 const ARTWORK_WORKERS: usize = 4;
-
-thread_local! {
-    static TEXTURE_CACHE: RefCell<VecDeque<(String, i32, i32, gtk4::gdk::Texture)>> =
-        const { RefCell::new(VecDeque::new()) };
-}
 
 /// The most recently observed `images_allowed` gate state, shared across the
 /// worker threads below.
@@ -116,6 +114,7 @@ impl SourceImage {
         fallback_icon: &str,
         size: i32,
         images_allowed: bool,
+        cache_scope: CacheScope,
     ) -> SourceImage {
         Self::new_with_dimensions(
             image_url,
@@ -123,6 +122,7 @@ impl SourceImage {
             size,
             size,
             images_allowed,
+            cache_scope,
             StartupTiming::Immediate,
         )
     }
@@ -141,6 +141,7 @@ impl SourceImage {
         fallback_icon: &str,
         size: i32,
         images_allowed: bool,
+        cache_scope: CacheScope,
         defer_for_startup: bool,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) -> SourceImage {
@@ -154,6 +155,7 @@ impl SourceImage {
             size,
             size,
             images_allowed,
+            cache_scope,
             if defer_for_startup {
                 StartupTiming::AfterQuiet
             } else {
@@ -170,6 +172,7 @@ impl SourceImage {
         width: i32,
         height: i32,
         images_allowed: bool,
+        cache_scope: CacheScope,
         startup_timing: StartupTiming,
     ) -> SourceImage {
         let image = Self::build(
@@ -182,6 +185,7 @@ impl SourceImage {
             width,
             height,
             images_allowed,
+            cache_scope,
             startup_timing,
             |_| {},
         );
@@ -246,6 +250,7 @@ impl SourceImage {
         width: i32,
         height: i32,
         images_allowed: bool,
+        cache_scope: CacheScope,
         startup_timing: StartupTiming,
         on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
     ) {
@@ -259,6 +264,7 @@ impl SourceImage {
             image_url,
             (width, height),
             images_allowed,
+            cache_scope,
             startup_timing,
             generation,
             &self.generation,
@@ -286,6 +292,7 @@ fn load_texture(
     image_url: Option<&str>,
     dimensions: (i32, i32),
     images_allowed: bool,
+    cache_scope: CacheScope,
     startup_timing: StartupTiming,
     generation: u64,
     current: &Rc<Cell<u64>>,
@@ -298,7 +305,7 @@ fn load_texture(
     let Some(url) = image_url.and_then(validated_url) else {
         return;
     };
-    if let Some(texture) = cached_texture(&url, width, height) {
+    if let Some(texture) = cached_texture(&url, width, height, cache_scope) {
         on_ready(texture);
         return;
     }
@@ -314,7 +321,7 @@ fn load_texture(
         if current.get() != generation {
             return;
         }
-        let Some(receiver) = queue_artwork(url.clone(), width, height) else {
+        let Some(receiver) = queue_artwork(url.clone(), width, height, cache_scope) else {
             tracing::warn!(%url, "source artwork worker queue is unavailable");
             return;
         };
@@ -333,7 +340,7 @@ fn load_texture(
                 return;
             }
             let texture = memory_texture(pixels);
-            remember_texture(url, width, height, texture.clone());
+            remember_texture(url, width, height, cache_scope, texture.clone());
             on_ready(texture);
         });
     };
@@ -351,6 +358,7 @@ pub(crate) fn load_into_image(
     image_url: Option<&str>,
     dimensions: (i32, i32),
     images_allowed: bool,
+    cache_scope: CacheScope,
     defer_for_startup: bool,
     generation: u64,
     current: &Rc<Cell<u64>>,
@@ -364,6 +372,7 @@ pub(crate) fn load_into_image(
         image_url,
         dimensions,
         images_allowed,
+        cache_scope,
         if defer_for_startup {
             StartupTiming::AfterQuiet
         } else {
@@ -382,17 +391,10 @@ pub(crate) fn load_into_image(
 
 struct ArtworkTask {
     url: String,
+    cache_scope: CacheScope,
     width: i32,
     height: i32,
     response: async_channel::Sender<Option<DecodedPixels>>,
-}
-
-struct DecodedPixels {
-    bytes: Vec<u8>,
-    width: i32,
-    height: i32,
-    rowstride: usize,
-    has_alpha: bool,
 }
 
 /// Runs one queued task against the CURRENT gate state — read via
@@ -402,7 +404,8 @@ struct DecodedPixels {
 /// can exercise this without ever making a real network request.
 fn process_task(task: &ArtworkTask, fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>) {
     let allowed = GATE_OPEN.load(Ordering::Relaxed);
-    let outcome = reprise_core::remote_image::resolve(Some(&task.url), allowed, fetch);
+    let outcome =
+        reprise_core::remote_image::resolve(Some(&task.url), task.cache_scope, allowed, fetch);
     let pixels = match outcome {
         ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => {
             match decode_pixels(&path, task.width, task.height) {
@@ -427,6 +430,7 @@ fn queue_artwork(
     url: String,
     width: i32,
     height: i32,
+    cache_scope: CacheScope,
 ) -> Option<async_channel::Receiver<Option<DecodedPixels>>> {
     static QUEUE: OnceLock<async_channel::Sender<ArtworkTask>> = OnceLock::new();
     let queue = QUEUE.get_or_init(|| {
@@ -454,6 +458,7 @@ fn queue_artwork(
         queue.clone(),
         ArtworkTask {
             url: url.clone(),
+            cache_scope,
             width,
             height,
             response,
@@ -462,75 +467,6 @@ fn queue_artwork(
     )
     .then_some(())?;
     Some(receiver)
-}
-
-fn decode_pixels(
-    path: &std::path::Path,
-    width: i32,
-    height: i32,
-) -> Result<DecodedPixels, gtk4::glib::Error> {
-    let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(
-        path,
-        width.saturating_mul(2),
-        height.saturating_mul(2),
-        true,
-    )?;
-    let bytes = pixbuf.read_pixel_bytes();
-    Ok(DecodedPixels {
-        bytes: bytes.as_ref().to_vec(),
-        width: pixbuf.width(),
-        height: pixbuf.height(),
-        rowstride: pixbuf.rowstride() as usize,
-        has_alpha: pixbuf.has_alpha(),
-    })
-}
-
-fn memory_texture(pixels: DecodedPixels) -> gtk4::gdk::Texture {
-    let format = if pixels.has_alpha {
-        gtk4::gdk::MemoryFormat::R8g8b8a8
-    } else {
-        gtk4::gdk::MemoryFormat::R8g8b8
-    };
-    let bytes = gtk4::glib::Bytes::from_owned(pixels.bytes);
-    gtk4::gdk::MemoryTexture::new(
-        pixels.width,
-        pixels.height,
-        format,
-        &bytes,
-        pixels.rowstride,
-    )
-    .upcast()
-}
-
-fn cached_texture(url: &str, width: i32, height: i32) -> Option<gtk4::gdk::Texture> {
-    TEXTURE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let index = cache
-            .iter()
-            .position(|(cached, cached_width, cached_height, _)| {
-                cached == url && *cached_width == width && *cached_height == height
-            })?;
-        let entry = cache.remove(index)?;
-        let texture = entry.3.clone();
-        cache.push_front(entry);
-        Some(texture)
-    })
-}
-
-pub(super) fn remember_texture(url: String, width: i32, height: i32, texture: gtk4::gdk::Texture) {
-    TEXTURE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some(index) = cache
-            .iter()
-            .position(|(cached, cached_width, cached_height, _)| {
-                cached == &url && *cached_width == width && *cached_height == height
-            })
-        {
-            cache.remove(index);
-        }
-        cache.push_front((url, width, height, texture));
-        cache.truncate(CACHE_LIMIT);
-    });
 }
 
 fn validated_url(value: &str) -> Option<String> {
@@ -576,6 +512,40 @@ mod tests {
         assert_eq!(super::validated_url("not a URL"), None);
     }
 
+    #[test]
+    fn src_11_transient_memory_texture_does_not_bypass_persistent_storage() {
+        let url = "https://images.test/src-11-memory-scope-boundary.png".to_owned();
+        let texture = super::memory_texture(super::DecodedPixels {
+            bytes: vec![0, 0, 0],
+            width: 1,
+            height: 1,
+            rowstride: 3,
+            has_alpha: false,
+        });
+        super::remember_texture(
+            url.clone(),
+            40,
+            40,
+            reprise_core::remote_image::CacheScope::Transient,
+            texture,
+        );
+
+        assert!(super::cached_texture(
+            &url,
+            40,
+            40,
+            reprise_core::remote_image::CacheScope::Persistent,
+        )
+        .is_none());
+        assert!(super::cached_texture(
+            &url,
+            40,
+            40,
+            reprise_core::remote_image::CacheScope::Transient,
+        )
+        .is_some());
+    }
+
     /// `NET-1a` / `SRC-11`: a task queued while the gate was open must still
     /// be refused if the gate has closed by the time a worker actually picks
     /// it up — the decision has to use the CURRENT gate state, not one
@@ -602,6 +572,7 @@ mod tests {
         let (response, receiver) = async_channel::bounded(1);
         let task = super::ArtworkTask {
             url: url.into(),
+            cache_scope: reprise_core::remote_image::CacheScope::Persistent,
             width: 40,
             height: 40,
             response,
@@ -672,6 +643,7 @@ mod tests {
         let (response, _receiver) = async_channel::bounded(1);
         let task = super::ArtworkTask {
             url: "https://images.test/src-11-gate-closed-from-preferences.png".into(),
+            cache_scope: reprise_core::remote_image::CacheScope::Persistent,
             width: 40,
             height: 40,
             response,
@@ -693,8 +665,12 @@ mod tests {
         gtk4::init().unwrap();
         let url = "https://images.test/src-11-cached.png";
         // Populate the cache through the public core path, with the gate open.
-        let outcome =
-            reprise_core::remote_image::resolve(Some(url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+        let outcome = reprise_core::remote_image::resolve(
+            Some(url),
+            reprise_core::remote_image::CacheScope::Persistent,
+            true,
+            &mut |_| Ok(TINY_PNG.to_vec()),
+        );
         assert!(
             matches!(
                 outcome,
@@ -706,8 +682,13 @@ mod tests {
 
         // Now the gate is closed. No request may happen — and no image may be
         // hidden either.
-        let image =
-            super::SourceImage::new(Some(url), "audio-input-microphone-symbolic", 40, false);
+        let image = super::SourceImage::new(
+            Some(url),
+            "audio-input-microphone-symbolic",
+            40,
+            false,
+            reprise_core::remote_image::CacheScope::Persistent,
+        );
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while image.widget().visible_child_name().as_deref() != Some("artwork") {
@@ -729,6 +710,7 @@ mod tests {
             "audio-input-microphone-symbolic",
             40,
             false,
+            reprise_core::remote_image::CacheScope::Persistent,
         );
         assert_eq!(
             image.widget().visible_child_name().as_deref(),
@@ -740,7 +722,13 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_11_no_url_stays_on_the_fallback_regardless_of_the_gate() {
         gtk4::init().unwrap();
-        let image = super::SourceImage::new(None, "audio-input-microphone-symbolic", 40, true);
+        let image = super::SourceImage::new(
+            None,
+            "audio-input-microphone-symbolic",
+            40,
+            true,
+            reprise_core::remote_image::CacheScope::Persistent,
+        );
         assert_eq!(
             image.widget().visible_child_name().as_deref(),
             Some("fallback")
@@ -755,11 +743,25 @@ mod tests {
 
         gtk4::init().unwrap();
         let url = "https://images.test/play-10-player-bar.png";
-        reprise_core::remote_image::resolve(Some(url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+        reprise_core::remote_image::resolve(
+            Some(url),
+            reprise_core::remote_image::CacheScope::Persistent,
+            true,
+            &mut |_| Ok(TINY_PNG.to_vec()),
+        );
         let image = gtk4::Image::new();
         let current = Rc::new(Cell::new(1));
 
-        super::load_into_image(&image, Some(url), (56, 56), false, false, 1, &current);
+        super::load_into_image(
+            &image,
+            Some(url),
+            (56, 56),
+            false,
+            reprise_core::remote_image::CacheScope::Persistent,
+            false,
+            1,
+            &current,
+        );
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while image.paintable().is_none() {

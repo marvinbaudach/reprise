@@ -24,6 +24,7 @@ pub(super) fn episode_thumbnail(
         width,
         height,
         images_allowed,
+        reprise_core::remote_image::CacheScope::Persistent,
         super::source_image::StartupTiming::AfterQuiet,
     );
     source

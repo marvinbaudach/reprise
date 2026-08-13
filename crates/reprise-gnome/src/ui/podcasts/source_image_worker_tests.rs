@@ -17,6 +17,7 @@ fn artwork_worker_returns_finished_pixels_instead_of_a_path() {
     let (response, receiver) = async_channel::bounded(1);
     let task = super::ArtworkTask {
         url: url.into(),
+        cache_scope: reprise_core::remote_image::CacheScope::Persistent,
         width: 40,
         height: 40,
         response,

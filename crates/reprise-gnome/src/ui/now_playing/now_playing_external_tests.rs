@@ -223,8 +223,12 @@ fn ac_26_a_late_empty_track_update_keeps_an_external_session_loaded() {
 fn ac_26_youtube_artwork_drives_the_bloom_while_an_rss_podcast_has_none() {
     gtk4::init().unwrap();
     let url = "https://images.test/ac-26-youtube-bloom.png";
-    let outcome =
-        reprise_core::remote_image::resolve(Some(url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+    let outcome = reprise_core::remote_image::resolve(
+        Some(url),
+        reprise_core::remote_image::CacheScope::Persistent,
+        true,
+        &mut |_| Ok(TINY_PNG.to_vec()),
+    );
     assert!(matches!(
         outcome,
         reprise_core::remote_image::ImageOutcome::Fetched(_)
@@ -255,7 +259,12 @@ fn ac_26_youtube_artwork_drives_the_bloom_while_an_rss_podcast_has_none() {
     assert!(!panel.widgets.bloom.has_cover_for_test());
 
     let stale_url = "https://images.test/ac-26-stale-youtube-bloom.png";
-    reprise_core::remote_image::resolve(Some(stale_url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+    reprise_core::remote_image::resolve(
+        Some(stale_url),
+        reprise_core::remote_image::CacheScope::Persistent,
+        true,
+        &mut |_| Ok(TINY_PNG.to_vec()),
+    );
     let mut stale_youtube = external_youtube_snapshot();
     stale_youtube.art_url = Some(stale_url.into());
     panel.set_external_snapshot(Some(stale_youtube));

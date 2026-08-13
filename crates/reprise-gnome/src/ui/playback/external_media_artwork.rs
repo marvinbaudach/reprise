@@ -22,6 +22,7 @@ impl PlayerController {
             snapshot.art_url.as_deref(),
             (size, size),
             images_allowed,
+            reprise_core::remote_image::CacheScope::Persistent,
             snapshot.restored,
             generation,
             &self.bar_cover_generation,
