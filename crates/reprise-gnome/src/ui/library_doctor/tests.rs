@@ -46,7 +46,10 @@ fn snapshot() -> DoctorViewSnapshot {
 /// than drawing GTK's missing-image box.
 #[test]
 fn doc_8d_the_start_page_icon_falls_back_when_the_theme_lacks_it() {
-    assert_eq!(super::doctor_glyph_for(true), "reprise-first-aid-symbolic");
+    assert_eq!(
+        super::doctor_glyph_for(true),
+        "io.github.marvinbaudach.Reprise-first-aid-symbolic"
+    );
     assert_eq!(super::doctor_glyph_for(false), "system-search-symbolic");
 }
 

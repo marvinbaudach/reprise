@@ -472,7 +472,7 @@ mod tests {
     fn the_library_doctor_row_asks_for_the_same_glyph_as_the_doctor_surfaces() {
         assert_eq!(
             NavIcon::LibraryDoctor.icon_name(),
-            "reprise-first-aid-symbolic"
+            "io.github.marvinbaudach.Reprise-first-aid-symbolic"
         );
         assert_eq!(
             NavIcon::LibraryDoctor.icon_name(),

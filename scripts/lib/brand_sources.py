@@ -181,7 +181,7 @@ def render(palette):
             "The deeper pair keeps that hierarchy\n"
             "       while clearing the graphical-object contrast floor on light ground."),
         "reprise-mark-mono.svg": mono_svg(),
-        "reprise-first-aid-symbolic.svg": first_aid_symbolic_svg(),
+        "io.github.marvinbaudach.Reprise-first-aid-symbolic.svg": first_aid_symbolic_svg(),
         "reprise-radio-symbolic.svg": radio_symbolic_svg(),
         "reprise-stats-symbolic.svg": stats_symbolic_svg(),
         "icon-plate.svg": plate_svg(palette["reprise_plate"]),

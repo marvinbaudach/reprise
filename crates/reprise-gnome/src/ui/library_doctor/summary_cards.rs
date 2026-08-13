@@ -235,7 +235,10 @@ mod tests {
         theme.add_search_path(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/icons"),
         );
-        assert_eq!(super::super::doctor_glyph(), "reprise-first-aid-symbolic");
+        assert_eq!(
+            super::super::doctor_glyph(),
+            "io.github.marvinbaudach.Reprise-first-aid-symbolic"
+        );
     }
 
     #[test]
