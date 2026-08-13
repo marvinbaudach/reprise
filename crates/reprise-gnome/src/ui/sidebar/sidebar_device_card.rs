@@ -21,6 +21,7 @@ pub(super) type CancelCallback = Rc<dyn Fn(String)>;
 const CANCEL_BUTTON_SIZE: i32 = 28;
 const CANCEL_BUTTON_MARGIN_END: i32 = 5;
 const ACTIVE_SUFFIX_RESERVATION: i32 = CANCEL_BUTTON_SIZE + CANCEL_BUTTON_MARGIN_END + 1;
+pub(super) const CARD_HORIZONTAL_MARGIN: i32 = 2;
 
 /// Live card widgets, keyed by device id, so a state update can refresh them
 /// in place. Rebuilding the section on every update destroyed the card
@@ -78,8 +79,8 @@ impl DeviceCard {
         let root = gtk4::Overlay::new();
         root.set_child(Some(&surface));
         root.set_margin_bottom(3);
-        root.set_margin_start(2);
-        root.set_margin_end(2);
+        root.set_margin_start(CARD_HORIZONTAL_MARGIN);
+        root.set_margin_end(CARD_HORIZONTAL_MARGIN);
 
         let top = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         top.set_margin_top(9);

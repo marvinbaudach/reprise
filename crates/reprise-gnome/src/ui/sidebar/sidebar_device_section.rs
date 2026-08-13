@@ -9,11 +9,18 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
-use super::sidebar_device_card::{menu, CancelCallback, CardRegistry, DeviceCard, OpenCallback};
+use super::sidebar_device_card::{
+    menu, CancelCallback, CardRegistry, DeviceCard, OpenCallback, CARD_HORIZONTAL_MARGIN,
+};
 use crate::ui::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
+use crate::ui::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET};
 
 const ARROW_CLOSED: &str = "pan-end-symbolic";
 const ARROW_OPEN: &str = "pan-down-symbolic";
+const HEADING_HORIZONTAL_PADDING: i32 = 8;
+// A negative container margin would trigger a GTK runtime critical.
+const _: () = assert!(SIDEBAR_SURFACE_INSET >= CARD_HORIZONTAL_MARGIN);
+const DEVICE_CONTAINER_HORIZONTAL_MARGIN: i32 = SIDEBAR_SURFACE_INSET - CARD_HORIZONTAL_MARGIN;
 
 /// The sidebar's device section.
 ///
@@ -33,8 +40,6 @@ struct DeviceSection {
 impl DeviceSection {
     fn new() -> Self {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        root.set_margin_start(10);
-        root.set_margin_end(10);
         root.set_margin_top(8);
         root.set_margin_bottom(8);
         root.set_visible(false);
@@ -56,9 +61,15 @@ impl DeviceSection {
             .has_frame(false)
             .build();
         heading.add_css_class("device-section-heading");
+        heading.set_margin_start(SIDEBAR_TEXT_INSET - HEADING_HORIZONTAL_PADDING);
+        heading.set_margin_end(SIDEBAR_TEXT_INSET - HEADING_HORIZONTAL_PADDING);
 
         let present = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        present.set_margin_start(DEVICE_CONTAINER_HORIZONTAL_MARGIN);
+        present.set_margin_end(DEVICE_CONTAINER_HORIZONTAL_MARGIN);
         let history = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        history.set_margin_start(DEVICE_CONTAINER_HORIZONTAL_MARGIN);
+        history.set_margin_end(DEVICE_CONTAINER_HORIZONTAL_MARGIN);
         let remembered = gtk4::Revealer::builder()
             .transition_type(gtk4::RevealerTransitionType::SlideDown)
             .transition_duration(crate::ui::motion::STANDARD_MS)
@@ -123,6 +134,17 @@ pub(super) fn bind(runtime: &Rc<DeviceSyncRuntime>, on_open: OpenCallback) -> gt
     }));
     subscription.retain_for_widget(&root);
     root
+}
+
+#[cfg(test)]
+pub(super) fn present_device_section_for_test(device: &DeviceView) -> gtk4::Box {
+    let section = DeviceSection::new();
+    let on_open: OpenCallback = Rc::new(|_, _| {});
+    let on_cancel: CancelCallback = Rc::new(|_| {});
+    let card = DeviceCard::new(device, &on_open, &on_cancel);
+    section.present.append(card.root());
+    section.apply_layout(1, 0);
+    section.root
 }
 
 /// Moves `card` into `target` unless it already hangs there. A device that
