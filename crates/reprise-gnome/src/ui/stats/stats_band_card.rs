@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_13_missing_cover_falls_back_to_initials() {
+    fn stats_23_missing_cover_falls_back_to_initials() {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
         card.set_data(&fixture(1));
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_13_band_card_click_opens_the_artist() {
+    fn stats_23_band_card_click_opens_the_artist() {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
         let opened = Rc::new(RefCell::new(None));

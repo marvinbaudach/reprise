@@ -200,7 +200,7 @@ fn best_week_is_none_for_an_empty_period() {
 }
 
 #[test]
-fn stats_13_band_card_data_reports_share_and_ranked_artists() {
+fn stats_23_band_card_data_reports_share_and_ranked_artists() {
     let conn = migrated_conn();
     let artists = [
         ("Alpha", 5),
