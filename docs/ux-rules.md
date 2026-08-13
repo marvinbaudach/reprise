@@ -399,11 +399,9 @@ result.
   neighbour in shuffled order. When history is empty, Previous seeks to the
   beginning so the control always does something meaningful and
   `CanGoPrevious` honestly remains true; this also applies to an episode with
-  no predecessor. Rewinding is a seek, not a restart: no new pipeline and no
-  new scrobble run. After stepping back, Next returns to the item the jump left;
-  an ordinary playback transition discards that forward branch. History exists
-  only at runtime, starts empty after launch, and survives a playback-context
-  change.
+  no predecessor. Rewinding is a seek, not a pipeline restart. After stepping
+  back, Next returns to the item the jump left. History exists only at runtime
+  and starts empty after launch.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two

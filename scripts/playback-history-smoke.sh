@@ -3,24 +3,10 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 mode="${1:-}"
-if [[ "$mode" != "--expect-broken" && -n "$mode" ]]; then
-  printf 'usage: %s [--expect-broken]\n' "$0" >&2
+if [[ "$mode" != "--expect-broken" && "$mode" != "--self-test" && -n "$mode" ]]; then
+  printf 'usage: %s [--expect-broken|--self-test]\n' "$0" >&2
   exit 2
 fi
-
-out="${PLAYBACK_HISTORY_OUT_DIR:-$(mktemp -d)}"
-mkdir -p "$out"
-fixture="$(mktemp -d)"
-trap 'rm -rf "$fixture"' EXIT
-
-for number in 1 2 3 4 5; do
-  ffmpeg -nostdin -loglevel error -y \
-    -f lavfi -i 'anullsrc=r=44100:cl=stereo' -t 30 \
-    -metadata "title=History ${number}" \
-    -metadata 'artist=Playback History Smoke' \
-    -metadata 'album=Isolated Fixture' \
-    -c:a flac "$fixture/history-${number}.flac"
-done
 
 now_title() {
   busctl --user get-property "$BUS" /org/mpris/MediaPlayer2 \
@@ -28,10 +14,21 @@ now_title() {
     | sed -n 's/.*"xesam:title" s "\([^"]*\)".*/\1/p'
 }
 
+parse_position_ms() {
+  awk '
+    NF >= 2 && $2 ~ /^-?[0-9]+$/ {
+      print int($2 / 1000)
+      found = 1
+      exit
+    }
+    END { if (!found) exit 1 }
+  '
+}
+
 position_ms() {
   busctl --user get-property "$BUS" /org/mpris/MediaPlayer2 \
     org.mpris.MediaPlayer2.Player Position \
-    | awk '{ print int($2 / 1000) }'
+    | parse_position_ms
 }
 
 starts_since() {
@@ -96,8 +93,8 @@ wait_for_position_at_most() {
   local limit="$1"
   local attempt current
   for attempt in {1..100}; do
-    current="$(position_ms)"
-    if (( current <= limit )); then
+    current="$(position_ms || true)"
+    if [[ "$current" =~ ^-?[0-9]+$ ]] && (( current <= limit )); then
       return 0
     fi
     sleep 0.1
@@ -111,8 +108,8 @@ wait_for_position_above() {
   local limit="$1"
   local attempt current
   for attempt in {1..200}; do
-    current="$(position_ms)"
-    if (( current > limit )); then
+    current="$(position_ms || true)"
+    if [[ "$current" =~ ^-?[0-9]+$ ]] && (( current > limit )); then
       return 0
     fi
     sleep 0.1
@@ -303,6 +300,7 @@ session_main() {
   export FIXTURE="$2"
   export OUT="$3"
   export REPO_ROOT="$4"
+  export APP_PID_FILE="$5/app.pgid"
   export BUS='org.mpris.MediaPlayer2.reprise.PlaybackHistorySmoke'
   : > "$OUT/app.log"
   : > "$OUT/report.txt"
@@ -311,9 +309,11 @@ session_main() {
     > "$OUT/app.log" 2>&1 &
   local app_pid=$!
   export APP_PID="$app_pid"
+  printf '%s\n' "$app_pid" > "$APP_PID_FILE"
   cleanup_app() {
     kill -- "-$APP_PID" 2>/dev/null || true
     wait "$APP_PID" 2>/dev/null || true
+    find "$APP_PID_FILE" -maxdepth 0 -type f -delete 2>/dev/null || true
   }
   trap cleanup_app EXIT
 
@@ -325,7 +325,146 @@ session_main() {
   fi
 }
 
-export -f now_title position_ms starts_since wait_for_bus wait_for_title
+terminate_process_group() {
+  local pid_file="$1"
+  local process_group attempt
+  if [[ -f "$pid_file" ]]; then
+    process_group="$(<"$pid_file")"
+    if [[ "$process_group" =~ ^[1-9][0-9]*$ ]]; then
+      kill -- "-$process_group" 2>/dev/null || true
+      for attempt in {1..20}; do
+        if ! kill -0 -- "-$process_group" 2>/dev/null; then
+          break
+        fi
+        sleep 0.05
+      done
+      kill -KILL -- "-$process_group" 2>/dev/null || true
+    fi
+  fi
+}
+
+cleanup_run_root() {
+  if [[ -n "${app_pid_file:-}" ]]; then
+    terminate_process_group "$app_pid_file"
+  fi
+  if [[ -n "${isolation_pid_file:-}" ]]; then
+    terminate_process_group "$isolation_pid_file"
+  fi
+  if [[ -n "${run_root:-}" && -d "$run_root" ]]; then
+    find "$run_root" -xdev -depth -delete
+  fi
+}
+
+run_isolated() {
+  local isolation_pid status=0
+  setsid timeout --foreground --kill-after=10s 420s \
+    dbus-run-session -- xvfb-run -a env \
+    XDG_DATA_HOME="$run_root/data" XDG_CACHE_HOME="$run_root/cache" \
+    XDG_CONFIG_HOME="$run_root/config" XDG_RUNTIME_DIR="$run_root/runtime" \
+    GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
+    GIO_USE_VFS=local GTK_USE_PORTAL=0 NO_AT_BRIDGE=1 GTK_A11Y=none REPRISE_LOG=info \
+    REPRISE_SCAN_DIR="$fixture" REPRISE_SMOKE_ACTIVATE=1 \
+    REPRISE_SMOKE_MPRIS_BUS_NAME='org.mpris.MediaPlayer2.reprise.PlaybackHistorySmoke' \
+    bash -c 'session_main "$@"' playback-history-session \
+    "$mode" "$fixture" "$out" "$repo_root" "$run_root" &
+  isolation_pid=$!
+  printf '%s\n' "$isolation_pid" > "$isolation_pid_file"
+  wait "$isolation_pid" || status=$?
+  terminate_process_group "$isolation_pid_file"
+  find "$isolation_pid_file" -maxdepth 0 -type f -delete 2>/dev/null || true
+  return "$status"
+}
+
+self_test() {
+  local test_root test_pid_file test_isolation_pid_file sleeper isolation_sleeper
+  local cleanup_body isolation rule attempt
+
+  [[ "$(printf 'x 750000\n' | parse_position_ms)" == 750 ]]
+  if printf 'x\n' | parse_position_ms >/dev/null 2>&1; then
+    printf 'FAIL missing MPRIS Position payload parsed as a number\n' >&2
+    return 1
+  fi
+
+  test_root="$(mktemp -d)"
+  test_pid_file="$test_root/app.pgid"
+  test_isolation_pid_file="$test_root/isolation.pgid"
+  setsid sleep 60 &
+  sleeper=$!
+  setsid bash -c 'sleep 60 & wait' &
+  isolation_sleeper=$!
+  for attempt in {1..100}; do
+    if kill -0 -- "-$sleeper" 2>/dev/null \
+      && kill -0 -- "-$isolation_sleeper" 2>/dev/null; then
+      break
+    fi
+    sleep 0.01
+  done
+  printf '%s\n' "$sleeper" > "$test_pid_file"
+  printf '%s\n' "$isolation_sleeper" > "$test_isolation_pid_file"
+  run_root="$test_root"
+  app_pid_file="$test_pid_file"
+  isolation_pid_file="$test_isolation_pid_file"
+  cleanup_run_root
+  wait "$sleeper" 2>/dev/null || true
+  if kill -0 "$isolation_sleeper" 2>/dev/null; then
+    kill -- "-$isolation_sleeper" 2>/dev/null || true
+    wait "$isolation_sleeper" 2>/dev/null || true
+    printf 'FAIL run cleanup left the isolation process group behind\n' >&2
+    return 1
+  fi
+  wait "$isolation_sleeper" 2>/dev/null || true
+  if kill -0 "$sleeper" 2>/dev/null || [[ -e "$test_root" ]]; then
+    printf 'FAIL run cleanup left a process or XDG root behind\n' >&2
+    return 1
+  fi
+
+  cleanup_body="$(declare -f cleanup_run_root)"
+  [[ "$cleanup_body" != *'OUT'* ]]
+  isolation="$(declare -f run_isolated)"
+  [[ "$isolation" == *'setsid timeout --foreground --kill-after=10s 420s'* ]]
+  for rule in XDG_DATA_HOME XDG_CACHE_HOME XDG_CONFIG_HOME XDG_RUNTIME_DIR; do
+    [[ "$isolation" == *"$rule=\"\$run_root/"* ]]
+  done
+
+  for unsupported in \
+    'no new scrobble run' \
+    'an ordinary playback transition discards that forward branch' \
+    'survives a playback-context change'; do
+    if grep -Fq "$unsupported" "$repo_root/docs/ux-rules.md"; then
+      printf 'FAIL PLAY-14 claims unmeasured behavior: %s\n' "$unsupported" >&2
+      return 1
+    fi
+  done
+
+  printf 'playback history smoke self-test passed\n'
+}
+
+if [[ "$mode" == '--self-test' ]]; then
+  self_test
+  exit
+fi
+
+out="${PLAYBACK_HISTORY_OUT_DIR:-$(mktemp -d)}"
+mkdir -p "$out"
+run_root="$(mktemp -d)"
+fixture="$run_root/fixture"
+app_pid_file="$run_root/app.pgid"
+isolation_pid_file="$run_root/isolation.pgid"
+mkdir -p "$fixture" "$run_root/data" "$run_root/cache" \
+  "$run_root/config" "$run_root/runtime"
+chmod 700 "$run_root/data" "$run_root/cache" "$run_root/config" "$run_root/runtime"
+trap cleanup_run_root EXIT
+
+for number in 1 2 3 4 5; do
+  ffmpeg -nostdin -loglevel error -y \
+    -f lavfi -i 'anullsrc=r=44100:cl=stereo' -t 30 \
+    -metadata "title=History ${number}" \
+    -metadata 'artist=Playback History Smoke' \
+    -metadata 'album=Isolated Fixture' \
+    -c:a flac "$fixture/history-${number}.flac"
+done
+
+export -f now_title parse_position_ms position_ms starts_since wait_for_bus wait_for_title
 export -f wait_for_starts wait_for_position_at_most wait_for_position_above
 export -f wait_for_shuffle transport report_step expect_broken expect_fixed
 export -f session_main
@@ -335,12 +474,4 @@ printf 'OUTPUT_DIR=%s\n' "$out"
 # Keep this complete isolation command in one place. The application inherits
 # a private session bus, X11 server, XDG roots and fake audio sink; the fixture
 # is generated above and never points at the user's library.
-timeout 420s dbus-run-session -- xvfb-run -a env \
-  XDG_DATA_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)" \
-  XDG_CONFIG_HOME="$(mktemp -d)" XDG_RUNTIME_DIR="$(mktemp -d)" \
-  GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
-  GIO_USE_VFS=local GTK_USE_PORTAL=0 NO_AT_BRIDGE=1 GTK_A11Y=none REPRISE_LOG=info \
-  REPRISE_SCAN_DIR="$fixture" REPRISE_SMOKE_ACTIVATE=1 \
-  REPRISE_SMOKE_MPRIS_BUS_NAME='org.mpris.MediaPlayer2.reprise.PlaybackHistorySmoke' \
-  bash -c 'session_main "$@"' playback-history-session \
-  "$mode" "$fixture" "$out" "$repo_root"
+run_isolated
