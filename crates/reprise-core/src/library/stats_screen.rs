@@ -539,7 +539,7 @@ pub(crate) fn ranked_groups(rows: &[NamedRow]) -> Vec<RankedGroup> {
         .filter(|row| !normalize_group_key(&row.raw).is_empty())
     {
         let entry = albums
-            .entry((resolver.key_for(&row.raw), row.album.clone()))
+            .entry((resolver.key_for(&row.raw), normalize_group_key(&row.album)))
             .or_insert_with(|| AlbumCandidate {
                 plays: 0,
                 ms: 0,

@@ -148,9 +148,61 @@ fn stats_23_album_grouping_leaves_plays_and_labels_untouched() {
 
     assert_eq!(ranked.len(), 1, "both spellings fold into one group");
     assert_eq!(ranked[0].group.plays, 11);
+    assert_eq!(ranked[0].group.ms, 1_100_000);
     assert_eq!(
         ranked[0].group.label, "Band",
         "the label follows summed plays per spelling, not per album row"
+    );
+}
+
+#[test]
+fn stats_23_equivalent_album_spellings_form_one_cover_candidate() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
+    for (id, path, album, plays) in [
+        (1, "/music/Band/Shared/01.flac", "Shared Album", 3),
+        (2, "/music/Band/Shared/02.flac", " shared album ", 3),
+        (3, "/music/Band/A Other/01.flac", "Other", 4),
+    ] {
+        insert_album_track(&conn, id, path, "Band", album);
+        for play_index in 0..plays {
+            play(&conn, id, 100 + play_index);
+        }
+    }
+
+    let ranked = ranked_groups(&artist_rows(&conn, 0, 1_000).unwrap());
+
+    assert_eq!(
+        ranked[0].representative_track_path, "/music/Band/Shared/01.flac",
+        "equivalent album spellings must combine before candidates are ranked"
+    );
+    assert_eq!(ranked[0].cover_candidates.len(), 2);
+}
+
+#[test]
+fn stats_23_album_ties_use_listening_time_then_path() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
+    for (id, path, album, ms) in [
+        (1, "/music/Band/Z Time/01.flac", "Z Time", 100_000),
+        (2, "/music/Band/B Path/01.flac", "B Path", 50_000),
+        (3, "/music/Band/A Path/01.flac", "A Path", 50_000),
+    ] {
+        insert_album_track(&conn, id, path, "Band", album);
+        for played_at in [100, 200] {
+            play_ms(&conn, id, played_at + id, ms);
+        }
+    }
+
+    let ranked = ranked_groups(&artist_rows(&conn, 0, 1_000).unwrap());
+
+    assert_eq!(
+        ranked[0].cover_candidates,
+        vec![
+            "/music/Band/Z Time/01.flac".to_string(),
+            "/music/Band/A Path/01.flac".to_string(),
+            "/music/Band/B Path/01.flac".to_string(),
+        ]
     );
 }
 
@@ -166,10 +218,14 @@ fn insert_album_track(conn: &rusqlite::Connection, id: i64, path: &str, artist: 
 }
 
 fn play(conn: &rusqlite::Connection, track_id: i64, played_at: i64) {
+    play_ms(conn, track_id, played_at, 100_000);
+}
+
+fn play_ms(conn: &rusqlite::Connection, track_id: i64, played_at: i64, ms_played: i64) {
     conn.execute(
         "INSERT INTO listen_events (track_id, played_at, ms_played) \
-         VALUES (?1, ?2, 100000)",
-        rusqlite::params![track_id, played_at],
+         VALUES (?1, ?2, ?3)",
+        rusqlite::params![track_id, played_at, ms_played],
     )
     .unwrap();
 }
