@@ -257,6 +257,8 @@ pub struct PlayerController {
     pub(in crate::ui) restored_placement_intact: Cell<bool>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<QueueItem>>,
+    /// PLAY-14 runtime playback history and navigation one-shot flag.
+    pub(in crate::ui) history: RefCell<super::playback_history_transport::HistoryState>,
     /// Catalog id removed while its player-owned snapshot remains loaded.
     /// The exact current queue slot survives until `present_track` hands off.
     pub(in crate::ui) deferred_queue_purge_id: Cell<Option<i64>>,
@@ -456,6 +458,7 @@ impl PlayerController {
             restored_placement_intact: Cell::new(false),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
+            history: RefCell::default(),
             deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),
             external: RefCell::new(super::external_media::ExternalPlaybackState::default()),
@@ -686,6 +689,11 @@ impl PlayerController {
                 match lyrics_result {
                     Ok(lyrics_query) => {
                         self.sync_lyrics_track(Some(lyrics_query));
+                        self.note_playback_started(
+                            QueueItem::Track(id),
+                            self.current_up_next.get() == Some(QueueItem::Track(id)),
+                        );
+                        self.update_mpris_position(0);
                         tracing::info!(
                             track_id = id,
                             gapless = matches!(start, StartPlayback::No),

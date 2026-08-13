@@ -112,6 +112,23 @@ fn queue_navigation_is_selected_only_by_the_session_not_the_open_view() {
 }
 
 #[test]
+fn podcasts_fall_back_to_history_but_radio_has_no_previous_route() {
+    let first = NeighbourContext::for_episode(&[6, 7, 8], 6).unwrap();
+    let podcast = ExternalPlaybackState {
+        session: Some(ExternalSession::Podcast(podcast_session(Some(first), None))),
+        ..ExternalPlaybackState::default()
+    };
+    assert_eq!(
+        podcast.transport_target(NeighbourDirection::Previous),
+        NeighbourTransport::History
+    );
+    assert_eq!(
+        radio_state().transport_target(NeighbourDirection::Previous),
+        NeighbourTransport::Unavailable
+    );
+}
+
+#[test]
 fn failed_early_resume_is_retried_once_after_duration_arrives() {
     let mut resume = ResumePolicy::new(42_000);
     resume.initial_seek_finished(false);

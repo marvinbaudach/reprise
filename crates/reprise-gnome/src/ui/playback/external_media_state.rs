@@ -358,6 +358,7 @@ pub(in crate::ui) struct ExternalPlaybackState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum NeighbourTransport {
     Queue,
+    History,
     Item {
         neighbours: NeighbourContext,
         origin: PodcastOrigin,
@@ -406,7 +407,7 @@ impl ExternalPlaybackState {
                     NeighbourDirection::Previous => neighbours.previous(),
                     NeighbourDirection::Next => neighbours.next(),
                 })
-                .map_or(NeighbourTransport::Unavailable, |neighbours| {
+                .map_or(NeighbourTransport::History, |neighbours| {
                     NeighbourTransport::Item {
                         neighbours,
                         origin: session.origin,

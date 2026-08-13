@@ -95,14 +95,6 @@ fn peek_auto_target(context: &Queue, pending: &UpNextQueue) -> Option<QueueItem>
     peek_matching_auto_target(context, pending, |_| true)
 }
 
-fn previous_target(context: &mut Queue, current_pending: &mut Option<QueueItem>) -> Option<i64> {
-    if current_pending.take().is_some() {
-        context.current()
-    } else {
-        context.previous()
-    }
-}
-
 fn play_pending_at(
     pending: &mut UpNextQueue,
     current_pending: &mut Option<QueueItem>,
@@ -355,19 +347,7 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn previous_with_up_next(self: &std::rc::Rc<Self>) {
-        let mut current_pending = self.current_up_next.get();
-        let previous = {
-            let mut context = self.queue.borrow_mut();
-            previous_target(&mut context, &mut current_pending)
-        };
-        self.current_up_next.set(current_pending);
-        match previous {
-            Some(id) => self.play_track_id_with_change(
-                id,
-                crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
-            ),
-            None => self.reset_to_stopped(),
-        }
+        self.previous_from_history();
     }
 }
 
@@ -381,8 +361,7 @@ mod tests {
     use reprise_core::up_next::UpNextQueue;
 
     use super::{
-        next_matching_target, next_target, peek_auto_target, play_pending_at, previous_target,
-        AdvanceReason,
+        next_matching_target, next_target, peek_auto_target, play_pending_at, AdvanceReason,
     };
 
     fn context(ids: &[i64]) -> Queue {
@@ -582,15 +561,6 @@ mod tests {
             ),
             track(2)
         );
-    }
-
-    #[test]
-    fn previous_from_a_pending_track_returns_to_unchanged_context() {
-        let mut context = context(&[1, 2]);
-        let mut current_pending = track(10);
-        assert_eq!(previous_target(&mut context, &mut current_pending), Some(1));
-        assert_eq!(current_pending, None);
-        assert_eq!(context.current(), Some(1));
     }
 
     #[test]

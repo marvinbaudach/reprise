@@ -221,33 +221,6 @@ impl Queue {
         None
     }
 
-    /// Move to the previous track (user pressed previous button).
-    /// At the first track, stay on the first track.
-    /// If queue is exhausted (pos == None) and queue is non-empty, resume at the last track.
-    /// Empty queue returns None.
-    pub fn previous(&mut self) -> Option<i64> {
-        match self.pos {
-            None => {
-                // Queue exhausted; if non-empty, resume at the last track
-                if !self.order.is_empty() {
-                    self.pos = Some(self.order.len() - 1);
-                    self.current()
-                } else {
-                    None
-                }
-            }
-            Some(idx) => {
-                if idx == 0 {
-                    // Already at the first track; stay here.
-                    self.current()
-                } else {
-                    self.pos = Some(idx - 1);
-                    self.current()
-                }
-            }
-        }
-    }
-
     /// Enable or disable shuffle mode.
     /// When enabling: Fisher-Yates shuffle the order, keeping the current track at its current position.
     /// When disabling: restore linear order, keeping the current track at its linear index.

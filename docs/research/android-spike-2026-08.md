@@ -1500,7 +1500,9 @@ Entscheidungen ausführt:
 - Antippen: `Queue::set_tracks` mit der ganzen aktuellen Liste und dem Cursor;
 - natürliches Ende und gapless Handoff: `Queue::advance_auto`;
 - Next: `Queue::next_manual`;
-- Previous: `Queue::previous`.
+- Previous: `playback_history::resolve_previous` über den tatsächlich
+  gehörten Verlauf, mit `Queue::jump_to_order_position` nur für noch gültige
+  Kontextpositionen.
 
 Damit liegt keine Reihenfolge- oder Fortschaltlogik in Kotlin. Trotzdem ist
 die Sitzung ein Hinweis auf den nächsten besseren Schnitt: Eine

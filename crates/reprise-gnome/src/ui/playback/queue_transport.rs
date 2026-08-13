@@ -376,15 +376,10 @@ impl PlayerController {
         self.sync_transport_enabled(queue_has_tracks);
     }
 
-    /// Steps the queue to the previous track and plays it (or resets to
-    /// stopped if there is none) — shared by the bar's previous button and
-    /// MPRIS's `Previous` method. Borrow discipline: `previous()` runs
-    /// inside this one `let` statement, so the borrow drops before
-    /// `play_track_id`/`reset_to_stopped` run.
+    /// PLAY-14 Previous follows playback history in every mode. Episode
+    /// neighbour priority is handled by `transport_previous`; reaching this
+    /// method means history is the answer.
     pub(in crate::ui) fn previous(self: &Rc<Self>) {
-        if self.playback_mode() != super::preview::PlaybackMode::Queue {
-            return;
-        }
         self.previous_with_up_next();
     }
 
@@ -392,6 +387,9 @@ impl PlayerController {
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(in crate::ui) fn next(self: &Rc<Self>) {
+        if self.forward_from_history() {
+            return;
+        }
         if self.playback_mode() != super::preview::PlaybackMode::Queue {
             return;
         }

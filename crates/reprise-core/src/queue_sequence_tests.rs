@@ -11,7 +11,7 @@ fn sequence_identity_changes_for_order_mutations_but_not_playhead_moves() {
 
     assert_eq!(queue.next_manual(), Some(20));
     assert_eq!(queue.sequence_identity(), seeded);
-    assert_eq!(queue.previous(), Some(10));
+    assert_eq!(queue.jump_to_order_position(0), Some(10));
     assert_eq!(queue.sequence_identity(), seeded);
 
     queue.append_tracks(&[40]);

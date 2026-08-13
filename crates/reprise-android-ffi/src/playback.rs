@@ -17,6 +17,10 @@ mod test_support;
 mod tests;
 
 #[cfg(test)]
+#[path = "playback_history_tests.rs"]
+mod history_tests;
+
+#[cfg(test)]
 #[path = "playback_terminal_event_tests.rs"]
 mod terminal_event_tests;
 

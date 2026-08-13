@@ -259,6 +259,101 @@ fn the_explicit_queue_is_played_before_the_context_continues() {
 }
 
 #[test]
+fn play_14_previous_returns_to_what_actually_played_across_a_reseed() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
+    fixture.play_tracks(vec![3, 2, 1], 0).unwrap();
+
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+
+    assert_eq!(fixture.transport.playback_snapshot().track_id, Some(1));
+}
+
+#[test]
+fn play_14_previous_within_three_seconds_steps_back_but_later_rewinds() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2], 0).unwrap();
+    fixture.command(&PlaybackCommand::Next).unwrap();
+    fixture.player_event(&PlayerEvent::Position {
+        position_ms: 2_000,
+        duration_ms: 60_000,
+    });
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+    assert_eq!(fixture.transport.playback_snapshot().track_id, Some(1));
+
+    fixture.command(&PlaybackCommand::Next).unwrap();
+    fixture.player_event(&PlayerEvent::Position {
+        position_ms: 4_000,
+        duration_ms: 60_000,
+    });
+    fixture.calls.clear();
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+    assert_eq!(fixture.transport.playback_snapshot().track_id, Some(2));
+    assert_eq!(fixture.calls.calls(), vec![BackendCall::SeekTo(0)]);
+}
+
+#[test]
+fn play_14_previous_with_an_empty_history_seeks_without_restarting() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1], 0).unwrap();
+    fixture.calls.clear();
+
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+
+    assert_eq!(fixture.transport.playback_snapshot().track_id, Some(1));
+    assert_eq!(fixture.calls.calls(), vec![BackendCall::SeekTo(0)]);
+}
+
+#[test]
+fn play_14_next_after_a_back_step_returns_to_the_track_it_left() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
+    fixture.command(&PlaybackCommand::Next).unwrap();
+    fixture.command(&PlaybackCommand::Next).unwrap();
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+    assert_eq!(fixture.transport.playback_snapshot().track_id, Some(2));
+
+    fixture.command(&PlaybackCommand::Next).unwrap();
+
+    assert_eq!(fixture.transport.playback_snapshot().track_id, Some(3));
+}
+
+#[test]
+fn play_14_previous_during_external_playback_falls_back_to_the_history() {
+    let mut played = fixture();
+    played.play_tracks(vec![1, 2], 0).unwrap();
+    played.command(&PlaybackCommand::Next).unwrap();
+    let stream = reprise_runtime_protocol::playback::ExternalMedia {
+        location: "https://stream.example/live".into(),
+        remote: true,
+        title: "Live".into(),
+        artist: "Station".into(),
+        duration_ms: 0,
+        external_ref: "radio/7".into(),
+        live: true,
+    };
+    played
+        .transport
+        .play_external(&played.backend, &stream, None)
+        .unwrap();
+
+    played.command(&PlaybackCommand::Previous).unwrap();
+    assert_eq!(played.transport.playback_snapshot().track_id, Some(1));
+
+    let mut empty = fixture();
+    empty
+        .transport
+        .play_external(&empty.backend, &stream, None)
+        .unwrap();
+    assert_eq!(
+        empty
+            .command(&PlaybackCommand::Previous)
+            .expect_err("a live stream cannot seek"),
+        RuntimeError::Rejected(Rejected::NotSeekable)
+    );
+}
+
+#[test]
 fn clearing_the_queue_does_not_stop_the_music() {
     let mut fixture = fixture();
     fixture.play_tracks(vec![1, 2], 0).unwrap();
