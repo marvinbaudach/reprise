@@ -11,11 +11,9 @@ use super::stats_period::{
 use super::stats_screen::{
     album_rows, artist_rows, first_event_unix, fold_album_rows, genre_artist_rows, genre_rows,
     key_resolver, listen_rows, ranked_groups, total_ms_in_range, track_rows, GenreArtistRow,
-    RankedGroup, TopAlbum, TopTrack, TrackAggregate,
+    RankedGroup, TopAlbum, TopTrack,
 };
 
-const SPOTLIGHT_TRACK_LIMIT: usize = 3;
-const SPOTLIGHT_ALSO_LIMIT: usize = 4;
 const GENRE_LIMIT: usize = 5;
 /// The first rounded upward percentage that switches to multiplicative copy.
 pub const COMPARISON_FACTOR_PERCENT_THRESHOLD: i64 = 1_000;
@@ -78,14 +76,6 @@ pub struct RibbonPoint {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SpotlightSection {
-    pub artist: RankedGroup,
-    pub share_percent: i64,
-    pub top_tracks: Vec<TopTrack>,
-    pub also: Vec<RankedGroup>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenreSegment {
     pub label: String,
     pub key: String,
@@ -115,7 +105,6 @@ pub struct StatsSnapshot {
     pub hero: HeroSection,
     pub ribbon: Vec<RibbonPoint>,
     pub best_week: Option<BestWeek>,
-    pub spotlight: Option<SpotlightSection>,
     pub genres: GenreSection,
     pub top_artists: Vec<RankedGroup>,
     pub top_albums: Vec<TopAlbum>,
@@ -131,6 +120,41 @@ impl StatsSnapshot {
         let mut tracks = self.top_tracks.clone();
         sort_tracks(&mut tracks, sort_by);
         tracks
+    }
+
+    /// The complete artist ranking under the chosen bands-card metric
+    /// (STATS-23).
+    pub fn top_artists_sorted(&self, sort_by: SortBy) -> Vec<RankedGroup> {
+        let mut artists = self.top_artists.clone();
+        artists.sort_by(|left, right| {
+            match sort_by {
+                SortBy::Plays => right
+                    .group
+                    .plays
+                    .cmp(&left.group.plays)
+                    .then_with(|| right.group.ms.cmp(&left.group.ms)),
+                SortBy::Time => right
+                    .group
+                    .ms
+                    .cmp(&left.group.ms)
+                    .then_with(|| right.group.plays.cmp(&left.group.plays)),
+            }
+            // The label breaks the last tie so the row order is stable across
+            // renders — a ranking that reshuffles on redraw reads as broken.
+            .then_with(|| left.group.label.cmp(&right.group.label))
+        });
+        artists
+    }
+
+    /// One artist's share of all artist listening. Tracks whose artist tag is
+    /// empty are no artist and must not shrink everyone else's share.
+    pub fn artist_share_percent(&self, artist: &RankedGroup) -> i64 {
+        let denominator = self
+            .top_artists
+            .iter()
+            .map(|entry| entry.group.ms)
+            .sum::<i64>();
+        percent(artist.group.ms, denominator)
     }
 }
 
@@ -256,7 +280,6 @@ pub fn compute_with_pattern<Tz: TimeZone>(
         .collect();
     let best_week = best_week(&listen_rows, tz);
     let artist_resolver = key_resolver(&artists);
-    let spotlight = spotlight(&top_artists, &artist_resolver, &track_aggregates);
     let genres = genre_section(&genres, &genre_artists, &artist_resolver, &top_artists);
 
     Ok(StatsSnapshot {
@@ -264,7 +287,6 @@ pub fn compute_with_pattern<Tz: TimeZone>(
         hero,
         ribbon,
         best_week,
-        spotlight,
         genres,
         top_artists,
         top_albums,
@@ -352,44 +374,9 @@ fn comparison_presentation(
     Some(ComparisonPresentation::Factor { direction, value })
 }
 
-/// `keys` must be the resolver built from the very rows `artists` was folded
-/// from. Keying a track through anything else re-creates the split STATS-9
-/// removes: a track without an MBID would miss its own artist's group.
-///
-/// `share_percent` divides by the artist population, matching
-/// [`genre_section`]: every section states a share of its own categorized
-/// total, never of a wider one that includes rows the section cannot show.
-fn spotlight(
-    artists: &[RankedGroup],
-    keys: &KeyResolver,
-    tracks: &[TrackAggregate],
-) -> Option<SpotlightSection> {
-    let denominator_ms = artists.iter().map(|artist| artist.group.ms).sum::<i64>();
-    let artist = artists.first()?.clone();
-    let mut artist_tracks = tracks
-        .iter()
-        .filter(|track| keys.key_for(&track.effective_artist) == artist.group.key)
-        .map(|track| track.track.clone())
-        .collect::<Vec<_>>();
-    sort_tracks(&mut artist_tracks, SortBy::Plays);
-    artist_tracks.truncate(SPOTLIGHT_TRACK_LIMIT);
-    Some(SpotlightSection {
-        share_percent: percent(artist.group.ms, denominator_ms),
-        artist,
-        top_tracks: artist_tracks,
-        also: artists
-            .iter()
-            .skip(1)
-            .take(SPOTLIGHT_ALSO_LIMIT)
-            .cloned()
-            .collect(),
-    })
-}
-
 /// Shares divide by the genre population, not by total listening: tracks
 /// without a genre are neither a segment nor "Other" (STATS-3), so counting
 /// them in the denominator would make the bar add up to less than 100 %.
-/// The spotlight follows the same rule against the artist population.
 fn genre_section(
     rows: &[super::stats_screen::NamedRow],
     genre_artists: &[GenreArtistRow],
@@ -550,3 +537,7 @@ mod hero_tests;
 #[cfg(test)]
 #[path = "stats_snapshot_genre_tests.rs"]
 mod genre_tests;
+
+#[cfg(test)]
+#[path = "stats_snapshot_artist_ranking_tests.rs"]
+mod artist_ranking_tests;

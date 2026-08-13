@@ -15,7 +15,8 @@ use reprise_core::library::stats_screen::group_track_ids;
 use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
 use reprise_core::playback::PlaybackState;
 
-use super::stats_bands_row::StatsBandsRow;
+use super::stats_artist_image::StatsArtistImage;
+use super::stats_bands_card::StatsBandsCard;
 use super::stats_entrance::{HorizontalBarGroup, StatsEntrance};
 use super::stats_genre_card::StatsGenreCard;
 use super::stats_header::StatsHeader;
@@ -86,18 +87,16 @@ pub(in crate::ui) struct StatsView {
 }
 
 impl StatsView {
-    pub(in crate::ui) fn new(
-        cover_loader: Rc<CoverLoader>,
-        artist_portrait: &Rc<ArtistPortraitRuntime>,
-    ) -> Self {
+    pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
         let header = StatsHeader::new();
         let hero = StatsHero::new();
         let period_dropdown = header.period_dropdown.clone();
         let period_model = header.period_model.clone();
 
-        let bands_row = StatsBandsRow::new();
-        bands_row.set_cover_loader(&cover_loader);
-        bands_row.set_artist_portrait_runtime(artist_portrait);
+        let artist_image = StatsArtistImage::new(cover_loader.clone());
+        let bands_card = StatsBandsCard::new(artist_image.clone());
+        let bands_section = card(bands_card.widget());
+        bands_section.set_hexpand(true);
         let genres = StatsGenreCard::new();
         let genres_section = card(genres.widget());
 
@@ -114,7 +113,7 @@ impl StatsView {
         // STATS-22: expanding the ranking is the songs card's own business —
         // the page has three sections whether it is open or closed.
         let sections = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
-        sections.append(bands_row.widget());
+        sections.append(&bands_section);
         sections.append(&songs_section);
         sections.append(&genres_section);
 
@@ -170,7 +169,7 @@ impl StatsView {
         let entrance_pending = Rc::new(Cell::new(false));
         let entrance = StatsEntrance::default();
 
-        bands_row.set_on_open_artist({
+        bands_card.set_on_open_artist({
             let callback = on_go_to_artist.clone();
             move |artist| {
                 let callback = callback.borrow().clone();
@@ -179,12 +178,14 @@ impl StatsView {
                 }
             }
         });
-        wire_unify(&bands_row, &genres, &connection, &on_unify_spellings);
+        wire_unify(&bands_card, &genres, &connection, &on_unify_spellings);
 
         let render = Rc::new(RenderParts {
             header: header.clone(),
             hero: hero.clone(),
-            bands_row: bands_row.clone(),
+            bands_card: bands_card.clone(),
+            bands_section: bands_section.clone(),
+            artist_image,
             genres_section_data: genres.clone(),
             songs_card: songs_card.clone(),
             songs_section: songs_section.clone(),
@@ -240,10 +241,11 @@ impl StatsView {
 
     #[cfg(test)]
     fn new_for_test(cover_loader: Rc<CoverLoader>) -> Self {
-        let artist_portrait = ArtistPortraitRuntime::for_test(false, |_| {
-            panic!("disabled test runtime must not resolve portraits")
-        });
-        Self::new(cover_loader, &artist_portrait)
+        Self::new(cover_loader)
+    }
+
+    pub(in crate::ui) fn set_portrait_runtime(&self, runtime: Rc<ArtistPortraitRuntime>) {
+        self.render.artist_image.set_portrait_runtime(runtime);
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::ScrolledWindow {
@@ -396,17 +398,9 @@ impl StatsView {
             .expect("stats content stack must own its sections page");
         let mut child = sections.first_child();
         while let Some(widget) = child {
-            // Both sections are the section child itself now, not a card
-            // wrapped around one — `is_ancestor` is false for a widget
-            // against itself, so these compare by identity.
-            if widget
-                == self
-                    .render
-                    .bands_row
-                    .widget()
-                    .clone()
-                    .upcast::<gtk4::Widget>()
-            {
+            // The ranking sections are the section child itself, so compare
+            // their wrappers by identity rather than ancestry.
+            if widget == self.render.bands_section.clone().upcast::<gtk4::Widget>() {
                 order.push("bands");
             } else if widget == self.render.songs_section.clone().upcast::<gtk4::Widget>() {
                 order.push("songs");
@@ -430,7 +424,9 @@ impl StatsView {
 struct RenderParts {
     header: StatsHeader,
     hero: StatsHero,
-    bands_row: StatsBandsRow,
+    bands_card: StatsBandsCard,
+    bands_section: gtk4::Box,
+    artist_image: Rc<StatsArtistImage>,
     genres_section_data: StatsGenreCard,
     songs_card: StatsSongsCard,
     songs_section: gtk4::Box,
@@ -485,12 +481,12 @@ fn refresh_parts(
 }
 
 fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: bool) {
-    if let Some(spotlight) = &snapshot.spotlight {
-        render.bands_row.set_data(spotlight);
-        render.bands_row.widget().set_visible(true);
+    if snapshot.top_artists.is_empty() {
+        render.bands_card.clear_data();
+        render.bands_section.set_visible(false);
     } else {
-        render.bands_row.clear_data();
-        render.bands_row.widget().set_visible(false);
+        render.bands_card.set_data(snapshot);
+        render.bands_section.set_visible(true);
     }
     render.genres_section_data.set_data(&snapshot.genres);
     render
@@ -501,7 +497,7 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: boo
         .set_visible(!snapshot.top_tracks.is_empty());
     render.songs_card.set_data(snapshot);
     let groups = [
-        HorizontalBarGroup::new(render.bands_row.bars(), Vec::new()),
+        HorizontalBarGroup::new(render.bands_card.bars(), Vec::new()),
         HorizontalBarGroup::new(render.songs_card.summary_bars(), Vec::new()),
         HorizontalBarGroup::new(Vec::new(), render.genres_section_data.segment_reveals()),
     ];
@@ -511,12 +507,12 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: boo
 }
 
 fn wire_unify(
-    bands_row: &StatsBandsRow,
+    bands_card: &StatsBandsCard,
     genres: &StatsGenreCard,
     connection: &Rc<RefCell<Option<Rc<Db>>>>,
     callback: &IdsCallback,
 ) {
-    bands_row.set_on_unify({
+    bands_card.set_on_unify({
         let connection = connection.clone();
         let callback = callback.clone();
         move |key| resolve_unify(&connection, &callback, GroupKind::Artist, &key)

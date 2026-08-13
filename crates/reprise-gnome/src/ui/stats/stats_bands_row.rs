@@ -5,14 +5,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::library::stats_snapshot::SpotlightSection;
+use reprise_core::library::stats_screen::RankedGroup;
+use reprise_core::library::stats_snapshot::SortBy;
 
-#[cfg(test)]
-use super::stats_artwork::StatsArtworkSource;
+use super::stats_artist_image::StatsArtistImage;
 use super::stats_band_card::StatsBandCard;
 use super::stats_band_tile::StatsBandTile;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
-use crate::ui::cover_loader::CoverLoader;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
@@ -72,17 +70,10 @@ impl StatsBandsRow {
         &self.root
     }
 
-    pub(in crate::ui) fn set_cover_loader(&self, loader: &Rc<CoverLoader>) {
-        self.leader.set_cover_loader(loader.clone());
+    pub(in crate::ui) fn set_artist_image(&self, image: &Rc<StatsArtistImage>) {
+        self.leader.set_artist_image(image.clone());
         for tile in &self.tiles {
-            tile.set_cover_loader(loader.clone());
-        }
-    }
-
-    pub(in crate::ui) fn set_artist_portrait_runtime(&self, runtime: &Rc<ArtistPortraitRuntime>) {
-        self.leader.set_artist_portrait_runtime(runtime.clone());
-        for tile in &self.tiles {
-            tile.set_artist_portrait_runtime(runtime.clone());
+            tile.set_artist_image(image.clone());
         }
     }
 
@@ -94,12 +85,21 @@ impl StatsBandsRow {
         *self.on_unify.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn set_data(&self, section: &SpotlightSection) {
-        self.leader.set_data(section);
-        let leader_ms = section.artist.group.ms.max(0);
+    pub(in crate::ui) fn set_data(
+        &self,
+        artists: &[RankedGroup],
+        share_percent: i64,
+        sort_by: SortBy,
+    ) {
+        let Some(leader) = artists.first() else {
+            self.clear_data();
+            return;
+        };
+        self.leader.set_data(leader, share_percent, sort_by);
+        let leader_metric = artist_metric(leader, sort_by);
         for (index, tile) in self.tiles.iter().enumerate() {
-            match section.also.get(index) {
-                Some(ranked) => tile.set_data(index + 2, ranked, leader_ms),
+            match artists.get(index + 1) {
+                Some(ranked) => tile.set_data(index + 2, ranked, leader_metric, sort_by),
                 None => tile.clear_data(),
             }
         }
@@ -126,6 +126,28 @@ impl StatsBandsRow {
     #[cfg(test)]
     pub(super) fn tiles(&self) -> &[StatsBandTile] {
         &self.tiles
+    }
+
+    #[cfg(test)]
+    pub(super) fn leader_label(&self) -> String {
+        self.leader.artist_label()
+    }
+
+    #[cfg(test)]
+    pub(super) fn leader_summary(&self) -> String {
+        self.leader.summary_text()
+    }
+
+    #[cfg(test)]
+    pub(super) fn runner_up_labels(&self) -> Vec<String> {
+        self.tiles.iter().map(StatsBandTile::artist_label).collect()
+    }
+}
+
+pub(super) fn artist_metric(artist: &RankedGroup, sort_by: SortBy) -> i64 {
+    match sort_by {
+        SortBy::Plays => artist.group.plays,
+        SortBy::Time => artist.group.ms,
     }
 }
 

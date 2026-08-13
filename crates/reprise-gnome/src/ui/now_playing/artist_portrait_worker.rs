@@ -1,6 +1,8 @@
-//! Live permission and off-thread loading for visible artist portraits in My Stats.
+//! Live permission and a bounded off-thread queue for artist portraits shown
+//! in My Stats (STATS-23).
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -8,15 +10,22 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::glib;
-use gtk4::prelude::*;
 use reprise_core::db::Db;
 
 type PortraitResolver = Arc<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;
+type PortraitCallback = Rc<dyn Fn(Option<PathBuf>)>;
+type PortraitGuard = Rc<dyn Fn() -> bool>;
+
+/// Twenty ranks can appear at once. Keeping only three portrait requests in
+/// flight avoids flooding the blocking pool and the remote provider.
+const MAX_IN_FLIGHT: usize = 3;
 
 pub(in crate::ui) struct ArtistPortraitRuntime {
     pub enabled: Rc<Cell<bool>>,
     worker_enabled: Arc<AtomicBool>,
     resolve: PortraitResolver,
+    in_flight: Rc<Cell<usize>>,
+    queue: Rc<RefCell<VecDeque<(String, PortraitGuard, PortraitCallback)>>>,
 }
 
 impl ArtistPortraitRuntime {
@@ -56,6 +65,8 @@ impl ArtistPortraitRuntime {
             enabled: Rc::new(Cell::new(enabled)),
             worker_enabled: Arc::new(AtomicBool::new(enabled)),
             resolve: Arc::new(resolve),
+            in_flight: Rc::new(Cell::new(0)),
+            queue: Rc::new(RefCell::new(VecDeque::new())),
         })
     }
 
@@ -67,99 +78,80 @@ impl ArtistPortraitRuntime {
         Self::new(enabled, resolve)
     }
 
-    /// Resolves and decodes a portrait away from GTK's main thread. Both the
-    /// request and the result are gated: disabling online artwork while a job
-    /// is queued prevents the resolver from running, and disabling it while a
-    /// request is in flight prevents the image from being shown.
-    pub(in crate::ui) fn load_into_picture(
+    pub(in crate::ui) fn is_enabled(&self) -> bool {
+        self.enabled.get()
+    }
+
+    /// Whether requesting `name` can call the resolver. Pure so non-display
+    /// tests can prove the network gate without observing a request.
+    pub(in crate::ui) fn request_would_run(&self, name: &str) -> bool {
+        self.is_enabled() && !name.trim().is_empty()
+    }
+
+    /// Queues one portrait lookup and calls `on_ready` on the main context.
+    /// Disabled and blank requests resolve locally and never enter the queue.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(in crate::ui) fn request(
         self: &Rc<Self>,
-        picture: &gtk4::Picture,
-        artist: &str,
-        token: u64,
-        current: &Rc<Cell<u64>>,
-        on_loaded: impl FnOnce(bool) + 'static,
+        name: String,
+        on_ready: impl Fn(Option<PathBuf>) + 'static,
     ) {
-        if current.get() != token {
+        self.request_while(name, || true, on_ready);
+    }
+
+    /// Like `request`, but drops work that stopped being visible while it was
+    /// waiting for one of the bounded worker slots (STATS-23).
+    pub(in crate::ui) fn request_while(
+        self: &Rc<Self>,
+        name: String,
+        still_visible: impl Fn() -> bool + 'static,
+        on_ready: impl Fn(Option<PathBuf>) + 'static,
+    ) {
+        if !self.request_would_run(&name) || !still_visible() {
+            on_ready(None);
             return;
         }
-        if !self.enabled.get() {
-            on_loaded(false);
-            return;
-        }
+        self.queue
+            .borrow_mut()
+            .push_back((name, Rc::new(still_visible), Rc::new(on_ready)));
+        self.pump();
+    }
 
-        let picture = picture.clone();
-        let artist = artist.to_string();
-        let current = current.clone();
-        let worker_enabled = self.worker_enabled.clone();
-        let resolve = self.resolve.clone();
-        glib::spawn_future_local(async move {
-            let gate = worker_enabled.clone();
-            let pixels = gio::spawn_blocking(move || {
-                if !gate.load(Ordering::Relaxed) {
-                    return None;
-                }
-                let path = resolve(&artist)?;
-                decode_pixels(&path).ok()
-            })
-            .await
-            .ok()
-            .flatten();
-
-            if current.get() != token {
-                return;
-            }
-            if !worker_enabled.load(Ordering::Relaxed) {
-                on_loaded(false);
-                return;
-            }
-            let Some(pixels) = pixels else {
-                on_loaded(false);
+    fn pump(self: &Rc<Self>) {
+        while self.in_flight.get() < MAX_IN_FLIGHT {
+            let next = self.queue.borrow_mut().pop_front();
+            let Some((name, still_visible, on_ready)) = next else {
                 return;
             };
-            picture.set_paintable(Some(&memory_texture(pixels)));
-            on_loaded(true);
-        });
+            if !self.is_enabled() {
+                on_ready(None);
+                continue;
+            }
+            if !still_visible() {
+                on_ready(None);
+                continue;
+            }
+            self.in_flight.set(self.in_flight.get() + 1);
+            let this = self.clone();
+            let gate = self.worker_enabled.clone();
+            let resolve = self.resolve.clone();
+            glib::spawn_future_local(async move {
+                let worker_gate = gate.clone();
+                let found = gio::spawn_blocking(move || {
+                    worker_gate
+                        .load(Ordering::Relaxed)
+                        .then(|| resolve(&name))
+                        .flatten()
+                })
+                .await
+                .ok()
+                .flatten();
+                this.in_flight.set(this.in_flight.get().saturating_sub(1));
+                on_ready(gate.load(Ordering::Relaxed).then_some(found).flatten());
+                this.pump();
+            });
+        }
     }
-}
-
-struct DecodedPixels {
-    bytes: Vec<u8>,
-    width: i32,
-    height: i32,
-    rowstride: usize,
-    has_alpha: bool,
-}
-
-fn decode_pixels(path: &std::path::Path) -> Result<DecodedPixels, glib::Error> {
-    let size = i32::try_from(reprise_core::cover::ThumbnailSize::Portrait.pixels())
-        .unwrap_or(192)
-        .saturating_mul(2);
-    let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true)?;
-    let bytes = pixbuf.read_pixel_bytes();
-    Ok(DecodedPixels {
-        bytes: bytes.as_ref().to_vec(),
-        width: pixbuf.width(),
-        height: pixbuf.height(),
-        rowstride: pixbuf.rowstride() as usize,
-        has_alpha: pixbuf.has_alpha(),
-    })
-}
-
-fn memory_texture(pixels: DecodedPixels) -> gtk4::gdk::Texture {
-    let format = if pixels.has_alpha {
-        gtk4::gdk::MemoryFormat::R8g8b8a8
-    } else {
-        gtk4::gdk::MemoryFormat::R8g8b8
-    };
-    let bytes = glib::Bytes::from_owned(pixels.bytes);
-    gtk4::gdk::MemoryTexture::new(
-        pixels.width,
-        pixels.height,
-        format,
-        &bytes,
-        pixels.rowstride,
-    )
-    .upcast()
 }
 
 #[cfg(test)]
@@ -199,5 +191,72 @@ mod tests {
         reprise_core::online_sources::set_enabled(&conn, true).unwrap();
         runtime.recompute_enabled(&conn);
         assert!(runtime.enabled.get());
+    }
+
+    #[test]
+    fn stats_23_stale_queued_portraits_never_reach_the_resolver() {
+        let resolver_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let runtime = ArtistPortraitRuntime::for_test(true, {
+            let resolver_calls = resolver_calls.clone();
+            move |_| {
+                resolver_calls.fetch_add(1, Ordering::SeqCst);
+                None
+            }
+        });
+        runtime.in_flight.set(MAX_IN_FLIGHT);
+        let still_visible = Rc::new(Cell::new(true));
+        let result = Rc::new(RefCell::new(Vec::new()));
+
+        runtime.request_while(
+            "Former leader".to_string(),
+            {
+                let still_visible = still_visible.clone();
+                move || still_visible.get()
+            },
+            {
+                let result = result.clone();
+                move |path| result.borrow_mut().push(path)
+            },
+        );
+        assert_eq!(runtime.queue.borrow().len(), 1);
+
+        still_visible.set(false);
+        runtime.in_flight.set(0);
+        runtime.pump();
+
+        assert_eq!(resolver_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(&*result.borrow(), &[None]);
+    }
+
+    #[test]
+    fn stats_23_disabling_portraits_drains_the_queue_without_resolving() {
+        let resolver_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let runtime = ArtistPortraitRuntime::for_test(true, {
+            let resolver_calls = resolver_calls.clone();
+            move |_| {
+                resolver_calls.fetch_add(1, Ordering::SeqCst);
+                None
+            }
+        });
+        runtime.in_flight.set(MAX_IN_FLIGHT);
+        let result = Rc::new(RefCell::new(Vec::new()));
+
+        for artist in ["Former leader", "Former runner-up"] {
+            runtime.request(artist.to_string(), {
+                let result = result.clone();
+                move |path| result.borrow_mut().push(path)
+            });
+        }
+        assert_eq!(runtime.queue.borrow().len(), 2);
+
+        runtime.worker_enabled.store(false, Ordering::Relaxed);
+        runtime.enabled.set(false);
+        runtime.in_flight.set(0);
+        runtime.pump();
+
+        assert_eq!(resolver_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(runtime.in_flight.get(), 0);
+        assert!(runtime.queue.borrow().is_empty());
+        assert_eq!(&*result.borrow(), &[None, None]);
     }
 }

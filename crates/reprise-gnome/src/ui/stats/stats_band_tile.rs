@@ -8,13 +8,11 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen::RankedGroup;
+use reprise_core::library::stats_snapshot::SortBy;
 
-use super::stats_artwork::{StatsArtworkRequest, StatsArtworkSource};
+use super::stats_artist_image::{ArtistImageRequest, StatsArtistImage};
 use super::stats_view_widgets::label;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
-use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
@@ -35,10 +33,11 @@ pub(super) struct StatsBandTile {
     unify: gtk4::Button,
     current_artist: Rc<RefCell<String>>,
     current_key: Rc<RefCell<String>>,
-    cover_loader: Rc<RefCell<Option<Rc<CoverLoader>>>>,
-    artist_portrait: Rc<RefCell<Option<Rc<ArtistPortraitRuntime>>>>,
+    artist_image: Rc<RefCell<Option<Rc<StatsArtistImage>>>>,
+    current_candidates: Rc<RefCell<Vec<String>>>,
     cover_generation: Rc<Cell<u64>>,
-    pub(super) artwork_source: Rc<Cell<StatsArtworkSource>>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) image_loaded: Rc<Cell<Option<bool>>>,
 }
 
 impl StatsBandTile {
@@ -139,10 +138,10 @@ impl StatsBandTile {
             unify,
             current_artist,
             current_key,
-            cover_loader: Rc::new(RefCell::new(None)),
-            artist_portrait: Rc::new(RefCell::new(None)),
+            artist_image: Rc::new(RefCell::new(None)),
+            current_candidates: Rc::new(RefCell::new(Vec::new())),
             cover_generation: Rc::new(Cell::new(0)),
-            artwork_source: Rc::new(Cell::new(StatsArtworkSource::Initials)),
+            image_loaded: Rc::new(Cell::new(None)),
         }
     }
 
@@ -154,18 +153,21 @@ impl StatsBandTile {
         self.bar.clone()
     }
 
-    pub(super) fn set_cover_loader(&self, loader: Rc<CoverLoader>) {
-        *self.cover_loader.borrow_mut() = Some(loader);
+    pub(super) fn set_artist_image(&self, image: Rc<StatsArtistImage>) {
+        *self.artist_image.borrow_mut() = Some(image);
     }
 
-    pub(super) fn set_artist_portrait_runtime(&self, runtime: Rc<ArtistPortraitRuntime>) {
-        *self.artist_portrait.borrow_mut() = Some(runtime);
-    }
-
-    pub(super) fn set_data(&self, rank: usize, ranked: &RankedGroup, leader_ms: i64) {
+    pub(super) fn set_data(
+        &self,
+        rank: usize,
+        ranked: &RankedGroup,
+        leader_metric: i64,
+        sort_by: SortBy,
+    ) {
         let group = &ranked.group;
         *self.current_artist.borrow_mut() = group.label.clone();
         *self.current_key.borrow_mut() = group.key.clone();
+        *self.current_candidates.borrow_mut() = ranked.cover_candidates.clone();
         self.root.set_visible(true);
         self.root
             .update_property(&[gtk4::accessible::Property::Label(&group.label)]);
@@ -173,19 +175,17 @@ impl StatsBandTile {
         self.name.set_label(&group.label);
         self.initials
             .set_label(&super::stats_band_card::initials(&group.label));
-        self.figures.set_label(&format!(
-            "{} plays · {}",
-            format_thousands(group.plays),
-            strings::stats_duration(group.ms)
-        ));
-        self.bar.set_value(relative_value(group.ms, leader_ms));
+        self.figures
+            .set_label(&strings::stats_artist_figures(group.plays, group.ms));
+        let metric = super::stats_bands_row::artist_metric(ranked, sort_by);
+        self.bar.set_value(relative_value(metric, leader_metric));
         self.unify.set_visible(group.variant_count >= 2);
         self.unify.set_tooltip_text(
             (group.variant_count >= 2)
                 .then(|| strings::spellings_merged_hint(group.variant_count))
                 .as_deref(),
         );
-        self.load_artwork(&group.label, &ranked.representative_track_path);
+        self.load_image(&group.label, &ranked.cover_candidates);
     }
 
     /// Hides the tile. The row has a fixed five slots, so a library with
@@ -195,26 +195,51 @@ impl StatsBandTile {
         self.cover_generation
             .set(self.cover_generation.get().wrapping_add(1));
         self.picture.set_paintable(gtk4::gdk::Paintable::NONE);
-        self.artwork_source.set(StatsArtworkSource::Initials);
+        self.image_loaded.set(None);
         self.root.set_visible(false);
         self.current_artist.borrow_mut().clear();
         self.current_key.borrow_mut().clear();
+        self.current_candidates.borrow_mut().clear();
     }
 
-    fn load_artwork(&self, artist: &str, path: &str) {
+    fn load_image(&self, artist: &str, candidates: &[String]) {
         let token = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(token);
-        super::stats_artwork::load(StatsArtworkRequest {
-            picture: &self.picture,
-            fallback: &self.initials,
-            artist,
-            track_path: path,
-            token,
-            current: &self.cover_generation,
-            portrait: self.artist_portrait.borrow().clone(),
-            cover: self.cover_loader.borrow().clone(),
-            source: self.artwork_source.clone(),
-        });
+        self.picture.set_paintable(gtk4::gdk::Paintable::NONE);
+        self.picture.set_visible(false);
+        self.initials.set_visible(true);
+        self.image_loaded.set(None);
+        let image = self.artist_image.borrow().clone();
+        let Some(image) = image else {
+            return;
+        };
+        let picture = self.picture.clone();
+        let initials = self.initials.clone();
+        let generation = self.cover_generation.clone();
+        let image_loaded = self.image_loaded.clone();
+        image.load(
+            &self.picture,
+            ArtistImageRequest {
+                artist: artist.to_string(),
+                candidates: candidates.to_vec(),
+                size: reprise_core::cover::ThumbnailSize::Portrait,
+                token,
+                generation: generation.clone(),
+                on_loaded: Rc::new(move |loaded| {
+                    if generation.get() != token {
+                        return;
+                    }
+                    picture.set_visible(loaded);
+                    initials.set_visible(!loaded);
+                    image_loaded.set(Some(loaded));
+                }),
+            },
+        );
+    }
+
+    #[cfg(test)]
+    pub(super) fn artist_label(&self) -> String {
+        self.current_artist.borrow().clone()
     }
 }
 

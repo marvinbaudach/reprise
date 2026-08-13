@@ -3348,7 +3348,7 @@ property is set and yet nothing happens.
   too short for weeks does the axis fall back to days (STATS-6); very long
   "All time" spans may show months and then drop the week marker — the
   best-week KPI stays.
-- **STATS-13** [active] [gtk] — The band card shows the most-listened
+- **STATS-13** [replaced by STATS-23] [gtk] — The band card shows the most-listened
   artist as an image hero: the album cover of their most-played track
   fills the card and fades out downward into the card background; if a
   cover is missing, an initials tile stands in its place — never an empty
@@ -3494,6 +3494,32 @@ property is set and yet nothing happens.
   STATS-10 that let the expanded list stand "as its own full-width section" is
   void with this rule; everything else STATS-10 says about the page — its order,
   its curation, its narrow-window stacking — stands.
+- **STATS-23** [active] [gtk] — Replaces STATS-13, which pinned the band card to
+  "the album cover of their most-played track" while the code shipped the
+  alphabetically first path, and which knew no ranking past rank 5. **The bands
+  row is one card and answers like the songs card.** Every band surface — the
+  leader's hero, the four runner-up tiles and the continuation rows — resolves
+  its image the same way while the Artist portraits module is enabled: the
+  cached artist portrait first, then the cover of the artist's most-played album
+  in the period, then the next most-played album that actually carries artwork
+  (at most three tried), then an initials tile; never an empty surface. A missing
+  portrait is fetched only for the ranks on screen. With the module off nothing
+  is read from the portrait cache or requested, and the album cover stands. The
+  album cover paints as soon as it resolves, and a portrait arriving later
+  replaces it. **The "by
+  plays / by time" toggle beside the row sorts the whole row** — leader, tiles
+  and continuation alike — and the leader's "N % of your artist listening" is
+  recomputed for whoever leads under the chosen metric, against the same artist
+  population STATS-13 divided by. **"Show more top artists" grows this card and
+  never opens a second one:** it reveals ranks 6 to 20 in two columns directly
+  below the button, each row carrying its rank, a round portrait, the name, a bar
+  relative to rank 1 and the metric the toggle selects. It is offered only when
+  there is something past the five on screen, and collapsing returns the card to
+  its row. **Its rows answer like the tiles above them:** a focusable target with
+  the pointer cursor and the shared hover wash (BTN-1/BTN-4) that opens the
+  library filtered to the artist on click and on Enter or Space (regular history
+  push). Where a group combines several spellings the unification hint from
+  STATS-9 is retained; durations follow the compact format from STATS-11.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;

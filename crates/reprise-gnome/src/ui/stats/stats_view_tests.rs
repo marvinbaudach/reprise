@@ -22,6 +22,26 @@ fn stats_19_page_orders_header_hero_bands_songs_genres() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_bands_ranking_uses_the_shared_card_wrapper() {
+    gtk4::init().unwrap();
+    let (view, _) = view_and_conn();
+
+    assert!(view.render.bands_section.has_css_class("stats-card"));
+    assert_eq!(
+        view.render.bands_section.first_child(),
+        Some(
+            view.render
+                .bands_card
+                .widget()
+                .clone()
+                .upcast::<gtk4::Widget>()
+        )
+    );
+    assert_eq!(view.section_order(), SECTION_ORDER);
+}
+
+#[test]
 fn section_spacing_stays_in_the_compact_design_range() {
     assert!((16..=24).contains(&SECTION_SPACING));
 }
@@ -60,7 +80,7 @@ fn stats_6c_fresh_library_without_counters_keeps_plain_empty_state() {
     // The sections are not hidden, they are simply on the page the stack is
     // not showing — which is what actually keeps them off screen.
     let sections = view.page_stack.child_by_name("sections").unwrap();
-    assert!(view.render.bands_row.widget().is_ancestor(&sections));
+    assert!(view.render.bands_card.widget().is_ancestor(&sections));
     assert_ne!(view.page_stack.visible_child(), Some(sections));
 }
 

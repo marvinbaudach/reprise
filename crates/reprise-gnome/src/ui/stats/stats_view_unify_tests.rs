@@ -35,10 +35,7 @@ fn stats_unify_wiring_resolves_artist_and_genre_group_ids() {
         move |ids| resolved.borrow_mut().push(ids)
     });
 
-    view.render
-        .bands_row
-        .leader()
-        .emit_unify("name:lorna shore");
+    view.render.bands_card.emit_unify("name:lorna shore");
     view.render.genres_section_data.emit_unify("name:deathcore");
 
     assert_eq!(*resolved.borrow(), vec![vec![1, 2], vec![3, 4]]);
