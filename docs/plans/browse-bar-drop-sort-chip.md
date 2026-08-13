@@ -2,7 +2,7 @@
 slug: browse-bar-drop-sort-chip
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-13
 ---

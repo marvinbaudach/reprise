@@ -2,7 +2,7 @@
 slug: cua-explore-night-run-fixes
 worktree: /home/marvin/Projects/reprise-cua-explore-night-run-fixes
 branch: fix/cua-explore-night-run-fixes
-phase: planned
+phase: shipped
 created: 2026-08-10
 ---
 

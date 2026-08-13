@@ -2,7 +2,7 @@
 slug: cua-explore-reasoning-agent
 worktree:
 branch:
-phase: planned
+phase: shipped
 created: 2026-08-06
 ---
 # Reasoning-Agent und Hover-Abnahme für `scripts/cua-explore`

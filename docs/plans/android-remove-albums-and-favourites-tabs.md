@@ -2,7 +2,7 @@
 slug: android-remove-albums-and-favourites-tabs
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-12
 ---

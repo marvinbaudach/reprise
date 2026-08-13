@@ -2,7 +2,7 @@
 slug: android-play-view-steady-and-queue-swipe
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-11
 ---

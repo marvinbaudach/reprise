@@ -2,7 +2,7 @@
 slug: accent-color-source
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-05
 ---

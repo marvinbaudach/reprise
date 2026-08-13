@@ -1,3 +1,12 @@
+---
+slug: radio-favicons-cold-start
+worktree: /home/marvin/Projects/reprise-radio-favicons-cold-start
+branch: feature/radio-favicons-cold-start
+phase: planned
+codex_session:
+created: 2026-08-13
+---
+
 # Radio-Favicons beim Kaltstart, plus zwei Nachzügler aus der Artwork-Review
 
 Umsetzt Punkt **1**, **4a** und **4b** aus

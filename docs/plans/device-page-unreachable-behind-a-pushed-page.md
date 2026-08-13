@@ -2,7 +2,7 @@
 slug: device-page-unreachable-behind-a-pushed-page
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-08
 ---

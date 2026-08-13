@@ -2,7 +2,7 @@
 slug: queue-section-anchor
 worktree: /home/marvin/Projects/reprise-queue-section-anchor
 branch: feature/queue-section-anchor
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-13
 ---

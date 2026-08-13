@@ -2,7 +2,7 @@
 slug: device-overview-column-width
 worktree: /home/marvin/Projects/reprise-device-overview-column-width
 branch: feature/device-overview-column-width
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-09
 ---
