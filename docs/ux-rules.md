@@ -5097,7 +5097,17 @@ listening statistics.
   setting inherits consent once when any retired artwork setting
   (`module.cover_download.enabled`, `module.artist_portraits.enabled`, or
   `module.source_images.enabled`) is explicitly on; all-off or absent legacy
-  settings stay off, and an existing unified setting always wins. Artwork is
+  settings stay off, and an existing unified setting always wins. Schema v72
+  applies that same rule to databases already stamped by the faulty v71: only
+  an absent unified row plus at least one enabled retired row is repaired;
+  every existing `0` or `1` remains untouched. Whenever either migration
+  actually enables Artwork, Reprise records that inherited consent and shows
+  one dismissible Library banner: "Reprise merged the separate image modules
+  into Artwork. It now loads album covers, artist portraits, and images for
+  podcasts, YouTube, and radio." "Review Artwork Settings" opens Plugins and
+  highlights Artwork; "Dismiss" closes it. The notice is consumed before
+  either action hides it, never returns after either action, and never appears
+  when the unified gate was untouched. Artwork is
   subject to `NET-1a`: a cache hit is always shown, regardless of the gate — a
   cache miss triggers a fetch only when the global gate **and** the module are
   both active, otherwise the surface's source fallback stays, never an error

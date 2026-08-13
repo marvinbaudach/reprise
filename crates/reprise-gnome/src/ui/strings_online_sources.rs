@@ -50,6 +50,11 @@ pub const ONLINE_DISCOVERY_BANNER_BODY: &str = N_!(
 );
 pub const ONLINE_DISCOVERY_REVIEW: &str = N_!("Review in Preferences");
 pub const ONLINE_DISCOVERY_NOT_NOW: &str = N_!("Not now");
+pub const ARTWORK_CONSENT_MERGE_NOTICE_BODY: &str = N_!(
+    "Reprise merged the separate image modules into Artwork. It now loads album covers, artist portraits, and images for podcasts, YouTube, and radio."
+);
+pub const ARTWORK_CONSENT_MERGE_NOTICE_REVIEW: &str = N_!("Review Artwork Settings");
+pub const ARTWORK_CONSENT_MERGE_NOTICE_DISMISS: &str = N_!("Dismiss");
 
 /// `NET-1a`: shown wherever a surface refuses to reach the network because the
 /// global switch — or the source's own switch — is off. The page promises "no

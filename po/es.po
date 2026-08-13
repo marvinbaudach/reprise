@@ -2636,6 +2636,19 @@ msgstr "Revisar en Preferencias"
 msgid "Not now"
 msgstr "Ahora no"
 
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:54
+msgid ""
+"Reprise merged the separate image modules into Artwork. It now loads album "
+"covers, artist portraits, and images for podcasts, YouTube, and radio."
+msgstr ""
+"Reprise ha fusionado los módulos de imágenes independientes en «Material "
+"gráfico». Ahora carga portadas de álbumes, retratos de artistas e imágenes "
+"para pódcasts, YouTube y radio."
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:56
+msgid "Review Artwork Settings"
+msgstr "Revisar los ajustes de Material gráfico"
+
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:58
 msgid "Online sources are turned off — enable them in Preferences"
 msgstr "Las fuentes en línea están desactivadas — actívalas en Preferencias"

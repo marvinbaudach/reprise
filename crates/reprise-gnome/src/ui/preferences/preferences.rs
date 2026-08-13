@@ -35,12 +35,14 @@ pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 enum SettingsDeepLink {
     OnlineSources,
     ConcertLocation,
+    Artwork,
 }
 
 fn plugin_targets_for_deep_link(link: SettingsDeepLink) -> &'static [&'static str] {
     match link {
         SettingsDeepLink::OnlineSources => &["youtube", "podcasts", "radio"],
         SettingsDeepLink::ConcertLocation => &["concerts"],
+        SettingsDeepLink::Artwork => &["artwork"],
     }
 }
 
@@ -418,6 +420,10 @@ impl PreferencesContext {
         self.present_plugins(plugin_targets_for_deep_link(
             SettingsDeepLink::OnlineSources,
         ));
+    }
+
+    pub(in crate::ui) fn present_artwork_settings(self: &Rc<Self>) {
+        self.present_plugins(plugin_targets_for_deep_link(SettingsDeepLink::Artwork));
     }
 
     /// `RAD-5`: Radio's "Near you" chip deep-links here when no app-level
