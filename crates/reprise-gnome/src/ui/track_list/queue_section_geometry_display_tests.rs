@@ -318,6 +318,7 @@ struct DeepQueueFixture {
     captured_queue: BrowserPlace,
     captured_anchor: TrackAnchor,
     headers: Vec<String>,
+    rendered_band_heights: (f32, f32),
     rows_before: Vec<(String, f32)>,
 }
 
@@ -341,6 +342,8 @@ impl DeepQueueFixture {
             headers.iter().any(|title| title == "Play Next"),
             "precondition: the queue renders its section headers; got {headers:?}"
         );
+        let rendered_band_heights = rendered_band_heights(&track_list.shared.column_view)
+            .expect("the Queue top must expose uniform allocated row and header bands");
 
         let adjustment = track_list.shared.column_view.vadjustment().unwrap();
         track_list.shared.column_view.scroll_to(
@@ -367,6 +370,7 @@ impl DeepQueueFixture {
             captured_queue,
             captured_anchor,
             headers,
+            rendered_band_heights,
             rows_before,
         }
     }
@@ -419,8 +423,7 @@ fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
     sampler.remove();
 
     let restored_ids = fixture.track_list.shared.current_view_ids();
-    let (row_height, header_height) = rendered_band_heights(&fixture.track_list.shared.column_view)
-        .expect("the restored Queue must expose uniform allocated row and header bands");
+    let (row_height, header_height) = fixture.rendered_band_heights;
     let row_height = f64::from(row_height);
     let header_height = f64::from(header_height);
     let measured_content =
