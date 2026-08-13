@@ -63,6 +63,12 @@ impl TimeWindowTask {
 pub struct LibrarySignature(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PassKind {
+    Startup,
+    UserTriggered,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DueReason {
     NeverCompleted,
     LibrarySignatureChanged {
@@ -228,17 +234,7 @@ pub fn begin_exact(db: &Db, task: SignatureTask) -> Option<ExactTaskPass> {
         Ok(DueDecision::Skip(_)) => None,
         Ok(DueDecision::Run(_)) => Some(ExactTaskPass {
             task,
-            signature: match current_signature_in(db.conn()) {
-                Ok(signature) => Some(signature),
-                Err(error) => {
-                    tracing::warn!(
-                        task = task.log_name(),
-                        %error,
-                        "could not capture startup task signature; running conservatively"
-                    );
-                    None
-                }
-            },
+            signature: capture_signature(db, task, PassKind::Startup),
         }),
         Err(error) => {
             tracing::warn!(
@@ -254,23 +250,42 @@ pub fn begin_exact(db: &Db, task: SignatureTask) -> Option<ExactTaskPass> {
     }
 }
 
+fn capture_signature(
+    db: &Db,
+    task: SignatureTask,
+    pass_kind: PassKind,
+) -> Option<LibrarySignature> {
+    match current_signature_in(db.conn()) {
+        Ok(signature) => Some(signature),
+        Err(error) => {
+            match pass_kind {
+                PassKind::Startup => {
+                    tracing::warn!(
+                        task = task.log_name(),
+                        %error,
+                        "could not capture startup task signature; running conservatively"
+                    );
+                }
+                PassKind::UserTriggered => {
+                    tracing::warn!(
+                        task = task.log_name(),
+                        %error,
+                        "could not capture user-triggered task signature; running conservatively"
+                    );
+                }
+            }
+            None
+        }
+    }
+}
+
 /// Starts work requested directly by the user without consulting startup
 /// freshness, while retaining the exact signature the completed pass may
 /// settle for the next launch.
 pub fn begin_user_triggered(db: &Db, task: SignatureTask) -> ExactTaskPass {
     ExactTaskPass {
         task,
-        signature: match current_signature_in(db.conn()) {
-            Ok(signature) => Some(signature),
-            Err(error) => {
-                tracing::warn!(
-                    task = task.log_name(),
-                    %error,
-                    "could not capture user-triggered task signature; running conservatively"
-                );
-                None
-            }
-        },
+        signature: capture_signature(db, task, PassKind::UserTriggered),
     }
 }
 
@@ -477,11 +492,38 @@ mod tests {
         let db = crate::db::Db::open_in_memory().unwrap();
         record_completed_at(&db, SignatureTask::CoverDownload, 123).unwrap();
         assert!(begin_exact(&db, SignatureTask::CoverDownload).is_none());
+        advance_library_signature_in(db.conn()).unwrap();
+        assert!(begin_exact(&db, SignatureTask::CoverDownload).is_some());
 
         let pass = begin_user_triggered(&db, SignatureTask::CoverDownload);
         pass.record_completed_or_warn(&db);
 
         assert!(begin_exact(&db, SignatureTask::CoverDownload).is_none());
+    }
+
+    #[test]
+    fn signature_capture_failure_keeps_each_request_kind_in_the_log() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        crate::library::settings::set_setting(&db, LIBRARY_SIGNATURE_KEY, "not-a-revision")
+            .unwrap();
+        let startup_logs = crate::log_capture::CapturedLogs::default();
+        let user_logs = crate::log_capture::CapturedLogs::default();
+
+        assert!(startup_logs
+            .capture(|| capture_signature(&db, SignatureTask::CoverDownload, PassKind::Startup))
+            .is_none());
+        assert!(user_logs
+            .capture(|| {
+                capture_signature(&db, SignatureTask::CoverDownload, PassKind::UserTriggered)
+            })
+            .is_none());
+
+        assert!(startup_logs
+            .joined()
+            .contains("could not capture startup task signature"));
+        assert!(user_logs
+            .joined()
+            .contains("could not capture user-triggered task signature"));
     }
 
     #[test]
