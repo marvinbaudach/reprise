@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-13 09:04+0200\n"
+"POT-Creation-Date: 2026-08-13 12:30+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -1048,38 +1048,58 @@ msgstr "Desactivar {name}"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
 #, rust-format
+msgid "{name} settings…"
+msgstr "Ajustes de {name}…"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
+#, rust-format
 msgid "Could not turn off {name}"
 msgstr "No se pudo desactivar {name}"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:51
+#, rust-format
+msgid "{name} turned off"
+msgstr "Se desactivó {name}"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:55
+#, rust-format
+msgid "{name} turned off · showing Music"
+msgstr "Se desactivó {name} · mostrando Música"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:59
+#, rust-format
+msgid "{count} turned off"
+msgstr "{count} desactivados"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:63
 msgid "Accent Color"
 msgstr "Color de acento"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:48
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:64
 msgid "Choose the Reprise accent or follow the system"
 msgstr "Usar el acento de Reprise o seguir el sistema"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:49
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:65
 msgid "App Accent"
 msgstr "Acento de la aplicación"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:50
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:66
 msgid "Color Scheme"
 msgstr "Esquema de color"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:51
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:67
 msgid "Choose light, dark, or follow system preference"
 msgstr "Elegir el modo claro, oscuro o seguir la preferencia del sistema"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:52
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:68
 msgid "Light"
 msgstr "Liviano"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:53
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:69
 msgid "Dark"
 msgstr "Oscuro"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:54
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:70
 msgid "System"
 msgstr "Sistema"
 

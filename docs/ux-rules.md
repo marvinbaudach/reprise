@@ -240,16 +240,26 @@ result.
   point end to end: the cua-e2e scenario that once proved this path drove
   the header item and retired with NAV-7.
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
-  switch.** A secondary click, Menu, or Shift+F10 on Podcasts, YouTube,
-  Radio, Releases, or Concerts opens one action, "Turn Off {name}". It
-  changes the same module setting as the Plugins switch, applies the same
-  runtime refresh immediately, and keeps subscriptions, favorites, caches,
-  and source data. If the place being turned off is open, Music becomes the
-  selected place; otherwise the current place does not change. Music, Queue,
-  playlists, smart lists, and My Stats never offer this action. *Tests:*
-  `nav_16_only_optional_module_rows_offer_turn_off`,
+  switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,
+  YouTube, Radio, Releases, or Concerts opens an arrowed menu anchored to the
+  highlighted row's trailing edge. The menu offers "Turn Off {name}" and
+  "{name} settings…"; Settings opens Plugins with that module highlighted.
+  Turn Off changes the same module setting as the Plugins switch, refreshes
+  immediately, and keeps subscriptions, favorites, caches, and source data.
+  Success removes the row and offers a five-second Undo toast. If the place
+  was open, Music becomes selected and the toast names that fallback; Undo
+  restores the row and returns there only when this turn-off caused the
+  fallback. Otherwise the current place does not change. While any optional
+  place is off, a dimmed "{n} turned off" action at the end of Library opens
+  Plugins with every disabled module highlighted; it is never a session
+  source. Music, Queue, playlists, smart lists, and My Stats never offer the
+  menu. *Tests:* `nav_16_only_optional_module_rows_offer_turn_off`,
   `nav_16_turn_off_dispatches_the_clicked_module_once`,
-  `nav_16_secondary_click_turns_off_the_row_and_falls_back_to_music`.
+  `nav_16_module_settings_dispatches_the_clicked_module`,
+  `nav_16_turned_off_row_tracks_every_disabled_optional_module`,
+  `nav_16_secondary_click_turns_off_the_row_and_falls_back_to_music`,
+  `nav_16_turn_off_posts_undo_and_restores_the_active_module`,
+  `nav_16_turned_off_row_is_not_a_restorable_session_source`.
 - **NAV-17** [active] [gtk] — **A Shift selection starts at an anchor, not at
   the beginning of the list.** The user sets the anchor with the last click
   without Shift. If no such anchor exists after a fresh load, sort change, or
