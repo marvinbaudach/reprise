@@ -180,9 +180,7 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
     assertEquals(
         LibraryScreenState.Browse(
             titles = LibraryWindow.empty(),
-            albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
-            favourites = LibraryWindow.empty(),
             folderUri = "content://provider/tree/Music",
             loadedTabs = setOf(BrowseTab.ARTISTS),
         ),
@@ -194,6 +192,7 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "artists:0:200",
+            "search-albums::0:1",
         ),
         port.operations,
     )
@@ -231,7 +230,6 @@ fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
     assertEquals(
         LibraryScreenState.Browse(
             titles = completeTestWindow(listOf(testTrack())),
-            albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
             folderUri = "content://provider/tree/Music",
         ),
@@ -245,9 +243,8 @@ fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
             "configure:content://provider/tree/Music",
             "scan",
             "search::0:200",
-            "albums:0:200",
             "artists:0:200",
-            "favourites:0:200",
+            "search-albums::0:1",
         ),
         port.operations,
     )
@@ -268,7 +265,6 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
     assertEquals(
         LibraryScreenState.Browse(
             titles = completeTestWindow(listOf(testTrack())),
-            albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
             folderUri = "content://provider/tree/Music",
         ),
@@ -280,13 +276,42 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
             "configure:content://provider/tree/Music",
             "scan",
             "search::0:200",
-            "albums:0:200",
             "artists:0:200",
-            "favourites:0:200",
+            "search-albums::0:1",
         ),
         port.operations,
     )
     assertEquals(LibraryScreenState.Scanning(), reports.first())
+}
+
+@Test
+fun artistAlbumWindowsDelegateTheLiteralArtistAndWindow() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = emptyList(),
+    )
+    val artist = LibraryArtist(" Slowdive ", 9, 3, "content://slowdive")
+    val window = LibraryWindowRange(offset = 200, limit = 75)
+
+    LibrarySession(port).listArtistAlbums(artist, window)
+
+    assertEquals(listOf("artist-albums: Slowdive :200:75"), port.operations)
+}
+
+@Test
+fun artistUntaggedWindowsDelegateTheLiteralArtistAndWindow() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = emptyList(),
+    )
+    val artist = LibraryArtist(" Low ", 7, 2, "content://low")
+    val window = LibraryWindowRange(offset = 125, limit = 33)
+
+    LibrarySession(port).listArtistUntaggedTracks(artist, window)
+
+    assertEquals(listOf("artist-untagged: Low :125:33"), port.operations)
 }
 }
 
@@ -312,7 +337,6 @@ private class RecordingLibrarySessionPort(
     private val readable: Boolean,
     private val tracks: List<LibraryTrack>,
     private val artistTracks: List<LibraryTrack> = emptyList(),
-    private val favouriteTracks: List<LibraryTrack> = emptyList(),
 ) : LibrarySessionPort {
     private var remembered = rememberedTreeUri
     val configuredUris = mutableListOf<String>()
@@ -355,11 +379,6 @@ private class RecordingLibrarySessionPort(
         return completeTestWindow(tracks)
     }
 
-    override fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> {
-        operations += "albums:${window.offset}:${window.limit}"
-        return completeTestWindow(emptyList())
-    }
-
     override fun searchAlbums(
         text: String,
         window: LibraryWindowRange,
@@ -381,25 +400,28 @@ private class RecordingLibrarySessionPort(
         return completeTestWindow(emptyList())
     }
 
+    override fun listArtistAlbums(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> {
+        operations += "artist-albums:$artist:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
+    }
+
+    override fun listArtistUntaggedTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "artist-untagged:$artist:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
+    }
+
     override fun listArtistTracks(
         artist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> {
         operations += "artist:$artist:${window.offset}:${window.limit}"
         return completeTestWindow(artistTracks)
-    }
-
-    override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> {
-        operations += "favourites:${window.offset}:${window.limit}"
-        return completeTestWindow(favouriteTracks)
-    }
-
-    override fun searchFavourites(
-        text: String,
-        window: LibraryWindowRange,
-    ): LibraryWindow<LibraryTrack> {
-        operations += "search-favourites:$text:${window.offset}:${window.limit}"
-        return completeTestWindow(favouriteTracks)
     }
 
     override fun listAlbumTracks(

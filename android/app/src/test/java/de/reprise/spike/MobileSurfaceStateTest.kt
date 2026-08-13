@@ -143,8 +143,8 @@ class MobileSurfaceStateTest {
         assertEquals(BrowseTab.QUEUE, state.selectedTab)
         assertEquals(emptyList<BrowseTab>(), remembered)
 
-        state.selectTab(BrowseTab.ALBUMS)
-        assertEquals(listOf(BrowseTab.ALBUMS), remembered)
+        state.selectTab(BrowseTab.ARTISTS)
+        assertEquals(listOf(BrowseTab.ARTISTS), remembered)
     }
 
     @Test
@@ -152,11 +152,10 @@ class MobileSurfaceStateTest {
         val state = MobileSurfaceViewModel()
         val paged = LoadedLibraryWindows(
             titles = LibraryWindow(total = 450, rows = emptyList(), hasMore = true),
-            albums = LibraryWindow.empty(),
             artists = LibraryWindow.empty(),
             openAlbum = null,
         )
-        val shape = LibraryCatalogShape(titles = 450, albums = 0, artists = 0)
+        val shape = LibraryCatalogShape(titles = 450, artists = 0)
 
         state.keepLoadedWindows(shape, paged)
 
@@ -167,11 +166,11 @@ class MobileSurfaceStateTest {
     @Test
     fun pagedInWindowsAreRestoredOnlyWithTheSearchThatProducedThem() {
         val state = MobileSurfaceViewModel()
-        val shape = LibraryCatalogShape(titles = 450, albums = 450, artists = 450)
+        val shape = LibraryCatalogShape(titles = 450, artists = 450)
         val filtered = LoadedLibraryWindows(
             titles = LibraryWindow.empty(),
-            albums = LibraryWindow(total = 450, rows = emptyList(), hasMore = true),
             artists = LibraryWindow.empty(),
+            artistSearchAlbums = LibraryWindow(total = 450, rows = emptyList(), hasMore = true),
             searchText = "slow",
             openAlbum = null,
         )
@@ -182,6 +181,54 @@ class MobileSurfaceStateTest {
         assertEquals(filtered, state.loadedWindows(shape))
         state.updateSearch("")
         assertNull(state.loadedWindows(shape))
+    }
+
+    @Test
+    fun artistAlbumRestoreDropsAnAlbumWhoseArtistIsMissing() {
+        val state = MobileSurfaceViewModel()
+        state.initializeSelectedTab(BrowseTab.ARTISTS) {}
+        val shape = LibraryCatalogShape(titles = 0, artists = 1)
+        val album = LibraryAlbum(
+            title = "Hey What",
+            artist = "Low",
+            representativeUri = "content://hey-what",
+            trackCount = 2,
+            year = 2021,
+            totalDurationMs = 120_000,
+        )
+        val restored = LoadedLibraryWindows(
+            titles = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+            openAlbum = AlbumTrackList(album, LibraryWindow.empty()),
+            openArtist = null,
+            openAlbumOrigin = OpenAlbumOrigin.ARTIST_DETAIL,
+        )
+
+        state.keepLoadedWindows(shape, restored)
+
+        assertNull(state.loadedWindows(shape)?.openAlbum)
+    }
+
+    @Test
+    fun directArtistSearchAlbumRestoreDoesNotRequireAnArtistPage() {
+        val state = MobileSurfaceViewModel()
+        state.initializeSelectedTab(BrowseTab.ARTISTS) {}
+        val shape = LibraryCatalogShape(titles = 0, artists = 1)
+        val album = AlbumTrackList(
+            album = LibraryAlbum("Hey What", "Low", "content://hey-what", 2, 2021, 120_000),
+            tracks = LibraryWindow.empty(),
+        )
+        val restored = LoadedLibraryWindows(
+            titles = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+            openAlbum = album,
+            openArtist = null,
+            openAlbumOrigin = OpenAlbumOrigin.ARTIST_SEARCH,
+        )
+
+        state.keepLoadedWindows(shape, restored)
+
+        assertEquals(album, state.loadedWindows(shape)?.openAlbum)
     }
 
     @Test

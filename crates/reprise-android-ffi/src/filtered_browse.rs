@@ -1,50 +1,42 @@
 //! Named filtered track windows for the Android library boundary.
 
 use reprise_core::browser::SortDirection;
-use reprise_core::queries::{
-    self, BrowseFilter, LibraryTrackOrder, LibraryTrackRequest, LibraryTrackScope,
-};
-use reprise_core::view_source::ViewSource;
+use reprise_core::queries::{self, LibraryTrackOrder, LibraryTrackRequest, LibraryTrackScope};
 
-use crate::{LibraryError, MusicLibrary, TrackRow, TrackWindow, WindowRange};
-
-fn filtered_track_window(
-    library: &MusicLibrary,
-    browse: &BrowseFilter,
-    sort_field: &str,
-    filter: &str,
-    window: WindowRange,
-) -> Result<TrackWindow, LibraryError> {
-    let state = library.lock()?;
-    let total =
-        queries::query_track_count_browsed(&state.db, &ViewSource::Library, filter, browse, &[])
-            .map_err(|error| LibraryError::Query {
-                detail: error.to_string(),
-            })?;
-    let rows = queries::query_track_window_browsed(
-        &state.db,
-        &ViewSource::Library,
-        sort_field,
-        "asc",
-        filter,
-        browse,
-        window.offset,
-        window.limit,
-        &[],
-    )
-    .map_err(|error| LibraryError::Query {
-        detail: error.to_string(),
-    })?;
-    let returned = i64::try_from(rows.len()).unwrap_or(i64::MAX);
-    Ok(TrackWindow {
-        total,
-        has_more: window.offset.max(0).saturating_add(returned) < total,
-        rows: rows.into_iter().map(TrackRow::from).collect(),
-    })
-}
+use crate::{AlbumWindow, LibraryError, MusicLibrary, TrackWindow, WindowRange};
 
 #[uniffi::export]
 impl MusicLibrary {
+    /// Returns one artist's albums in newest-first order.
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns exported strings.
+    pub fn list_artist_albums(
+        &self,
+        artist: String,
+        window: WindowRange,
+    ) -> Result<AlbumWindow, LibraryError> {
+        let state = self.lock()?;
+        queries::query_artist_albums(&state.db, artist.as_str(), window.into())
+            .map(AlbumWindow::from)
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+
+    /// Returns one artist's present tracks with no album tag.
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns exported strings.
+    pub fn list_artist_untagged_tracks(
+        &self,
+        artist: String,
+        window: WindowRange,
+    ) -> Result<TrackWindow, LibraryError> {
+        let state = self.lock()?;
+        queries::query_artist_untagged_tracks(&state.db, artist.as_str(), window.into())
+            .map(TrackWindow::from)
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+
     /// Returns one artist's present tracks in album and track-number order.
     pub fn list_artist_tracks(
         &self,
@@ -69,30 +61,6 @@ impl MusicLibrary {
             detail: error.to_string(),
         })
     }
-
-    /// Returns present tracks rated exactly five in artist, year, album, and
-    /// track-number order. Albums remain grouped when their tracks share the
-    /// album's year.
-    pub fn list_favourites(&self, window: WindowRange) -> Result<TrackWindow, LibraryError> {
-        self.search_favourites("", window)
-    }
-
-    pub fn search_favourites(
-        &self,
-        text: &str,
-        window: WindowRange,
-    ) -> Result<TrackWindow, LibraryError> {
-        filtered_track_window(
-            self,
-            &BrowseFilter {
-                rating: Some("5".to_owned()),
-                ..BrowseFilter::default()
-            },
-            "artist",
-            crate::bounded_search_text(text),
-            window,
-        )
-    }
 }
 
 #[cfg(test)]
@@ -111,6 +79,7 @@ mod tests {
             ("other.flac", "Other", "Bela", "Bela", "Middle", 1),
             ("alpha-1.flac", "Omega", " aDa ", " ADA ", "Alpha", 1),
             ("zulu-1.flac", "Alpha", "Ada", "Ada", "Zulu", 1),
+            ("loose.flac", "Loose", "Ada", "Ada", "", 0),
         ] {
             let path = music.join(name);
             std::fs::copy(&fixture, &path).unwrap();
@@ -178,7 +147,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(ada.track_count, 4);
+        assert_eq!(ada.track_count, 5);
         assert_eq!(window.total, ada.track_count);
         assert_eq!(window.rows.len() as i64, window.total);
         assert!(!window.has_more);
@@ -193,6 +162,7 @@ mod tests {
                 ))
                 .collect::<Vec<_>>(),
             [
+                ("Ada", "", "Loose"),
                 (" aDa ", "Alpha", "Omega"),
                 ("Guest", "Alpha", "Beta"),
                 ("Ada", "Zulu", "Alpha"),
@@ -222,7 +192,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(window.total, 4);
+        assert_eq!(window.total, 5);
         assert_eq!(window.rows.len(), 2);
         assert!(window.has_more);
     }
@@ -249,93 +219,82 @@ mod tests {
     }
 
     #[test]
-    fn favourites_are_exactly_fives_in_artist_album_track_order() {
+    fn artist_album_windows_keep_the_artist_filter_total_and_page_in_step() {
         let (_directory, library) = filtered_library();
 
         let window = library
-            .list_favourites(WindowRange {
-                offset: 0,
-                limit: 2,
-            })
-            .unwrap();
-
-        assert_eq!(window.total, 3);
-        assert!(window.has_more);
-        assert!(window.rows.iter().all(|track| track.rating == 5));
-        assert_eq!(
-            window
-                .rows
-                .iter()
-                .map(|track| (
-                    track.artist.as_str(),
-                    track.album.as_str(),
-                    track.title.as_str()
-                ))
-                .collect::<Vec<_>>(),
-            [(" aDa ", "Alpha", "Omega"), ("Ada", "Zulu", "Gamma")]
-        );
-        assert!(window.rows.iter().all(|track| track.title != "Beta"));
-    }
-
-    #[test]
-    fn favourite_search_keeps_the_filter_count_and_window_in_step() {
-        let (_directory, library) = filtered_library();
-
-        let first = library
-            .search_favourites(
-                "ada",
+            .list_artist_albums(
+                "Ada".to_owned(),
                 WindowRange {
                     offset: 0,
                     limit: 1,
                 },
             )
             .unwrap();
-        let second = library
-            .search_favourites(
-                "ADA",
-                WindowRange {
-                    offset: 1,
-                    limit: 1,
-                },
-            )
-            .unwrap();
 
-        assert_eq!(first.total, 2);
-        assert_eq!(first.rows.len(), 1);
-        assert!(first.has_more);
-        assert_eq!(second.total, 2);
-        assert_eq!(second.rows.len(), 1);
-        assert!(!second.has_more);
-        assert!(first
+        assert_eq!(window.total, 2);
+        assert_eq!(window.rows.len(), 1);
+        assert!(window.has_more);
+        assert_eq!(window.rows[0].album, "Alpha");
+        assert!(window
             .rows
             .iter()
-            .chain(&second.rows)
-            .all(|track| track.rating == 5));
+            .all(|album| album.album_artist.trim().eq_ignore_ascii_case("Ada")));
     }
 
     #[test]
-    fn empty_favourites_are_an_empty_window_not_an_error() {
+    fn unknown_artists_are_empty_album_windows_not_errors() {
         let (_directory, library) = filtered_library();
-        for track in library
-            .list_tracks(WindowRange {
-                offset: 0,
-                limit: 20,
-            })
-            .unwrap()
-            .rows
-        {
-            library.set_track_rating(track.id, 0).unwrap();
-        }
 
         let window = library
-            .list_favourites(WindowRange {
-                offset: 0,
-                limit: 2,
-            })
+            .list_artist_albums(
+                "Nobody".to_owned(),
+                WindowRange {
+                    offset: 0,
+                    limit: 2,
+                },
+            )
             .unwrap();
 
         assert_eq!(window.total, 0);
         assert!(window.rows.is_empty());
         assert!(!window.has_more);
+    }
+
+    #[test]
+    fn artist_untagged_windows_return_only_loose_tracks_and_empty_cleanly() {
+        let (_directory, library) = filtered_library();
+
+        let ada = library
+            .list_artist_untagged_tracks(
+                "Ada".to_owned(),
+                WindowRange {
+                    offset: 0,
+                    limit: 20,
+                },
+            )
+            .unwrap();
+        let bela = library
+            .list_artist_untagged_tracks(
+                "Bela".to_owned(),
+                WindowRange {
+                    offset: 0,
+                    limit: 20,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(ada.total, 1);
+        assert_eq!(
+            ada.rows
+                .iter()
+                .map(|track| (track.title.as_str(), track.album.as_str()))
+                .collect::<Vec<_>>(),
+            [("Loose", "")]
+        );
+        assert!(!ada.has_more);
+        assert_eq!(bela.total, 0);
+        assert!(bela.rows.is_empty());
+        assert!(!bela.has_more);
     }
 }

@@ -72,9 +72,6 @@ internal class AndroidLibrarySessionPort(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = library.searchTracks(text, window.toFfi()).toLibraryTracks()
 
-    override fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> =
-        library.listAlbums(window.toFfi()).toLibraryAlbums()
-
     override fun searchAlbums(
         text: String,
         window: LibraryWindowRange,
@@ -88,19 +85,23 @@ internal class AndroidLibrarySessionPort(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryArtist> = library.searchArtists(text, window.toFfi()).toLibraryArtists()
 
+    override fun listArtistAlbums(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> =
+        library.listArtistAlbums(artist, window.toFfi()).toLibraryAlbums()
+
+    override fun listArtistUntaggedTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> =
+        library.listArtistUntaggedTracks(artist, window.toFfi()).toLibraryTracks()
+
     override fun listArtistTracks(
         artist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> =
         library.listArtistTracks(artist, window.toFfi()).toLibraryTracks()
-
-    override fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
-        library.listFavourites(window.toFfi()).toLibraryTracks()
-
-    override fun searchFavourites(
-        text: String,
-        window: LibraryWindowRange,
-    ): LibraryWindow<LibraryTrack> = library.searchFavourites(text, window.toFfi()).toLibraryTracks()
 
     override fun listAlbumTracks(
         album: String,

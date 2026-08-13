@@ -14,9 +14,11 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -44,6 +46,7 @@ import uniffi.reprise_android_ffi.AndroidPlaybackSession
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 
 /**
  * Configuration claims run through the path a device uses: MainActivity's
@@ -100,22 +103,14 @@ class MainActivityConfigurationTest {
     }
 
     @Test
-    fun searchFiltersTheSelectedAlbumTabAndClosingItRestoresTheCatalog() {
-        // Prime Albums first: without invalidating loadedTabs, returning here
-        // after entering a query on Titles would keep this unfiltered window.
-        compose.onNodeWithText("Albums").performClick()
-        compose.onNodeWithText("Full Album 2").assertIsDisplayed()
-        compose.onNodeWithText("Titles").performClick()
+    fun artistSearchFiltersAlbumsAndClosingItRestoresTheArtistCatalog() {
+        compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-summary-search").performClick()
-        compose.onNodeWithText("Search titles").performTextInput("slow")
-        compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
-        compose.waitForIdle()
-        compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
+        compose.onNodeWithText("Search albums and artists").performTextInput("full")
         compose.waitForIdle()
 
-        compose.onNodeWithText("Search albums").assertTextContains("slow")
-        compose.onNodeWithText(DEEP_ALBUM).assertIsDisplayed()
-        compose.onNodeWithText("Full Album 2").assertDoesNotExist()
+        compose.onNodeWithText("Full Album 2").assertIsDisplayed()
+        compose.onNodeWithText("Artist 2").assertDoesNotExist()
 
         // The open field owns the way out: clear the query, then close it. The
         // summary row's magnifier is gone for as long as the field is up.
@@ -125,28 +120,24 @@ class MainActivityConfigurationTest {
         compose.onNodeWithContentDescription("Close search").performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithText("Full Album 2").assertIsDisplayed()
+        compose.onNodeWithText("Artist 2").assertIsDisplayed()
+        compose.onNodeWithText("Full Album 2").assertDoesNotExist()
     }
 
     @Test
     fun filteredAlbumPaginationAndItsSearchSurviveRecreation() {
-        compose.onNodeWithText("Albums").performClick()
-        compose.onNodeWithTag("library-albums-list").performScrollToIndex(200)
-        compose.waitForIdle()
-        compose.onNodeWithTag("library-albums-list").performScrollToIndex(210)
-        compose.onNodeWithText("Full Album 211").assertIsDisplayed()
-
+        compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-summary-search").performClick()
-        compose.onNodeWithText("Search albums").performTextInput("full")
+        compose.onNodeWithText("Search albums and artists").performTextInput("full")
         compose.waitForIdle()
-        compose.onNodeWithTag("library-albums-list").performScrollToIndex(200)
+        compose.onNodeWithTag("library-artist-search-albums-list").performScrollToIndex(200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-albums-list").performScrollToIndex(210)
+        compose.onNodeWithTag("library-artist-search-albums-list").performScrollToIndex(210)
         compose.onNodeWithText("Full Album 212").assertIsDisplayed()
 
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithText("Search albums").assertTextContains("full")
+        compose.onNodeWithText("Search albums and artists").assertTextContains("full")
         compose.onNodeWithText("Full Album 212").assertIsDisplayed()
     }
 
@@ -213,8 +204,7 @@ class MainActivityConfigurationTest {
      */
     @Test
     fun anOpenAlbumAndTheDepthPagedIntoItBothSurviveTheTurn() {
-        compose.onNodeWithText("Albums").performClick()
-        compose.onNodeWithText(DEEP_ALBUM).performClick()
+        openDeepAlbum()
         compose.waitForIdle()
         compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
         compose.waitForIdle()
@@ -225,13 +215,17 @@ class MainActivityConfigurationTest {
         recreateAt("w916dp-h412dp-land")
 
         // Still inside the album, and still where it was left.
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
         compose.onNodeWithText("Album Song 1").assertDoesNotExist()
     }
 
     @Test
     fun unheartingDoesNotDiscardAnotherLoadedWindowOrAnOpenAlbumOnRecreate() {
+        application.trackRatings[1L] = 5
+        application.catalogSize += 1
+        recreateAt("w412dp-h916dp-port")
+
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
         compose.waitForIdle()
@@ -239,19 +233,23 @@ class MainActivityConfigurationTest {
         compose.waitForIdle()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
 
-        compose.onNodeWithText("Favourites").performClick()
-        compose.onNodeWithText("Alpha Artist · First Record").assertIsDisplayed()
+        compose.onNodeWithText("Titles").performClick()
         compose.onNode(
             hasTestTag(TRACK_HEART_TAG) and
-                hasAnyAncestor(
-                    hasTestTag("library-track-row-${FAVOURITE_TRACK_ID_BASE + 1}"),
-                ) and
-                hasAnyAncestor(hasTestTag("library-page-FAVOURITES")),
+                hasAnyAncestor(hasTestTag("library-track-row-1")) and
+                hasAnyAncestor(hasTestTag("library-page-TITLES")),
         ).performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Alpha Artist · First Record").assertDoesNotExist()
+        assertTrue(application.controls.ratingRequests.contains(1L to 0))
+        compose.onNode(
+            hasTestTag(TRACK_HEART_TAG) and
+                hasContentDescription("Add to favourites") and
+                hasAnyAncestor(hasTestTag("library-track-row-1")),
+        ).assertIsDisplayed()
 
-        compose.onNodeWithText("Albums").performClick()
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        compose.onNodeWithText("Artist 211").performClick()
         compose.onNodeWithText(DEEP_ALBUM).performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
@@ -262,10 +260,10 @@ class MainActivityConfigurationTest {
 
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Back to albums").performClick()
-        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
     }
 
@@ -276,17 +274,16 @@ class MainActivityConfigurationTest {
      */
     @Test
     fun anAlbumWhoseCatalogChangedUnderTheScreenIsLetGoRatherThanShownStale() {
-        compose.onNodeWithText("Albums").performClick()
-        compose.onNodeWithText(DEEP_ALBUM).performClick()
+        openDeepAlbum()
         compose.waitForIdle()
         compose.onNodeWithText("Album Song 1").assertIsDisplayed()
 
         application.catalogSize = CATALOG_SIZE + 1
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithContentDescription("Back to albums").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
         compose.onNodeWithText("Album Song 1").assertDoesNotExist()
-        compose.onNodeWithText(DEEP_ALBUM).assertIsDisplayed()
+        compose.onNodeWithText("Artist 1").assertIsDisplayed()
     }
 
     @Test
@@ -397,6 +394,13 @@ class MainActivityConfigurationTest {
         compose.waitForIdle()
     }
 
+    private fun openDeepAlbum() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(0)
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.onNodeWithText(DEEP_ALBUM).performClick()
+    }
+
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.progress(): Float =
         fetchSemanticsNode().config
             .getOrNull(SemanticsProperties.ProgressBarRangeInfo)
@@ -500,33 +504,35 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 album = "Second Album",
             ),
         )
-    private val seededFavouriteTracks = listOf(
-        configurationTestTrack(
-            FAVOURITE_TRACK_ID_BASE + 1,
-            "Alpha Artist · First Record",
-            rating = 5,
-        ),
-        configurationTestTrack(
-            FAVOURITE_TRACK_ID_BASE + 2,
-            "Alpha Artist · Second Record",
-            rating = 5,
-        ),
-        configurationTestTrack(
-            FAVOURITE_TRACK_ID_BASE + 3,
-            "Zulu Artist · Last Record",
-            rating = 5,
-        ),
-    )
-    private val favouriteTracks: List<LibraryTrack>
-        get() = if (favouritesEmpty) {
-            emptyList()
-        } else {
-            (tracks.filter { trackRatings[it.id] == 5 } + seededFavouriteTracks).map { track ->
-                track.copy(rating = trackRatings[track.id] ?: track.rating)
-            }.filter { it.rating == 5 }
+    private val artistAlbums: List<LibraryAlbum>
+        get() = listOf(
+            LibraryAlbum(
+                title = DEEP_ALBUM,
+                artist = "Artist 1",
+                representativeUri = "content://provider/album/deep.flac",
+                trackCount = catalogSize.toLong(),
+                year = 2026,
+                totalDurationMs = catalogSize * 120_000L,
+            ),
+        ) + artistTracks.mapIndexed { index, track ->
+            LibraryAlbum(
+                title = track.album,
+                artist = track.artist,
+                representativeUri = track.uri,
+                trackCount = 1,
+                year = 2025 - index,
+                totalDurationMs = track.durationMs,
+            )
         }
 
-    var favouritesEmpty = false
+    private fun tracksFor(album: LibraryAlbum): List<LibraryTrack> =
+        if (album.title == DEEP_ALBUM) {
+            albumTracks
+        } else if (album.artist == "Artist 1") {
+            artistTracks.filter { track -> track.album == album.title }
+        } else {
+            albumTracks
+        }
     var rememberedDestination = BrowseTab.TITLES
     val rememberedDestinationWrites = mutableListOf<BrowseTab>()
     val artistWindowRequests = mutableListOf<LibraryWindowRange>()
@@ -600,9 +606,8 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
             titles = tracks.window(firstLibraryWindow()),
-            albums = albums.window(firstLibraryWindow()),
             artists = artists.window(firstLibraryWindow()),
-            favourites = favouriteTracks.window(firstLibraryWindow()),
+            albumCount = albums.size.toLong(),
             loadedTabs = setOf(BrowseTab.TITLES),
         )
         return MainActivitySurfaceDependencies(
@@ -612,7 +617,11 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 dynamicAvailable = false,
             ),
             initialState = browse,
-            initialBrowseTab = rememberedDestination,
+            initialStoredDestination = when (rememberedDestination) {
+                BrowseTab.TITLES -> AndroidStoredLibraryDestination.Titles
+                BrowseTab.ARTISTS -> AndroidStoredLibraryDestination.Artists
+                BrowseTab.QUEUE -> AndroidStoredLibraryDestination.Unset
+            },
             rememberBrowseTab = { tab ->
                 rememberedDestination = tab
                 rememberedDestinationWrites += tab
@@ -626,7 +635,6 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
                     .window(range)
             },
-            listAlbums = { range -> albums.window(range) },
             searchAlbums = { query, range ->
                 albums.filter { album ->
                     album.title.contains(query, ignoreCase = true) ||
@@ -641,20 +649,19 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 artists.filter { artist -> artist.name.contains(query, ignoreCase = true) }
                     .window(range)
             },
-            openAlbum = { album -> AlbumTrackList(album, albumTracks.window(firstLibraryWindow())) },
-            listAlbumTracks = { _, range -> albumTracks.window(range) },
+            openAlbum = { album -> AlbumTrackList(album, tracksFor(album).window(firstLibraryWindow())) },
+            listAlbumTracks = { album, range -> tracksFor(album).window(range) },
             openArtist = { artist ->
-                ArtistTrackList(artist, artistTracks.window(firstLibraryWindow()))
+                ArtistTrackList(
+                    artist = artist,
+                    albums = artistAlbums.window(firstLibraryWindow()),
+                )
             },
             listArtistTracks = { _, range -> artistTracks.window(range) },
-            listFavourites = { range -> favouriteTracks.window(range) },
-            searchFavourites = { query, range ->
-                favouriteTracks.filter { track ->
-                    track.title.contains(query, ignoreCase = true)
-                }.window(range)
-            },
+            listArtistAlbums = { _, range -> artistAlbums.window(range) },
+            listArtistUntaggedTracks = { _, _ -> LibraryWindow.empty() },
             loadTrack = { id, deliver ->
-                deliver((tracks + albumTracks + artistTracks + favouriteTracks).firstOrNull {
+                deliver((tracks + albumTracks + artistTracks).firstOrNull {
                     it.id == id
                 })
             },
@@ -691,102 +698,6 @@ internal class ConfigurationTestPlaybackService : ReprisePlaybackService() {
     }
 }
 
-internal class ConfigurationTestPlaybackControls(
-    private val store: (Long, Int) -> Unit = { _, _ -> },
-    private val loadUpcoming: (LibraryWindowRange) -> LibraryWindow<LibraryTrack> = {
-        LibraryWindow.empty()
-    },
-    private val playUpcoming: (Int, Long) -> Boolean = { _, _ -> false },
-    private val moveUpcoming: (Int, Long, Int) -> Boolean = { _, _, _ -> false },
-    private val removeUpcoming: (Int, Long) -> Boolean = { _, _ -> false },
-    private val startSleepTimer: (SleepTimerSelection) -> Unit = {},
-    private val cancelSleepTimer: () -> Unit = {},
-) : PlaybackControls {
-    private var deferredUpcomingOffset: Long? = null
-    private val deferredUpcomingLoads = mutableListOf<() -> Unit>()
-    val seekPositions = mutableListOf<Long>()
-    val ratingRequests = mutableListOf<Pair<Long, Int>>()
-    val playUpcomingRequests = mutableListOf<Pair<Int, Long>>()
-    val moveUpcomingRequests = mutableListOf<Triple<Int, Long, Int>>()
-    val removeUpcomingRequests = mutableListOf<Pair<Int, Long>>()
-    val loadUpcomingRequests = mutableListOf<LibraryWindowRange>()
-
-    /** What the write answers with; null is the database agreeing. */
-    var ratingFailure: String? = null
-
-    fun deferUpcomingLoad(offset: Long) {
-        deferredUpcomingOffset = offset
-    }
-
-    fun completeDeferredUpcomingLoads() {
-        deferredUpcomingOffset = null
-        deferredUpcomingLoads.toList().also { deferredUpcomingLoads.clear() }.forEach { it() }
-    }
-
-    override fun togglePause() = Unit
-    override fun next() = Unit
-    override fun previous() = Unit
-    override fun seekTo(positionMs: Long) {
-        seekPositions += positionMs
-    }
-    override fun setShuffle(enabled: Boolean) = Unit
-    override fun setRepeat(mode: AndroidRepeatMode) = Unit
-    override fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) {
-        val rating = if (favourite) 5 else 0
-        ratingRequests += trackId to rating
-        if (ratingFailure == null) {
-            store(trackId, rating)
-        }
-        report(ratingFailure)
-    }
-
-    override fun loadUpcomingTracks(
-        window: LibraryWindowRange,
-        report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
-    ) {
-        loadUpcomingRequests += window
-        val answer = Result.success(loadUpcoming(window))
-        if (window.offset == deferredUpcomingOffset) {
-            deferredUpcomingOffset = null
-            deferredUpcomingLoads += { report(answer) }
-        } else {
-            report(answer)
-        }
-    }
-
-    override fun playUpcomingTrackNow(
-        position: Int,
-        expectedTrackId: Long,
-        report: (Result<Boolean>) -> Unit,
-    ) {
-        playUpcomingRequests += position to expectedTrackId
-        report(Result.success(playUpcoming(position, expectedTrackId)))
-    }
-
-    override fun moveUpcomingTrack(
-        fromPosition: Int,
-        expectedTrackId: Long,
-        toPosition: Int,
-        report: (Result<Boolean>) -> Unit,
-    ) {
-        moveUpcomingRequests += Triple(fromPosition, expectedTrackId, toPosition)
-        report(Result.success(moveUpcoming(fromPosition, expectedTrackId, toPosition)))
-    }
-
-    override fun removeUpcomingTrack(
-        position: Int,
-        expectedTrackId: Long,
-        report: (Result<Boolean>) -> Unit,
-    ) {
-        removeUpcomingRequests += position to expectedTrackId
-        report(Result.success(removeUpcoming(position, expectedTrackId)))
-    }
-
-    override fun startSleepTimer(selection: SleepTimerSelection) = startSleepTimer.invoke(selection)
-
-    override fun cancelSleepTimer() = cancelSleepTimer.invoke()
-}
-
 /** Enough rows that the screen has to ask for a second window to reach the end. */
 private const val CATALOG_SIZE = 450
 private const val DEEP_ALBUM = "Deep Album"
@@ -794,7 +705,6 @@ private const val DEEP_ALBUM = "Deep Album"
 /** Album tracks are their own rows, so they get their own ids and titles. */
 private const val ALBUM_TRACK_ID_BASE = 1_000_000L
 private const val ARTIST_TRACK_ID_BASE = 2_000_000L
-private const val FAVOURITE_TRACK_ID_BASE = 3_000_000L
 
 /** The library's own paging contract: honour the offset, the limit, and the end. */
 private fun <T> List<T>.window(range: LibraryWindowRange): LibraryWindow<T> {

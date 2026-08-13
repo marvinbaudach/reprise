@@ -76,7 +76,7 @@ class MobileHeaderRowTest {
         compose.onNodeWithTag("library-summary-search").performClick()
 
         compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
-        compose.onNodeWithText("Search artists").assertIsDisplayed()
+        compose.onNodeWithText("Search albums and artists").assertIsDisplayed()
     }
 
     @Test
@@ -97,17 +97,17 @@ class MobileHeaderRowTest {
         assertEquals(row.top, titlesOverflow.top)
         assertEquals(row.bottom, titlesOverflow.bottom)
 
-        compose.onNodeWithTag("library-destination-ALBUMS").performClick()
-        compose.onNodeWithTag("library-page-ALBUMS").assertIsDisplayed()
-        compose.onNodeWithText("200 of 450 albums loaded").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-ARTISTS").performClick()
+        compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
+        compose.onNodeWithText("200 of 450 artists loaded").assertIsDisplayed()
 
-        val albumsSearch = compose.onNodeWithTag("library-summary-search")
+        val artistsSearch = compose.onNodeWithTag("library-summary-search")
             .getUnclippedBoundsInRoot()
-        val albumsOverflow = compose.onNodeWithTag("library-summary-overflow")
+        val artistsOverflow = compose.onNodeWithTag("library-summary-overflow")
             .getUnclippedBoundsInRoot()
-        assertEquals(titlesSearch.left, albumsSearch.left)
-        assertEquals(titlesSearch.right, albumsSearch.right)
-        assertEquals(titlesOverflow.left, albumsOverflow.left)
-        assertEquals(titlesOverflow.right, albumsOverflow.right)
+        assertEquals(titlesSearch.left, artistsSearch.left)
+        assertEquals(titlesSearch.right, artistsSearch.right)
+        assertEquals(titlesOverflow.left, artistsOverflow.left)
+        assertEquals(titlesOverflow.right, artistsOverflow.right)
     }
 }

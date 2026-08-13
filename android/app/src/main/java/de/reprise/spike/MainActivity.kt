@@ -44,6 +44,7 @@ import de.reprise.spike.ui.theme.RepriseTheme
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
+import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
@@ -189,7 +190,10 @@ class MainActivity : ComponentActivity() {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
-            surfaceState.initializeSelectedTab(surface.initialBrowseTab, surface.rememberBrowseTab)
+            surfaceState.initializeSelectedTab(
+                surface.initialStoredDestination.toBrowseTab(),
+                surface.rememberBrowseTab,
+            )
             val surfaceLayout = surfaceLayoutFor(calculateWindowSizeClass(this))
             val ambientMotion = remember(surface.observeAmbientScheduling) {
                 AmbientMotionController(surface.observeAmbientScheduling)
@@ -234,7 +238,6 @@ class MainActivity : ComponentActivity() {
                                 chooseFolder = surface.chooseFolder,
                                 rescan = surface.rescan,
                                 searchTitles = surface.searchTitles,
-                                listAlbums = surface.listAlbums,
                                 searchAlbums = surface.searchAlbums,
                                 listArtists = surface.listArtists,
                                 searchArtists = surface.searchArtists,
@@ -242,8 +245,8 @@ class MainActivity : ComponentActivity() {
                                 listAlbumTracks = surface.listAlbumTracks,
                                 openArtist = surface.openArtist,
                                 listArtistTracks = surface.listArtistTracks,
-                                listFavourites = surface.listFavourites,
-                                searchFavourites = surface.searchFavourites,
+                                listArtistAlbums = surface.listArtistAlbums,
+                                listArtistUntaggedTracks = surface.listArtistUntaggedTracks,
                                 loadTrack = surface.loadTrack,
                                 playTracks = surface.playTracks,
                                 loadPlaybackSettings = surface.loadPlaybackSettings,
@@ -269,11 +272,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun productionSurface(): MainActivitySurfaceDependencies {
-        val initialBrowseTab = restoreBrowseTab()
+        val initialStoredDestination = restoreStoredDestination()
+        val initialBrowseTab = initialStoredDestination.toBrowseTab()
         return MainActivitySurfaceDependencies(
             initialTheme = restoreTheme(),
             initialState = restoreLibrary(initialBrowseTab),
-            initialBrowseTab = initialBrowseTab,
+            initialStoredDestination = initialStoredDestination,
             rememberBrowseTab = ::rememberBrowseTab,
             artwork = { artwork },
             playbackControls = playbackControls,
@@ -281,7 +285,6 @@ class MainActivity : ComponentActivity() {
             chooseFolder = ::chooseTree,
             rescan = ::rescan,
             searchTitles = { query, range -> session.searchTitles(query, range) },
-            listAlbums = { range -> session.listAlbums(range) },
             searchAlbums = { query, range -> session.searchAlbums(query, range) },
             listArtists = { range -> session.listArtists(range) },
             searchArtists = { query, range -> session.searchArtists(query, range) },
@@ -289,8 +292,10 @@ class MainActivity : ComponentActivity() {
             listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
             openArtist = { artist -> session.openArtist(artist) },
             listArtistTracks = { artist, range -> session.listArtistTracks(artist, range) },
-            listFavourites = { range -> session.listFavourites(range) },
-            searchFavourites = { query, range -> session.searchFavourites(query, range) },
+            listArtistAlbums = { artist, range -> session.listArtistAlbums(artist, range) },
+            listArtistUntaggedTracks = { artist, range ->
+                session.listArtistUntaggedTracks(artist, range)
+            },
             loadTrack = ::loadTrack,
             playTracks = ::playTracks,
             loadPlaybackSettings = ::loadPlaybackSettings,
@@ -303,11 +308,11 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun restoreBrowseTab(): BrowseTab = runCatching {
-        library.libraryDestinationSetting().toBrowseTab()
+    private fun restoreStoredDestination(): AndroidStoredLibraryDestination = runCatching {
+        library.libraryDestinationSetting()
     }.getOrElse { error ->
         Log.e(TAG, "Could not load the library destination; using Titles", error)
-        BrowseTab.TITLES
+        AndroidStoredLibraryDestination.Titles
     }
 
     private fun rememberBrowseTab(tab: BrowseTab) {
@@ -677,7 +682,6 @@ private fun LibraryScreen(
     chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     rescan: ((LibraryScreenState) -> Unit) -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    listAlbums: (LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     searchAlbums: (String, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
@@ -685,8 +689,9 @@ private fun LibraryScreen(
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     openArtist: (LibraryArtist) -> ArtistTrackList,
     listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    searchFavourites: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    listArtistAlbums: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
+    listArtistUntaggedTracks:
+        (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     loadPlaybackSettings: () -> PlaybackSettingsUiState,
@@ -724,7 +729,6 @@ private fun LibraryScreen(
             chooseFolder = launchFolderPicker,
             rescan = { rescan { state = it } },
             searchTitles = searchTitles,
-            listAlbums = listAlbums,
             searchAlbums = searchAlbums,
             listArtists = listArtists,
             searchArtists = searchArtists,
@@ -732,8 +736,8 @@ private fun LibraryScreen(
             listAlbumTracks = listAlbumTracks,
             openArtist = openArtist,
             listArtistTracks = listArtistTracks,
-            listFavourites = listFavourites,
-            searchFavourites = searchFavourites,
+            listArtistAlbums = listArtistAlbums,
+            listArtistUntaggedTracks = listArtistUntaggedTracks,
             loadTrack = loadTrack,
             playTracks = playTracks,
             loadPlaybackSettings = loadPlaybackSettings,

@@ -25,22 +25,26 @@ internal interface LibrarySessionPort {
 
     fun searchTracks(text: String, window: LibraryWindowRange): LibraryWindow<LibraryTrack>
 
-    fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum>
-
     fun searchAlbums(text: String, window: LibraryWindowRange): LibraryWindow<LibraryAlbum>
 
     fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist>
 
     fun searchArtists(text: String, window: LibraryWindowRange): LibraryWindow<LibraryArtist>
 
-    fun listArtistTracks(
+    fun listArtistAlbums(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum>
+
+    fun listArtistUntaggedTracks(
         artist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack>
 
-    fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack>
-
-    fun searchFavourites(text: String, window: LibraryWindowRange): LibraryWindow<LibraryTrack>
+    fun listArtistTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack>
 
     fun listAlbumTracks(
         album: String,
@@ -114,12 +118,10 @@ internal class LibrarySession(
             browseState(message)
         }.getOrElse {
             LibraryScreenState.Browse(
-                LibraryWindow.empty(),
-                LibraryWindow.empty(),
-                LibraryWindow.empty(),
-                LibraryWindow.empty(),
-                message,
-                treeUri,
+                titles = LibraryWindow.empty(),
+                artists = LibraryWindow.empty(),
+                message = message,
+                folderUri = treeUri,
             )
         }
     }
@@ -128,9 +130,6 @@ internal class LibrarySession(
         text: String,
         window: LibraryWindowRange = firstLibraryWindow(),
     ): LibraryWindow<LibraryTrack> = port.searchTracks(text, window)
-
-    fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> =
-        port.listAlbums(window)
 
     fun searchAlbums(
         text: String,
@@ -145,6 +144,16 @@ internal class LibrarySession(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryArtist> = port.searchArtists(text, window)
 
+    fun listArtistAlbums(
+        artist: LibraryArtist,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryAlbum> = port.listArtistAlbums(artist.name, window)
+
+    fun listArtistUntaggedTracks(
+        artist: LibraryArtist,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = port.listArtistUntaggedTracks(artist.name, window)
+
     fun openAlbum(album: LibraryAlbum): AlbumTrackList = AlbumTrackList(
         album = album,
         tracks = listAlbumTracks(album, firstLibraryWindow()),
@@ -152,7 +161,8 @@ internal class LibrarySession(
 
     fun openArtist(artist: LibraryArtist): ArtistTrackList = ArtistTrackList(
         artist = artist,
-        tracks = listArtistTracks(artist, firstLibraryWindow()),
+        albums = listArtistAlbums(artist, firstLibraryWindow()),
+        untaggedTracks = listArtistUntaggedTracks(artist, firstLibraryWindow()),
     )
 
     fun listAlbumTracks(
@@ -167,14 +177,6 @@ internal class LibrarySession(
         artist: LibraryArtist,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = port.listArtistTracks(artist.name, window)
-
-    fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
-        port.listFavourites(window)
-
-    fun searchFavourites(
-        text: String,
-        window: LibraryWindowRange,
-    ): LibraryWindow<LibraryTrack> = port.searchFavourites(text, window)
 
     fun trackById(trackId: Long): LibraryTrack? = port.trackById(trackId)
 
@@ -239,21 +241,12 @@ internal class LibrarySession(
             } else {
                 LibraryWindow.empty()
             },
-            albums = if (selectedTab == null || selectedTab == BrowseTab.ALBUMS) {
-                port.listAlbums(firstLibraryWindow())
-            } else {
-                LibraryWindow.empty()
-            },
             artists = if (selectedTab == null || selectedTab == BrowseTab.ARTISTS) {
                 port.listArtists(firstLibraryWindow())
             } else {
                 LibraryWindow.empty()
             },
-            favourites = if (selectedTab == null || selectedTab == BrowseTab.FAVOURITES) {
-                port.listFavourites(firstLibraryWindow())
-            } else {
-                LibraryWindow.empty()
-            },
+            albumCount = port.searchAlbums("", LibraryWindowRange(offset = 0, limit = 1)).total,
             message = message,
             folderUri = port.rememberedTreeUri(),
             loadedTabs = selectedTab?.let(::setOf) ?: BrowseTab.entries.toSet(),
