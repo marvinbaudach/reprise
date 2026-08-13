@@ -3,6 +3,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
@@ -79,7 +80,14 @@ pub(in crate::ui) fn build(
     review.set_valign(gtk4::Align::Center);
     review.add_css_class("suggested-action");
 
-    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    let root = glib::Object::builder::<gtk4::Box>()
+        .property("accessible-role", gtk4::AccessibleRole::Group)
+        .property("orientation", gtk4::Orientation::Horizontal)
+        .property("spacing", 8)
+        .build();
+    root.update_relation(&[gtk4::accessible::Relation::LabelledBy(
+        &[label.upcast_ref()],
+    )]);
     root.set_hexpand(true);
     root.add_css_class("toolbar");
     root.add_css_class("reprise-online-discovery-strip");
@@ -160,6 +168,14 @@ mod tests {
         let strip = build(&db, || {}).expect("fresh disabled database shows discovery");
         let root = strip.widget();
 
+        assert!(gtk4::test_accessible_has_role(
+            root,
+            gtk4::AccessibleRole::Group
+        ));
+        assert!(gtk4::test_accessible_has_relation(
+            root,
+            gtk4::AccessibleRelation::LabelledBy
+        ));
         assert!(root.has_css_class("toolbar"));
         assert!(root.has_css_class("reprise-online-discovery-strip"));
         let children =
