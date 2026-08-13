@@ -25,6 +25,7 @@ mod podcasts_list_surface;
 mod podcasts_model;
 mod podcasts_playback;
 mod podcasts_presentation;
+mod podcasts_refresh_decision;
 mod podcasts_removal;
 mod podcasts_rendered_order;
 mod podcasts_reveal;
@@ -41,6 +42,7 @@ mod youtube_channel_detail;
 
 pub(in crate::ui) use podcasts_callbacks::PodcastsCallbacks;
 pub(in crate::ui) use podcasts_playback::{episode_mark_from_snapshot, EpisodeMark};
+pub(in crate::ui) use podcasts_refresh_decision::{scope_status, RefreshWindow, ScopeStatus};
 pub(in crate::ui) use podcasts_view::PodcastsView;
 pub(in crate::ui) use podcasts_worker::PodcastsRuntime;
 
