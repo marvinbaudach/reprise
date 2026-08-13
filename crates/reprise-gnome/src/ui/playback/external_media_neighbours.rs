@@ -55,7 +55,9 @@ impl PlayerController {
                 self.play_item_from_neighbour(neighbours, AutomaticAdvance::new(direction), origin);
                 true
             }
-            NeighbourTransport::Unavailable => true,
+            // No external neighbour: let PLAY-14 history handle the press
+            // instead of swallowing it.
+            NeighbourTransport::Unavailable => false,
         }
     }
 

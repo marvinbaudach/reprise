@@ -290,6 +290,15 @@ impl PlayerController {
         mirror.position_ms = position_ms;
     }
 
+    /// Returns the last mirrored playback position. Position events and every
+    /// seek update this value, while `present_track` resets it at transition.
+    pub(in crate::ui) fn current_position_ms(&self) -> i64 {
+        self.mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .position_ms
+    }
+
     /// Patches only `volume` in the shared mirror — called immediately after
     /// either the bar's volume control or an MPRIS `Volume` write changes
     /// `PlayerController::volume`, so the mirror (and thus MPRIS clients,
