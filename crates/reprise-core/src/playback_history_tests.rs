@@ -32,6 +32,30 @@ fn played(entries: &[HistoryEntry]) -> PlaybackHistory {
 }
 
 #[test]
+fn replay_identity_ignores_stale_context_but_not_a_changed_uri() {
+    let original = HistoryEntry {
+        item: QueueItem::Track(7),
+        replay_uri: Some("content://track/7".to_owned()),
+        context_pos: Some(2),
+        sequence: (1, 3),
+        from_up_next: false,
+    };
+    let moved_context = HistoryEntry {
+        context_pos: Some(0),
+        sequence: (1, 4),
+        from_up_next: true,
+        ..original.clone()
+    };
+    let changed_uri = HistoryEntry {
+        replay_uri: Some("content://replacement/7".to_owned()),
+        ..moved_context.clone()
+    };
+
+    assert!(original.same_replay_target(&moved_context));
+    assert!(!original.same_replay_target(&changed_uri));
+}
+
+#[test]
 fn play_14_a_long_played_track_rewinds_to_its_start() {
     let history = played(&[entry(10, 0), entry(20, 1)]);
     assert_eq!(

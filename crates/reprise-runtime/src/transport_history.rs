@@ -26,7 +26,7 @@ impl HistoryState {
         if let Some(pending) = self.pending.take() {
             let (target, committed) = match pending {
                 PendingNavigation::Back(target) => {
-                    let committed = if target == entry {
+                    let committed = if target.same_replay_target(&entry) {
                         self.history.step_back()
                     } else {
                         None
@@ -34,7 +34,7 @@ impl HistoryState {
                     (target, committed)
                 }
                 PendingNavigation::Forward(target) => {
-                    let committed = if target == entry {
+                    let committed = if target.same_replay_target(&entry) {
                         self.history.step_forward()
                     } else {
                         None
@@ -42,8 +42,8 @@ impl HistoryState {
                     (target, committed)
                 }
             };
-            if target == entry {
-                debug_assert_eq!(committed, Some(entry));
+            if target.same_replay_target(&entry) {
+                debug_assert_eq!(committed, Some(target));
                 return;
             }
         }
@@ -134,6 +134,25 @@ mod tests {
             state.history.current().map(|entry| entry.item),
             Some(QueueItem::Track(99))
         );
+    }
+
+    #[test]
+    fn play_14_a_confirmed_history_start_survives_stale_context_metadata() {
+        let mut queue = Queue::new();
+        queue.set_tracks(vec![10, 20], 0);
+        let mut state = HistoryState::default();
+        state.note(entry_for(&queue, 10, Source::Context));
+        queue.jump_to_order_position(1);
+        state.note(entry_for(&queue, 20, Source::Context));
+
+        let target = state.history.peek_back().expect("back target");
+        state.begin_back_navigation(target.clone());
+        queue.set_shuffle(true);
+        state.note(entry_for(&queue, 10, Source::Context));
+
+        assert_eq!(state.history.back_len(), 0);
+        assert_eq!(state.history.current(), Some(target));
+        assert!(state.history.can_go_forward());
     }
 
     #[test]

@@ -31,7 +31,7 @@ impl HistoryState {
         if let Some(pending) = self.pending.take() {
             let (target, committed) = match pending {
                 PendingNavigation::Back(target) => {
-                    let committed = if target == entry {
+                    let committed = if target.same_replay_target(&entry) {
                         self.history.step_back()
                     } else {
                         None
@@ -39,7 +39,7 @@ impl HistoryState {
                     (target, committed)
                 }
                 PendingNavigation::Forward(target) => {
-                    let committed = if target == entry {
+                    let committed = if target.same_replay_target(&entry) {
                         self.history.step_forward()
                     } else {
                         None
@@ -47,8 +47,8 @@ impl HistoryState {
                     (target, committed)
                 }
             };
-            if target == entry {
-                debug_assert_eq!(committed, Some(entry));
+            if target.same_replay_target(&entry) {
+                debug_assert_eq!(committed, Some(target));
                 return;
             }
         }

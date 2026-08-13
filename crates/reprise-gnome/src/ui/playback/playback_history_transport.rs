@@ -40,7 +40,7 @@ pub(in crate::ui) fn note(state: &mut HistoryState, entry: HistoryEntry) {
     if let Some(pending) = state.pending.take() {
         let (target, committed) = match pending {
             PendingNavigation::Back(target) => {
-                let matches = target == entry;
+                let matches = target.same_replay_target(&entry);
                 let committed = if matches {
                     state.history.step_back()
                 } else {
@@ -49,7 +49,7 @@ pub(in crate::ui) fn note(state: &mut HistoryState, entry: HistoryEntry) {
                 (target, committed)
             }
             PendingNavigation::Forward(target) => {
-                let matches = target == entry;
+                let matches = target.same_replay_target(&entry);
                 let committed = if matches {
                     state.history.step_forward()
                 } else {
@@ -58,8 +58,8 @@ pub(in crate::ui) fn note(state: &mut HistoryState, entry: HistoryEntry) {
                 (target, committed)
             }
         };
-        if target == entry {
-            debug_assert_eq!(committed, Some(entry));
+        if target.same_replay_target(&entry) {
+            debug_assert_eq!(committed, Some(target));
             return;
         }
     }
@@ -201,6 +201,24 @@ mod tests {
             state.history.current().map(|entry| entry.item),
             Some(QueueItem::Track(99))
         );
+    }
+
+    #[test]
+    fn play_14_a_confirmed_history_start_survives_stale_context_metadata() {
+        let mut queue = context(&[10, 20], 0);
+        let mut state = HistoryState::default();
+        note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
+        queue.jump_to_order_position(1);
+        note(&mut state, entry_for(&queue, QueueItem::Track(20), false));
+
+        let target = state.history.peek_back().expect("back target");
+        state.pending = Some(PendingNavigation::Back(target.clone()));
+        queue.set_shuffle(true);
+        note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
+
+        assert_eq!(state.history.back_len(), 0);
+        assert_eq!(state.history.current(), Some(target));
+        assert!(state.history.can_go_forward());
     }
 
     #[test]

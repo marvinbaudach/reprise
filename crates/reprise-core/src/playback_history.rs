@@ -47,6 +47,13 @@ pub struct HistoryEntry {
 }
 
 impl HistoryEntry {
+    /// Whether a confirmed start is the media this history entry requested.
+    /// Queue placement is historical metadata and may legitimately be stale;
+    /// Android's replay URI remains part of the media identity when present.
+    pub fn same_replay_target(&self, other: &Self) -> bool {
+        self.item == other.item && self.replay_uri == other.replay_uri
+    }
+
     /// Returns the recorded playhead only while the context is unchanged.
     pub fn playhead_in(&self, sequence: (u64, u64)) -> Option<usize> {
         (self.sequence == sequence)
