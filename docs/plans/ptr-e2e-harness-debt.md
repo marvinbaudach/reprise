@@ -2,7 +2,7 @@
 slug: ptr-e2e-harness-debt
 worktree: /home/marvin/Projects/reprise-ptr-e2e-harness-debt
 branch: feature/ptr-e2e-harness-debt
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-12
 ---
