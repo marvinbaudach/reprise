@@ -2,7 +2,7 @@
 slug: artwork-toggle-starts-the-scan
 worktree: /home/marvin/Projects/reprise-artwork-toggle-starts-the-scan
 branch: feature/artwork-toggle-starts-the-scan
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-13
 ---
