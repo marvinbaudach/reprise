@@ -87,6 +87,14 @@ double_click_at() {
   xdotool mousemove "$x" "$y" click --repeat 2 --delay 80 1 >/dev/null 2>&1
 }
 
+shift_click_at() {
+  # `click_at` injects globally through XTEST, so the modifier has to take the
+  # same global path rather than a window-targeted XSendEvent.
+  xdotool keydown shift >/dev/null 2>&1
+  click_at "$1" "$2"
+  xdotool keyup shift >/dev/null 2>&1
+}
+
 type_text() {
   xdotool type -- "$1" >/dev/null 2>&1
 }
