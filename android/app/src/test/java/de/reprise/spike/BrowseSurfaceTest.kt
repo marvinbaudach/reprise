@@ -481,7 +481,6 @@ fun openingAnAlbumFromArtistDetailUsesItsCoreIdentityAndOrder() {
     val port = RecordingBrowsePort(albumTracks = completeWindow(coreOrder))
     val artistDetail = ArtistTrackList(
         artist = LibraryArtist("Miles Davis", 2, 1, "content://miles"),
-        tracks = completeWindow(coreOrder),
         albums = completeWindow(listOf(album)),
     )
 

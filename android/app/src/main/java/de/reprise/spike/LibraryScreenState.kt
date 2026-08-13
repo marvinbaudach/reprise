@@ -142,13 +142,9 @@ internal data class AlbumTrackList(
 
 internal data class ArtistTrackList(
     val artist: LibraryArtist,
-    val tracks: LibraryWindow<LibraryTrack>,
     val albums: LibraryWindow<LibraryAlbum> = LibraryWindow.empty(),
     val untaggedTracks: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
-) {
-    fun playbackSelection(startIndex: Int): PlaybackSelection =
-        PlaybackSelection(tracks.rows, startIndex)
-}
+)
 
 internal data class PlaybackSelection(
     val tracks: List<LibraryTrack>,

@@ -81,7 +81,7 @@ internal fun BrowseScreen(
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     openArtist: (LibraryArtist) -> ArtistTrackList = { artist ->
-        ArtistTrackList(artist, LibraryWindow.empty())
+        ArtistTrackList(artist = artist)
     },
     listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
         { _, _ -> LibraryWindow.empty() },
@@ -445,8 +445,12 @@ internal fun BrowseScreen(
         BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
         BrowseTab.ARTISTS -> selectedAlbum?.tracks
             ?.visibleCountLabel("track", "tracks")
-            ?: selectedArtist?.tracks
-            ?.visibleCountLabel("track", "tracks")
+            ?: selectedArtist?.let { detail ->
+                val albums = detail.albums.total
+                val otherTitles = detail.untaggedTracks.total
+                "$albums ${if (albums == 1L) "album" else "albums"} · " +
+                    "$otherTitles ${if (otherTitles == 1L) "other title" else "other titles"}"
+            }
             ?: visibleArtists.visibleCountLabel("artist", "artists")
         BrowseTab.QUEUE -> "Queue"
     }

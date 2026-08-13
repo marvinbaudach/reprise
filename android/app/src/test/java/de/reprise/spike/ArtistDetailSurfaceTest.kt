@@ -245,7 +245,6 @@ class ArtistDetailSurfaceTest {
         untagged: List<LibraryTrack> = emptyList(),
     ) = ArtistTrackList(
         artist = LibraryArtist("Low", 4, albums.size.toLong(), "content://low"),
-        tracks = window(untagged),
         albums = window(albums),
         untaggedTracks = window(untagged),
     )

@@ -161,7 +161,6 @@ internal class LibrarySession(
 
     fun openArtist(artist: LibraryArtist): ArtistTrackList = ArtistTrackList(
         artist = artist,
-        tracks = listArtistTracks(artist, firstLibraryWindow()),
         albums = listArtistAlbums(artist, firstLibraryWindow()),
         untaggedTracks = listArtistUntaggedTracks(artist, firstLibraryWindow()),
     )

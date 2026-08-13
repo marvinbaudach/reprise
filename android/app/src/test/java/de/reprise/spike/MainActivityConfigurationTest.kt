@@ -654,7 +654,6 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
             openArtist = { artist ->
                 ArtistTrackList(
                     artist = artist,
-                    tracks = artistTracks.window(firstLibraryWindow()),
                     albums = artistAlbums.window(firstLibraryWindow()),
                 )
             },
