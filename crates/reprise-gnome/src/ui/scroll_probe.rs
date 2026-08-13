@@ -18,6 +18,34 @@ pub(in crate::ui) fn probe(writer: &str, adjustment: &gtk4::Adjustment, value: f
     );
 }
 
+pub(in crate::ui) fn probe_scroll_to(writer: &str, adjustment: &gtk4::Adjustment, position: u32) {
+    use gtk4::prelude::AdjustmentExt;
+
+    if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
+        return;
+    }
+    eprintln!(
+        "SCROLLTO writer={writer} position={position} from={:.1} upper={:.1} page={:.1}",
+        adjustment.value(),
+        adjustment.upper(),
+        adjustment.page_size(),
+    );
+}
+
+pub(in crate::ui) fn probe_value_change(writer: &str, adjustment: &gtk4::Adjustment, from: f64) {
+    use gtk4::prelude::AdjustmentExt;
+
+    if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
+        return;
+    }
+    eprintln!(
+        "SCROLLVALUE writer={writer} from={from:.1} to={:.1} upper={:.1} page={:.1}",
+        adjustment.value(),
+        adjustment.upper(),
+        adjustment.page_size(),
+    );
+}
+
 pub(in crate::ui) fn probe_upper(writer: &str, adjustment: &gtk4::Adjustment, upper: f64) {
     use gtk4::prelude::AdjustmentExt;
 

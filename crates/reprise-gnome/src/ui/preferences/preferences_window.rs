@@ -549,10 +549,10 @@ mod tests {
                 .upcast::<gtk4::Widget>()
         );
         for id in PAGE_ORDER {
-            assert!(shell
-                .stack
-                .child_by_name(id.name())
-                .is_some_and(|page| page.has_css_class("reprise-preferences-page")));
+            shell.stack.set_visible_child_name(id.name());
+            let holder = shell.stack.child_by_name(id.name()).unwrap();
+            let page: adw::PreferencesPage = holder.first_child().unwrap().downcast().unwrap();
+            assert!(page.has_css_class("reprise-preferences-page"));
         }
         assert_eq!(
             shell.dialog.child().as_ref(),

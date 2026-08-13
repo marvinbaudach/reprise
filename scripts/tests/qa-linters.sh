@@ -21,6 +21,15 @@ require_pattern() {
   fi
 }
 
+reject_pattern() {
+  local pattern=$1
+  local path=$2
+  if rg --quiet -- "$pattern" "$path"; then
+    echo "$path must not contain obsolete policy pattern: $pattern" >&2
+    exit 1
+  fi
+}
+
 require_pattern_order() {
   local before=$1
   local after=$2
@@ -81,9 +90,12 @@ require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
-require_pattern 'check-display-tests.sh --css' scripts/check-merge-readiness.sh
+require_pattern '^scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh
+reject_pattern 'check-display-tests.sh --(rule-named|motion|css)' scripts/check-merge-readiness.sh
+reject_pattern '--motion' scripts/check-display-tests.sh
 require_pattern 'mode=css' scripts/check-display-tests.sh
 require_pattern 'display_test_passed' scripts/check-display-tests.sh
+require_pattern 'passed_lines=\$\(grep -Ec' scripts/check-display-tests.sh
 require_pattern 'DISPLAY_TEST_JOBS' scripts/check-display-tests.sh
 require_pattern 'wait -n' scripts/check-display-tests.sh
 require_pattern 'results_dir' scripts/check-display-tests.sh
