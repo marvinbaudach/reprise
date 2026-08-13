@@ -225,6 +225,21 @@ internal fun ArtistsTab(
             val hasOtherTitles = selectedArtist.untaggedTracks.rows.isNotEmpty()
             if (!hasAlbums && !hasOtherTitles) {
                 Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
+            } else {
+                val albumTrackIds = LocalAlbumTrackIds.current
+                val controls = LocalPlaybackControls.current
+                ListPlayButton(
+                    description = "Play ${selectedArtist.artist.name}",
+                    onClick = {
+                        val trackIds = buildList {
+                            selectedArtist.albums.rows.forEach { album ->
+                                addAll(albumTrackIds(album))
+                            }
+                            addAll(selectedArtist.untaggedTracks.rows.map(LibraryTrack::id))
+                        }
+                        controls.playTrackIds(trackIds, 0)
+                    },
+                )
             }
             if (hasAlbums) {
                 ArtistDetailSections(

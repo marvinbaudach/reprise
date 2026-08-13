@@ -2,6 +2,7 @@ package de.reprise.spike
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -111,6 +112,37 @@ class ArtistDetailSurfaceTest {
     }
 
     @Test
+    fun artistPlayUsesAlbumsInPageOrderThenOtherTitles() {
+        val firstAlbum = album("Newest", 2024)
+        val secondAlbum = album("Earlier", 2020)
+        val loose = track("Loose Song")
+        val selections = mutableListOf<Pair<List<Long>, Int>>()
+        val controls = object : PlaybackControls by DisconnectedPlaybackControls {
+            override fun playTrackIds(trackIds: List<Long>, startIndex: Int) {
+                selections += trackIds to startIndex
+            }
+        }
+        showArtist(
+            detail = artistDetail(
+                albums = listOf(firstAlbum, secondAlbum),
+                untagged = listOf(loose),
+            ),
+            controls = controls,
+            albumTrackIds = { album ->
+                when (album) {
+                    firstAlbum -> listOf(11L, 12L)
+                    secondAlbum -> listOf(21L)
+                    else -> emptyList()
+                }
+            },
+        )
+
+        compose.onNodeWithContentDescription("Play Low").performClick()
+
+        assertEquals(listOf(listOf(11L, 12L, 21L, loose.id) to 0), selections)
+    }
+
+    @Test
     fun playingFromAnArtistAlbumUsesTheAlbumSnapshot() {
         val albumTracks = listOf(track("first"), track("second"))
         val detail = AlbumTrackList(album("Double Negative", 2018), window(albumTracks))
@@ -177,31 +209,38 @@ class ArtistDetailSurfaceTest {
         detail: ArtistTrackList,
         openAlbum: (LibraryAlbum) -> Unit = {},
         openedAlbumTracks: List<LibraryTrack> = emptyList(),
+        controls: PlaybackControls = DisconnectedPlaybackControls,
+        albumTrackIds: (LibraryAlbum) -> List<Long> = { emptyList() },
     ) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
-                var selectedAlbum by remember { mutableStateOf<AlbumTrackList?>(null) }
-                ArtistsTab(
-                    surfaceLayout = SurfaceLayout.STACKED,
-                    surfaceState = MobileSurfaceViewModel(),
-                    artists = LibraryWindow.empty(),
-                    searchText = "",
-                    selectedArtist = detail,
-                    selectedAlbum = selectedAlbum,
-                    playback = PlaybackUiState(),
-                    openArtist = {},
-                    openAlbum = { album ->
-                        openAlbum(album)
-                        selectedAlbum = AlbumTrackList(album, window(openedAlbumTracks))
-                    },
-                    closeArtist = {},
-                    closeAlbum = { selectedAlbum = null },
-                    play = {},
-                    lastRequestedOffset = null,
-                    artistRequestedOffset = null,
-                    loadMoreArtists = {},
-                    loadMoreArtistTracks = {},
-                )
+                CompositionLocalProvider(
+                    LocalPlaybackControls provides controls,
+                    LocalAlbumTrackIds provides albumTrackIds,
+                ) {
+                    var selectedAlbum by remember { mutableStateOf<AlbumTrackList?>(null) }
+                    ArtistsTab(
+                        surfaceLayout = SurfaceLayout.STACKED,
+                        surfaceState = MobileSurfaceViewModel(),
+                        artists = LibraryWindow.empty(),
+                        searchText = "",
+                        selectedArtist = detail,
+                        selectedAlbum = selectedAlbum,
+                        playback = PlaybackUiState(),
+                        openArtist = {},
+                        openAlbum = { album ->
+                            openAlbum(album)
+                            selectedAlbum = AlbumTrackList(album, window(openedAlbumTracks))
+                        },
+                        closeArtist = {},
+                        closeAlbum = { selectedAlbum = null },
+                        play = {},
+                        lastRequestedOffset = null,
+                        artistRequestedOffset = null,
+                        loadMoreArtists = {},
+                        loadMoreArtistTracks = {},
+                    )
+                }
             }
         }
     }
