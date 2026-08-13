@@ -424,12 +424,20 @@ impl Sidebar {
     pub fn refresh_queue_count(&self) {
         let count = (self.shared.queue_len_provider)() as i64;
         let label = self.shared.queue_count_label.borrow().clone();
-        if let Some(label) = label {
+        let badge_updated = if let Some(label) = label {
             super::sidebar_presentation::update_live_count_label(
                 &label,
                 super::sidebar_presentation::nonzero_count(count),
             );
-        }
+            true
+        } else {
+            false
+        };
+        tracing::debug!(
+            up_next_len = count,
+            badge_updated,
+            "sidebar refresh after up next changed"
+        );
     }
 
     /// Rebuilds counts and selects `source` through the normal row-selected

@@ -111,6 +111,17 @@ fn record_viewport(adjustment: &gtk4::Adjustment) -> Rc<RefCell<Vec<f64>>> {
     samples
 }
 
+fn attached_popover(column_view: &gtk4::ColumnView) -> gtk4::Popover {
+    let mut child = column_view.first_child();
+    while let Some(current) = child {
+        if let Some(popover) = current.downcast_ref::<gtk4::Popover>() {
+            return popover.clone();
+        }
+        child = current.next_sibling();
+    }
+    panic!("the context menu did not parent a popover onto the table");
+}
+
 /// The popover `show_context_menu` parented onto the table.
 fn open_popover(fixture: &Fixture) -> gtk4::Popover {
     let column_view = &fixture.track_list.shared.column_view;
@@ -123,14 +134,34 @@ fn open_popover(fixture: &Fixture) -> gtk4::Popover {
         100.0,
     );
     crate::ui::test_settle::settle_for(Duration::from_millis(200));
-    let mut child = column_view.first_child();
-    while let Some(current) = child {
-        if let Some(popover) = current.downcast_ref::<gtk4::Popover>() {
-            return popover.clone();
-        }
-        child = current.next_sibling();
-    }
-    panic!("the context menu did not parent a popover onto the table");
+    attached_popover(column_view)
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn acc_8_keyboard_context_menu_moves_focus_inside_the_popover() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let fixture = scrolled_library();
+    let column_view = &fixture.track_list.shared.column_view;
+    let menu = super::build_context_menu_model(&fixture.track_list.shared);
+    let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+    // `autohide = false` suppresses GTK's incidental first-item focus so the
+    // test proves the keyboard-only presentation seam installs Reprise's
+    // explicit focus-on-map guarantee rather than merely getting lucky with
+    // the current toolkit default.
+    popover.set_autohide(false);
+    super::super::track_list_context_keys::present_keyboard_popover(column_view, &popover);
+    crate::ui::test_settle::settle_for(Duration::from_millis(200));
+
+    let focus = gtk4::prelude::GtkWindowExt::focus(&fixture.window)
+        .expect("opening the menu from the keyboard must retain keyboard focus");
+    assert!(
+        focus.is_ancestor(&popover),
+        "keyboard focus must move inside the popover, but remained on {}",
+        focus.type_().name()
+    );
+    popover.popdown();
+    fixture.window.close();
 }
 
 #[test]

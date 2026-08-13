@@ -31,7 +31,7 @@ Environment overrides (all optional):
 | `PTR_E2E_PROFILE` | `debug` | `debug` or `release` — which `target/<profile>/reprise` binary to exercise. Must already be built. |
 | `PTR_E2E_SCREEN_RES` | `1600x900x24` | Xvfb resolution. Changing this invalidates the hardcoded click coordinates — see "Known limits" below. |
 | `PTR_E2E_N_TRACKS` | `5` | Number of copies of the core crate's `sine.flac` fixture scanned into the library. |
-| `PTR_E2E_OUT_DIR` | `/tmp/reprise-ptr-e2e` | Where screenshots and the app log are left after the run. Cleared at the start of each run. |
+| `PTR_E2E_OUT_DIR` | `/tmp/reprise-ptr-e2e` | Where screenshots, the app log, and the harness run log are left after the run. Cleared at the start of each run. |
 | `PTR_E2E_PREFERENCES_ONLY` | `0` | Set to `1` to run only the Preferences pointer flow, independently of list geometry. |
 | `PTR_E2E_SEARCH_CHIP_ONLY` | `0` | Set to `1` to run only the search-chip flow: type a query, then prove one real click on the chip's × removes it. Covers the shared chrome, so it stands for every section's filter row. |
 | `PTR_E2E_COMPACT_SEEK_ONLY` | `0` | Set to `1` to run only the mini-player seek flow (MINI-1/MINI-2). Replaces the short fixtures with a single generated long track, so it runs alone; needs `ffmpeg`. |
@@ -40,7 +40,10 @@ Environment overrides (all optional):
 Exit code is `0` when every check passes, non-zero otherwise. On any exit
 (pass, fail, or interrupted) the `cleanup()` trap kills the app, openbox, and
 Xvfb, and removes the scratch directory — nothing is left running or on
-disk except `PTR_E2E_OUT_DIR`.
+disk except `PTR_E2E_OUT_DIR`. `run.log` is the harness's emitted status log;
+cleanup derives the failed-check balance from a separate append-only failure
+ledger and emits `TALLY MISMATCH` if its line count ever differs from the
+number of `FAIL:` lines in `run.log`.
 
 ## What it does
 
@@ -64,38 +67,47 @@ disk except `PTR_E2E_OUT_DIR`.
    not reliable for matching), then uses `wmctrl` and the live geometry to
    wait until it has reached the harness's fixed maximized size.
 4. Runs six pointer/keyboard flows and asserts on the app's own log:
-   - **Star-rating click**: opens row 0's compact Rating button and chooses
-     two stars in its popover, then greps for `rating changed` — proof that real
-     pointer events reached both controls and the list-cell write-back.
+   - **Star-rating click**: hovers row 0's Rating cell until its inline star
+     buttons are allocated, clicks star two, then checks both `rating changed`
+     and the scratch database — proof that real pointer input reached the
+     list-cell write-back and persisted it.
    - **Keyboard context menu**: selects a track row and presses Shift+F10,
      then navigates to Edit tags, proving the selected track's context menu
      and tag editor open without a pointer. It enters an invalid Year and
      verifies Enter rejects it instead of applying or closing the dialog.
-   - **Manual Up Next and drag reorder**: adds two tracks through the keyboard
-     menu, proves the visible count reaches one and then two, opens Queue,
-     holds a real drag over the second row, captures the active insertion
-     target, and verifies release applies the reorder. A Library activation
-     then establishes context A; private-bus MPRIS Next calls consume manual
-     X and Y in reordered order, drive the visible count from two to one to
-     zero, and finally resume context B.
+   - **Manual Up Next and drag reorder**: first issues private-bus MPRIS Stop
+     and requires a fresh stopped-state log, then adds two tracks through the
+     keyboard menu. With playback unable to consume the short fixtures under
+     the assertions, it proves the visible count reaches one and then two,
+     opens Queue, holds a real drag over the second row, captures the active
+     insertion target, and verifies release applies the reorder. The playback
+     ordering flow then clears that residue, adds its own X/Y pair through the
+     private scratch-bus control, and requires the visible count to reach two.
+     A Library activation establishes context A; one private-bus MPRIS Next
+     begins X, whose short fakesink playback may hand off gaplessly to Y before
+     the shell wakes. One ordered-log assertion proves the count and playback
+     sequence for X then Y; the following Next resumes context B.
    - **Space toggles play/pause**: while that real fakesink playback is live,
      presses Space twice and asserts `state=Paused` then `state=Playing` —
      proof a physical keypress reached the window-level action, not just that
      `PlayerController::toggle_pause()` works when called directly.
-   - **Native compact layouts and input policy**: enters Card through the
-     Library header, selects Cover, Pill, and Card through the shared menu,
-     and checks every bounded window geometry and screenshot. It opens the
-     same menu through its visible button, a free-surface right click, and
-     Shift+F10; invokes the menu-only Return to Library action; and proves a
-     Ctrl+M round trip retains Card. One real downward wheel step on the Card
-     metadata changes the private MPRIS volume by exactly five percent while
-     leaving paused position unchanged; the same wheel input over seek changes
-     neither volume nor position.
-   - **Preferences**: opens the real primary-menu item, then drives the
-     redesigned vertical settings sidebar (a `.navigation-sidebar` list on the
-     left) to switch pages — exercising the Player Bar choice cards, visiting
-     every top-level page via its sidebar row, and proving all four Library
-     Window switches write the expected values to the scratch SQLite database.
+   - **Native Compact card and input policy**: enters Card through the F10
+     primary menu and checks its bounded geometry and screenshot. It establishes
+     a fresh one-track playback context through the private control surface,
+     confirms plain `PlaybackStatus=Playing`, and proves the derived play
+     button changes it to Paused. It opens the mini-card menu through a real
+     right click and invokes Restore Full Window, then proves Ctrl+M and cover
+     double-click round trips. One real downward wheel step on Card metadata
+     changes the private MPRIS volume by exactly five percent while leaving
+     paused position unchanged.
+   - **Preferences**: first forces the Library surface back to at least
+     1500x850 after Compact. If Openbox cannot reach that fixed geometry, it
+     records one hard failure and skips every coordinate step in this flow.
+     Otherwise it opens the real primary-menu item, then drives the redesigned
+     vertical settings sidebar (a `.navigation-sidebar` list on the left) to
+     switch pages — exercising the Player Bar choice cards, visiting every
+     top-level page via its sidebar row, and proving all four Library Window
+     switches write the expected values to the scratch SQLite database.
 5. Takes a final screenshot and checks it isn't blank/solid-color (pixel
    standard deviation above a threshold), then rejects any application log
    containing GTK/GLib criticals, a Rust panic, or a `RefCell` borrow failure.
