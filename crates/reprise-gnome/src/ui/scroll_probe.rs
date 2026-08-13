@@ -51,6 +51,14 @@ pub(in crate::ui) fn preseed_suppressed() -> bool {
     std::env::var_os("REPRISE_NO_PRESEED").is_some()
 }
 
+/// Keeps the A1 experiment's successful arm available as a counterprobe:
+/// force the whole anchor restore to wait for the first allocated viewport.
+/// The experiment established that ordering, rather than any individual
+/// writer, decides whether a fresh-start track list is allocated.
+pub(in crate::ui) fn restore_after_allocation_enabled() -> bool {
+    std::env::var_os("REPRISE_RESTORE_AFTER_ALLOCATION").is_some()
+}
+
 /// Records realized row widgets at the moment a restore runs.
 pub(in crate::ui) fn probe_rows(where_: &str, column_view: &gtk4::ColumnView) {
     use gtk4::glib::prelude::Cast;

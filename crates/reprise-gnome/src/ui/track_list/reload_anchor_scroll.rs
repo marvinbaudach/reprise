@@ -16,14 +16,41 @@ pub(super) fn schedule(
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
 ) {
+    if crate::ui::scroll_probe::restore_after_allocation_enabled()
+        && !has_allocated_viewport(shared)
+    {
+        arm_refinement(shared, anchor, captured_row_height, current_ids, hold);
+        return;
+    }
     let Some(anchor_position) = reload_restore::prepaint_position(anchor, current_ids) else {
         return;
     };
     let applied = apply(shared, anchor, captured_row_height, current_ids, hold);
     if !applied {
         arm_refinement(shared, anchor, captured_row_height, current_ids, hold);
+        if !has_allocated_viewport(shared) {
+            return;
+        }
     }
 
+    scroll_to_anchor(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        anchor_position,
+        applied,
+    );
+}
+
+fn scroll_to_anchor(
+    shared: &Shared,
+    anchor: Option<(i64, f64)>,
+    captured_row_height: Option<RowHeight>,
+    current_ids: &[i64],
+    anchor_position: u32,
+    applied: bool,
+) {
     let guard_position = if applied {
         let page = shared
             .column_view
@@ -48,6 +75,13 @@ pub(super) fn schedule(
     );
 }
 
+fn has_allocated_viewport(shared: &Shared) -> bool {
+    shared
+        .column_view
+        .vadjustment()
+        .is_some_and(|adjustment| adjustment.page_size() > 0.0)
+}
+
 fn arm_refinement(
     shared: &Rc<Shared>,
     anchor: Option<(i64, f64)>,
@@ -59,6 +93,31 @@ fn arm_refinement(
         return;
     };
     let generation = shared.model.generation();
+
+    if adjustment.page_size() <= 0.0 {
+        let weak_shared = Rc::downgrade(shared);
+        let allocated_ids = current_ids.to_owned();
+        let allocated_hold = hold.cloned();
+        crate::ui::list_geometry_changed::after_first_positive_page_size(&adjustment, move || {
+            let Some(shared) = weak_shared.upgrade() else {
+                return;
+            };
+            if !refinement_is_current(&shared, generation) {
+                return;
+            }
+            super::track_list_geometry::remember_after_layout(&shared, allocated_ids.len());
+            refine_once(
+                &shared,
+                generation,
+                anchor,
+                captured_row_height,
+                &allocated_ids,
+                allocated_hold.as_ref(),
+            );
+        });
+        return;
+    }
+
     let restored = Rc::new(Cell::new(false));
 
     let weak_shared = Rc::downgrade(shared);
@@ -72,12 +131,13 @@ fn arm_refinement(
         let Some(shared) = weak_shared.upgrade() else {
             return;
         };
-        if shared.model.generation() != generation {
+        if !refinement_is_current(&shared, generation) {
             return;
         }
         super::track_list_geometry::remember_after_layout(&shared, changed_ids.len());
-        if apply(
+        if refine_once(
             &shared,
+            generation,
             anchor,
             captured_row_height,
             &changed_ids,
@@ -99,18 +159,49 @@ fn arm_refinement(
         let Some(shared) = weak_shared.upgrade() else {
             return;
         };
-        if shared.model.generation() == generation
-            && apply(
-                &shared,
-                anchor,
-                captured_row_height,
-                &idle_ids,
-                idle_hold.as_ref(),
-            )
-        {
+        if refine_once(
+            &shared,
+            generation,
+            anchor,
+            captured_row_height,
+            &idle_ids,
+            idle_hold.as_ref(),
+        ) {
             restored.set(true);
         }
     });
+}
+
+fn refine_once(
+    shared: &Rc<Shared>,
+    generation: u64,
+    anchor: Option<(i64, f64)>,
+    captured_row_height: Option<RowHeight>,
+    current_ids: &[i64],
+    hold: Option<&AdjustmentHold>,
+) -> bool {
+    if !refinement_is_current(shared, generation) {
+        return false;
+    }
+    if !apply(shared, anchor, captured_row_height, current_ids, hold) {
+        return false;
+    }
+    let Some(anchor_position) = reload_restore::prepaint_position(anchor, current_ids) else {
+        return false;
+    };
+    scroll_to_anchor(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        anchor_position,
+        true,
+    );
+    true
+}
+
+fn refinement_is_current(shared: &Shared, generation: u64) -> bool {
+    shared.model.generation() == generation && has_allocated_viewport(shared)
 }
 
 fn apply(
@@ -125,6 +216,9 @@ fn apply(
     };
     crate::ui::scroll_probe::probe_rows("apply_scroll_anchor", &shared.column_view);
     if current_ids.is_empty() {
+        return false;
+    }
+    if adjustment.page_size() <= 0.0 {
         return false;
     }
     let n_sections = shared.queue_sections.borrow().len();

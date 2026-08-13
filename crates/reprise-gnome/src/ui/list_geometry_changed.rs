@@ -105,6 +105,41 @@ pub(in crate::ui) fn after_changed_once(
     });
 }
 
+/// Runs `callback` after the adjustment first reports an allocated viewport.
+/// One handler remains connected across earlier range changes whose
+/// `page_size` is still zero, then disconnects before deferring the callback
+/// outside the emission that carried the first positive page size.
+pub(in crate::ui) fn after_first_positive_page_size(
+    adjustment: &gtk4::Adjustment,
+    callback: impl FnOnce() + 'static,
+) {
+    let handler = Rc::new(RefCell::new(None));
+    let pending_callback = Rc::new(OneShot::new(callback));
+    let callback_handler = handler.clone();
+    let callback_slot = pending_callback.clone();
+    let id = adjustment.connect_notify_local(Some("page-size"), move |changed, _| {
+        if changed.page_size() <= 0.0 {
+            return;
+        }
+        let handler = callback_handler.borrow_mut().take();
+        if let Some(handler) = handler {
+            changed.disconnect(handler);
+        }
+        let callback = callback_slot.take();
+        if let Some(callback) = callback {
+            let _emission = ChangedEmissionGuard::enter();
+            let mut callback = Some(callback);
+            gtk4::glib::idle_add_local_full(gtk4::glib::Priority::HIGH_IDLE, move || {
+                if let Some(callback) = callback.take() {
+                    callback();
+                }
+                gtk4::glib::ControlFlow::Break
+            });
+        }
+    });
+    handler.borrow_mut().replace(id);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
