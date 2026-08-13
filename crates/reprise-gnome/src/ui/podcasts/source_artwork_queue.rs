@@ -12,14 +12,12 @@ const ARTWORK_WORKERS: usize = 8;
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct ArtworkKey {
     url: String,
-    // A transient result must never satisfy a persistent request without
-    // populating the persistent store, so scope is part of request identity.
-    cache_scope: CacheScope,
 }
 
 struct ArtworkWaiter {
     width: i32,
     height: i32,
+    cache_scope: CacheScope,
     response: async_channel::Sender<Option<DecodedPixels>>,
 }
 
@@ -62,11 +60,12 @@ impl ArtworkQueue {
         height: i32,
         cache_scope: CacheScope,
     ) -> async_channel::Receiver<Option<DecodedPixels>> {
-        let key = ArtworkKey { url, cache_scope };
+        let key = ArtworkKey { url };
         let (response, receiver) = async_channel::bounded(1);
         let waiter = ArtworkWaiter {
             width,
             height,
+            cache_scope,
             response,
         };
         let is_new_job = {
@@ -123,12 +122,31 @@ fn process_job(
     key: ArtworkKey,
     fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
 ) {
+    let requested_scopes = requested_scopes(pending, &key);
+    let cached = requested_scopes.into_iter().find_map(|scope| {
+        let mut must_not_fetch = |_: &str| Err("cache-only lookup must not fetch".to_string());
+        match reprise_core::remote_image::resolve(Some(&key.url), scope, false, &mut must_not_fetch)
+        {
+            ImageOutcome::Cached(path) => Some((scope, path)),
+            ImageOutcome::Fetched(_)
+            | ImageOutcome::NotAllowed
+            | ImageOutcome::NoUrl
+            | ImageOutcome::FetchFailed => None,
+        }
+    });
+    let resolve_scope = cached
+        .as_ref()
+        .map_or_else(|| preferred_scope(pending, &key), |(scope, _)| *scope);
     let allowed = super::GATE_OPEN.load(std::sync::atomic::Ordering::Relaxed);
-    let outcome =
-        reprise_core::remote_image::resolve(Some(&key.url), key.cache_scope, allowed, fetch);
-    let path = match outcome {
-        ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => Some(path),
-        ImageOutcome::NotAllowed | ImageOutcome::NoUrl | ImageOutcome::FetchFailed => None,
+    let path = match cached {
+        Some((_, path)) => Some(path),
+        None => {
+            match reprise_core::remote_image::resolve(Some(&key.url), resolve_scope, allowed, fetch)
+            {
+                ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => Some(path),
+                ImageOutcome::NotAllowed | ImageOutcome::NoUrl | ImageOutcome::FetchFailed => None,
+            }
+        }
     };
 
     loop {
@@ -140,13 +158,25 @@ fn process_job(
             std::mem::take(waiters)
         };
         for waiter in waiters {
-            let pixels = path.as_ref().and_then(|path| {
-                decode_pixels(path, waiter.width, waiter.height)
+            let waiter_path = path.as_ref().and_then(|path| {
+                if waiter.cache_scope == resolve_scope {
+                    Some(path.clone())
+                } else {
+                    reprise_core::remote_image::cache_existing_file(
+                        &key.url,
+                        path,
+                        waiter.cache_scope,
+                    )
+                    .or_else(|| Some(path.clone()))
+                }
+            });
+            let pixels = waiter_path.as_ref().and_then(|waiter_path| {
+                decode_pixels(waiter_path, waiter.width, waiter.height)
                     .map_err(|error| {
                         tracing::debug!(
                             %error,
                             url = %key.url,
-                            path = %path.display(),
+                            path = %waiter_path.display(),
                             "source artwork could not be decoded"
                         );
                     })
@@ -161,6 +191,32 @@ fn process_job(
             return;
         }
     }
+}
+
+fn requested_scopes(pending: &Pending, key: &ArtworkKey) -> Vec<CacheScope> {
+    let pending = pending.lock().unwrap_or_else(|error| error.into_inner());
+    let Some(waiters) = pending.get(key) else {
+        return vec![CacheScope::Persistent];
+    };
+    let persistent = waiters
+        .iter()
+        .any(|waiter| waiter.cache_scope == CacheScope::Persistent);
+    let transient = waiters
+        .iter()
+        .any(|waiter| waiter.cache_scope == CacheScope::Transient);
+    match (persistent, transient) {
+        (true, true) => vec![CacheScope::Persistent, CacheScope::Transient],
+        (true, false) => vec![CacheScope::Persistent],
+        (false, true) => vec![CacheScope::Transient],
+        (false, false) => vec![CacheScope::Persistent],
+    }
+}
+
+fn preferred_scope(pending: &Pending, key: &ArtworkKey) -> CacheScope {
+    requested_scopes(pending, key)
+        .into_iter()
+        .next()
+        .unwrap_or(CacheScope::Persistent)
 }
 
 fn finish_without_image(pending: &Pending, key: &ArtworkKey) {
@@ -234,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn src_11_duplicate_url_fetches_once_and_answers_every_waiter() {
+    fn src_11_duplicate_url_across_scopes_fetches_once_and_answers_every_waiter() {
         let _gate = super::super::GATE_TEST_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -248,7 +304,7 @@ mod tests {
         let mut second = None;
         super::process_job(&queue.pending, jobs.try_recv().unwrap(), &mut |_| {
             fetches += 1;
-            second = Some(queue.submit(url.clone(), 80, 80, CacheScope::Persistent));
+            second = Some(queue.submit(url.clone(), 80, 80, CacheScope::Transient));
             Ok(TINY_PNG.to_vec())
         });
 
@@ -261,6 +317,58 @@ mod tests {
         let second = second.unwrap().try_recv().unwrap().unwrap();
         assert_eq!((first.width, first.height), (80, 80));
         assert_eq!((second.width, second.height), (160, 160));
+        for cache_scope in [CacheScope::Persistent, CacheScope::Transient] {
+            let outcome =
+                reprise_core::remote_image::resolve(Some(&url), cache_scope, false, &mut |_| {
+                    panic!("both stores must be populated without another fetch")
+                });
+            let reprise_core::remote_image::ImageOutcome::Cached(path) = outcome else {
+                panic!("expected a cached file in {cache_scope:?}, got {outcome:?}");
+            };
+            std::fs::remove_file(path).ok();
+        }
+    }
+
+    #[test]
+    fn src_11_secondary_scope_cache_hit_is_shown_with_the_gate_closed() {
+        let _gate = super::super::GATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let (queue, jobs) = super::ArtworkQueue::test_queue();
+        let url = unique_url("cross-scope-cached");
+        let cached = reprise_core::remote_image::resolve(
+            Some(&url),
+            CacheScope::Transient,
+            true,
+            &mut |_| Ok(TINY_PNG.to_vec()),
+        );
+        assert!(matches!(
+            cached,
+            reprise_core::remote_image::ImageOutcome::Fetched(_)
+        ));
+
+        let persistent = queue.submit(url.clone(), 40, 40, CacheScope::Persistent);
+        let transient = queue.submit(url.clone(), 40, 40, CacheScope::Transient);
+        super::super::GATE_OPEN.store(false, std::sync::atomic::Ordering::SeqCst);
+        let mut fetch_called = false;
+        super::process_job(&queue.pending, jobs.try_recv().unwrap(), &mut |_| {
+            fetch_called = true;
+            Err("must not fetch".into())
+        });
+
+        assert!(!fetch_called, "a cache hit must remain gate-independent");
+        assert!(matches!(persistent.try_recv(), Ok(Some(_))));
+        assert!(matches!(transient.try_recv(), Ok(Some(_))));
+        for cache_scope in [CacheScope::Persistent, CacheScope::Transient] {
+            let outcome =
+                reprise_core::remote_image::resolve(Some(&url), cache_scope, false, &mut |_| {
+                    panic!("the closed gate must prevent another fetch")
+                });
+            let reprise_core::remote_image::ImageOutcome::Cached(path) = outcome else {
+                panic!("expected a cached file in {cache_scope:?}, got {outcome:?}");
+            };
+            std::fs::remove_file(path).ok();
+        }
     }
 
     #[test]

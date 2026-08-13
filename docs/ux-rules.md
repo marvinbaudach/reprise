@@ -5109,9 +5109,10 @@ listening statistics.
   recreated. In-memory textures retain the same scope boundary, so a transient
   hit cannot bypass persistent storage. Every valid display request is admitted
   to an unbounded worker queue rather than dropped for lack of capacity;
-  matching in-flight URLs within one cache scope share one resolve/fetch and
-  fan the result out to every waiter. The current gate is still read immediately
-  before that resolve, not when the waiter joined. Episode images follow the
+  matching in-flight URLs share one network fetch across cache scopes, populate
+  every waiter's selected store from the resolved local file, and fan the result
+  out to every waiter. The current gate is still read immediately before that
+  resolve, not when the waiter joined. Episode images follow the
   same rule: a stored provider URL wins, and when a YouTube episode has none,
   the read projection derives
   `https://i.ytimg.com/vi/<video-id>/hqdefault.jpg` from its durable video id

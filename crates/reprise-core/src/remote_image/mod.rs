@@ -22,7 +22,7 @@
 
 pub mod cache;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Selects the on-disk lifetime of a remote source image. Callers know
 /// whether they are rendering owned library content or a disposable search
@@ -90,6 +90,23 @@ pub fn resolve(
         },
         Err(_) => ImageOutcome::FetchFailed,
     }
+}
+
+/// Copies an already-resolved image into another cache scope without doing
+/// network work. This lets one in-flight URL satisfy callers from both
+/// lifetimes while still populating each caller's selected store.
+pub fn cache_existing_file(url: &str, source: &Path, scope: CacheScope) -> Option<PathBuf> {
+    let url = url.trim();
+    if url.is_empty() {
+        return None;
+    }
+    let dir = cache::cache_dir(scope);
+    if let Some(path) = cache::cached_path_in(&dir, url) {
+        return Some(path);
+    }
+    let bytes = std::fs::read(source).ok()?;
+    let extension = crate::cover_download::validated_image_extension(&bytes)?;
+    cache::store_image(&dir, url, &bytes, extension, scope.entry_limit())
 }
 
 #[cfg(test)]
@@ -199,5 +216,32 @@ mod tests {
             ImageOutcome::FetchFailed
         );
         assert!(cache::cached_path_in(&cache::cache_dir(CacheScope::Persistent), url).is_none());
+    }
+
+    #[test]
+    fn src_11_cached_bytes_fill_another_scope_without_another_fetch() {
+        let url = "https://images.test/src-11-cross-scope-mirror.png";
+        let transient = resolve(Some(url), CacheScope::Transient, true, &mut |_| {
+            Ok(png_bytes())
+        });
+        let source = match transient {
+            ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => path,
+            outcome => panic!("expected cached source bytes, got {outcome:?}"),
+        };
+
+        let persistent = cache_existing_file(url, &source, CacheScope::Persistent).unwrap();
+        let mut must_not_fetch = |_: &str| -> Result<Vec<u8>, String> { panic!("must not fetch") };
+        assert_eq!(
+            resolve(
+                Some(url),
+                CacheScope::Persistent,
+                false,
+                &mut must_not_fetch,
+            ),
+            ImageOutcome::Cached(persistent.clone())
+        );
+
+        std::fs::remove_file(source).ok();
+        std::fs::remove_file(persistent).ok();
     }
 }
