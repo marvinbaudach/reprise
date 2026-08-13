@@ -246,7 +246,10 @@ class MainActivityConfigurationTest {
                 hasAnyAncestor(hasTestTag("library-track-row-1")),
         ).assertIsDisplayed()
 
-        openDeepAlbum()
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        compose.onNodeWithText("Artist 211").performClick()
+        compose.onNodeWithText(DEEP_ALBUM).performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
         compose.waitForIdle()
@@ -260,7 +263,6 @@ class MainActivityConfigurationTest {
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to albums").performClick()
         compose.onNodeWithContentDescription("Back to artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
     }
 
