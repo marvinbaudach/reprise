@@ -20,6 +20,7 @@ const TINY_PNG: &[u8] = &[
 ];
 
 fn ranked(label: &str, ms: i64, variant_count: usize) -> RankedGroup {
+    let path = format!("/music/{label}.flac");
     RankedGroup {
         group: Group {
             label: label.into(),
@@ -28,7 +29,8 @@ fn ranked(label: &str, ms: i64, variant_count: usize) -> RankedGroup {
             ms,
             variant_count,
         },
-        representative_track_path: format!("/music/{label}.flac"),
+        representative_track_path: path.clone(),
+        cover_candidates: vec![path],
     }
 }
 

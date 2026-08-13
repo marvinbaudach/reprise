@@ -310,15 +310,19 @@ mod tests {
     ];
 
     fn fixture(variant_count: usize) -> SpotlightSection {
-        let ranked = |label: &str, ms: i64, variant_count: usize| RankedGroup {
-            group: Group {
-                label: label.into(),
-                key: label.to_lowercase(),
-                plays: ms / 60_000,
-                ms,
-                variant_count,
-            },
-            representative_track_path: format!("/music/{label}.flac"),
+        let ranked = |label: &str, ms: i64, variant_count: usize| {
+            let path = format!("/music/{label}.flac");
+            RankedGroup {
+                group: Group {
+                    label: label.into(),
+                    key: label.to_lowercase(),
+                    plays: ms / 60_000,
+                    ms,
+                    variant_count,
+                },
+                representative_track_path: path.clone(),
+                cover_candidates: vec![path],
+            }
         };
         SpotlightSection {
             artist: RankedGroup {
@@ -330,6 +334,7 @@ mod tests {
                     variant_count,
                 },
                 representative_track_path: "/missing/cover.flac".into(),
+                cover_candidates: vec!["/missing/cover.flac".into()],
             },
             share_percent: 60,
             top_tracks: Vec::<TopTrack>::new(),
