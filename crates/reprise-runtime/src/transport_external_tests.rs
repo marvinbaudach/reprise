@@ -275,6 +275,23 @@ fn next_during_a_stream_does_not_swap_in_the_music_behind_it() {
 }
 
 #[test]
+fn next_during_a_stream_ignores_a_populated_forward_history() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
+    fixture.command(&PlaybackCommand::Next).unwrap();
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &a_stream(), None)
+        .unwrap();
+
+    fixture.command(&PlaybackCommand::Next).unwrap();
+
+    assert_eq!(fixture.transport.playback_snapshot().track_id, None);
+    assert_eq!(fixture.transport.playback_snapshot().title, "Morning Show");
+}
+
+#[test]
 fn previous_during_a_stream_without_history_reports_that_it_cannot_seek() {
     let mut fixture = fixture();
     fixture.play_tracks(vec![1, 2, 3], 1).unwrap();

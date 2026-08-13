@@ -149,6 +149,9 @@ impl Transport {
         backend: &dyn PlaybackBackend,
         library: &dyn LibraryPort,
     ) -> Result<(), RuntimeError> {
+        if self.external_is_loaded() {
+            return Ok(());
+        }
         // PLAY-14: return along the forward side before advancing the context.
         if let Some(target) = self.history_forward_target() {
             if let Some(position) = target.playhead_in(self.queue.sequence_identity()) {
@@ -163,9 +166,6 @@ impl Transport {
                 Source::Context
             };
             return self.start(backend, library, track_id, source);
-        }
-        if self.external_is_loaded() {
-            return Ok(());
         }
         // The explicit queue wins over the context: it is what the user
         // asked for most recently and most deliberately.

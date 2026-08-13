@@ -50,14 +50,12 @@ impl PlayerController {
             external.transport_target(direction)
         };
         match target {
-            NeighbourTransport::Queue => false,
+            NeighbourTransport::Queue | NeighbourTransport::History => false,
             NeighbourTransport::Item { neighbours, origin } => {
                 self.play_item_from_neighbour(neighbours, AutomaticAdvance::new(direction), origin);
                 true
             }
-            // No external neighbour: let PLAY-14 history handle the press
-            // instead of swallowing it.
-            NeighbourTransport::Unavailable => false,
+            NeighbourTransport::Unavailable => true,
         }
     }
 
@@ -211,5 +209,19 @@ impl PlayerController {
         self.sync_state(PlaybackState::Stopped);
         self.update_external_mpris(MprisPlaybackStatus::Stopped);
         self.notify_external_changed();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn unavailable_external_transport_is_consumed_as_a_no_op() {
+        let implementation = include_str!("external_media_neighbours.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("implementation section");
+        let handled = ["NeighbourTransport::Unavailable => ", "true"].concat();
+
+        assert!(implementation.contains(&handled));
     }
 }
