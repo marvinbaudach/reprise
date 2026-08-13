@@ -94,6 +94,19 @@ class ArtistDetailSurfaceTest {
         showArtist(artistDetail(untagged = listOf(track("Laser Beam"))))
         compose.onNodeWithText("Other titles").assertIsDisplayed()
         compose.onNodeWithText("Laser Beam").assertIsDisplayed()
+        compose.onNodeWithText("Unknown album").assertDoesNotExist()
+    }
+
+    @Test
+    fun albumOnlyRowWithAlbumShowsItsAlbumName() {
+        showArtist(
+            artistDetail(
+                untagged = listOf(track("Dinosaur Act", album = "Things We Lost in the Fire")),
+            ),
+        )
+
+        compose.onNodeWithText("Dinosaur Act").assertIsDisplayed()
+        compose.onNodeWithText("Things We Lost in the Fire").assertIsDisplayed()
     }
 
     @Test
@@ -297,12 +310,12 @@ class ArtistDetailSurfaceTest {
         totalDurationMs = 120_000,
     )
 
-    private fun track(title: String) = LibraryTrack(
+    private fun track(title: String, album: String = "") = LibraryTrack(
         id = title.hashCode().toLong(),
         uri = "content://$title",
         title = title,
         artist = "Low",
-        album = "",
+        album = album,
         durationMs = 60_000,
         playCount = 0,
         rating = 0,
