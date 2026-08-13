@@ -22,7 +22,27 @@
 
 pub mod cache;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Selects the on-disk lifetime of a remote source image. Callers know
+/// whether they are rendering owned library content or a disposable search
+/// result, so the cache never guesses from the URL.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum CacheScope {
+    /// Artwork for subscriptions, favourites, playback, and library views.
+    Persistent,
+    /// Search results and previews shown before a source is added.
+    Transient,
+}
+
+impl CacheScope {
+    pub const fn entry_limit(self) -> usize {
+        match self {
+            Self::Persistent => 1_000,
+            Self::Transient => 200,
+        }
+    }
+}
 
 /// What [`resolve`] decided. `NotAllowed`, `NoUrl`, and `FetchFailed` all
 /// mean the same thing to a caller: show the source glyph, never an error.
@@ -48,13 +68,14 @@ pub enum ImageOutcome {
 /// when `allowed` is true and there is no cache entry.
 pub fn resolve(
     url: Option<&str>,
+    scope: CacheScope,
     allowed: bool,
     fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
 ) -> ImageOutcome {
     let Some(url) = url.map(str::trim).filter(|url| !url.is_empty()) else {
         return ImageOutcome::NoUrl;
     };
-    let dir = cache::cache_dir();
+    let dir = cache::cache_dir(scope);
     if let Some(path) = cache::cached_path_in(&dir, url) {
         return ImageOutcome::Cached(path);
     }
@@ -63,12 +84,29 @@ pub fn resolve(
     }
     match fetch(url) {
         Ok(bytes) => match crate::cover_download::validated_image_extension(&bytes) {
-            Some(ext) => cache::store_image(&dir, url, &bytes, ext)
+            Some(ext) => cache::store_image(&dir, url, &bytes, ext, scope.entry_limit())
                 .map_or(ImageOutcome::FetchFailed, ImageOutcome::Fetched),
             None => ImageOutcome::FetchFailed,
         },
         Err(_) => ImageOutcome::FetchFailed,
     }
+}
+
+/// Copies an already-resolved image into another cache scope without doing
+/// network work. This lets one in-flight URL satisfy callers from both
+/// lifetimes while still populating each caller's selected store.
+pub fn cache_existing_file(url: &str, source: &Path, scope: CacheScope) -> Option<PathBuf> {
+    let url = url.trim();
+    if url.is_empty() {
+        return None;
+    }
+    let dir = cache::cache_dir(scope);
+    if let Some(path) = cache::cached_path_in(&dir, url) {
+        return Some(path);
+    }
+    let bytes = std::fs::read(source).ok()?;
+    let extension = crate::cover_download::validated_image_extension(&bytes)?;
+    cache::store_image(&dir, url, &bytes, extension, scope.entry_limit())
 }
 
 #[cfg(test)]
@@ -86,9 +124,18 @@ mod tests {
     #[test]
     fn src_11_no_url_never_calls_fetch() {
         let mut fetch = |_: &str| -> Result<Vec<u8>, String> { panic!("must not fetch") };
-        assert_eq!(resolve(None, true, &mut fetch), ImageOutcome::NoUrl);
-        assert_eq!(resolve(Some(""), true, &mut fetch), ImageOutcome::NoUrl);
-        assert_eq!(resolve(Some("   "), true, &mut fetch), ImageOutcome::NoUrl);
+        assert_eq!(
+            resolve(None, CacheScope::Persistent, true, &mut fetch),
+            ImageOutcome::NoUrl
+        );
+        assert_eq!(
+            resolve(Some(""), CacheScope::Persistent, true, &mut fetch),
+            ImageOutcome::NoUrl
+        );
+        assert_eq!(
+            resolve(Some("   "), CacheScope::Persistent, true, &mut fetch),
+            ImageOutcome::NoUrl
+        );
     }
 
     /// `SRC-11` / `NET-1a`: the core proof that the gate is checked before
@@ -99,7 +146,7 @@ mod tests {
         let url = "https://images.test/net-1a-closed.jpg";
         let mut fetch = |_: &str| -> Result<Vec<u8>, String> { panic!("must not fetch") };
         assert_eq!(
-            resolve(Some(url), false, &mut fetch),
+            resolve(Some(url), CacheScope::Persistent, false, &mut fetch),
             ImageOutcome::NotAllowed
         );
     }
@@ -107,13 +154,20 @@ mod tests {
     #[test]
     fn src_11_cache_hit_is_returned_without_checking_allowed() {
         let url = "https://images.test/net-1a-cached.jpg";
-        let dir = cache::cache_dir();
-        let path = cache::store_image(&dir, url, &png_bytes(), "png").unwrap();
+        let dir = cache::cache_dir(CacheScope::Persistent);
+        let path = cache::store_image(
+            &dir,
+            url,
+            &png_bytes(),
+            "png",
+            CacheScope::Persistent.entry_limit(),
+        )
+        .unwrap();
 
         let mut fetch = |_: &str| -> Result<Vec<u8>, String> { panic!("must not fetch") };
         // `allowed: false` — NET-1a: an already-cached image is never hidden.
         assert_eq!(
-            resolve(Some(url), false, &mut fetch),
+            resolve(Some(url), CacheScope::Persistent, false, &mut fetch),
             ImageOutcome::Cached(path)
         );
         std::fs::remove_file(cache::cached_path_in(&dir, url).unwrap()).ok();
@@ -127,7 +181,7 @@ mod tests {
             assert_eq!(requested, url);
             Ok(bytes.clone())
         };
-        let outcome = resolve(Some(url), true, &mut fetch);
+        let outcome = resolve(Some(url), CacheScope::Persistent, true, &mut fetch);
         let ImageOutcome::Fetched(path) = outcome else {
             panic!("expected Fetched, got {outcome:?}");
         };
@@ -136,7 +190,7 @@ mod tests {
         // A second resolve must now hit the cache and never fetch again.
         let mut must_not_fetch = |_: &str| -> Result<Vec<u8>, String> { panic!("must not fetch") };
         assert_eq!(
-            resolve(Some(url), true, &mut must_not_fetch),
+            resolve(Some(url), CacheScope::Persistent, true, &mut must_not_fetch),
             ImageOutcome::Cached(path.clone())
         );
         std::fs::remove_file(path).ok();
@@ -147,10 +201,10 @@ mod tests {
         let url = "https://images.test/net-1a-error.jpg";
         let mut fetch = |_: &str| -> Result<Vec<u8>, String> { Err("transport".into()) };
         assert_eq!(
-            resolve(Some(url), true, &mut fetch),
+            resolve(Some(url), CacheScope::Persistent, true, &mut fetch),
             ImageOutcome::FetchFailed
         );
-        assert!(cache::cached_path_in(&cache::cache_dir(), url).is_none());
+        assert!(cache::cached_path_in(&cache::cache_dir(CacheScope::Persistent), url).is_none());
     }
 
     #[test]
@@ -158,9 +212,36 @@ mod tests {
         let url = "https://images.test/net-1a-not-an-image.jpg";
         let mut fetch = |_: &str| -> Result<Vec<u8>, String> { Ok(b"not an image".to_vec()) };
         assert_eq!(
-            resolve(Some(url), true, &mut fetch),
+            resolve(Some(url), CacheScope::Persistent, true, &mut fetch),
             ImageOutcome::FetchFailed
         );
-        assert!(cache::cached_path_in(&cache::cache_dir(), url).is_none());
+        assert!(cache::cached_path_in(&cache::cache_dir(CacheScope::Persistent), url).is_none());
+    }
+
+    #[test]
+    fn src_11_cached_bytes_fill_another_scope_without_another_fetch() {
+        let url = "https://images.test/src-11-cross-scope-mirror.png";
+        let transient = resolve(Some(url), CacheScope::Transient, true, &mut |_| {
+            Ok(png_bytes())
+        });
+        let source = match transient {
+            ImageOutcome::Cached(path) | ImageOutcome::Fetched(path) => path,
+            outcome => panic!("expected cached source bytes, got {outcome:?}"),
+        };
+
+        let persistent = cache_existing_file(url, &source, CacheScope::Persistent).unwrap();
+        let mut must_not_fetch = |_: &str| -> Result<Vec<u8>, String> { panic!("must not fetch") };
+        assert_eq!(
+            resolve(
+                Some(url),
+                CacheScope::Persistent,
+                false,
+                &mut must_not_fetch,
+            ),
+            ImageOutcome::Cached(persistent.clone())
+        );
+
+        std::fs::remove_file(source).ok();
+        std::fs::remove_file(persistent).ok();
     }
 }

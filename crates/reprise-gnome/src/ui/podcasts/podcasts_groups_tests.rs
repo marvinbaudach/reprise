@@ -189,6 +189,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
         "https://img.test/episode.jpg".to_owned(),
         32,
         32,
+        reprise_core::remote_image::CacheScope::Persistent,
         texture,
     );
     for row in [episode(None), episode(Some("https://img.test/episode.jpg"))] {

@@ -11,6 +11,10 @@ fn set_10_retired_settings_deep_links_target_the_plugins_rows() {
         plugin_targets_for_deep_link(SettingsDeepLink::ConcertLocation),
         &["concerts"]
     );
+    assert_eq!(
+        plugin_targets_for_deep_link(SettingsDeepLink::Artwork),
+        &["artwork"]
+    );
 }
 
 #[test]

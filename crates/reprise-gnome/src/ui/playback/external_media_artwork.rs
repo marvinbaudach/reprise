@@ -19,10 +19,18 @@ impl PlayerController {
         .unwrap_or(false);
         crate::ui::podcasts::source_image::load_into_image(
             self.bar.cover_image(),
-            snapshot.art_url.as_deref(),
-            (size, size),
-            images_allowed,
-            snapshot.restored,
+            crate::ui::podcasts::source_image::ArtworkRequest::new(
+                snapshot.art_url.as_deref(),
+                snapshot.fallback_art_url.as_deref(),
+                (size, size),
+                images_allowed,
+                reprise_core::remote_image::CacheScope::Persistent,
+                if snapshot.restored {
+                    crate::ui::podcasts::source_image::StartupTiming::AfterQuiet
+                } else {
+                    crate::ui::podcasts::source_image::StartupTiming::Immediate
+                },
+            ),
             generation,
             &self.bar_cover_generation,
         );

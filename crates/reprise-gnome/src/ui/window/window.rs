@@ -476,6 +476,7 @@ pub fn build(
         &decorations,
     );
     super::startup_report::mark("PreferencesContext::new");
+    super::artwork_consent_banner::install(conn, &preferences, &library_chrome.root);
     {
         let preferences = Rc::downgrade(&preferences);
         if let Some(discovery) = super::online_discovery_banner::build(conn, move || {

@@ -15,8 +15,8 @@ use crate::ui::player_controller::PlayerController;
 pub(super) use super::external_media_fields::session_id;
 use super::external_media_fields::{podcast_fields, radio_fields};
 use super::external_media_state::{
-    podcast_source_requires_resolution, AutomaticAdvance, ExternalSession, NeighbourContext,
-    PodcastOrigin, PodcastSession, RadioCommand, RadioSession, ResumePolicy,
+    episode_artwork_urls, podcast_source_requires_resolution, AutomaticAdvance, ExternalSession,
+    NeighbourContext, PodcastOrigin, PodcastSession, RadioCommand, RadioSession, ResumePolicy,
 };
 use super::preview::PlaybackMode;
 
@@ -148,7 +148,7 @@ impl PlayerController {
                 let row = reprise_core::podcasts::store::episode(&self.conn, episode_id)
                     .map_err(|error| PlaybackError::Backend(error.to_string()))?;
                 self.prepare_external_playback();
-                self.begin_podcast(media, row, neighbours, automatic_advance, origin)
+                self.begin_podcast(media, row.as_ref(), neighbours, automatic_advance, origin)
             }
             media @ ExternalMedia::Radio { station_id, .. } => {
                 self.prepare_external_playback();
@@ -160,12 +160,12 @@ impl PlayerController {
 
     pub(super) fn play_podcast_row_with_context(
         self: &Rc<Self>,
-        episode: EpisodeRow,
+        episode: &EpisodeRow,
         neighbours: NeighbourContext,
         automatic_advance: AutomaticAdvance,
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
-        let media = media_from_episode(&episode);
+        let media = media_from_episode(episode);
         self.prepare_external_playback();
         self.begin_podcast(
             media,
@@ -224,21 +224,17 @@ impl PlayerController {
     fn begin_podcast(
         self: &Rc<Self>,
         media: ExternalMedia,
-        row: Option<EpisodeRow>,
+        row: Option<&EpisodeRow>,
         neighbours: Option<NeighbourContext>,
         automatic_advance: Option<AutomaticAdvance>,
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
         let episode_id = session_id(&media);
-        let kind = row
-            .as_ref()
-            .map_or(PodcastKind::Rss, |episode| episode.kind);
-        let subscription_id = row.as_ref().map_or(0, |episode| episode.subscription_id);
-        let published_at = row.as_ref().and_then(|episode| episode.published_at);
-        let media_category = row
-            .as_ref()
-            .and_then(|episode| episode.media_category.clone());
-        let art_url = row.and_then(|episode| episode.image_url.or(episode.show_image_url));
+        let kind = row.map_or(PodcastKind::Rss, |episode| episode.kind);
+        let subscription_id = row.map_or(0, |episode| episode.subscription_id);
+        let published_at = row.and_then(|episode| episode.published_at);
+        let media_category = row.and_then(|episode| episode.media_category.clone());
+        let (art_url, fallback_art_url) = row.map_or((None, None), episode_artwork_urls);
         let (title, show, source, resume_ms, duration_ms) = podcast_fields(&media);
         let needs_ytdlp = podcast_source_requires_resolution(kind, &source);
         let phase = if needs_ytdlp {
@@ -255,6 +251,7 @@ impl PlayerController {
             media_category,
             published_at,
             art_url,
+            fallback_art_url,
             phase,
             restored: false,
             origin,

@@ -110,7 +110,7 @@ impl PlayerController {
         match episode {
             Ok(Some(episode)) => {
                 let _ = self.play_podcast_row_with_context(
-                    episode,
+                    &episode,
                     neighbours,
                     automatic_advance,
                     origin,
