@@ -12,6 +12,7 @@ use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
 
 const SCROLL_TO_ADOPTION_WINDOW: Duration = Duration::from_millis(250);
+const SCROLL_ADOPTION_EPSILON: f64 = 0.5;
 
 #[derive(Clone, Copy)]
 enum RestorePath {
@@ -56,6 +57,49 @@ struct ScrollRequest<'a> {
     captured_row_height: Option<RowHeight>,
     current_ids: &'a [i64],
     anchor_position: u32,
+}
+
+#[derive(Clone, Copy)]
+struct ScrollAdoptionGeometry {
+    guard_position: u32,
+    row_count: usize,
+    section_count: usize,
+    preceding_sections: usize,
+    row_height: RowHeight,
+    before: f64,
+}
+
+impl ScrollAdoptionGeometry {
+    fn matches(self, candidate: f64, lower: f64, upper: f64, page_size: f64) -> bool {
+        if self.row_count == 0
+            || self.section_count == 0
+            || self.preceding_sections > self.section_count
+            || self.guard_position as usize >= self.row_count
+            || !candidate.is_finite()
+            || !self.before.is_finite()
+            || !lower.is_finite()
+            || !upper.is_finite()
+            || !page_size.is_finite()
+            || upper < lower
+            || page_size < 0.0
+        {
+            return false;
+        }
+
+        let row_height = self.row_height.pixels();
+        let row_content_height = self.row_count as f64 * row_height;
+        let section_content_height = upper - row_content_height;
+        if section_content_height < -SCROLL_ADOPTION_EPSILON {
+            return false;
+        }
+        let section_height = section_content_height.max(0.0) / self.section_count as f64;
+        let guard_top = (self.guard_position as f64)
+            .mul_add(row_height, self.preceding_sections as f64 * section_height);
+        let requested = guard_top.clamp(lower, (upper - page_size).max(lower));
+        let candidate_error = (candidate - requested).abs();
+        let before_error = (self.before - requested).abs();
+        candidate_error <= SCROLL_ADOPTION_EPSILON && candidate_error < before_error
+    }
 }
 
 pub(super) fn schedule(
@@ -132,30 +176,61 @@ fn scroll_to_anchor(
     };
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
-    let adopt_scroll_value = !applied && !shared.queue_sections.borrow().is_empty();
+    let (section_count, preceding_sections) = {
+        let sections = shared.queue_sections.borrow();
+        (
+            sections.len(),
+            sections
+                .iter()
+                .filter(|section| section.start <= guard_position)
+                .count(),
+        )
+    };
+    let adoption_geometry = (!applied && section_count > 0).then(|| ScrollAdoptionGeometry {
+        guard_position,
+        row_count: request.current_ids.len(),
+        section_count,
+        preceding_sections,
+        row_height: request.captured_row_height.unwrap_or_else(|| {
+            ListGeometry::for_view(&shared.column_view)
+                .row_height(&shared.conn, &shared.list_geometry_cache)
+        }),
+        before: 0.0,
+    });
     let adoption = shared.column_view.vadjustment().and_then(|adjustment| {
         crate::ui::scroll_probe::probe_scroll_to(path.scroll_probe(), &adjustment, guard_position);
-        if !adopt_scroll_value {
-            return None;
-        }
         let before = adjustment.value();
-        let hold = hold.cloned()?;
+        let mut geometry = adoption_geometry?;
+        geometry.before = before;
+        let hold_lifetime = Rc::new(hold.cloned()?);
+        let weak_hold = Rc::downgrade(&hold_lifetime);
         let handler = Rc::new(RefCell::new(None));
         let callback_handler = handler.clone();
         let writer = path.scroll_probe();
         let id = adjustment.connect_value_changed(move |changed| {
+            crate::ui::scroll_probe::probe_value_change(writer, changed, before);
+            if !geometry.matches(
+                changed.value(),
+                changed.lower(),
+                changed.upper(),
+                changed.page_size(),
+            ) {
+                return;
+            }
+            let Some(hold) = weak_hold.upgrade() else {
+                return;
+            };
             let handler = callback_handler.borrow_mut().take();
             if let Some(handler) = handler {
                 changed.disconnect(handler);
             }
-            crate::ui::scroll_probe::probe_value_change(writer, changed, before);
             // `scroll_to` is the final restore writer. Its GTK-computed value
             // includes section geometry that a provisional row-only target
             // cannot know while the rebuilt list is still settling.
             hold.set_target(changed.value());
         });
         handler.borrow_mut().replace(id);
-        Some((adjustment, handler))
+        Some((adjustment, handler, hold_lifetime))
     });
     shared.column_view.scroll_to(
         guard_position,
@@ -163,12 +238,13 @@ fn scroll_to_anchor(
         gtk4::ListScrollFlags::NONE,
         Some(scroll),
     );
-    if let Some((adjustment, handler)) = adoption {
+    if let Some((adjustment, handler, hold_lifetime)) = adoption {
         gtk4::glib::timeout_add_local_once(SCROLL_TO_ADOPTION_WINDOW, move || {
             let handler = handler.borrow_mut().take();
             if let Some(handler) = handler {
                 adjustment.disconnect(handler);
             }
+            drop(hold_lifetime);
         });
     }
 }
@@ -380,9 +456,10 @@ fn apply(
         return false;
     }
     if provisional_sectioned_refinement {
-        // A refinement that cannot prove settled geometry must not replace the
-        // value adopted from `scroll_to`; that stale replacement caused the
-        // one-row Queue settle. Settled refinements remain authoritative.
+        // The row-only target is provisional while section geometry settles.
+        // Deferring this write until after the settled check makes an early
+        // return leave the existing hold target alone; settled refinements
+        // remain authoritative.
         set_hold_target(hold, &adjustment, target, path);
     }
     geometry.remember_if_settled(
@@ -410,5 +487,26 @@ fn set_hold_target(
     if let Some(hold) = hold {
         crate::ui::scroll_probe::probe(path.hold_probe(), adjustment, target);
         hold.set_target(target);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adoption_accepts_only_the_value_explained_by_the_requested_guard_row() {
+        let geometry = ScrollAdoptionGeometry {
+            guard_position: 1_101,
+            row_count: 2_276,
+            section_count: 2,
+            preceding_sections: 2,
+            row_height: RowHeight::new(34.0).unwrap(),
+            before: 37_454.0,
+        };
+
+        assert!(geometry.matches(37_488.0, 0.0, 77_438.0, 249.0));
+        assert!(!geometry.matches(37_454.0, 0.0, 77_438.0, 249.0));
+        assert!(!geometry.matches(36_000.0, 0.0, 77_438.0, 249.0));
     }
 }
