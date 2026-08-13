@@ -8,6 +8,7 @@
 //! user pressing Stop is not a queue running out.
 
 use reprise_core::playback::{PlaybackBackend, PlaybackState};
+use reprise_core::playback_history::{resolve_previous, PreviousAction};
 use reprise_core::queue::Queue;
 
 use super::{backend_failed, Seek, Source, Transport};
@@ -148,6 +149,21 @@ impl Transport {
         backend: &dyn PlaybackBackend,
         library: &dyn LibraryPort,
     ) -> Result<(), RuntimeError> {
+        // PLAY-14: return along the forward side before advancing the context.
+        if let Some(target) = self.history_forward_target() {
+            if let Some(position) = target.playhead_in(self.queue.sequence_identity()) {
+                self.queue.jump_to_order_position(position);
+            }
+            let Some(track_id) = target.item.track_id() else {
+                return Ok(());
+            };
+            let source = if target.from_up_next {
+                Source::PlayNext
+            } else {
+                Source::Context
+            };
+            return self.start(backend, library, track_id, source);
+        }
         if self.external_is_loaded() {
             return Ok(());
         }
@@ -174,29 +190,29 @@ impl Transport {
         backend: &dyn PlaybackBackend,
         library: &dyn LibraryPort,
     ) -> Result<(), RuntimeError> {
-        if self.external_is_loaded() {
-            return Ok(());
+        // PLAY-14 owns the entire decision. Play Next interruptions and
+        // external playback are ordinary history states, not side branches.
+        if matches!(
+            resolve_previous(self.position_ms, self.history_view()),
+            PreviousAction::RestartCurrent
+        ) {
+            return self.seek(backend, Seek::To(0));
         }
-        // A queued track played *beside* the context, so going back means
-        // returning to the entry it interrupted — not stepping the context
-        // on top of that, which lands a track further back than the user
-        // ever heard. At the head of the context it is the difference
-        // between replaying the current entry and Previous doing nothing.
-        let interrupted = self
-            .current
-            .as_ref()
-            .is_some_and(|loaded| loaded.source == Source::PlayNext);
-        let target = if interrupted {
-            self.queue.current()
-        } else {
-            self.queue.previous()
+        let Some(target) = self.history_back_target() else {
+            return self.seek(backend, Seek::To(0));
         };
-        match target {
-            Some(track_id) => self.start(backend, library, track_id, Source::Context),
-            // Nothing before the first track: staying put is the expected
-            // behaviour of every player, not an error worth reporting.
-            None => Ok(()),
+        if let Some(position) = target.playhead_in(self.queue.sequence_identity()) {
+            self.queue.jump_to_order_position(position);
         }
+        let Some(track_id) = target.item.track_id() else {
+            return Ok(());
+        };
+        let source = if target.from_up_next {
+            Source::PlayNext
+        } else {
+            Source::Context
+        };
+        self.start(backend, library, track_id, source)
     }
 
     /// Seeks, either by an offset from where the playhead is or to an
