@@ -189,6 +189,57 @@ impl CoverLoader {
         );
     }
 
+    /// Loads an image file (not a track) into a picture. Artist portraits are
+    /// plain cache files and use the same thumbnail and texture caches as
+    /// covers, so an original-size image never sits behind a small avatar.
+    #[allow(dead_code)] // Wired into every stats band surface in Task 4.
+    pub fn load_image_into_picture(
+        self: &Rc<Self>,
+        picture: &gtk4::Picture,
+        image_path: &std::path::Path,
+        size: ThumbnailSize,
+        token: u64,
+        current: &Rc<Cell<u64>>,
+        on_loaded: impl Fn(bool) + 'static,
+    ) {
+        if current.get() != token {
+            return;
+        }
+        let key = format!("{}|{}", image_path.to_string_lossy(), size.pixels());
+        if let Some(cached) = self.cache_get(&key) {
+            picture.set_paintable(Some(&cached.texture));
+            on_loaded(true);
+            return;
+        }
+        let this = self.clone();
+        let picture = picture.clone();
+        let current = current.clone();
+        let source = image_path.to_path_buf();
+        glib::spawn_future_local(async move {
+            let thumbnail_path = gio::spawn_blocking(move || {
+                thumbnail(&reprise_core::cover::CoverSource::FolderImage(source), size).ok()
+            })
+            .await
+            .ok()
+            .flatten();
+            if current.get() != token {
+                return;
+            }
+            let Some(path) = thumbnail_path else {
+                on_loaded(false);
+                return;
+            };
+            match gdk::Texture::from_filename(&path) {
+                Ok(texture) => {
+                    picture.set_paintable(Some(&texture));
+                    this.cache_put(key, CachedCover { texture, path });
+                    on_loaded(true);
+                }
+                Err(_) => on_loaded(false),
+            }
+        });
+    }
+
     pub fn load_into_track_cover(
         self: &Rc<Self>,
         cover: &TrackCover,

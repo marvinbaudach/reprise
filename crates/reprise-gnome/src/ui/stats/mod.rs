@@ -1,3 +1,5 @@
+#[allow(dead_code)] // Built in Task 3 and wired into the band surfaces in Task 4.
+mod stats_artist_image;
 mod stats_artwork;
 pub(in crate::ui) mod stats_band_card;
 mod stats_band_tile;
