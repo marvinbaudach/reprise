@@ -562,40 +562,15 @@ impl TrackList {
         self.shared.missing_files_view.set_window(window);
     }
 
-    /// Injects the context menu's "Add to queue" action callback — see the
-    /// `Shared::on_queue_selected` doc comment. `window.rs` wires this to
-    /// `PlayerController::append_to_queue`.
     /// The source the table currently shows — the dedup baseline NAV-9b's
     /// jump hands to `Sidebar::sync_current_source` before navigating.
     pub fn current_source(&self) -> ViewSource {
         self.shared.source.borrow().clone()
     }
 
-    pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) -> usize + 'static) {
-        *self.shared.on_play_next_selected.borrow_mut() = Some(Rc::new(callback));
-    }
-
     /// Opens the existing batch tag editor for an explicit present-track id
     /// set, used by album-container actions.
     pub(in crate::ui) fn edit_tags_for_ids(&self, ids: &[i64]) {
         crate::ui::tag_edit_flow::begin_for_ids(&self.shared, ids);
-    }
-
-    pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) -> usize + 'static) {
-        *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub fn set_on_queue_activate(
-        &self,
-        callback: impl Fn(super::queue_row_mapping::QueueRow) + 'static,
-    ) {
-        *self.shared.on_queue_activate.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub fn set_on_queue_remove(
-        &self,
-        callback: impl Fn(&[super::queue_row_mapping::QueueRow]) -> usize + 'static,
-    ) {
-        *self.shared.on_queue_remove.borrow_mut() = Some(Rc::new(callback));
     }
 }
