@@ -230,42 +230,33 @@ internal fun ArtistsTab(
                             .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title.trim() },
                     ),
                 )
-                Text(
-                    "Albums",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                ArtistDetailSections(
+                    surfaceLayout = surfaceLayout,
+                    surfaceState = surfaceState,
+                    albums = orderedAlbums,
+                    untaggedTracks = selectedArtist.untaggedTracks,
+                    playback = playback,
+                    albumsRequestedOffset = artistAlbumsRequestedOffset,
+                    tracksRequestedOffset = artistRequestedOffset,
+                    openAlbum = openAlbum,
+                    play = play,
+                    loadMoreAlbums = loadMoreArtistAlbums,
+                    loadMoreTracks = loadMoreArtistTracks,
                 )
-                Box(modifier = Modifier.weight(1f)) {
-                    AlbumRows(
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        albums = orderedAlbums,
-                        requestedOffset = artistAlbumsRequestedOffset,
-                        openAlbum = openAlbum,
-                        loadMore = loadMoreArtistAlbums,
-                        key = LibraryListKey.ARTIST_ALBUMS,
-                    )
-                }
-            }
-            if (hasOtherTitles) {
-                Text(
-                    "Other titles",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            } else if (hasOtherTitles) {
+                ArtistDetailSections(
+                    surfaceLayout = surfaceLayout,
+                    surfaceState = surfaceState,
+                    albums = LibraryWindow.empty(),
+                    untaggedTracks = selectedArtist.untaggedTracks,
+                    playback = playback,
+                    albumsRequestedOffset = artistAlbumsRequestedOffset,
+                    tracksRequestedOffset = artistRequestedOffset,
+                    openAlbum = openAlbum,
+                    play = play,
+                    loadMoreAlbums = loadMoreArtistAlbums,
+                    loadMoreTracks = loadMoreArtistTracks,
                 )
-                Box(modifier = Modifier.weight(1f)) {
-                    TrackRows(
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        listKey = LibraryListKey.ARTIST_TRACKS,
-                        tracks = selectedArtist.untaggedTracks,
-                        playback = playback,
-                        lastRequestedOffset = artistRequestedOffset,
-                        play = play,
-                        loadMore = loadMoreArtistTracks,
-                        subtitle = TrackRowSubtitle.ALBUM_ONLY,
-                    )
-                }
             }
         }
         return
@@ -278,43 +269,17 @@ internal fun ArtistsTab(
             Text("No matching albums or artists.", modifier = Modifier.padding(16.dp))
             return
         }
-        Column(modifier = Modifier.fillMaxSize()) {
-            if (hasAlbums) {
-                Text(
-                    "Albums",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-                Box(modifier = Modifier.weight(1f)) {
-                    AlbumRows(
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        albums = albumResults,
-                        requestedOffset = artistAlbumsRequestedOffset,
-                        openAlbum = openAlbum,
-                        loadMore = loadMoreArtistAlbums,
-                        key = LibraryListKey.ARTIST_SEARCH_ALBUMS,
-                    )
-                }
-            }
-            if (hasArtists) {
-                Text(
-                    "Artists",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-                Box(modifier = Modifier.weight(1f)) {
-                    ArtistRows(
-                        surfaceLayout = surfaceLayout,
-                        surfaceState = surfaceState,
-                        artists = artists,
-                        requestedOffset = lastRequestedOffset,
-                        openArtist = openArtist,
-                        loadMore = loadMoreArtists,
-                    )
-                }
-            }
-        }
+        ArtistSearchSections(
+            surfaceState = surfaceState,
+            albums = albumResults,
+            artists = artists,
+            albumsRequestedOffset = artistAlbumsRequestedOffset,
+            artistsRequestedOffset = lastRequestedOffset,
+            openAlbum = openAlbum,
+            openArtist = openArtist,
+            loadMoreAlbums = loadMoreArtistAlbums,
+            loadMoreArtists = loadMoreArtists,
+        )
         return
     }
 
@@ -332,6 +297,141 @@ internal fun ArtistsTab(
             loadMore = loadMoreArtists,
         )
     }
+}
+
+@Composable
+private fun ArtistDetailSections(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    albums: LibraryWindow<LibraryAlbum>,
+    untaggedTracks: LibraryWindow<LibraryTrack>,
+    playback: PlaybackUiState,
+    albumsRequestedOffset: Long?,
+    tracksRequestedOffset: Long?,
+    openAlbum: (LibraryAlbum) -> Unit,
+    play: (Int) -> Unit,
+    loadMoreAlbums: (LibraryWindowRange) -> Unit,
+    loadMoreTracks: (LibraryWindowRange) -> Unit,
+) {
+    val key = LibraryListKey.ARTIST_ALBUMS
+    val trackContent = trackListContent(untaggedTracks, tracksRequestedOffset)
+    val albumContinuation = albums.nextRequest(albumsRequestedOffset)
+    val albumItemCount = albums.rows.size + if (albums.rows.isEmpty()) 0 else 1
+    val itemCount = albumItemCount + trackContent.size +
+        (if (albumContinuation == null) 0 else 1) +
+        (if (untaggedTracks.rows.isEmpty()) 0 else 1)
+    val anchor = surfaceState.scrollPosition(key).within(itemCount)
+    val listState = rememberLibraryListState(anchor)
+    ObserveLibraryListAnchor(key, listState, surfaceState)
+    val metrics = libraryFrameMetrics(surfaceLayout)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().testTag(key.testTag()),
+    ) {
+        if (albums.rows.isNotEmpty()) {
+            item(key = "artist-albums-heading") { SectionHeading("Albums") }
+            items(
+                albums.rows,
+                key = { album -> "artist-album-${album.artist}\u0000${album.title}" },
+            ) { album -> AlbumRow(album, openAlbum) }
+            albumContinuation?.let { request ->
+                item(key = "artist-albums-load-${request.offset}") {
+                    LaunchedEffect(request.offset) { loadMoreAlbums(request) }
+                    LoadingWindowRow()
+                }
+            }
+        }
+        if (untaggedTracks.rows.isNotEmpty()) {
+            item(key = "artist-tracks-heading") { SectionHeading("Other titles") }
+            items(
+                trackContent,
+                key = { content ->
+                    when (content) {
+                        is TrackListContent.Row -> "artist-track-${content.track.uri}"
+                        is TrackListContent.Continuation ->
+                            "artist-tracks-load-${content.request.offset}"
+                    }
+                },
+            ) { content ->
+                TrackListItem(
+                    content = content,
+                    surfaceState = surfaceState,
+                    metrics = metrics,
+                    playback = playback,
+                    play = play,
+                    loadMore = loadMoreTracks,
+                    subtitle = TrackRowSubtitle.ALBUM_ONLY,
+                    onFavouriteChanged = { _, _ -> },
+                    queueActions = null,
+                    rowCount = untaggedTracks.rows.size,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtistSearchSections(
+    surfaceState: MobileSurfaceViewModel,
+    albums: LibraryWindow<LibraryAlbum>,
+    artists: LibraryWindow<LibraryArtist>,
+    albumsRequestedOffset: Long?,
+    artistsRequestedOffset: Long?,
+    openAlbum: (LibraryAlbum) -> Unit,
+    openArtist: (LibraryArtist) -> Unit,
+    loadMoreAlbums: (LibraryWindowRange) -> Unit,
+    loadMoreArtists: (LibraryWindowRange) -> Unit,
+) {
+    val key = LibraryListKey.ARTIST_SEARCH_ALBUMS
+    val albumContinuation = albums.nextRequest(albumsRequestedOffset)
+    val artistContinuation = artists.nextRequest(artistsRequestedOffset)
+    val albumItemCount = albums.rows.size + if (albums.rows.isEmpty()) 0 else 1
+    val artistItemCount = artists.rows.size + if (artists.rows.isEmpty()) 0 else 1
+    val itemCount = albumItemCount + artistItemCount +
+        (if (albumContinuation == null) 0 else 1) +
+        (if (artistContinuation == null) 0 else 1)
+    val anchor = surfaceState.scrollPosition(key).within(itemCount)
+    val listState = rememberLibraryListState(anchor)
+    ObserveLibraryListAnchor(key, listState, surfaceState)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().testTag(key.testTag()),
+    ) {
+        if (albums.rows.isNotEmpty()) {
+            item(key = "search-albums-heading") { SectionHeading("Albums") }
+            items(
+                albums.rows,
+                key = { album -> "search-album-${album.artist}\u0000${album.title}" },
+            ) { album -> AlbumRow(album, openAlbum) }
+            albumContinuation?.let { request ->
+                item(key = "search-albums-load-${request.offset}") {
+                    LaunchedEffect(request.offset) { loadMoreAlbums(request) }
+                    LoadingWindowRow()
+                }
+            }
+        }
+        if (artists.rows.isNotEmpty()) {
+            item(key = "search-artists-heading") { SectionHeading("Artists") }
+            items(artists.rows, key = { artist -> "search-artist-${artist.name}" }) { artist ->
+                ArtistRow(artist, openArtist)
+            }
+            artistContinuation?.let { request ->
+                item(key = "search-artists-load-${request.offset}") {
+                    LaunchedEffect(request.offset) { loadMoreArtists(request) }
+                    LoadingWindowRow()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 @Composable

@@ -1,14 +1,15 @@
 package de.reprise.spike
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import org.junit.After
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,8 +45,11 @@ class ArtistSearchActivityTest {
         val album = compose.onNodeWithText("Full Album 2")
         val artist = compose.onNodeWithText("Artist 2")
         album.assertIsDisplayed()
+        compose.onNodeWithTag("library-artist-search-albums-list")
+            .performScrollToNode(hasText("Artist 2"))
         artist.assertIsDisplayed()
-        assertTrue(album.getUnclippedBoundsInRoot().top < artist.getUnclippedBoundsInRoot().top)
+        compose.onNodeWithTag("library-artist-search-albums-list")
+            .performScrollToNode(hasText("Full Album 2"))
 
         album.performClick()
 

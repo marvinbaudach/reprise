@@ -178,7 +178,7 @@ internal enum class TrackRowSubtitle {
 }
 
 @Composable
-private fun TrackListItem(
+internal fun TrackListItem(
     content: TrackListContent,
     surfaceState: MobileSurfaceViewModel,
     metrics: LibraryFrameMetrics,
