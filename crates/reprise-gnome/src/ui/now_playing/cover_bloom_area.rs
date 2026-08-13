@@ -18,9 +18,19 @@ use std::cell::{Cell, RefCell};
 use gtk4::gdk;
 use gtk4::glib;
 use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
+use gtk4::gsk;
+use gtk4::gsk::prelude::IsRenderNode;
 use gtk4::prelude::*;
 
-use super::cover_bloom::{BLOOM_HEIGHT, BLOOM_WIDTH_FACTOR};
+use super::cover_bloom::{
+    bloom_mask_needs_rebuild, bloom_mask_stops, BLOOM_HEIGHT, BLOOM_WIDTH_FACTOR,
+};
+
+struct MaskCache {
+    width: i32,
+    band: i32,
+    node: gsk::RenderNode,
+}
 
 mod imp {
     use super::*;
@@ -30,6 +40,7 @@ mod imp {
         pub texture: RefCell<Option<gdk::Texture>>,
         pub opacity: Cell<f64>,
         pub scale: Cell<f64>,
+        pub(super) mask: RefCell<Option<MaskCache>>,
     }
 
     impl Default for BloomArea {
@@ -38,6 +49,7 @@ mod imp {
                 texture: RefCell::new(None),
                 opacity: Cell::new(0.0),
                 scale: Cell::new(1.0),
+                mask: RefCell::new(None),
             }
         }
     }
@@ -80,6 +92,7 @@ mod imp {
             }
 
             let band = BLOOM_HEIGHT.min(height);
+            let mask = widget.mask_node(width as i32, band as i32);
             let scale = self.scale.get() as f32;
             let rest_width = (width * BLOOM_WIDTH_FACTOR) as f32;
             let rest_height = BLOOM_HEIGHT as f32;
@@ -94,6 +107,9 @@ mod imp {
                 band as f32,
             ));
             snapshot.push_opacity(opacity);
+            snapshot.push_mask(gsk::MaskMode::Alpha);
+            snapshot.append_node(&mask);
+            snapshot.pop();
 
             // The breath's scale is a transform around the band's centre, not a
             // different destination rectangle. Same picture either way — but a
@@ -114,6 +130,7 @@ mod imp {
             );
             snapshot.restore();
 
+            snapshot.pop();
             snapshot.pop();
             snapshot.pop();
         }
@@ -139,6 +156,38 @@ impl BloomArea {
         area.set_can_target(false);
         area.set_can_focus(false);
         area
+    }
+
+    /// The vertical mask is immutable for one allocation. Reuse its render
+    /// node across light and breath frames; only a size change rebuilds it.
+    fn mask_node(&self, width: i32, band: i32) -> gsk::RenderNode {
+        let imp = self.imp();
+        if let Some(cache) = imp.mask.borrow().as_ref() {
+            if !bloom_mask_needs_rebuild(Some((cache.width, cache.band)), width, band) {
+                return cache.node.clone();
+            }
+        }
+
+        let stops = bloom_mask_stops(f64::from(band)).map(|stop| {
+            gsk::ColorStop::new(
+                stop.offset as f32,
+                gdk::RGBA::new(0.0, 0.0, 0.0, stop.alpha as f32),
+            )
+        });
+        let bounds = gtk4::graphene::Rect::new(0.0, 0.0, width as f32, band as f32);
+        let node = gsk::LinearGradientNode::new(
+            &bounds,
+            &gtk4::graphene::Point::new(0.0, 0.0),
+            &gtk4::graphene::Point::new(0.0, band as f32),
+            &stops,
+        )
+        .upcast();
+        *imp.mask.borrow_mut() = Some(MaskCache {
+            width,
+            band,
+            node: node.clone(),
+        });
+        node
     }
 
     /// The blurred cover, handed over once per track.

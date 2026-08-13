@@ -37,6 +37,16 @@ pub(super) struct PanelWidgets {
     stage: gtk4::Box,
     #[cfg(test)]
     track_content: gtk4::Box,
+    #[cfg(test)]
+    head_column: gtk4::Box,
+    #[cfg(test)]
+    artwork_overlay: gtk4::Overlay,
+    #[cfg(test)]
+    artwork_band: gtk4::Box,
+    #[cfg(test)]
+    head: gtk4::Box,
+    #[cfg(test)]
+    metadata: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
     pub(super) visualizer: SongVisualizer,
@@ -139,6 +149,7 @@ fn build_widgets_for_session(
     album.add_css_class("reprise-now-playing-subtitle");
 
     let metadata = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    metadata.add_css_class("reprise-now-playing-metadata");
     metadata.set_halign(gtk4::Align::Fill);
     metadata.append(&title);
     metadata.append(&artist);
@@ -146,22 +157,35 @@ fn build_widgets_for_session(
     let head = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     head.add_css_class("reprise-now-playing-head");
     head.set_halign(gtk4::Align::Center);
-    head.set_valign(gtk4::Align::Center);
+    // The artwork band has a fixed 280 px allocation. Start alignment keeps
+    // the cover's top edge at the established 22 px inset instead of
+    // re-centering it when the title block leaves this box.
+    head.set_valign(gtk4::Align::Start);
     head.append(&cover_stack);
-    head.append(&metadata);
 
     let glow = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     glow.add_css_class("reprise-now-playing-glow");
     glow.set_can_target(false);
-    let head_overlay = gtk4::Overlay::new();
-    head_overlay.set_child(Some(&glow));
+    let artwork_band = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    artwork_band.set_height_request(tokens::NOW_PLAYING_ARTWORK_BAND);
+    artwork_band.set_can_target(false);
+    let artwork_overlay = gtk4::Overlay::new();
+    artwork_overlay.set_child(Some(&artwork_band));
     let bloom = cover_bloom::CoverBloom::new();
     let shimmer = cover_shimmer::CoverShimmer::new();
-    // Bottom to top: the static ellipse, the blurred cover, the cover-palette
-    // sweep, then the cover and the title block over all three.
-    head_overlay.add_overlay(bloom.widget());
-    head_overlay.add_overlay(shimmer.widget());
-    head_overlay.add_overlay(&head);
+    // Within the artwork band, bottom to top: the transparent geometry band,
+    // the blurred cover, the cover-palette sweep, then the cover. Metadata is a sibling
+    // below this overlay, so no cover-derived pixel can paint behind it.
+    artwork_overlay.add_overlay(bloom.widget());
+    artwork_overlay.add_overlay(shimmer.widget());
+    artwork_overlay.add_overlay(&head);
+    let head_column = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    head_column.append(&artwork_overlay);
+    head_column.append(&metadata);
+    let head_group = gtk4::Overlay::new();
+    head_group.set_child(Some(&glow));
+    head_group.add_overlay(&head_column);
+    head_group.set_measure_overlay(&head_column, true);
 
     let lyrics = LyricsView::new();
     let up_next = UpNextPanel::new(conn.clone(), cover_loader);
@@ -263,7 +287,7 @@ fn build_widgets_for_session(
     stage.set_vexpand(true);
     let track_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     track_content.add_css_class("reprise-now-playing-track-content");
-    track_content.append(&head_overlay);
+    track_content.append(&head_group);
     stage.append(&track_content);
     stage.append(&tab_switcher);
     stage.append(&tab_stack);
@@ -277,6 +301,16 @@ fn build_widgets_for_session(
         stage,
         #[cfg(test)]
         track_content,
+        #[cfg(test)]
+        head_column,
+        #[cfg(test)]
+        artwork_overlay,
+        #[cfg(test)]
+        artwork_band,
+        #[cfg(test)]
+        head,
+        #[cfg(test)]
+        metadata,
         lyrics,
         up_next,
         visualizer,
