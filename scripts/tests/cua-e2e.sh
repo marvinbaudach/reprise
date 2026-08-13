@@ -41,6 +41,8 @@ fi
 sort_scenario="$repo_root/scripts/cua-e2e/track_sort.sh"
 tag_autocomplete_scenario="$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
 responsive_window_scenario="$repo_root/scripts/cua-e2e/responsive_window.sh"
+library_doctor_scenario="$repo_root/scripts/cua-e2e/library_doctor.sh"
+selection_anchor_scenario="$repo_root/scripts/cua-e2e/selection_anchor.sh"
 helper_library="$repo_root/scripts/cua-e2e/lib.sh"
 if [[ ! -f "$sort_scenario" ]]; then
   echo "$sort_scenario must exist" >&2
@@ -86,6 +88,26 @@ if [[ ! -f "$tag_autocomplete_scenario" ]]; then
   echo "$tag_autocomplete_scenario must exist" >&2
   exit 1
 fi
+for scenario_file in "$library_doctor_scenario" "$selection_anchor_scenario"; do
+  if [[ ! -f "$scenario_file" ]]; then
+    echo "$scenario_file must exist" >&2
+    exit 1
+  fi
+done
+for scenario_source in \
+  'source "$repo_root/scripts/cua-e2e/library_doctor.sh"' \
+  'source "$repo_root/scripts/cua-e2e/selection_anchor.sh"'; do
+  if ! rg --quiet --fixed-strings "$scenario_source" "$runner"; then
+    echo "$runner must load focused scenario module: $scenario_source" >&2
+    exit 1
+  fi
+done
+runner_contract_files=(
+  "$runner"
+  "$session_library"
+  "$library_doctor_scenario"
+  "$selection_anchor_scenario"
+)
 for pattern in \
   'run_tag_autocomplete_surface_scenario' \
   'Cogitations' \
@@ -173,7 +195,7 @@ for pattern in \
   'browse-3-sidebar-escapes-doctor' \
   'Revert Last Cleanup'
 do
-  if ! rg --quiet -- "$pattern" "$runner" "$session_library"; then
+  if ! rg --quiet -- "$pattern" "${runner_contract_files[@]}"; then
     echo "CUA runner/session must contain isolation/coverage pattern: $pattern" >&2
     exit 1
   fi
@@ -247,47 +269,49 @@ if rg --quiet 'wait_for_label .*"Library Doctor" .*menu' "$runner"; then
   echo "$runner must not expect detached popup labels in the main-window snapshot" >&2
   exit 1
 fi
-if ! rg --quiet --fixed-strings 'safe_change_count=$((fixture_count * 3))' "$runner"; then
-  echo "$runner must derive the Library Doctor safe-review label from its fixture" >&2
+if ! rg --quiet --fixed-strings \
+  'safe_change_count=$((fixture_count * 3))' "$library_doctor_scenario"; then
+  echo "$library_doctor_scenario must derive the safe-review label from its fixture" >&2
   exit 1
 fi
 if ! rg --quiet --fixed-strings \
   '"$APP_PID" "$WINDOW_ID" 110 115 browse-3-sidebar-escapes-doctor' \
-  "$runner"; then
-  echo "$runner must use window-local screenshot coordinates for the Music row" >&2
+  "$library_doctor_scenario"; then
+  echo "$library_doctor_scenario must use window-local screenshot coordinates for the Music row" >&2
   exit 1
 fi
-if rg --quiet --fixed-strings '"Review Safe Fixes"' "$runner"; then
-  echo "$runner must not wait for the obsolete static Library Doctor review label" >&2
+if rg --quiet --fixed-strings '"Review Safe Fixes"' "$library_doctor_scenario"; then
+  echo "$library_doctor_scenario must not wait for the obsolete static review label" >&2
   exit 1
 fi
 if rg --quiet --fixed-strings \
   'assert_snapshot_contains "$reverted_path" "Library Doctor"' \
-  "$runner"; then
-  echo "$runner must verify the completed Library Doctor revert result, not a structural page title" >&2
+  "$library_doctor_scenario"; then
+  echo "$library_doctor_scenario must verify the completed revert result" >&2
   exit 1
 fi
 if ! rg --quiet --fixed-strings \
   '"$APP_PID" "$WINDOW_ID" "Tags reverted · $fixture_count tracks" doctor-reverted' \
-  "$runner"; then
-  echo "$runner must wait for the completed Library Doctor revert result" >&2
+  "$library_doctor_scenario"; then
+  echo "$library_doctor_scenario must wait for the completed revert result" >&2
   exit 1
 fi
 if rg --quiet --fixed-strings \
   'cua_click_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-plugins-page' \
-  "$runner"; then
-  echo "$runner must not pixel-click the geometry-less Preferences Plugins label" >&2
+  "$library_doctor_scenario"; then
+  echo "$library_doctor_scenario must not pixel-click the geometry-less Plugins label" >&2
   exit 1
 fi
 for pattern in \
   'cua_focus_label_via_key "$APP_PID" "$WINDOW_ID" "Plugins" down doctor-plugins-focus' \
   'cua_press_key_window "$APP_PID" "$WINDOW_ID" enter doctor-plugins-enter'; do
-  if ! rg --quiet --fixed-strings "$pattern" "$runner"; then
-    echo "$runner must activate the Plugins navigation row through GTK focus: $pattern" >&2
+  if ! rg --quiet --fixed-strings "$pattern" "$library_doctor_scenario"; then
+    echo "$library_doctor_scenario must activate Plugins through GTK focus: $pattern" >&2
     exit 1
   fi
 done
-doctor_scenario=$(sed -n '/^run_library_doctor_scenario() {/,/^}/p' "$runner")
+doctor_scenario=$(sed -n \
+  '/^run_library_doctor_scenario() {/,/^}/p' "$library_doctor_scenario")
 for pattern in \
   'doctor-plugin-no-toggle' \
   'doctor-tool-close' \
