@@ -27,7 +27,7 @@ set -- env \
   LOCALEDIR="$localedir"
 
 
-"$@" cargo build $cargo_profile_args $cargo_feature_args \
+"$@" cargo build --locked $cargo_profile_args $cargo_feature_args \
   -p reprise-gnome --manifest-path "$source_root/Cargo.toml"
 
 cp "$build_root/cargo-target/$profile/reprise" "$output"
