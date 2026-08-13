@@ -56,8 +56,8 @@ struct Loaded {
 ///
 /// The distinction the GTK controller has always drawn and the runtime did
 /// not: an explicitly queued track plays *beside* the context rather than
-/// inside it, so the context cursor stays where it was and going back means
-/// going back to the entry that was interrupted.
+/// inside it, so the context cursor stays where it was. Playback history
+/// preserves that distinction when the entry is revisited.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Source {
     /// The surrounding context the user started from.
@@ -130,6 +130,8 @@ struct Failure {
 pub(crate) struct Transport {
     queue: Queue,
     up_next: UpNextQueue,
+    /// PLAY-14 runtime playback history; see `transport_history.rs`.
+    history: history::HistoryState,
     status: PlaybackState,
     /// What is loaded in the backend right now. `None` means nothing is —
     /// which is what makes `Stopped` distinguishable from `Paused` with a
@@ -179,6 +181,7 @@ impl Transport {
         Self {
             queue: Queue::new(),
             up_next: UpNextQueue::default(),
+            history: history::HistoryState::default(),
             status: PlaybackState::Stopped,
             current: None,
             position_ms: 0,
@@ -640,6 +643,7 @@ impl Transport {
             ..track.into()
         });
         self.position_ms = 0;
+        self.note_playback_started(track_id, source);
         self.status = PlaybackState::Playing;
         // The facet describes the situation, not the history: something is
         // playing, so there is no failure and no stop left to explain.
@@ -698,6 +702,7 @@ impl Transport {
                     ..track.into()
                 });
                 self.position_ms = 0;
+                self.note_playback_started(track_id, source);
                 // Something is playing again, so no stop is left to explain.
                 // `start` says this next to its own `failure = None`; this is
                 // the other way a track becomes current and it owes the same.
@@ -780,3 +785,6 @@ mod session;
 
 #[path = "transport_controls.rs"]
 mod controls;
+
+#[path = "transport_history.rs"]
+mod history;

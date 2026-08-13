@@ -13,6 +13,7 @@ use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
 };
 
+mod history;
 mod queue_boundary;
 mod queue_persistence;
 mod trash_boundary;
@@ -61,6 +62,8 @@ pub trait AndroidPlaybackListener: Send + Sync {
 
 struct SessionState {
     queue: Queue,
+    /// PLAY-14 runtime playback history; see `playback_session/history.rs`.
+    history: history::HistoryState,
     track_ids: Vec<i64>,
     track_index_by_id: HashMap<i64, usize>,
     uris: Vec<String>,
@@ -76,6 +79,7 @@ impl SessionState {
     fn new() -> Self {
         Self {
             queue: Queue::new(),
+            history: history::HistoryState::default(),
             track_ids: Vec::new(),
             track_index_by_id: HashMap::new(),
             uris: Vec::new(),
@@ -129,6 +133,7 @@ impl SessionState {
                 error: None,
             },
             queue: restored.queue,
+            history: history::HistoryState::default(),
             track_ids: restored.track_ids,
             track_index_by_id,
             uris: restored.uris,
@@ -140,6 +145,9 @@ impl SessionState {
     }
 
     fn current_uri(&self) -> Option<String> {
+        if let Some(target) = self.history.presented() {
+            return target.replay_uri.clone();
+        }
         self.queue
             .current()
             .and_then(|track_id| self.track_index(track_id))
@@ -169,6 +177,7 @@ impl SessionState {
     }
 
     fn adopt_current(&mut self) {
+        self.history.clear_presented();
         self.snapshot.current_index = self
             .queue
             .current()
@@ -184,6 +193,7 @@ impl SessionState {
     }
 
     fn stop(&mut self) {
+        self.history.clear_presented();
         self.snapshot.state = AndroidPlaybackState::Stopped;
         self.snapshot.current_index = None;
         self.snapshot.position_ms = 0;
@@ -200,16 +210,25 @@ impl SessionState {
     }
 
     fn current_track_id(&self) -> Option<i64> {
+        if let Some(target) = self.history.presented() {
+            return target.item.track_id();
+        }
         self.queue.current()
     }
 
     fn presented_snapshot(&self) -> AndroidPlaybackSnapshot {
         let mut snapshot = self.snapshot.clone();
-        let identity = self.current_track_id().and_then(|track_id| {
-            self.track_index(track_id)
-                .and_then(|index| self.uris.get(index))
-                .map(|uri| (track_id, uri))
-        });
+        let identity = self
+            .history
+            .presented()
+            .and_then(|target| target.item.track_id().zip(target.replay_uri.as_ref()))
+            .or_else(|| {
+                self.queue.current().and_then(|track_id| {
+                    self.track_index(track_id)
+                        .and_then(|index| self.uris.get(index))
+                        .map(|uri| (track_id, uri))
+                })
+            });
         match identity {
             Some((track_id, uri)) => {
                 snapshot.current_track_id = Some(track_id);
@@ -312,17 +331,24 @@ impl SessionInner {
 
     fn start_current(&self) -> Result<(), AndroidPlaybackError> {
         let backend = self.backend()?;
-        let (uri, next_uri) = {
+        let (uri, next_uri, history_entry) = {
             let mut state = self.lock()?;
+            let track_id =
+                state
+                    .current_track_id()
+                    .ok_or(AndroidPlaybackError::InvalidRequest {
+                        detail: "the Core queue has no current track".to_owned(),
+                    })?;
             let uri = state
                 .current_uri()
                 .ok_or(AndroidPlaybackError::InvalidRequest {
                     detail: "the Core queue has no current track".to_owned(),
                 })?;
             let next_uri = state.next_uri();
+            let history_entry = state.history_entry_for_started(track_id, uri.clone());
             // `play_uri` may synchronously publish this stream's first event.
             state.current_loaded = true;
-            (uri, next_uri)
+            (uri, next_uri, history_entry)
         };
         if let Err(error) = backend.play_uri(&uri) {
             let detail = error.to_string();
@@ -336,6 +362,7 @@ impl SessionInner {
         }
         {
             let mut state = self.lock()?;
+            state.note_playback_started(history_entry);
             state.stream = backend.current_generation();
         }
         backend.set_next(next_uri.as_deref());
@@ -405,6 +432,13 @@ impl SessionInner {
                     if state.queue.advance_auto().is_some() {
                         state.adopt_current();
                         state.current_loaded = true;
+                        let history_entry = state
+                            .current_track_id()
+                            .zip(state.current_uri())
+                            .map(|(track_id, uri)| state.history_entry_for_started(track_id, uri));
+                        if let Some(history_entry) = history_entry {
+                            state.note_playback_started(history_entry);
+                        }
                         (
                             FollowUp::Feed(state.next_uri()),
                             play,
@@ -612,11 +646,15 @@ impl AndroidPlaybackSession {
     }
 
     pub fn next(&self) -> Result<(), AndroidPlaybackError> {
+        if self.inner.forward_from_history()? {
+            return Ok(());
+        }
         self.move_playhead(Queue::next_manual)
     }
 
+    /// PLAY-14: Previous follows playback history, never the queue cursor.
     pub fn previous(&self) -> Result<(), AndroidPlaybackError> {
-        self.move_playhead(Queue::previous)
+        self.inner.previous_from_history()
     }
 
     pub fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError> {
@@ -723,72 +761,5 @@ impl AndroidPlaybackSession {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_snapshot_with_an_out_of_range_cursor_has_no_track_identity() {
-        let mut state = SessionState::new();
-        state.track_ids = vec![41];
-        state.uris = vec!["content://provider/only.flac".to_owned()];
-        state.snapshot.current_index = Some(2);
-        state.snapshot.current_track_id = Some(41);
-        state.snapshot.current_track_uri = Some("content://provider/only.flac".to_owned());
-
-        let snapshot = state.presented_snapshot();
-
-        assert_eq!(snapshot.current_track_id, None);
-        assert_eq!(snapshot.current_track_uri, None);
-    }
-
-    /// `presented_snapshot` runs on every position tick, so resolving the
-    /// playing track must not walk the queue.
-    ///
-    /// A wall-clock deadline would be the obvious test and the wrong one: this
-    /// suite shares a machine with other builds, so a fixed bound turns red for
-    /// reasons that have nothing to do with the code, and a test that cries
-    /// wolf stops being read. Comparing a long queue against a short one
-    /// measures the *shape* of the cost instead, and load inflates both
-    /// measurements together, so it cancels out of the ratio.
-    ///
-    /// A scan is roughly `LARGE / SMALL` times dearer here; the threshold sits
-    /// far below that and far above the noise.
-    #[test]
-    fn presenting_a_long_queue_costs_about_what_a_short_one_costs() {
-        const SNAPSHOTS: usize = 50_000;
-        const LARGE: usize = 10_000;
-        const SMALL: usize = 10;
-        const MAX_RATIO: f64 = 8.0;
-
-        fn cost(queue_size: usize, snapshots: usize) -> std::time::Duration {
-            let mut state = SessionState::new();
-            let ids = (0..queue_size as i64).collect::<Vec<_>>();
-            let uris = ids
-                .iter()
-                .map(|id| format!("content://provider/{id}.flac"))
-                .collect();
-            // The last track: a scan by id pays the whole queue for it, an
-            // index does not care where it sits.
-            state.set_tracks(ids, uris, queue_size - 1);
-
-            let started = std::time::Instant::now();
-            for _ in 0..snapshots {
-                std::hint::black_box(state.presented_snapshot());
-            }
-            started.elapsed()
-        }
-
-        // Warm the allocator before either measurement counts.
-        let _ = cost(SMALL, SNAPSHOTS / 10);
-        let short = cost(SMALL, SNAPSHOTS);
-        let long = cost(LARGE, SNAPSHOTS);
-
-        let ratio = long.as_secs_f64() / short.as_secs_f64().max(f64::EPSILON);
-        assert!(
-            ratio <= MAX_RATIO,
-            "resolving the playing track must not walk the queue: \
-             {LARGE} tracks cost {long:?} against {short:?} for {SMALL}, \
-             a factor of {ratio:.1} over the {MAX_RATIO:.0}× allowed",
-        );
-    }
-}
+#[path = "playback_session_tests.rs"]
+mod tests;

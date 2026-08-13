@@ -199,13 +199,14 @@ fn manual_cursor_moves_and_shuffle_each_survive_a_fresh_session() {
         session.snapshot().unwrap().current_track_id,
         Some(track("Second").id),
     );
-    session.previous().unwrap();
+    session.next().unwrap();
     drop(session);
 
     let session = session_in(directory.path());
     assert_eq!(
         session.snapshot().unwrap().current_track_id,
-        Some(track("First").id),
+        Some(track("Third").id),
+        "a second manual cursor move must survive too; Previous is now runtime-only history and a fresh session intentionally has none",
     );
     session.set_shuffle(true).unwrap();
     drop(session);
@@ -214,7 +215,7 @@ fn manual_cursor_moves_and_shuffle_each_survive_a_fresh_session() {
     assert!(restored.snapshot().unwrap().shuffled);
     assert_eq!(
         restored.snapshot().unwrap().current_track_id,
-        Some(track("First").id),
+        Some(track("Third").id),
         "shuffle persistence must retain the current track",
     );
 }

@@ -82,7 +82,7 @@ fn a_queued_track_leaves_the_context_cursor_where_it_was() {
 }
 
 #[test]
-fn previous_within_the_context_still_steps_back_by_one() {
+fn previous_with_only_a_current_context_entry_rewinds_it() {
     let mut fixture = fixture();
     fixture.play_tracks(vec![1, 2, 3], 1).unwrap();
 
@@ -90,9 +90,8 @@ fn previous_within_the_context_still_steps_back_by_one() {
 
     assert_eq!(
         fixture.transport.playback_snapshot().track_id,
-        Some(1),
-        "nothing queued was involved, so this is the ordinary case and must \
-         not have been broken by the special one"
+        Some(2),
+        "a queue predecessor that never played is not playback history"
     );
 }
 

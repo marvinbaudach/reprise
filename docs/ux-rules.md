@@ -392,6 +392,16 @@ result.
   an accent point, “LIVE”, and the station name while retaining connected
   elapsed time. The point pulses only during active playback through MOT-7's
   central motion gate; pause and reduced motion leave the same point static.
+- **PLAY-14** [active] [gtk] — **Previous follows the actual playback history,
+  not queue order.** After the current item has played for more than 3 seconds,
+  Previous seeks to its beginning; otherwise it selects the most recently
+  played item — under shuffle, the item that actually played rather than a
+  neighbour in shuffled order. When history is empty, Previous seeks to the
+  beginning so the control always does something meaningful and
+  `CanGoPrevious` honestly remains true; this also applies to an episode with
+  no predecessor. Rewinding is a seek, not a pipeline restart. After stepping
+  back, Next returns to the item the jump left. History exists only at runtime
+  and starts empty after launch.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two

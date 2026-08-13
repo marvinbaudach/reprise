@@ -275,7 +275,24 @@ fn next_during_a_stream_does_not_swap_in_the_music_behind_it() {
 }
 
 #[test]
-fn previous_during_a_stream_does_not_swap_in_the_music_behind_it() {
+fn next_during_a_stream_ignores_a_populated_forward_history() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2, 3], 0).unwrap();
+    fixture.command(&PlaybackCommand::Next).unwrap();
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+    fixture
+        .transport
+        .play_external(&fixture.backend, &a_stream(), None)
+        .unwrap();
+
+    fixture.command(&PlaybackCommand::Next).unwrap();
+
+    assert_eq!(fixture.transport.playback_snapshot().track_id, None);
+    assert_eq!(fixture.transport.playback_snapshot().title, "Morning Show");
+}
+
+#[test]
+fn previous_during_a_stream_without_history_reports_that_it_cannot_seek() {
     let mut fixture = fixture();
     fixture.play_tracks(vec![1, 2, 3], 1).unwrap();
     fixture
@@ -283,13 +300,17 @@ fn previous_during_a_stream_does_not_swap_in_the_music_behind_it() {
         .play_external(&fixture.backend, &a_stream(), None)
         .unwrap();
 
-    fixture.command(&PlaybackCommand::Previous).unwrap();
+    assert_eq!(
+        fixture
+            .command(&PlaybackCommand::Previous)
+            .expect_err("a live stream has no start to seek to"),
+        RuntimeError::Rejected(Rejected::NotSeekable)
+    );
 
     assert_eq!(
         fixture.transport.playback_snapshot().track_id,
         None,
-        "there is a context entry before the cursor, so without the gate \
-         Previous silently replaces the stream with a library track"
+        "the unrecorded queue index is not playback history"
     );
 }
 
@@ -557,6 +578,22 @@ fn a_handoff_after_a_finish_does_not_leave_the_finish_standing() {
         snapshot.stopped_reason, None,
         "a track is current again; a surface reading `finished` here would \
          act on an ending that has been overtaken"
+    );
+}
+
+#[test]
+fn play_14_a_gapless_handoff_is_recorded_as_playback() {
+    let mut fixture = fixture();
+    fixture.play_tracks(vec![1, 2], 0).unwrap();
+
+    fixture.player_event(&PlayerEvent::AdvancedToNext);
+    assert_eq!(fixture.transport.playback_snapshot().track_id, Some(2));
+
+    fixture.command(&PlaybackCommand::Previous).unwrap();
+    assert_eq!(
+        fixture.transport.playback_snapshot().track_id,
+        Some(1),
+        "the gapless handoff was audible and therefore belongs in history"
     );
 }
 
