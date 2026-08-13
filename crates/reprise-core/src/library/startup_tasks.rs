@@ -254,6 +254,26 @@ pub fn begin_exact(db: &Db, task: SignatureTask) -> Option<ExactTaskPass> {
     }
 }
 
+/// Starts work requested directly by the user without consulting startup
+/// freshness, while retaining the exact signature the completed pass may
+/// settle for the next launch.
+pub fn begin_user_triggered(db: &Db, task: SignatureTask) -> ExactTaskPass {
+    ExactTaskPass {
+        task,
+        signature: match current_signature_in(db.conn()) {
+            Ok(signature) => Some(signature),
+            Err(error) => {
+                tracing::warn!(
+                    task = task.log_name(),
+                    %error,
+                    "could not capture user-triggered task signature; running conservatively"
+                );
+                None
+            }
+        },
+    }
+}
+
 /// Seeds a completion record at a controlled time for deterministic tests.
 /// Production callers must use [`begin_exact`] and finish its returned pass.
 #[doc(hidden)]
@@ -450,6 +470,18 @@ mod tests {
         assert!(exact_signature_decision(&db, SignatureTask::Spectrogram)
             .unwrap()
             .is_due());
+    }
+
+    #[test]
+    fn a_user_triggered_pass_ignores_due_state_and_settles_the_current_signature() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        record_completed_at(&db, SignatureTask::CoverDownload, 123).unwrap();
+        assert!(begin_exact(&db, SignatureTask::CoverDownload).is_none());
+
+        let pass = begin_user_triggered(&db, SignatureTask::CoverDownload);
+        pass.record_completed_or_warn(&db);
+
+        assert!(begin_exact(&db, SignatureTask::CoverDownload).is_none());
     }
 
     #[test]

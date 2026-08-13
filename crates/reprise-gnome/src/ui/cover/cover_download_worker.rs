@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use reprise_core::cover::{read_cover_tag, resolve_source, CoverSource, CoverTag};
-use reprise_core::cover_download::{album_key, fetch_and_cache};
+use reprise_core::cover_download::{album_key, fetch_and_cache, CoverFetchOutcome};
 use reprise_core::db::Db;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +17,7 @@ pub(in crate::ui) enum DownloadOutcome {
     AlreadyCovered,
     Downloaded(PathBuf),
     Unavailable,
+    TransientFailure,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,7 +125,7 @@ fn open_library(database_path: Option<&Path>) -> Option<Db> {
 fn result_for_path(
     track_path: &Path,
     skip_if_covered: bool,
-    attempted: &mut HashMap<String, Option<PathBuf>>,
+    attempted: &mut HashMap<String, CoverFetchOutcome>,
     observed_embedded: &mut HashMap<String, u64>,
     db: Option<&Db>,
 ) -> DownloadOutcome {
@@ -137,8 +138,9 @@ fn result_for_path(
         }
     }
     match result_for_tag(tag, attempted, db) {
-        Some(path) => DownloadOutcome::Downloaded(path),
-        None => DownloadOutcome::Unavailable,
+        CoverFetchOutcome::Downloaded(path) => DownloadOutcome::Downloaded(path),
+        CoverFetchOutcome::NotFound => DownloadOutcome::Unavailable,
+        CoverFetchOutcome::TransientFailure => DownloadOutcome::TransientFailure,
     }
 }
 
@@ -174,14 +176,14 @@ fn cover_status(
 
 fn result_for_tag(
     tag: CoverTag,
-    attempted: &mut HashMap<String, Option<PathBuf>>,
+    attempted: &mut HashMap<String, CoverFetchOutcome>,
     db: Option<&Db>,
-) -> Option<PathBuf> {
+) -> CoverFetchOutcome {
     let (Some(album_artist), Some(album)) = (tag.album_artist, tag.album) else {
-        return None;
+        return CoverFetchOutcome::NotFound;
     };
     if album_artist.trim().is_empty() || album.trim().is_empty() {
-        return None;
+        return CoverFetchOutcome::NotFound;
     }
     let key = album_key(&album_artist, &album);
     if let Some(result) = attempted.get(&key) {
@@ -217,7 +219,7 @@ mod tests {
     use std::task::{Context, Poll, Waker};
 
     use reprise_core::cover::{CoverSource, CoverTag};
-    use reprise_core::cover_download::album_key;
+    use reprise_core::cover_download::{album_key, CoverFetchOutcome};
 
     use super::{
         cover_status, open_library, result_for_path, result_for_tag, setup, CoverDownloadRuntime,
@@ -343,7 +345,7 @@ mod tests {
         let mut attempted = HashMap::new();
         assert_eq!(
             result_for_tag(CoverTag::default(), &mut attempted, None),
-            None
+            CoverFetchOutcome::NotFound
         );
         assert!(attempted.is_empty());
     }
@@ -352,14 +354,17 @@ mod tests {
     fn an_attempted_album_reuses_its_result_without_fetching_again() {
         let key = album_key("Dedup Artist", "Dedup Album");
         let cached = PathBuf::from("/cached/cover.jpg");
-        let mut attempted = HashMap::from([(key, Some(cached.clone()))]);
+        let mut attempted = HashMap::from([(key, CoverFetchOutcome::Downloaded(cached.clone()))]);
         let tag = CoverTag {
             picture: None,
             album_artist: Some("Dedup Artist".into()),
             album: Some("Dedup Album".into()),
             release_mbid: None,
         };
-        assert_eq!(result_for_tag(tag, &mut attempted, None), Some(cached));
+        assert_eq!(
+            result_for_tag(tag, &mut attempted, None),
+            CoverFetchOutcome::Downloaded(cached)
+        );
         assert_eq!(attempted.len(), 1);
     }
 

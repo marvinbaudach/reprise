@@ -67,6 +67,7 @@ impl BatchProgress {
             DownloadOutcome::AlreadyCovered => {}
             DownloadOutcome::Downloaded(_) => self.downloaded += 1,
             DownloadOutcome::Unavailable => self.unavailable += 1,
+            DownloadOutcome::TransientFailure => {}
         }
         if self.checked == self.total {
             self.state = BatchState::Complete;
@@ -222,16 +223,16 @@ impl CoverDownloadBatch {
                     this.set_progress(progress);
                     return;
                 }
-                let outcome = result.recv().await.unwrap_or(DownloadOutcome::Unavailable);
+                let outcome = result
+                    .recv()
+                    .await
+                    .unwrap_or(DownloadOutcome::TransientFailure);
                 if this.generation.get() != generation {
                     return;
                 }
-                // Settled either way: covered already, or nothing to be had.
-                // Both mean the next launch has no reason to open this file.
-                if matches!(
-                    outcome,
-                    DownloadOutcome::AlreadyCovered | DownloadOutcome::Unavailable
-                ) {
+                // Only definitive results settle the track. Transport and
+                // worker failures stay open so a later pass can retry them.
+                if outcome_settles_track(&outcome) {
                     let settled = path.clone();
                     gtk4::gio::spawn_blocking(move || {
                         reprise_core::cover::remember_download_unavailable(
@@ -293,11 +294,18 @@ fn open_paths(paths: Vec<String>, is_settled: impl Fn(&str) -> bool) -> Vec<Stri
     paths.into_iter().filter(|path| !is_settled(path)).collect()
 }
 
+fn outcome_settles_track(outcome: &DownloadOutcome) -> bool {
+    matches!(
+        outcome,
+        DownloadOutcome::AlreadyCovered | DownloadOutcome::Unavailable
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::{open_paths, BatchProgress, BatchState};
+    use super::{open_paths, outcome_settles_track, BatchProgress, BatchState};
     use crate::ui::cover_download_worker::DownloadOutcome;
 
     #[test]
@@ -314,6 +322,16 @@ mod tests {
         assert_eq!(progress.downloaded, 1);
         assert_eq!(progress.unavailable, 1);
         assert_eq!(progress.fraction(), 1.0);
+    }
+
+    #[test]
+    fn only_definitive_cover_outcomes_settle_a_track() {
+        assert!(outcome_settles_track(&DownloadOutcome::AlreadyCovered));
+        assert!(outcome_settles_track(&DownloadOutcome::Unavailable));
+        assert!(!outcome_settles_track(&DownloadOutcome::TransientFailure));
+        assert!(!outcome_settles_track(&DownloadOutcome::Downloaded(
+            PathBuf::from("/cache/cover.jpg")
+        )));
     }
 
     #[test]
