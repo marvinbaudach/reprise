@@ -615,6 +615,10 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
 mod display_tests;
 
 #[cfg(test)]
+#[path = "fresh_start_allocation_display_tests.rs"]
+mod fresh_start_allocation_display_tests;
+
+#[cfg(test)]
 #[path = "track_list_reload_tests.rs"]
 mod tests;
 
