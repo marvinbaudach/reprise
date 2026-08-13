@@ -241,6 +241,7 @@ pub(in crate::ui) fn wire_source_routing(
             );
         } else if matches!(source, ViewSource::Podcasts) {
             podcasts_view.refresh();
+            podcasts_view.request_tab_open_refresh();
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
@@ -248,6 +249,7 @@ pub(in crate::ui) fn wire_source_routing(
             );
         } else if matches!(source, ViewSource::Youtube) {
             youtube_view.refresh();
+            youtube_view.request_tab_open_refresh();
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
