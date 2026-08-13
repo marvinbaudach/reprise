@@ -9,7 +9,7 @@ use super::clauses::{
     filter_clause, like_pattern, order_clause, row_to_id, row_to_track, track_projection, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
-use super::{browse::browse_clause, BrowseFilter, WindowRange, MAX_WINDOW_LIMIT};
+use super::{browse::browse_clause, BrowseFilter, TrackWindow, WindowRange, MAX_WINDOW_LIMIT};
 
 pub(crate) const EFFECTIVE_ALBUM_ARTIST: &str =
     "CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END";
@@ -67,6 +67,16 @@ fn artist_summary_filter_clause(has_filter: bool, param_index: u8) -> String {
     } else {
         String::new()
     }
+}
+
+/// What counts as an album by one artist: a present track, a non-blank album
+/// title, and an exact case-insensitive match on the effective album artist.
+/// Shared so desktop and Android cannot drift apart on the definition.
+fn artist_albums_selection(param_index: u8) -> String {
+    format!(
+        "{PRESENT} AND TRIM(album) <> '' \
+         AND {EFFECTIVE_ALBUM_ARTIST} = ?{param_index} COLLATE NOCASE"
+    )
 }
 
 /// Returns one row per case-insensitive `(album, effective album artist)`
@@ -130,6 +140,124 @@ pub fn query_albums(
         has_more: super::surface_browse::has_more(total, window, rows.len()),
         rows,
     })
+}
+
+/// Returns a bounded album summary window for one exact effective album
+/// artist, newest release year first and alphabetical within a year.
+pub fn query_artist_albums(
+    db: &Db,
+    artist: &str,
+    window: WindowRange,
+) -> Result<AlbumWindow, rusqlite::Error> {
+    let total = query_artist_album_count(db, artist)?;
+    let conn = db.conn();
+    let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let selection = artist_albums_selection(3);
+    let sql = format!(
+        "WITH grouped AS ( \
+           SELECT LOWER(TRIM(album)) AS album_key, \
+                  MIN(id) AS representative_id, \
+                  COUNT(*) AS track_count, \
+                  MIN(CASE WHEN year > 0 THEN year END) AS year, \
+                  SUM(duration_ms) AS total_duration_ms, \
+                  MAX(added_at) AS max_added_at, \
+                  SUM(play_count) AS total_play_count \
+           FROM tracks \
+           WHERE {selection} \
+           GROUP BY album_key \
+         ) \
+         SELECT TRIM(tracks.album), {EFFECTIVE_ALBUM_ARTIST}, tracks.path, \
+                grouped.track_count, grouped.year, \
+                COALESCE(grouped.total_duration_ms, 0), \
+                COALESCE(grouped.max_added_at, 0), \
+                COALESCE(grouped.total_play_count, 0) \
+         FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
+         ORDER BY grouped.year DESC, TRIM(tracks.album) COLLATE NOCASE ASC \
+         LIMIT ?1 OFFSET ?2"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(
+        rusqlite::params![limit, window.offset, artist.trim()],
+        |row| {
+            Ok(AlbumSummary {
+                album: row.get(0)?,
+                album_artist: row.get(1)?,
+                representative_path: row.get(2)?,
+                track_count: row.get(3)?,
+                year: row.get(4)?,
+                total_duration_ms: row.get(5)?,
+                max_added_at: row.get(6)?,
+                total_play_count: row.get(7)?,
+            })
+        },
+    )?;
+    let rows = rows.collect::<Result<Vec<_>, _>>()?;
+    Ok(AlbumWindow {
+        total,
+        has_more: super::surface_browse::has_more(total, window, rows.len()),
+        rows,
+    })
+}
+
+/// Counts the exact album groups returned by [`query_artist_albums`] without
+/// materializing their summaries.
+pub fn query_artist_album_count(db: &Db, artist: &str) -> Result<i64, rusqlite::Error> {
+    let selection = artist_albums_selection(1);
+    db.conn().query_row(
+        &format!(
+            "SELECT COUNT(*) FROM ( \
+               SELECT 1 FROM tracks WHERE {selection} \
+               GROUP BY LOWER(TRIM(album)) \
+             )"
+        ),
+        rusqlite::params![artist.trim()],
+        |row| row.get(0),
+    )
+}
+
+/// Returns one counted, bounded window of an artist's present tracks whose
+/// album tag is blank after trimming.
+pub fn query_artist_untagged_tracks(
+    db: &Db,
+    artist: &str,
+    window: WindowRange,
+) -> Result<TrackWindow, rusqlite::Error> {
+    let total = query_artist_untagged_track_count(db, artist)?;
+    let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let projection = track_projection("", true);
+    let sql = format!(
+        "SELECT {projection} FROM tracks WHERE {PRESENT} \
+         AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE \
+         AND TRIM(album) = '' \
+         ORDER BY title COLLATE NOCASE ASC, path COLLATE NOCASE ASC, id ASC \
+         LIMIT ?1 OFFSET ?2"
+    );
+    let mut statement = db.conn().prepare(&sql)?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![limit, window.offset, artist.trim()],
+            row_to_track,
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(TrackWindow {
+        total,
+        has_more: super::surface_browse::has_more(total, window, rows.len()),
+        rows,
+    })
+}
+
+/// Counts the exact rows returned by [`query_artist_untagged_tracks`] without
+/// materializing their track projections.
+pub fn query_artist_untagged_track_count(db: &Db, artist: &str) -> Result<i64, rusqlite::Error> {
+    db.conn().query_row(
+        &format!(
+            "SELECT count(*) FROM tracks WHERE {PRESENT} \
+             AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+             AND TRIM(album) = ''"
+        ),
+        rusqlite::params![artist.trim()],
+        |row| row.get(0),
+    )
 }
 
 /// One row per case-insensitive effective album artist. Compilation and
@@ -404,13 +532,13 @@ pub fn query_artist_detail_albums(
     artist: &str,
 ) -> Result<Vec<ArtistAlbum>, rusqlite::Error> {
     let conn = db.conn();
+    let selection = artist_albums_selection(1);
     let sql = format!(
         "WITH grouped AS ( \
            SELECT LOWER(TRIM(album)) AS album_key, MIN(id) AS representative_id, \
                   COUNT(*) AS track_count, COALESCE(MAX(year), 0) AS year \
            FROM tracks \
-           WHERE {PRESENT} AND TRIM(album) <> '' \
-             AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+           WHERE {selection} \
            GROUP BY album_key \
          ) \
          SELECT TRIM(tracks.album), grouped.year, grouped.track_count, tracks.path \

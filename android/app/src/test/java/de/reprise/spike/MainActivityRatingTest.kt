@@ -51,7 +51,7 @@ class MainActivityRatingTest {
     }
 
     @Test
-    fun libraryHeartWritesFiveThenZeroAndBothSurviveAFreshActivityRead() {
+    fun libraryHeartWritesFiveThenZeroAndAFreshActivityReadsAnotherTracksStoredRating() {
         libraryHeart("Add to favourites").performClick()
         compose.waitForIdle()
 
@@ -59,17 +59,24 @@ class MainActivityRatingTest {
         assertEquals(5, application.trackRatings[1L])
         assertEquals(emptyList<LibraryTrack>(), application.currentQueue)
 
-        compose.onNodeWithText("Favourites").performClick()
-        favouriteTrack().assertIsDisplayed()
         libraryHeart("Remove from favourites").performClick()
         compose.waitForIdle()
 
         assertEquals(listOf(1L to 5, 1L to 0), application.controls.ratingRequests)
         assertEquals(0, application.trackRatings[1L])
-        favouriteTrack().assertDoesNotExist()
+        libraryHeart("Add to favourites").assertIsDisplayed()
 
+        // Track 2, not track 1: the view model's optimistic rating cache survives
+        // recreate(), so track 1 would show the heart even if nothing were read back.
+        application.trackRatings[2L] = 5
+        application.catalogSize += 1
         recreate()
-        favouriteTrack().assertDoesNotExist()
+        compose.onNode(
+            hasTestTag(TRACK_HEART_TAG) and
+                hasContentDescription("Remove from favourites") and
+                hasAnyAncestor(hasTestTag("library-track-row-2")) and
+                hasAnyAncestor(hasTestTag("library-page-TITLES")),
+        ).assertIsDisplayed()
     }
 
     @Test
@@ -194,11 +201,6 @@ class MainActivityRatingTest {
                 ),
         )
             .assertContentDescriptionEquals(description)
-
-    private fun favouriteTrack() = compose.onNode(
-        hasTestTag("library-track-row-1") and
-            hasAnyAncestor(hasTestTag("library-page-FAVOURITES")),
-    )
 
     private fun publishTrack(trackId: Long) {
         application.service.publish(m9bSnapshot(trackId))

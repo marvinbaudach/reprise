@@ -97,9 +97,8 @@ internal sealed interface LibraryScreenState {
      */
     data class Browse(
         val titles: LibraryWindow<LibraryTrack>,
-        val albums: LibraryWindow<LibraryAlbum>,
         val artists: LibraryWindow<LibraryArtist>,
-        val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
+        val albumCount: Long = 0,
         val message: String? = null,
         val folderUri: String? = null,
         val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
@@ -143,11 +142,9 @@ internal data class AlbumTrackList(
 
 internal data class ArtistTrackList(
     val artist: LibraryArtist,
-    val tracks: LibraryWindow<LibraryTrack>,
-) {
-    fun playbackSelection(startIndex: Int): PlaybackSelection =
-        PlaybackSelection(tracks.rows, startIndex)
-}
+    val albums: LibraryWindow<LibraryAlbum> = LibraryWindow.empty(),
+    val untaggedTracks: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
+)
 
 internal data class PlaybackSelection(
     val tracks: List<LibraryTrack>,

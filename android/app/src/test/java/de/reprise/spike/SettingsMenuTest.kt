@@ -27,8 +27,8 @@ class SettingsMenuTest {
         var folderChoices = 0
         val browse = LibraryScreenState.Browse(
             titles = LibraryWindow(total = 1_824, rows = emptyList(), hasMore = true),
-            albums = LibraryWindow(total = 143, rows = emptyList(), hasMore = true),
             artists = LibraryWindow(total = 92, rows = emptyList(), hasMore = true),
+            albumCount = 143,
         )
         compose.setContent {
             RepriseTheme(nocturneForTests, darkPalette = true) {
@@ -41,7 +41,7 @@ class SettingsMenuTest {
                     themeSelection = nocturneForTests,
                     selectTheme = {},
                     searchTitles = { _, _ -> browse.titles },
-                    listAlbums = { browse.albums },
+                    searchAlbums = { _, _ -> LibraryWindow.empty() },
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },

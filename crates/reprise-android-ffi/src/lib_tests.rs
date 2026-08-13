@@ -180,47 +180,6 @@ fn full_window() -> WindowRange {
 }
 
 #[test]
-fn browse_surface_lists_core_album_summaries_in_core_order() {
-    let (directory, library) = browse_library();
-    let blue_representatives = [
-        directory
-            .path()
-            .join("music/blue-1.flac")
-            .to_string_lossy()
-            .into_owned(),
-        directory
-            .path()
-            .join("music/blue-2.flac")
-            .to_string_lossy()
-            .into_owned(),
-    ];
-    let live_uri = directory
-        .path()
-        .join("music/blue-live.flac")
-        .to_string_lossy()
-        .into_owned();
-    let rows = library.list_albums(full_window()).unwrap().rows;
-
-    assert_eq!(
-        rows.iter()
-            .map(|row| (
-                row.album.as_str(),
-                row.album_artist.as_str(),
-                row.track_count,
-                row.year,
-                row.total_duration_ms,
-            ))
-            .collect::<Vec<_>>(),
-        vec![
-            ("Blue", "Joni Mitchell", 2, Some(1971), 2_320),
-            ("Blue", "Other Artist", 1, Some(2000), 1_160),
-        ]
-    );
-    assert!(blue_representatives.contains(&rows[0].representative_uri));
-    assert_eq!(rows[1].representative_uri, live_uri);
-}
-
-#[test]
 fn browse_surface_lists_core_artist_summaries_in_core_order() {
     let (directory, library) = browse_library();
     let joni_representatives = [

@@ -99,20 +99,22 @@ class TrackContextMenuTest {
                     LocalPlaybackControls provides controls,
                     LocalAlbumTrackIds provides { listOf(9L, 7L, 5L) },
                 ) {
-                    AlbumsTab(
+                    ArtistsTab(
                         surfaceLayout = SurfaceLayout.STACKED,
                         surfaceState = MobileSurfaceViewModel(),
-                        albums = LibraryWindow(1, listOf(album), false),
-                        searchText = "",
-                        selectedAlbum = null,
+                        artists = LibraryWindow.empty(),
+                        albumResults = LibraryWindow(1, listOf(album), false),
+                        searchText = "whole",
+                        selectedArtist = null,
                         playback = PlaybackUiState(),
+                        openArtist = {},
                         openAlbum = {},
-                        closeAlbum = {},
+                        closeArtist = {},
                         play = {},
-                        albumsRequestedOffset = null,
-                        albumRequestedOffset = null,
-                        loadMoreAlbums = {},
-                        loadMoreAlbumTracks = {},
+                        lastRequestedOffset = null,
+                        artistRequestedOffset = null,
+                        loadMoreArtists = {},
+                        loadMoreArtistTracks = {},
                     )
                 }
             }

@@ -49,8 +49,6 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
         compose.onNodeWithTag("library-destination-TITLES").assertIsNotSelected()
         compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
-        compose.onNodeWithTag("library-destination-ALBUMS").assertIsNotSelected()
-        compose.onNodeWithTag("library-destination-FAVOURITES").assertIsNotSelected()
         compose.onNodeWithTag("library-destination-QUEUE").assertIsNotSelected()
     }
 
@@ -74,8 +72,8 @@ class MobileBottomTabsTest {
 
     @Test
     fun theChosenDestinationIsRememberedAndSurvivesActivityRecreation() {
-        compose.onNodeWithTag("library-destination-ALBUMS").performClick()
-        assertEquals(BrowseTab.ALBUMS, application.rememberedDestination)
+        compose.onNodeWithTag("library-destination-ARTISTS").performClick()
+        assertEquals(BrowseTab.ARTISTS, application.rememberedDestination)
 
         compose.activityRule.scenario.recreate()
         shadowOf(Looper.getMainLooper()).idle()
@@ -83,8 +81,8 @@ class MobileBottomTabsTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
 
-        compose.onNodeWithTag("library-page-ALBUMS").assertIsDisplayed()
-        compose.onNodeWithTag("library-destination-ALBUMS").assertIsSelected()
+        compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
     }
 
     @Test

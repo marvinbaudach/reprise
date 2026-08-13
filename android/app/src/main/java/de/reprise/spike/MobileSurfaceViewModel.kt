@@ -27,12 +27,17 @@ internal fun surfaceLayoutFor(windowSizeClass: WindowSizeClass): SurfaceLayout =
 
 internal enum class LibraryListKey {
     TITLES,
-    ALBUMS,
     ARTISTS,
-    FAVOURITES,
     ALBUM_TRACKS,
+    ARTIST_ALBUMS,
+    ARTIST_SEARCH_ALBUMS,
     ARTIST_TRACKS,
     UPCOMING,
+}
+
+internal enum class OpenAlbumOrigin {
+    ARTIST_SEARCH,
+    ARTIST_DETAIL,
 }
 
 /**
@@ -52,9 +57,8 @@ internal enum class LibraryListKey {
  */
 internal data class LoadedLibraryWindows(
     val titles: LibraryWindow<LibraryTrack>,
-    val albums: LibraryWindow<LibraryAlbum>,
     val artists: LibraryWindow<LibraryArtist>,
-    val favourites: LibraryWindow<LibraryTrack> = LibraryWindow.empty(),
+    val artistSearchAlbums: LibraryWindow<LibraryAlbum> = LibraryWindow.empty(),
     val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
     val searchText: String = "",
     /**
@@ -65,6 +69,7 @@ internal data class LoadedLibraryWindows(
      */
     val openAlbum: AlbumTrackList?,
     val openArtist: ArtistTrackList? = null,
+    val openAlbumOrigin: OpenAlbumOrigin? = null,
 )
 
 /**
@@ -79,13 +84,11 @@ internal data class LoadedLibraryWindows(
  */
 internal data class LibraryCatalogShape(
     val titles: Long,
-    val albums: Long,
     val artists: Long,
 )
 
 internal fun LibraryScreenState.Browse.catalogShape() = LibraryCatalogShape(
     titles = titles.total,
-    albums = albums.total,
     artists = artists.total,
 )
 
@@ -266,7 +269,20 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     /** Paged-in windows while both their catalog and refinement still match. */
     fun loadedWindows(shape: LibraryCatalogShape): LoadedLibraryWindows? =
-        loadedWindows?.takeIf { loadedShape == shape && it.searchText == searchText }
+        loadedWindows
+            ?.takeIf { loadedShape == shape && it.searchText == searchText }
+            ?.let { windows ->
+                if (
+                    selectedTab == BrowseTab.ARTISTS &&
+                    windows.openAlbumOrigin == OpenAlbumOrigin.ARTIST_DETAIL &&
+                    windows.openAlbum != null &&
+                    windows.openArtist == null
+                ) {
+                    windows.copy(openAlbum = null)
+                } else {
+                    windows
+                }
+            }
 
     fun keepLoadedWindows(shape: LibraryCatalogShape, windows: LoadedLibraryWindows) {
         loadedShape = shape

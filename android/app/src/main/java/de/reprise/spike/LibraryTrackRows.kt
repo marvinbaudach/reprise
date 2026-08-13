@@ -162,12 +162,12 @@ private fun TrackListContent.queueRowKey(): String = when (this) {
     is TrackListContent.Continuation -> "load-window-${request.offset}"
 }
 
-private fun LibraryListKey.testTag(): String = when (this) {
+internal fun LibraryListKey.testTag(): String = when (this) {
     LibraryListKey.TITLES -> "library-titles-list"
-    LibraryListKey.ALBUMS -> "library-albums-list"
     LibraryListKey.ARTISTS -> "library-artists-list"
-    LibraryListKey.FAVOURITES -> "library-favourites-list"
     LibraryListKey.ALBUM_TRACKS -> "library-album-tracks-list"
+    LibraryListKey.ARTIST_ALBUMS -> "library-artist-albums-list"
+    LibraryListKey.ARTIST_SEARCH_ALBUMS -> "library-artist-search-albums-list"
     LibraryListKey.ARTIST_TRACKS -> "library-artist-tracks-list"
     LibraryListKey.UPCOMING -> "now-playing-queue"
 }
@@ -178,7 +178,7 @@ internal enum class TrackRowSubtitle {
 }
 
 @Composable
-private fun TrackListItem(
+internal fun TrackListItem(
     content: TrackListContent,
     surfaceState: MobileSurfaceViewModel,
     metrics: LibraryFrameMetrics,
