@@ -584,6 +584,7 @@ internal fun BrowseScreen(
                                     } else {
                                         artistAlbumsRequestedOffset
                                     },
+                                    albumRequestedOffset = albumRequestedOffset,
                                     loadMoreArtists = ::loadMoreArtists,
                                     loadMoreArtistTracks = ::loadMoreArtistTracks,
                                     loadMoreArtistAlbums = if (selectedArtist == null) {

@@ -131,6 +131,7 @@ internal fun AlbumDetailPage(
     playback: PlaybackUiState,
     closeAlbum: () -> Unit,
     play: (Int) -> Unit,
+    albumRequestedOffset: Long?,
     loadMoreAlbumTracks: (LibraryWindowRange) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -162,7 +163,7 @@ internal fun AlbumDetailPage(
                 listKey = LibraryListKey.ALBUM_TRACKS,
                 tracks = selectedAlbum.tracks,
                 playback = playback,
-                lastRequestedOffset = null,
+                lastRequestedOffset = albumRequestedOffset,
                 play = play,
                 loadMore = loadMoreAlbumTracks,
             )
@@ -189,6 +190,7 @@ internal fun ArtistsTab(
     lastRequestedOffset: Long?,
     artistRequestedOffset: Long?,
     artistAlbumsRequestedOffset: Long? = null,
+    albumRequestedOffset: Long? = null,
     loadMoreArtists: (LibraryWindowRange) -> Unit,
     loadMoreArtistTracks: (LibraryWindowRange) -> Unit,
     loadMoreArtistAlbums: (LibraryWindowRange) -> Unit = {},
@@ -202,6 +204,7 @@ internal fun ArtistsTab(
             playback = playback,
             closeAlbum = closeAlbum,
             play = playAlbum,
+            albumRequestedOffset = albumRequestedOffset,
             loadMoreAlbumTracks = loadMoreAlbumTracks,
         )
         return
