@@ -10,14 +10,6 @@ use reprise_core::library::settings;
 
 use super::strings;
 
-fn initial_visibility(db: &Db) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(
-        db,
-        settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
-        false,
-    )
-}
-
 fn persist_completed(db: &Db, completed: &Cell<bool>) -> bool {
     if completed.get() {
         return true;
@@ -71,7 +63,11 @@ pub(in crate::ui) fn build(
     db: &Rc<Db>,
     on_review: impl Fn() + 'static,
 ) -> Option<ArtworkConsentBanner> {
-    match initial_visibility(db) {
+    match settings::get_bool(
+        db,
+        settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+        false,
+    ) {
         Ok(true) => {}
         Ok(false) => return None,
         Err(error) => {
@@ -151,12 +147,17 @@ mod tests {
 
     use crate::ui::strings;
 
-    use super::{build, initial_visibility, persist_completed};
+    use super::{build, persist_completed};
 
     #[test]
     fn src_11_artwork_consent_notice_is_pending_only_until_consumed() {
         let untouched = Db::open_in_memory().unwrap();
-        assert!(!initial_visibility(&untouched).unwrap());
+        assert!(!settings::get_bool(
+            &untouched,
+            settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+            false,
+        )
+        .unwrap());
 
         let repaired = Db::open_in_memory().unwrap();
         settings::set_bool(
@@ -165,14 +166,29 @@ mod tests {
             true,
         )
         .unwrap();
-        assert!(initial_visibility(&repaired).unwrap());
+        assert!(settings::get_bool(
+            &repaired,
+            settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+            false,
+        )
+        .unwrap());
 
         let completed = Cell::new(false);
         assert!(persist_completed(&repaired, &completed));
         assert!(completed.get());
-        assert!(!initial_visibility(&repaired).unwrap());
+        assert!(!settings::get_bool(
+            &repaired,
+            settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+            false,
+        )
+        .unwrap());
         assert!(persist_completed(&repaired, &completed));
-        assert!(!initial_visibility(&repaired).unwrap());
+        assert!(!settings::get_bool(
+            &repaired,
+            settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+            false,
+        )
+        .unwrap());
     }
 
     #[test]
@@ -225,7 +241,12 @@ mod tests {
 
         banner.banner.emit_by_name::<()>("button-clicked", &[]);
         assert!(reviewed.get());
-        assert!(!initial_visibility(&review_db).unwrap());
+        assert!(!settings::get_bool(
+            &review_db,
+            settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+            false,
+        )
+        .unwrap());
         assert!(!banner.banner.is_revealed());
         assert!(!banner.widget().is_visible());
         assert!(build(&review_db, || {}).is_none());
@@ -239,7 +260,12 @@ mod tests {
         .unwrap();
         let banner = build(&dismiss_db, || {}).expect("second inherited consent shows the notice");
         banner.dismiss.emit_clicked();
-        assert!(!initial_visibility(&dismiss_db).unwrap());
+        assert!(!settings::get_bool(
+            &dismiss_db,
+            settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+            false,
+        )
+        .unwrap());
         assert!(!banner.banner.is_revealed());
         assert!(!banner.widget().is_visible());
         assert!(build(&dismiss_db, || {}).is_none());
