@@ -165,6 +165,11 @@ impl StatsBandCard {
         &self.root
     }
 
+    #[cfg(test)]
+    pub(super) fn artwork_generation_for_test(&self) -> u64 {
+        self.cover_generation.get()
+    }
+
     pub(in crate::ui) fn set_data(
         &self,
         ranked: &RankedGroup,

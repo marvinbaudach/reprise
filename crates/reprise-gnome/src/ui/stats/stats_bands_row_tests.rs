@@ -121,14 +121,17 @@ fn an_already_rendered_row_requests_portraits_after_artwork_is_enabled() {
         }
     });
     let row = StatsBandsRow::new();
-    row.set_artist_portrait_runtime(&runtime);
-    let spotlight = fixture(4);
+    let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    let image = StatsArtistImage::for_test(loader, |_| None);
+    image.set_portrait_runtime(runtime.clone());
+    row.set_artist_image(&image);
+    let artists = fixture(4);
 
-    row.set_data(&spotlight);
+    row.set_data(&artists, 60, SortBy::Time);
     assert_eq!(requests.load(Ordering::SeqCst), 0);
 
     runtime.set_enabled_for_test(true);
-    row.set_data(&spotlight);
+    row.set_data(&artists, 60, SortBy::Time);
     assert!(
         crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
             requests.load(Ordering::SeqCst) == 5

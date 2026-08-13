@@ -91,16 +91,6 @@ impl LyricsBatch {
         })
     }
 
-    /// Re-publishes the live gate and starts only an off-to-on transition.
-    #[cfg(test)]
-    pub(in crate::ui) fn recompute_enabled(self: &Rc<Self>) {
-        let was_enabled = self.permission_enabled();
-        let is_enabled = self.republish_enabled();
-        if !was_enabled && is_enabled {
-            self.start();
-        }
-    }
-
     pub(in crate::ui) fn republish_enabled(&self) -> bool {
         let allowed = network_allowed(&self.conn);
         self.enabled.store(allowed, Ordering::Relaxed);
@@ -109,6 +99,11 @@ impl LyricsBatch {
 
     pub(in crate::ui) fn permission_enabled(&self) -> bool {
         self.enabled.load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn generation_for_test(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
     }
 
     /// Republishes the live gate and answers whether lyrics work may run at all.

@@ -48,6 +48,47 @@ fn section_spacing_stays_in_the_compact_design_range() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn net_6_stats_rebinds_the_mapped_snapshot_and_keeps_hidden_pages_cold() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    seed_one_play(&conn);
+    view.wire_year_selector(&conn);
+    let snapshot = view.current_snapshot.borrow().clone();
+    let before_hidden = view.render.bands_card.artwork_generations_for_test();
+
+    view.refresh_visible_artwork();
+    let after_hidden = view.render.bands_card.artwork_generations_for_test();
+    assert_eq!(
+        before_hidden, after_hidden,
+        "a hidden Stats page must stay cold"
+    );
+
+    let window = adw::Window::builder()
+        .default_width(1_000)
+        .default_height(700)
+        .content(view.widget())
+        .build();
+    window.present();
+    wait_for_layout();
+    let before_mapped = view.render.bands_card.artwork_generations_for_test();
+
+    view.refresh_visible_artwork();
+
+    let after_mapped = view.render.bands_card.artwork_generations_for_test();
+    assert_eq!(view.current_snapshot.borrow().as_ref(), snapshot.as_ref());
+    assert_eq!(before_mapped.len(), after_mapped.len());
+    assert!(
+        before_mapped
+            .iter()
+            .zip(&after_mapped)
+            .all(|(before, after)| after == &(before + 1)),
+        "the visible bands row must be rebound from current_snapshot"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn stats_10_no_clock_highlights_or_customize_widgets() {
     gtk4::init().unwrap();
     let (view, _) = view_and_conn();

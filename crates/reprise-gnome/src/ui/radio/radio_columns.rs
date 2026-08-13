@@ -473,8 +473,15 @@ mod tests {
     fn artwork_permission_rebinds_visible_radio_images_without_resetting_the_model() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
+        let conn = crate::test_db::open().unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, false)
+            .unwrap();
+        crate::ui::podcasts::source_image::recompute_gate(&conn);
+        assert!(!crate::ui::podcasts::source_image::gate_open());
         let store = gtk4::gio::ListStore::new::<RadioObject>();
-        store.append(&RadioObject::new(station()));
+        let mut row = station();
+        row.favicon_url = Some("https://images.test/radio-gate-transition.png".into());
+        store.append(&RadioObject::new(row));
         let selection = gtk4::SingleSelection::new(Some(store));
         let view = gtk4::ColumnView::new(Some(selection.clone()));
         let live: LiveState = Rc::new(RadioLiveState::default);
@@ -500,6 +507,10 @@ mod tests {
         assert_eq!(before.len(), 1);
         let selected_before = selection.selected();
 
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
+            .unwrap();
+        crate::ui::podcasts::source_image::recompute_gate(&conn);
+        assert!(crate::ui::podcasts::source_image::gate_open());
         artwork_cells.reapply();
         crate::ui::source_context_surface::settle_layout();
 

@@ -13,15 +13,22 @@ enum PermissionEffect {
     Stop,
 }
 
-fn effect_for_transition(
+fn effect_for_transition(was_allowed: bool, is_allowed: bool) -> PermissionEffect {
+    match (was_allowed, is_allowed) {
+        (true, false) => PermissionEffect::Stop,
+        (false, true) => PermissionEffect::Start,
+        _ => PermissionEffect::None,
+    }
+}
+
+fn artwork_effect_for_transition(
     was_allowed: bool,
     is_allowed: bool,
     connectivity: Connectivity,
 ) -> PermissionEffect {
-    match (was_allowed, is_allowed, connectivity) {
-        (true, false, _) => PermissionEffect::Stop,
-        (false, true, Connectivity::Online) => PermissionEffect::Start,
-        _ => PermissionEffect::None,
+    match (effect_for_transition(was_allowed, is_allowed), connectivity) {
+        (PermissionEffect::Start, Connectivity::Offline) => PermissionEffect::None,
+        (effect, _) => effect,
     }
 }
 
@@ -55,16 +62,12 @@ impl PreferencesContext {
         }
         let lyrics_is_allowed = self.lyrics_batch.republish_enabled();
 
-        self.apply_artwork_effect(effect_for_transition(
+        self.apply_artwork_effect(artwork_effect_for_transition(
             artwork_was_allowed,
             self.cover_download.enabled.get(),
             self.connectivity.get(),
         ));
-        match effect_for_transition(
-            lyrics_was_allowed,
-            lyrics_is_allowed,
-            self.connectivity.get(),
-        ) {
+        match effect_for_transition(lyrics_was_allowed, lyrics_is_allowed) {
             PermissionEffect::Start => self.lyrics_batch.start(),
             PermissionEffect::Stop => self.lyrics_batch.cancel(),
             PermissionEffect::None => {}
@@ -89,16 +92,16 @@ impl PreferencesContext {
 mod tests {
     use reprise_core::connectivity::Connectivity;
 
-    use super::{effect_for_transition, PermissionEffect};
+    use super::{artwork_effect_for_transition, effect_for_transition, PermissionEffect};
 
     #[test]
     fn an_online_off_to_on_transition_starts_once() {
         assert_eq!(
-            effect_for_transition(false, true, Connectivity::Online),
+            artwork_effect_for_transition(false, true, Connectivity::Online),
             PermissionEffect::Start
         );
         assert_eq!(
-            effect_for_transition(true, true, Connectivity::Online),
+            artwork_effect_for_transition(true, true, Connectivity::Online),
             PermissionEffect::None
         );
     }
@@ -106,7 +109,7 @@ mod tests {
     #[test]
     fn an_offline_off_to_on_transition_waits_without_failure() {
         assert_eq!(
-            effect_for_transition(false, true, Connectivity::Offline),
+            artwork_effect_for_transition(false, true, Connectivity::Offline),
             PermissionEffect::None
         );
     }
@@ -114,8 +117,13 @@ mod tests {
     #[test]
     fn an_on_to_off_transition_stops_even_while_offline() {
         assert_eq!(
-            effect_for_transition(true, false, Connectivity::Offline),
+            artwork_effect_for_transition(true, false, Connectivity::Offline),
             PermissionEffect::Stop
         );
+    }
+
+    #[test]
+    fn offline_lyrics_enable_still_starts_the_batch() {
+        assert_eq!(effect_for_transition(false, true), PermissionEffect::Start);
     }
 }

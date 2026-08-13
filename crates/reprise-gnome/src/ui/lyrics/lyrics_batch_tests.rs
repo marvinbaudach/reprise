@@ -21,36 +21,12 @@ fn net_1a_the_batch_gate_follows_the_global_online_sources_switch() {
     assert!(batch.enabled.load(Ordering::Relaxed));
 
     reprise_core::online_sources::set_enabled(&conn, false).unwrap();
-    batch.recompute_enabled();
+    batch.republish_enabled();
     assert!(!batch.enabled.load(Ordering::Relaxed));
 
     reprise_core::online_sources::set_enabled(&conn, true).unwrap();
-    batch.recompute_enabled();
+    batch.republish_enabled();
     assert!(batch.enabled.load(Ordering::Relaxed));
-}
-
-#[test]
-fn lyr_6_enabling_the_module_starts_the_batch_once_and_nothing_else_does() {
-    let conn = Rc::new(crate::test_db::open().unwrap());
-    let batch = LyricsBatch::new(&conn);
-    let starts = || batch.generation.load(Ordering::Relaxed);
-    assert!(!batch.enabled.load(Ordering::Relaxed));
-
-    batch.recompute_enabled();
-    assert_eq!(starts(), 0);
-
-    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
-        .unwrap();
-    batch.recompute_enabled();
-    assert_eq!(starts(), 1);
-
-    batch.recompute_enabled();
-    assert_eq!(starts(), 1);
-
-    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, false)
-        .unwrap();
-    batch.recompute_enabled();
-    assert_eq!(starts(), 1);
 }
 
 #[test]

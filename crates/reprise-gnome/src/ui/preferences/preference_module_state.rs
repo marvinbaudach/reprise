@@ -83,4 +83,14 @@ impl PreferencesContext {
         self.refresh_online_module_state(reason);
         Ok(())
     }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn set_module_enabled_for_test(
+        &self,
+        descriptor: &'static ModuleDescriptor,
+        enabled: bool,
+        reason: &'static str,
+    ) -> Result<(), String> {
+        self.set_module_enabled(descriptor, enabled, reason)
+    }
 }

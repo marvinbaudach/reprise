@@ -48,6 +48,11 @@ use crate::ui::strings;
 
 #[path = "podcasts_view_actions.rs"]
 mod actions;
+#[path = "podcasts_artwork_refresh.rs"]
+mod artwork_refresh;
+#[cfg(test)]
+#[path = "podcasts_artwork_refresh_tests.rs"]
+mod artwork_refresh_tests;
 #[path = "podcasts_connectivity_ui.rs"]
 mod connectivity_ui;
 #[path = "podcasts_view_copy.rs"]
@@ -128,6 +133,7 @@ pub(in crate::ui) struct PodcastsView {
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
     selection_widgets: RefCell<BTreeMap<i64, podcasts_groups::SelectionRowWidgets>>,
     channel_widgets: RefCell<BTreeMap<i64, podcasts_groups::ChannelRowWidgets>>,
+    artwork_rebinds: RefCell<Vec<podcasts_groups::ArtworkRebind>>,
     scroller: gtk4::ScrolledWindow,
     last_scroll_activity: Cell<Option<std::time::Instant>>,
     reveal_animation: Rc<RefCell<Option<adw::TimedAnimation>>>,
@@ -236,6 +242,7 @@ impl PodcastsView {
             download_widgets: RefCell::new(BTreeMap::new()),
             selection_widgets: RefCell::new(BTreeMap::new()),
             channel_widgets: RefCell::new(BTreeMap::new()),
+            artwork_rebinds: RefCell::new(Vec::new()),
             scroller,
             last_scroll_activity: Cell::new(None),
             reveal_animation: Rc::new(RefCell::new(None)),
@@ -345,14 +352,6 @@ impl PodcastsView {
         }
     }
 
-    /// Rebinds the rows already held by a visible source page so their image
-    /// requests see a newly opened Artwork gate. Hidden pages stay cold.
-    pub(in crate::ui) fn refresh_visible_artwork(&self) {
-        if self.root.is_mapped() {
-            self.render();
-        }
-    }
-
     fn wire_controls(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         self.refresh_button.connect_clicked(move |_| {
@@ -425,6 +424,7 @@ impl PodcastsView {
         self.download_widgets.replace(rendered_widgets.downloads);
         self.selection_widgets.replace(rendered_widgets.selection);
         self.channel_widgets.replace(rendered_widgets.channels);
+        self.artwork_rebinds.replace(rendered_widgets.artwork);
         // `G2` (design 6a): the header line is a projection over the
         // unfiltered `groups`, not `rendered_groups` — it stays a stable
         // library overview instead of jittering with the active filter.
