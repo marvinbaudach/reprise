@@ -8,6 +8,8 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::db::Db;
 
+use crate::ui::podcasts::{scope_status, RefreshWindow, ScopeStatus};
+
 const REFRESH_TIMER_SECONDS: u32 = 60 * 60;
 
 pub(in crate::ui) fn arm(
@@ -26,8 +28,8 @@ pub(in crate::ui) fn arm(
                 return false;
             };
             let metered = gio::NetworkMonitor::default().is_network_metered();
-            let (subscription_count, due) = decision_inputs(&conn, &db_path);
-            if runtime.automatic_refresh_allowed(subscription_count, metered, due) {
+            let status = decision_inputs(&conn, &db_path);
+            if runtime.automatic_refresh_allowed(status.count, metered, status.due) {
                 view.request_refresh(false);
             }
             true
@@ -49,31 +51,32 @@ pub(in crate::ui) fn arm(
     });
 }
 
-fn decision_inputs(db: &Db, db_path: &Path) -> (usize, bool) {
+fn decision_inputs(db: &Db, db_path: &Path) -> ScopeStatus {
     let subscriptions = match reprise_core::podcasts::store::active_subscriptions(db) {
         Ok(subscriptions) => subscriptions,
         Err(error) => {
             tracing::warn!(%error, "could not inspect podcast refresh schedule");
-            return (0, false);
+            return ScopeStatus::default();
         }
     };
     let config = match reprise_core::podcasts::config::load(db) {
         Ok(config) => config,
         Err(error) => {
             tracing::warn!(%error, "could not read podcast refresh interval");
-            return (subscriptions.len(), false);
+            return ScopeStatus {
+                count: subscriptions.len(),
+                due: false,
+            };
         }
     };
-    let now = chrono::Utc::now().timestamp();
-    let seed = db_path.to_string_lossy();
-    let jitter = reprise_core::podcasts::refresh::jitter_seconds(&seed);
-    let due = subscriptions.iter().any(|subscription| {
-        reprise_core::podcasts::refresh::refresh_due_with_hours(
-            subscription.last_fetch_at,
-            now,
-            config.refresh_hours,
-            jitter,
-        )
-    });
-    (subscriptions.len(), due)
+    let jitter = reprise_core::podcasts::refresh::jitter_seconds(&db_path.to_string_lossy());
+    scope_status(
+        &subscriptions,
+        None,
+        RefreshWindow::Hours {
+            refresh_hours: config.refresh_hours,
+            jitter_seconds: jitter,
+        },
+        chrono::Utc::now().timestamp(),
+    )
 }

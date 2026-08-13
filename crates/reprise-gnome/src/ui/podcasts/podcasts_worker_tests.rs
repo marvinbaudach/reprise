@@ -139,7 +139,13 @@ fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
         9
     );
     assert_eq!(
-        request_generation(9, PodcastsOperation::Refresh { force: true }),
+        request_generation(
+            9,
+            PodcastsOperation::Refresh {
+                policy: podcasts::refresh::RefreshPolicy::Force,
+                kind: None,
+            },
+        ),
         10
     );
     assert_eq!(

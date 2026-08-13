@@ -329,7 +329,7 @@ fn refresh_podcasts(
         &reprise_core::podcasts::pipeline::HttpFeedFetcher,
         &ytdlp,
         now_secs(),
-        true,
+        reprise_core::podcasts::refresh::RefreshRequest::force(),
         &download_root,
     )
     .map_err(|error| {
