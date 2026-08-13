@@ -74,6 +74,10 @@ fn sidebar_headings_and_surfaces_share_one_column_edge() {
         &crate::ui::strings::text(crate::ui::strings::SIDEBAR_SECTION_ISSUES),
     );
     let devices_heading = descendant_label(&device_section, "DEVICES");
+    let device_heading_content = devices_heading
+        .parent()
+        .and_downcast::<gtk4::Box>()
+        .expect("the Devices label lives in the heading content box");
     let device_card = descendant_with_css_class(&device_section, "device-card");
 
     let text_edges = [
@@ -89,9 +93,16 @@ fn sidebar_headings_and_surfaces_share_one_column_edge() {
         + navigation_content.spacing() as f32;
     let navigation_surface_edge = left_edge(&library_row, root);
     let device_surface_edge = left_edge(&device_card, root);
+    let navigation_content_right_edge = right_edge(&navigation_content, root);
+    let device_heading_content_right_edge = right_edge(&device_heading_content, root);
+    let navigation_surface_right_edge = right_edge(&library_row, root);
+    let device_surface_right_edge = right_edge(&device_card, root);
     eprintln!("sidebar text edges: {text_edges:?}");
     eprintln!(
-        "sidebar surface edges: navigation={navigation_surface_edge:.1}, device={device_surface_edge:.1}"
+        "sidebar content right edges: navigation={navigation_content_right_edge:.1}, device heading={device_heading_content_right_edge:.1}"
+    );
+    eprintln!(
+        "sidebar surface edges: navigation=({navigation_surface_edge:.1}, {navigation_surface_right_edge:.1}), device=({device_surface_edge:.1}, {device_surface_right_edge:.1})"
     );
     for (name, edge) in text_edges {
         assert!(
@@ -103,10 +114,18 @@ fn sidebar_headings_and_surfaces_share_one_column_edge() {
         (navigation_title_edge - expected_title_edge).abs() <= 1.0,
         "Music title starts at {navigation_title_edge:.1}px, but its icon and spacing place it at {expected_title_edge:.1}px"
     );
+    assert!(
+        (device_heading_content_right_edge - navigation_content_right_edge).abs() <= 1.0,
+        "device heading content ends at {device_heading_content_right_edge:.1}px, but navigation trailing content ends at {navigation_content_right_edge:.1}px"
+    );
 
     assert!(
         (device_surface_edge - navigation_surface_edge).abs() <= 1.0,
         "device card starts at {device_surface_edge:.1}px, but navigation surfaces start at {navigation_surface_edge:.1}px"
+    );
+    assert!(
+        (device_surface_right_edge - navigation_surface_right_edge).abs() <= 1.0,
+        "device card ends at {device_surface_right_edge:.1}px, but navigation surfaces end at {navigation_surface_right_edge:.1}px"
     );
 
     window.close();
@@ -166,6 +185,14 @@ fn left_edge(widget: &impl IsA<gtk4::Widget>, root: &impl IsA<gtk4::Widget>) -> 
         .compute_bounds(root.upcast_ref())
         .expect("the sidebar child is allocated")
         .x()
+}
+
+fn right_edge(widget: &impl IsA<gtk4::Widget>, root: &impl IsA<gtk4::Widget>) -> f32 {
+    let bounds = widget
+        .upcast_ref::<gtk4::Widget>()
+        .compute_bounds(root.upcast_ref())
+        .expect("the sidebar child is allocated");
+    root.width() as f32 - (bounds.x() + bounds.width())
 }
 
 #[test]

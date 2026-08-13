@@ -18,6 +18,9 @@ use crate::ui::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET}
 const ARROW_CLOSED: &str = "pan-end-symbolic";
 const ARROW_OPEN: &str = "pan-down-symbolic";
 const HEADING_HORIZONTAL_PADDING: i32 = 8;
+// A negative container margin would trigger a GTK runtime critical.
+const _: () = assert!(SIDEBAR_SURFACE_INSET >= CARD_HORIZONTAL_MARGIN);
+const DEVICE_CONTAINER_HORIZONTAL_MARGIN: i32 = SIDEBAR_SURFACE_INSET - CARD_HORIZONTAL_MARGIN;
 
 /// The sidebar's device section.
 ///
@@ -62,11 +65,11 @@ impl DeviceSection {
         heading.set_margin_end(SIDEBAR_TEXT_INSET - HEADING_HORIZONTAL_PADDING);
 
         let present = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        present.set_margin_start(SIDEBAR_SURFACE_INSET - CARD_HORIZONTAL_MARGIN);
-        present.set_margin_end(SIDEBAR_SURFACE_INSET - CARD_HORIZONTAL_MARGIN);
+        present.set_margin_start(DEVICE_CONTAINER_HORIZONTAL_MARGIN);
+        present.set_margin_end(DEVICE_CONTAINER_HORIZONTAL_MARGIN);
         let history = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        history.set_margin_start(SIDEBAR_SURFACE_INSET - CARD_HORIZONTAL_MARGIN);
-        history.set_margin_end(SIDEBAR_SURFACE_INSET - CARD_HORIZONTAL_MARGIN);
+        history.set_margin_start(DEVICE_CONTAINER_HORIZONTAL_MARGIN);
+        history.set_margin_end(DEVICE_CONTAINER_HORIZONTAL_MARGIN);
         let remembered = gtk4::Revealer::builder()
             .transition_type(gtk4::RevealerTransitionType::SlideDown)
             .transition_duration(crate::ui::motion::STANDARD_MS)
