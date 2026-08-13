@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use super::*;
+use super::{RefreshRequest as R, *};
 use crate::podcasts::store::{self, NewSubscription};
 
 fn conn() -> Db {
@@ -180,7 +180,7 @@ fn pod_18_a_date_arriving_later_fills_an_episode_that_had_none() {
             published_at: 1_785_225_600,
         },
         20,
-        true,
+        R::force(),
         directory.path(),
     )
     .unwrap();
@@ -236,7 +236,7 @@ fn pod_18_an_exact_feed_date_is_not_overwritten_by_an_approximate_one() {
             published_at: 1_785_312_000,
         },
         20,
-        true,
+        R::force(),
         directory.path(),
     )
     .unwrap();
@@ -315,7 +315,15 @@ fn pod_10_initial_youtube_window_uses_the_official_long_form_feed() {
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let summary = refresh_to_root(&conn, &feed, &NeverYoutube, 10, true, directory.path()).unwrap();
+    let summary = refresh_to_root(
+        &conn,
+        &feed,
+        &NeverYoutube,
+        10,
+        R::force(),
+        directory.path(),
+    )
+    .unwrap();
 
     assert_eq!(summary.episodes_inserted, 2);
     assert_eq!(
@@ -381,8 +389,15 @@ fn handle_subscription_resolves_channel_identity_before_refresh() {
     };
     let directory = tempfile::tempdir().unwrap();
 
-    let summary =
-        refresh_to_root(&conn, &feed, &HandleYoutube, 10, true, directory.path()).unwrap();
+    let summary = refresh_to_root(
+        &conn,
+        &feed,
+        &HandleYoutube,
+        10,
+        R::force(),
+        directory.path(),
+    )
+    .unwrap();
 
     assert_eq!(summary.episodes_inserted, 2);
     assert_eq!(
@@ -504,7 +519,7 @@ fn a_channel_that_cannot_be_resolved_fails_alone_and_never_aborts_the_batch() {
         &PlainRssFeed,
         &UnresolvableHandle,
         10,
-        true,
+        R::force(),
         directory.path(),
     )
     .expect("one unresolvable channel must not abort the whole refresh");
@@ -607,7 +622,7 @@ fn resolved_handle_falls_back_to_dated_flat_playlist_when_atom_is_unavailable() 
         &UnavailableOfficialFeed,
         &DatedFlatPlaylist,
         10,
-        true,
+        R::force(),
         directory.path(),
     )
     .unwrap();
@@ -720,7 +735,7 @@ fn net_1a_disabled_youtube_module_skips_refresh_without_fetching() {
         &FakeFeedNeverCalled,
         &NeverYoutube,
         10,
-        true,
+        R::force(),
         directory.path(),
     )
     .unwrap();
