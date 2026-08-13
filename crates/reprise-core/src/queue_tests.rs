@@ -6,6 +6,8 @@
 //! (a pure move, not a rewrite).
 
 use super::*;
+use crate::playback_history::{HistoryEntry, PlaybackHistory};
+use crate::up_next::QueueItem;
 use std::collections::HashSet;
 
 // Test 1: Empty queue
@@ -579,14 +581,26 @@ fn jump_to_last_order_position_after_exhaustion_resumes_the_last_track() {
     let mut q = Queue::new();
     q.set_tracks(vec![10, 20, 30], 0);
     q.set_repeat(Repeat::Off);
+    let sequence = q.sequence_identity();
+    let mut history = PlaybackHistory::default();
 
-    // Advance to the end and exhaust the queue
-    q.advance_auto(); // -> 20
-    q.advance_auto(); // -> 30
-    q.advance_auto(); // -> None (exhausted)
+    while let Some(track_id) = q.current() {
+        history.record(HistoryEntry {
+            item: QueueItem::Track(track_id),
+            replay_uri: None,
+            context_pos: q.current_order_position(),
+            sequence,
+            from_up_next: false,
+        });
+        q.advance_auto();
+    }
     assert_eq!(q.current(), None);
 
-    let result = q.jump_to_order_position(q.len() - 1);
+    let target = history.current().expect("the last heard track");
+    let position = target
+        .playhead_in(q.sequence_identity())
+        .expect("the exhausted queue still has the recorded context");
+    let result = q.jump_to_order_position(position);
     assert_eq!(
         result,
         Some(30),

@@ -278,11 +278,10 @@ mod tests {
 
     #[test]
     fn play_14_an_empty_history_still_advertises_can_go_previous() {
-        let queue = context(&[10, 20], 0);
-        let mut state = HistoryState::default();
-        note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
-        assert_eq!(state.history.back_len(), 0);
-        assert!(!queue.is_empty());
+        let mirror = include_str!("../mpris_mirror.rs");
+        let queue_projection = ["can_prev: queue", "_has_tracks"].concat();
+
+        assert!(mirror.contains(&queue_projection));
     }
 
     #[test]
@@ -333,6 +332,23 @@ mod tests {
 
     #[test]
     fn play_14_the_controller_exposes_the_forward_history_transport() {
-        let _transport = PlayerController::forward_from_history;
+        let implementation = include_str!("queue_transport.rs");
+        let next = implementation
+            .split("pub(in crate::ui) fn next")
+            .nth(1)
+            .expect("next implementation")
+            .split("pub fn play_from_view")
+            .next()
+            .expect("next body");
+        let history = next
+            .find("self.forward_from_history()")
+            .expect("history route");
+        let queue = next.find("self.advance_playback").expect("queue route");
+
+        assert!(
+            history < queue,
+            "Forward history must short-circuit queue advance"
+        );
+        assert!(next[history..queue].contains("return;"));
     }
 }
