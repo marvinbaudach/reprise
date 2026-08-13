@@ -202,7 +202,10 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(action_labels, ["Not now", "Review in Preferences"]);
+    }
 
+    #[test]
+    fn mtp_65_discovery_strip_has_a_named_surface_and_bottom_edge() {
         let css = crate::ui::style::app_css_for_test();
         let rule = css
             .split(".reprise-online-discovery-strip {")
