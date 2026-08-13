@@ -85,6 +85,7 @@ pub mod musicbrainz;
 pub mod online_sources;
 pub mod perf_report;
 pub mod playback;
+pub mod playback_history;
 pub mod podcasts;
 pub mod provenance;
 pub mod queries;
