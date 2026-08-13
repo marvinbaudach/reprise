@@ -32,7 +32,8 @@ const TOTAL: u32 = 1_821;
 fn input(rows: usize, now_ms: u64) -> TickInput {
     TickInput {
         suspicious: rows == 0,
-        rows,
+        row_widgets_present: rows,
+        row_widgets_allocated: rows,
         now_ms,
     }
 }
@@ -43,6 +44,8 @@ fn snapshot(trail: &DiagnosticTrail) -> DumpSnapshot {
         git_sha: option_env!("REPRISE_GIT_SHA").unwrap_or("<unknown>").into(),
         wall_clock: "2026-08-04T13:22:00+02:00".into(),
         n_items: TOTAL,
+        row_widgets_present: 0,
+        row_widgets_allocated: 0,
         stack_page: "list".into(),
         source: "Music".into(),
         sort_field: "artist".into(),
@@ -77,6 +80,8 @@ fn assert_complete(text: &str) {
         "git_sha=",
         "timestamp=2026-08-04T13:22:00+02:00",
         "n_items=1821",
+        "row_widgets_present=0",
+        "row_widgets_allocated=0",
         "stack_page=list",
         "source=Music",
         "sort_field=artist",
