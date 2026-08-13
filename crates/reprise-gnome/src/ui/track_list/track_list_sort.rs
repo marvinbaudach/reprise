@@ -78,38 +78,6 @@ pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &R
         let shared = shared.clone();
         cv_sorter.connect_primary_sort_order_notify(move |s| on_sorter_changed(&shared, s));
     }
-    {
-        let weak = Rc::downgrade(shared);
-        shared
-            .browse_bar
-            .set_on_sort_changed(move |field, direction| {
-                let Some(shared) = weak.upgrade() else {
-                    return;
-                };
-                let Some(column) = column_for_sort_field(&shared.column_view, &field) else {
-                    tracing::warn!(field, "track list: sort menu field has no column");
-                    return;
-                };
-                let order = if direction == "desc" {
-                    gtk4::SortType::Descending
-                } else {
-                    gtk4::SortType::Ascending
-                };
-                sort_by_column(&shared.column_view, &column, order);
-            });
-    }
-    {
-        let weak = Rc::downgrade(shared);
-        shared.browse_bar.set_on_sort_open(move || {
-            let Some(shared) = weak.upgrade() else {
-                return;
-            };
-            let sort = shared.sort.borrow().clone();
-            shared.browse_bar.sync_sort(&sort.field, &sort.dir);
-        });
-    }
-    let sort = shared.sort.borrow().clone();
-    shared.browse_bar.sync_sort(&sort.field, &sort.dir);
 }
 
 fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
@@ -128,7 +96,6 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
         field: id.to_string(),
         dir: dir.to_string(),
     };
-    shared.browse_bar.sync_sort(&new_sort.field, &new_sort.dir);
     if shared.restoring_view.get() {
         return;
     }
@@ -144,17 +111,6 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
 
     *shared.sort.borrow_mut() = new_sort;
     reload(shared);
-}
-
-fn column_for_sort_field(view: &gtk4::ColumnView, field: &str) -> Option<gtk4::ColumnViewColumn> {
-    ColumnId::from_sort_field(field)?;
-    let columns = view.columns();
-    (0..columns.n_items()).find_map(|index| {
-        columns
-            .item(index)
-            .and_downcast::<gtk4::ColumnViewColumn>()
-            .filter(|column| column.id().as_deref() == Some(field))
-    })
 }
 
 /// Mirrors `queries.rs`'s `"playlist_order"` `SORT_WHITELIST` sentinel (see
@@ -424,7 +380,7 @@ mod restored_sort_tests {
 }
 
 #[cfg(test)]
-mod sort_menu_display_tests {
+mod header_sort_display_tests {
     use std::cell::Cell;
 
     use super::*;
@@ -432,7 +388,7 @@ mod sort_menu_display_tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn sort_menu_and_header_use_the_same_state_and_reload_path() {
+    fn column_headers_update_sort_state_and_reload_once() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let reloads = Rc::new(Cell::new(0));
@@ -450,10 +406,12 @@ mod sort_menu_display_tests {
         window.present();
         let initial_reloads = reloads.get();
 
-        track_list
-            .shared
-            .browse_bar
-            .activate_sort_field_for_test("title");
+        let title = column_for_field(&track_list.shared.column_view, "title");
+        sort_by_column(
+            &track_list.shared.column_view,
+            &title,
+            gtk4::SortType::Ascending,
+        );
         assert_eq!(
             *track_list.shared.sort.borrow(),
             SortState {
@@ -463,10 +421,11 @@ mod sort_menu_display_tests {
         );
         assert_eq!(reloads.get(), initial_reloads + 1);
 
-        track_list
-            .shared
-            .browse_bar
-            .activate_sort_direction_for_test("desc");
+        sort_by_column(
+            &track_list.shared.column_view,
+            &title,
+            gtk4::SortType::Descending,
+        );
         assert_eq!(
             *track_list.shared.sort.borrow(),
             SortState {
@@ -483,9 +442,12 @@ mod sort_menu_display_tests {
             gtk4::SortType::Ascending,
         );
         assert_eq!(
-            track_list.shared.browse_bar.sort_state_for_test(),
-            ("artist".to_string(), "asc".to_string()),
-            "a real header sort must update both menu marks"
+            *track_list.shared.sort.borrow(),
+            SortState {
+                field: "artist".into(),
+                dir: "asc".into(),
+            },
+            "a header sort owns the persisted sort state"
         );
         assert_eq!(reloads.get(), initial_reloads + 3);
         window.close();

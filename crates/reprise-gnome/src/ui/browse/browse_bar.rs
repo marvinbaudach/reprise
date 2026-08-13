@@ -19,7 +19,6 @@ use super::browse_chooser::{
     browse_popup_min_height, build_chooser, chooser_row, load_values, wire_chooser, FACET_PAGE,
     VALUE_PAGE,
 };
-use super::browse_sort_menu::BrowseSortMenu;
 use crate::ui::filter_bar_layout::{self, CountPresentation, FilterBarLayout};
 use crate::ui::filter_bar_strings as filter_strings;
 use crate::ui::track_list::Shared;
@@ -56,7 +55,6 @@ pub struct BrowseBar {
     preference_visible: Cell<bool>,
     chips: gtk4::Box,
     pub(super) add_filter: gtk4::MenuButton,
-    sort_menu: Rc<BrowseSortMenu>,
     chooser_stack: gtk4::Stack,
     pub(super) facet_list: gtk4::ListBox,
     pub(super) chooser_back: gtk4::Button,
@@ -110,10 +108,8 @@ impl BrowseBar {
         add_filter.update_property(&[gtk4::accessible::Property::Label(&filter_strings::text(
             filter_strings::ADD_FILTER,
         ))]);
-        let sort_menu = BrowseSortMenu::new();
         let filter_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         filter_actions.append(&add_filter);
-        filter_actions.append(sort_menu.button());
         let result_label = filter_bar_layout::count_label();
         result_label.set_visible(false);
 
@@ -147,7 +143,6 @@ impl BrowseBar {
             preference_visible: Cell::new(true),
             chips,
             add_filter,
-            sort_menu,
             chooser_stack,
             facet_list,
             chooser_back,
@@ -260,38 +255,6 @@ impl BrowseBar {
 
     pub fn set_on_changed(&self, callback: impl Fn(BrowseFilter) + 'static) {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn set_on_sort_changed(&self, callback: impl Fn(String, String) + 'static) {
-        self.sort_menu.set_on_changed(callback);
-    }
-
-    pub(in crate::ui) fn set_on_sort_open(&self, callback: impl Fn() + 'static) {
-        self.sort_menu.set_on_open(callback);
-    }
-
-    pub(in crate::ui) fn sync_sort(&self, field: &str, direction: &str) {
-        self.sort_menu.sync(field, direction);
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn sort_button(&self) -> &gtk4::MenuButton {
-        self.sort_menu.button()
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn activate_sort_field_for_test(&self, field: &str) {
-        self.sort_menu.activate_field(field);
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn activate_sort_direction_for_test(&self, direction: &str) {
-        self.sort_menu.activate_direction(direction);
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn sort_state_for_test(&self) -> (String, String) {
-        self.sort_menu.state()
     }
 
     pub fn set_on_search_cleared(&self, callback: impl Fn() + 'static) {
