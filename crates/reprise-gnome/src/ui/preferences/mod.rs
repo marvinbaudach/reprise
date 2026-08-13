@@ -9,6 +9,7 @@ pub(in crate::ui) mod preference_library;
 pub(in crate::ui) mod preference_listenbrainz;
 mod preference_module_state;
 pub(in crate::ui) mod preference_new_releases;
+mod preference_online_module_effects;
 pub(in crate::ui) mod preference_playback;
 pub(in crate::ui) mod preference_plugins;
 pub(in crate::ui) mod preference_podcasts;

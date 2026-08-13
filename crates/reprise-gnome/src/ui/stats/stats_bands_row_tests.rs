@@ -108,6 +108,39 @@ fn the_leader_and_all_four_tiles_load_artist_portraits() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn an_already_rendered_row_requests_portraits_after_artwork_is_enabled() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let requests = Arc::new(AtomicUsize::new(0));
+    let runtime = ArtistPortraitRuntime::for_test(false, {
+        let requests = requests.clone();
+        move |_| {
+            requests.fetch_add(1, Ordering::SeqCst);
+            None
+        }
+    });
+    let row = StatsBandsRow::new();
+    let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    let image = StatsArtistImage::for_test(loader, |_| None);
+    image.set_portrait_runtime(runtime.clone());
+    row.set_artist_image(&image);
+    let artists = fixture(4);
+
+    row.set_data(&artists, 60, SortBy::Time);
+    assert_eq!(requests.load(Ordering::SeqCst), 0);
+
+    runtime.set_enabled_for_test(true);
+    row.set_data(&artists, 60, SortBy::Time);
+    assert!(
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            requests.load(Ordering::SeqCst) == 5
+        }),
+        "the leader and four existing tiles must retry their portrait requests"
+    );
+}
+
+#[test]
 fn stats_19_the_leader_spans_two_of_six_columns() {
     // 2 : 1 : 1 : 1 : 1 expressed as a homogeneous six-column grid.
     assert_eq!(LEADER_SPAN, 2);

@@ -23,6 +23,11 @@ use super::stats_header::StatsHeader;
 use super::stats_hero::StatsHero;
 use super::stats_metadata_links::{MetadataCallback, StatsMetadataTarget};
 use super::stats_songs_card::StatsSongsCard;
+
+#[cfg(test)]
+thread_local! {
+    static ARTWORK_REFRESH_REQUESTS: Cell<u64> = const { Cell::new(0) };
+}
 use super::stats_view_widgets::card;
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
@@ -326,6 +331,25 @@ impl StatsView {
             &self.render,
             &self.entrance_pending,
         );
+    }
+
+    /// Reissues artwork requests for the ranking already on screen without
+    /// rerunning the statistics query or warming a hidden page.
+    pub(in crate::ui) fn refresh_visible_artwork(&self) {
+        #[cfg(test)]
+        ARTWORK_REFRESH_REQUESTS.with(|count| count.set(count.get() + 1));
+        if !self.root.is_mapped() {
+            return;
+        }
+        let snapshot = self.current_snapshot.borrow().clone();
+        if let Some(snapshot) = snapshot {
+            self.render.bands_card.set_data(&snapshot);
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn artwork_refresh_requests_for_test() -> u64 {
+        ARTWORK_REFRESH_REQUESTS.with(Cell::get)
     }
 
     pub(in crate::ui) fn prepare_entrance(&self) {

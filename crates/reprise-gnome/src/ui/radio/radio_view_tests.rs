@@ -74,6 +74,57 @@ fn add_station(conn: &Rc<Db>, name: &str) -> i64 {
     .unwrap()
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_6_radio_refreshes_only_mapped_artwork_cells_without_moving_selection() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, false)
+        .unwrap();
+    add_station(&conn, "Alpha");
+    add_station(&conn, "Bravo");
+    let view = RadioView::new(conn.clone(), None);
+    view.shared.model.selection().set_selected(1);
+
+    let hidden_before = source_images(view.root());
+    view.refresh_visible_artwork();
+    assert_eq!(source_images(view.root()), hidden_before);
+
+    let window = gtk4::Window::new();
+    window.set_default_size(900, 400);
+    window.set_child(Some(view.root()));
+    window.present();
+    crate::ui::source_context_surface::settle_layout();
+    let before = source_images(view.root());
+    assert!(!before.is_empty());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
+        .unwrap();
+    crate::ui::podcasts::source_image::recompute_gate(&conn);
+
+    view.refresh_visible_artwork();
+    crate::ui::source_context_surface::settle_layout();
+
+    let after = source_images(view.root());
+    assert_eq!(after.len(), before.len());
+    assert!(before.iter().zip(&after).all(|(left, right)| left != right));
+    assert_eq!(view.shared.model.selection().selected(), 1);
+}
+
+fn source_images(widget: &gtk4::Widget) -> Vec<gtk4::Widget> {
+    let mut images = widget
+        .has_css_class("reprise-source-image")
+        .then(|| widget.clone())
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        images.extend(source_images(&current));
+        child = current.next_sibling();
+    }
+    images
+}
+
 fn connected_snapshot(station_id: i64, title: &str) -> ExternalPlaybackSnapshot {
     ExternalPlaybackSnapshot {
         mode: PlaybackMode::Radio,

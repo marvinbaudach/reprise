@@ -30,6 +30,8 @@ use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
 
+#[path = "window_artwork_permission_wiring.rs"]
+mod artwork_permission_wiring;
 #[path = "window_external_changes_wiring.rs"]
 mod external_changes_wiring;
 #[path = "window_playing_source_wiring.rs"]
@@ -132,8 +134,17 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         podcasts_view,
         youtube_view,
         radio_view,
+        preferences,
     );
     super::startup_report::mark("source_connectivity::wire");
+    artwork_permission_wiring::wire(
+        preferences,
+        cover_batch,
+        &stats_view,
+        podcasts_view,
+        youtube_view,
+        radio_view,
+    );
 
     let refresh_doctor_views = {
         let stats = stats_view.clone();

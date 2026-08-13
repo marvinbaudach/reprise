@@ -118,6 +118,7 @@ pub(in crate::ui) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownl
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::rc::Rc;
 
     use gtk4::prelude::*;
@@ -182,6 +183,71 @@ mod tests {
             !view.widget().reveals_child(),
             "a cancelled batch takes its card away instead of leaving it stuck"
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn an_artwork_enable_starts_one_fresh_pass_and_disable_stops_it() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks (path, title, added_at) \
+                 VALUES ('/music/waiting.mp3', 'Waiting', 1)",
+                [],
+            )
+            .unwrap();
+        reprise_core::library::startup_tasks::record_completed_at(
+            &conn,
+            reprise_core::library::startup_tasks::SignatureTask::CoverDownload,
+            123,
+        )
+        .unwrap();
+        assert!(reprise_core::library::startup_tasks::begin_exact(
+            &conn,
+            reprise_core::library::startup_tasks::SignatureTask::CoverDownload,
+        )
+        .is_none());
+
+        let (worker, _requests) = async_channel::unbounded();
+        let runtime = crate::ui::cover_download_worker::CoverDownloadRuntime {
+            enabled: Rc::new(Cell::new(true)),
+            worker,
+        };
+        let track_list = Rc::new(crate::ui::track_list::TrackList::new(
+            conn.clone(),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
+            runtime.clone(),
+        ));
+        let batch = CoverDownloadBatch::new(&conn, &runtime, &track_list, None);
+
+        batch.start_user_triggered();
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            batch.progress_for_test().state == BatchState::Running
+        });
+        assert_eq!(batch.progress_for_test().state, BatchState::Running);
+        let first_generation = batch.generation_for_test();
+
+        batch.start_user_triggered();
+        assert_eq!(batch.generation_for_test(), first_generation);
+
+        let root = tempfile::tempdir().unwrap();
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../reprise-core/tests/fixtures/sine.flac");
+        std::fs::copy(fixture, root.path().join("new.flac")).unwrap();
+        reprise_core::library::scanner::scan_folder(&conn, root.path()).unwrap();
+        batch.start();
+        assert_eq!(
+            batch.generation_for_test(),
+            first_generation,
+            "a completed library scan must join the active pass"
+        );
+
+        batch.cancel();
+        assert_eq!(batch.progress_for_test().state, BatchState::Idle);
     }
 
     #[test]

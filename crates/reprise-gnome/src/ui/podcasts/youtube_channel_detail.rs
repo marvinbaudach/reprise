@@ -184,6 +184,7 @@ pub(super) struct YoutubeChannelDetail {
     /// Rebuilt with the toolbar on each `render_active`, kept so a selection
     /// change can refresh the count without rebuilding anything.
     selection_summary: RefCell<Option<SelectionSummary>>,
+    artwork_rebinds: RefCell<Vec<podcasts_groups::ArtworkRebind>>,
     /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
     /// &modules::ARTWORK_MODULE)`, refreshed by [`Self::update`] on
     /// every render pass — this view never reads settings itself.
@@ -224,6 +225,7 @@ impl YoutubeChannelDetail {
             download_widgets: RefCell::new(BTreeMap::new()),
             selection_widgets: RefCell::new(BTreeMap::new()),
             selection_summary: RefCell::new(None),
+            artwork_rebinds: RefCell::new(Vec::new()),
             images_allowed: Cell::new(false),
             connectivity: Cell::new(Connectivity::Online),
             unavailable_episode: Cell::new(None),
@@ -304,6 +306,17 @@ impl YoutubeChannelDetail {
 
     pub(super) fn is_active(&self) -> bool {
         self.state.borrow().active_channel().is_some()
+    }
+
+    pub(super) fn refresh_visible_artwork(&self, images_allowed: bool) {
+        if !self.root.is_mapped() {
+            return;
+        }
+        self.images_allowed.set(images_allowed);
+        let rebinds = self.artwork_rebinds.borrow().clone();
+        for rebind in rebinds {
+            rebind(images_allowed);
+        }
     }
 
     pub(super) fn close_channel(&self) {
@@ -392,6 +405,7 @@ impl YoutubeChannelDetail {
         while let Some(child) = self.content.first_child() {
             self.content.remove(&child);
         }
+        self.artwork_rebinds.borrow_mut().clear();
         self.content.append(&self.build_header(&rendered));
         self.content
             .append(&self.build_controls(&rendered, &projected));
@@ -471,14 +485,25 @@ impl YoutubeChannelDetail {
         back.set_tooltip_text(Some(&strings::text(strings::YOUTUBE_BACK_TO_CHANNELS)));
         back.set_action_name(Some("podcasts.close-channel"));
         row.append(&back);
-        let image = super::source_image::SourceImage::new(
-            rendered.group.image_url.as_deref(),
-            "video-x-generic-symbolic",
-            48,
-            self.images_allowed.get(),
-            reprise_core::remote_image::CacheScope::Persistent,
-        );
-        row.append(image.widget());
+        let artwork_host = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let host_for_rebind = artwork_host.clone();
+        let image_url = rendered.group.image_url.clone();
+        let rebind = Rc::new(move |images_allowed| {
+            while let Some(child) = host_for_rebind.first_child() {
+                host_for_rebind.remove(&child);
+            }
+            let image = super::source_image::SourceImage::new(
+                image_url.as_deref(),
+                "video-x-generic-symbolic",
+                48,
+                images_allowed,
+                reprise_core::remote_image::CacheScope::Persistent,
+            );
+            host_for_rebind.append(image.widget());
+        }) as podcasts_groups::ArtworkRebind;
+        rebind(self.images_allowed.get());
+        self.artwork_rebinds.borrow_mut().push(rebind);
+        row.append(&artwork_host);
         let source = source_header(
             rendered.group.kind,
             &rendered.group.title,
@@ -616,8 +641,19 @@ impl YoutubeChannelDetail {
             self.unavailable_episode.get(),
             SELECT_CHANNEL_ROW_ACTION,
         );
-        let (artwork, shape) = episode_thumbnail(episode, self.images_allowed.get());
-        row.append(&crate::ui::source_row::media(&artwork, shape));
+        let artwork_host = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let host_for_rebind = artwork_host.clone();
+        let artwork_episode = episode.clone();
+        let rebind = Rc::new(move |images_allowed| {
+            while let Some(child) = host_for_rebind.first_child() {
+                host_for_rebind.remove(&child);
+            }
+            let (artwork, shape) = episode_thumbnail(&artwork_episode, images_allowed);
+            host_for_rebind.append(&crate::ui::source_row::media(&artwork, shape));
+        }) as podcasts_groups::ArtworkRebind;
+        rebind(self.images_allowed.get());
+        self.artwork_rebinds.borrow_mut().push(rebind);
+        row.append(&artwork_host);
         let play = gtk4::Button::new();
         play.add_css_class("flat");
         play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));

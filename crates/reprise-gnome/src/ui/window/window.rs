@@ -19,7 +19,6 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::db::Db;
-
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::view_source::ViewSource;
@@ -539,6 +538,8 @@ pub fn build(
         active_content_focus: &active_content_focus,
         metadata_navigator: &metadata_navigator,
     });
+    #[cfg(test)]
+    super::window_online_module_test_hook::publish(&preferences, &cover_batch, &lyrics_batch);
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
     super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
 

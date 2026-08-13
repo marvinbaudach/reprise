@@ -129,6 +129,17 @@ impl StatsBandsRow {
     }
 
     #[cfg(test)]
+    pub(super) fn artwork_generations_for_test(&self) -> Vec<u64> {
+        std::iter::once(self.leader.artwork_generation_for_test())
+            .chain(
+                self.tiles
+                    .iter()
+                    .map(StatsBandTile::artwork_generation_for_test),
+            )
+            .collect()
+    }
+
+    #[cfg(test)]
     pub(super) fn leader_label(&self) -> String {
         self.leader.artist_label()
     }

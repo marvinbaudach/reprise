@@ -153,6 +153,11 @@ impl StatsBandTile {
         self.bar.clone()
     }
 
+    #[cfg(test)]
+    pub(super) fn artwork_generation_for_test(&self) -> u64 {
+        self.cover_generation.get()
+    }
+
     pub(super) fn set_artist_image(&self, image: Rc<StatsArtistImage>) {
         *self.artist_image.borrow_mut() = Some(image);
     }

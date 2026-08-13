@@ -25,6 +25,7 @@ struct ConnectivityTargets {
     podcasts: Weak<crate::ui::podcasts::PodcastsView>,
     youtube: Weak<crate::ui::podcasts::PodcastsView>,
     radio: Weak<crate::ui::radio::RadioView>,
+    preferences: Weak<crate::ui::preferences::PreferencesContext>,
 }
 
 impl ConnectivityTargets {
@@ -34,6 +35,7 @@ impl ConnectivityTargets {
         podcasts: &Rc<crate::ui::podcasts::PodcastsView>,
         youtube: &Rc<crate::ui::podcasts::PodcastsView>,
         radio: &Rc<crate::ui::radio::RadioView>,
+        preferences: &Rc<crate::ui::preferences::PreferencesContext>,
     ) -> Self {
         Self {
             concerts: Rc::downgrade(concerts),
@@ -41,6 +43,7 @@ impl ConnectivityTargets {
             podcasts: Rc::downgrade(podcasts),
             youtube: Rc::downgrade(youtube),
             radio: Rc::downgrade(radio),
+            preferences: Rc::downgrade(preferences),
         }
     }
 
@@ -59,6 +62,9 @@ impl ConnectivityTargets {
         }
         if let Some(view) = self.radio.upgrade() {
             view.set_connectivity(connectivity);
+        }
+        if let Some(preferences) = self.preferences.upgrade() {
+            preferences.set_connectivity(connectivity);
         }
     }
 }
@@ -110,8 +116,10 @@ pub(super) fn wire(
     podcasts: &Rc<crate::ui::podcasts::PodcastsView>,
     youtube: &Rc<crate::ui::podcasts::PodcastsView>,
     radio: &Rc<crate::ui::radio::RadioView>,
+    preferences: &Rc<crate::ui::preferences::PreferencesContext>,
 ) {
-    let targets = ConnectivityTargets::new(concerts, releases, podcasts, youtube, radio);
+    let targets =
+        ConnectivityTargets::new(concerts, releases, podcasts, youtube, radio, preferences);
     #[cfg(feature = "test-fixtures")]
     if wire_test_connectivity(targets.clone()) {
         return;

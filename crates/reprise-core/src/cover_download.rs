@@ -57,6 +57,13 @@ pub enum ReleaseGroupCover {
     Fallback,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoverFetchOutcome {
+    Downloaded(PathBuf),
+    NotFound,
+    TransientFailure,
+}
+
 /// Cache key for an album's downloaded cover: normalized album-artist + album,
 /// hashed to hex. One cover per album — every track of an album shares it.
 pub fn album_key(album_artist: &str, album: &str) -> String {
@@ -170,15 +177,26 @@ where
     }
 }
 
-pub(crate) fn parse_best_release(json: &str, album_artist: &str, album: &str) -> Option<String> {
+#[derive(Debug, PartialEq, Eq)]
+enum ReleaseSearchResult {
+    Match(String),
+    NoMatch,
+    Malformed,
+}
+
+fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSearchResult {
     fn norm(s: &str) -> String {
         s.split_whitespace()
             .collect::<Vec<_>>()
             .join(" ")
             .to_lowercase()
     }
-    let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let releases = v.get("releases")?.as_array()?;
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return ReleaseSearchResult::Malformed;
+    };
+    let Some(releases) = value.get("releases").and_then(serde_json::Value::as_array) else {
+        return ReleaseSearchResult::Malformed;
+    };
     let (want_artist, want_album) = (norm(album_artist), norm(album));
     for r in releases {
         let score = r
@@ -200,10 +218,13 @@ pub(crate) fn parse_best_release(json: &str, album_artist: &str, album: &str) ->
             .and_then(|name| name.as_str())
             .unwrap_or_default();
         if norm(title) == want_album && norm(artist) == want_artist {
-            return r.get("id").and_then(|id| id.as_str()).map(str::to_string);
+            let Some(id) = r.get("id").and_then(serde_json::Value::as_str) else {
+                return ReleaseSearchResult::Malformed;
+            };
+            return ReleaseSearchResult::Match(id.to_owned());
         }
     }
-    None
+    ReleaseSearchResult::NoMatch
 }
 
 pub fn fetch_and_cache(
@@ -211,41 +232,69 @@ pub fn fetch_and_cache(
     album: &str,
     mbid: Option<&str>,
     album_dirs: &[PathBuf],
-) -> Option<PathBuf> {
+) -> CoverFetchOutcome {
+    fetch_and_cache_with(
+        album_artist,
+        album,
+        mbid,
+        album_dirs,
+        &mut mb_get,
+        &mut http_get_bytes,
+    )
+}
+
+fn fetch_and_cache_with<M, C>(
+    album_artist: &str,
+    album: &str,
+    mbid: Option<&str>,
+    album_dirs: &[PathBuf],
+    mb_fetch: &mut M,
+    caa_fetch: &mut C,
+) -> CoverFetchOutcome
+where
+    M: FnMut(&str) -> Option<String>,
+    C: FnMut(&str) -> CaaFetchResult,
+{
     let key = album_key(album_artist, album);
     // 1. Already resolved (positive or negative) -> no network.
     if let Some(existing) = downloaded_cover_path(&key) {
-        return Some(existing);
+        return CoverFetchOutcome::Downloaded(existing);
     }
     if negative_marker_path(&key).exists() {
-        return None;
+        return CoverFetchOutcome::NotFound;
     }
     // 2. Resolve a release MBID: embedded first, else conservative search.
     let release_mbid = match mbid {
         Some(id) if !id.is_empty() => id.to_string(),
         _ => {
-            let body = mb_get(&musicbrainz_search_url(album_artist, album))?;
+            let Some(body) = mb_fetch(&musicbrainz_search_url(album_artist, album)) else {
+                return CoverFetchOutcome::TransientFailure;
+            };
             match parse_best_release(&body, album_artist, album) {
-                Some(id) => id,
-                None => {
+                ReleaseSearchResult::Match(id) => id,
+                ReleaseSearchResult::NoMatch => {
                     write_negative(&key);
-                    return None;
+                    return CoverFetchOutcome::NotFound;
                 }
+                ReleaseSearchResult::Malformed => return CoverFetchOutcome::TransientFailure,
             }
         }
     };
     // 3. Fetch the CAA front cover (follows the 302 to the image).
-    let (bytes, ext) = match http_get_bytes(&caa_front_url(&release_mbid)) {
+    let (bytes, ext) = match caa_fetch(&caa_front_url(&release_mbid)) {
         CaaFetchResult::Found(bytes, ext) => (bytes, ext),
         CaaFetchResult::NotFound => {
             write_negative(&key);
-            return None;
+            return CoverFetchOutcome::NotFound;
         }
-        CaaFetchResult::TransientFailure => return None,
+        CaaFetchResult::TransientFailure => return CoverFetchOutcome::TransientFailure,
     };
     // 4. Publish atomically under the download cache, then best-effort beside
     // the album tracks. Folder writeback never changes download success.
-    store_album_downloaded(&key, &bytes, ext, album_dirs)
+    store_album_downloaded(&key, &bytes, ext, album_dirs).map_or(
+        CoverFetchOutcome::TransientFailure,
+        CoverFetchOutcome::Downloaded,
+    )
 }
 
 /// A rate-limited MusicBrainz GET returning the response body as text.
@@ -281,12 +330,16 @@ fn http_get_bytes(url: &str) -> CaaFetchResult {
     {
         return CaaFetchResult::TransientFailure;
     }
+    classify_caa_body(bytes)
+}
+
+fn classify_caa_body(bytes: Vec<u8>) -> CaaFetchResult {
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
-        return CaaFetchResult::NotFound;
+        return CaaFetchResult::TransientFailure;
     }
     match validated_image_extension(&bytes) {
         Some(ext) => CaaFetchResult::Found(bytes, ext),
-        None => CaaFetchResult::NotFound,
+        None => CaaFetchResult::TransientFailure,
     }
 }
 
@@ -381,6 +434,10 @@ fn store_album_downloaded_with(
 }
 
 #[cfg(test)]
+#[path = "cover_download_retry_tests.rs"]
+mod retry_tests;
+
+#[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
@@ -439,20 +496,29 @@ mod tests {
     #[test]
     fn parse_best_release_accepts_a_strong_match() {
         assert_eq!(
-            parse_best_release(MB_STRONG, "Pink Floyd", "The Wall").as_deref(),
-            Some("11111111-1111-1111-1111-111111111111")
+            parse_best_release(MB_STRONG, "Pink Floyd", "The Wall"),
+            ReleaseSearchResult::Match("11111111-1111-1111-1111-111111111111".to_owned())
         );
     }
 
     #[test]
     fn parse_best_release_rejects_a_weak_match() {
-        assert!(parse_best_release(MB_WEAK, "Pink Floyd", "The Wall").is_none());
+        assert_eq!(
+            parse_best_release(MB_WEAK, "Pink Floyd", "The Wall"),
+            ReleaseSearchResult::NoMatch
+        );
     }
 
     #[test]
     fn parse_best_release_handles_empty_and_garbage() {
-        assert!(parse_best_release(r#"{"releases":[]}"#, "A", "B").is_none());
-        assert!(parse_best_release("not json", "A", "B").is_none());
+        assert_eq!(
+            parse_best_release(r#"{"releases":[]}"#, "A", "B"),
+            ReleaseSearchResult::NoMatch
+        );
+        assert_eq!(
+            parse_best_release("not json", "A", "B"),
+            ReleaseSearchResult::Malformed
+        );
     }
 
     #[test]
@@ -478,7 +544,7 @@ mod tests {
         // Already cached -> must return it, never touching the network.
         assert_eq!(
             fetch_and_cache("CachedBand", "CachedAlbum", None, &[]),
-            Some(f.clone())
+            CoverFetchOutcome::Downloaded(f.clone())
         );
         std::fs::remove_file(&f).ok();
     }
@@ -489,8 +555,50 @@ mod tests {
         std::fs::create_dir_all(downloaded_dir()).unwrap();
         let marker = negative_marker_path(&key);
         std::fs::write(&marker, b"").unwrap();
-        assert_eq!(fetch_and_cache("MissBand", "MissAlbum", None, &[]), None);
+        assert_eq!(
+            fetch_and_cache("MissBand", "MissAlbum", None, &[]),
+            CoverFetchOutcome::NotFound
+        );
         std::fs::remove_file(&marker).ok();
+    }
+
+    #[test]
+    fn transient_album_fetch_does_not_write_a_negative_marker() {
+        let key = album_key("Retry Band", "Retry Album");
+        let marker = negative_marker_path(&key);
+        std::fs::remove_file(&marker).ok();
+
+        let outcome = fetch_and_cache_with(
+            "Retry Band",
+            "Retry Album",
+            Some("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            &[],
+            &mut |_| panic!("an embedded release id must skip MusicBrainz search"),
+            &mut |_| CaaFetchResult::TransientFailure,
+        );
+
+        assert_eq!(outcome, CoverFetchOutcome::TransientFailure);
+        assert!(!marker.exists());
+    }
+
+    #[test]
+    fn definitive_album_miss_writes_a_negative_marker() {
+        let key = album_key("Missing Band", "Missing Album");
+        let marker = negative_marker_path(&key);
+        std::fs::remove_file(&marker).ok();
+
+        let outcome = fetch_and_cache_with(
+            "Missing Band",
+            "Missing Album",
+            Some("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            &[],
+            &mut |_| panic!("an embedded release id must skip MusicBrainz search"),
+            &mut |_| CaaFetchResult::NotFound,
+        );
+
+        assert_eq!(outcome, CoverFetchOutcome::NotFound);
+        assert!(marker.exists());
+        std::fs::remove_file(marker).ok();
     }
 
     #[test]

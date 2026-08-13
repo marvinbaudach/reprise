@@ -78,6 +78,12 @@ impl ArtistPortraitRuntime {
         Self::new(enabled, resolve)
     }
 
+    #[cfg(test)]
+    pub(in crate::ui) fn set_enabled_for_test(&self, enabled: bool) {
+        self.worker_enabled.store(enabled, Ordering::Relaxed);
+        self.enabled.set(enabled);
+    }
+
     pub(in crate::ui) fn is_enabled(&self) -> bool {
         self.enabled.get()
     }
@@ -89,7 +95,9 @@ impl ArtistPortraitRuntime {
     }
 
     /// Queues one portrait lookup and calls `on_ready` on the main context.
-    /// Disabled and blank requests resolve locally and never enter the queue.
+    /// Both the request and the result are gated: disabling online artwork
+    /// while a job is queued prevents the resolver from running, and disabling
+    /// it while a request is in flight prevents the image from being shown.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::ui) fn request(
         self: &Rc<Self>,

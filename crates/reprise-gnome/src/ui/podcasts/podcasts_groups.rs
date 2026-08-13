@@ -52,11 +52,14 @@ pub(super) struct ChannelRowWidgets {
     pub(super) header: gtk4::Widget,
 }
 
+pub(super) type ArtworkRebind = Rc<dyn Fn(bool)>;
+
 /// Everything `replace` hands back for later targeted updates.
 pub(super) struct RenderedRowWidgets {
     pub(super) downloads: BTreeMap<i64, DownloadRowWidgets>,
     pub(super) selection: BTreeMap<i64, SelectionRowWidgets>,
     pub(super) channels: BTreeMap<i64, ChannelRowWidgets>,
+    pub(super) artwork: Vec<ArtworkRebind>,
 }
 
 struct GroupRenderContext<'a> {
@@ -112,6 +115,7 @@ pub(super) fn replace(
         downloads: BTreeMap::new(),
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
+        artwork: Vec::new(),
     };
     let paths = Rc::new(EpisodePaths::from_row_refs(snapshot_rows(groups)));
     let context = GroupRenderContext {
@@ -178,7 +182,12 @@ fn build_group(
         }
     });
     expander.add_css_class("reprise-podcast-group");
-    let header = group_header(group, &rendered.summary, context.images_allowed);
+    let header = group_header_with_rebind(
+        group,
+        &rendered.summary,
+        context.images_allowed,
+        &mut widgets.artwork,
+    );
     expander.set_label_widget(Some(&header));
     widgets.channels.insert(
         subscription_id,
@@ -242,31 +251,51 @@ fn build_group(
     expander
 }
 
+#[cfg(test)]
 fn group_header(
     group: &SourceGroup,
     summary: &SourceSummary,
     images_allowed: bool,
 ) -> gtk4::Widget {
+    group_header_with_rebind(group, summary, images_allowed, &mut Vec::new())
+}
+
+fn group_header_with_rebind(
+    group: &SourceGroup,
+    summary: &SourceSummary,
+    images_allowed: bool,
+    artwork_rebinds: &mut Vec<ArtworkRebind>,
+) -> gtk4::Widget {
     let skeleton = crate::ui::source_row::skeleton();
     let header = skeleton.root.clone();
     header.set_hexpand(true);
 
-    let artwork = super::source_image::SourceImage::new_after_startup(
-        group_image_url(group),
-        match group.kind {
-            PodcastKind::Rss => "audio-input-microphone-symbolic",
-            PodcastKind::Youtube => "video-x-generic-symbolic",
-        },
-        40,
-        images_allowed,
-    );
-    artwork
-        .widget()
-        .add_css_class("reprise-podcast-group-artwork");
-    skeleton.media.append(&crate::ui::source_row::media(
-        artwork.widget(),
-        crate::ui::source_row::MediaShape::SourceSquare,
-    ));
+    let artwork_host = skeleton.media.clone();
+    let image_url = group_image_url(group).map(str::to_owned);
+    let fallback_icon = match group.kind {
+        PodcastKind::Rss => "audio-input-microphone-symbolic",
+        PodcastKind::Youtube => "video-x-generic-symbolic",
+    };
+    let rebind = Rc::new(move |images_allowed| {
+        while let Some(child) = artwork_host.first_child() {
+            artwork_host.remove(&child);
+        }
+        let artwork = super::source_image::SourceImage::new_after_startup(
+            image_url.as_deref(),
+            fallback_icon,
+            40,
+            images_allowed,
+        );
+        artwork
+            .widget()
+            .add_css_class("reprise-podcast-group-artwork");
+        artwork_host.append(&crate::ui::source_row::media(
+            artwork.widget(),
+            crate::ui::source_row::MediaShape::SourceSquare,
+        ));
+    }) as ArtworkRebind;
+    rebind(images_allowed);
+    artwork_rebinds.push(rebind);
 
     let source = source_header(group.kind, &group.title, group.author.as_deref());
     let title = gtk4::Label::new(Some(source.title));
@@ -350,12 +379,20 @@ fn episode_row(
     if is_selected {
         root.add_css_class(SELECTED_ROW_CLASS);
     }
-    let (artwork, shape) = episode_thumbnail(row, context.images_allowed);
-    let media = crate::ui::source_row::media(&artwork, shape);
+    let artwork_host = skeleton.media.clone();
+    let artwork_row = row.clone();
+    let rebind = Rc::new(move |images_allowed| {
+        while let Some(child) = artwork_host.first_child() {
+            artwork_host.remove(&child);
+        }
+        let (artwork, shape) = episode_thumbnail(&artwork_row, images_allowed);
+        artwork_host.append(&crate::ui::source_row::media(&artwork, shape));
+    }) as ArtworkRebind;
+    rebind(context.images_allowed);
+    widgets.artwork.push(rebind);
     let marker = playing_marker::build();
     playing_marker::set_playing(&marker, playing);
     marker.set_visible(loaded);
-    skeleton.media.append(&media);
     install_row_interaction(&root, row.id, SELECT_ROW_ACTION);
     podcasts_context_surface::wire_episode_row(
         &root,

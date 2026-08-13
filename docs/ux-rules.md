@@ -2603,6 +2603,22 @@ property is set and yet nothing happens.
   the global gate is already on, and is never a modal or a toast. The
   permanent path is Preferences → Plugins. On the first enable the master
   turns on and every source remains off except Radio.
+- **NET-5** [active] [gtk] — Enabling Artwork while the global online-sources
+  gate is open and the device is online immediately starts exactly one fresh
+  cover pass through the same Preferences transition used by Plugins and the
+  sidebar. Repeating the enabled state or completing a library scan while that
+  pass is active never replaces it; disabling Artwork stops the pass. An
+  offline Artwork enable waits without writing a permanent miss. Online
+  Lyrics keeps the immediate start promised by `LYR-6` independently of the
+  live-connectivity projection, while its persisted module and global gates
+  still apply.
+- **NET-6** [active] [gtk] — When an Artwork enable opens the effective gate,
+  every already mapped artwork surface immediately rebinds only its retained
+  image cells: My Stats uses its current snapshot, and Podcasts, YouTube, and
+  Radio keep their rows, selection, expansion, and viewport intact. Hidden
+  surfaces stay cold. The refresh is part of the same Preferences transition
+  that starts the cover pass; it does not rerun a statistics or source query
+  and does not rebuild an entire source page.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
