@@ -234,6 +234,18 @@ mod tests {
         batch.start_user_triggered();
         assert_eq!(batch.generation_for_test(), first_generation);
 
+        let root = tempfile::tempdir().unwrap();
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../reprise-core/tests/fixtures/sine.flac");
+        std::fs::copy(fixture, root.path().join("new.flac")).unwrap();
+        reprise_core::library::scanner::scan_folder(&conn, root.path()).unwrap();
+        batch.start();
+        assert_eq!(
+            batch.generation_for_test(),
+            first_generation,
+            "a completed library scan must join the active pass"
+        );
+
         batch.cancel();
         assert_eq!(batch.progress_for_test().state, BatchState::Idle);
     }

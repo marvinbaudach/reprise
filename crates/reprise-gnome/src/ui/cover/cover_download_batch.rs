@@ -137,6 +137,9 @@ impl CoverDownloadBatch {
     }
 
     pub(in crate::ui) fn start(self: &Rc<Self>) {
+        if !start_request_allowed(self.running.get()) {
+            return;
+        }
         if !self.runtime.enabled.get() {
             self.set_progress(BatchProgress::idle());
             return;
@@ -153,7 +156,7 @@ impl CoverDownloadBatch {
     /// the library is already settled. A second request joins the active pass
     /// instead of replacing it with overlapping work.
     pub(in crate::ui) fn start_user_triggered(self: &Rc<Self>) {
-        if self.running.get() {
+        if !start_request_allowed(self.running.get()) {
             return;
         }
         if !self.runtime.enabled.get() {
@@ -356,11 +359,17 @@ fn outcome_settles_track(outcome: &DownloadOutcome) -> bool {
     )
 }
 
+fn start_request_allowed(running: bool) -> bool {
+    !running
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::{open_paths, outcome_settles_track, BatchProgress, BatchState};
+    use super::{
+        open_paths, outcome_settles_track, start_request_allowed, BatchProgress, BatchState,
+    };
     use crate::ui::cover_download_worker::DownloadOutcome;
 
     #[test]
@@ -387,6 +396,12 @@ mod tests {
         assert!(!outcome_settles_track(&DownloadOutcome::Downloaded(
             PathBuf::from("/cache/cover.jpg")
         )));
+    }
+
+    #[test]
+    fn an_active_cover_pass_rejects_every_start_request() {
+        assert!(!start_request_allowed(true));
+        assert!(start_request_allowed(false));
     }
 
     #[test]
