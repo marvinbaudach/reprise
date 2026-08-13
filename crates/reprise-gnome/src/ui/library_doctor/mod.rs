@@ -60,9 +60,9 @@ pub(in crate::ui) fn doctor_job_card_for_test() -> gtk4::Revealer {
 
 /// The glyph that stands for the Library Doctor: the first-aid kit the app
 /// ships itself as
-/// `data/icons/hicolor/symbolic/apps/reprise-first-aid-symbolic.svg`, drawn by
-/// `scripts/build-brand-assets.sh`. Its closed case and cross stay legible at
-/// 16 px, unlike the former multi-part medical glyph.
+/// `data/icons/hicolor/symbolic/apps/io.github.marvinbaudach.Reprise-first-aid-symbolic.svg`,
+/// drawn by `scripts/build-brand-assets.sh`. Its closed case and cross stay
+/// legible at 16 px, unlike the former multi-part medical glyph.
 ///
 /// Resolved here rather than at each call site, so the start page, the result
 /// card and the sidebar entry cannot end up asking for different things — they
@@ -75,7 +75,7 @@ pub(in crate::ui) fn doctor_job_card_for_test() -> gtk4::Revealer {
 /// through `doctor_glyph`: `NavIcon` already owns a name/fallback pair and
 /// `nav_icon` already performs this theme check, so the row joins that
 /// mechanism instead of adding a second one.
-pub(in crate::ui) const DOCTOR_GLYPH: &str = "reprise-first-aid-symbolic";
+pub(in crate::ui) const DOCTOR_GLYPH: &str = "io.github.marvinbaudach.Reprise-first-aid-symbolic";
 pub(in crate::ui) const DOCTOR_GLYPH_FALLBACK: &str = "system-search-symbolic";
 
 pub(in crate::ui) fn doctor_glyph() -> &'static str {
