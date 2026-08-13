@@ -201,6 +201,8 @@ fn run_worker(
     fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
 ) {
     while let Ok(job) = receiver.recv_blocking() {
+        // SAFETY: `fetch` is the stateless wrapper around the free fetch function; this
+        // reused `FnMut` must never retain partially mutated state after a panic.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             process_job(pending, &job, fetch);
         }));
