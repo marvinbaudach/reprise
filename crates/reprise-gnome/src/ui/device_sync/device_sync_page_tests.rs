@@ -13,6 +13,10 @@ use reprise_core::device_sync::{
 use super::*;
 use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
 
+/// The width every presented device-page probe window is built at. Named
+/// rather than repeated so a pinned probe and its siblings cannot drift apart.
+const PROBE_WINDOW_WIDTH: i32 = 968;
+
 fn no_op_content_actions() -> OnDeviceActions {
     OnDeviceActions {
         set_remove_deleted: Rc::new(|_| {}),

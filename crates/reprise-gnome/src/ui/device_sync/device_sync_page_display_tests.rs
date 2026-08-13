@@ -7,10 +7,6 @@
 
 use super::*;
 
-/// The width every presented probe window in this file is built at. Named
-/// rather than repeated so a pinned probe and its siblings cannot drift apart.
-const PROBE_WINDOW_WIDTH: i32 = 968;
-
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mtp_60_the_sync_bar_is_not_inside_the_scrollview() {

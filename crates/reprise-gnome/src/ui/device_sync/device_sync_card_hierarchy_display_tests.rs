@@ -2,8 +2,6 @@
 
 use super::*;
 
-const PROBE_WINDOW_WIDTH: i32 = 968;
-
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mtp_60_playlist_and_sync_overview_cards_share_the_same_edges() {
