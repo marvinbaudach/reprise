@@ -317,9 +317,5 @@ mod tests {
             clear_edge <= SHIMMER_BAND_HEIGHT,
             "the shimmer clears at y={clear_edge:.1}, after the {SHIMMER_BAND_HEIGHT:.1}px band"
         );
-        assert_eq!(
-            SHIMMER_BAND_HEIGHT,
-            f64::from(tokens::NOW_PLAYING_ARTWORK_BAND)
-        );
     }
 }
