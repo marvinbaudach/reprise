@@ -96,10 +96,7 @@ impl StatsBandsRow {
             return;
         };
         self.leader.set_data(leader, share_percent, sort_by);
-        let leader_metric = match sort_by {
-            SortBy::Plays => leader.group.plays,
-            SortBy::Time => leader.group.ms,
-        };
+        let leader_metric = artist_metric(leader, sort_by);
         for (index, tile) in self.tiles.iter().enumerate() {
             match artists.get(index + 1) {
                 Some(ranked) => tile.set_data(index + 2, ranked, leader_metric, sort_by),
@@ -134,6 +131,23 @@ impl StatsBandsRow {
     #[cfg(test)]
     pub(super) fn leader_label(&self) -> String {
         self.leader.artist_label()
+    }
+
+    #[cfg(test)]
+    pub(super) fn leader_summary(&self) -> String {
+        self.leader.summary_text()
+    }
+
+    #[cfg(test)]
+    pub(super) fn runner_up_labels(&self) -> Vec<String> {
+        self.tiles.iter().map(StatsBandTile::artist_label).collect()
+    }
+}
+
+pub(super) fn artist_metric(artist: &RankedGroup, sort_by: SortBy) -> i64 {
+    match sort_by {
+        SortBy::Plays => artist.group.plays,
+        SortBy::Time => artist.group.ms,
     }
 }
 

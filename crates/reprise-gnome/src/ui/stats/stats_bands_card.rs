@@ -9,9 +9,10 @@ use reprise_core::library::stats_screen::RankedGroup;
 use reprise_core::library::stats_snapshot::{SortBy, StatsSnapshot};
 
 use super::stats_artist_image::StatsArtistImage;
-use super::stats_bands_more::{self, ContinuationRow};
+use super::stats_bands_more::{self, ContinuationCallbacks, ContinuationRow};
 use super::stats_bands_row::{StatsBandsRow, RUNNER_UP_COUNT};
 use super::stats_view_widgets::clear;
+use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
@@ -36,6 +37,7 @@ struct RankingState {
     snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     sort_by: Rc<Cell<SortBy>>,
     on_open_artist: StringCallback,
+    on_unify: StringCallback,
 }
 
 impl RankingState {
@@ -71,18 +73,19 @@ impl RankingState {
         self.clear_continuation();
         let token = self.generation.get();
         let generation = self.generation.clone();
-        let leader_metric = artists
-            .first()
-            .map_or(0, |artist| artist_metric(artist, sort_by));
+        let leader_metric = artists.first().map_or(0, |artist| {
+            super::stats_bands_row::artist_metric(artist, sort_by)
+        });
         let continuation = artists
             .iter()
             .skip(RUNNER_UP_COUNT + 1)
             .take(ARTIST_ROW_EXTRA)
             .collect::<Vec<_>>();
         let first_column_rows = continuation.len().div_ceil(2);
-        let mut rows = self.rows.borrow_mut();
+        let mut rendered_rows = Vec::with_capacity(continuation.len());
         for (offset, artist) in continuation.into_iter().enumerate() {
-            let callback = self.on_open_artist.clone();
+            let open_callback = self.on_open_artist.clone();
+            let unify_callback = self.on_unify.clone();
             let row = stats_bands_more::build_row(
                 offset + first_continuation_rank(),
                 artist,
@@ -90,12 +93,16 @@ impl RankingState {
                 sort_by,
                 &self.artist_image,
                 &generation,
-                Rc::new(move |artist| invoke(&callback, artist)),
+                ContinuationCallbacks {
+                    open_artist: Rc::new(move |artist| invoke(&open_callback, artist)),
+                    unify: Rc::new(move |key| invoke(&unify_callback, key)),
+                },
             );
             let column = usize::from(offset >= first_column_rows);
             self.columns[column].append(&row.root);
-            rows.push(row);
+            rendered_rows.push(row);
         }
+        *self.rows.borrow_mut() = rendered_rows;
         debug_assert_eq!(generation.get(), token);
     }
 }
@@ -117,15 +124,20 @@ impl StatsBandsCard {
 
         let plays_sort = adw::Toggle::builder()
             .name("plays")
-            .label("by plays")
+            .label(strings::stats_sort_by_plays())
             .build();
-        let time_sort = adw::Toggle::builder().name("time").label("by time").build();
+        let time_sort = adw::Toggle::builder()
+            .name("time")
+            .label(strings::stats_sort_by_time())
+            .build();
         let sort_toggle = adw::ToggleGroup::new();
         sort_toggle.add(plays_sort);
         sort_toggle.add(time_sort);
         sort_toggle.set_active_name(Some("time"));
         sort_toggle.set_halign(gtk4::Align::End);
-        sort_toggle.update_property(&[gtk4::accessible::Property::Label("Sort top artists")]);
+        sort_toggle.update_property(&[gtk4::accessible::Property::Label(
+            &strings::stats_sort_top_artists(),
+        )]);
 
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
         let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
@@ -138,7 +150,7 @@ impl StatsBandsCard {
         bands_row.set_artist_image(&artist_image);
         root.append(bands_row.widget());
 
-        let reveal_button = gtk4::Button::with_label("Show more top artists");
+        let reveal_button = gtk4::Button::with_label(&strings::stats_show_more_top_artists());
         reveal_button.add_css_class("flat");
         reveal_button.add_css_class("stats-songs-reveal");
         reveal_button.set_halign(gtk4::Align::Start);
@@ -164,6 +176,10 @@ impl StatsBandsCard {
             }
         });
         root.append(&revealer);
+        reveal_button.update_relation(&[gtk4::accessible::Relation::Controls(&[
+            revealer.upcast_ref()
+        ])]);
+        reveal_button.update_state(&[gtk4::accessible::State::Expanded(Some(false))]);
 
         let state = RankingState {
             bands_row,
@@ -174,6 +190,7 @@ impl StatsBandsCard {
             snapshot: Rc::new(RefCell::new(None)),
             sort_by: Rc::new(Cell::new(SortBy::Time)),
             on_open_artist: Rc::new(RefCell::new(None)),
+            on_unify: Rc::new(RefCell::new(None)),
         };
 
         reveal_button.connect_clicked({
@@ -188,11 +205,7 @@ impl StatsBandsCard {
                 } else {
                     revealer.set_reveal_child(false);
                 }
-                button.set_label(if reveal {
-                    "Hide more top artists"
-                } else {
-                    "Show more top artists"
-                });
+                update_reveal_button(button, reveal);
             }
         });
 
@@ -208,7 +221,7 @@ impl StatsBandsCard {
                 reveal_button.set_visible(offer);
                 if !offer {
                     revealer.set_reveal_child(false);
-                    reveal_button.set_label("Show more top artists");
+                    update_reveal_button(&reveal_button, false);
                 }
             }
         });
@@ -232,7 +245,7 @@ impl StatsBandsCard {
         self.reveal_button.set_visible(offer);
         if !offer {
             self.revealer.set_reveal_child(false);
-            self.reveal_button.set_label("Show more top artists");
+            update_reveal_button(&self.reveal_button, false);
         }
     }
 
@@ -240,7 +253,7 @@ impl StatsBandsCard {
         *self.state.snapshot.borrow_mut() = None;
         self.state.render(false);
         self.revealer.set_reveal_child(false);
-        self.reveal_button.set_label("Show more top artists");
+        update_reveal_button(&self.reveal_button, false);
         self.reveal_button.set_visible(false);
     }
 
@@ -253,7 +266,11 @@ impl StatsBandsCard {
     }
 
     pub(in crate::ui) fn set_on_unify(&self, callback: impl Fn(String) + 'static) {
-        self.state.bands_row.set_on_unify(callback);
+        *self.state.on_unify.borrow_mut() = Some(Rc::new(callback));
+        self.state.bands_row.set_on_unify({
+            let callback = self.state.on_unify.clone();
+            move |key| invoke(&callback, key)
+        });
     }
 
     pub(super) fn bars(&self) -> Vec<gtk4::LevelBar> {
@@ -263,6 +280,26 @@ impl StatsBandsCard {
     #[cfg(test)]
     pub(super) fn leader_label(&self) -> String {
         self.state.bands_row.leader_label()
+    }
+
+    #[cfg(test)]
+    pub(super) fn leader_summary(&self) -> String {
+        self.state.bands_row.leader_summary()
+    }
+
+    #[cfg(test)]
+    pub(super) fn runner_up_labels(&self) -> Vec<String> {
+        self.state.bands_row.runner_up_labels()
+    }
+
+    #[cfg(test)]
+    pub(super) fn continuation_labels(&self) -> Vec<String> {
+        self.state
+            .rows
+            .borrow()
+            .iter()
+            .map(ContinuationRow::artist_label)
+            .collect()
     }
 
     #[cfg(test)]
@@ -276,19 +313,21 @@ impl StatsBandsCard {
     }
 }
 
-fn artist_metric(artist: &RankedGroup, sort_by: SortBy) -> i64 {
-    match sort_by {
-        SortBy::Plays => artist.group.plays,
-        SortBy::Time => artist.group.ms,
-    }
-}
-
 fn sort_for_toggle_name(name: Option<&str>) -> SortBy {
     if name == Some("plays") {
         SortBy::Plays
     } else {
         SortBy::Time
     }
+}
+
+fn update_reveal_button(button: &gtk4::Button, expanded: bool) {
+    button.set_label(&if expanded {
+        strings::stats_hide_more_top_artists()
+    } else {
+        strings::stats_show_more_top_artists()
+    });
+    button.update_state(&[gtk4::accessible::State::Expanded(Some(expanded))]);
 }
 
 fn invoke(callback: &StringCallback, artist: String) {

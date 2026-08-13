@@ -7,7 +7,6 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
-use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen::RankedGroup;
 use reprise_core::library::stats_snapshot::SortBy;
 
@@ -184,11 +183,10 @@ impl StatsBandCard {
         self.fallback.set_label(&initials(&leader.label));
         self.fallback.set_visible(true);
         self.picture.set_visible(false);
-        self.summary.set_label(&format!(
-            "{} plays · {} · {}% of your artist listening",
-            format_thousands(leader.plays),
-            strings::stats_duration(leader.ms),
-            share_percent
+        self.summary.set_label(&strings::stats_artist_summary(
+            leader.plays,
+            leader.ms,
+            share_percent,
         ));
         self.set_unify_hint(leader.variant_count);
         self.load_image(&leader.label, &ranked.cover_candidates);
@@ -282,6 +280,11 @@ impl StatsBandCard {
     #[cfg(test)]
     pub(super) fn artist_label(&self) -> String {
         self.current_artist.borrow().clone()
+    }
+
+    #[cfg(test)]
+    pub(super) fn summary_text(&self) -> String {
+        self.summary.text().to_string()
     }
 }
 

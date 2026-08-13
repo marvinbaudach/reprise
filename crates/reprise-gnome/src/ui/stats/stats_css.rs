@@ -220,12 +220,7 @@ pub(in crate::ui) fn css() -> String {
          .stats-top-track-row:hover {{ \
            background-color: alpha(currentColor, {hover_alpha}); }}\n\
          .stats-top-track-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
-         .stats-artist-row {{ \
-           padding: 5px; \
-           transition: background-color {transition}; }}\n\
-         .stats-artist-row:hover {{ \
-           background-color: alpha(currentColor, {hover_alpha}); }}\n\
-         .stats-artist-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
+         .stats-artist-row {{ padding: 0; }}\n\
          .stats-bands-card {{ padding: 8px; }}",
         radius = tokens::RADIUS_SURFACE,
         border_alpha = tokens::SURFACE_BORDER_ALPHA,

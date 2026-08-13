@@ -34,6 +34,15 @@ const NEAR_ZERO_PREVIOUS_DAYS: &str = N_!("Less than one minute in the previous 
 const SPELLINGS_MERGED_ONE: &str = N_!("1 spelling merged \u{2014} unify it in the tag editor?");
 const SPELLINGS_MERGED: &str =
     N_!("{count} spellings merged \u{2014} unify them in the tag editor?");
+const STATS_SORT_BY_PLAYS: &str = N_!("by plays");
+const STATS_SORT_BY_TIME: &str = N_!("by time");
+const STATS_SORT_TOP_ARTISTS: &str = N_!("Sort top artists");
+const STATS_SHOW_MORE_TOP_ARTISTS: &str = N_!("Show more top artists");
+const STATS_HIDE_MORE_TOP_ARTISTS: &str = N_!("Hide more top artists");
+const STATS_ARTIST_PLAYS: &str = N_!("{plays} plays");
+const STATS_ARTIST_FIGURES: &str = N_!("{plays} plays · {duration}");
+const STATS_ARTIST_SUMMARY: &str =
+    N_!("{plays} plays · {duration} · {percent}% of your artist listening");
 pub const STATS_EMPTY: &str = N_!("Start listening to see your stats");
 /// Accessible name of a song row. The row itself is the play affordance —
 /// only its title and artist labels navigate — so this is what a screen
@@ -252,6 +261,51 @@ pub fn spellings_merged_hint(count: usize) -> String {
     )
 }
 
+pub fn stats_sort_by_plays() -> String {
+    text(STATS_SORT_BY_PLAYS)
+}
+
+pub fn stats_sort_by_time() -> String {
+    text(STATS_SORT_BY_TIME)
+}
+
+pub fn stats_sort_top_artists() -> String {
+    text(STATS_SORT_TOP_ARTISTS)
+}
+
+pub fn stats_show_more_top_artists() -> String {
+    text(STATS_SHOW_MORE_TOP_ARTISTS)
+}
+
+pub fn stats_hide_more_top_artists() -> String {
+    text(STATS_HIDE_MORE_TOP_ARTISTS)
+}
+
+pub fn stats_artist_plays(plays: i64) -> String {
+    formatted(STATS_ARTIST_PLAYS, &[("plays", &format_thousands(plays))])
+}
+
+pub fn stats_artist_figures(plays: i64, milliseconds: i64) -> String {
+    formatted(
+        STATS_ARTIST_FIGURES,
+        &[
+            ("plays", &format_thousands(plays)),
+            ("duration", &stats_duration(milliseconds)),
+        ],
+    )
+}
+
+pub fn stats_artist_summary(plays: i64, milliseconds: i64, percent: i64) -> String {
+    formatted(
+        STATS_ARTIST_SUMMARY,
+        &[
+            ("plays", &format_thousands(plays)),
+            ("duration", &stats_duration(milliseconds)),
+            ("percent", &percent.to_string()),
+        ],
+    )
+}
+
 pub fn stats_empty_title() -> String {
     text(STATS_EMPTY)
 }
@@ -289,6 +343,16 @@ mod tests {
             comparison_pill(-8, &previous_days(30)),
             "\u{25bc} 8% vs previous 30 days"
         );
+    }
+
+    #[test]
+    fn stats_23_artist_ranking_controls_and_values_are_localized() {
+        assert_eq!(stats_sort_by_plays(), "by plays");
+        assert_eq!(stats_sort_by_time(), "by time");
+        assert_eq!(stats_sort_top_artists(), "Sort top artists");
+        assert_eq!(stats_show_more_top_artists(), "Show more top artists");
+        assert_eq!(stats_hide_more_top_artists(), "Hide more top artists");
+        assert_eq!(stats_artist_plays(1_234), "1,234 plays");
     }
 
     #[test]

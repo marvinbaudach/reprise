@@ -28,15 +28,42 @@ fn stats_23_the_expander_is_offered_only_past_the_five_on_screen() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn stats_23_the_toggle_reorders_the_whole_row() {
     gtk4::init().unwrap();
-    let (card, snapshot) = card_and_snapshot();
+    let (card, snapshot) = card_and_full_ranking_snapshot();
 
     card.set_data(&snapshot);
-    let by_time = card.leader_label();
+    card.reveal_button.emit_clicked();
+    let by_time = (
+        card.leader_label(),
+        card.runner_up_labels()[0].clone(),
+        card.continuation_labels()[0].clone(),
+        card.leader_summary(),
+    );
     card.sort_toggle.set_active_name(Some("plays"));
-    let by_plays = card.leader_label();
+    let by_plays = (
+        card.leader_label(),
+        card.runner_up_labels()[0].clone(),
+        card.continuation_labels()[0].clone(),
+        card.leader_summary(),
+    );
 
-    assert_eq!(by_time, "Marathon");
-    assert_eq!(by_plays, "Sprinter");
+    assert_eq!(
+        by_time,
+        (
+            "Marathon".to_string(),
+            "Mid".to_string(),
+            "Other Six".to_string(),
+            "2 plays · 20 min · 30% of your artist listening".to_string(),
+        )
+    );
+    assert_eq!(
+        by_plays,
+        (
+            "Sprinter".to_string(),
+            "Play Runner".to_string(),
+            "Other Five".to_string(),
+            "10 plays · 10 min · 15% of your artist listening".to_string(),
+        )
+    );
 }
 
 #[test]
@@ -69,15 +96,80 @@ fn stats_23_a_continuation_row_opens_its_artist() {
 
     card.set_data(&snapshot);
     card.reveal_button.emit_clicked();
-    card.state.rows.borrow()[0].root.emit_clicked();
+    card.state.rows.borrow()[0].open_button.emit_clicked();
 
     assert_eq!(&*opened.borrow(), &["Artist 06"]);
 }
 
-fn card_and_snapshot() -> (StatsBandsCard, StatsSnapshot) {
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_a_continuation_row_retains_the_unification_hint() {
+    gtk4::init().unwrap();
+    let (card, mut snapshot) = card_and_snapshot_with(6);
+    let artist = snapshot
+        .top_artists
+        .iter_mut()
+        .find(|artist| artist.group.label == "Artist 06")
+        .unwrap();
+    artist.group.variant_count = 2;
+    let unified = Rc::new(RefCell::new(Vec::new()));
+    card.set_on_unify({
+        let unified = unified.clone();
+        move |key| unified.borrow_mut().push(key)
+    });
+
+    card.set_data(&snapshot);
+    card.reveal_button.emit_clicked();
+    let rows = card.state.rows.borrow();
+    assert!(rows[0].unify_button.is_visible());
+    assert_eq!(
+        rows[0].unify_button.tooltip_text().as_deref(),
+        Some("2 spellings merged — unify them in the tag editor?")
+    );
+    assert!(gtk4::test_accessible_has_property(
+        &rows[0].unify_button,
+        gtk4::AccessibleProperty::Label
+    ));
+    rows[0].unify_button.emit_clicked();
+
+    assert_eq!(&*unified.borrow(), &["name:artist 06"]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_continuation_controls_use_shared_states_and_accessibility() {
+    gtk4::init().unwrap();
+    let (card, snapshot) = card_and_snapshot_with(6);
+
+    card.set_data(&snapshot);
+    card.reveal_button.emit_clicked();
+
+    assert!(card.state.rows.borrow()[0]
+        .open_button
+        .has_css_class(crate::ui::style::buttons::TERTIARY_CLASS));
+    assert!(gtk4::test_accessible_has_state(
+        &card.reveal_button,
+        gtk4::AccessibleState::Expanded
+    ));
+    assert!(gtk4::test_accessible_has_relation(
+        &card.reveal_button,
+        gtk4::AccessibleRelation::Controls
+    ));
+}
+
+fn card_and_full_ranking_snapshot() -> (StatsBandsCard, StatsSnapshot) {
     let conn = crate::test_db::open().unwrap();
-    insert_artist(&conn, 1, "Sprinter", 60_000, 6);
-    insert_artist(&conn, 2, "Marathon", 600_000, 2);
+    for (id, artist, duration_ms, plays) in [
+        (1, "Sprinter", 60_000, 10),
+        (2, "Play Runner", 50_000, 9),
+        (3, "Mid", 80_000, 8),
+        (4, "Other Seven", 70_000, 7),
+        (5, "Other Six", 60_000, 6),
+        (6, "Other Five", 60_000, 5),
+        (7, "Marathon", 600_000, 2),
+    ] {
+        insert_artist(&conn, id, artist, duration_ms, plays);
+    }
     snapshot_card(&conn)
 }
 

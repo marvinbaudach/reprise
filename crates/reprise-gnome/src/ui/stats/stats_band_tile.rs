@@ -8,7 +8,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen::RankedGroup;
 use reprise_core::library::stats_snapshot::SortBy;
 
@@ -176,15 +175,9 @@ impl StatsBandTile {
         self.name.set_label(&group.label);
         self.initials
             .set_label(&super::stats_band_card::initials(&group.label));
-        self.figures.set_label(&format!(
-            "{} plays · {}",
-            format_thousands(group.plays),
-            strings::stats_duration(group.ms)
-        ));
-        let metric = match sort_by {
-            SortBy::Plays => group.plays,
-            SortBy::Time => group.ms,
-        };
+        self.figures
+            .set_label(&strings::stats_artist_figures(group.plays, group.ms));
+        let metric = super::stats_bands_row::artist_metric(ranked, sort_by);
         self.bar.set_value(relative_value(metric, leader_metric));
         self.unify.set_visible(group.variant_count >= 2);
         self.unify.set_tooltip_text(
@@ -242,6 +235,11 @@ impl StatsBandTile {
                 }),
             },
         );
+    }
+
+    #[cfg(test)]
+    pub(super) fn artist_label(&self) -> String {
+        self.current_artist.borrow().clone()
     }
 }
 
