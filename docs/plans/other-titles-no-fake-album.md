@@ -2,7 +2,7 @@
 slug: other-titles-no-fake-album
 worktree: /home/marvin/Projects/reprise-other-titles-subtitle
 branch: fix/other-titles-no-fake-album
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-13
 ---
