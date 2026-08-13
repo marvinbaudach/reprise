@@ -7,7 +7,9 @@ use reprise_core::artist_news;
 use reprise_core::concerts;
 use reprise_core::library::playlists;
 use reprise_core::library::settings;
-use reprise_core::modules::{self, CONCERTS_MODULE, NEW_RELEASES_MODULE, RADIO_MODULE};
+use reprise_core::modules::{
+    self, CONCERTS_MODULE, NEW_RELEASES_MODULE, PODCASTS_MODULE, RADIO_MODULE, YOUTUBE_MODULE,
+};
 use reprise_core::online_sources;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
@@ -24,6 +26,23 @@ use super::surface::remember_issue_focus_entry;
 use super::{
     find_row, has_sidebar_row, resolve_select_source, select_row_in_its_listbox, RowEntry, Shared,
 };
+
+const OPTIONAL_SIDEBAR_MODULES: &[&reprise_core::modules::ModuleDescriptor] = &[
+    &PODCASTS_MODULE,
+    &YOUTUBE_MODULE,
+    &RADIO_MODULE,
+    &NEW_RELEASES_MODULE,
+    &CONCERTS_MODULE,
+];
+
+pub(in crate::ui) fn turned_off_modules(conn: &reprise_core::db::Db) -> Vec<&'static str> {
+    OPTIONAL_SIDEBAR_MODULES
+        .iter()
+        .copied()
+        .filter(|module| !modules::is_enabled(conn, module).unwrap_or(false))
+        .map(|module| module.id)
+        .collect()
+}
 
 pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
     let refresh_number = shared.refresh_count.get() + 1;
@@ -266,6 +285,10 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         sidebar_presentation::nonzero_count(queue_count),
         NavIcon::Queue,
     );
+    let turned_off_modules = turned_off_modules(&shared.conn);
+    if !turned_off_modules.is_empty() {
+        add_turned_off_action_row(shared, turned_off_modules);
+    }
 
     let playlist_add_button = sidebar_presentation::append_header_with_action(
         &shared.listbox,
@@ -551,6 +574,26 @@ fn add_issue_row(
         .rows
         .borrow_mut()
         .push((row, source, title.to_string()));
+}
+
+fn add_turned_off_action_row(shared: &Rc<Shared>, targets: Vec<&'static str>) {
+    let title = strings::sidebar_turned_off_count(targets.len());
+    let row = super::sidebar_turned_off_row::build(&title);
+    row.set_selectable(false);
+    // a11y-semantics: role=list-item name=turned-off-modules state=focusable action=activate
+    row.set_focusable(true);
+    // input-parity: ACC-8 keyboard=turned-off-modules-enter
+    {
+        let shared = Rc::downgrade(shared);
+        row.connect_activate(move |_| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            let callback = shared.on_present_plugins.borrow().clone();
+            sidebar_module_menu::dispatch_present_plugins(callback, &targets);
+        });
+    }
+    shared.listbox.append(&row);
 }
 
 pub(super) fn add_issue_action_row(

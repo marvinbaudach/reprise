@@ -55,6 +55,10 @@ pub fn sidebar_turned_off_showing_music(name: &str) -> String {
     super::formatted(N_!("{name} turned off · showing Music"), &[("name", name)])
 }
 
+pub fn sidebar_turned_off_count(count: usize) -> String {
+    super::formatted(N_!("{count} turned off"), &[("count", &count.to_string())])
+}
+
 // Appearance accent and color scheme preferences.
 pub const ACCENT_COLOR: &str = N_!("Accent Color");
 pub const ACCENT_COLOR_SUBTITLE: &str = N_!("Choose the Reprise accent or follow the system");

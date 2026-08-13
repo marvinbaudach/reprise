@@ -342,6 +342,31 @@ mod tests {
         assert_eq!(&*seen.borrow(), &["podcasts"]);
     }
 
+    #[test]
+    fn nav_16_turned_off_row_tracks_every_disabled_optional_module() {
+        let conn = crate::test_db::open().unwrap();
+        for module in [
+            &reprise_core::modules::PODCASTS_MODULE,
+            &reprise_core::modules::YOUTUBE_MODULE,
+            &reprise_core::modules::RADIO_MODULE,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+            &reprise_core::modules::CONCERTS_MODULE,
+        ] {
+            reprise_core::modules::set_enabled(&conn, module, true).unwrap();
+        }
+        assert!(crate::ui::sidebar::sidebar_rebuild::turned_off_modules(&conn).is_empty());
+
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, false)
+            .unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, false)
+            .unwrap();
+
+        assert_eq!(
+            crate::ui::sidebar::sidebar_rebuild::turned_off_modules(&conn),
+            vec!["podcasts", "concerts"]
+        );
+    }
+
     fn assert_row_anchored(popover: &gtk4::PopoverMenu, row: &gtk4::ListBoxRow) {
         assert!(popover.has_arrow());
         assert_eq!(popover.position(), gtk4::PositionType::Right);
@@ -383,6 +408,15 @@ mod tests {
         std::iter::successors(widget.first_child(), gtk4::prelude::WidgetExt::next_sibling)
             .find_map(|child| child.downcast::<gtk4::PopoverMenu>().ok())
             .expect("optional sidebar row popover")
+    }
+
+    fn turned_off_action_row(listbox: &gtk4::ListBox) -> Option<gtk4::ListBoxRow> {
+        std::iter::successors(
+            listbox.first_child(),
+            gtk4::prelude::WidgetExt::next_sibling,
+        )
+        .filter_map(|child| child.downcast::<gtk4::ListBoxRow>().ok())
+        .find(|row| row.has_css_class("reprise-turned-off-modules"))
     }
 
     fn menu_has_action(model: &gtk4::gio::MenuModel, expected: &str) -> bool {
@@ -526,5 +560,72 @@ mod tests {
             ViewSource::Podcasts
         );
         assert_eq!(&*calls.borrow(), &[("podcasts", false), ("podcasts", true)]);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_16_turned_off_row_is_not_a_restorable_session_source() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        reprise_core::online_sources::set_enabled(&conn, true).unwrap();
+        for module in [
+            &reprise_core::modules::PODCASTS_MODULE,
+            &reprise_core::modules::YOUTUBE_MODULE,
+            &reprise_core::modules::RADIO_MODULE,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+            &reprise_core::modules::CONCERTS_MODULE,
+        ] {
+            reprise_core::modules::set_enabled(&conn, module, true).unwrap();
+        }
+        let window = adw::ApplicationWindow::builder().build();
+        let sidebar = Sidebar::new(conn.clone(), &window, || 0);
+        assert!(turned_off_action_row(&sidebar.shared.listbox).is_none());
+
+        reprise_core::modules::set_enabled(&conn, &PODCASTS_MODULE, false).unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, false)
+            .unwrap();
+        let presented = Rc::new(RefCell::new(Vec::new()));
+        {
+            let presented = presented.clone();
+            sidebar.set_on_present_plugins(move |targets| {
+                presented.borrow_mut().extend_from_slice(targets);
+            });
+        }
+        sidebar.refresh("test optional modules disabled");
+
+        let action_row =
+            turned_off_action_row(&sidebar.shared.listbox).expect("turned-off modules action row");
+        assert_eq!(
+            action_row
+                .child()
+                .and_then(|button| button.downcast::<gtk4::Button>().ok())
+                .and_then(|button| button.child())
+                .and_then(|content| content.downcast::<gtk4::Box>().ok())
+                .and_then(|content| content.first_child())
+                .and_then(|power| power.next_sibling())
+                .and_then(|title| title.downcast::<gtk4::Label>().ok())
+                .map(|title| title.text().to_string())
+                .as_deref(),
+            Some("2 turned off")
+        );
+        assert!(!sidebar
+            .shared
+            .rows
+            .borrow()
+            .iter()
+            .any(|(row, _, _)| row == &action_row));
+        assert!(find_row(&sidebar.shared, &ViewSource::Podcasts).is_none());
+        let (restored, _) = sidebar.restore_source(ViewSource::Podcasts);
+        assert_eq!(restored, ViewSource::Library);
+
+        action_row.activate();
+        assert_eq!(&*presented.borrow(), &["podcasts", "concerts"]);
+
+        reprise_core::modules::set_enabled(&conn, &PODCASTS_MODULE, true).unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, true)
+            .unwrap();
+        sidebar.refresh("test optional modules restored");
+        assert!(turned_off_action_row(&sidebar.shared.listbox).is_none());
     }
 }

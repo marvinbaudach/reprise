@@ -17,6 +17,7 @@ pub(in crate::ui) mod sidebar_rebuild;
 mod sidebar_root;
 mod sidebar_row_wiring;
 pub(crate) mod sidebar_session;
+mod sidebar_turned_off_row;
 #[path = "sidebar.rs"]
 mod surface;
 

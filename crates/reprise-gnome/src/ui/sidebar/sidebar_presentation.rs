@@ -39,6 +39,7 @@ pub(in crate::ui) enum NavIcon {
     Youtube,
     Radio,
     MyStats,
+    TurnedOff,
 }
 
 impl NavIcon {
@@ -58,6 +59,7 @@ impl NavIcon {
             Self::Podcasts => "audio-input-microphone-symbolic",
             Self::Youtube => "video-x-generic-symbolic",
             Self::Radio => "network-wireless-symbolic",
+            Self::TurnedOff => "system-shutdown-symbolic",
             // Unused: My Stats renders a drawn three-bar chart via `nav_icon`,
             // not a theme symbolic (so it never collides with `TopRated`'s
             // star). Kept only to satisfy the exhaustive match.
