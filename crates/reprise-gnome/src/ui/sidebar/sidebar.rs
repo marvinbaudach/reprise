@@ -359,24 +359,6 @@ impl Sidebar {
         *self.shared.on_tracks_added.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// Wires the optional-row context menu to the Plugins module mutation
-    /// path. A weak `PreferencesContext` is supplied during preferences
-    /// construction, so the sidebar cannot create an ownership cycle.
-    pub(in crate::ui) fn set_on_module_enabled(
-        &self,
-        callback: impl Fn(&'static reprise_core::modules::ModuleDescriptor, bool) -> Result<(), String>
-            + 'static,
-    ) {
-        *self.shared.on_module_enabled.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn set_on_present_plugins(
-        &self,
-        callback: impl Fn(&[&'static str]) + 'static,
-    ) {
-        *self.shared.on_present_plugins.borrow_mut() = Some(Rc::new(callback));
-    }
-
     /// Routes Missing-files bulk cleanup through the shared tombstone/Undo
     /// service owned by the track list.
     pub fn set_on_remove_missing(&self, callback: impl Fn(&[i64]) + 'static) {

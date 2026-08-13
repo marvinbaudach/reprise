@@ -1,24 +1,17 @@
-//! A small CSS-drawn three-bar equaliser motif, shared by two surfaces:
-//!
-//! - **Animated** — shown before the now-playing track's title in the track
+//! A small CSS-drawn three-bar equaliser motif shown before the now-playing
+//! track's title in the track
 //!   table (`track_list_columns.rs`). This is the MOT-5 named exception for
 //!   EQ indicators, so the loop runs only during active playback. Its bars
 //!   pulse in the player accent (`@reprise_player_accent`) and freeze when
 //!   playback is paused, driven
 //!   entirely by CSS `@keyframes` plus an ancestor `.playback-paused` class
 //!   toggled on the `ColumnView` (see `TrackList::set_playback_paused`).
-//! - **Static** — the "My Stats" sidebar icon (`sidebar_presentation.rs`),
-//!   three fixed ascending bars in `currentColor` so it reads like the other
-//!   symbolic nav icons while being visibly distinct from the "Top rated"
-//!   star.
 //!
 //! ## Why a CSS widget, not an icon
 //!
-//! A static app-owned symbolic could not animate with playback. Drawing three
-//! `gtk::Box` bars styled by app-owned CSS renders identically on every icon
-//! theme (the same reasoning the rating widget uses text glyphs over theme
-//! symbolics — see `ui::rating`'s module doc), animates for free, and serves
-//! both surfaces from one widget.
+//! Drawing three `gtk::Box` bars styled by app-owned CSS renders identically
+//! on every icon theme (the same reasoning the rating widget uses text glyphs
+//! over theme symbolics — see `ui::rating`'s module doc) and animates for free.
 //!
 //! The bars animate `min-height` (not `transform: scaleY`): GTK4 CSS honours
 //! keyframed `min-height` reliably, and with each bar bottom-aligned
@@ -28,13 +21,11 @@
 
 use gtk4::prelude::*;
 
-/// Root class carried by every instance; the animated colour + keyframes and
-/// the static heights are scoped under the two modifier classes below.
+/// Root class carried by every instance; the animated colour and keyframes
+/// are scoped under the modifier class below.
 pub(in crate::ui) const EQ_BARS_CLASS: &str = "reprise-eq-bars";
 /// Modifier for the animated, accent-coloured now-playing variant.
 const EQ_ANIMATED_CLASS: &str = "reprise-eq-animated";
-/// Modifier for the static, `currentColor` sidebar variant.
-const EQ_STATIC_CLASS: &str = "reprise-eq-static";
 /// Per-bar class (`reprise-eq-bar`) plus a 1-based positional class
 /// (`reprise-eq-bar-1`…) so each bar can carry its own animation delay and
 /// static height without relying on `:nth-child` support.
@@ -58,17 +49,11 @@ const BAR_COUNT: usize = 3;
 const BAR_SPACING: i32 = 2;
 const WIDGET_SIZE: i32 = 16;
 
-/// Which of the two presentations to build.
+/// Which presentation to build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::ui) enum EqVariant {
     /// Pulsing accent bars for the now-playing row.
     Animated,
-    /// Fixed ascending `currentColor` bars retained by the CSS regression tests.
-    #[allow(
-        dead_code,
-        reason = "retained as the static equalizer regression fixture after My Stats adopted a symbolic icon"
-    )]
-    Static,
 }
 
 /// Which tempo step a swell reading belongs to, given the step it is in now.
@@ -101,7 +86,6 @@ pub(in crate::ui) fn build(variant: EqVariant) -> gtk4::Box {
     container.add_css_class(EQ_BARS_CLASS);
     container.add_css_class(match variant {
         EqVariant::Animated => EQ_ANIMATED_CLASS,
-        EqVariant::Static => EQ_STATIC_CLASS,
     });
     container.set_valign(gtk4::Align::Center);
     container.set_halign(gtk4::Align::Center);
@@ -123,7 +107,7 @@ pub(in crate::ui) fn build(variant: EqVariant) -> gtk4::Box {
 /// The equaliser CSS section; installed app-wide by [`super::style`] (see its
 /// `app_css` list). Keyframed `min-height` per bar, staggered so the three
 /// bars pulse out of phase; `.playback-paused` (on the `ColumnView`) freezes
-/// them; the static variant overrides to fixed ascending heights.
+/// them.
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{EQ_BARS_CLASS} {{ min-height: {WIDGET_SIZE}px; }}\n\
@@ -142,10 +126,6 @@ pub(in crate::ui) fn css() -> String {
          .{EQ_BAR_CLASS}-3 {{ animation-delay: -800ms; }}\n\
          .playback-paused .{EQ_ANIMATED_CLASS} .{EQ_BAR_CLASS} {{ \
            animation-play-state: paused; }}\n\
-         .{EQ_STATIC_CLASS} .{EQ_BAR_CLASS} {{ animation: none; }}\n\
-         .{EQ_STATIC_CLASS} .{EQ_BAR_CLASS}-1 {{ min-height: 6px; }}\n\
-         .{EQ_STATIC_CLASS} .{EQ_BAR_CLASS}-2 {{ min-height: 10px; }}\n\
-         .{EQ_STATIC_CLASS} .{EQ_BAR_CLASS}-3 {{ min-height: 14px; }}\n\
          @keyframes reprise-eq {{ \
            0% {{ min-height: 4px; }} \
            25% {{ min-height: 14px; }} \
@@ -180,25 +160,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn static_variant_is_marked_static_not_animated() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let bars = build(EqVariant::Static);
-        assert!(bars.has_css_class(EQ_STATIC_CLASS));
-        assert!(!bars.has_css_class(EQ_ANIMATED_CLASS));
-    }
-
-    #[test]
-    fn css_defines_animation_pause_and_static_overrides() {
+    fn css_defines_animation_and_pause() {
         let css = css();
         assert!(css.contains("@keyframes reprise-eq"));
         assert!(css.contains("animation-play-state: paused"));
         assert!(css.contains("@reprise_player_accent"));
-        assert!(css.contains(".reprise-eq-static .reprise-eq-bar { animation: none; }"));
         // Pause must be scoped to the animated variant under the ColumnView's
-        // `.playback-paused`, never the static sidebar icon.
+        // `.playback-paused`.
         assert!(css.contains(".playback-paused .reprise-eq-animated .reprise-eq-bar"));
     }
 

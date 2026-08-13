@@ -16,6 +16,13 @@ use crate::ui::{popover_lifecycle, strings};
 const ACTION_DISABLE: &str = "disable";
 const ACTION_GROUP: &str = "sidebarmodule";
 const ACTION_SETTINGS: &str = "settings";
+const OPTIONAL_MODULE_SOURCES: &[(ViewSource, &ModuleDescriptor)] = &[
+    (ViewSource::Podcasts, &PODCASTS_MODULE),
+    (ViewSource::Youtube, &YOUTUBE_MODULE),
+    (ViewSource::Radio, &RADIO_MODULE),
+    (ViewSource::Releases, &NEW_RELEASES_MODULE),
+    (ViewSource::Concerts, &CONCERTS_MODULE),
+];
 
 pub(in crate::ui) struct ModuleMenuHighlight {
     generation: Cell<u64>,
@@ -77,25 +84,15 @@ fn dispatch_set_enabled(
 }
 
 fn module_for_source(source: &ViewSource) -> Option<&'static ModuleDescriptor> {
-    match source {
-        ViewSource::Podcasts => Some(&PODCASTS_MODULE),
-        ViewSource::Youtube => Some(&YOUTUBE_MODULE),
-        ViewSource::Radio => Some(&RADIO_MODULE),
-        ViewSource::Releases => Some(&NEW_RELEASES_MODULE),
-        ViewSource::Concerts => Some(&CONCERTS_MODULE),
-        _ => None,
-    }
+    OPTIONAL_MODULE_SOURCES
+        .iter()
+        .find_map(|(candidate, module)| (candidate == source).then_some(*module))
 }
 
 fn source_for_module(module: &ModuleDescriptor) -> Option<ViewSource> {
-    match module.id {
-        "podcasts" => Some(ViewSource::Podcasts),
-        "youtube" => Some(ViewSource::Youtube),
-        "radio" => Some(ViewSource::Radio),
-        "new_releases" => Some(ViewSource::Releases),
-        "concerts" => Some(ViewSource::Concerts),
-        _ => None,
-    }
+    OPTIONAL_MODULE_SOURCES
+        .iter()
+        .find_map(|(source, candidate)| (candidate.id == module.id).then(|| source.clone()))
 }
 
 pub(in crate::ui) fn wire(
@@ -277,7 +274,7 @@ mod tests {
 
     use super::{
         disable_module, dispatch_present_plugins, dispatch_set_enabled, module_for_source,
-        OnPresentPlugins, OnSetModuleEnabled,
+        source_for_module, OnPresentPlugins, OnSetModuleEnabled,
     };
     use crate::ui::sidebar::{find_row, Sidebar};
 
@@ -310,6 +307,32 @@ mod tests {
                 "{} must remain a permanent sidebar route",
                 permanent.label()
             );
+        }
+    }
+
+    #[test]
+    fn nav_16_optional_module_sources_round_trip_both_directions() {
+        for (source, module) in [
+            (
+                ViewSource::Podcasts,
+                &reprise_core::modules::PODCASTS_MODULE,
+            ),
+            (ViewSource::Youtube, &reprise_core::modules::YOUTUBE_MODULE),
+            (ViewSource::Radio, &reprise_core::modules::RADIO_MODULE),
+            (
+                ViewSource::Releases,
+                &reprise_core::modules::NEW_RELEASES_MODULE,
+            ),
+            (
+                ViewSource::Concerts,
+                &reprise_core::modules::CONCERTS_MODULE,
+            ),
+        ] {
+            assert_eq!(
+                module_for_source(&source).map(|candidate| candidate.id),
+                Some(module.id)
+            );
+            assert_eq!(source_for_module(module), Some(source));
         }
     }
 
@@ -608,6 +631,18 @@ mod tests {
                 .map(|title| title.text().to_string())
                 .as_deref(),
             Some("2 turned off")
+        );
+        assert_eq!(
+            action_row
+                .child()
+                .and_then(|button| button.downcast::<gtk4::Button>().ok())
+                .and_then(|button| button.child())
+                .and_then(|content| content.downcast::<gtk4::Box>().ok())
+                .and_then(|content| content.last_child())
+                .and_then(|next| next.downcast::<gtk4::Image>().ok())
+                .and_then(|next| next.icon_name())
+                .as_deref(),
+            Some("go-next-symbolic")
         );
         assert!(!sidebar
             .shared

@@ -17,10 +17,12 @@ pub(super) fn show_with_action(
     overlay: &adw::ToastOverlay,
     text: &str,
     button: &str,
+    timeout: u32,
     on_click: impl Fn() + 'static,
 ) -> adw::Toast {
     let toast = adw::Toast::new(text);
     toast.set_button_label(Some(button));
+    toast.set_timeout(timeout);
     toast.connect_button_clicked(move |_| on_click());
     overlay.add_toast(toast.clone());
     toast

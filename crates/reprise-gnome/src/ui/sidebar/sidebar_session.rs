@@ -61,6 +61,24 @@ pub(in crate::ui) fn prepare_history_reroute(shared: &Shared, target: &ViewSourc
 // Queue-nav-row drop seams, relocated from `sidebar.rs` (orchestrator size
 // rule) — same overflow home as `sync_current_source` above.
 impl crate::ui::sidebar::Sidebar {
+    /// Wires the optional-row context menu to the Plugins module mutation
+    /// path. A weak `PreferencesContext` is supplied during preferences
+    /// construction, so the sidebar cannot create an ownership cycle.
+    pub(in crate::ui) fn set_on_module_enabled(
+        &self,
+        callback: impl Fn(&'static reprise_core::modules::ModuleDescriptor, bool) -> Result<(), String>
+            + 'static,
+    ) {
+        *self.shared.on_module_enabled.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_present_plugins(
+        &self,
+        callback: impl Fn(&[&'static str]) + 'static,
+    ) {
+        *self.shared.on_present_plugins.borrow_mut() = Some(Rc::new(callback));
+    }
+
     /// Sets the callback invoked when tracks are dropped onto the Queue nav
     /// row — see `Shared::on_queue_drop`'s doc comment. `window.rs` wires
     /// this to `PlayerController::append_to_queue`.
@@ -124,8 +142,7 @@ pub(in crate::ui) fn show_toast_with_action(
 ) -> Option<libadwaita::Toast> {
     match shared.toast_overlay.upgrade() {
         Some(overlay) => {
-            let toast = toasts::show_with_action(&overlay, text, button, on_click);
-            toast.set_timeout(5);
+            let toast = toasts::show_with_action(&overlay, text, button, 5, on_click);
             Some(toast)
         }
         None => {

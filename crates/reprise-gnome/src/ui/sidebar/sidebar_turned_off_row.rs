@@ -12,11 +12,13 @@ pub(super) fn build(title: &str) -> gtk4::ListBoxRow {
         .and_then(|child| child.downcast::<gtk4::Button>().ok())
         .and_then(|button| button.child())
         .and_then(|child| child.downcast::<gtk4::Box>().ok());
-    if let Some(content) = content {
-        let next = gtk4::Image::from_icon_name("go-next-symbolic");
-        next.set_pixel_size(16);
-        next.set_valign(gtk4::Align::Center);
-        content.append(&next);
-    }
+    let Some(content) = content else {
+        tracing::warn!("turned-off modules row has no navigation content; chevron is missing");
+        return row;
+    };
+    let next = gtk4::Image::from_icon_name("go-next-symbolic");
+    next.set_pixel_size(16);
+    next.set_valign(gtk4::Align::Center);
+    content.append(&next);
     row
 }
