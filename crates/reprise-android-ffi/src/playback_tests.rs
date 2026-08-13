@@ -406,7 +406,17 @@ fn session_modes_are_readable_and_repeat_one_refeeds_after_media3_auto_advance()
         "Repeat::All must leave the track it just finished",
     );
 
-    fixture.session.previous().unwrap();
+    fixture
+        .session
+        .play_tracks(
+            vec![10, 11],
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
     fixture.session.set_repeat(AndroidRepeatMode::One).unwrap();
     assert_eq!(
         fixture.session.snapshot().unwrap().repeat,

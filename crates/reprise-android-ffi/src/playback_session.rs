@@ -13,6 +13,7 @@ use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
 };
 
+mod history;
 mod queue_boundary;
 mod queue_persistence;
 mod trash_boundary;
@@ -61,6 +62,8 @@ pub trait AndroidPlaybackListener: Send + Sync {
 
 struct SessionState {
     queue: Queue,
+    /// PLAY-14 runtime playback history; see `playback_session/history.rs`.
+    history: history::HistoryState,
     track_ids: Vec<i64>,
     track_index_by_id: HashMap<i64, usize>,
     uris: Vec<String>,
@@ -76,6 +79,7 @@ impl SessionState {
     fn new() -> Self {
         Self {
             queue: Queue::new(),
+            history: history::HistoryState::default(),
             track_ids: Vec::new(),
             track_index_by_id: HashMap::new(),
             uris: Vec::new(),
@@ -129,6 +133,7 @@ impl SessionState {
                 error: None,
             },
             queue: restored.queue,
+            history: history::HistoryState::default(),
             track_ids: restored.track_ids,
             track_index_by_id,
             uris: restored.uris,
@@ -140,6 +145,9 @@ impl SessionState {
     }
 
     fn current_uri(&self) -> Option<String> {
+        if let Some(target) = self.history.presented() {
+            return Some(target.uri.clone());
+        }
         self.queue
             .current()
             .and_then(|track_id| self.track_index(track_id))
@@ -169,6 +177,7 @@ impl SessionState {
     }
 
     fn adopt_current(&mut self) {
+        self.history.clear_presented();
         self.snapshot.current_index = self
             .queue
             .current()
@@ -200,16 +209,25 @@ impl SessionState {
     }
 
     fn current_track_id(&self) -> Option<i64> {
+        if let Some(target) = self.history.presented() {
+            return target.entry.item.track_id();
+        }
         self.queue.current()
     }
 
     fn presented_snapshot(&self) -> AndroidPlaybackSnapshot {
         let mut snapshot = self.snapshot.clone();
-        let identity = self.current_track_id().and_then(|track_id| {
-            self.track_index(track_id)
-                .and_then(|index| self.uris.get(index))
-                .map(|uri| (track_id, uri))
-        });
+        let identity = self
+            .history
+            .presented()
+            .and_then(|target| target.entry.item.track_id().map(|id| (id, &target.uri)))
+            .or_else(|| {
+                self.queue.current().and_then(|track_id| {
+                    self.track_index(track_id)
+                        .and_then(|index| self.uris.get(index))
+                        .map(|uri| (track_id, uri))
+                })
+            });
         match identity {
             Some((track_id, uri)) => {
                 snapshot.current_track_id = Some(track_id);
@@ -336,6 +354,7 @@ impl SessionInner {
         }
         {
             let mut state = self.lock()?;
+            state.note_playback_started();
             state.stream = backend.current_generation();
         }
         backend.set_next(next_uri.as_deref());
@@ -405,6 +424,7 @@ impl SessionInner {
                     if state.queue.advance_auto().is_some() {
                         state.adopt_current();
                         state.current_loaded = true;
+                        state.note_playback_started();
                         (
                             FollowUp::Feed(state.next_uri()),
                             play,
@@ -612,11 +632,15 @@ impl AndroidPlaybackSession {
     }
 
     pub fn next(&self) -> Result<(), AndroidPlaybackError> {
+        if self.inner.forward_from_history()? {
+            return Ok(());
+        }
         self.move_playhead(Queue::next_manual)
     }
 
+    /// PLAY-14: Previous follows playback history, never the queue cursor.
     pub fn previous(&self) -> Result<(), AndroidPlaybackError> {
-        self.move_playhead(Queue::previous)
+        self.inner.previous_from_history()
     }
 
     pub fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError> {
