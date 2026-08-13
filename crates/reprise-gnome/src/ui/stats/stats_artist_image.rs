@@ -3,14 +3,17 @@
 //! initials when neither source resolves.
 
 use std::cell::{Cell, RefCell};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk4::{gio, glib};
 use reprise_core::cover::ThumbnailSize;
 
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
+
+type CachedPortraitResolver = Arc<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;
 
 pub(super) struct ArtistImageRequest {
     pub artist: String,
@@ -27,9 +30,10 @@ pub(super) fn next_candidate(candidates: &[String], tried: usize) -> Option<&str
 }
 
 #[derive(Clone)]
-pub(super) struct StatsArtistImage {
+pub(in crate::ui) struct StatsArtistImage {
     cover_loader: Rc<CoverLoader>,
     portrait: Rc<RefCell<Option<Rc<ArtistPortraitRuntime>>>>,
+    cached_portrait: CachedPortraitResolver,
 }
 
 impl StatsArtistImage {
@@ -37,6 +41,24 @@ impl StatsArtistImage {
         Rc::new(Self {
             cover_loader,
             portrait: Rc::new(RefCell::new(None)),
+            cached_portrait: Arc::new(|artist| {
+                match reprise_core::artist_portrait::load_cached(artist) {
+                    reprise_core::artist_portrait::PortraitOutcome::Found(path) => Some(path),
+                    reprise_core::artist_portrait::PortraitOutcome::NotFound => None,
+                }
+            }),
+        })
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(
+        cover_loader: Rc<CoverLoader>,
+        cached_portrait: impl Fn(&str) -> Option<PathBuf> + Send + Sync + 'static,
+    ) -> Rc<Self> {
+        Rc::new(Self {
+            cover_loader,
+            portrait: Rc::new(RefCell::new(None)),
+            cached_portrait: Arc::new(cached_portrait),
         })
     }
 
@@ -49,15 +71,11 @@ impl StatsArtistImage {
         let picture = picture.clone();
         glib::spawn_future_local(async move {
             let name = request.artist.clone();
-            let cached = gio::spawn_blocking(move || {
-                match reprise_core::artist_portrait::load_cached(&name) {
-                    reprise_core::artist_portrait::PortraitOutcome::Found(path) => Some(path),
-                    reprise_core::artist_portrait::PortraitOutcome::NotFound => None,
-                }
-            })
-            .await
-            .ok()
-            .flatten();
+            let cached_portrait = this.cached_portrait.clone();
+            let cached = gio::spawn_blocking(move || cached_portrait(&name))
+                .await
+                .ok()
+                .flatten();
             if request.generation.get() != request.token {
                 return;
             }

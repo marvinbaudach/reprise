@@ -10,6 +10,7 @@ use reprise_core::library::group_key::Group;
 use reprise_core::library::stats_screen::{RankedGroup, TopTrack};
 
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
+use crate::ui::cover_loader::CoverLoader;
 
 const TINY_PNG: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
@@ -87,16 +88,19 @@ fn the_leader_and_all_four_tiles_load_artist_portraits() {
         }
     });
     let row = StatsBandsRow::new();
-    row.set_artist_portrait_runtime(&runtime);
+    let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    let image = StatsArtistImage::for_test(loader, |_| None);
+    image.set_portrait_runtime(runtime);
+    row.set_artist_image(&image);
 
     row.set_data(&fixture(4));
     assert!(
         crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-            row.leader().artwork_source.get() == StatsArtworkSource::Portrait
+            row.leader().image_loaded.get() == Some(true)
                 && row
                     .tiles()
                     .iter()
-                    .all(|tile| tile.artwork_source.get() == StatsArtworkSource::Portrait)
+                    .all(|tile| tile.image_loaded.get() == Some(true))
         },),
         "timed out waiting for stats artwork"
     );

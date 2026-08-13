@@ -15,6 +15,7 @@ use reprise_core::library::stats_screen::group_track_ids;
 use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
 use reprise_core::playback::PlaybackState;
 
+use super::stats_artist_image::StatsArtistImage;
 use super::stats_bands_row::StatsBandsRow;
 use super::stats_entrance::{HorizontalBarGroup, StatsEntrance};
 use super::stats_genre_card::StatsGenreCard;
@@ -86,18 +87,15 @@ pub(in crate::ui) struct StatsView {
 }
 
 impl StatsView {
-    pub(in crate::ui) fn new(
-        cover_loader: Rc<CoverLoader>,
-        artist_portrait: &Rc<ArtistPortraitRuntime>,
-    ) -> Self {
+    pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
         let header = StatsHeader::new();
         let hero = StatsHero::new();
         let period_dropdown = header.period_dropdown.clone();
         let period_model = header.period_model.clone();
 
         let bands_row = StatsBandsRow::new();
-        bands_row.set_cover_loader(&cover_loader);
-        bands_row.set_artist_portrait_runtime(artist_portrait);
+        let artist_image = StatsArtistImage::new(cover_loader.clone());
+        bands_row.set_artist_image(&artist_image);
         let genres = StatsGenreCard::new();
         let genres_section = card(genres.widget());
 
@@ -185,6 +183,7 @@ impl StatsView {
             header: header.clone(),
             hero: hero.clone(),
             bands_row: bands_row.clone(),
+            artist_image,
             genres_section_data: genres.clone(),
             songs_card: songs_card.clone(),
             songs_section: songs_section.clone(),
@@ -240,10 +239,11 @@ impl StatsView {
 
     #[cfg(test)]
     fn new_for_test(cover_loader: Rc<CoverLoader>) -> Self {
-        let artist_portrait = ArtistPortraitRuntime::for_test(false, |_| {
-            panic!("disabled test runtime must not resolve portraits")
-        });
-        Self::new(cover_loader, &artist_portrait)
+        Self::new(cover_loader)
+    }
+
+    pub(in crate::ui) fn set_portrait_runtime(&self, runtime: Rc<ArtistPortraitRuntime>) {
+        self.render.artist_image.set_portrait_runtime(runtime);
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::ScrolledWindow {
@@ -431,6 +431,7 @@ struct RenderParts {
     header: StatsHeader,
     hero: StatsHero,
     bands_row: StatsBandsRow,
+    artist_image: Rc<StatsArtistImage>,
     genres_section_data: StatsGenreCard,
     songs_card: StatsSongsCard,
     songs_section: gtk4::Box,

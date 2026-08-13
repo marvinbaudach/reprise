@@ -192,7 +192,6 @@ impl CoverLoader {
     /// Loads an image file (not a track) into a picture. Artist portraits are
     /// plain cache files and use the same thumbnail and texture caches as
     /// covers, so an original-size image never sits behind a small avatar.
-    #[allow(dead_code)] // Wired into every stats band surface in Task 4.
     pub fn load_image_into_picture(
         self: &Rc<Self>,
         picture: &gtk4::Picture,

@@ -7,12 +7,9 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::library::stats_snapshot::SpotlightSection;
 
-#[cfg(test)]
-use super::stats_artwork::StatsArtworkSource;
+use super::stats_artist_image::StatsArtistImage;
 use super::stats_band_card::StatsBandCard;
 use super::stats_band_tile::StatsBandTile;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
-use crate::ui::cover_loader::CoverLoader;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
@@ -72,17 +69,10 @@ impl StatsBandsRow {
         &self.root
     }
 
-    pub(in crate::ui) fn set_cover_loader(&self, loader: &Rc<CoverLoader>) {
-        self.leader.set_cover_loader(loader.clone());
+    pub(in crate::ui) fn set_artist_image(&self, image: &Rc<StatsArtistImage>) {
+        self.leader.set_artist_image(image.clone());
         for tile in &self.tiles {
-            tile.set_cover_loader(loader.clone());
-        }
-    }
-
-    pub(in crate::ui) fn set_artist_portrait_runtime(&self, runtime: &Rc<ArtistPortraitRuntime>) {
-        self.leader.set_artist_portrait_runtime(runtime.clone());
-        for tile in &self.tiles {
-            tile.set_artist_portrait_runtime(runtime.clone());
+            tile.set_artist_image(image.clone());
         }
     }
 
