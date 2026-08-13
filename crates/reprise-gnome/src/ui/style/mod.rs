@@ -361,6 +361,8 @@ mod tests {
             ".issue-card",
             ".mini-player-card",
             ".scan-card",
+            ".reprise-device-sync-dock",
+            ".reprise-online-discovery-strip",
         ] {
             assert!(css.contains(marker), "missing section marker: {marker}");
         }
