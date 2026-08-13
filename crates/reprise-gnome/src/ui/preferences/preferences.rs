@@ -406,7 +406,7 @@ impl PreferencesContext {
         tracing::info!("preferences smoke applied layout and audio settings");
     }
 
-    pub(in crate::ui) fn present_plugins(self: &Rc<Self>, targets: &'static [&'static str]) {
+    pub(in crate::ui) fn present_plugins(self: &Rc<Self>, targets: &[&'static str]) {
         *self.pending_plugin_targets.borrow_mut() = targets.to_vec();
         self.open(Some("plugins"));
     }

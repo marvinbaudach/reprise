@@ -39,6 +39,10 @@ pub fn sidebar_turn_off(name: &str) -> String {
     super::formatted(N_!("Turn Off {name}"), &[("name", name)])
 }
 
+pub fn sidebar_module_settings(name: &str) -> String {
+    super::formatted(N_!("{name} settings…"), &[("name", name)])
+}
+
 pub fn sidebar_turn_off_failed(name: &str) -> String {
     super::formatted(N_!("Could not turn off {name}"), &[("name", name)])
 }

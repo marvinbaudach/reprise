@@ -67,6 +67,12 @@ impl PreferencesContext {
                 .ok_or_else(|| "preferences context is no longer available".to_string())?;
             context.set_module_enabled(module, false, "sidebar module disabled")
         });
+        let weak = Rc::downgrade(self);
+        self.sidebar.set_on_present_plugins(move |targets| {
+            if let Some(context) = weak.upgrade() {
+                context.present_plugins(targets);
+            }
+        });
     }
 
     pub(super) fn set_module_enabled(

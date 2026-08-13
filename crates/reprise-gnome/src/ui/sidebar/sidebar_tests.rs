@@ -27,6 +27,7 @@ pub(super) fn test_shared() -> Rc<Shared> {
         on_remove_missing: RefCell::new(None),
         on_queue_drop: RefCell::new(None),
         on_disable_module: RefCell::new(None),
+        on_present_plugins: RefCell::new(None),
         module_menu_highlight: super::super::sidebar_module_menu::ModuleMenuHighlight::new(),
         window: glib::WeakRef::new(),
         toast_overlay: glib::WeakRef::new(),

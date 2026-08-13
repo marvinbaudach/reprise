@@ -15,6 +15,7 @@ use crate::ui::{popover_lifecycle, strings};
 
 const ACTION_DISABLE: &str = "disable";
 const ACTION_GROUP: &str = "sidebarmodule";
+const ACTION_SETTINGS: &str = "settings";
 
 pub(in crate::ui) struct ModuleMenuHighlight {
     generation: Cell<u64>,
@@ -55,6 +56,16 @@ impl ModuleMenuHighlight {
 
 pub(in crate::ui) type OnDisableModule =
     Rc<dyn Fn(&'static ModuleDescriptor) -> Result<(), String>>;
+pub(in crate::ui) type OnPresentPlugins = Rc<dyn Fn(&[&'static str])>;
+
+pub(in crate::ui) fn dispatch_present_plugins(
+    callback: Option<OnPresentPlugins>,
+    targets: &[&'static str],
+) {
+    if let Some(callback) = callback {
+        callback(targets);
+    }
+}
 
 fn dispatch_disable(
     callback: Option<OnDisableModule>,
@@ -143,12 +154,28 @@ fn show(
         });
     }
     actions.add_action(&disable);
+    let settings = gio::SimpleAction::new(ACTION_SETTINGS, None);
+    {
+        let shared = Rc::downgrade(shared);
+        settings.connect_activate(move |_, _| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            let callback = shared.on_present_plugins.borrow().clone();
+            dispatch_present_plugins(callback, &[module.id]);
+        });
+    }
+    actions.add_action(&settings);
     row.insert_action_group(ACTION_GROUP, Some(&actions));
 
     let menu = gio::Menu::new();
     menu.append(
         Some(&strings::sidebar_turn_off(title)),
         Some(&format!("{ACTION_GROUP}.{ACTION_DISABLE}")),
+    );
+    menu.append(
+        Some(&strings::sidebar_module_settings(title)),
+        Some(&format!("{ACTION_GROUP}.{ACTION_SETTINGS}")),
     );
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
     popover.set_parent(row);
@@ -194,7 +221,10 @@ mod tests {
     use reprise_core::modules::PODCASTS_MODULE;
     use reprise_core::view_source::ViewSource;
 
-    use super::{dispatch_disable, module_for_source, OnDisableModule};
+    use super::{
+        dispatch_disable, dispatch_present_plugins, module_for_source, OnDisableModule,
+        OnPresentPlugins,
+    };
     use crate::ui::sidebar::{find_row, Sidebar};
 
     #[test]
@@ -242,6 +272,19 @@ mod tests {
 
         assert_eq!(&*seen.borrow(), &["podcasts"]);
         assert!(dispatch_disable(None, &PODCASTS_MODULE).is_err());
+    }
+
+    #[test]
+    fn nav_16_module_settings_dispatches_the_clicked_module() {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let seen_for_callback = seen.clone();
+        let callback: OnPresentPlugins = Rc::new(move |targets| {
+            seen_for_callback.borrow_mut().extend_from_slice(targets);
+        });
+
+        dispatch_present_plugins(Some(callback), &[PODCASTS_MODULE.id]);
+
+        assert_eq!(&*seen.borrow(), &["podcasts"]);
     }
 
     fn assert_row_anchored(popover: &gtk4::PopoverMenu, row: &gtk4::ListBoxRow) {
@@ -341,6 +384,10 @@ mod tests {
         assert!(menu_has_action(
             &popover.menu_model().expect("sidebar module menu model"),
             "sidebarmodule.disable"
+        ));
+        assert!(menu_has_action(
+            &popover.menu_model().expect("sidebar module menu model"),
+            "sidebarmodule.settings"
         ));
 
         popover.popdown();
