@@ -61,6 +61,7 @@ pub(crate) mod link_activation;
 mod list_geometry;
 mod list_geometry_changed;
 mod list_geometry_header;
+mod list_geometry_layout;
 mod lyrics;
 pub(crate) mod motion;
 pub(crate) mod motion_reveal;

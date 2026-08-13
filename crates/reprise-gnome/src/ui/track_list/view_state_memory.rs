@@ -9,7 +9,8 @@ use reprise_core::browser::TrackFocus;
 use reprise_core::browser::{SortDirection, TrackAnchor, TrackSort, TrackViewState};
 use reprise_core::queries::BrowseFilter;
 
-use crate::ui::list_geometry::ListGeometry;
+#[cfg(test)]
+use crate::ui::list_geometry_layout::ListLayout;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::SortState;
 
@@ -90,10 +91,10 @@ pub(in crate::ui) fn positions_to_select(saved: &SavedViewState, current_ids: &[
 fn scroll_target(
     saved: &SavedViewState,
     current_ids: &[i64],
-    row_height: f64,
+    layout: &ListLayout,
     viewport_height: f64,
 ) -> Option<f64> {
-    super::reload_restore::scroll_target(saved.anchor, current_ids, row_height, viewport_height)
+    super::reload_restore::scroll_target(saved.anchor, current_ids, layout, viewport_height)
 }
 
 /// Captures the current scroll offset + selection of the track table.
@@ -101,22 +102,13 @@ pub(in crate::ui) fn capture(shared: &Shared) -> SavedViewState {
     let scroll_value = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
         .map_or(0.0, |adjustment| adjustment.value());
     let total = shared.model.n_items();
-    let n_sections = shared.queue_sections.borrow().len();
-    let geometry = ListGeometry::for_view(&shared.column_view);
-    let anchor = geometry
-        .observed_row_height(
-            &shared.conn,
-            &shared.list_geometry_cache,
-            total as usize,
-            n_sections,
-        )
-        .and_then(|height| {
-            let height = height.pixels();
-            let index = (scroll_value / height).floor().max(0.0) as u32;
+    let anchor =
+        super::track_list_geometry::layout(shared, None, total as usize).and_then(|layout| {
+            let (position, offset) = layout.row_at(scroll_value.max(0.0));
             shared
                 .model
-                .track_at(index)
-                .map(|track| (track.id, scroll_value - f64::from(index) * height))
+                .track_at(position)
+                .map(|track| (track.id, offset))
         });
     let selection = shared.selection.selection();
     let mut selected_ids = Vec::new();
@@ -213,30 +205,10 @@ fn apply_restored_scroll(shared: &Shared, anchor: Option<(i64, f64)>, current_id
     if upper <= page {
         return true;
     }
-    let n_sections = shared.queue_sections.borrow().len();
-    let geometry = ListGeometry::for_view(&shared.column_view);
-    let Some(height) = geometry
-        .observed_row_height(
-            &shared.conn,
-            &shared.list_geometry_cache,
-            current_ids.len(),
-            n_sections,
-        )
-        .map(crate::ui::list_geometry::RowHeight::pixels)
-    else {
+    let Some(layout) = super::track_list_geometry::layout(shared, None, current_ids.len()) else {
         return false;
     };
-    if !geometry.is_settled(upper, current_ids.len(), n_sections) {
-        return false;
-    }
-    geometry.remember_if_settled(
-        &shared.conn,
-        &shared.list_geometry_cache,
-        upper,
-        current_ids.len(),
-        n_sections,
-    );
-    let Some(target) = super::reload_restore::scroll_target(anchor, current_ids, height, page)
+    let Some(target) = super::reload_restore::scroll_target(anchor, current_ids, &layout, page)
     else {
         return false;
     };
@@ -312,7 +284,8 @@ mod tests {
         };
         let resorted = [5, 9, 11, 42, 77, 88];
 
-        assert_eq!(scroll_target(&state, &resorted, 20.0, 40.0), Some(66.0));
+        let layout = ListLayout::rows_only(crate::ui::list_geometry::RowHeight::new(20.0).unwrap());
+        assert_eq!(scroll_target(&state, &resorted, &layout, 40.0), Some(66.0));
     }
 
     #[test]

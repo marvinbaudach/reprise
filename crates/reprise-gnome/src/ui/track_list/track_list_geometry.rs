@@ -5,7 +5,8 @@ use std::rc::Rc;
 use gtk4::gio::prelude::ListModelExt;
 use gtk4::prelude::{AdjustmentExt, ScrollableExt};
 
-use crate::ui::list_geometry::ListGeometry;
+use crate::ui::list_geometry::{ListGeometry, RowHeight};
+use crate::ui::list_geometry_layout::ListLayout;
 
 use super::Shared;
 
@@ -13,6 +14,42 @@ use super::Shared;
 /// value for the density that becomes active immediately after this call.
 pub(in crate::ui) fn forget_row_height(cache: &crate::ui::list_geometry::ListGeometryCache) {
     cache.invalidate();
+}
+
+/// Builds the complete row/header layout and accepts it only when it agrees
+/// with the live adjustment. Section starts are copied before any GTK or
+/// database call so no `RefCell` borrow crosses a re-entrant boundary.
+pub(in crate::ui) fn layout(
+    shared: &Shared,
+    captured_row_height: Option<RowHeight>,
+    n_rows: usize,
+) -> Option<ListLayout> {
+    let section_starts = shared
+        .queue_sections
+        .borrow()
+        .iter()
+        .map(|section| section.start)
+        .collect::<Vec<_>>();
+    let n_sections = section_starts.len();
+    let adjustment = shared.column_view.vadjustment()?;
+    let geometry = ListGeometry::for_view(&shared.column_view);
+    let row_height = captured_row_height.or_else(|| {
+        geometry.observed_row_height(
+            &shared.conn,
+            &shared.list_geometry_cache,
+            n_rows,
+            n_sections,
+        )
+    })?;
+    let layout = geometry.layout(
+        &shared.conn,
+        &shared.list_geometry_cache,
+        row_height,
+        section_starts,
+    )?;
+    layout
+        .validate(n_rows, adjustment.upper())
+        .then_some(layout)
 }
 
 /// Explicitly warms both geometry caches at the first post-swap allocation.
