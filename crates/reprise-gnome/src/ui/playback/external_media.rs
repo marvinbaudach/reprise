@@ -9,6 +9,7 @@ use std::rc::Rc;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::{PlaybackError, PlaybackState};
 use reprise_core::podcasts::{EpisodeRow, PodcastKind};
+use reprise_core::up_next::QueueItem;
 
 use crate::ui::player_controller::PlayerController;
 
@@ -230,6 +231,7 @@ impl PlayerController {
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
         let episode_id = session_id(&media);
+        self.note_playback_started(QueueItem::Episode(episode_id), true);
         let kind = row.map_or(PodcastKind::Rss, |episode| episode.kind);
         let subscription_id = row.map_or(0, |episode| episode.subscription_id);
         let published_at = row.and_then(|episode| episode.published_at);
