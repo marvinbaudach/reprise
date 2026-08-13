@@ -1,4 +1,6 @@
 use super::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 
@@ -19,13 +21,22 @@ fn stats_23_the_candidate_walk_advances_once_per_failure() {
 /// only thing standing between the stats page and a request per artist.
 #[test]
 fn stats_23_a_disabled_module_queues_no_portrait_request() {
-    let runtime = ArtistPortraitRuntime::for_test(false, |_| {
-        panic!("a disabled portrait runtime must not call its resolver")
+    let resolver_calls = Arc::new(AtomicUsize::new(0));
+    let runtime = ArtistPortraitRuntime::for_test(false, {
+        let resolver_calls = resolver_calls.clone();
+        move |_| {
+            resolver_calls.fetch_add(1, Ordering::SeqCst);
+            None
+        }
     });
+    let result = Rc::new(RefCell::new(Vec::new()));
 
     assert!(!runtime.is_enabled());
-    assert!(
-        !runtime.request_would_run("Lorna Shore"),
-        "a disabled module answers from the cache alone"
-    );
+    runtime.request("Lorna Shore".to_string(), {
+        let result = result.clone();
+        move |path| result.borrow_mut().push(path)
+    });
+
+    assert_eq!(resolver_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(&*result.borrow(), &[None]);
 }

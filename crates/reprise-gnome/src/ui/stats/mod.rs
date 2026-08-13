@@ -1,6 +1,8 @@
 mod stats_artist_image;
 pub(in crate::ui) mod stats_band_card;
 mod stats_band_tile;
+mod stats_bands_card;
+mod stats_bands_more;
 pub(in crate::ui) mod stats_bands_row;
 pub(crate) mod stats_css;
 pub(in crate::ui) mod stats_entrance;

@@ -5,7 +5,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::library::stats_snapshot::SpotlightSection;
+use reprise_core::library::stats_screen::RankedGroup;
+use reprise_core::library::stats_snapshot::SortBy;
 
 use super::stats_artist_image::StatsArtistImage;
 use super::stats_band_card::StatsBandCard;
@@ -84,12 +85,24 @@ impl StatsBandsRow {
         *self.on_unify.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn set_data(&self, section: &SpotlightSection) {
-        self.leader.set_data(section);
-        let leader_ms = section.artist.group.ms.max(0);
+    pub(in crate::ui) fn set_data(
+        &self,
+        artists: &[RankedGroup],
+        share_percent: i64,
+        sort_by: SortBy,
+    ) {
+        let Some(leader) = artists.first() else {
+            self.clear_data();
+            return;
+        };
+        self.leader.set_data(leader, share_percent, sort_by);
+        let leader_metric = match sort_by {
+            SortBy::Plays => leader.group.plays,
+            SortBy::Time => leader.group.ms,
+        };
         for (index, tile) in self.tiles.iter().enumerate() {
-            match section.also.get(index) {
-                Some(ranked) => tile.set_data(index + 2, ranked, leader_ms),
+            match artists.get(index + 1) {
+                Some(ranked) => tile.set_data(index + 2, ranked, leader_metric, sort_by),
                 None => tile.clear_data(),
             }
         }
@@ -116,6 +129,11 @@ impl StatsBandsRow {
     #[cfg(test)]
     pub(super) fn tiles(&self) -> &[StatsBandTile] {
         &self.tiles
+    }
+
+    #[cfg(test)]
+    pub(super) fn leader_label(&self) -> String {
+        self.leader.artist_label()
     }
 }
 

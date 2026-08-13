@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use reprise_core::artist_portrait::PortraitOutcome;
 use reprise_core::library::group_key::Group;
-use reprise_core::library::stats_screen::{RankedGroup, TopTrack};
+use reprise_core::library::stats_screen::RankedGroup;
+use reprise_core::library::stats_snapshot::SortBy;
 
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
@@ -35,19 +36,17 @@ fn ranked(label: &str, ms: i64, variant_count: usize) -> RankedGroup {
     }
 }
 
-fn fixture(runners_up: usize) -> SpotlightSection {
-    SpotlightSection {
-        artist: ranked("Lorna Shore", 600_000, 1),
-        share_percent: 60,
-        top_tracks: Vec::<TopTrack>::new(),
-        also: [
+fn fixture(runners_up: usize) -> Vec<RankedGroup> {
+    let mut artists = vec![ranked("Lorna Shore", 600_000, 1)];
+    artists.extend_from_slice(
+        &[
             ranked("Alpha", 300_000, 1),
             ranked("Beta", 150_000, 1),
             ranked("Gamma", 60_000, 2),
             ranked("Delta", 30_000, 1),
-        ][..runners_up]
-            .to_vec(),
-    }
+        ][..runners_up],
+    );
+    artists
 }
 
 fn cache_portrait(cache_dir: &std::path::Path, artist: &str) {
@@ -93,7 +92,7 @@ fn the_leader_and_all_four_tiles_load_artist_portraits() {
     image.set_portrait_runtime(runtime);
     row.set_artist_image(&image);
 
-    row.set_data(&fixture(4));
+    row.set_data(&fixture(4), 60, SortBy::Time);
     assert!(
         crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
             row.leader().image_loaded.get() == Some(true)
@@ -120,7 +119,7 @@ fn stats_19_the_leader_spans_two_of_six_columns() {
 fn stats_19_runner_up_bars_are_relative_to_the_leader() {
     gtk4::init().unwrap();
     let row = StatsBandsRow::new();
-    row.set_data(&fixture(4));
+    row.set_data(&fixture(4), 60, SortBy::Time);
 
     let values = row
         .bars()
@@ -135,7 +134,7 @@ fn stats_19_runner_up_bars_are_relative_to_the_leader() {
 fn stats_19_a_short_ranking_leaves_the_tail_empty() {
     gtk4::init().unwrap();
     let row = StatsBandsRow::new();
-    row.set_data(&fixture(2));
+    row.set_data(&fixture(2), 60, SortBy::Time);
 
     let visible = row
         .tiles()
@@ -157,7 +156,7 @@ fn stats_19_a_short_ranking_leaves_the_tail_empty() {
 fn stats_21_every_band_surface_carries_the_hover_wash_and_pointer() {
     gtk4::init().unwrap();
     let row = StatsBandsRow::new();
-    row.set_data(&fixture(4));
+    row.set_data(&fixture(4), 60, SortBy::Time);
 
     let mut surfaces: Vec<gtk4::Widget> = vec![row.leader().widget().clone().upcast()];
     surfaces.extend(
@@ -204,7 +203,7 @@ fn stats_19_leader_and_tiles_share_one_navigation_callback() {
         let opened = opened.clone();
         move |artist| opened.borrow_mut().push(artist)
     });
-    row.set_data(&fixture(4));
+    row.set_data(&fixture(4), 60, SortBy::Time);
 
     row.leader().name_button.emit_clicked();
     row.tiles()[0].widget().emit_clicked();

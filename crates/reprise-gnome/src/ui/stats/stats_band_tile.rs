@@ -10,6 +10,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen::RankedGroup;
+use reprise_core::library::stats_snapshot::SortBy;
 
 use super::stats_artist_image::{ArtistImageRequest, StatsArtistImage};
 use super::stats_view_widgets::label;
@@ -157,7 +158,13 @@ impl StatsBandTile {
         *self.artist_image.borrow_mut() = Some(image);
     }
 
-    pub(super) fn set_data(&self, rank: usize, ranked: &RankedGroup, leader_ms: i64) {
+    pub(super) fn set_data(
+        &self,
+        rank: usize,
+        ranked: &RankedGroup,
+        leader_metric: i64,
+        sort_by: SortBy,
+    ) {
         let group = &ranked.group;
         *self.current_artist.borrow_mut() = group.label.clone();
         *self.current_key.borrow_mut() = group.key.clone();
@@ -174,7 +181,11 @@ impl StatsBandTile {
             format_thousands(group.plays),
             strings::stats_duration(group.ms)
         ));
-        self.bar.set_value(relative_value(group.ms, leader_ms));
+        let metric = match sort_by {
+            SortBy::Plays => group.plays,
+            SortBy::Time => group.ms,
+        };
+        self.bar.set_value(relative_value(metric, leader_metric));
         self.unify.set_visible(group.variant_count >= 2);
         self.unify.set_tooltip_text(
             (group.variant_count >= 2)

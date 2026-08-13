@@ -67,6 +67,10 @@ impl StatsArtistImage {
     }
 
     pub(super) fn load(self: &Rc<Self>, picture: &gtk4::Picture, request: ArtistImageRequest) {
+        if !self.portraits_enabled() {
+            self.walk_candidates(picture, &request, 0, &Rc::new(Cell::new(false)));
+            return;
+        }
         let this = self.clone();
         let picture = picture.clone();
         glib::spawn_future_local(async move {
@@ -79,6 +83,10 @@ impl StatsArtistImage {
             if request.generation.get() != request.token {
                 return;
             }
+            if !this.portraits_enabled() {
+                this.walk_candidates(&picture, &request, 0, &Rc::new(Cell::new(false)));
+                return;
+            }
             if let Some(path) = cached {
                 this.show_cached_portrait(&picture, &path, &request);
                 return;
@@ -89,6 +97,13 @@ impl StatsArtistImage {
             this.walk_candidates(&picture, &request, 0, &portrait_shown);
             this.fetch_portrait(&picture, &request, &portrait_shown);
         });
+    }
+
+    fn portraits_enabled(&self) -> bool {
+        self.portrait
+            .borrow()
+            .as_ref()
+            .is_some_and(|runtime| runtime.is_enabled())
     }
 
     fn show_cached_portrait(
@@ -174,15 +189,21 @@ impl StatsArtistImage {
         let picture = picture.clone();
         let mirrored = mirror_request(request);
         let portrait_shown = portrait_shown.clone();
-        runtime.request(request.artist.clone(), move |found| {
-            let Some(path) = found else {
-                return;
-            };
-            if mirrored.generation.get() != mirrored.token {
-                return;
-            }
-            this.show_fetched_portrait(&picture, &path, &mirrored, &portrait_shown);
-        });
+        let generation = request.generation.clone();
+        let token = request.token;
+        runtime.request_while(
+            request.artist.clone(),
+            move || generation.get() == token,
+            move |found| {
+                let Some(path) = found else {
+                    return;
+                };
+                if mirrored.generation.get() != mirrored.token {
+                    return;
+                }
+                this.show_fetched_portrait(&picture, &path, &mirrored, &portrait_shown);
+            },
+        );
     }
 
     fn show_fetched_portrait(

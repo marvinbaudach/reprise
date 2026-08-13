@@ -60,7 +60,7 @@ fn stats_6c_fresh_library_without_counters_keeps_plain_empty_state() {
     // The sections are not hidden, they are simply on the page the stack is
     // not showing — which is what actually keeps them off screen.
     let sections = view.page_stack.child_by_name("sections").unwrap();
-    assert!(view.render.bands_row.widget().is_ancestor(&sections));
+    assert!(view.render.bands_card.widget().is_ancestor(&sections));
     assert_ne!(view.page_stack.visible_child(), Some(sections));
 }
 

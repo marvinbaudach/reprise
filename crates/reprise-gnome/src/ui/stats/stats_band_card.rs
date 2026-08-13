@@ -8,7 +8,8 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
-use reprise_core::library::stats_snapshot::SpotlightSection;
+use reprise_core::library::stats_screen::RankedGroup;
+use reprise_core::library::stats_snapshot::SortBy;
 
 use super::stats_artist_image::{ArtistImageRequest, StatsArtistImage};
 use crate::ui::strings;
@@ -165,11 +166,16 @@ impl StatsBandCard {
         &self.root
     }
 
-    pub(in crate::ui) fn set_data(&self, section: &SpotlightSection) {
-        let leader = &section.artist.group;
+    pub(in crate::ui) fn set_data(
+        &self,
+        ranked: &RankedGroup,
+        share_percent: i64,
+        _sort_by: SortBy,
+    ) {
+        let leader = &ranked.group;
         *self.current_artist.borrow_mut() = leader.label.clone();
         *self.current_key.borrow_mut() = leader.key.clone();
-        *self.current_candidates.borrow_mut() = section.artist.cover_candidates.clone();
+        *self.current_candidates.borrow_mut() = ranked.cover_candidates.clone();
         self.name_button
             .child()
             .and_downcast::<gtk4::Label>()
@@ -182,10 +188,10 @@ impl StatsBandCard {
             "{} plays · {} · {}% of your artist listening",
             format_thousands(leader.plays),
             strings::stats_duration(leader.ms),
-            section.share_percent
+            share_percent
         ));
         self.set_unify_hint(leader.variant_count);
-        self.load_image(&leader.label, &section.artist.cover_candidates);
+        self.load_image(&leader.label, &ranked.cover_candidates);
     }
 
     /// Routes this card's activations into the row's shared callbacks, so the
@@ -272,6 +278,11 @@ impl StatsBandCard {
     pub(super) fn emit_unify(&self, key: &str) {
         invoke(&self.on_unify, key.to_string());
     }
+
+    #[cfg(test)]
+    pub(super) fn artist_label(&self) -> String {
+        self.current_artist.borrow().clone()
+    }
 }
 
 fn invoke(callback: &StringCallback, value: String) {
@@ -314,7 +325,7 @@ mod tests {
 
     use reprise_core::artist_portrait::PortraitOutcome;
     use reprise_core::library::group_key::Group;
-    use reprise_core::library::stats_screen::{RankedGroup, TopTrack};
+    use reprise_core::library::stats_screen::RankedGroup;
 
     use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
     use crate::ui::cover_loader::CoverLoader;
@@ -327,41 +338,17 @@ mod tests {
         0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ];
 
-    fn fixture(variant_count: usize) -> SpotlightSection {
-        let ranked = |label: &str, ms: i64, variant_count: usize| {
-            let path = format!("/music/{label}.flac");
-            RankedGroup {
-                group: Group {
-                    label: label.into(),
-                    key: label.to_lowercase(),
-                    plays: ms / 60_000,
-                    ms,
-                    variant_count,
-                },
-                representative_track_path: path.clone(),
-                cover_candidates: vec![path],
-            }
-        };
-        SpotlightSection {
-            artist: RankedGroup {
-                group: Group {
-                    label: "Lorna Shore".into(),
-                    key: "lorna shore".into(),
-                    plays: 10,
-                    ms: 600_000,
-                    variant_count,
-                },
-                representative_track_path: "/missing/cover.flac".into(),
-                cover_candidates: vec!["/missing/cover.flac".into()],
+    fn fixture(variant_count: usize) -> RankedGroup {
+        RankedGroup {
+            group: Group {
+                label: "Lorna Shore".into(),
+                key: "lorna shore".into(),
+                plays: 10,
+                ms: 600_000,
+                variant_count,
             },
-            share_percent: 60,
-            top_tracks: Vec::<TopTrack>::new(),
-            also: vec![
-                ranked("Alpha", 300_000, 1),
-                ranked("Beta", 150_000, 1),
-                ranked("Gamma", 60_000, 2),
-                ranked("Delta", 30_000, 1),
-            ],
+            representative_track_path: "/missing/cover.flac".into(),
+            cover_candidates: vec!["/missing/cover.flac".into()],
         }
     }
 
@@ -418,7 +405,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn artist_portrait_is_shown_before_the_album_cover() {
+    fn stats_23_artist_portrait_is_shown_before_the_album_cover() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let cache = tempfile::tempdir().unwrap();
@@ -428,7 +415,7 @@ mod tests {
         let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
         card.set_artist_image(artist_image(loader, runtime, cache.path()));
 
-        card.set_data(&fixture(1));
+        card.set_data(&fixture(1), 60, SortBy::Time);
         assert!(
             crate::ui::test_settle::settle_until(
                 crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
@@ -444,7 +431,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn missing_portrait_falls_back_to_the_album_cover() {
+    fn stats_23_missing_portrait_falls_back_to_the_album_cover() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let cache = tempfile::tempdir().unwrap();
@@ -457,10 +444,10 @@ mod tests {
         let card = StatsBandCard::new();
         card.set_artist_image(artist_image(loader, runtime, cache.path()));
         let mut data = fixture(1);
-        data.artist.representative_track_path = track.to_string_lossy().into_owned();
-        data.artist.cover_candidates = vec![track.to_string_lossy().into_owned()];
+        data.representative_track_path = track.to_string_lossy().into_owned();
+        data.cover_candidates = vec![track.to_string_lossy().into_owned()];
 
-        card.set_data(&data);
+        card.set_data(&data, 60, SortBy::Time);
         assert!(
             crate::ui::test_settle::settle_until(
                 crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
@@ -476,7 +463,44 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn missing_portrait_and_cover_fall_back_to_initials() {
+    fn stats_23_cover_walk_uses_the_next_album_with_artwork() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let (runtime, requests) = portrait_runtime(false, cache.path());
+        let coverless_album = tempfile::tempdir().unwrap();
+        let coverless_track = coverless_album.path().join("first.mp3");
+        std::fs::write(&coverless_track, b"not really an mp3").unwrap();
+        let illustrated_album = tempfile::tempdir().unwrap();
+        let illustrated_track = illustrated_album.path().join("second.mp3");
+        std::fs::write(&illustrated_track, b"not really an mp3").unwrap();
+        std::fs::write(illustrated_album.path().join("cover.png"), TINY_PNG).unwrap();
+        let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+        let card = StatsBandCard::new();
+        card.set_artist_image(artist_image(loader, runtime, cache.path()));
+        let mut data = fixture(1);
+        data.cover_candidates = vec![
+            coverless_track.to_string_lossy().into_owned(),
+            illustrated_track.to_string_lossy().into_owned(),
+        ];
+
+        card.set_data(&data, 60, SortBy::Time);
+        assert!(
+            crate::ui::test_settle::settle_until(
+                crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                || card.image_loaded.get() == Some(true),
+            ),
+            "timed out waiting for the second album candidate"
+        );
+
+        assert_eq!(requests.load(Ordering::SeqCst), 0);
+        assert!(card.picture.is_visible());
+        assert!(!card.fallback.is_visible());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stats_23_missing_portrait_and_cover_fall_back_to_initials() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let cache = tempfile::tempdir().unwrap();
@@ -485,7 +509,7 @@ mod tests {
         let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
         card.set_artist_image(artist_image(loader, runtime, cache.path()));
 
-        card.set_data(&fixture(1));
+        card.set_data(&fixture(1), 60, SortBy::Time);
         assert!(
             crate::ui::test_settle::settle_until(
                 crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
@@ -502,26 +526,47 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn disabled_artwork_module_uses_cached_portrait_without_a_request() {
+    fn stats_23_disabled_artwork_module_skips_cached_portrait_and_uses_album_cover() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let cache = tempfile::tempdir().unwrap();
         cache_portrait(cache.path(), "Lorna Shore");
         let (runtime, requests) = portrait_runtime(false, cache.path());
+        let cache_reads = std::sync::Arc::new(AtomicUsize::new(0));
+        let album = tempfile::tempdir().unwrap();
+        let track = album.path().join("untagged.mp3");
+        std::fs::write(&track, b"not really an mp3").unwrap();
+        std::fs::write(album.path().join("cover.png"), TINY_PNG).unwrap();
         let card = StatsBandCard::new();
         let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-        card.set_artist_image(artist_image(loader, runtime, cache.path()));
+        let image = StatsArtistImage::for_test(loader, {
+            let cache_dir = cache.path().to_path_buf();
+            let cache_reads = cache_reads.clone();
+            move |artist| {
+                cache_reads.fetch_add(1, Ordering::SeqCst);
+                match reprise_core::artist_portrait::load_cached_from(artist, &cache_dir) {
+                    PortraitOutcome::Found(path) => Some(path),
+                    PortraitOutcome::NotFound => None,
+                }
+            }
+        });
+        image.set_portrait_runtime(runtime);
+        card.set_artist_image(image);
+        let mut data = fixture(1);
+        data.representative_track_path = track.to_string_lossy().into_owned();
+        data.cover_candidates = vec![track.to_string_lossy().into_owned()];
 
-        card.set_data(&fixture(1));
+        card.set_data(&data, 60, SortBy::Time);
         assert!(
             crate::ui::test_settle::settle_until(
                 crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
                 || card.image_loaded.get() == Some(true),
             ),
-            "timed out waiting for cached stats artwork"
+            "timed out waiting for album artwork"
         );
 
         assert_eq!(requests.load(Ordering::SeqCst), 0);
+        assert_eq!(cache_reads.load(Ordering::SeqCst), 0);
         assert!(card.picture.is_visible());
         assert!(!card.fallback.is_visible());
     }
@@ -531,7 +576,7 @@ mod tests {
     fn stats_23_missing_cover_falls_back_to_initials() {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
-        card.set_data(&fixture(1));
+        card.set_data(&fixture(1), 60, SortBy::Time);
 
         assert!(card.fallback.is_visible());
         assert_eq!(card.fallback.label(), "LS");
@@ -545,13 +590,13 @@ mod tests {
     fn stats_23_the_card_requests_the_artist_and_all_candidates() {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
-        let mut section = fixture(1);
-        section.artist.cover_candidates = vec![
+        let mut ranked = fixture(1);
+        ranked.cover_candidates = vec![
             "/music/first.flac".to_string(),
             "/music/second.flac".to_string(),
         ];
 
-        card.set_data(&section);
+        card.set_data(&ranked, 11, SortBy::Time);
 
         assert_eq!(&*card.current_artist.borrow(), "Lorna Shore");
         assert_eq!(
@@ -568,7 +613,7 @@ mod tests {
     fn unify_hint_survives_on_the_band_card() {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
-        card.set_data(&fixture(3));
+        card.set_data(&fixture(3), 60, SortBy::Time);
 
         assert!(card.unify_hint.is_visible());
         assert!(card.unify_hint.tooltip_text().is_some());
@@ -585,7 +630,7 @@ mod tests {
             move |artist: String| *opened.borrow_mut() = Some(artist)
         }))));
         card.forward_callbacks(&outer, &Rc::new(RefCell::new(None)));
-        card.set_data(&fixture(1));
+        card.set_data(&fixture(1), 60, SortBy::Time);
 
         assert_eq!(card.card_click.button(), gtk4::gdk::BUTTON_PRIMARY);
         card.card_click

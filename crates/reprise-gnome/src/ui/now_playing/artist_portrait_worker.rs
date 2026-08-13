@@ -14,6 +14,7 @@ use reprise_core::db::Db;
 
 type PortraitResolver = Arc<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;
 type PortraitCallback = Rc<dyn Fn(Option<PathBuf>)>;
+type PortraitGuard = Rc<dyn Fn() -> bool>;
 
 /// Twenty ranks can appear at once. Keeping only three portrait requests in
 /// flight avoids flooding the blocking pool and the remote provider.
@@ -24,7 +25,7 @@ pub(in crate::ui) struct ArtistPortraitRuntime {
     worker_enabled: Arc<AtomicBool>,
     resolve: PortraitResolver,
     in_flight: Rc<Cell<usize>>,
-    queue: Rc<RefCell<VecDeque<(String, PortraitCallback)>>>,
+    queue: Rc<RefCell<VecDeque<(String, PortraitGuard, PortraitCallback)>>>,
 }
 
 impl ArtistPortraitRuntime {
@@ -89,25 +90,43 @@ impl ArtistPortraitRuntime {
 
     /// Queues one portrait lookup and calls `on_ready` on the main context.
     /// Disabled and blank requests resolve locally and never enter the queue.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::ui) fn request(
         self: &Rc<Self>,
         name: String,
         on_ready: impl Fn(Option<PathBuf>) + 'static,
     ) {
-        if !self.request_would_run(&name) {
+        self.request_while(name, || true, on_ready);
+    }
+
+    /// Like `request`, but drops work that stopped being visible while it was
+    /// waiting for one of the bounded worker slots (STATS-23).
+    pub(in crate::ui) fn request_while(
+        self: &Rc<Self>,
+        name: String,
+        still_visible: impl Fn() -> bool + 'static,
+        on_ready: impl Fn(Option<PathBuf>) + 'static,
+    ) {
+        if !self.request_would_run(&name) || !still_visible() {
             on_ready(None);
             return;
         }
-        self.queue.borrow_mut().push_back((name, Rc::new(on_ready)));
+        self.queue
+            .borrow_mut()
+            .push_back((name, Rc::new(still_visible), Rc::new(on_ready)));
         self.pump();
     }
 
     fn pump(self: &Rc<Self>) {
         while self.in_flight.get() < MAX_IN_FLIGHT {
             let next = self.queue.borrow_mut().pop_front();
-            let Some((name, on_ready)) = next else {
+            let Some((name, still_visible, on_ready)) = next else {
                 return;
             };
+            if !still_visible() {
+                on_ready(None);
+                continue;
+            }
             self.in_flight.set(self.in_flight.get() + 1);
             let this = self.clone();
             let gate = self.worker_enabled.clone();
@@ -168,5 +187,40 @@ mod tests {
         reprise_core::online_sources::set_enabled(&conn, true).unwrap();
         runtime.recompute_enabled(&conn);
         assert!(runtime.enabled.get());
+    }
+
+    #[test]
+    fn stats_23_stale_queued_portraits_never_reach_the_resolver() {
+        let resolver_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let runtime = ArtistPortraitRuntime::for_test(true, {
+            let resolver_calls = resolver_calls.clone();
+            move |_| {
+                resolver_calls.fetch_add(1, Ordering::SeqCst);
+                None
+            }
+        });
+        runtime.in_flight.set(MAX_IN_FLIGHT);
+        let still_visible = Rc::new(Cell::new(true));
+        let result = Rc::new(RefCell::new(Vec::new()));
+
+        runtime.request_while(
+            "Former leader".to_string(),
+            {
+                let still_visible = still_visible.clone();
+                move || still_visible.get()
+            },
+            {
+                let result = result.clone();
+                move |path| result.borrow_mut().push(path)
+            },
+        );
+        assert_eq!(runtime.queue.borrow().len(), 1);
+
+        still_visible.set(false);
+        runtime.in_flight.set(0);
+        runtime.pump();
+
+        assert_eq!(resolver_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(&*result.borrow(), &[None]);
     }
 }
