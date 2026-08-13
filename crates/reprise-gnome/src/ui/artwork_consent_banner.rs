@@ -40,6 +40,10 @@ fn persist_completed(db: &Db, completed: &Cell<bool>) -> bool {
 
 pub(in crate::ui) struct ArtworkConsentBanner {
     root: gtk4::Box,
+    #[cfg(test)]
+    banner: adw::Banner,
+    #[cfg(test)]
+    dismiss: gtk4::Button,
 }
 
 impl ArtworkConsentBanner {
@@ -120,19 +124,27 @@ pub(in crate::ui) fn build(
         }
     });
     banner.set_revealed(true);
-    Some(ArtworkConsentBanner { root })
+    Some(ArtworkConsentBanner {
+        root,
+        #[cfg(test)]
+        banner,
+        #[cfg(test)]
+        dismiss,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::rc::Rc;
 
+    use gtk4::prelude::*;
     use reprise_core::db::Db;
     use reprise_core::library::settings;
 
     use crate::ui::strings;
 
-    use super::{initial_visibility, persist_completed};
+    use super::{build, initial_visibility, persist_completed};
 
     #[test]
     fn src_11_artwork_consent_notice_is_pending_only_until_consumed() {
@@ -167,5 +179,62 @@ mod tests {
             "Review Artwork Settings"
         );
         assert_eq!(strings::ARTWORK_CONSENT_MERGE_NOTICE_DISMISS, "Dismiss");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_11_artwork_consent_banner_persists_review_and_dismiss_actions_before_hiding() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        if gtk4::init().is_err() {
+            return;
+        }
+
+        let review_db = Rc::new(Db::open_in_memory().unwrap());
+        settings::set_bool(
+            &review_db,
+            settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+            true,
+        )
+        .unwrap();
+        let reviewed = Rc::new(Cell::new(false));
+        let banner = build(&review_db, {
+            let reviewed = reviewed.clone();
+            move || reviewed.set(true)
+        })
+        .expect("inherited consent shows the notice");
+        assert_eq!(
+            banner.banner.title(),
+            strings::ARTWORK_CONSENT_MERGE_NOTICE_BODY
+        );
+        assert_eq!(
+            banner.banner.button_label().as_deref(),
+            Some(strings::ARTWORK_CONSENT_MERGE_NOTICE_REVIEW)
+        );
+        assert!(banner.banner.is_revealed());
+        assert_eq!(
+            banner.dismiss.label().as_deref(),
+            Some(strings::ARTWORK_CONSENT_MERGE_NOTICE_DISMISS)
+        );
+
+        banner.banner.emit_by_name::<()>("button-clicked", &[]);
+        assert!(reviewed.get());
+        assert!(!initial_visibility(&review_db).unwrap());
+        assert!(!banner.banner.is_revealed());
+        assert!(!banner.widget().is_visible());
+        assert!(build(&review_db, || {}).is_none());
+
+        let dismiss_db = Rc::new(Db::open_in_memory().unwrap());
+        settings::set_bool(
+            &dismiss_db,
+            settings::ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY,
+            true,
+        )
+        .unwrap();
+        let banner = build(&dismiss_db, || {}).expect("second inherited consent shows the notice");
+        banner.dismiss.emit_clicked();
+        assert!(!initial_visibility(&dismiss_db).unwrap());
+        assert!(!banner.banner.is_revealed());
+        assert!(!banner.widget().is_visible());
+        assert!(build(&dismiss_db, || {}).is_none());
     }
 }
