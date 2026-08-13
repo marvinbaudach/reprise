@@ -141,6 +141,9 @@ pub(in crate::ui) struct PreferencesContext {
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
+    pub(super) connectivity: Cell<reprise_core::connectivity::Connectivity>,
+    pub(super) on_artwork_permission_changed:
+        RefCell<Option<super::preference_online_module_effects::ArtworkPermissionCallback>>,
     pub(in crate::ui) plugin_rows: RefCell<HashMap<&'static str, glib::WeakRef<gtk4::Widget>>>,
     pub(in crate::ui) pending_plugin_targets: RefCell<Vec<&'static str>>,
 }
@@ -204,6 +207,8 @@ impl PreferencesContext {
             preferences_dialog: RefCell::new(glib::WeakRef::new()),
             preferences_navigation: RefCell::new(glib::WeakRef::new()),
             preferences_stack: RefCell::new(glib::WeakRef::new()),
+            connectivity: Cell::new(reprise_core::connectivity::Connectivity::Online),
+            on_artwork_permission_changed: RefCell::new(None),
             plugin_rows: RefCell::new(HashMap::new()),
             pending_plugin_targets: RefCell::new(Vec::new()),
         });
@@ -444,44 +449,6 @@ impl PreferencesContext {
 
     fn layout_page(self: &Rc<Self>) -> adw::PreferencesPage {
         super::preference_layout::build(self)
-    }
-
-    /// `NET-1a`: persists the global online-sources gate and re-derives
-    /// every cached "is this feature network-allowed" flag from it, so the
-    /// change takes effect immediately (`SET-4`) rather than only on the
-    /// next app start. Online Lyrics is recomputed via the player (its
-    /// runtime lives there); Radio has no cache to recompute — its network
-    /// call paths read the gate fresh each time.
-    pub(in crate::ui) fn set_online_sources_enabled(
-        &self,
-        enabled: bool,
-    ) -> Result<(), rusqlite::Error> {
-        reprise_core::online_sources::set_enabled(&self.conn, enabled)?;
-        self.refresh_online_module_state("online sources gate toggled");
-        Ok(())
-    }
-
-    pub(in crate::ui) fn refresh_online_module_state(&self, reason: &'static str) {
-        self.cover_download.recompute_enabled(&self.conn);
-        self.artist_portrait.recompute_enabled(&self.conn);
-        self.artist_news.recompute_enabled(&self.conn);
-        self.concerts.recompute_enabled(&self.conn);
-        self.podcasts.recompute_enabled(&self.conn);
-        // `SRC-11`: source artwork keeps its gate in a process-wide atomic the
-        // artwork workers read, so it has to be republished here too — a queue
-        // that is still draining has no other reason to notice the change.
-        crate::ui::podcasts::source_image::recompute_gate(&self.conn);
-        if let Some(player) = &self.player {
-            player.recompute_lyrics_enabled();
-        }
-        // `NET-1a`: the library-wide lyrics batch runs on its own thread and
-        // reads a shared gate — without this republish a run started before
-        // the switch would keep fetching for the rest of the library.
-        self.lyrics_batch.recompute_enabled();
-        self.sidebar.refresh(reason);
-        // TODO(package-B): replace this fan-out and consumer-side database
-        // re-reads with one shared enabled-state signal for contributed
-        // surfaces.
     }
 
     pub(in crate::ui) fn open_column_layout_editor(&self) {

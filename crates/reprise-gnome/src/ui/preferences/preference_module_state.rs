@@ -45,8 +45,6 @@ fn persist_module_state(
         "artwork" => {
             reprise_core::modules::set_enabled(&context.conn, descriptor, enabled)
                 .map_err(|error| error.to_string())?;
-            context.cover_download.recompute_enabled(&context.conn);
-            context.artist_portrait.recompute_enabled(&context.conn);
             Ok(())
         }
         "online_lyrics" => match &context.player {

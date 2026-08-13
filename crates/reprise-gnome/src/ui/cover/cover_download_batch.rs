@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use gtk4::glib;
 use reprise_core::db::Db;
@@ -103,6 +103,7 @@ pub(in crate::ui) struct CoverDownloadBatch {
     track_list: Rc<TrackList>,
     player: Option<Rc<PlayerController>>,
     generation: Cell<u64>,
+    running: Cell<bool>,
     progress: Cell<BatchProgress>,
     progress_subscribers: ProgressSubscribers<BatchProgress>,
 }
@@ -120,6 +121,7 @@ impl CoverDownloadBatch {
             track_list: track_list.clone(),
             player: player.cloned(),
             generation: Cell::new(0),
+            running: Cell::new(false),
             progress: Cell::new(BatchProgress::idle()),
             progress_subscribers: ProgressSubscribers::default(),
         })
@@ -144,6 +146,25 @@ impl CoverDownloadBatch {
             self.set_progress(BatchProgress::running(0));
             return;
         };
+        self.start_pass(pass);
+    }
+
+    /// Starts a pass requested by the user even when startup freshness says
+    /// the library is already settled. A second request joins the active pass
+    /// instead of replacing it with overlapping work.
+    pub(in crate::ui) fn start_user_triggered(self: &Rc<Self>) {
+        if self.running.get() {
+            return;
+        }
+        if !self.runtime.enabled.get() {
+            self.set_progress(BatchProgress::idle());
+            return;
+        }
+        let pass = startup_tasks::begin_user_triggered(&self.conn, SignatureTask::CoverDownload);
+        self.start_pass(pass);
+    }
+
+    fn start_pass(self: &Rc<Self>, pass: startup_tasks::ExactTaskPass) {
         let paths = {
             let conn = &self.conn;
             reprise_core::queries::query_live_track_paths(conn)
@@ -158,17 +179,20 @@ impl CoverDownloadBatch {
         };
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
+        self.running.set(true);
         if paths.is_empty() {
             // A run of nothing is a run that is already done — `running(0)`
             // says exactly that, and the batches waiting on this one need to
             // hear it.
             self.set_progress(BatchProgress::running(0));
             pass.record_completed_or_warn(&self.conn);
+            self.running.set(false);
             return;
         }
 
         let this = self.clone();
         glib::spawn_future_local(async move {
+            let _active_run = ActiveRun::new(&this, generation);
             // Every track the download side has already settled is dropped
             // here, before anything opens a file. Asking the worker means it
             // reads the track's tags to work out which album to look up, and
@@ -266,6 +290,7 @@ impl CoverDownloadBatch {
     /// later run — a finished scan, say — is free to start again.
     pub(in crate::ui) fn cancel(&self) {
         self.generation.set(self.generation.get().wrapping_add(1));
+        self.running.set(false);
         self.set_progress(BatchProgress::idle());
     }
 
@@ -282,6 +307,36 @@ impl CoverDownloadBatch {
     #[cfg(test)]
     pub(in crate::ui) fn progress_for_test(&self) -> BatchProgress {
         self.progress.get()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn generation_for_test(&self) -> u64 {
+        self.generation.get()
+    }
+}
+
+struct ActiveRun {
+    batch: Weak<CoverDownloadBatch>,
+    generation: u64,
+}
+
+impl ActiveRun {
+    fn new(batch: &Rc<CoverDownloadBatch>, generation: u64) -> Self {
+        Self {
+            batch: Rc::downgrade(batch),
+            generation,
+        }
+    }
+}
+
+impl Drop for ActiveRun {
+    fn drop(&mut self) {
+        let Some(batch) = self.batch.upgrade() else {
+            return;
+        };
+        if batch.generation.get() == self.generation {
+            batch.running.set(false);
+        }
     }
 }
 
