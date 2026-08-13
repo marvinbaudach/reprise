@@ -255,7 +255,7 @@ fn finish_without_image(pending: &Pending, key: &ArtworkKey) {
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use reprise_core::remote_image::CacheScope;
 
@@ -445,6 +445,53 @@ mod tests {
 
         let failed = queue.submit(url.clone(), 40, 40, CacheScope::Transient);
         assert!(matches!(failed.recv_blocking(), Ok(None)));
+
+        let retried = queue.submit(url, 40, 40, CacheScope::Transient);
+        assert!(matches!(retried.recv_blocking(), Ok(Some(_))));
+
+        drop(queue);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn src_11_a_panic_while_decoding_frees_the_url_for_a_fresh_job() {
+        let _gate = super::super::GATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        super::super::GATE_OPEN.store(true, std::sync::atomic::Ordering::SeqCst);
+        let (queue, jobs) = super::ArtworkQueue::test_queue();
+        let pending = queue.pending.clone();
+        let worker = std::thread::spawn(move || {
+            super::run_worker(&jobs, &pending, &mut |_| Ok(TINY_PNG.to_vec()));
+        });
+        let url = unique_url("decode-panic-recovery");
+        let key = super::ArtworkKey { url: url.clone() };
+
+        // Candidate (a) was selected: a zero-width probe produced a non-fatal GdkPixbuf
+        // critical followed by an unwindable gtk-rs null-pointer panic. It exercises the
+        // real post-`mem::take` decode path, so no test-only seam is needed.
+        let failed = queue.submit(url.clone(), 0, 40, CacheScope::Transient);
+        assert!(
+            failed.recv_blocking().is_err(),
+            "the taken waiter's sender must be dropped while decode unwinds"
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let is_pending = queue
+                .pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains_key(&key);
+            if !is_pending {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the panicking job left its URL pending"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
 
         let retried = queue.submit(url, 40, 40, CacheScope::Transient);
         assert!(matches!(retried.recv_blocking(), Ok(Some(_))));
