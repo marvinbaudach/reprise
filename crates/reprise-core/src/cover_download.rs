@@ -177,15 +177,26 @@ where
     }
 }
 
-pub(crate) fn parse_best_release(json: &str, album_artist: &str, album: &str) -> Option<String> {
+#[derive(Debug, PartialEq, Eq)]
+enum ReleaseSearchResult {
+    Match(String),
+    NoMatch,
+    Malformed,
+}
+
+fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSearchResult {
     fn norm(s: &str) -> String {
         s.split_whitespace()
             .collect::<Vec<_>>()
             .join(" ")
             .to_lowercase()
     }
-    let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let releases = v.get("releases")?.as_array()?;
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return ReleaseSearchResult::Malformed;
+    };
+    let Some(releases) = value.get("releases").and_then(serde_json::Value::as_array) else {
+        return ReleaseSearchResult::Malformed;
+    };
     let (want_artist, want_album) = (norm(album_artist), norm(album));
     for r in releases {
         let score = r
@@ -207,10 +218,13 @@ pub(crate) fn parse_best_release(json: &str, album_artist: &str, album: &str) ->
             .and_then(|name| name.as_str())
             .unwrap_or_default();
         if norm(title) == want_album && norm(artist) == want_artist {
-            return r.get("id").and_then(|id| id.as_str()).map(str::to_string);
+            let Some(id) = r.get("id").and_then(serde_json::Value::as_str) else {
+                return ReleaseSearchResult::Malformed;
+            };
+            return ReleaseSearchResult::Match(id.to_owned());
         }
     }
-    None
+    ReleaseSearchResult::NoMatch
 }
 
 pub fn fetch_and_cache(
@@ -257,11 +271,12 @@ where
                 return CoverFetchOutcome::TransientFailure;
             };
             match parse_best_release(&body, album_artist, album) {
-                Some(id) => id,
-                None => {
+                ReleaseSearchResult::Match(id) => id,
+                ReleaseSearchResult::NoMatch => {
                     write_negative(&key);
                     return CoverFetchOutcome::NotFound;
                 }
+                ReleaseSearchResult::Malformed => return CoverFetchOutcome::TransientFailure,
             }
         }
     };
@@ -315,12 +330,16 @@ fn http_get_bytes(url: &str) -> CaaFetchResult {
     {
         return CaaFetchResult::TransientFailure;
     }
+    classify_caa_body(bytes)
+}
+
+fn classify_caa_body(bytes: Vec<u8>) -> CaaFetchResult {
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
-        return CaaFetchResult::NotFound;
+        return CaaFetchResult::TransientFailure;
     }
     match validated_image_extension(&bytes) {
         Some(ext) => CaaFetchResult::Found(bytes, ext),
-        None => CaaFetchResult::NotFound,
+        None => CaaFetchResult::TransientFailure,
     }
 }
 
@@ -415,6 +434,10 @@ fn store_album_downloaded_with(
 }
 
 #[cfg(test)]
+#[path = "cover_download_retry_tests.rs"]
+mod retry_tests;
+
+#[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
@@ -473,20 +496,29 @@ mod tests {
     #[test]
     fn parse_best_release_accepts_a_strong_match() {
         assert_eq!(
-            parse_best_release(MB_STRONG, "Pink Floyd", "The Wall").as_deref(),
-            Some("11111111-1111-1111-1111-111111111111")
+            parse_best_release(MB_STRONG, "Pink Floyd", "The Wall"),
+            ReleaseSearchResult::Match("11111111-1111-1111-1111-111111111111".to_owned())
         );
     }
 
     #[test]
     fn parse_best_release_rejects_a_weak_match() {
-        assert!(parse_best_release(MB_WEAK, "Pink Floyd", "The Wall").is_none());
+        assert_eq!(
+            parse_best_release(MB_WEAK, "Pink Floyd", "The Wall"),
+            ReleaseSearchResult::NoMatch
+        );
     }
 
     #[test]
     fn parse_best_release_handles_empty_and_garbage() {
-        assert!(parse_best_release(r#"{"releases":[]}"#, "A", "B").is_none());
-        assert!(parse_best_release("not json", "A", "B").is_none());
+        assert_eq!(
+            parse_best_release(r#"{"releases":[]}"#, "A", "B"),
+            ReleaseSearchResult::NoMatch
+        );
+        assert_eq!(
+            parse_best_release("not json", "A", "B"),
+            ReleaseSearchResult::Malformed
+        );
     }
 
     #[test]
