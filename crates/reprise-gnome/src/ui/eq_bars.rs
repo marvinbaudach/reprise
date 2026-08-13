@@ -63,7 +63,11 @@ const WIDGET_SIZE: i32 = 16;
 pub(in crate::ui) enum EqVariant {
     /// Pulsing accent bars for the now-playing row.
     Animated,
-    /// Fixed ascending `currentColor` bars for the My Stats sidebar icon.
+    /// Fixed ascending `currentColor` bars retained by the CSS regression tests.
+    #[allow(
+        dead_code,
+        reason = "retained as the static equalizer regression fixture after My Stats adopted a symbolic icon"
+    )]
     Static,
 }
 

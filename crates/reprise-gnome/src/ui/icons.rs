@@ -56,6 +56,11 @@ mod tests {
             "sidebar_presentation::NavIcon::Radio through nav_icon's theme check \
              → audio-x-generic-symbolic",
         ),
+        (
+            "reprise-stats-symbolic",
+            "sidebar_presentation::NavIcon::MyStats through nav_icon's theme check \
+             → view-list-symbolic",
+        ),
     ];
 
     fn ui_root() -> PathBuf {

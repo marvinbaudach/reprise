@@ -3,7 +3,6 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::strings;
 use reprise_core::format::format_thousands;
 
@@ -60,10 +59,7 @@ impl NavIcon {
             Self::Youtube => "video-x-generic-symbolic",
             Self::Radio => "reprise-radio-symbolic",
             Self::TurnedOff => "system-shutdown-symbolic",
-            // Unused: My Stats renders a drawn three-bar chart via `nav_icon`,
-            // not a theme symbolic (so it never collides with `TopRated`'s
-            // star). Kept only to satisfy the exhaustive match.
-            Self::MyStats => "starred-symbolic",
+            Self::MyStats => "reprise-stats-symbolic",
         }
     }
 
@@ -77,6 +73,7 @@ impl NavIcon {
             Self::Releases => "starred-symbolic",
             Self::Concerts => "x-office-calendar-symbolic",
             Self::Radio => "audio-x-generic-symbolic",
+            Self::MyStats => "view-list-symbolic",
             _ => self.icon_name(),
         }
     }
@@ -391,14 +388,6 @@ fn editable_navigation_row(child: &gtk4::Box, label: &str) -> gtk4::ListBoxRow {
 }
 
 fn nav_icon(icon: NavIcon) -> gtk4::Widget {
-    // My Stats renders a drawn three-bar chart (see `eq_bars`) rather than a
-    // theme symbolic, so it reads as "stats" and is unmistakably distinct from
-    // the "Top rated" star — two identical icons in one section aren't allowed.
-    if matches!(icon, NavIcon::MyStats) {
-        let bars = eq_bars::build(EqVariant::Static);
-        bars.set_valign(gtk4::Align::Center);
-        return bars.upcast();
-    }
     let icon_name = gtk4::gdk::Display::default().map_or_else(
         || resolved_icon_name(icon, false),
         |display| {
@@ -444,7 +433,12 @@ mod tests {
         );
         assert_eq!(NavIcon::ImportErrors.icon_name(), "dialog-warning-symbolic");
         assert_eq!(NavIcon::Missing.icon_name(), "edit-delete-symbolic");
-        assert_eq!(NavIcon::MyStats.icon_name(), "starred-symbolic");
+        assert_eq!(NavIcon::MyStats.icon_name(), "reprise-stats-symbolic");
+        assert_eq!(NavIcon::MyStats.fallback_icon_name(), "view-list-symbolic");
+        assert_eq!(
+            resolved_icon_name(NavIcon::MyStats, false),
+            "view-list-symbolic"
+        );
         assert_eq!(NavIcon::Releases.icon_name(), "star-new-symbolic");
         assert_eq!(NavIcon::Concerts.icon_name(), "ticket-symbolic");
         assert_eq!(
