@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-13 12:30+0200\n"
+"POT-Creation-Date: 2026-08-13 15:30+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -777,6 +777,7 @@ msgstr "Reintentar"
 
 #: crates/reprise-gnome/src/ui/strings.rs:563
 #: crates/reprise-gnome/src/ui/strings_news.rs:43
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:57
 #: crates/reprise-gnome/src/ui/strings_sources.rs:19
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:402
 msgid "Dismiss"
@@ -2649,7 +2650,7 @@ msgstr ""
 msgid "Review Artwork Settings"
 msgstr "Revisar los ajustes de Material gráfico"
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:58
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:63
 msgid "Online sources are turned off — enable them in Preferences"
 msgstr "Las fuentes en línea están desactivadas — actívalas en Preferencias"
 
