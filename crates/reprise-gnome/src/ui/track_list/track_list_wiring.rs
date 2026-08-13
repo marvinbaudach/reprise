@@ -6,6 +6,31 @@ use std::rc::Rc;
 use super::surface::TrackList;
 
 impl TrackList {
+    /// Injects the context menu's "Add to queue" action callback — see the
+    /// `Shared::on_queue_selected` doc comment. `window.rs` wires this to
+    /// `PlayerController::append_to_queue`.
+    pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) -> usize + 'static) {
+        *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) -> usize + 'static) {
+        *self.shared.on_play_next_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn set_on_queue_activate(
+        &self,
+        callback: impl Fn(super::queue_row_mapping::QueueRow) + 'static,
+    ) {
+        *self.shared.on_queue_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn set_on_queue_remove(
+        &self,
+        callback: impl Fn(&[super::queue_row_mapping::QueueRow]) -> usize + 'static,
+    ) {
+        *self.shared.on_queue_remove.borrow_mut() = Some(Rc::new(callback));
+    }
+
     /// Injects the callback invoked after any context-menu action that
     /// mutates a playlist's membership — see the `Shared::on_playlist_
     /// mutated` doc comment. `window.rs` wires this to `Sidebar::refresh`.
