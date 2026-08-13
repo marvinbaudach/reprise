@@ -396,6 +396,11 @@ impl<K: ColumnKey> EditorModel for ColumnRegistry<K> {
         let next = layout::set_visible(&self.layout(), key, visible);
         self.apply(&next);
         self.persist(&next);
+        tracing::debug!(
+            column = key.as_str(),
+            visible,
+            "column header visibility changed"
+        );
     }
 
     fn move_column(&self, id: &str, target: &str, after: bool) {
@@ -480,6 +485,20 @@ mod tests {
         String::from_utf8(bytes).unwrap()
     }
 
+    fn capture_debug(operation: impl FnOnce()) -> String {
+        let output = CapturedWarnings::default();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(output.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, operation);
+        let bytes = output.0.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
+
     #[test]
     fn invalid_editor_column_ids_are_logged_with_the_rejected_role() {
         let logs = capture_warnings(|| {
@@ -499,6 +518,36 @@ mod tests {
         assert!(logs.contains("operation=\"move_column\""), "{logs}");
         assert!(logs.contains("role=\"target\""), "{logs}");
         assert!(logs.contains("column_id=\"also-missing\""), "{logs}");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn column_visibility_change_logs_the_column_and_new_value() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let artist = gtk4::ColumnViewColumn::builder()
+            .title("Artist")
+            .id(ReleaseColumn::Artist.as_str())
+            .build();
+        view.append_column(&artist);
+        let registry = ColumnRegistry::new(
+            &view,
+            Rc::new(crate::test_db::open().unwrap()),
+            TableKeys {
+                layout: "test.visibility-log.layout",
+                widths: "test.visibility-log.widths",
+            },
+            vec![(ReleaseColumn::Artist, artist)],
+        );
+
+        let logs = capture_debug(|| {
+            EditorModel::set_visible(registry.as_ref(), ReleaseColumn::Artist.as_str(), false);
+        });
+
+        assert!(logs.contains("column header visibility changed"), "{logs}");
+        assert!(logs.contains("column=\"artist\""), "{logs}");
+        assert!(logs.contains("visible=false"), "{logs}");
     }
 
     #[test]

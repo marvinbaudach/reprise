@@ -2,7 +2,7 @@
 
 # Deletes the seeded manual playlist through its real sidebar context menu.
 run_playlist_delete_flow() {
-  log_step "flow 1c: confirmed sidebar playlist deletion…"
+  start_flow "1c: confirmed sidebar playlist deletion…"
   click_window_relative "$SIDEBAR_PLAYLIST_X" "$SIDEBAR_PLAYLIST_Y"
   sleep 0.4
   click_window_relative "$SIDEBAR_PLAYLIST_X" "$SIDEBAR_PLAYLIST_Y" 3

@@ -143,6 +143,31 @@ impl TransientFocusGuard {
     }
 }
 
+/// Returns the first real menu item rather than PopoverMenu's focusable
+/// scrolling shell. `GtkModelButton` is private GTK implementation detail,
+/// so the public accessible role is the stable way to identify the initial
+/// keyboard target.
+pub(super) fn popover_menu_initial_focus(popover: &gtk4::PopoverMenu) -> Option<gtk4::Widget> {
+    first_focusable_menu_item(popover.upcast_ref())
+}
+
+fn first_focusable_menu_item(widget: &gtk4::Widget) -> Option<gtk4::Widget> {
+    if widget.accessible_role() == gtk4::AccessibleRole::MenuItem
+        && widget.is_focusable()
+        && widget.is_sensitive()
+    {
+        return Some(widget.clone());
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = first_focusable_menu_item(&current) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
 struct RowBindingValidity {
     valid: Cell<bool>,
     model: glib::WeakRef<gtk4::gio::ListModel>,

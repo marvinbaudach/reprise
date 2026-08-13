@@ -46,7 +46,7 @@ assert_position_near() {
 }
 
 run_compact_seek_flow() {
-  log_step "flow: mini-player waveform seeks by click and scrubs by drag…"
+  start_flow "compact-seek: mini-player waveform seeks by click and scrubs by drag…"
 
   # Play the long fixture, then switch to compact. The generated fixture is
   # minutes long, so its scan (and waveform extraction) can still be running
