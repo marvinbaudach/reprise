@@ -51,7 +51,7 @@ class MainActivityRatingTest {
     }
 
     @Test
-    fun libraryHeartWritesFiveThenZeroAndBothSurviveAFreshActivityRead() {
+    fun libraryHeartWritesFiveThenZeroAndAFreshActivityReadsAnotherTracksStoredRating() {
         libraryHeart("Add to favourites").performClick()
         compose.waitForIdle()
 
@@ -66,6 +66,8 @@ class MainActivityRatingTest {
         assertEquals(0, application.trackRatings[1L])
         libraryHeart("Add to favourites").assertIsDisplayed()
 
+        // Track 2, not track 1: the view model's optimistic rating cache survives
+        // recreate(), so track 1 would show the heart even if nothing were read back.
         application.trackRatings[2L] = 5
         application.catalogSize += 1
         recreate()
