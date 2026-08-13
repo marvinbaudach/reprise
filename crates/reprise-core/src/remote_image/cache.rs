@@ -8,22 +8,30 @@
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::sync::Once;
 use std::time::SystemTime;
 
 use crate::cover_download::IMAGE_EXTS;
 
 use super::CacheScope;
 
+static LEGACY_CACHE_REMOVAL: Once = Once::new();
+
 pub(crate) fn cache_dir(scope: CacheScope) -> PathBuf {
-    cache_dir_with_root(&crate::cover::cache_dir(), scope)
+    let root = crate::cover::cache_dir();
+    remove_legacy_cache_once(&root, &LEGACY_CACHE_REMOVAL);
+    cache_dir_with_root(&root, scope)
 }
 
 fn cache_dir_with_root(root: &Path, scope: CacheScope) -> PathBuf {
-    remove_legacy_cache(root);
     root.join(match scope {
         CacheScope::Persistent => "remote-images-persistent",
         CacheScope::Transient => "remote-images-transient",
     })
+}
+
+fn remove_legacy_cache_once(root: &Path, removal: &Once) {
+    removal.call_once(|| remove_legacy_cache(root));
 }
 
 fn remove_legacy_cache(root: &Path) {
@@ -151,6 +159,7 @@ fn enforce_bound(dir: &Path, limit: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Once;
     use std::time::{Duration, UNIX_EPOCH};
 
     fn tmp() -> PathBuf {
@@ -214,6 +223,8 @@ mod tests {
         std::fs::create_dir_all(&legacy).unwrap();
         std::fs::write(legacy.join("old.jpg"), b"old").unwrap();
 
+        let removal = Once::new();
+        remove_legacy_cache_once(&root, &removal);
         let persistent = cache_dir_with_root(&root, super::super::CacheScope::Persistent);
         assert!(!legacy.exists());
         store_image(
@@ -229,6 +240,10 @@ mod tests {
         assert!(!legacy.exists());
         assert!(persistent.ends_with("remote-images-persistent"));
         assert!(transient.ends_with("remote-images-transient"));
+
+        std::fs::create_dir_all(&legacy).unwrap();
+        remove_legacy_cache_once(&root, &removal);
+        assert!(legacy.exists(), "legacy cleanup must run only once");
         std::fs::remove_dir_all(&root).ok();
     }
 
