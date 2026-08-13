@@ -9,6 +9,12 @@ use reprise_core::format::format_thousands;
 
 const ICON_WIDTH: i32 = 16;
 const ROW_HORIZONTAL_MARGIN: i32 = 12;
+// These mirror libadwaita's current `.navigation-sidebar > row` geometry.
+// Keep the platform rules untouched; the Xvfb layout regression catches drift.
+pub(in crate::ui) const SIDEBAR_SURFACE_INSET: i32 = 6;
+const ADWAITA_NAVIGATION_ROW_PADDING: i32 = 8;
+pub(in crate::ui) const SIDEBAR_TEXT_INSET: i32 =
+    SIDEBAR_SURFACE_INSET + ADWAITA_NAVIGATION_ROW_PADDING + ROW_HORIZONTAL_MARGIN;
 const ROW_VERTICAL_MARGIN: i32 = 5;
 const ROW_SPACING: i32 = 10;
 const SIDEBAR_MIN_WIDTH: f64 = 240.0;
@@ -204,7 +210,7 @@ pub(in crate::ui) fn build_issue_nav_row(
     row
 }
 
-fn header_label(text: &str) -> gtk4::Label {
+fn section_header_label(text: &str) -> gtk4::Label {
     let label = gtk4::Label::builder()
         .label(text)
         .xalign(0.0)
@@ -212,15 +218,27 @@ fn header_label(text: &str) -> gtk4::Label {
         .build();
     label.add_css_class("caption-heading");
     label.add_css_class("reprise-text-secondary");
-    label.set_margin_start(ROW_HORIZONTAL_MARGIN);
-    label.set_margin_end(ROW_HORIZONTAL_MARGIN);
     label.set_margin_top(14);
     label.set_margin_bottom(4);
     label
 }
 
+fn navigation_header_label(text: &str) -> gtk4::Label {
+    let label = section_header_label(text);
+    label.set_margin_start(ROW_HORIZONTAL_MARGIN);
+    label.set_margin_end(ROW_HORIZONTAL_MARGIN);
+    label
+}
+
+fn standalone_header_label(text: &str) -> gtk4::Label {
+    let label = section_header_label(text);
+    label.set_margin_start(SIDEBAR_TEXT_INSET);
+    label.set_margin_end(SIDEBAR_TEXT_INSET);
+    label
+}
+
 pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBoxRow {
-    let label = header_label(text);
+    let label = navigation_header_label(text);
     let row = gtk4::ListBoxRow::builder()
         .child(&label)
         .selectable(false)
@@ -239,7 +257,7 @@ pub(in crate::ui) fn append_header_with_action(
     on_activate: impl Fn() + 'static,
 ) -> gtk4::Button {
     let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, ROW_SPACING);
-    let label = header_label(text);
+    let label = navigation_header_label(text);
     label.set_hexpand(true);
     hbox.append(&label);
 
@@ -294,7 +312,7 @@ pub(in crate::ui) fn build_editable_playlist_row(
 }
 
 pub(in crate::ui) fn problem_header() -> gtk4::Label {
-    header_label(&strings::text(strings::SIDEBAR_SECTION_ISSUES))
+    standalone_header_label(&strings::text(strings::SIDEBAR_SECTION_ISSUES))
 }
 
 /// Pins the navigation sidebar at [`SIDEBAR_MIN_WIDTH`] real pixels (NPP-1).

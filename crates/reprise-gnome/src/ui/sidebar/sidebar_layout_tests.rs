@@ -13,6 +13,163 @@ use crate::ui::sidebar_presentation;
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn sidebar_headings_and_surfaces_share_one_column_edge() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    libadwaita::init().unwrap();
+    crate::ui::style::install();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let window = adw::ApplicationWindow::builder()
+        .default_width(240)
+        .default_height(900)
+        .build();
+    let sidebar = Sidebar::new(conn, &window, || 0);
+    sidebar.widget().set_size_request(240, -1);
+
+    let issue_row = sidebar_presentation::build_issue_nav_row(
+        "Missing files",
+        sidebar_presentation::issue_row_presentation(1, sidebar_presentation::NavIcon::Missing),
+        sidebar_presentation::NavIcon::Missing,
+    );
+    sidebar.shared.issues_listbox.append(&issue_row);
+    sidebar.shared.issues_listbox.set_visible(true);
+
+    let device = crate::ui::sidebar::sidebar_device_card::tests::view(
+        crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+    );
+    let device_section =
+        crate::ui::sidebar::sidebar_device_section::present_device_section_for_test(&device);
+    sidebar.activity_slot.set_device_section(&device_section);
+
+    window.set_content(Some(sidebar.widget()));
+    window.present();
+    drain_display_events();
+
+    let root = sidebar.widget();
+    let library_heading = sidebar
+        .shared
+        .listbox
+        .row_at_index(0)
+        .and_then(|row| row.child())
+        .and_downcast::<gtk4::Label>()
+        .expect("the first navigation row is the Library heading label");
+    let library_row = find_row(
+        &sidebar.shared,
+        &reprise_core::view_source::ViewSource::Library,
+    )
+    .expect("the sidebar has a Music navigation row");
+    let navigation_content = navigation_row_content(&library_row);
+    // The title itself follows the row's 16 px icon and 10 px spacing. Reach
+    // that real label so this cannot accidentally become a row-only test, but
+    // compare the heading column with the icon-bearing row's leading content.
+    let navigation_title = navigation_title_label(&library_row);
+    assert_eq!(
+        navigation_title.text(),
+        crate::ui::strings::text(crate::ui::strings::SIDEBAR_MUSIC)
+    );
+    let navigation_icon = navigation_content
+        .first_child()
+        .expect("a navigation row starts with an icon");
+    let issues_heading = descendant_label(
+        root,
+        &crate::ui::strings::text(crate::ui::strings::SIDEBAR_SECTION_ISSUES),
+    );
+    let devices_heading = descendant_label(&device_section, "DEVICES");
+    let device_card = descendant_with_css_class(&device_section, "device-card");
+
+    let text_edges = [
+        ("LIBRARY", left_edge(&library_heading, root)),
+        ("Music row content", left_edge(&navigation_content, root)),
+        ("ISSUES", left_edge(&issues_heading, root)),
+        ("DEVICES", left_edge(&devices_heading, root)),
+    ];
+    let expected_text_edge = text_edges[0].1;
+    let navigation_title_edge = left_edge(&navigation_title, root);
+    let expected_title_edge = left_edge(&navigation_icon, root)
+        + navigation_icon.width() as f32
+        + navigation_content.spacing() as f32;
+    let navigation_surface_edge = left_edge(&library_row, root);
+    let device_surface_edge = left_edge(&device_card, root);
+    eprintln!("sidebar text edges: {text_edges:?}");
+    eprintln!(
+        "sidebar surface edges: navigation={navigation_surface_edge:.1}, device={device_surface_edge:.1}"
+    );
+    for (name, edge) in text_edges {
+        assert!(
+            (edge - expected_text_edge).abs() <= 1.0,
+            "{name} starts at {edge:.1}px, but the sidebar text column starts at {expected_text_edge:.1}px"
+        );
+    }
+    assert!(
+        (navigation_title_edge - expected_title_edge).abs() <= 1.0,
+        "Music title starts at {navigation_title_edge:.1}px, but its icon and spacing place it at {expected_title_edge:.1}px"
+    );
+
+    assert!(
+        (device_surface_edge - navigation_surface_edge).abs() <= 1.0,
+        "device card starts at {device_surface_edge:.1}px, but navigation surfaces start at {navigation_surface_edge:.1}px"
+    );
+
+    window.close();
+}
+
+fn navigation_title_label(row: &gtk4::ListBoxRow) -> gtk4::Label {
+    navigation_row_content(row)
+        .first_child()
+        .and_then(|icon| icon.next_sibling())
+        .and_downcast::<gtk4::Label>()
+        .expect("a navigation row has a title label after its icon")
+}
+
+fn navigation_row_content(row: &gtk4::ListBoxRow) -> gtk4::Box {
+    row.child()
+        .and_downcast::<gtk4::Button>()
+        .and_then(|button| button.child())
+        .and_downcast::<gtk4::Box>()
+        .expect("a navigation row has a content box")
+}
+
+fn descendant_label(root: &impl IsA<gtk4::Widget>, text: &str) -> gtk4::Label {
+    find_descendant(root.upcast_ref(), &|widget| {
+        widget
+            .downcast_ref::<gtk4::Label>()
+            .is_some_and(|label| label.text() == text)
+    })
+    .and_downcast::<gtk4::Label>()
+    .unwrap_or_else(|| panic!("no descendant label named {text:?}"))
+}
+
+fn descendant_with_css_class(root: &impl IsA<gtk4::Widget>, css_class: &str) -> gtk4::Widget {
+    find_descendant(root.upcast_ref(), &|widget| widget.has_css_class(css_class))
+        .unwrap_or_else(|| panic!("no descendant with CSS class {css_class:?}"))
+}
+
+fn find_descendant(
+    root: &gtk4::Widget,
+    predicate: &dyn Fn(&gtk4::Widget) -> bool,
+) -> Option<gtk4::Widget> {
+    if predicate(root) {
+        return Some(root.clone());
+    }
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        if let Some(found) = find_descendant(&widget, predicate) {
+            return Some(found);
+        }
+        child = widget.next_sibling();
+    }
+    None
+}
+
+fn left_edge(widget: &impl IsA<gtk4::Widget>, root: &impl IsA<gtk4::Widget>) -> f32 {
+    widget
+        .upcast_ref::<gtk4::Widget>()
+        .compute_bounds(root.upcast_ref())
+        .expect("the sidebar child is allocated")
+        .x()
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn fb_8_progress_region_reaches_split_view_bottom() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
