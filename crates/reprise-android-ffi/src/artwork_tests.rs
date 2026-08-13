@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use super::log_capture::{CapturedLogs, LogCapture};
+use super::log_capture::CapturedLogs;
 use super::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 use super::{AndroidArtworkSize, LibraryError, MusicLibrary, WindowRange};
 
@@ -239,9 +239,7 @@ fn an_unusable_cover_cache_is_logged_rather_than_passing_as_no_artwork() {
     std::fs::write(directory.path().join("cache/reprise"), b"not a directory").unwrap();
 
     let logs = CapturedLogs::default();
-    let artwork = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
-        library.track_artwork(&track_uri, AndroidArtworkSize::List)
-    });
+    let artwork = logs.capture(|| library.track_artwork(&track_uri, AndroidArtworkSize::List));
 
     assert_eq!(artwork.unwrap(), None);
     assert_eq!(
