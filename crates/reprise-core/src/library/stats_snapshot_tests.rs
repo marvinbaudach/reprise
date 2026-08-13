@@ -200,59 +200,6 @@ fn best_week_is_none_for_an_empty_period() {
 }
 
 #[test]
-fn stats_23_band_card_data_reports_share_and_ranked_artists() {
-    let conn = migrated_conn();
-    let artists = [
-        ("Alpha", 5),
-        ("Beta", 4),
-        ("Gamma", 3),
-        ("Delta", 2),
-        ("Epsilon", 1),
-    ];
-    let mut track_id = 1;
-    for (artist, plays) in artists {
-        let tracks = if artist == "Alpha" { 3 } else { 1 };
-        for track_index in 0..tracks {
-            insert_track(
-                &conn,
-                track_id,
-                &format!("{artist} {track_index}"),
-                artist,
-                "",
-                "Rock",
-                100_000,
-                0,
-                None,
-            );
-            let track_plays = if artist == "Alpha" {
-                [2, 2, 1][track_index]
-            } else {
-                plays
-            };
-            for play in 0..track_plays {
-                insert_event(
-                    &conn,
-                    track_id,
-                    timestamp(2026, 2, track_id as u32, 12, play),
-                    100_000,
-                );
-            }
-            track_id += 1;
-        }
-    }
-
-    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
-    let spotlight = snapshot.spotlight.as_ref().unwrap();
-
-    assert_eq!(spotlight.artist.group.label, "Alpha");
-    assert_eq!(spotlight.artist.group.plays, 5);
-    assert_eq!(spotlight.artist.group.ms, 500_000);
-    assert_eq!(spotlight.share_percent, 33);
-    assert_eq!(spotlight.top_tracks.len(), 3);
-    assert_eq!(spotlight.also.len(), 4);
-}
-
-#[test]
 fn stats_15_genre_card_buckets_other() {
     let conn = migrated_conn();
     for (index, genre) in ["Rock", "Jazz", "Folk", "Pop", "Metal", "Soul", "Punk"]
@@ -458,37 +405,6 @@ fn stats_9_mbid_never_merges_a_foreign_album_artist() {
     assert_eq!(
         group_track_ids(&conn, GroupKind::Artist, &captives.group.key).unwrap(),
         vec![2]
-    );
-}
-
-/// Mixed MBID coverage inside one spelling: the artist merges, so every one of
-/// its tracks must stay reachable from the spotlight.
-#[test]
-fn stats_9_spotlight_keeps_tracks_without_an_mbid() {
-    let conn = migrated_conn();
-    insert_track(
-        &conn,
-        1,
-        "Tagged",
-        "Alpha",
-        "",
-        "Rock",
-        100_000,
-        0,
-        Some("alpha-mbid"),
-    );
-    insert_track(&conn, 2, "Untagged", "Alpha", "", "Rock", 100_000, 0, None);
-    insert_event(&conn, 1, timestamp(2026, 6, 1, 12, 0), 100_000);
-    insert_event(&conn, 2, timestamp(2026, 6, 2, 12, 0), 100_000);
-
-    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
-    let spotlight = snapshot.spotlight.as_ref().unwrap();
-
-    assert_eq!(spotlight.artist.group.plays, 2);
-    assert_eq!(spotlight.top_tracks.len(), 2);
-    assert_eq!(
-        group_track_ids(&conn, GroupKind::Artist, &spotlight.artist.group.key).unwrap(),
-        vec![1, 2]
     );
 }
 

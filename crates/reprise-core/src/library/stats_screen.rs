@@ -128,7 +128,6 @@ pub(crate) struct AlbumRow {
 #[derive(Debug, Clone)]
 pub(crate) struct TrackAggregate {
     pub track: TopTrack,
-    pub effective_artist: String,
 }
 
 /// `tracks.artist_mbid` is keyed to the raw `artist` column, but the stats
@@ -245,7 +244,8 @@ pub(crate) fn artist_rows(
 ) -> Result<Vec<NamedRow>, rusqlite::Error> {
     // Grouped one level finer than the fold needs, because MBID eligibility is
     // a per-row question (see `eligible_artist_mbid`) and SQLite cannot answer
-    // it: its `lower()` folds no diacritics. Rust decides, then folds.
+    // it: its `lower()` folds no diacritics. Rust decides, then folds. The album
+    // also stays in the group so cover candidates can be ranked per album.
     let sql = format!(
         "SELECT {RAW_EFFECTIVE_ALBUM_ARTIST} AS raw, le.artist, le.album_artist, \
                 NULLIF(TRIM(le.artist_mbid), ''), COUNT(le.id), \
@@ -402,7 +402,6 @@ pub(crate) fn track_rows(
                     total_ms: row.get(5)?,
                     track_path: row.get(6)?,
                 },
-                effective_artist: row.get(7)?,
             })
         })?
         .collect();
