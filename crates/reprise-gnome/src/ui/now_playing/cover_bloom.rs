@@ -350,11 +350,35 @@ mod tests {
 
     #[test]
     fn npp_18_bloom_mask_stops_fade_outward_and_resize_rebuilds_cache() {
-        let stops = bloom_mask_stops(280.0);
+        let band = 280.0;
+        let stops = bloom_mask_stops(band);
 
         assert_eq!(stops[0], BloomMaskStop::new(0.0, 1.0));
-        assert_eq!(stops[1], BloomMaskStop::new(190.0 / 280.0, 1.0));
+        assert_eq!(
+            stops[1],
+            BloomMaskStop::new(BLOOM_FULL_STRENGTH_Y / band, 1.0)
+        );
         assert_eq!(stops[2], BloomMaskStop::new(1.0, 0.0));
+
+        let taller_band = 400.0;
+        assert_eq!(
+            bloom_mask_stops(taller_band),
+            [
+                BloomMaskStop::new(0.0, 1.0),
+                BloomMaskStop::new(BLOOM_FULL_STRENGTH_Y / taller_band, 1.0),
+                BloomMaskStop::new(1.0, 0.0),
+            ]
+        );
+
+        let clamped_band = BLOOM_FULL_STRENGTH_Y / 2.0;
+        assert_eq!(
+            bloom_mask_stops(clamped_band),
+            [
+                BloomMaskStop::new(0.0, 1.0),
+                BloomMaskStop::new(1.0, 1.0),
+                BloomMaskStop::new(1.0, 1.0),
+            ]
+        );
 
         assert!(bloom_mask_needs_rebuild(None, 900, 280));
         assert!(!bloom_mask_needs_rebuild(Some((900, 280)), 900, 280));
