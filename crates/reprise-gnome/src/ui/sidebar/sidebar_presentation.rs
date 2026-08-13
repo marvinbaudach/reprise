@@ -58,7 +58,7 @@ impl NavIcon {
             Self::Concerts => "ticket-symbolic",
             Self::Podcasts => "audio-input-microphone-symbolic",
             Self::Youtube => "video-x-generic-symbolic",
-            Self::Radio => "network-wireless-symbolic",
+            Self::Radio => "reprise-radio-symbolic",
             Self::TurnedOff => "system-shutdown-symbolic",
             // Unused: My Stats renders a drawn three-bar chart via `nav_icon`,
             // not a theme symbolic (so it never collides with `TopRated`'s
@@ -76,7 +76,7 @@ impl NavIcon {
             Self::LibraryDoctor => crate::ui::library_doctor::DOCTOR_GLYPH_FALLBACK,
             Self::Releases => "starred-symbolic",
             Self::Concerts => "x-office-calendar-symbolic",
-            Self::Radio => "network-cellular-symbolic",
+            Self::Radio => "audio-x-generic-symbolic",
             _ => self.icon_name(),
         }
     }
@@ -400,14 +400,10 @@ fn nav_icon(icon: NavIcon) -> gtk4::Widget {
         return bars.upcast();
     }
     let icon_name = gtk4::gdk::Display::default().map_or_else(
-        || icon.fallback_icon_name(),
+        || resolved_icon_name(icon, false),
         |display| {
             let theme = gtk4::IconTheme::for_display(&display);
-            if theme.has_icon(icon.icon_name()) {
-                icon.icon_name()
-            } else {
-                icon.fallback_icon_name()
-            }
+            resolved_icon_name(icon, theme.has_icon(icon.icon_name()))
         },
     );
     let image = gtk4::Image::from_icon_name(icon_name);
@@ -415,6 +411,14 @@ fn nav_icon(icon: NavIcon) -> gtk4::Widget {
     image.set_pixel_size(ICON_WIDTH);
     image.set_valign(gtk4::Align::Center);
     image.upcast()
+}
+
+const fn resolved_icon_name(icon: NavIcon, primary_available: bool) -> &'static str {
+    if primary_available {
+        icon.icon_name()
+    } else {
+        icon.fallback_icon_name()
+    }
 }
 
 #[cfg(test)]
@@ -448,10 +452,14 @@ mod tests {
             "audio-input-microphone-symbolic"
         );
         assert_eq!(NavIcon::Youtube.icon_name(), "video-x-generic-symbolic");
-        assert_eq!(NavIcon::Radio.icon_name(), "network-wireless-symbolic");
+        assert_eq!(NavIcon::Radio.icon_name(), "reprise-radio-symbolic");
         assert_eq!(
             NavIcon::Radio.fallback_icon_name(),
-            "network-cellular-symbolic"
+            "audio-x-generic-symbolic"
+        );
+        assert_eq!(
+            resolved_icon_name(NavIcon::Radio, false),
+            "audio-x-generic-symbolic"
         );
         assert_eq!(NavIcon::Releases.fallback_icon_name(), "starred-symbolic");
         assert_eq!(
