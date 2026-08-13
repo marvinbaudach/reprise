@@ -2,6 +2,13 @@ use crate::ui::list_geometry::{self, ContentHeight, RowHeight};
 
 const CONTENT_HEIGHT_EPSILON: f64 = 0.5;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ui) enum LayoutValidation {
+    Accepted,
+    Rejected,
+    NoOpinion,
+}
+
 /// Content-space geometry of a list that may carry section headers: the one
 /// place that knows a row's top edge is
 /// `position * row_height + headers_above(position) * section_header_height`.
@@ -33,7 +40,6 @@ impl ListLayout {
         })
     }
 
-    #[cfg(test)]
     pub(in crate::ui) fn rows_only(row_height: RowHeight) -> Self {
         Self {
             row_height,
@@ -44,6 +50,10 @@ impl ListLayout {
 
     pub(in crate::ui) fn row_height(&self) -> RowHeight {
         self.row_height
+    }
+
+    pub(in crate::ui) fn has_sections(&self) -> bool {
+        !self.section_starts.is_empty()
     }
 
     pub(in crate::ui) fn headers_above(&self, position: u32) -> usize {
@@ -121,13 +131,32 @@ impl ListLayout {
             .map(|height| (height - viewport_height).max(0.0))
     }
 
-    /// Whether this layout agrees with the live allocation closely enough to
-    /// write a scroll value. A wrong assumed header height must fail closed.
-    pub(in crate::ui) fn validate(&self, n_rows: usize, upper: f64) -> bool {
-        upper.is_finite()
-            && self
-                .content_height(n_rows)
-                .is_some_and(|height| (height - upper).abs() < CONTENT_HEIGHT_EPSILON)
+    /// Whether a live allocation can judge this layout's assumed header height.
+    ///
+    /// A non-positive or non-finite `upper` is not evidence. Neither is an
+    /// allocation shorter than the known row bodies, which cannot describe
+    /// this model, nor one below the predicted content height, because GTK's
+    /// range can still grow while section headers settle. Once `upper` reaches
+    /// or exceeds the prediction, an excess beyond the sub-pixel tolerance is
+    /// proof that the assumed header height disagrees with the allocation.
+    pub(in crate::ui) fn validate(&self, n_rows: usize, upper: f64) -> LayoutValidation {
+        if !upper.is_finite() || upper <= 0.0 {
+            return LayoutValidation::NoOpinion;
+        }
+        let Some(content_height) = self.content_height(n_rows) else {
+            return LayoutValidation::NoOpinion;
+        };
+        let rows_height = n_rows as f64 * self.row_height.pixels();
+        if upper + CONTENT_HEIGHT_EPSILON < rows_height
+            || upper + CONTENT_HEIGHT_EPSILON < content_height
+        {
+            return LayoutValidation::NoOpinion;
+        }
+        if (content_height - upper).abs() < CONTENT_HEIGHT_EPSILON {
+            LayoutValidation::Accepted
+        } else {
+            LayoutValidation::Rejected
+        }
     }
 }
 
@@ -135,7 +164,7 @@ impl ListLayout {
 mod tests {
     use crate::ui::list_geometry::RowHeight;
 
-    use super::ListLayout;
+    use super::{LayoutValidation, ListLayout};
 
     fn height(pixels: f64) -> RowHeight {
         RowHeight::new(pixels).unwrap()
@@ -248,8 +277,24 @@ mod tests {
     fn validate_accepts_the_queue_allocation_and_rejects_a_wrong_header_guess() {
         let layout = layout(34.0, 36.0, &[0, 1]);
 
-        assert!(layout.validate(2_276, 77_456.0));
-        assert!(!layout.validate(2_276, 77_464.0));
+        assert_eq!(layout.validate(2_276, 77_456.0), LayoutValidation::Accepted);
+        assert_eq!(layout.validate(2_276, 77_464.0), LayoutValidation::Rejected);
+    }
+
+    #[test]
+    fn validate_has_no_opinion_about_unsettled_or_foreign_allocations() {
+        let layout = layout(34.0, 36.0, &[0, 1]);
+
+        assert_eq!(
+            layout.validate(2_276, 77_438.0),
+            LayoutValidation::NoOpinion
+        );
+        assert_eq!(layout.validate(2_276, 748.0), LayoutValidation::NoOpinion);
+        assert_eq!(
+            layout.validate(2_276, f64::NAN),
+            LayoutValidation::NoOpinion
+        );
+        assert_eq!(layout.validate(2_276, 0.0), LayoutValidation::NoOpinion);
     }
 
     #[test]

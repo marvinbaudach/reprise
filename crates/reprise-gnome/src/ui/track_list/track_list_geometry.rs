@@ -6,7 +6,7 @@ use gtk4::gio::prelude::ListModelExt;
 use gtk4::prelude::{AdjustmentExt, ScrollableExt};
 
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
-use crate::ui::list_geometry_layout::ListLayout;
+use crate::ui::list_geometry_layout::{LayoutValidation, ListLayout};
 
 use super::Shared;
 
@@ -16,9 +16,9 @@ pub(in crate::ui) fn forget_row_height(cache: &crate::ui::list_geometry::ListGeo
     cache.invalidate();
 }
 
-/// Builds the complete row/header layout and accepts it only when it agrees
-/// with the live adjustment. Section starts are copied before any GTK or
-/// database call so no `RefCell` borrow crosses a re-entrant boundary.
+/// Builds the complete row/header layout, using the live adjustment only when
+/// the layout contains section headers. Section starts are copied before any
+/// GTK or database call so no `RefCell` borrow crosses a re-entrant boundary.
 pub(in crate::ui) fn layout(
     shared: &Shared,
     captured_row_height: Option<RowHeight>,
@@ -47,9 +47,25 @@ pub(in crate::ui) fn layout(
         row_height,
         section_starts,
     )?;
-    layout
-        .validate(n_rows, adjustment.upper())
-        .then_some(layout)
+    Some(layout_for_live_allocation(
+        layout,
+        n_rows,
+        adjustment.upper(),
+    ))
+}
+
+/// Keeps useful anchor geometry for every validation outcome. An allocation
+/// that cannot yet judge the header guess keeps the complete layout; a proven
+/// disagreement falls back to the rows-only arithmetic used before section
+/// geometry existed, so callers never lose the anchor entirely.
+fn layout_for_live_allocation(layout: ListLayout, n_rows: usize, upper: f64) -> ListLayout {
+    if !layout.has_sections() {
+        return layout;
+    }
+    match layout.validate(n_rows, upper) {
+        LayoutValidation::Accepted | LayoutValidation::NoOpinion => layout,
+        LayoutValidation::Rejected => ListLayout::rows_only(layout.row_height()),
+    }
 }
 
 /// Explicitly warms both geometry caches at the first post-swap allocation.
@@ -119,4 +135,34 @@ fn schedule_section_measurement_attempt(shared: &Rc<Shared>, attempts_left: u8) 
             schedule_section_measurement_attempt(&shared, attempts_left);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ui::list_geometry::RowHeight;
+    use crate::ui::list_geometry_layout::ListLayout;
+
+    use super::layout_for_live_allocation;
+
+    fn height(pixels: f64) -> RowHeight {
+        RowHeight::new(pixels).unwrap()
+    }
+
+    #[test]
+    fn rejected_section_geometry_falls_back_but_no_opinion_keeps_the_anchor_model() {
+        let sectioned = ListLayout::new(height(34.0), Some(height(36.0)), vec![0, 1]).unwrap();
+
+        let rejected = layout_for_live_allocation(sectioned.clone(), 2_276, 77_464.0);
+        assert_eq!(rejected, ListLayout::rows_only(height(34.0)));
+
+        let unsettled = layout_for_live_allocation(sectioned.clone(), 2_276, 77_438.0);
+        assert_eq!(unsettled, sectioned);
+
+        let unsectioned = ListLayout::rows_only(height(34.0));
+        assert_eq!(
+            layout_for_live_allocation(unsectioned.clone(), 2_276, 748.0),
+            unsectioned,
+            "an unsectioned layout never consults allocation validation"
+        );
+    }
 }
