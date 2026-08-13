@@ -22,7 +22,9 @@ use gtk4::gsk;
 use gtk4::gsk::prelude::IsRenderNode;
 use gtk4::prelude::*;
 
-use super::cover_bloom::{bloom_falloff, BLOOM_FULL_STRENGTH_Y, BLOOM_HEIGHT, BLOOM_WIDTH_FACTOR};
+use super::cover_bloom::{
+    bloom_mask_needs_rebuild, bloom_mask_stops, BLOOM_HEIGHT, BLOOM_WIDTH_FACTOR,
+};
 
 struct MaskCache {
     width: i32,
@@ -161,27 +163,23 @@ impl BloomArea {
     fn mask_node(&self, width: i32, band: i32) -> gsk::RenderNode {
         let imp = self.imp();
         if let Some(cache) = imp.mask.borrow().as_ref() {
-            if cache.width == width && cache.band == band {
+            if !bloom_mask_needs_rebuild(Some((cache.width, cache.band)), width, band) {
                 return cache.node.clone();
             }
         }
 
-        let opaque_alpha = bloom_falloff(0.0, BLOOM_FULL_STRENGTH_Y, f64::from(band)) as f32;
-        let clear_alpha =
-            bloom_falloff(f64::from(band), BLOOM_FULL_STRENGTH_Y, f64::from(band)) as f32;
-        let opaque = gdk::RGBA::new(0.0, 0.0, 0.0, opaque_alpha);
-        let clear = gdk::RGBA::new(0.0, 0.0, 0.0, clear_alpha);
-        let full_offset = (BLOOM_FULL_STRENGTH_Y / f64::from(band)).clamp(0.0, 1.0) as f32;
+        let stops = bloom_mask_stops(f64::from(band)).map(|stop| {
+            gsk::ColorStop::new(
+                stop.offset as f32,
+                gdk::RGBA::new(0.0, 0.0, 0.0, stop.alpha as f32),
+            )
+        });
         let bounds = gtk4::graphene::Rect::new(0.0, 0.0, width as f32, band as f32);
         let node = gsk::LinearGradientNode::new(
             &bounds,
             &gtk4::graphene::Point::new(0.0, 0.0),
             &gtk4::graphene::Point::new(0.0, band as f32),
-            &[
-                gsk::ColorStop::new(0.0, opaque),
-                gsk::ColorStop::new(full_offset, opaque),
-                gsk::ColorStop::new(1.0, clear),
-            ],
+            &stops,
         )
         .upcast();
         *imp.mask.borrow_mut() = Some(MaskCache {

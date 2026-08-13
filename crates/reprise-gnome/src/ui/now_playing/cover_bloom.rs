@@ -68,6 +68,37 @@ pub(super) fn bloom_falloff(y: f64, full: f64, band: f64) -> f64 {
     (band - y) / (band - full)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct BloomMaskStop {
+    pub(super) offset: f64,
+    pub(super) alpha: f64,
+}
+
+impl BloomMaskStop {
+    pub(super) const fn new(offset: f64, alpha: f64) -> Self {
+        Self { offset, alpha }
+    }
+}
+
+pub(super) fn bloom_mask_stops(band: f64) -> [BloomMaskStop; 3] {
+    let full_offset = (BLOOM_FULL_STRENGTH_Y / band).clamp(0.0, 1.0);
+    let opaque_alpha = bloom_falloff(0.0, BLOOM_FULL_STRENGTH_Y, band);
+    let clear_alpha = bloom_falloff(band, BLOOM_FULL_STRENGTH_Y, band);
+    [
+        BloomMaskStop::new(0.0, opaque_alpha),
+        BloomMaskStop::new(full_offset, opaque_alpha),
+        BloomMaskStop::new(1.0, clear_alpha),
+    ]
+}
+
+pub(super) fn bloom_mask_needs_rebuild(
+    cached_size: Option<(i32, i32)>,
+    width: i32,
+    band: i32,
+) -> bool {
+    cached_size != Some((width, band))
+}
+
 pub(super) fn bloom_scale(swell: f64) -> f64 {
     REST_SCALE + SCALE_PER_SWELL * swell.clamp(0.0, 1.0)
 }
@@ -315,6 +346,20 @@ mod tests {
             .map(|step| bloom_falloff(full + (band - full) * f64::from(step) / 10.0, full, band))
             .collect::<Vec<_>>();
         assert!(samples.windows(2).all(|pair| pair[0] >= pair[1]));
+    }
+
+    #[test]
+    fn npp_18_bloom_mask_stops_fade_outward_and_resize_rebuilds_cache() {
+        let stops = bloom_mask_stops(280.0);
+
+        assert_eq!(stops[0], BloomMaskStop::new(0.0, 1.0));
+        assert_eq!(stops[1], BloomMaskStop::new(190.0 / 280.0, 1.0));
+        assert_eq!(stops[2], BloomMaskStop::new(1.0, 0.0));
+
+        assert!(bloom_mask_needs_rebuild(None, 900, 280));
+        assert!(!bloom_mask_needs_rebuild(Some((900, 280)), 900, 280));
+        assert!(bloom_mask_needs_rebuild(Some((900, 280)), 901, 280));
+        assert!(bloom_mask_needs_rebuild(Some((900, 280)), 900, 279));
     }
 
     #[test]
