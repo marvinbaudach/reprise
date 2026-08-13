@@ -66,7 +66,7 @@ use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
 #[cfg(test)]
 use super::sidebar_issues_section::bottom_region_placement;
-use super::sidebar_module_menu::OnDisableModule;
+use super::sidebar_module_menu::{ModuleMenuHighlight, OnDisableModule};
 use super::sidebar_navigation_scroller::build_navigation_scroller;
 use super::sidebar_root::build_root;
 #[cfg(test)]
@@ -187,6 +187,10 @@ pub(in crate::ui) struct Shared {
     /// row. Wired after `PreferencesContext` exists so the context menu uses
     /// the exact same runtime refresh path as the Plugins switch.
     pub(in crate::ui) on_disable_module: RefCell<Option<OnDisableModule>>,
+    /// Tracks the one optional-module row highlighted by its open menu. The
+    /// row is weak and generations prevent an older popover's close signal
+    /// from clearing a newer popup's target state.
+    pub(in crate::ui) module_menu_highlight: ModuleMenuHighlight,
     /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
     /// export dialog plus playlist-delete confirmation — hence `pub(in crate::ui)`,
     /// mirroring `conn`/`on_tracks_added`
@@ -277,6 +281,7 @@ impl Sidebar {
             on_remove_missing: RefCell::new(None),
             on_queue_drop: RefCell::new(None),
             on_disable_module: RefCell::new(None),
+            module_menu_highlight: ModuleMenuHighlight::new(),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
             refresh_count: Cell::new(0),

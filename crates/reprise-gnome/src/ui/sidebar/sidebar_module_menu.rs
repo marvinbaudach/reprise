@@ -1,3 +1,4 @@
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -14,6 +15,43 @@ use crate::ui::{popover_lifecycle, strings};
 
 const ACTION_DISABLE: &str = "disable";
 const ACTION_GROUP: &str = "sidebarmodule";
+
+pub(in crate::ui) struct ModuleMenuHighlight {
+    generation: Cell<u64>,
+    target: RefCell<gtk4::glib::WeakRef<gtk4::ListBoxRow>>,
+}
+
+impl ModuleMenuHighlight {
+    pub(in crate::ui) fn new() -> Self {
+        Self {
+            generation: Cell::new(0),
+            target: RefCell::new(gtk4::glib::WeakRef::new()),
+        }
+    }
+
+    fn begin(&self, row: &gtk4::ListBoxRow) -> u64 {
+        let previous = self.target.borrow().upgrade();
+        if let Some(previous) = previous {
+            previous.remove_css_class(crate::ui::preference_plugins::TARGET_CLASS);
+        }
+        let generation = self.generation.get().wrapping_add(1);
+        self.generation.set(generation);
+        self.target.borrow_mut().set(Some(row));
+        row.add_css_class(crate::ui::preference_plugins::TARGET_CLASS);
+        generation
+    }
+
+    fn finish(&self, generation: u64) {
+        if self.generation.get() != generation {
+            return;
+        }
+        let target = self.target.borrow().upgrade();
+        self.target.borrow_mut().set(None::<&gtk4::ListBoxRow>);
+        if let Some(target) = target {
+            target.remove_css_class(crate::ui::preference_plugins::TARGET_CLASS);
+        }
+    }
+}
 
 pub(in crate::ui) type OnDisableModule =
     Rc<dyn Fn(&'static ModuleDescriptor) -> Result<(), String>>;
@@ -53,7 +91,7 @@ pub(in crate::ui) fn wire(
     {
         let shared = Rc::downgrade(shared);
         let title = title.to_string();
-        gesture.connect_pressed(move |gesture, _, x, y| {
+        gesture.connect_pressed(move |gesture, _, _, _| {
             let Some(shared) = shared.upgrade() else {
                 return;
             };
@@ -61,7 +99,7 @@ pub(in crate::ui) fn wire(
                 return;
             };
             gesture.set_state(gtk4::EventSequenceState::Claimed);
-            show(&shared, &row, module, &title, x as i32, y as i32);
+            show(&shared, &row, module, &title);
         });
     }
     row.add_controller(gesture);
@@ -80,14 +118,7 @@ pub(in crate::ui) fn wire(
             let Some(row) = keys.widget().and_downcast::<gtk4::ListBoxRow>() else {
                 return gtk4::glib::Propagation::Proceed;
             };
-            show(
-                &shared,
-                &row,
-                module,
-                &title,
-                row.width() / 2,
-                row.height() / 2,
-            );
+            show(&shared, &row, module, &title);
             gtk4::glib::Propagation::Stop
         });
     }
@@ -99,8 +130,6 @@ fn show(
     row: &gtk4::ListBoxRow,
     module: &'static ModuleDescriptor,
     title: &str,
-    x: i32,
-    y: i32,
 ) {
     let actions = gio::SimpleActionGroup::new();
     let disable = gio::SimpleAction::new(ACTION_DISABLE, None);
@@ -123,8 +152,23 @@ fn show(
     );
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
     popover.set_parent(row);
-    popover.set_has_arrow(false);
-    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x, y, 1, 1)));
+    popover.set_has_arrow(true);
+    popover.set_position(gtk4::PositionType::Right);
+    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(
+        0,
+        0,
+        row.width(),
+        row.height(),
+    )));
+    let highlight_generation = shared.module_menu_highlight.begin(row);
+    {
+        let shared = Rc::downgrade(shared);
+        popover.connect_closed(move |_| {
+            if let Some(shared) = shared.upgrade() {
+                shared.module_menu_highlight.finish(highlight_generation);
+            }
+        });
+    }
     popover_lifecycle::unparent_after_actions(popover.upcast_ref());
     let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(row);
     focus_guard.restore_on_popover_close(popover.upcast_ref());
@@ -198,6 +242,17 @@ mod tests {
 
         assert_eq!(&*seen.borrow(), &["podcasts"]);
         assert!(dispatch_disable(None, &PODCASTS_MODULE).is_err());
+    }
+
+    fn assert_row_anchored(popover: &gtk4::PopoverMenu, row: &gtk4::ListBoxRow) {
+        assert!(popover.has_arrow());
+        assert_eq!(popover.position(), gtk4::PositionType::Right);
+        let (has_pointing_rect, pointing_rect) = popover.pointing_to();
+        assert!(has_pointing_rect);
+        assert_eq!(
+            pointing_rect,
+            gtk4::gdk::Rectangle::new(0, 0, row.width(), row.height())
+        );
     }
 
     fn context_gesture(widget: &gtk4::Widget) -> gtk4::GestureClick {
@@ -281,10 +336,30 @@ mod tests {
         context_gesture(row.upcast_ref()).emit_by_name::<()>("pressed", &[&1i32, &8.0f64, &8.0f64]);
         let popover = attached_popover(row.upcast_ref());
         assert!(popover.is_visible());
+        assert_row_anchored(&popover, &row);
+        assert!(row.has_css_class("reprise-plugin-target"));
         assert!(menu_has_action(
             &popover.menu_model().expect("sidebar module menu model"),
             "sidebarmodule.disable"
         ));
+
+        popover.popdown();
+        crate::ui::source_context_surface::settle_layout();
+        assert!(!row.has_css_class("reprise-plugin-target"));
+
+        let handled = context_keys(row.upcast_ref()).emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk4::gdk::Key::F10,
+                &0u32,
+                &gtk4::gdk::ModifierType::SHIFT_MASK,
+            ],
+        );
+        assert!(handled);
+        let popover = attached_popover(row.upcast_ref());
+        assert!(popover.is_visible());
+        assert_row_anchored(&popover, &row);
+        assert!(row.has_css_class("reprise-plugin-target"));
 
         row.activate_action("sidebarmodule.disable", None).unwrap();
 
