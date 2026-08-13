@@ -39,8 +39,24 @@ pub fn sidebar_turn_off(name: &str) -> String {
     super::formatted(N_!("Turn Off {name}"), &[("name", name)])
 }
 
+pub fn sidebar_module_settings(name: &str) -> String {
+    super::formatted(N_!("{name} settings…"), &[("name", name)])
+}
+
 pub fn sidebar_turn_off_failed(name: &str) -> String {
     super::formatted(N_!("Could not turn off {name}"), &[("name", name)])
+}
+
+pub fn sidebar_turned_off(name: &str) -> String {
+    super::formatted(N_!("{name} turned off"), &[("name", name)])
+}
+
+pub fn sidebar_turned_off_showing_music(name: &str) -> String {
+    super::formatted(N_!("{name} turned off · showing Music"), &[("name", name)])
+}
+
+pub fn sidebar_turned_off_count(count: usize) -> String {
+    super::formatted(N_!("{count} turned off"), &[("count", &count.to_string())])
 }
 
 // Appearance accent and color scheme preferences.

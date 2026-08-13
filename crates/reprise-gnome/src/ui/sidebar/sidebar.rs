@@ -66,7 +66,7 @@ use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
 #[cfg(test)]
 use super::sidebar_issues_section::bottom_region_placement;
-use super::sidebar_module_menu::OnDisableModule;
+use super::sidebar_module_menu::{ModuleMenuHighlight, OnPresentPlugins, OnSetModuleEnabled};
 use super::sidebar_navigation_scroller::build_navigation_scroller;
 use super::sidebar_root::build_root;
 #[cfg(test)]
@@ -186,7 +186,14 @@ pub(in crate::ui) struct Shared {
     /// Persists and republishes the module state behind an optional sidebar
     /// row. Wired after `PreferencesContext` exists so the context menu uses
     /// the exact same runtime refresh path as the Plugins switch.
-    pub(in crate::ui) on_disable_module: RefCell<Option<OnDisableModule>>,
+    pub(in crate::ui) on_module_enabled: RefCell<Option<OnSetModuleEnabled>>,
+    /// Opens the Plugins page with the supplied module rows highlighted. The
+    /// same slice callback serves one row's menu and the aggregate action row.
+    pub(in crate::ui) on_present_plugins: RefCell<Option<OnPresentPlugins>>,
+    /// Tracks the one optional-module row highlighted by its open menu. The
+    /// row is weak and generations prevent an older popover's close signal
+    /// from clearing a newer popup's target state.
+    pub(in crate::ui) module_menu_highlight: ModuleMenuHighlight,
     /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
     /// export dialog plus playlist-delete confirmation — hence `pub(in crate::ui)`,
     /// mirroring `conn`/`on_tracks_added`
@@ -276,7 +283,9 @@ impl Sidebar {
             on_tracks_added: RefCell::new(None),
             on_remove_missing: RefCell::new(None),
             on_queue_drop: RefCell::new(None),
-            on_disable_module: RefCell::new(None),
+            on_module_enabled: RefCell::new(None),
+            on_present_plugins: RefCell::new(None),
+            module_menu_highlight: ModuleMenuHighlight::new(),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
             refresh_count: Cell::new(0),
@@ -348,17 +357,6 @@ impl Sidebar {
     /// reload`.
     pub fn set_on_tracks_added(&self, callback: impl Fn() + 'static) {
         *self.shared.on_tracks_added.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Wires the optional-row context menu to the Plugins module mutation
-    /// path. A weak `PreferencesContext` is supplied during preferences
-    /// construction, so the sidebar cannot create an ownership cycle.
-    pub(in crate::ui) fn set_on_disable_module(
-        &self,
-        callback: impl Fn(&'static reprise_core::modules::ModuleDescriptor) -> Result<(), String>
-            + 'static,
-    ) {
-        *self.shared.on_disable_module.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Routes Missing-files bulk cleanup through the shared tombstone/Undo

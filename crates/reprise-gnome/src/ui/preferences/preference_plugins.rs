@@ -9,7 +9,7 @@ use reprise_core::modules::ModuleDescriptor;
 
 use super::{strings, PreferencesContext};
 
-const TARGET_CLASS: &str = "reprise-plugin-target";
+pub(in crate::ui) const TARGET_CLASS: &str = "reprise-plugin-target";
 pub(in crate::ui) const ONLINE_LYRICS_TARGETS: &[&str] = &["online_lyrics"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

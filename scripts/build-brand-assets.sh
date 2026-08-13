@@ -59,7 +59,13 @@ plate=$generated_brand/icon-plate.svg
 icon_16=$generated_brand/reprise-icon-16.svg
 mark_16_mono=$generated_brand/reprise-mark-16-mono.svg
 first_aid_symbolic=$generated_brand/reprise-first-aid-symbolic.svg
+radio_symbolic=$generated_brand/reprise-radio-symbolic.svg
+stats_symbolic=$generated_brand/reprise-stats-symbolic.svg
 python3 "$lib/svg_recolour.py" "$first_aid_symbolic" "$first_aid_symbolic" \
+  'currentColor=#222222'
+python3 "$lib/svg_recolour.py" "$radio_symbolic" "$radio_symbolic" \
+  'currentColor=#222222'
+python3 "$lib/svg_recolour.py" "$stats_symbolic" "$stats_symbolic" \
   'currentColor=#222222'
 
 build_surface_tree() {
@@ -93,6 +99,10 @@ build_surface_tree() {
     'currentColor=#222222'
   cp "$first_aid_symbolic" \
     "$icons/symbolic/apps/reprise-first-aid-symbolic.svg"
+  cp "$radio_symbolic" \
+    "$icons/symbolic/apps/reprise-radio-symbolic.svg"
+  cp "$stats_symbolic" \
+    "$icons/symbolic/apps/reprise-stats-symbolic.svg"
 
   mkdir -p "$android/drawable"
   python3 "$lib/svg_to_vectordrawable.py" "$mark" \

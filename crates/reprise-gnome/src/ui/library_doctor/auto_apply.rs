@@ -135,6 +135,7 @@ impl LibraryDoctorCoordinator {
                 &self.toast_overlay,
                 &crate::ui::strings::doctor_tags_fixed(changes),
                 &crate::ui::strings::text(crate::ui::strings::DOCTOR_UNDO),
+                5,
                 move || {
                     if let Some(coordinator) = weak.upgrade() {
                         coordinator.start_revert();

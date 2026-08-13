@@ -3,7 +3,6 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::strings;
 use reprise_core::format::format_thousands;
 
@@ -39,6 +38,7 @@ pub(in crate::ui) enum NavIcon {
     Youtube,
     Radio,
     MyStats,
+    TurnedOff,
 }
 
 impl NavIcon {
@@ -57,11 +57,9 @@ impl NavIcon {
             Self::Concerts => "ticket-symbolic",
             Self::Podcasts => "audio-input-microphone-symbolic",
             Self::Youtube => "video-x-generic-symbolic",
-            Self::Radio => "network-wireless-symbolic",
-            // Unused: My Stats renders a drawn three-bar chart via `nav_icon`,
-            // not a theme symbolic (so it never collides with `TopRated`'s
-            // star). Kept only to satisfy the exhaustive match.
-            Self::MyStats => "starred-symbolic",
+            Self::Radio => "reprise-radio-symbolic",
+            Self::TurnedOff => "system-shutdown-symbolic",
+            Self::MyStats => "reprise-stats-symbolic",
         }
     }
 
@@ -74,7 +72,8 @@ impl NavIcon {
             Self::LibraryDoctor => crate::ui::library_doctor::DOCTOR_GLYPH_FALLBACK,
             Self::Releases => "starred-symbolic",
             Self::Concerts => "x-office-calendar-symbolic",
-            Self::Radio => "network-cellular-symbolic",
+            Self::Radio => "audio-x-generic-symbolic",
+            Self::MyStats => "view-list-symbolic",
             _ => self.icon_name(),
         }
     }
@@ -389,23 +388,11 @@ fn editable_navigation_row(child: &gtk4::Box, label: &str) -> gtk4::ListBoxRow {
 }
 
 fn nav_icon(icon: NavIcon) -> gtk4::Widget {
-    // My Stats renders a drawn three-bar chart (see `eq_bars`) rather than a
-    // theme symbolic, so it reads as "stats" and is unmistakably distinct from
-    // the "Top rated" star — two identical icons in one section aren't allowed.
-    if matches!(icon, NavIcon::MyStats) {
-        let bars = eq_bars::build(EqVariant::Static);
-        bars.set_valign(gtk4::Align::Center);
-        return bars.upcast();
-    }
     let icon_name = gtk4::gdk::Display::default().map_or_else(
-        || icon.fallback_icon_name(),
+        || resolved_icon_name(icon, false),
         |display| {
             let theme = gtk4::IconTheme::for_display(&display);
-            if theme.has_icon(icon.icon_name()) {
-                icon.icon_name()
-            } else {
-                icon.fallback_icon_name()
-            }
+            resolved_icon_name(icon, theme.has_icon(icon.icon_name()))
         },
     );
     let image = gtk4::Image::from_icon_name(icon_name);
@@ -413,6 +400,14 @@ fn nav_icon(icon: NavIcon) -> gtk4::Widget {
     image.set_pixel_size(ICON_WIDTH);
     image.set_valign(gtk4::Align::Center);
     image.upcast()
+}
+
+const fn resolved_icon_name(icon: NavIcon, primary_available: bool) -> &'static str {
+    if primary_available {
+        icon.icon_name()
+    } else {
+        icon.fallback_icon_name()
+    }
 }
 
 #[cfg(test)]
@@ -438,7 +433,12 @@ mod tests {
         );
         assert_eq!(NavIcon::ImportErrors.icon_name(), "dialog-warning-symbolic");
         assert_eq!(NavIcon::Missing.icon_name(), "edit-delete-symbolic");
-        assert_eq!(NavIcon::MyStats.icon_name(), "starred-symbolic");
+        assert_eq!(NavIcon::MyStats.icon_name(), "reprise-stats-symbolic");
+        assert_eq!(NavIcon::MyStats.fallback_icon_name(), "view-list-symbolic");
+        assert_eq!(
+            resolved_icon_name(NavIcon::MyStats, false),
+            "view-list-symbolic"
+        );
         assert_eq!(NavIcon::Releases.icon_name(), "star-new-symbolic");
         assert_eq!(NavIcon::Concerts.icon_name(), "ticket-symbolic");
         assert_eq!(
@@ -446,10 +446,14 @@ mod tests {
             "audio-input-microphone-symbolic"
         );
         assert_eq!(NavIcon::Youtube.icon_name(), "video-x-generic-symbolic");
-        assert_eq!(NavIcon::Radio.icon_name(), "network-wireless-symbolic");
+        assert_eq!(NavIcon::Radio.icon_name(), "reprise-radio-symbolic");
         assert_eq!(
             NavIcon::Radio.fallback_icon_name(),
-            "network-cellular-symbolic"
+            "audio-x-generic-symbolic"
+        );
+        assert_eq!(
+            resolved_icon_name(NavIcon::Radio, false),
+            "audio-x-generic-symbolic"
         );
         assert_eq!(NavIcon::Releases.fallback_icon_name(), "starred-symbolic");
         assert_eq!(
