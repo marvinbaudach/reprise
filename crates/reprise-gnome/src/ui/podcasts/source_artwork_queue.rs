@@ -39,12 +39,10 @@ impl ArtworkQueue {
             if let Err(error) = std::thread::Builder::new()
                 .name(format!("reprise-source-artwork-{index}"))
                 .spawn(move || {
-                    while let Ok(job) = receiver.recv_blocking() {
-                        process_job(&pending, &job, &mut |url| {
-                            reprise_core::podcasts::source_artwork::fetch(url)
-                                .map_err(|error| error.to_string())
-                        });
-                    }
+                    run_worker(&receiver, &pending, &mut |url| {
+                        reprise_core::podcasts::source_artwork::fetch(url)
+                            .map_err(|error| error.to_string())
+                    });
                 })
             {
                 tracing::warn!(%error, "could not start source artwork worker");
@@ -193,6 +191,22 @@ fn process_job(
         if pending.get(key).is_some_and(Vec::is_empty) {
             pending.remove(key);
             return;
+        }
+    }
+}
+
+fn run_worker(
+    receiver: &async_channel::Receiver<ArtworkKey>,
+    pending: &Pending,
+    fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+) {
+    while let Ok(job) = receiver.recv_blocking() {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            process_job(pending, &job, fetch);
+        }));
+        if result.is_err() {
+            tracing::warn!(url = %job.url, "source artwork worker recovered from a panicking job");
+            finish_without_image(pending, &job);
         }
     }
 }
@@ -405,5 +419,35 @@ mod tests {
 
         assert!(!fetch_called);
         assert!(matches!(result.try_recv(), Ok(None)));
+    }
+
+    #[test]
+    fn src_11_panicking_job_finishes_and_the_worker_accepts_the_same_url_again() {
+        let _gate = super::super::GATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        super::super::GATE_OPEN.store(true, std::sync::atomic::Ordering::SeqCst);
+        let (queue, jobs) = super::ArtworkQueue::test_queue();
+        let pending = queue.pending.clone();
+        let worker = std::thread::spawn(move || {
+            let mut attempts = 0;
+            super::run_worker(&jobs, &pending, &mut |_| {
+                attempts += 1;
+                if attempts == 1 {
+                    panic!("simulated artwork fetch panic");
+                }
+                Ok(TINY_PNG.to_vec())
+            });
+        });
+        let url = unique_url("panic-recovery");
+
+        let failed = queue.submit(url.clone(), 40, 40, CacheScope::Transient);
+        assert!(matches!(failed.recv_blocking(), Ok(None)));
+
+        let retried = queue.submit(url, 40, 40, CacheScope::Transient);
+        assert!(matches!(retried.recv_blocking(), Ok(Some(_))));
+
+        drop(queue);
+        worker.join().unwrap();
     }
 }
