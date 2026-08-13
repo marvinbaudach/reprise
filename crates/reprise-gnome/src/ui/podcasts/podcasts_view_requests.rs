@@ -4,7 +4,19 @@ use super::*;
 
 impl PodcastsView {
     pub(in crate::ui) fn request_refresh(self: &Rc<Self>, force: bool) -> bool {
-        let operation = PodcastsOperation::Refresh { force };
+        let policy = if force {
+            podcasts::refresh::RefreshPolicy::Force
+        } else {
+            podcasts::refresh::RefreshPolicy::Due
+        };
+        self.request_refresh_with(podcasts::refresh::RefreshRequest { policy, kind: None })
+    }
+
+    fn request_refresh_with(self: &Rc<Self>, request: podcasts::refresh::RefreshRequest) -> bool {
+        let operation = PodcastsOperation::Refresh {
+            policy: request.policy,
+            kind: request.kind,
+        };
         let generation = request_generation(self.generation.get(), operation);
         self.generation.set(generation);
         let (response, receiver) = podcasts_response_channel();
