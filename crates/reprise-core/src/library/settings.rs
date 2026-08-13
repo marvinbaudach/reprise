@@ -26,6 +26,7 @@ pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
 pub const ONLINE_DISCOVERY_BANNER_COMPLETED_KEY: &str = "online_sources.discovery_banner_completed";
 pub const ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY: &str = "online_sources.first_enable_completed";
+pub const ARTWORK_CONSENT_MERGE_NOTICE_PENDING_KEY: &str = "artwork.consent_merge_notice_pending";
 pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
 pub const NEW_RELEASES_LAST_COMPLETED_AT_KEY: &str = "new_releases.last_completed_at";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";

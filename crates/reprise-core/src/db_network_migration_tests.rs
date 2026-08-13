@@ -78,6 +78,16 @@ fn stored_artwork_setting(conn: &Connection) -> Option<String> {
     .unwrap()
 }
 
+fn stored_artwork_merge_notice(conn: &Connection) -> Option<String> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'artwork.consent_merge_notice_pending'",
+        [],
+        |row| row.get(0),
+    )
+    .optional()
+    .unwrap()
+}
+
 #[test]
 fn net_2a_fresh_database_migration_stores_the_master_off() {
     let conn = open(None).unwrap();
@@ -420,6 +430,7 @@ fn src_11_v71_inherits_consent_from_one_legacy_artwork_module() {
 
         assert_eq!(stored_artwork_setting(&conn).as_deref(), Some("1"));
         assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
+        assert_eq!(stored_artwork_merge_notice(&conn).as_deref(), Some("1"));
     }
 }
 
@@ -449,6 +460,7 @@ fn src_11_v71_all_legacy_artwork_modules_off_stays_off() {
 
     assert_eq!(stored_artwork_setting(&conn), None);
     assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
+    assert_eq!(stored_artwork_merge_notice(&conn), None);
 }
 
 #[test]
@@ -470,6 +482,7 @@ fn src_11_v71_without_legacy_artwork_rows_stays_off() {
 
     assert_eq!(stored_artwork_setting(&conn), None);
     assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
+    assert_eq!(stored_artwork_merge_notice(&conn), None);
 }
 
 #[test]
@@ -492,4 +505,103 @@ fn src_11_v71_manual_artwork_disable_survives_a_second_migration_run() {
 
     assert_eq!(stored_artwork_setting(&conn).as_deref(), Some("0"));
     assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
+}
+
+#[test]
+fn src_11_v72_repairs_missing_unified_consent_after_faulty_v71() {
+    let conn = open(None).unwrap();
+    migrate_with_empty_caches(&conn);
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')",
+        [crate::db_grandfather::LEGACY_SOURCE_IMAGES_KEY],
+    )
+    .unwrap();
+    conn.execute(
+        "DELETE FROM settings WHERE key = ?1",
+        [crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE)],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 71).unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_artwork_setting(&conn).as_deref(), Some("1"));
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ARTWORK_MODULE).unwrap());
+    assert_eq!(stored_artwork_merge_notice(&conn).as_deref(), Some("1"));
+}
+
+#[test]
+fn src_11_v72_leaves_all_off_legacy_consent_absent() {
+    let conn = open(None).unwrap();
+    migrate_with_empty_caches(&conn);
+    for legacy_key in [
+        crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY,
+        crate::db_grandfather::LEGACY_ARTIST_PORTRAITS_KEY,
+        crate::db_grandfather::LEGACY_SOURCE_IMAGES_KEY,
+    ] {
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '0')",
+            [legacy_key],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "DELETE FROM settings WHERE key = ?1",
+        [crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE)],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 71).unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_artwork_setting(&conn), None);
+    assert_eq!(stored_artwork_merge_notice(&conn), None);
+}
+
+#[test]
+fn src_11_v72_leaves_existing_unified_consent_untouched() {
+    for value in ["0", "1"] {
+        let conn = open(None).unwrap();
+        migrate_with_empty_caches(&conn);
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')",
+            [crate::db_grandfather::LEGACY_SOURCE_IMAGES_KEY],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            rusqlite::params![
+                crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE),
+                value
+            ],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 71).unwrap();
+
+        migrate_with_empty_caches(&conn);
+
+        assert_eq!(stored_artwork_setting(&conn).as_deref(), Some(value));
+        assert_eq!(stored_artwork_merge_notice(&conn), None);
+    }
+}
+
+#[test]
+fn src_11_v72_manual_disable_survives_a_second_run() {
+    let conn = open(None).unwrap();
+    migrate_with_empty_caches(&conn);
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')",
+        [crate::db_grandfather::LEGACY_COVER_DOWNLOAD_KEY],
+    )
+    .unwrap();
+    let artwork_key = crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE);
+    conn.execute("DELETE FROM settings WHERE key = ?1", [&artwork_key])
+        .unwrap();
+    conn.pragma_update(None, "user_version", 71).unwrap();
+    migrate_with_empty_caches(&conn);
+    crate::library::settings::set_bool_in(&conn, &artwork_key, false).unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_artwork_setting(&conn).as_deref(), Some("0"));
 }
