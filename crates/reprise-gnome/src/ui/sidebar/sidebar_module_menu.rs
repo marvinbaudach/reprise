@@ -10,7 +10,7 @@ use reprise_core::modules::{
 };
 use reprise_core::view_source::ViewSource;
 
-use super::{show_toast, Shared};
+use super::{show_toast, show_toast_with_action, Shared};
 use crate::ui::{popover_lifecycle, strings};
 
 const ACTION_DISABLE: &str = "disable";
@@ -54,8 +54,8 @@ impl ModuleMenuHighlight {
     }
 }
 
-pub(in crate::ui) type OnDisableModule =
-    Rc<dyn Fn(&'static ModuleDescriptor) -> Result<(), String>>;
+pub(in crate::ui) type OnSetModuleEnabled =
+    Rc<dyn Fn(&'static ModuleDescriptor, bool) -> Result<(), String>>;
 pub(in crate::ui) type OnPresentPlugins = Rc<dyn Fn(&[&'static str])>;
 
 pub(in crate::ui) fn dispatch_present_plugins(
@@ -67,12 +67,13 @@ pub(in crate::ui) fn dispatch_present_plugins(
     }
 }
 
-fn dispatch_disable(
-    callback: Option<OnDisableModule>,
+fn dispatch_set_enabled(
+    callback: Option<OnSetModuleEnabled>,
     module: &'static ModuleDescriptor,
+    enabled: bool,
 ) -> Result<(), String> {
-    let callback = callback.ok_or_else(|| "module disable route is not wired".to_string())?;
-    callback(module)
+    let callback = callback.ok_or_else(|| "module state route is not wired".to_string())?;
+    callback(module, enabled)
 }
 
 fn module_for_source(source: &ViewSource) -> Option<&'static ModuleDescriptor> {
@@ -82,6 +83,17 @@ fn module_for_source(source: &ViewSource) -> Option<&'static ModuleDescriptor> {
         ViewSource::Radio => Some(&RADIO_MODULE),
         ViewSource::Releases => Some(&NEW_RELEASES_MODULE),
         ViewSource::Concerts => Some(&CONCERTS_MODULE),
+        _ => None,
+    }
+}
+
+fn source_for_module(module: &ModuleDescriptor) -> Option<ViewSource> {
+    match module.id {
+        "podcasts" => Some(ViewSource::Podcasts),
+        "youtube" => Some(ViewSource::Youtube),
+        "radio" => Some(ViewSource::Radio),
+        "new_releases" => Some(ViewSource::Releases),
+        "concerts" => Some(ViewSource::Concerts),
         _ => None,
     }
 }
@@ -202,12 +214,54 @@ fn show(
     popover.popup();
 }
 
-fn disable_module(shared: &Rc<Shared>, module: &'static ModuleDescriptor, title: &str) {
-    let callback = shared.on_disable_module.borrow().clone();
-    if let Err(error) = dispatch_disable(callback, module) {
+fn disable_module(
+    shared: &Rc<Shared>,
+    module: &'static ModuleDescriptor,
+    title: &str,
+) -> Option<libadwaita::Toast> {
+    let callback = shared.on_module_enabled.borrow().clone();
+    let source = source_for_module(module);
+    let current_source = shared.current_source.borrow().clone();
+    let fell_back = source.as_ref() == Some(&current_source);
+    if let Err(error) = dispatch_set_enabled(callback.clone(), module, false) {
         tracing::warn!(%error, module = module.id, "could not disable sidebar module");
         show_toast(shared, &strings::sidebar_turn_off_failed(title));
+        return None;
     }
+
+    let message = if fell_back {
+        strings::sidebar_turned_off_showing_music(title)
+    } else {
+        strings::sidebar_turned_off(title)
+    };
+    let undone = Rc::new(Cell::new(false));
+    let shared_weak = Rc::downgrade(shared);
+    let undo_flag = undone.clone();
+    show_toast_with_action(shared, &message, &strings::text(strings::UNDO), move || {
+        if undo_flag.replace(true) {
+            return;
+        }
+        let Some(shared) = shared_weak.upgrade() else {
+            return;
+        };
+        if let Err(error) = dispatch_set_enabled(callback.clone(), module, true) {
+            tracing::warn!(%error, module = module.id, "could not restore sidebar module");
+            return;
+        }
+        if !fell_back {
+            return;
+        }
+        let current_source = shared.current_source.borrow().clone();
+        if current_source != ViewSource::Library {
+            return;
+        }
+        let Some(source) = source.clone() else {
+            return;
+        };
+        if let Some(row) = super::find_row(&shared, &source) {
+            super::select_row_in_its_listbox(&row);
+        }
+    })
 }
 
 #[cfg(test)]
@@ -222,8 +276,8 @@ mod tests {
     use reprise_core::view_source::ViewSource;
 
     use super::{
-        dispatch_disable, dispatch_present_plugins, module_for_source, OnDisableModule,
-        OnPresentPlugins,
+        disable_module, dispatch_present_plugins, dispatch_set_enabled, module_for_source,
+        OnPresentPlugins, OnSetModuleEnabled,
     };
     use crate::ui::sidebar::{find_row, Sidebar};
 
@@ -263,15 +317,16 @@ mod tests {
     fn nav_16_turn_off_dispatches_the_clicked_module_once() {
         let seen = Rc::new(RefCell::new(Vec::new()));
         let seen_for_callback = seen.clone();
-        let callback: OnDisableModule = Rc::new(move |module| {
-            seen_for_callback.borrow_mut().push(module.id);
+        let callback: OnSetModuleEnabled = Rc::new(move |module, enabled| {
+            seen_for_callback.borrow_mut().push((module.id, enabled));
             Ok(())
         });
 
-        dispatch_disable(Some(callback), &PODCASTS_MODULE).unwrap();
+        dispatch_set_enabled(Some(callback.clone()), &PODCASTS_MODULE, false).unwrap();
+        dispatch_set_enabled(Some(callback), &PODCASTS_MODULE, true).unwrap();
 
-        assert_eq!(&*seen.borrow(), &["podcasts"]);
-        assert!(dispatch_disable(None, &PODCASTS_MODULE).is_err());
+        assert_eq!(&*seen.borrow(), &[("podcasts", false), ("podcasts", true)]);
+        assert!(dispatch_set_enabled(None, &PODCASTS_MODULE, false).is_err());
     }
 
     #[test]
@@ -353,8 +408,8 @@ mod tests {
         {
             let conn = conn.clone();
             let sidebar_weak = Rc::downgrade(&sidebar);
-            sidebar.set_on_disable_module(move |module| {
-                reprise_core::modules::set_enabled(&conn, module, false)
+            sidebar.set_on_module_enabled(move |module, enabled| {
+                reprise_core::modules::set_enabled(&conn, module, enabled)
                     .map_err(|error| error.to_string())?;
                 if let Some(sidebar) = sidebar_weak.upgrade() {
                     sidebar.refresh("test module disabled");
@@ -413,5 +468,63 @@ mod tests {
         assert!(!reprise_core::modules::is_enabled(&conn, &PODCASTS_MODULE).unwrap());
         assert!(find_row(&sidebar.shared, &ViewSource::Podcasts).is_none());
         assert_eq!(*sidebar.shared.current_source.borrow(), ViewSource::Library);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_16_turn_off_posts_undo_and_restores_the_active_module() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        reprise_core::online_sources::set_enabled(&conn, true).unwrap();
+        reprise_core::modules::set_enabled(&conn, &PODCASTS_MODULE, true).unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, || 0));
+        let overlay = adw::ToastOverlay::new();
+        sidebar.set_toast_overlay(&overlay);
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        {
+            let conn = conn.clone();
+            let calls = calls.clone();
+            let sidebar_weak = Rc::downgrade(&sidebar);
+            sidebar.set_on_module_enabled(move |module, enabled| {
+                calls.borrow_mut().push((module.id, enabled));
+                reprise_core::modules::set_enabled(&conn, module, enabled)
+                    .map_err(|error| error.to_string())?;
+                if let Some(sidebar) = sidebar_weak.upgrade() {
+                    sidebar.refresh("test module state changed");
+                }
+                Ok(())
+            });
+        }
+        sidebar.refresh_and_select(ViewSource::Podcasts, "test select Podcasts");
+        overlay.set_child(Some(sidebar.widget()));
+        window.set_content(Some(&overlay));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let toast = disable_module(&sidebar.shared, &PODCASTS_MODULE, "Podcasts")
+            .expect("successful turn-off toast");
+
+        assert_eq!(
+            toast.title().as_deref(),
+            Some("Podcasts turned off · showing Music")
+        );
+        assert_eq!(toast.button_label().as_deref(), Some("Undo"));
+        assert_eq!(toast.timeout(), 5);
+        assert!(!reprise_core::modules::is_enabled(&conn, &PODCASTS_MODULE).unwrap());
+        assert!(find_row(&sidebar.shared, &ViewSource::Podcasts).is_none());
+        assert_eq!(*sidebar.shared.current_source.borrow(), ViewSource::Library);
+
+        toast.emit_by_name::<()>("button-clicked", &[]);
+        toast.emit_by_name::<()>("button-clicked", &[]);
+
+        assert!(reprise_core::modules::is_enabled(&conn, &PODCASTS_MODULE).unwrap());
+        assert!(find_row(&sidebar.shared, &ViewSource::Podcasts).is_some());
+        assert_eq!(
+            *sidebar.shared.current_source.borrow(),
+            ViewSource::Podcasts
+        );
+        assert_eq!(&*calls.borrow(), &[("podcasts", false), ("podcasts", true)]);
     }
 }

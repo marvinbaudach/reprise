@@ -61,11 +61,11 @@ fn persist_module_state(
 impl PreferencesContext {
     pub(in crate::ui) fn wire_sidebar_module_menu(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
-        self.sidebar.set_on_disable_module(move |module| {
+        self.sidebar.set_on_module_enabled(move |module, enabled| {
             let context = weak
                 .upgrade()
                 .ok_or_else(|| "preferences context is no longer available".to_string())?;
-            context.set_module_enabled(module, false, "sidebar module disabled")
+            context.set_module_enabled(module, enabled, "sidebar module state changed")
         });
         let weak = Rc::downgrade(self);
         self.sidebar.set_on_present_plugins(move |targets| {

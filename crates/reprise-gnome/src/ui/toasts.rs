@@ -18,11 +18,12 @@ pub(super) fn show_with_action(
     text: &str,
     button: &str,
     on_click: impl Fn() + 'static,
-) {
+) -> adw::Toast {
     let toast = adw::Toast::new(text);
     toast.set_button_label(Some(button));
     toast.connect_button_clicked(move |_| on_click());
-    overlay.add_toast(toast);
+    overlay.add_toast(toast.clone());
+    toast
 }
 
 #[cfg(test)]

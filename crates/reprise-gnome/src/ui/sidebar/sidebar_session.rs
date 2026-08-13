@@ -116,6 +116,25 @@ pub(in crate::ui) fn show_toast(shared: &super::sidebar::Shared, text: &str) {
     }
 }
 
+pub(in crate::ui) fn show_toast_with_action(
+    shared: &super::sidebar::Shared,
+    text: &str,
+    button: &str,
+    on_click: impl Fn() + 'static,
+) -> Option<libadwaita::Toast> {
+    match shared.toast_overlay.upgrade() {
+        Some(overlay) => {
+            let toast = toasts::show_with_action(&overlay, text, button, on_click);
+            toast.set_timeout(5);
+            Some(toast)
+        }
+        None => {
+            tracing::warn!(text, "toast overlay is gone; degrading to log-only");
+            None
+        }
+    }
+}
+
 impl crate::ui::sidebar::Sidebar {
     #[cfg(test)]
     pub(in crate::ui) fn test_shared(&self) -> &std::rc::Rc<super::sidebar::Shared> {
