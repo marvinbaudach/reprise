@@ -451,6 +451,18 @@ impl PreferencesContext {
         super::preference_layout::build(self)
     }
 
+    /// `NET-1a`: persists the global online-sources gate and re-derives every
+    /// cached module permission. Work starts only when the persisted change
+    /// creates a fresh, currently-online off-to-on transition.
+    pub(in crate::ui) fn set_online_sources_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), reprise_core::db::DbError> {
+        reprise_core::online_sources::set_enabled(&self.conn, enabled)?;
+        self.refresh_online_module_state("online sources gate toggled");
+        Ok(())
+    }
+
     pub(in crate::ui) fn open_column_layout_editor(&self) {
         let navigation = self.preferences_navigation.borrow().upgrade();
         let Some(navigation) = navigation else {

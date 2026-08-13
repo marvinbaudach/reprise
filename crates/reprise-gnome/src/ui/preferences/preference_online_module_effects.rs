@@ -38,18 +38,6 @@ impl PreferencesContext {
             .replace(Some(Rc::new(callback)));
     }
 
-    /// `NET-1a`: persists the global online-sources gate and re-derives every
-    /// cached module permission. Work starts only when the persisted change
-    /// creates a fresh, currently-online off-to-on transition.
-    pub(in crate::ui) fn set_online_sources_enabled(
-        &self,
-        enabled: bool,
-    ) -> Result<(), rusqlite::Error> {
-        reprise_core::online_sources::set_enabled(&self.conn, enabled)?;
-        self.refresh_online_module_state("online sources gate toggled");
-        Ok(())
-    }
-
     pub(in crate::ui) fn refresh_online_module_state(&self, reason: &'static str) {
         let artwork_was_allowed = self.cover_download.enabled.get();
         let lyrics_was_allowed = self.lyrics_batch.permission_enabled();
