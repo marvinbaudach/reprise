@@ -1,6 +1,6 @@
 ---
 slug: p1a-welle3-browse
-worktree: /home/marvin/Projects/reprise-p1a-welle3-browse
+worktree: ~/Projects/reprise-p1a-welle3-browse
 branch: feature/p1a-welle3-browse
 phase: refactored
 codex_session:

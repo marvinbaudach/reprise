@@ -1,6 +1,6 @@
 ---
 slug: podcasts-radio
-worktree: /home/marvin/Projects/reprise-podcasts-radio
+worktree: ~/Projects/reprise-podcasts-radio
 branch: feature/podcasts-radio
 phase: planned
 codex_session:

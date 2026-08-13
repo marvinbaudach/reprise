@@ -1,6 +1,6 @@
 ---
 slug: library-source-traversal
-worktree: /home/marvin/Projects/reprise-library-source-traversal
+worktree: ~/Projects/reprise-library-source-traversal
 branch: feature/library-source-traversal
 phase: planned
 codex_session:

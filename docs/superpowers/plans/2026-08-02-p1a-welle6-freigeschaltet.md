@@ -1,6 +1,6 @@
 ---
 slug: p1a-welle6-freigeschaltet
-worktree: /home/marvin/Projects/reprise-p1a-welle6
+worktree: ~/Projects/reprise-p1a-welle6
 branch: feature/p1a-welle6-unblocked
 phase: refactored
 codex_session:

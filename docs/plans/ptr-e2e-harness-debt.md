@@ -1,12 +1,14 @@
 ---
 slug: ptr-e2e-harness-debt
-worktree: /home/marvin/Projects/reprise-ptr-e2e-harness-debt
+worktree: ~/Projects/reprise-ptr-e2e-harness-debt
 branch: feature/ptr-e2e-harness-debt
 phase: shipped
 codex_session:
 created: 2026-08-12
 ---
 # Die ptr-e2e-Harness wieder ehrlich machen
+
+This shipped plan is retained because tracked files still reference it as durable documentation.
 
 **Goal:** Die 14 dauerhaft roten Checks von `scripts/ptr-e2e/run.sh` abarbeiten.
 Sie sind keine gemeinsame Ursache: ein echter Produktfehler, mehrere verschwundene
@@ -121,7 +123,7 @@ Beobachtbarkeit fehlt (Paket B) — beides wird behoben, nicht weggeschrieben.
 > falsch. Sie beruht auf einer Log-Zeile, die dem falschen Skriptschritt
 > zugeordnet wurde. Siehe „Korrektur" ganz unten.
 
-Worktree `/home/marvin/Projects/reprise-ptr-e2e-harness-debt`, Branch
+Worktree `~/Projects/reprise-ptr-e2e-harness-debt`, Branch
 `feature/ptr-e2e-harness-debt`, drei Commits:
 
 - `21524015e8` Banner-Abweisung (aus dem NAV-17-Branch übernommen)

@@ -1,6 +1,6 @@
 ---
 slug: podcast-queue-context-rebase
-worktree: /home/marvin/Projects/reprise-podcast-queue-context
+worktree: ~/Projects/reprise-podcast-queue-context
 branch: feature/podcast-queue-context
 phase: planned
 codex_session:

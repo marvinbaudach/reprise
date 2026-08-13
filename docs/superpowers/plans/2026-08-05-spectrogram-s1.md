@@ -168,8 +168,8 @@ occasionally red in the pack and green alone.
 ## Two hard limits
 
 **The owner's real library and database are read-only.** Measure against files in
-`/home/marvin/Music` by reading them; open
-`/home/marvin/.local/share/reprise/reprise.db` only through a read-only URI, and
+`~/Music` by reading them; open
+`~/.local/share/reprise/reprise.db` only through a read-only URI, and
 never write to it. Work on copies.
 
 **The machine reached 96 °C tonight.** Measure single tracks, not the library.

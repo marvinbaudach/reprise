@@ -1,12 +1,14 @@
 ---
 slug: multi-frontend-core
-worktree: /home/marvin/Projects/reprise-multi-frontend-core
+worktree: ~/Projects/reprise-multi-frontend-core
 branch: feature/multi-frontend-core
 phase: shipped
 codex_session:
 created: 2026-07-21
 ---
 # Multi-frontend core — architecture plan
+
+This shipped plan is retained because tracked files still reference it as durable documentation.
 
 Grilled and decided 2026-07-21 (section 7); base `origin/dev`
 `797afa2dfa`. This document is the execution document. Deliberately open
@@ -874,7 +876,7 @@ review.
    default workspace run stays free of new display dependencies;
    nothing is built on the known MainContext flakiness.
 4. **ML without real data:** only generated/license-cleared short fixtures;
-   never `~/.local/share/reprise/reprise.db` or `/home/marvin/Music`;
+   never `~/.local/share/reprise/reprise.db` or `~/Music`;
    temp XDG in every command (AGENTS.md recipe). Performance numbers are
    same-host evidence in the release profile, not CI thresholds
    (TESTING.md convention).

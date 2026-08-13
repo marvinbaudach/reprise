@@ -1,6 +1,6 @@
 ---
 slug: library-source-probe
-worktree: /home/marvin/Projects/reprise-library-source-inventory
+worktree: ~/Projects/reprise-library-source-inventory
 branch: feature/library-source-inventory
 phase: planned
 codex_session:

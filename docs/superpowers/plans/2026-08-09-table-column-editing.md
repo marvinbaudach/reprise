@@ -1,6 +1,6 @@
 ---
 slug: table-column-editing
-worktree: /home/marvin/Projects/reprise-table-column-editing
+worktree: ~/Projects/reprise-table-column-editing
 branch: feature/table-column-editing
 phase: refactored
 codex_session:

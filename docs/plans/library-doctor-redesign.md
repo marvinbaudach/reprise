@@ -1,6 +1,6 @@
 ---
 slug: library-doctor-redesign
-worktree: /home/marvin/Projects/reprise-library-doctor-redesign
+worktree: ~/Projects/reprise-library-doctor-redesign
 branch: feature/library-doctor-redesign
 phase: refactored
 codex_session:

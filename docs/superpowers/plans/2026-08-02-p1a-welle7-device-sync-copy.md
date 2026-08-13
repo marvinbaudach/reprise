@@ -1,6 +1,6 @@
 ---
 slug: p1a-welle7-device-sync-copy
-worktree: /home/marvin/Projects/reprise-p1a-welle7-device-sync-copy
+worktree: ~/Projects/reprise-p1a-welle7-device-sync-copy
 branch: feature/p1a-welle7-device-sync-copy
 phase: refactored
 codex_session:

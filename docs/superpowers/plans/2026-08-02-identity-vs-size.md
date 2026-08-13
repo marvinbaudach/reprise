@@ -1,6 +1,6 @@
 ---
 slug: identity-vs-size
-worktree: /home/marvin/Projects/reprise-identity-fix
+worktree: ~/Projects/reprise-identity-fix
 branch: fix/identity-vs-size
 phase: refactored
 codex_session:

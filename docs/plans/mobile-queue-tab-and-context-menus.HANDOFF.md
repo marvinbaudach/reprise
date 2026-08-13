@@ -18,7 +18,7 @@ Später ergänzt: **auch in der Player-Ansicht** soll gelöscht werden können.
 
 | | |
 |---|---|
-| Worktree | `/home/marvin/Projects/reprise-mobile-queue-tab-and-context-menus` |
+| Worktree | `~/Projects/reprise-mobile-queue-tab-and-context-menus` |
 | Branch | `feature/mobile-queue-tab-and-context-menus`, Basis `75a24b35a9` (`origin/dev`) |
 | Spec | `docs/superpowers/specs/2026-08-10-android-queue-search-context-menu-design.md` |
 | Plan | `docs/superpowers/plans/2026-08-10-mobile-queue-tab-and-context-menus.md` |

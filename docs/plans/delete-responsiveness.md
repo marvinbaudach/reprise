@@ -1,6 +1,6 @@
 ---
 slug: delete-responsiveness
-worktree: /home/marvin/Projects/reprise-delete-perf
+worktree: ~/Projects/reprise-delete-perf
 branch: perf/delete-responsiveness
 phase: refactored
 codex_session:

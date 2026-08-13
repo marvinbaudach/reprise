@@ -1,6 +1,6 @@
 ---
 slug: navback-scroll-jump-to-top
-worktree: /home/marvin/Projects/reprise-navback
+worktree: ~/Projects/reprise-navback
 branch: fix/navback-anchor
 phase: reviewed
 codex_session:

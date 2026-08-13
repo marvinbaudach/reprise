@@ -1,6 +1,6 @@
 ---
 slug: sound-similarity
-worktree: /home/marvin/Projects/reprise-sound-similarity
+worktree: ~/Projects/reprise-sound-similarity
 branch: feature/sound-similarity
 phase: refactored
 codex_session:

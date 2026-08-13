@@ -59,7 +59,7 @@ alone.**
 
 ## Global constraints
 
-- **Worktree:** `/home/marvin/Projects/reprise-reactive-light`, branch
+- **Worktree:** `~/Projects/reprise-reactive-light`, branch
   `feature/reactive-light`. Do not touch files outside it. Do not push.
 - `cargo test -p reprise-gnome --bins <filter>` — it is a binary crate.
 - **Do not run display tests and do not start Xvfb.** Write them, leave them

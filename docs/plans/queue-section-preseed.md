@@ -1,12 +1,14 @@
 ---
 slug: queue-section-preseed
-worktree: /home/marvin/Projects/reprise/.worktrees/list-geometry-service
+worktree: ~/Projects/reprise/.worktrees/list-geometry-service
 branch: feat/list-geometry-service
 phase: shipped
 codex_session:
 created: 2026-08-10
 ---
 # Pre-seed the sectioned Queue
+
+This shipped plan is retained because tracked files still reference it as durable documentation.
 
 Follow-up to `docs/plans/list-geometry-service.md`, decision 5 / task M4.
 

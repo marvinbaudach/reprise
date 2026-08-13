@@ -1,6 +1,6 @@
 ---
 slug: search-responsiveness
-worktree: /home/marvin/Projects/reprise/.worktrees/search-responsiveness
+worktree: ~/Projects/reprise/.worktrees/search-responsiveness
 branch: feature/search-responsiveness
 phase: coded
 codex_session:
