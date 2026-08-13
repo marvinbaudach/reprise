@@ -47,7 +47,7 @@ mod tests {
             "updates::release_row_actions::icon_with_fallback → web-browser-symbolic",
         ),
         (
-            "reprise-first-aid-symbolic",
+            "io.github.marvinbaudach.Reprise-first-aid-symbolic",
             "library_doctor::doctor_glyph, and sidebar_presentation::NavIcon::LibraryDoctor \
              through nav_icon's theme check, both → system-search-symbolic",
         ),
@@ -100,7 +100,7 @@ mod tests {
                     && !literal.starts_with('-')
                     && literal.ends_with("-symbolic")
                     && literal.chars().all(|character| {
-                        character.is_ascii_lowercase() || matches!(character, '0'..='9' | '-')
+                        character.is_ascii_alphanumeric() || matches!(character, '-' | '.')
                     });
                 if is_whole_name {
                     names.insert(literal.to_owned());
@@ -120,6 +120,10 @@ mod tests {
         assert!(
             names.contains(super::UNEXPLAINED_SEARCH_MATCH),
             "the scan must guard the podcast search marker: {names:?}"
+        );
+        assert!(
+            names.contains(crate::ui::library_doctor::DOCTOR_GLYPH),
+            "the scan must guard the app-ID-prefixed first-aid icon: {names:?}"
         );
         assert!(names.len() > 40, "only {} names found", names.len());
     }

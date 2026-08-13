@@ -31,7 +31,7 @@ install_data(
 )
 
 install_data(
-  'icons/hicolor/symbolic/apps/reprise-first-aid-symbolic.svg',
+  'icons/hicolor/symbolic/apps/' + app_id + '-first-aid-symbolic.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/symbolic/apps',
 )
 
