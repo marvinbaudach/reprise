@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -220,6 +221,10 @@ class MainActivityConfigurationTest {
 
     @Test
     fun unheartingDoesNotDiscardAnotherLoadedWindowOrAnOpenAlbumOnRecreate() {
+        application.trackRatings[1L] = 5
+        application.catalogSize += 1
+        recreateAt("w412dp-h916dp-port")
+
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
         compose.waitForIdle()
@@ -234,7 +239,12 @@ class MainActivityConfigurationTest {
                 hasAnyAncestor(hasTestTag("library-page-TITLES")),
         ).performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Remove from favourites").assertIsDisplayed()
+        assertTrue(application.controls.ratingRequests.contains(1L to 0))
+        compose.onNode(
+            hasTestTag(TRACK_HEART_TAG) and
+                hasContentDescription("Add to favourites") and
+                hasAnyAncestor(hasTestTag("library-track-row-1")),
+        ).assertIsDisplayed()
 
         openDeepAlbum()
         compose.waitForIdle()
