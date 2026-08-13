@@ -7,8 +7,8 @@ use reprise_core::db::Db;
 use reprise_core::radio;
 use reprise_core::radio::search::StationCandidate;
 
-use super::add_dialog::images_allowed;
 use super::add_dialog_network::{now_unix, station_from_candidate};
+use super::images_allowed;
 use crate::ui::search_highlight::{self, HighlightPalette};
 use crate::ui::source_add_action;
 use crate::ui::strings;

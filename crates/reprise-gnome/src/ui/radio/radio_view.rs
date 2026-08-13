@@ -140,6 +140,7 @@ impl RadioView {
             &column_view,
             &live_source,
             &connectivity_source,
+            &radio_columns::images_allowed_source(&conn),
             &cells,
             &artwork_cells,
             &query_source,
