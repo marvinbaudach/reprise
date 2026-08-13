@@ -1,8 +1,8 @@
 # Spectrogram pipeline: measurement and producer decision
 
-Measured on 2026-08-05 in `/home/marvin/Projects/reprise-mobile` at
+Measured on 2026-08-05 in `~/Projects/reprise-mobile` at
 `feature/mobile-m8`, read-only. The three sample files under
-`/home/marvin/Music` were read but never modified. The library database was
+`~/Music` were read but never modified. The library database was
 opened through SQLite's read-only URI mode. Referenced source files were
 confirmed identical in the main repository.
 

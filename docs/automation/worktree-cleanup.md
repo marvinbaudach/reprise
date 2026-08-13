@@ -10,8 +10,8 @@ After a topic branch was squash-merged into `dev`, run this from the topic
 worktree while the GitHub pull request still identifies its exact head:
 
 ```sh
-/home/marvin/Projects/reprise/scripts/close-worktree.sh \
-  --repo /home/marvin/Projects/reprise \
+~/Projects/reprise/scripts/close-worktree.sh \
+  --repo ~/Projects/reprise \
   --worktree "$PWD" \
   --pr 123
 ```
@@ -29,7 +29,7 @@ The default sweep is read-only:
 
 ```sh
 scripts/reprise-worktree-gc.sh sweep \
-  --scope /home/marvin/Projects/reprise
+  --scope ~/Projects/reprise
 ```
 
 `--scope` governs **removal only**. It checks the canonical repository and
@@ -89,7 +89,7 @@ Claude Desktop stores worktrees below the current project by default. Set
 **Settings → Claude Code → Worktree location** to:
 
 ```text
-/home/marvin/.cache/reprise-agent-worktrees
+~/.cache/reprise-agent-worktrees
 ```
 
 Archive completed desktop sessions after their pull requests are merged.

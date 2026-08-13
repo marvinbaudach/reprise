@@ -1,12 +1,14 @@
 ---
 slug: ux-rules-motion
-worktree: /home/marvin/Projects/reprise/.worktrees/transitions
+worktree: ~/Projects/reprise/.worktrees/transitions
 branch: feat/ux-rules-motion
 phase: shipped
 codex_session:
 created: 2026-07-17
 ---
 # UX motion (section O) — final implementation plan
+
+This shipped plan is retained because tracked files still reference it as durable documentation.
 
 **Status:** grilled 2026-07-17, ready for /code
 **Branch:** feat/ux-rules-motion (from the worktree `.worktrees/transitions`, see Operational notes)

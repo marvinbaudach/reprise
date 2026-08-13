@@ -1,6 +1,6 @@
 ---
 slug: search-popover-commit-chip
-worktree: /home/marvin/Projects/reprise-search-popover-commit-chip
+worktree: ~/Projects/reprise-search-popover-commit-chip
 branch: feature/search-popover-commit-chip
 phase: planned
 codex_session:
@@ -25,7 +25,7 @@ commits, while Escape now discards through the section's chip-clear path.
 ## Anchoring note — read this before touching anything
 
 This plan was written against **`origin/dev` at `7214a29de1`**, in the worktree
-`/home/marvin/Projects/reprise-search-popover-commit-chip`. Three premises of
+`~/Projects/reprise-search-popover-commit-chip`. Three premises of
 the original request are stale against that base and are corrected here:
 
 1. **`browse/browse_bar_chips.rs::chip_labels` and

@@ -1,6 +1,6 @@
 ---
 slug: library-window
-worktree: /home/marvin/Projects/reprise-library-window
+worktree: ~/Projects/reprise-library-window
 branch: feature/library-window
 phase: planned
 codex_session:

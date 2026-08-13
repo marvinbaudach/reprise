@@ -1,6 +1,6 @@
 ---
 slug: android-playback
-worktree: /home/marvin/Projects/reprise-android-playback
+worktree: ~/Projects/reprise-android-playback
 branch: feature/android-playback
 phase: planned
 codex_session:

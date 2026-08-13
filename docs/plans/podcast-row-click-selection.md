@@ -1,6 +1,6 @@
 ---
 slug: podcast-row-click-selection
-worktree: /home/marvin/Projects/reprise-row-selection
+worktree: ~/Projects/reprise-row-selection
 branch: feature/podcast-row-click-selection
 phase: coded
 codex_session:

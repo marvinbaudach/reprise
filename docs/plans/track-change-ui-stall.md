@@ -1,6 +1,6 @@
 ---
 slug: track-change-ui-stall
-worktree: /home/marvin/Projects/reprise-track-change-ui-stall
+worktree: ~/Projects/reprise-track-change-ui-stall
 branch: feature/track-change-ui-stall
 phase: reviewed
 codex_session:

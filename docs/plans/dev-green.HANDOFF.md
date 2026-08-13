@@ -18,7 +18,7 @@ Gate-Frage folgenlos).
 
 Die Gate-Liste ist `scripts/check-merge-readiness.sh` (CI ruft sie über
 `scripts/ci-quality.sh`). Gemessen wurde jede Stufe einzeln gegen
-`origin/dev` @ `4f6dfc7cb2` im Worktree `/home/marvin/Projects/reprise-dev`.
+`origin/dev` @ `4f6dfc7cb2` im Worktree `~/Projects/reprise-dev`.
 
 **`check-merge-readiness.sh` niemals selbst starten** — sie fährt pro UX-Regel
 einen eigenen Display-Test-Lauf mit eigenem Xvfb und terminiert praktisch nie.
@@ -59,7 +59,7 @@ grünen Meldung glauben.
 ### Paket 2 — Display-Tests (Codex läuft)
 
 - Plan: `docs/plans/dev-green-display-tests.md`
-- Worktree: `/home/marvin/Projects/reprise-dev-green-display-tests`
+- Worktree: `~/Projects/reprise-dev-green-display-tests`
 - Branch: `feature/dev-green-display-tests` (basiert auf `4f6dfc7cb2`,
   **muss vor dem PR auf `dec75b8a18` nachgezogen werden** — merge-readiness
   verlangt, dass die Basis Vorfahre ist)
@@ -85,7 +85,7 @@ Offen sind damit noch vier Tests: die drei Anker-Tests
 ### Paket 3 — android-ffi hängt an der Scan-Reihenfolge (Codex läuft)
 
 - Plan: `docs/plans/dev-green-android-ffi-scan-order.md`
-- Worktree: `/home/marvin/Projects/reprise-dev-green-android-ffi-scan-order`
+- Worktree: `~/Projects/reprise-dev-green-android-ffi-scan-order`
 - Branch: `feature/dev-green-android-ffi-scan-order` (basiert auf `cd4f60aae0`)
 - systemd-Unit: `reprise-codex-ffi`
 
@@ -135,7 +135,7 @@ DISPLAY_TEST_JOBS=2 scripts/check-display-tests.sh --rule-named
 ```
 
 Rote Tests danach **einzeln** nachfahren, bevor man sie sich zuschreibt. Das
-Skript `/home/marvin/.cache/reprise-gate-run/rerun-reds.sh` macht genau das
+Skript `~/.cache/reprise-gate-run/rerun-reds.sh` macht genau das
 für eine Liste von Testnamen (Ergebnis in `reruns/summary.txt`).
 
 ### Workspace-Tests
@@ -156,14 +156,14 @@ Hintergrund-Bash aus dem Harness wird gekillt — `setsid nohup` hat in dieser
 Sitzung **nicht** gereicht. Verlässlich ist eine eigene systemd-User-Unit:
 
 ```
-systemd-run --user --unit=<name> --collect /home/marvin/.cache/reprise-gate-run/<skript>.sh
+systemd-run --user --unit=<name> --collect ~/.cache/reprise-gate-run/<skript>.sh
 systemctl --user is-active <name>
 journalctl --user -u <name> -n 5 --no-pager
 ```
 
 Das Skript darf dabei **nicht** im Scratchpad unter `/tmp/claude-1000/…`
 liegen — systemd startet es dort mit `status=203/EXEC`, obwohl es ausführbar
-ist. Deshalb liegen alle Läufe unter `/home/marvin/.cache/reprise-gate-run/`.
+ist. Deshalb liegen alle Läufe unter `~/.cache/reprise-gate-run/`.
 
 ### Codex-Betrieb
 

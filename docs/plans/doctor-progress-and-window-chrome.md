@@ -1,6 +1,6 @@
 ---
 slug: doctor-progress-and-window-chrome
-worktree: /home/marvin/Projects/reprise/.worktrees/doctor-progress
+worktree: ~/Projects/reprise/.worktrees/doctor-progress
 branch: fix/doctor-progress-and-chrome
 phase: coded
 codex_session:

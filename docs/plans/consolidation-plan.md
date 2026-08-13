@@ -47,7 +47,7 @@ common way to break them is a literally-followed command that omits one of
 them.
 
 1. **The real database is off limits.** `~/.local/share/reprise/reprise.db`
-   (1,686 tracks), library root `/home/marvin/Music`. Do not scan it, do not
+   (1,686 tracks), library root `~/Music`. Do not scan it, do not
    mutate it, do not point tooling at it.
 2. **Every app launch is fully isolated.** Every run/smoke command line must
    contain **all** of this:

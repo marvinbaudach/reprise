@@ -1,6 +1,6 @@
 ---
 slug: rhythmbox-boundary
-worktree: /home/marvin/Projects/reprise-rhythmbox
+worktree: ~/Projects/reprise-rhythmbox
 branch: feature/rhythmbox-boundary
 phase: complete
 created: 2026-08-03

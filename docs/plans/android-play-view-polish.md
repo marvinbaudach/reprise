@@ -1,6 +1,6 @@
 ---
 slug: android-play-view-polish
-worktree: /home/marvin/Projects/reprise/.worktrees/android-play-gestures
+worktree: ~/Projects/reprise/.worktrees/android-play-gestures
 branch: feat/android-play-gestures
 phase: planned
 codex_session:

@@ -1,6 +1,6 @@
 ---
 slug: jump-to-playing-source-item
-worktree: /home/marvin/Projects/reprise-jump-to-playing-source-item
+worktree: ~/Projects/reprise-jump-to-playing-source-item
 branch: feature/jump-to-playing-source-item
 phase: coded
 codex_session:

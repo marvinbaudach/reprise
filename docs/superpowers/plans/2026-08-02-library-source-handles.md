@@ -1,6 +1,6 @@
 ---
 slug: library-source-handles
-worktree: /home/marvin/Projects/reprise-library-source-handles
+worktree: ~/Projects/reprise-library-source-handles
 branch: feature/library-source-handles
 phase: planned
 codex_session:

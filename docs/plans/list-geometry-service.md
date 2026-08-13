@@ -1,6 +1,6 @@
 ---
 slug: list-geometry-service
-worktree: /home/marvin/Projects/reprise/.worktrees/list-geometry-service
+worktree: ~/Projects/reprise/.worktrees/list-geometry-service
 branch: feat/list-geometry-service
 phase: grilled
 codex_session:

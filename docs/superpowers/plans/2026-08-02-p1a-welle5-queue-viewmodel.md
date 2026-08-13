@@ -1,6 +1,6 @@
 ---
 slug: p1a-welle5-queue-viewmodel
-worktree: /home/marvin/Projects/reprise-p1a-welle5
+worktree: ~/Projects/reprise-p1a-welle5
 branch: feature/p1a-welle5-queue-viewmodel
 phase: refactored
 codex_session:

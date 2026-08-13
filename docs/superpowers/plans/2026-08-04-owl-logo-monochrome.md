@@ -1,6 +1,6 @@
 ---
 slug: owl-logo
-worktree: /home/marvin/Projects/reprise/.worktrees/owl-logo
+worktree: ~/Projects/reprise/.worktrees/owl-logo
 branch: feat/owl-logo
 phase: verified
 codex_session:

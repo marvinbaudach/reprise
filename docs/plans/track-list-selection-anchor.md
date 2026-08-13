@@ -1,6 +1,6 @@
 ---
 slug: track-list-selection-anchor
-worktree: /home/marvin/Projects/reprise-track-list-selection-anchor
+worktree: ~/Projects/reprise-track-list-selection-anchor
 branch: feature/track-list-selection-anchor
 phase: planned
 codex_session:

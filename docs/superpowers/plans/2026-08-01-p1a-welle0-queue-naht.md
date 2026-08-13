@@ -1,6 +1,6 @@
 ---
 slug: p1a-welle0-queue-naht
-worktree: /home/marvin/Projects/reprise-p1a-welle0-queue-naht
+worktree: ~/Projects/reprise-p1a-welle0-queue-naht
 branch: feature/p1a-welle0-queue-naht
 phase: refactored
 codex_session:

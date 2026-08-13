@@ -27,7 +27,7 @@ plan documents stay.
 >
 > **Four safety rules, non-negotiable.**
 > 1. The real database `~/.local/share/reprise/reprise.db` (1,686 tracks) and
->    the library root `/home/marvin/Music` are off limits. Never scan, mutate
+>    the library root `~/Music` are off limits. Never scan, mutate
 >    or point tooling at them.
 > 2. Every app launch is fully isolated. A run or smoke command must contain
 >    **all** of this, and you must grep your own command for `XDG_DATA_HOME`

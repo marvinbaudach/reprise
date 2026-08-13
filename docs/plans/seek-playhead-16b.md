@@ -1,6 +1,6 @@
 ---
 slug: seek-playhead-16b
-worktree: /home/marvin/Projects/reprise-seek-playhead-16b
+worktree: ~/Projects/reprise-seek-playhead-16b
 branch: feature/seek-playhead-16b
 phase: planned
 codex_session:

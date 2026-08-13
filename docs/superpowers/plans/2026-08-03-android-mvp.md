@@ -1,6 +1,6 @@
 ---
 slug: android-mvp
-worktree: /home/marvin/Projects/reprise-android-mvp
+worktree: ~/Projects/reprise-android-mvp
 branch: feature/android-mvp
 phase: planned
 codex_session:
@@ -127,7 +127,7 @@ haben ihre eigene Brücke.
 
 ```
 export ANDROID_NDK_HOME=/opt/android-ndk
-export ANDROID_HOME=/home/marvin/Android/Sdk
+export ANDROID_HOME=~/Android/Sdk
 TC=/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin
 export PATH="$TC:$PATH"
 export CC_x86_64_linux_android=$TC/x86_64-linux-android21-clang

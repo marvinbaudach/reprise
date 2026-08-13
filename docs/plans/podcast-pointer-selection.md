@@ -1,6 +1,6 @@
 ---
 slug: podcast-pointer-selection
-worktree: /home/marvin/Projects/reprise-podcast-pointer-selection
+worktree: ~/Projects/reprise-podcast-pointer-selection
 branch: feature/podcast-pointer-selection
 phase: planned
 codex_session:

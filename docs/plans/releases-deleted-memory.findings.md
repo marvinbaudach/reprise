@@ -1,6 +1,6 @@
 # Review findings — releases-deleted-memory (2026-08-11, phase `reviewed`)
 
-Worktree `/home/marvin/Projects/reprise-releases-deleted-memory`, branch
+Worktree `~/Projects/reprise-releases-deleted-memory`, branch
 `feature/releases-deleted-memory`, base `origin/dev`. Three reviewers: Rust,
 security, spec/rule conformance. Security cleared the change (no critical, no
 major); the other two independently found the same critical defect.

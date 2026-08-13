@@ -1,1 +1,3 @@
 *.bat text eol=crlf whitespace=cr-at-eol
+/docs/plans export-ignore
+/docs/superpowers/plans export-ignore

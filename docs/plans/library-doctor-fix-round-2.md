@@ -1,6 +1,6 @@
 ---
 slug: library-doctor-fix-round-2
-worktree: /home/marvin/Projects/reprise-library-doctor-fix-round-2
+worktree: ~/Projects/reprise-library-doctor-fix-round-2
 branch: feature/library-doctor-fix-round-2
 phase: planned
 codex_session:
