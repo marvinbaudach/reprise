@@ -6,16 +6,11 @@ mode=all
 case "${1:-}" in
   "") ;;
   --rule-named) mode=rule-named ;;
-  # --motion runs the motion tokens' display tests (mot_* names) unconditionally,
-  # i.e. without deriving prefixes from docs/ux-rules.md. Phase 1 needs this
-  # because the MOT section is not committed yet, so --rule-named would filter
-  # every motion test out and #[ignore] would then skip it entirely.
-  --motion) mode=motion ;;
   # --css runs only ignored CSS-provider parsing guards. Keep this targeted:
-  # unrelated display tests remain owned by their rule or motion gates.
+  # it is a focused developer mode, never the standing merge gate.
   --css) mode=css ;;
   *)
-    echo "Usage: $0 [--rule-named | --motion | --css]" >&2
+    echo "Usage: $0 [--rule-named | --css]" >&2
     exit 2
     ;;
 esac
@@ -34,17 +29,6 @@ if [[ $mode == css ]]; then
     fi
   done
   tests=("${css_tests[@]}")
-fi
-
-if [[ $mode == motion ]]; then
-  motion_tests=()
-  for test in "${tests[@]}"; do
-    test_name=${test##*::}
-    if [[ $test_name =~ ^mot_[0-9]+[a-z]?_ ]]; then
-      motion_tests+=("$test")
-    fi
-  done
-  tests=("${motion_tests[@]}")
 fi
 
 if [[ $mode == rule-named ]]; then
@@ -108,7 +92,7 @@ run_display_test() {
   local index=$1
   local test=$2
   local data_home cache_home config_home runtime_dir marker_dir tmp_home
-  local display_test_passed server_num attempt attempts
+  local display_test_passed display_test_output server_num attempt attempts
   # The parent owns the shared results directory. A background worker must
   # never inherit its EXIT cleanup and remove siblings' logs or statuses.
   trap - EXIT
@@ -183,8 +167,11 @@ run_display_test() {
     # consume an animation's timing window before the first assertion.
     # xvfb-run can return non-zero after the test process succeeded when its
     # cleanup races an already-exited Xvfb process. The marker is written only
-    # after cargo reports success, so it remains the authoritative test result.
+    # after cargo reports success and at least one test binary reports exactly
+    # one passing test, so it remains the authoritative result. `--exact` with
+    # a stale name exits zero after running nothing; that is a gate failure.
     for ((attempt = 1; attempt <= attempts; attempt++)); do
+      display_test_output="$marker_dir/attempt-$attempt.log"
       if env \
         XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
         XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
@@ -193,10 +180,21 @@ run_display_test() {
         GSK_RENDERER=cairo \
         GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
         DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
+        DISPLAY_TEST_OUTPUT="$display_test_output" \
         dbus-run-session -- xvfb-run --server-num="$server_num" \
         bash -c '
-          cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
-            && : >"$DISPLAY_TEST_PASSED"
+          set -o pipefail
+          if ! cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
+            2>&1 | tee "$DISPLAY_TEST_OUTPUT"; then
+            exit 1
+          fi
+          passed_lines=$(grep -Ec "test result: ok\\. 1 passed;" \
+            "$DISPLAY_TEST_OUTPUT" || true)
+          if (( passed_lines < 1 )); then
+            echo "display test matched no executing test binary: $DISPLAY_TEST" >&2
+            exit 1
+          fi
+          : >"$DISPLAY_TEST_PASSED"
         '; then
         :
       fi

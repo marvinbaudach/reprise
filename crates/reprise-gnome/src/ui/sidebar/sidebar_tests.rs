@@ -125,8 +125,13 @@ fn handle_queue_drop_dispatches_ids_to_the_wired_callback() {
         reprise_core::up_next::QueueItem::Track(7),
         reprise_core::up_next::QueueItem::Episode(7),
     ];
+    let expected_after_episode_filter = [reprise_core::up_next::QueueItem::Track(7)];
     assert!(crate::ui::sidebar_dnd::handle_queue_drop(&shared, &items));
-    assert_eq!(*seen.borrow(), items);
+    assert_eq!(
+        *seen.borrow(),
+        expected_after_episode_filter,
+        "the wired callback receives tracks after episode queue items are filtered out"
+    );
 }
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
