@@ -24,16 +24,44 @@ use crate::ui::player_controller::PlayerController;
 
 use super::player_controller::StartPlayback;
 
+#[derive(Debug)]
+enum PendingNavigation {
+    Back(HistoryEntry),
+    Forward(HistoryEntry),
+}
+
 #[derive(Debug, Default)]
 pub(in crate::ui) struct HistoryState {
     pub(in crate::ui) history: PlaybackHistory,
-    /// One-shot flag consumed by the recorder after a history navigation.
-    pub(in crate::ui) navigating: bool,
+    pending: Option<PendingNavigation>,
 }
 
 pub(in crate::ui) fn note(state: &mut HistoryState, entry: HistoryEntry) {
-    if std::mem::take(&mut state.navigating) {
-        return;
+    if let Some(pending) = state.pending.take() {
+        let (target, committed) = match pending {
+            PendingNavigation::Back(target) => {
+                let matches = target == entry;
+                let committed = if matches {
+                    state.history.step_back()
+                } else {
+                    None
+                };
+                (target, committed)
+            }
+            PendingNavigation::Forward(target) => {
+                let matches = target == entry;
+                let committed = if matches {
+                    state.history.step_forward()
+                } else {
+                    None
+                };
+                (target, committed)
+            }
+        };
+        if target == entry {
+            debug_assert_eq!(committed, Some(entry));
+            return;
+        }
     }
     state.history.record(entry);
 }
@@ -74,21 +102,12 @@ impl PlayerController {
             let state = self.history.borrow();
             resolve_previous(position_ms, &state.history)
         };
-        let PreviousAction::GoTo(_) = action else {
+        let PreviousAction::GoTo(target) = action else {
             self.seek(0);
             tracing::info!(position_ms, "previous rewound to the song start");
             return;
         };
-        let target = {
-            let mut state = self.history.borrow_mut();
-            state.navigating = true;
-            state.history.step_back()
-        };
-        let Some(target) = target else {
-            self.history.borrow_mut().navigating = false;
-            self.seek(0);
-            return;
-        };
+        self.history.borrow_mut().pending = Some(PendingNavigation::Back(target.clone()));
         let sequence = self.queue.borrow().sequence_identity();
         if let Some(position) = target.playhead_in(sequence) {
             self.queue.borrow_mut().jump_to_order_position(position);
@@ -113,15 +132,11 @@ impl PlayerController {
     pub(in crate::ui) fn forward_from_history(self: &Rc<Self>) -> bool {
         let target = {
             let mut state = self.history.borrow_mut();
-            if !state.history.can_go_forward() {
+            let Some(target) = state.history.peek_forward() else {
                 return false;
-            }
-            state.navigating = true;
-            state.history.step_forward()
-        };
-        let Some(target) = target else {
-            self.history.borrow_mut().navigating = false;
-            return false;
+            };
+            state.pending = Some(PendingNavigation::Forward(target.clone()));
+            target
         };
         let sequence = self.queue.borrow().sequence_identity();
         if let Some(position) = target.playhead_in(sequence) {
@@ -161,14 +176,42 @@ mod tests {
         note(&mut state, entry_for(&queue, QueueItem::Track(20), false));
         assert_eq!(state.history.back_len(), 1);
 
-        state.navigating = true;
+        let target = state.history.peek_back().expect("back target");
+        state.pending = Some(PendingNavigation::Back(target.clone()));
+        note(&mut state, target.clone());
+        assert!(state.pending.is_none(), "navigation is one-shot state");
+        assert_eq!(state.history.back_len(), 0);
+        assert!(state.history.can_go_forward());
+        assert_eq!(state.history.current(), Some(target));
+    }
+
+    #[test]
+    fn play_14_a_failed_history_start_does_not_consume_the_next_real_start() {
+        let queue = context(&[10, 20, 99], 0);
+        let mut state = HistoryState::default();
         note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
-        assert!(!state.navigating, "navigation is a one-shot flag");
+        note(&mut state, entry_for(&queue, QueueItem::Track(20), false));
+
+        let target = state.history.peek_back().expect("back target");
+        assert_eq!(target.item, QueueItem::Track(10));
+        state.pending = Some(PendingNavigation::Back(target));
+        note(&mut state, entry_for(&queue, QueueItem::Track(99), false));
+
         assert_eq!(
-            state.history.back_len(),
-            1,
-            "a history jump must not record itself as a transition"
+            state.history.current().map(|entry| entry.item),
+            Some(QueueItem::Track(99))
         );
+    }
+
+    #[test]
+    fn previous_transport_uses_the_payload_resolve_previous_already_returned() {
+        let implementation = include_str!("playback_history_transport.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("implementation section");
+        let direct_payload = ["PreviousAction::GoTo(", "target", ")"].concat();
+
+        assert!(implementation.contains(&direct_payload));
     }
 
     #[test]
@@ -279,9 +322,9 @@ mod tests {
         let mut state = HistoryState::default();
         note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
         note(&mut state, entry_for(&queue, QueueItem::Track(20), false));
-        state.navigating = true;
-        state.history.step_back();
-        note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
+        let target = state.history.peek_back().expect("back target");
+        state.pending = Some(PendingNavigation::Back(target.clone()));
+        note(&mut state, target);
         assert!(state.history.can_go_forward());
 
         note(&mut state, entry_for(&queue, QueueItem::Track(30), false));

@@ -10,30 +10,54 @@ use reprise_core::up_next::QueueItem;
 
 use super::{Source, Transport};
 
+enum PendingNavigation {
+    Back(HistoryEntry),
+    Forward(HistoryEntry),
+}
+
 #[derive(Default)]
 pub(super) struct HistoryState {
     history: PlaybackHistory,
-    navigating: bool,
+    pending: Option<PendingNavigation>,
 }
 
 impl HistoryState {
     fn note(&mut self, entry: HistoryEntry) {
-        if std::mem::take(&mut self.navigating) {
-            return;
+        if let Some(pending) = self.pending.take() {
+            let (target, committed) = match pending {
+                PendingNavigation::Back(target) => {
+                    let committed = if target == entry {
+                        self.history.step_back()
+                    } else {
+                        None
+                    };
+                    (target, committed)
+                }
+                PendingNavigation::Forward(target) => {
+                    let committed = if target == entry {
+                        self.history.step_forward()
+                    } else {
+                        None
+                    };
+                    (target, committed)
+                }
+            };
+            if target == entry {
+                debug_assert_eq!(committed, Some(entry));
+                return;
+            }
         }
         self.history.record(entry);
     }
 
-    fn step_back_for_navigation(&mut self) -> Option<HistoryEntry> {
-        let target = self.history.step_back();
-        self.navigating = target.is_some();
-        target
+    fn begin_back_navigation(&mut self, target: HistoryEntry) {
+        self.pending = Some(PendingNavigation::Back(target));
     }
 
-    fn step_forward_for_navigation(&mut self) -> Option<HistoryEntry> {
-        let target = self.history.step_forward();
-        self.navigating = target.is_some();
-        target
+    fn forward_target(&mut self) -> Option<HistoryEntry> {
+        let target = self.history.peek_forward()?;
+        self.pending = Some(PendingNavigation::Forward(target.clone()));
+        Some(target)
     }
 }
 
@@ -41,9 +65,11 @@ fn entry_for(queue: &Queue, track_id: i64, source: Source) -> HistoryEntry {
     HistoryEntry {
         item: QueueItem::Track(track_id),
         replay_uri: None,
-        context_pos: (source == Source::Context)
-            .then(|| queue.current_order_position())
-            .flatten(),
+        context_pos: if source == Source::Context {
+            queue.current_order_position()
+        } else {
+            None
+        },
         sequence: queue.sequence_identity(),
         from_up_next: source == Source::PlayNext,
     }
@@ -59,12 +85,12 @@ impl Transport {
         &self.history.history
     }
 
-    pub(super) fn history_back_target(&mut self) -> Option<HistoryEntry> {
-        self.history.step_back_for_navigation()
+    pub(super) fn begin_history_back_navigation(&mut self, target: HistoryEntry) {
+        self.history.begin_back_navigation(target);
     }
 
     pub(super) fn history_forward_target(&mut self) -> Option<HistoryEntry> {
-        self.history.step_forward_for_navigation()
+        self.history.forward_target()
     }
 }
 
@@ -83,10 +109,49 @@ mod tests {
         state.note(entry_for(&queue, 99, Source::PlayNext));
 
         let back = state
-            .step_back_for_navigation()
+            .history
+            .peek_back()
             .expect("interrupted context entry");
         assert_eq!(back.item, QueueItem::Track(20));
         assert_eq!(back.playhead_in(queue.sequence_identity()), Some(1));
         assert!(!back.from_up_next);
+    }
+
+    #[test]
+    fn play_14_a_failed_history_start_does_not_consume_the_next_real_start() {
+        let mut queue = Queue::new();
+        queue.set_tracks(vec![10, 20, 99], 0);
+        let mut state = HistoryState::default();
+        state.note(entry_for(&queue, 10, Source::Context));
+        state.note(entry_for(&queue, 20, Source::Context));
+
+        let target = state.history.peek_back().expect("back target");
+        assert_eq!(target.item, QueueItem::Track(10));
+        state.begin_back_navigation(target);
+        state.note(entry_for(&queue, 99, Source::Context));
+
+        assert_eq!(
+            state.history.current().map(|entry| entry.item),
+            Some(QueueItem::Track(99))
+        );
+    }
+
+    #[test]
+    fn previous_transport_uses_the_payload_resolve_previous_already_returned() {
+        let implementation = include_str!("transport_controls.rs");
+        let direct_payload = ["PreviousAction::GoTo(", "target", ")"].concat();
+
+        assert!(implementation.contains(&direct_payload));
+    }
+
+    #[test]
+    fn context_position_uses_an_explicit_source_branch() {
+        let implementation = include_str!("transport_history.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("implementation section");
+        let chained_option = [".then(", "|| queue.current_order_position())"].concat();
+
+        assert!(!implementation.contains(&chained_option));
     }
 }

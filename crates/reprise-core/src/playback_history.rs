@@ -97,6 +97,10 @@ impl PlaybackHistory {
         self.back.back().cloned()
     }
 
+    pub fn peek_forward(&self) -> Option<HistoryEntry> {
+        self.forward.back().cloned()
+    }
+
     pub fn can_go_forward(&self) -> bool {
         !self.forward.is_empty()
     }

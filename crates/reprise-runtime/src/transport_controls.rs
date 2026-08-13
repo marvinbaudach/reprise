@@ -192,15 +192,11 @@ impl Transport {
     ) -> Result<(), RuntimeError> {
         // PLAY-14 owns the entire decision. Play Next interruptions and
         // external playback are ordinary history states, not side branches.
-        if matches!(
-            resolve_previous(self.position_ms, self.history_view()),
-            PreviousAction::RestartCurrent
-        ) {
-            return self.seek(backend, Seek::To(0));
-        }
-        let Some(target) = self.history_back_target() else {
+        let PreviousAction::GoTo(target) = resolve_previous(self.position_ms, self.history_view())
+        else {
             return self.seek(backend, Seek::To(0));
         };
+        self.begin_history_back_navigation(target.clone());
         if let Some(position) = target.playhead_in(self.queue.sequence_identity()) {
             self.queue.jump_to_order_position(position);
         }

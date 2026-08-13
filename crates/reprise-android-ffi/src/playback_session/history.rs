@@ -13,17 +13,44 @@ use reprise_core::up_next::QueueItem;
 
 use super::{AndroidPlaybackError, AndroidPlaybackState, SessionInner, SessionState};
 
+#[derive(Debug)]
+enum PendingNavigation {
+    Back(HistoryEntry),
+    Forward(HistoryEntry),
+}
+
 #[derive(Debug, Default)]
 pub(super) struct HistoryState {
     history: PlaybackHistory,
-    navigating: bool,
+    pending: Option<PendingNavigation>,
     presented: Option<HistoryEntry>,
 }
 
 impl HistoryState {
     fn note(&mut self, entry: HistoryEntry) {
-        if std::mem::take(&mut self.navigating) {
-            return;
+        if let Some(pending) = self.pending.take() {
+            let (target, committed) = match pending {
+                PendingNavigation::Back(target) => {
+                    let committed = if target == entry {
+                        self.history.step_back()
+                    } else {
+                        None
+                    };
+                    (target, committed)
+                }
+                PendingNavigation::Forward(target) => {
+                    let committed = if target == entry {
+                        self.history.step_forward()
+                    } else {
+                        None
+                    };
+                    (target, committed)
+                }
+            };
+            if target == entry {
+                debug_assert_eq!(committed, Some(entry));
+                return;
+            }
         }
         if self.history.current().as_ref() == Some(&entry) {
             return;
@@ -32,20 +59,26 @@ impl HistoryState {
         self.history.record(entry);
     }
 
-    fn step_back_for_navigation(&mut self) -> Option<HistoryEntry> {
-        let entry = self.history.step_back()?;
-        self.navigating = true;
-        Some(entry)
+    #[cfg(test)]
+    fn back_target_for_navigation(&mut self) -> Option<HistoryEntry> {
+        let target = self.history.peek_back()?;
+        self.begin_back_navigation(target.clone());
+        Some(target)
     }
 
-    fn step_forward_for_navigation(&mut self) -> Option<HistoryEntry> {
-        let entry = self.history.step_forward()?;
-        self.navigating = true;
-        Some(entry)
+    fn begin_back_navigation(&mut self, target: HistoryEntry) {
+        self.pending = Some(PendingNavigation::Back(target));
+    }
+
+    fn forward_target_for_navigation(&mut self) -> Option<HistoryEntry> {
+        let target = self.history.peek_forward()?;
+        self.pending = Some(PendingNavigation::Forward(target.clone()));
+        Some(target)
     }
 
     fn cancel_navigation(&mut self) {
-        self.navigating = false;
+        self.pending = None;
+        self.presented = None;
     }
 
     pub(super) fn clear_presented(&mut self) {
@@ -79,16 +112,20 @@ impl SessionState {
         let Some(uri) = self.current_uri() else {
             return;
         };
-        let entry = entry_for(&self.queue, track_id, uri);
+        let entry = self
+            .history
+            .presented()
+            .filter(|target| {
+                target.item.track_id() == Some(track_id)
+                    && target.replay_uri.as_deref() == Some(uri.as_str())
+            })
+            .cloned()
+            .unwrap_or_else(|| entry_for(&self.queue, track_id, uri));
         self.history.note(entry);
     }
 
-    fn history_back_target(&mut self) -> Option<HistoryEntry> {
-        self.history.step_back_for_navigation()
-    }
-
     fn history_forward_target(&mut self) -> Option<HistoryEntry> {
-        self.history.step_forward_for_navigation()
+        self.history.forward_target_for_navigation()
     }
 
     fn adopt_history_target(&mut self, target: HistoryEntry) {
@@ -110,15 +147,12 @@ impl SessionInner {
             let state = self.lock()?;
             resolve_previous(state.snapshot.position_ms, &state.history.history)
         };
-        if matches!(action, PreviousAction::RestartCurrent) {
+        let PreviousAction::GoTo(target) = action else {
             return self.rewind_current();
-        }
+        };
         let queue_to_save = {
             let mut state = self.lock()?;
-            let Some(target) = state.history_back_target() else {
-                drop(state);
-                return self.rewind_current();
-            };
+            state.history.begin_back_navigation(target.clone());
             self.adopt_target(&mut state, target);
             state.queue.clone()
         };
@@ -203,14 +237,37 @@ mod tests {
         state.note(entry_for(&queue, 20, "content://track/20".into()));
 
         let target = state
-            .step_back_for_navigation()
+            .back_target_for_navigation()
             .expect("the first track is behind the current one");
         assert_eq!(target.item, QueueItem::Track(10));
         state.note(target);
 
-        assert!(!state.navigating, "the navigation marker is one-shot");
+        assert!(state.pending.is_none(), "navigation is one-shot state");
         assert_eq!(state.history.back_len(), 0);
         assert!(state.history.can_go_forward());
+    }
+
+    #[test]
+    fn play_14_a_failed_android_history_start_keeps_the_real_predecessor() {
+        let mut queue = Queue::new();
+        queue.set_tracks(vec![10, 20, 99], 0);
+        let mut state = HistoryState::default();
+        state.note(entry_for(&queue, 10, "content://track/10".into()));
+        queue.jump_to_order_position(1);
+        state.note(entry_for(&queue, 20, "content://track/20".into()));
+
+        assert_eq!(
+            state.back_target_for_navigation().map(|entry| entry.item),
+            Some(QueueItem::Track(10))
+        );
+        state.cancel_navigation();
+        queue.jump_to_order_position(2);
+        state.note(entry_for(&queue, 99, "content://track/99".into()));
+
+        assert_eq!(
+            state.back_target_for_navigation().map(|entry| entry.item),
+            Some(QueueItem::Track(20))
+        );
     }
 
     #[test]
@@ -232,8 +289,10 @@ mod tests {
             Some("content://track/249".into())
         );
         for _ in 0..HISTORY_CAPACITY {
-            assert!(state.step_back_for_navigation().is_some());
-            state.navigating = false;
+            let target = state
+                .back_target_for_navigation()
+                .expect("bounded back target");
+            state.note(target);
         }
     }
 
@@ -250,7 +309,7 @@ mod tests {
                 format!("content://track/{track_id}"),
             ));
         }
-        let target = state.step_back_for_navigation().expect("20 is behind 30");
+        let target = state.back_target_for_navigation().expect("20 is behind 30");
         state.note(target.clone());
         state.note(target);
 
@@ -259,14 +318,17 @@ mod tests {
 
         assert_eq!(
             state
-                .step_back_for_navigation()
+                .back_target_for_navigation()
                 .and_then(|target| target.replay_uri),
             Some("content://track/20".into())
         );
-        state.navigating = false;
+        let target = state
+            .back_target_for_navigation()
+            .expect("20 remains pending");
+        state.note(target);
         assert_eq!(
             state
-                .step_back_for_navigation()
+                .back_target_for_navigation()
                 .and_then(|target| target.replay_uri),
             Some("content://track/10".into())
         );
@@ -283,11 +345,11 @@ mod tests {
         queue.jump_to_order_position(2);
         state.note(entry_for(&queue, 10, "content://second/10".into()));
 
-        let middle = state.step_back_for_navigation().expect("20 is behind 10");
+        let middle = state.back_target_for_navigation().expect("20 is behind 10");
         assert_eq!(middle.replay_uri.as_deref(), Some("content://track/20"));
-        state.navigating = false;
+        state.note(middle);
         let first = state
-            .step_back_for_navigation()
+            .back_target_for_navigation()
             .expect("the first 10 remains");
         assert_eq!(first.replay_uri.as_deref(), Some("content://first/10"));
     }
@@ -309,7 +371,7 @@ mod tests {
 
         assert_eq!(state.history.back_len(), 1);
         assert_eq!(
-            state.step_back_for_navigation().map(|entry| entry.item),
+            state.back_target_for_navigation().map(|entry| entry.item),
             Some(QueueItem::Track(10))
         );
     }
