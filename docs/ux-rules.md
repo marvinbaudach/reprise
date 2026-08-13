@@ -3499,13 +3499,14 @@ property is set and yet nothing happens.
   alphabetically first path, and which knew no ranking past rank 5. **The bands
   row is one card and answers like the songs card.** Every band surface — the
   leader's hero, the four runner-up tiles and the continuation rows — resolves
-  its image the same way: the cached artist portrait first, then the cover of
-  the artist's most-played album in the period, then the next most-played album
-  that actually carries artwork (at most three tried), then an initials tile;
-  never an empty surface. A missing portrait is fetched only while the Artist
-  portraits module is enabled and only for the ranks on screen; with the module
-  off nothing is requested and the album cover stands. The album cover paints as
-  soon as it resolves, and a portrait arriving later replaces it. **The "by
+  its image the same way while the Artist portraits module is enabled: the
+  cached artist portrait first, then the cover of the artist's most-played album
+  in the period, then the next most-played album that actually carries artwork
+  (at most three tried), then an initials tile; never an empty surface. A missing
+  portrait is fetched only for the ranks on screen. With the module off nothing
+  is read from the portrait cache or requested, and the album cover stands. The
+  album cover paints as soon as it resolves, and a portrait arriving later
+  replaces it. **The "by
   plays / by time" toggle beside the row sorts the whole row** — leader, tiles
   and continuation alike — and the leader's "N % of your artist listening" is
   recomputed for whoever leads under the chosen metric, against the same artist
