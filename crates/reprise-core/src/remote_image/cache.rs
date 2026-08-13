@@ -37,7 +37,14 @@ fn remove_legacy_cache_once(root: &Path, removal: &Once) {
 fn remove_legacy_cache(root: &Path) {
     let legacy = root.join("remote-images");
     if legacy.exists() {
-        let _ = std::fs::remove_dir_all(legacy);
+        // Best-effort migration cleanup must not block the replacement caches.
+        if let Err(error) = std::fs::remove_dir_all(&legacy) {
+            tracing::debug!(
+                %error,
+                path = %legacy.display(),
+                "could not remove the legacy remote image cache"
+            );
+        }
     }
 }
 
