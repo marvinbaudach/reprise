@@ -59,6 +59,9 @@ mod end_of_results_tests;
 mod failure_ui;
 #[path = "podcasts_view_marker.rs"]
 mod marker;
+#[cfg(test)]
+#[path = "podcasts_refresh_button_tests.rs"]
+mod refresh_button_tests;
 #[path = "podcasts_view_requests.rs"]
 mod requests;
 #[path = "podcasts_view_selection.rs"]
