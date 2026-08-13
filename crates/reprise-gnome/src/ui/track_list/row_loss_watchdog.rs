@@ -13,31 +13,61 @@ use super::row_loss_watchdog_state::{
 };
 use super::{Shared, STACK_PAGE_LIST};
 
-const ROW_SEARCH_DEPTH: u8 = 6;
-
-/// Returns `1` as soon as the realised widget tree contains a row, otherwise
-/// `0`. The watchdog only needs presence, so stopping on the first row keeps
-/// the healthy heartbeat bounded independently of viewport size.
-pub(crate) fn realized_row_count(column_view: &gtk4::ColumnView) -> usize {
-    usize::from(contains_row(column_view.upcast_ref(), 0))
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RowWidgetCounts {
+    pub present: usize,
+    pub allocated: usize,
 }
 
-fn contains_row(widget: &gtk4::Widget, depth: u8) -> bool {
-    if widget.css_name() == "row" {
+/// Counts present and allocated row widgets in the realised widget tree.
+///
+/// The healthy path stops at the first allocated row, so both counts are lower
+/// bounds there. When no row is allocated, the walk visits the complete tree
+/// and both counts are exact; only that fault path is rendered into a dump.
+pub(crate) fn row_widget_counts(column_view: &gtk4::ColumnView) -> RowWidgetCounts {
+    let mut counts = RowWidgetCounts::default();
+    contains_allocated_row(column_view.upcast_ref(), &mut counts);
+    counts
+}
+
+fn contains_allocated_row(widget: &gtk4::Widget, counts: &mut RowWidgetCounts) -> bool {
+    if record_row_widget(counts, widget.css_name().as_str(), widget.height()) {
         return true;
-    }
-    if depth >= ROW_SEARCH_DEPTH {
-        return false;
     }
 
     let mut child = widget.first_child();
     while let Some(current) = child {
-        if contains_row(&current, depth + 1) {
+        if contains_allocated_row(&current, counts) {
             return true;
         }
         child = current.next_sibling();
     }
     false
+}
+
+fn record_row_widget(counts: &mut RowWidgetCounts, css_name: &str, height: i32) -> bool {
+    if css_name != "row" {
+        return false;
+    }
+    counts.present += 1;
+    if height <= 0 {
+        return false;
+    }
+    counts.allocated += 1;
+    true
+}
+
+#[cfg(test)]
+fn row_widget_counts_from_observations<'a>(
+    observations: impl IntoIterator<Item = (&'a str, i32)>,
+) -> RowWidgetCounts {
+    let mut counts = RowWidgetCounts::default();
+    for (css_name, height) in observations {
+        if record_row_widget(&mut counts, css_name, height) {
+            break;
+        }
+    }
+    counts
 }
 
 pub(super) fn install(shared: &Rc<Shared>) {
@@ -68,18 +98,19 @@ fn run_tick(
     now_ms: u64,
     self_heal: bool,
 ) {
-    let rows = realized_row_count(&shared.column_view);
+    let row_widgets = row_widget_counts(&shared.column_view);
     let n_items = shared.model.n_items();
     let stack_page = stack_page(shared);
     let suspicious = shared.column_view.is_mapped()
         && stack_page == STACK_PAGE_LIST
         && shared.column_view.height() > 0
         && n_items > 0
-        && rows == 0;
+        && row_widgets.allocated == 0;
     let decision = state.tick(
         TickInput {
             suspicious,
-            rows,
+            row_widgets_present: row_widgets.present,
+            row_widgets_allocated: row_widgets.allocated,
             now_ms,
         },
         self_heal,
@@ -90,6 +121,8 @@ fn run_tick(
         tracing::error!(
             n_items,
             stack_page,
+            row_widgets_present = row_widgets.present,
+            row_widgets_allocated = row_widgets.allocated,
             "track-list row loss confirmed; writing diagnostic dump"
         );
         let now = chrono::Local::now();
@@ -97,7 +130,7 @@ fn run_tick(
         match write_dump_file(
             &directory,
             &now.format("%Y%m%d-%H%M%S").to_string(),
-            &capture_dump(shared, n_items, &stack_page, now.to_rfc3339()),
+            &capture_dump(shared, n_items, row_widgets, &stack_page, now.to_rfc3339()),
         ) {
             Ok(path) => {
                 *dump_path = Some(path);
@@ -168,6 +201,7 @@ fn stack_page(shared: &Shared) -> String {
 fn capture_dump(
     shared: &Shared,
     n_items: u32,
+    row_widgets: RowWidgetCounts,
     stack_page: &str,
     wall_clock: String,
 ) -> DumpSnapshot {
@@ -187,6 +221,8 @@ fn capture_dump(
         git_sha: option_env!("REPRISE_GIT_SHA").unwrap_or("<unknown>").into(),
         wall_clock,
         n_items,
+        row_widgets_present: row_widgets.present,
+        row_widgets_allocated: row_widgets.allocated,
         stack_page: stack_page.into(),
         source,
         sort_field: sort.field,
@@ -222,3 +258,7 @@ fn environment(name: &str) -> String {
 #[cfg(test)]
 #[path = "row_loss_watchdog_display_tests.rs"]
 mod display_tests;
+
+#[cfg(test)]
+#[path = "row_loss_watchdog_tests.rs"]
+mod tests;

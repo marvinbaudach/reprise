@@ -5,7 +5,22 @@ use super::*;
 fn tick(suspicious: bool, rows: usize, now_ms: u64) -> TickInput {
     TickInput {
         suspicious,
-        rows,
+        row_widgets_present: rows,
+        row_widgets_allocated: rows,
+        now_ms,
+    }
+}
+
+fn tick_with_row_widgets(
+    suspicious: bool,
+    row_widgets_present: usize,
+    row_widgets_allocated: usize,
+    now_ms: u64,
+) -> TickInput {
+    TickInput {
+        suspicious,
+        row_widgets_present,
+        row_widgets_allocated,
         now_ms,
     }
 }
@@ -74,12 +89,40 @@ fn diagnose_only_disables_the_self_heal_request() {
     assert!(!state.tick(tick(true, 0, 20), false).request_self_heal);
 }
 
+#[test]
+fn only_the_rows_missing_fault_class_requests_self_heal() {
+    let mut unallocated = WatchdogState::default();
+    unallocated.tick(tick_with_row_widgets(true, 206, 0, 10), true);
+    let confirmed = unallocated.tick(tick_with_row_widgets(true, 206, 0, 20), true);
+    assert!(confirmed.confirmed);
+    assert!(!confirmed.request_self_heal);
+    let still_unallocated = unallocated.tick(tick_with_row_widgets(true, 206, 0, 30), true);
+    assert_eq!(still_unallocated.self_heal_outcome, None);
+    let recovered = unallocated.tick(tick_with_row_widgets(false, 1, 1, 40), true);
+    assert_eq!(recovered.self_heal_outcome, None);
+    assert_eq!(
+        recovered.recovered,
+        Some(Recovery {
+            after_ms: 30,
+            rows: 1,
+        })
+    );
+
+    let mut missing = WatchdogState::default();
+    missing.tick(tick_with_row_widgets(true, 0, 0, 10), true);
+    let confirmed = missing.tick(tick_with_row_widgets(true, 0, 0, 20), true);
+    assert!(confirmed.confirmed);
+    assert!(confirmed.request_self_heal);
+}
+
 fn snapshot() -> DumpSnapshot {
     DumpSnapshot {
         app_version: "0.1.1".into(),
         git_sha: "abc123".into(),
         wall_clock: "2026-08-04T13:22:00+02:00".into(),
         n_items: 1_821,
+        row_widgets_present: 206,
+        row_widgets_allocated: 0,
         stack_page: "list".into(),
         source: "library".into(),
         sort_field: "artist".into(),
@@ -119,6 +162,8 @@ fn dump_rendering_contains_every_field_and_ordered_trail() {
         "git_sha=abc123",
         "timestamp=2026-08-04",
         "n_items=1821",
+        "row_widgets_present=206",
+        "row_widgets_allocated=0",
         "stack_page=list",
         "source=library",
         "sort_field=artist",

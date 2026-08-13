@@ -26,7 +26,8 @@ pub(crate) struct TickDecision {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct TickInput {
     pub suspicious: bool,
-    pub rows: usize,
+    pub row_widgets_present: usize,
+    pub row_widgets_allocated: usize,
     pub now_ms: u64,
 }
 
@@ -43,17 +44,17 @@ impl WatchdogState {
         if self.confirmed {
             let self_heal_outcome = self.self_heal_pending.then(|| {
                 self.self_heal_pending = false;
-                if input.rows > 0 {
+                if input.row_widgets_allocated > 0 {
                     RecoveryOutcome::Worked
                 } else {
                     RecoveryOutcome::Failed
                 }
             });
-            let recovered = (input.rows > 0).then(|| Recovery {
+            let recovered = (input.row_widgets_allocated > 0).then(|| Recovery {
                 after_ms: input
                     .now_ms
                     .saturating_sub(self.episode_started_ms.unwrap_or(input.now_ms)),
-                rows: input.rows,
+                rows: input.row_widgets_allocated,
             });
             if recovered.is_some() {
                 *self = Self::default();
@@ -80,10 +81,11 @@ impl WatchdogState {
         }
 
         self.confirmed = true;
-        self.self_heal_pending = self_heal;
+        let request_self_heal = self_heal && input.row_widgets_present == 0;
+        self.self_heal_pending = request_self_heal;
         TickDecision {
             confirmed: true,
-            request_self_heal: self_heal,
+            request_self_heal,
             ..TickDecision::default()
         }
     }
@@ -99,6 +101,8 @@ pub(crate) struct DumpSnapshot {
     pub git_sha: String,
     pub wall_clock: String,
     pub n_items: u32,
+    pub row_widgets_present: usize,
+    pub row_widgets_allocated: usize,
     pub stack_page: String,
     pub source: String,
     pub sort_field: String,
@@ -145,6 +149,16 @@ pub(crate) fn render_dump(snapshot: &DumpSnapshot) -> String {
         let _ = writeln!(output, "{name}={}", single_line(value));
     }
     let _ = writeln!(output, "n_items={}", snapshot.n_items);
+    let _ = writeln!(
+        output,
+        "row_widgets_present={}",
+        snapshot.row_widgets_present
+    );
+    let _ = writeln!(
+        output,
+        "row_widgets_allocated={}",
+        snapshot.row_widgets_allocated
+    );
     let _ = writeln!(output, "exclude_ai={}", snapshot.exclude_ai);
     let _ = writeln!(output, "vadjustment.value={:.3}", snapshot.adjustment_value);
     let _ = writeln!(output, "vadjustment.lower={:.3}", snapshot.adjustment_lower);
