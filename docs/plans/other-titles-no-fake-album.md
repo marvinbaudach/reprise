@@ -145,7 +145,10 @@ cannot lock its advisory database. Both are sandbox limits, not regressions.
 
 ## Done when
 
-- `"Unknown album"` no longer appears anywhere in `android/`.
+- `"Unknown album"` no longer appears in production code under
+  `android/app/src/main`. A test that asserts the phrase is *absent from the UI*
+  must of course still name it, plainly — do not split or obfuscate the literal
+  to satisfy a grep.
 - An album-less row on the artist page renders one line; an `ALBUM_ONLY` row with
   an album still renders its album name, proven by a test.
 - Both gate scripts exit 0 and the Android suite is green, with the XML totals

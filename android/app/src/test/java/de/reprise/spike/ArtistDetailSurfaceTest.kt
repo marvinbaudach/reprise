@@ -94,7 +94,7 @@ class ArtistDetailSurfaceTest {
         showArtist(artistDetail(untagged = listOf(track("Laser Beam"))))
         compose.onNodeWithText("Other titles").assertIsDisplayed()
         compose.onNodeWithText("Laser Beam").assertIsDisplayed()
-        compose.onNodeWithText("Unknown" + " album").assertDoesNotExist()
+        compose.onNodeWithText("Unknown album").assertDoesNotExist()
     }
 
     @Test
