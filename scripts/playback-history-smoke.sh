@@ -92,6 +92,36 @@ wait_for_starts() {
   return 1
 }
 
+wait_for_position_at_most() {
+  local limit="$1"
+  local attempt current
+  for attempt in {1..100}; do
+    current="$(position_ms)"
+    if (( current <= limit )); then
+      return 0
+    fi
+    sleep 0.1
+  done
+  printf 'FAIL position did not fall to at most %s ms (got %s)\n' \
+    "$limit" "$(position_ms)" >&2
+  return 1
+}
+
+wait_for_position_above() {
+  local limit="$1"
+  local attempt current
+  for attempt in {1..200}; do
+    current="$(position_ms)"
+    if (( current > limit )); then
+      return 0
+    fi
+    sleep 0.1
+  done
+  printf 'FAIL position did not rise above %s ms (got %s)\n' \
+    "$limit" "$(position_ms)" >&2
+  return 1
+}
+
 wait_for_shuffle() {
   local attempt value
   for attempt in {1..100}; do
@@ -160,21 +190,111 @@ expect_broken() {
   return 1
 }
 
-expect_fixed_probe() {
-  local first mark before_starts after_starts
+expect_fixed() {
+  local first second current mark rewound
+  local -a heard back forward
   first="$(wait_for_title)"
+  busctl --user set-property "$BUS" /org/mpris/MediaPlayer2 \
+    org.mpris.MediaPlayer2.Player Shuffle b true
+  wait_for_shuffle
+
+  # Step 1: an early Previous on the first entry is a seek, not a restart.
   mark="$(wc -l < "$OUT/app.log")"
-  before_starts="$(starts_since "$mark")"
   transport Previous
-  sleep 0.5
-  after_starts="$(starts_since "$mark")"
-  report_step 'immediate-previous' "$mark"
-  if [[ "$(now_title)" == "$first" && "$before_starts" == "$after_starts" ]]; then
-    printf 'RESULT initial fixed Previous probe passed\n' | tee -a "$OUT/report.txt"
-    return 0
+  wait_for_title "$first" >/dev/null
+  wait_for_position_at_most 750
+  report_step '1-rewind-first' "$mark"
+  if [[ "$(starts_since "$mark")" != 0 ]]; then
+    printf 'FAIL step 1 restarted the initial track\n'
+    return 1
   fi
-  printf 'FAIL Previous restarted the initial track\n'
-  return 1
+
+  # Step 2: Next and Previous return to the actual first entry.
+  mark="$(wc -l < "$OUT/app.log")"
+  transport Next
+  second="$(wait_for_title '' "$first")"
+  wait_for_starts "$mark" 1
+  transport Previous
+  wait_for_title "$first" >/dev/null
+  wait_for_starts "$mark" 2
+  report_step '2-next-then-back' "$mark"
+  if [[ "$(starts_since "$mark")" != 2 ]]; then
+    printf 'FAIL step 2 did not make exactly two real track changes\n'
+    return 1
+  fi
+
+  # Step 3: exhausted history rewinds and creates no new pipeline start.
+  mark="$(wc -l < "$OUT/app.log")"
+  transport Previous
+  wait_for_title "$first" >/dev/null
+  wait_for_position_at_most 750
+  report_step '3-exhausted-rewind' "$mark"
+  if [[ "$(starts_since "$mark")" != 0 ]]; then
+    printf 'FAIL step 3 restarted at exhausted history\n'
+    return 1
+  fi
+
+  # Step 4: hear three advances, then walk those prior entries backwards.
+  heard=("$first")
+  current="$first"
+  mark="$(wc -l < "$OUT/app.log")"
+  for expected_starts in 1 2 3; do
+    transport Next
+    current="$(wait_for_title '' "$current")"
+    wait_for_starts "$mark" "$expected_starts"
+    heard+=("$current")
+  done
+  back=()
+  for index in 2 1 0; do
+    transport Previous
+    wait_for_title "${heard[$index]}" >/dev/null
+    back+=("$(now_title)")
+  done
+  wait_for_starts "$mark" 6
+  report_step '4-three-back' "$mark"
+  if [[ "${back[*]}" != "${heard[2]} ${heard[1]} ${heard[0]}" ]]; then
+    printf 'FAIL step 4 heard=%s back=%s\n' "${heard[*]}" "${back[*]}"
+    return 1
+  fi
+
+  # Step 5: the same branch is available in its original direction.
+  forward=()
+  mark="$(wc -l < "$OUT/app.log")"
+  for index in 1 2 3; do
+    transport Next
+    wait_for_title "${heard[$index]}" >/dev/null
+    forward+=("$(now_title)")
+  done
+  wait_for_starts "$mark" 3
+  report_step '5-three-forward' "$mark"
+  if [[ "${forward[*]}" != "${heard[1]} ${heard[2]} ${heard[3]}" ]]; then
+    printf 'FAIL step 5 heard=%s forward=%s\n' "${heard[*]}" "${forward[*]}"
+    return 1
+  fi
+
+  # Step 6: after three seconds the first press rewinds, the second goes back.
+  wait_for_position_above 3000
+  mark="$(wc -l < "$OUT/app.log")"
+  transport Previous
+  wait_for_title "${heard[3]}" >/dev/null
+  wait_for_position_at_most 750
+  rewound="$(now_title)"
+  if [[ "$(starts_since "$mark")" != 0 ]]; then
+    printf 'FAIL step 6 rewind restarted the pipeline\n'
+    return 1
+  fi
+  transport Previous
+  wait_for_title "${heard[2]}" >/dev/null
+  wait_for_starts "$mark" 1
+  report_step '6-rewind-then-back' "$mark"
+  if [[ "$rewound" != "${heard[3]}" || "$(now_title)" != "${heard[2]}" \
+        || "$(starts_since "$mark")" != 1 ]]; then
+    printf 'FAIL step 6 did not rewind once and change once\n'
+    return 1
+  fi
+
+  printf 'RESULT all six PLAY-14 MPRIS steps passed (heard=%s)\n' \
+    "${heard[*]}" | tee -a "$OUT/report.txt"
 }
 
 session_main() {
@@ -201,12 +321,13 @@ session_main() {
   if [[ "$requested_mode" == '--expect-broken' ]]; then
     expect_broken
   else
-    expect_fixed_probe
+    expect_fixed
   fi
 }
 
 export -f now_title position_ms starts_since wait_for_bus wait_for_title
-export -f wait_for_starts wait_for_shuffle transport report_step expect_broken expect_fixed_probe
+export -f wait_for_starts wait_for_position_at_most wait_for_position_above
+export -f wait_for_shuffle transport report_step expect_broken expect_fixed
 export -f session_main
 
 printf 'OUTPUT_DIR=%s\n' "$out"
