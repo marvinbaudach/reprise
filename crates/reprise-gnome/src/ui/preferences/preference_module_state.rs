@@ -45,8 +45,6 @@ fn persist_module_state(
         "artwork" => {
             reprise_core::modules::set_enabled(&context.conn, descriptor, enabled)
                 .map_err(|error| error.to_string())?;
-            context.cover_download.recompute_enabled(&context.conn);
-            context.artist_portrait.recompute_enabled(&context.conn);
             Ok(())
         }
         "online_lyrics" => match &context.player {
@@ -84,5 +82,15 @@ impl PreferencesContext {
         persist_module_state(self, descriptor, enabled)?;
         self.refresh_online_module_state(reason);
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn set_module_enabled_for_test(
+        &self,
+        descriptor: &'static ModuleDescriptor,
+        enabled: bool,
+        reason: &'static str,
+    ) -> Result<(), String> {
+        self.set_module_enabled(descriptor, enabled, reason)
     }
 }

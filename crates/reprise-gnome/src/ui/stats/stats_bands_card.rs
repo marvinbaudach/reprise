@@ -249,6 +249,11 @@ impl StatsBandsCard {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn artwork_generations_for_test(&self) -> Vec<u64> {
+        self.state.bands_row.artwork_generations_for_test()
+    }
+
     pub(in crate::ui) fn clear_data(&self) {
         *self.state.snapshot.borrow_mut() = None;
         self.state.render(false);

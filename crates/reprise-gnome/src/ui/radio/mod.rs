@@ -7,6 +7,7 @@ mod add_dialog_rows;
 mod css;
 mod edit_dialog;
 mod radio_add_input;
+mod radio_artwork_refresh;
 mod radio_chips;
 mod radio_column_layout;
 mod radio_columns;

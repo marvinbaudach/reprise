@@ -58,6 +58,7 @@ fn rendered_episode_title(
         downloads: BTreeMap::new(),
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
+        artwork: Vec::new(),
     };
     let rendered = episode_row(
         &row,

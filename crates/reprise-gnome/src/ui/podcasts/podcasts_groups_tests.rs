@@ -197,6 +197,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
             downloads: BTreeMap::new(),
             selection: BTreeMap::new(),
             channels: BTreeMap::new(),
+            artwork: Vec::new(),
         };
         let rendered = episode_row(
             &row,
@@ -323,6 +324,7 @@ fn acc_1_every_point_of_a_grouped_episode_row_reaches_the_context_menu() {
         downloads: BTreeMap::new(),
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
+        artwork: Vec::new(),
     };
     let row = episode(None);
     let rendered = episode_row(
