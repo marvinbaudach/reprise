@@ -22,6 +22,7 @@ use super::podcasts_deferred_actions::{replay_until_refused, DeferredAction, Def
 use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
+use super::podcasts_footer::PodcastsFooter;
 use super::podcasts_groups;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
@@ -44,7 +45,6 @@ use super::youtube_channel_detail::YoutubeChannelDetail;
 use crate::ui::source_empty_state::{SourceEmptyState, SourceFailureState};
 use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
-use crate::ui::style::buttons;
 
 #[path = "podcasts_view_actions.rs"]
 mod actions;
@@ -108,6 +108,14 @@ pub(in crate::ui) struct PodcastsView {
     footer_add: gtk4::Button,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
+    refresh_button: gtk4::Button,
+    refresh_stack: gtk4::Stack,
+    refresh_spinner: gtk4::Spinner,
+    /// Number of refresh requests currently running for this view. This is a
+    /// counter rather than a boolean because scheduler, button, and tab-open
+    /// requests can overlap; the oldest completion must not release the
+    /// button while a newer request is still fetching.
+    refresh_in_flight: Cell<usize>,
     groups: RefCell<Vec<SourceGroup>>,
     rows: RefCell<Vec<EpisodeRow>>,
     expanded_sources: Rc<RefCell<BTreeSet<i64>>>,
@@ -127,11 +135,10 @@ pub(in crate::ui) struct PodcastsView {
     generation: Cell<u64>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     kept_downloads: RefCell<KeptDownloads>,
-    /// `NET-3c`: explicit, injectable connectivity seam, mirroring
-    /// `RadioView`'s (`NET-3b`) — defaults to `Online` and is not wired to
-    /// any real OS signal yet; only [`PodcastsView::set_connectivity`] (and
-    /// tests) change it. A transition from `Offline` to `Online` triggers
-    /// the queued-download runner.
+    /// `NET-3c`: explicit connectivity seam, mirroring `RadioView`'s
+    /// (`NET-3b`). The window projects `gio::NetworkMonitor` changes into
+    /// this value through [`PodcastsView::set_connectivity`]. A transition
+    /// from `Offline` to `Online` triggers the queued-download runner.
     connectivity: Cell<Connectivity>,
     deferred_actions: RefCell<DeferredActions>,
 }
@@ -167,31 +174,15 @@ impl PodcastsView {
         stack.add_named(youtube_detail.widget(), Some("youtube-channel"));
         stack.set_vexpand(true);
 
-        let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        footer.set_margin_top(6);
-        footer.set_margin_bottom(6);
-        footer.set_margin_start(12);
-        footer.set_margin_end(12);
-        let footer_add = gtk4::Button::builder()
-            .label(strings::text(match kind {
-                PodcastKind::Rss => strings::PODCAST_ADD,
-                PodcastKind::Youtube => strings::YOUTUBE_ADD,
-            }))
-            .build();
-        buttons::arm(&footer_add, buttons::ADD_ACTION_CLASS);
-        footer_add.set_action_name(Some("podcasts.open-add"));
-        footer.append(&footer_add);
-        let footer_spinner = gtk4::Spinner::new();
-        footer.append(&footer_spinner);
-        let footer_status = gtk4::Label::new(None);
-        footer_status.add_css_class("caption");
-        footer_status.add_css_class("dim-label");
-        footer_status.set_hexpand(true);
-        footer_status.set_xalign(0.0);
-        footer.append(&footer_status);
-        let refresh = gtk4::Button::with_label(&strings::text(strings::PODCAST_REFRESH_NOW));
-        refresh.add_css_class("flat");
-        footer.append(&refresh);
+        let PodcastsFooter {
+            root: footer,
+            add: footer_add,
+            status: footer_status,
+            spinner: footer_spinner,
+            refresh_button,
+            refresh_stack,
+            refresh_spinner,
+        } = super::podcasts_footer::build(kind);
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-podcasts-source");
@@ -229,6 +220,10 @@ impl PodcastsView {
             footer_add,
             footer_status,
             footer_spinner,
+            refresh_button,
+            refresh_stack,
+            refresh_spinner,
+            refresh_in_flight: Cell::new(0),
             groups: RefCell::new(Vec::new()),
             rows: RefCell::new(Vec::new()),
             expanded_sources: Rc::new(RefCell::new(BTreeSet::new())),
@@ -252,7 +247,7 @@ impl PodcastsView {
             deferred_actions: RefCell::new(DeferredActions::default()),
         });
         view.install_actions();
-        view.wire_controls(&refresh);
+        view.wire_controls();
         view.install_selection_shortcuts();
         view.install_reveal_tracking();
         let weak = Rc::downgrade(&view);
@@ -347,9 +342,9 @@ impl PodcastsView {
         }
     }
 
-    fn wire_controls(self: &Rc<Self>, refresh_button: &gtk4::Button) {
+    fn wire_controls(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
-        refresh_button.connect_clicked(move |_| {
+        self.refresh_button.connect_clicked(move |_| {
             if let Some(view) = weak.upgrade() {
                 view.request_refresh(true);
             }

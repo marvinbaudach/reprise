@@ -19,6 +19,7 @@ mod podcasts_empty_state;
 mod podcasts_episode_files;
 mod podcasts_episode_window;
 mod podcasts_filter_bar;
+mod podcasts_footer;
 mod podcasts_groups;
 mod podcasts_list_surface;
 mod podcasts_model;
