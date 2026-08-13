@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gtk4::prelude::*;
+use gtk4::{glib, prelude::*};
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
@@ -97,10 +97,13 @@ pub(in crate::ui) fn build(
     root.append(&dismiss);
 
     let completed = Rc::new(Cell::new(false));
-    banner.connect_button_clicked({
-        let db = db.clone();
-        let completed = completed.clone();
-        let root = root.clone();
+    banner.connect_button_clicked(glib::clone!(
+        #[strong]
+        db,
+        #[strong]
+        completed,
+        #[weak]
+        root,
         move |banner| {
             if !persist_completed(&db, &completed) {
                 return;
@@ -109,12 +112,16 @@ pub(in crate::ui) fn build(
             root.set_visible(false);
             on_review();
         }
-    });
-    dismiss.connect_clicked({
-        let db = db.clone();
-        let completed = completed.clone();
-        let banner = banner.clone();
-        let root = root.clone();
+    ));
+    dismiss.connect_clicked(glib::clone!(
+        #[strong]
+        db,
+        #[strong]
+        completed,
+        #[weak]
+        banner,
+        #[weak]
+        root,
         move |_| {
             if !persist_completed(&db, &completed) {
                 return;
@@ -122,7 +129,7 @@ pub(in crate::ui) fn build(
             banner.set_revealed(false);
             root.set_visible(false);
         }
-    });
+    ));
     banner.set_revealed(true);
     Some(ArtworkConsentBanner {
         root,
