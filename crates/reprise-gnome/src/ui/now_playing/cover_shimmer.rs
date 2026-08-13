@@ -29,8 +29,8 @@ const SHIMMER_OPACITY_PER_SWELL: f64 = 0.16;
 const SHIMMER_DIAMETER_PER_COVER: f64 = 520.0 / 168.0;
 /// Centre of the disc, measured down from the top of the band.
 const SHIMMER_CENTRE_Y: f64 = 100.0;
-/// The mockup clips the disc to this band from the top of the panel head.
-const SHIMMER_BAND_HEIGHT: f64 = 340.0;
+/// The disc is clipped to the same artwork band as the cover and bloom.
+const SHIMMER_BAND_HEIGHT: f64 = tokens::NOW_PLAYING_ARTWORK_BAND as f64;
 /// One turn a minute.
 const SHIMMER_TURN_S: f64 = 60.0;
 /// `radial-gradient(circle closest-side, #000 12%, transparent 68%)`.
@@ -305,5 +305,17 @@ mod tests {
     fn ac_24_the_shimmer_disc_is_three_covers_wide() {
         // 520 px against the mockup's 168 px cover.
         assert!((SHIMMER_DIAMETER_PER_COVER - 520.0 / 168.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn npp_18_shimmer_mask_is_clear_before_the_artwork_band_ends() {
+        let radius = SHIMMER_DIAMETER_PER_COVER * f64::from(tokens::NOW_PLAYING_COVER_SIZE) / 2.0;
+        let clear_edge = SHIMMER_CENTRE_Y + SHIMMER_MASK_CLEAR * radius;
+
+        assert_eq!(shimmer_mask(SHIMMER_MASK_CLEAR), 0.0);
+        assert!(
+            clear_edge <= SHIMMER_BAND_HEIGHT,
+            "the shimmer clears at y={clear_edge:.1}, after the {SHIMMER_BAND_HEIGHT:.1}px band"
+        );
     }
 }

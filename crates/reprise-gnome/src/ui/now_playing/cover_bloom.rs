@@ -24,12 +24,15 @@ use gtk4::prelude::*;
 use reprise_core::playback::PlaybackState;
 
 use super::cover_bloom_area::BloomArea;
-use crate::ui::cover_glow;
+use crate::ui::{cover_glow, style::tokens};
 
 type OnFrame = Rc<dyn Fn(i64)>;
-/// Height of the bloom band, from the top of the head overlay: enough for the
-/// cover and the title block, stopping short of the tabs.
-pub(super) const BLOOM_HEIGHT: f64 = 330.0;
+/// Height of the bloom band. It ends where the title block begins, so the
+/// cover-derived light cannot paint behind text.
+pub(super) const BLOOM_HEIGHT: f64 = tokens::NOW_PLAYING_ARTWORK_BAND as f64;
+/// The cover begins 22 px from the band's top and remains at full bloom
+/// strength through its bottom edge.
+pub(super) const BLOOM_FULL_STRENGTH_Y: f64 = 22.0 + tokens::NOW_PLAYING_COVER_SIZE as f64;
 /// Width as a share of the panel width. The overflow is clipped by the panel.
 pub(super) const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 
@@ -50,6 +53,50 @@ pub(super) fn bloom_opacity(pressure: f64, swell: f64) -> f64 {
     REST_OPACITY
         + OPACITY_PER_PRESSURE * pressure.clamp(0.0, 1.0)
         + OPACITY_PER_SWELL * swell.clamp(0.0, 1.0)
+}
+
+/// Vertical alpha ramp of the bloom: 1.0 above `full`, 0.0 at `band`, linear
+/// in between. The band's bottom edge is where the title block begins, so the
+/// bloom is gone before it instead of being hard-clipped there.
+pub(super) fn bloom_falloff(y: f64, full: f64, band: f64) -> f64 {
+    if y <= full {
+        return 1.0;
+    }
+    if y >= band {
+        return 0.0;
+    }
+    (band - y) / (band - full)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct BloomMaskStop {
+    pub(super) offset: f64,
+    pub(super) alpha: f64,
+}
+
+impl BloomMaskStop {
+    pub(super) const fn new(offset: f64, alpha: f64) -> Self {
+        Self { offset, alpha }
+    }
+}
+
+pub(super) fn bloom_mask_stops(band: f64) -> [BloomMaskStop; 3] {
+    let full_offset = (BLOOM_FULL_STRENGTH_Y / band).clamp(0.0, 1.0);
+    let opaque_alpha = bloom_falloff(0.0, BLOOM_FULL_STRENGTH_Y, band);
+    let clear_alpha = bloom_falloff(band, BLOOM_FULL_STRENGTH_Y, band);
+    [
+        BloomMaskStop::new(0.0, opaque_alpha),
+        BloomMaskStop::new(full_offset, opaque_alpha),
+        BloomMaskStop::new(1.0, clear_alpha),
+    ]
+}
+
+pub(super) fn bloom_mask_needs_rebuild(
+    cached_size: Option<(i32, i32)>,
+    width: i32,
+    band: i32,
+) -> bool {
+    cached_size != Some((width, band))
 }
 
 pub(super) fn bloom_scale(swell: f64) -> f64 {
@@ -283,6 +330,61 @@ impl CoverBloom {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npp_18_bloom_falloff_is_full_then_monotonic_and_clamped_to_the_band() {
+        let full = BLOOM_FULL_STRENGTH_Y;
+        let band = BLOOM_HEIGHT;
+
+        assert_eq!(bloom_falloff(-20.0, full, band), 1.0);
+        assert_eq!(bloom_falloff(full, full, band), 1.0);
+        assert_eq!(bloom_falloff((full + band) / 2.0, full, band), 0.5);
+        assert_eq!(bloom_falloff(band, full, band), 0.0);
+        assert_eq!(bloom_falloff(band + 20.0, full, band), 0.0);
+
+        let samples = (0..=10)
+            .map(|step| bloom_falloff(full + (band - full) * f64::from(step) / 10.0, full, band))
+            .collect::<Vec<_>>();
+        assert!(samples.windows(2).all(|pair| pair[0] >= pair[1]));
+    }
+
+    #[test]
+    fn npp_18_bloom_mask_stops_fade_outward_and_resize_rebuilds_cache() {
+        let band = 280.0;
+        let stops = bloom_mask_stops(band);
+
+        assert_eq!(stops[0], BloomMaskStop::new(0.0, 1.0));
+        assert_eq!(
+            stops[1],
+            BloomMaskStop::new(BLOOM_FULL_STRENGTH_Y / band, 1.0)
+        );
+        assert_eq!(stops[2], BloomMaskStop::new(1.0, 0.0));
+
+        let taller_band = 400.0;
+        assert_eq!(
+            bloom_mask_stops(taller_band),
+            [
+                BloomMaskStop::new(0.0, 1.0),
+                BloomMaskStop::new(BLOOM_FULL_STRENGTH_Y / taller_band, 1.0),
+                BloomMaskStop::new(1.0, 0.0),
+            ]
+        );
+
+        let clamped_band = BLOOM_FULL_STRENGTH_Y / 2.0;
+        assert_eq!(
+            bloom_mask_stops(clamped_band),
+            [
+                BloomMaskStop::new(0.0, 1.0),
+                BloomMaskStop::new(1.0, 1.0),
+                BloomMaskStop::new(1.0, 1.0),
+            ]
+        );
+
+        assert!(bloom_mask_needs_rebuild(None, 900, 280));
+        assert!(!bloom_mask_needs_rebuild(Some((900, 280)), 900, 280));
+        assert!(bloom_mask_needs_rebuild(Some((900, 280)), 901, 280));
+        assert!(bloom_mask_needs_rebuild(Some((900, 280)), 900, 279));
+    }
 
     #[test]
     fn ac_24_bloom_adds_a_swell_on_top_of_a_pressure_bed() {

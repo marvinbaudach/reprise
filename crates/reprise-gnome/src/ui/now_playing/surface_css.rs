@@ -18,7 +18,8 @@ pub(super) fn css() -> String {
          alpha(@sidebar_bg_color, 0) 70%); }}\n\
      .reprise-now-playing-idle .reprise-now-playing-glow {{ \
        background-image: none; }}\n\
-     .reprise-now-playing-head {{ padding: 22px 18px 16px; }}\n\
+     .reprise-now-playing-head {{ padding: 22px 18px 0; }}\n\
+     .reprise-now-playing-metadata {{ padding: 0 18px 16px; }}\n\
      .reprise-now-playing-cover {{ \
        border-radius: {RADIUS_SURFACE}; \
        box-shadow: inset 0 0 0 1px alpha(@sidebar_fg_color, 0.12); }}\n\
