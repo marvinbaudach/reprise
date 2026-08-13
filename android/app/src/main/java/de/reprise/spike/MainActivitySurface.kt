@@ -1,6 +1,7 @@
 package de.reprise.spike
 
 import android.net.Uri
+import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 
 /** A JVM-replaceable library edge; activity, service, ViewModel and UI stay real. */
 internal interface MainActivitySurfaceProvider {
@@ -10,7 +11,8 @@ internal interface MainActivitySurfaceProvider {
 internal data class MainActivitySurfaceDependencies(
     val initialTheme: MobileThemeSelection,
     val initialState: LibraryScreenState,
-    val initialBrowseTab: BrowseTab = BrowseTab.TITLES,
+    val initialStoredDestination: AndroidStoredLibraryDestination =
+        AndroidStoredLibraryDestination.Titles,
     val rememberBrowseTab: (BrowseTab) -> Unit = {},
     val artwork: () -> TrackArtwork?,
     val playbackControls: PlaybackControls,

@@ -52,6 +52,6 @@ class BrowseDestinationMigrationTest {
 internal class RemovedDestinationTestApplication : ConfigurationTestApplication() {
     override fun mainActivitySurface(): MainActivitySurfaceDependencies =
         super.mainActivitySurface().copy(
-            initialBrowseTab = AndroidStoredLibraryDestination.Unsupported("albums").toBrowseTab(),
+            initialStoredDestination = AndroidStoredLibraryDestination.Unsupported("albums"),
         )
 }

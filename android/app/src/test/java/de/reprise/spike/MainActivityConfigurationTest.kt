@@ -46,6 +46,7 @@ import uniffi.reprise_android_ffi.AndroidPlaybackSession
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 
 /**
  * Configuration claims run through the path a device uses: MainActivity's
@@ -616,7 +617,11 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 dynamicAvailable = false,
             ),
             initialState = browse,
-            initialBrowseTab = rememberedDestination,
+            initialStoredDestination = when (rememberedDestination) {
+                BrowseTab.TITLES -> AndroidStoredLibraryDestination.Titles
+                BrowseTab.ARTISTS -> AndroidStoredLibraryDestination.Artists
+                BrowseTab.QUEUE -> AndroidStoredLibraryDestination.Unset
+            },
             rememberBrowseTab = { tab ->
                 rememberedDestination = tab
                 rememberedDestinationWrites += tab

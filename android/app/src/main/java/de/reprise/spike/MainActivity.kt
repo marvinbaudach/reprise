@@ -44,6 +44,7 @@ import de.reprise.spike.ui.theme.RepriseTheme
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
+import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
@@ -189,7 +190,10 @@ class MainActivity : ComponentActivity() {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
-            surfaceState.initializeSelectedTab(surface.initialBrowseTab, surface.rememberBrowseTab)
+            surfaceState.initializeSelectedTab(
+                surface.initialStoredDestination.toBrowseTab(),
+                surface.rememberBrowseTab,
+            )
             val surfaceLayout = surfaceLayoutFor(calculateWindowSizeClass(this))
             val ambientMotion = remember(surface.observeAmbientScheduling) {
                 AmbientMotionController(surface.observeAmbientScheduling)
@@ -268,11 +272,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun productionSurface(): MainActivitySurfaceDependencies {
-        val initialBrowseTab = restoreBrowseTab()
+        val initialStoredDestination = restoreStoredDestination()
+        val initialBrowseTab = initialStoredDestination.toBrowseTab()
         return MainActivitySurfaceDependencies(
             initialTheme = restoreTheme(),
             initialState = restoreLibrary(initialBrowseTab),
-            initialBrowseTab = initialBrowseTab,
+            initialStoredDestination = initialStoredDestination,
             rememberBrowseTab = ::rememberBrowseTab,
             artwork = { artwork },
             playbackControls = playbackControls,
@@ -303,11 +308,11 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun restoreBrowseTab(): BrowseTab = runCatching {
-        library.libraryDestinationSetting().toBrowseTab()
+    private fun restoreStoredDestination(): AndroidStoredLibraryDestination = runCatching {
+        library.libraryDestinationSetting()
     }.getOrElse { error ->
         Log.e(TAG, "Could not load the library destination; using Titles", error)
-        BrowseTab.TITLES
+        AndroidStoredLibraryDestination.Titles
     }
 
     private fun rememberBrowseTab(tab: BrowseTab) {
