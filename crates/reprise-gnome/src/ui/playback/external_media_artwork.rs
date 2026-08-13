@@ -20,6 +20,7 @@ impl PlayerController {
         crate::ui::podcasts::source_image::load_into_image(
             self.bar.cover_image(),
             snapshot.art_url.as_deref(),
+            snapshot.fallback_art_url.as_deref(),
             (size, size),
             images_allowed,
             reprise_core::remote_image::CacheScope::Persistent,

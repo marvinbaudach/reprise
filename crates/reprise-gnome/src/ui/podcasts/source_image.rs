@@ -37,7 +37,9 @@ mod source_image_fallback;
 mod source_image_texture;
 
 pub(super) use source_image_texture::remember_texture;
-use source_image_texture::{cached_texture, decode_pixels, memory_texture, DecodedPixels};
+use source_image_texture::{
+    cached_texture, cached_texture_at_any_size, decode_pixels, memory_texture, DecodedPixels,
+};
 
 /// The most recently observed `images_allowed` gate state, shared across the
 /// worker threads below.
@@ -70,6 +72,48 @@ static GATE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 pub(crate) enum StartupTiming {
     Immediate,
     AfterQuiet,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtworkStage {
+    Fallback,
+    Primary,
+}
+
+fn artwork_chain(
+    primary_url: Option<&str>,
+    fallback_url: Option<&str>,
+) -> Vec<(ArtworkStage, String)> {
+    let primary = primary_url.and_then(validated_url);
+    let fallback = fallback_url
+        .and_then(validated_url)
+        .filter(|fallback| Some(fallback) != primary.as_ref());
+    let mut chain = Vec::with_capacity(2);
+    if let Some(fallback) = fallback {
+        chain.push((ArtworkStage::Fallback, fallback));
+    }
+    if let Some(primary) = primary {
+        chain.push((ArtworkStage::Primary, primary));
+    }
+    chain
+}
+
+fn may_publish_artwork(
+    stage: ArtworkStage,
+    generation: u64,
+    current: &Cell<u64>,
+    primary_visible: &Cell<bool>,
+) -> bool {
+    if current.get() != generation {
+        return false;
+    }
+    match stage {
+        ArtworkStage::Fallback => !primary_visible.get(),
+        ArtworkStage::Primary => {
+            primary_visible.set(true);
+            true
+        }
+    }
 }
 
 /// `NET-1a` / `SET-4`: re-publishes the gate from settings when the setting
@@ -115,6 +159,7 @@ impl SourceImage {
     ) -> SourceImage {
         Self::new_with_dimensions(
             image_url,
+            None,
             fallback_icon,
             size,
             size,
@@ -135,6 +180,7 @@ impl SourceImage {
     /// third-party host for the same image. One load, two consumers.
     pub(crate) fn new_observed(
         image_url: Option<&str>,
+        fallback_image_url: Option<&str>,
         fallback_icon: &str,
         size: i32,
         images_allowed: bool,
@@ -147,8 +193,9 @@ impl SourceImage {
             size,
             size,
         );
-        image.set_url(
+        image.set_urls(
             image_url,
+            fallback_image_url,
             size,
             size,
             images_allowed,
@@ -165,6 +212,7 @@ impl SourceImage {
 
     pub(crate) fn new_with_dimensions(
         image_url: Option<&str>,
+        fallback_image_url: Option<&str>,
         fallback_icon: &str,
         width: i32,
         height: i32,
@@ -177,8 +225,9 @@ impl SourceImage {
             width,
             height,
         );
-        image.set_url(
+        image.set_urls(
             image_url,
+            fallback_image_url,
             width,
             height,
             images_allowed,
@@ -241,9 +290,10 @@ impl SourceImage {
         &self.root
     }
 
-    fn set_url(
+    fn set_urls(
         &self,
         image_url: Option<&str>,
+        fallback_image_url: Option<&str>,
         width: i32,
         height: i32,
         images_allowed: bool,
@@ -257,8 +307,9 @@ impl SourceImage {
         self.artwork.set_paintable(gtk4::gdk::Paintable::NONE);
         let weak_root = self.root.downgrade();
         let weak_artwork = self.artwork.downgrade();
-        load_texture(
+        load_texture_chain(
             image_url,
+            fallback_image_url,
             (width, height),
             images_allowed,
             cache_scope,
@@ -278,6 +329,47 @@ impl SourceImage {
                 };
                 artwork.set_paintable(Some(&texture));
                 root.set_visible_child(&artwork);
+            },
+        );
+    }
+}
+
+fn load_texture_chain(
+    primary_url: Option<&str>,
+    fallback_url: Option<&str>,
+    dimensions: (i32, i32),
+    images_allowed: bool,
+    cache_scope: CacheScope,
+    startup_timing: StartupTiming,
+    generation: u64,
+    current: &Rc<Cell<u64>>,
+    on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
+) {
+    let primary_visible = Rc::new(Cell::new(false));
+    let on_ready: Rc<dyn Fn(gtk4::gdk::Texture)> = Rc::new(on_ready);
+    for (stage, url) in artwork_chain(primary_url, fallback_url) {
+        let primary_visible = primary_visible.clone();
+        let current_for_callback = current.clone();
+        let on_ready = on_ready.clone();
+        if stage == ArtworkStage::Fallback {
+            if let Some(texture) = cached_texture_at_any_size(&url, cache_scope) {
+                if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
+                    on_ready(texture);
+                }
+            }
+        }
+        load_texture(
+            Some(&url),
+            dimensions,
+            images_allowed,
+            cache_scope,
+            startup_timing,
+            generation,
+            current,
+            move |texture| {
+                if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
+                    on_ready(texture);
+                }
             },
         );
     }
@@ -350,6 +442,7 @@ fn load_texture(
 pub(crate) fn load_into_image(
     image: &gtk4::Image,
     image_url: Option<&str>,
+    fallback_image_url: Option<&str>,
     dimensions: (i32, i32),
     images_allowed: bool,
     cache_scope: CacheScope,
@@ -362,8 +455,9 @@ pub(crate) fn load_into_image(
     }
     crate::ui::cover_loader::CoverLoader::set_placeholder(image);
     let weak_image = image.downgrade();
-    load_texture(
+    load_texture_chain(
         image_url,
+        fallback_image_url,
         dimensions,
         images_allowed,
         cache_scope,
@@ -454,6 +548,81 @@ mod tests {
             reprise_core::remote_image::CacheScope::Transient,
         )
         .is_some());
+        assert!(super::cached_texture_at_any_size(
+            &url,
+            reprise_core::remote_image::CacheScope::Transient,
+        )
+        .is_some());
+        assert!(super::cached_texture_at_any_size(
+            &url,
+            reprise_core::remote_image::CacheScope::Persistent,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn src_11_failed_episode_artwork_keeps_the_show_fallback() {
+        let current = std::cell::Cell::new(7);
+        let primary_visible = std::cell::Cell::new(false);
+
+        assert!(super::may_publish_artwork(
+            super::ArtworkStage::Fallback,
+            7,
+            &current,
+            &primary_visible,
+        ));
+        assert!(!primary_visible.get());
+    }
+
+    #[test]
+    fn src_11_missing_artwork_chain_keeps_the_source_glyph() {
+        assert!(super::artwork_chain(None, None).is_empty());
+    }
+
+    #[test]
+    fn src_11_episode_artwork_replaces_the_show_fallback() {
+        let current = std::cell::Cell::new(9);
+        let primary_visible = std::cell::Cell::new(false);
+
+        assert!(super::may_publish_artwork(
+            super::ArtworkStage::Fallback,
+            9,
+            &current,
+            &primary_visible,
+        ));
+        assert!(super::may_publish_artwork(
+            super::ArtworkStage::Primary,
+            9,
+            &current,
+            &primary_visible,
+        ));
+        assert!(primary_visible.get());
+        assert!(!super::may_publish_artwork(
+            super::ArtworkStage::Fallback,
+            9,
+            &current,
+            &primary_visible,
+        ));
+    }
+
+    #[test]
+    fn src_11_recycled_row_rejects_both_artwork_stages() {
+        let current = std::cell::Cell::new(12);
+        let primary_visible = std::cell::Cell::new(false);
+
+        assert!(!super::may_publish_artwork(
+            super::ArtworkStage::Fallback,
+            11,
+            &current,
+            &primary_visible,
+        ));
+        assert!(!super::may_publish_artwork(
+            super::ArtworkStage::Primary,
+            11,
+            &current,
+            &primary_visible,
+        ));
+        assert!(!primary_visible.get());
     }
 
     /// A real 1x1 truecolor PNG, small enough to inline and valid enough for
@@ -592,6 +761,7 @@ mod tests {
         super::load_into_image(
             &image,
             Some(url),
+            None,
             (56, 56),
             false,
             reprise_core::remote_image::CacheScope::Persistent,

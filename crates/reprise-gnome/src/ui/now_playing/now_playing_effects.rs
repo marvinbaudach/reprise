@@ -101,6 +101,7 @@ impl super::NowPlayingPanel {
             });
             let source_image = crate::ui::podcasts::source_image::SourceImage::new_observed(
                 external.art_url.as_deref(),
+                external.fallback_art_url.as_deref(),
                 fallback_icon,
                 tokens::NOW_PLAYING_COVER_SIZE,
                 images_allowed,

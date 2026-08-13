@@ -117,6 +117,7 @@ mod tests {
             media_category: None,
             published_at: None,
             art_url: None,
+            fallback_art_url: None,
             phase: PodcastPhase::Playing,
             restored,
             origin,

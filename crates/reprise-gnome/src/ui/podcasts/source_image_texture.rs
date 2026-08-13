@@ -84,6 +84,22 @@ pub(super) fn cached_texture(
     })
 }
 
+pub(super) fn cached_texture_at_any_size(
+    url: &str,
+    cache_scope: CacheScope,
+) -> Option<gtk4::gdk::Texture> {
+    TEXTURE_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let index = cache.iter().position(|(cached, _, _, cached_scope, _)| {
+            cached == url && *cached_scope == cache_scope
+        })?;
+        let entry = cache.remove(index)?;
+        let texture = entry.4.clone();
+        cache.push_front(entry);
+        Some(texture)
+    })
+}
+
 pub(in crate::ui::podcasts) fn remember_texture(
     url: String,
     width: i32,

@@ -16,7 +16,8 @@ pub(super) fn episode_thumbnail(
     };
     let (width, height) = crate::ui::source_row::media_size(shape);
     let source = super::source_image::SourceImage::new_with_dimensions(
-        row.image_url.as_deref().or(row.show_image_url.as_deref()),
+        row.image_url.as_deref(),
+        row.show_image_url.as_deref(),
         match row.kind {
             PodcastKind::Rss => "audio-input-microphone-symbolic",
             PodcastKind::Youtube => "video-x-generic-symbolic",

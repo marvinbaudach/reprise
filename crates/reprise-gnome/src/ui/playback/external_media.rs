@@ -15,8 +15,8 @@ use crate::ui::player_controller::PlayerController;
 pub(super) use super::external_media_fields::session_id;
 use super::external_media_fields::{podcast_fields, radio_fields};
 use super::external_media_state::{
-    podcast_source_requires_resolution, AutomaticAdvance, ExternalSession, NeighbourContext,
-    PodcastOrigin, PodcastSession, RadioCommand, RadioSession, ResumePolicy,
+    episode_artwork_urls, podcast_source_requires_resolution, AutomaticAdvance, ExternalSession,
+    NeighbourContext, PodcastOrigin, PodcastSession, RadioCommand, RadioSession, ResumePolicy,
 };
 use super::preview::PlaybackMode;
 
@@ -238,7 +238,7 @@ impl PlayerController {
         let media_category = row
             .as_ref()
             .and_then(|episode| episode.media_category.clone());
-        let art_url = row.and_then(|episode| episode.image_url.or(episode.show_image_url));
+        let (art_url, fallback_art_url) = row.as_ref().map_or((None, None), episode_artwork_urls);
         let (title, show, source, resume_ms, duration_ms) = podcast_fields(&media);
         let needs_ytdlp = podcast_source_requires_resolution(kind, &source);
         let phase = if needs_ytdlp {
@@ -255,6 +255,7 @@ impl PlayerController {
             media_category,
             published_at,
             art_url,
+            fallback_art_url,
             phase,
             restored: false,
             origin,

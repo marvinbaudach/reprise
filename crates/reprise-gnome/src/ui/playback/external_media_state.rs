@@ -237,6 +237,7 @@ pub(super) struct PodcastSession {
     pub(super) media_category: Option<String>,
     pub(super) published_at: Option<i64>,
     pub(super) art_url: Option<String>,
+    pub(super) fallback_art_url: Option<String>,
     pub(super) phase: PodcastPhase,
     /// True only for the paused metadata shell reconstructed at cold start.
     /// The first Play resolves a fresh source instead of toggling a pipeline
@@ -248,6 +249,18 @@ pub(super) struct PodcastSession {
     pub(super) last_persisted_ms: i64,
     pub(super) duration_known: bool,
     pub(super) error: Option<String>,
+}
+
+pub(super) fn episode_artwork_urls(episode: &EpisodeRow) -> (Option<String>, Option<String>) {
+    let primary = episode
+        .image_url
+        .clone()
+        .or_else(|| episode.show_image_url.clone());
+    let fallback = episode
+        .image_url
+        .as_ref()
+        .and(episode.show_image_url.clone());
+    (primary, fallback)
 }
 
 impl PodcastSession {
@@ -296,6 +309,7 @@ pub(in crate::ui) struct ExternalPlaybackSnapshot {
     pub(in crate::ui) media_category: Option<String>,
     pub(in crate::ui) media: ExternalMedia,
     pub(in crate::ui) art_url: Option<String>,
+    pub(in crate::ui) fallback_art_url: Option<String>,
     pub(in crate::ui) can_go_previous: bool,
     pub(in crate::ui) can_go_next: bool,
     pub(in crate::ui) stream_tags: StreamTags,
@@ -492,6 +506,7 @@ impl ExternalPlaybackState {
                 media_category: session.media_category.clone(),
                 media: session.media.clone(),
                 art_url: session.art_url.clone(),
+                fallback_art_url: session.fallback_art_url.clone(),
                 can_go_previous: session
                     .neighbours
                     .as_ref()
@@ -512,6 +527,7 @@ impl ExternalPlaybackState {
                 media_category: None,
                 media: session.media.clone(),
                 art_url: session.art_url.clone(),
+                fallback_art_url: None,
                 can_go_previous: false,
                 can_go_next: false,
                 stream_tags: self.stream_tags.clone(),

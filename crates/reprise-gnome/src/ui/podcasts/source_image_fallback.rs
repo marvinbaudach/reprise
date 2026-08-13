@@ -73,8 +73,9 @@ impl super::SourceImage {
         cache_scope: reprise_core::remote_image::CacheScope,
     ) -> Self {
         let image = Self::build(fallback, size, size);
-        image.set_url(
+        image.set_urls(
             image_url,
+            None,
             size,
             size,
             images_allowed,

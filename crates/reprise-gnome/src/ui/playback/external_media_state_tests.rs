@@ -22,6 +22,7 @@ fn podcast_session(
         media_category: None,
         published_at: None,
         art_url: None,
+        fallback_art_url: None,
         phase: PodcastPhase::Playing,
         restored: false,
         origin: PodcastOrigin::Direct,
