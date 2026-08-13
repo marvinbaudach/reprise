@@ -76,3 +76,4 @@ __pycache__/
 .claude/
 .agents/
 .tmp/
+skills-lock.json
