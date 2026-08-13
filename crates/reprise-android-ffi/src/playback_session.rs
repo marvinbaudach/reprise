@@ -193,6 +193,7 @@ impl SessionState {
     }
 
     fn stop(&mut self) {
+        self.history.clear_presented();
         self.snapshot.state = AndroidPlaybackState::Stopped;
         self.snapshot.current_index = None;
         self.snapshot.position_ms = 0;
@@ -330,17 +331,24 @@ impl SessionInner {
 
     fn start_current(&self) -> Result<(), AndroidPlaybackError> {
         let backend = self.backend()?;
-        let (uri, next_uri) = {
+        let (uri, next_uri, history_entry) = {
             let mut state = self.lock()?;
+            let track_id =
+                state
+                    .current_track_id()
+                    .ok_or(AndroidPlaybackError::InvalidRequest {
+                        detail: "the Core queue has no current track".to_owned(),
+                    })?;
             let uri = state
                 .current_uri()
                 .ok_or(AndroidPlaybackError::InvalidRequest {
                     detail: "the Core queue has no current track".to_owned(),
                 })?;
             let next_uri = state.next_uri();
+            let history_entry = state.history_entry_for_started(track_id, uri.clone());
             // `play_uri` may synchronously publish this stream's first event.
             state.current_loaded = true;
-            (uri, next_uri)
+            (uri, next_uri, history_entry)
         };
         if let Err(error) = backend.play_uri(&uri) {
             let detail = error.to_string();
@@ -354,7 +362,7 @@ impl SessionInner {
         }
         {
             let mut state = self.lock()?;
-            state.note_playback_started();
+            state.note_playback_started(history_entry);
             state.stream = backend.current_generation();
         }
         backend.set_next(next_uri.as_deref());
@@ -424,7 +432,13 @@ impl SessionInner {
                     if state.queue.advance_auto().is_some() {
                         state.adopt_current();
                         state.current_loaded = true;
-                        state.note_playback_started();
+                        let history_entry = state
+                            .current_track_id()
+                            .zip(state.current_uri())
+                            .map(|(track_id, uri)| state.history_entry_for_started(track_id, uri));
+                        if let Some(history_entry) = history_entry {
+                            state.note_playback_started(history_entry);
+                        }
                         (
                             FollowUp::Feed(state.next_uri()),
                             play,

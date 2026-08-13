@@ -104,23 +104,24 @@ fn entry_for(queue: &Queue, track_id: i64, replay_uri: String) -> HistoryEntry {
     }
 }
 
+fn history_target_playhead(queue: &Queue, target: &HistoryEntry) -> Option<usize> {
+    let position = target.playhead_in(queue.sequence_identity())?;
+    (queue.id_at_order_position(position) == target.item.track_id()).then_some(position)
+}
+
 impl SessionState {
-    pub(super) fn note_playback_started(&mut self) {
-        let Some(track_id) = self.current_track_id() else {
-            return;
-        };
-        let Some(uri) = self.current_uri() else {
-            return;
-        };
-        let entry = self
-            .history
+    pub(super) fn history_entry_for_started(&self, track_id: i64, uri: String) -> HistoryEntry {
+        self.history
             .presented()
             .filter(|target| {
                 target.item.track_id() == Some(track_id)
                     && target.replay_uri.as_deref() == Some(uri.as_str())
             })
             .cloned()
-            .unwrap_or_else(|| entry_for(&self.queue, track_id, uri));
+            .unwrap_or_else(|| entry_for(&self.queue, track_id, uri))
+    }
+
+    pub(super) fn note_playback_started(&mut self, entry: HistoryEntry) {
         self.history.note(entry);
     }
 
@@ -175,14 +176,14 @@ impl SessionInner {
     }
 
     fn adopt_target(&self, state: &mut SessionState, target: HistoryEntry) {
-        let sequence = state.queue.sequence_identity();
-        if let Some(position) = target.playhead_in(sequence) {
-            state.queue.jump_to_order_position(position);
-            state.adopt_current();
-            state.history.present(target);
-        } else {
-            state.adopt_history_target(target);
+        if let Some(position) = history_target_playhead(&state.queue, &target) {
+            if state.queue.jump_to_order_position(position).is_some() {
+                state.adopt_current();
+                state.history.present(target);
+                return;
+            }
         }
+        state.adopt_history_target(target);
     }
 
     fn start_navigation(&self) -> Result<(), AndroidPlaybackError> {
@@ -268,6 +269,47 @@ mod tests {
             state.back_target_for_navigation().map(|entry| entry.item),
             Some(QueueItem::Track(20))
         );
+    }
+
+    #[test]
+    fn stopping_clears_a_presented_history_target_from_the_snapshot() {
+        let mut state = SessionState::new();
+        state.set_tracks(vec![10], vec!["content://track/10".into()], 0);
+        assert_eq!(state.queue.advance_auto(), None);
+        state
+            .history
+            .present(entry_for(&state.queue, 99, "content://history/99".into()));
+
+        state.stop();
+
+        let snapshot = state.presented_snapshot();
+        assert_eq!(snapshot.state, AndroidPlaybackState::Stopped);
+        assert_eq!(snapshot.current_track_id, None);
+        assert_eq!(snapshot.current_track_uri, None);
+    }
+
+    #[test]
+    fn an_invalid_recorded_playhead_falls_back_to_the_history_payload() {
+        let mut queue = Queue::new();
+        queue.set_tracks(vec![10, 20], 0);
+        let mut target = entry_for(&queue, 10, "content://history/10".into());
+        target.context_pos = Some(99);
+
+        assert_eq!(history_target_playhead(&queue, &target), None);
+    }
+
+    #[test]
+    fn a_started_uri_is_recorded_with_the_identity_captured_before_unlock() {
+        let mut state = SessionState::new();
+        state.set_tracks(vec![10], vec!["content://track/10".into()], 0);
+        let started = state.history_entry_for_started(10, "content://track/10".into());
+
+        state.set_tracks(vec![99], vec!["content://track/99".into()], 0);
+        state.note_playback_started(started);
+
+        let recorded = state.history.history.current().expect("recorded start");
+        assert_eq!(recorded.item, QueueItem::Track(10));
+        assert_eq!(recorded.replay_uri.as_deref(), Some("content://track/10"));
     }
 
     #[test]
