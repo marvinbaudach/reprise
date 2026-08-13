@@ -2,7 +2,7 @@
 slug: stats-artist-images-and-ranking
 worktree: /home/marvin/Projects/reprise-stats-artist-images-and-ranking
 branch: feature/stats-artist-images-and-ranking
-phase: verified
+phase: shipped
 codex_session:
 created: 2026-08-13
 ---
