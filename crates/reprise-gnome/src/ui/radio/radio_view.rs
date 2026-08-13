@@ -68,7 +68,7 @@ pub(super) struct Shared {
     empty_state: Cell<RadioEmptyState>,
     empty_page: SourceEmptyState,
     error_banner: SourceErrorBanner,
-    root: gtk4::Widget,
+    pub(super) root: gtk4::Widget,
     footer: gtk4::Box,
     footer_add: gtk4::Button,
     add_dialog: RefCell<Option<Rc<RadioAddDialog>>>,
@@ -84,6 +84,7 @@ pub(super) struct Shared {
     /// station record. Re-applied on every snapshot so the playing marker and
     /// the "Now playing" title move without a model signal.
     cells: Rc<super::radio_live_cells::RadioLiveCells>,
+    pub(super) artwork_cells: Rc<super::radio_live_cells::RadioLiveCells>,
     /// The station a row of *this* table was last activated for, until it
     /// actually connects. `SRC-13` says an activated row was visible by
     /// definition and must not move the viewport — but a stream connects
@@ -122,6 +123,7 @@ impl RadioView {
         column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
 
         let cells = Rc::new(super::radio_live_cells::RadioLiveCells::default());
+        let artwork_cells = Rc::new(super::radio_live_cells::RadioLiveCells::default());
         if let Some(controller) = controller {
             let live_for_state = live.clone();
             let cells_for_state = cells.clone();
@@ -139,6 +141,7 @@ impl RadioView {
             &live_source,
             &connectivity_source,
             &cells,
+            &artwork_cells,
             &query_source,
         );
         let column_model = super::radio_column_layout::install(&column_view, conn.clone());
@@ -235,6 +238,7 @@ impl RadioView {
             on_removed: RefCell::new(None),
             reveal,
             cells,
+            artwork_cells,
             activated_here: Cell::new(None),
         });
         let add_dialog = {

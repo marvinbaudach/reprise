@@ -258,6 +258,7 @@ fn artwork_column(
     view: &gtk4::ColumnView,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
+    cells: &Rc<RadioLiveCells>,
 ) {
     let factory = gtk4::SignalListItemFactory::new();
     let live_for_gesture = live_state.clone();
@@ -278,6 +279,7 @@ fn artwork_column(
         );
         item.set_child(Some(&surface));
     });
+    let cells_for_bind = cells.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -291,18 +293,29 @@ fn artwork_column(
         let Some(object) = item.item().and_downcast::<RadioObject>() else {
             return;
         };
-        while let Some(child) = cell.first_child() {
-            cell.remove(&child);
-        }
         let row = object.row();
-        let artwork =
-            crate::ui::podcasts::source_image::SourceImage::new_after_startup_with_initials(
-                row.favicon_url.as_deref(),
-                &row.name,
-                36,
-                crate::ui::podcasts::source_image::gate_open(),
-            );
-        cell.append(artwork.widget());
+        let apply = Rc::new(move || {
+            while let Some(child) = cell.first_child() {
+                cell.remove(&child);
+            }
+            let artwork =
+                crate::ui::podcasts::source_image::SourceImage::new_after_startup_with_initials(
+                    row.favicon_url.as_deref(),
+                    &row.name,
+                    36,
+                    crate::ui::podcasts::source_image::gate_open(),
+                );
+            cell.append(artwork.widget());
+        }) as Rc<dyn Fn()>;
+        apply();
+        cells_for_bind.register(item, apply);
+    });
+    let cells_for_unbind = cells.clone();
+    factory.connect_unbind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        cells_for_unbind.unregister(item);
     });
     let column = gtk4::ColumnViewColumn::builder()
         .factory(&factory)
@@ -317,9 +330,10 @@ pub(super) fn append_columns(
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
     cells: &Rc<RadioLiveCells>,
+    artwork_cells: &Rc<RadioLiveCells>,
     query: &crate::ui::search_highlight::QuerySource,
 ) {
-    artwork_column(view, live_state, connectivity);
+    artwork_column(view, live_state, connectivity, artwork_cells);
     state_column(view, live_state, connectivity, cells);
     let context = TextColumnContext {
         live_state,
@@ -440,6 +454,61 @@ mod tests {
         labels
     }
 
+    fn descendants_with_class(widget: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget> {
+        let mut found = widget
+            .has_css_class(class)
+            .then(|| widget.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            found.extend(descendants_with_class(&current, class));
+            child = current.next_sibling();
+        }
+        found
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn artwork_permission_rebinds_visible_radio_images_without_resetting_the_model() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let store = gtk4::gio::ListStore::new::<RadioObject>();
+        store.append(&RadioObject::new(station()));
+        let selection = gtk4::SingleSelection::new(Some(store));
+        let view = gtk4::ColumnView::new(Some(selection.clone()));
+        let live: LiveState = Rc::new(RadioLiveState::default);
+        let connectivity: ConnectivitySource = Rc::new(|| Connectivity::Online);
+        let live_cells = Rc::new(RadioLiveCells::default());
+        let artwork_cells = Rc::new(RadioLiveCells::default());
+        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
+        append_columns(
+            &view,
+            &live,
+            &connectivity,
+            &live_cells,
+            &artwork_cells,
+            &query,
+        );
+        let window = gtk4::Window::new();
+        window.set_default_size(1200, 300);
+        window.set_child(Some(&view));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let before = descendants_with_class(view.upcast_ref(), "reprise-source-image");
+        assert_eq!(before.len(), 1);
+        let selected_before = selection.selected();
+
+        artwork_cells.reapply();
+        crate::ui::source_context_surface::settle_layout();
+
+        let after = descendants_with_class(view.upcast_ref(), "reprise-source-image");
+        assert_eq!(after.len(), 1);
+        assert_ne!(before[0], after[0]);
+        assert_eq!(selection.selected(), selected_before);
+    }
+
     /// UX FIL-5a: Radio highlights only the station-name field its query
     /// searches, not metadata that happens to contain the same text.
     #[test]
@@ -457,12 +526,13 @@ mod tests {
         let live: LiveState = Rc::new(RadioLiveState::default);
         let connectivity: ConnectivitySource = Rc::new(|| Connectivity::Online);
         let cells = Rc::new(RadioLiveCells::default());
+        let artwork_cells = Rc::new(RadioLiveCells::default());
         let query_text = Rc::new(std::cell::RefCell::new("fall".to_owned()));
         let query: crate::ui::search_highlight::QuerySource = {
             let query_text = query_text.clone();
             Rc::new(move || query_text.borrow().clone())
         };
-        append_columns(&view, &live, &connectivity, &cells, &query);
+        append_columns(&view, &live, &connectivity, &cells, &artwork_cells, &query);
 
         let window = gtk4::Window::new();
         window.set_default_size(1200, 300);
@@ -519,6 +589,7 @@ mod tests {
             &live_state,
             &connectivity,
             &Rc::new(RadioLiveCells::default()),
+            &Rc::new(RadioLiveCells::default()),
             &query,
         );
 
@@ -554,6 +625,7 @@ mod tests {
             &live_state,
             &connectivity,
             &Rc::new(RadioLiveCells::default()),
+            &Rc::new(RadioLiveCells::default()),
             &query,
         );
 
@@ -582,6 +654,7 @@ mod tests {
             &view,
             &live_state,
             &connectivity,
+            &Rc::new(RadioLiveCells::default()),
             &Rc::new(RadioLiveCells::default()),
             &query,
         );

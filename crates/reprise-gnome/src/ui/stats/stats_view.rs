@@ -328,6 +328,22 @@ impl StatsView {
         );
     }
 
+    /// Reissues artwork requests for the ranking already on screen without
+    /// rerunning the statistics query or warming a hidden page.
+    pub(in crate::ui) fn refresh_visible_artwork(&self) {
+        if !self.root.is_mapped() {
+            return;
+        }
+        let spotlight = self
+            .current_snapshot
+            .borrow()
+            .as_ref()
+            .and_then(|snapshot| snapshot.spotlight.clone());
+        if let Some(spotlight) = spotlight {
+            self.render.bands_row.set_data(&spotlight);
+        }
+    }
+
     pub(in crate::ui) fn prepare_entrance(&self) {
         self.entrance_pending.set(true);
     }

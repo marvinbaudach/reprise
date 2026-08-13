@@ -345,6 +345,14 @@ impl PodcastsView {
         }
     }
 
+    /// Rebinds the rows already held by a visible source page so their image
+    /// requests see a newly opened Artwork gate. Hidden pages stay cold.
+    pub(in crate::ui) fn refresh_visible_artwork(&self) {
+        if self.root.is_mapped() {
+            self.render();
+        }
+    }
+
     fn wire_controls(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         self.refresh_button.connect_clicked(move |_| {

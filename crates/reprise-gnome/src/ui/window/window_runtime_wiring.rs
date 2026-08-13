@@ -137,7 +137,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         preferences,
     );
     super::startup_report::mark("source_connectivity::wire");
-    artwork_permission_wiring::wire(preferences, cover_batch);
+    artwork_permission_wiring::wire(
+        preferences,
+        cover_batch,
+        &stats_view,
+        podcasts_view,
+        youtube_view,
+        radio_view,
+    );
 
     let refresh_doctor_views = {
         let stats = stats_view.clone();
