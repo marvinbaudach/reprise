@@ -142,7 +142,7 @@ internal fun AlbumDetailPage(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MaterialSymbol("arrow_back", "Back to albums")
+            MaterialSymbol("arrow_back", "Back")
             Text(selectedAlbum.album.title, style = MaterialTheme.typography.titleLarge)
         }
         Text(

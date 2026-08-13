@@ -84,7 +84,7 @@ class ArtistDetailSurfaceTest {
         compose.onNodeWithText(target.title).performClick()
 
         assertEquals(listOf(target), opened)
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Dinosaur Act").assertIsDisplayed()
     }
 
@@ -144,7 +144,7 @@ class ArtistDetailSurfaceTest {
 
         compose.onNodeWithText("The Curtain Hits the Cast").performClick()
 
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Over the Ocean").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to artists").assertDoesNotExist()
     }

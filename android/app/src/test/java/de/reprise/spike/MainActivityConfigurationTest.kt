@@ -215,7 +215,7 @@ class MainActivityConfigurationTest {
         recreateAt("w916dp-h412dp-land")
 
         // Still inside the album, and still where it was left.
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
         compose.onNodeWithText("Album Song 1").assertDoesNotExist()
     }
@@ -260,9 +260,9 @@ class MainActivityConfigurationTest {
 
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Back to albums").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
     }
@@ -281,7 +281,7 @@ class MainActivityConfigurationTest {
         application.catalogSize = CATALOG_SIZE + 1
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithContentDescription("Back to albums").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
         compose.onNodeWithText("Album Song 1").assertDoesNotExist()
         compose.onNodeWithText("Artist 1").assertIsDisplayed()
     }

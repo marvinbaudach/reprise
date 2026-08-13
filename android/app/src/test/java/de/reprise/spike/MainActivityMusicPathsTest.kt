@@ -54,7 +54,7 @@ class MainActivityMusicPathsTest {
         compose.onNodeWithText("Artist 1 • First Album").assertDoesNotExist()
         compose.onNodeWithText("Someone Else · Album").assertDoesNotExist()
         compose.onNodeWithText("First Album").performClick()
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Artist One · First Album").assertIsDisplayed()
 
         compose.activityRule.scenario.recreate()
@@ -63,7 +63,7 @@ class MainActivityMusicPathsTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
 
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Artist One · First Album").assertIsDisplayed()
     }
 
@@ -78,7 +78,7 @@ class MainActivityMusicPathsTest {
         assertEquals(0, application.currentQueueIndex)
         assertEquals(200, application.currentQueue.size)
 
-        compose.onNodeWithContentDescription("Back to albums").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("First Album").performClick()
         compose.onNodeWithContentDescription("Play First Album").performClick()
 
@@ -96,7 +96,7 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
 
         application.service.publish(m9bSnapshot(1))
         shadowOf(Looper.getMainLooper()).idle()
@@ -108,13 +108,13 @@ class MainActivityMusicPathsTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag("now-playing-transport").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
 
         compose.activity.onBackPressedDispatcher.onBackPressed()
         compose.waitForIdle()
 
         assertEquals(Lifecycle.State.RESUMED, compose.activityRule.scenario.state)
-        compose.onNodeWithContentDescription("Back to albums").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
         compose.onNodeWithText("Deep Album").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to artists").performClick()
 

@@ -53,7 +53,7 @@ class ArtistSearchActivityTest {
 
         album.performClick()
 
-        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Album Song 1").assertIsDisplayed()
     }
 }
