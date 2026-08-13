@@ -106,6 +106,40 @@ impl PlayerController {
         );
         self.notify_queue_changed();
     }
+
+    /// Returns to the item a history back-step left. `false` means ordinary
+    /// queue advance should handle Next instead.
+    pub(in crate::ui) fn forward_from_history(self: &Rc<Self>) -> bool {
+        let target = {
+            let mut state = self.history.borrow_mut();
+            if !state.history.can_go_forward() {
+                return false;
+            }
+            state.navigating = true;
+            state.history.step_forward()
+        };
+        let Some(target) = target else {
+            self.history.borrow_mut().navigating = false;
+            return false;
+        };
+        let sequence = self.queue.borrow().sequence_identity();
+        if let Some(position) = target.playhead_in(sequence) {
+            self.queue.borrow_mut().jump_to_order_position(position);
+        }
+        self.current_up_next
+            .set(target.from_up_next.then_some(target.item));
+        tracing::info!(
+            item = ?target.item,
+            "next stepped forward through the playback history"
+        );
+        self.present_queue_item(
+            target.item,
+            StartPlayback::Yes,
+            crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+        );
+        self.notify_queue_changed();
+        true
+    }
 }
 
 #[cfg(test)]
@@ -205,5 +239,56 @@ mod tests {
         note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
         assert_eq!(state.history.back_len(), 0);
         assert!(!queue.is_empty());
+    }
+
+    #[test]
+    fn play_14_forward_after_a_back_jump_returns_the_same_three_tracks() {
+        let queue = context(&[10, 20, 30, 40], 0);
+        let mut state = HistoryState::default();
+        for id in [10, 20, 30, 40] {
+            note(&mut state, entry_for(&queue, QueueItem::Track(id), false));
+        }
+        let back: Vec<_> = (0..3)
+            .filter_map(|_| state.history.step_back().map(|held| held.item))
+            .collect();
+        assert_eq!(
+            back,
+            vec![
+                QueueItem::Track(30),
+                QueueItem::Track(20),
+                QueueItem::Track(10)
+            ]
+        );
+        let forward: Vec<_> = (0..3)
+            .filter_map(|_| state.history.step_forward().map(|held| held.item))
+            .collect();
+        assert_eq!(
+            forward,
+            vec![
+                QueueItem::Track(20),
+                QueueItem::Track(30),
+                QueueItem::Track(40)
+            ]
+        );
+    }
+
+    #[test]
+    fn play_14_an_ordinary_advance_leaves_no_forward_step_behind() {
+        let queue = context(&[10, 20, 30], 0);
+        let mut state = HistoryState::default();
+        note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
+        note(&mut state, entry_for(&queue, QueueItem::Track(20), false));
+        state.navigating = true;
+        state.history.step_back();
+        note(&mut state, entry_for(&queue, QueueItem::Track(10), false));
+        assert!(state.history.can_go_forward());
+
+        note(&mut state, entry_for(&queue, QueueItem::Track(30), false));
+        assert!(!state.history.can_go_forward());
+    }
+
+    #[test]
+    fn play_14_the_controller_exposes_the_forward_history_transport() {
+        let _transport = PlayerController::forward_from_history;
     }
 }

@@ -387,6 +387,9 @@ impl PlayerController {
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(in crate::ui) fn next(self: &Rc<Self>) {
+        if self.forward_from_history() {
+            return;
+        }
         if self.playback_mode() != super::preview::PlaybackMode::Queue {
             return;
         }
