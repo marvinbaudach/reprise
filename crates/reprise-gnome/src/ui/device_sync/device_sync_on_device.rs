@@ -4,6 +4,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use libadwaita as adw;
 use reprise_core::device_sync::{summarize_playlist_selection, StorageProjectionState};
 
 use super::device_sync_content_copy::playlist_result_text;
@@ -280,8 +281,8 @@ fn card_content() -> gtk4::Box {
     content
 }
 
-fn card(child: &impl IsA<gtk4::Widget>) -> libadwaita::Bin {
-    let card = libadwaita::Bin::builder().child(child).build();
+fn card(child: &impl IsA<gtk4::Widget>) -> adw::Bin {
+    let card = adw::Bin::builder().child(child).build();
     card.add_css_class("card");
     card
 }
