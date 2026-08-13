@@ -204,6 +204,19 @@ to expose GVfs MTP. The manifest must contain exactly
 host filesystem access, and broad session/system bus access are forbidden by the
 release check.
 
+## AUR metadata
+
+Regenerate `packaging/aur/.SRCINFO` whenever `packaging/aur/PKGBUILD` or the
+Meson install set changes:
+
+```sh
+cd packaging/aur
+makepkg --printsrcinfo > .SRCINFO
+```
+
+Review and push the separate AUR mirror by hand as documented in
+`packaging/aur/README.md`. Release tooling must not push it.
+
 ## Manual GNOME QA
 
 Use disposable test music and a disposable XDG data directory where practical.
