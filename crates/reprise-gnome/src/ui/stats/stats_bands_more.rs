@@ -20,6 +20,8 @@ pub(super) struct ContinuationRow {
     #[cfg(test)]
     pub(super) unify_button: gtk4::Button,
     #[cfg(test)]
+    pub(super) bar: gtk4::LevelBar,
+    #[cfg(test)]
     artist: String,
 }
 
@@ -69,7 +71,8 @@ pub(super) fn build_row(
     bar.set_max_value(1.0);
     let metric = super::stats_bands_row::artist_metric(artist, sort_by);
     bar.set_value(share_of_leader(metric, leader_metric));
-    bar.set_size_request(90, -1);
+    bar.set_size_request(90, 8);
+    bar.set_valign(gtk4::Align::Center);
     line.append(&bar);
 
     let value = gtk4::Label::new(Some(&metric_text(artist, sort_by)));
@@ -121,6 +124,8 @@ pub(super) fn build_row(
         open_button,
         #[cfg(test)]
         unify_button,
+        #[cfg(test)]
+        bar,
         #[cfg(test)]
         artist: artist.group.label.clone(),
     }

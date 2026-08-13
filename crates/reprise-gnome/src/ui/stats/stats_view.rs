@@ -95,6 +95,8 @@ impl StatsView {
 
         let artist_image = StatsArtistImage::new(cover_loader.clone());
         let bands_card = StatsBandsCard::new(artist_image.clone());
+        let bands_section = card(bands_card.widget());
+        bands_section.set_hexpand(true);
         let genres = StatsGenreCard::new();
         let genres_section = card(genres.widget());
 
@@ -111,7 +113,7 @@ impl StatsView {
         // STATS-22: expanding the ranking is the songs card's own business —
         // the page has three sections whether it is open or closed.
         let sections = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
-        sections.append(bands_card.widget());
+        sections.append(&bands_section);
         sections.append(&songs_section);
         sections.append(&genres_section);
 
@@ -182,6 +184,7 @@ impl StatsView {
             header: header.clone(),
             hero: hero.clone(),
             bands_card: bands_card.clone(),
+            bands_section: bands_section.clone(),
             artist_image,
             genres_section_data: genres.clone(),
             songs_card: songs_card.clone(),
@@ -395,17 +398,9 @@ impl StatsView {
             .expect("stats content stack must own its sections page");
         let mut child = sections.first_child();
         while let Some(widget) = child {
-            // Both sections are the section child itself now, not a card
-            // wrapped around one — `is_ancestor` is false for a widget
-            // against itself, so these compare by identity.
-            if widget
-                == self
-                    .render
-                    .bands_card
-                    .widget()
-                    .clone()
-                    .upcast::<gtk4::Widget>()
-            {
+            // The ranking sections are the section child itself, so compare
+            // their wrappers by identity rather than ancestry.
+            if widget == self.render.bands_section.clone().upcast::<gtk4::Widget>() {
                 order.push("bands");
             } else if widget == self.render.songs_section.clone().upcast::<gtk4::Widget>() {
                 order.push("songs");
@@ -430,6 +425,7 @@ struct RenderParts {
     header: StatsHeader,
     hero: StatsHero,
     bands_card: StatsBandsCard,
+    bands_section: gtk4::Box,
     artist_image: Rc<StatsArtistImage>,
     genres_section_data: StatsGenreCard,
     songs_card: StatsSongsCard,
@@ -487,10 +483,10 @@ fn refresh_parts(
 fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: bool) {
     if snapshot.top_artists.is_empty() {
         render.bands_card.clear_data();
-        render.bands_card.widget().set_visible(false);
+        render.bands_section.set_visible(false);
     } else {
         render.bands_card.set_data(snapshot);
-        render.bands_card.widget().set_visible(true);
+        render.bands_section.set_visible(true);
     }
     render.genres_section_data.set_data(&snapshot.genres);
     render

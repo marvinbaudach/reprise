@@ -157,6 +157,20 @@ fn stats_23_continuation_controls_use_shared_states_and_accessibility() {
     ));
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_continuation_bar_matches_the_song_ranking_geometry() {
+    gtk4::init().unwrap();
+    let (card, snapshot) = card_and_snapshot_with(6);
+
+    card.set_data(&snapshot);
+    card.reveal_button.emit_clicked();
+    let rows = card.state.rows.borrow();
+
+    assert_eq!(rows[0].bar.height_request(), 8);
+    assert_eq!(rows[0].bar.valign(), gtk4::Align::Center);
+}
+
 fn card_and_full_ranking_snapshot() -> (StatsBandsCard, StatsSnapshot) {
     let conn = crate::test_db::open().unwrap();
     for (id, artist, duration_ms, plays) in [
