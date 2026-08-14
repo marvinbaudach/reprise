@@ -40,10 +40,16 @@ impl ReviewSnapshot {
         for (position, row) in rows.iter().enumerate() {
             let position = u32::try_from(position).expect("review row count fits u32");
             for row_id in &row.row_ids {
-                debug_assert!(
-                    index.insert(*row_id, position).is_none(),
-                    "a review row id belongs to exactly one display row"
-                );
+                if let Some(first_position) = index.get(row_id).copied() {
+                    tracing::error!(
+                        ?row_id,
+                        first_position,
+                        duplicate_position = position,
+                        "Library Doctor review row id belongs to multiple display rows"
+                    );
+                } else {
+                    index.insert(*row_id, position);
+                }
             }
             let album = albums.entry(row.album_key.clone()).or_default();
             album.selected += row.selected_change_count;

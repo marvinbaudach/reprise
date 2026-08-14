@@ -13,7 +13,7 @@ use reprise_core::library_doctor::{DoctorReviewFilter, DoctorReviewSession};
 
 use super::super::review_model::{grouped_rows_for, ReviewCategory, ReviewRowModel};
 use super::super::review_row::contract_tests::{album_change_scan, conflict_scan};
-use super::super::review_snapshot::ReviewSnapshot;
+use super::super::review_snapshot::{splice_selection_rows, ReviewSnapshot};
 use super::{compare_rows, LibraryDoctorReviewPage};
 
 fn sorted_count_for(
@@ -99,6 +99,50 @@ fn review_snapshot_selection_diff_changes_only_selection_facts() {
     assert!(updated.albums.values().all(|album| album.selected == 0));
     assert_eq!(updated.totals.changes, snapshot.totals.changes);
     assert_eq!(updated.totals.albums, snapshot.totals.albums);
+}
+
+#[test]
+fn review_snapshot_duplicate_row_id_keeps_first_store_position() {
+    let scan = album_change_scan();
+    let mut session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+    let mut rows = grouped_rows_for(&scan, &session, &HashMap::new());
+    rows.truncate(2);
+    assert_eq!(rows.len(), 2, "the fixture must produce two display rows");
+    let shared_id = rows[0].row_ids[0];
+    assert_ne!(rows[1].row_ids[0], shared_id);
+    rows[1].row_ids.push(shared_id);
+
+    let snapshot = ReviewSnapshot::from_rows(rows);
+    let store = gio::ListStore::new::<glib::Object>();
+    let objects = snapshot
+        .rows
+        .iter()
+        .cloned()
+        .map(|row| glib::BoxedAnyObject::new(row).upcast::<glib::Object>())
+        .collect::<Vec<_>>();
+    store.splice(0, 0, &objects);
+
+    session.none();
+    let changed = snapshot.selection_diff(&session);
+    assert_eq!(
+        changed
+            .iter()
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>(),
+        vec![0, 1],
+        "a duplicate row id must retain its first display position"
+    );
+    splice_selection_rows(&store, &changed, snapshot.rows.len());
+    for (position, replacement) in changed {
+        let stored = store
+            .item(position)
+            .unwrap()
+            .downcast::<glib::BoxedAnyObject>()
+            .unwrap();
+        let stored = stored.borrow::<ReviewRowModel>();
+        assert_eq!(stored.row.id, replacement.row.id);
+        assert_eq!(stored.row.selected, replacement.row.selected);
+    }
 }
 
 #[test]
