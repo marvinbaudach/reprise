@@ -1,0 +1,32 @@
+reference empty-md5  d41d8cd98f00b204e9800998ecf8427e colours=   236 bytes=16802
+reference oceano     415714b66a5de709809dd3d05f58afe4 colours=   213 bytes=14563
+
+reference-to-reference: dhash=16 ahash=2
+
+artist                   identifier                             fans  colours        dHash        aHash
+Suicide Silence          4650083eb25b840cf7a7ea977916c820     325468    95048    21/29        40/42    
+Asking Alexandria        8b4e3a39848be8ecac941e0ce5639d5d     630328    50603    21/21        17/19    
+Woe, Is Me               358fd701afabce6e9c4638b5c0e3fed6      27136    31439    26/26        28/28    
+Oceano                   68526b594bc647dea90845bf08c4dd67       2347    19032    26/28        44/46    
+A Day to Remember        aaa15d668fb06f9e02816f606b6122b8     489283    51490    28/36        18/18    
+Electric Callboy         c043f010f24c5c9c2c4fabd49f2e9479     152739   121220    28/30        22/22    
+Chelsea Grin             6c5e6d3478c72f8cbffd3ec1d1a6549d          6   167739    29/31        26/28    
+Lorna Shore              5d670c3280ab0a80c80d39e50ce5cb85      68548     1972    34/30        23/25    
+The Browning             e6512732ab5cc8d1727d083485c065a4      16924    37956    30/34        31/33    
+Oceano                   94c084faa8059fa032d0dfe8371f9983          6    76464    30/30        25/27    
+Until I Wake             31b347bf5f862344fa407b24356eecdc       2883    33163    30/32        34/36    
+Falling in Reverse       0d156d38a772589703669d9e5c2ac747     525699      256    31/33        55/55    
+The Devil Wears Prada    ce8738d5e5bfbfa515d9ba9ec4a0c62a      90776   153739    37/31        45/43    
+Chelsea Grin             e594fd1a90fca0d49be47724e3d3bd3c      93599    42995    31/35        44/46    
+Dead by April            7f79c1dcb6c8f85f35613eff645cebcc      74717    43894    31/35        38/40    
+Annisokay                eab0f74db967c88b1abe5b365c3bb460      25117    32320    34/32        34/34    
+Bring Me The Horizon     d159e783c1f419ae27fd2deca5b89b54    1305944    26811    32/32        31/33    
+Bury Tomorrow            e7dc5e9d8f85d33bf249b016c8de7c0c      58382   106462    40/32        27/29    
+Chelsea Grin             81f6a2f66fc76507326a333ff9d156f5          7   113957    33/37        43/41    
+As I Lay Dying           cfdc9597ad843b83c501172c94b0ca7c     121478    80945    36/34        46/44    
+Woe, Is Me               f03e6ab2e55583288cacf14bdb1b45f5       1330   116830    42/36        28/30    
+From Ashes to New        f22bca7c96b2ca684cb354c68923dc14      68094    56964    38/38        26/28    
+
+candidates measured: 22
+closest non-reference dHash distance to a silhouette: 21
+candidates under 1000 unique colours: 1 [('Falling in Reverse', 256)]
