@@ -14,10 +14,13 @@ binary="$repo_root/target/debug/reprise"
 case "$run_label" in
   before) expected_cache_files=0 ;;
   after) expected_cache_files=3 ;;
-  *) expected_cache_files= ;;
+  *)
+    echo "RADIO_FAVICON_OUT_DIR must end in 'before' or 'after', got: $run_label" >&2
+    exit 2
+    ;;
 esac
 
-required_commands=(cargo convert curl dbus-run-session import openbox sqlite3 Xvfb xdotool)
+required_commands=(cargo convert curl dbus-run-session git import openbox sqlite3 timeout Xvfb xdotool)
 for command_name in "${required_commands[@]}"; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "missing required command: $command_name" >&2
@@ -29,7 +32,20 @@ if [[ ! -f $repo_root/Cargo.toml ]]; then
   exit 2
 fi
 
-mkdir -p "$out_dir"
+if [[ -e $out_dir && ! -d $out_dir ]]; then
+  echo "evidence path is not a directory: $out_dir" >&2
+  exit 2
+fi
+if [[ -d $out_dir && ! -O $out_dir ]]; then
+  echo "evidence directory is not owned by the current user: $out_dir" >&2
+  exit 2
+fi
+mkdir -p -m 0700 "$out_dir"
+if [[ ! -O $out_dir ]]; then
+  echo "evidence directory is not owned by the current user: $out_dir" >&2
+  exit 2
+fi
+chmod 0700 "$out_dir"
 scratch_root=$(mktemp -d "${TMPDIR:-/tmp}/reprise-radio-favicons.XXXXXX")
 xdg_data="$scratch_root/xdg-data"
 xdg_config="$scratch_root/xdg-config"
@@ -123,13 +139,19 @@ if [[ $(grep -c '^200 0$' "$preflight") -ne 3 ]]; then
 fi
 
 # Open the app once so Core creates and migrates the disposable database.
-timeout --foreground 20s dbus-run-session -- env \
-  DISPLAY="$display" GDK_BACKEND=x11 WAYLAND_DISPLAY= \
+setsid timeout --foreground 20s dbus-run-session -- env -u WAYLAND_DISPLAY \
+  DISPLAY="$display" GDK_BACKEND=x11 \
   XDG_DATA_HOME="$xdg_data" XDG_CONFIG_HOME="$xdg_config" XDG_CACHE_HOME="$xdg_cache" \
   GSETTINGS_BACKEND=memory GTK_A11Y=none NO_AT_BRIDGE=1 REPRISE_AUDIO_SINK=fakesink \
   REPRISE_SMOKE_FIRST_RUN=skip \
   REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=2 \
-  "$binary" >"$out_dir/schema-$run_label.log" 2>&1
+  "$binary" >"$out_dir/schema-$run_label.log" 2>&1 &
+app_pid=$!
+if ! wait "$app_pid"; then
+  echo "schema-establishing run failed; see $out_dir/schema-$run_label.log" >&2
+  exit 1
+fi
+app_pid=
 
 if [[ ! -f $database ]]; then
   echo "schema run did not create $database" >&2
@@ -163,6 +185,13 @@ VALUES
    1786651202, NULL);
 SQL
 
+seeded_stations=$(sqlite3 "$database" \
+  'SELECT count(*) FROM radio_stations WHERE favicon_url IS NOT NULL AND removed_at IS NULL;')
+if [[ $seeded_stations -ne 3 ]]; then
+  echo "radio seed failed: expected 3 active stations with favicons, found $seeded_stations" >&2
+  exit 1
+fi
+
 if [[ -d $cache_dir ]] && find "$cache_dir" -type f -print -quit | grep -q .; then
   echo "cold-start precondition failed: persistent image cache is not empty" >&2
   exit 1
@@ -170,8 +199,8 @@ fi
 
 {
   printf 'app: '
-  quote_command setsid dbus-run-session -- env \
-    DISPLAY="$display" GDK_BACKEND=x11 WAYLAND_DISPLAY= \
+  quote_command setsid dbus-run-session -- env -u WAYLAND_DISPLAY \
+    DISPLAY="$display" GDK_BACKEND=x11 \
     XDG_DATA_HOME="$xdg_data" XDG_CONFIG_HOME="$xdg_config" XDG_CACHE_HOME="$xdg_cache" \
     GSETTINGS_BACKEND=memory GTK_A11Y=none NO_AT_BRIDGE=1 \
     REPRISE_AUDIO_SINK=fakesink REPRISE_LOG=debug \
@@ -180,8 +209,8 @@ fi
 } >> "$command_evidence"
 
 start_time=$SECONDS
-setsid dbus-run-session -- env \
-  DISPLAY="$display" GDK_BACKEND=x11 WAYLAND_DISPLAY= \
+setsid dbus-run-session -- env -u WAYLAND_DISPLAY \
+  DISPLAY="$display" GDK_BACKEND=x11 \
   XDG_DATA_HOME="$xdg_data" XDG_CONFIG_HOME="$xdg_config" XDG_CACHE_HOME="$xdg_cache" \
   GSETTINGS_BACKEND=memory GTK_A11Y=none NO_AT_BRIDGE=1 \
   REPRISE_AUDIO_SINK=fakesink REPRISE_LOG=debug \
@@ -238,12 +267,17 @@ if ! grep 'smoke: opening detail view through sidebar source routing' "$plain_lo
 fi
 
 if [[ -d $cache_dir ]]; then
-  cache_count=$(find "$cache_dir" -type f | wc -l)
+  cache_count=$(find "$cache_dir" -maxdepth 1 -type f ! -name '.*' | wc -l)
+  incomplete_count=$(find "$cache_dir" -maxdepth 1 -type f -name '.*.tmp' | wc -l)
 else
   cache_count=0
+  incomplete_count=0
 fi
 printf '%s\n' "$cache_count" > "$cache_evidence"
-if [[ -n $expected_cache_files && $cache_count -ne $expected_cache_files ]]; then
+if [[ $incomplete_count -ne 0 ]]; then
+  echo "warning: found $incomplete_count incomplete cache download(s)" >&2
+fi
+if [[ $cache_count -ne $expected_cache_files ]]; then
   echo "expected $expected_cache_files persistent cache files for $run_label, found $cache_count" >&2
   exit 1
 fi
