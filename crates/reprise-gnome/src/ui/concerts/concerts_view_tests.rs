@@ -123,7 +123,7 @@ fn conc_16_the_source_column_is_available_but_off_by_default() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn conc_4b_app_location_broadcast_re_evaluates_the_open_view() {
+fn conc_4c_app_location_broadcast_re_evaluates_the_open_view() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
