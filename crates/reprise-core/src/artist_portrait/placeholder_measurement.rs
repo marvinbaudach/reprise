@@ -41,6 +41,7 @@ fn measure_external_portrait_corpus_and_emit_references() {
 
     writeln!(report, "portrait placeholder fingerprint Rust measurement").unwrap();
     writeln!(report, "thumbnail=32x32 grayscale Lanczos3").unwrap();
+    writeln!(report, "decode=single shared image decode").unwrap();
     writeln!(report, "distance=normalized RMSE").unwrap();
     writeln!(
         report,
@@ -71,8 +72,9 @@ fn measure_external_portrait_corpus_and_emit_references() {
     for row in rows {
         let bytes = std::fs::read(corpus.join(format!("{}.jpg", row.identifier)))
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", row.identifier));
-        let distance = placeholder_distance(&bytes)
+        let image = crate::cover_download::decode_image(&bytes)
             .unwrap_or_else(|| panic!("failed to decode {}", row.identifier));
+        let distance = placeholder_distance(image.image());
         match row.expected {
             ExpectedKind::Placeholder => {
                 placeholders += 1;
@@ -188,7 +190,9 @@ fn read_thumbnail(corpus: &Path, identifier: &str) -> [u8; 1024] {
     let path = corpus.join(format!("{identifier}.jpg"));
     let bytes = std::fs::read(&path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-    thumbnail(&bytes).unwrap_or_else(|| panic!("failed to decode {}", path.display()))
+    let image = crate::cover_download::decode_image(&bytes)
+        .unwrap_or_else(|| panic!("failed to decode {}", path.display()));
+    thumbnail(image.image())
 }
 
 fn read_rows(path: &Path) -> Vec<CorpusRow> {

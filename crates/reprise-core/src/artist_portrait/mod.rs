@@ -138,7 +138,10 @@ where
         Ok(bytes) => bytes,
         Err(error) => return stale_or(cached_path, error.into()),
     };
-    let placeholder_distance = placeholder::placeholder_distance(&bytes);
+    let decoded_image = crate::cover_download::decode_image(&bytes);
+    let placeholder_distance = decoded_image
+        .as_ref()
+        .map(|decoded| placeholder::placeholder_distance(decoded.image()));
     if let Some(distance) =
         placeholder_distance.filter(|distance| *distance <= placeholder::PLACEHOLDER_RMSE_MAX)
     {
@@ -150,13 +153,23 @@ where
             "artist portrait rejected as a known Deezer placeholder"
         );
         if let Some(path) = cached_path.as_ref().filter(|path| path.exists()) {
-            let refreshed = cache::refresh_image(dir, name, path).unwrap_or_else(|| path.clone());
+            let refreshed = cache::refresh_image(dir, name, path).unwrap_or_else(|| {
+                tracing::warn!(
+                    artist = name,
+                    cached_path = %path.display(),
+                    "artist portrait could not refresh the cached image after placeholder rejection"
+                );
+                path.clone()
+            });
             return Ok(PortraitOutcome::Found(refreshed));
         }
         cache::write_negative(dir, name);
         return Ok(PortraitOutcome::NotFound);
     }
-    let Some(extension) = crate::cover_download::validated_image_extension(&bytes) else {
+    let Some(extension) = decoded_image
+        .as_ref()
+        .and_then(crate::cover_download::DecodedImage::validated_extension)
+    else {
         cache::write_negative(dir, name);
         return Ok(PortraitOutcome::NotFound);
     };
@@ -297,6 +310,20 @@ mod tests {
     }
 
     #[test]
+    fn downloaded_invalid_image_writes_a_negative_outcome() {
+        let dir = tmp();
+        let mut search = |_: &str| Ok(HIT.to_string());
+        let mut download = |_: &str| Ok(b"not an image".to_vec());
+
+        let outcome = load_or_fetch_with("Band", 1_000, &dir, &mut search, &mut download).unwrap();
+
+        assert!(matches!(outcome, PortraitOutcome::NotFound));
+        assert!(cache::portrait_path_in(&dir, "Band").is_none());
+        assert!(cache::negative_marker_path(&dir, "Band").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn downloaded_placeholder_without_cached_portrait_writes_one_negative_outcome() {
         let dir = tmp();
         let logs = crate::log_capture::CapturedLogs::default();
@@ -349,6 +376,35 @@ mod tests {
         assert_eq!(std::fs::read(&cached).unwrap(), b"existing portrait");
         assert!(std::fs::metadata(&cached).unwrap().modified().unwrap() > before_modified);
         assert!(!cache::negative_marker_path(&dir, "Band").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn failed_cached_portrait_refresh_emits_a_warning() {
+        let dir = tmp();
+        let cached = cache::store_image(&dir, "Band", b"existing portrait", "jpg").unwrap();
+        let stale_now = cache::file_epoch_secs(&cached) + 31 * 24 * 60 * 60;
+        let logs = crate::log_capture::CapturedLogs::default();
+        let mut search = |_: &str| Ok(HIT.to_string());
+        let mut download = |_: &str| {
+            std::fs::remove_file(&cached).unwrap();
+            std::fs::create_dir(&cached).unwrap();
+            Ok(placeholder_png(0))
+        };
+
+        let outcome = logs
+            .capture(|| load_or_fetch_with("Band", stale_now, &dir, &mut search, &mut download))
+            .unwrap();
+
+        match outcome {
+            PortraitOutcome::Found(path) => assert_eq!(path, cached),
+            PortraitOutcome::NotFound => panic!("expected the stale cache path"),
+        }
+        let logs = logs.joined();
+        assert!(logs.contains("artist portrait could not refresh the cached image"));
+        assert!(logs.contains("Band"));
+        assert!(logs.contains("cached_path"));
+        assert!(logs.contains(&cached.display().to_string()));
         std::fs::remove_dir_all(&dir).ok();
     }
 

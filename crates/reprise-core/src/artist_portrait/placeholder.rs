@@ -1,4 +1,4 @@
-use image::imageops::FilterType;
+use image::{imageops::FilterType, DynamicImage};
 
 pub(super) const THUMBNAIL_WIDTH: u32 = 32;
 pub(super) const THUMBNAIL_HEIGHT: u32 = 32;
@@ -130,28 +130,38 @@ pub(super) const REFERENCE_THUMBNAILS: [[u8; PIXEL_COUNT]; 2] =
 pub(super) const PLACEHOLDER_RMSE_MAX: f64 = 0.0025;
 pub(super) const PLACEHOLDER_WARNING_RMSE_MAX: f64 = 0.05;
 
-pub(super) fn placeholder_distance(bytes: &[u8]) -> Option<f64> {
-    let thumbnail = thumbnail(bytes)?;
+pub(super) fn placeholder_distance(image: &DynamicImage) -> f64 {
+    let thumbnail = thumbnail(image);
     REFERENCE_THUMBNAILS
         .iter()
         .map(|reference| normalized_rmse(&thumbnail, reference))
         .reduce(f64::min)
+        .expect("the placeholder reference set must not be empty")
 }
 
 #[cfg(test)]
 pub(super) fn looks_like_placeholder(bytes: &[u8]) -> bool {
-    placeholder_distance(bytes).is_some_and(|distance| distance <= PLACEHOLDER_RMSE_MAX)
+    image::load_from_memory(bytes)
+        .ok()
+        .is_some_and(|image| placeholder_distance(&image) <= PLACEHOLDER_RMSE_MAX)
 }
 
-pub(super) fn thumbnail(bytes: &[u8]) -> Option<[u8; PIXEL_COUNT]> {
-    let grey = image::load_from_memory(bytes).ok()?.to_luma8();
-    let resized = image::imageops::resize(
-        &grey,
-        THUMBNAIL_WIDTH,
-        THUMBNAIL_HEIGHT,
-        FilterType::Lanczos3,
-    );
-    resized.into_raw().try_into().ok()
+pub(super) fn thumbnail(image: &DynamicImage) -> [u8; PIXEL_COUNT] {
+    let grey = image.to_luma8();
+    let pixels = if grey.dimensions() == (THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT) {
+        grey.into_raw()
+    } else {
+        image::imageops::resize(
+            &grey,
+            THUMBNAIL_WIDTH,
+            THUMBNAIL_HEIGHT,
+            FilterType::Lanczos3,
+        )
+        .into_raw()
+    };
+    pixels
+        .try_into()
+        .expect("the portrait thumbnail dimensions must match PIXEL_COUNT")
 }
 
 fn normalized_rmse(left: &[u8; PIXEL_COUNT], right: &[u8; PIXEL_COUNT]) -> f64 {
@@ -192,6 +202,15 @@ mod tests {
     }
 
     #[test]
+    fn exact_size_fixture_pixels_are_not_resampled() {
+        let reference = REFERENCE_THUMBNAILS[0];
+        let image =
+            GrayImage::from_raw(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, reference.to_vec()).unwrap();
+
+        assert_eq!(thumbnail(&image.into()), reference);
+    }
+
+    #[test]
     fn clearly_different_pattern_is_accepted() {
         let checkerboard = GrayImage::from_fn(320, 320, |x, y| {
             image::Luma([if (x / 16 + y / 16) % 2 == 0 { 0 } else { 255 }])
@@ -202,7 +221,6 @@ mod tests {
 
     #[test]
     fn undecodable_bytes_are_left_to_image_validation() {
-        assert_eq!(placeholder_distance(b"not an image"), None);
         assert!(!looks_like_placeholder(b"not an image"));
     }
 }

@@ -1,5 +1,6 @@
 portrait placeholder fingerprint Rust measurement
 thumbnail=32x32 grayscale Lanczos3
+decode=single shared image decode
 distance=normalized RMSE
 required_placeholder_margin=10.0x
 required_photograph_margin=20.0x
