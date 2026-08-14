@@ -2,7 +2,7 @@
 slug: android-reads-during-scan
 worktree: /home/marvin/Projects/reprise-android-reads-during-scan
 branch: feature/android-reads-during-scan
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-14
 ---
@@ -568,7 +568,12 @@ Then:
    returns `LibraryError::TreeNotConfigured` for `None`. Making the drop
    structural is the point: no caller can hold the tree lock across work.
 3. `scan` (`lib.rs:114-142`): `writer()` **first**, then `configured_tree()` (D3).
-   Add the lock-order rule as a doc comment on the struct.
+   Add the lock-order rule as a comment on the struct — an ordinary `//`
+   comment, **not** `///`. Corrected 2026-08-14 during the code phase: the
+   struct carries `#[derive(uniffi::Object)]`, and UniFFI copies doc comments
+   into the generated Kotlin, so a `///` here breaks Task 5's byte-identical
+   binding proof. The rule is for Rust readers; it has no business in the
+   exported surface. `//` satisfies both requirements.
 4. `track_artwork` (`lib.rs:242-246`) and `import_track_analysis`
    (`mobile_sync.rs:8-17`) use `configured_tree()`.
 5. Re-point `artwork_tests.rs:177-193`: it poisons `state` (`artwork_tests.rs:180`)
@@ -636,6 +641,12 @@ device**.
 on the branch head and `diff -r` the two output directories: they must be
 identical. If they are not, this plan has changed the exported surface and §6's
 claim is false — stop and report it rather than adapting the Kotlin.
+
+The one non-surface way to fail this that has actually happened: a `///` doc
+comment on a `#[derive(uniffi::Object)]` type. UniFFI copies those into the
+generated Kotlin, so the diff is non-empty while no signature, record or error
+variant moved. Task 3 step 3 is written to avoid it. If it recurs, the fix is to
+demote the comment to `//`, never to adapt the Kotlin.
 
 **Verify:** quote the counts the script prints
 (`suites=… tests=… failures=… errors=… skips=… verdict=fresh`) and the empty
