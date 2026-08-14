@@ -71,8 +71,8 @@ mod tests {
             FailureSurface::FullArea
         );
         assert_eq!(
-            failure_support(4, Some("Updated 2 h ago")),
-            "Showing saved releases from Updated 2 h ago. Announcement links need a connection."
+            failure_support(4, Some("2026-07-13")),
+            "Showing saved releases from 2026-07-13. Announcement links need a connection."
         );
         assert_eq!(
             failure_support(0, None),

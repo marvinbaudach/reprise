@@ -2530,7 +2530,7 @@ the panel).
   or Space.
   Test: `nr_36_dismissing_a_row_never_opens_its_link`
   (`ui/updates/popover_tests.rs`).
-- **NR-37** [active] [gtk] — replaces NR-22. The Releases view and the
+- **NR-37** [active] [core] [gtk] — replaces NR-22. The Releases view and the
   Updates popover use CONC-15's live-state footer with `releases` and
   `updates` as their unit. There is no "Fetch now" button and no update
   age; the reload icon button carries the manual trigger, and the
