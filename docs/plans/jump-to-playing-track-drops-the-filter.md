@@ -2,7 +2,7 @@
 slug: jump-to-playing-track-drops-the-filter
 worktree: /home/marvin/Projects/reprise-jump-to-playing-track-drops-the-filter
 branch: feature/jump-to-playing-track-drops-the-filter
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
