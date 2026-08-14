@@ -181,9 +181,13 @@ impl ScanProgressView {
             .build();
         percent.add_css_class("scan-card-percent");
 
-        let cancel = gtk4::Button::with_label(&strings::text(strings::CANCEL_SCAN));
-        cancel.add_css_class("flat");
-        cancel.add_css_class("scan-card-cancel");
+        let cancel_label = strings::text(strings::CANCEL_SCAN);
+        let cancel = gtk4::Button::builder()
+            .icon_name(crate::ui::scan_card_css::SIDEBAR_CANCEL_ICON)
+            .tooltip_text(&cancel_label)
+            .css_classes(["flat", "scan-card-cancel"])
+            .build();
+        cancel.update_property(&[gtk4::accessible::Property::Label(&cancel_label)]);
         cancel.set_visible(false);
 
         // The title owns its row. Keeping percentage and Cancel beside it made

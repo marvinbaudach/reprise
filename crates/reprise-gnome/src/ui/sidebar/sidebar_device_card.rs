@@ -186,7 +186,7 @@ impl DeviceCard {
         content.append(&progress_revealer);
 
         let cancel_button = gtk4::Button::builder()
-            .icon_name("process-stop-symbolic")
+            .icon_name(crate::ui::scan_card_css::SIDEBAR_CANCEL_ICON)
             .has_frame(false)
             .build();
         cancel_button.add_css_class("device-card-cancel");

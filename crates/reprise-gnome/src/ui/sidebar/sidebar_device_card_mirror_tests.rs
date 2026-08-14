@@ -410,6 +410,10 @@ fn mtp_63_the_cancel_button_exists_only_while_this_device_syncs() {
     let active = view(PlannedSyncPhase::Finishing);
     card.update(&active);
     assert!(card.cancel_button.is_visible());
+    assert_eq!(
+        card.cancel_button.icon_name().as_deref(),
+        Some(crate::ui::scan_card_css::SIDEBAR_CANCEL_ICON)
+    );
     assert_eq!(card.suffix_stack.margin_end(), ACTIVE_SUFFIX_RESERVATION);
     card.cancel_button.emit_clicked();
     assert_eq!(cancelled.borrow().as_slice(), ["pixel"]);
