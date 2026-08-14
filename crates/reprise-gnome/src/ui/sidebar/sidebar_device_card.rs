@@ -518,3 +518,7 @@ pub(super) mod tests {
 #[cfg(test)]
 #[path = "sidebar_device_card_mirror_tests.rs"]
 mod mirror_tests;
+
+#[cfg(test)]
+#[path = "sidebar_device_card_status_tests.rs"]
+mod status_tests;
