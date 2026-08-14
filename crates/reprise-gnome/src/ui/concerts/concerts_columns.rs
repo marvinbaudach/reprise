@@ -227,6 +227,7 @@ fn text_column(
 
 pub(super) struct SortColumns {
     pub date: gtk4::ColumnViewColumn,
+    pub venue: gtk4::ColumnViewColumn,
     pub distance: gtk4::ColumnViewColumn,
 }
 
@@ -262,7 +263,7 @@ pub(super) fn append_columns(
         |row| row.city.clone(),
         city_tooltip,
     );
-    text_column(
+    let venue = text_column(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_VENUE),
@@ -278,7 +279,11 @@ pub(super) fn append_columns(
     let distance = concerts_status_cells::distance_column(view, radius_source);
     concerts_status_cells::ticket_column(view);
     concerts_status_cells::source_column(view);
-    SortColumns { date, distance }
+    SortColumns {
+        date,
+        venue,
+        distance,
+    }
 }
 
 #[cfg(test)]

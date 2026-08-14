@@ -1,5 +1,13 @@
 use super::*;
 
+fn build_view(conn: Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> ConcertsView {
+    ConcertsView::new(
+        conn,
+        runtime,
+        &Rc::new(crate::ui::location_broadcast::LocationBroadcast::default()),
+    )
+}
+
 fn row_with_links(ticket_url: Option<&str>, event_url: Option<&str>) -> ConcertRow {
     ConcertRow {
         id: 1,
@@ -36,7 +44,9 @@ fn conc_13_a_row_without_a_target_does_not_activate() {
     assert!(!presentation.activatable);
     assert_eq!(presentation.tooltip, "No ticket or event link available");
     assert_eq!(presentation.accessible_description, presentation.tooltip);
-    assert!(!activate_row(&row, &on_open));
+    assert!(!super::super::concerts_activation::activate_row(
+        &row, &on_open
+    ));
     assert_eq!(activations.get(), 0);
 }
 
@@ -73,10 +83,11 @@ fn concerts_view_exposes_seven_columns_and_row_activation() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn.clone(), &runtime);
+    let view = build_view(conn.clone(), &runtime);
     let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
     let stack = root
         .first_child()
+        .and_then(|child| child.next_sibling())
         .and_then(|child| child.next_sibling())
         .and_then(|child| child.next_sibling())
         .and_downcast::<gtk4::Stack>()
@@ -98,7 +109,7 @@ fn conc_16_the_source_column_is_available_but_off_by_default() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn.clone(), &runtime);
+    let view = build_view(conn.clone(), &runtime);
     let model = view.column_model();
 
     assert!(model.columns().iter().any(|column| column.id == "source"));
@@ -106,8 +117,85 @@ fn conc_16_the_source_column_is_available_but_off_by_default() {
     model.set_visible("source", true);
     assert!(model.is_visible("source"));
 
-    let reopened = ConcertsView::new(conn, &runtime);
+    let reopened = build_view(conn, &runtime);
     assert!(reopened.column_model().is_visible("source"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn conc_4b_app_location_broadcast_re_evaluates_the_open_view() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ConcertsRuntime::setup(&conn);
+    let location_broadcast = Rc::new(crate::ui::location_broadcast::LocationBroadcast::default());
+    let view = ConcertsView::new(conn.clone(), &runtime, &location_broadcast);
+    let refreshes = Rc::new(Cell::new(0));
+    view.set_on_refreshed({
+        let refreshes = refreshes.clone();
+        move || refreshes.set(refreshes.get() + 1)
+    });
+
+    reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, DE", Some("DE")).unwrap();
+    location_broadcast.notify();
+
+    assert_eq!(refreshes.get(), 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn conc_2_location_availability_hides_distance_without_overwriting_user_choice() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ConcertsRuntime::setup(&conn);
+    let broadcast = Rc::new(crate::ui::location_broadcast::LocationBroadcast::default());
+    let view = ConcertsView::new(conn.clone(), &runtime, &broadcast);
+
+    view.refresh();
+    assert!(!view.shared.location_columns.distance_visible());
+    assert!(!view.shared.location_columns.distance_sortable());
+    assert!(view.shared.location_columns.venue_expands());
+    assert_eq!(
+        view.shared.location_columns.venue_column_id().as_deref(),
+        Some("venue"),
+        "the Venue column, not City, must absorb the freed width"
+    );
+    assert!(!view
+        .shared
+        .column_model
+        .columns()
+        .iter()
+        .any(|column| column.id == "distance"));
+
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert!(view.shared.location_columns.distance_visible());
+    assert!(view.shared.location_columns.distance_sortable());
+    view.shared
+        .location_columns
+        .sort_by_distance(gtk4::SortType::Descending);
+    reprise_core::location::clear(&conn).unwrap();
+    broadcast.notify();
+    assert_eq!(
+        view.shared.location_columns.primary_sort().0.as_deref(),
+        Some("date")
+    );
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert_eq!(
+        view.shared.location_columns.primary_sort(),
+        (Some("distance".to_owned()), gtk4::SortType::Descending),
+        "restoring location must restore the exact Distance sort"
+    );
+
+    view.shared.column_model.set_visible("distance", false);
+    reprise_core::location::clear(&conn).unwrap();
+    broadcast.notify();
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert!(
+        !view.shared.location_columns.distance_visible(),
+        "restoring location must honor the user's previously hidden Distance column"
+    );
 }
 
 fn insert_event(conn: &Db, id: i64, artist: &str) {
@@ -151,7 +239,7 @@ fn fil_3a_concerts_end_line_counts_concerts_and_recovers_with_clear_all() {
     insert_event(&conn, 1, "Afd Artist");
     insert_event(&conn, 2, "Different Artist");
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn, &runtime);
+    let view = build_view(conn, &runtime);
     let window = gtk4::Window::new();
     window.set_default_size(900, 600);
     window.set_child(Some(view.root()));
@@ -193,7 +281,7 @@ fn fil_3a_the_concerts_end_of_results_sits_below_the_last_row() {
     }
     insert_event(&conn, 4, "Hidden Artist");
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn, &runtime);
+    let view = build_view(conn, &runtime);
     let window = gtk4::Window::new();
     window.set_default_size(900, 600);
     window.set_child(Some(view.root()));
@@ -275,7 +363,7 @@ fn concerts_visual_acceptance_fixture() {
     )
     .unwrap();
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn, &runtime);
+    let view = build_view(conn, &runtime);
     let rows = vec![
         visual_fixture_row(
             1,
@@ -383,7 +471,7 @@ fn feed_footer_keeps_fetch_progress_below_the_live_table() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn, &runtime);
+    let view = build_view(conn, &runtime);
     let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
     assert_eq!(
         root.last_child().as_ref(),
@@ -423,7 +511,7 @@ fn reopening_a_fresh_cache_reports_checked_instead_of_loaded() {
         )
         .unwrap();
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn, &runtime);
+    let view = build_view(conn, &runtime);
     view.shared.loaded_this_visit.set(true);
 
     view.refresh();
@@ -444,7 +532,7 @@ fn conc_4c_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, true)
         .unwrap();
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn.clone(), &runtime);
+    let view = build_view(conn.clone(), &runtime);
     let refreshes = Rc::new(Cell::new(0));
     view.set_on_refreshed({
         let refreshes = refreshes.clone();

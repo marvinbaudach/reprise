@@ -130,10 +130,6 @@ impl LocationColumns {
         self.columns.venue.set_expand(true);
     }
 
-    pub(super) fn has_location(&self) -> bool {
-        self.has_location.get()
-    }
-
     pub(super) fn sort_by_date(&self) {
         self.view
             .sort_by_column(Some(&self.columns.date), gtk4::SortType::Ascending);

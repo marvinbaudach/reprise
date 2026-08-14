@@ -19,12 +19,15 @@ use super::concerts_failure_ui::{
     concerts_failure_presentation, failure_support, row_is_dimmed, update_failure_for_connectivity,
 };
 use super::concerts_filter_bar::ConcertsFilterBar;
-use super::concerts_model::{ConcertObject, ConcertsModel};
+use super::concerts_location_banner::ConcertsLocationBanner;
+use super::concerts_location_columns::LocationColumns;
+use super::concerts_model::ConcertsModel;
 use super::concerts_presentation::{sort_rows, ConcertSortKey, SortDirection};
 use super::concerts_search::concerts_matching;
 use super::concerts_worker::{request_allowed, ConcertsRequest, ConcertsResponse, ConcertsRuntime};
 use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::feed_footer::{FeedFooter, FeedFooterState};
+use crate::ui::location_broadcast::LocationBroadcast;
 use crate::ui::source_empty_state::SourceFailureState;
 use crate::ui::source_error_banner::SourceErrorBanner;
 
@@ -39,14 +42,6 @@ fn notify_filter_changed(runtime: &ConcertsRuntime) {
     runtime.notify_settings_changed();
 }
 
-fn activate_row(row: &ConcertRow, on_open: &OnOpenTarget) -> bool {
-    let Some(target) = concerts_columns::ticket_target(row) else {
-        return false;
-    };
-    on_open(target.to_owned());
-    true
-}
-
 struct Shared {
     conn: Rc<Db>,
     runtime: Rc<ConcertsRuntime>,
@@ -57,11 +52,13 @@ struct Shared {
     cached_items: Cell<usize>,
     column_view: gtk4::ColumnView,
     column_model: Rc<dyn crate::ui::table_columns::EditorModel>,
+    location_columns: LocationColumns,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
     footer: FeedFooter,
     error_banner: SourceErrorBanner,
+    location_banner: ConcertsLocationBanner,
     failure_state: SourceFailureState,
     fetch_failure: RefCell<Option<ConcertFailure>>,
     failure_occurred_at: RefCell<String>,
@@ -83,7 +80,11 @@ pub(in crate::ui) struct ConcertsView {
 }
 
 impl ConcertsView {
-    pub(in crate::ui) fn new(conn: Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> Self {
+    pub(in crate::ui) fn new(
+        conn: Rc<Db>,
+        runtime: &Rc<ConcertsRuntime>,
+        location_broadcast: &Rc<LocationBroadcast>,
+    ) -> Self {
         let model = Rc::new(ConcertsModel::new());
         let filter_bar = ConcertsFilterBar::new(conn.clone());
         let column_view = gtk4::ColumnView::builder()
@@ -108,7 +109,8 @@ impl ConcertsView {
         };
         let columns = concerts_columns::append_columns(&column_view, &query_source, &radius_source);
         let column_registry = super::concerts_column_layout::registry(&column_view, conn.clone());
-        let column_model = super::concerts_column_layout::model(&column_registry);
+        let (location_columns, column_model) =
+            LocationColumns::new(column_registry, &column_view, columns);
         crate::ui::table_columns::header_popover::install_header_popover(
             &column_view,
             &column_model,
@@ -147,9 +149,11 @@ impl ConcertsView {
 
         let footer = FeedFooter::new();
         let error_banner = SourceErrorBanner::new();
+        let location_banner = ConcertsLocationBanner::new();
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-concerts-view");
         root.append(filter_bar.widget());
+        root.append(location_banner.widget());
         root.append(error_banner.widget());
         root.append(&stack);
         root.append(footer.widget());
@@ -164,11 +168,13 @@ impl ConcertsView {
             cached_items: Cell::new(0),
             column_view: column_view.clone(),
             column_model,
+            location_columns,
             stack,
             status,
             status_button: status_button.clone(),
             footer,
             error_banner,
+            location_banner,
             failure_state,
             fetch_failure: RefCell::new(None),
             failure_occurred_at: RefCell::new(String::new()),
@@ -188,6 +194,30 @@ impl ConcertsView {
             filter_bar.set_on_changed(move |_| {
                 if let Some(shared) = shared.upgrade() {
                     notify_filter_changed(&shared.runtime);
+                }
+            });
+        }
+        {
+            let shared = Rc::downgrade(&shared);
+            filter_bar.set_on_open_location(move || {
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                let callback = shared.on_open_preferences.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            });
+        }
+        {
+            let weak = Rc::downgrade(&shared);
+            shared.location_banner.set_on_open_location(move || {
+                let Some(shared) = weak.upgrade() else {
+                    return;
+                };
+                let callback = shared.on_open_preferences.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
                 }
             });
         }
@@ -221,45 +251,7 @@ impl ConcertsView {
                 }
             });
         }
-        {
-            let shared = shared.clone();
-            let on_open = on_open.clone();
-            column_view.connect_activate(move |_, position| {
-                let Some(object) = shared
-                    .model
-                    .store()
-                    .item(position)
-                    .and_downcast::<ConcertObject>()
-                else {
-                    return;
-                };
-                activate_row(&object.row(), &on_open);
-            });
-        }
-        {
-            let shared = shared.clone();
-            let on_open = on_open.clone();
-            let keys = gtk4::EventControllerKey::new();
-            keys.connect_key_pressed(move |_, key, _, _| {
-                if key != gtk4::gdk::Key::space {
-                    return gtk4::glib::Propagation::Proceed;
-                }
-                let position = shared.model.selection().selected();
-                let Some(object) = shared
-                    .model
-                    .store()
-                    .item(position)
-                    .and_downcast::<ConcertObject>()
-                else {
-                    return gtk4::glib::Propagation::Proceed;
-                };
-                if !activate_row(&object.row(), &on_open) {
-                    return gtk4::glib::Propagation::Proceed;
-                }
-                gtk4::glib::Propagation::Stop
-            });
-            column_view.add_controller(keys);
-        }
+        super::concerts_activation::wire(&column_view, &shared.model, on_open);
         {
             let root = root.downgrade();
             let shared = Rc::downgrade(&shared);
@@ -268,6 +260,30 @@ impl ConcertsView {
                 move |enabled| {
                     if let Some(shared) = shared.upgrade() {
                         enabled_changed(&shared, enabled);
+                    }
+                },
+            );
+        }
+        {
+            let root = root.downgrade();
+            let shared = Rc::downgrade(&shared);
+            location_broadcast.subscribe(
+                move || root.upgrade().is_some(),
+                move || {
+                    let Some(shared) = shared.upgrade() else {
+                        return;
+                    };
+                    if let Err(error) = shared.filter_bar.reload_persisted() {
+                        tracing::warn!(%error, "could not reload app location settings");
+                        return;
+                    }
+                    if let Err(error) = render_cache(&shared) {
+                        tracing::warn!(%error, "could not apply app location settings");
+                        return;
+                    }
+                    let callback = shared.on_refreshed.borrow().clone();
+                    if let Some(callback) = callback {
+                        callback();
                     }
                 },
             );
@@ -297,7 +313,7 @@ impl ConcertsView {
             );
         }
         wire_sorting(&column_view, &shared);
-        column_view.sort_by_column(Some(&columns.date), gtk4::SortType::Ascending);
+        shared.location_columns.sort_by_date();
 
         Self {
             root: root.upcast(),
@@ -380,7 +396,6 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
     let conn = &shared.conn;
     let filter = shared.filter_bar.filter();
-    let location = concerts::config::location(conn)?;
     let app_location = reprise_core::location::app_location(conn)?;
     let credentials = concerts::config::credentials(conn)?;
     let similar_enabled = concerts::config::similar_config(conn)?.enabled;
@@ -389,16 +404,20 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     // FIL-1d: the query narrows what the facets returned, matching artist and
     // venue — the two fields the chip names.
     let rows = concerts_matching(
-        concerts::query_events(conn, &filter, location.as_ref(), today)?,
+        concerts::query_events(conn, &filter, app_location.as_ref(), today)?,
         &query,
     );
     let facets_restrict = filter.country.is_some()
         || filter.horizon != reprise_core::concerts::DateHorizon::AllUpcoming
-        || (location.is_some() && filter.radius_km.is_some());
+        || (app_location.is_some() && filter.radius_km.is_some());
     let restricted = filter != ConcertFilter::default() || !query.is_empty();
     let total = if restricted {
-        concerts::count_upcoming(conn, &ConcertFilter::default(), location.as_ref(), today)?
-            as usize
+        concerts::count_upcoming(
+            conn,
+            &ConcertFilter::default(),
+            app_location.as_ref(),
+            today,
+        )? as usize
     } else {
         rows.len()
     };
@@ -406,8 +425,14 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let never_fetched = latest_fetch.is_none();
     shared
         .filter_bar
-        .set_context(location.is_some(), similar_enabled, has_similar_rows);
+        .set_context(app_location.as_ref(), similar_enabled, has_similar_rows);
     shared.filter_bar.set_counts(rows.len(), total);
+    shared.location_columns.apply(app_location.is_some());
+    if app_location.is_some() {
+        shared.location_banner.hide();
+    } else {
+        shared.location_banner.show(total);
+    }
     shared
         .end_of_results
         .update(super::concerts_end_of_results::Input {

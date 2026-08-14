@@ -8,7 +8,9 @@ use reprise_view::columns::ConcertColumn;
 
 use crate::ui::table_column_widths as widths;
 use crate::ui::table_columns::registry::{bind_columns_by_id, ColumnRegistry, TableKeys};
-use crate::ui::table_columns::{width_persistence, EditorModel};
+use crate::ui::table_columns::width_persistence;
+#[cfg(test)]
+use crate::ui::table_columns::EditorModel;
 
 pub(super) fn registry(view: &gtk4::ColumnView, conn: Rc<Db>) -> Rc<ColumnRegistry<ConcertColumn>> {
     let columns = bind_columns_by_id::<ConcertColumn>(view);
@@ -26,6 +28,7 @@ pub(super) fn registry(view: &gtk4::ColumnView, conn: Rc<Db>) -> Rc<ColumnRegist
     registry
 }
 
+#[cfg(test)]
 pub(super) fn model(registry: &Rc<ColumnRegistry<ConcertColumn>>) -> Rc<dyn EditorModel> {
     registry.clone()
 }
