@@ -4,9 +4,11 @@
 //! need a real `ColumnView` with a real allocation and are `#[ignore]`d.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::prelude::*;
 
+use super::super::current_track_selection::CurrentTrackChange;
 use crate::ui::track_list::TrackList;
 
 /// Lets the frame clock run for a moment so GTK can allocate. `iteration(false)`
@@ -102,6 +104,103 @@ fn typed_search_reads_from_the_top_and_clearing_comes_back() {
         (adjustment.value() - departed_from).abs() < 40.0,
         "clearing returns within a row of where the search began: expected \
          about {departed_from}, got {}",
+        adjustment.value()
+    );
+
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_16_a_result_set_that_fits_still_centers_after_clear_all() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = crate::test_db::open().unwrap();
+    let fixture_conn = crate::test_db::connection(&conn);
+    let tx = fixture_conn.unchecked_transaction().unwrap();
+    for id in 1..=200 {
+        let title = if (98..=100).contains(&id) {
+            format!("Track {id:03} Needle")
+        } else {
+            format!("Track {id:03} Other")
+        };
+        tx.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) \
+             VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+            (id, format!("/synthetic/{id:03}.flac"), title),
+        )
+        .unwrap();
+    }
+    tx.commit().unwrap();
+
+    let track_list = Rc::new(TrackList::new(
+        Rc::new(conn),
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        super::super::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    ));
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(320)
+        .child(track_list.widget())
+        .build();
+    window.present();
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        track_list
+            .shared
+            .column_view
+            .vadjustment()
+            .is_some_and(|adjustment| adjustment.upper() > adjustment.page_size())
+    });
+
+    let entry = gtk4::SearchEntry::new();
+    entry.set_search_delay(0);
+    let toggle = gtk4::ToggleButton::new();
+    let popover = crate::ui::window::search_popover::SearchPopover::new(&toggle, &entry);
+    let search = crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &toggle);
+    crate::ui::window::section_search_wiring::install_tracks(&search, &track_list);
+    search.activate_source(&reprise_core::view_source::ViewSource::Library, "Music");
+
+    entry.set_text("Needle");
+    track_list.set_filter("Needle");
+    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        track_list.shared.model.n_items() == 3 && adjustment.upper() <= adjustment.page_size()
+    });
+    let playing_id = 99;
+    track_list.update_current_track(playing_id, None, CurrentTrackChange::PlaybackStarted);
+
+    search.clear_all();
+    crate::ui::test_settle::settle_for(Duration::from_millis(500));
+
+    let current_ids = track_list.shared.current_view_ids();
+    assert_eq!(
+        current_ids.len(),
+        200,
+        "Clear all must restore the complete synthetic library"
+    );
+    assert!(
+        adjustment.upper() > adjustment.page_size(),
+        "the expanded list must be genuinely scrollable"
+    );
+    let row_height = adjustment.upper() / current_ids.len() as f64;
+    let expected = super::reload_restore::centered_track_scroll_target(
+        Some(playing_id),
+        &current_ids,
+        row_height,
+        adjustment.page_size(),
+    )
+    .expect("the expanded list must have a centered target");
+    eprintln!(
+        "MUTATION PROBE value={} expected={expected} row_height={row_height} upper={} page={}",
+        adjustment.value(),
+        adjustment.upper(),
+        adjustment.page_size()
+    );
+    assert!(
+        (adjustment.value() - expected).abs() <= row_height,
+        "Clear all left the expanded list at {} instead of centering near {expected}",
         adjustment.value()
     );
 

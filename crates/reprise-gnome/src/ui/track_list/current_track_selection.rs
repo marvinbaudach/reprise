@@ -275,7 +275,7 @@ impl TrackList {
         }
     }
 
-    fn update_current_track(
+    pub(in crate::ui) fn update_current_track(
         &self,
         track_id: i64,
         queue_position: Option<usize>,
