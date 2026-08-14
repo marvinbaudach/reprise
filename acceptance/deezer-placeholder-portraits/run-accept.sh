@@ -196,7 +196,7 @@ self_test_private_atspi() {
   snapshot_json="$fixture_root/snapshot.json"
   printf '%s\n' '{"degraded":true,"degraded_reason":"synthetic AT-SPI failure"}' >"$degraded_json"
   printf '%s\n' '{"degraded":false}' >"$healthy_json"
-  printf '%s\n' '{"elements":[{"label":"My Stats","role":"button","element_token":"snapshot-7:31"}]}' >"$snapshot_json"
+  printf '%s\n' '{"elements":[{"label":"My Stats","role":"list item","element_token":"snapshot-7:31"},{"label":"My Stats","role":"button","element_token":"snapshot-7:32"}]}' >"$snapshot_json"
 
   if diagnostic=$(assert_accessible_snapshot "$degraded_json" contract-degraded 2>&1); then
     echo "degraded snapshot passed the harness contract" >&2
@@ -225,11 +225,15 @@ element_token_for_label() {
   local snapshot_path=$1 label=$2
   local token
   token=$(jq -r --arg label "$label" '
-    [(.structuredContent.elements // .elements // [])[]
-      | select(.label == $label)
-      | select(.role == "button" or (.actions // [] | any(. == "click")))
-      | .element_token
-      | select(. != null)][0] // empty
+    ([ (.structuredContent.elements // .elements // [])[]
+        | select(.label == $label and .role == "list item")
+        | .element_token
+        | select(. != null) ]
+      + [ (.structuredContent.elements // .elements // [])[]
+          | select(.label == $label)
+          | select(.role == "button" or (.actions // [] | any(. == "click")))
+          | .element_token
+          | select(. != null) ])[0] // empty
   ' "$snapshot_path")
   if [[ -z "$token" ]]; then
     echo "snapshot exposes no clickable token for '$label': $snapshot_path" >&2
