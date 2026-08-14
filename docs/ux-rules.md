@@ -1362,6 +1362,26 @@ result.
   files through to the running instance and focuses its window.
 - **OS-5** [planned] [e2e] — MPRIS always mirrors the player state;
   playback from file association is identically visible there.
+- **OS-6** [active] [core] [gtk] — A release that reaches its release
+  date announces itself once. The desktop notification fires only for a
+  release whose row already existed before the current run began, so a
+  first fetch announces nothing, and a stamp on the row prevents the hourly
+  due check from repeating it the same day. Up to three releases send one
+  notification each, carrying the release title, `{artist} · {type} · out
+  today` and the cover when it is available; four or more collapse into a
+  single collected notification. Activating a notification opens exactly
+  the URL its popover row would open, through the shared external-link
+  guard.
+  Test: `os_6_the_first_fetch_announces_nothing`
+  (`crates/reprise-core/src/artist_news_notify.rs`, `#[cfg(test)]`).
+- **OS-7** [active] [gtk] — Update notifications are a three-step
+  setting on the New Releases plugin row — `Off`, `Releases only`,
+  `All updates` — stored as `updates.notifications` and defaulting to
+  `Releases only`. `All updates` adds one collected notification per run
+  for newly found concerts of library artists, and behaves like
+  `Releases only` while the Concerts module is off. Nothing else notifies.
+  Test: `os_7_all_updates_adds_the_concerts_delta`
+  (`ui/preferences/preference_new_releases.rs`, `#[cfg(test)]`).
 
 ## I. Start state
 

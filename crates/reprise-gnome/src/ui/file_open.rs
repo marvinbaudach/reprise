@@ -164,6 +164,14 @@ pub(crate) struct FileOpenHandler {
     sidebar: Rc<Sidebar>,
 }
 
+fn updates_view_source(target: &str) -> Option<reprise_core::view_source::ViewSource> {
+    match target {
+        "releases" => Some(reprise_core::view_source::ViewSource::Releases),
+        "concerts" => Some(reprise_core::view_source::ViewSource::Concerts),
+        _ => None,
+    }
+}
+
 impl FileOpenHandler {
     pub(super) fn new(
         window: &adw::ApplicationWindow,
@@ -183,6 +191,16 @@ impl FileOpenHandler {
 
     pub(crate) fn present(&self) {
         self.window.present();
+    }
+
+    pub(crate) fn open_updates_view(&self, target: &str) {
+        let Some(source) = updates_view_source(target) else {
+            tracing::warn!(target, "update notification named an unknown view");
+            return;
+        };
+        self.present();
+        self.sidebar
+            .refresh_and_select(source, "update notification activated");
     }
 
     pub(crate) fn open_request(&self, request: OpenRequest) {
@@ -236,8 +254,22 @@ mod tests {
     use reprise_core::db::Db;
 
     use super::{
-        classify_path, resolve_audio_ids, resolve_open_request, OpenFileKind, StartupOpenIntent,
+        classify_path, resolve_audio_ids, resolve_open_request, updates_view_source, OpenFileKind,
+        StartupOpenIntent,
     };
+
+    #[test]
+    fn update_notification_view_targets_map_only_to_the_two_update_surfaces() {
+        assert_eq!(
+            updates_view_source("releases"),
+            Some(reprise_core::view_source::ViewSource::Releases)
+        );
+        assert_eq!(
+            updates_view_source("concerts"),
+            Some(reprise_core::view_source::ViewSource::Concerts)
+        );
+        assert_eq!(updates_view_source("library"), None);
+    }
 
     fn open_request_fixture(name: &str) -> (Db, PathBuf) {
         let db = crate::test_db::open().unwrap();
