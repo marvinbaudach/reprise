@@ -269,6 +269,16 @@ result.
   range never moves the anchor; the next input starts from it again. The
   playing track remains passive: it receives neither selection nor keyboard
   focus, and playback still moves nothing, preserving NAV-10b.
+- **NAV-18** [active] [gtk] — **The sidebar marks the visible view, and the
+  marked entry stays clickable.** Exactly the sidebar entry whose view is
+  visible in the content area carries the marking — including Library Doctor
+  and the opened device card, neither of which is a `ViewSource`. At most one
+  entry is marked at any time across both navigation lists and the device
+  cards. When the visible view has no sidebar entry, nothing is marked. A
+  sidebar rebuild never changes the marking. While a placeless view is
+  visible, activating **any** source entry routes into it — including the
+  source that was last visible (BROWSE-3); activating the entry of the already
+  visible placeless view does nothing.
 
 ## C. Playback, queue, shuffle, filter
 

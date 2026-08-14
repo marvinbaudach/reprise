@@ -6,7 +6,7 @@ use super::*;
 /// ApplicationWindow`/`Application` (the `window`/`toast_overlay` weak refs
 /// simply stay unset, which every consumer already degrades on). Display
 /// required (`gtk::ListBox`), hence only the `#[ignore]` tests below use it.
-pub(super) fn test_shared() -> Rc<Shared> {
+pub(in crate::ui) fn test_shared() -> Rc<Shared> {
     let conn = Rc::new(crate::test_db::open().unwrap());
     Rc::new(Shared {
         conn,
@@ -17,6 +17,11 @@ pub(super) fn test_shared() -> Rc<Shared> {
         releases_count_label: RefCell::new(None),
         releases_count_generation: Cell::new(0),
         current_source: RefCell::new(ViewSource::default()),
+        current_place: RefCell::new(SidebarPlace::Source),
+        doctor_row: RefCell::new(None),
+        open_device: RefCell::new(None),
+        content_stack: glib::WeakRef::new(),
+        mark_device: RefCell::new(None),
         rows: RefCell::new(Vec::new()),
         playlist_add_button: RefCell::new(None),
         playlist_quick_edit_id: Cell::new(None),

@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use gtk4::prelude::*;
 use libadwaita as adw;
 
 use super::review_page::LibraryDoctorReviewPage;
@@ -78,5 +79,67 @@ impl DoctorNavigation {
             self.content_navigation.pop_to_page(&root);
         }
         super::super::window::content_stack::show_page(&self.content_stack, ROOT_TAG);
+        if let Some(split_view) = self
+            .content_navigation
+            .ancestor(adw::OverlaySplitView::static_type())
+            .and_downcast::<adw::OverlaySplitView>()
+        {
+            if split_view.is_collapsed() {
+                split_view.set_show_sidebar(false);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_18_opening_the_doctor_closes_a_collapsed_sidebar_overlay() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        crate::ui::style::install();
+        let content_stack = gtk4::Stack::new();
+        let doctor_navigation = adw::NavigationView::new();
+        content_stack.add_named(&doctor_navigation, Some(ROOT_TAG));
+        let content_root = adw::NavigationPage::builder()
+            .title("Library")
+            .tag(crate::ui::now_playing_wiring::LIBRARY_CONTENT_TAG)
+            .child(&content_stack)
+            .build();
+        let content_navigation = adw::NavigationView::new();
+        content_navigation.add(&content_root);
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split_view = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&content_navigation)
+            .collapsed(true)
+            .show_sidebar(true)
+            .build();
+        let doctor_root = adw::NavigationPage::builder()
+            .title("Library Doctor")
+            .tag(ROOT_TAG)
+            .child(&gtk4::Label::new(Some("Doctor")))
+            .build();
+        let navigation =
+            DoctorNavigation::new(&content_navigation, &content_stack, &doctor_navigation);
+        navigation.add_root(&doctor_root);
+
+        navigation.show_root();
+
+        assert!(!split_view.shows_sidebar());
+        assert_eq!(
+            content_navigation.visible_page().as_ref(),
+            Some(&content_root)
+        );
+        assert_eq!(
+            content_stack.visible_child_name().as_deref(),
+            Some(ROOT_TAG)
+        );
     }
 }
