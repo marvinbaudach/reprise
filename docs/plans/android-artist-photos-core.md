@@ -110,6 +110,11 @@ aus derselben Logzeile ablesen).
 
 ## Aufgabe 3 — Porträtverzeichnis und Beschaffer-Naht auf `MusicLibrary`
 
+**Status:** complete in this task commit. The named path-ownership test was
+compile-red on the missing `portrait_dir` seam, then passed in
+`/tmp/reprise-artist-photos/ffi-portrait.log`; strict package Clippy also
+passed after the shared fetcher type was named.
+
 **Dateien:** `crates/reprise-android-ffi/src/library_types.rs:23-39`,
 `crates/reprise-android-ffi/src/lib.rs:81-94`, neu
 `crates/reprise-android-ffi/src/artist_portrait.rs`.
