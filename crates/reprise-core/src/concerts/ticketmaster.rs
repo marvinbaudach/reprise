@@ -3,6 +3,7 @@ use serde_json::Value;
 
 use super::{
     http, ArtistRef, EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution,
+    TicketAvailability,
 };
 
 pub struct TicketmasterProvider {
@@ -131,6 +132,11 @@ fn parse_event(value: &Value) -> Option<ProviderEvent> {
     let event_url = value.get("url").and_then(non_empty).map(str::to_owned);
     Some(ProviderEvent {
         provider: ProviderKind::Ticketmaster,
+        availability: match value.pointer("/dates/status/code").and_then(non_empty) {
+            Some("onsale") => TicketAvailability::OnSale,
+            Some("offsale") => TicketAvailability::OffSale,
+            _ => TicketAvailability::Unknown,
+        },
         starts_at: format!("{date_key}T{local_time}"),
         date_key: date_key.to_owned(),
         venue: venue.to_owned(),

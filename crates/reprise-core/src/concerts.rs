@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+mod availability;
 mod backoff;
 mod bandsintown;
 mod candidates;
@@ -23,21 +24,25 @@ mod resolution;
 mod similar;
 mod ticketmaster;
 
+pub use availability::TicketAvailability;
 pub use backoff::backoff_delay;
 pub use bandsintown::BandsintownProvider;
 pub use credential::{verify_credential, CredentialVerification};
 pub use dedupe::{dedupe_key, merge, normalize_component, ticket_source_label};
 pub use geo::haversine_km;
 pub use geocode::{geocode, geocode_url, parse_geocode, GeocodedLocation};
-pub use pipeline::{refresh, refresh_cancellable, CancellationToken, RefreshSummary};
+pub use pipeline::{
+    refresh, refresh_cancellable, refresh_cancellable_with_progress, CancellationToken,
+    RefreshSummary,
+};
 pub use provider::{
     ArtistRef, ConcertFailure, EventProvider, ProviderError, ProviderEvent, ProviderKind,
     Resolution,
 };
 pub use query::{
     count_unseen, count_upcoming, has_similar_events, known_countries, latest_fetch_at,
-    mark_scope_seen, query_cached_events, query_events, query_scope_with_seen, query_unseen,
-    CachedConcertEvent,
+    mark_event_seen, mark_scope_seen, query_cached_events, query_events, query_scope_with_seen,
+    query_unseen, CachedConcertEvent,
 };
 pub use refresh::{artist_due, jitter_seconds, refresh_due};
 pub use similar::{
@@ -78,6 +83,7 @@ impl Default for ConcertFilter {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConcertRow {
     pub id: i64,
+    pub availability: TicketAvailability,
     pub date_key: String,
     pub starts_at: String,
     pub artist_name: String,

@@ -1,9 +1,10 @@
 use super::{dedupe_key, merge, normalize_component, ticket_source_label};
-use crate::concerts::{ProviderEvent, ProviderKind};
+use crate::concerts::{ProviderEvent, ProviderKind, TicketAvailability};
 
 fn event(provider: ProviderKind, venue: &str) -> ProviderEvent {
     ProviderEvent {
         provider,
+        availability: TicketAvailability::Unknown,
         starts_at: "2026-10-17T19:00:00".into(),
         date_key: "2026-10-17".into(),
         venue: venue.into(),

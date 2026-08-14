@@ -1,7 +1,8 @@
 use chrono::{Duration, Months, NaiveDate};
 use rusqlite::{params, Connection};
+use std::str::FromStr;
 
-use super::{haversine_km, ConcertFilter, ConcertRow, DateHorizon};
+use super::{haversine_km, ConcertFilter, ConcertRow, DateHorizon, TicketAvailability};
 use crate::location::AppLocation;
 
 struct StoredEvent {
@@ -37,6 +38,7 @@ pub struct CachedConcertEvent {
     pub fetched_at: i64,
     pub seen_at: Option<i64>,
     pub dedupe_key: String,
+    pub availability: TicketAvailability,
 }
 
 /// Reads every durable concert-event field without applying the current UI
@@ -47,7 +49,7 @@ pub fn query_cached_events(db: &crate::db::Db) -> Result<Vec<CachedConcertEvent>
         "SELECT id, artist_key, artist_name, starts_at, date_key, venue, city,
                 region, country, latitude, longitude, ticket_url, ticket_source,
                 event_url, provider, is_similar, similar_to, fetched_at, seen_at,
-                dedupe_key
+                dedupe_key, ticket_availability
          FROM concert_events
          ORDER BY date_key ASC, starts_at ASC, lower(artist_name) ASC, id ASC",
     )?;
@@ -74,6 +76,7 @@ pub fn query_cached_events(db: &crate::db::Db) -> Result<Vec<CachedConcertEvent>
                 fetched_at: row.get(17)?,
                 seen_at: row.get(18)?,
                 dedupe_key: row.get(19)?,
+                availability: TicketAvailability::from_str(&row.get::<_, String>(20)?).unwrap(),
             })
         })?
         .collect();
@@ -171,6 +174,13 @@ pub fn mark_scope_seen(
     Ok(ids.len())
 }
 
+pub fn mark_event_seen(db: &crate::db::Db, id: i64, now: i64) -> Result<usize, rusqlite::Error> {
+    db.conn().execute(
+        "UPDATE concert_events SET seen_at = ?1 WHERE id = ?2 AND seen_at IS NULL",
+        params![now, id],
+    )
+}
+
 pub fn latest_fetch_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
     let conn = db.conn();
     super::refresh::latest_attempt(conn)
@@ -185,7 +195,8 @@ fn filtered_events(
     let mut statement = conn.prepare(
         "SELECT id, starts_at, date_key, artist_name, venue, city, region,
                 country, latitude, longitude, ticket_url, ticket_source,
-                event_url, provider, is_similar, similar_to, seen_at
+                event_url, provider, is_similar, similar_to, seen_at,
+                ticket_availability
          FROM concert_events
          WHERE date_key >= ?1
          ORDER BY date_key ASC, starts_at ASC, lower(artist_name) ASC, id ASC",
@@ -201,6 +212,7 @@ fn filtered_events(
         Ok(StoredEvent {
             row: ConcertRow {
                 id: row.get(0)?,
+                availability: TicketAvailability::from_str(&row.get::<_, String>(17)?).unwrap(),
                 starts_at: row.get(1)?,
                 date_key: row.get(2)?,
                 artist_name: row.get(3)?,

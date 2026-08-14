@@ -5021,7 +5021,7 @@ available. The player plays only finished files.
   With location, the active chip reads `{city} · {radius} km` (or just the
   radius for a blank city name), Distance returns according to that stored
   choice, and the banner disappears.
-- **CONC-3** [active] [gtk] — Double-click/Enter on a row and the
+- **CONC-3** [replaced by CONC-13] — Double-click/Enter on a row and the
   ticket cell open the same external target: offer URL, otherwise the
   event page. Without either, the cell is empty and activation is a
   no-op with a tooltip. There is no play path.
@@ -5029,7 +5029,7 @@ available. The player plays only finished files.
   explicit live re-evaluation after changes to Concerts settings.
 - **CONC-4a** [replaced by CONC-4b] — Original state contract with
   credential input hint and Preferences deep link.
-- **CONC-4b** [active] [gtk] — Without a credential, Concerts neutrally
+- **CONC-4b** [replaced by CONC-4c] — Without a credential, Concerts neutrally
   shows "No concert data yet" with no action; the Concerts section in
   the Updates popover is not visible. There is no credential input hint
   and no Preferences deep link. Changes to credentials, location,
@@ -5043,7 +5043,7 @@ available. The player plays only finished files.
 - **CONC-5** [replaced by CONC-5a] — Original worker contract with
   view-open staleness, due check, and "Fetch now" as the only network
   triggers.
-- **CONC-5a** [active] [core] — Network runs exclusively in the worker
+- **CONC-5a** [replaced by CONC-5b] — Network runs exclusively in the worker
   or `one_shot_task`. Triggers are view-open staleness (24 h plus
   jitter), the hourly due check, "Fetch now", and an explicitly
   confirmed credential check. All Concerts requests share the 1-req/s
@@ -5069,12 +5069,12 @@ available. The player plays only finished files.
   legacy value over the runtime environment and the embedded build
   value; empty values do not count. Bandsintown remains available as an
   optional credential row independently of this.
-- **CONC-10** [active] [gtk] — Every Concerts row shares a common
+- **CONC-10** [replaced by CONC-14] — Every Concerts row shares a common
   vertical center. The artist stands as a single-line group on the same
   baseline as date, location, venue, distance, and ticket; an optional
   "similar to …" caption expands and centers the artist group as a
   unit, instead of pinning the artist to the top edge of the row.
-- **CONC-11** [active] [gtk] — A failed Concerts fetch leaves every cached
+- **CONC-11** [replaced by CONC-11a] — A failed Concerts fetch leaves every cached
   event and „Updated X ago" untouched. A neutral shared banner above a
   populated view names the failed refresh, what remains available, and the
   next action; only a genuinely empty cache uses the shared full-area failure
@@ -5087,6 +5087,95 @@ available. The player plays only finished files.
   outcome with „Open Preferences" targeting the Concerts Plugins row, never
   „Try again"; CONC-4b's ordinary no-credential empty state remains neutral
   with no action.
+
+- **CONC-12** [active] [core] — Ticket availability is what the source
+  says, never an inference. Ticketmaster's `dates.status.code` maps
+  `onsale` → On sale, `offsale` → Off sale, and everything else
+  (`cancelled`, `postponed`, `rescheduled`, missing) → Unknown; Bandsintown
+  maps an `available` offer → On sale, offers without an available one →
+  Off sale, and a missing or empty offers list → Unknown. The app never
+  renders "Sold out": no provider distinguishes a sold-out show from a
+  pre-sale that has not opened.
+  Test: `conc_12_offsale_never_becomes_sold_out`
+  (`crates/reprise-core/src/concerts/availability.rs`, `#[cfg(test)]`).
+
+- **CONC-13** [active] [gtk] — replaces CONC-3. Double-click, Enter or
+  Space on a concert row opens its external target: the offer URL,
+  otherwise the event page. The Tickets cell is a status label and is never
+  an activation surface. A row without a launchable target does not
+  activate, keeps its ordinary appearance, and carries the same sentence in
+  its tooltip and its accessible description. There is no play path.
+  Test: `conc_13_a_row_without_a_target_does_not_activate`
+  (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-14** [active] [gtk] — replaces CONC-10. Every concert row is a
+  single line and never wraps. Every cell ellipsises at its end. The
+  optional dimmed "similar to {seed}" sits on the artist's own line,
+  directly after the name, and ellipsises before the name does — losing the
+  provenance is acceptable, losing the artist is not. Rows keep a common
+  vertical center.
+  Test: `conc_14_the_similar_caption_shrinks_before_the_artist`
+  (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-15** [active] [gtk] — The feed footer states the live state, not
+  an age, and it is the only place any of these views shows a timestamp.
+  Its nine states are: loaded in this visit, served from cache, updating
+  (with determinate progress), failed, offline, never loaded, no
+  credentials, online sources off, module off (footer hidden). A loaded or
+  cached state carries the accent dot and a reload button; an updating
+  state replaces the button with the progress bar; the two configuration
+  states offer no button. "Up to date" never appears while a fetch is
+  running or has failed.
+  Test: `conc_15_the_footer_never_claims_up_to_date_while_fetching`
+  (`ui/feed_footer.rs`, `#[cfg(test)]`).
+
+- **CONC-16** [active] [gtk] — The provider name has a hover-free home:
+  an optional `Source` column, hidden by default, switchable in the column
+  header menu, its visibility persisted like every other column. The row
+  tooltip "Opens {source}" is a comfort duplicate of it (TIP-3), never the
+  only place the name appears.
+  Test: `conc_16_the_source_column_is_available_but_off_by_default`
+  (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-4c** [active] [gtk] — replaces CONC-4b. Without a credential,
+  Concerts neutrally shows "No concert data yet" with no action; the Concerts
+  section in the Updates popover is not visible. There is no credential input
+  hint and no Preferences deep link. Changes to credentials, location,
+  default radius, time range, and similar settings immediately re-evaluate
+  the already-open view, its sidebar count, and the Updates popover. Never
+  fetched shows exactly "Not loaded yet" and offers the reload button; zero
+  hits with filters offers exactly "Show all". Offline or error leaves the
+  cache visible and states so per CONC-15. CONC-11a specifies the shared
+  failure surface; credential and filter behaviour stay Concerts' own and
+  remain `[active]` unchanged.
+  Test: `conc_4c_settings_changes_re_evaluate_credentials_and_refresh_dependents`
+  (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-5b** [active] [core] — replaces CONC-5a. Network runs exclusively
+  in the worker or `one_shot_task`. Triggers are view-open staleness (24 h
+  plus jitter), the hourly due check, the footer's reload button, and an
+  explicitly confirmed credential check. All Concerts requests share the
+  1-req/s limiter. Track changes, navigation, and individual credential
+  keystrokes only read or write locally; fetch results are applied per MOT-2
+  without a fade-in animation.
+  Test: `conc_5b_only_enabled_due_idle_workers_fetch`
+  (`ui/concerts/concerts_worker.rs`).
+
+- **CONC-11a** [active] [gtk] — replaces CONC-11. A failed Concerts fetch
+  leaves every cached event untouched and reports the failure through
+  CONC-15's footer state. A neutral shared banner above a populated view names
+  the failed refresh, what remains available, and the next action; only a
+  genuinely empty cache uses the shared full-area failure state. Both surfaces
+  carry the same collapsed `Details` block with Copy, and technical status,
+  host, and exception text appears only there. Offline is written from the
+  window's explicit connectivity value, dims the remote-action rows, and never
+  overwrites a provider or configuration failure already on screen; reconnect
+  removes only an offline-authored notice. A successful fetch removes the
+  notice silently. Missing credentials are a configuration outcome with
+  "Open Preferences" targeting the Concerts Plugins row, never "Try again";
+  CONC-4b's ordinary no-credential empty state remains neutral with no action.
+  Test: `conc_11a_cached_and_empty_failures_choose_the_shared_surfaces`
+  (`ui/concerts/concerts_failure_ui.rs`).
 ## AF. Podcasts & Radio
 
 <!-- Section letter: AE is the last assigned section after Concerts

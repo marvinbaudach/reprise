@@ -4,9 +4,11 @@ use std::rc::Rc;
 
 use reprise_core::db::Db;
 
+mod concerts_activation;
 mod concerts_column_layout;
 mod concerts_columns;
 mod concerts_empty_state;
+mod concerts_end_of_results;
 mod concerts_failure_ui;
 mod concerts_filter_bar;
 mod concerts_location_banner;
@@ -14,6 +16,7 @@ mod concerts_location_columns;
 mod concerts_model;
 pub(in crate::ui) mod concerts_presentation;
 mod concerts_search;
+mod concerts_status_cells;
 mod concerts_view;
 mod concerts_worker;
 pub(super) mod css;

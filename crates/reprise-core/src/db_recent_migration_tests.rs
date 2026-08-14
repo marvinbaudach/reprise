@@ -534,6 +534,7 @@ fn assert_new_releases_schema(conn: &Connection) {
             "announce_url",
             "track_count",
             "hidden_by_deleted_memory",
+            "notified_released_at",
         ]
     );
 }
