@@ -368,3 +368,110 @@ fn nav_18_the_vanishing_doctor_row_leaves_nothing_marked_instead_of_the_old_sour
     fixture.assert_returned_to_my_stats();
     fixture.window.close();
 }
+
+#[test]
+fn nav_18_every_literal_content_stack_page_is_classified_as_a_source_or_place() {
+    const KNOWN_SOURCES: &[&str] = &[
+        "concerts", "library", "podcasts", "radio", "releases", "stats", "youtube",
+    ];
+    const KNOWN_PLACES: &[&str] = &["device-sync", "library-doctor"];
+
+    let scan = content_stack_literal_pages();
+    assert!(
+        scan.rust_files >= 300,
+        "the content-stack drift guard inspected suspiciously few Rust files"
+    );
+    assert!(
+        scan.add_named_calls >= 15,
+        "the content-stack drift guard found suspiciously few literal registrations"
+    );
+
+    let known = KNOWN_SOURCES
+        .iter()
+        .chain(KNOWN_PLACES)
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        known.len(),
+        KNOWN_SOURCES.len() + KNOWN_PLACES.len(),
+        "source and place classifications must not overlap"
+    );
+    let discovered = scan
+        .pages
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        discovered, known,
+        "every literal content_stack page must be classified as a source or place"
+    );
+
+    for page in KNOWN_SOURCES {
+        assert_eq!(
+            place_for_content_page(Some(page), None),
+            SidebarPlace::Source
+        );
+    }
+    assert_eq!(
+        place_for_content_page(Some("library-doctor"), None),
+        SidebarPlace::LibraryDoctor
+    );
+    assert_eq!(
+        place_for_content_page(Some("device-sync"), Some("fixture-device")),
+        SidebarPlace::Device("fixture-device".to_string())
+    );
+}
+
+struct ContentStackLiteralScan {
+    rust_files: usize,
+    add_named_calls: usize,
+    pages: std::collections::BTreeSet<String>,
+}
+
+fn content_stack_literal_pages() -> ContentStackLiteralScan {
+    let ui_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui");
+    let mut pending = vec![ui_root];
+    let mut scan = ContentStackLiteralScan {
+        rust_files: 0,
+        add_named_calls: 0,
+        pages: std::collections::BTreeSet::new(),
+    };
+
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()))
+        {
+            let path = entry.expect("failed to read a UI source entry").path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+                continue;
+            }
+
+            scan.rust_files += 1;
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+            let compact_source = source
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>();
+            for call in compact_source.split("content_stack.add_named(").skip(1) {
+                let Some(arguments) = call.split_once(");").map(|(arguments, _)| arguments) else {
+                    continue;
+                };
+                let Some((_, literal)) = arguments.rsplit_once("Some(\"") else {
+                    continue;
+                };
+                let Some((page, _)) = literal.split_once("\")") else {
+                    continue;
+                };
+                scan.add_named_calls += 1;
+                scan.pages.insert(page.to_string());
+            }
+        }
+    }
+
+    scan
+}
