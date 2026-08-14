@@ -10,9 +10,10 @@ impl TrackList {
         self.shared.browse_bar.set_committed_query(query);
     }
 
-    /// FIL-1a/FIL-6: one action resets search and browse facets in a single
-    /// reload. The caller additionally clears the headerbar entry text; the
-    /// debounced search handler then early-returns because the filter is empty.
+    /// FIL-1a/FIL-6: one action resets search and browse facets and performs
+    /// the single model reload. The caller still applies the empty header-bar
+    /// query so its commit half removes the chip; `set_filter_and_reload`
+    /// recognizes that the filter is already empty and does no model work.
     pub fn clear_all_restrictions(&self) {
         let empty = BrowseFilter::default();
         *self.shared.browse_filter.borrow_mut() = empty.clone();
@@ -38,12 +39,96 @@ impl TrackList {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::rc::Rc;
 
     use gtk4::gio::prelude::*;
     use gtk4::glib;
+    use gtk4::prelude::*;
+    use reprise_view::search_scope::SearchScope;
 
     use super::*;
+
+    fn contains_label(widget: &gtk4::Widget, needle: &str) -> bool {
+        if widget
+            .downcast_ref::<gtk4::Label>()
+            .is_some_and(|label| label.label().contains(needle))
+        {
+            return true;
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            if contains_label(&current, needle) {
+                return true;
+            }
+            child = current.next_sibling();
+        }
+        false
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_2a_clear_all_reloads_the_track_list_once() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let entry = gtk4::SearchEntry::new();
+        entry.set_search_delay(0);
+        let toggle = gtk4::ToggleButton::new();
+        let popover = crate::ui::window::search_popover::SearchPopover::new(&toggle, &entry);
+        let search =
+            crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &toggle);
+        let reloads = Rc::new(Cell::new(0));
+        let reloads_for_callback = reloads.clone();
+        let track_list = Rc::new(TrackList::new(
+            Rc::new(crate::test_db::open().unwrap()),
+            Box::new(|_, _, _, _| {}),
+            move |_, _, _, _| reloads_for_callback.set(reloads_for_callback.get() + 1),
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        ));
+        crate::ui::window::section_search_wiring::install_tracks(&search, &track_list);
+        search.activate_source(&reprise_core::view_source::ViewSource::Library, "Music");
+
+        track_list.set_filter("falling");
+        track_list.set_committed_search_query("falling");
+        entry.set_text("falling");
+        let browse = BrowseFilter {
+            genre: Some("Metal".into()),
+            ..BrowseFilter::default()
+        };
+        *track_list.shared.browse_filter.borrow_mut() = browse.clone();
+        track_list.shared.browse_bar.restore_filter(&browse);
+        reloads.set(0);
+
+        search.clear_all();
+
+        assert_eq!(reloads.get(), 1, "Clear all must rebuild the model once");
+        assert_eq!(track_list.shared.filter.borrow().as_str(), "");
+        assert_eq!(
+            *track_list.shared.browse_filter.borrow(),
+            BrowseFilter::default()
+        );
+        assert_eq!(entry.text(), "");
+        assert!(
+            !contains_label(
+                track_list.shared.browse_bar.widget().upcast_ref(),
+                "falling"
+            ),
+            "the committed search chip must be gone"
+        );
+
+        // Missing files shares the same clear-facets handler, but its query
+        // has a separate sink. Exercise that registration once so the Tracks
+        // no-op cannot strand the Missing query in the header entry.
+        search.activate_source(
+            &reprise_core::view_source::ViewSource::Missing,
+            "Missing files",
+        );
+        search.set_query(SearchScope::Missing, "missing");
+        assert_eq!(entry.text(), "missing");
+        search.clear_all();
+        assert_eq!(entry.text(), "");
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]

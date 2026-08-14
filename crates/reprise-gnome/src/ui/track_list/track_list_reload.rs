@@ -322,6 +322,12 @@ pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
 /// filter through the identical code path.
 pub(in crate::ui) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
     let previous = shared.filter.borrow().clone();
+    // Clear all has already emptied the filter through its facet-reset
+    // handler. SectionSearch still applies the empty query afterward so its
+    // commit half can remove the chip; that apply is model-neutral.
+    if previous == text {
+        return;
+    }
     prepare_filter_change(shared, previous.as_str(), text);
     *shared.filter.borrow_mut() = text.to_string();
     reload_filter_change(shared, previous.as_str());
