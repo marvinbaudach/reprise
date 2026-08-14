@@ -16,6 +16,7 @@ fn migration_projects_the_legacy_ten_levels_back_exactly() {
         ],
     )
     .unwrap();
+    crate::db_recent_test_support::remove_v73_v74_columns(&conn);
     conn.pragma_update(None, "user_version", 52).unwrap();
 
     migrate_connection(&conn).unwrap();

@@ -56,9 +56,12 @@ mod db_mix_planner;
 mod db_mobile_sync;
 mod db_new_releases_accent;
 mod db_new_releases_history;
+mod db_new_releases_notify;
 mod db_online_sources;
 mod db_play_journal;
 mod db_podcasts_radio;
+#[cfg(test)]
+mod db_recent_test_support;
 mod db_recently_added;
 mod db_release_discography;
 mod db_releases_view_scope;

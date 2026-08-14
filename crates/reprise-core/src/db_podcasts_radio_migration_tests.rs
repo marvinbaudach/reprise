@@ -20,6 +20,7 @@ fn object_schema(conn: &Connection, table: &str) -> Vec<(String, String)> {
 }
 
 fn reset_to_v31(conn: &Connection) {
+    crate::db_recent_test_support::remove_v73_v74_columns(conn);
     conn.execute_batch(
         "DROP TABLE podcast_episode_dismissals;
          DROP TABLE podcast_subscription_baselines;
@@ -251,6 +252,7 @@ fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync(
         [],
     )
     .unwrap();
+    crate::db_recent_test_support::remove_v73_v74_columns(&conn);
     conn.pragma_update(None, "user_version", 39).unwrap();
 
     db::migrate_connection(&conn).unwrap();
@@ -274,6 +276,7 @@ fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync(
 fn migration_repairs_the_parallel_v34_device_sync_schema() {
     let conn = db::open(None).unwrap();
     db::migrate_connection(&conn).unwrap();
+    crate::db_recent_test_support::remove_v73_v74_columns(&conn);
     conn.execute_batch(
         "DROP TABLE podcast_episode_dismissals;
          DROP INDEX idx_podcast_episodes_unplayed;
@@ -368,6 +371,7 @@ fn v51_removes_the_retired_podcast_show_filter_setting() {
         [],
     )
     .unwrap();
+    crate::db_recent_test_support::remove_v73_v74_columns(&conn);
     conn.pragma_update(None, "user_version", 50).unwrap();
 
     db::migrate_connection(&conn).unwrap();
@@ -391,6 +395,7 @@ fn v51_removes_the_retired_podcast_show_filter_setting() {
 fn v52_names_youtube_subscriptions_from_their_channel_author() {
     let conn = db::open(None).unwrap();
     db::migrate_connection(&conn).unwrap();
+    crate::db_recent_test_support::remove_v73_v74_columns(&conn);
     conn.execute_batch(
         "INSERT INTO podcast_subscriptions
            (id, kind, feed_url, title, author, added_at)

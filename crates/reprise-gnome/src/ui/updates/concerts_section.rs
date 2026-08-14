@@ -167,6 +167,7 @@ fn build_delta_row(row: ConcertDeltaPresentation, on_open_url: &OnOpenUrl) -> gt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::concerts::TicketAvailability;
 
     fn row(id: i64, date: &str) -> ConcertRow {
         ConcertRow {
@@ -187,6 +188,7 @@ mod tests {
             provider: "bandsintown".into(),
             is_similar: false,
             similar_to: None,
+            availability: TicketAvailability::Unknown,
         }
     }
 

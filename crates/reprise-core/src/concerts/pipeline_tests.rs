@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,8 +7,9 @@ use rusqlite::params;
 
 use super::similar::{SimilarArtist, SimilarFetch};
 use super::{
-    refresh, refresh_cancellable, ArtistRef, BandsintownProvider, CancellationToken, ConcertError,
-    EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution, TicketmasterProvider,
+    refresh, refresh_cancellable, refresh_cancellable_with_progress, ArtistRef,
+    BandsintownProvider, CancellationToken, ConcertError, EventProvider, ProviderError,
+    ProviderEvent, ProviderKind, Resolution, TicketAvailability, TicketmasterProvider,
 };
 
 fn conn() -> crate::db::Db {
@@ -29,6 +30,7 @@ fn seed_play(db: &crate::db::Db, artist: &str, played_at: i64) {
 fn event(venue: &str) -> ProviderEvent {
     ProviderEvent {
         provider: ProviderKind::Ticketmaster,
+        availability: TicketAvailability::Unknown,
         starts_at: "2026-10-17T19:00:00".into(),
         date_key: "2026-10-17".into(),
         venue: venue.into(),
@@ -41,6 +43,58 @@ fn event(venue: &str) -> ProviderEvent {
         ticket_source: Some("Example".into()),
         event_url: Some("https://events.example/1".into()),
     }
+}
+
+#[test]
+fn reconcile_updates_ticket_availability_for_an_existing_event() {
+    let conn = conn();
+    seed_play(&conn, "Lorna Shore", 1_000);
+    let mut first_event = event("Zenith");
+    first_event.availability = TicketAvailability::OnSale;
+    let first = FakeProvider::new(
+        ProviderKind::Ticketmaster,
+        Resolution::Resolved {
+            provider_id: "tm-id".into(),
+            mbid_verified: false,
+        },
+        vec![first_event],
+    );
+    refresh(
+        &conn,
+        &[Box::new(first)],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        1_000,
+        false,
+    )
+    .unwrap();
+
+    let mut second_event = event("Zenith");
+    second_event.availability = TicketAvailability::OffSale;
+    let second = FakeProvider::new(
+        ProviderKind::Ticketmaster,
+        Resolution::Resolved {
+            provider_id: "tm-id".into(),
+            mbid_verified: false,
+        },
+        vec![second_event],
+    );
+    refresh(
+        &conn,
+        &[Box::new(second)],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        1_001,
+        true,
+    )
+    .unwrap();
+
+    let rows = super::query_events(
+        &conn,
+        &super::ConcertFilter::default(),
+        None,
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(rows[0].availability, TicketAvailability::OffSale);
 }
 
 struct FakeProvider {
@@ -611,4 +665,33 @@ fn cancellation_after_first_artist_stops_further_provider_calls() {
         *requests.lock().unwrap(),
         ["resolve:Artist A", "events:Artist A"]
     );
+}
+
+#[test]
+fn refresh_progress_reports_the_candidate_denominator_and_completion() {
+    let conn = conn();
+    seed_play(&conn, "Artist A", 1_000);
+    seed_play(&conn, "Artist B", 1_000);
+    let provider = FakeProvider::new(
+        ProviderKind::Ticketmaster,
+        Resolution::Resolved {
+            provider_id: "tm-id".into(),
+            mbid_verified: false,
+        },
+        vec![event("Venue")],
+    );
+    let updates = RefCell::new(Vec::new());
+
+    refresh_cancellable_with_progress(
+        &conn,
+        &[Box::new(provider)],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        1_000,
+        false,
+        &CancellationToken::default(),
+        &|checked, total| updates.borrow_mut().push((checked, total)),
+    )
+    .unwrap();
+
+    assert_eq!(*updates.borrow(), [(0, 2), (1, 2), (2, 2)]);
 }

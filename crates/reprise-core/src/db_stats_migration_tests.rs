@@ -53,6 +53,7 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_current() {
         let conn = Connection::open(database.path()).unwrap();
         migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
         if starting_version == 16 {
+            crate::db_recent_test_support::remove_v73_v74_columns(&conn);
             conn.execute_batch(
                 "DROP TABLE change_log;
                  DROP TABLE library_exclusions;

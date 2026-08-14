@@ -25,6 +25,7 @@ fn object_schema(conn: &Connection, table: &str) -> Vec<(String, String)> {
 /// change_log table stays, so re-migration resumes at v28 and only replays the
 /// v29 AI-jobs step.
 fn reset_to_v28(conn: &Connection) {
+    crate::db_recent_test_support::remove_v73_v74_columns(conn);
     conn.execute_batch(
         "DROP TABLE ai_jobs;
          DROP TABLE track_provenance;

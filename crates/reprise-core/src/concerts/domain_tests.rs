@@ -3,8 +3,8 @@ use rusqlite::params;
 
 use super::{
     artist_due, config, count_unseen, count_upcoming, geocode_url, haversine_km, jitter_seconds,
-    mark_scope_seen, parse_geocode, query_events, query_scope_with_seen, query_unseen, refresh_due,
-    ConcertFilter, DateHorizon,
+    mark_event_seen, mark_scope_seen, parse_geocode, query_events, query_scope_with_seen,
+    query_unseen, refresh_due, ConcertFilter, DateHorizon, TicketAvailability,
 };
 
 fn conn() -> crate::db::Db {
@@ -351,6 +351,53 @@ fn seen_cycle_marks_only_the_current_filter_scope() {
     assert_eq!(count_unseen(&conn, &filter, None, today).unwrap(), 0);
     filter.country = None;
     assert_eq!(count_unseen(&conn, &filter, None, today).unwrap(), 1);
+}
+
+#[test]
+fn mark_event_seen_stamps_only_the_requested_event() {
+    let conn = conn();
+    for id in 1..=3 {
+        insert_event(
+            &conn,
+            id,
+            &format!("2026-08-0{id}"),
+            "DE",
+            Some(48.14),
+            false,
+        );
+    }
+    let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+    let filter = ConcertFilter::default();
+
+    assert_eq!(mark_event_seen(&conn, 2, 500).unwrap(), 1);
+    let unseen = query_unseen(&conn, &filter, None, today, 3).unwrap();
+    assert_eq!(unseen.iter().map(|row| row.id).collect::<Vec<_>>(), [1, 3]);
+}
+
+#[test]
+fn query_events_reads_persisted_availability_after_reopening_the_database() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("concerts.db");
+    {
+        let db = crate::db::Db::open_migrated(Some(&path)).unwrap();
+        insert_event(&db, 1, "2026-08-01", "DE", Some(48.14), false);
+        db.conn()
+            .execute(
+                "UPDATE concert_events SET ticket_availability = 'off_sale' WHERE id = 1",
+                [],
+            )
+            .unwrap();
+    }
+
+    let reopened = crate::db::Db::open_ready(&path).unwrap();
+    let rows = query_events(
+        &reopened,
+        &ConcertFilter::default(),
+        None,
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(rows[0].availability, TicketAvailability::OffSale);
 }
 
 #[test]

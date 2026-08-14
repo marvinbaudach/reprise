@@ -29,6 +29,7 @@ fn schema_v28_fresh_and_v26_upgrade_have_the_same_change_log_shape() {
     // v29 AI-jobs shape (ai_jobs/track_provenance/playlists.role) included. The
     // v26 new_releases-history columns stay, so re-migration resumes at v26 and
     // replays v27 (the audio-analysis drop, a no-op here) through v29.
+    crate::db_recent_test_support::remove_v73_v74_columns(&upgraded);
     upgraded
         .execute_batch(
             "DROP TABLE change_log;

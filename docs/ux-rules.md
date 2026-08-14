@@ -5087,6 +5087,18 @@ available. The player plays only finished files.
   outcome with „Open Preferences" targeting the Concerts Plugins row, never
   „Try again"; CONC-4b's ordinary no-credential empty state remains neutral
   with no action.
+
+- **CONC-12** [active] [core] — Ticket availability is what the source
+  says, never an inference. Ticketmaster's `dates.status.code` maps
+  `onsale` → On sale, `offsale` → Off sale, and everything else
+  (`cancelled`, `postponed`, `rescheduled`, missing) → Unknown; Bandsintown
+  maps an `available` offer → On sale, offers without an available one →
+  Off sale, and a missing or empty offers list → Unknown. The app never
+  renders "Sold out": no provider distinguishes a sold-out show from a
+  pre-sale that has not opened.
+  Test: `conc_12_offsale_never_becomes_sold_out`
+  (`crates/reprise-core/src/concerts/availability.rs`, `#[cfg(test)]`).
+
 ## AF. Podcasts & Radio
 
 <!-- Section letter: AE is the last assigned section after Concerts

@@ -1695,3 +1695,6 @@ before restoring the browser place; the second comes from `finish_track_source` 
 neutralises that search-state path. The fixed order makes the first, wasted reload benign because
 the anchor-carrying reload always supersedes it; reducing the count would require the out-of-scope
 D6/D8 changes to same-source handling or sidebar reselection without a measured defect.
+# Updates, Concerts, Releases rework — strand 1
+
+Package A: complete (this commit, base 604677322e, carried source-authored ticket availability through both providers, the v73 cache column, the 19-value reconciliation upsert and reopened queries, added single-event seen stamping, installed the v73 to v74 migration chain, and exposed determinate refresh progress for the shared footer; v74 creates `notified_released_at` for strand 3 so `db.rs` has a single owner, while mechanical legacy-fixture rewinds, the recent-schema expectation and the approved Updates test-row field keep repository-wide tests honest; Core passed 2,443 tests with 2 ignored, strict all-target workspace Clippy, the isolated complete workspace suite, Core purity, architecture and cached audit with only accepted RUSTSEC-2024-0436 passed)
