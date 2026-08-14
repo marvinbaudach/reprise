@@ -29,6 +29,10 @@ Kotlin unverändert übersetzen lassen.
 
 ## Aufgabe 1 — `ThumbnailSize::MobilePortrait` mit 640 px
 
+**Status:** complete in this task commit. Both named tests were compile-red
+before the enum branch existed and passed in
+`/tmp/reprise-artist-photos/core-cover.log` after implementation.
+
 **Dateien:** `crates/reprise-core/src/cover.rs:142-168`,
 `crates/reprise-core/src/cover_mobile_tests.rs`.
 

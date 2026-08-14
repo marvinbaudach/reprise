@@ -149,6 +149,8 @@ pub enum ThumbnailSize {
     Full,
     /// A 56 dp Android list/mini-player slot at the measured 3x density.
     MobileList,
+    /// A 210 dp Android artist portrait at the measured 3x density.
+    MobilePortrait,
     /// A 364 dp Android Now Playing cover at the measured 3x density.
     MobileFull,
 }
@@ -163,6 +165,7 @@ impl ThumbnailSize {
             ThumbnailSize::Grid => 256,
             ThumbnailSize::Full => 1024,
             ThumbnailSize::MobileList => 168,
+            ThumbnailSize::MobilePortrait => 640,
             ThumbnailSize::MobileFull => 1092,
         }
     }
