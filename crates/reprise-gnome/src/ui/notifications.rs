@@ -16,6 +16,32 @@ pub(super) mod updates;
 
 const UPDATE_DUE_CHECK_SECONDS: u32 = 60 * 60;
 
+pub(crate) fn install_update_actions(
+    application: &gio::Application,
+    open_view: impl Fn(&str) + 'static,
+) {
+    let open_link = gio::SimpleAction::new("open-updates-link", Some(glib::VariantTy::STRING));
+    open_link.connect_activate(|_, parameter| {
+        let Some(url) = parameter.and_then(glib::Variant::str) else {
+            tracing::warn!("update notification link action received no string target");
+            return;
+        };
+        super::external_link::launch(url, "update notification", None);
+    });
+    application.add_action(&open_link);
+
+    let open_view = Rc::new(open_view);
+    let view_action = gio::SimpleAction::new("open-updates-view", Some(glib::VariantTy::STRING));
+    view_action.connect_activate(move |_, parameter| {
+        let Some(target) = parameter.and_then(glib::Variant::str) else {
+            tracing::warn!("update notification view action received no string target");
+            return;
+        };
+        open_view(target);
+    });
+    application.add_action(&view_action);
+}
+
 pub(crate) fn arm_update_notifications(application: &adw::Application, db: &Rc<Db>) {
     let application = application.clone().upcast::<gio::Application>();
     let db = db.clone();
@@ -90,6 +116,11 @@ impl PlayerController {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gtk4::glib::variant::ToVariant;
+
     use super::*;
 
     #[test]
@@ -101,5 +132,29 @@ mod tests {
     fn only_the_current_cover_generation_may_send() {
         assert!(generation_is_current(7, 7));
         assert!(!generation_is_current(7, 8));
+    }
+
+    #[test]
+    fn update_notification_actions_accept_only_string_targets() {
+        let application = gio::Application::new(None, gio::ApplicationFlags::NON_UNIQUE);
+        let opened = Rc::new(RefCell::new(Vec::new()));
+        let opened_for_action = opened.clone();
+        install_update_actions(&application, move |target| {
+            opened_for_action.borrow_mut().push(target.to_owned());
+        });
+
+        let link = application.lookup_action("open-updates-link").unwrap();
+        let view = application.lookup_action("open-updates-view").unwrap();
+        assert_eq!(
+            link.parameter_type().as_deref(),
+            Some(glib::VariantTy::STRING)
+        );
+        assert_eq!(
+            view.parameter_type().as_deref(),
+            Some(glib::VariantTy::STRING)
+        );
+
+        view.activate(Some(&"concerts".to_variant()));
+        assert_eq!(opened.borrow().as_slice(), ["concerts"]);
     }
 }

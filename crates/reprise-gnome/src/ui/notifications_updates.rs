@@ -213,6 +213,22 @@ mod tests {
     }
 
     #[test]
+    fn notification_link_matches_the_release_result_value() {
+        let release = release("same-target", "Artist", "Record");
+        let expected = reprise_core::artist_news_links::announce_url_or_fallback(
+            release.announce_url.as_deref(),
+            &release.release_group_mbid,
+        );
+
+        let notifications = release_notification_specs(&[release]);
+
+        assert_eq!(
+            notifications[0].target,
+            super::NotificationTarget::Link(expected)
+        );
+    }
+
+    #[test]
     fn four_releases_collapse_into_one_collected_notification() {
         let releases = [
             release("one", "First", "One"),
