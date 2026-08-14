@@ -3,12 +3,18 @@
 //! in `tracing-subscriber`'s formatting. Mirrors the capture `reprise-core`'s
 //! podcast tests use for the same purpose.
 //!
-//! Installed per test with `tracing::subscriber::with_default`, which is
-//! thread-local — so a test using this one still sees only its own events even
-//! though [`crate::init_logging`] has installed a global subscriber for the
-//! whole process.
+//! One process-global subscriber routes events into a thread-local capture.
+//! Keeping the dispatcher stable avoids races in tracing's global callsite
+//! interest cache when Rust's test runner starts logging tests concurrently.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex},
+};
+
+thread_local! {
+    static ACTIVE_CAPTURE: RefCell<Option<CapturedLogs>> = const { RefCell::new(None) };
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct CapturedLogs(Arc<Mutex<Vec<String>>>);
@@ -16,6 +22,31 @@ pub(crate) struct CapturedLogs(Arc<Mutex<Vec<String>>>);
 impl CapturedLogs {
     pub(crate) fn joined(&self) -> String {
         self.0.lock().unwrap().join("\n")
+    }
+
+    /// Runs one assertion scope with this thread's events routed here.
+    pub(crate) fn capture<T>(&self, operation: impl FnOnce() -> T) -> T {
+        crate::init_logging();
+        let guard = CaptureGuard::install(self.clone());
+        let result = operation();
+        drop(guard);
+        result
+    }
+}
+
+struct CaptureGuard(Option<CapturedLogs>);
+
+impl CaptureGuard {
+    fn install(logs: CapturedLogs) -> Self {
+        Self(ACTIVE_CAPTURE.with(|slot| slot.replace(Some(logs))))
+    }
+}
+
+impl Drop for CaptureGuard {
+    fn drop(&mut self) {
+        ACTIVE_CAPTURE.with(|slot| {
+            slot.replace(self.0.take());
+        });
     }
 }
 
@@ -28,28 +59,23 @@ impl tracing::field::Visit for FieldCollector {
     }
 }
 
-pub(crate) struct LogCapture(pub(crate) CapturedLogs);
+pub(crate) struct CaptureLayer;
 
-impl tracing::Subscriber for LogCapture {
-    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
-        true
-    }
-
-    fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-        tracing::span::Id::from_u64(1)
-    }
-
-    fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
-
-    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
-
-    fn event(&self, event: &tracing::Event<'_>) {
+impl<S> tracing_subscriber::Layer<S> for CaptureLayer
+where
+    S: tracing::Subscriber,
+{
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _context: tracing_subscriber::layer::Context<'_, S>,
+    ) {
         let mut collector = FieldCollector(event.metadata().level().to_string());
         event.record(&mut collector);
-        self.0 .0.lock().unwrap().push(collector.0);
+        ACTIVE_CAPTURE.with(|slot| {
+            if let Some(logs) = slot.borrow().as_ref() {
+                logs.0.lock().unwrap().push(collector.0);
+            }
+        });
     }
-
-    fn enter(&self, _span: &tracing::span::Id) {}
-
-    fn exit(&self, _span: &tracing::span::Id) {}
 }

@@ -414,7 +414,7 @@ mod tests {
     use reprise_core::db::Db;
 
     use super::{record_play_with_retries, retry_after, RecordedPlay, BUSY_ATTEMPTS};
-    use crate::log_capture::{CapturedLogs, LogCapture};
+    use crate::log_capture::CapturedLogs;
     use crate::play_journal::{
         JournalEntry, PlayJournal, FILE_NAME as JOURNAL_FILE_NAME,
         TEMP_FILE_NAME as JOURNAL_TEMP_FILE_NAME,
@@ -567,7 +567,7 @@ mod tests {
         std::fs::create_dir(directory.path().join(JOURNAL_TEMP_FILE_NAME)).unwrap();
 
         let logs = CapturedLogs::default();
-        tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+        logs.capture(|| {
             super::drain_journal(&db, &mut journal, &AtomicBool::new(false));
         });
 
@@ -612,7 +612,7 @@ mod tests {
         drop(plays);
 
         let logs = CapturedLogs::default();
-        tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+        logs.capture(|| {
             super::write_queued_plays(&database_path, 0, queued, &AtomicBool::new(false));
         });
 
@@ -768,7 +768,7 @@ mod tests {
         let read_only = Db::open_ready_read_only(&path).unwrap();
 
         let logs = CapturedLogs::default();
-        tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+        logs.capture(|| {
             record_play_with_retries(
                 &read_only,
                 JournalEntry {
