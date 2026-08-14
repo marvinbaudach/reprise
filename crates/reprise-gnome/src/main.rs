@@ -272,6 +272,7 @@ fn main() -> glib::ExitCode {
         handler.present();
     });
 
+    ui::notifications::arm_update_notifications(&app, &conn);
     let open_conn = conn;
     let open_path = path;
     app.connect_open(move |app, files, _hint| {

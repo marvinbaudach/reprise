@@ -71,7 +71,7 @@ pub(crate) mod motion_reveal;
 mod mounts;
 pub mod mpris_mirror;
 pub(crate) mod nav_history;
-mod notifications;
+pub(crate) mod notifications;
 pub(crate) mod now_playing;
 mod one_shot_task;
 mod online_discovery_banner;

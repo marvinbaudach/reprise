@@ -1,10 +1,43 @@
 //! Off-main-thread track-change notifications with stale-cover rejection.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
+use libadwaita as adw;
+use reprise_core::db::Db;
 
 use super::player_controller::PlayerController;
+
+#[path = "notifications_updates.rs"]
+pub(super) mod updates;
+
+const UPDATE_DUE_CHECK_SECONDS: u32 = 60 * 60;
+
+pub(crate) fn arm_update_notifications(application: &adw::Application, db: &Rc<Db>) {
+    let application = application.clone().upcast::<gio::Application>();
+    let db = db.clone();
+    let cover_generation = Rc::new(Cell::new(0));
+    let run = Rc::new(move || {
+        let now = chrono::Utc::now().timestamp();
+        let today = chrono::Local::now().date_naive();
+        if let Err(error) =
+            updates::send_due_releases(&application, &db, now, now, today, &cover_generation)
+        {
+            tracing::warn!(%error, "could not run update notification due check");
+        }
+    });
+    {
+        let run = run.clone();
+        glib::idle_add_local_once(move || run());
+    }
+    glib::timeout_add_seconds_local(UPDATE_DUE_CHECK_SECONDS, move || {
+        run();
+        glib::ControlFlow::Continue
+    });
+}
 
 fn notification_body(artist: &str, album: &str) -> String {
     format!("{artist} — {album}")

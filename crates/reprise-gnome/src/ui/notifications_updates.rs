@@ -1,0 +1,272 @@
+//! Release-date and concert update notifications.
+
+use std::cell::Cell;
+use std::path::Path;
+use std::rc::Rc;
+
+use chrono::NaiveDate;
+use gtk4::gio;
+use gtk4::gio::prelude::*;
+use gtk4::glib;
+use gtk4::glib::variant::ToVariant;
+use reprise_core::artist_news::StoredRelease;
+use reprise_core::db::Db;
+
+const COLLECT_RELEASES_AT: usize = 4;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum NotificationTarget {
+    Link(String),
+    View(&'static str),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NotificationSpec {
+    id: String,
+    title: String,
+    body: String,
+    target: NotificationTarget,
+    cover_mbid: String,
+}
+
+fn release_notification_specs(releases: &[StoredRelease]) -> Vec<NotificationSpec> {
+    if releases.len() >= COLLECT_RELEASES_AT {
+        let body = releases
+            .iter()
+            .take(3)
+            .map(|release| release.artist_name.as_str())
+            .collect::<Vec<_>>()
+            .join(" · ");
+        return vec![NotificationSpec {
+            id: "updates-releases".into(),
+            title: crate::ui::strings::update_releases_title(releases.len()),
+            body,
+            target: NotificationTarget::View("releases"),
+            cover_mbid: releases[0].release_group_mbid.clone(),
+        }];
+    }
+
+    releases
+        .iter()
+        .map(|release| NotificationSpec {
+            id: format!("updates-release-{}", release.release_group_mbid),
+            title: release.title.clone(),
+            body: crate::ui::strings::update_release_body(
+                &release.artist_name,
+                &release.release_type,
+            ),
+            target: NotificationTarget::Link(
+                reprise_core::artist_news_links::announce_url_or_fallback(
+                    release.announce_url.as_deref(),
+                    &release.release_group_mbid,
+                ),
+            ),
+            cover_mbid: release.release_group_mbid.clone(),
+        })
+        .collect()
+}
+
+/// Sends and stamps every release that became due before this check began.
+pub(super) fn send_due_releases(
+    application: &gio::Application,
+    db: &Db,
+    run_started_at: i64,
+    now: i64,
+    today: NaiveDate,
+    cover_generation: &Rc<Cell<u64>>,
+) -> Result<usize, rusqlite::Error> {
+    let generation = cover_generation.get().wrapping_add(1);
+    cover_generation.set(generation);
+    if !reprise_core::modules::is_enabled(db, &reprise_core::modules::NEW_RELEASES_MODULE)? {
+        return Ok(0);
+    }
+    if reprise_core::artist_news_notify::notification_preference(db)?
+        == reprise_core::artist_news_notify::UpdateNotifications::Off
+    {
+        return Ok(0);
+    }
+    let releases =
+        reprise_core::artist_news_notify::released_today_candidates(db, run_started_at, today)?;
+    let specs = deliver_release_candidates(db, &releases, now, |spec| {
+        send_notification(application, spec, None);
+    })?;
+    for spec in specs {
+        send_with_cover_when_available(application, spec, generation, cover_generation);
+    }
+    Ok(releases.len())
+}
+
+fn deliver_release_candidates(
+    db: &Db,
+    releases: &[StoredRelease],
+    now: i64,
+    mut send: impl FnMut(&NotificationSpec),
+) -> Result<Vec<NotificationSpec>, rusqlite::Error> {
+    let specs = release_notification_specs(releases);
+    if releases.len() >= COLLECT_RELEASES_AT {
+        if let Some(spec) = specs.first() {
+            send(spec);
+            for release in releases {
+                reprise_core::artist_news_notify::mark_release_notified(
+                    db,
+                    &release.release_group_mbid,
+                    now,
+                )?;
+            }
+        }
+    } else {
+        for (release, spec) in releases.iter().zip(&specs) {
+            send(spec);
+            reprise_core::artist_news_notify::mark_release_notified(
+                db,
+                &release.release_group_mbid,
+                now,
+            )?;
+        }
+    }
+    Ok(specs)
+}
+
+fn send_notification(application: &gio::Application, spec: &NotificationSpec, icon: Option<&Path>) {
+    let notification = gio::Notification::new(&spec.title);
+    notification.set_body(Some(&spec.body));
+    match &spec.target {
+        NotificationTarget::Link(url) => notification
+            .set_default_action_and_target_value("app.open-updates-link", Some(&url.to_variant())),
+        NotificationTarget::View(target) => notification.set_default_action_and_target_value(
+            "app.open-updates-view",
+            Some(&target.to_variant()),
+        ),
+    }
+    if let Some(icon) = icon {
+        notification.set_icon(&gio::FileIcon::new(&gio::File::for_path(icon)));
+    }
+    application.send_notification(Some(&spec.id), &notification);
+}
+
+fn send_with_cover_when_available(
+    application: &gio::Application,
+    spec: NotificationSpec,
+    expected_generation: u64,
+    current_generation: &Rc<Cell<u64>>,
+) {
+    let application = application.clone();
+    let current_generation = current_generation.clone();
+    let mbid = spec.cover_mbid.clone();
+    glib::spawn_future_local(async move {
+        let cover = gio::spawn_blocking(move || {
+            reprise_core::cover_download::fetch_release_group_cover(&mbid)
+        })
+        .await
+        .ok();
+        if !super::generation_is_current(expected_generation, current_generation.get()) {
+            return;
+        }
+        let Some(reprise_core::cover_download::ReleaseGroupCover::Image(path)) = cover else {
+            return;
+        };
+        send_notification(&application, &spec, Some(&path));
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use reprise_core::artist_news::{LibraryPresence, StoredRelease};
+
+    use super::{deliver_release_candidates, release_notification_specs};
+
+    fn release(mbid: &str, artist: &str, title: &str) -> StoredRelease {
+        StoredRelease {
+            release_group_mbid: mbid.into(),
+            artist_name: artist.into(),
+            artist_mbid: format!("artist-{mbid}"),
+            title: title.into(),
+            release_type: "Album".into(),
+            first_release_date: "2026-08-14".into(),
+            fetched_at: 1,
+            seen_at: None,
+            hidden: false,
+            presence: LibraryPresence::Absent,
+            announce_url: Some(format!("https://{artist}.bandcamp.com/album/{mbid}")),
+            track_count: Some(10),
+            local_track_count: 0,
+        }
+    }
+
+    #[test]
+    fn one_to_three_releases_keep_stable_per_release_notifications() {
+        let releases = [
+            release("one", "First", "First Record"),
+            release("two", "Second", "Second Record"),
+        ];
+
+        let notifications = release_notification_specs(&releases);
+
+        assert_eq!(notifications.len(), 2);
+        assert_eq!(notifications[0].id, "updates-release-one");
+        assert_eq!(notifications[0].title, "First Record");
+        assert_eq!(notifications[0].body, "First · Album · out today");
+        assert_eq!(
+            notifications[0].target,
+            super::NotificationTarget::Link("https://First.bandcamp.com/album/one".into())
+        );
+    }
+
+    #[test]
+    fn four_releases_collapse_into_one_collected_notification() {
+        let releases = [
+            release("one", "First", "One"),
+            release("two", "Second", "Two"),
+            release("three", "Third", "Three"),
+            release("four", "Fourth", "Four"),
+        ];
+
+        let notifications = release_notification_specs(&releases);
+
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].id, "updates-releases");
+        assert_eq!(notifications[0].title, "4 releases are out");
+        assert_eq!(notifications[0].body, "First · Second · Third");
+        assert_eq!(
+            notifications[0].target,
+            super::NotificationTarget::View("releases")
+        );
+    }
+
+    #[test]
+    fn the_release_stamp_is_written_only_after_the_notification_is_sent() {
+        let db = crate::test_db::open().unwrap();
+        crate::test_db::connection(&db)
+            .execute(
+                "INSERT INTO new_releases (
+                   release_group_mbid, artist_name, artist_mbid, title, release_type,
+                   first_release_date, fetched_at, first_seen
+                 ) VALUES ('known', 'Artist', 'artist-id', 'Record', 'Album',
+                           '2026-08-14', 1, 1)",
+                [],
+            )
+            .unwrap();
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 14).unwrap();
+        let releases =
+            reprise_core::artist_news_notify::released_today_candidates(&db, 2, today).unwrap();
+        let mut sends = 0;
+
+        deliver_release_candidates(&db, &releases, 3, |_| {
+            sends += 1;
+            assert_eq!(
+                reprise_core::artist_news_notify::released_today_candidates(&db, 2, today)
+                    .unwrap()
+                    .len(),
+                1
+            );
+        })
+        .unwrap();
+
+        assert_eq!(sends, 1);
+        assert!(
+            reprise_core::artist_news_notify::released_today_candidates(&db, 4, today)
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
