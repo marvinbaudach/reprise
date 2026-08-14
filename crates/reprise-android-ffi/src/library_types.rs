@@ -15,15 +15,13 @@ pub(crate) struct ConfiguredTree {
     pub(crate) source: Arc<BridgedSource>,
 }
 
-pub(crate) struct LibraryState {
-    pub(crate) db: Db,
-    pub(crate) tree: Option<ConfiguredTree>,
-}
-
+/// Lock order for any operation that needs both is `writer` before `tree`.
+/// The reader is never held together with either of them.
 #[derive(uniffi::Object)]
 pub struct MusicLibrary {
-    pub(crate) writer: Mutex<LibraryState>,
+    pub(crate) writer: Mutex<Db>,
     pub(crate) reader: Mutex<Db>,
+    pub(crate) tree: Mutex<Option<ConfiguredTree>>,
     pub(crate) cache_root: PathBuf,
     pub(crate) database_path: PathBuf,
 }
@@ -32,7 +30,7 @@ impl MusicLibrary {
     /// A poisoned mutex means another call panicked while holding the
     /// connection. Reporting that as an error beats propagating the panic
     /// across the FFI boundary, where it would abort the app process.
-    pub(crate) fn writer(&self) -> Result<std::sync::MutexGuard<'_, LibraryState>, LibraryError> {
+    pub(crate) fn writer(&self) -> Result<std::sync::MutexGuard<'_, Db>, LibraryError> {
         self.writer.lock().map_err(|_| LibraryError::Database {
             detail: "library handle poisoned by an earlier panic".to_owned(),
         })
@@ -42,6 +40,14 @@ impl MusicLibrary {
         self.reader.lock().map_err(|_| LibraryError::Database {
             detail: "library handle poisoned by an earlier panic".to_owned(),
         })
+    }
+
+    pub(crate) fn configured_tree(&self) -> Result<(PathBuf, Arc<BridgedSource>), LibraryError> {
+        let tree = self.tree.lock().map_err(|_| LibraryError::Database {
+            detail: "library handle poisoned by an earlier panic".to_owned(),
+        })?;
+        let tree = tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
+        Ok((tree.uri.clone(), Arc::clone(&tree.source)))
     }
 }
 

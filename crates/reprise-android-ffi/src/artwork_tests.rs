@@ -177,7 +177,7 @@ fn a_broken_library_is_an_error_while_a_track_without_a_picture_is_not() {
     let library = Arc::new(library);
     let poisoner = Arc::clone(&library);
     let panicked = std::thread::spawn(move || {
-        let _guard = poisoner.writer.lock().unwrap();
+        let _guard = poisoner.tree.lock().unwrap();
         panic!("poisoning the library handle on purpose");
     })
     .join();

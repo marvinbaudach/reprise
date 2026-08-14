@@ -47,7 +47,7 @@ pub use library_types::{
     AndroidArtworkSize, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
     ScanSummary,
 };
-use library_types::{ConfiguredTree, LibraryState, DATABASE_FILE_NAME};
+use library_types::{ConfiguredTree, DATABASE_FILE_NAME};
 pub use logging::init_logging;
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
@@ -94,11 +94,9 @@ impl MusicLibrary {
             detail: error.to_string(),
         })?;
         Ok(Self {
-            writer: Mutex::new(LibraryState {
-                db: writer,
-                tree: None,
-            }),
+            writer: Mutex::new(writer),
             reader: Mutex::new(reader),
+            tree: Mutex::new(None),
             cache_root: PathBuf::from(app_cache_directory),
             database_path: db_path,
         })
@@ -109,13 +107,14 @@ impl MusicLibrary {
         tree_uri: String,
         source: Box<dyn SafSource>,
     ) -> Result<(), LibraryError> {
-        let mut state = self.writer()?;
-        settings::set_library_root(&state.db, &tree_uri).map_err(|error| {
-            LibraryError::Database {
-                detail: error.to_string(),
-            }
+        let writer = self.writer()?;
+        settings::set_library_root(&writer, &tree_uri).map_err(|error| LibraryError::Database {
+            detail: error.to_string(),
         })?;
-        state.tree = Some(ConfiguredTree {
+        let mut tree = self.tree.lock().map_err(|_| LibraryError::Database {
+            detail: "library handle poisoned by an earlier panic".to_owned(),
+        })?;
+        *tree = Some(ConfiguredTree {
             uri: tree_uri.into(),
             source: Arc::new(BridgedSource::new(source)),
         });
@@ -126,16 +125,12 @@ impl MusicLibrary {
         &self,
         progress: Box<dyn ScanProgressListener>,
     ) -> Result<ScanSummary, LibraryError> {
-        let state = self.writer()?;
-        let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
-        let outcome = scan_folder_with_source_and_progress(
-            tree.source.as_ref(),
-            &state.db,
-            &tree.uri,
-            |event| {
+        let writer = self.writer()?;
+        let (tree_uri, source) = self.configured_tree()?;
+        let outcome =
+            scan_folder_with_source_and_progress(source.as_ref(), &writer, &tree_uri, |event| {
                 progress.on_progress(event.into());
-            },
-        );
+            });
         drop(progress);
         let outcome = outcome.map_err(|error| LibraryError::Scan {
             detail: error.to_string(),
@@ -250,11 +245,7 @@ impl MusicLibrary {
         track_uri: &str,
         size: AndroidArtworkSize,
     ) -> Result<Option<String>, LibraryError> {
-        let source = {
-            let state = self.writer()?;
-            let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
-            Arc::clone(&tree.source)
-        };
+        let (_, source) = self.configured_tree()?;
         let Some(cover) = reprise_core::cover::resolve_source_with_source(
             source.as_ref(),
             Path::new(&track_uri),

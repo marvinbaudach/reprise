@@ -89,8 +89,8 @@ impl MusicLibrary {
     }
 
     pub fn set_equalizer_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
-        let state = self.writer()?;
-        settings::set_equalizer_enabled(&state.db, enabled).map_err(|error| database_error(&error))
+        let writer = self.writer()?;
+        settings::set_equalizer_enabled(&writer, enabled).map_err(|error| database_error(&error))
     }
 
     /// Replaces the authored curve with points from one explicit phone edit.
@@ -100,13 +100,13 @@ impl MusicLibrary {
     ) -> Result<(), LibraryError> {
         let curve = EqualizerCurve::new(points.into_iter().map(EqualizerPoint::from).collect())
             .map_err(|error| invalid_playback_setting(&error))?;
-        let state = self.writer()?;
-        settings::set_equalizer_curve(&state.db, &curve).map_err(|error| database_error(&error))
+        let writer = self.writer()?;
+        settings::set_equalizer_curve(&writer, &curve).map_err(|error| database_error(&error))
     }
 
     pub fn set_gapless_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
-        let state = self.writer()?;
-        settings::set_gapless_enabled(&state.db, enabled).map_err(|error| database_error(&error))
+        let writer = self.writer()?;
+        settings::set_gapless_enabled(&writer, enabled).map_err(|error| database_error(&error))
     }
 }
 

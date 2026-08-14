@@ -6,7 +6,10 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use super::{LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate, TrackWindow};
+use super::{
+    AndroidArtworkSize, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
+    TrackWindow,
+};
 use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 use crate::WindowRange;
 
@@ -33,8 +36,13 @@ struct FixtureSource {
 struct ScanRendezvous {
     entered: AtomicBool,
     scan_is_inside: mpsc::SyncSender<()>,
-    reader_answer: Mutex<mpsc::Receiver<Result<TrackWindow, LibraryError>>>,
-    observed_answer: Arc<Mutex<Option<Result<TrackWindow, LibraryError>>>>,
+    reader_answer: Mutex<mpsc::Receiver<ReaderAnswer>>,
+    observed_answer: Arc<Mutex<Option<ReaderAnswer>>>,
+}
+
+enum ReaderAnswer {
+    Browse(Result<TrackWindow, LibraryError>),
+    Artwork(Result<Option<String>, LibraryError>),
 }
 
 impl FixtureSource {
@@ -48,8 +56,8 @@ impl FixtureSource {
     fn blocking(
         track_count: usize,
         scan_is_inside: mpsc::SyncSender<()>,
-        reader_answer: mpsc::Receiver<Result<TrackWindow, LibraryError>>,
-        observed_answer: Arc<Mutex<Option<Result<TrackWindow, LibraryError>>>>,
+        reader_answer: mpsc::Receiver<ReaderAnswer>,
+        observed_answer: Arc<Mutex<Option<ReaderAnswer>>>,
     ) -> Self {
         Self {
             track_count,
@@ -200,14 +208,67 @@ fn read_while_scanning() -> (Option<Result<TrackWindow, LibraryError>>, TrackWin
     let reader_library = Arc::clone(&library);
     let reader = thread::spawn(move || {
         inside_rx.recv().unwrap();
-        let _ = answer_tx.send(reader_library.list_tracks(full_window()));
+        let _ = answer_tx.send(ReaderAnswer::Browse(
+            reader_library.list_tracks(full_window()),
+        ));
     });
     library.scan(Box::new(QuietProgress)).unwrap();
     reader.join().unwrap();
 
-    let during_scan = observed_answer.lock().unwrap().take();
+    let during_scan = match observed_answer.lock().unwrap().take() {
+        Some(ReaderAnswer::Browse(answer)) => Some(answer),
+        Some(ReaderAnswer::Artwork(_)) => panic!("browse rendezvous received artwork"),
+        None => None,
+    };
     let after_scan = library.list_tracks(full_window()).unwrap();
     (during_scan, after_scan)
+}
+
+fn artwork_while_scanning() -> Option<Result<Option<String>, LibraryError>> {
+    let directory = tempfile::tempdir().unwrap();
+    let library = Arc::new(
+        MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap(),
+    );
+    library
+        .set_tree_uri(TREE_URI.to_owned(), Box::new(FixtureSource::plain(1)))
+        .unwrap();
+    library.scan(Box::new(QuietProgress)).unwrap();
+
+    let (inside_tx, inside_rx) = mpsc::sync_channel(1);
+    let (answer_tx, answer_rx) = mpsc::sync_channel(1);
+    let observed_answer = Arc::new(Mutex::new(None));
+    library
+        .set_tree_uri(
+            TREE_URI.to_owned(),
+            Box::new(FixtureSource::blocking(
+                2,
+                inside_tx,
+                answer_rx,
+                Arc::clone(&observed_answer),
+            )),
+        )
+        .unwrap();
+
+    let reader_library = Arc::clone(&library);
+    let reader = thread::spawn(move || {
+        inside_rx.recv().unwrap();
+        let _ = answer_tx.send(ReaderAnswer::Artwork(
+            reader_library.track_artwork(FIRST_TRACK_URI, AndroidArtworkSize::List),
+        ));
+    });
+    library.scan(Box::new(QuietProgress)).unwrap();
+    reader.join().unwrap();
+
+    let answer = match observed_answer.lock().unwrap().take() {
+        Some(ReaderAnswer::Artwork(answer)) => Some(answer),
+        Some(ReaderAnswer::Browse(_)) => panic!("artwork rendezvous received browse answer"),
+        None => None,
+    };
+    answer
 }
 
 #[test]
@@ -229,4 +290,14 @@ fn a_read_during_a_scan_sees_the_library_as_it_was_before_the_scan_committed() {
 
     assert_eq!(during_scan.total, 1);
     assert_eq!(after_scan.total, 2);
+}
+
+#[test]
+fn track_artwork_answers_while_a_scan_holds_the_writer() {
+    let during_scan = artwork_while_scanning();
+
+    assert!(
+        matches!(during_scan, Some(Ok(_))),
+        "track artwork did not answer while a scan held the writer"
+    );
 }
