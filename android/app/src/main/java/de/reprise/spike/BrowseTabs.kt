@@ -32,6 +32,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 internal fun BrowseTab.emptyMessage(searchText: String): String = if (searchText.isNotBlank()) {
     "No matching ${label.lowercase()}."
@@ -588,9 +589,16 @@ private fun ArtistRows(
 
 @Composable
 private fun ArtistRow(artist: LibraryArtist, openArtist: (LibraryArtist) -> Unit) {
+    val visual = rememberArtistArtworkVisual(
+        name = artist.name,
+        representativeUri = artist.representativeUri,
+        artworkSize = AndroidArtworkSize.LIST,
+        allowFetch = false,
+    )
     ListItem(
         headlineContent = { Text(artist.name) },
         supportingContent = { Text(artist.details()) },
+        leadingContent = { ArtistAvatar(visual, sizeDp = 40) },
         modifier = Modifier
             .fillMaxWidth()
             .clickable { openArtist(artist) },
