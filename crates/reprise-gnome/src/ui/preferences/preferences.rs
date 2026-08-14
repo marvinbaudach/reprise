@@ -15,6 +15,7 @@ use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
+use crate::ui::location_broadcast::LocationBroadcast;
 use crate::ui::lyrics_batch::LyricsBatch;
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
@@ -133,6 +134,7 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) lastfm_activation_pending: Cell<bool>,
     pub(in crate::ui) artist_news: Rc<ArtistNewsRuntime>,
     pub(in crate::ui) concerts: Rc<ConcertsRuntime>,
+    pub(in crate::ui) location_broadcast: Rc<LocationBroadcast>,
     pub(in crate::ui) podcasts: Rc<PodcastsRuntime>,
     pub(in crate::ui) cover_download: CoverDownloadRuntime,
     pub(in crate::ui) lyrics_batch: Rc<LyricsBatch>,
@@ -167,6 +169,7 @@ impl PreferencesContext {
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
         concerts: &Rc<ConcertsRuntime>,
+        location_broadcast: &Rc<LocationBroadcast>,
         podcasts: &Rc<PodcastsRuntime>,
         cover_download: &CoverDownloadRuntime,
         lyrics_batch: &Rc<LyricsBatch>,
@@ -199,6 +202,7 @@ impl PreferencesContext {
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
             concerts: concerts.clone(),
+            location_broadcast: location_broadcast.clone(),
             podcasts: podcasts.clone(),
             cover_download: cover_download.clone(),
             lyrics_batch: lyrics_batch.clone(),
@@ -269,7 +273,7 @@ impl PreferencesContext {
         self.replaygain_mode.borrow_mut().take();
         self.plugin_rows.borrow_mut().clear();
         use super::preferences_window::PageId;
-        // SET-8: handed to the shell as a factory rather than five finished
+        // SET-8: handed to the shell as a factory rather than six finished
         // pages, so only the page in sight is built. See
         // `preferences_window::build` for why the shell calls this
         // synchronously. Weak, because the closure lives in the stack, the
@@ -285,6 +289,7 @@ impl PreferencesContext {
                 PageId::Appearance => context.appearance_page(),
                 PageId::Layout => context.layout_page(),
                 PageId::Library => context.library_page(),
+                PageId::Location => context.location_page(),
                 PageId::Plugins => context.plugins_page(),
             }
         });

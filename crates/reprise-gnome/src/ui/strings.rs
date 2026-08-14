@@ -35,11 +35,9 @@ pub use reprise_view::strings::playlists::IMPORTED_PLAYLIST_FALLBACK_NAME;
 #[path = "strings_artist.rs"]
 mod artist;
 pub use artist::*;
-
 #[path = "strings_song_visuals.rs"]
 mod song_visuals;
 pub use song_visuals::*;
-
 #[path = "strings_seek.rs"]
 mod seek;
 pub use seek::*;
@@ -58,6 +56,9 @@ mod concerts;
 #[allow(unused_imports)]
 pub use concerts::*;
 
+#[path = "strings_location.rs"]
+mod location;
+pub use location::*;
 #[path = "strings_releases.rs"]
 mod releases;
 #[allow(unused_imports)]

@@ -8,7 +8,6 @@ type OnLocationChanged = Rc<dyn Fn()>;
 struct Subscriber {
     id: u64,
     is_alive: IsAlive,
-    #[cfg_attr(not(test), allow(dead_code))]
     callback: OnLocationChanged,
 }
 
@@ -43,7 +42,6 @@ impl LocationBroadcast {
         });
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::ui) fn notify(&self) {
         self.prune();
         let entries = self.entries.borrow().clone();

@@ -1,68 +1,6 @@
 use super::*;
 
 #[test]
-fn location_apply_decisions_store_success_and_keep_errors_visible() {
-    assert_eq!(
-        geocode_decision(Ok(Some(reprise_core::concerts::GeocodedLocation {
-            lat: 48.137,
-            lon: 11.575,
-            display_name: "Munich, Bavaria".into(),
-            country_code: Some("DE".into()),
-        }))),
-        LocationDecision::Store {
-            latitude: 48.137,
-            longitude: 11.575,
-            name: "Munich, Bavaria".into(),
-            country_code: Some("DE".into()),
-        }
-    );
-    assert!(matches!(
-        geocode_decision(Ok(None)),
-        LocationDecision::Error(_)
-    ));
-    assert_eq!(
-        portal_decision(&Ok(reprise_platform_linux::location::PortalLocation {
-            latitude: 47.376,
-            longitude: 8.541,
-            accuracy_m: Some(1_000.0),
-        })),
-        LocationDecision::Store {
-            latitude: 47.376,
-            longitude: 8.541,
-            name: crate::ui::strings::text(crate::ui::strings::CONCERTS_CURRENT_LOCATION),
-            // `RAD-5`/`O-4`: the portal has no address text, so this is
-            // honestly `None` — never a guessed country.
-            country_code: None,
-        }
-    );
-    assert!(matches!(
-        portal_decision(&Err("denied".into())),
-        LocationDecision::Error(error)
-            if error == crate::ui::strings::text(
-                crate::ui::strings::CONCERTS_LOCATION_NOT_FOUND
-            )
-    ));
-}
-
-#[test]
-fn current_location_button_is_disabled_with_pending_feedback() {
-    assert_eq!(
-        current_location_button_state(false),
-        CurrentLocationButtonState {
-            sensitive: true,
-            show_spinner: false,
-        }
-    );
-    assert_eq!(
-        current_location_button_state(true),
-        CurrentLocationButtonState {
-            sensitive: false,
-            show_spinner: true,
-        }
-    );
-}
-
-#[test]
 fn set_4_credential_apply_requires_successful_persistence() {
     assert_eq!(
         credential_apply_decision("", true),

@@ -63,8 +63,8 @@ pub fn build(
     // The player is created eagerly at window build (not lazily on first
     // activation): construction is cheap (one playbin, no I/O), the
     // `REPRISE_AUDIO_SINK` override keeps headless environments working, and
-    // eager creation means the bottom bar exists — greyed out — from the
-    // first frame. If GStreamer is unavailable the app degrades to a library
+    // eager creation means the bottom bar exists — greyed out — from the first frame.
+    // Without GStreamer, the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
     let super::window_runtime_setup::WindowRuntimes {
@@ -132,7 +132,6 @@ pub fn build(
     };
 
     let status_bar = StatusBar::new();
-
     // Stage 3 Task 3: the Queue source reads the current playback queue's
     // ids (in play order) from the controller rather than a SQL `WHERE`
     // clause (see `queries.rs`'s module doc). `player` already exists at
@@ -468,6 +467,7 @@ pub fn build(
         &lastfm,
         &artist_news,
         &concerts_runtime,
+        &location_broadcast,
         &podcasts_runtime,
         &cover_download,
         &lyrics_batch,
