@@ -1,238 +1,12 @@
 use std::path::PathBuf;
 
-use reprise_core::library::tag_edit::EditableTags;
-use reprise_core::library_doctor::{
-    DoctorCandidate, DoctorField, DoctorGroupMember, DoctorProposal, DoctorScanOptions,
-    DoctorTrackRef, DoctorTrackSnapshot, DoctorUnresolvedGroup, DoctorValue, ProblemClass,
-    ProposalSource,
+use reprise_core::library_doctor::{DoctorField, DoctorValue, ProblemClass};
+
+use super::super::review_row::contract_tests::{
+    album_change_scan, conflict_scan, ready_and_stale_scan, scan,
+    seed_ready_and_stale_badge_fixture, stale_album_scan, three_album_scan,
 };
-
 use super::*;
-
-fn scan() -> DoctorScan {
-    DoctorScan {
-        id: 1,
-        scope_kind: "whole_library".into(),
-        created_at: 2,
-        options: DoctorScanOptions::local_only(),
-        checked_tracks: 1,
-        skipped_tracks: 0,
-        track_ids: vec![7],
-        tracks: vec![DoctorTrackSnapshot {
-            reference: DoctorTrackRef {
-                track_id: 7,
-                path: PathBuf::from("/tmp/doctor-review.flac"),
-                file_mtime: 1,
-                file_size: 2,
-                device: None,
-                inode: None,
-            },
-            tags: Some(EditableTags {
-                title: "Review track".into(),
-                artist: "Artist".into(),
-                album: "Album".into(),
-                album_artist: "Artist".into(),
-                year: Some(2020),
-                track_no: Some(1),
-                genre: "Rock".into(),
-            }),
-            stale: false,
-        }],
-        proposals: vec![DoctorProposal {
-            track_id: 7,
-            field: DoctorField::Genre,
-            current: DoctorValue::Text("Rock".into()),
-            proposed: DoctorValue::Text("Alternative".into()),
-            source: ProposalSource::MusicBrainz,
-            confidence: 90,
-            preselected: false,
-            never_preselect: false,
-            problem_class: ProblemClass::GenreVariant,
-            resolved_release_mbid: None,
-            evidence: Vec::new(),
-            local_fallback: None,
-        }],
-        unresolved_groups: Vec::new(),
-    }
-}
-
-fn three_album_scan() -> DoctorScan {
-    let mut scan = scan();
-    scan.track_ids = vec![7, 8, 9];
-    for (track_id, album) in [(8, "Second"), (9, "Third")] {
-        let mut track = scan.tracks[0].clone();
-        track.reference.track_id = track_id;
-        track.reference.path = PathBuf::from(format!("/tmp/doctor-review-{track_id}.flac"));
-        track.tags.as_mut().unwrap().album = album.into();
-        track.tags.as_mut().unwrap().title = format!("Track {track_id}");
-        scan.tracks.push(track);
-        let mut proposal = scan.proposals[0].clone();
-        proposal.track_id = track_id;
-        scan.proposals.push(proposal);
-    }
-    scan.checked_tracks = 3;
-    scan
-}
-
-fn album_change_scan() -> DoctorScan {
-    let template = scan();
-    let mut scan = template.clone();
-    scan.track_ids.clear();
-    scan.tracks.clear();
-    scan.proposals.clear();
-    for track_id in 1..=11 {
-        let mut track = template.tracks[0].clone();
-        track.reference.track_id = track_id;
-        track.reference.path = PathBuf::from(format!("/tmp/album-{track_id}.flac"));
-        let tags = track.tags.as_mut().unwrap();
-        tags.title = format!("Track {track_id}");
-        tags.album = "One album".into();
-        tags.album_artist = "Artists".into();
-        scan.track_ids.push(track_id);
-        scan.tracks.push(track);
-        scan.proposals.push(DoctorProposal {
-            track_id,
-            field: DoctorField::AlbumArtist,
-            current: DoctorValue::Text("Artists".into()),
-            proposed: DoctorValue::Text("Artist".into()),
-            source: ProposalSource::MusicBrainz,
-            confidence: 90,
-            preselected: false,
-            never_preselect: false,
-            problem_class: ProblemClass::MissingAlbumArtist,
-            resolved_release_mbid: None,
-            evidence: Vec::new(),
-            local_fallback: None,
-        });
-    }
-    for (track_id, field, current, proposed, problem_class) in [
-        (
-            1,
-            DoctorField::Title,
-            DoctorValue::Text("Track 1".into()),
-            DoctorValue::Text("First track".into()),
-            ProblemClass::CasingWhitespace,
-        ),
-        (
-            2,
-            DoctorField::Genre,
-            DoctorValue::Text("Rock".into()),
-            DoctorValue::Text("Alternative".into()),
-            ProblemClass::GenreVariant,
-        ),
-        (
-            3,
-            DoctorField::Year,
-            DoctorValue::Year(2020),
-            DoctorValue::Year(2021),
-            ProblemClass::MissingWrongYear,
-        ),
-    ] {
-        scan.proposals.push(DoctorProposal {
-            track_id,
-            field,
-            current,
-            proposed,
-            source: ProposalSource::MusicBrainz,
-            confidence: 90,
-            preselected: false,
-            never_preselect: false,
-            problem_class,
-            resolved_release_mbid: None,
-            evidence: Vec::new(),
-            local_fallback: None,
-        });
-    }
-    scan.checked_tracks = 11;
-    scan
-}
-
-fn ready_and_stale_scan() -> DoctorScan {
-    let mut scan = scan();
-    let mut stale_track = scan.tracks[0].clone();
-    stale_track.reference.track_id = 8;
-    stale_track.reference.path = PathBuf::from("/tmp/doctor-review-stale.flac");
-    stale_track.stale = true;
-    scan.track_ids.push(8);
-    scan.tracks.push(stale_track);
-    let mut stale_proposal = scan.proposals[0].clone();
-    stale_proposal.track_id = 8;
-    scan.proposals.push(stale_proposal);
-    scan.checked_tracks = 2;
-    scan
-}
-
-fn seed_ready_and_stale_badge_fixture(db: &Db) {
-    let conn = crate::test_db::connection(db);
-    conn.execute(
-        "INSERT INTO library_doctor_scans \
-             (id, scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks) \
-             VALUES (1, 'whole_library', 2, 0, 2, 0)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE library_doctor_state SET last_complete_scan_id=1 WHERE singleton=1",
-        [],
-    )
-    .unwrap();
-    for (position, track_id, path, mtime) in [
-        (0, 7, "/tmp/doctor-review.flac", 1),
-        (1, 8, "/tmp/doctor-review-stale.flac", 2),
-    ] {
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size) \
-                 VALUES (?1, ?2, 'Review track', 0, ?3, 2)",
-            rusqlite::params![track_id, path, mtime],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO library_doctor_scan_tracks \
-                 (scan_id, position, track_id, path, file_mtime, file_size, read_ok, \
-                  title, artist, album, album_artist, year, track_no, genre) \
-                 VALUES (1, ?1, ?2, ?3, 1, 2, 1, 'Review track', 'Artist', 'Album', \
-                         'Artist', 2020, 1, 'Rock')",
-            rusqlite::params![position, track_id, path],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO library_doctor_proposals \
-                 (scan_id, position, track_id, field, current_value, proposed_value, source, \
-                  confidence, preselected, problem_class, evidence_json, local_fallback_json) \
-                 VALUES (1, ?1, ?2, 'genre', 'Rock', 'Alternative', 'musicbrainz', \
-                         90, 0, 'genre_variant', '[]', 'null')",
-            rusqlite::params![position, track_id],
-        )
-        .unwrap();
-    }
-}
-
-fn conflict_scan() -> DoctorScan {
-    let mut scan = scan();
-    scan.proposals.clear();
-    scan.unresolved_groups = vec![DoctorUnresolvedGroup {
-        field: DoctorField::Genre,
-        group_key: "genre".into(),
-        candidates: vec![
-            DoctorCandidate {
-                value: DoctorValue::Text("Rock".into()),
-                count: 1,
-                evidence: Vec::new(),
-            },
-            DoctorCandidate {
-                value: DoctorValue::Text("rock".into()),
-                count: 1,
-                evidence: Vec::new(),
-            },
-        ],
-        members: vec![DoctorGroupMember {
-            track_id: 7,
-            current: DoctorValue::Text("ROCK".into()),
-        }],
-        local_fallback: None,
-    }];
-    scan
-}
 
 #[test]
 fn doc_9b_one_column_header_serves_the_whole_page() {
@@ -607,6 +381,159 @@ fn doc_9b_the_first_row_carries_its_album_header() {
             .iter()
             .any(|label| label == "Album"),
         "the first header must name the first album"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &stale_album_scan(),
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let headers = ["doctor-album-header-first", "doctor-album-header-later"]
+        .into_iter()
+        .flat_map(|class| descendants_with_css_class(&page.rows.clone().upcast(), class))
+        .collect::<Vec<_>>();
+    let header = |album: &str| {
+        headers
+            .iter()
+            .find(|header| {
+                descendant_label_text(header)
+                    .iter()
+                    .any(|label| label == album)
+            })
+            .unwrap_or_else(|| panic!("missing realized header for {album}"))
+    };
+    let checkbox = |root: &gtk4::Widget| {
+        root.first_child()
+            .and_downcast::<gtk4::CheckButton>()
+            .expect("album header begins with its checkbox")
+    };
+    let ready = header("Ready album");
+    let stale = header("Stale album");
+
+    assert!(checkbox(ready).is_sensitive());
+    assert!(
+        !checkbox(stale).is_sensitive(),
+        "an album with no selectable changes must not expose an active checkbox"
+    );
+    let stale_labels = descendant_label_text(stale);
+    assert!(stale_labels
+        .iter()
+        .any(|label| label == "1 change · out of date"));
+    assert!(!stale_labels.iter().any(|label| label == "0 changes"));
+    assert_eq!(
+        stale.tooltip_text().as_deref(),
+        Some("This file changed after the scan — scan again to include this fix.")
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_activating_an_unselectable_row_selects_nothing() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder().build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &stale_album_scan(),
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    let position_for = |state| {
+        (0..page.state.selection.n_items())
+            .find(|position| {
+                let object = page
+                    .state
+                    .selection
+                    .item(*position)
+                    .and_downcast::<glib::BoxedAnyObject>()
+                    .unwrap();
+                let row_state = object.borrow::<ReviewRowModel>().row.state;
+                row_state == state
+            })
+            .unwrap_or_else(|| panic!("missing {state:?} row"))
+    };
+    let selections = || {
+        page.state
+            .session
+            .borrow()
+            .rows()
+            .iter()
+            .map(|row| (row.id, row.selected))
+            .collect::<Vec<_>>()
+    };
+    let churn = Rc::new(Cell::new(0_u32));
+    page.state.store.connect_items_changed({
+        let churn = churn.clone();
+        move |_, _, removed, added| churn.set(churn.get() + removed + added)
+    });
+    let before = selections();
+
+    page.state
+        .toggle_position(position_for(DoctorReviewRowState::Stale));
+
+    assert_eq!(
+        churn.get(),
+        0,
+        "an activation the page refuses must not rebuild its store"
+    );
+    assert_eq!(selections(), before);
+
+    let ready_position = position_for(DoctorReviewRowState::Ready);
+    let ready_id = page
+        .state
+        .selection
+        .item(ready_position)
+        .and_downcast::<glib::BoxedAnyObject>()
+        .map(|object| object.borrow::<ReviewRowModel>().row.id)
+        .unwrap();
+    let ready_before = page
+        .state
+        .session
+        .borrow()
+        .rows()
+        .iter()
+        .find(|row| row.id == ready_id)
+        .unwrap()
+        .selected;
+
+    page.state.toggle_position(ready_position);
+
+    assert_eq!(
+        page.state
+            .session
+            .borrow()
+            .rows()
+            .iter()
+            .find(|row| row.id == ready_id)
+            .unwrap()
+            .selected,
+        !ready_before,
+        "a selectable row activation must still flip its selection"
     );
 }
 

@@ -4076,14 +4076,20 @@ means deterministic and high-confidence, never „without review".
   `doc_3b_breakpoint_changes_layout_without_changing_row_identity`,
   `doc_3b_review_page_virtualizes_rows_without_horizontal_scroll`.
 
-- **DOC-3c** [active] [gtk] — **The master checkbox says what it covers.**
-  The review's column header carries one checkbox above the row checkboxes.
-  It is checked when every selectable row the current category filter shows
-  is selected, mixed when only some are, and unchecked when none are;
-  it is insensitive when the filter shows nothing selectable. Toggling it
-  affects exactly the rows that filter shows and never touches a stale or
-  conflicting row. It stays reachable in the narrow layout, where the column
-  titles are hidden and it is labelled instead.
+- **DOC-3c** [active] [gtk] — **Every set checkbox says what it covers.**
+  The review's column header carries one master checkbox above the row
+  checkboxes, and every album header carries a group checkbox. Each is checked
+  when every selectable row in its set is selected, mixed when only some are,
+  and unchecked when none are; it is insensitive when its set contains nothing
+  selectable. An insensitive set checkbox names its reason in visible text,
+  not only on hover. Toggling affects exactly the represented rows and never
+  touches a stale or conflicting row. The master stays reachable in the narrow
+  layout, where the column titles are hidden and it is labelled instead.
+  *Tests:* `doc_3c_the_master_check_mirrors_the_visible_selection`,
+  `doc_3c_album_header_state_names_the_reason_at_zero`,
+  `doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check`.
+  *Amended 2026-08-14: the sensitivity and reason contract now covers album
+  group checkboxes as well as the page master.*
 
 - **DOC-4a** [replaced by DOC-4c] [core] — **Confidence never chooses for the
   user.** Unambiguous local fixes are preselected; remote suggestions,
@@ -4459,6 +4465,10 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_the_conflicts_panel_covers_no_row`,
   `doc_9b_the_first_row_carries_its_album_header`,
   `doc_9b_a_fully_deselected_album_says_none_selected`,
+  `doc_3c_album_header_state_names_the_reason_at_zero`,
+  `doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check`,
+  `doc_9b_a_stale_row_names_its_reason_where_the_click_happens`,
+  `doc_9b_activating_an_unselectable_row_selects_nothing`,
   `doc_9b_every_section_boundary_binds_a_non_empty_header`,
   `doc_9b_an_album_wide_change_renders_all_n_tracks_italic_and_muted`,
   `doc_9b_a_recycled_row_loses_the_italic_style_again`,
@@ -4471,6 +4481,11 @@ means deterministic and high-confidence, never „without review".
   scrolling list, not a block above it; an album-wide change renders "All N
   tracks" in italic muted text; and every row, including the first, appears
   beneath an album header.*
+  *Amended 2026-08-14: an album header's change count is its written-change
+  inventory; when none is selectable, the reason appears next to that count.
+  A refused row names its reason in the Source cell and accessible description;
+  activating it changes nothing and performs no refresh, while the page banner
+  remains the aggregate explanation.*
 
 - **DOC-9d** [active] [gtk] — **An active filter limits everything.** Apply
   writes only the filtered set and counts that set in its label. `All` and
