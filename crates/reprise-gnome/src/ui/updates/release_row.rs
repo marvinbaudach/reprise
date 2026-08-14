@@ -19,6 +19,7 @@ use gtk4::prelude::*;
 
 use reprise_core::artist_news::{LibraryPresence, StoredRelease};
 
+use super::feed_row;
 use super::release_cover::LazyReleaseCover;
 use super::release_row_actions;
 use crate::ui::releases::releases_presentation::format_partial_date;
@@ -134,33 +135,13 @@ pub(in crate::ui) fn build(
         COVER_EDGE,
     );
 
-    let title = gtk4::Label::new(Some(&release.title));
-    title.set_xalign(0.0);
-    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    title.add_css_class("new-release-title");
-
     let formatted_date = format_partial_date(
         &release.first_release_date,
         &crate::ui::date_format::current().date,
     );
     let meta_text = meta_line(&release.artist_name, &release.release_type, &formatted_date);
-    let meta = gtk4::Label::new(Some(&meta_text));
-    meta.set_xalign(0.0);
-    meta.set_ellipsize(gtk4::pango::EllipsizeMode::None);
-    meta.add_css_class("new-release-meta");
-
-    let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    text.set_hexpand(true);
-    text.append(&title);
-    text.append(&meta);
-
     let trailing = release_row_actions::build(release, today, on_show_album, close_popover);
-
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    row.add_css_class("new-release-row");
-    row.append(cover.widget());
-    row.append(&text);
-    row.append(&trailing.root);
+    let row = feed_row::content(cover.widget(), &release.title, &meta_text, &trailing.root);
 
     // a11y-semantics: role=group name=new-release-row state=focusable action=tab-into-actions
     row.set_focusable(true);
