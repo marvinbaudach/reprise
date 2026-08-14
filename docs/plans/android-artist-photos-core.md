@@ -2,7 +2,7 @@
 slug: android-artist-photos-core
 worktree: /home/marvin/Projects/reprise-android-artist-photos-core
 branch: feature/android-artist-photos-core
-phase: planned
+phase: complete
 codex_session:
 created: 2026-08-14
 ---
@@ -295,6 +295,18 @@ ließe sich nicht einschalten.
 ---
 
 ## Aufgabe 7 — Volles Rust-Gate
+
+**Status:** complete in this status commit. With private writable XDG roots,
+the Core, Android FFI, and GNOME logs each contain zero failed result groups
+(`core.log`: 2,439 passed / 2 ignored; `ffi.log`: 156 passed; `gnome.log`:
+1,822 passed / 671 ignored). Formatting, the requested all-target/all-feature
+Clippy command, the repository workspace Clippy profile, Core purity, ownership,
+diff, and file-size checks passed. A live isolated-cache audit reported only the
+accepted `RUSTSEC-2024-0436`; the default advisory lock path is read-only. The
+non-required workspace-plus-all-features Clippy combination still exposes the
+pre-existing out-of-scope eight-argument lint in `reprise-mcp/src/server.rs`.
+The aggregate merge-readiness wrapper was not run because this strand's plan
+explicitly prohibits the Android suite that wrapper now includes.
 
 **Dateien:** keine.
 
