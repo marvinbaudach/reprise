@@ -59,6 +59,19 @@ internal class ArtworkCache(
     }
 
     @Synchronized
+    fun invalidateArtistArtwork(request: ArtworkRequest) {
+        if (request.kind != ArtworkKind.ARTIST) return
+        visuals.keys.removeAll { key ->
+            key is TrackArtworkKey &&
+                key.trackUri == request.trackUri &&
+                key.kind == ArtworkKind.ARTIST
+        }
+        resolvedFallbacks.keys.removeAll { key ->
+            key.trackUri == request.trackUri && key.kind == ArtworkKind.ARTIST
+        }
+    }
+
+    @Synchronized
     fun generated(request: ArtworkRequest): ArtworkVisual? = visuals[request.generatedKey()]
 
     @Synchronized

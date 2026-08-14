@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import de.reprise.spike.ui.theme.RepriseTheme
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
@@ -27,6 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidColorScheme
 
 @RunWith(RobolectricTestRunner::class)
@@ -153,6 +155,47 @@ class ArtistPortraitSurfaceTest {
 
         assertTrue(cachedLookups.get() > 0)
         assertEquals(0, fetches.get())
+    }
+
+    @Test
+    fun aPortraitFetchedInDetailReplacesTheRowsCachedAlbumCover() {
+        val portraitAvailable = AtomicBoolean(false)
+        val rowBitmapPath = AtomicReference<String>()
+        val sharedCache = ArtworkCache()
+        val artwork = artwork(
+            cachedPortrait = { _, size ->
+                if (portraitAvailable.get() && size == AndroidArtworkSize.LIST) {
+                    "portrait-list"
+                } else {
+                    null
+                }
+            },
+            fetchedPortrait = { _, _ ->
+                portraitAvailable.set(true)
+                "portrait-detail"
+            },
+            albumCover = { _, size ->
+                if (size == AndroidArtworkSize.LIST) {
+                    "album-list"
+                } else {
+                    "album-detail"
+                }
+            },
+            decode = { path ->
+                if (path.endsWith("-list")) rowBitmapPath.set(path)
+                if (path.startsWith("portrait")) bitmap(Color.RED) else bitmap(Color.GREEN)
+            },
+            cache = sharedCache,
+        )
+
+        showArtistDetail(artistDetail("Arriving Portrait"), artwork, initiallyOpen = false)
+        compose.waitUntil { rowBitmapPath.get() == "album-list" }
+        compose.onNodeWithText("Arriving Portrait").performClick()
+        compose.waitUntil { portraitAvailable.get() }
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+
+        compose.waitUntil { rowBitmapPath.get() == "portrait-list" }
+        assertEquals("portrait-list", rowBitmapPath.get())
     }
 
     @Test
@@ -347,13 +390,14 @@ class ArtistPortraitSurfaceTest {
         albumCover: (String, uniffi.reprise_android_ffi.AndroidArtworkSize) -> String?,
         decode: (String) -> Bitmap?,
         fallback: (String, String, Int) -> Bitmap = { _, _, _ -> bitmap(Color.MAGENTA) },
+        cache: ArtworkCache = ArtworkCache(),
     ): TrackArtwork = TrackArtwork(
         resolve = albumCover,
         resolveArtistPortraitCached = cachedPortrait,
         resolveArtistPortraitFetched = fetchedPortrait,
         decode = decode,
         fallback = fallback,
-        cache = ArtworkCache(),
+        cache = cache,
     ).also(activeArtwork::add)
 
     private fun artist(name: String) = LibraryArtist(

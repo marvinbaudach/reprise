@@ -159,7 +159,11 @@ internal class TrackArtwork(
         } else {
             null
         }
-        val bitmap = portraitPath?.let(decode)
+        val portrait = portraitPath?.let(decode)
+        if (portrait != null && request.refreshesArtistPortrait()) {
+            cache.invalidateArtistArtwork(request)
+        }
+        val bitmap = portrait
             ?: resolve(request.trackUri, request.size)?.let(decode)
             ?: return generatedVisual(request, resolved = true)
         return ArtworkVisual(
