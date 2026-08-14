@@ -15,8 +15,8 @@ pub(crate) struct ConfiguredTree {
     pub(crate) source: Arc<BridgedSource>,
 }
 
-/// Lock order for any operation that needs both is `writer` before `tree`.
-/// The reader is never held together with either of them.
+// Lock order for any operation that needs both is `writer` before `tree`.
+// The reader is never held together with either of them.
 #[derive(uniffi::Object)]
 pub struct MusicLibrary {
     pub(crate) writer: Mutex<Db>,
