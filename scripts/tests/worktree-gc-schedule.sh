@@ -21,6 +21,7 @@ refute() {
 [[ -f $guide ]]
 
 rg -Fq 'Type=oneshot' "$service"
+rg -Fq 'ConditionPathIsDirectory=%h/Projects/reprise/.git' "$service"
 rg -Fq 'REPRISE_GC_STATE_ROOT=%h/.local/state/reprise-worktree-gc' "$service"
 rg -Fq 'ExecStart=%h/.local/libexec/reprise-worktree-gc sweep --scope %h/Projects/reprise --exclude %h/.cache/reprise-nightly/src --apply --target-max-age-days 7 --target-min-kib 1048576' "$service"
 refute rg -Fq 'ExecStart=/home/marvin/Projects/reprise/scripts/reprise-worktree-gc.sh' "$service"

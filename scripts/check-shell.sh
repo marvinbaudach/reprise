@@ -22,7 +22,7 @@ for file in "${files[@]}"; do
     [[ -n $line ]] || continue
     above=''
     if ((line > 1)); then
-      above=$(sed -n "$((line - 1))p" "$file")
+      above=$(sed -n "$((line - 1))p" -- "$file")
     fi
     if [[ $directive =~ shellcheck\ disable=SC[0-9]+(,SC[0-9]+)*[[:space:]]+#[[:space:]]*[^[:space:]] ]] ||
       [[ $above =~ ^[[:space:]]*#[[:space:]]+[^[:space:]] && $above != *"$disable_marker"* ]]; then
@@ -30,7 +30,7 @@ for file in "${files[@]}"; do
     fi
     unexplained=$((unexplained + 1))
     printf '  %s:%s\n' "$file" "$line" >&2
-  done < <(grep -n "$disable_marker" "$file" 2>/dev/null || true)
+  done < <(grep -n -- "$disable_marker" "$file" 2>/dev/null || true)
 done
 
 if ((unexplained != 0)); then

@@ -1,7 +1,7 @@
 [Unit]
 Description=Safely collect finished Reprise worktrees
-Documentation=file://~/Projects/reprise/docs/automation/worktree-cleanup.md
-ConditionPathIsDirectory=~/Projects/reprise/.git
+Documentation=file://%h/Projects/reprise/docs/automation/worktree-cleanup.md
+ConditionPathIsDirectory=%h/Projects/reprise/.git
 
 [Service]
 Type=oneshot
