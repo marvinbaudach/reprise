@@ -246,6 +246,56 @@ die nachträglich passend gelegt wird, misst nichts mehr.
 `docs/evidence/portrait-placeholder-fingerprint/` reproduzierbar). Eingecheckt
 werden die **Messergebnisse**, nicht Deezers Bytes.
 
+### E7 — Die Abnahme impft die Rangliste, statt den Deckel anzuheben
+
+Beschlossen am 14.08.2026, nachdem die Frage aufkam, ob Oceano als einziger
+Bildbeweis reicht. Er reicht nicht: Oceano zeigt vorher das Foto eines
+Namensvetters, also gerade **nicht** die Silhouette, um die es geht. Die vier
+Künstler mit der Silhouette unter einer künstlerspezifischen Kennung —
+Aetheriality, In Your Grave, Our Vices, Wake Me — sollen ebenfalls im Bild
+belegt werden.
+
+**Das Hindernis ist der Abruf, nicht der Deckel.** Ein Porträt wird nur für einen
+**gerenderten** Rang geholt (`stats_bands_more.rs:106`), und die vier stehen auf
+Rang 40, 122, 131 und — mit null Wiedergaben — auf keinem. Gerendert werden 20
+(`stats_bands_card.rs:20`, `ARTIST_ROW_EXTRA = 15` plus fünf Kacheln).
+
+**Verworfen: den Deckel über einen Schalter anheben.** Drei Gründe, alle
+gemessen, nicht geschätzt:
+
+- Der Vorher-Arm entsteht aus `git archive origin/dev` **ohne jeden Patch**
+  (`run-accept.sh:614`). Ein Schalter, den nur dieser Zweig kennt, wirkt dort
+  nicht — die Arme rendern dann verschieden viele Ränge und sind nicht mehr
+  vergleichbar. Es bräuchte zusätzlich einen Patch-Schritt auf den Basis-Baum.
+- Der Prüfstand **scrollt nicht**; das Fenster steht fest auf 1560×1160. Rang 131
+  sichtbar zu machen heißt, Scroll-Mechanik und mehrere Snapshots je Arm neu zu
+  bauen.
+- Es bliebe bei **drei von vier**. Aetheriality hat null Wiedergaben und steht
+  durch keinen Deckel in einer Rangliste, die `SUM(ms_played)` gruppiert.
+
+**Gewählt: die Laufkopie bekommt Hörereignisse.** Die Kopie wird ohnehin
+beschrieben (Quellen aktivieren, Pfade umbiegen, Queue leeren —
+`run-accept.sh:650`), und die Rangliste ist eine reine Aggregation über
+`listen_events` ohne JOIN auf `tracks` und ohne Mindestspielzeit
+(`stats_screen.rs:240`). Die vier werden dicht **unter** den fünfzehnten echten
+Künstler gesetzt und landen damit auf Rang 16–19; die Ränge 1–15 bleiben
+unangetastet, Oceano behält seinen Platz. Beide Arme erhalten dieselbe geimpfte
+Kopie, der Vorher/Nachher-Unterschied bleibt also unberührt.
+
+Die Impfung **ankert an der Rangliste der Kopie**, nicht an gemessenen Zahlen:
+Ränge wandern mit jeder Wiedergabe (Oceano stand am 14.08. um 05:00 auf Rang 10,
+um 15:49 auf 13, um 17:10 auf 12), und eine feste Zahl verrottet genauso wie es
+`MY_STATS_CLICK_Y` getan hat. Reicht der Abstand zwischen Rang 15 und 16 nicht
+für vier Einschübe, **hält der Lauf an**, statt die sichtbare Rangfolge
+umzuschreiben. Jede eingespielte Millisekunde steht in
+`<lauf>/<arm>/seeded-ranking-proof.txt`, und `MANUAL-REVIEW.md` benennt die
+Impfung, damit niemand die gezeigte Rangfolge für die reine Höhistorie hält.
+
+Der Preis ist ehrlich zu nennen: die Ränge 16–19 des Screenshots sind gesetzt,
+nicht gehört. Der Gewinn ist, dass **kein Produktivcode** für einen Test
+verbogen wird — die Zusage „Kein GNOME-Code" aus dem Abschnitt „Ausdrücklich
+nicht Gegenstand" bleibt damit gültig.
+
 ---
 
 ## Umsetzung in Wellen
@@ -301,9 +351,18 @@ zeigt künftig Initialen, nicht ein Foto (E2) — mit Begründung im Skript. Gat
 6. Genau ein Bildabruf pro Künstler, nachgewiesen über die gezählten
    Download-Aufrufe im Test (E2).
 7. Die WARN-Zeilen aus E5 erscheinen im vorgesehenen Fall und sonst nicht.
-8. Die Abnahmestrecke aus #469 läuft mit korrigiertem Orakel durch: Rang 3 zeigt
-   ein Foto, Rang 10 Initialen, die übrigen Ränge unverändert.
+8. Die Abnahmestrecke aus #469 läuft mit korrigiertem Orakel durch — **nach
+   Namen, nicht nach Rangnummern**, weil Ränge mit jeder Wiedergabe wandern:
+   „The Devil Wears Prada" ist der Kontrollarm und zeigt in beiden Armen
+   dasselbe Foto (byte-gleich), „Oceano" ist das Subjekt und zeigt vorher ein
+   Foto, nachher Initialen. Die übrigen Ränge unverändert.
 9. Jeder neue Test war vor seiner Implementierung rot, mit Beleg.
+10. Die vier Künstler mit Silhouette unter künstlerspezifischer Kennung —
+    Aetheriality, In Your Grave, Our Vices, Wake Me — sind **im Bild** belegt:
+    im Vorher-Arm liegt für jeden ein zwischengespeichertes Bild, im
+    Nachher-Arm für jeden eine Negativ-Marke und kein Bild. Erreicht wird das
+    über die geimpfte Rangliste aus E7, deren Nachweis je Arm in
+    `seeded-ranking-proof.txt` liegt.
 
 ---
 
