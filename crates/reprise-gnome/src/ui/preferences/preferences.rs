@@ -34,16 +34,27 @@ pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 
 #[derive(Clone, Copy)]
 enum SettingsDeepLink {
+    Location,
+}
+
+impl SettingsDeepLink {
+    fn page_name(self) -> &'static str {
+        match self {
+            Self::Location => "location",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PluginDeepLink {
     OnlineSources,
-    ConcertLocation,
     Artwork,
 }
 
-fn plugin_targets_for_deep_link(link: SettingsDeepLink) -> &'static [&'static str] {
+fn plugin_targets_for_deep_link(link: PluginDeepLink) -> &'static [&'static str] {
     match link {
-        SettingsDeepLink::OnlineSources => &["youtube", "podcasts", "radio"],
-        SettingsDeepLink::ConcertLocation => &["concerts"],
-        SettingsDeepLink::Artwork => &["artwork"],
+        PluginDeepLink::OnlineSources => &["youtube", "podcasts", "radio"],
+        PluginDeepLink::Artwork => &["artwork"],
     }
 }
 
@@ -143,6 +154,8 @@ pub(in crate::ui) struct PreferencesContext {
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
+    preferences_sidebar: RefCell<glib::WeakRef<gtk4::ListBox>>,
+    pub(in crate::ui) location_city_row: RefCell<glib::WeakRef<adw::ActionRow>>,
     pub(super) connectivity: Cell<reprise_core::connectivity::Connectivity>,
     pub(super) on_artwork_permission_changed:
         RefCell<Option<super::preference_online_module_effects::ArtworkPermissionCallback>>,
@@ -211,6 +224,8 @@ impl PreferencesContext {
             preferences_dialog: RefCell::new(glib::WeakRef::new()),
             preferences_navigation: RefCell::new(glib::WeakRef::new()),
             preferences_stack: RefCell::new(glib::WeakRef::new()),
+            preferences_sidebar: RefCell::new(glib::WeakRef::new()),
+            location_city_row: RefCell::new(glib::WeakRef::new()),
             connectivity: Cell::new(reprise_core::connectivity::Connectivity::Online),
             on_artwork_permission_changed: RefCell::new(None),
             plugin_rows: RefCell::new(HashMap::new()),
@@ -265,8 +280,12 @@ impl PreferencesContext {
     }
 
     fn open(self: &Rc<Self>, initial_page: Option<&str>) {
-        if self.preferences_dialog.borrow().upgrade().is_some() {
-            return; // dialog is already open (modal, always on top)
+        let already_open = self.preferences_dialog.borrow().upgrade().is_some();
+        if already_open {
+            if let Some(page_name) = initial_page {
+                self.navigate_preferences_to(page_name);
+            }
+            return;
         }
         self.equalizer_controls.borrow_mut().clear();
         self.equalizer_surfaces.borrow_mut().clear();
@@ -321,16 +340,13 @@ impl PreferencesContext {
             .borrow()
             .set(Some(&shell.navigation));
         self.preferences_stack.borrow().set(Some(&shell.stack));
+        self.preferences_sidebar.borrow().set(Some(&shell.sidebar));
 
         // Navigate to the requested page by selecting its sidebar row,
         // which drives both the stack and the content title via the
         // row-selected handler.
         if let Some(page_name) = initial_page {
-            if let Some(index) = super::preferences_window::page_index_by_name(page_name) {
-                shell
-                    .sidebar
-                    .select_row(shell.sidebar.row_at_index(index).as_ref());
-            }
+            self.navigate_preferences_to(page_name);
         }
 
         let smoke = std::env::var(SMOKE_ENV).ok();
@@ -388,6 +404,17 @@ impl PreferencesContext {
         }
     }
 
+    fn navigate_preferences_to(&self, page_name: &str) {
+        let sidebar = self.preferences_sidebar.borrow().upgrade();
+        let Some(sidebar) = sidebar else {
+            return;
+        };
+        let Some(index) = super::preferences_window::page_index_by_name(page_name) else {
+            return;
+        };
+        sidebar.select_row(sidebar.row_at_index(index).as_ref());
+    }
+
     fn apply_smoke(&self) {
         let conn = &self.conn;
         let _ = settings::set_list_density(conn, ListDensity::Compact);
@@ -427,25 +454,16 @@ impl PreferencesContext {
     /// in Preferences" button lands here directly, rather than the plain
     /// Preferences root the user would otherwise have to navigate from.
     pub(in crate::ui) fn present_online_sources(self: &Rc<Self>) {
-        self.present_plugins(plugin_targets_for_deep_link(
-            SettingsDeepLink::OnlineSources,
-        ));
+        self.present_plugins(plugin_targets_for_deep_link(PluginDeepLink::OnlineSources));
     }
 
     pub(in crate::ui) fn present_artwork_settings(self: &Rc<Self>) {
-        self.present_plugins(plugin_targets_for_deep_link(SettingsDeepLink::Artwork));
+        self.present_plugins(plugin_targets_for_deep_link(PluginDeepLink::Artwork));
     }
 
-    /// `RAD-5`: Radio's "Near you" chip deep-links here when no app-level
-    /// location is stored — the Concerts page is still where the location
-    /// entry, "Use current location" and "Clear" rows live (`O-4` hoisted
-    /// only the settings storage, not this page). Same shape as
-    /// `present_plugins` above, reused rather than a second navigation
-    /// mechanism.
     pub(in crate::ui) fn present_location_settings(self: &Rc<Self>) {
-        self.present_plugins(plugin_targets_for_deep_link(
-            SettingsDeepLink::ConcertLocation,
-        ));
+        self.open(Some(SettingsDeepLink::Location.page_name()));
+        self.focus_location_city();
     }
 
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {

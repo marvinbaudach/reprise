@@ -19,6 +19,7 @@ const RESPONSE_CANCEL: &str = "cancel";
 const RESPONSE_SET: &str = "set";
 
 type OnOpen = Rc<dyn Fn(ViewSource)>;
+pub(in crate::ui) const LOCATION_TARGET_CLASS: &str = "reprise-location-target";
 
 #[derive(Clone, Debug, PartialEq)]
 enum LocationDecision {
@@ -93,7 +94,6 @@ fn set_current_location_pending(button: &gtk4::Button, pending: bool) {
 
 struct LocationPageSurface {
     page: adw::PreferencesPage,
-    #[cfg(test)]
     city: adw::ActionRow,
     #[cfg(test)]
     radius: adw::ComboRow,
@@ -169,7 +169,6 @@ fn build_surface(
 
     LocationPageSurface {
         page,
-        #[cfg(test)]
         city,
         #[cfg(test)]
         radius,
@@ -188,6 +187,8 @@ fn city_row(conn: &Rc<Db>, broadcast: &Rc<LocationBroadcast>) -> adw::ActionRow 
                 .map_or_else(strings::location_not_set, |location| location.name.clone()),
         )
         .build();
+    // a11y-semantics: role=row name=city state=location-summary action=focus/edit
+    city.set_focusable(true);
     let edit = gtk4::Button::from_icon_name("document-edit-symbolic");
     edit.add_css_class("flat");
     edit.set_valign(gtk4::Align::Center);
@@ -417,6 +418,24 @@ fn used_by_row(
     row
 }
 
+fn focus_city_row(city: &adw::ActionRow, highlight: bool) {
+    if highlight {
+        city.add_css_class(LOCATION_TARGET_CLASS);
+        let target = city.downgrade();
+        glib::timeout_add_local_once(super::preference_plugins::highlight_duration(), move || {
+            if let Some(city) = target.upgrade() {
+                city.remove_css_class(LOCATION_TARGET_CLASS);
+            }
+        });
+    }
+    let target = city.downgrade();
+    glib::idle_add_local_once(move || {
+        if let Some(city) = target.upgrade() {
+            city.grab_focus();
+        }
+    });
+}
+
 impl PreferencesContext {
     pub(in crate::ui) fn location_page(self: &Rc<Self>) -> adw::PreferencesPage {
         let context = Rc::downgrade(self);
@@ -431,7 +450,21 @@ impl PreferencesContext {
                 .sidebar
                 .refresh_and_select(source, "Location used-by row");
         });
-        build_surface(&self.conn, &self.location_broadcast, &on_open).page
+        let surface = build_surface(&self.conn, &self.location_broadcast, &on_open);
+        self.location_city_row.borrow().set(Some(&surface.city));
+        surface.page
+    }
+
+    pub(in crate::ui) fn focus_location_city(&self) {
+        let city = self.location_city_row.borrow().upgrade();
+        let Some(city) = city else {
+            return;
+        };
+        let highlight = reprise_core::location::app_location(&self.conn)
+            .ok()
+            .flatten()
+            .is_none();
+        focus_city_row(&city, highlight);
     }
 }
 
@@ -530,5 +563,33 @@ mod tests {
             radius_hits, 1,
             "the real Location page must index its radius row"
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn missing_location_target_focuses_city_and_removes_its_brief_highlight() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let broadcast = Rc::new(LocationBroadcast::default());
+        let on_open: OnOpen = Rc::new(|_| {});
+        let surface = build_surface(&conn, &broadcast, &on_open);
+        let window = gtk4::Window::builder().child(&surface.page).build();
+        window.present();
+
+        focus_city_row(&surface.city, true);
+        assert!(surface.city.has_css_class(LOCATION_TARGET_CLASS));
+        let main_loop = glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        glib::timeout_add_local_once(
+            super::super::preference_plugins::highlight_duration()
+                + std::time::Duration::from_millis(30),
+            move || quit.quit(),
+        );
+        main_loop.run();
+
+        assert!(surface.city.has_focus());
+        assert!(!surface.city.has_css_class(LOCATION_TARGET_CLASS));
+        window.close();
     }
 }
