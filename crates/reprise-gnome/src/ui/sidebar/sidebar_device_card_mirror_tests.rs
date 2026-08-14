@@ -86,7 +86,7 @@ fn mtp_63_sidebar_keeps_free_space_visible_during_sync() {
 }
 
 #[test]
-fn computing_delta_without_storage_names_the_activity_without_a_placeholder() {
+fn mtp_63_computing_delta_without_storage_names_the_activity_without_a_placeholder() {
     let device = view(PlannedSyncPhase::ComputingDelta);
 
     let subtitle = card_subtitle(&device);
