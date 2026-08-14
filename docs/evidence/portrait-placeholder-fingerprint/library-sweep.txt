@@ -1,0 +1,59 @@
+reference-to-reference distance (the two known drawings):
+  16x16: 0.04936
+  32x32: 0.05575
+  64x64: 0.05716
+
+artists in library: 195
+  25/195 artists, 28 candidates
+  50/195 artists, 68 candidates
+  75/195 artists, 93 candidates
+  100/195 artists, 120 candidates
+  125/195 artists, 152 candidates
+  150/195 artists, 191 candidates
+  175/195 artists, 220 candidates
+
+candidates: 238  measured images: 237  structurally empty: 1
+artists with no exact-name candidate: 12
+failures: 0
+
+placeholder instances: 18 (7 under ordinary identifiers)
+  ORDINARY  Aetheriality               895abde025e12b5703f7e5c75cc63d6c   16:0.00000  32:0.00000  64:0.00000
+  ORDINARY  Caliban                    05c328e5c382f929e1c4d392858cd2b9   16:0.00000  32:0.00000  64:0.00000
+  ORDINARY  In Your Grave              790f849972c0966b9494944b5ef513f6   16:0.00042  32:0.00017  64:0.00033
+  ORDINARY  Our Vices                  5dbfc32ce4dc3ef5dbd9904721d6b846   16:0.00042  32:0.00017  64:0.00033
+  ORDINARY  Shiva                      8cbdfabc63757997f761091d55a10c0c   16:0.00042  32:0.00017  64:0.00033
+  ORDINARY  The Narrator               37d44076a187d4fd03c2e60d80c359f8   16:0.00042  32:0.00017  64:0.00033
+  ORDINARY  Wake Me                    e02c0c8d515882697bd7711cdd1bb30e   16:0.00042  32:0.00017  64:0.00033
+  reference Caliban                    d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference Currents                   d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference Distant                    d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference From Fall to Spring        d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference Levels                     d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference ONI                        d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference Oceano                     415714b66a5de709809dd3d05f58afe4   16:0.00000  32:0.00000  64:0.00000
+  reference SAGE                       d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference Shiva                      d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference Spiritbox                  d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+  reference The Devil Wears Prada      d41d8cd98f00b204e9800998ecf8427e   16:0.00000  32:0.00000  64:0.00000
+
+margin per resolution:
+  16x16 worst placeholder 0.00042   nearest photograph 0.05068 (Currents)   ratio   119.4x
+  32x32 worst placeholder 0.00017   nearest photograph 0.05728 (Currents)   ratio   330.5x
+  64x64 worst placeholder 0.00033   nearest photograph 0.06047 (Currents)   ratio   183.3x
+
+ten nearest photographs (sorted by 32x32):
+  Currents                   0f7b6bafdb7cf8612498ef396cfd6500   16:0.0507  32:0.0573  64:0.0605
+  Currents                   d8bfcd18c6e177e9a500876b18e9ecc0   16:0.1146  32:0.1342  64:0.1597
+  Shiva                      0989415c08005f79beb808229f9af438   16:0.1342  32:0.1404  64:0.1442
+  Signs Of Humanity          315cd50927895007aeb71ec9cbff9d58   16:0.1536  32:0.1615  64:0.1714
+  Her Last Sight             92cc6a0152663d217da4937ad88155d2   16:0.1611  32:0.1664  64:0.1700
+  SAGE                       c6277c1e4da56bc0a7561aaeb63c7984   16:0.1878  32:0.1915  64:0.1927
+  Volumes                    b20ef0a01c6c97739e08335394dc4214   16:0.1915  32:0.1928  64:0.1940
+  Currents                   36dbfe757cb6b08d7afc3dc8965f29b5   16:0.2227  32:0.2284  64:0.2339
+  The Narrator               2b192e0642c11b42af9d0d63961b111b   16:0.2360  32:0.2381  64:0.2395
+  Through Arteries           e271e45ef70210a7fe2abb96f3d6fa5b   16:0.2233  32:0.2429  64:0.2611
+
+artists with a placeholder under an ordinary identifier: 8
+  of those, placeholder ranks first: 5
+  of those, a namesake carries a real photograph: 1
+done
