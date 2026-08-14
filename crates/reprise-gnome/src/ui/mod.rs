@@ -45,6 +45,7 @@ mod enumerated;
 pub(crate) mod eq_bars;
 mod external_changes;
 pub(crate) mod external_link;
+pub(in crate::ui) mod feed_footer;
 pub(crate) mod file_open;
 mod filter_bar_layout;
 mod filter_bar_strings;

@@ -84,26 +84,6 @@ pub(super) fn count_line(shown: usize, total: usize) -> String {
     strings::concert_count_line(shown, total)
 }
 
-pub(super) fn ticket_button_label(row: &ConcertRow) -> Option<String> {
-    [row.ticket_url.as_deref(), row.event_url.as_deref()]
-        .into_iter()
-        .flatten()
-        .find(|url| reprise_core::external_link::is_launchable_url(url))
-        .map(|_| {
-            row.ticket_source
-                .as_deref()
-                .filter(|source| !source.trim().is_empty())
-                .map_or_else(|| strings::text(strings::CONCERTS_TICKETS), strings::text)
-        })
-}
-
-pub(super) fn updated_ago(latest_attempt: Option<i64>, now: i64) -> String {
-    latest_attempt.map_or_else(
-        || strings::text(strings::CONCERTS_UPDATED_NEVER),
-        |timestamp| strings::concerts_updated_ago(timestamp, now),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +92,7 @@ mod tests {
     fn row(date: &str, distance: Option<f64>) -> ConcertRow {
         ConcertRow {
             id: 1,
+            availability: reprise_core::concerts::TicketAvailability::Unknown,
             date_key: date.into(),
             starts_at: format!("{date}T19:00:00"),
             artist_name: "Artist".into(),
@@ -197,27 +178,5 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["2026-10-17", "2026-10-19", "broken"]
         );
-    }
-
-    #[test]
-    fn tickets_and_updated_copy_degrade_without_optional_values() {
-        let mut event = row("2026-10-17", None);
-        assert_eq!(ticket_button_label(&event).as_deref(), Some("Ticketmaster"));
-        event.ticket_source = None;
-        assert_eq!(ticket_button_label(&event).as_deref(), Some("Tickets"));
-        event.ticket_url = None;
-        event.event_url = None;
-        assert_eq!(ticket_button_label(&event), None);
-        assert_eq!(updated_ago(None, 10_000), "Never updated");
-        assert_eq!(updated_ago(Some(9_900), 10_000), "Updated 1 min ago");
-    }
-
-    #[test]
-    fn non_web_provider_urls_hide_the_ticket_cell() {
-        let mut event = row("2026-10-17", None);
-        event.ticket_url = Some("javascript:alert(1)".into());
-        event.event_url = Some("file:///etc/passwd".into());
-
-        assert_eq!(ticket_button_label(&event), None);
     }
 }

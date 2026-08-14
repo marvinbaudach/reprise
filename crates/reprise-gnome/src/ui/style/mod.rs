@@ -131,6 +131,7 @@ fn app_css() -> String {
         super::track_list_row_interaction::css(),
         super::stats_css::css(),
         super::concerts::css::css(),
+        super::feed_footer::css(),
         super::releases::css::css(),
         super::updates::css(),
         super::podcasts::css(),

@@ -5,10 +5,12 @@ use std::rc::Rc;
 use chrono::Local;
 use gtk4::prelude::*;
 use reprise_core::concerts::ConcertRow;
-use reprise_view::columns::{ColumnKey, ConcertColumn};
+use reprise_view::columns::ColumnKey;
 
+use super::concerts_column_layout::ConcertTableColumn;
 use super::concerts_model::ConcertObject;
-use super::concerts_presentation::{format_distance_km, format_event_date, ticket_button_label};
+use super::concerts_presentation::format_event_date;
+use super::concerts_status_cells::{self, RadiusSource};
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
 
@@ -44,19 +46,19 @@ fn similar_caption(row: &ConcertRow) -> Option<String> {
         .map(strings::concert_similar_caption)
 }
 
-struct ArtistCell {
-    root: gtk4::Box,
-    artist: gtk4::Label,
-    caption: gtk4::Label,
+pub(super) struct ArtistCell {
+    pub(super) root: gtk4::Box,
+    pub(super) artist: gtk4::Label,
+    pub(super) caption: gtk4::Label,
 }
 
-fn build_artist_cell() -> ArtistCell {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
+pub(super) fn build_artist_cell() -> ArtistCell {
+    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     root.set_valign(gtk4::Align::Center);
     let artist = gtk4::Label::builder()
         .xalign(0.0)
-        .hexpand(true)
-        .ellipsize(gtk4::pango::EllipsizeMode::End)
+        .hexpand(false)
+        .ellipsize(gtk4::pango::EllipsizeMode::None)
         .build();
     let caption = gtk4::Label::builder()
         .xalign(0.0)
@@ -105,6 +107,7 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
         let text = similar_caption(&row);
         caption.set_text(text.as_deref().unwrap_or_default());
         caption.set_visible(text.is_some());
+        concerts_status_cells::apply_row_link_presentation(&cell, &row);
     });
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -124,7 +127,7 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
         caption.set_visible(false);
     });
     let column = gtk4::ColumnViewColumn::builder()
-        .id(ConcertColumn::Artist.as_str())
+        .id(ConcertTableColumn::Artist.as_str())
         .title(strings::text(strings::CONCERTS_ARTIST))
         .factory(&factory)
         .resizable(true)
@@ -143,6 +146,7 @@ struct TextColumnSpec<'a> {
     sizing: widths::Sizing,
     numeric: bool,
     query: Option<&'a crate::ui::search_highlight::QuerySource>,
+    css_class: Option<&'static str>,
 }
 
 fn text_column(
@@ -157,6 +161,7 @@ fn text_column(
         sizing,
         numeric,
         query,
+        css_class,
     } = spec;
     let factory = gtk4::SignalListItemFactory::new();
     factory.connect_setup(move |_, object| {
@@ -169,6 +174,9 @@ fn text_column(
         label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         if numeric {
             label.add_css_class("numeric");
+        }
+        if let Some(css_class) = css_class {
+            label.add_css_class(css_class);
         }
         item.set_child(Some(&label));
     });
@@ -191,6 +199,7 @@ fn text_column(
             label.set_text(&text);
         }
         label.set_tooltip_text(tooltip(&row).as_deref());
+        concerts_status_cells::apply_row_link_presentation(&label, &row);
     });
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -217,102 +226,25 @@ fn text_column(
     column
 }
 
-fn ticket_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
-    let factory = gtk4::SignalListItemFactory::new();
-    let on_open = on_open.clone();
-    factory.connect_setup(move |_, object| {
-        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
-            return;
-        };
-        let cell = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        let button = gtk4::Button::new();
-        button.add_css_class("flat");
-        button.add_css_class("link");
-        let item_weak = item.downgrade();
-        let on_open = on_open.clone();
-        button.connect_clicked(move |_| {
-            let Some(item) = item_weak.upgrade() else {
-                return;
-            };
-            let Some(object) = item.item().and_downcast::<ConcertObject>() else {
-                return;
-            };
-            if let Some(target) = ticket_target(&object.row()) {
-                on_open(target.to_owned());
-            }
-        });
-        cell.append(&button);
-        item.set_child(Some(&cell));
-    });
-    factory.connect_bind(move |_, object| {
-        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
-            return;
-        };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
-            return;
-        };
-        let Some(button) = cell.first_child().and_downcast::<gtk4::Button>() else {
-            return;
-        };
-        let Some(object) = item.item().and_downcast::<ConcertObject>() else {
-            return;
-        };
-        let row = object.row();
-        let label = ticket_button_label(&row);
-        button.set_label(label.as_deref().unwrap_or_default());
-        button.set_visible(label.is_some());
-        cell.set_tooltip_text(Some(&ticket_target(&row).map_or_else(
-            || strings::text(strings::CONCERTS_NO_LINK),
-            ToOwned::to_owned,
-        )));
-        if let Some(label) = label {
-            button.update_property(&[gtk4::accessible::Property::Label(&label)]);
-        }
-    });
-    factory.connect_unbind(move |_, object| {
-        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
-            return;
-        };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
-            return;
-        };
-        let Some(button) = cell.first_child().and_downcast::<gtk4::Button>() else {
-            return;
-        };
-        button.set_label("");
-        cell.set_tooltip_text(None);
-        button.set_visible(false);
-    });
-
-    let column = gtk4::ColumnViewColumn::builder()
-        .title(strings::text(strings::CONCERTS_TICKETS))
-        .factory(&factory)
-        .resizable(false)
-        .build();
-    // The button label differs per row (provider name vs none at all).
-    widths::pin(&column, widths::ACTION);
-    view.append_column(&column);
-}
-
 pub(super) struct SortColumns {
     pub date: gtk4::ColumnViewColumn,
-    pub venue: gtk4::ColumnViewColumn,
     pub distance: gtk4::ColumnViewColumn,
 }
 
 pub(super) fn append_columns(
     view: &gtk4::ColumnView,
-    on_open: &OnOpenTarget,
     query: &crate::ui::search_highlight::QuerySource,
+    radius_source: &RadiusSource,
 ) -> SortColumns {
     let date = text_column(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_DATE),
-            id: Some(ConcertColumn::Date.as_str()),
+            id: Some(ConcertTableColumn::Date.as_str()),
             sizing: widths::Sizing::pinned(widths::DATE),
             numeric: false,
             query: None,
+            css_class: None,
         },
         |row| format_event_date(&row.date_key, Local::now().date_naive()),
         |_| None,
@@ -322,44 +254,32 @@ pub(super) fn append_columns(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_CITY),
-            id: Some(ConcertColumn::City.as_str()),
+            id: Some(ConcertTableColumn::City.as_str()),
             sizing: widths::Sizing::pinned(widths::LABEL),
             numeric: false,
             query: None,
+            css_class: Some("reprise-concert-city"),
         },
         |row| row.city.clone(),
         city_tooltip,
     );
-    let venue = text_column(
+    text_column(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_VENUE),
-            id: Some(ConcertColumn::Venue.as_str()),
+            id: Some(ConcertTableColumn::Venue.as_str()),
             sizing: widths::Sizing::pinned(widths::NAME),
             numeric: false,
             query: Some(query),
+            css_class: Some("reprise-concert-venue"),
         },
         |row| row.venue.clone(),
         |_| None,
     );
-    let distance = text_column(
-        view,
-        TextColumnSpec {
-            title: strings::text(strings::CONCERTS_DISTANCE),
-            id: Some(ConcertColumn::Distance.as_str()),
-            sizing: widths::Sizing::pinned(widths::NUMERIC),
-            numeric: true,
-            query: None,
-        },
-        |row| format_distance_km(row.distance_km),
-        |_| None,
-    );
-    ticket_column(view, on_open);
-    SortColumns {
-        date,
-        venue,
-        distance,
-    }
+    let distance = concerts_status_cells::distance_column(view, radius_source);
+    concerts_status_cells::ticket_column(view);
+    concerts_status_cells::source_column(view);
+    SortColumns { date, distance }
 }
 
 #[cfg(test)]
@@ -369,6 +289,7 @@ mod tests {
     fn row(ticket_url: Option<&str>, event_url: Option<&str>) -> ConcertRow {
         ConcertRow {
             id: 1,
+            availability: reprise_core::concerts::TicketAvailability::Unknown,
             date_key: "2026-10-17".into(),
             starts_at: "2026-10-17T19:00:00".into(),
             artist_name: "Lorna Shore".into(),
@@ -418,9 +339,9 @@ mod tests {
         let store = gtk4::gio::ListStore::new::<ConcertObject>();
         store.append(&ConcertObject::new(event));
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
-        let on_open: OnOpenTarget = Rc::new(|_| {});
         let query: crate::ui::search_highlight::QuerySource = Rc::new(|| "fall".into());
-        append_columns(&view, &on_open, &query);
+        let radius: RadiusSource = Rc::new(|| None);
+        append_columns(&view, &query, &radius);
 
         let window = gtk4::Window::new();
         window.set_default_size(1200, 300);
@@ -446,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn conc_3_row_activation_opens_ticket_target_then_event_fallback() {
+    fn row_activation_opens_ticket_target_then_event_fallback() {
         let offer = row(
             Some("https://tickets.example/offer"),
             Some("https://events.example/event"),
@@ -500,9 +421,9 @@ mod tests {
         let store = gtk4::gio::ListStore::new::<ConcertObject>();
         store.append(&ConcertObject::new(row(None, None)));
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
-        let on_open: OnOpenTarget = Rc::new(|_| {});
         let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
-        append_columns(&view, &on_open, &query);
+        let radius: RadiusSource = Rc::new(|| None);
+        append_columns(&view, &query, &radius);
 
         crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {
             let mut long = row(Some("https://tickets.example/offer"), None);
@@ -514,17 +435,16 @@ mod tests {
         });
     }
 
-    /// STYLE-10: the Concerts header exposes the shared editor. Tickets is
-    /// fixed because it is the table's only route to the external action.
+    /// STYLE-10: the Concerts header exposes the shared editor.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn style_10_concerts_header_right_click_edits_the_table() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
-        let on_open: OnOpenTarget = Rc::new(|_| {});
         let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
-        append_columns(&view, &on_open, &query);
+        let radius: RadiusSource = Rc::new(|| None);
+        append_columns(&view, &query, &radius);
         let registry = super::super::concerts_column_layout::registry(
             &view,
             Rc::new(crate::test_db::open().unwrap()),
@@ -563,17 +483,16 @@ mod tests {
         );
 
         model.set_visible("city", false);
-        use reprise_view::columns::ConcertColumn;
-        assert!(!registry.is_visible(ConcertColumn::City));
-        assert!(registry.is_visible(ConcertColumn::Tickets));
+        assert!(!registry.is_visible(ConcertTableColumn::City));
+        assert!(registry.is_visible(ConcertTableColumn::Tickets));
         assert!(registry
-            .column(ConcertColumn::Venue)
+            .column(ConcertTableColumn::Venue)
             .is_some_and(gtk4::ColumnViewColumn::expands));
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn conc_10_artist_cell_is_vertically_centered_with_the_other_columns() {
+    fn artist_cell_is_vertically_centered_with_the_other_columns() {
         gtk4::init().unwrap();
         let cell = build_artist_cell();
 

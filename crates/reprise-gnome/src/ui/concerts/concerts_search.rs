@@ -29,6 +29,7 @@ mod tests {
     fn concert(artist: &str, venue: &str) -> ConcertRow {
         ConcertRow {
             id: 0,
+            availability: reprise_core::concerts::TicketAvailability::Unknown,
             date_key: "2026-08-05".into(),
             starts_at: "2026-08-05T20:00:00Z".into(),
             artist_name: artist.to_owned(),

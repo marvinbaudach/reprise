@@ -269,16 +269,6 @@ result.
   range never moves the anchor; the next input starts from it again. The
   playing track remains passive: it receives neither selection nor keyboard
   focus, and playback still moves nothing, preserving NAV-10b.
-- **NAV-18** [active] [gtk] — **The sidebar marks the visible view, and the
-  marked entry stays clickable.** Exactly the sidebar entry whose view is
-  visible in the content area carries the marking — including Library Doctor
-  and the opened device card, neither of which is a `ViewSource`. At most one
-  entry is marked at any time across both navigation lists and the device
-  cards. When the visible view has no sidebar entry, nothing is marked. A
-  sidebar rebuild never changes the marking. While a placeless view is
-  visible, activating **any** source entry routes into it — including the
-  source that was last visible (BROWSE-3); activating the entry of the already
-  visible placeless view does nothing.
 
 ## C. Playback, queue, shuffle, filter
 
@@ -1170,10 +1160,7 @@ result.
   rows. There are no "Online sources", "New Releases", or "Concerts"
   Preferences main pages. Every Online-content row names the service it
   contacts, so Plugins is also the privacy overview. Phone sync deliberately
-  does not appear here: its rules stay on the device page (`MTP-37`). Location
-  is the explicit exception: it is app state shared by multiple capabilities,
-  not an optional capability, and therefore owns the main page specified by
-  `SET-15`.
+  does not appear here: its rules stay on the device page (`MTP-37`).
 - **SET-11** [active] [gtk] — The Online-content group's own header is the
   master switch. Off is a kill switch, not a bulk toggle: no request of any
   kind runs, sidebar entries are hidden, and running downloads are cancelled,
@@ -1207,16 +1194,6 @@ result.
   switch on the same right edge. A non-expandable switch row reserves the
   expander arrow's trailing slot even though the row does not open, so its
   switch stays aligned with the switch of a row that exposes child settings.
-- **SET-15** [active] [core] [gtk] — Location has one app-wide value and one
-  Preferences owner. Its main page sits between Library and Plugins, owns City
-  and Default radius, and names every reader under Used by: Concerts, Radio's
-  Near you, and Podcasts' Popular in country chart (`SRC-19`). Optional
-  capability pages only link to Location; they never duplicate or own its
-  controls. Clearing Location removes only latitude, longitude, name, and
-  country code: it preserves the default radius, view filters, module choices,
-  and online-source choice. Disabling Concerts or online sources never makes
-  the stored location or radius unreadable and never suppresses the app-wide
-  location-change announcement.
 
 ## G. Feedback vocabulary
 
@@ -1630,8 +1607,7 @@ result.
   visible in the target, the existing ID-plus-offset anchor is retained.
   The header-bar search is no longer covered: SEARCH-9 governs it, because
   a query changes with every keystroke and paid for the centering far more
-  often than a facet click does. “Clear all” with an active query follows
-  SEARCH-16; without a query, clearing facets remains governed by FIL-9.
+  often than a facet click does.
 
 ## L. Tag editor
 
@@ -2897,8 +2873,7 @@ property is set and yet nothing happens.
   destinations such as Library ↔ Recently added ↔ Playlist ↔ Smart ↔ Queue ↔
   Missing. Drilling into an Artist, Album or Genre place by activating a row is
   not a switch: it carries the current query and its chip into that narrower
-  context. `RevealTrack` is not such a metadata drill and follows BROWSE-14.
-  Back out of such a place restores the complete remembered list
+  context. Back out of such a place restores the complete remembered list
   state, including its query and facets, from the existing navigation history;
   search owns no parallel origin or history state. Closing the popover without
   navigating still preserves the current query per SEARCH-5/SEARCH-6, and an
@@ -2920,18 +2895,8 @@ property is set and yet nothing happens.
   hand-cleared field reload straight away. A query that is set or refined
   places the viewport at the top of its results and moves it no further
   after the model swap — it centers nothing (superseding FIL-9 for search).
-  Emptying the query's viewport follows SEARCH-16. (Revised 2026-08-14:
-  SEARCH-16 distinguishes an ordinary clear from one after deliberate
-  playback during the query.)
-- **SEARCH-16** [active] [gtk] — Emptying the query — the chip's ×, Escape,
-  clearing the entry by hand, “Show all N tracks”, and “Clear all” alike —
-  restores the pre-search anchor, unless the user started playback during that
-  query (a deliberate start or an explicit transport, not an automatic
-  advance), in which case the loaded track is centred; if that track is absent
-  from the cleared list, the pre-search anchor applies again, and if that row
-  is gone too, the top. The rule needs a pre-search anchor to have been taken,
-  which happens only on the transition from an empty to a non-empty query:
-  clearing facets alone, with no query ever typed, stays with FIL-9.
+  Emptying the query returns the viewport to where the list stood when the
+  search began, as an ID-plus-offset anchor; if that row is gone, to the top.
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
@@ -4723,15 +4688,6 @@ means deterministic and high-confidence, never „without review".
   or activation. Rebinding or unbinding a recycled cell clears the previous
   target. The unchanged context-menu route continues to follow CTX-4.
 
-- **BROWSE-14** [active] [core] — **Revealing a track removes restrictions,
-  not context.** `RevealTrack` keeps the origin's collection and sorting while
-  dropping its text query and browse facets, even when the track would have
-  survived them, then selects, focuses, and anchors that track. When anything
-  was dropped, the narrowed origin enters Back history unchanged; an already
-  unrestricted reveal remains an in-place replacement and adds no duplicate
-  history entry. Album, Artist, and Genre drills continue carrying the query
-  under SEARCH-8a.
-
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
   existing directory represented by the live track paths of that album, but
@@ -5010,18 +4966,10 @@ available. The player plays only finished files.
 - **CONC-2** [active] [gtk] — The filter row is a permanent header.
   Idle, it quietly shows the total count and "+ Add filter"; every
   active restriction is a chip with its own ×-target of at least 20 px.
-  Active, it shows "X of Y concerts" and "Clear all". Radius is active only
-  when a location makes it meaningful. Without one, the header shows a
-  dashed `{radius} km · off` chip that opens Preferences Location but neither
-  filters nor counts as active; the count is the plain total. A banner above
-  the independent failure banner says that all concerts worldwide are shown,
-  Distance is absent from the table, column editor, and sorting, and Venue
-  absorbs its width. Automatic hiding never changes the user's stored column
-  choice; setting a location restores the exact prior visibility and sort.
-  With location, the active chip reads `{city} · {radius} km` (or just the
-  radius for a blank city name), Distance returns according to that stored
-  choice, and the banner disappears.
-- **CONC-3** [active] [gtk] — Double-click/Enter on a row and the
+  Active, it shows "X of Y concerts" and "Clear all". Without a
+  location, Radius is disabled and carries the tooltip "Set a location
+  in Preferences".
+- **CONC-3** [replaced by CONC-13] — Double-click/Enter on a row and the
   ticket cell open the same external target: offer URL, otherwise the
   event page. Without either, the cell is empty and activation is a
   no-op with a tooltip. There is no play path.
@@ -5029,7 +4977,7 @@ available. The player plays only finished files.
   explicit live re-evaluation after changes to Concerts settings.
 - **CONC-4a** [replaced by CONC-4b] — Original state contract with
   credential input hint and Preferences deep link.
-- **CONC-4b** [active] [gtk] — Without a credential, Concerts neutrally
+- **CONC-4b** [replaced by CONC-4c] — Without a credential, Concerts neutrally
   shows "No concert data yet" with no action; the Concerts section in
   the Updates popover is not visible. There is no credential input hint
   and no Preferences deep link. Changes to credentials, location,
@@ -5043,7 +4991,7 @@ available. The player plays only finished files.
 - **CONC-5** [replaced by CONC-5a] — Original worker contract with
   view-open staleness, due check, and "Fetch now" as the only network
   triggers.
-- **CONC-5a** [active] [core] — Network runs exclusively in the worker
+- **CONC-5a** [replaced by CONC-5b] — Network runs exclusively in the worker
   or `one_shot_task`. Triggers are view-open staleness (24 h plus
   jitter), the hourly due check, "Fetch now", and an explicitly
   confirmed credential check. All Concerts requests share the 1-req/s
@@ -5069,12 +5017,12 @@ available. The player plays only finished files.
   legacy value over the runtime environment and the embedded build
   value; empty values do not count. Bandsintown remains available as an
   optional credential row independently of this.
-- **CONC-10** [active] [gtk] — Every Concerts row shares a common
+- **CONC-10** [replaced by CONC-14] — Every Concerts row shares a common
   vertical center. The artist stands as a single-line group on the same
   baseline as date, location, venue, distance, and ticket; an optional
   "similar to …" caption expands and centers the artist group as a
   unit, instead of pinning the artist to the top edge of the row.
-- **CONC-11** [active] [gtk] — A failed Concerts fetch leaves every cached
+- **CONC-11** [replaced by CONC-11a] — A failed Concerts fetch leaves every cached
   event and „Updated X ago" untouched. A neutral shared banner above a
   populated view names the failed refresh, what remains available, and the
   next action; only a genuinely empty cache uses the shared full-area failure
@@ -5099,6 +5047,83 @@ available. The player plays only finished files.
   Test: `conc_12_offsale_never_becomes_sold_out`
   (`crates/reprise-core/src/concerts/availability.rs`, `#[cfg(test)]`).
 
+- **CONC-13** [active] [gtk] — replaces CONC-3. Double-click, Enter or
+  Space on a concert row opens its external target: the offer URL,
+  otherwise the event page. The Tickets cell is a status label and is never
+  an activation surface. A row without a launchable target does not
+  activate, keeps its ordinary appearance, and carries the same sentence in
+  its tooltip and its accessible description. There is no play path.
+  Test: `conc_13_a_row_without_a_target_does_not_activate`
+  (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-14** [active] [gtk] — replaces CONC-10. Every concert row is a
+  single line and never wraps. Every cell ellipsises at its end. The
+  optional dimmed "similar to {seed}" sits on the artist's own line,
+  directly after the name, and ellipsises before the name does — losing the
+  provenance is acceptable, losing the artist is not. Rows keep a common
+  vertical center.
+  Test: `conc_14_the_similar_caption_shrinks_before_the_artist`
+  (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-15** [active] [gtk] — The feed footer states the live state, not
+  an age, and it is the only place any of these views shows a timestamp.
+  Its nine states are: loaded in this visit, served from cache, updating
+  (with determinate progress), failed, offline, never loaded, no
+  credentials, online sources off, module off (footer hidden). A loaded or
+  cached state carries the accent dot and a reload button; an updating
+  state replaces the button with the progress bar; the two configuration
+  states offer no button. "Up to date" never appears while a fetch is
+  running or has failed.
+  Test: `conc_15_the_footer_never_claims_up_to_date_while_fetching`
+  (`ui/feed_footer.rs`, `#[cfg(test)]`).
+
+- **CONC-16** [active] [gtk] — The provider name has a hover-free home:
+  an optional `Source` column, hidden by default, switchable in the column
+  header menu, its visibility persisted like every other column. The row
+  tooltip "Opens {source}" is a comfort duplicate of it (TIP-3), never the
+  only place the name appears.
+  Test: `conc_16_the_source_column_is_available_but_off_by_default`
+  (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-4c** [active] [gtk] — replaces CONC-4b. Without a credential,
+  Concerts neutrally shows "No concert data yet" with no action; the Concerts
+  section in the Updates popover is not visible. There is no credential input
+  hint and no Preferences deep link. Changes to credentials, location,
+  default radius, time range, and similar settings immediately re-evaluate
+  the already-open view, its sidebar count, and the Updates popover. Never
+  fetched shows exactly "Not loaded yet" and offers the reload button; zero
+  hits with filters offers exactly "Show all". Offline or error leaves the
+  cache visible and states so per CONC-15. CONC-11a specifies the shared
+  failure surface; credential and filter behaviour stay Concerts' own and
+  remain `[active]` unchanged.
+  Test: `conc_4c_settings_changes_re_evaluate_credentials_and_refresh_dependents`
+  (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-5b** [active] [core] — replaces CONC-5a. Network runs exclusively
+  in the worker or `one_shot_task`. Triggers are view-open staleness (24 h
+  plus jitter), the hourly due check, the footer's reload button, and an
+  explicitly confirmed credential check. All Concerts requests share the
+  1-req/s limiter. Track changes, navigation, and individual credential
+  keystrokes only read or write locally; fetch results are applied per MOT-2
+  without a fade-in animation.
+  Test: `conc_5b_only_enabled_due_idle_workers_fetch`
+  (`ui/concerts/concerts_worker.rs`).
+
+- **CONC-11a** [active] [gtk] — replaces CONC-11. A failed Concerts fetch
+  leaves every cached event untouched and reports the failure through
+  CONC-15's footer state. A neutral shared banner above a populated view names
+  the failed refresh, what remains available, and the next action; only a
+  genuinely empty cache uses the shared full-area failure state. Both surfaces
+  carry the same collapsed `Details` block with Copy, and technical status,
+  host, and exception text appears only there. Offline is written from the
+  window's explicit connectivity value, dims the remote-action rows, and never
+  overwrites a provider or configuration failure already on screen; reconnect
+  removes only an offline-authored notice. A successful fetch removes the
+  notice silently. Missing credentials are a configuration outcome with
+  "Open Preferences" targeting the Concerts Plugins row, never "Try again";
+  CONC-4b's ordinary no-credential empty state remains neutral with no action.
+  Test: `conc_11a_cached_and_empty_failures_choose_the_shared_surfaces`
+  (`ui/concerts/concerts_failure_ui.rs`).
 ## AF. Podcasts & Radio
 
 <!-- Section letter: AE is the last assigned section after Concerts
@@ -5491,11 +5516,10 @@ listening statistics.
   replaces the section, exactly as a second search replaces the first. The
   country is resolved **once per dialog** from the stored app-level location's
   country code (`O-4`), falling back to the system locale — unlike `RAD-5`,
-  where a countryless location gives Near you its own honest empty state, a
-  location that carries no country falls through to the locale here, because
-  this chip has a working answer either way. The shared Location page names
-  this Podcasts reader under Used by (`SET-15`). A stored code that is not a
-  storefront — two ASCII letters, the same
+  where a countryless location turns "Near you" into a deep link that opens the
+  location setting in Preferences, a location that carries no country falls
+  through to the locale here, because this chip has a working answer either
+  way. A stored code that is not a storefront — two ASCII letters, the same
   check the locale territory passes — falls through with it rather than being
   handed to Apple.
   That same country drives the text search below it, so the chip and the
@@ -5886,18 +5910,14 @@ listening statistics.
   queries the XDG Location portal or a geocoder itself, and hoisting that
   location out of the `concerts.` namespace carries its existing consent
   forward rather than asking again. With a country-taggable location
-  stored, the chip runs a country-filtered search. Without a location, its
-  result area instead shows "No location set" and explains that one shared
-  city serves Concerts, Radio, and local podcasts. A location with no country
-  gets the distinct "Location has no country" state and explains that the
-  portal supplies coordinates only. Both states offer exactly "Open
-  Preferences › Location"; the chip itself never forces navigation, and the
-  Add Station dialog remains open underneath Preferences. If the app-wide
-  location announcement arrives while either state is open, the pending Near
-  you intent re-evaluates immediately and starts the search as soon as the
-  location is usable. It never fires a silent unfiltered search standing in
-  for "near you": a chip that claims to filter by location but does not is
-  worse than exposing the missing input. The country code itself is derived
+  stored, the chip runs a country-filtered search; with none — no location
+  at all, or one whose only source was "Use current location" and
+  therefore carries no address text — activating the chip opens the
+  location setting in Preferences instead, the same deep-link shape
+  `present_plugins` already uses for the Online Lyrics settings button. It
+  never fires a silent unfiltered search standing in for "near you": a
+  chip that claims to filter by location but does not is worse than
+  sending the user to fix the input. The country code itself is derived
   only from data a call Reprise already makes — Nominatim's
   `addressdetails` enrichment of the existing forward-geocode request
   behind city search — never from a new reverse-geocoding call, so a
