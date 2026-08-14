@@ -419,3 +419,28 @@ umgesetzt. Die Margenregel wurde daraufhin korrigiert (siehe E6); die Schwelle s
 bei 0,0025 und die Wellen 2 und 3 sind wieder freigegeben.
 Der vollständige Rust-Lauf einschließlich aller Einzelabstände steht unter
 `docs/evidence/portrait-placeholder-fingerprint/rust-separation.txt`.
+
+---
+
+## Protokoll: Sichtabnahme vom 14.08.2026 (erledigt)
+
+Lauf `20260814T145219Z`, Basis `8b87ae8ada`, Kandidat `baece97e1e`, exit 0.
+Zusammenfassung und Bilder unter
+`docs/evidence/portrait-placeholder-fingerprint/acceptance.md`.
+
+Fünf Porträts ändern sich, sonst keines: Oceano (Rang 13) vom Foto eines
+Namensvetters zum Initial „O", und die vier Silhouetten auf Rang 16–19 zu „A",
+„IG", „OV", „WM". Die fünf Kacheln und die Ränge 6–12, 14, 15 und 20 tragen in
+beiden Armen dasselbe Foto; „The Devil Wears Prada" ist byte-gleich (`34aefe17…`).
+
+Der schärfste Beleg steckt in den Hashes, nicht im Bild: drei der vier
+Silhouetten kommen als **exakt dieselben Bytes** wie die hinterlegte Referenz
+`d41d8cd98f00b204e9800998ecf8427e.jpg` (`bd8dae14…`). Die Basis kennt genau diese
+Zeichnung — über die Kennung — und speichert sie trotzdem als Porträt, weil sie
+unter einem anderen Namen ankommt. Wake Me kommt als `0497f872…`, dieselbe
+Zeichnung neu komprimiert: der Grund, warum E1 Miniaturen vergleicht und keine
+Hashes.
+
+Damit sind die Abnahmekriterien 8 und 10 erfüllt. Aetheriality war nur über die
+Impfung aus E7 erreichbar; über einen angehobenen Deckel wäre der Künstler ohne
+Wiedergaben nie sichtbar geworden.

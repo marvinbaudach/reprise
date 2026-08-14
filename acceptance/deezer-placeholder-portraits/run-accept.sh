@@ -1131,6 +1131,12 @@ cat >"$output_dir/MANUAL-REVIEW.md" <<'EOF'
   image identifiers, which no fixed list can enumerate in advance.
 - A silhouette anywhere *else* — at any rank outside 16-19, in either arm — is a
   finding. The baseline already rejects the two structural identifiers.
+- Check in the screenshot that the four really sit at ranks 16-19. The seeding
+  anchors on a SQL ranking that groups by the effective album artist only, while
+  the view folds spelling variants and MBIDs together first, so the two can drift
+  apart. They agreed on 2026-08-14. If they ever disagree, the four will still be
+  rendered — the SQL check refuses to place them above rank 16 — but the rank
+  numbers in these notes stop matching the picture.
 - Oceano is the only intended difference: a photograph before, initials after. Its
   most popular exact-name candidate now reaches content validation, is rejected as
   the known silhouette, and must not fall back to the pictured namesake.

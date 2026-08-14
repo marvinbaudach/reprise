@@ -1,0 +1,31 @@
+seeded_ranking=true
+seeded_artists=Aetheriality In Your Grave Our Vices Wake Me
+reason=only a rendered rank fetches a portrait; these four carry the artist-specific silhouette
+rank_15_total_ms=3035578
+rank_16_anchor_total_ms=2847037
+events_per_seeded_artist=12
+
+artist                  real_ms      target_ms    injected_ms prior_events
+Aetheriality                  0        2851037        2851037 0
+In Your Grave           1175612        2850037        1674425 8
+Our Vices                235159        2849037        2613878 1
+Wake Me                  198994        2848037        2649043 1
+
+resulting ranks (rank|artist|total_ms):
+16|Aetheriality|2851037
+17|In Your Grave|2850037
+18|Our Vices|2849037
+19|Wake Me|2848037
+
+neighbourhood after seeding (rank artist total_ms):
+12  Oceano  3253392
+13  Suicide Silence  3133896
+14  As I Lay Dying  3050366
+15  Bring Me The Horizon  3035578
+16  Aetheriality  2851037
+17  In Your Grave  2850037
+18  Our Vices  2849037
+19  Wake Me  2848037
+20  Asking Alexandria  2847037
+21  Dead by April  2544061
+22  Blessthefall  2503479
