@@ -5,8 +5,14 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 acceptance_root="$repo_root/acceptance/deezer-placeholder-portraits"
 readonly UNIX_SOCKET_PATH_MAX=107
 readonly CUA_MAX_ELEMENTS=500
+# Every sidebar row reports an AT-SPI frame of 0x0, so the row can only be hit
+# by a measured pixel. The y therefore depends on how many rows sit above it,
+# which changes with the library's playlists — re-measure it from
+# <run>/before/cua/before-open-stats-before.png whenever the sidebar shrinks or
+# grows. Measured 2026-08-14 at 15:30 CEST: rows are pitched 38 px apart and
+# My Stats is the twelfth and last one.
 readonly MY_STATS_CLICK_X=100
-readonly MY_STATS_CLICK_Y=692
+readonly MY_STATS_CLICK_Y=615
 readonly SHOW_MORE_ARTISTS_CLICK_X=390
 readonly SHOW_MORE_ARTISTS_CLICK_Y=640
 readonly RENDERED_TOP_ARTIST_RANKS=20
@@ -425,6 +431,15 @@ run_private_acceptance() {
     "$MY_STATS_CLICK_X" "$MY_STATS_CLICK_Y" "$label-open-stats"
 
   ACCEPT_CUA_MAX_DEPTH=40
+  # Prove the pixel landed before waiting on any artist. A stale coordinate is
+  # otherwise indistinguishable from a missing artist: the run spins out the
+  # retries below and blames the ranking for a click that never opened the view.
+  if ! cua_wait_for_label \
+    "$ACCEPT_APP_PID" "$window_id" "Show more top artists" \
+    "$label-stats-opened" >/dev/null; then
+    echo "the My Stats click at ($MY_STATS_CLICK_X, $MY_STATS_CLICK_Y) did not open My Stats; re-measure the sidebar row in $CUA_E2E_OUT_DIR/$label-open-stats-before.png" >&2
+    return 1
+  fi
   final_snapshot=$(cua_wait_for_label \
     "$ACCEPT_APP_PID" "$window_id" "The Devil Wears Prada" "$label-stats-ready")
   x11_click_pixel \
