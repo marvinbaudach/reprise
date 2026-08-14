@@ -82,7 +82,7 @@ fn browse_14_a_reveal_without_restrictions_still_replaces_instead_of_pushing() {
 }
 
 #[test]
-fn browse_4_reveal_track_restores_its_structured_origin_and_exact_anchor() {
+fn browse_4_reveal_track_preserves_its_structured_origin_and_exact_anchor() {
     let mut navigation = BrowserNavigation::new(library_with_state(TrackViewState::default()));
     let origin = BrowserPlace::tracks(TrackCollection::Playlist(7), TrackViewState::default());
 

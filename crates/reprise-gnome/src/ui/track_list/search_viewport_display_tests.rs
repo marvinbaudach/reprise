@@ -192,12 +192,6 @@ fn search_16_a_result_set_that_fits_still_centers_after_clear_all() {
         adjustment.page_size(),
     )
     .expect("the expanded list must have a centered target");
-    eprintln!(
-        "MUTATION PROBE value={} expected={expected} row_height={row_height} upper={} page={}",
-        adjustment.value(),
-        adjustment.upper(),
-        adjustment.page_size()
-    );
     assert!(
         (adjustment.value() - expected).abs() <= row_height,
         "Clear all left the expanded list at {} instead of centering near {expected}",
