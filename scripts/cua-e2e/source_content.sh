@@ -133,7 +133,7 @@ YTDLP
   chmod +x "$ytdlp"
 
   # Phase 1: opt-in, so the page is unreachable while the module is off.
-  LC_ALL=C.UTF-8 LANGUAGE= \
+  LC_ALL=C.UTF-8 LANGUAGE='' \
     source_content_start youtube "$music" "$fixtures" off 25 "$ytdlp"
   snapshot=$(cua_snapshot "$APP_PID" "$WINDOW_ID" sy-off)
   assert_snapshot_absent "$snapshot" "No channels yet"
@@ -142,7 +142,7 @@ YTDLP
 
   # Phase 2: switched on, a channel URL resolves through the fake binary.
   source_content_set_setting youtube module.youtube.enabled 1
-  LC_ALL=C.UTF-8 LANGUAGE= \
+  LC_ALL=C.UTF-8 LANGUAGE='' \
     source_content_start youtube "$music" "$fixtures" on 45 "$ytdlp"
   snapshot=$(wait_for_label "$APP_PID" "$WINDOW_ID" "No channels yet" sy-empty)
   assert_snapshot_contains "$snapshot" "Add channel"

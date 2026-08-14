@@ -537,7 +537,7 @@ seed_silhouette_ranks() {
   local proof="$output_dir/$label/seeded-ranking-proof.txt"
   local cte quoted artist escaped slots index anchors anchor keep_total
   local existing target topup per_event remainder has_history verified
-  local expected_rank rank name total line
+  local expected_rank rank name line
   local -a report=()
 
   cte=$(seed_ranking_cte)
@@ -634,7 +634,7 @@ ranked AS (
 SELECT rank || '|' || raw || '|' || total FROM ranked
 WHERE raw IN ($quoted) ORDER BY rank;")
   expected_rank=16
-  while IFS='|' read -r rank name total; do
+  while IFS='|' read -r rank name _; do
     if [[ -n "$rank" ]]; then
       if (( rank != expected_rank )); then
         echo "seeded artist $name landed at rank $rank, expected $expected_rank" >&2

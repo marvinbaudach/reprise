@@ -101,7 +101,7 @@ done
 
 reject_fixed '## Product surface today' "$english"
 reject_fixed '## Heutiger Produktumfang' "$german"
-reject_fixed '## Roadmap: the same core beyond today’s player' "$english"
+reject_fixed "## Roadmap: the same core beyond today’s player" "$english"
 reject_fixed '## Roadmap: derselbe Core über den heutigen Player hinaus' "$german"
 
 echo "Bilingual developer README contract passed"

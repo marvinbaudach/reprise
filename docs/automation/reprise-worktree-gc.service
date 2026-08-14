@@ -1,11 +1,11 @@
 [Unit]
 Description=Safely collect finished Reprise worktrees
-Documentation=file://~/Projects/reprise/docs/automation/worktree-cleanup.md
-ConditionPathIsDirectory=~/Projects/reprise/.git
+Documentation=file://%h/Projects/reprise/docs/automation/worktree-cleanup.md
+ConditionPathIsDirectory=%h/Projects/reprise/.git
 
 [Service]
 Type=oneshot
 Environment=REPRISE_GC_STATE_ROOT=%h/.local/state/reprise-worktree-gc
-ExecStart=%h/.local/libexec/reprise-worktree-gc sweep --scope ~/Projects/reprise --exclude %h/.cache/reprise-nightly/src --apply --target-max-age-days 7 --target-min-kib 1048576
+ExecStart=%h/.local/libexec/reprise-worktree-gc sweep --scope %h/Projects/reprise --exclude %h/.cache/reprise-nightly/src --apply --target-max-age-days 7 --target-min-kib 1048576
 Nice=10
 IOSchedulingClass=idle

@@ -218,6 +218,13 @@ and Rustdoc with warnings denied, the isolated workspace tests, and
 `cargo audit` with no advisory beyond the explicitly accepted `paste`
 maintenance warning.
 
+Merge readiness runs `scripts/check-shell.sh` over every tracked `*.sh` file
+and `.githooks/*`. It rejects all warning-or-higher findings plus SC2251,
+SC2004, and SC2181 at style level, and requires every `shellcheck disable`
+directive to state a reason. A missing `shellcheck` binary produces an explicit
+`SKIPPED` result; CI installs the package so the quality job cannot skip it.
+The merge chain also runs both hermetic worktree-GC safety tests.
+
 Merge readiness also runs `scripts/check-ux-traceability.sh`: every `[active]`
 rule in `docs/ux-rules.md` needs a rule-named test, no test may reference an
 unknown or replaced rule ID, no `[active]` rule test may be `#[ignore]`d, and

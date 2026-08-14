@@ -55,8 +55,8 @@ run_compact_seek_flow() {
   # The first row's y depends on whether the onboarding banner is showing, so
   # sweep the plausible rows instead of pinning one offset: a double-click on
   # a column header only re-sorts, which is harmless here (one track).
-  local playing=0 attempt row_y position
-  for attempt in $(seq 1 4); do
+  local playing=0 row_y position
+  for _ in $(seq 1 4); do
     for row_y in "$ROW0_TITLE_CELL_Y" 190 208 226 244; do
       double_click_at "$ROW0_TITLE_CELL_X" "$row_y"
       for _ in $(seq 1 4); do

@@ -188,7 +188,7 @@ expect_broken() {
 }
 
 expect_fixed() {
-  local first second current mark rewound
+  local first current mark rewound
   local -a heard back forward
   first="$(wait_for_title)"
   busctl --user set-property "$BUS" /org/mpris/MediaPlayer2 \
@@ -209,7 +209,7 @@ expect_fixed() {
   # Step 2: Next and Previous return to the actual first entry.
   mark="$(wc -l < "$OUT/app.log")"
   transport Next
-  second="$(wait_for_title '' "$first")"
+  wait_for_title '' "$first" >/dev/null
   wait_for_starts "$mark" 1
   transport Previous
   wait_for_title "$first" >/dev/null

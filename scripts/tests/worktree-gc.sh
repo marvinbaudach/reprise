@@ -5,6 +5,13 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 runner="$repo_root/scripts/reprise-worktree-gc.sh"
 closer="$repo_root/scripts/close-worktree.sh"
 
+refute() {
+  if "$@"; then
+    printf 'refute failed: %s\n' "$*" >&2
+    exit 1
+  fi
+}
+
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/reprise-worktree-gc.XXXXXX")
 start_active_probe() {
   local path=$1
@@ -100,7 +107,7 @@ rg -Fq "removed no_unique_commits $stale_worktree" "$state_root"/runs/*.log
 [[ -d $locked_worktree ]]
 [[ -d $active_worktree ]]
 [[ -d $protected_worktree ]]
-! git -C "$repo" show-ref --verify --quiet refs/heads/test/stale
+refute git -C "$repo" show-ref --verify --quiet refs/heads/test/stale
 git -C "$repo" show-ref --verify --quiet refs/heads/test/dirty
 git -C "$repo" show-ref --verify --quiet refs/heads/test/unmerged
 git -C "$repo" show-ref --verify --quiet refs/heads/test/locked
@@ -182,7 +189,7 @@ merged_report=$(
 )
 rg -Fq "removed verified_merged_pr $merged_worktree" <<<"$merged_report"
 [[ ! -d $merged_worktree ]]
-! git -C "$repo" show-ref --verify --quiet refs/heads/test/merged
+refute git -C "$repo" show-ref --verify --quiet refs/heads/test/merged
 [[ $(find "$state_root/pending" -type f | wc -l) -eq 0 ]]
 
 busy_merged_worktree="$fixture/busy-merged"
@@ -214,7 +221,7 @@ busy_merged_report=$(
 )
 rg -Fq "removed verified_merged_pr $busy_merged_worktree" <<<"$busy_merged_report"
 [[ ! -d $busy_merged_worktree ]]
-! git -C "$repo" show-ref --verify --quiet refs/heads/test/busy-merged
+refute git -C "$repo" show-ref --verify --quiet refs/heads/test/busy-merged
 [[ $(find "$state_root/pending" -type f | wc -l) -eq 0 ]]
 
 cache_worktree="$fixture/cache"
@@ -310,7 +317,7 @@ rg -Fq "removed no_unique_commits $nested_stale" <<<"$scope_apply_report"
 [[ ! -d $nested_stale ]]
 [[ -d $outside_scope ]]
 git -C "$scope" show-ref --verify --quiet refs/heads/test/outside
-! git -C "$standalone" show-ref \
+refute git -C "$standalone" show-ref \
   --verify --quiet refs/heads/worktree-stale-agent
 
 artifact_repo="$fixture/artifact-scope"
@@ -571,7 +578,7 @@ rg -Fq "keep active_artifacts $active_artifact_worktree" \
   <<<"$dirty_artifact_report"
 rg -Fq "keep active $active_artifact_worktree" \
   <<<"$dirty_artifact_report"
-! rg -Fq "keep outside_scope $active_artifact_worktree" \
+refute rg -Fq "keep outside_scope $active_artifact_worktree" \
   <<<"$dirty_artifact_report"
 rg -Fq "keep locked $locked_artifact_worktree" \
   <<<"$dirty_artifact_report"

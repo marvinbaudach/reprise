@@ -320,7 +320,7 @@ sweep_repo() {
   fi
   primary_path=$(absolute_directory "$repo")
 
-  local path= head= branch= locked=false line classification exclusion_status
+  local path='' head='' branch='' locked=false line classification exclusion_status
   while IFS= read -r line || [[ -n $line ]]; do
     if [[ -z $line ]]; then
       if [[ -n $path ]]; then
@@ -413,7 +413,7 @@ discover_repositories() {
 registered_worktree_fields() {
   local repo=$1
   local wanted_path=$2
-  local path= head= branch= locked=false line
+  local path='' head='' branch='' locked=false line
   local found=
   while IFS= read -r line || [[ -n $line ]]; do
     if [[ -z $line ]]; then
@@ -585,7 +585,7 @@ main() {
         die "--target-min-kib must be a non-negative integer"
       local excluded_index
       for excluded_index in "${!excluded_paths[@]}"; do
-        excluded_paths[$excluded_index]=$(absolute_directory \
+        excluded_paths[excluded_index]=$(absolute_directory \
           "${excluded_paths[$excluded_index]}")
       done
       if [[ $apply == true ]]; then
