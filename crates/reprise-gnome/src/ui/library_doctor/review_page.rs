@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
@@ -25,6 +25,7 @@ use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
     ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
 };
+use super::review_snapshot::ReviewSnapshot;
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -51,6 +52,7 @@ struct ReviewState {
     layout: Rc<Cell<ReviewLayout>>,
     column_groups: ReviewColumnGroups,
     outcomes: RefCell<HashMap<DoctorReviewRowId, ReviewOutcome>>,
+    snapshot: RefCell<ReviewSnapshot>,
     on_reviewed: Rc<dyn Fn()>,
 }
 
@@ -72,8 +74,15 @@ impl ReviewState {
         let stale_notice = review_stale_notice(&session);
         let ready_count = review_ready_count(&session);
         let grouped_rows_started = Instant::now();
-        let objects = grouped_rows_for(&self.scan, &session, &self.outcomes.borrow())
-            .into_iter()
+        let snapshot = ReviewSnapshot::from_rows(grouped_rows_for(
+            &self.scan,
+            &session,
+            &self.outcomes.borrow(),
+        ));
+        let objects = snapshot
+            .rows
+            .iter()
+            .cloned()
             .map(|row| glib::BoxedAnyObject::new(row).upcast::<glib::Object>())
             .collect::<Vec<_>>();
         tracing::debug!(
@@ -99,7 +108,7 @@ impl ReviewState {
             elapsed_us = conflicts_started.elapsed().as_micros(),
             "DOCTOR_REVIEW_REFRESH stage"
         );
-        self.filter.changed(gtk4::FilterChange::Different);
+        *self.snapshot.borrow_mut() = snapshot;
         let count = self.sorted.n_items();
         self.content
             .set_visible_child_name(if count == 0 { "empty" } else { "rows" });
@@ -131,6 +140,7 @@ impl ReviewState {
         );
     }
 
+    #[cfg(test)]
     fn visible_rows(&self) -> Vec<ReviewRowModel> {
         (0..self.sorted.n_items())
             .filter_map(|position| row_at(&self.sorted, position))
@@ -138,21 +148,15 @@ impl ReviewState {
     }
 
     fn refresh_filter_summary(&self) {
-        let (changes, albums) = review_header_counts(&self.visible_rows());
-        self.filter_bar.set_summary(changes, albums);
+        let snapshot = self.snapshot.borrow();
+        let totals = snapshot.totals;
+        debug_assert_eq!(totals.albums, snapshot.albums.len());
+        self.filter_bar.set_summary(totals.changes, totals.albums);
     }
 
     fn refresh_master_check(&self) {
-        let rows = self.visible_rows();
-        let selected = rows
-            .iter()
-            .map(|row| row.selected_change_count)
-            .sum::<usize>();
-        let selectable = rows
-            .iter()
-            .map(|row| row.selectable_row_ids.len())
-            .sum::<usize>();
-        let check = master_check_state(selected, selectable);
+        let totals = self.snapshot.borrow().totals;
+        let check = master_check_state(totals.selected, totals.selectable);
         let handler = self.select_all_handler.borrow_mut().take();
         if let Some(handler) = handler.as_ref() {
             self.select_all.block_signal(handler);
@@ -198,6 +202,7 @@ impl ReviewState {
         self.session
             .borrow_mut()
             .set_category_filter(category.map(ReviewCategory::problem_classes));
+        self.filter.changed(gtk4::FilterChange::Different);
         self.refresh();
     }
 
@@ -316,6 +321,7 @@ fn acknowledge_skipped_scan(db: &Db, scan_id: i64) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+#[cfg(test)]
 fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> {
     let object = model
         .item(position)?
@@ -333,14 +339,10 @@ fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> 
 /// Apply button answer "what will be written". Mixing the two produced
 /// "1 changes · 2 albums", where the first number followed the checkbox and the
 /// second did not.
+#[cfg(test)]
 fn review_header_counts(rows: &[ReviewRowModel]) -> (usize, usize) {
-    let changes = rows.iter().map(|row| row.selectable_row_ids.len()).sum();
-    let albums = rows
-        .iter()
-        .map(|row| row.album_key.as_str())
-        .collect::<HashSet<_>>()
-        .len();
-    (changes, albums)
+    let totals = ReviewSnapshot::from_rows(rows.to_vec()).totals;
+    (totals.changes, totals.albums)
 }
 
 fn review_stale_notice(session: &DoctorReviewSession) -> Option<String> {
@@ -540,6 +542,7 @@ impl LibraryDoctorReviewPage {
             layout,
             column_groups: header.groups.clone(),
             outcomes: RefCell::new(HashMap::new()),
+            snapshot: RefCell::new(ReviewSnapshot::default()),
             on_reviewed,
         });
         let on_select = {
@@ -674,6 +677,10 @@ impl LibraryDoctorReviewPage {
 #[cfg(test)]
 #[path = "review_page_perf_tests.rs"]
 mod review_page_perf_tests;
+
+#[cfg(test)]
+#[path = "review_refresh_tests.rs"]
+mod review_refresh_tests;
 
 #[cfg(test)]
 #[path = "review_page_tests.rs"]
