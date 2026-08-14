@@ -16,7 +16,6 @@ import android.view.View
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -71,7 +70,13 @@ class MainActivity : ComponentActivity() {
             ),
         )
     }
-    private val artworkDelegate = lazy { TrackArtwork(resolve = session::artworkFor) }
+    private val artworkDelegate = lazy {
+        TrackArtwork(
+            resolve = session::artworkFor,
+            resolveArtistPortraitCached = session::artistPortraitCached,
+            resolveArtistPortraitFetched = session::artistPortraitFetched,
+        )
+    }
     private val artwork by artworkDelegate
 
     /**
@@ -188,6 +193,9 @@ class MainActivity : ComponentActivity() {
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
+            var onlineSourcesEnabled by remember {
+                mutableStateOf(surface.onlineSourcesEnabled())
+            }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
             surfaceState.initializeSelectedTab(
@@ -253,6 +261,18 @@ class MainActivity : ComponentActivity() {
                                 setEqualizerEnabled = surface.setEqualizerEnabled,
                                 replaceEqualizerCurve = surface.replaceEqualizerCurve,
                                 setGaplessEnabled = surface.setGaplessEnabled,
+                                onlineSourcesEnabled = onlineSourcesEnabled,
+                                setOnlineSourcesEnabled = { enabled ->
+                                    surface.setOnlineSourcesEnabled(enabled)
+                                        .onSuccess { onlineSourcesEnabled = enabled }
+                                        .onFailure { error ->
+                                            Log.e(
+                                                TAG,
+                                                "Could not change online source settings",
+                                                error,
+                                            )
+                                        }
+                                },
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
                                     runCatching {
@@ -303,6 +323,16 @@ class MainActivity : ComponentActivity() {
             replaceEqualizerCurve = ::replaceEqualizerCurve,
             setGaplessEnabled = ::setGaplessEnabled,
             selectTheme = { current, palette -> themeController.select(current, palette) },
+            onlineSourcesEnabled = {
+                runCatching { library.onlineSourcesEnabled() }
+                    .onFailure { error ->
+                        Log.e(TAG, "Could not load online source settings", error)
+                    }
+                    .getOrDefault(false)
+            },
+            setOnlineSourcesEnabled = { enabled ->
+                runCatching { library.setOnlineSourcesEnabled(enabled) }
+            },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
         )
@@ -669,84 +699,6 @@ internal class UiProgress(
             )
         }
         report(scanning)
-    }
-}
-
-@Composable
-private fun LibraryScreen(
-    initialState: LibraryScreenState,
-    playback: PlaybackUiState,
-    playbackSettingsRevision: Long,
-    surfaceLayout: SurfaceLayout,
-    surfaceState: MobileSurfaceViewModel,
-    chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
-    rescan: ((LibraryScreenState) -> Unit) -> Unit,
-    searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    searchAlbums: (String, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
-    listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
-    searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
-    openAlbum: (LibraryAlbum) -> AlbumTrackList,
-    listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    openArtist: (LibraryArtist) -> ArtistTrackList,
-    listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    listArtistAlbums: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
-    listArtistUntaggedTracks:
-        (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
-    playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
-    loadPlaybackSettings: () -> PlaybackSettingsUiState,
-    setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
-    replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
-    setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
-    themeSelection: MobileThemeSelection,
-    selectTheme: (MobileTheme) -> Unit,
-) {
-    var state by remember { mutableStateOf(initialState) }
-    val folderPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree(),
-    ) { treeUri ->
-        if (treeUri != null) {
-            chooseFolder(treeUri) { state = it }
-        }
-    }
-    val launchFolderPicker = { folderPicker.launch(folderPickerInitialUri()) }
-
-    when (val current = state) {
-        is LibraryScreenState.NoFolder -> NoFolderScreen(
-            message = current.message,
-            chooseFolder = launchFolderPicker,
-        )
-        LibraryScreenState.TreeUnreadable -> TreeUnreadableScreen(
-            chooseFolder = launchFolderPicker,
-        )
-        is LibraryScreenState.Scanning -> ScanningScreen(current)
-        is LibraryScreenState.Browse -> BrowseScreen(
-            state = current,
-            playback = playback,
-            playbackSettingsRevision = playbackSettingsRevision,
-            surfaceLayout = surfaceLayout,
-            surfaceState = surfaceState,
-            chooseFolder = launchFolderPicker,
-            rescan = { rescan { state = it } },
-            searchTitles = searchTitles,
-            searchAlbums = searchAlbums,
-            listArtists = listArtists,
-            searchArtists = searchArtists,
-            openAlbum = openAlbum,
-            listAlbumTracks = listAlbumTracks,
-            openArtist = openArtist,
-            listArtistTracks = listArtistTracks,
-            listArtistAlbums = listArtistAlbums,
-            listArtistUntaggedTracks = listArtistUntaggedTracks,
-            loadTrack = loadTrack,
-            playTracks = playTracks,
-            loadPlaybackSettings = loadPlaybackSettings,
-            setEqualizerEnabled = setEqualizerEnabled,
-            replaceEqualizerCurve = replaceEqualizerCurve,
-            setGaplessEnabled = setGaplessEnabled,
-            themeSelection = themeSelection,
-            selectTheme = selectTheme,
-        )
     }
 }
 

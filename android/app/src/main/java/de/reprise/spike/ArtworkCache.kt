@@ -9,12 +9,14 @@ private sealed interface ArtworkVisualCacheKey
 private data class TrackArtworkKey(
     val trackUri: String,
     val size: AndroidArtworkSize,
+    val kind: ArtworkKind,
 ) : ArtworkVisualCacheKey
 
 private data class GeneratedArtworkKey(
     val title: String,
     val artist: String,
     val size: AndroidArtworkSize,
+    val kind: ArtworkKind,
 ) : ArtworkVisualCacheKey
 
 private class ArtworkIdentity(
@@ -57,6 +59,19 @@ internal class ArtworkCache(
     }
 
     @Synchronized
+    fun invalidateArtistArtwork(request: ArtworkRequest) {
+        if (request.kind != ArtworkKind.ARTIST) return
+        visuals.keys.removeAll { key ->
+            key is TrackArtworkKey &&
+                key.trackUri == request.trackUri &&
+                key.kind == ArtworkKind.ARTIST
+        }
+        resolvedFallbacks.keys.removeAll { key ->
+            key.trackUri == request.trackUri && key.kind == ArtworkKind.ARTIST
+        }
+    }
+
+    @Synchronized
     fun generated(request: ArtworkRequest): ArtworkVisual? = visuals[request.generatedKey()]
 
     @Synchronized
@@ -74,12 +89,13 @@ internal class ArtworkCache(
         fogs[ArtworkIdentity(image)] = fog
     }
 
-    private fun ArtworkRequest.trackKey() = TrackArtworkKey(trackUri, size)
+    private fun ArtworkRequest.trackKey() = TrackArtworkKey(trackUri, size, kind)
 
     private fun ArtworkRequest.generatedKey() = GeneratedArtworkKey(
         title = title.trim().lowercase(),
         artist = artist.trim().lowercase(),
         size = size,
+        kind = kind,
     )
 
     private fun <K, V> lruMap(capacity: Int) =

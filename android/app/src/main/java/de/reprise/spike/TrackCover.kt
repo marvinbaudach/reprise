@@ -38,6 +38,8 @@ private const val TAG = "RepriseArtwork"
  */
 internal class TrackArtwork(
     private val resolve: (String, AndroidArtworkSize) -> String?,
+    private val resolveArtistPortraitCached: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
+    private val resolveArtistPortraitFetched: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
     private val decode: (String) -> android.graphics.Bitmap? = BitmapFactory::decodeFile,
     private val fallback: (String, String, Int) -> android.graphics.Bitmap = ::fallbackCoverBitmap,
     private val cache: ArtworkCache = SharedArtworkCache,
@@ -65,13 +67,16 @@ internal class TrackArtwork(
         gate: ArtworkRequestGate,
         deliver: (ArtworkVisual?) -> Unit,
     ) {
-        cache.artwork(request)?.let { cached ->
-            if (gate.accepts(request)) deliver(cached)
-            return
+        if (!request.refreshesArtistPortrait()) {
+            cache.artwork(request)?.let { cached ->
+                if (gate.accepts(request)) deliver(cached)
+                return
+            }
         }
         val lane = when (request.size) {
             AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
             AndroidArtworkSize.LIST -> worker
+            AndroidArtworkSize.ARTIST_DETAIL -> fullSizeWorker
         }
         lane.execute {
             if (!gate.accepts(request)) {
@@ -111,6 +116,7 @@ internal class TrackArtwork(
         val lane = when (request.size) {
             AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
             AndroidArtworkSize.LIST -> worker
+            AndroidArtworkSize.ARTIST_DETAIL -> fullSizeWorker
         }
         lane.execute {
             val visual = runCatching { resolveVisual(request) }.getOrElse { error ->
@@ -141,8 +147,24 @@ internal class TrackArtwork(
         cache.artwork(request) ?: generatedVisual(request, resolved = false)
 
     private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
-        cache.artwork(request)?.let { return it }
-        val bitmap = resolve(request.trackUri, request.size)?.let(decode)
+        if (!request.refreshesArtistPortrait()) {
+            cache.artwork(request)?.let { return it }
+        }
+        val portraitPath = if (request.kind == ArtworkKind.ARTIST) {
+            if (request.allowFetch) {
+                resolveArtistPortraitFetched(request.artistName, request.size)
+            } else {
+                resolveArtistPortraitCached(request.artistName, request.size)
+            }
+        } else {
+            null
+        }
+        val portrait = portraitPath?.let(decode)
+        if (portrait != null && request.refreshesArtistPortrait()) {
+            cache.invalidateArtistArtwork(request)
+        }
+        val bitmap = portrait
+            ?: resolve(request.trackUri, request.size)?.let(decode)
             ?: return generatedVisual(request, resolved = true)
         return ArtworkVisual(
             image = bitmap.asImageBitmap(),
@@ -282,7 +304,11 @@ internal fun ArtworkCover(
 private fun singleArtworkThread(name: String): ExecutorService =
     Executors.newSingleThreadExecutor { runnable -> Thread(runnable, name) }
 
+private fun ArtworkRequest.refreshesArtistPortrait(): Boolean =
+    kind == ArtworkKind.ARTIST && allowFetch
+
 private fun AndroidArtworkSize.fallbackSizePx(): Int = when (this) {
     AndroidArtworkSize.LIST -> 168
     AndroidArtworkSize.NOW_PLAYING -> 1_092
+    AndroidArtworkSize.ARTIST_DETAIL -> 640
 }

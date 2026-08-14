@@ -98,6 +98,8 @@ internal fun BrowseScreen(
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
+    onlineSourcesEnabled: Boolean = false,
+    setOnlineSourcesEnabled: (Boolean) -> Unit = {},
 ) {
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
@@ -694,6 +696,8 @@ internal fun BrowseScreen(
                         artistCount = state.artists.total,
                         folderName = folderLabel(state.folderUri),
                         themeSelection = themeSelection,
+                        onlineSourcesEnabled = onlineSourcesEnabled,
+                        setOnlineSourcesEnabled = setOnlineSourcesEnabled,
                         close = { surfaceState.showSettings(false) },
                         chooseFolder = chooseFolder,
                         rescan = rescan,

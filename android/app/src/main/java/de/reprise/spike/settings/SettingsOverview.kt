@@ -27,6 +27,7 @@ internal enum class SettingsRoute(val route: String) {
     LIBRARY("library"),
     AUDIO("audio"),
     APPEARANCE("appearance"),
+    ONLINE_SOURCES("online-sources"),
     ABOUT("about"),
 }
 
@@ -41,6 +42,7 @@ private data class SettingsSection(
 internal fun SettingsOverview(
     titleCount: Long,
     themeSelection: MobileThemeSelection,
+    onlineSourcesEnabled: Boolean,
     versionName: String,
     error: String?,
     close: () -> Unit,
@@ -65,6 +67,12 @@ internal fun SettingsOverview(
             symbol = "palette",
             title = "Appearance",
             subtitle = themeSelection.palette.displayName(),
+        ),
+        SettingsSection(
+            destination = SettingsRoute.ONLINE_SOURCES,
+            symbol = "cloud",
+            title = "Online sources",
+            subtitle = if (onlineSourcesEnabled) "On" else "Off",
         ),
         SettingsSection(
             destination = SettingsRoute.ABOUT,
