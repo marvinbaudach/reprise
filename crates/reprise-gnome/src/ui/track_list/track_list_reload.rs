@@ -79,7 +79,7 @@ pub(in crate::ui) enum ReloadViewport {
     CenterPlayingTrack,
     /// SEARCH-9: a new result set is read from its top.
     Top,
-    /// SEARCH-9: an emptied query returns to `Shared::pre_search_anchor`.
+    /// SEARCH-9: an emptied query returns to `Shared::pre_search.anchor`.
     RestorePreSearch,
 }
 
@@ -212,7 +212,7 @@ fn restore_reload_anchor(
     let reveal_playing_track = matches!(viewport, ReloadViewport::CenterPlayingTrack)
         && shared.playing_track_id.get().is_some();
     let restores_pre_search = matches!(viewport, ReloadViewport::RestorePreSearch)
-        && shared.pre_search_anchor.get().is_some();
+        && shared.pre_search.get().anchor.is_some();
     if reload_restore::is_noop(captured) && !reveal_playing_track && !restores_pre_search {
         return;
     }
@@ -230,7 +230,7 @@ fn restore_reload_anchor(
     // SEARCH-9: the search is over — put the user back where it started. A
     // consumed anchor is taken, not copied: the next search captures its own.
     if matches!(viewport, ReloadViewport::RestorePreSearch) {
-        let anchor = shared.pre_search_anchor.take();
+        let anchor = shared.pre_search.take().anchor;
         super::reload_anchor_scroll::schedule(shared, anchor, None, &current_ids, hold);
         return;
     }
@@ -342,7 +342,10 @@ pub(in crate::ui) fn prepare_filter_change(shared: &Rc<Shared>, previous: &str, 
     // overwrite it with a position inside the result set.
     if previous.is_empty() && !current.is_empty() {
         let captured = capture_reload_anchor(shared);
-        shared.pre_search_anchor.set(captured.anchor);
+        shared.pre_search.set(super::PreSearch {
+            anchor: captured.anchor,
+            playback_started: false,
+        });
     }
 }
 
@@ -384,7 +387,7 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: &ViewSou
     *shared.filter.borrow_mut() = String::new();
     // SEARCH-9: an anchor from the previous source points at a row this view
     // does not contain.
-    shared.pre_search_anchor.set(None);
+    shared.pre_search.set(super::PreSearch::default());
     *shared.browse_filter.borrow_mut() = BrowseFilter::default();
     shared.browse_bar.restore_filter(&BrowseFilter::default());
     let new_sort = resolve_sort_on_switch(&Default::default(), source);
@@ -440,7 +443,7 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     )
     .then(|| gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view))
     .flatten()
-    .filter(|_| captured.anchor.is_some() || shared.pre_search_anchor.get().is_some())
+    .filter(|_| captured.anchor.is_some() || shared.pre_search.get().anchor.is_some())
     // A zero in a view the reload is about to leave is not a position worth
     // protecting: the hold would pin the list to the top while anchor restore
     // writes the meaningful destination.
