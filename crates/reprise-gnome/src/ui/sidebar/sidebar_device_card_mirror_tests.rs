@@ -80,9 +80,65 @@ fn mtp_63_sidebar_keeps_free_space_visible_during_sync() {
         "8.0 MiB free · ↑ Track A · 2.0 MiB/s"
     );
     copying.sync_phase = PlannedSyncPhase::ComputingDelta;
-    assert_eq!(card_subtitle(&copying), "8.0 MiB free · Checking…");
+    assert_eq!(card_subtitle(&copying), "8.0 MiB free · Checking changes…");
     copying.sync_phase = PlannedSyncPhase::Finishing;
     assert_eq!(card_subtitle(&copying), "8.0 MiB free · Finishing…");
+}
+
+#[test]
+fn computing_delta_without_storage_names_the_activity_without_a_placeholder() {
+    let device = view(PlannedSyncPhase::ComputingDelta);
+
+    let subtitle = card_subtitle(&device);
+
+    assert_eq!(subtitle, "Checking changes…");
+    assert!(!subtitle.contains(device_sync_strings::SPACE_UNKNOWN));
+    assert!(!subtitle.starts_with('·'));
+}
+
+#[test]
+fn syncing_without_storage_names_the_activity_without_a_placeholder() {
+    let mut device = view(PlannedSyncPhase::Syncing {
+        step: SyncStep::Copying,
+        done: 0,
+        total: 1,
+        current_track: "Track A".into(),
+        bytes_done: 0,
+        bytes_total: 1,
+    });
+    device.bytes_per_second = 2 * 1_024 * 1_024;
+
+    let subtitle = card_subtitle(&device);
+
+    assert_eq!(subtitle, "↑ Track A · 2.0 MiB/s");
+    assert!(!subtitle.contains(device_sync_strings::SPACE_UNKNOWN));
+    assert!(!subtitle.starts_with('·'));
+}
+
+#[test]
+fn finishing_without_storage_names_the_activity_without_a_placeholder() {
+    let device = view(PlannedSyncPhase::Finishing);
+
+    let subtitle = card_subtitle(&device);
+
+    assert_eq!(subtitle, "Finishing…");
+    assert!(!subtitle.contains(device_sync_strings::SPACE_UNKNOWN));
+    assert!(!subtitle.starts_with('·'));
+}
+
+#[test]
+fn attention_without_storage_names_the_problem_without_a_placeholder() {
+    let mut device = view(PlannedSyncPhase::Idle);
+    device
+        .page
+        .warnings
+        .push(reprise_core::device_sync::SyncPageWarning::UnsafeManagedItem);
+
+    let subtitle = card_subtitle(&device);
+
+    assert_eq!(subtitle, "Needs attention");
+    assert!(!subtitle.contains(device_sync_strings::SPACE_UNKNOWN));
+    assert!(!subtitle.starts_with('·'));
 }
 
 #[test]
@@ -510,10 +566,7 @@ fn warnings_keep_an_idle_card_reading_needs_attention() {
         .push(reprise_core::device_sync::SyncPageWarning::UnsafeManagedItem);
 
     assert_eq!(detail_mode(&device), DetailMode::Delta);
-    assert_eq!(
-        card_subtitle(&device),
-        "Needs attention · Available space unknown"
-    );
+    assert_eq!(card_subtitle(&device), "Needs attention");
 }
 
 #[test]
@@ -553,11 +606,17 @@ fn card_activity_distinguishes_transcoding_and_copying_with_artist() {
     let track = "Immortal — Lorna Shore";
 
     assert_eq!(
-        device_sync_strings::sync_activity(step_glyph(&SyncStep::Transcoding), track),
+        device_sync_strings::sync_activity(
+            sidebar_device_card_text::step_glyph(&SyncStep::Transcoding),
+            track,
+        ),
         "⟳ transcoding · Immortal — Lorna Shore"
     );
     assert_eq!(
-        device_sync_strings::sync_activity(step_glyph(&SyncStep::Copying), track),
+        device_sync_strings::sync_activity(
+            sidebar_device_card_text::step_glyph(&SyncStep::Copying),
+            track,
+        ),
         "↑ Immortal — Lorna Shore"
     );
 }

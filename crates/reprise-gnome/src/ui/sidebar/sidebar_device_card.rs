@@ -9,7 +9,9 @@ use gtk4::prelude::*;
 use reprise_core::device_sync::device_view::DeviceContentsState;
 
 use super::sidebar_device_card_text;
-use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncStep};
+#[cfg(test)]
+use crate::ui::device_sync_runtime::SyncStep;
+use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase};
 use crate::ui::device_sync_strings;
 
 #[path = "../device_sync/device_sync_card_menu.rs"]
@@ -423,14 +425,7 @@ fn detail_mode(device: &DeviceView) -> DetailMode {
 /// selected" honestly via `Up to date`/`Tap to scan device contents`, so it
 /// must not also trip a competing "Needs attention" reading).
 fn mirror_needs_attention(device: &DeviceView) -> bool {
-    device
-        .page
-        .blockers
-        .iter()
-        .any(|blocker| blocker != &reprise_core::device_sync::MirrorBlocker::NoPlaylistsSelected)
-        || !device.page.warnings.is_empty()
-        || device.scan_error.is_some()
-        || device.sync_error.is_some()
+    sidebar_device_card_text::mirror_needs_attention(device)
 }
 
 /// `MTP-29`: "The card carries only the leading sentence; the full balance
@@ -477,75 +472,7 @@ fn card_title(device: &DeviceView) -> String {
 }
 
 fn card_subtitle(device: &DeviceView) -> String {
-    if device.session_state == reprise_core::device_sync::DeviceSessionState::Remembered {
-        return sidebar_device_card_text::remembered_sentence(device.last_sync, Utc::now());
-    }
-    if let reprise_core::device_sync::DeviceSessionState::Inert { active_device_name } =
-        &device.session_state
-    {
-        return device_sync_strings::inert_device_status(active_device_name);
-    }
-    if let Some(status) = &device.memory_status {
-        return status.clone();
-    }
-    match &device.sync_phase {
-        PlannedSyncPhase::ComputingDelta => format!(
-            "{} · Checking…",
-            device_sync_strings::free_space(device.storage.free_bytes)
-        ),
-        // The percentage lives in its own fixed-width label; keeping it out of
-        // here stops the track name from shifting the number around.
-        PlannedSyncPhase::Syncing {
-            step,
-            current_track,
-            ..
-        } => {
-            let activity = device_sync_strings::sync_activity(step_glyph(step), current_track);
-            if matches!(step, SyncStep::Copying) && device.bytes_per_second > 0 {
-                format!(
-                    "{} · {activity} · {}/s",
-                    device_sync_strings::free_space(device.storage.free_bytes),
-                    device_sync_strings::file_size(device.bytes_per_second)
-                )
-            } else {
-                format!(
-                    "{} · {activity}",
-                    device_sync_strings::free_space(device.storage.free_bytes)
-                )
-            }
-        }
-        PlannedSyncPhase::Finishing => format!(
-            "{} · Finishing…",
-            device_sync_strings::free_space(device.storage.free_bytes)
-        ),
-        // `MTP-29` (design 7c): four exact leading sentences replace the
-        // old blended "N changes · X to transfer" text, which is exactly
-        // the "3 changes · 0 B" lie design 7c calls out — see
-        // `sidebar_device_card_text` for the pure projection and its tests.
-        PlannedSyncPhase::Idle => {
-            if mirror_needs_attention(device) {
-                let space = device_sync_strings::available_space(device.storage.free_bytes);
-                return format!("Needs attention · {space}");
-            }
-            let balance = reprise_core::device_sync::aggregate_balance(&[device.target_reading]);
-            sidebar_device_card_text::leading_sentence(
-                &device.contents_state,
-                &balance,
-                device.last_sync,
-                Utc::now(),
-            )
-        }
-    }
-}
-
-/// What is happening to the named track.
-fn step_glyph(step: &SyncStep) -> &'static str {
-    match step {
-        SyncStep::Transcoding => "⟳ transcoding ·",
-        SyncStep::Copying => "↑",
-        SyncStep::Removing => "−",
-        SyncStep::WritingPlaylists => "≡",
-    }
+    sidebar_device_card_text::card_subtitle(device, Utc::now())
 }
 
 #[cfg(test)]
