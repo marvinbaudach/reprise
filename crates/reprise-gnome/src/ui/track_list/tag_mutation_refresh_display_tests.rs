@@ -376,9 +376,9 @@ fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
         })
         .collect::<Vec<_>>();
     let row_height = fixture.adjustment.upper() / old_ids.len() as f64;
-    let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
-        crate::ui::list_geometry::RowHeight::new(row_height).unwrap(),
-    );
+    let row_height = crate::ui::list_geometry::RowHeight::new(row_height)
+        .unwrap_or_else(|| panic!("the measured row height must be positive; got {row_height}"));
+    let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(row_height);
     let anchor = crate::ui::tag_edit::tag_reload_anchor::post_save_reload_anchor(
         anchor,
         &edited_ids,

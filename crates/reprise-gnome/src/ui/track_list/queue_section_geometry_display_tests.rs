@@ -231,39 +231,32 @@ fn scroll_region_bounds(column_view: &gtk4::ColumnView) -> (f32, f32) {
         widget: &gtk4::Widget,
         column_view: &gtk4::ColumnView,
         title_bottom: &mut Option<f32>,
-        list_bounds: &mut Option<(f32, f32)>,
     ) {
         let type_name = widget.type_().name();
         if let Some(bounds) = widget.compute_bounds(column_view) {
             if type_name.contains("ColumnViewTitle") {
                 let bottom = bounds.y() + bounds.height();
                 *title_bottom = Some(title_bottom.map_or(bottom, |current| current.max(bottom)));
-            } else if type_name == "GtkListView" {
-                *list_bounds = Some((bounds.y(), bounds.y() + bounds.height()));
             }
         }
 
         let mut child = widget.first_child();
         while let Some(current) = child {
-            collect(&current, column_view, title_bottom, list_bounds);
+            collect(&current, column_view, title_bottom);
             child = current.next_sibling();
         }
     }
 
     let mut title_bottom = None;
-    let mut list_bounds = None;
-    collect(
-        column_view.upcast_ref(),
-        column_view,
-        &mut title_bottom,
-        &mut list_bounds,
-    );
-    let title_bottom = title_bottom.expect("the ColumnView must allocate its title bar");
-    let (list_top, list_bottom) = list_bounds.expect("the ColumnView must allocate its ListView");
-    (
-        title_bottom.max(list_top),
-        list_bottom.min(column_view.height() as f32),
-    )
+    collect(column_view.upcast_ref(), column_view, &mut title_bottom);
+    // A theme or GTK build may omit the discoverable title widget. Starting at
+    // zero is safer than turning that internal tree difference into a panic.
+    let viewport_top = title_bottom.unwrap_or(0.0);
+    let adjustment = column_view
+        .vadjustment()
+        .expect("the ColumnView must expose a vertical adjustment");
+    let viewport_bottom = viewport_top + adjustment.page_size() as f32;
+    (viewport_top, viewport_bottom)
 }
 
 /// Every visible track row as `(title, top edge in ColumnView coordinates)`,
