@@ -351,7 +351,7 @@ for case_name in "${cases[@]}"; do
   sleep 0.6
 
   runtime_dir="$scratch/runtime"; mkdir -m 700 "$runtime_dir"
-  dbus-run-session -- env \
+  if ! dbus-run-session -- env \
     -u GNOME_KEYRING_CONTROL -u GNOME_KEYRING_PID \
     DISPLAY="$openbox_display" \
     XDG_RUNTIME_DIR="$runtime_dir" \
@@ -360,8 +360,9 @@ for case_name in "${cases[@]}"; do
     OUT="$out" SCRATCH="$scratch" \
     TRACK_SECONDS="$TRACK_SECONDS" \
     CUA_E2E_BIN_PATH="$CUA_E2E_BIN_PATH" \
-    bash "${BASH_SOURCE[0]}" "$case_name"
-  [[ $? -eq 0 ]] || failed+=("$case_name")
+    bash "${BASH_SOURCE[0]}" "$case_name"; then
+    failed+=("$case_name")
+  fi
 
   kill -TERM "$openbox_pid" "$xvfb_pid" 2>/dev/null
   rm -rf "$scratch"

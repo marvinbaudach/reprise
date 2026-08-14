@@ -585,7 +585,7 @@ main() {
         die "--target-min-kib must be a non-negative integer"
       local excluded_index
       for excluded_index in "${!excluded_paths[@]}"; do
-        excluded_paths[$excluded_index]=$(absolute_directory \
+        excluded_paths[excluded_index]=$(absolute_directory \
           "${excluded_paths[$excluded_index]}")
       done
       if [[ $apply == true ]]; then

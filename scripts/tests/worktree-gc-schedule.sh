@@ -8,6 +8,13 @@ installer="$repo_root/scripts/install-worktree-gc-timer.sh"
 collector="$repo_root/scripts/reprise-worktree-gc.sh"
 guide="$repo_root/docs/automation/worktree-cleanup.md"
 
+refute() {
+  if "$@"; then
+    printf 'refute failed: %s\n' "$*" >&2
+    exit 1
+  fi
+}
+
 [[ -x $installer ]]
 [[ -f $service ]]
 [[ -f $timer ]]
@@ -16,7 +23,7 @@ guide="$repo_root/docs/automation/worktree-cleanup.md"
 rg -Fq 'Type=oneshot' "$service"
 rg -Fq 'REPRISE_GC_STATE_ROOT=%h/.local/state/reprise-worktree-gc' "$service"
 rg -Fq 'ExecStart=%h/.local/libexec/reprise-worktree-gc sweep --scope %h/Projects/reprise --exclude %h/.cache/reprise-nightly/src --apply --target-max-age-days 7 --target-min-kib 1048576' "$service"
-! rg -Fq 'ExecStart=/home/marvin/Projects/reprise/scripts/reprise-worktree-gc.sh' "$service"
+refute rg -Fq 'ExecStart=/home/marvin/Projects/reprise/scripts/reprise-worktree-gc.sh' "$service"
 rg -Fq 'OnCalendar=Sun *-*-* 04:15:00' "$timer"
 rg -Fq 'Persistent=true' "$timer"
 rg -Fq 'RandomizedDelaySec=30m' "$timer"
