@@ -119,6 +119,14 @@ internal class AndroidLibrarySessionPort(
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? =
         library.trackArtwork(trackUri, size)
 
+    override fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? =
+        library.artistPortraitCached(name, size)
+
+    override fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? =
+        runCatching { library.artistPortraitFetch(name, size) }
+            .onFailure { error -> Log.w(TAG, "Could not fetch artist portrait", error) }
+            .getOrNull()
+
     override fun setFavourite(trackId: Long, favourite: Boolean) {
         library.setTrackRating(trackId, if (favourite) 5 else 0)
         rememberedTreeUri()?.let { treeUri -> publishListenReport(Uri.parse(treeUri)) }

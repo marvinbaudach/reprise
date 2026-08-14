@@ -71,7 +71,13 @@ class MainActivity : ComponentActivity() {
             ),
         )
     }
-    private val artworkDelegate = lazy { TrackArtwork(resolve = session::artworkFor) }
+    private val artworkDelegate = lazy {
+        TrackArtwork(
+            resolve = session::artworkFor,
+            resolveArtistPortraitCached = session::artistPortraitCached,
+            resolveArtistPortraitFetched = session::artistPortraitFetched,
+        )
+    }
     private val artwork by artworkDelegate
 
     /**
@@ -303,6 +309,19 @@ class MainActivity : ComponentActivity() {
             replaceEqualizerCurve = ::replaceEqualizerCurve,
             setGaplessEnabled = ::setGaplessEnabled,
             selectTheme = { current, palette -> themeController.select(current, palette) },
+            onlineSourcesEnabled = {
+                runCatching { library.onlineSourcesEnabled() }
+                    .onFailure { error ->
+                        Log.e(TAG, "Could not load online source settings", error)
+                    }
+                    .getOrDefault(false)
+            },
+            setOnlineSourcesEnabled = { enabled ->
+                runCatching { library.setOnlineSourcesEnabled(enabled) }
+                    .onFailure { error ->
+                        Log.e(TAG, "Could not change online source settings", error)
+                    }
+            },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
         )

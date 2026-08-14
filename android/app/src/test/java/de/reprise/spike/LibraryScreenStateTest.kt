@@ -313,6 +313,24 @@ fun artistUntaggedWindowsDelegateTheLiteralArtistAndWindow() {
 
     assertEquals(listOf("artist-untagged: Low :125:33"), port.operations)
 }
+
+@Test
+fun portraitLookupsAreNotMemoisedBySession() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = emptyList(),
+    )
+    val session = LibrarySession(port)
+
+    session.artistPortraitCached("Low", AndroidArtworkSize.LIST)
+    session.artistPortraitCached("Low", AndroidArtworkSize.LIST)
+
+    assertEquals(
+        listOf("portrait-cached:Low:LIST", "portrait-cached:Low:LIST"),
+        port.operations,
+    )
+}
 }
 
 private fun testTrack() = LibraryTrack(
@@ -435,6 +453,13 @@ private class RecordingLibrarySessionPort(
     override fun trackById(trackId: Long): LibraryTrack? = tracks.firstOrNull { it.id == trackId }
 
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? = null
+
+    override fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? {
+        operations += "portrait-cached:$name:${size.name}"
+        return null
+    }
+
+    override fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? = null
 
     override fun setFavourite(trackId: Long, favourite: Boolean) = Unit
 }

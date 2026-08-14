@@ -58,6 +58,10 @@ internal interface LibrarySessionPort {
 
     fun artworkFor(trackUri: String, size: AndroidArtworkSize): String?
 
+    fun artistPortraitCached(name: String, size: AndroidArtworkSize): String?
+
+    fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String?
+
     fun setFavourite(trackId: Long, favourite: Boolean)
 }
 
@@ -212,6 +216,12 @@ internal class LibrarySession(
         }
         return path
     }
+
+    fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? =
+        port.artistPortraitCached(name, size)
+
+    fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? =
+        port.artistPortraitFetched(name, size)
 
     private fun scanTree(
         treeUri: String,
