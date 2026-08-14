@@ -67,52 +67,46 @@ pub(in crate::ui) fn css() -> String {
     }\
     .new-release-row {\
         border-radius: 8px;\
-        padding: 9px 4px;\
+        border-left: 2px solid transparent;\
     }\
-    .new-release-row:hover {\
-        background-color: alpha(currentColor, 0.04);\
+    .new-release-row:hover,\
+    .new-release-row:focus-within {\
+        border-left-color: @accent_bg_color;\
+        background-color: alpha(currentColor, 0.06);\
+    }\
+    .new-release-activation {\
+        padding: 9px 4px;\
+        border-radius: 8px;\
+        font-weight: normal;\
     }\
     /* Release title: the row's one point of emphasis, medium weight rather \
        than bold so it stays quiet next to the chip/actions stack. */\
     .new-release-title {\
-        font-size: 14px;\
+        font-size: 15px;\
         font-weight: 500;\
     }\
-    /* Upcoming release chip: a quiet accent tint, one step calmer than a \
-       button — thin dark-accent border, light-accent text, near-invisible \
-       fill (#4a). */\
-    .new-release-chip {\
+    .new-release-title-suffix {\
+        color: @reprise_secondary_fg_color;\
+    }\
+    .updates-tag {\
+        border-radius: 999px;\
+        padding: 2px 8px;\
+        font-size: 11px;\
+    }\
+    .updates-tag.updates-tag-accent {\
         border: 1px solid alpha(@accent_bg_color, 0.45);\
         color: @reprise_accent_text_color;\
         background-color: alpha(@accent_bg_color, 0.08);\
-        border-radius: 999px;\
-        padding: 2px 8px;\
-        font-size: 11px;\
     }\
-    /* Released / already-in-library chip: neutral dimmed outline, no fill. */\
-    .new-release-chip-neutral {\
+    .updates-tag.updates-tag-neutral {\
         border: 1px solid alpha(@window_fg_color, 0.20);\
         color: @reprise_secondary_fg_color;\
         background-color: transparent;\
-        border-radius: 999px;\
-        padding: 2px 8px;\
-        font-size: 11px;\
-    }\
-    /* Partial-ownership chip: you hold the lead single, not the album. \
-       Sits between the neutral \"released\" chip and the accent \"upcoming\" \
-       one — a dimmed accent outline says \"related to you\" without \
-       claiming the album is yours. */\
-    .new-release-chip-partial {\
-        border: 1px solid alpha(@accent_bg_color, 0.30);\
-        color: @reprise_accent_text_color;\
-        background-color: transparent;\
-        border-radius: 999px;\
-        padding: 2px 8px;\
-        font-size: 11px;\
     }\
     .new-release-meta {\
-        font-size: 12px;\
+        font-size: 13px;\
         color: @reprise_secondary_fg_color;\
+        opacity: 0.78;\
     }\
     /* Thin divider between the list and the history entry point, fading at \
        both ends instead of running edge to edge. */\
@@ -120,21 +114,6 @@ pub(in crate::ui) fn css() -> String {
         min-height: 1px;\
         background-image: linear-gradient(to right, transparent, \
                            @borders 48px, @borders calc(100% - 48px), transparent);\
-    }\
-    /* Navigation, not a primary action: normal weight, dimmed text, an even \
-       quieter count fragment (#7). */\
-    .new-release-history-row {\
-        border-radius: 8px;\
-        font-weight: normal;\
-    }\
-    .new-release-history-row:hover {\
-        background-color: alpha(currentColor, 0.04);\
-    }\
-    .new-release-history-label {\
-        color: @reprise_secondary_fg_color;\
-    }\
-    .new-release-history-count {\
-        color: @reprise_hint_fg_color;\
     }\
     /* Row action icon buttons ('Show in library', 'Hide', history restore): \
        flat at rest, a soft tint on hover, with enough hit area for a pointer. */\
@@ -147,18 +126,21 @@ pub(in crate::ui) fn css() -> String {
     .new-release-action:hover {\
         background-color: alpha(currentColor, 0.08);\
     }\
-    /* Header 'Fetch now' ghost button: accent text, no border, tinted hover. */\
-    .new-release-ghost {\
-        color: @reprise_accent_text_color;\
-        background-color: transparent;\
-        border: none;\
-        border-radius: 8px;\
+    .new-release-row-actions {\
+        opacity: 0.55;\
     }\
-    .new-release-ghost:hover {\
-        background-color: alpha(@accent_bg_color, 0.12);\
+    .new-release-row:hover .new-release-row-actions,\
+    .new-release-row:focus-within .new-release-row-actions {\
+        opacity: 1;\
+    }\
+    .updates-section-header {\
+        padding: 2px 4px;\
+        font-weight: normal;\
     }\
     .new-release-cover {\
         border-radius: 4px;\
+        min-width: 44px;\
+        min-height: 44px;\
     }\
     /* Shared dimming hook retained for release-history surfaces. */\
     .new-release-hidden {\
@@ -187,16 +169,16 @@ mod tests {
             ".new-release-tag",
             ".new-release-row",
             ".new-release-title",
-            ".new-release-chip",
-            ".new-release-chip-neutral",
-            ".new-release-chip-partial",
+            ".new-release-title-suffix",
+            ".updates-tag",
+            ".updates-tag.updates-tag-accent",
+            ".updates-tag.updates-tag-neutral",
             ".new-release-meta",
             ".new-release-separator",
-            ".new-release-history-row",
-            ".new-release-history-label",
-            ".new-release-history-count",
+            ".new-release-activation",
             ".new-release-action",
-            ".new-release-ghost",
+            ".new-release-row-actions",
+            ".updates-section-header",
             ".new-release-cover",
             ".new-release-hidden",
         ] {
@@ -216,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_23_count_chip_uses_the_theme_accent_fill() {
+    fn count_chip_uses_the_theme_accent_fill() {
         let css = super::css();
         let tag = css
             .split(".new-release-tag {")
@@ -233,10 +215,11 @@ mod tests {
         let css = super::css();
         for (selector, role) in [
             (".new-release-header", "@reprise_secondary_fg_color"),
-            (".new-release-meta", "@reprise_secondary_fg_color"),
-            (".new-release-chip-neutral", "@reprise_secondary_fg_color"),
-            (".new-release-history-label", "@reprise_secondary_fg_color"),
-            (".new-release-history-count", "@reprise_hint_fg_color"),
+            (".new-release-title-suffix", "@reprise_secondary_fg_color"),
+            (
+                ".updates-tag.updates-tag-neutral",
+                "@reprise_secondary_fg_color",
+            ),
         ] {
             let rules = rules_for(&css, selector);
             assert!(
@@ -275,13 +258,13 @@ mod tests {
     }
 
     #[test]
-    fn css_declares_no_local_active_or_focus_states() {
-        // BTN-4: interaction states for widgets that opt into the shared
-        // button vocabulary stay owned by `style::buttons`. Hover-only tints
-        // here are fine (STYLE-1); focus/active are not.
+    fn rows_reserve_the_accent_border_and_share_hover_and_focus_treatment() {
         let css = super::css();
         assert!(!css.contains(":active"));
-        assert!(!css.contains(":focus"));
+        let row = rules_for(&css, ".new-release-row");
+        assert!(row.contains("border-left: 2px solid transparent"));
+        assert!(css.contains(".new-release-row:focus-within"));
+        assert!(css.contains("border-left-color: @accent_bg_color"));
     }
 
     #[test]

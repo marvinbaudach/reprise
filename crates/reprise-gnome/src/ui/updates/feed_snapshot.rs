@@ -18,7 +18,6 @@ pub(super) struct ConcertsSnapshot {
     pub credentials: bool,
     pub filter: ConcertFilter,
     pub delta: DeltaBatch<ConcertRow>,
-    pub count: usize,
 }
 
 pub(super) fn unseen_release_ids(candidates: &[StoredRelease]) -> Vec<String> {
@@ -63,30 +62,9 @@ pub(super) fn concerts(db: &Db, enabled: bool, today: NaiveDate) -> ConcertsSnap
         total: delta.total,
         unseen: delta.unseen,
     };
-    let count = reprise_core::concerts::count_upcoming(db, &filter, location.as_ref(), today)
-        .map_or_else(
-            |error| {
-                tracing::warn!(%error, "could not count upcoming Concerts");
-                0
-            },
-            |count| usize::try_from(count).unwrap_or_default(),
-        );
     ConcertsSnapshot {
         credentials,
         filter,
         delta,
-        count,
     }
-}
-
-pub(super) fn releases_count(db: &Db, today: NaiveDate) -> usize {
-    reprise_core::artist_news::persisted_releases_filter(db)
-        .and_then(|filter| reprise_core::artist_news::count_releases_view(db, &filter, today))
-        .map_or_else(
-            |error| {
-                tracing::warn!(%error, "could not count Releases view rows");
-                0
-            },
-            |count| usize::try_from(count).unwrap_or_default(),
-        )
 }

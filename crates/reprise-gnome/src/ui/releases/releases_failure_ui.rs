@@ -59,7 +59,7 @@ mod tests {
     };
 
     #[test]
-    fn nr_21_cached_and_empty_failures_choose_the_shared_surfaces() {
+    fn nr_21a_cached_and_empty_failures_choose_the_shared_surfaces() {
         let error = SourceError::new(SourceErrorKind::Unreachable, "refresh", "HTTP 503");
 
         assert_eq!(
@@ -81,7 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_21_going_offline_writing_path_preserves_a_provider_failure() {
+    fn nr_21a_going_offline_writing_path_preserves_a_provider_failure() {
         let mut failure = Some(SourceError::new(
             SourceErrorKind::Unreachable,
             "refresh",

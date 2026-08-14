@@ -2232,7 +2232,7 @@ the panel).
   chip and fades in the row actions; on leaving, the chip returns.
   Keyboard parity: the row is focusable, focus shows the actions, and
   the buttons are reachable via Tab/Enter.
-- **NR-10a** [active] [gtk] — Row hover or focus fades in the row
+- **NR-10a** [replaced by NR-36] — Row hover or focus fades in the row
   actions without displacing the status chip; the chip remains visible
   in every state. The row stays focusable and its sensitive action
   buttons remain reachable via Tab/Enter.
@@ -2256,7 +2256,7 @@ the panel).
   visible as soon as at least one active feed has entries or a
   first-run state per NR-8. Its badge counts exclusively unseen
   entries of all active, fetch-ready feeds.
-- **NR-5b** [active] [gtk] — The popover is transient; opening/closing
+- **NR-5b** [replaced by NR-34] — The popover is transient; opening/closing
   never changes the navigation stack. Explicit row actions and the
   jump rows „Show all releases/concerts →" navigate normally and close
   the popover. The popover has no internal subpages; the history
@@ -2345,7 +2345,7 @@ the panel).
   no purchase button. The direct link is commission-free, contains no
   tracking parameters, and is not labeled as an affiliate link; NR-19
   remains reserved for a later contractually approved monetization.
-- **NR-21** [active] [gtk] — A failed New Releases fetch leaves every
+- **NR-21** [replaced by NR-21a] [gtk] — A failed New Releases fetch leaves every
   cached release and the existing update age untouched. A neutral shared
   banner above a populated view names the failed refresh, what remains
   available, and „Try again"; only a genuinely empty cache uses the shared
@@ -2356,13 +2356,13 @@ the panel).
   failure already on screen; reconnect removes only an offline-authored
   notice. A successful fetch removes the notice silently. NR-22's spinner
   and NR-8's consent and first-fetch loop remain unchanged.
-- **NR-22** [active] [core] [gtk] — „Fetch now" replaces its refresh icon with
+- **NR-22** [replaced by NR-37] [core] [gtk] — „Fetch now" replaces its refresh icon with
   a spinner during the fetch. The Releases footer replaces the stale update
   age with determinate checked/total artist progress for that run, then shows
   the age measured from the completed update again, including a successful run
   with no queued artists. Offline or error still show the last cache and its
   previous age. The shared failure surface remains specified by NR-21.
-- **NR-23** [active] [gtk] — The delta popover shows at most five
+- **NR-23** [replaced by NR-34] — The delta popover shows at most five
   releases and three concerts without an internal scroller. A section's
   count chip names the full batch size, but appears **only while that
   batch is genuinely unseen**: a batch held over from the last visit
@@ -2481,6 +2481,70 @@ the panel).
   column is named `Release` because its rows are albums, EPs and singles, not
   songs. Sorting, filters, counts, activation semantics, the trailing action
   column and zero-result recovery remain exactly as NR-31 specified.
+- **NR-34** [active] [gtk] — replaces NR-5b and NR-23. The Updates
+  popover shows at most five releases and three concerts without an
+  internal scroller, and both feeds use one identical row shape. Each
+  section header is the only bridge into its full view: activating it — by
+  pointer or by keyboard — closes the popover and navigates, exactly as the
+  removed jump rows did. A header stays visible while its module is active
+  even when its section is empty, and then shows a quiet empty line. The
+  header's count chip names the full batch size and appears only while that
+  batch is genuinely unseen. The popover remains transient and has no
+  internal subpages.
+  Test: `nr_34_an_empty_section_keeps_its_header_and_its_bridge`
+  (`ui/updates/popover_tests.rs`).
+- **NR-35** [active] [gtk] — replaces CONC-7. The popover's Concerts
+  section appears only while the Concerts module is active, shows at most
+  three unseen entries of the persistent filter scope, and reaches the full
+  view through its header per NR-34. Opening still stamps the entire delta
+  set of both sections, and the header badge still sums unseen entries
+  across all active, fetch-ready feeds.
+  Test: `nr_35_the_concerts_section_header_carries_the_unseen_count`
+  (`ui/updates/popover_tests.rs`).
+- **NR-36** [active] [gtk] — replaces NR-10a. The row's trailing slot
+  holds the status tag and the dismiss button side by side, permanently:
+  the button rests at reduced contrast and reaches full contrast on hover
+  or focus, and it never displaces the tag. The button is a sibling of the
+  row's activation surface, not a child of it, so dismissing a row can
+  never open its link. Both are reachable with Tab and activate with Enter
+  or Space.
+  Test: `nr_36_dismissing_a_row_never_opens_its_link`
+  (`ui/updates/popover_tests.rs`).
+- **NR-37** [active] [gtk] — replaces NR-22. The Releases view and the
+  Updates popover use CONC-15's live-state footer with `releases` and
+  `updates` as their unit. There is no "Fetch now" button and no update
+  age; the reload icon button carries the manual trigger, and the
+  determinate checked/total artist progress appears in the footer's
+  progress bar. The popover's footer aggregates both feeds: any running
+  fetch makes it "updating", otherwise it reports the older of the two
+  timestamps.
+  Test: `nr_37_the_popover_footer_reports_the_older_of_both_feeds`
+  (`ui/updates/popover_tests.rs`).
+- **NR-38** [active] [gtk] — A popover row opens its link on a single
+  click anywhere on its activation surface — cover, title, meta or tag —
+  and on Enter or Space when focused. Releases follow NR-11's URL
+  priority, concerts prefer the offer URL over the event page. The
+  provider name appears as the row's tooltip and, hover-free, in CONC-16's
+  Source column. A concert row without a launchable target is insensitive
+  and says why.
+  Test: `nr_38_a_row_opens_the_same_url_its_tooltip_names`
+  (`ui/updates/popover_tests.rs`).
+- **NR-21a** [active] [gtk] — replaces NR-21. A failed New Releases fetch
+  leaves every cached release untouched and reports the failure through
+  CONC-15's footer state. A neutral shared banner above a populated view
+  names the failed refresh, what remains available, and „Try again"; only
+  a genuinely empty cache uses the shared full-area failure state. Both
+  surfaces carry the same collapsed `Details` block with Copy, and
+  technical status, host, and exception text appears only there. Offline
+  is written from the window's explicit connectivity value, dims the
+  remote-action rows, and never overwrites a provider failure already on
+  screen; reconnect removes only an offline-authored notice. A successful
+  fetch removes the notice silently. NR-37's live-state footer and NR-8's
+  consent and first-fetch loop remain unchanged.
+  Tests: `nr_21a_cached_and_empty_failures_choose_the_shared_surfaces` and
+  `nr_21a_going_offline_writing_path_preserves_a_provider_failure`
+  (`ui/releases/releases_failure_ui.rs`).
+
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
@@ -5053,7 +5117,7 @@ available. The player plays only finished files.
 - **CONC-6** [active] [gtk] — Similar rows carry a dimmed "similar to
   {seed}" and disappear with "Library artists only". The source pill is
   visible as soon as Similar is enabled or similar rows exist.
-- **CONC-7** [active] [gtk] — The Updates popover shows the Concerts
+- **CONC-7** [replaced by NR-35] — The Updates popover shows the Concerts
   section only when the module is active, at most three unseen entries
   of the persistent filter scope, and "Show all concerts (N) →".
   Opening stamps the entire delta set of both sections. The header

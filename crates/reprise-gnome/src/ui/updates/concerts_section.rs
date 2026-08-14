@@ -5,22 +5,35 @@ use std::rc::Rc;
 
 use chrono::NaiveDate;
 use gtk4::prelude::*;
-use reprise_core::concerts::ConcertRow;
+use reprise_core::concerts::{ConcertRow, TicketAvailability};
 
+use super::feed_row;
+use super::release_cover::LazyReleaseCover;
 use crate::ui::concerts::concerts_presentation::format_event_date;
 use crate::ui::strings;
 
+const COVER_EDGE: i32 = 44;
+
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct ConcertDeltaPresentation {
+    pub id: i64,
     pub artist: String,
+    pub similar_caption: Option<String>,
     pub meta: String,
-    pub distance: Option<String>,
-    pub ticket_label: Option<String>,
+    pub tag: Option<feed_row::Tag>,
+    pub tooltip: String,
     pub target: Option<String>,
 }
 
-pub(super) fn concerts_section_visible(enabled: bool, has_credentials: bool, total: usize) -> bool {
-    enabled && has_credentials && total > 0
+pub(super) fn concerts_section_visible(enabled: bool) -> bool {
+    enabled
+}
+
+fn source_name(row: &ConcertRow) -> &str {
+    row.ticket_source
+        .as_deref()
+        .filter(|source| !source.trim().is_empty())
+        .unwrap_or(row.provider.as_str())
 }
 
 pub(super) fn delta_presentations(
@@ -30,32 +43,30 @@ pub(super) fn delta_presentations(
     rows.iter()
         .map(|row| {
             let date = format_event_date(&row.date_key, today);
-            let location = if row.city.trim().is_empty() {
-                row.venue.clone()
-            } else if row.venue.trim().is_empty() {
-                row.city.clone()
-            } else {
-                format!("{} · {}", row.city, row.venue)
-            };
-            // Provider JSON decides these URLs, so only web links become a
-            // clickable target; anything else leaves the row inert (CONC-7).
             let target = [row.ticket_url.as_deref(), row.event_url.as_deref()]
                 .into_iter()
                 .flatten()
                 .find(|url| reprise_core::external_link::is_launchable_url(url))
                 .map(str::to_owned);
+            let tooltip = target.as_ref().map_or_else(
+                || strings::text(strings::CONCERTS_NO_LINK),
+                |_| strings::updates_opens_source(source_name(row)),
+            );
             ConcertDeltaPresentation {
+                id: row.id,
                 artist: row.artist_name.clone(),
-                meta: format!("{date} · {location}"),
-                distance: row
-                    .distance_km
-                    .map(|distance| format!("{:.0} km", distance.max(0.0).round())),
-                ticket_label: target.as_ref().map(|_| {
-                    row.ticket_source
-                        .as_deref()
-                        .filter(|source| !source.trim().is_empty())
-                        .map_or_else(|| strings::text(strings::CONCERTS_TICKETS), strings::text)
+                similar_caption: row
+                    .is_similar
+                    .then_some(row.similar_to.as_deref())
+                    .flatten()
+                    .filter(|seed| !seed.trim().is_empty())
+                    .map(strings::concert_similar_caption),
+                meta: strings::updates_concert_meta(&date, &row.city, &row.venue),
+                tag: (row.availability == TicketAvailability::OffSale).then(|| feed_row::Tag {
+                    text: strings::text(strings::CONCERTS_OFF_SALE),
+                    tone: feed_row::TagTone::Neutral,
                 }),
+                tooltip,
                 target,
             }
         })
@@ -63,111 +74,169 @@ pub(super) fn delta_presentations(
 }
 
 pub(super) type OnOpenUrl = Rc<dyn Fn(String)>;
+pub(super) type OnDismissEvent = Rc<dyn Fn(i64)>;
+pub(super) type OnOpenView = Rc<dyn Fn()>;
 
 pub(super) struct ConcertsSection {
     root: gtk4::Box,
+    header: gtk4::Button,
     list: gtk4::Box,
     count_tag: gtk4::Label,
+    empty: gtk4::Label,
     on_open_url: RefCell<OnOpenUrl>,
+    on_dismiss_event: RefCell<OnDismissEvent>,
+    on_open_view: Rc<RefCell<OnOpenView>>,
 }
 
 impl ConcertsSection {
     pub(super) fn new() -> Self {
-        let title = gtk4::Label::new(Some(&strings::text(strings::UPDATES_CONCERTS_HEADER)));
+        let title = gtk4::Label::new(Some(&strings::text(strings::CONCERTS)));
         title.add_css_class("new-release-header");
         title.set_xalign(0.0);
         title.set_hexpand(true);
         let count_tag = gtk4::Label::new(None);
         count_tag.add_css_class("new-release-tag");
-        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        header.append(&title);
-        header.append(&count_tag);
+        let header_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        header_content.append(&title);
+        header_content.append(&count_tag);
+        let header = gtk4::Button::builder()
+            .child(&header_content)
+            .css_classes(["flat", "updates-section-header"])
+            .build();
 
         let list = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        let empty = gtk4::Label::new(Some(&strings::text(strings::UPDATES_NO_NEW_CONCERTS)));
+        empty.add_css_class("reprise-text-secondary");
+        empty.set_xalign(0.0);
+        empty.set_margin_top(8);
+        empty.set_margin_bottom(8);
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         root.append(&header);
         root.append(&list);
-        Self {
+        root.append(&empty);
+
+        let section = Self {
             root,
+            header,
             list,
             count_tag,
+            empty,
             on_open_url: RefCell::new(Rc::new(|_| {})),
-        }
+            on_dismiss_event: RefCell::new(Rc::new(|_| {})),
+            on_open_view: Rc::new(RefCell::new(Rc::new(|| {}))),
+        };
+        section.wire_header();
+        section
+    }
+
+    fn wire_header(&self) {
+        let on_open_view = self.on_open_view.clone();
+        self.header.connect_clicked(move |_| {
+            let callback = on_open_view.borrow().clone();
+            callback();
+        });
     }
 
     pub(super) fn root(&self) -> &gtk4::Box {
         &self.root
     }
 
+    #[cfg(test)]
+    pub(super) fn count_tag(&self) -> &gtk4::Label {
+        &self.count_tag
+    }
+
+    #[cfg(test)]
+    pub(super) fn empty_label(&self) -> &gtk4::Label {
+        &self.empty
+    }
+
+    #[cfg(test)]
+    pub(super) fn header(&self) -> &gtk4::Button {
+        &self.header
+    }
+
     pub(super) fn set_on_open_url(&self, on_open_url: OnOpenUrl) {
         *self.on_open_url.borrow_mut() = on_open_url;
     }
 
+    pub(super) fn set_on_dismiss_event(&self, on_dismiss_event: OnDismissEvent) {
+        *self.on_dismiss_event.borrow_mut() = on_dismiss_event;
+    }
+
+    pub(super) fn set_on_open_view(&self, on_open_view: OnOpenView) {
+        *self.on_open_view.borrow_mut() = on_open_view;
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn render(
         &self,
         enabled: bool,
-        has_credentials: bool,
+        _has_credentials: bool,
         total: usize,
         unseen: bool,
         rows: &[ConcertRow],
         today: NaiveDate,
+        cached_portraits: bool,
     ) {
-        let visible = concerts_section_visible(enabled, has_credentials, total);
-        self.root.set_visible(visible);
-        if !visible {
+        self.root.set_visible(concerts_section_visible(enabled));
+        if !enabled {
             return;
         }
-        // See the releases header: a held-over batch renders without a count.
         self.count_tag.set_label(&strings::updates_new_count(total));
         self.count_tag.set_visible(unseen && total > 0);
         while let Some(child) = self.list.first_child() {
             self.list.remove(&child);
         }
-        for row in delta_presentations(rows, today) {
-            self.list
-                .append(&build_delta_row(row, &self.on_open_url.borrow()));
+        let presentations = delta_presentations(rows, today);
+        self.empty.set_visible(presentations.is_empty());
+        for row in presentations {
+            self.list.append(&build_delta_row(
+                row,
+                cached_portraits,
+                &self.on_open_url.borrow(),
+                &self.on_dismiss_event.borrow(),
+            ));
         }
     }
 }
 
-fn build_delta_row(row: ConcertDeltaPresentation, on_open_url: &OnOpenUrl) -> gtk4::Button {
-    let artist = gtk4::Label::new(Some(&row.artist));
-    artist.set_xalign(0.0);
-    artist.set_hexpand(true);
-    let ticket = gtk4::Label::new(row.ticket_label.as_deref());
-    ticket.add_css_class("reprise-text-secondary");
-    ticket.set_visible(row.ticket_label.is_some());
-    let title = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-    title.append(&artist);
-    title.append(&ticket);
-
-    let meta = gtk4::Label::new(Some(&row.meta));
-    meta.set_xalign(0.0);
-    meta.add_css_class("reprise-text-secondary");
-    let distance = gtk4::Label::new(row.distance.as_deref());
-    distance.set_xalign(0.0);
-    distance.add_css_class("reprise-text-secondary");
-    distance.set_visible(row.distance.is_some());
-    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    content.append(&title);
-    content.append(&meta);
-    content.append(&distance);
-    let button = gtk4::Button::builder()
-        .child(&content)
-        .css_classes(["flat", "new-release-history-row"])
-        .build();
-    button.set_sensitive(row.target.is_some());
-    if let Some(target) = row.target {
-        let on_open_url = on_open_url.clone();
-        button.connect_clicked(move |_| on_open_url(target.clone()));
-    }
-    button
+fn build_delta_row(
+    row: ConcertDeltaPresentation,
+    cached_portraits: bool,
+    on_open_url: &OnOpenUrl,
+    on_dismiss_event: &OnDismissEvent,
+) -> gtk4::Box {
+    let cover = LazyReleaseCover::new_cached_artist(&row.artist, COVER_EDGE, cached_portraits);
+    let target = row.target.clone();
+    let on_open_url = on_open_url.clone();
+    let on_activate: Rc<dyn Fn()> = Rc::new(move || {
+        if let Some(target) = target.as_ref() {
+            on_open_url(target.clone());
+        }
+    });
+    let id = row.id;
+    let on_dismiss_event = on_dismiss_event.clone();
+    feed_row::build(
+        cover.widget(),
+        feed_row::Presentation {
+            title: row.artist,
+            title_suffix: row.similar_caption,
+            meta: row.meta,
+            tag: row.tag,
+            tooltip: row.tooltip,
+            activatable: row.target.is_some(),
+        },
+        &strings::text(strings::DISMISS),
+        on_activate,
+        Rc::new(move || on_dismiss_event(id)),
+    )
+    .root
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reprise_core::concerts::TicketAvailability;
 
     fn row(id: i64, date: &str) -> ConcertRow {
         ConcertRow {
@@ -193,11 +262,9 @@ mod tests {
     }
 
     #[test]
-    fn conc_9_section_is_absent_without_provider_credentials() {
-        assert!(concerts_section_visible(true, true, 1));
-        assert!(!concerts_section_visible(true, false, 1));
-        assert!(!concerts_section_visible(false, true, 1));
-        assert!(!concerts_section_visible(true, true, 0));
+    fn section_follows_the_module_even_without_rows_or_credentials() {
+        assert!(concerts_section_visible(true));
+        assert!(!concerts_section_visible(false));
     }
 
     #[test]
@@ -210,26 +277,36 @@ mod tests {
         let presentations = delta_presentations(&[hostile], today);
 
         assert_eq!(presentations[0].target, None);
-        assert_eq!(presentations[0].ticket_label, None);
+        assert_eq!(
+            presentations[0].tooltip,
+            strings::text(strings::CONCERTS_NO_LINK)
+        );
     }
 
     #[test]
-    fn conc_7_delta_rows_preserve_the_already_capped_snapshot() {
+    fn concert_fields_and_target_follow_the_shared_row_contract() {
         let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
-        let rows = (1..=4)
-            .map(|id| row(id, &format!("2026-08-0{id}")))
-            .collect::<Vec<_>>();
+        let mut event = row(1, "2026-08-01");
+        event.is_similar = true;
+        event.similar_to = Some("Seed".into());
+        event.availability = TicketAvailability::OffSale;
 
-        let presentations = delta_presentations(&rows, today);
+        let presentation = delta_presentations(&[event], today).remove(0);
 
-        assert_eq!(presentations.len(), 4);
-        assert_eq!(presentations[0].artist, "Artist 1");
-        assert!(presentations[0].meta.contains("Cologne"));
-        assert!(presentations[0].meta.contains("Palladium"));
-        assert_eq!(presentations[0].distance.as_deref(), Some("38 km"));
-        assert_eq!(presentations[0].ticket_label.as_deref(), Some("Eventim"));
+        assert_eq!(presentation.artist, "Artist 1");
         assert_eq!(
-            presentations[0].target.as_deref(),
+            presentation.similar_caption.as_deref(),
+            Some("similar to Seed")
+        );
+        assert!(presentation.meta.contains("Cologne"));
+        assert!(presentation.meta.contains("Palladium"));
+        assert_eq!(
+            presentation.tag.as_ref().map(|tag| tag.text.as_str()),
+            Some("Off sale")
+        );
+        assert_eq!(presentation.tooltip, "Opens Eventim");
+        assert_eq!(
+            presentation.target.as_deref(),
             Some("https://tickets.example/1")
         );
     }
