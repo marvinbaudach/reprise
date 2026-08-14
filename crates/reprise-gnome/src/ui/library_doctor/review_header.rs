@@ -1,3 +1,5 @@
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk4::glib;
@@ -5,9 +7,55 @@ use gtk4::prelude::*;
 use reprise_core::library_doctor::{DoctorReviewRowId, DoctorReviewRowState};
 
 use super::review_model::{row_state_reason, ReviewRowModel};
+use super::review_snapshot::{AlbumCounts, ReviewSnapshot};
 use crate::ui::strings;
 
 pub(super) type OnSelect = Rc<dyn Fn(&[DoctorReviewRowId], bool)>;
+
+struct HeaderWidgets {
+    root: gtk4::Box,
+    checkbox: gtk4::CheckButton,
+    title: gtk4::Label,
+    detail: gtk4::Label,
+    pill: gtk4::Label,
+    album_key: RefCell<String>,
+    album_title: RefCell<String>,
+    album_artist: RefCell<String>,
+    row_ids: RefCell<Vec<DoctorReviewRowId>>,
+    binding: Cell<bool>,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct AlbumHeaderRegistry {
+    widgets: Rc<RefCell<HashMap<usize, Rc<HeaderWidgets>>>>,
+    #[cfg(test)]
+    pushes: Rc<Cell<u32>>,
+}
+
+impl AlbumHeaderRegistry {
+    pub(super) fn push_selection(&self, albums: &HashMap<String, AlbumCounts>) {
+        let updates = self
+            .widgets
+            .borrow()
+            .values()
+            .filter_map(|widgets| {
+                let album_key = widgets.album_key.borrow().clone();
+                let counts = albums.get(&album_key)?.clone();
+                Some((widgets.clone(), counts))
+            })
+            .collect::<Vec<_>>();
+        for (widgets, counts) in updates {
+            apply_check_state(&widgets, &counts);
+            #[cfg(test)]
+            self.pushes.set(self.pushes.get() + 1);
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn push_count(&self) -> u32 {
+        self.pushes.get()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct MasterCheckState {
@@ -183,39 +231,100 @@ impl ReviewHeader {
 pub(super) fn album_header_factory(
     model: &gtk4::SortListModel,
     on_select: &OnSelect,
+    snapshot: &Rc<RefCell<ReviewSnapshot>>,
+    registry: &AlbumHeaderRegistry,
 ) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
     {
         let model = model.clone();
         let on_select = on_select.clone();
+        let snapshot = snapshot.clone();
+        let registry = registry.clone();
         factory.connect_setup(move |_, object| {
             let Some(header) = object.downcast_ref::<gtk4::ListHeader>() else {
                 return;
             };
+            let widgets = Rc::new(build_album_header());
+            {
+                let widgets = widgets.clone();
+                let on_select = on_select.clone();
+                widgets.checkbox.clone().connect_toggled(move |button| {
+                    if widgets.binding.get() {
+                        return;
+                    }
+                    let row_ids = widgets.row_ids.borrow().clone();
+                    on_select(&row_ids, button.is_active());
+                });
+            }
+            registry
+                .widgets
+                .borrow_mut()
+                .insert(header_key(header), widgets);
             for property in ["start", "end"] {
                 let model = model.clone();
-                let on_select = on_select.clone();
+                let snapshot = snapshot.clone();
+                let registry = registry.clone();
                 header.connect_notify_local(Some(property), move |header, _| {
-                    bind_album_header(header, &model, &on_select);
+                    bind_album_header(header, &model, &snapshot, &registry);
                 });
             }
         });
     }
     {
         let model = model.clone();
-        let on_select = on_select.clone();
+        let snapshot = snapshot.clone();
+        let registry = registry.clone();
         factory.connect_bind(move |_, object| {
             let Some(header) = object.downcast_ref::<gtk4::ListHeader>() else {
                 return;
             };
-            bind_album_header(header, &model, &on_select);
+            bind_album_header(header, &model, &snapshot, &registry);
+        });
+    }
+    {
+        let registry = registry.clone();
+        factory.connect_unbind(move |_, object| {
+            let Some(header) = object.downcast_ref::<gtk4::ListHeader>() else {
+                return;
+            };
+            if let Some(widgets) = registry.widgets.borrow().get(&header_key(header)).cloned() {
+                widgets.album_key.borrow_mut().clear();
+                widgets.row_ids.borrow_mut().clear();
+            }
+            header.set_child(gtk4::Widget::NONE);
+        });
+    }
+    {
+        let registry = registry.clone();
+        factory.connect_teardown(move |_, object| {
+            let Some(header) = object.downcast_ref::<gtk4::ListHeader>() else {
+                return;
+            };
+            registry.widgets.borrow_mut().remove(&header_key(header));
         });
     }
     factory
 }
 
-fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_select: &OnSelect) {
-    let Some(first) = row_at(model, header.start()) else {
+fn bind_album_header(
+    header: &gtk4::ListHeader,
+    model: &gtk4::SortListModel,
+    snapshot: &Rc<RefCell<ReviewSnapshot>>,
+    registry: &AlbumHeaderRegistry,
+) {
+    if header.start() == gtk4::INVALID_LIST_POSITION || header.end() == gtk4::INVALID_LIST_POSITION
+    {
+        tracing::warn!(
+            start = header.start(),
+            end = header.end(),
+            "DOC-9b kept the last known header while its section row was unavailable"
+        );
+        return;
+    }
+    let Some(widgets) = registry.widgets.borrow().get(&header_key(header)).cloned() else {
+        return;
+    };
+    let Some(item) = model.item(header.start()) else {
         tracing::warn!(
             start = header.start(),
             end = header.end(),
@@ -223,67 +332,43 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
         );
         return;
     };
-    let rows = (header.start()..header.end())
-        .filter_map(|position| row_at(model, position))
-        .collect::<Vec<_>>();
-    let row_ids = rows
-        .iter()
-        .flat_map(|row| row.selectable_row_ids.iter().copied())
-        .collect::<Vec<_>>();
-    let selected = rows
-        .iter()
-        .map(|row| row.selected_change_count)
-        .sum::<usize>();
-    let changes = rows.iter().map(|row| row.row_ids.len()).sum::<usize>();
-    let blocked_by = if rows
-        .iter()
-        .any(|row| row.row.state == DoctorReviewRowState::Stale)
-    {
-        Some(DoctorReviewRowState::Stale)
-    } else if rows
-        .iter()
-        .any(|row| row.row.state == DoctorReviewRowState::Conflict)
-    {
-        Some(DoctorReviewRowState::Conflict)
-    } else {
-        None
+    let Ok(boxed) = item.downcast::<glib::BoxedAnyObject>() else {
+        widgets.album_key.borrow_mut().clear();
+        widgets.row_ids.borrow_mut().clear();
+        header.set_child(gtk4::Widget::NONE);
+        return;
     };
-    let total = row_ids.len();
+    let first = boxed.borrow::<ReviewRowModel>().clone();
+    let counts = snapshot.borrow().albums.get(&first.album_key).cloned();
+    let Some(counts) = counts else {
+        tracing::warn!(
+            album = first.album_key,
+            "DOC-9b kept the last known header while its snapshot was unavailable"
+        );
+        return;
+    };
+    bind_header_widgets(&widgets, &first, &counts);
+    if header.child().as_ref() != Some(widgets.root.upcast_ref()) {
+        header.set_child(Some(&widgets.root));
+    }
+}
+
+fn build_album_header() -> HeaderWidgets {
     let checkbox = gtk4::CheckButton::new();
     checkbox.set_size_request(16, 16);
     checkbox.add_css_class("doctor-album-check");
-    let state = album_header_state(selected, total, changes, blocked_by);
-    checkbox.set_active(state.check.active);
-    checkbox.set_inconsistent(state.check.inconsistent);
-    checkbox.set_sensitive(state.check.sensitive);
-    checkbox.update_property(&[gtk4::accessible::Property::Label(&state.pill)]);
     // a11y-semantics: role=checkbox name=change-count state=selection action=toggle
     checkbox.set_focusable(true);
-    let callback = on_select.clone();
-    checkbox.connect_toggled(move |button| callback(&row_ids, button.is_active()));
 
     let cover = gtk4::Image::from_icon_name("audio-x-generic-symbolic");
     cover.set_size_request(38, 38);
     cover.add_css_class("doctor-album-cover");
-    let title = if first.album_title.trim().is_empty() {
-        strings::text(strings::DOCTOR_NO_ALBUM)
-    } else {
-        first.album_title.clone()
-    };
     let title_label = gtk4::Label::builder()
-        .label(&title)
         .xalign(0.0)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .css_classes(["heading", "doctor-album-title"])
         .build();
-    let track_count = strings::drag_tracks_label(first.album_track_count);
-    let detail_text = if first.album_artist.trim().is_empty() {
-        track_count
-    } else {
-        format!("{} · {track_count}", first.album_artist)
-    };
     let detail = gtk4::Label::builder()
-        .label(detail_text)
         .xalign(0.0)
         .css_classes(["doctor-album-detail"])
         .build();
@@ -296,7 +381,6 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
     copy.append(&title_label);
     copy.append(&detail);
     let pill = gtk4::Label::builder()
-        .label(&state.pill)
         .halign(gtk4::Align::End)
         .css_classes(["tag"])
         .build();
@@ -306,32 +390,85 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
         .css_classes(["doctor-album-caret"])
         .build();
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
-    root.set_margin_top(if first.album_position == 0 { 16 } else { 8 });
     root.set_margin_bottom(10);
     root.set_margin_start(28);
     root.set_margin_end(28);
-    root.add_css_class(if first.album_position == 0 {
-        "doctor-album-header-first"
-    } else {
-        "doctor-album-header-later"
-    });
     root.append(&checkbox);
     root.append(&cover);
     root.append(&copy);
     root.append(&pill);
     root.append(&caret);
-    root.set_tooltip_text(state.reason.as_deref());
-    let accessible_label = state.reason.as_ref().map_or_else(
-        || format!("{} · {} · {}", title, first.album_artist, state.pill),
-        |reason| {
-            format!(
-                "{} · {} · {} · {reason}",
-                title, first.album_artist, state.pill
-            )
-        },
+    HeaderWidgets {
+        root,
+        checkbox,
+        title: title_label,
+        detail,
+        pill,
+        album_key: RefCell::new(String::new()),
+        album_title: RefCell::new(String::new()),
+        album_artist: RefCell::new(String::new()),
+        row_ids: RefCell::new(Vec::new()),
+        binding: Cell::new(false),
+    }
+}
+
+fn bind_header_widgets(widgets: &HeaderWidgets, first: &ReviewRowModel, counts: &AlbumCounts) {
+    let title = if first.album_title.trim().is_empty() {
+        strings::text(strings::DOCTOR_NO_ALBUM)
+    } else {
+        first.album_title.clone()
+    };
+    let track_count = strings::drag_tracks_label(first.album_track_count);
+    let detail = if first.album_artist.trim().is_empty() {
+        track_count
+    } else {
+        format!("{} · {track_count}", first.album_artist)
+    };
+    widgets.album_key.replace(first.album_key.clone());
+    widgets.album_title.replace(title.clone());
+    widgets.album_artist.replace(first.album_artist.clone());
+    widgets.row_ids.replace(counts.selectable_row_ids.clone());
+    widgets.title.set_label(&title);
+    widgets.detail.set_label(&detail);
+    widgets.root.remove_css_class("doctor-album-header-first");
+    widgets.root.remove_css_class("doctor-album-header-later");
+    widgets
+        .root
+        .set_margin_top(if first.album_position == 0 { 16 } else { 8 });
+    widgets.root.add_css_class(if first.album_position == 0 {
+        "doctor-album-header-first"
+    } else {
+        "doctor-album-header-later"
+    });
+    apply_check_state(widgets, counts);
+}
+
+fn apply_check_state(widgets: &HeaderWidgets, counts: &AlbumCounts) {
+    let state = album_header_state(
+        counts.selected,
+        counts.selectable,
+        counts.changes,
+        counts.blocked_by,
     );
-    root.update_property(&[gtk4::accessible::Property::Label(&accessible_label)]);
-    header.set_child(Some(&root));
+    widgets.binding.set(true);
+    widgets.checkbox.set_active(state.check.active);
+    widgets.checkbox.set_inconsistent(state.check.inconsistent);
+    widgets.checkbox.set_sensitive(state.check.sensitive);
+    widgets.binding.set(false);
+    widgets
+        .checkbox
+        .update_property(&[gtk4::accessible::Property::Label(&state.pill)]);
+    widgets.pill.set_label(&state.pill);
+    widgets.root.set_tooltip_text(state.reason.as_deref());
+    let title = widgets.album_title.borrow().clone();
+    let artist = widgets.album_artist.borrow().clone();
+    let accessible_label = state.reason.as_ref().map_or_else(
+        || format!("{title} · {artist} · {}", state.pill),
+        |reason| format!("{title} · {artist} · {} · {reason}", state.pill),
+    );
+    widgets
+        .root
+        .update_property(&[gtk4::accessible::Property::Label(&accessible_label)]);
 }
 
 fn album_change_count(total: usize, selected: usize) -> String {
@@ -342,13 +479,8 @@ fn album_change_count(total: usize, selected: usize) -> String {
     }
 }
 
-fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> {
-    let object = model
-        .item(position)?
-        .downcast::<glib::BoxedAnyObject>()
-        .ok()?;
-    let row = object.borrow::<ReviewRowModel>().clone();
-    Some(row)
+fn header_key(header: &gtk4::ListHeader) -> usize {
+    header.as_ptr() as usize
 }
 
 #[cfg(test)]

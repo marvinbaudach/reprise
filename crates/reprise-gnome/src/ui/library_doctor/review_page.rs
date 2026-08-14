@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
@@ -19,7 +19,8 @@ use reprise_core::library_doctor::{
 use super::review_conflicts::ReviewConflicts;
 use super::review_filter_bar::ReviewFilterBar;
 use super::review_header::{
-    album_header_factory, master_check_state, OnSelect, ReviewColumnGroups, ReviewHeader,
+    album_header_factory, master_check_state, AlbumHeaderRegistry, OnSelect, ReviewColumnGroups,
+    ReviewHeader,
 };
 use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
@@ -54,7 +55,10 @@ struct ReviewState {
     column_groups: ReviewColumnGroups,
     outcomes: RefCell<HashMap<DoctorReviewRowId, ReviewOutcome>>,
     ready_count: Cell<usize>,
-    snapshot: RefCell<ReviewSnapshot>,
+    snapshot: Rc<RefCell<ReviewSnapshot>>,
+    album_headers: AlbumHeaderRegistry,
+    #[cfg(test)]
+    selection_requests: Cell<u32>,
     on_reviewed: Rc<dyn Fn()>,
 }
 
@@ -97,6 +101,7 @@ impl ReviewState {
         self.stale_notice.set_visible(stale_notice.is_some());
         self.stale_notice_label
             .set_label(stale_notice.as_deref().unwrap_or_default());
+        *self.snapshot.borrow_mut() = snapshot;
         let splice_started = Instant::now();
         self.store.splice(0, self.store.n_items(), &objects);
         tracing::debug!(
@@ -111,7 +116,6 @@ impl ReviewState {
             elapsed_us = conflicts_started.elapsed().as_micros(),
             "DOCTOR_REVIEW_REFRESH stage"
         );
-        *self.snapshot.borrow_mut() = snapshot;
         let count = self.sorted.n_items();
         self.content
             .set_visible_child_name(if count == 0 { "empty" } else { "rows" });
@@ -179,6 +183,9 @@ impl ReviewState {
     }
 
     fn set_selected(self: &Rc<Self>, row_ids: &[DoctorReviewRowId], selected: bool) {
+        #[cfg(test)]
+        self.selection_requests
+            .set(self.selection_requests.get() + 1);
         let mut session = self.session.borrow_mut();
         let mut session_changed = false;
         for row_id in row_ids {
@@ -218,10 +225,26 @@ impl ReviewState {
         }
         let row_count = self.snapshot.borrow().rows.len();
         splice_selection_rows(&self.store, &changed, row_count);
+        let affected = changed
+            .iter()
+            .map(|(_, row)| row.album_key.clone())
+            .collect::<HashSet<_>>();
         let snapshot = std::mem::take(&mut *self.snapshot.borrow_mut());
-        *self.snapshot.borrow_mut() = snapshot.with_selection(&changed);
+        let snapshot = snapshot.with_selection(&changed);
+        let affected_albums = affected
+            .iter()
+            .filter_map(|album_key| {
+                snapshot
+                    .albums
+                    .get(album_key)
+                    .cloned()
+                    .map(|counts| (album_key.clone(), counts))
+            })
+            .collect::<HashMap<_, _>>();
+        *self.snapshot.borrow_mut() = snapshot;
         self.refresh_action_summary(self.ready_count.get());
         self.refresh_master_check();
+        self.album_headers.push_selection(&affected_albums);
         tracing::debug!(
             path = "selection",
             touched = changed.len(),
@@ -568,6 +591,7 @@ impl LibraryDoctorReviewPage {
         footer.append(&change_summary);
         footer.append(&apply);
         let layout = Rc::new(Cell::new(ReviewLayout::Wide));
+        let album_headers = AlbumHeaderRegistry::default();
         let full_refresh_only =
             std::env::var("REPRISE_DOCTOR_FULL_REFRESH").is_ok_and(|value| value == "1");
         let state = Rc::new(ReviewState {
@@ -594,7 +618,10 @@ impl LibraryDoctorReviewPage {
             column_groups: header.groups.clone(),
             outcomes: RefCell::new(HashMap::new()),
             ready_count: Cell::new(0),
-            snapshot: RefCell::new(ReviewSnapshot::default()),
+            snapshot: Rc::new(RefCell::new(ReviewSnapshot::default())),
+            album_headers,
+            #[cfg(test)]
+            selection_requests: Cell::new(0),
             on_reviewed,
         });
         let on_select = {
@@ -609,7 +636,12 @@ impl LibraryDoctorReviewPage {
             &header.groups,
             &state.layout,
         )));
-        rows.set_header_factory(Some(&album_header_factory(&state.sorted, &on_select)));
+        rows.set_header_factory(Some(&album_header_factory(
+            &state.sorted,
+            &on_select,
+            &state.snapshot,
+            &state.album_headers,
+        )));
         {
             let state = state.clone();
             rows.connect_activate(move |_, position| state.toggle_position(position));
