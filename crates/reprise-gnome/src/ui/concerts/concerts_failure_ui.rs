@@ -58,17 +58,13 @@ pub(super) const fn row_is_dimmed(connectivity: Connectivity) -> bool {
     matches!(connectivity, Connectivity::Offline)
 }
 
-pub(super) fn failure_support(
-    failure: &ConcertFailure,
-    cached_items: usize,
-    updated: &str,
-) -> String {
+pub(super) fn failure_support(failure: &ConcertFailure, cached_items: usize) -> String {
     if failure.is_missing_credentials() {
         strings::text(strings::CONCERTS_CONFIGURATION_DESCRIPTION)
     } else if cached_items == 0 {
         strings::text(strings::CONCERTS_EMPTY_FAILURE_DESCRIPTION)
     } else {
-        strings::concerts_cached_failure_description(updated)
+        strings::text(strings::CONCERTS_CACHED_FAILURE_DESCRIPTION)
     }
 }
 
@@ -84,7 +80,7 @@ mod tests {
     };
 
     #[test]
-    fn conc_11_cached_and_empty_failures_choose_the_shared_surfaces() {
+    fn conc_11a_cached_and_empty_failures_choose_the_shared_surfaces() {
         let failure = ConcertFailure::from(ProviderError::HttpStatus(503));
 
         assert_eq!(
@@ -98,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn conc_11_missing_credentials_open_the_concerts_plugin_instead_of_retrying() {
+    fn cached_failure_missing_credentials_open_the_concerts_plugin_instead_of_retrying() {
         let failure = ConcertFailure::from(ProviderError::MissingCredentials);
 
         assert_eq!(
@@ -106,28 +102,27 @@ mod tests {
             vec![FailureAction::OpenPreferences]
         );
         assert_eq!(
-            failure_support(&failure, 4, "Updated 2 h ago"),
+            failure_support(&failure, 4),
             "Saved concerts stay available. Add credentials in Preferences to refresh them."
         );
     }
 
     #[test]
-    fn conc_11_failure_copy_names_what_still_works_without_raw_text() {
+    fn cached_failure_copy_names_what_still_works_without_raw_text() {
         let failure = ConcertFailure::from(ProviderError::HttpStatus(599));
 
         assert_eq!(
-            failure_support(&failure, 4, "Updated 2 h ago"),
-            "Showing saved concerts from Updated 2 h ago. \
-             Ticket and event links need a connection."
+            failure_support(&failure, 4),
+            "Saved concerts stay available. Ticket and event links need a connection."
         );
         assert_eq!(
-            failure_support(&failure, 0, "Never updated"),
+            failure_support(&failure, 0),
             "There are no saved concerts to show. Your music is unaffected."
         );
     }
 
     #[test]
-    fn conc_11_going_offline_writing_path_preserves_a_provider_failure() {
+    fn offline_writing_path_preserves_a_provider_failure() {
         let mut failure = Some(ConcertFailure::from(ProviderError::HttpStatus(404)));
 
         update_failure_for_connectivity(&mut failure, Connectivity::Offline, true);

@@ -58,6 +58,21 @@ pub(crate) fn migrate_v31(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v73(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 73 {
+        return Ok(());
+    }
+
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(
+        "ALTER TABLE concert_events
+         ADD COLUMN ticket_availability TEXT NOT NULL DEFAULT 'unknown';",
+    )?;
+    transaction.pragma_update(None, "user_version", 73)?;
+    transaction.commit()
+}
+
 #[cfg(test)]
 #[path = "db_concerts_migration_tests.rs"]
 mod tests;

@@ -21,21 +21,19 @@ use super::concerts_failure_ui::{
 use super::concerts_filter_bar::ConcertsFilterBar;
 use super::concerts_location_banner::ConcertsLocationBanner;
 use super::concerts_location_columns::LocationColumns;
-use super::concerts_model::{ConcertObject, ConcertsModel};
-use super::concerts_presentation::{sort_rows, updated_ago, ConcertSortKey, SortDirection};
+use super::concerts_model::ConcertsModel;
+use super::concerts_presentation::{sort_rows, ConcertSortKey, SortDirection};
 use super::concerts_search::concerts_matching;
 use super::concerts_worker::{request_allowed, ConcertsRequest, ConcertsResponse, ConcertsRuntime};
 use crate::ui::external_link::{self, LaunchErrorSlot};
+use crate::ui::feed_footer::{FeedFooter, FeedFooterState};
 use crate::ui::location_broadcast::LocationBroadcast;
 use crate::ui::source_empty_state::SourceFailureState;
 use crate::ui::source_error_banner::SourceErrorBanner;
-use crate::ui::strings;
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
 const FAILURE_PAGE: &str = "failure";
-const FETCH_BUTTON_PAGE: &str = "button";
-const FETCH_SPINNER_PAGE: &str = "spinner";
 const REFRESH_TIMER_SECONDS: u32 = 60 * 60;
 
 type Callback = Rc<dyn Fn()>;
@@ -49,7 +47,7 @@ struct Shared {
     runtime: Rc<ConcertsRuntime>,
     model: Rc<ConcertsModel>,
     filter_bar: Rc<ConcertsFilterBar>,
-    end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
+    end_of_results: Rc<super::concerts_end_of_results::ConcertsEndOfResults>,
     rows: RefCell<Vec<ConcertRow>>,
     cached_items: Cell<usize>,
     column_view: gtk4::ColumnView,
@@ -58,10 +56,7 @@ struct Shared {
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
-    fetch_button: gtk4::Button,
-    fetch_stack: gtk4::Stack,
-    spinner: gtk4::Spinner,
-    updated: gtk4::Label,
+    footer: FeedFooter,
     error_banner: SourceErrorBanner,
     location_banner: ConcertsLocationBanner,
     failure_state: SourceFailureState,
@@ -69,10 +64,10 @@ struct Shared {
     failure_occurred_at: RefCell<String>,
     connectivity: Cell<Connectivity>,
     fetching: Cell<bool>,
+    loaded_this_visit: Cell<bool>,
     generation: Cell<u64>,
     refresh_timer: Cell<Option<gtk4::glib::SourceId>>,
     empty_state: Cell<ConcertsEmptyState>,
-    on_fetch_now: RefCell<Option<Callback>>,
     on_clear_filters: RefCell<Option<Callback>>,
     on_refreshed: RefCell<Option<Callback>>,
     on_open_preferences: RefCell<Option<Callback>>,
@@ -108,7 +103,11 @@ impl ConcertsView {
             let filter_bar = filter_bar.clone();
             Rc::new(move || filter_bar.query())
         };
-        let columns = concerts_columns::append_columns(&column_view, &on_open, &query_source);
+        let radius_source: super::concerts_status_cells::RadiusSource = {
+            let filter_bar = filter_bar.clone();
+            Rc::new(move || filter_bar.filter().radius_km)
+        };
+        let columns = concerts_columns::append_columns(&column_view, &query_source, &radius_source);
         let column_registry = super::concerts_column_layout::registry(&column_view, conn.clone());
         let (location_columns, column_model) =
             LocationColumns::new(column_registry, &column_view, columns);
@@ -125,11 +124,10 @@ impl ConcertsView {
             .build();
         let list_overlay = gtk4::Overlay::new();
         list_overlay.set_child(Some(&scrolled));
-        let end_of_results = crate::ui::end_of_results::EndOfResults::install(
+        let end_of_results = super::concerts_end_of_results::ConcertsEndOfResults::install(
             &list_overlay,
             &scrolled,
             &column_view,
-            crate::ui::end_of_results::ResultsUnit::Concerts,
         );
         {
             let filter_bar = filter_bar.clone();
@@ -149,7 +147,7 @@ impl ConcertsView {
         let failure_state = SourceFailureState::new("x-office-calendar-symbolic");
         stack.add_named(failure_state.widget(), Some(FAILURE_PAGE));
 
-        let (footer, updated, fetch_button, fetch_stack, spinner) = build_footer();
+        let footer = FeedFooter::new();
         let error_banner = SourceErrorBanner::new();
         let location_banner = ConcertsLocationBanner::new();
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -158,7 +156,7 @@ impl ConcertsView {
         root.append(location_banner.widget());
         root.append(error_banner.widget());
         root.append(&stack);
-        root.append(&footer);
+        root.append(footer.widget());
 
         let shared = Rc::new(Shared {
             conn,
@@ -174,10 +172,7 @@ impl ConcertsView {
             stack,
             status,
             status_button: status_button.clone(),
-            fetch_button: fetch_button.clone(),
-            fetch_stack,
-            spinner,
-            updated,
+            footer,
             error_banner,
             location_banner,
             failure_state,
@@ -185,10 +180,10 @@ impl ConcertsView {
             failure_occurred_at: RefCell::new(String::new()),
             connectivity: Cell::new(Connectivity::Online),
             fetching: Cell::new(false),
+            loaded_this_visit: Cell::new(false),
             generation: Cell::new(0),
             refresh_timer: Cell::new(None),
             empty_state: Cell::new(ConcertsEmptyState::NeverFetched),
-            on_fetch_now: RefCell::new(None),
             on_clear_filters: RefCell::new(None),
             on_refreshed: RefCell::new(None),
             on_open_preferences: RefCell::new(None),
@@ -234,16 +229,8 @@ impl ConcertsView {
         }
         {
             let shared_weak = Rc::downgrade(&shared);
-            *shared.on_fetch_now.borrow_mut() = Some(Rc::new(move || {
+            shared.footer.connect_reload(move || {
                 if let Some(shared) = shared_weak.upgrade() {
-                    request_fetch(&shared, true);
-                }
-            }));
-        }
-        {
-            let shared = Rc::downgrade(&shared);
-            fetch_button.connect_clicked(move |_| {
-                if let Some(shared) = shared.upgrade() {
                     request_fetch(&shared, true);
                 }
             });
@@ -255,32 +242,16 @@ impl ConcertsView {
                 let callback = match shared.empty_state.get() {
                     ConcertsEmptyState::NoCredentials => None,
                     ConcertsEmptyState::NoResults => shared.on_clear_filters.borrow().clone(),
-                    ConcertsEmptyState::NeverFetched | ConcertsEmptyState::Empty => {
-                        shared.on_fetch_now.borrow().clone()
-                    }
-                    ConcertsEmptyState::List => None,
+                    ConcertsEmptyState::NeverFetched
+                    | ConcertsEmptyState::Empty
+                    | ConcertsEmptyState::List => None,
                 };
                 if let Some(callback) = callback {
                     callback();
                 }
             });
         }
-        {
-            let shared = shared.clone();
-            column_view.connect_activate(move |_, position| {
-                let Some(object) = shared
-                    .model
-                    .store()
-                    .item(position)
-                    .and_downcast::<ConcertObject>()
-                else {
-                    return;
-                };
-                if let Some(target) = concerts_columns::ticket_target(&object.row()) {
-                    on_open(target.to_owned());
-                }
-            });
-        }
+        super::concerts_activation::wire(&column_view, &shared.model, on_open);
         {
             let root = root.downgrade();
             let shared = Rc::downgrade(&shared);
@@ -378,14 +349,11 @@ impl ConcertsView {
     }
 
     pub(in crate::ui) fn refresh(&self) {
+        self.shared.loaded_this_visit.set(false);
         if let Err(error) = render_cache(&self.shared) {
             tracing::warn!(%error, "could not load concerts view");
         }
         maybe_background_refresh(&self.shared);
-    }
-
-    pub(in crate::ui) fn set_on_fetch_now(&self, callback: impl Fn() + 'static) {
-        *self.shared.on_fetch_now.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_on_clear_filters(&self, callback: impl Fn() + 'static) {
@@ -428,7 +396,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
     let conn = &shared.conn;
     let filter = shared.filter_bar.filter();
-    let location = concerts::config::location(conn)?;
+    let app_location = reprise_core::location::app_location(conn)?;
     let credentials = concerts::config::credentials(conn)?;
     let similar_enabled = concerts::config::similar_config(conn)?.enabled;
     let has_similar_rows = concerts::has_similar_events(conn)?;
@@ -436,16 +404,20 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     // FIL-1d: the query narrows what the facets returned, matching artist and
     // venue — the two fields the chip names.
     let rows = concerts_matching(
-        concerts::query_events(conn, &filter, location.as_ref(), today)?,
+        concerts::query_events(conn, &filter, app_location.as_ref(), today)?,
         &query,
     );
     let facets_restrict = filter.country.is_some()
         || filter.horizon != reprise_core::concerts::DateHorizon::AllUpcoming
-        || (location.is_some() && filter.radius_km.is_some());
+        || (app_location.is_some() && filter.radius_km.is_some());
     let restricted = filter != ConcertFilter::default() || !query.is_empty();
     let total = if restricted {
-        concerts::count_upcoming(conn, &ConcertFilter::default(), location.as_ref(), today)?
-            as usize
+        concerts::count_upcoming(
+            conn,
+            &ConcertFilter::default(),
+            app_location.as_ref(),
+            today,
+        )? as usize
     } else {
         rows.len()
     };
@@ -453,21 +425,23 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let never_fetched = latest_fetch.is_none();
     shared
         .filter_bar
-        .set_context(location.as_ref(), similar_enabled, has_similar_rows);
+        .set_context(app_location.as_ref(), similar_enabled, has_similar_rows);
     shared.filter_bar.set_counts(rows.len(), total);
-    shared.location_columns.apply(location.is_some());
-    if location.is_some() {
+    shared.location_columns.apply(app_location.is_some());
+    if app_location.is_some() {
         shared.location_banner.hide();
     } else {
         shared.location_banner.show(total);
     }
     shared
         .end_of_results
-        .update(crate::ui::end_of_results::EndOfResultsInput {
+        .update(super::concerts_end_of_results::Input {
             shown: rows.len(),
             total,
             query,
             facets_restrict,
+            radius_km: app_location.as_ref().and(filter.radius_km),
+            city: app_location.map(|location| location.name),
         });
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
@@ -479,18 +453,13 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
         never_fetched,
     );
     apply_empty_state(shared, state, total);
-    shared
-        .updated
-        .set_label(&updated_ago(latest_fetch, chrono::Utc::now().timestamp()));
+    apply_footer(shared, latest_fetch);
     render_current_failure(shared);
     Ok(())
 }
 
 fn apply_empty_state(shared: &Shared, state: ConcertsEmptyState, total: usize) {
     shared.empty_state.set(state);
-    shared
-        .fetch_stack
-        .set_visible(state != ConcertsEmptyState::NoCredentials);
     if state == ConcertsEmptyState::List {
         shared.stack.set_visible_child_name(LIST_PAGE);
         return;
@@ -509,35 +478,6 @@ fn apply_empty_state(shared: &Shared, state: ConcertsEmptyState, total: usize) {
         shared.status_button.set_label(&action);
     }
     shared.stack.set_visible_child_name(STATUS_PAGE);
-}
-
-fn build_footer() -> (
-    gtk4::Box,
-    gtk4::Label,
-    gtk4::Button,
-    gtk4::Stack,
-    gtk4::Spinner,
-) {
-    let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    footer.set_margin_top(6);
-    footer.set_margin_bottom(6);
-    footer.set_margin_start(12);
-    footer.set_margin_end(12);
-    let updated = gtk4::Label::new(None);
-    updated.add_css_class("dim-label");
-    updated.add_css_class("caption");
-    updated.set_hexpand(true);
-    footer.append(&updated);
-    let fetch_button = gtk4::Button::with_label(&strings::text(strings::FETCH_NOW));
-    fetch_button.add_css_class("flat");
-    let spinner = gtk4::Spinner::new();
-    let fetch_stack = gtk4::Stack::new();
-    fetch_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
-    fetch_stack.add_named(&fetch_button, Some(FETCH_BUTTON_PAGE));
-    fetch_stack.add_named(&spinner, Some(FETCH_SPINNER_PAGE));
-    fetch_stack.set_visible_child_name(FETCH_BUTTON_PAGE);
-    footer.append(&fetch_stack);
-    (footer, updated, fetch_button, fetch_stack, spinner)
 }
 
 fn maybe_background_refresh(shared: &Rc<Shared>) {
@@ -565,20 +505,23 @@ fn request_fetch(shared: &Rc<Shared>, force: bool) {
     if shared.fetching.replace(true) {
         return;
     }
-    shared.fetch_button.set_sensitive(false);
-    shared
-        .fetch_stack
-        .set_visible_child_name(FETCH_SPINNER_PAGE);
-    shared.spinner.start();
+    apply_footer(
+        shared,
+        concerts::latest_fetch_at(&shared.conn).ok().flatten(),
+    );
 
     let generation = shared.generation.get().wrapping_add(1);
     shared.generation.set(generation);
     let (sender, receiver) = async_channel::bounded(1);
-    if !shared.runtime.request(ConcertsRequest {
-        generation,
-        force,
-        response: sender,
-    }) {
+    let (progress_sender, progress_receiver) = async_channel::unbounded();
+    if !shared.runtime.request_with_progress(
+        ConcertsRequest {
+            generation,
+            force,
+            response: sender,
+        },
+        progress_sender,
+    ) {
         finish_fetch(
             shared,
             Some(ConcertFailure::Source(SourceError::new(
@@ -589,6 +532,21 @@ fn request_fetch(shared: &Rc<Shared>, force: bool) {
         );
         return;
     }
+    let progress_weak = Rc::downgrade(shared);
+    gtk4::glib::spawn_future_local(async move {
+        while let Ok(progress) = progress_receiver.recv().await {
+            let Some(shared) = progress_weak.upgrade() else {
+                return;
+            };
+            if !shared.fetching.get() || shared.generation.get() != generation {
+                return;
+            }
+            shared.footer.apply(FeedFooterState::Fetching {
+                checked: progress.checked,
+                total: progress.total,
+            });
+        }
+    });
     let weak = Rc::downgrade(shared);
     gtk4::glib::spawn_future_local(async move {
         let response = receiver.recv().await;
@@ -622,9 +580,9 @@ fn request_fetch(shared: &Rc<Shared>, force: bool) {
 
 fn finish_fetch(shared: &Rc<Shared>, failure: Option<ConcertFailure>) {
     shared.fetching.set(false);
-    shared.spinner.stop();
-    shared.fetch_stack.set_visible_child_name(FETCH_BUTTON_PAGE);
-    shared.fetch_button.set_sensitive(true);
+    if failure.is_none() {
+        shared.loaded_this_visit.set(true);
+    }
     shared.fetch_failure.replace(failure);
     if shared.fetch_failure.borrow().is_some() {
         *shared.failure_occurred_at.borrow_mut() = chrono::Utc::now().to_rfc3339();
@@ -645,7 +603,7 @@ fn render_current_failure(shared: &Rc<Shared>) {
     };
     let cached_items = shared.cached_items.get();
     let presentation = concerts_failure_presentation(&failure, cached_items);
-    let support = failure_support(&failure, cached_items, shared.updated.text().as_str());
+    let support = failure_support(&failure, cached_items);
     let error = failure.source_error().clone();
     let occurred_at = shared.failure_occurred_at.borrow().clone();
     let weak = Rc::downgrade(shared);
@@ -711,6 +669,47 @@ fn enabled_changed(shared: &Rc<Shared>, enabled: bool) {
     } else {
         stop_refresh_timer(shared);
     }
+    if let Err(error) = render_cache(shared) {
+        tracing::warn!(%error, "could not apply Concerts module state");
+    }
+}
+
+fn apply_footer(shared: &Shared, latest_fetch: Option<i64>) {
+    let module_enabled =
+        reprise_core::modules::is_enabled(&shared.conn, &reprise_core::modules::CONCERTS_MODULE)
+            .unwrap_or(false);
+    let network_enabled = reprise_core::online_sources::is_enabled(&shared.conn).unwrap_or(false);
+    let has_credentials = concerts::config::credentials(&shared.conn)
+        .is_ok_and(|credentials| !credentials.is_empty());
+    let state = if !module_enabled {
+        FeedFooterState::ModuleOff
+    } else if !network_enabled {
+        FeedFooterState::NetworkOff
+    } else if !has_credentials {
+        FeedFooterState::NoCredentials
+    } else if shared.fetching.get() {
+        FeedFooterState::Fetching {
+            checked: 0,
+            total: 0,
+        }
+    } else if shared.connectivity.get() == Connectivity::Offline {
+        latest_fetch.map_or(FeedFooterState::NeverFetched, |latest| {
+            FeedFooterState::Offline { latest }
+        })
+    } else if shared.fetch_failure.borrow().is_some() {
+        latest_fetch.map_or(FeedFooterState::NeverFetched, |latest| {
+            FeedFooterState::Failed { latest }
+        })
+    } else if let Some(at) = latest_fetch {
+        if shared.loaded_this_visit.get() {
+            FeedFooterState::Loaded { at }
+        } else {
+            FeedFooterState::Cached { at }
+        }
+    } else {
+        FeedFooterState::NeverFetched
+    };
+    shared.footer.apply(state);
 }
 
 fn start_refresh_timer(shared: &Rc<Shared>) {
@@ -759,7 +758,7 @@ fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
         return;
     };
     let key = match column.id().as_deref() {
-        Some("distance") if shared.location_columns.has_location() => ConcertSortKey::Distance,
+        Some("distance") => ConcertSortKey::Distance,
         _ => ConcertSortKey::Date,
     };
     let direction = if sorter.primary_sort_order() == gtk4::SortType::Descending {

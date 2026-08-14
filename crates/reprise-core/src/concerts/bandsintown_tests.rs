@@ -1,5 +1,5 @@
 use super::{artist_url, events_url, parse_artist, parse_events};
-use crate::concerts::{ProviderError, Resolution};
+use crate::concerts::{ProviderError, Resolution, TicketAvailability};
 
 #[test]
 fn artist_parser_resolves_canonical_name_and_verifies_matching_mbid() {
@@ -54,13 +54,26 @@ fn events_parser_accepts_string_or_number_coordinates_and_offer_fallbacks() {
       "venue":{"name":"Backstage","city":"München"},
       "offers":[],
       "url":"https://www.bandsintown.com/e/2"
+    },{
+      "datetime":"2026-10-19T20:00:00",
+      "venue":{"name":"Olympiahalle","city":"München"},
+      "offers":[{"type":"Tickets","url":"https://tickets.example/3","status":"unavailable"}],
+      "url":"https://www.bandsintown.com/e/3"
+    },{
+      "datetime":"2026-10-20T20:00:00",
+      "venue":{"name":"Strom","city":"München"},
+      "url":"https://www.bandsintown.com/e/4"
     }]"#;
     let rows = parse_events(body).unwrap();
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 4);
     assert_eq!(rows[0].latitude, Some(48.174));
     assert_eq!(rows[0].longitude, Some(11.555));
     assert_eq!(rows[0].ticket_source.as_deref(), Some("Eventim"));
+    assert_eq!(rows[0].availability, TicketAvailability::OnSale);
     assert_eq!(rows[1].ticket_url, None);
+    assert_eq!(rows[1].availability, TicketAvailability::Unknown);
+    assert_eq!(rows[2].availability, TicketAvailability::OffSale);
+    assert_eq!(rows[3].availability, TicketAvailability::Unknown);
     assert_eq!(
         rows[1].event_url.as_deref(),
         Some("https://www.bandsintown.com/e/2")

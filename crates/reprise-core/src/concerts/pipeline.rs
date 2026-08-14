@@ -66,6 +66,18 @@ pub fn refresh_cancellable(
     force: bool,
     cancelled: &CancellationToken,
 ) -> Result<RefreshSummary, ConcertError> {
+    refresh_cancellable_with_progress(db, providers, today, now, force, cancelled, &|_, _| {})
+}
+
+pub fn refresh_cancellable_with_progress(
+    db: &crate::db::Db,
+    providers: &[Box<dyn EventProvider>],
+    today: NaiveDate,
+    now: i64,
+    force: bool,
+    cancelled: &CancellationToken,
+    progress: &dyn Fn(usize, usize),
+) -> Result<RefreshSummary, ConcertError> {
     let conn = db.conn();
     refresh_with_similar_fetch_cancellable(
         conn,
@@ -74,7 +86,10 @@ pub fn refresh_cancellable(
         now,
         force,
         (&HttpSimilarFetch, crate::scrobbling::BUNDLED_API_KEY),
-        cancelled,
+        &RefreshControl {
+            cancelled,
+            progress,
+        },
     )
 }
 
@@ -96,7 +111,10 @@ pub(crate) fn refresh_with_similar_fetch(
         now,
         force,
         (similar_fetch, lastfm_api_key),
-        &CancellationToken::default(),
+        &RefreshControl {
+            cancelled: &CancellationToken::default(),
+            progress: &|_, _| {},
+        },
     )
 }
 
@@ -115,8 +133,16 @@ fn refresh_cancellable_in(
         now,
         force,
         (&HttpSimilarFetch, crate::scrobbling::BUNDLED_API_KEY),
-        cancelled,
+        &RefreshControl {
+            cancelled,
+            progress: &|_, _| {},
+        },
     )
+}
+
+struct RefreshControl<'a> {
+    cancelled: &'a CancellationToken,
+    progress: &'a dyn Fn(usize, usize),
 }
 
 fn refresh_with_similar_fetch_cancellable(
@@ -126,8 +152,10 @@ fn refresh_with_similar_fetch_cancellable(
     now: i64,
     force: bool,
     similar: (&dyn SimilarFetch, Option<&str>),
-    cancelled: &CancellationToken,
+    control: &RefreshControl<'_>,
 ) -> Result<RefreshSummary, ConcertError> {
+    let cancelled = control.cancelled;
+    let progress = control.progress;
     if cancelled.is_cancelled() {
         return Ok(RefreshSummary::default());
     }
@@ -161,8 +189,13 @@ fn refresh_with_similar_fetch_cancellable(
         candidates.extend(similar);
     }
     candidates.truncate(MAX_ARTISTS_PER_RUN);
+    let total = candidates.len();
+    progress(0, total);
     let mut summary = RefreshSummary::default();
-    for candidate in candidates {
+    for (index, candidate) in candidates.into_iter().enumerate() {
+        if index > 0 {
+            progress(index, total);
+        }
         if cancelled.is_cancelled() {
             return Ok(summary);
         }
@@ -256,6 +289,7 @@ fn refresh_with_similar_fetch_cancellable(
         summary.resolved += 1;
         summary.events_upserted += upserted;
     }
+    progress(total, total);
     delete_past_events(conn, today)?;
     Ok(summary)
 }
@@ -399,10 +433,10 @@ fn reconcile_artist(
                artist_key, artist_name, starts_at, date_key, venue, city,
                region, country, latitude, longitude, ticket_url,
                ticket_source, event_url, provider, is_similar, similar_to,
-               fetched_at, dedupe_key
+               fetched_at, dedupe_key, ticket_availability
              ) VALUES (
                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-               ?14, ?15, ?16, ?17, ?18
+               ?14, ?15, ?16, ?17, ?18, ?19
              )
              ON CONFLICT(dedupe_key) DO UPDATE SET
                artist_key = CASE
@@ -433,7 +467,8 @@ fn reconcile_artist(
                    THEN NULL
                  ELSE excluded.similar_to
                END,
-               fetched_at = excluded.fetched_at",
+               fetched_at = excluded.fetched_at,
+               ticket_availability = excluded.ticket_availability",
             params![
                 artist.key,
                 artist.name,
@@ -452,7 +487,8 @@ fn reconcile_artist(
                 i64::from(artist.is_similar),
                 artist.similar_to,
                 now,
-                key
+                key,
+                event.availability.as_str()
             ],
         )?;
     }

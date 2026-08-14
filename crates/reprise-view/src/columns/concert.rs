@@ -10,23 +10,26 @@ pub enum ConcertColumn {
     Venue,
     Distance,
     Tickets,
+    Source,
 }
 
-const ALL: [ConcertColumn; 6] = [
+const ALL: [ConcertColumn; 7] = [
     ConcertColumn::Date,
     ConcertColumn::Artist,
     ConcertColumn::City,
     ConcertColumn::Venue,
     ConcertColumn::Distance,
     ConcertColumn::Tickets,
+    ConcertColumn::Source,
 ];
 
-const DEFAULT_VISIBLE: [ConcertColumn; 5] = [
+const DEFAULT_VISIBLE: [ConcertColumn; 6] = [
     ConcertColumn::Date,
     ConcertColumn::Artist,
     ConcertColumn::City,
     ConcertColumn::Venue,
     ConcertColumn::Distance,
+    ConcertColumn::Tickets,
 ];
 
 impl ColumnKey for ConcertColumn {
@@ -38,6 +41,7 @@ impl ColumnKey for ConcertColumn {
             Self::Venue => "venue",
             Self::Distance => "distance",
             Self::Tickets => "tickets",
+            Self::Source => "source",
         }
     }
 
@@ -54,29 +58,27 @@ impl ColumnKey for ConcertColumn {
     }
 
     fn pin(self) -> Option<Pin> {
-        match self {
-            Self::Tickets => Some(Pin::Trailing),
-            _ => None,
-        }
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::columns::{ColumnKey, Layout, Pin};
+    use crate::columns::{ColumnKey, Layout};
 
     #[test]
-    fn concert_columns_round_trip_and_pin_the_ticket_action() {
+    fn concert_columns_round_trip_without_pinning_status_or_source() {
         for key in ConcertColumn::all() {
             assert_eq!(ConcertColumn::parse(key.as_str()), Some(*key));
         }
-        assert_eq!(ConcertColumn::Tickets.pin(), Some(Pin::Trailing));
+        assert_eq!(ConcertColumn::Tickets.pin(), None);
+        assert_eq!(ConcertColumn::Source.pin(), None);
         assert_eq!(ConcertColumn::Date.pin(), None);
     }
 
     #[test]
-    fn the_default_concert_layout_keeps_tickets_trailing() {
+    fn the_default_concert_layout_shows_status_but_hides_source() {
         let layout = Layout::<ConcertColumn>::default();
         assert_eq!(
             layout.order,
@@ -87,7 +89,10 @@ mod tests {
                 ConcertColumn::Venue,
                 ConcertColumn::Distance,
                 ConcertColumn::Tickets,
+                ConcertColumn::Source,
             ]
         );
+        assert!(layout.visible.contains(&ConcertColumn::Tickets));
+        assert!(!layout.visible.contains(&ConcertColumn::Source));
     }
 }

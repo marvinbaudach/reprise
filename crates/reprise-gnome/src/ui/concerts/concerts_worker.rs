@@ -22,9 +22,16 @@ pub(in crate::ui) struct ConcertsResponse {
     pub result: Result<RefreshSummary, ConcertError>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) struct ConcertsProgress {
+    pub checked: usize,
+    pub total: usize,
+}
+
 struct WorkerRequest {
     request: ConcertsRequest,
     cancelled: CancellationToken,
+    progress: Option<async_channel::Sender<ConcertsProgress>>,
 }
 
 type IsAlive = Rc<dyn Fn() -> bool>;
@@ -245,11 +252,31 @@ impl ConcertsRuntime {
     }
 
     pub(in crate::ui) fn request(&self, request: ConcertsRequest) -> bool {
+        self.queue(request, None)
+    }
+
+    pub(in crate::ui) fn request_with_progress(
+        &self,
+        request: ConcertsRequest,
+        progress: async_channel::Sender<ConcertsProgress>,
+    ) -> bool {
+        self.queue(request, Some(progress))
+    }
+
+    fn queue(
+        &self,
+        request: ConcertsRequest,
+        progress: Option<async_channel::Sender<ConcertsProgress>>,
+    ) -> bool {
         if !self.enabled.get() {
             return false;
         }
         let cancelled = self.cancellation.borrow().clone();
-        match self.worker.try_send(WorkerRequest { request, cancelled }) {
+        match self.worker.try_send(WorkerRequest {
+            request,
+            cancelled,
+            progress,
+        }) {
             Ok(()) => true,
             Err(error) => {
                 tracing::warn!(%error, "could not queue Concerts request");
@@ -289,8 +316,15 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<WorkerRequest>
                 .as_deref()
                 .map(|path| Db::open_migrated(Some(path)));
             while let Ok(work) = receiver.recv_blocking() {
+                let progress = |checked, total| {
+                    if let Some(sender) = work.progress.as_ref() {
+                        let _ = sender.try_send(ConcertsProgress { checked, total });
+                    }
+                };
                 let result = match connection.as_ref() {
-                    Some(Ok(db)) => refresh_configured(db, work.request.force, &work.cancelled),
+                    Some(Ok(db)) => {
+                        refresh_configured(db, work.request.force, &work.cancelled, &progress)
+                    }
                     Some(Err(error)) => Err(ConcertError::InvalidData(error.to_string())),
                     None => Err(ConcertError::InvalidData(
                         "the active database has no persistent path".into(),
@@ -312,6 +346,7 @@ fn refresh_configured(
     db: &Db,
     force: bool,
     cancelled: &CancellationToken,
+    progress: &dyn Fn(usize, usize),
 ) -> Result<RefreshSummary, ConcertError> {
     let credentials = concerts::config::credentials(db)?;
     let mut providers: Vec<Box<dyn EventProvider>> = Vec::new();
@@ -321,13 +356,14 @@ fn refresh_configured(
     if let Some(api_key) = credentials.ticketmaster_api_key {
         providers.push(Box::new(TicketmasterProvider::new(api_key)));
     }
-    concerts::refresh_cancellable(
+    concerts::refresh_cancellable_with_progress(
         db,
         &providers,
         chrono::Local::now().date_naive(),
         chrono::Utc::now().timestamp(),
         force,
         cancelled,
+        progress,
     )
 }
 
@@ -340,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn conc_5a_only_enabled_due_idle_workers_fetch() {
+    fn conc_5b_only_enabled_due_idle_workers_fetch() {
         assert!(request_allowed(true, false, true));
         assert!(!request_allowed(false, false, true));
         assert!(!request_allowed(true, true, true));

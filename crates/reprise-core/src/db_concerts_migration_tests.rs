@@ -75,6 +75,82 @@ fn v31_is_idempotent() {
 }
 
 #[test]
-fn supported_schema_version_is_v72() {
-    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 72);
+fn v73_preserves_cached_concerts_and_defaults_availability_to_unknown() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.pragma_update(None, "user_version", 30).unwrap();
+    crate::db_concerts::migrate_v31(&conn).unwrap();
+    insert_event(&conn, 1, "2026-10-17|munich|zenith").unwrap();
+    conn.pragma_update(None, "user_version", 72).unwrap();
+
+    let before: i64 = conn
+        .query_row("SELECT COUNT(*) FROM concert_events", [], |row| row.get(0))
+        .unwrap();
+    crate::db_concerts::migrate_v73(&conn).unwrap();
+    let after: i64 = conn
+        .query_row("SELECT COUNT(*) FROM concert_events", [], |row| row.get(0))
+        .unwrap();
+    let availability: String = conn
+        .query_row(
+            "SELECT ticket_availability FROM concert_events WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(before, after);
+    assert_eq!(availability, "unknown");
+}
+
+#[test]
+fn a_v72_database_reaches_v74_with_both_new_columns() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.pragma_update(None, "user_version", 30).unwrap();
+    crate::db_concerts::migrate_v31(&conn).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE new_releases (
+           release_group_mbid TEXT PRIMARY KEY,
+           artist_name TEXT NOT NULL,
+           artist_mbid TEXT NOT NULL,
+           title TEXT NOT NULL,
+           release_type TEXT NOT NULL,
+           first_release_date TEXT NOT NULL,
+           fetched_at INTEGER NOT NULL,
+           seen_at INTEGER,
+           hidden INTEGER NOT NULL DEFAULT 0
+         );",
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 72).unwrap();
+
+    crate::db_concerts::migrate_v73(&conn).unwrap();
+    crate::db_new_releases_notify::migrate_v74(&conn).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    let concert_columns = table_columns(&conn, "concert_events");
+    let release_columns = table_columns(&conn, "new_releases");
+    assert_eq!(version, 74);
+    assert!(concert_columns
+        .iter()
+        .any(|column| column == "ticket_availability"));
+    assert!(release_columns
+        .iter()
+        .any(|column| column == "notified_released_at"));
+}
+
+fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
+    let mut statement = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .unwrap();
+    statement
+        .query_map([], |row| row.get(1))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+
+#[test]
+fn supported_schema_version_is_v74() {
+    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 74);
 }

@@ -41,6 +41,7 @@ fn label(key: ConcertColumn) -> String {
         ConcertColumn::Venue => crate::ui::strings::CONCERTS_VENUE,
         ConcertColumn::Distance => crate::ui::strings::CONCERTS_DISTANCE,
         ConcertColumn::Tickets => crate::ui::strings::CONCERTS_TICKETS,
+        ConcertColumn::Source => crate::ui::strings::CONCERTS_SOURCE,
     };
     crate::ui::strings::text(message)
 }
@@ -53,5 +54,6 @@ fn width(key: ConcertColumn) -> i32 {
         ConcertColumn::Venue => widths::NAME,
         ConcertColumn::Distance => widths::NUMERIC,
         ConcertColumn::Tickets => widths::ACTION,
+        ConcertColumn::Source => widths::LABEL,
     }
 }

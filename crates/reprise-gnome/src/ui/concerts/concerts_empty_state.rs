@@ -51,7 +51,7 @@ pub(super) fn concerts_empty_state_presentation(
             "x-office-calendar-symbolic",
             strings::text(strings::CONCERTS_NO_DATA_TITLE),
             String::new(),
-            Some(strings::text(strings::FETCH_NOW)),
+            None,
         ),
         ConcertsEmptyState::NoResults => (
             "system-search-symbolic",
@@ -63,7 +63,7 @@ pub(super) fn concerts_empty_state_presentation(
             crate::ui::icons::DONE,
             strings::text(strings::CONCERTS_NO_UPCOMING_TITLE),
             String::new(),
-            Some(strings::text(strings::FETCH_NOW)),
+            None,
         ),
         ConcertsEmptyState::List => unreachable!("list state has no status presentation"),
     };
@@ -80,7 +80,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn conc_4b_empty_state_matrix_has_one_deterministic_next_step() {
+    fn empty_state_matrix_has_one_deterministic_next_step() {
         assert_eq!(
             concerts_empty_state_for(1, false, false, true),
             ConcertsEmptyState::List
@@ -104,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn conc_4b_missing_credentials_have_no_key_entry_prompt() {
+    fn missing_credentials_have_no_key_entry_prompt() {
         let presentation = concerts_empty_state_presentation(ConcertsEmptyState::NoCredentials, 0);
 
         assert_eq!(

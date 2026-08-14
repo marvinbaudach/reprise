@@ -37,6 +37,11 @@ fn migrate_with_empty_caches(conn: &Connection) {
     migrate_with_cache_dirs(conn, cover_cache.path(), portrait_cache.path()).unwrap();
 }
 
+fn rewind_fully_migrated_database(conn: &Connection, version: i64) {
+    crate::db_recent_test_support::remove_v73_v74_columns(conn);
+    conn.pragma_update(None, "user_version", version).unwrap();
+}
+
 fn open_pre_online_gate_database() -> Connection {
     let conn = open(None).unwrap();
     migrate_with_empty_caches(&conn);
@@ -45,7 +50,7 @@ fn open_pre_online_gate_database() -> Connection {
         [crate::online_sources::ENABLED_KEY],
     )
     .unwrap();
-    conn.pragma_update(None, "user_version", 48).unwrap();
+    rewind_fully_migrated_database(&conn, 48);
     conn
 }
 
@@ -424,7 +429,7 @@ fn src_11_v71_inherits_consent_from_one_legacy_artwork_module() {
         .unwrap();
         conn.execute("DELETE FROM settings WHERE key = ?1", [ARTWORK])
             .unwrap();
-        conn.pragma_update(None, "user_version", 70).unwrap();
+        rewind_fully_migrated_database(&conn, 70);
 
         migrate_with_empty_caches(&conn);
 
@@ -454,7 +459,7 @@ fn src_11_v71_all_legacy_artwork_modules_off_stays_off() {
         [crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE)],
     )
     .unwrap();
-    conn.pragma_update(None, "user_version", 70).unwrap();
+    rewind_fully_migrated_database(&conn, 70);
 
     migrate_with_empty_caches(&conn);
 
@@ -476,7 +481,7 @@ fn src_11_v71_without_legacy_artwork_rows_stays_off() {
         conn.execute("DELETE FROM settings WHERE key = ?1", [key])
             .unwrap();
     }
-    conn.pragma_update(None, "user_version", 70).unwrap();
+    rewind_fully_migrated_database(&conn, 70);
 
     migrate_with_empty_caches(&conn);
 
@@ -497,7 +502,7 @@ fn src_11_v71_manual_artwork_disable_survives_a_second_migration_run() {
     let artwork_key = crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE);
     conn.execute("DELETE FROM settings WHERE key = ?1", [&artwork_key])
         .unwrap();
-    conn.pragma_update(None, "user_version", 70).unwrap();
+    rewind_fully_migrated_database(&conn, 70);
     migrate_with_empty_caches(&conn);
     crate::library::settings::set_bool_in(&conn, &artwork_key, false).unwrap();
 
@@ -521,7 +526,7 @@ fn src_11_v72_repairs_missing_unified_consent_after_faulty_v71() {
         [crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE)],
     )
     .unwrap();
-    conn.pragma_update(None, "user_version", 71).unwrap();
+    rewind_fully_migrated_database(&conn, 71);
 
     migrate_with_empty_caches(&conn);
 
@@ -550,7 +555,7 @@ fn src_11_v72_leaves_all_off_legacy_consent_absent() {
         [crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE)],
     )
     .unwrap();
-    conn.pragma_update(None, "user_version", 71).unwrap();
+    rewind_fully_migrated_database(&conn, 71);
 
     migrate_with_empty_caches(&conn);
 
@@ -576,7 +581,7 @@ fn src_11_v72_leaves_existing_unified_consent_untouched() {
             ],
         )
         .unwrap();
-        conn.pragma_update(None, "user_version", 71).unwrap();
+        rewind_fully_migrated_database(&conn, 71);
 
         migrate_with_empty_caches(&conn);
 
@@ -597,7 +602,7 @@ fn src_11_v72_manual_disable_survives_a_second_run() {
     let artwork_key = crate::modules::enabled_key(&crate::modules::ARTWORK_MODULE);
     conn.execute("DELETE FROM settings WHERE key = ?1", [&artwork_key])
         .unwrap();
-    conn.pragma_update(None, "user_version", 71).unwrap();
+    rewind_fully_migrated_database(&conn, 71);
     migrate_with_empty_caches(&conn);
     crate::library::settings::set_bool_in(&conn, &artwork_key, false).unwrap();
 

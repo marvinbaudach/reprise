@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use super::{
     dedupe::ticket_source_label, http, ArtistRef, EventProvider, ProviderError, ProviderEvent,
-    ProviderKind, Resolution,
+    ProviderKind, Resolution, TicketAvailability,
 };
 
 pub struct BandsintownProvider {
@@ -105,22 +105,26 @@ fn parse_event(value: &Value) -> Option<ProviderEvent> {
     let venue_value = value.get("venue")?;
     let venue = non_empty(venue_value.get("name")?)?;
     let city = non_empty(venue_value.get("city")?)?;
-    let ticket_url = value
-        .get("offers")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .find(|offer| {
-            offer
-                .get("status")
-                .and_then(Value::as_str)
-                .is_some_and(|status| status.eq_ignore_ascii_case("available"))
-        })
+    let offers = value.get("offers").and_then(Value::as_array);
+    let available_offer = offers.into_iter().flatten().find(|offer| {
+        offer
+            .get("status")
+            .and_then(Value::as_str)
+            .is_some_and(|status| status.eq_ignore_ascii_case("available"))
+    });
+    let ticket_url = available_offer
         .and_then(|offer| offer.get("url"))
         .and_then(non_empty)
         .map(str::to_owned);
     Some(ProviderEvent {
         provider: ProviderKind::Bandsintown,
+        availability: if available_offer.is_some() {
+            TicketAvailability::OnSale
+        } else if offers.is_some_and(|offers| !offers.is_empty()) {
+            TicketAvailability::OffSale
+        } else {
+            TicketAvailability::Unknown
+        },
         starts_at: starts_at.to_owned(),
         date_key: date_key.to_owned(),
         venue: venue.to_owned(),

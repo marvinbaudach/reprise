@@ -2,6 +2,8 @@ use std::{fmt, time::Duration};
 
 use crate::source_error::{SourceError, SourceErrorKind};
 
+use super::TicketAvailability;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderKind {
     Bandsintown,
@@ -35,6 +37,7 @@ pub enum Resolution {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProviderEvent {
     pub provider: ProviderKind,
+    pub availability: TicketAvailability,
     pub starts_at: String,
     pub date_key: String,
     pub venue: String,

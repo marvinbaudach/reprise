@@ -87,6 +87,7 @@ mod tests {
     fn row(id: i64) -> ConcertRow {
         ConcertRow {
             id,
+            availability: reprise_core::concerts::TicketAvailability::Unknown,
             date_key: "2099-01-01".into(),
             starts_at: "2099-01-01T19:00:00".into(),
             artist_name: format!("Artist {id}"),

@@ -1,5 +1,5 @@
 use super::{attractions_url, credential_url, events_url, parse_attractions, parse_events};
-use crate::concerts::{ProviderError, Resolution};
+use crate::concerts::{ProviderError, Resolution, TicketAvailability};
 
 #[test]
 fn attraction_parser_requires_an_exact_trimmed_case_insensitive_name() {
@@ -42,7 +42,8 @@ fn event_parser_maps_local_date_time_and_venue() {
     let body = r#"{"_embedded":{"events":[{
       "name":"Lorna Shore",
       "url":"https://ticketmaster.example/e/1",
-      "dates":{"start":{"localDate":"2026-10-17","localTime":"19:30:00"}},
+      "dates":{"start":{"localDate":"2026-10-17","localTime":"19:30:00"},
+               "status":{"code":"offsale"}},
       "_embedded":{"venues":[{
         "name":"Zenith","city":{"name":"München"},"state":{"stateCode":"BY"},
         "country":{"name":"Germany","countryCode":"DE"},
@@ -51,7 +52,7 @@ fn event_parser_maps_local_date_time_and_venue() {
     },{
       "name":"No Time",
       "url":"https://ticketmaster.example/e/2",
-      "dates":{"start":{"localDate":"2026-10-18"}},
+      "dates":{"start":{"localDate":"2026-10-18"},"status":{"code":"onsale"}},
       "_embedded":{"venues":[{"name":"Backstage","city":{"name":"München"}}]}
     }]}}"#;
     let rows = parse_events(body).unwrap();
@@ -59,6 +60,8 @@ fn event_parser_maps_local_date_time_and_venue() {
     assert_eq!(rows[0].starts_at, "2026-10-17T19:30:00");
     assert_eq!(rows[0].country.as_deref(), Some("DE"));
     assert_eq!(rows[1].starts_at, "2026-10-18T00:00:00");
+    assert_eq!(rows[0].availability, TicketAvailability::OffSale);
+    assert_eq!(rows[1].availability, TicketAvailability::OnSale);
     assert_eq!(
         rows[0].ticket_url.as_deref(),
         Some("https://ticketmaster.example/e/1")
