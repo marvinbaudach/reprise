@@ -32,8 +32,11 @@ shared_view=crates/reprise-view/src
 # obsolete presentation lines. Removing the two-step preparation progress API
 # that went with it — PreparationProgress, progress_copy and the four
 # "Step 2 of 2" titles, none of which had a consumer left — removed 55 more.
-# This floor is the measured sum; future migration waves raise it.
-view_floor=2115
+# This floor is the measured sum; future migration waves raise it. Concerts
+# saying where a ticket stands (#493) gave the column set a seventh entry —
+# Source, its name arm and its default visibility, against the trailing pin
+# that Tickets no longer needs: one production line net.
+view_floor=2116
 
 echo "== Frontend thinness =="
 
