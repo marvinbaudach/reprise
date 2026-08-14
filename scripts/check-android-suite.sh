@@ -77,6 +77,41 @@ sys.exit(2 if stale else 0)
 PY
 }
 
+decide_results() {
+  local summary=$1
+  local tests
+  local failures
+  local errors
+  local skips
+  local executed
+
+  tests=${summary#* tests=}
+  tests=${tests%% *}
+  failures=${summary#* failures=}
+  failures=${failures%% *}
+  errors=${summary#* errors=}
+  errors=${errors%% *}
+  skips=${summary#* skips=}
+  skips=${skips%% *}
+  if [[ ! "$tests" =~ ^[0-9]+$ || ! "$failures" =~ ^[0-9]+$ ||
+    ! "$errors" =~ ^[0-9]+$ || ! "$skips" =~ ^[0-9]+$ ]]; then
+    echo "Invalid Android suite summary: $summary" >&2
+    return 64
+  fi
+
+  if (( failures != 0 || errors != 0 )); then
+    echo "Android unit suite failed: $failures failures and $errors errors" >&2
+    return 1
+  fi
+  executed=$((tests - skips))
+  if (( executed < ANDROID_TEST_FLOOR )); then
+    echo "Android test floor missed: executed $executed, required at least $ANDROID_TEST_FLOOR (measured at dd67122fc7)" >&2
+    return 1
+  fi
+
+  echo "Android unit-suite gate passed"
+}
+
 if [[ ${1:-} == "--parse-results" ]]; then
   if (( $# != 3 )); then
     echo "usage: $0 --parse-results START_TIMESTAMP JUNIT_DIRECTORY" >&2
@@ -85,8 +120,16 @@ if [[ ${1:-} == "--parse-results" ]]; then
   parse_results "$2" "$3"
   exit $?
 fi
+if [[ ${1:-} == "--decide" ]]; then
+  if (( $# != 2 )); then
+    echo "usage: $0 --decide JUNIT_SUMMARY" >&2
+    exit 64
+  fi
+  decide_results "$2"
+  exit $?
+fi
 if (( $# != 0 )); then
-  echo "usage: $0 [--parse-results START_TIMESTAMP JUNIT_DIRECTORY]" >&2
+  echo "usage: $0 [--parse-results START_TIMESTAMP JUNIT_DIRECTORY | --decide JUNIT_SUMMARY]" >&2
   exit 64
 fi
 
@@ -121,19 +164,4 @@ if (( parse_status != 0 )); then
   exit "$parse_status"
 fi
 
-tests=${summary#* tests=}
-tests=${tests%% *}
-failures=${summary#* failures=}
-failures=${failures%% *}
-errors=${summary#* errors=}
-errors=${errors%% *}
-if (( failures != 0 || errors != 0 )); then
-  echo "Android unit suite failed: $failures failures and $errors errors" >&2
-  exit 1
-fi
-if (( tests < ANDROID_TEST_FLOOR )); then
-  echo "Android test floor missed: executed $tests, required at least $ANDROID_TEST_FLOOR (measured at dd67122fc7)" >&2
-  exit 1
-fi
-
-echo "Android unit-suite gate passed"
+decide_results "$summary"

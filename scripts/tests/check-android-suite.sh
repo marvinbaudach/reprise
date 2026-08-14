@@ -53,6 +53,29 @@ assert_parse() {
   fi
 }
 
+assert_decision() {
+  local expected_status=$1
+  local expected_output=$2
+  local summary=$3
+  local output
+  local status
+
+  set +e
+  output=$(bash "$checker" --decide "$summary" 2>&1)
+  status=$?
+  set -e
+
+  if (( status != expected_status )); then
+    echo "Expected decision status $expected_status, got $status: $output" >&2
+    exit 1
+  fi
+  if [[ "$output" != "$expected_output" ]]; then
+    echo "Unexpected decision output: $output" >&2
+    echo "Expected: $expected_output" >&2
+    exit 1
+  fi
+}
+
 fresh_dir="$fixture_root/fresh"
 mkdir -p "$fresh_dir"
 write_suite "$fresh_dir/TEST-first.xml" 2 0 0 1 1000
@@ -79,4 +102,20 @@ assert_parse 4 \
   'suites=0 tests=0 failures=0 errors=0 skips=0 verdict=missing' \
   1000 "$fixture_root/missing"
 
-echo "Android suite parser tests passed"
+assert_decision 0 \
+  'Android unit-suite gate passed' \
+  'suites=66 tests=334 failures=0 errors=0 skips=0 verdict=fresh'
+assert_decision 1 \
+  'Android test floor missed: executed 0, required at least 334 (measured at dd67122fc7)' \
+  'suites=66 tests=334 failures=0 errors=0 skips=334 verdict=fresh'
+assert_decision 1 \
+  'Android test floor missed: executed 333, required at least 334 (measured at dd67122fc7)' \
+  'suites=66 tests=333 failures=0 errors=0 skips=0 verdict=fresh'
+assert_decision 1 \
+  'Android unit suite failed: 1 failures and 0 errors' \
+  'suites=66 tests=334 failures=1 errors=0 skips=0 verdict=fresh'
+assert_decision 1 \
+  'Android unit suite failed: 0 failures and 1 errors' \
+  'suites=66 tests=334 failures=0 errors=1 skips=0 verdict=fresh'
+
+echo "Android suite parser and decision tests passed"
