@@ -2,7 +2,7 @@
 slug: dev-gate-back-to-green
 worktree: /home/marvin/Projects/reprise-dev-gate-back-to-green
 branch: feature/dev-gate-back-to-green
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-13
 ---
