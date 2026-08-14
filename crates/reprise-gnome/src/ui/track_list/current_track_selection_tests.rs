@@ -2,6 +2,7 @@
 //! module stays under the 800-line cap — the same split its glide and
 //! start-restore tests already use.
 
+use super::super::PreSearch;
 use super::*;
 use reprise_core::queries::BrowseFilter;
 
@@ -23,6 +24,44 @@ fn nav_10b_playback_scroll_policy_distinguishes_user_intent() {
         reveal_policy(CurrentTrackChange::AutomaticAdvance, true),
         TrackRevealPolicy::MarkerOnly
     );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_16_only_a_user_start_during_the_search_arms_the_centering() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let track_list = TrackList::new(
+        Rc::new(crate::test_db::open().unwrap()),
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        super::super::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+
+    *track_list.shared.filter.borrow_mut() = "needle".to_owned();
+    track_list.update_current_track(1, None, CurrentTrackChange::PlaybackStarted);
+    assert!(track_list.shared.pre_search.get().playback_started);
+
+    track_list.shared.pre_search.set(PreSearch::default());
+    track_list.update_current_track(2, None, CurrentTrackChange::AutomaticAdvance);
+    assert!(!track_list.shared.pre_search.get().playback_started);
+
+    track_list.shared.pre_search.set(PreSearch::default());
+    track_list.shared.filter.borrow_mut().clear();
+    track_list.update_current_track(3, None, CurrentTrackChange::PlaybackStarted);
+    assert!(!track_list.shared.pre_search.get().playback_started);
+
+    track_list.shared.pre_search.set(PreSearch {
+        anchor: Some((4, 12.0)),
+        playback_started: true,
+    });
+    crate::ui::track_list::track_list_reload::prepare_filter_change(
+        &track_list.shared,
+        "",
+        "new query",
+    );
+    assert!(!track_list.shared.pre_search.get().playback_started);
 }
 
 #[test]

@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gtk4::prelude::{AdjustmentExt, ScrollableExt};
 
 use super::Shared;
-use crate::ui::list_geometry::ListGeometry;
+use crate::ui::list_geometry::{ContentHeight, ListGeometry, RowHeightSource};
 
 pub(super) fn schedule(shared: &Rc<Shared>, track_id: Option<i64>, current_ids: Vec<i64>) {
     let anchor = track_id.map(|track_id| (track_id, 0.0));
@@ -64,8 +64,20 @@ fn apply(shared: &Shared, track_id: Option<i64>, current_ids: &[i64]) -> bool {
         return false;
     };
     let page = adjustment.page_size();
-    if adjustment.upper() <= page {
-        return true;
+    let n_sections = shared.queue_sections.borrow().len();
+    let (content, row_source, header_source) = ListGeometry::for_view(&shared.column_view)
+        .content_height(
+            &shared.conn,
+            &shared.list_geometry_cache,
+            current_ids.len(),
+            n_sections,
+        );
+    let measured = row_source == RowHeightSource::Measured
+        && header_source.is_none_or(|source| source == RowHeightSource::Measured);
+    if let ContentHeight::Known(pixels) = content {
+        if measured && pixels <= page {
+            return true;
+        }
     }
     let Some(height) = ListGeometry::for_view(&shared.column_view)
         .live_row_height(current_ids.len())

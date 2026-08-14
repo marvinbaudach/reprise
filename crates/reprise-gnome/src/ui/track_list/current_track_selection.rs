@@ -275,7 +275,7 @@ impl TrackList {
         }
     }
 
-    fn update_current_track(
+    pub(in crate::ui) fn update_current_track(
         &self,
         track_id: i64,
         queue_position: Option<usize>,
@@ -285,6 +285,19 @@ impl TrackList {
         self.shared.track_reveal_generation.set(reveal_generation);
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
+        let query_is_active = !self.shared.filter.borrow().is_empty();
+        if query_is_active
+            && matches!(
+                change,
+                CurrentTrackChange::PlaybackStarted | CurrentTrackChange::ExplicitTransport
+            )
+        {
+            let pre_search = self.shared.pre_search.get();
+            self.shared.pre_search.set(super::PreSearch {
+                playback_started: true,
+                ..pre_search
+            });
+        }
 
         // Every change carries a loaded track, including the session restore:
         // NAV-10b asks for the marker on every visible instance of the

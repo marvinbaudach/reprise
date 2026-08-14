@@ -93,6 +93,12 @@ pub(in crate::ui) use super::track_list_toast::show_toast;
 /// faults.rs` (Stage 3 Task 1) — same reasoning, same visibility shape. Only
 /// the fields that module actually needs are marked `pub(in crate::ui)`
 /// individually below; everything else stays private to this file.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(in crate::ui) struct PreSearch {
+    pub(in crate::ui) anchor: Option<(i64, f64)>,
+    pub(in crate::ui) playback_started: bool,
+}
+
 pub(in crate::ui) struct Shared {
     pub(in crate::ui) model: TrackListModel,
     /// The bounded, ordered id projection used when an activation turns the
@@ -150,13 +156,12 @@ pub(in crate::ui) struct Shared {
     /// just left, so `track_list_reload::capture_reload_anchor` reads this and
     /// anchors on where the viewport is going instead.
     pub(in crate::ui) track_reveal_pending: Cell<bool>,
-    /// SEARCH-9: where the list stood before a search narrowed it, so clearing
-    /// the search can put the user back instead of dropping them at the top or
-    /// on the playing track. Captured once on the empty → non-empty transition
-    /// and consumed when the query goes empty again. `(track id, offset)`
-    /// rather than a raw scroll value, for the same reason BROWSE-2 uses that
-    /// form: after a re-sort a pixel value points at a different row.
-    pub(in crate::ui) pre_search_anchor: Cell<Option<(i64, f64)>>,
+    /// SEARCH-9/SEARCH-16 state for the active search: where the list stood
+    /// before the query narrowed it, and whether the user deliberately
+    /// started playback while that query was active. Both values share one
+    /// lifecycle and are consumed together when the query goes empty.
+    /// `(track id, offset)` rather than a raw scroll value survives re-sorts.
+    pub(in crate::ui) pre_search: Cell<PreSearch>,
     /// POD-20's shared loaded-episode marker. Separate from
     /// `playing_track_id` because the two id spaces are unrelated and may
     /// collide numerically; the marker also retains running versus paused.

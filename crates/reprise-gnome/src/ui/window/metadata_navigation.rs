@@ -481,4 +481,129 @@ mod tests {
         assert!(track_list.shared.browse_bar.place_button().is_none());
         assert_eq!(track_list.current_source(), ViewSource::RecentlyAdded);
     }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn browse_14_the_now_playing_link_clears_the_search_and_lands_on_the_track() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = crate::test_db::open().unwrap();
+        let fixture_conn = crate::test_db::connection(&conn);
+        let tx = fixture_conn.unchecked_transaction().unwrap();
+        for id in 1..=200 {
+            let title = if (1..=21).contains(&id) {
+                format!("Track {id:03} Needle")
+            } else {
+                format!("Track {id:03} Other")
+            };
+            tx.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) \
+                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+                (id, format!("/synthetic/{id:03}.flac"), title),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+
+        let conn = Rc::new(conn);
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.NowPlayingRevealTest")
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        window.set_default_size(900, 320);
+        let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, || 0));
+        let track_list = Rc::new(TrackList::new(
+            conn,
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        ));
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(track_list.widget(), Some("library"));
+        window.set_content(Some(&content_stack));
+        window.present();
+        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            adjustment.upper() > adjustment.page_size()
+        });
+
+        let source_title = adw::WindowTitle::new("Music", "");
+        let history = Rc::new(NavHistory::default());
+        let library = BrowserPlace::from(ViewSource::Library);
+        history.restore(library.clone(), library);
+        let navigator = MetadataNavigator::new(
+            history.clone(),
+            &sidebar,
+            &track_list,
+            adw::NavigationView::new(),
+            content_stack.clone(),
+            source_title,
+            ActiveContentFocus::new(&content_stack, &track_list),
+        );
+        sidebar.set_on_select({
+            let track_list = track_list.clone();
+            move |source, _title| track_list.set_source(source)
+        });
+        let restored_search = Rc::new(RefCell::new(Vec::new()));
+        track_list.set_on_search_restored({
+            let restored_search = restored_search.clone();
+            move |query| restored_search.borrow_mut().push(query.to_owned())
+        });
+
+        track_list.set_filter("Needle");
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            track_list.shared.model.n_items() == 21
+                && adjustment.upper() > adjustment.page_size()
+                && adjustment.upper() < 2_000.0
+        });
+        adjustment.set_value(200.0);
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            adjustment.value() > 0.0
+        });
+        let narrowed = track_list.browser_place();
+        let revealed_id = 3;
+        navigator.navigate(
+            NavigationIntent::RevealTrack {
+                origin: Box::new(narrowed.clone()),
+                track_id: revealed_id,
+            },
+            "test now playing link",
+        );
+        crate::ui::test_settle::settle_for(std::time::Duration::from_millis(500));
+
+        assert!(track_list.shared.filter.borrow().is_empty());
+        assert!(track_list.shared.browse_filter.borrow().is_empty());
+        assert_eq!(&*restored_search.borrow(), &[String::new()]);
+        let current_ids = track_list.shared.current_view_ids();
+        let row_height = adjustment.upper() / current_ids.len() as f64;
+        let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
+            crate::ui::list_geometry::RowHeight::new(row_height).unwrap(),
+        );
+        let expected = crate::ui::track_list::reload_restore::scroll_target(
+            Some((revealed_id, 0.0)),
+            &current_ids,
+            &layout,
+            adjustment.page_size(),
+        )
+        .unwrap();
+        assert!(
+            (adjustment.value() - expected).abs() <= row_height,
+            "the router reveal landed at {} instead of {expected}",
+            adjustment.value()
+        );
+        let revealed_position = current_ids
+            .iter()
+            .position(|id| *id == revealed_id)
+            .unwrap() as u32;
+        assert!(track_list.shared.selection.is_selected(revealed_position));
+        let back = history
+            .go_back_from(track_list.browser_place())
+            .expect("the narrowed origin must remain on Back");
+        assert_eq!(back.browser_place(), &narrowed);
+        assert_eq!(back.browser_place().track_state().unwrap().search, "Needle");
+
+        window.close();
+    }
 }
