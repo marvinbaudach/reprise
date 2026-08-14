@@ -2,7 +2,7 @@
 slug: portrait-placeholder-fingerprint
 worktree: /home/marvin/Projects/reprise-portrait-placeholder-fingerprint
 branch: feature/portrait-placeholder-fingerprint
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
