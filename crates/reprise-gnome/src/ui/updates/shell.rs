@@ -17,12 +17,8 @@ pub(super) struct UpdatesShell {
     pub concerts_section: ConcertsSection,
     pub list: gtk4::ListBox,
     pub empty: gtk4::Label,
-    pub nothing_new: gtk4::Label,
+    pub releases_header: gtk4::Button,
     pub new_tag: gtk4::Label,
-    pub releases_jump: gtk4::Button,
-    pub releases_jump_label: gtk4::Label,
-    pub concerts_jump: gtk4::Button,
-    pub concerts_jump_label: gtk4::Label,
     pub fetch_button: gtk4::Button,
     pub fetch_stack: gtk4::Stack,
     pub spinner: gtk4::Spinner,
@@ -38,12 +34,13 @@ pub(super) fn build() -> UpdatesShell {
     let list = gtk4::ListBox::new();
     list.set_selection_mode(gtk4::SelectionMode::None);
     let empty = gtk4::Label::new(None);
+    empty.add_css_class("reprise-text-secondary");
     empty.set_wrap(true);
     empty.set_justify(gtk4::Justification::Center);
     empty.set_margin_top(12);
     empty.set_margin_bottom(12);
 
-    let header_label = gtk4::Label::new(Some(&strings::text(strings::UPDATES_NEW_RELEASES_HEADER)));
+    let header_label = gtk4::Label::new(Some(&strings::text(strings::RELEASES)));
     header_label.add_css_class("new-release-header");
     header_label.set_xalign(0.0);
     header_label.set_hexpand(true);
@@ -53,21 +50,15 @@ pub(super) fn build() -> UpdatesShell {
     let header_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     header_row.append(&header_label);
     header_row.append(&new_tag);
+    let releases_header = gtk4::Button::builder()
+        .child(&header_row)
+        .css_classes(["flat", "updates-section-header"])
+        .build();
     let news_section = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-    news_section.append(&header_row);
+    news_section.append(&releases_header);
     news_section.append(&list);
 
     let concerts_section = ConcertsSection::new();
-    let nothing_new = gtk4::Label::new(Some(&strings::text(strings::UPDATES_NOTHING_NEW)));
-    nothing_new.add_css_class("reprise-text-secondary");
-    nothing_new.set_halign(gtk4::Align::Center);
-    nothing_new.set_margin_top(12);
-    nothing_new.set_margin_bottom(12);
-    nothing_new.set_visible(false);
-    let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
-    separator.add_css_class("new-release-separator");
-    let (releases_jump, releases_jump_label) = build_jump_row();
-    let (concerts_jump, concerts_jump_label) = build_jump_row();
 
     let (updates_header, fetch_button, fetch_stack, spinner, updated) = build_header();
     let failure = gtk4::Label::new(None);
@@ -80,10 +71,6 @@ pub(super) fn build() -> UpdatesShell {
     list_page.append(&failure);
     list_page.append(&news_section);
     list_page.append(concerts_section.root());
-    list_page.append(&nothing_new);
-    list_page.append(&separator);
-    list_page.append(&releases_jump);
-    list_page.append(&concerts_jump);
 
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.set_size_request(POPOVER_WIDTH, -1);
@@ -103,32 +90,14 @@ pub(super) fn build() -> UpdatesShell {
         concerts_section,
         list,
         empty,
-        nothing_new,
+        releases_header,
         new_tag,
-        releases_jump,
-        releases_jump_label,
-        concerts_jump,
-        concerts_jump_label,
         fetch_button,
         fetch_stack,
         spinner,
         updated,
         failure,
     }
-}
-
-fn build_jump_row() -> (gtk4::Button, gtk4::Label) {
-    let label = gtk4::Label::new(None);
-    label.set_xalign(0.0);
-    label.set_hexpand(true);
-    label.add_css_class("new-release-history-label");
-    let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    content.append(&label);
-    let button = gtk4::Button::builder()
-        .child(&content)
-        .css_classes(["flat", "new-release-history-row"])
-        .build();
-    (button, label)
 }
 
 fn build_header() -> (
@@ -167,46 +136,4 @@ fn build_header() -> (
     header.append(&title);
     header.append(&fetch_button);
     (header, fetch_button, stack, spinner, updated)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_23_shell_is_a_fixed_delta_layout_with_fetch_state_in_its_header() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        if gtk4::init().is_err() {
-            return;
-        }
-        let shell = build();
-        let content = shell.popover.child().expect("popover content");
-        let list_page = content.first_child().expect("list page");
-        let header = list_page.first_child().expect("updates header");
-
-        assert_eq!(content.width_request(), 380);
-        assert!(shell
-            .list
-            .ancestor(gtk4::ScrolledWindow::static_type())
-            .is_none());
-        assert_eq!(
-            shell.list.parent(),
-            Some(shell.news_section.clone().upcast())
-        );
-        assert_eq!(shell.failure.parent(), Some(list_page.clone()));
-        // The age label is inside the fetch button, so the whole "Updated 1 d
-        // ago" row is one labelled target rather than a bare glyph.
-        assert_eq!(
-            shell
-                .updated
-                .ancestor(gtk4::Button::static_type())
-                .and_then(|button| button.downcast::<gtk4::Button>().ok()),
-            Some(shell.fetch_button.clone())
-        );
-        assert_eq!(shell.fetch_button.parent(), Some(header));
-        assert!(shell.nothing_new.has_css_class("reprise-text-secondary"));
-        assert!(shell.failure.has_css_class("reprise-text-secondary"));
-        assert!(!shell.updated.has_css_class("dim-label"));
-    }
 }

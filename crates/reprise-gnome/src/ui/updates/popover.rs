@@ -13,6 +13,8 @@ use crate::ui::strings;
 
 use super::badge::{self, FeedBadgeInput};
 use super::concerts_section::ConcertsSection;
+#[cfg(test)]
+use super::feed_row;
 use super::feed_snapshot;
 use super::footer_state::{
     failure_text as fetch_failure_text, oldest_active_feed_timestamp,
@@ -66,7 +68,7 @@ fn module_effect(
     fetch_completed: bool,
     fetching: bool,
 ) -> ModuleEffect {
-    let empty = if !enabled || has_releases || fetch_completed {
+    let empty = if !enabled || has_releases {
         EmptyPresentation::Hidden
     } else if fetching {
         EmptyPresentation::Checking
@@ -108,12 +110,8 @@ struct NewReleasesPopover {
     concerts_section: ConcertsSection,
     list: gtk4::ListBox,
     empty: gtk4::Label,
-    nothing_new: gtk4::Label,
+    releases_header: gtk4::Button,
     new_tag: gtk4::Label,
-    releases_jump: gtk4::Button,
-    releases_jump_label: gtk4::Label,
-    concerts_jump: gtk4::Button,
-    concerts_jump_label: gtk4::Label,
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
     spinner: gtk4::Spinner,
@@ -148,12 +146,8 @@ impl NewReleasesPopover {
             concerts_section,
             list,
             empty,
-            nothing_new,
+            releases_header,
             new_tag,
-            releases_jump,
-            releases_jump_label,
-            concerts_jump,
-            concerts_jump_label,
             fetch_button,
             fetch_stack,
             spinner,
@@ -172,12 +166,8 @@ impl NewReleasesPopover {
             concerts_section,
             list,
             empty,
-            nothing_new,
+            releases_header,
             new_tag,
-            releases_jump,
-            releases_jump_label,
-            concerts_jump,
-            concerts_jump_label,
             fetch_button,
             fetch_stack,
             spinner,
@@ -197,6 +187,31 @@ impl NewReleasesPopover {
                     state.popover.popdown();
                 }
                 release_row::launch_uri(&url);
+            }));
+        }
+        {
+            let weak = Rc::downgrade(&state);
+            state
+                .concerts_section
+                .set_on_dismiss_event(Rc::new(move |id| {
+                    let Some(state) = weak.upgrade() else { return };
+                    if let Err(error) = reprise_core::concerts::mark_event_seen(
+                        &state.conn,
+                        id,
+                        chrono::Utc::now().timestamp(),
+                    ) {
+                        tracing::warn!(%error, event_id = id, "could not dismiss Concerts update");
+                        return;
+                    }
+                    state.render(false, false);
+                }));
+        }
+        {
+            let weak = Rc::downgrade(&state);
+            state.concerts_section.set_on_open_view(Rc::new(move || {
+                if let Some(state) = weak.upgrade() {
+                    state.open_view(reprise_core::browser::navigation::SidebarTarget::Concerts);
+                }
             }));
         }
         state.wire();
@@ -227,28 +242,17 @@ impl NewReleasesPopover {
             }
         });
 
-        self.wire_jump(
-            &self.releases_jump,
-            reprise_core::browser::navigation::SidebarTarget::Releases,
-        );
-        self.wire_jump(
-            &self.concerts_jump,
-            reprise_core::browser::navigation::SidebarTarget::Concerts,
-        );
-    }
-
-    fn wire_jump(
-        self: &Rc<Self>,
-        button: &gtk4::Button,
-        target: reprise_core::browser::navigation::SidebarTarget,
-    ) {
         let weak = Rc::downgrade(self);
-        button.connect_clicked(move |_| {
+        self.releases_header.connect_clicked(move |_| {
             if let Some(state) = weak.upgrade() {
-                state.popover.popdown();
-                (state.on_open_view)(target);
+                state.open_view(reprise_core::browser::navigation::SidebarTarget::Releases);
             }
         });
+    }
+
+    fn open_view(&self, target: reprise_core::browser::navigation::SidebarTarget) {
+        self.popover.popdown();
+        (self.on_open_view)(target);
     }
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
@@ -272,8 +276,7 @@ impl NewReleasesPopover {
         );
         self.button
             .set_visible(effect.button_visible || concerts_enabled);
-        let news_visible =
-            news_enabled && (releases.delta.total > 0 || effect.empty != EmptyPresentation::Hidden);
+        let news_visible = news_enabled;
         self.news_section.set_visible(news_visible);
         // Only an actually unseen batch is announced as new. A batch held over
         // from the last visit still renders, but without a count that would
@@ -292,7 +295,7 @@ impl NewReleasesPopover {
             }
             EmptyPresentation::NoReleases => {
                 self.empty
-                    .set_label(&strings::text(strings::NEW_RELEASES_NONE));
+                    .set_label(&strings::text(strings::UPDATES_NO_NEW_RELEASES));
                 self.list.append(&self.empty);
             }
         }
@@ -329,18 +332,9 @@ impl NewReleasesPopover {
             concerts.delta.unseen,
             &concerts.delta.shown,
             today,
+            reprise_core::modules::is_enabled(&self.conn, &reprise_core::modules::ARTWORK_MODULE)
+                .unwrap_or(false),
         );
-        let concerts_visible = concerts_enabled && concerts.credentials && concerts.delta.total > 0;
-        self.nothing_new.set_visible(
-            effect.empty == EmptyPresentation::Hidden && !news_visible && !concerts_visible,
-        );
-        self.concerts_jump.set_visible(concerts_enabled);
-        self.concerts_jump_label
-            .set_label(&strings::updates_show_all_concerts(concerts.count));
-        let releases_count = feed_snapshot::releases_count(&self.conn, today);
-        self.releases_jump.set_visible(news_enabled);
-        self.releases_jump_label
-            .set_label(&strings::updates_show_all_releases(releases_count));
         if mark_seen {
             let effect = opening_effect(&releases.unseen_ids);
             if !effect.seen_ids.is_empty() {

@@ -29,6 +29,22 @@ impl LazyReleaseCover {
         cover
     }
 
+    /// Builds an initials tile and, when allowed, replaces it only with an
+    /// already-cached artist portrait. The empty release id guarantees the
+    /// map handler can never start a cover or portrait network request.
+    pub(in crate::ui) fn new_cached_artist(artist: &str, edge: i32, allowed: bool) -> Self {
+        let cover = Self::new("", artist, edge);
+        if allowed {
+            if let reprise_core::artist_portrait::PortraitOutcome::Found(path) =
+                reprise_core::artist_portrait::load_cached(artist)
+            {
+                cover.picture.set_filename(Some(path));
+                cover.picture.set_visible(true);
+            }
+        }
+        cover
+    }
+
     /// Builds an empty cover suitable for a recycled `ColumnView` cell.
     pub(in crate::ui) fn new_unbound(edge: i32) -> Self {
         let root = gtk4::Overlay::new();

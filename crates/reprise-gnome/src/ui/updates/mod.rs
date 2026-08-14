@@ -7,7 +7,6 @@ mod footer_state;
 pub(in crate::ui) mod popover;
 pub(in crate::ui) mod release_cover;
 pub(in crate::ui) mod release_row;
-mod release_row_actions;
 mod shell;
 
 /// The New Releases feature's CSS section (D1), composed here so

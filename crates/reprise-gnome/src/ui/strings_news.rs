@@ -47,12 +47,12 @@ pub const ALL_ARTISTS: &str = N_!("All artists");
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
 pub const UPDATES_HEADER: &str = N_!("UPDATES");
-pub const UPDATES_NEW_RELEASES_HEADER: &str = N_!("RELEASES");
-pub const UPDATES_CONCERTS_HEADER: &str = N_!("CONCERTS");
 pub const UPDATES_CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed");
-pub const UPDATES_NOTHING_NEW: &str = N_!("Nothing new since your last look");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
 pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
+pub const UPDATES_NO_NEW_RELEASES: &str = N_!("No new releases");
+pub const UPDATES_NO_NEW_CONCERTS: &str = N_!("No new concerts");
+pub const UPDATES_RELEASED: &str = N_!("Released");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
 pub const SEE_ALL_RELEASES: &str = N_!("See all");
 pub const HIDE_RELEASE: &str = N_!("Hide");
@@ -145,27 +145,37 @@ pub const RETENTION_SIX_MONTHS: &str = N_!("Retention: 6 months");
 /// `days > 0`; whether `days <= 0` reads as „today" or „released" is a UI
 /// decision made by the caller, not by this formatter.
 pub fn new_releases_days_until(days: i64) -> String {
-    formatted(N_!("in {days} d"), &[("days", &days.to_string())])
+    let days_text = days.to_string();
+    plural(
+        N_!("In {days} day"),
+        N_!("In {days} days"),
+        usize::try_from(days).unwrap_or_default(),
+        &[("days", &days_text)],
+    )
+}
+
+pub fn updates_release_meta(artist: &str, release_type: &str, date: &str) -> String {
+    formatted(
+        N_!("{artist} · {type} · {date}"),
+        &[("artist", artist), ("type", release_type), ("date", date)],
+    )
+}
+
+pub fn updates_concert_meta(date: &str, city: &str, venue: &str) -> String {
+    formatted(
+        N_!("{date} · {city} · {venue}"),
+        &[("date", date), ("city", city), ("venue", venue)],
+    )
+}
+
+pub fn updates_opens_source(source: &str) -> String {
+    formatted(N_!("Opens {source}"), &[("source", source)])
 }
 
 /// „N new" count pill shared by both Updates feed headers. „new" does not
 /// change with the count, so no plural form is needed.
 pub fn updates_new_count(count: usize) -> String {
     formatted(N_!("{count} new"), &[("count", &count.to_string())])
-}
-
-pub fn updates_show_all_concerts(count: usize) -> String {
-    formatted(
-        N_!("Show all concerts ({count}) →"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn updates_show_all_releases(count: usize) -> String {
-    formatted(
-        N_!("Show all releases ({count}) →"),
-        &[("count", &count.to_string())],
-    )
 }
 
 pub fn news_timestamp_date(timestamp: i64) -> String {
@@ -255,20 +265,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_releases_days_until_formats_positive_days() {
-        let copy = new_releases_days_until(25);
-        assert!(copy.contains("25"));
-        assert!(copy.contains('d'));
+    fn new_releases_days_until_uses_the_house_plural_form() {
+        assert_eq!(new_releases_days_until(1), "In 1 day");
+        assert_eq!(new_releases_days_until(25), "In 25 days");
     }
 
     #[test]
     fn updates_new_count_formats_either_feed() {
         assert_eq!(updates_new_count(3), "3 new");
-    }
-
-    #[test]
-    fn updates_jump_rows_format_feed_counts() {
-        assert_eq!(updates_show_all_concerts(14), "Show all concerts (14) →");
-        assert_eq!(updates_show_all_releases(8), "Show all releases (8) →");
     }
 }

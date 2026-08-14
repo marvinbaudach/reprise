@@ -540,11 +540,6 @@ mod tests {
                 crate::ui::updates::css(),
                 ".new-release-header",
             ),
-            (
-                "updates card meta",
-                crate::ui::updates::css(),
-                ".new-release-meta",
-            ),
         ] {
             let rules = css
                 .split(selector)
@@ -561,5 +556,16 @@ mod tests {
                 "{role} ({selector}) dims text locally instead of using the level"
             );
         }
+
+        // NR-34 deliberately gives the compact Updates metadata a stronger
+        // 0.78 level while retaining the verified secondary colour role.
+        let updates_css = crate::ui::updates::css();
+        let meta = updates_css
+            .split(".new-release-meta")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("updates card meta rules");
+        assert!(meta.contains("@reprise_secondary_fg_color"));
+        assert!(meta.contains("opacity: 0.78"));
     }
 }

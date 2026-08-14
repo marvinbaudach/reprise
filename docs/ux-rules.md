@@ -2232,7 +2232,7 @@ the panel).
   chip and fades in the row actions; on leaving, the chip returns.
   Keyboard parity: the row is focusable, focus shows the actions, and
   the buttons are reachable via Tab/Enter.
-- **NR-10a** [active] [gtk] — Row hover or focus fades in the row
+- **NR-10a** [replaced by NR-36] — Row hover or focus fades in the row
   actions without displacing the status chip; the chip remains visible
   in every state. The row stays focusable and its sensitive action
   buttons remain reachable via Tab/Enter.
@@ -2256,7 +2256,7 @@ the panel).
   visible as soon as at least one active feed has entries or a
   first-run state per NR-8. Its badge counts exclusively unseen
   entries of all active, fetch-ready feeds.
-- **NR-5b** [active] [gtk] — The popover is transient; opening/closing
+- **NR-5b** [replaced by NR-34] — The popover is transient; opening/closing
   never changes the navigation stack. Explicit row actions and the
   jump rows „Show all releases/concerts →" navigate normally and close
   the popover. The popover has no internal subpages; the history
@@ -2362,7 +2362,7 @@ the panel).
   the age measured from the completed update again, including a successful run
   with no queued artists. Offline or error still show the last cache and its
   previous age. The shared failure surface remains specified by NR-21.
-- **NR-23** [active] [gtk] — The delta popover shows at most five
+- **NR-23** [replaced by NR-34] — The delta popover shows at most five
   releases and three concerts without an internal scroller. A section's
   count chip names the full batch size, but appears **only while that
   batch is genuinely unseen**: a batch held over from the last visit
@@ -2481,6 +2481,45 @@ the panel).
   column is named `Release` because its rows are albums, EPs and singles, not
   songs. Sorting, filters, counts, activation semantics, the trailing action
   column and zero-result recovery remain exactly as NR-31 specified.
+- **NR-34** [active] [gtk] — replaces NR-5b and NR-23. The Updates
+  popover shows at most five releases and three concerts without an
+  internal scroller, and both feeds use one identical row shape. Each
+  section header is the only bridge into its full view: activating it — by
+  pointer or by keyboard — closes the popover and navigates, exactly as the
+  removed jump rows did. A header stays visible while its module is active
+  even when its section is empty, and then shows a quiet empty line. The
+  header's count chip names the full batch size and appears only while that
+  batch is genuinely unseen. The popover remains transient and has no
+  internal subpages.
+  Test: `nr_34_an_empty_section_keeps_its_header_and_its_bridge`
+  (`ui/updates/popover_tests.rs`).
+- **NR-35** [active] [gtk] — replaces CONC-7. The popover's Concerts
+  section appears only while the Concerts module is active, shows at most
+  three unseen entries of the persistent filter scope, and reaches the full
+  view through its header per NR-34. Opening still stamps the entire delta
+  set of both sections, and the header badge still sums unseen entries
+  across all active, fetch-ready feeds.
+  Test: `nr_35_the_concerts_section_header_carries_the_unseen_count`
+  (`ui/updates/popover_tests.rs`).
+- **NR-36** [active] [gtk] — replaces NR-10a. The row's trailing slot
+  holds the status tag and the dismiss button side by side, permanently:
+  the button rests at reduced contrast and reaches full contrast on hover
+  or focus, and it never displaces the tag. The button is a sibling of the
+  row's activation surface, not a child of it, so dismissing a row can
+  never open its link. Both are reachable with Tab and activate with Enter
+  or Space.
+  Test: `nr_36_dismissing_a_row_never_opens_its_link`
+  (`ui/updates/popover_tests.rs`).
+- **NR-38** [active] [gtk] — A popover row opens its link on a single
+  click anywhere on its activation surface — cover, title, meta or tag —
+  and on Enter or Space when focused. Releases follow NR-11's URL
+  priority, concerts prefer the offer URL over the event page. The
+  provider name appears as the row's tooltip and, hover-free, in CONC-16's
+  Source column. A concert row without a launchable target is insensitive
+  and says why.
+  Test: `nr_38_a_row_opens_the_same_url_its_tooltip_names`
+  (`ui/updates/popover_tests.rs`).
+
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
@@ -5053,7 +5092,7 @@ available. The player plays only finished files.
 - **CONC-6** [active] [gtk] — Similar rows carry a dimmed "similar to
   {seed}" and disappear with "Library artists only". The source pill is
   visible as soon as Similar is enabled or similar rows exist.
-- **CONC-7** [active] [gtk] — The Updates popover shows the Concerts
+- **CONC-7** [replaced by NR-35] — The Updates popover shows the Concerts
   section only when the module is active, at most three unseen entries
   of the persistent filter scope, and "Show all concerts (N) →".
   Opening stamps the entire delta set of both sections. The header
