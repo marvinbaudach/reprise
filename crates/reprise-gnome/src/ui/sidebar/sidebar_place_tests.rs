@@ -319,3 +319,52 @@ fn nav_18_focus_leaving_the_sidebar_does_not_snap_the_marking_back_to_a_source()
     );
     fixture.window.close();
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nav_18_activating_the_doctor_row_while_the_doctor_is_visible_changes_nothing() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let fixture = routing_fixture();
+    fixture.open_doctor_through_findings();
+
+    fixture.open_doctor_through_findings();
+
+    assert!(fixture.routed.borrow().is_empty());
+    assert_eq!(fixture.shown.get(), 0);
+    assert_eq!(
+        fixture.stack.visible_child_name().as_deref(),
+        Some("library-doctor")
+    );
+    assert_only_doctor_is_marked(&fixture.sidebar.shared);
+    fixture.window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nav_18_the_vanishing_doctor_row_leaves_nothing_marked_instead_of_the_old_source() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let fixture = routing_fixture();
+    fixture.open_doctor_through_findings();
+    crate::test_db::connection(&fixture.sidebar.shared.conn)
+        .execute(
+            "UPDATE library_doctor_state SET reviewed_scan_id=last_complete_scan_id \
+             WHERE singleton=1",
+            [],
+        )
+        .unwrap();
+
+    fixture.sidebar.refresh("findings applied");
+    pump_main_context();
+
+    assert!(fixture.sidebar.shared.doctor_row.borrow().is_none());
+    assert!(fixture.sidebar.shared.listbox.selected_row().is_none());
+    assert!(fixture
+        .sidebar
+        .shared
+        .issues_listbox
+        .selected_row()
+        .is_none());
+    fixture.activate_my_stats();
+    fixture.assert_returned_to_my_stats();
+    fixture.window.close();
+}
