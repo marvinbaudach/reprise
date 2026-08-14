@@ -59,6 +59,25 @@ cua_wait_for_label() {
   return 1
 }
 
+# Cua Driver 0.17 deliberately rejects a bare element_index because indices
+# are meaningful only within one snapshot. Retain and submit the snapshot-
+# scoped token instead of falling back to fragile pixel coordinates.
+cua_click_label() {
+  local pid=$1 window_id=$2 label=$3 stem=$4
+  local before_path action_path token payload
+
+  before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
+  token=$(element_token_for_label "$before_path" "$label")
+  action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
+  payload=$(element_action_payload "$pid" "$window_id" "$token")
+  if ! cua_driver click "$payload" >"$action_path"; then
+    echo "CUA token click command failed at $stem; evidence: $action_path" >&2
+    return 1
+  fi
+  assert_action_landed "$action_path" || return 1
+  cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null
+}
+
 usage() {
   cat <<'EOF'
 usage: acceptance/deezer-placeholder-portraits/run-accept.sh \
@@ -169,13 +188,15 @@ self_test_private_paths() {
 }
 
 self_test_private_atspi() {
-  local fixture_root degraded_json healthy_json diagnostic payload
+  local fixture_root degraded_json healthy_json diagnostic payload snapshot_json token
   mkdir -p "$acceptance_root/runs"
   fixture_root=$(mktemp -d "$acceptance_root/runs/atspi-contract.XXXXXX")
   degraded_json="$fixture_root/degraded.json"
   healthy_json="$fixture_root/healthy.json"
+  snapshot_json="$fixture_root/snapshot.json"
   printf '%s\n' '{"degraded":true,"degraded_reason":"synthetic AT-SPI failure"}' >"$degraded_json"
   printf '%s\n' '{"degraded":false}' >"$healthy_json"
+  printf '%s\n' '{"elements":[{"label":"My Stats","role":"button","element_token":"snapshot-7:31"}]}' >"$snapshot_json"
 
   if diagnostic=$(assert_accessible_snapshot "$degraded_json" contract-degraded 2>&1); then
     echo "degraded snapshot passed the harness contract" >&2
@@ -192,8 +213,40 @@ self_test_private_atspi() {
   jq -e --argjson depth "$ACCEPT_CUA_MAX_DEPTH" \
     --argjson elements "$CUA_MAX_ELEMENTS" \
     '.max_depth == $depth and .max_elements == $elements' <<<"$payload" >/dev/null
+  token=$(element_token_for_label "$snapshot_json" "My Stats")
+  payload=$(element_action_payload 7 11 "$token")
+  jq -e '.element_token == "snapshot-7:31" and has("element_index") == false' \
+    <<<"$payload" >/dev/null
   find "$fixture_root" -xdev -depth -delete
   echo "private_atspi_self_test=passed"
+}
+
+element_token_for_label() {
+  local snapshot_path=$1 label=$2
+  local token
+  token=$(jq -r --arg label "$label" '
+    [(.structuredContent.elements // .elements // [])[]
+      | select(.label == $label)
+      | select(.role == "button" or (.actions // [] | any(. == "click")))
+      | .element_token
+      | select(. != null)][0] // empty
+  ' "$snapshot_path")
+  if [[ -z "$token" ]]; then
+    echo "snapshot exposes no clickable token for '$label': $snapshot_path" >&2
+    return 1
+  fi
+  printf '%s\n' "$token"
+}
+
+element_action_payload() {
+  local pid=$1 window_id=$2 token=$3
+  jq -nc \
+    --argjson pid "$pid" \
+    --argjson window_id "$window_id" \
+    --arg element_token "$token" \
+    --arg session "$CUA_E2E_SESSION" \
+    '{pid: $pid, window_id: $window_id, element_token: $element_token,
+      session: $session}'
 }
 
 snapshot_payload() {
