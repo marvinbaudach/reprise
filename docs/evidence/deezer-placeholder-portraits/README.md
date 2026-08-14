@@ -98,3 +98,11 @@ The acceptance script retains executable mode. The first live run exposed F5
 before the application started, so this directory still makes no visible My
 Stats claim. The identical unbounded wait in the shared
 `scripts/cua-common/session.sh` remains a pre-existing out-of-scope issue.
+
+## Final live acceptance
+
+The later F6-F12 repair sequence and the completed live before/after result are
+recorded in `final-acceptance.md`. The committed screenshots, isolated cache
+listings, named byte comparison, placeholder hashes, AT-SPI ownership proof,
+run manifest and network-fetch proof all come from the final successful run
+`20260814T042511Z`. The focused portrait suite now contains 28 passing tests.
