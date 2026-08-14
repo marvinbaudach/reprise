@@ -401,6 +401,17 @@ Beweisführung, die über einen Screenshot hinausgeht:
 - **Kontrollarm**: für 1 und 4 gilt eine Änderung erst als bewiesen, wenn der
   zurückgerollte Zustand jetzt gerade das alte Verhalten zeigt.
 
+Nachgereicht am 14.08.2026: Die beiden Punkte „über einen Screenshot hinaus"
+waren nach dem Landen unbelegt — die Bildstrecke zeigt sie nicht, und niemand
+hatte sie behauptet. Sie stehen jetzt als drei Display-Tests da, jeder mit
+Kontrollarm über eine Mutation im **Produktionscode**:
+
+| Test | Mutation, die ihn rot macht |
+| --- | --- |
+| `conc_2_tiny_radius_without_a_location_never_narrows_the_shown_count` | `has_location &&` aus `active_facets()` entfernen → `3 of 3 concerts` statt `3 concerts` |
+| `set_15_disabling_concerts_never_blocks_the_real_near_you_search` | `broadcast.notify()` in `apply_location()` hinter ein Concerts-Gate legen |
+| `set_15_the_stored_location_stays_readable_once_online_sources_are_off` | den gespeicherten Lesezugriff in `city_row()` hinter den Online-Gate legen → `Not set` statt `Berlin` |
+
 ---
 
 ## 4. Nicht in diesem Auftrag

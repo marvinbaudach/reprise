@@ -342,6 +342,14 @@ impl ConcertsFilterBar {
         self.rebuild();
     }
 
+    /// CONC-2: reads the rendered count line exactly as the user sees it —
+    /// "N concerts" plain, or "N of M concerts" once a restriction is
+    /// active — without exposing the private `result_label` field itself.
+    #[cfg(test)]
+    pub(super) fn result_text_for_test(&self) -> String {
+        self.result_label.text().to_string()
+    }
+
     pub(super) fn reload_persisted(self: &Rc<Self>) -> Result<(), rusqlite::Error> {
         let filter = config::persisted_filter(&self.conn)?;
         self.filter.replace(filter);
