@@ -2,7 +2,7 @@
 slug: location-is-not-a-concerts-setting
 worktree: /home/marvin/Projects/reprise-location-is-not-a-concerts-setting
 branch: feature/location-is-not-a-concerts-setting
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-14
 ---
