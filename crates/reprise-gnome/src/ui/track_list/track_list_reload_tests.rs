@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use reprise_core::view_source::ViewSource;
 
-use super::{filter_change_viewport, source_snapshot, ReloadViewport};
+use super::{filter_change_viewport, source_snapshot, viewport_after_clearing, ReloadViewport};
 
 #[test]
 fn startup_reload_requests_are_served_once_when_startup_finishes() {
@@ -33,23 +33,43 @@ fn source_snapshot_releases_the_borrow_before_reentrant_work() {
 #[test]
 fn search_9_filter_change_decides_viewport_by_the_new_query() {
     assert!(matches!(
-        filter_change_viewport("", "Match"),
+        filter_change_viewport("", "Match", false),
         ReloadViewport::Top
     ));
     assert!(matches!(
-        filter_change_viewport("Mat", "Match"),
+        filter_change_viewport("Mat", "Match", false),
         ReloadViewport::Top
     ));
     assert!(matches!(
-        filter_change_viewport("Match", "Mat"),
+        filter_change_viewport("Match", "Mat", false),
         ReloadViewport::Top
     ));
     assert!(matches!(
-        filter_change_viewport("Match", ""),
+        filter_change_viewport("Match", "", false),
         ReloadViewport::RestorePreSearch
     ));
     assert!(matches!(
-        filter_change_viewport("Match", "Match"),
+        filter_change_viewport("Match", "Match", false),
         ReloadViewport::PreserveAnchor
+    ));
+}
+
+#[test]
+fn search_16_clearing_chooses_its_viewport_from_the_search_that_ran() {
+    assert!(matches!(
+        viewport_after_clearing(true, true),
+        ReloadViewport::CenterPlayingElsePreSearch
+    ));
+    assert!(matches!(
+        viewport_after_clearing(true, false),
+        ReloadViewport::RestorePreSearch
+    ));
+    assert!(matches!(
+        viewport_after_clearing(false, true),
+        ReloadViewport::CenterPlayingTrack
+    ));
+    assert!(matches!(
+        viewport_after_clearing(false, false),
+        ReloadViewport::CenterPlayingTrack
     ));
 }

@@ -137,6 +137,10 @@ impl AdjustmentHold {
         }
     }
 
+    pub(super) fn release_now(&self) {
+        release(&self.inner);
+    }
+
     pub(super) fn release_after(self, duration: Duration) {
         glib::timeout_add_local_once(duration, move || {
             // A bounds/value signal may already have queued a HIGH_IDLE

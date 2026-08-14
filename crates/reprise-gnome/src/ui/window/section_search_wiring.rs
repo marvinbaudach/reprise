@@ -42,7 +42,7 @@ pub(in crate::ui) fn install(search: &Rc<SectionSearch>, views: &SectionSearchVi
 /// `MissingFilesView`, not by the table, and that view has to be told the
 /// query separately (FIL-1d — it matches file paths, which the table's
 /// "any field" search does not).
-fn install_tracks(search: &Rc<SectionSearch>, track_list: &Rc<TrackList>) {
+pub(in crate::ui) fn install_tracks(search: &Rc<SectionSearch>, track_list: &Rc<TrackList>) {
     let applying = Rc::downgrade(track_list);
     let committing = Rc::downgrade(track_list);
     let clearing = Rc::downgrade(track_list);

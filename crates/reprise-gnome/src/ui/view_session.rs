@@ -107,7 +107,7 @@ pub(super) fn wire_search(
         // `restoring` is still set — a navigation restoring its own query —
         // where the old code returned early and left a timer armed. That timer
         // then fired against the view the user had just moved to, applying a
-        // query and a `pre_search_anchor` belonging to the view they had left.
+        // query and `pre_search` state belonging to the view they had left.
         // GTK's own 150 ms delay used to hide this by pushing the emission
         // past the guard's reset; removing the delay removed the accident that
         // made the old order work.
@@ -193,7 +193,9 @@ fn prepare_track_view(
     // contain. `set_source_and_reload` clears it for plain source switches;
     // this covers the navigation paths (sidebar, Back/Forward, session
     // restore) that reach a new view without going through it.
-    shared.pre_search_anchor.set(None);
+    shared
+        .pre_search
+        .set(crate::ui::track_list::PreSearch::default());
     *shared.filter.borrow_mut() = search.to_string();
     *shared.browse_filter.borrow_mut() = browse.clone();
     shared.browse_bar.restore_filter(browse);

@@ -292,7 +292,9 @@ impl SectionSearch {
 
     /// FIL-2a: "Clear all" belongs to the view it was clicked in — it drops
     /// that view's query and facets, and leaves every other view's facets
-    /// alone.
+    /// alone. Tracks performs its model reload in `clear_facets`; the final
+    /// apply still runs so commit can remove the chip, while the unchanged
+    /// empty filter makes that apply model-neutral.
     pub(in crate::ui) fn clear_all(self: &Rc<Self>) {
         let scope = self.active.get();
         let clear_facets = self

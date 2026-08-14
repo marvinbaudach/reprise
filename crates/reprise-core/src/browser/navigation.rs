@@ -249,8 +249,24 @@ impl BrowserNavigation {
                 } else {
                     self.library_root.clone()
                 };
+                let was_narrowed = target
+                    .track_state()
+                    .is_some_and(|state| !state.search.is_empty() || !state.browse.is_empty());
+                if let Some(state) = target.track_state_mut() {
+                    state.search.clear();
+                    state.browse = Default::default();
+                }
                 set_explicit_track_anchor(&mut target, track_id);
-                self.go_metadata_scope(target)
+                // Reveal is the one route that removes restrictions: changing
+                // PlayOrigin would also alter queue/session context (PLAY-8),
+                // while changing place restore would corrupt Back (BROWSE-2).
+                // Preserve the narrowed origin in history only when something
+                // was actually removed.
+                if was_narrowed {
+                    self.go_new(target)
+                } else {
+                    self.go_metadata_scope(target)
+                }
             }
             source_intent @ (NavigationIntent::RevealEpisode { .. }
             | NavigationIntent::RevealStation { .. }) => {
@@ -436,6 +452,10 @@ fn push_bounded(stack: &mut Vec<BrowserPlace>, place: BrowserPlace) {
 #[cfg(test)]
 #[path = "navigation_source_tests.rs"]
 mod source_tests;
+
+#[cfg(test)]
+#[path = "navigation_reveal_tests.rs"]
+mod reveal_tests;
 
 #[cfg(test)]
 mod tests {
@@ -670,34 +690,6 @@ mod tests {
     }
 
     #[test]
-    fn browse_4_reveal_track_restores_its_structured_origin_and_exact_anchor() {
-        let mut navigation = BrowserNavigation::new(library());
-        let origin_state = TrackViewState {
-            search: "blue".into(),
-            ..TrackViewState::default()
-        };
-        let origin = BrowserPlace::tracks(TrackCollection::Playlist(7), origin_state);
-
-        let target = navigation
-            .navigate(NavigationIntent::RevealTrack {
-                origin: Box::new(origin),
-                track_id: 42,
-            })
-            .unwrap()
-            .to;
-
-        assert_eq!(target.collection(), Some(&TrackCollection::Playlist(7)));
-        let state = target.track_state().unwrap();
-        assert_eq!(state.search, "blue");
-        assert_eq!(
-            state.anchor,
-            Some(crate::browser::TrackAnchor::new(42, 0.0))
-        );
-        assert_eq!(state.selected_ids, vec![42]);
-        assert_eq!(state.focus, TrackFocus::Track(42));
-    }
-
-    #[test]
     fn browse_4_retargeting_the_same_scope_replaces_without_history_and_discards_forward() {
         let mut navigation = BrowserNavigation::new(library());
         navigation
@@ -759,29 +751,5 @@ mod tests {
         )));
         assert_eq!(navigation.current(), &library());
         assert_eq!(navigation.back_len(), 0);
-    }
-
-    #[test]
-    fn browse_4_revealing_inside_music_updates_the_remembered_root() {
-        let mut navigation = BrowserNavigation::new(library());
-        let target = navigation
-            .navigate(NavigationIntent::RevealTrack {
-                origin: Box::new(library()),
-                track_id: 13,
-            })
-            .unwrap()
-            .to;
-
-        assert_eq!(navigation.library_root(), &target);
-        navigation
-            .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
-            .unwrap();
-        assert_eq!(
-            navigation
-                .navigate(NavigationIntent::Sidebar(SidebarTarget::Music))
-                .unwrap()
-                .to,
-            target
-        );
     }
 }
