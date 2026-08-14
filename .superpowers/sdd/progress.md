@@ -1653,3 +1653,4 @@ Task android-reads-during-scan-6: complete (this commit, base b6712f5d47, correc
 # Sidebar marks the visible view
 
 Task 1: complete (this commit, base 4960ec30e1, added the explicit sidebar-place model and pure content-page resolver, moved the existing selection helpers out of the size-constrained orchestrator, and proved the Library Doctor resolver arm red before green; the focused NAV-18 test passed exactly 1 test, formatting, strict all-target workspace Clippy, and architecture passed)
+Task 2: complete (this commit, base cea0f99a0c, added one visible-place state, one optional Doctor row, the pending device id and card-marking callback to Shared, and centralized source, Doctor, device, and empty-state marking in one reentrancy-safe function; the focused NAV-18 test passed exactly 1 test, formatting, strict all-target workspace Clippy, and architecture passed)

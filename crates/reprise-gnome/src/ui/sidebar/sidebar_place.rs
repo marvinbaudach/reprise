@@ -14,7 +14,6 @@ const LIBRARY_DOCTOR_PAGE: &str = "library-doctor";
 )]
 const DEVICE_SYNC_PAGE: &str = "device-sync";
 
-#[cfg_attr(not(test), expect(dead_code, reason = "stored by Shared in Task 2"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum SidebarPlace {
     /// A real track source is visible; `current_source` owns the marking.
@@ -102,6 +101,74 @@ pub(in crate::ui) fn find_row(
         .iter()
         .find(|(_, candidate, _)| candidate == source)
         .map(|(row, _, _)| row.clone())
+}
+
+/// Reconciles both sidebar lists and the device cards with the visible place.
+/// Every `RefCell` value is cloned out before GTK or callback code can re-enter.
+#[expect(dead_code, reason = "wired into rebuild and focus resync in Task 3")]
+pub(in crate::ui) fn apply_marking(shared: &std::rc::Rc<Shared>) {
+    let place = shared.current_place.borrow().clone();
+    match place {
+        SidebarPlace::Source => apply_source_marking(shared),
+        SidebarPlace::LibraryDoctor => {
+            clear_list_marking(shared);
+            mark_device(shared, None);
+            let doctor_row = shared.doctor_row.borrow().clone();
+            if let Some(row) = doctor_row {
+                select_row_in_its_listbox(&row);
+            }
+        }
+        SidebarPlace::Device(device_id) => {
+            clear_list_marking(shared);
+            mark_device(shared, Some(device_id.as_str()));
+        }
+        SidebarPlace::Unknown => {
+            clear_list_marking(shared);
+            mark_device(shared, None);
+        }
+    }
+}
+
+fn apply_source_marking(shared: &std::rc::Rc<Shared>) {
+    mark_device(shared, None);
+    let requested_source = shared.current_source.borrow().clone();
+    if !has_sidebar_row(&requested_source) {
+        clear_list_marking(shared);
+        tracing::debug!(
+            scope = %requested_source.label(),
+            "scope view has no sidebar row; leaving the selection empty"
+        );
+        return;
+    }
+    let requested_row = find_row(shared, &requested_source);
+    let (select_source, fell_back) =
+        resolve_select_source(requested_source.clone(), requested_row.is_some());
+    if fell_back {
+        tracing::debug!(
+            vanished_source = %requested_source.label(),
+            "selected source vanished; falling back to Library"
+        );
+    }
+    let row_to_select = if fell_back {
+        find_row(shared, &select_source)
+    } else {
+        requested_row
+    };
+    if let Some(row) = row_to_select {
+        select_row_in_its_listbox(&row);
+    }
+}
+
+fn clear_list_marking(shared: &Shared) {
+    shared.listbox.unselect_all();
+    shared.issues_listbox.unselect_all();
+}
+
+fn mark_device(shared: &Shared, device_id: Option<&str>) {
+    let callback = shared.mark_device.borrow().clone();
+    if let Some(callback) = callback {
+        callback(device_id);
+    }
 }
 
 #[cfg(test)]

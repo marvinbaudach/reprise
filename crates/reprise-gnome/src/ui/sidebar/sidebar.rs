@@ -68,6 +68,7 @@ use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
 use super::sidebar_issues_section::bottom_region_placement;
 use super::sidebar_module_menu::{ModuleMenuHighlight, OnPresentPlugins, OnSetModuleEnabled};
 use super::sidebar_navigation_scroller::build_navigation_scroller;
+use super::sidebar_place::SidebarPlace;
 #[cfg(test)]
 use super::sidebar_place::{find_row, has_sidebar_row, resolve_select_source};
 use super::sidebar_root::build_root;
@@ -83,6 +84,7 @@ pub(in crate::ui) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// Callback invoked whenever the logically selected source changes — see
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
+type MarkDevice = Rc<dyn Fn(Option<&str>)>;
 pub(in crate::ui) type OnRemoveMissing = Rc<dyn Fn(&[i64])>;
 use super::sidebar_dnd::OnQueueDrop;
 use super::sidebar_row_wiring::{wire_focus_leave_resync, wire_row_activated, wire_row_selected};
@@ -120,6 +122,16 @@ pub(in crate::ui) struct Shared {
     /// `row-selected` handler and used by a routine `rebuild` (`force_select
     /// = None`) to re-select the same source's (rebuilt) row afterwards.
     pub(in crate::ui) current_source: RefCell<ViewSource>,
+    /// Which kind of content page is actually visible. This is separate from
+    /// `current_source`, because utility pages do not own a track source.
+    pub(in crate::ui) current_place: RefCell<SidebarPlace>,
+    /// The one placeless navigation row, rebuilt with the Issues collection.
+    pub(in crate::ui) doctor_row: RefCell<Option<gtk4::ListBoxRow>>,
+    /// Device id supplied by the card that most recently opened sync details.
+    #[expect(dead_code, reason = "read by the content-stack binding in Task 4")]
+    pub(in crate::ui) open_device: RefCell<Option<String>>,
+    /// Applies the open-device marking to the current card registry.
+    pub(in crate::ui) mark_device: RefCell<Option<MarkDevice>>,
     /// Every row built by the most recent `rebuild`, for row-identity lookup
     /// (see the module doc's `## Row identity` section). Rebuilt from
     /// scratch on every `rebuild` call.
@@ -281,6 +293,10 @@ impl Sidebar {
             releases_count_label: RefCell::new(None),
             releases_count_generation: Cell::new(0),
             current_source: RefCell::new(ViewSource::default()),
+            current_place: RefCell::new(SidebarPlace::Source),
+            doctor_row: RefCell::new(None),
+            open_device: RefCell::new(None),
+            mark_device: RefCell::new(None),
             rows: RefCell::new(Vec::new()),
             playlist_add_button: RefCell::new(None),
             playlist_quick_edit_id: Cell::new(None),
