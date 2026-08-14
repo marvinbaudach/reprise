@@ -22,6 +22,11 @@ const SECOND_TRACK_URI: &str = "content://reprise.test/tree/music/second.flac";
 // A working reader answers in microseconds; two minutes avoids load flakes.
 const READER_DEADLINE: Duration = Duration::from_secs(120);
 
+// This bounds only the scan-to-reader rendezvous signal. It arrives in
+// microseconds on a working fixture; ten seconds leaves ample room for a loaded
+// parallel test runner while failing far sooner than the reader deadline.
+const SCAN_RENDEZVOUS_DEADLINE: Duration = Duration::from_secs(10);
+
 struct QuietProgress;
 
 impl ScanProgressListener for QuietProgress {
@@ -43,6 +48,11 @@ struct ScanRendezvous {
 enum ReaderAnswer {
     Browse(Result<TrackWindow, LibraryError>),
     Artwork(Result<Option<String>, LibraryError>),
+}
+
+enum ReaderRendezvousOutcome {
+    ReadAttempted,
+    ScanNeverReachedRendezvous,
 }
 
 impl FixtureSource {
@@ -207,13 +217,20 @@ fn read_while_scanning() -> (Option<Result<TrackWindow, LibraryError>>, TrackWin
 
     let reader_library = Arc::clone(&library);
     let reader = thread::spawn(move || {
-        inside_rx.recv().unwrap();
+        if inside_rx.recv_timeout(SCAN_RENDEZVOUS_DEADLINE).is_err() {
+            return ReaderRendezvousOutcome::ScanNeverReachedRendezvous;
+        }
         let _ = answer_tx.send(ReaderAnswer::Browse(
             reader_library.list_tracks(full_window()),
         ));
+        ReaderRendezvousOutcome::ReadAttempted
     });
     library.scan(Box::new(QuietProgress)).unwrap();
-    reader.join().unwrap();
+    let reader_outcome = reader.join().unwrap();
+    assert!(
+        matches!(reader_outcome, ReaderRendezvousOutcome::ReadAttempted),
+        "scan never reached the read-during-scan rendezvous; the fixture scanner did not call list_children for the configured tree"
+    );
 
     let during_scan = match observed_answer.lock().unwrap().take() {
         Some(ReaderAnswer::Browse(answer)) => Some(answer),
@@ -255,13 +272,20 @@ fn artwork_while_scanning() -> Option<Result<Option<String>, LibraryError>> {
 
     let reader_library = Arc::clone(&library);
     let reader = thread::spawn(move || {
-        inside_rx.recv().unwrap();
+        if inside_rx.recv_timeout(SCAN_RENDEZVOUS_DEADLINE).is_err() {
+            return ReaderRendezvousOutcome::ScanNeverReachedRendezvous;
+        }
         let _ = answer_tx.send(ReaderAnswer::Artwork(
             reader_library.track_artwork(FIRST_TRACK_URI, AndroidArtworkSize::List),
         ));
+        ReaderRendezvousOutcome::ReadAttempted
     });
     library.scan(Box::new(QuietProgress)).unwrap();
-    reader.join().unwrap();
+    let reader_outcome = reader.join().unwrap();
+    assert!(
+        matches!(reader_outcome, ReaderRendezvousOutcome::ReadAttempted),
+        "scan never reached the read-during-scan rendezvous; the fixture scanner did not call list_children for the configured tree"
+    );
 
     let answer = match observed_answer.lock().unwrap().take() {
         Some(ReaderAnswer::Artwork(answer)) => Some(answer),
