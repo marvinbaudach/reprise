@@ -2,7 +2,7 @@
 slug: android-reads-during-scan
 worktree: /home/marvin/Projects/reprise-android-reads-during-scan
 branch: feature/android-reads-during-scan
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
