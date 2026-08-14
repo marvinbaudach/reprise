@@ -22,6 +22,7 @@ mod artist_news_candidates;
 pub mod artist_news_history;
 mod artist_news_ledger;
 pub mod artist_news_links;
+pub mod artist_news_notify;
 mod artist_news_parsing;
 mod artist_news_pipeline;
 mod artist_news_query;
