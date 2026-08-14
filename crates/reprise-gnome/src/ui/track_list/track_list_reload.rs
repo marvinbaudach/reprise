@@ -77,17 +77,33 @@ const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_mi
 pub(in crate::ui) enum ReloadViewport {
     PreserveAnchor,
     CenterPlayingTrack,
+    CenterPlayingElsePreSearch,
     /// SEARCH-9: a new result set is read from its top.
     Top,
     /// SEARCH-9: an emptied query returns to `Shared::pre_search.anchor`.
     RestorePreSearch,
 }
 
-fn filter_change_viewport(previous: &str, current: &str) -> ReloadViewport {
+pub(in crate::ui) fn viewport_after_clearing(
+    had_query: bool,
+    started_in_search: bool,
+) -> ReloadViewport {
+    match (had_query, started_in_search) {
+        (true, true) => ReloadViewport::CenterPlayingElsePreSearch,
+        (true, false) => ReloadViewport::RestorePreSearch,
+        (false, _) => ReloadViewport::CenterPlayingTrack,
+    }
+}
+
+fn filter_change_viewport(
+    previous: &str,
+    current: &str,
+    started_in_search: bool,
+) -> ReloadViewport {
     if previous == current {
         ReloadViewport::PreserveAnchor
     } else if current.is_empty() {
-        ReloadViewport::RestorePreSearch
+        viewport_after_clearing(!previous.is_empty(), started_in_search)
     } else {
         ReloadViewport::Top
     }
@@ -209,19 +225,37 @@ fn restore_reload_anchor(
     // Resolving positions costs a sorted full-table id query; skip it when
     // the capture side already established there is nothing to put back and
     // the caller did not request a playing-track reveal.
-    let reveal_playing_track = matches!(viewport, ReloadViewport::CenterPlayingTrack)
-        && shared.playing_track_id.get().is_some();
-    let restores_pre_search = matches!(viewport, ReloadViewport::RestorePreSearch)
-        && shared.pre_search.get().anchor.is_some();
+    let reveal_playing_track = matches!(
+        viewport,
+        ReloadViewport::CenterPlayingTrack | ReloadViewport::CenterPlayingElsePreSearch
+    ) && shared.playing_track_id.get().is_some();
+    let restores_pre_search = matches!(
+        viewport,
+        ReloadViewport::RestorePreSearch | ReloadViewport::CenterPlayingElsePreSearch
+    ) && shared.pre_search.get().anchor.is_some();
     if reload_restore::is_noop(captured) && !reveal_playing_track && !restores_pre_search {
+        if matches!(viewport, ReloadViewport::CenterPlayingElsePreSearch) {
+            // A restored query may have no pre-search anchor. Still consume
+            // the playback marker when its cleared list has nothing to reveal.
+            shared.pre_search.take();
+        }
         return;
     }
     let current_ids = resolved_ids.unwrap_or_else(|| shared.current_view_ids());
     select_captured_ids(shared, captured, &current_ids);
 
-    if matches!(viewport, ReloadViewport::CenterPlayingTrack) {
+    if matches!(
+        viewport,
+        ReloadViewport::CenterPlayingTrack | ReloadViewport::CenterPlayingElsePreSearch
+    ) {
         let playing_track_id = shared.playing_track_id.get();
         if playing_track_id.is_some_and(|track_id| current_ids.contains(&track_id)) {
+            if matches!(viewport, ReloadViewport::CenterPlayingElsePreSearch) {
+                shared.pre_search.take();
+                if let Some(hold) = hold {
+                    hold.release_now();
+                }
+            }
             super::centered_scroll_restore::schedule(shared, playing_track_id, current_ids);
             return;
         }
@@ -229,7 +263,10 @@ fn restore_reload_anchor(
 
     // SEARCH-9: the search is over — put the user back where it started. A
     // consumed anchor is taken, not copied: the next search captures its own.
-    if matches!(viewport, ReloadViewport::RestorePreSearch) {
+    if matches!(
+        viewport,
+        ReloadViewport::RestorePreSearch | ReloadViewport::CenterPlayingElsePreSearch
+    ) {
         let anchor = shared.pre_search.take().anchor;
         super::reload_anchor_scroll::schedule(shared, anchor, None, &current_ids, hold);
         return;
@@ -353,7 +390,8 @@ pub(in crate::ui) fn prepare_filter_change(shared: &Rc<Shared>, previous: &str, 
 /// solely to choose SEARCH-9's viewport behavior.
 pub(in crate::ui) fn reload_filter_change(shared: &Rc<Shared>, previous: &str) {
     let current = shared.filter.borrow().clone();
-    let viewport = filter_change_viewport(previous, current.as_str());
+    let started_in_search = shared.pre_search.get().playback_started;
+    let viewport = filter_change_viewport(previous, current.as_str(), started_in_search);
     reload_with_viewport(shared, viewport);
 }
 
@@ -412,7 +450,7 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
     reload_with_viewport(shared, ReloadViewport::PreserveAnchor);
 }
 
-fn reload_with_viewport(shared: &Rc<Shared>, viewport: ReloadViewport) {
+pub(in crate::ui) fn reload_with_viewport(shared: &Rc<Shared>, viewport: ReloadViewport) {
     let captured = capture_reload_anchor(shared);
     reload_with_anchor_and_viewport(shared, &captured, viewport, None, None);
 }
@@ -436,10 +474,12 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
         return;
     }
     // SEARCH-9: `Top` writes the adjustment itself and wants no guard fighting
-    // it; only the two variants that restore a captured position need one.
+    // it; only variants that may restore a captured position need one.
     let hold = matches!(
         viewport,
-        ReloadViewport::PreserveAnchor | ReloadViewport::RestorePreSearch
+        ReloadViewport::PreserveAnchor
+            | ReloadViewport::RestorePreSearch
+            | ReloadViewport::CenterPlayingElsePreSearch
     )
     .then(|| gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view))
     .flatten()

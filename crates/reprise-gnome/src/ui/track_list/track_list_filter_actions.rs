@@ -3,7 +3,7 @@
 use reprise_core::queries::BrowseFilter;
 
 use super::surface::TrackList;
-use super::track_list_reload::reload_centering_playing_track;
+use super::track_list_reload::{reload_with_viewport, viewport_after_clearing};
 
 impl TrackList {
     pub(in crate::ui) fn set_committed_search_query(&self, query: &str) {
@@ -15,13 +15,18 @@ impl TrackList {
     /// query so its commit half removes the chip; `set_filter_and_reload`
     /// recognizes that the filter is already empty and does no model work.
     pub fn clear_all_restrictions(&self) {
+        let had_query = !self.shared.filter.borrow().is_empty();
+        let started_in_search = self.shared.pre_search.get().playback_started;
         let empty = BrowseFilter::default();
         *self.shared.browse_filter.borrow_mut() = empty.clone();
         self.shared.browse_bar.restore_filter(&empty);
         // FIL-7: Clear all also drops the AI-exclude filter (one reload below).
         self.shared.browse_bar.clear_exclude_ai();
         *self.shared.filter.borrow_mut() = String::new();
-        reload_centering_playing_track(&self.shared);
+        reload_with_viewport(
+            &self.shared,
+            viewport_after_clearing(had_query, started_in_search),
+        );
     }
 
     pub fn set_on_search_cleared(&self, callback: impl Fn() + 'static) {
