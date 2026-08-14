@@ -56,6 +56,14 @@ pub const UPDATES_RELEASED: &str = N_!("Released");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
 pub const SEE_ALL_RELEASES: &str = N_!("See all");
 pub const HIDE_RELEASE: &str = N_!("Hide");
+const NEWS_FEED_LOADED_AT: &str = N_!("Up to date — loaded at {time}");
+const NEWS_FEED_CHECKED_AT: &str = N_!("Up to date — checked {time}");
+const NEWS_FEED_NOT_LOADED: &str = N_!("Not loaded yet");
+const NEWS_FEED_NETWORK_OFF: &str = N_!("Online sources are off");
+const NEWS_FEED_RELOAD: &str = N_!("Reload");
+pub const RELEASES_UPDATING: &str = N_!("Updating releases …");
+pub const RELEASES_UPDATE_FAILED: &str = N_!("Update failed — showing saved releases from {time}");
+pub const RELEASES_OFFLINE: &str = N_!("Offline — showing saved releases from {time}");
 
 pub fn tracks_selected(count: usize) -> String {
     let count_text = count.to_string();
@@ -170,6 +178,23 @@ pub fn updates_concert_meta(date: &str, city: &str, venue: &str) -> String {
 
 pub fn updates_opens_source(source: &str) -> String {
     formatted(N_!("Opens {source}"), &[("source", source)])
+}
+
+fn releases_update_failed(time: &str) -> String {
+    formatted(RELEASES_UPDATE_FAILED, &[("time", time)])
+}
+
+fn releases_offline(time: &str) -> String {
+    formatted(RELEASES_OFFLINE, &[("time", time)])
+}
+
+pub(in crate::ui) fn releases_feed_footer_copy() -> crate::ui::feed_footer::FeedFooterCopy {
+    crate::ui::feed_footer::FeedFooterCopy {
+        updating: RELEASES_UPDATING,
+        no_credentials: NEWS_FEED_NOT_LOADED,
+        failed: releases_update_failed,
+        offline: releases_offline,
+    }
 }
 
 /// „N new" count pill shared by both Updates feed headers. „new" does not

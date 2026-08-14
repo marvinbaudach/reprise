@@ -195,6 +195,10 @@ impl FeedFooter {
         self.apply_presentation(&presentation(state, Local::now()));
     }
 
+    pub(in crate::ui) fn apply_with_copy(&self, state: FeedFooterState, copy: FeedFooterCopy) {
+        self.apply_presentation(&presentation_with_copy(state, Local::now(), copy));
+    }
+
     #[cfg(test)]
     pub(in crate::ui) fn text(&self) -> String {
         self.label.text().to_string()
