@@ -49,21 +49,37 @@ class MainActivitySettingsNavigationTest {
     }
 
     @Test
-    fun overviewListsExactlyTheFourSectionsThatExist() {
+    fun overviewListsExactlyTheFiveSectionsThatExist() {
         openSettings()
 
         val rows = compose.onAllNodesWithTag("settings-overview-row")
-        rows.assertCountEquals(4)
-        repeat(4) { index -> rows[index].assertHeightIsEqualTo(72.dp) }
+        rows.assertCountEquals(5)
+        repeat(5) { index -> rows[index].assertHeightIsEqualTo(72.dp) }
         compose.onNodeWithText("Library & scan folder").assertIsDisplayed()
         compose.onNodeWithText("450 titles · 1 folder").assertIsDisplayed()
         compose.onNodeWithText("Audio").assertIsDisplayed()
         compose.onNodeWithText("Gapless, Equalizer").assertIsDisplayed()
         compose.onNodeWithText("Appearance").assertIsDisplayed()
         compose.onNodeWithText("Nocturne").assertIsDisplayed()
+        compose.onNodeWithText("Online sources").assertIsDisplayed()
+        compose.onNodeWithText("Off").assertIsDisplayed()
         compose.onNodeWithText("About Reprise").assertIsDisplayed()
         compose.onNodeWithText(BuildConfig.VERSION_NAME).assertIsDisplayed()
         compose.onNodeWithText("Sync & devices").assertDoesNotExist()
+    }
+
+    @Test
+    fun theOnlineSourcesPageOpensAndBackReturnsToTheOverview() {
+        openSettings()
+
+        compose.onNodeWithContentDescription("Open Online sources").performClick()
+        compose.onNodeWithTag("settings-page-online-sources").assertIsDisplayed()
+        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(0)
+
+        compose.onNodeWithContentDescription("Back to Settings").performClick()
+
+        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(5)
+        compose.onNodeWithText("Online sources").assertIsDisplayed()
     }
 
     @Test
@@ -76,7 +92,7 @@ class MainActivitySettingsNavigationTest {
         compose.activity.onBackPressedDispatcher.onBackPressed()
         compose.waitForIdle()
 
-        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(4)
+        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(5)
         assertTrue(surfaceState().settingsVisible)
 
         compose.activity.onBackPressedDispatcher.onBackPressed()
