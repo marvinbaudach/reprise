@@ -2,7 +2,7 @@
 slug: android-ci-gates
 worktree: /home/marvin/Projects/reprise-android-ci-gates
 branch: feature/android-ci-gates
-phase: in-progress
+phase: coded
 codex_session:
 created: 2026-08-14
 ---
@@ -239,17 +239,17 @@ No `paths` filter (D3).
 
 **Steps:**
 
-- [ ] **Step 1: Add the job.** Reuse the Cargo cache configuration already in
+- [x] **Step 1: Add the job.** Reuse the Cargo cache configuration already in
       `ci.yml:48-56` — the host cdylib build is the slow part.
-- [ ] **Step 2: Push the branch and read the run.** Not `gh pr checks` alone:
+- [x] **Step 2: Push the branch and read the run.** Not `gh pr checks` alone:
       **it exits 0 when a PR has no checks at all**, so "green" and "absent"
       look identical from the exit code. List the checks by name and confirm the
       new one is among them.
-- [ ] **Step 3: Confirm what the job actually ran** by reading the counts the
+- [x] **Step 3: Confirm what the job actually ran** by reading the counts the
       script printed in the log — the same four numbers, from CI this time.
       A `cancelled` conclusion is not a failure: concurrency cancels superseded
       runs, and the verdict belongs to the successor run.
-- [ ] **Step 4: Commit.** `ci: run the Android unit suite on every change`
+- [x] **Step 4: Commit.** `ci: run the Android unit suite on every change`
 
 ---
 
@@ -264,19 +264,19 @@ and a change confined to that crate or to `android/**` triggers the workflow.
 
 **Steps:**
 
-- [ ] **Step 1: Widen the `paths` filter** to include
+- [x] **Step 1: Widen the `paths` filter** to include
       `crates/reprise-android-ffi/**` and `android/**`, in both the
       `pull_request` and the `push` block. Extend the comment at the top of the
       file, which currently explains the filter in terms of the portable engine
       only.
-- [ ] **Step 2: Add the crate to the Android check.** The NDK environment is
+- [x] **Step 2: Add the crate to the Android check.** The NDK environment is
       already set up in that step; the change is the package list. Prefer a
       second `cargo check` invocation over widening the first, so a failure
       names which crate broke.
-- [ ] **Step 3: Prove it can go red.** Temporarily add a host-only dependency
+- [x] **Step 3: Prove it can go red.** Temporarily add a host-only dependency
       or a `std::os::unix`-flavoured call to the crate, push, confirm the job
       fails, revert. Quote the failure.
-- [ ] **Step 4: Commit.** `ci: type-check reprise-android-ffi for Android`
+- [x] **Step 4: Commit.** `ci: type-check reprise-android-ffi for Android`
 
 ---
 
