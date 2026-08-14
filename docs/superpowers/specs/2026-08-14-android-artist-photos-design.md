@@ -62,7 +62,12 @@ Vom Nutzer bestätigt, bindend:
 4. **Eine neue Einstellungsseite „Online sources"**, ein Schalter, Voreinstellung
    aus. Das ist die Stelle, an die Lyrics, Radio und Podcasts später ohne Umbau
    dazukommen, und der Ort für den Satz, dass Künstlernamen das Gerät verlassen.
-5. **Basis ist `origin/dev`**, nicht der offene Branch
+5. **Das Porträt bekommt nie eine große Fläche, also auch nicht viele Pixel.**
+   Zeile 168 px, Detail-Kopf 640 px (≈ 210 dp auf 3x). Kein Antippen-vergrößert:
+   die App kennt für **kein** Bild ein Zoom-Overlay — Album-Cover werden groß,
+   weil Now Playing eine eigene Ansicht ist, nicht weil man sie antippt. Ein
+   Vollbild-Porträt wäre ein neues Bedienmuster ohne erkennbaren Anlass.
+6. **Basis ist `origin/dev`**, nicht der offene Branch
    `feature/android-list-scroll-performance`. Der fasst dieselben drei Dateien
    an (`BrowseTabs.kt`, `TrackCover.kt`, `ArtworkCache.kt`); wer zweiter landet,
    rebast. Unsere Änderung an der Bildpipeline ist additiv — ein zweiter
@@ -116,6 +121,19 @@ Beide Bildmethoden geben den Pfad einer **verkleinerten** Datei zurück, gewonne
 `CoverSource::FolderImage(pfad)`. Kein 500-px-JPEG hinter einem 40-dp-Kreis —
 auf dem Handy wiegt das schwerer als auf dem Desktop.
 
+Zwei Stufen genügen, weil das Porträt nie eine große Fläche bekommt
+(siehe Entscheidung 5):
+
+* **Zeile** — `ThumbnailSize::MobileList` (168 px, `cover.rs:66-73`), dieselbe
+  Stufe wie die Track-Zeilen. Der Avatar misst 40 dp, auf einem 3x-Gerät also
+  120 px.
+* **Detail-Kopf** — eine neue Stufe `ThumbnailSize::MobilePortrait` mit
+  **640 px**, passend zu 210 dp auf einem 3x-Gerät.
+
+`MobileFull` (1092 px) wird für Porträts **nicht** benutzt. Diese Stufe existiert
+für das Now-Playing-Sheet (364 dp, `NowPlayingSheet.kt:253`) — eine Fläche, die
+ein Künstlerfoto in dieser App nirgends bekommt.
+
 ### 3 · Oberfläche (Android)
 
 **Manifest.** `<uses-permission android:name="android.permission.INTERNET" />`.
@@ -143,8 +161,9 @@ Aus der Liste geht **keine** Anfrage raus. Das ist die Regel, die den Entwurf
 trägt, und sie gehört in einen Test, nicht in einen Kommentar.
 
 **Detailseite.** Ein neues erstes `item()` in der `LazyColumn` von
-`ArtistDetailSections` (`BrowseTabs.kt:339`), vor der Sektion „Albums": großes
-Bild, darunter Name und Kennzahlen, gleiche Kette. Beim Öffnen wird genau **ein**
+`ArtistDetailSections` (`BrowseTabs.kt:339`), vor der Sektion „Albums": Bild in
+**210 dp**, darunter Name und Kennzahlen, gleiche Kette. Kein Vollbild, kein
+Antippen-vergrößert. Beim Öffnen wird genau **ein**
 `artist_portrait_fetch` für den geöffneten Interpreten auf einem Worker
 angestoßen — ob daraus eine Netzanfrage wird, entscheidet der Kern: liegt ein
 frisches Porträt oder ein gültiger Negativmarker vor, kehrt der Aufruf ohne
@@ -181,6 +200,8 @@ UX-Regel. Die Absicherung sind die Tests unten.
   entsteht keine Datei im Porträtverzeichnis.
 * `artist_portrait_cached` erzeugt auch bei eingeschaltetem Gate keinen Aufruf.
 * Der zurückgegebene Pfad ist die verkleinerte Datei, nicht das Original.
+* Die Zeile bekommt 168 px, der Detail-Kopf 640 px; `MobileFull` wird für
+  Porträts nie angefordert.
 
 **Oberfläche (Android, Robolectric — JDK 21, `TMPDIR=/tmp`)**
 
@@ -205,6 +226,7 @@ sichtbares Stocken. Zu belegen mit Aufnahmen, nicht mit einem Bericht.
 
 * Kein Porträt im Now-Playing der Handy-App.
 * Keine Rasteransicht für Interpreten; die Liste bleibt eine Liste.
+* Kein Zoom-Overlay auf Bilder — weder für Porträts noch für Cover.
 * Kein Stapellauf, der Porträts für alle Interpreten auf einmal holt.
 * Keine Änderung an Deezer-Abfrage, Fristen, Auswahlregel oder Platzhalterliste.
 * Keine Cover-Übertragung vom Desktop — das ist der eigene Strang
