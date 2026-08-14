@@ -255,7 +255,8 @@ class ArtistPortraitSurfaceTest {
             cachedPortrait = { _, _ -> null },
             fetchedPortrait = { _, _ ->
                 bridgeCalls.incrementAndGet()
-                // This double models the Rust bridge's closed-gate contract.
+                // This is not end-to-end switch proof: this double owns both
+                // gateOpen and networkCalls. Core Task 5 proves the real gate.
                 if (gateOpen) networkCalls.incrementAndGet()
                 null
             },

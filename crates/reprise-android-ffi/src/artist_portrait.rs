@@ -130,18 +130,29 @@ mod tests {
         .unwrap();
         open_gate(&library);
 
-        let fetched = library
+        let artist_detail_fetched = library
             .artist_portrait_fetch("Band", crate::AndroidArtworkSize::ArtistDetail)
             .unwrap()
             .unwrap();
-        let cached = library
+        let artist_detail_cached = library
             .artist_portrait_cached("Band", crate::AndroidArtworkSize::ArtistDetail)
             .unwrap();
+        let now_playing_cached = library
+            .artist_portrait_cached("Band", crate::AndroidArtworkSize::NowPlaying)
+            .unwrap();
 
-        assert!(fetched.ends_with("-640.png"), "got {fetched}");
-        assert!(cached.ends_with("-640.png"), "got {cached}");
-        assert!(!fetched.ends_with("-1092.png"), "got {fetched}");
-        assert!(!cached.ends_with("-1092.png"), "got {cached}");
+        assert!(
+            artist_detail_fetched.ends_with("-640.png"),
+            "got {artist_detail_fetched}"
+        );
+        assert!(
+            artist_detail_cached.ends_with("-640.png"),
+            "got {artist_detail_cached}"
+        );
+        assert!(
+            now_playing_cached.ends_with("-1092.png"),
+            "got {now_playing_cached}"
+        );
     }
 
     #[test]
