@@ -7,15 +7,12 @@ use super::{ConcertFilter, DateHorizon};
 pub const BANDSINTOWN_APP_ID_KEY: &str = "concerts.bandsintown_app_id";
 pub const TICKETMASTER_API_KEY: &str = "concerts.ticketmaster_apikey";
 pub const WINDOW_DAYS_KEY: &str = "concerts.window_days";
-pub const DEFAULT_RADIUS_KEY: &str = "concerts.default_radius_km";
 pub const SIMILAR_ENABLED_KEY: &str = "concerts.similar_enabled";
 pub const SIMILAR_COUNT_KEY: &str = "concerts.similar_count";
 pub const FILTER_RADIUS_KEY: &str = "concerts.filter.radius_km";
 pub const FILTER_COUNTRY_KEY: &str = "concerts.filter.country";
 pub const FILTER_HORIZON_KEY: &str = "concerts.filter.horizon";
 pub const FILTER_INCLUDE_SIMILAR_KEY: &str = "concerts.filter.include_similar";
-pub const DEFAULT_RADIUS_KM: f64 = 1_000.0;
-pub const RADIUS_PRESETS_KM: [u32; 4] = [100, 250, 500, 1_000];
 
 const BANDSINTOWN_ENV: &str = "REPRISE_BANDSINTOWN_APP_ID";
 const TICKETMASTER_ENV: &str = "REPRISE_TICKETMASTER_APIKEY";
@@ -106,7 +103,7 @@ pub fn persisted_filter(db: &crate::db::Db) -> Result<ConcertFilter, rusqlite::E
     let stored_radius = crate::library::settings::get_setting_in(conn, FILTER_RADIUS_KEY)?;
     let radius_km = match stored_radius {
         Some(value) => value.trim().parse::<f64>().ok(),
-        None => Some(numeric_setting(conn, DEFAULT_RADIUS_KEY)?.unwrap_or(DEFAULT_RADIUS_KM)),
+        None => Some(crate::location::default_radius_km(db)?),
     }
     .filter(|radius| radius.is_finite() && *radius > 0.0);
     let country = non_empty_setting(conn, FILTER_COUNTRY_KEY)?;
@@ -152,12 +149,6 @@ fn non_empty_setting(conn: &Connection, key: &str) -> Result<Option<String>, rus
 fn non_empty(value: &str) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_owned())
-}
-
-fn numeric_setting(conn: &Connection, key: &str) -> Result<Option<f64>, rusqlite::Error> {
-    Ok(non_empty_setting(conn, key)?
-        .and_then(|value| value.parse().ok())
-        .filter(|value: &f64| value.is_finite()))
 }
 
 fn integer_setting(conn: &Connection, key: &str) -> Result<Option<i64>, rusqlite::Error> {

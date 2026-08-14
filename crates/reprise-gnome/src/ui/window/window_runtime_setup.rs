@@ -23,6 +23,7 @@ pub(super) struct WindowRuntimes {
     pub lastfm: Rc<ScrobbleRuntime>,
     pub artist_news: Rc<ArtistNewsRuntime>,
     pub concerts: Rc<ConcertsRuntime>,
+    pub location_broadcast: Rc<super::super::location_broadcast::LocationBroadcast>,
     pub podcasts: Rc<PodcastsRuntime>,
     pub artist_portrait: Rc<ArtistPortraitRuntime>,
     pub device_sync: Rc<DeviceSyncRuntime>,
@@ -52,6 +53,8 @@ pub(super) fn setup(
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = ArtistNewsRuntime::setup(conn);
     let concerts = ConcertsRuntime::setup(conn);
+    let location_broadcast =
+        Rc::new(super::super::location_broadcast::LocationBroadcast::default());
     let podcasts = PodcastsRuntime::setup(conn);
     let artist_portrait = ArtistPortraitRuntime::setup(conn);
     super::super::startup_report::mark("runtime setups");
@@ -96,6 +99,7 @@ pub(super) fn setup(
         lastfm,
         artist_news,
         concerts,
+        location_broadcast,
         podcasts,
         artist_portrait,
         device_sync,

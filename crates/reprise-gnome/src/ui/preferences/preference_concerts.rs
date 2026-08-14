@@ -10,82 +10,75 @@ use libadwaita::prelude::*;
 use reprise_core::db::Db;
 
 use crate::ui::concerts::ConcertsRuntime;
+use crate::ui::location_broadcast::LocationBroadcast;
 use crate::ui::{one_shot_task, strings};
 
-#[derive(Clone, Debug, PartialEq)]
-enum LocationDecision {
-    Store {
-        latitude: f64,
-        longitude: f64,
-        name: String,
-        /// `RAD-5`/`O-4`: only ever set from city search's Nominatim
-        /// `addressdetails` — never from a reverse-geocoding call, so the
-        /// XDG-portal "Use current location" path always stores `None`.
-        country_code: Option<String>,
-    },
-    Error(String),
-}
+pub(in crate::ui) const LOCATION_REFERENCE_CLASS: &str = "reprise-location-reference";
 
-fn geocode_decision(
-    result: Result<Option<reprise_core::concerts::GeocodedLocation>, String>,
-) -> LocationDecision {
-    match result {
-        Ok(Some(location)) => LocationDecision::Store {
-            latitude: location.lat,
-            longitude: location.lon,
-            name: location.display_name,
-            country_code: location.country_code,
-        },
-        Ok(None) => LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
-        Err(_) => LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
+type OnLocation = Rc<dyn Fn()>;
+
+fn location_reference_copy(
+    location: Option<&reprise_core::location::AppLocation>,
+    radius_km: u32,
+) -> (String, String) {
+    match location {
+        Some(location) => (
+            strings::location_reference(&location.name, radius_km),
+            strings::text(strings::LOCATION_CHANGE_IN_LOCATION),
+        ),
+        None => (
+            strings::text(strings::LOCATION_REFERENCE_NOT_SET),
+            strings::text(strings::LOCATION_SET_LOCATION),
+        ),
     }
 }
 
-fn portal_decision(
-    result: &Result<reprise_platform_linux::location::PortalLocation, String>,
-) -> LocationDecision {
-    match result {
-        Ok(location) => LocationDecision::Store {
-            latitude: location.latitude,
-            longitude: location.longitude,
-            name: strings::text(strings::CONCERTS_CURRENT_LOCATION),
-            // The portal returns only coordinates — no address text at
-            // all — so there is nothing honest to derive a country from
-            // without a new reverse-geocoding call, which `O-4` forbids.
-            country_code: None,
-        },
-        Err(_) => LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
-    }
+fn refresh_location_reference(conn: &Db, row: &adw::ActionRow, action: &gtk4::Label) {
+    let location = reprise_core::location::app_location(conn).ok().flatten();
+    let radius = reprise_core::location::default_radius_km(conn)
+        .unwrap_or(reprise_core::location::DEFAULT_RADIUS_KM)
+        .round() as u32;
+    let (title, action_text) = location_reference_copy(location.as_ref(), radius);
+    row.set_title(&title);
+    action.set_label(&action_text);
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CurrentLocationButtonState {
-    sensitive: bool,
-    show_spinner: bool,
-}
-
-fn current_location_button_state(pending: bool) -> CurrentLocationButtonState {
-    CurrentLocationButtonState {
-        sensitive: !pending,
-        show_spinner: pending,
+fn location_reference_row(
+    conn: &Rc<Db>,
+    broadcast: &Rc<LocationBroadcast>,
+    on_location: &OnLocation,
+) -> adw::ActionRow {
+    let row = adw::ActionRow::builder().activatable(true).build();
+    row.set_sensitive(true);
+    row.add_css_class(LOCATION_REFERENCE_CLASS);
+    row.add_css_class("dim-label");
+    let pin = gtk4::Image::from_icon_name("find-location-symbolic");
+    pin.set_accessible_role(gtk4::AccessibleRole::Presentation);
+    row.add_prefix(&pin);
+    let action = gtk4::Label::new(None);
+    action.add_css_class("caption");
+    row.add_suffix(&action);
+    refresh_location_reference(conn, &row, &action);
+    {
+        let on_location = on_location.clone();
+        row.connect_activated(move |_| on_location());
     }
-}
-
-fn set_current_location_pending(button: &gtk4::Button, pending: bool) {
-    let state = current_location_button_state(pending);
-    button.set_sensitive(state.sensitive);
-    if state.show_spinner {
-        let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        let spinner = gtk4::Spinner::new();
-        spinner.start();
-        content.append(&spinner);
-        content.append(&gtk4::Label::new(Some(&strings::text(
-            strings::CONCERTS_USE_CURRENT_LOCATION,
-        ))));
-        button.set_child(Some(&content));
-    } else {
-        button.set_label(&strings::text(strings::CONCERTS_USE_CURRENT_LOCATION));
+    {
+        let alive = row.downgrade();
+        let target = alive.clone();
+        let action = action.downgrade();
+        let conn = conn.clone();
+        broadcast.subscribe(
+            move || alive.upgrade().is_some(),
+            move || {
+                let (Some(row), Some(action)) = (target.upgrade(), action.upgrade()) else {
+                    return;
+                };
+                refresh_location_reference(&conn, &row, &action);
+            },
+        );
     }
+    row
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +151,9 @@ fn credential_preference_specs() -> [CredentialPreferenceSpec; 1] {
 
 struct ConcertPreferenceRowsInner {
     rows: Vec<gtk4::Widget>,
+    module_rows: Vec<gtk4::Widget>,
+    #[cfg(test)]
+    location_reference: adw::ActionRow,
     #[cfg(test)]
     credentials: Vec<CredentialPreferenceRow>,
     similar_enabled: adw::SwitchRow,
@@ -179,7 +175,7 @@ impl ConcertPreferenceRows {
 
     pub(in crate::ui) fn set_sensitive(&self, enabled: bool) {
         self.inner.module_enabled.set(enabled);
-        for row in &self.inner.rows {
+        for row in &self.inner.module_rows {
             row.set_sensitive(enabled);
         }
         self.inner
@@ -191,14 +187,15 @@ impl ConcertPreferenceRows {
 pub(in crate::ui) fn build(
     conn: &Rc<Db>,
     runtime: &Rc<ConcertsRuntime>,
+    broadcast: &Rc<LocationBroadcast>,
+    on_location: &OnLocation,
     enabled: bool,
 ) -> ConcertPreferenceRows {
+    let location_reference = location_reference_row(conn, broadcast, on_location);
     let credentials = credential_preference_specs()
         .into_iter()
         .map(|spec| password_row(conn, runtime, spec.provider, spec.key, spec.title))
         .collect::<Vec<_>>();
-    let (city, location_status) = location_rows(conn, runtime);
-    let radius = radius_row(conn, runtime);
     let window_days = window_days_row(conn, runtime);
     let similar = reprise_core::concerts::config::similar_config(conn).unwrap_or(
         reprise_core::concerts::config::SimilarConfig {
@@ -239,21 +236,23 @@ pub(in crate::ui) fn build(
             }
         });
     }
-    let mut rows = credentials
+    let mut module_rows = credentials
         .iter()
         .map(|credential| credential.row.clone().upcast())
         .collect::<Vec<_>>();
-    rows.extend([
-        city.upcast(),
-        location_status.upcast(),
-        radius.upcast(),
+    module_rows.extend([
         window_days.upcast(),
         similar_enabled.clone().upcast(),
         similar_count.clone().upcast(),
     ]);
+    let mut rows = vec![location_reference.clone().upcast()];
+    rows.extend(module_rows.iter().cloned());
     let preferences = ConcertPreferenceRows {
         inner: Rc::new(ConcertPreferenceRowsInner {
             rows,
+            module_rows,
+            #[cfg(test)]
+            location_reference,
             #[cfg(test)]
             credentials,
             similar_enabled: similar_enabled.clone(),
@@ -385,235 +384,6 @@ fn start_credential_verification(
             apply_credential_feedback(&status, verification);
         }
     });
-}
-
-fn location_rows(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> (adw::EntryRow, adw::ActionRow) {
-    let stored = reprise_core::concerts::config::location(conn)
-        .ok()
-        .flatten();
-    let city = adw::EntryRow::builder()
-        .title(strings::text(strings::CONCERTS_CITY_ENTRY))
-        .text(
-            stored
-                .as_ref()
-                .map_or("", |location| location.name.as_str()),
-        )
-        .show_apply_button(true)
-        .build();
-    let current = gtk4::Button::builder()
-        .label(strings::text(strings::CONCERTS_USE_CURRENT_LOCATION))
-        .valign(gtk4::Align::Center)
-        .build();
-    let clear = gtk4::Button::builder()
-        .label(strings::text(strings::CONCERTS_CLEAR_LOCATION))
-        .valign(gtk4::Align::Center)
-        .build();
-    city.add_suffix(&current);
-    city.add_suffix(&clear);
-    let status = adw::ActionRow::builder().visible(false).build();
-    let current_pending = Rc::new(Cell::new(false));
-
-    {
-        let conn = conn.clone();
-        let runtime = runtime.clone();
-        let status = status.clone();
-        city.connect_apply(move |row| {
-            let query = row.text().trim().to_owned();
-            if query.is_empty() {
-                apply_location(
-                    &conn,
-                    &runtime,
-                    &status,
-                    LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
-                );
-                return;
-            }
-            let receiver = one_shot_task::spawn("reprise-geocode", move || {
-                geocode_decision(
-                    reprise_core::concerts::geocode(&query).map_err(|error| error.to_string()),
-                )
-            });
-            receive_location(
-                receiver,
-                conn.clone(),
-                runtime.clone(),
-                status.clone(),
-                None,
-            );
-        });
-    }
-    {
-        let conn = conn.clone();
-        let runtime = runtime.clone();
-        let status = status.clone();
-        let pending = current_pending.clone();
-        current.connect_clicked(move |button| {
-            if pending.replace(true) {
-                return;
-            }
-            set_current_location_pending(button, true);
-            let receiver = one_shot_task::spawn("reprise-location", || {
-                portal_decision(&reprise_platform_linux::location::current_location(
-                    reprise_platform_linux::location::DEFAULT_TIMEOUT,
-                ))
-            });
-            let button = button.clone();
-            let pending = pending.clone();
-            receive_location(
-                receiver,
-                conn.clone(),
-                runtime.clone(),
-                status.clone(),
-                Some(Box::new(move || {
-                    pending.set(false);
-                    set_current_location_pending(&button, false);
-                })),
-            );
-        });
-    }
-    {
-        let conn = conn.clone();
-        let runtime = runtime.clone();
-        let status = status.clone();
-        let city = city.clone();
-        clear.connect_clicked(move |_| {
-            clear_location(&conn, &runtime);
-            city.set_text("");
-            status.set_visible(false);
-        });
-    }
-    (city, status)
-}
-
-fn receive_location(
-    receiver: std::io::Result<async_channel::Receiver<LocationDecision>>,
-    conn: Rc<Db>,
-    runtime: Rc<ConcertsRuntime>,
-    status: adw::ActionRow,
-    on_complete: Option<Box<dyn FnOnce()>>,
-) {
-    let Ok(receiver) = receiver else {
-        apply_location(
-            &conn,
-            &runtime,
-            &status,
-            LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND)),
-        );
-        if let Some(on_complete) = on_complete {
-            on_complete();
-        }
-        return;
-    };
-    glib::spawn_future_local(async move {
-        let decision = receiver.recv().await.unwrap_or_else(|_| {
-            LocationDecision::Error(strings::text(strings::CONCERTS_LOCATION_NOT_FOUND))
-        });
-        apply_location(&conn, &runtime, &status, decision);
-        if let Some(on_complete) = on_complete {
-            on_complete();
-        }
-    });
-}
-
-fn apply_location(
-    conn: &Rc<Db>,
-    runtime: &ConcertsRuntime,
-    status: &adw::ActionRow,
-    decision: LocationDecision,
-) {
-    match decision {
-        LocationDecision::Store {
-            latitude,
-            longitude,
-            name,
-            country_code,
-        } => {
-            // `O-4`: this is the single write path for the app-level,
-            // consented location — Radio's "Near you" chip (`RAD-5`) reads
-            // straight through `reprise_core::location`, not a copy.
-            let saved = reprise_core::location::store(
-                conn,
-                latitude,
-                longitude,
-                &name,
-                country_code.as_deref(),
-            );
-            match saved {
-                Ok(()) => runtime.notify_settings_changed(),
-                Err(error) => tracing::warn!(%error, "could not save Concerts location"),
-            }
-            status.set_subtitle(&name);
-            status.set_visible(true);
-        }
-        LocationDecision::Error(error) => {
-            status.set_subtitle(&error);
-            status.set_visible(true);
-        }
-    }
-}
-
-fn clear_location(conn: &Rc<Db>, runtime: &ConcertsRuntime) {
-    match reprise_core::location::clear(conn) {
-        Ok(()) => runtime.notify_settings_changed(),
-        Err(error) => tracing::warn!(%error, "could not clear Concerts location"),
-    }
-}
-
-fn radius_row(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> adw::ComboRow {
-    let radii = std::iter::once(None)
-        .chain(
-            reprise_core::concerts::config::RADIUS_PRESETS_KM
-                .into_iter()
-                .map(Some),
-        )
-        .collect::<Vec<_>>();
-    let labels = radii
-        .iter()
-        .map(|radius| {
-            radius.map_or_else(
-                || strings::text(strings::CONCERTS_OFF),
-                strings::concerts_radius_km,
-            )
-        })
-        .collect::<Vec<_>>();
-    let label_refs = labels.iter().map(String::as_str).collect::<Vec<_>>();
-    let model = gtk4::StringList::new(&label_refs);
-    let stored = match reprise_core::library::settings::get_setting(
-        conn,
-        reprise_core::concerts::config::DEFAULT_RADIUS_KEY,
-    )
-    .ok()
-    .flatten()
-    {
-        Some(value) => value.parse::<u32>().ok(),
-        None => Some(reprise_core::concerts::config::DEFAULT_RADIUS_KM as u32),
-    };
-    let selected = radii
-        .iter()
-        .position(|radius| *radius == stored)
-        .unwrap_or_default() as u32;
-    let row = adw::ComboRow::builder()
-        .title(strings::text(strings::CONCERTS_DEFAULT_RADIUS))
-        .model(&model)
-        .selected(selected)
-        .build();
-    let conn = conn.clone();
-    let runtime = runtime.clone();
-    row.connect_selected_notify(move |row| {
-        let value = radii
-            .get(row.selected() as usize)
-            .copied()
-            .flatten()
-            .map_or_else(String::new, |radius| radius.to_string());
-        if save_setting(
-            &conn,
-            reprise_core::concerts::config::DEFAULT_RADIUS_KEY,
-            &value,
-        ) {
-            runtime.notify_settings_changed();
-        }
-    });
-    row
 }
 
 fn window_days_row(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> adw::SpinRow {

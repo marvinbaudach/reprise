@@ -62,7 +62,11 @@ fn style_11_the_concerts_view_renders_the_pinned_pattern() {
         )
         .unwrap();
     let runtime = crate::ui::concerts::ConcertsRuntime::setup(&concerts_db);
-    let concerts = crate::ui::concerts::ConcertsView::new(concerts_db, &runtime);
+    let concerts = crate::ui::concerts::ConcertsView::new(
+        concerts_db,
+        &runtime,
+        &Rc::new(crate::ui::location_broadcast::LocationBroadcast::default()),
+    );
     concerts.refresh();
 
     let tables = gtk4::Box::new(gtk4::Orientation::Vertical, 12);

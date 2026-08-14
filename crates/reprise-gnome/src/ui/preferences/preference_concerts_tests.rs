@@ -1,64 +1,23 @@
 use super::*;
 
 #[test]
-fn location_apply_decisions_store_success_and_keep_errors_visible() {
+fn concerts_location_reference_copy_distinguishes_missing_and_stored_values() {
     assert_eq!(
-        geocode_decision(Ok(Some(reprise_core::concerts::GeocodedLocation {
-            lat: 48.137,
-            lon: 11.575,
-            display_name: "Munich, Bavaria".into(),
-            country_code: Some("DE".into()),
-        }))),
-        LocationDecision::Store {
-            latitude: 48.137,
-            longitude: 11.575,
-            name: "Munich, Bavaria".into(),
-            country_code: Some("DE".into()),
-        }
+        location_reference_copy(None, 1_000),
+        ("Location · not set".to_owned(), "Set location →".to_owned())
     );
-    assert!(matches!(
-        geocode_decision(Ok(None)),
-        LocationDecision::Error(_)
-    ));
+    let location = reprise_core::location::AppLocation {
+        latitude: 52.52,
+        longitude: 13.405,
+        name: "Berlin, DE".to_owned(),
+        country_code: Some("DE".to_owned()),
+    };
     assert_eq!(
-        portal_decision(&Ok(reprise_platform_linux::location::PortalLocation {
-            latitude: 47.376,
-            longitude: 8.541,
-            accuracy_m: Some(1_000.0),
-        })),
-        LocationDecision::Store {
-            latitude: 47.376,
-            longitude: 8.541,
-            name: crate::ui::strings::text(crate::ui::strings::CONCERTS_CURRENT_LOCATION),
-            // `RAD-5`/`O-4`: the portal has no address text, so this is
-            // honestly `None` — never a guessed country.
-            country_code: None,
-        }
-    );
-    assert!(matches!(
-        portal_decision(&Err("denied".into())),
-        LocationDecision::Error(error)
-            if error == crate::ui::strings::text(
-                crate::ui::strings::CONCERTS_LOCATION_NOT_FOUND
-            )
-    ));
-}
-
-#[test]
-fn current_location_button_is_disabled_with_pending_feedback() {
-    assert_eq!(
-        current_location_button_state(false),
-        CurrentLocationButtonState {
-            sensitive: true,
-            show_spinner: false,
-        }
-    );
-    assert_eq!(
-        current_location_button_state(true),
-        CurrentLocationButtonState {
-            sensitive: false,
-            show_spinner: true,
-        }
+        location_reference_copy(Some(&location), 1_000),
+        (
+            "Location · Berlin, DE, within 1000 km".to_owned(),
+            "Change in Location →".to_owned(),
+        )
     );
 }
 
@@ -146,7 +105,9 @@ fn concerts_preferences_expose_only_bandsintown_and_link_similar_sensitivity() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
-    let preferences = build(&conn, &runtime, true);
+    let broadcast = Rc::new(LocationBroadcast::default());
+    let on_location: OnLocation = Rc::new(|| {});
+    let preferences = build(&conn, &runtime, &broadcast, &on_location, true);
 
     assert!(preferences.inner.rows[0].is::<adw::PasswordEntryRow>());
     assert!(!preferences.inner.rows[1].is::<adw::PasswordEntryRow>());
@@ -160,11 +121,50 @@ fn concerts_preferences_expose_only_bandsintown_and_link_similar_sensitivity() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn set_15_concerts_location_reference_is_first_and_refreshes_on_app_broadcast() {
+    gtk4::init().unwrap();
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ConcertsRuntime::setup(&conn);
+    let broadcast = Rc::new(LocationBroadcast::default());
+    let on_location: OnLocation = Rc::new(|| {});
+    let preferences = build(&conn, &runtime, &broadcast, &on_location, true);
+
+    assert_eq!(
+        preferences.inner.location_reference.title(),
+        "Location · not set"
+    );
+    assert_eq!(
+        preferences.inner.rows[0],
+        preferences
+            .inner
+            .location_reference
+            .clone()
+            .upcast::<gtk4::Widget>()
+    );
+    preferences.set_sensitive(false);
+    assert!(preferences
+        .inner
+        .location_reference
+        .property::<bool>("sensitive"));
+
+    reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, DE", Some("DE")).unwrap();
+    broadcast.notify();
+    assert_eq!(
+        preferences.inner.location_reference.title(),
+        "Location · Berlin, DE, within 1000 km"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn set_4_concert_credentials_expose_apply_and_inline_status() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
-    let preferences = build(&conn, &runtime, true);
+    let broadcast = Rc::new(LocationBroadcast::default());
+    let on_location: OnLocation = Rc::new(|| {});
+    let preferences = build(&conn, &runtime, &broadcast, &on_location, true);
     let credential = &preferences.inner.credentials[0];
 
     assert!(credential.row.shows_apply_button());

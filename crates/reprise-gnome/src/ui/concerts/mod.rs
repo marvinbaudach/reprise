@@ -9,6 +9,8 @@ mod concerts_columns;
 mod concerts_empty_state;
 mod concerts_failure_ui;
 mod concerts_filter_bar;
+mod concerts_location_banner;
+mod concerts_location_columns;
 mod concerts_model;
 pub(in crate::ui) mod concerts_presentation;
 mod concerts_search;
@@ -20,6 +22,10 @@ pub(in crate::ui) use concerts_view::ConcertsView;
 pub(in crate::ui) use concerts_worker::{ConcertsRequest, ConcertsRuntime};
 
 #[allow(dead_code)]
-pub(in crate::ui) fn install(conn: Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> ConcertsView {
-    ConcertsView::new(conn, runtime)
+pub(in crate::ui) fn install(
+    conn: Rc<Db>,
+    runtime: &Rc<ConcertsRuntime>,
+    location_broadcast: &Rc<crate::ui::location_broadcast::LocationBroadcast>,
+) -> ConcertsView {
+    ConcertsView::new(conn, runtime, location_broadcast)
 }

@@ -2,6 +2,35 @@ use super::super::add_dialog_rows::{candidate_row, title_markup};
 use super::*;
 use crate::ui::search_highlight::HighlightPalette;
 
+impl RadioAddDialog {
+    pub(in crate::ui::radio) fn open_near_you_location_preferences_for_test(
+        self: &Rc<Self>,
+        parent: &gtk4::Widget,
+    ) {
+        self.present(parent);
+        self.widgets.chip_near_you.emit_clicked();
+        self.widgets
+            .location_results
+            .open_preferences_button(&NearYouAction::MissingLocation)
+            .emit_clicked();
+    }
+
+    pub(in crate::ui::radio) fn is_visible_for_test(&self) -> bool {
+        self.widgets.dialog.is_visible()
+    }
+
+    pub(in crate::ui::radio) fn needs_location_for_test(&self) -> bool {
+        matches!(
+            self.state.borrow().phase,
+            AddDialogPhase::NearYou(NearYouAction::MissingLocation)
+        )
+    }
+
+    pub(in crate::ui::radio) fn is_searching_for_test(&self) -> bool {
+        matches!(self.state.borrow().phase, AddDialogPhase::Searching)
+    }
+}
+
 #[test]
 fn src_3a_radio_add_dialog_submits_search_or_url_through_one_field() {
     assert_eq!(
@@ -458,6 +487,7 @@ fn seed_played_genre(conn: &Db, genre: &str) {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn rad_5_the_library_chip_appears_from_the_library_and_searches_what_it_says() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let dialog = RadioAddDialog::new(
@@ -535,10 +565,12 @@ fn src_8_a_long_station_name_never_widens_the_dialog() {
 /// `RAD-5`: the required "absent without a location" half, exercised
 /// through the real button wiring rather than just the pure decision
 /// function — clicking "Near you" with no app-level location stored must
-/// call the location-settings callback and dispatch no search at all.
+/// show its own empty state and dispatch no search at all. Preferences only
+/// opens from the empty state's explicit action.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn rad_5_near_you_click_without_a_location_opens_settings_and_dispatches_no_search() {
+fn rad_5_near_you_click_without_a_location_shows_an_empty_state_and_dispatches_no_search() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
@@ -548,14 +580,81 @@ fn rad_5_near_you_click_without_a_location_opens_settings_and_dispatches_no_sear
 
     dialog.widgets.chip_near_you.emit_clicked();
 
+    assert!(!opened.get(), "the chip itself must not force navigation");
     assert!(
-        opened.get(),
-        "no location stored must hand off to the location setting"
-    );
-    assert!(
-        matches!(dialog.state.borrow().phase, AddDialogPhase::Idle),
+        matches!(
+            dialog.state.borrow().phase,
+            AddDialogPhase::NearYou(NearYouAction::MissingLocation)
+        ),
         "a chip that cannot filter by location must never fire an unfiltered search instead"
     );
+    assert_eq!(
+        dialog
+            .widgets
+            .location_results
+            .visible_page_name()
+            .as_deref(),
+        Some("missing-location")
+    );
+    dialog
+        .widgets
+        .location_results
+        .open_preferences_button(&NearYouAction::MissingLocation)
+        .emit_clicked();
+    assert!(opened.get(), "the empty-state action must open Location");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rad_5_near_you_with_countryless_location_uses_distinct_honest_copy() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::location::store(&conn, 52.52, 13.405, "Current location", None).unwrap();
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
+
+    dialog.widgets.chip_near_you.emit_clicked();
+
+    assert!(matches!(
+        dialog.state.borrow().phase,
+        AddDialogPhase::NearYou(NearYouAction::MissingCountry)
+    ));
+    assert_eq!(
+        dialog
+            .widgets
+            .location_results
+            .visible_page_name()
+            .as_deref(),
+        Some("missing-country")
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rad_5_location_broadcast_resumes_the_open_near_you_intent() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let dialog = RadioAddDialog::new(
+        conn.clone(),
+        Rc::new(Cell::new(Connectivity::Online)),
+        || {},
+    );
+    let broadcast = Rc::new(crate::ui::location_broadcast::LocationBroadcast::default());
+    dialog.subscribe_location(&broadcast);
+    dialog.widgets.chip_near_you.emit_clicked();
+    assert!(matches!(
+        dialog.state.borrow().phase,
+        AddDialogPhase::NearYou(NearYouAction::MissingLocation)
+    ));
+
+    reprise_core::location::store(&conn, 52.52, 13.405, "Berlin", Some("DE")).unwrap();
+    broadcast.notify();
+
+    assert!(matches!(
+        dialog.state.borrow().phase,
+        AddDialogPhase::Searching
+    ));
 }
 
 /// `RAD-5`: the required "present with a location" half — with a
@@ -565,9 +664,12 @@ fn rad_5_near_you_click_without_a_location_opens_settings_and_dispatches_no_sear
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn rad_5_near_you_click_with_a_location_dispatches_a_search_and_never_opens_settings() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, false)
+        .unwrap();
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     let opened = Rc::new(std::cell::Cell::new(false));
     let flag = opened.clone();

@@ -49,17 +49,12 @@ pub const CONCERTS_CREDENTIAL_CHECKING: &str = N_!("Checking key…");
 pub const CONCERTS_CREDENTIAL_VALID: &str = N_!("Key works");
 pub const CONCERTS_CREDENTIAL_REJECTED: &str = N_!("Key was rejected");
 pub const CONCERTS_CREDENTIAL_UNVERIFIED: &str = N_!("Could not verify");
-pub const CONCERTS_LOCATION: &str = N_!("Location");
-pub const CONCERTS_CITY_ENTRY: &str = N_!("City");
-pub const CONCERTS_USE_CURRENT_LOCATION: &str = N_!("Use current location");
-pub const CONCERTS_CLEAR_LOCATION: &str = N_!("Clear location");
-pub const CONCERTS_CURRENT_LOCATION: &str = N_!("Current location");
-pub const CONCERTS_LOCATION_NOT_FOUND: &str = N_!("Could not find that place");
-pub const CONCERTS_DEFAULT_RADIUS: &str = N_!("Default radius");
 pub const CONCERTS_PLAY_WINDOW: &str = N_!("Consider artists played in the last N days");
 pub const CONCERTS_SIMILAR_ENABLED: &str = N_!("Include similar artists");
 pub const CONCERTS_SIMILAR_COUNT: &str = N_!("Similar artists per top artist");
 pub const CONCERTS_OFF: &str = N_!("Off");
+pub const CONCERTS_NO_LOCATION_DESCRIPTION: &str =
+    N_!("Distance and the radius filter stay switched off until a city is known.");
 
 pub fn concert_count_line(shown: usize, total: usize) -> String {
     concert_count(&shown.to_string(), total)
@@ -82,6 +77,24 @@ fn concert_count(shown: &str, total: usize) -> String {
 
 pub fn concert_total_line(total: usize) -> String {
     formatted(N_!("{total} concerts"), &[("total", &total.to_string())])
+}
+
+pub fn concerts_location_radius(city: &str, radius: u32) -> String {
+    formatted(
+        N_!("{city} · {radius} km"),
+        &[("city", city), ("radius", &radius.to_string())],
+    )
+}
+
+pub fn concerts_radius_off(radius: u32) -> String {
+    formatted(N_!("{radius} km · off"), &[("radius", &radius.to_string())])
+}
+
+pub fn concerts_no_location_title(total: usize) -> String {
+    formatted(
+        N_!("No location set — showing all {total} concerts worldwide"),
+        &[("total", &total.to_string())],
+    )
 }
 
 pub fn concert_similar_caption(artist: &str) -> String {

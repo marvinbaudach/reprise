@@ -6,10 +6,15 @@ fn conc_3_concerts_view_exposes_six_columns_and_row_activation() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn, &runtime);
+    let view = ConcertsView::new(
+        conn,
+        &runtime,
+        &Rc::new(crate::ui::location_broadcast::LocationBroadcast::default()),
+    );
     let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
     let stack = root
         .first_child()
+        .and_then(|child| child.next_sibling())
         .and_then(|child| child.next_sibling())
         .and_then(|child| child.next_sibling())
         .and_downcast::<gtk4::Stack>()
@@ -66,7 +71,11 @@ fn fil_3a_concerts_end_line_counts_concerts_and_recovers_with_clear_all() {
     insert_event(&conn, 1, "Afd Artist");
     insert_event(&conn, 2, "Different Artist");
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn, &runtime);
+    let view = ConcertsView::new(
+        conn,
+        &runtime,
+        &Rc::new(crate::ui::location_broadcast::LocationBroadcast::default()),
+    );
     let window = gtk4::Window::new();
     window.set_default_size(900, 600);
     window.set_child(Some(view.root()));
@@ -103,7 +112,11 @@ fn conc_5a_footer_keeps_fetch_progress_below_the_live_table() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn, &runtime);
+    let view = ConcertsView::new(
+        conn,
+        &runtime,
+        &Rc::new(crate::ui::location_broadcast::LocationBroadcast::default()),
+    );
     let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
     let footer = root.last_child().and_downcast::<gtk4::Box>().unwrap();
     let fetch_stack = footer.last_child().and_downcast::<gtk4::Stack>().unwrap();
@@ -117,7 +130,11 @@ fn conc_4b_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
-    let view = ConcertsView::new(conn.clone(), &runtime);
+    let view = ConcertsView::new(
+        conn.clone(),
+        &runtime,
+        &Rc::new(crate::ui::location_broadcast::LocationBroadcast::default()),
+    );
     let refreshes = Rc::new(Cell::new(0));
     view.set_on_refreshed({
         let refreshes = refreshes.clone();
@@ -158,6 +175,83 @@ fn conc_4b_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
     );
     assert!(!view.shared.fetch_stack.is_visible());
     assert_eq!(refreshes.get(), 2);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn conc_4b_app_location_broadcast_re_evaluates_the_open_view() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ConcertsRuntime::setup(&conn);
+    let location_broadcast = Rc::new(crate::ui::location_broadcast::LocationBroadcast::default());
+    let view = ConcertsView::new(conn.clone(), &runtime, &location_broadcast);
+    let refreshes = Rc::new(Cell::new(0));
+    view.set_on_refreshed({
+        let refreshes = refreshes.clone();
+        move || refreshes.set(refreshes.get() + 1)
+    });
+
+    reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, DE", Some("DE")).unwrap();
+    location_broadcast.notify();
+
+    assert_eq!(refreshes.get(), 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn conc_2_location_availability_hides_distance_without_overwriting_user_choice() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ConcertsRuntime::setup(&conn);
+    let broadcast = Rc::new(crate::ui::location_broadcast::LocationBroadcast::default());
+    let view = ConcertsView::new(conn.clone(), &runtime, &broadcast);
+
+    view.refresh();
+    assert!(!view.shared.location_columns.distance_visible());
+    assert!(!view.shared.location_columns.distance_sortable());
+    assert!(view.shared.location_columns.venue_expands());
+    assert_eq!(
+        view.shared.location_columns.venue_column_id().as_deref(),
+        Some("venue"),
+        "the Venue column, not City, must absorb the freed width"
+    );
+    assert!(!view
+        .shared
+        .column_model
+        .columns()
+        .iter()
+        .any(|column| column.id == "distance"));
+
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert!(view.shared.location_columns.distance_visible());
+    assert!(view.shared.location_columns.distance_sortable());
+    view.shared
+        .location_columns
+        .sort_by_distance(gtk4::SortType::Descending);
+    reprise_core::location::clear(&conn).unwrap();
+    broadcast.notify();
+    assert_eq!(
+        view.shared.location_columns.primary_sort().0.as_deref(),
+        Some("date")
+    );
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert_eq!(
+        view.shared.location_columns.primary_sort(),
+        (Some("distance".to_owned()), gtk4::SortType::Descending),
+        "restoring location must restore the exact Distance sort"
+    );
+
+    view.shared.column_model.set_visible("distance", false);
+    reprise_core::location::clear(&conn).unwrap();
+    broadcast.notify();
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert!(
+        !view.shared.location_columns.distance_visible(),
+        "restoring location must honor the user's previously hidden Distance column"
+    );
 }
 
 #[test]
