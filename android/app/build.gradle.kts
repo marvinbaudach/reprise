@@ -67,6 +67,11 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
+            // Robolectric 4.16.1 cannot instrument Java 26 class files and fails
+            // with "Unsupported class file major version 70" on the ambient JVM.
+            it.javaLauncher.set(javaToolchains.launcherFor {
+                languageVersion.set(JavaLanguageVersion.of(21))
+            })
             it.systemProperty("user.home", gradle.gradleUserHomeDir.absolutePath)
         }
     }
