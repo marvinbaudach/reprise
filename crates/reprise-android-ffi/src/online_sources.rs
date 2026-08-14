@@ -5,8 +5,8 @@ use crate::{LibraryError, MusicLibrary};
 #[uniffi::export]
 impl MusicLibrary {
     pub fn online_sources_enabled(&self) -> Result<bool, LibraryError> {
-        let state = self.lock()?;
-        online_sources::network_allowed(&state.db, &modules::ARTWORK_MODULE).map_err(|error| {
+        let reader = self.reader()?;
+        online_sources::network_allowed(&reader, &modules::ARTWORK_MODULE).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
             }
@@ -14,11 +14,11 @@ impl MusicLibrary {
     }
 
     pub fn set_online_sources_enabled(&self, value: bool) -> Result<(), LibraryError> {
-        let state = self.lock()?;
-        online_sources::set_enabled(&state.db, value).map_err(|error| LibraryError::Database {
+        let writer = self.writer()?;
+        online_sources::set_enabled(&writer, value).map_err(|error| LibraryError::Database {
             detail: error.to_string(),
         })?;
-        modules::set_enabled(&state.db, &modules::ARTWORK_MODULE, value).map_err(|error| {
+        modules::set_enabled(&writer, &modules::ARTWORK_MODULE, value).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
             }
@@ -57,13 +57,12 @@ mod tests {
         library.set_online_sources_enabled(true).unwrap();
 
         assert!(library.online_sources_enabled().unwrap());
-        let state = library.lock().unwrap();
-        assert!(reprise_core::online_sources::is_enabled(&state.db).unwrap());
-        assert!(reprise_core::modules::is_enabled(
-            &state.db,
-            &reprise_core::modules::ARTWORK_MODULE,
-        )
-        .unwrap());
+        let reader = library.reader().unwrap();
+        assert!(reprise_core::online_sources::is_enabled(&reader).unwrap());
+        assert!(
+            reprise_core::modules::is_enabled(&reader, &reprise_core::modules::ARTWORK_MODULE,)
+                .unwrap()
+        );
     }
 
     #[test]

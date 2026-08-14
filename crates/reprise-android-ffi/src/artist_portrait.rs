@@ -46,9 +46,9 @@ impl MusicLibrary {
         size: AndroidArtworkSize,
     ) -> Result<Option<String>, crate::LibraryError> {
         let allowed = {
-            let state = self.lock()?;
+            let reader = self.reader()?;
             reprise_core::online_sources::network_allowed_or_off(
-                &state.db,
+                &reader,
                 &reprise_core::modules::ARTWORK_MODULE,
             )
         };
@@ -89,9 +89,9 @@ mod tests {
     }
 
     fn open_gate(library: &MusicLibrary) {
-        let state = library.lock().unwrap();
-        reprise_core::online_sources::set_enabled(&state.db, true).unwrap();
-        reprise_core::modules::set_enabled(&state.db, &reprise_core::modules::ARTWORK_MODULE, true)
+        let writer = library.writer().unwrap();
+        reprise_core::online_sources::set_enabled(&writer, true).unwrap();
+        reprise_core::modules::set_enabled(&writer, &reprise_core::modules::ARTWORK_MODULE, true)
             .unwrap();
     }
 
