@@ -1,0 +1,1 @@
+No gtk4, libadwaita, gstreamer, or zbus dependency found.
