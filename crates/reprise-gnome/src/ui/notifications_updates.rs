@@ -85,8 +85,7 @@ fn concert_notification_spec(
 }
 
 /// Sends the full unseen Concerts delta once for an `All updates` run.
-pub(super) fn send_due_concerts(
-    application: &gio::Application,
+pub(in crate::ui) fn concert_delta_count(
     db: &Db,
     today: NaiveDate,
 ) -> Result<usize, rusqlite::Error> {
@@ -100,10 +99,20 @@ pub(super) fn send_due_concerts(
     let filter = reprise_core::concerts::config::persisted_filter(db)?;
     let location = reprise_core::concerts::config::location(db)?;
     let count = reprise_core::concerts::count_unseen(db, &filter, location.as_ref(), today)?;
-    let count = usize::try_from(count).unwrap_or(usize::MAX);
+    Ok(usize::try_from(count).unwrap_or(usize::MAX))
+}
+
+pub(super) fn send_due_concerts(
+    application: &gio::Application,
+    db: &Db,
+    today: NaiveDate,
+) -> Result<usize, rusqlite::Error> {
+    let count = concert_delta_count(db, today)?;
     if count == 0 {
         return Ok(0);
     }
+    let filter = reprise_core::concerts::config::persisted_filter(db)?;
+    let location = reprise_core::concerts::config::location(db)?;
     let Some(first) =
         reprise_core::concerts::query_unseen(db, &filter, location.as_ref(), today, 1)?
             .into_iter()

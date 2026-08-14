@@ -1374,6 +1374,14 @@ result.
   guard.
   Test: `os_6_the_first_fetch_announces_nothing`
   (`crates/reprise-core/src/artist_news_notify.rs`, `#[cfg(test)]`).
+- **OS-7** [active] [gtk] — Update notifications are a three-step
+  setting on the New Releases plugin row — `Off`, `Releases only`,
+  `All updates` — stored as `updates.notifications` and defaulting to
+  `Releases only`. `All updates` adds one collected notification per run
+  for newly found concerts of library artists, and behaves like
+  `Releases only` while the Concerts module is off. Nothing else notifies.
+  Test: `os_7_all_updates_adds_the_concerts_delta`
+  (`ui/preferences/preference_new_releases.rs`, `#[cfg(test)]`).
 
 ## I. Start state
 
