@@ -9,12 +9,14 @@ private sealed interface ArtworkVisualCacheKey
 private data class TrackArtworkKey(
     val trackUri: String,
     val size: AndroidArtworkSize,
+    val kind: ArtworkKind,
 ) : ArtworkVisualCacheKey
 
 private data class GeneratedArtworkKey(
     val title: String,
     val artist: String,
     val size: AndroidArtworkSize,
+    val kind: ArtworkKind,
 ) : ArtworkVisualCacheKey
 
 private class ArtworkIdentity(
@@ -74,12 +76,13 @@ internal class ArtworkCache(
         fogs[ArtworkIdentity(image)] = fog
     }
 
-    private fun ArtworkRequest.trackKey() = TrackArtworkKey(trackUri, size)
+    private fun ArtworkRequest.trackKey() = TrackArtworkKey(trackUri, size, kind)
 
     private fun ArtworkRequest.generatedKey() = GeneratedArtworkKey(
         title = title.trim().lowercase(),
         artist = artist.trim().lowercase(),
         size = size,
+        kind = kind,
     )
 
     private fun <K, V> lruMap(capacity: Int) =

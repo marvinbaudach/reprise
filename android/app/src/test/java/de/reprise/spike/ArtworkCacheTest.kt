@@ -20,6 +20,26 @@ import uniffi.reprise_android_ffi.AndroidFallbackCoverColours
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ArtworkCacheTest {
     @Test
+    fun anArtistNamedLikeATrackUriDoesNotInheritItsCover() {
+        val cache = ArtworkCache()
+        val sharedIdentity = "content://tracks/also-an-artist"
+        val track = ArtworkRequest(
+            trackUri = sharedIdentity,
+            size = AndroidArtworkSize.LIST,
+        )
+        val artist = ArtworkRequest(
+            trackUri = sharedIdentity,
+            size = AndroidArtworkSize.LIST,
+            kind = ArtworkKind.ARTIST,
+            artistName = sharedIdentity,
+        )
+
+        cache.putArtwork(track, visual(Color.RED))
+
+        assertNull(cache.artwork(artist))
+    }
+
+    @Test
     fun artwork_lru_evicts_the_oldest_entry_after_twelve_slots() {
         val cache = ArtworkCache(artworkCapacity = 2, fogCapacity = 1)
         val first = request("first")
