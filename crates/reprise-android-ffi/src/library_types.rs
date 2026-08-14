@@ -1,14 +1,18 @@
 //! Owned library records and errors that form the Android FFI contract.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use reprise_core::artist_portrait::{PortraitError, PortraitOutcome};
 use reprise_core::db::Db;
 use reprise_core::library::scanner::ScanProgress;
 
 use crate::source::BridgedSource;
 
 pub(crate) const DATABASE_FILE_NAME: &str = "reprise.db";
+
+pub(crate) type PortraitFetch =
+    dyn Fn(&str, &Path) -> Result<PortraitOutcome, PortraitError> + Send + Sync;
 
 pub(crate) struct ConfiguredTree {
     pub(crate) uri: PathBuf,
@@ -24,6 +28,7 @@ pub struct MusicLibrary {
     pub(crate) tree: Mutex<Option<ConfiguredTree>>,
     pub(crate) cache_root: PathBuf,
     pub(crate) database_path: PathBuf,
+    pub(crate) portrait_fetch: Arc<PortraitFetch>,
 }
 
 impl MusicLibrary {
