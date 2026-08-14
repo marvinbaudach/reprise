@@ -1,6 +1,7 @@
 //! Headerbar entry point and transient New Releases popover.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -8,14 +9,21 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::concerts::{ConcertsRequest, ConcertsRuntime};
-use crate::ui::{one_shot_task, strings};
+use crate::ui::concerts::ConcertsRuntime;
+use crate::ui::strings;
 
 use super::badge::{self, FeedBadgeInput};
 use super::concerts_section::ConcertsSection;
+#[cfg(test)]
+use super::feed_row;
 use super::feed_snapshot;
+use super::footer_state::{aggregate as aggregate_footer_state, ActiveFeed};
 use super::release_row;
 use super::shell;
+use crate::ui::feed_footer::FeedFooter;
+
+#[path = "popover_fetch.rs"]
+mod popover_fetch;
 
 /// How often the background timer re-checks staleness while the module is
 /// enabled (Beschluss 8). Deliberately coarse: `refresh_due`'s own 6 h+jitter
@@ -35,49 +43,6 @@ fn opening_effect(unseen_ids: &[String]) -> OpeningEffect {
     OpeningEffect {
         seen_ids: unseen_ids.to_vec(),
         navigates: false,
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct FooterPresentation {
-    updated: String,
-    show_cached_failure: bool,
-}
-
-fn footer_presentation(latest: Option<i64>, now: i64, failed: bool) -> FooterPresentation {
-    FooterPresentation {
-        updated: latest.map_or_else(
-            || strings::text(strings::UPDATED_JUST_NOW),
-            |timestamp| strings::new_releases_updated_ago(timestamp, now),
-        ),
-        show_cached_failure: failed,
-    }
-}
-
-fn oldest_active_feed_timestamp(
-    news_active: bool,
-    news_latest: Option<i64>,
-    concerts_active: bool,
-    concerts_latest: Option<i64>,
-) -> Option<i64> {
-    match (news_active, concerts_active) {
-        (false, false) => None,
-        (true, false) => news_latest,
-        (false, true) => concerts_latest,
-        (true, true) => Some(news_latest?.min(concerts_latest?)),
-    }
-}
-
-fn fetch_failure_text(news_failed: bool, concerts_failed: bool) -> String {
-    match (news_failed, concerts_failed) {
-        (false, false) => String::new(),
-        (true, false) => strings::text(strings::FETCH_FAILED_INLINE),
-        (false, true) => strings::text(strings::UPDATES_CONCERTS_FETCH_FAILED),
-        (true, true) => format!(
-            "{} · {}",
-            strings::text(strings::FETCH_FAILED_INLINE),
-            strings::text(strings::UPDATES_CONCERTS_FETCH_FAILED)
-        ),
     }
 }
 
@@ -102,7 +67,7 @@ fn module_effect(
     fetch_completed: bool,
     fetching: bool,
 ) -> ModuleEffect {
-    let empty = if !enabled || has_releases || fetch_completed {
+    let empty = if !enabled || has_releases {
         EmptyPresentation::Hidden
     } else if fetching {
         EmptyPresentation::Checking
@@ -144,21 +109,16 @@ struct NewReleasesPopover {
     concerts_section: ConcertsSection,
     list: gtk4::ListBox,
     empty: gtk4::Label,
-    nothing_new: gtk4::Label,
+    releases_header: gtk4::Button,
     new_tag: gtk4::Label,
-    releases_jump: gtk4::Button,
-    releases_jump_label: gtk4::Label,
-    concerts_jump: gtk4::Button,
-    concerts_jump_label: gtk4::Label,
-    fetch_button: gtk4::Button,
-    fetch_stack: gtk4::Stack,
-    spinner: gtk4::Spinner,
-    updated: gtk4::Label,
-    failure: gtk4::Label,
+    footer: FeedFooter,
     fetching: Cell<bool>,
     /// The fetch currently in flight across both feeds, or the finished one
     /// whose outcome the footer is still showing.
     run: RefCell<FeedRefresh>,
+    news_loaded_this_visit: Cell<bool>,
+    concerts_loaded_this_visit: Cell<bool>,
+    dismissed_concert_ids: RefCell<HashSet<i64>>,
     generation: Cell<u64>,
     /// The hourly background staleness timer (Beschluss 8), running only
     /// while the module is enabled. `SourceId` is move-only, so `Cell::take`
@@ -184,17 +144,9 @@ impl NewReleasesPopover {
             concerts_section,
             list,
             empty,
-            nothing_new,
+            releases_header,
             new_tag,
-            releases_jump,
-            releases_jump_label,
-            concerts_jump,
-            concerts_jump_label,
-            fetch_button,
-            fetch_stack,
-            spinner,
-            updated,
-            failure,
+            footer,
         } = shell::build();
 
         let state = Rc::new(Self {
@@ -208,19 +160,14 @@ impl NewReleasesPopover {
             concerts_section,
             list,
             empty,
-            nothing_new,
+            releases_header,
             new_tag,
-            releases_jump,
-            releases_jump_label,
-            concerts_jump,
-            concerts_jump_label,
-            fetch_button,
-            fetch_stack,
-            spinner,
-            updated,
-            failure,
+            footer,
             fetching: Cell::new(false),
             run: RefCell::new(FeedRefresh::start(&[])),
+            news_loaded_this_visit: Cell::new(false),
+            concerts_loaded_this_visit: Cell::new(false),
+            dismissed_concert_ids: RefCell::new(HashSet::new()),
             generation: Cell::new(0),
             refresh_timer: Cell::new(None),
             on_show_album,
@@ -233,6 +180,35 @@ impl NewReleasesPopover {
                     state.popover.popdown();
                 }
                 release_row::launch_uri(&url);
+            }));
+        }
+        {
+            let weak = Rc::downgrade(&state);
+            state
+                .concerts_section
+                .set_on_dismiss_event(Rc::new(move |id| {
+                    let Some(state) = weak.upgrade() else { return };
+                    if let Err(error) = reprise_core::concerts::mark_event_seen(
+                        &state.conn,
+                        id,
+                        chrono::Utc::now().timestamp(),
+                    ) {
+                        tracing::warn!(%error, event_id = id, "could not dismiss Concerts update");
+                        return;
+                    }
+                    // Opening already stamps the scope, but this idempotent call
+                    // is still the correct persistence path if the row was not
+                    // stamped yet. The held session delta is a separate concern.
+                    state.dismissed_concert_ids.borrow_mut().insert(id);
+                    state.render(false, false);
+                }));
+        }
+        {
+            let weak = Rc::downgrade(&state);
+            state.concerts_section.set_on_open_view(Rc::new(move || {
+                if let Some(state) = weak.upgrade() {
+                    state.open_view(reprise_core::browser::navigation::SidebarTarget::Concerts);
+                }
             }));
         }
         state.wire();
@@ -257,34 +233,23 @@ impl NewReleasesPopover {
         });
 
         let weak = Rc::downgrade(self);
-        self.fetch_button.connect_clicked(move |_| {
+        self.footer.connect_reload(move || {
             if let Some(state) = weak.upgrade() {
                 state.start_fetch(true);
             }
         });
 
-        self.wire_jump(
-            &self.releases_jump,
-            reprise_core::browser::navigation::SidebarTarget::Releases,
-        );
-        self.wire_jump(
-            &self.concerts_jump,
-            reprise_core::browser::navigation::SidebarTarget::Concerts,
-        );
-    }
-
-    fn wire_jump(
-        self: &Rc<Self>,
-        button: &gtk4::Button,
-        target: reprise_core::browser::navigation::SidebarTarget,
-    ) {
         let weak = Rc::downgrade(self);
-        button.connect_clicked(move |_| {
+        self.releases_header.connect_clicked(move |_| {
             if let Some(state) = weak.upgrade() {
-                state.popover.popdown();
-                (state.on_open_view)(target);
+                state.open_view(reprise_core::browser::navigation::SidebarTarget::Releases);
             }
         });
+    }
+
+    fn open_view(&self, target: reprise_core::browser::navigation::SidebarTarget) {
+        self.popover.popdown();
+        (self.on_open_view)(target);
     }
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
@@ -298,7 +263,11 @@ impl NewReleasesPopover {
                 .unwrap_or(false);
         let today = chrono::Local::now().date_naive();
         let releases = feed_snapshot::releases(&self.conn, news_enabled, today);
-        let concerts = feed_snapshot::concerts(&self.conn, concerts_enabled, today);
+        let mut concerts = feed_snapshot::concerts(&self.conn, concerts_enabled, today);
+        concerts.delta.shown = {
+            let dismissed = self.dismissed_concert_ids.borrow();
+            visible_concert_rows(concerts.delta.shown, &dismissed)
+        };
         let fetch_completed = self.fetch_completed();
         let effect = module_effect(
             news_enabled,
@@ -308,8 +277,7 @@ impl NewReleasesPopover {
         );
         self.button
             .set_visible(effect.button_visible || concerts_enabled);
-        let news_visible =
-            news_enabled && (releases.delta.total > 0 || effect.empty != EmptyPresentation::Hidden);
+        let news_visible = news_enabled;
         self.news_section.set_visible(news_visible);
         // Only an actually unseen batch is announced as new. A batch held over
         // from the last visit still renders, but without a count that would
@@ -328,7 +296,7 @@ impl NewReleasesPopover {
             }
             EmptyPresentation::NoReleases => {
                 self.empty
-                    .set_label(&strings::text(strings::NEW_RELEASES_NONE));
+                    .set_label(&strings::text(strings::UPDATES_NO_NEW_RELEASES));
                 self.list.append(&self.empty);
             }
         }
@@ -365,18 +333,9 @@ impl NewReleasesPopover {
             concerts.delta.unseen,
             &concerts.delta.shown,
             today,
+            reprise_core::modules::is_enabled(&self.conn, &reprise_core::modules::ARTWORK_MODULE)
+                .unwrap_or(false),
         );
-        let concerts_visible = concerts_enabled && concerts.credentials && concerts.delta.total > 0;
-        self.nothing_new.set_visible(
-            effect.empty == EmptyPresentation::Hidden && !news_visible && !concerts_visible,
-        );
-        self.concerts_jump.set_visible(concerts_enabled);
-        self.concerts_jump_label
-            .set_label(&strings::updates_show_all_concerts(concerts.count));
-        let releases_count = feed_snapshot::releases_count(&self.conn, today);
-        self.releases_jump.set_visible(news_enabled);
-        self.releases_jump_label
-            .set_label(&strings::updates_show_all_releases(releases_count));
         if mark_seen {
             let effect = opening_effect(&releases.unseen_ids);
             if !effect.seen_ids.is_empty() {
@@ -433,20 +392,29 @@ impl NewReleasesPopover {
         let latest_news = reprise_core::artist_news::latest_fetched_at(&self.conn)
             .ok()
             .flatten();
-        let latest = oldest_active_feed_timestamp(
-            news_enabled,
-            latest_news,
-            concerts_enabled && concerts.credentials,
-            latest_concerts,
+        let concerts_active = concerts_enabled && concerts.credentials;
+        let run_failed = {
+            let run = self.run.borrow();
+            failed || run.has_failed(Feed::NewReleases) || run.has_failed(Feed::Concerts)
+        };
+        let footer_state = aggregate_footer_state(
+            ActiveFeed {
+                active: news_enabled,
+                latest: latest_news,
+                loaded_this_visit: self.news_loaded_this_visit.get(),
+            },
+            ActiveFeed {
+                active: concerts_active,
+                latest: latest_concerts,
+                loaded_this_visit: self.concerts_loaded_this_visit.get(),
+            },
+            reprise_core::online_sources::is_enabled(&self.conn).unwrap_or(false),
+            self.fetching.get(),
+            run_failed,
+            concerts_enabled && !concerts.credentials,
         );
-        let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
-        self.updated.set_label(&footer.updated);
-        self.updated.set_visible(latest.is_some());
-        let failure_text = fetch_failure_text(failed, self.run.borrow().has_failed(Feed::Concerts));
-        self.failure.set_label(&failure_text);
-        self.failure.set_visible(
-            footer.show_cached_failure || self.run.borrow().has_failed(Feed::Concerts),
-        );
+        self.footer
+            .apply_with_copy(footer_state, strings::updates_feed_footer_copy());
     }
 
     fn concerts_badge_state(&self, today: chrono::NaiveDate) -> (bool, bool, i64, Option<i64>) {
@@ -556,139 +524,15 @@ impl NewReleasesPopover {
             self.render(false, false);
         }
     }
+}
 
-    fn start_fetch(self: &Rc<Self>, include_concerts: bool) {
-        if self.fetching.get() {
-            return;
-        }
-        let news_enabled = reprise_core::modules::is_enabled(
-            &self.conn,
-            &reprise_core::modules::NEW_RELEASES_MODULE,
-        )
-        .unwrap_or(false);
-        let concerts_enabled = include_concerts
-            && reprise_core::modules::is_enabled(
-                &self.conn,
-                &reprise_core::modules::CONCERTS_MODULE,
-            )
-            .unwrap_or(false)
-            && reprise_core::concerts::config::credentials(&self.conn)
-                .is_ok_and(|credentials| !credentials.is_empty());
-        let mut feeds = Vec::new();
-        if news_enabled {
-            feeds.push(Feed::NewReleases);
-        }
-        if concerts_enabled {
-            feeds.push(Feed::Concerts);
-        }
-        let run = FeedRefresh::start(&feeds);
-        if run.is_complete() {
-            self.run.replace(run);
-            self.render(false, false);
-            return;
-        }
-        self.fetching.set(true);
-        self.run.replace(run);
-        self.fetch_stack.set_visible_child_name("spinner");
-        self.spinner.start();
-        self.fetch_button.set_sensitive(false);
-        self.failure.set_visible(false);
-        self.render(false, false);
-
-        if news_enabled {
-            self.start_news_fetch();
-        }
-        if concerts_enabled {
-            self.start_concerts_fetch();
-        }
-    }
-
-    fn start_news_fetch(self: &Rc<Self>) {
-        let database_path = self.database_path.clone();
-        let result = one_shot_task::spawn("reprise-new-releases", move || {
-            fetch_from_database(&database_path)
-        });
-        let Ok(receiver) = result else {
-            self.finish_feed(Feed::NewReleases, true);
-            return;
-        };
-        let weak = Rc::downgrade(self);
-        gtk4::glib::spawn_future_local(async move {
-            let failed = match receiver.recv().await {
-                Ok(Ok(report)) => report.failed > 0,
-                Ok(Err(error)) => {
-                    tracing::warn!(%error, "could not refresh New Releases");
-                    true
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "New Releases worker closed without a result");
-                    true
-                }
-            };
-            if let Some(state) = weak.upgrade() {
-                state.finish_feed(Feed::NewReleases, failed);
-            }
-        });
-    }
-
-    fn start_concerts_fetch(self: &Rc<Self>) {
-        let generation = self.generation.get().wrapping_add(1);
-        self.generation.set(generation);
-        let (sender, receiver) = async_channel::bounded(1);
-        if !self.concerts_runtime.request(ConcertsRequest {
-            generation,
-            force: true,
-            response: sender,
-        }) {
-            self.finish_feed(Feed::Concerts, true);
-            return;
-        }
-        let weak = Rc::downgrade(self);
-        gtk4::glib::spawn_future_local(async move {
-            let failed = match receiver.recv().await {
-                Ok(response) if response.generation == generation => match response.result {
-                    Ok(summary) => summary.failed > 0,
-                    Err(error) => {
-                        tracing::warn!(%error, "could not refresh Concerts from Updates");
-                        true
-                    }
-                },
-                Ok(_) => true,
-                Err(error) => {
-                    tracing::warn!(%error, "Concerts worker closed without an Updates result");
-                    true
-                }
-            };
-            if let Some(state) = weak.upgrade() {
-                state.finish_feed(Feed::Concerts, failed);
-            }
-        });
-    }
-
-    fn finish_feed(self: &Rc<Self>, feed: Feed, failed: bool) {
-        if matches!(feed, Feed::NewReleases) && !failed {
-            let result = {
-                let conn = &self.conn;
-                reprise_core::library::settings::set_new_releases_fetch_completed(conn, true)
-            };
-            if let Err(error) = result {
-                tracing::warn!(%error, "could not save New Releases fetch state");
-            }
-        }
-        let (complete, news_failed) = {
-            let mut run = self.run.borrow_mut();
-            run.finish(feed, failed);
-            (run.is_complete(), run.has_failed(Feed::NewReleases))
-        };
-        if !complete {
-            return;
-        }
-        self.fetching.set(false);
-        self.spinner.stop();
-        self.fetch_stack.set_visible_child_name("icon");
-        self.fetch_button.set_sensitive(true);
-        self.render(false, news_failed);
-    }
+fn visible_concert_rows(
+    rows: Vec<reprise_core::concerts::ConcertRow>,
+    dismissed: &HashSet<i64>,
+) -> Vec<reprise_core::concerts::ConcertRow> {
+    rows.into_iter()
+        .filter(|row| !dismissed.contains(&row.id))
+        .collect()
 }
 
 fn bind_runtime(state: &Rc<NewReleasesPopover>, runtime: &Rc<ArtistNewsRuntime>) {

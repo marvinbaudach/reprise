@@ -58,6 +58,39 @@ fn fil_3a_releases_only_report_facets_that_can_hide_rows() {
     assert!(release_facets_restrict(&filter));
 }
 
+#[test]
+fn releases_footer_projects_live_cache_progress_and_failure_states() {
+    let timestamp = 1_723_647_600;
+    let latest = Some(timestamp);
+    assert_eq!(
+        releases_footer_state(
+            true,
+            true,
+            Connectivity::Online,
+            false,
+            false,
+            latest,
+            false
+        ),
+        crate::ui::feed_footer::FeedFooterState::Cached { at: timestamp }
+    );
+    assert_eq!(
+        releases_footer_state(true, true, Connectivity::Online, false, false, latest, true),
+        crate::ui::feed_footer::FeedFooterState::Loaded { at: timestamp }
+    );
+    assert_eq!(
+        releases_footer_state(true, true, Connectivity::Online, true, false, latest, false),
+        crate::ui::feed_footer::FeedFooterState::Fetching {
+            checked: 0,
+            total: 0
+        }
+    );
+    assert_eq!(
+        releases_footer_state(true, true, Connectivity::Online, false, true, latest, false),
+        crate::ui::feed_footer::FeedFooterState::Failed { latest: timestamp }
+    );
+}
+
 fn pump_until(label: &str, condition: impl Fn() -> bool) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while !condition() {
@@ -252,7 +285,7 @@ fn fil_3a_releases_end_line_counts_gaps_and_recovers_with_clear_all() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_22_fetch_action_replaces_stale_age_with_progress_then_updates_completion_age() {
+fn releases_reload_shows_live_progress_then_loaded_completion() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
@@ -291,27 +324,40 @@ fn nr_22_fetch_action_replaces_stale_age_with_progress_then_updates_completion_a
             })
         })));
     view.refresh();
-    let stale_age = view.shared.updated.text();
-    assert!(stale_age.contains("6 min ago"), "{stale_age}");
+    let cached = view.shared.footer.text();
+    assert!(cached.starts_with("Up to date — checked"), "{cached}");
 
-    view.shared.fetch_button.emit_clicked();
-    assert!(!view.shared.updated.is_visible());
-    assert_eq!(
-        view.shared.fetch_stack.visible_child_name().as_deref(),
-        Some(FETCH_SPINNER_PAGE)
-    );
+    let reload = descendant_button_with_tooltip(view.root(), "Reload")
+        .expect("the live footer exposes its reload button");
+    reload.emit_clicked();
     pump_until("determinate release progress", || {
-        view.shared.progress.text().as_deref() == Some("Checked 0 of 1 artists")
+        view.shared.footer.text() == "Updating releases …"
     });
-    assert!(view.shared.progress.is_visible());
+    assert!(view.shared.footer.progress_is_visible());
+    assert!(!view.shared.footer.reload_is_visible());
 
     pump_until("release fetch completion", || !view.shared.fetching.get());
-    assert!(!view.shared.progress.is_visible());
-    assert!(view.shared.updated.is_visible());
-    assert_eq!(view.shared.updated.text().as_str(), "Updated just now");
-    assert!(view.shared.fetch_button.is_sensitive());
-    assert_eq!(
-        view.shared.fetch_stack.visible_child_name().as_deref(),
-        Some(FETCH_ICON_PAGE)
+    assert!(!view.shared.footer.progress_is_visible());
+    assert!(view.shared.footer.reload_is_visible());
+    assert!(
+        view.shared.footer.text().starts_with("Up to date — loaded"),
+        "{}",
+        view.shared.footer.text()
     );
+}
+
+fn descendant_button_with_tooltip(widget: &gtk4::Widget, tooltip: &str) -> Option<gtk4::Button> {
+    if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
+        if button.tooltip_text().as_deref() == Some(tooltip) {
+            return Some(button);
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = descendant_button_with_tooltip(&current, tooltip) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
 }

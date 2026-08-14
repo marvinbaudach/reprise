@@ -1,52 +1,35 @@
-//! One New Releases list row: cover, title/meta, a persistent status chip,
-//! and actions revealed on row hover or keyboard focus (NR-10a). Library ownership is three-state
-//! (`LibraryPresence`: `Absent`, `Partial`, `Complete`), not a boolean —
-//! owning only the lead single off an album is `Partial`, distinct from
-//! owning nothing (`Absent`) or the whole thing (`Complete`). The primary
-//! action reflects that split: only a released, `Complete` match navigates
-//! to and focuses the album (never a play path — this branch is currently
-//! unreachable in the popover, since `delta_candidates`/NR-29 already
-//! excludes owned releases before a row is ever built; kept for the
-//! `primary_action`/`chip_presentation` pure functions' completeness).
-//! Both `Absent` and `Partial` open the release's announcement externally
-//! instead (NR-11), because owning just the single means the user wants the
-//! rest of the album, not a trip back to the one track they already have.
+//! One New Releases row: a 44px cover, title/meta, a persistent date tag,
+//! one flat activation surface, and a sibling Hide button. Activation always
+//! follows NR-11's announcement URL priority, independent of library presence.
 
 use std::rc::Rc;
 
 use chrono::NaiveDate;
 use gtk4::prelude::*;
 
-use reprise_core::artist_news::{LibraryPresence, StoredRelease};
+use reprise_core::artist_news::StoredRelease;
 
+use super::feed_row;
 use super::release_cover::LazyReleaseCover;
-use super::release_row_actions;
 use crate::ui::releases::releases_presentation::format_partial_date;
 use crate::ui::strings;
 
 /// Compact cover edge shared by every row (NR-9 layout; the old hero/row
 /// split is gone — see popover.rs).
-const COVER_EDGE: i32 = 40;
+const COVER_EDGE: i32 = 44;
 
-/// Navigates to and focuses an in-library album by (title, artist). Kept as
-/// a plain closure type rather than a `MetadataNavigator` reference so this
-/// module — and the popover that owns it — stays navigation-agnostic; the
-/// window wires the real implementation. Currently unreachable via the
-/// popover's own data feed (see the module doc), since owned releases never
-/// reach a row to begin with.
+/// Retained in the constructor seam until the owning window wiring can remove
+/// the now-obsolete album-navigation callback without crossing strand ownership.
 pub(in crate::ui) type OnShowAlbum = Rc<dyn Fn(&str, &str)>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::ui) enum ChipPresentation {
     Upcoming(String),
     Released,
-    PartiallyOwned,
-    InLibrary,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::ui) enum PrimaryAction {
-    ShowInLibrary,
     OpenAnnouncement(String),
 }
 
@@ -63,26 +46,8 @@ pub(in crate::ui) fn parse_release_date(value: &str) -> Option<NaiveDate> {
     }
 }
 
-/// The meta line's character budget at the popover's ~336px width / 12px
-/// type: tuned so `"{artist} · {type} · {date}"` fits the ~260px meta
-/// column before the type is dropped in favor of `"{artist} · {date}"`
-/// (#1 — the meta line must never ellipsize).
-const META_LINE_CHAR_BUDGET: usize = 34;
-
-/// "Artist · Type · Date", dropping the type when the full line would
-/// overrun the meta line's character budget (#1) — "Artist · Date" instead
-/// of ellipsizing, since the meta line must never truncate with "…".
 fn meta_line(artist: &str, release_type: &str, formatted_date: &str) -> String {
-    let full = format!("{artist} · {release_type} · {formatted_date}");
-    if full.chars().count() <= META_LINE_CHAR_BUDGET {
-        full
-    } else {
-        format!("{artist} · {formatted_date}")
-    }
-}
-
-fn is_upcoming(release: &StoredRelease, today: NaiveDate) -> bool {
-    parse_release_date(&release.first_release_date).is_some_and(|date| date > today)
+    strings::updates_release_meta(artist, release_type, formatted_date)
 }
 
 pub(in crate::ui) fn chip_presentation(
@@ -95,37 +60,45 @@ pub(in crate::ui) fn chip_presentation(
             return ChipPresentation::Upcoming(strings::new_releases_days_until(days_until));
         }
     }
-    match release.presence {
-        LibraryPresence::Complete => ChipPresentation::InLibrary,
-        LibraryPresence::Partial => ChipPresentation::PartiallyOwned,
-        LibraryPresence::Absent => ChipPresentation::Released,
-    }
+    ChipPresentation::Released
 }
 
-pub(in crate::ui) fn primary_action(release: &StoredRelease, today: NaiveDate) -> PrimaryAction {
-    // Only full ownership navigates into the library. Owning the lead single
-    // means the album is still something to go read about, not something to
-    // go listen to.
-    if release.presence == LibraryPresence::Complete && !is_upcoming(release, today) {
-        return PrimaryAction::ShowInLibrary;
-    }
+pub(in crate::ui) fn primary_action(release: &StoredRelease, _today: NaiveDate) -> PrimaryAction {
     PrimaryAction::OpenAnnouncement(reprise_core::artist_news_links::announce_url_or_fallback(
         release.announce_url.as_deref(),
         &release.release_group_mbid,
     ))
 }
 
-pub(in crate::ui) use super::release_row_actions::launch_uri;
+pub(in crate::ui) fn launch_uri(url: &str) {
+    crate::ui::external_link::launch(url, "announcement", None);
+}
+
+fn release_source(url: &str) -> String {
+    if reprise_core::artist_news_links::bandcamp_purchase_url(Some(url)).is_some() {
+        return strings::text(strings::RELEASES_BANDCAMP);
+    }
+    if url.starts_with("https://musicbrainz.org/") || url.starts_with("http://musicbrainz.org/") {
+        return strings::text(strings::RELEASES_MUSICBRAINZ);
+    }
+    url.split("//")
+        .nth(1)
+        .and_then(|tail| tail.split('/').next())
+        .filter(|host| !host.trim().is_empty())
+        .map_or_else(
+            || strings::text(strings::RELEASES_OPEN),
+            |host| host.trim_start_matches("www.").to_owned(),
+        )
+}
 
 /// One popover list entry. Hiding lives on the row itself rather than
 /// behind a separate destination, so it stays reachable regardless of list
-/// length; "Show in library" navigates and focuses, never plays (currently
-/// unreachable in practice — see the module doc).
+/// length.
 pub(in crate::ui) fn build(
     release: &StoredRelease,
     today: NaiveDate,
     on_hide: &Rc<dyn Fn(&str)>,
-    on_show_album: &OnShowAlbum,
+    _on_show_album: &OnShowAlbum,
     close_popover: &Rc<dyn Fn()>,
 ) -> gtk4::Widget {
     let cover = LazyReleaseCover::new(
@@ -134,38 +107,35 @@ pub(in crate::ui) fn build(
         COVER_EDGE,
     );
 
-    let title = gtk4::Label::new(Some(&release.title));
-    title.set_xalign(0.0);
-    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    title.add_css_class("new-release-title");
-
     let formatted_date = format_partial_date(
         &release.first_release_date,
         &crate::ui::date_format::current().date,
     );
     let meta_text = meta_line(&release.artist_name, &release.release_type, &formatted_date);
-    let meta = gtk4::Label::new(Some(&meta_text));
-    meta.set_xalign(0.0);
-    meta.set_ellipsize(gtk4::pango::EllipsizeMode::None);
-    meta.add_css_class("new-release-meta");
-
-    let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    text.set_hexpand(true);
-    text.append(&title);
-    text.append(&meta);
-
-    let trailing = release_row_actions::build(release, today, on_show_album, close_popover);
-
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    row.add_css_class("new-release-row");
-    row.append(cover.widget());
-    row.append(&text);
-    row.append(&trailing.root);
-
-    // a11y-semantics: role=group name=new-release-row state=focusable action=tab-into-actions
-    row.set_focusable(true);
-
-    release_row_actions::wire_hover_and_focus(&row, &trailing.actions);
+    let action = primary_action(release, today);
+    let (tooltip, on_activate): (String, Rc<dyn Fn()>) = match action {
+        PrimaryAction::OpenAnnouncement(url) => {
+            let tooltip = strings::updates_opens_source(&release_source(&url));
+            let close_popover = close_popover.clone();
+            (
+                tooltip,
+                Rc::new(move || {
+                    close_popover();
+                    launch_uri(&url);
+                }),
+            )
+        }
+    };
+    let tag = match chip_presentation(release, today) {
+        ChipPresentation::Upcoming(copy) => feed_row::Tag {
+            text: copy,
+            tone: feed_row::TagTone::Neutral,
+        },
+        ChipPresentation::Released => feed_row::Tag {
+            text: strings::text(strings::UPDATES_RELEASED),
+            tone: feed_row::TagTone::Accent,
+        },
+    };
 
     // Hide collapses the row instead of yanking it out (B4): the button only
     // starts the collapse; `on_hide` (which persists hidden/hidden_at and
@@ -174,10 +144,25 @@ pub(in crate::ui) fn build(
     // initial `reveal_child(true)` below finishes revealing — the guard here
     // keys off `!is_child_revealed()`, so that initial fire (revealed ==
     // true) never triggers `on_hide`.
+    let feed_row = feed_row::build(
+        cover.widget(),
+        feed_row::Presentation {
+            title: release.title.clone(),
+            title_suffix: None,
+            meta: meta_text,
+            tag: Some(tag),
+            tooltip,
+            activatable: true,
+        },
+        &strings::text(strings::HIDE_RELEASE),
+        on_activate,
+        Rc::new(|| {}),
+    );
+    let dismiss = feed_row.dismiss.clone();
     let revealer = gtk4::Revealer::builder()
         .transition_type(gtk4::RevealerTransitionType::SlideUp)
         .transition_duration(crate::ui::motion::STANDARD_MS)
-        .child(&row)
+        .child(&feed_row.root)
         .reveal_child(true)
         .build();
 
@@ -192,7 +177,7 @@ pub(in crate::ui) fn build(
     // Weak: the button (owned by the row, owned by the revealer) must not
     // hold a strong ref back to the revealer, or the pair leaks.
     let revealer_weak = revealer.downgrade();
-    trailing.hide.connect_clicked(move |_| {
+    dismiss.connect_clicked(move |_| {
         if let Some(revealer) = revealer_weak.upgrade() {
             revealer.set_reveal_child(false);
         }
@@ -204,6 +189,7 @@ pub(in crate::ui) fn build(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::artist_news::LibraryPresence;
     use reprise_core::format::DatePattern;
     use std::cell::Cell;
 
@@ -251,11 +237,11 @@ mod tests {
     }
 
     #[test]
-    fn meta_line_drops_the_type_for_a_long_artist_name() {
+    fn meta_line_keeps_all_fields_for_a_long_artist_name() {
         let artist = "A Very Long Artist Name That Overruns The Budget";
         assert_eq!(
             meta_line(artist, "Album", "15. Aug"),
-            format!("{artist} · 15. Aug")
+            format!("{artist} · Album · 15. Aug")
         );
     }
 
@@ -278,12 +264,12 @@ mod tests {
     }
 
     #[test]
-    fn chip_presentation_in_library_when_past_and_in_library() {
+    fn chip_presentation_released_when_past_and_in_library() {
         let mut release = release_with_date("2026-01-01");
         release.presence = LibraryPresence::Complete;
         assert_eq!(
             chip_presentation(&release, today()),
-            ChipPresentation::InLibrary
+            ChipPresentation::Released
         );
     }
 
@@ -295,7 +281,7 @@ mod tests {
         release.presence = LibraryPresence::Complete;
         assert_eq!(
             chip_presentation(&release, today()),
-            ChipPresentation::InLibrary
+            ChipPresentation::Released
         );
     }
 
@@ -318,12 +304,14 @@ mod tests {
     }
 
     #[test]
-    fn in_library_row_offers_show_in_library() {
+    fn nr_38_in_library_row_still_opens_the_announcement_url() {
         let mut release = release_with_date("2026-01-01");
         release.presence = LibraryPresence::Complete;
         assert_eq!(
             primary_action(&release, today()),
-            PrimaryAction::ShowInLibrary
+            PrimaryAction::OpenAnnouncement(
+                "https://musicbrainz.org/release-group/rg-sample".into()
+            )
         );
     }
 
@@ -404,56 +392,14 @@ mod tests {
         );
     }
 
-    /// Clicking "Show in library" navigates via the injected callback and
-    /// closes the popover first. It must never carry a play icon/path. This
-    /// primary action is currently unreachable via the popover's own data
-    /// feed (see the module doc) but is asserted here for the pure
-    /// `primary_action`/`build` wiring regardless.
     #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn show_in_library_closes_popover_and_navigates_without_play_icon() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let mut release = release_with_date("2026-01-01");
-        release.presence = LibraryPresence::Complete;
-        let navigated: Rc<std::cell::RefCell<Vec<(String, String)>>> =
-            Rc::new(std::cell::RefCell::new(Vec::new()));
-        let sink = navigated.clone();
-        let on_show_album: OnShowAlbum = Rc::new(move |album: &str, artist: &str| {
-            sink.borrow_mut()
-                .push((album.to_string(), artist.to_string()));
-        });
-        let closed = Rc::new(Cell::new(false));
-        let close_flag = closed.clone();
-        let close_popover: Rc<dyn Fn()> = Rc::new(move || close_flag.set(true));
-        let on_hide: Rc<dyn Fn(&str)> = Rc::new(|_| {});
-
-        let row = build(&release, today(), &on_hide, &on_show_album, &close_popover);
-
-        let buttons = action_buttons(&row);
-        let primary = buttons
-            .first()
-            .expect("row exposes a primary action button");
-        assert_eq!(primary.icon_name().as_deref(), Some("go-jump-symbolic"));
-
-        primary.emit_clicked();
-
-        assert!(closed.get());
-        assert_eq!(
-            navigated.borrow().as_slice(),
-            [("Release".to_string(), "Artist".to_string())]
-        );
-    }
-
-    #[test]
-    fn partial_ownership_gets_its_own_chip_and_opens_the_announcement() {
+    fn partial_ownership_keeps_the_date_tag_and_opens_the_announcement() {
         let mut release = release_with_date("2026-01-01");
         release.presence = LibraryPresence::Partial;
 
         assert_eq!(
             chip_presentation(&release, today()),
-            ChipPresentation::PartiallyOwned
+            ChipPresentation::Released
         );
         assert!(
             matches!(
@@ -465,17 +411,19 @@ mod tests {
     }
 
     #[test]
-    fn complete_ownership_still_navigates_into_the_library() {
+    fn complete_ownership_still_opens_the_announcement() {
         let mut release = release_with_date("2026-01-01");
         release.presence = LibraryPresence::Complete;
 
         assert_eq!(
             chip_presentation(&release, today()),
-            ChipPresentation::InLibrary
+            ChipPresentation::Released
         );
         assert_eq!(
             primary_action(&release, today()),
-            PrimaryAction::ShowInLibrary
+            PrimaryAction::OpenAnnouncement(
+                "https://musicbrainz.org/release-group/rg-sample".into()
+            )
         );
     }
 

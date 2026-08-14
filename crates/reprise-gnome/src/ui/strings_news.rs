@@ -45,17 +45,25 @@ pub const NEW_RELEASES_ARTISTS: &str = N_!("Artists");
 pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
 pub const ALL_ARTISTS: &str = N_!("All artists");
 pub const FETCH_NOW: &str = N_!("Fetch now");
-pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
-pub const UPDATES_HEADER: &str = N_!("UPDATES");
-pub const UPDATES_NEW_RELEASES_HEADER: &str = N_!("RELEASES");
-pub const UPDATES_CONCERTS_HEADER: &str = N_!("CONCERTS");
-pub const UPDATES_CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed");
-pub const UPDATES_NOTHING_NEW: &str = N_!("Nothing new since your last look");
+pub const UPDATES_HEADER: &str = N_!("Updates");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
 pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
-pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
+pub const UPDATES_NO_NEW_RELEASES: &str = N_!("No new releases");
+pub const UPDATES_NO_NEW_CONCERTS: &str = N_!("No new concerts");
+pub const UPDATES_RELEASED: &str = N_!("Released");
 pub const SEE_ALL_RELEASES: &str = N_!("See all");
 pub const HIDE_RELEASE: &str = N_!("Hide");
+const NEWS_FEED_LOADED_AT: &str = N_!("Up to date — loaded at {time}");
+const NEWS_FEED_CHECKED_AT: &str = N_!("Up to date — checked {time}");
+const NEWS_FEED_NOT_LOADED: &str = N_!("Not loaded yet");
+const NEWS_FEED_NETWORK_OFF: &str = N_!("Online sources are off");
+const NEWS_FEED_RELOAD: &str = N_!("Reload");
+pub const RELEASES_UPDATING: &str = N_!("Updating releases …");
+pub const RELEASES_UPDATE_FAILED: &str = N_!("Update failed — showing saved releases from {time}");
+pub const RELEASES_OFFLINE: &str = N_!("Offline — showing saved releases from {time}");
+pub const UPDATES_UPDATING: &str = N_!("Updating …");
+pub const UPDATES_UPDATE_FAILED: &str = N_!("Update failed — showing saved updates from {time}");
+pub const UPDATES_OFFLINE: &str = N_!("Offline — showing saved updates from {time}");
 
 pub fn tracks_selected(count: usize) -> String {
     let count_text = count.to_string();
@@ -106,26 +114,6 @@ pub fn news_cached(timestamp: i64) -> String {
     formatted(N_!("Cached · Updated {date}"), &[("date", &date)])
 }
 
-pub fn new_releases_updated_ago(timestamp: i64, now: i64) -> String {
-    let age = now.saturating_sub(timestamp).max(0);
-    if age < 60 {
-        return text(UPDATED_JUST_NOW);
-    }
-    if age < 60 * 60 {
-        let minutes = age / 60;
-        return formatted(
-            N_!("Updated {age} min ago"),
-            &[("age", &minutes.to_string())],
-        );
-    }
-    if age < 24 * 60 * 60 {
-        let hours = age / (60 * 60);
-        return formatted(N_!("Updated {age} h ago"), &[("age", &hours.to_string())]);
-    }
-    let days = age / (24 * 60 * 60);
-    formatted(N_!("Updated {age} d ago"), &[("age", &days.to_string())])
-}
-
 pub fn new_releases_hidden(count: usize) -> String {
     let count = count.to_string();
     formatted(N_!("{count} hidden · Show"), &[("count", &count)])
@@ -145,27 +133,71 @@ pub const RETENTION_SIX_MONTHS: &str = N_!("Retention: 6 months");
 /// `days > 0`; whether `days <= 0` reads as „today" or „released" is a UI
 /// decision made by the caller, not by this formatter.
 pub fn new_releases_days_until(days: i64) -> String {
-    formatted(N_!("in {days} d"), &[("days", &days.to_string())])
+    let days_text = days.to_string();
+    plural(
+        N_!("In {days} day"),
+        N_!("In {days} days"),
+        usize::try_from(days).unwrap_or_default(),
+        &[("days", &days_text)],
+    )
+}
+
+pub fn updates_release_meta(artist: &str, release_type: &str, date: &str) -> String {
+    formatted(
+        N_!("{artist} · {type} · {date}"),
+        &[("artist", artist), ("type", release_type), ("date", date)],
+    )
+}
+
+pub fn updates_concert_meta(date: &str, city: &str, venue: &str) -> String {
+    formatted(
+        N_!("{date} · {city} · {venue}"),
+        &[("date", date), ("city", city), ("venue", venue)],
+    )
+}
+
+pub fn updates_opens_source(source: &str) -> String {
+    formatted(N_!("Opens {source}"), &[("source", source)])
+}
+
+fn releases_update_failed(time: &str) -> String {
+    formatted(RELEASES_UPDATE_FAILED, &[("time", time)])
+}
+
+fn releases_offline(time: &str) -> String {
+    formatted(RELEASES_OFFLINE, &[("time", time)])
+}
+
+pub(in crate::ui) fn releases_feed_footer_copy() -> crate::ui::feed_footer::FeedFooterCopy {
+    crate::ui::feed_footer::FeedFooterCopy {
+        updating: RELEASES_UPDATING,
+        no_credentials: NEWS_FEED_NOT_LOADED,
+        failed: releases_update_failed,
+        offline: releases_offline,
+    }
+}
+
+fn updates_update_failed(time: &str) -> String {
+    formatted(UPDATES_UPDATE_FAILED, &[("time", time)])
+}
+
+fn updates_offline(time: &str) -> String {
+    formatted(UPDATES_OFFLINE, &[("time", time)])
+}
+
+pub(in crate::ui) fn updates_feed_footer_copy() -> crate::ui::feed_footer::FeedFooterCopy {
+    crate::ui::feed_footer::FeedFooterCopy {
+        updating: UPDATES_UPDATING,
+        no_credentials: super::concerts::CONCERTS_NEEDS_CONFIGURATION,
+        failed: updates_update_failed,
+        offline: updates_offline,
+    }
 }
 
 /// „N new" count pill shared by both Updates feed headers. „new" does not
 /// change with the count, so no plural form is needed.
 pub fn updates_new_count(count: usize) -> String {
     formatted(N_!("{count} new"), &[("count", &count.to_string())])
-}
-
-pub fn updates_show_all_concerts(count: usize) -> String {
-    formatted(
-        N_!("Show all concerts ({count}) →"),
-        &[("count", &count.to_string())],
-    )
-}
-
-pub fn updates_show_all_releases(count: usize) -> String {
-    formatted(
-        N_!("Show all releases ({count}) →"),
-        &[("count", &count.to_string())],
-    )
 }
 
 pub fn news_timestamp_date(timestamp: i64) -> String {
@@ -255,10 +287,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_releases_days_until_formats_positive_days() {
-        let copy = new_releases_days_until(25);
-        assert!(copy.contains("25"));
-        assert!(copy.contains('d'));
+    fn new_releases_days_until_uses_the_house_plural_form() {
+        assert_eq!(new_releases_days_until(1), "In 1 day");
+        assert_eq!(new_releases_days_until(25), "In 25 days");
     }
 
     #[test]
@@ -267,8 +298,44 @@ mod tests {
     }
 
     #[test]
-    fn updates_jump_rows_format_feed_counts() {
-        assert_eq!(updates_show_all_concerts(14), "Show all concerts (14) →");
-        assert_eq!(updates_show_all_releases(8), "Show all releases (8) →");
+    fn strand_two_visible_copy_matches_the_source_contract() {
+        assert_eq!(text(UPDATES_HEADER), "Updates");
+        assert_eq!(
+            updates_release_meta("Castiel", "EP", "2026-07-24"),
+            "Castiel · EP · 2026-07-24"
+        );
+        assert_eq!(
+            updates_concert_meta("2026-08-14", "Indianapolis", "Everwise Amphitheater"),
+            "2026-08-14 · Indianapolis · Everwise Amphitheater"
+        );
+        assert_eq!(updates_opens_source("Ticketmaster"), "Opens Ticketmaster");
+
+        let releases = releases_feed_footer_copy();
+        assert_eq!(text(releases.updating), "Updating releases …");
+        assert_eq!(
+            (releases.failed)("14:32"),
+            "Update failed — showing saved releases from 14:32"
+        );
+        assert_eq!(
+            (releases.offline)("14:32"),
+            "Offline — showing saved releases from 14:32"
+        );
+
+        let updates = updates_feed_footer_copy();
+        assert_eq!(text(updates.updating), "Updating …");
+        assert_eq!(
+            (updates.failed)("14:32"),
+            "Update failed — showing saved updates from 14:32"
+        );
+        assert_eq!(
+            (updates.offline)("14:32"),
+            "Offline — showing saved updates from 14:32"
+        );
+
+        assert_eq!(text(NEWS_FEED_LOADED_AT), "Up to date — loaded at {time}");
+        assert_eq!(text(NEWS_FEED_CHECKED_AT), "Up to date — checked {time}");
+        assert_eq!(text(NEWS_FEED_NOT_LOADED), "Not loaded yet");
+        assert_eq!(text(NEWS_FEED_NETWORK_OFF), "Online sources are off");
+        assert_eq!(text(NEWS_FEED_RELOAD), "Reload");
     }
 }

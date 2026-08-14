@@ -28,11 +28,191 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
 }
 
 #[test]
-fn nr_5b_opening_the_popover_never_requests_navigation() {
+fn opening_the_popover_never_requests_navigation() {
     let effect = opening_effect(&["one".into(), "two".into()]);
 
     assert_eq!(effect.seen_ids, ["one", "two"]);
     assert!(!effect.navigates);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_34_an_empty_section_keeps_its_header_and_its_bridge() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
+        .unwrap();
+    reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
+    let routed = Rc::new(RefCell::new(Vec::new()));
+    let on_open_view: OnOpenView = {
+        let routed = routed.clone();
+        Rc::new(move |target| routed.borrow_mut().push(target))
+    };
+    let runtime = ConcertsRuntime::setup(&conn);
+    let state = NewReleasesPopover::new(
+        conn,
+        PathBuf::from("unused.db"),
+        runtime,
+        noop_show_album(),
+        on_open_view,
+    );
+
+    state.render(false, false);
+
+    assert!(state.news_section.get_visible());
+    assert_eq!(state.empty.text(), "No new releases");
+    state.releases_header.emit_clicked();
+    assert_eq!(
+        routed.borrow().as_slice(),
+        [reprise_core::browser::navigation::SidebarTarget::Releases]
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_35_the_concerts_section_header_carries_the_unseen_count() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let section = ConcertsSection::new();
+    let navigated = Rc::new(Cell::new(false));
+    section.set_on_open_view({
+        let navigated = navigated.clone();
+        Rc::new(move || navigated.set(true))
+    });
+    section.render(
+        true,
+        true,
+        415,
+        true,
+        &[],
+        chrono::NaiveDate::from_ymd_opt(2026, 8, 14).unwrap(),
+        false,
+    );
+
+    assert!(section.root().get_visible());
+    assert_eq!(section.count_tag().text(), "415 new");
+    assert!(section.count_tag().get_visible());
+    assert_eq!(section.empty_label().text(), "No new concerts");
+    section.header().emit_clicked();
+    assert!(navigated.get());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_36_dismissing_a_row_never_opens_its_link() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let cover = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let opened = Rc::new(Cell::new(false));
+    let dismissed = Rc::new(Cell::new(false));
+    let row = feed_row::build(
+        &cover,
+        feed_row::Presentation {
+            title: "Release".into(),
+            title_suffix: None,
+            meta: "Artist · Album · 14.08.2026".into(),
+            tag: None,
+            tooltip: "Opens MusicBrainz".into(),
+            activatable: true,
+        },
+        "Hide",
+        {
+            let opened = opened.clone();
+            Rc::new(move || opened.set(true))
+        },
+        {
+            let dismissed = dismissed.clone();
+            Rc::new(move || dismissed.set(true))
+        },
+    );
+
+    assert_eq!(row.activation.parent(), Some(row.root.clone().upcast()));
+    assert_eq!(row.dismiss.parent(), Some(row.root.clone().upcast()));
+    assert_eq!(
+        row.activation.next_sibling(),
+        Some(row.dismiss.clone().upcast()),
+        "dismiss is the activation button's sibling, never its child"
+    );
+    row.dismiss.emit_clicked();
+
+    assert!(dismissed.get());
+    assert!(!opened.get());
+}
+
+#[test]
+fn dismissed_concert_is_removed_from_the_held_session_delta() {
+    let rows = vec![
+        concert_row(10, "First"),
+        concert_row(20, "Dismissed"),
+        concert_row(30, "Third"),
+    ];
+    let dismissed = std::collections::HashSet::from([20]);
+
+    let visible = visible_concert_rows(rows, &dismissed);
+
+    assert_eq!(
+        visible.iter().map(|row| row.id).collect::<Vec<_>>(),
+        [10, 30]
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_38_a_row_opens_the_same_url_its_tooltip_names() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let cover = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let opened = Rc::new(RefCell::new(Vec::new()));
+    let target = "https://musicbrainz.org/release-group/example";
+    let row = feed_row::build(
+        &cover,
+        feed_row::Presentation {
+            title: "Release".into(),
+            title_suffix: None,
+            meta: "Artist · Album · 14.08.2026".into(),
+            tag: None,
+            tooltip: "Opens MusicBrainz".into(),
+            activatable: true,
+        },
+        "Hide",
+        {
+            let opened = opened.clone();
+            let target = target.to_owned();
+            Rc::new(move || opened.borrow_mut().push(target.clone()))
+        },
+        Rc::new(|| {}),
+    );
+
+    assert_eq!(
+        row.root.tooltip_text().as_deref(),
+        Some("Opens MusicBrainz")
+    );
+    assert!(row.root.is_sensitive());
+    row.activation.emit_clicked();
+    assert_eq!(opened.borrow().as_slice(), [target]);
+
+    let inert_cover = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let inert = feed_row::build(
+        &inert_cover,
+        feed_row::Presentation {
+            title: "Concert".into(),
+            title_suffix: None,
+            meta: "14.08.2026 · Zurich · Hall".into(),
+            tag: None,
+            tooltip: strings::text(strings::CONCERTS_NO_LINK),
+            activatable: false,
+        },
+        "Dismiss",
+        Rc::new(|| panic!("an inert row must not activate")),
+        Rc::new(|| {}),
+    );
+    assert!(!inert.activation.is_sensitive());
+    assert!(inert.root.is_sensitive());
+    assert_eq!(
+        inert.root.tooltip_text(),
+        Some(strings::text(strings::CONCERTS_NO_LINK).into())
+    );
 }
 
 /// The visible batch is capped at five, but opening must stamp every unseen
@@ -59,30 +239,29 @@ fn nr_29_opening_stamps_every_unseen_candidate_not_only_the_visible_batch() {
 }
 
 #[test]
-fn nr_22_failure_keeps_updated_age_with_an_inline_cached_hint() {
-    let presentation = footer_presentation(Some(100), 3_700, true);
+fn nr_37_the_popover_footer_reports_the_older_of_both_feeds() {
+    let news = ActiveFeed {
+        active: true,
+        latest: Some(200),
+        loaded_this_visit: true,
+    };
+    let concerts = ActiveFeed {
+        active: true,
+        latest: Some(100),
+        loaded_this_visit: false,
+    };
 
-    assert_eq!(presentation.updated, "Updated 1 h ago");
-    assert!(presentation.show_cached_failure);
-}
-
-#[test]
-fn shared_footer_uses_the_oldest_active_feed_and_names_failures() {
     assert_eq!(
-        oldest_active_feed_timestamp(true, Some(200), true, Some(100)),
-        Some(100)
+        aggregate_footer_state(news, concerts, true, false, false, false),
+        crate::ui::feed_footer::FeedFooterState::Cached { at: 100 }
     );
     assert_eq!(
-        oldest_active_feed_timestamp(true, Some(200), true, None),
-        None
+        aggregate_footer_state(news, concerts, true, true, false, false),
+        crate::ui::feed_footer::FeedFooterState::Fetching {
+            checked: 0,
+            total: 0
+        }
     );
-    assert_eq!(
-        oldest_active_feed_timestamp(true, Some(200), false, None),
-        Some(200)
-    );
-    assert!(fetch_failure_text(false, true).contains("Concerts"));
-    let both = fetch_failure_text(true, true);
-    assert!(both.contains("saved releases") && both.contains("Concerts"));
 }
 
 /// A no-op stand-in for the window-supplied navigation callback: these
@@ -90,6 +269,29 @@ fn shared_footer_uses_the_oldest_active_feed_and_names_failures() {
 /// navigation (that lives in `release_row.rs`'s own tests).
 fn noop_show_album() -> release_row::OnShowAlbum {
     Rc::new(|_, _| {})
+}
+
+fn concert_row(id: i64, artist: &str) -> reprise_core::concerts::ConcertRow {
+    reprise_core::concerts::ConcertRow {
+        id,
+        date_key: "2026-08-20".into(),
+        starts_at: "2026-08-20T20:00:00".into(),
+        artist_name: artist.into(),
+        venue: "Hall".into(),
+        city: "Zurich".into(),
+        region: None,
+        country: Some("CH".into()),
+        latitude: None,
+        longitude: None,
+        distance_km: None,
+        ticket_url: Some(format!("https://tickets.example/{id}")),
+        ticket_source: Some("Tickets".into()),
+        event_url: None,
+        provider: "fixture".into(),
+        is_similar: false,
+        similar_to: None,
+        availability: reprise_core::concerts::TicketAvailability::Unknown,
+    }
 }
 
 fn test_popover(conn: Rc<Db>, database_path: PathBuf) -> Rc<NewReleasesPopover> {
@@ -141,7 +343,7 @@ fn nr_7_disabled_module_hides_the_button_and_blocks_fetch() {
         ModuleEffect {
             button_visible: false,
             fetch_allowed: true,
-            empty: EmptyPresentation::Hidden,
+            empty: EmptyPresentation::NoReleases,
             badge_allowed: false,
         }
     );
@@ -230,7 +432,7 @@ fn nr_3a_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
 /// The reachability gap NR-8 closes. Every other test here enables the
 /// module *after* inserting a release, so none of them walks the path a
 /// real user takes: switch the plugin on while the table is still empty.
-/// On that path the sparkle never appears, "Fetch now" lives inside the
+/// On that path the sparkle never appears, the reload action lives inside the
 /// popover behind it, and nothing else requests a fetch — so the feature
 /// can never populate itself. Green rule-by-rule tests missed this because
 /// the defect sits between the rules, not inside one.
@@ -325,7 +527,7 @@ fn nr_29_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
 /// contradicted each other. A held-over batch renders without a count.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_23_a_held_over_batch_renders_without_claiming_to_be_new() {
+fn nr_34_a_held_over_batch_renders_without_claiming_to_be_new() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
@@ -362,25 +564,6 @@ fn nr_23_a_held_over_batch_renders_without_claiming_to_be_new() {
         !state.badge.get_visible(),
         "and the badge agrees — that is the point"
     );
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn nr_23_an_empty_batch_hides_its_header_and_list() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    if gtk4::init().is_err() {
-        return;
-    }
-    let conn = Rc::new(crate::test_db::open().unwrap());
-    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
-        .unwrap();
-    reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
-    let state = test_popover(conn, PathBuf::from("unused.db"));
-
-    state.render(false, false);
-
-    assert!(!state.news_section.get_visible());
-    assert!(state.nothing_new.get_visible());
 }
 
 /// B5: the hourly background staleness timer's lifecycle is coupled to the
@@ -423,39 +606,5 @@ fn enabling_starts_the_refresh_timer_and_disabling_stops_it() {
     assert!(
         !state.has_active_timer(),
         "disabling the module must stop the hourly staleness timer"
-    );
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn nr_5b_jump_rows_route_to_full_views_without_an_internal_page() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    if gtk4::init().is_err() {
-        return;
-    }
-    let conn = Rc::new(crate::test_db::open().unwrap());
-    let routed = Rc::new(RefCell::new(Vec::new()));
-    let on_open_view: OnOpenView = {
-        let routed = routed.clone();
-        Rc::new(move |target| routed.borrow_mut().push(target))
-    };
-    let runtime = ConcertsRuntime::setup(&conn);
-    let state = NewReleasesPopover::new(
-        conn,
-        PathBuf::from("unused.db"),
-        runtime,
-        noop_show_album(),
-        on_open_view,
-    );
-
-    state.releases_jump.emit_clicked();
-    state.concerts_jump.emit_clicked();
-
-    assert_eq!(
-        routed.borrow().as_slice(),
-        [
-            reprise_core::browser::navigation::SidebarTarget::Releases,
-            reprise_core::browser::navigation::SidebarTarget::Concerts,
-        ]
     );
 }
