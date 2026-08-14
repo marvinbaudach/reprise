@@ -436,6 +436,8 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     }
     val ambientScheduleEvents = mutableListOf<Boolean>()
     var animationsEnabled = true
+    var onlineSourcesEnabled = false
+    var onlineSourcesWriteSucceeds = true
     val trackRatings = mutableMapOf<Long, Int>()
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
@@ -677,6 +679,15 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 PlaybackSettingsUiState(false, enabled, emptyList())
             },
             selectTheme = { current, _ -> current },
+            onlineSourcesEnabled = { onlineSourcesEnabled },
+            setOnlineSourcesEnabled = { enabled ->
+                if (onlineSourcesWriteSucceeds) {
+                    onlineSourcesEnabled = enabled
+                    Result.success(Unit)
+                } else {
+                    Result.failure(IllegalStateException("online source write failed"))
+                }
+            },
             animationsEnabled = { animationsEnabled },
             observeAmbientScheduling = ambientScheduleEvents::add,
         )

@@ -1,8 +1,8 @@
 ---
 slug: android-artist-photos-ui
-worktree:
-branch:
-phase: planned
+worktree: /home/marvin/Projects/reprise-android-artist-photos-ui
+branch: feature/android-artist-photos-ui
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
@@ -409,6 +409,11 @@ Zeitpunkt bereits gelandet.
 ---
 
 ## Aufgabe 10 — Sichtprüfung am Gerät
+
+**Status: OFFEN.** Aufgaben 1–9 sind gelandet, diese nicht. Sie braucht ein
+echtes Telefon und einen Release-Build, läuft deshalb unter Aufsicht und wurde
+aus dem headless Codex-Lauf bewusst ausgeschlossen. `phase: shipped` in diesem
+Statusblock bezieht sich auf den Code, nicht auf diese Abnahme.
 
 **Dateien:** keine.
 

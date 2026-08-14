@@ -23,6 +23,8 @@ internal fun SettingsNavigation(
     artistCount: Long,
     folderName: String?,
     themeSelection: MobileThemeSelection,
+    onlineSourcesEnabled: Boolean = false,
+    setOnlineSourcesEnabled: (Boolean) -> Unit = {},
     close: () -> Unit,
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
@@ -47,6 +49,7 @@ internal fun SettingsNavigation(
             SettingsOverview(
                 titleCount = titleCount,
                 themeSelection = themeSelection,
+                onlineSourcesEnabled = onlineSourcesEnabled,
                 versionName = BuildConfig.VERSION_NAME,
                 error = state.error,
                 close = close,
@@ -94,6 +97,13 @@ internal fun SettingsNavigation(
             AppearanceSettingsPage(
                 themeSelection = themeSelection,
                 selectTheme = selectTheme,
+                back = { navController.navigateUp() },
+            )
+        }
+        composable(SettingsRoute.ONLINE_SOURCES.route) {
+            OnlineSourcesSettingsPage(
+                enabled = onlineSourcesEnabled,
+                setEnabled = setOnlineSourcesEnabled,
                 back = { navController.navigateUp() },
             )
         }

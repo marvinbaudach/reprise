@@ -74,11 +74,12 @@ pub enum LibraryError {
     ListenReport { detail: String },
 }
 
-/// The two measured Android artwork slots; both remain lazy per track.
+/// The three measured Android artwork slots; all remain lazy per item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum AndroidArtworkSize {
     List,
     NowPlaying,
+    ArtistDetail,
 }
 
 impl AndroidArtworkSize {
@@ -86,6 +87,7 @@ impl AndroidArtworkSize {
         match self {
             Self::List => reprise_core::cover::ThumbnailSize::MobileList,
             Self::NowPlaying => reprise_core::cover::ThumbnailSize::MobileFull,
+            Self::ArtistDetail => reprise_core::cover::ThumbnailSize::MobilePortrait,
         }
     }
 }

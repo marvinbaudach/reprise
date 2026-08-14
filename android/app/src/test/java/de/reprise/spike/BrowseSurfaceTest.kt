@@ -632,6 +632,10 @@ private class RecordingBrowsePort(
         return artwork[trackUri]
     }
 
+    override fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? = null
+
+    override fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? = null
+
     override fun setFavourite(trackId: Long, favourite: Boolean) {
         operations += "rating:$trackId:${if (favourite) 5 else 0}"
     }

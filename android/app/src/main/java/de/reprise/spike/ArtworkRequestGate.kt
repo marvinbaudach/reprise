@@ -2,6 +2,11 @@ package de.reprise.spike
 
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
+internal enum class ArtworkKind {
+    TRACK,
+    ARTIST,
+}
+
 /**
  * One list slot's claim on an artwork resolution.
  *
@@ -13,6 +18,9 @@ internal class ArtworkRequest(
     val size: AndroidArtworkSize,
     val title: String = "",
     val artist: String = "",
+    val kind: ArtworkKind = ArtworkKind.TRACK,
+    val artistName: String = "",
+    val allowFetch: Boolean = false,
 )
 
 /**
@@ -33,7 +41,18 @@ internal class ArtworkRequestGate {
         size: AndroidArtworkSize = AndroidArtworkSize.LIST,
         title: String = "",
         artist: String = "",
-    ): ArtworkRequest = ArtworkRequest(trackUri, size, title, artist).also { request ->
+        kind: ArtworkKind = ArtworkKind.TRACK,
+        artistName: String = "",
+        allowFetch: Boolean = false,
+    ): ArtworkRequest = ArtworkRequest(
+        trackUri,
+        size,
+        title,
+        artist,
+        kind,
+        artistName,
+        allowFetch,
+    ).also { request ->
         current = request
     }
 
