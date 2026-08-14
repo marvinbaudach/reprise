@@ -2,7 +2,7 @@
 slug: doctor-review-selection-and-refresh-a
 worktree: /home/marvin/Projects/reprise-doctor-review-selection-and-refresh-a
 branch: feature/doctor-review-selection-and-refresh-a
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-14
 ---
