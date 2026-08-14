@@ -45,7 +45,7 @@ pub const NEW_RELEASES_ARTISTS: &str = N_!("Artists");
 pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
 pub const ALL_ARTISTS: &str = N_!("All artists");
 pub const FETCH_NOW: &str = N_!("Fetch now");
-pub const UPDATES_HEADER: &str = N_!("UPDATES");
+pub const UPDATES_HEADER: &str = N_!("Updates");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
 pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
 pub const UPDATES_NO_NEW_RELEASES: &str = N_!("No new releases");
@@ -295,5 +295,47 @@ mod tests {
     #[test]
     fn updates_new_count_formats_either_feed() {
         assert_eq!(updates_new_count(3), "3 new");
+    }
+
+    #[test]
+    fn strand_two_visible_copy_matches_the_source_contract() {
+        assert_eq!(text(UPDATES_HEADER), "Updates");
+        assert_eq!(
+            updates_release_meta("Castiel", "EP", "2026-07-24"),
+            "Castiel · EP · 2026-07-24"
+        );
+        assert_eq!(
+            updates_concert_meta("2026-08-14", "Indianapolis", "Everwise Amphitheater"),
+            "2026-08-14 · Indianapolis · Everwise Amphitheater"
+        );
+        assert_eq!(updates_opens_source("Ticketmaster"), "Opens Ticketmaster");
+
+        let releases = releases_feed_footer_copy();
+        assert_eq!(text(releases.updating), "Updating releases …");
+        assert_eq!(
+            (releases.failed)("14:32"),
+            "Update failed — showing saved releases from 14:32"
+        );
+        assert_eq!(
+            (releases.offline)("14:32"),
+            "Offline — showing saved releases from 14:32"
+        );
+
+        let updates = updates_feed_footer_copy();
+        assert_eq!(text(updates.updating), "Updating …");
+        assert_eq!(
+            (updates.failed)("14:32"),
+            "Update failed — showing saved updates from 14:32"
+        );
+        assert_eq!(
+            (updates.offline)("14:32"),
+            "Offline — showing saved updates from 14:32"
+        );
+
+        assert_eq!(text(NEWS_FEED_LOADED_AT), "Up to date — loaded at {time}");
+        assert_eq!(text(NEWS_FEED_CHECKED_AT), "Up to date — checked {time}");
+        assert_eq!(text(NEWS_FEED_NOT_LOADED), "Not loaded yet");
+        assert_eq!(text(NEWS_FEED_NETWORK_OFF), "Online sources are off");
+        assert_eq!(text(NEWS_FEED_RELOAD), "Reload");
     }
 }
