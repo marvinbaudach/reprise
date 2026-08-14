@@ -76,6 +76,15 @@ pub const RADIO_REPORT_PLAYS: &str = N_!("Report plays to the directory");
 /// [`radio_chip_genre_in_country`] or from the genre alone.
 pub const RADIO_CHIP_TOP_VOTED: &str = N_!("Top voted");
 pub const RADIO_CHIP_NEAR_YOU: &str = N_!("Near you");
+pub const RADIO_NEAR_YOU_NO_LOCATION_TITLE: &str = N_!("No location set");
+pub const RADIO_NEAR_YOU_NO_LOCATION_DESCRIPTION: &str = N_!(
+    "Near you needs a city to look up stations. It is one setting, shared with Concerts and local podcasts."
+);
+pub const RADIO_NEAR_YOU_NO_COUNTRY_TITLE: &str = N_!("Location has no country");
+pub const RADIO_NEAR_YOU_NO_COUNTRY_DESCRIPTION: &str = N_!(
+    "Near you filters by country. The location from \"Use current location\" carries coordinates only — set a city to get one."
+);
+pub const RADIO_OPEN_LOCATION_PREFERENCES: &str = N_!("Open Preferences › Location");
 
 /// `RAD-5`: the library chip once a country is known — "Metal in DE". Both
 /// parts come from the user's own data, so the order has to stay

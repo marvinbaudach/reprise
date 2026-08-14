@@ -19,6 +19,8 @@ use super::concerts_failure_ui::{
     concerts_failure_presentation, failure_support, row_is_dimmed, update_failure_for_connectivity,
 };
 use super::concerts_filter_bar::ConcertsFilterBar;
+use super::concerts_location_banner::ConcertsLocationBanner;
+use super::concerts_location_columns::LocationColumns;
 use super::concerts_model::{ConcertObject, ConcertsModel};
 use super::concerts_presentation::{sort_rows, updated_ago, ConcertSortKey, SortDirection};
 use super::concerts_search::concerts_matching;
@@ -52,6 +54,7 @@ struct Shared {
     cached_items: Cell<usize>,
     column_view: gtk4::ColumnView,
     column_model: Rc<dyn crate::ui::table_columns::EditorModel>,
+    location_columns: LocationColumns,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
@@ -60,6 +63,7 @@ struct Shared {
     spinner: gtk4::Spinner,
     updated: gtk4::Label,
     error_banner: SourceErrorBanner,
+    location_banner: ConcertsLocationBanner,
     failure_state: SourceFailureState,
     fetch_failure: RefCell<Option<ConcertFailure>>,
     failure_occurred_at: RefCell<String>,
@@ -106,7 +110,8 @@ impl ConcertsView {
         };
         let columns = concerts_columns::append_columns(&column_view, &on_open, &query_source);
         let column_registry = super::concerts_column_layout::registry(&column_view, conn.clone());
-        let column_model = super::concerts_column_layout::model(&column_registry);
+        let (location_columns, column_model) =
+            LocationColumns::new(column_registry, &column_view, columns);
         crate::ui::table_columns::header_popover::install_header_popover(
             &column_view,
             &column_model,
@@ -146,9 +151,11 @@ impl ConcertsView {
 
         let (footer, updated, fetch_button, fetch_stack, spinner) = build_footer();
         let error_banner = SourceErrorBanner::new();
+        let location_banner = ConcertsLocationBanner::new();
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-concerts-view");
         root.append(filter_bar.widget());
+        root.append(location_banner.widget());
         root.append(error_banner.widget());
         root.append(&stack);
         root.append(&footer);
@@ -163,6 +170,7 @@ impl ConcertsView {
             cached_items: Cell::new(0),
             column_view: column_view.clone(),
             column_model,
+            location_columns,
             stack,
             status,
             status_button: status_button.clone(),
@@ -171,6 +179,7 @@ impl ConcertsView {
             spinner,
             updated,
             error_banner,
+            location_banner,
             failure_state,
             fetch_failure: RefCell::new(None),
             failure_occurred_at: RefCell::new(String::new()),
@@ -190,6 +199,30 @@ impl ConcertsView {
             filter_bar.set_on_changed(move |_| {
                 if let Some(shared) = shared.upgrade() {
                     notify_filter_changed(&shared.runtime);
+                }
+            });
+        }
+        {
+            let shared = Rc::downgrade(&shared);
+            filter_bar.set_on_open_location(move || {
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                let callback = shared.on_open_preferences.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            });
+        }
+        {
+            let weak = Rc::downgrade(&shared);
+            shared.location_banner.set_on_open_location(move || {
+                let Some(shared) = weak.upgrade() else {
+                    return;
+                };
+                let callback = shared.on_open_preferences.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
                 }
             });
         }
@@ -309,7 +342,7 @@ impl ConcertsView {
             );
         }
         wire_sorting(&column_view, &shared);
-        column_view.sort_by_column(Some(&columns.date), gtk4::SortType::Ascending);
+        shared.location_columns.sort_by_date();
 
         Self {
             root: root.upcast(),
@@ -420,8 +453,14 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let never_fetched = latest_fetch.is_none();
     shared
         .filter_bar
-        .set_context(location.is_some(), similar_enabled, has_similar_rows);
+        .set_context(location.as_ref(), similar_enabled, has_similar_rows);
     shared.filter_bar.set_counts(rows.len(), total);
+    shared.location_columns.apply(location.is_some());
+    if location.is_some() {
+        shared.location_banner.hide();
+    } else {
+        shared.location_banner.show(total);
+    }
     shared
         .end_of_results
         .update(crate::ui::end_of_results::EndOfResultsInput {
@@ -720,7 +759,7 @@ fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
         return;
     };
     let key = match column.id().as_deref() {
-        Some("distance") => ConcertSortKey::Distance,
+        Some("distance") if shared.location_columns.has_location() => ConcertSortKey::Distance,
         _ => ConcertSortKey::Date,
     };
     let direction = if sorter.primary_sort_order() == gtk4::SortType::Descending {

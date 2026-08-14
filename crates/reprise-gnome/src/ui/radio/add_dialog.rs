@@ -10,6 +10,7 @@ use reprise_core::radio::playlist::PlaylistKind;
 use reprise_core::radio::search::{SearchCriteria, SearchOrder, StationCandidate};
 use reprise_core::radio::{self, RadioError};
 
+use super::add_dialog_location::LocationResults;
 use super::add_dialog_network::{now_unix, preview_url};
 use super::add_dialog_rows;
 use super::images_allowed;
@@ -35,6 +36,7 @@ pub(super) enum AddDialogPhase {
     Results(Vec<StationCandidate>),
     Previewing,
     Preview(StationPreview),
+    NearYou(NearYouAction),
     Error(AddFailure),
 }
 
@@ -147,6 +149,7 @@ struct DialogWidgets {
     spinner: gtk4::Spinner,
     status: gtk4::Label,
     results: gtk4::ListBox,
+    location_results: LocationResults,
     preview: gtk4::Box,
     confirm: gtk4::Button,
     fetch_metadata: gtk4::Switch,
@@ -235,20 +238,8 @@ impl RadioAddDialog {
         content.append(&chips.root);
         content.append(&spinner);
         content.append(&status);
-        // SRC-8: the result list is the only part that may grow. A bare
-        // GtkListBox contributes every row's natural height, so fifty hits push
-        // the footer — and every Add action with it — past the window edge.
-        let results_scroller = gtk4::ScrolledWindow::builder()
-            .hscrollbar_policy(gtk4::PolicyType::Never)
-            .vscrollbar_policy(gtk4::PolicyType::Automatic)
-            .propagate_natural_height(true)
-            .vexpand(true)
-            .child(&results)
-            .build();
-        // SRC-8: same clearance from the overlay scrollbar as the podcast and
-        // channel dialogs, so no row action sits underneath it.
-        results.set_margin_end(6);
-        content.append(&results_scroller);
+        let location_results = LocationResults::new(&results);
+        content.append(location_results.widget());
         content.append(&preview);
         content.append(&fetch_row);
         content.append(&footnote);
@@ -278,6 +269,7 @@ impl RadioAddDialog {
                 spinner,
                 status,
                 results,
+                location_results,
                 preview,
                 confirm,
                 fetch_metadata,
@@ -347,6 +339,20 @@ impl RadioAddDialog {
                 }
             });
         }
+        {
+            let weak = Rc::downgrade(&this);
+            this.widgets
+                .location_results
+                .connect_open_preferences(move || {
+                    let Some(this) = weak.upgrade() else {
+                        return;
+                    };
+                    let callback = this.on_location_settings.borrow().clone();
+                    if let Some(callback) = callback {
+                        callback();
+                    }
+                });
+        }
         this
     }
 
@@ -374,6 +380,36 @@ impl RadioAddDialog {
         let suggestion = radio_chips::library_suggestion(genre, location.as_ref());
         radio_chips::apply_library_suggestion(&self.widgets.chip_library, suggestion.as_ref());
         *self.library_suggestion.borrow_mut() = suggestion;
+    }
+
+    /// Location is app state, so this subscription deliberately bypasses
+    /// both the Concerts module and the online-source gate. If the user has
+    /// the honest Near-you empty state open, a usable new location resumes
+    /// that same intent immediately.
+    pub(super) fn subscribe_location(
+        self: &Rc<Self>,
+        broadcast: &Rc<crate::ui::location_broadcast::LocationBroadcast>,
+    ) {
+        let alive = Rc::downgrade(self);
+        let callback = Rc::downgrade(self);
+        broadcast.subscribe(
+            move || alive.upgrade().is_some(),
+            move || {
+                let Some(this) = callback.upgrade() else {
+                    return;
+                };
+                this.refresh_library_chip();
+                let near_you_open = matches!(
+                    this.state.borrow().phase,
+                    AddDialogPhase::NearYou(
+                        NearYouAction::MissingLocation | NearYouAction::MissingCountry
+                    )
+                );
+                if near_you_open {
+                    this.run_near_you();
+                }
+            },
+        );
     }
 
     pub(super) fn present(self: &Rc<Self>, parent: &impl IsA<gtk4::Widget>) {
@@ -497,10 +533,15 @@ impl RadioAddDialog {
             NearYouAction::Search(criteria) => {
                 self.run_chip_search(&strings::text(strings::RADIO_CHIP_NEAR_YOU), criteria);
             }
-            NearYouAction::OpenLocationSettings => {
-                if let Some(callback) = self.on_location_settings.borrow().clone() {
-                    callback();
-                }
+            action @ (NearYouAction::MissingLocation | NearYouAction::MissingCountry) => {
+                self.widgets
+                    .entry
+                    .set_text(&strings::text(strings::RADIO_CHIP_NEAR_YOU));
+                let mut state = self.state.borrow().clone();
+                state.phase = AddDialogPhase::NearYou(action);
+                state.query = None;
+                state.result_label = Some(strings::text(strings::RADIO_CHIP_NEAR_YOU));
+                self.render(state);
             }
         }
     }
@@ -584,6 +625,7 @@ impl RadioAddDialog {
         self.widgets.status.set_visible(false);
         self.widgets.status.remove_css_class("error");
         self.widgets.preview.set_visible(false);
+        self.widgets.location_results.show_results();
         self.widgets.confirm.set_sensitive(state.can_confirm());
         self.widgets.results.remove_all();
         self.widgets.fetch_row.set_visible(matches!(
@@ -604,6 +646,7 @@ impl RadioAddDialog {
             }
             AddDialogPhase::Results(rows) => self.render_results(rows),
             AddDialogPhase::Preview(preview) => self.render_preview(&preview),
+            AddDialogPhase::NearYou(action) => self.widgets.location_results.show_empty(&action),
             AddDialogPhase::Error(failure) => {
                 self.widgets.status.set_text(&strings::text(match failure {
                     AddFailure::Search => strings::RADIO_SEARCH_FAILED,

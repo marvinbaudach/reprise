@@ -296,6 +296,7 @@ fn ticket_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
 
 pub(super) struct SortColumns {
     pub date: gtk4::ColumnViewColumn,
+    pub venue: gtk4::ColumnViewColumn,
     pub distance: gtk4::ColumnViewColumn,
 }
 
@@ -329,7 +330,7 @@ pub(super) fn append_columns(
         |row| row.city.clone(),
         city_tooltip,
     );
-    text_column(
+    let venue = text_column(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_VENUE),
@@ -354,7 +355,11 @@ pub(super) fn append_columns(
         |_| None,
     );
     ticket_column(view, on_open);
-    SortColumns { date, distance }
+    SortColumns {
+        date,
+        venue,
+        distance,
+    }
 }
 
 #[cfg(test)]

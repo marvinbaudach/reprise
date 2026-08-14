@@ -9,6 +9,8 @@ mod concerts_columns;
 mod concerts_empty_state;
 mod concerts_failure_ui;
 mod concerts_filter_bar;
+mod concerts_location_banner;
+mod concerts_location_columns;
 mod concerts_model;
 pub(in crate::ui) mod concerts_presentation;
 mod concerts_search;

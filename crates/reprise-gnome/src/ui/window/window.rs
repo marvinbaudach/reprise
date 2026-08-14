@@ -329,6 +329,7 @@ pub fn build(
         player.as_ref(),
         &sidebar,
         &content_stack,
+        &location_broadcast,
     );
     super::startup_report::mark("source_views::install (podcasts / YouTube / radio)");
     // The toast layer is attached after the player-bar shell exists so
@@ -542,7 +543,6 @@ pub fn build(
     super::window_online_module_test_hook::publish(&preferences, &cover_batch, &lyrics_batch);
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
     super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
-
     tracing::info!("main window built");
     let startup_completion = if startup_report_armed {
         let mapped = Rc::new(Cell::new(false));

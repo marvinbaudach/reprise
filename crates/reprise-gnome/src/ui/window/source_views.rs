@@ -37,6 +37,7 @@ pub(in crate::ui) fn install(
     player: Option<&Rc<PlayerController>>,
     sidebar: &Rc<Sidebar>,
     content_stack: &gtk4::Stack,
+    location_broadcast: &Rc<crate::ui::location_broadcast::LocationBroadcast>,
 ) -> SourceViews {
     let callbacks = crate::ui::podcasts::PodcastsCallbacks::new(
         {
@@ -110,7 +111,11 @@ pub(in crate::ui) fn install(
         callbacks,
         reprise_core::podcasts::PodcastKind::Youtube,
     );
-    let radio = Rc::new(crate::ui::radio::install(conn.clone(), player));
+    let radio = Rc::new(crate::ui::radio::install(
+        conn.clone(),
+        player,
+        location_broadcast,
+    ));
     content_stack.add_named(podcasts.root(), Some("podcasts"));
     content_stack.add_named(youtube.root(), Some("youtube"));
     content_stack.add_named(radio.root(), Some("radio"));

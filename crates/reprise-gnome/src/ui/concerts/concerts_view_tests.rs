@@ -16,6 +16,7 @@ fn conc_3_concerts_view_exposes_six_columns_and_row_activation() {
         .first_child()
         .and_then(|child| child.next_sibling())
         .and_then(|child| child.next_sibling())
+        .and_then(|child| child.next_sibling())
         .and_downcast::<gtk4::Stack>()
         .unwrap();
     let scrolled = stack
@@ -194,6 +195,63 @@ fn conc_4b_app_location_broadcast_re_evaluates_the_open_view() {
     location_broadcast.notify();
 
     assert_eq!(refreshes.get(), 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn conc_2_location_availability_hides_distance_without_overwriting_user_choice() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ConcertsRuntime::setup(&conn);
+    let broadcast = Rc::new(crate::ui::location_broadcast::LocationBroadcast::default());
+    let view = ConcertsView::new(conn.clone(), &runtime, &broadcast);
+
+    view.refresh();
+    assert!(!view.shared.location_columns.distance_visible());
+    assert!(!view.shared.location_columns.distance_sortable());
+    assert!(view.shared.location_columns.venue_expands());
+    assert_eq!(
+        view.shared.location_columns.venue_column_id().as_deref(),
+        Some("venue"),
+        "the Venue column, not City, must absorb the freed width"
+    );
+    assert!(!view
+        .shared
+        .column_model
+        .columns()
+        .iter()
+        .any(|column| column.id == "distance"));
+
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert!(view.shared.location_columns.distance_visible());
+    assert!(view.shared.location_columns.distance_sortable());
+    view.shared
+        .location_columns
+        .sort_by_distance(gtk4::SortType::Descending);
+    reprise_core::location::clear(&conn).unwrap();
+    broadcast.notify();
+    assert_eq!(
+        view.shared.location_columns.primary_sort().0.as_deref(),
+        Some("date")
+    );
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert_eq!(
+        view.shared.location_columns.primary_sort(),
+        (Some("distance".to_owned()), gtk4::SortType::Descending),
+        "restoring location must restore the exact Distance sort"
+    );
+
+    view.shared.column_model.set_visible("distance", false);
+    reprise_core::location::clear(&conn).unwrap();
+    broadcast.notify();
+    reprise_core::location::store(&conn, 47.376, 8.541, "Zürich", Some("CH")).unwrap();
+    broadcast.notify();
+    assert!(
+        !view.shared.location_columns.distance_visible(),
+        "restoring location must honor the user's previously hidden Distance column"
+    );
 }
 
 #[test]

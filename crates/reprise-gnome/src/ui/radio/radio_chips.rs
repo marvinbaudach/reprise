@@ -23,7 +23,8 @@ use crate::ui::strings;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum NearYouAction {
     Search(SearchCriteria),
-    OpenLocationSettings,
+    MissingLocation,
+    MissingCountry,
 }
 
 /// Pure so it is testable without a display. `O-4`'s only permitted country
@@ -31,15 +32,16 @@ pub(super) enum NearYouAction {
 /// forward-geocode request behind city search — never a new
 /// reverse-geocoding call — so a location set via the XDG portal ("Use
 /// current location") carries no country and, like no location at all,
-/// resolves to [`NearYouAction::OpenLocationSettings`] rather than a search
-/// that silently ignores "near you" and returns the whole catalog.
+/// resolves to an honest, specific empty state rather than a search that
+/// silently ignores "near you" and returns the whole catalog.
 pub(super) fn near_you_action(location: Option<&AppLocation>) -> NearYouAction {
-    match location.and_then(|location| location.country_code.clone()) {
-        Some(country_code) => NearYouAction::Search(SearchCriteria {
+    match location {
+        None => NearYouAction::MissingLocation,
+        Some(location) if location.country_code.is_none() => NearYouAction::MissingCountry,
+        Some(location) => NearYouAction::Search(SearchCriteria {
             tag: None,
-            country_code: Some(country_code),
+            country_code: location.country_code.clone(),
         }),
-        None => NearYouAction::OpenLocationSettings,
     }
 }
 
@@ -168,11 +170,11 @@ mod tests {
     }
 
     /// `RAD-5`: the required "absent without a location" half — activating
-    /// "Near you" with no stored location opens the location setting and
-    /// starts no search.
+    /// "Near you" with no stored location exposes the missing input without
+    /// dispatching an unfiltered search.
     #[test]
-    fn rad_5_near_you_without_a_location_opens_the_location_setting_and_starts_no_search() {
-        assert_eq!(near_you_action(None), NearYouAction::OpenLocationSettings);
+    fn rad_5_near_you_without_a_location_has_its_own_empty_state() {
+        assert_eq!(near_you_action(None), NearYouAction::MissingLocation);
     }
 
     /// `RAD-5`: a location that exists but has no derivable country — the
@@ -180,10 +182,10 @@ mod tests {
     /// only — must resolve exactly like no location at all. Never a silent
     /// unfiltered search dressed up as "near you".
     #[test]
-    fn rad_5_a_location_without_a_country_also_opens_the_location_setting() {
+    fn rad_5_a_location_without_a_country_has_distinct_honest_copy() {
         assert_eq!(
             near_you_action(Some(&location(None))),
-            NearYouAction::OpenLocationSettings
+            NearYouAction::MissingCountry
         );
     }
 
