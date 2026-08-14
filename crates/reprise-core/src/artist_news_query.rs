@@ -297,6 +297,43 @@ fn load_releases_in(
     Ok(releases)
 }
 
+pub(crate) fn release_notification_candidates(
+    db: &crate::db::Db,
+    run_started_at: i64,
+    today: NaiveDate,
+) -> Result<Vec<StoredRelease>, rusqlite::Error> {
+    let conn = db.conn();
+    let mut statement = conn.prepare(
+        "SELECT release_group_mbid
+           FROM new_releases
+          WHERE fetched_at < ?1
+            AND notified_released_at IS NULL",
+    )?;
+    let eligible = statement
+        .query_map([run_started_at], |row| row.get::<_, String>(0))?
+        .collect::<Result<std::collections::HashSet<_>, _>>()?;
+    Ok(load_releases_in(conn, false, today)?
+        .into_iter()
+        .filter(|release| eligible.contains(&release.release_group_mbid))
+        .collect())
+}
+
+pub(crate) fn mark_release_notified_at(
+    db: &crate::db::Db,
+    release_group_mbid: &str,
+    notified_at: i64,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    conn.execute(
+        "UPDATE new_releases
+            SET notified_released_at = ?1
+          WHERE release_group_mbid = ?2
+            AND notified_released_at IS NULL",
+        rusqlite::params![notified_at, release_group_mbid],
+    )?;
+    Ok(())
+}
+
 fn cap_releases_per_artist(releases: &mut Vec<StoredRelease>) {
     let mut per_artist = std::collections::HashMap::<String, usize>::new();
     releases.retain(|release| {

@@ -272,6 +272,27 @@ fn main() -> glib::ExitCode {
         handler.present();
     });
 
+    let action_app = app.downgrade();
+    let action_conn = conn.clone();
+    let action_path = path.clone();
+    let action_handler = file_open_handler.clone();
+    ui::notifications::install_update_actions(
+        app.upcast_ref::<gio::Application>(),
+        move |target| {
+            let Some(app) = action_app.upgrade() else {
+                return;
+            };
+            let handler = ensure_window(
+                &app,
+                &action_conn,
+                &action_path,
+                &action_handler,
+                ui::file_open::StartupOpenIntent::Library,
+            );
+            handler.open_updates_view(target);
+        },
+    );
+    ui::notifications::arm_update_notifications(&app, &conn);
     let open_conn = conn;
     let open_path = path;
     app.connect_open(move |app, files, _hint| {
