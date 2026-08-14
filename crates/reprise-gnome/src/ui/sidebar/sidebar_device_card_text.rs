@@ -106,9 +106,15 @@ pub(super) fn css() -> String {
      .device-card-remembered { background-color: transparent; border-color: alpha(@window_fg_color, 0.55); }\n\
      .device-card-connected { background-color: alpha(@window_fg_color, 0.07); border-color: alpha(@window_fg_color, 0.65); }\n\
      .device-card-active { background-color: alpha(@accent_color, 0.10); border-color: @reprise_accent_text_color; }\n\
+     .device-card-current.device-card-remembered { background-color: alpha(@window_fg_color, 0.13); }\n\
+     .device-card-current.device-card-connected { background-color: alpha(@window_fg_color, 0.16); }\n\
+     .device-card-current.device-card-active { background-color: alpha(@accent_color, 0.20); }\n\
      .device-card-remembered:hover { background-color: alpha(@window_fg_color, 0.04); border-color: alpha(@window_fg_color, 0.62); }\n\
      .device-card-connected:hover { background-color: alpha(@window_fg_color, 0.10); border-color: alpha(@window_fg_color, 0.72); }\n\
      .device-card-active:hover { background-color: alpha(@accent_color, 0.16); border-color: @reprise_accent_text_color; }\n\
+     .device-card-current.device-card-remembered:hover { background-color: alpha(@window_fg_color, 0.17); }\n\
+     .device-card-current.device-card-connected:hover { background-color: alpha(@window_fg_color, 0.20); }\n\
+     .device-card-current.device-card-active:hover { background-color: alpha(@accent_color, 0.26); }\n\
      .device-card:focus-visible { box-shadow: inset 0 0 0 2px alpha(@window_fg_color, 0.32); }\n\
      .device-card-icon { border-radius: 13px; background-color: transparent; }\n\
      .device-card-remembered .device-card-icon { background-color: alpha(@window_fg_color, 0.035); }\n\

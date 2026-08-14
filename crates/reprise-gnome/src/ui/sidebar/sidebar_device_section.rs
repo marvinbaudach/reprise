@@ -12,6 +12,7 @@ use gtk4::prelude::*;
 use super::sidebar_device_card::{
     menu, CancelCallback, CardRegistry, DeviceCard, OpenCallback, CARD_HORIZONTAL_MARGIN,
 };
+use super::Shared;
 use crate::ui::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
 use crate::ui::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET};
 
@@ -35,6 +36,7 @@ struct DeviceSection {
     present: gtk4::Box,
     remembered: gtk4::Revealer,
     history: gtk4::Box,
+    current_id: Rc<RefCell<Option<String>>>,
 }
 
 impl DeviceSection {
@@ -97,6 +99,7 @@ impl DeviceSection {
             present,
             remembered,
             history,
+            current_id: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -122,17 +125,47 @@ fn present_and_remembered(devices: &[DeviceView]) -> (Vec<&DeviceView>, Vec<&Dev
     devices.iter().partition(|device| device.connected)
 }
 
-pub(super) fn bind(runtime: &Rc<DeviceSyncRuntime>, on_open: OpenCallback) -> gtk4::Box {
-    let section = DeviceSection::new();
-    let root = section.root.clone();
+fn track_open_device(shared: &Rc<Shared>, on_open: OpenCallback) -> OpenCallback {
+    let shared = Rc::downgrade(shared);
+    Rc::new(move |device_id, device_name| {
+        if let Some(shared) = shared.upgrade() {
+            *shared.open_device.borrow_mut() = Some(device_id.clone());
+        }
+        on_open(device_id, device_name);
+    })
+}
 
+fn apply_current(cards: &HashMap<String, DeviceCard>, current_id: Option<&str>) {
+    for (device_id, card) in cards {
+        card.set_current(current_id == Some(device_id.as_str()));
+    }
+}
+
+pub(super) fn bind(
+    shared: &Rc<Shared>,
+    runtime: &Rc<DeviceSyncRuntime>,
+    on_open: OpenCallback,
+) -> gtk4::Box {
+    let section = Rc::new(DeviceSection::new());
+    let root = section.root.clone();
     let cards: CardRegistry = Rc::new(RefCell::new(HashMap::new()));
+
+    let current_id = section.current_id.clone();
+    let cards_for_marking = cards.clone();
+    *shared.mark_device.borrow_mut() = Some(Rc::new(move |device_id| {
+        *current_id.borrow_mut() = device_id.map(str::to_owned);
+        apply_current(&cards_for_marking.borrow(), device_id);
+    }));
+    let on_open = track_open_device(shared, on_open);
+
     let subscription = runtime.subscribe(Rc::new({
+        let section = section.clone();
         let cards = cards.clone();
         let runtime = runtime.clone();
         move |state| render(&section, &cards, &state, &on_open, &runtime)
     }));
     subscription.retain_for_widget(&root);
+    super::apply_marking(shared);
     root
 }
 
@@ -217,6 +250,8 @@ fn render(
     }
     order(&section.present, &present, &registry);
     order(&section.history, &remembered, &registry);
+    let current_id = section.current_id.borrow().clone();
+    apply_current(&registry, current_id.as_deref());
 }
 
 #[cfg(test)]
@@ -295,3 +330,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "sidebar_device_marking_tests.rs"]
+mod marking_tests;

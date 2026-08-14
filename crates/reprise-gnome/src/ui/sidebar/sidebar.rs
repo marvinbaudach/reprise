@@ -39,15 +39,19 @@
 //!
 //! `rebuild` tears down every row and re-selects the logical current source.
 //! If a future caller feeds that selection back into another rebuild,
-//! `wire_row_selected`'s dedup-by-value check (comparing the
-//! newly selected row's `ViewSource` against `shared.current_source`'s
-//! already-stored value, not row identity — a fresh `rebuild` always
-//! produces a *different* `ListBoxRow` GObject even for "the same" source)
-//! is what stops that from looping forever. Every `RefCell` borrow in this
-//! module is also scoped to end before any call that could re-enter (the
-//! pattern documented project-wide, e.g. `player_controller.rs`'s "Queue
-//! borrow discipline" section), so no such reentrant chain ever overlaps two
-//! borrows of the same `RefCell` either.
+//! `wire_row_selected`'s dedup-by-value check (the visible place must be
+//! `SidebarPlace::Source` and the newly selected row's `ViewSource` must equal
+//! `shared.current_source`, rather than matching row identity — a fresh
+//! `rebuild` always produces a *different* `ListBoxRow` GObject even for "the
+//! same" source) is what stops that from looping forever. The place component
+//! is not incidental: it is what lets a source row route out of a sourceless
+//! view even when that row's source equals the already-stored
+//! `shared.current_source`. The comparison remains a value comparison, not a
+//! time-windowed suppress flag. Every `RefCell` borrow in this module is also
+//! scoped to end before any call that could re-enter (the pattern documented
+//! project-wide, e.g. `player_controller.rs`'s "Queue borrow discipline"
+//! section), so no such reentrant chain ever overlaps two borrows of the same
+//! `RefCell` either.
 //!
 //! The playlist row's drop target/drop-handling logic lives in the sibling
 //! `ui::sidebar_dnd` module (split out to keep this file under 800 lines,
@@ -68,6 +72,9 @@ use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
 use super::sidebar_issues_section::bottom_region_placement;
 use super::sidebar_module_menu::{ModuleMenuHighlight, OnPresentPlugins, OnSetModuleEnabled};
 use super::sidebar_navigation_scroller::build_navigation_scroller;
+use super::sidebar_place::SidebarPlace;
+#[cfg(test)]
+use super::sidebar_place::{find_row, has_sidebar_row, resolve_select_source};
 use super::sidebar_root::build_root;
 #[cfg(test)]
 use super::sidebar_root::{sidebar_root_order, SidebarRootChild};
@@ -81,6 +88,7 @@ pub(in crate::ui) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// Callback invoked whenever the logically selected source changes — see
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
+type MarkDevice = Rc<dyn Fn(Option<&str>)>;
 pub(in crate::ui) type OnRemoveMissing = Rc<dyn Fn(&[i64])>;
 use super::sidebar_dnd::OnQueueDrop;
 use super::sidebar_row_wiring::{wire_focus_leave_resync, wire_row_activated, wire_row_selected};
@@ -118,6 +126,17 @@ pub(in crate::ui) struct Shared {
     /// `row-selected` handler and used by a routine `rebuild` (`force_select
     /// = None`) to re-select the same source's (rebuilt) row afterwards.
     pub(in crate::ui) current_source: RefCell<ViewSource>,
+    /// Which kind of content page is actually visible. This is separate from
+    /// `current_source`, because utility pages do not own a track source.
+    pub(in crate::ui) current_place: RefCell<SidebarPlace>,
+    /// The one placeless navigation row, rebuilt with the Issues collection.
+    pub(in crate::ui) doctor_row: RefCell<Option<gtk4::ListBoxRow>>,
+    /// Device id supplied by the card that most recently opened sync details.
+    pub(in crate::ui) open_device: RefCell<Option<String>>,
+    /// Weak handle to the content stack that is the visible-place truth.
+    pub(in crate::ui) content_stack: glib::WeakRef<gtk4::Stack>,
+    /// Applies the open-device marking to the current card registry.
+    pub(in crate::ui) mark_device: RefCell<Option<MarkDevice>>,
     /// Every row built by the most recent `rebuild`, for row-identity lookup
     /// (see the module doc's `## Row identity` section). Rebuilt from
     /// scratch on every `rebuild` call.
@@ -279,6 +298,11 @@ impl Sidebar {
             releases_count_label: RefCell::new(None),
             releases_count_generation: Cell::new(0),
             current_source: RefCell::new(ViewSource::default()),
+            current_place: RefCell::new(SidebarPlace::Source),
+            doctor_row: RefCell::new(None),
+            open_device: RefCell::new(None),
+            content_stack: glib::WeakRef::new(),
+            mark_device: RefCell::new(None),
             rows: RefCell::new(Vec::new()),
             playlist_add_button: RefCell::new(None),
             playlist_quick_edit_id: Cell::new(None),
@@ -502,68 +526,11 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     crate::ui::sidebar_rebuild::rebuild(shared, force_select, reason);
 }
 
-/// Selects `row` in whichever of the two nav lists actually contains it (the
-/// main scrolling list or the bottom-pinned issues list), so selection-follow
-/// works regardless of which list a source lives in. Its `row-selected`
-/// handler then clears the sibling list, keeping a single visible selection.
-pub(in crate::ui) fn select_row_in_its_listbox(row: &gtk4::ListBoxRow) {
-    if let Some(listbox) = row
-        .parent()
-        .and_then(|p| p.downcast::<gtk4::ListBox>().ok())
-    {
-        listbox.select_row(Some(row));
-    }
-}
-
-/// Pure decision behind the vanished-source fallback (Stage 3 Task 4 review
-/// finding #3): given the source `rebuild` would like to (re)select and
-/// whether a row for it still exists, decides what to actually select.
-/// Returns `(source_to_select, fell_back)`, where `fell_back` is `true` when
-/// `requested` no longer has a row and `Library` was substituted instead.
-/// Kept free of `Shared`/GTK so it's unit-testable without a live `ListBox`
-/// (see the `resolve_select_source_tests` module at the end of this file —
-/// grouped there, not right below this function, per `clippy::items_after_
-/// test_module`).
-pub(in crate::ui) fn resolve_select_source(
-    requested: ViewSource,
-    row_exists: bool,
-) -> (ViewSource, bool) {
-    if row_exists {
-        (requested, false)
-    } else {
-        (ViewSource::Library, true)
-    }
-}
-
-/// Whether `source` is one the sidebar ever builds a row for. Album, artist,
-/// and genre scopes are opened from inside the track list (metadata links,
-/// the stats page) and deliberately have no row — so their absence from the
-/// row set is the normal state, not a vanished row, and must never trigger
-/// [`resolve_select_source`]'s Library fallback.
-pub(in crate::ui) fn has_sidebar_row(source: &ViewSource) -> bool {
-    !matches!(
-        source,
-        ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_)
-    )
-}
-
-/// Looks up the row currently backing `source` in `shared.rows` (rebuilt on
-/// every `rebuild` call, so this only ever searches the *current* row set).
-pub(in crate::ui) fn find_row(
-    shared: &Rc<Shared>,
-    source: &ViewSource,
-) -> Option<gtk4::ListBoxRow> {
-    shared
-        .rows
-        .borrow()
-        .iter()
-        .find(|(_, s, _)| s == source)
-        .map(|(row, _, _)| row.clone())
-}
-
 #[cfg(test)]
 #[path = "sidebar_tests.rs"]
 mod resolve_select_source_tests;
+#[cfg(test)]
+pub(in crate::ui) use resolve_select_source_tests::test_shared;
 
 #[cfg(test)]
 #[path = "sidebar_layout_tests.rs"]

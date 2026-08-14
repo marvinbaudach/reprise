@@ -11,6 +11,9 @@ fn css_covers_the_sync_card_vocabulary() {
     for marker in [
         ".device-card {",
         ".device-card-active:hover",
+        ".device-card-current.device-card-remembered",
+        ".device-card-current.device-card-connected",
+        ".device-card-current.device-card-active",
         ".device-card:focus-visible",
         ".device-card-icon",
         ".device-card-glyph",

@@ -23,9 +23,7 @@ use super::sidebar_playlist_quick_add;
 use super::sidebar_presentation::{self, NavIcon};
 use super::strings;
 use super::surface::remember_issue_focus_entry;
-use super::{
-    find_row, has_sidebar_row, resolve_select_source, select_row_in_its_listbox, RowEntry, Shared,
-};
+use super::{apply_marking, find_row, has_sidebar_row, resolve_select_source, RowEntry, Shared};
 
 const OPTIONAL_SIDEBAR_MODULES: &[&reprise_core::modules::ModuleDescriptor] = &[
     &PODCASTS_MODULE,
@@ -236,6 +234,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     shared.listbox.remove_all();
     shared.issues_listbox.remove_all();
     shared.rows.borrow_mut().clear();
+    *shared.doctor_row.borrow_mut() = None;
     *shared.queue_count_label.borrow_mut() = None;
     *shared.releases_count_label.borrow_mut() = None;
     *shared.playlist_add_button.borrow_mut() = None;
@@ -401,23 +400,26 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         "sidebar built: {playlist_count} playlists, missing={missing_count}, active_import_errors={active_import_error_count}"
     );
 
-    let requested_source = force_select.unwrap_or_else(|| shared.current_source.borrow().clone());
+    let forced_route = force_select.and_then(|source| prepare_forced_source(shared, source));
+    apply_marking(shared);
+    if let Some((source, title)) = forced_route {
+        let callback = shared.on_select.borrow().clone();
+        if let Some(callback) = callback {
+            callback(source, title);
+        }
+    }
+}
+
+fn prepare_forced_source(
+    shared: &Rc<Shared>,
+    requested_source: ViewSource,
+) -> Option<(ViewSource, String)> {
     if !has_sidebar_row(&requested_source) {
-        // UX FIL-1c: album/artist/genre scopes are opened from inside the
-        // track list and never get a row. Their absence from the row set is
-        // the normal state, so falling back to Library here would route the
-        // user out of the scope they are looking at — which is exactly what
-        // queue mutations used to trigger this rebuild, dropping the scope
-        // chip and re-showing the whole library. Leave the selection empty
-        // instead.
-        tracing::debug!(
-            scope = %requested_source.label(),
-            "scope view has no sidebar row; leaving the selection empty"
-        );
-        return;
+        *shared.current_source.borrow_mut() = requested_source;
+        return None;
     }
     let requested_row = find_row(shared, &requested_source);
-    let (select_source, fell_back) =
+    let (source, fell_back) =
         resolve_select_source(requested_source.clone(), requested_row.is_some());
     if fell_back {
         tracing::debug!(
@@ -425,14 +427,16 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             "selected source vanished; falling back to Library"
         );
     }
-    let row_to_select = if fell_back {
-        find_row(shared, &select_source)
-    } else {
-        requested_row
-    };
-    if let Some(row) = row_to_select {
-        select_row_in_its_listbox(&row);
-    }
+    let entry = shared
+        .rows
+        .borrow()
+        .iter()
+        .find(|(_, candidate, _)| candidate == &source)
+        .map(|(_, _, title)| title.clone());
+    let title = entry?;
+    let changed = *shared.current_source.borrow() != source;
+    *shared.current_source.borrow_mut() = source.clone();
+    changed.then_some((source, title))
 }
 
 pub(in crate::ui) const fn doctor_issue_visible(pending_count: u32) -> bool {
@@ -605,8 +609,7 @@ pub(super) fn add_issue_action_row(
 ) {
     let presentation = sidebar_presentation::issue_row_presentation(count, icon);
     let row = sidebar_presentation::build_issue_nav_row(title, presentation, icon);
-    row.set_selectable(false);
-    // a11y-semantics: role=list-item name=library-doctor state=focusable action=activate
+    // a11y-semantics: role=list-item name=library-doctor state=focusable/selectable action=activate
     row.set_focusable(true);
     // input-parity: ACC-8 keyboard=issue-action-row-enter
     row.connect_activate(move |row| activate_issue_action(row, action));
@@ -614,6 +617,7 @@ pub(super) fn add_issue_action_row(
     // button built by `build_issue_nav_row`; it activates this same row signal
     // and therefore shares the keyboard path above.
     shared.issues_listbox.append(&row);
+    *shared.doctor_row.borrow_mut() = Some(row.clone());
     remember_issue_focus_entry(&shared.issues_listbox, &row);
 }
 

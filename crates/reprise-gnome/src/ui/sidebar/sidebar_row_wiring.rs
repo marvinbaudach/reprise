@@ -8,20 +8,19 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
-use super::sidebar::{find_row, select_row_in_its_listbox, Shared};
+use super::sidebar::{apply_marking, sync_place_from_stack, Shared, SidebarPlace};
 
 /// Wires the `ListBox`'s `row-selected` signal: a navigation row becoming
 /// selected updates `shared.current_source` and notifies `on_select` — but
-/// only when the newly selected row's `ViewSource` actually *differs* from
-/// `shared.current_source`'s current value. This is a value comparison, not
-/// a time-windowed suppress flag, because `rebuild` tears down and rebuilds
-/// every row on every refresh: a routine refresh's silent re-selection is
-/// still selecting a brand new `ListBoxRow` GObject (row identity always
-/// changes), so only comparing the *logical* source can tell "nothing
-/// actually changed" apart from a real switch. `row` is `None` for a
-/// deselection, including the one `rebuild`'s `remove_all` causes when it
-/// clears out the previously selected row — see the module doc's
-/// `## Reentrancy` section.
+/// only when the visible place and row source are not already the same
+/// source. This is a logical `(place, source)` comparison, not a time-windowed
+/// suppress flag, because `rebuild` tears down and rebuilds every row on every
+/// refresh: a routine refresh's silent re-selection is still selecting a brand
+/// new `ListBoxRow` GObject (row identity always changes). A source row that
+/// remains marked while a placeless page is visible must still route when
+/// activated. `row` is `None` for a deselection, including the one `rebuild`'s
+/// `remove_all` causes when it clears out the previously selected row — see the
+/// module doc's `## Reentrancy` section.
 pub(in crate::ui) fn wire_row_selected(shared: &Rc<Shared>) {
     // Both nav lists share one selection: selecting in either clears the other.
     wire_row_selected_on(shared, &shared.listbox, &shared.issues_listbox);
@@ -55,10 +54,14 @@ fn wire_row_selected_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox, sibling: &
     });
 }
 
-/// Resolves `row` to its `ViewSource` and routes there (dedup'd against
-/// `current_source`) — the shared tail of programmatic selection
+/// Resolves `row` to its `ViewSource` and routes there (dedup'd only when the
+/// visible place is that same source) — the shared tail of programmatic selection
 /// (`row-selected` without focus) and user activation (`row-activated`).
 fn route_row(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
+    let doctor_row = shared.doctor_row.borrow().clone();
+    if doctor_row.as_ref() == Some(row) {
+        return;
+    }
     let matched = shared
         .rows
         .borrow()
@@ -72,10 +75,11 @@ fn route_row(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
         tracing::warn!("sidebar: selected row not found in row map; ignoring");
         return;
     };
-    if *shared.current_source.borrow() == source {
-        // Same logical source as before (a routine refresh's silent
-        // re-select, or re-selecting the row that's already active) —
-        // nothing to notify.
+    let current_place = shared.current_place.borrow().clone();
+    let current_source = shared.current_source.borrow().clone();
+    if matches!(current_place, SidebarPlace::Source) && current_source == source {
+        // Same visible source as before (a routine refresh's silent re-select,
+        // or re-selecting the row that's already active) — nothing to notify.
         return;
     }
     tracing::debug!(source = %source.label(), "sidebar: row selected");
@@ -88,6 +92,7 @@ fn route_row(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
     if let Some(callback) = callback {
         callback(source, title);
     }
+    sync_place_from_stack(shared);
 }
 
 /// Wires the `ListBox`'s `row-activated` signal. Every navigation row is
@@ -105,22 +110,16 @@ fn route_row(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
 /// While keyboard focus browses the sidebar, GTK's focus-driven selection
 /// wanders WITHOUT routing (see `wire_row_selected_on`). If focus then
 /// leaves the lists without a commit, snap the visual selection back to the
-/// source that is actually shown — otherwise a merely-browsed row stays
+/// place that is actually shown — otherwise a merely-browsed row stays
 /// highlighted while the content shows something else.
 pub(in crate::ui) fn wire_focus_leave_resync(shared: &Rc<Shared>) {
     for listbox in [&shared.listbox, &shared.issues_listbox] {
         let controller = gtk4::EventControllerFocus::new();
         let shared = shared.clone();
         controller.connect_leave(move |_| {
-            let current = shared.current_source.borrow().clone();
-            let Some(row) = find_row(&shared, &current) else {
-                return;
-            };
-            if !row.is_selected() {
-                // Re-selecting fires `row-selected`, whose `route_row` then
-                // dedups against `current_source` — no reroute, no loop.
-                select_row_in_its_listbox(&row);
-            }
+            // Re-selecting fires `row-selected`, whose `route_row` then dedups
+            // against the visible place — no reroute, no loop.
+            apply_marking(&shared);
         });
         listbox.add_controller(controller);
     }
