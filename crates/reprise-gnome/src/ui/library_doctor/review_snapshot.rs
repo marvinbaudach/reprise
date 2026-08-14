@@ -25,14 +25,24 @@ pub(super) struct ReviewTotals {
 pub(super) struct ReviewSnapshot {
     pub(super) rows: Vec<ReviewRowModel>,
     pub(super) albums: HashMap<String, AlbumCounts>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    index: HashMap<DoctorReviewRowId, u32>,
     pub(super) totals: ReviewTotals,
 }
 
 impl ReviewSnapshot {
     pub(super) fn from_rows(rows: Vec<ReviewRowModel>) -> Self {
         let mut albums = HashMap::<String, AlbumCounts>::new();
+        let mut index = HashMap::new();
         let mut totals = ReviewTotals::default();
-        for row in &rows {
+        for (position, row) in rows.iter().enumerate() {
+            let position = u32::try_from(position).expect("review row count fits u32");
+            for row_id in &row.row_ids {
+                debug_assert!(
+                    index.insert(*row_id, position).is_none(),
+                    "a review row id belongs to exactly one display row"
+                );
+            }
             let album = albums.entry(row.album_key.clone()).or_default();
             album.selected += row.selected_change_count;
             album.selectable += row.selectable_row_ids.len();
@@ -49,8 +59,78 @@ impl ReviewSnapshot {
         Self {
             rows,
             albums,
+            index,
             totals,
         }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn selection_diff(
+        &self,
+        session: &reprise_core::library_doctor::DoctorReviewSession,
+    ) -> Vec<(u32, ReviewRowModel)> {
+        let rows_by_id = session
+            .rows()
+            .iter()
+            .map(|row| (row.id, row))
+            .collect::<HashMap<_, _>>();
+        self.rows
+            .iter()
+            .filter_map(|cached| {
+                let selected_change_count = cached
+                    .row_ids
+                    .iter()
+                    .filter_map(|id| rows_by_id.get(id))
+                    .filter(|row| row.selected && row.state == DoctorReviewRowState::Ready)
+                    .count();
+                let selected = !cached.selectable_row_ids.is_empty()
+                    && selected_change_count == cached.selectable_row_ids.len();
+                if selected_change_count == cached.selected_change_count
+                    && selected == cached.row.selected
+                {
+                    return None;
+                }
+                let mut changed = cached.clone();
+                changed.selected_change_count = selected_change_count;
+                changed.row.selected = selected;
+                let position = cached
+                    .row_ids
+                    .first()
+                    .and_then(|row_id| self.index.get(row_id))
+                    .copied()
+                    .expect("every cached review row has an indexed row id");
+                Some((position, changed))
+            })
+            .collect()
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn with_selection(mut self, changed: &[(u32, ReviewRowModel)]) -> Self {
+        for (position, replacement) in changed {
+            let position = usize::try_from(*position).expect("review row position fits usize");
+            let cached = self
+                .rows
+                .get(position)
+                .expect("selection diff points inside the cached review rows");
+            debug_assert_eq!(cached.album_key, replacement.album_key);
+            let album = self
+                .albums
+                .get_mut(&cached.album_key)
+                .expect("every cached review row belongs to a cached album");
+            album.selected = album
+                .selected
+                .checked_sub(cached.selected_change_count)
+                .expect("cached album selection includes its row")
+                + replacement.selected_change_count;
+            self.totals.selected = self
+                .totals
+                .selected
+                .checked_sub(cached.selected_change_count)
+                .expect("cached page selection includes its row")
+                + replacement.selected_change_count;
+            self.rows[position] = replacement.clone();
+        }
+        self
     }
 }
 

@@ -67,3 +67,32 @@ fn doc_9b_the_snapshot_is_the_visible_row_set() {
         );
     }
 }
+
+#[test]
+fn review_snapshot_selection_diff_changes_only_selection_facts() {
+    let scan = album_change_scan();
+    let mut session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+    let snapshot = ReviewSnapshot::from_rows(grouped_rows_for(&scan, &session, &HashMap::new()));
+    let selected_before = snapshot.totals.selected;
+    assert!(
+        snapshot.selection_diff(&session).is_empty(),
+        "an unchanged session must not allocate replacement rows"
+    );
+
+    session.none();
+    let changed = snapshot.selection_diff(&session);
+    assert_eq!(changed.len(), snapshot.rows.len());
+    assert!(changed
+        .iter()
+        .all(|(_, row)| row.selected_change_count == 0 && !row.row.selected));
+
+    let updated = snapshot.clone().with_selection(&changed);
+    assert_eq!(
+        snapshot.totals.selected, selected_before,
+        "building a replacement snapshot must not mutate the cached value"
+    );
+    assert_eq!(updated.totals.selected, 0);
+    assert!(updated.albums.values().all(|album| album.selected == 0));
+    assert_eq!(updated.totals.changes, snapshot.totals.changes);
+    assert_eq!(updated.totals.albums, snapshot.totals.albums);
+}
