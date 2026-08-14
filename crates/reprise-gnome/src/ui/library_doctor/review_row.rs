@@ -7,7 +7,8 @@ use gtk4::prelude::*;
 
 use super::review_header::{OnSelect, ReviewColumnGroups};
 use super::review_model::{
-    outcome_label, row_selectable, ConfidenceTone, ReviewLayout, ReviewRowModel,
+    outcome_label, row_selectable, row_state_label, row_state_reason, ConfidenceTone, ReviewLayout,
+    ReviewRowModel,
 };
 use crate::ui::strings;
 
@@ -250,20 +251,21 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
     let proposed = narrow_prefixed(layout, ValueKind::Proposed, &model.proposed);
     set_full_text(&widgets.current, &current);
     set_full_text(&widgets.proposed, &proposed);
-    let source = model.outcome.as_ref().map_or_else(
-        || model.confidence.label.clone(),
-        |outcome| {
-            let status = format!(
-                "{} · {}",
-                model.confidence.label,
-                strings::text(outcome_label(outcome.state))
-            );
-            outcome
-                .error
-                .as_ref()
-                .map_or(status.clone(), |error| format!("{status} · {error}"))
-        },
-    );
+    let source = if let Some(outcome) = model.outcome.as_ref() {
+        let status = format!(
+            "{} · {}",
+            model.confidence.label,
+            strings::text(outcome_label(outcome.state))
+        );
+        outcome
+            .error
+            .as_ref()
+            .map_or(status.clone(), |error| format!("{status} · {error}"))
+    } else if let Some(state) = row_state_label(model.row.state) {
+        format!("{} · {}", model.confidence.label, strings::text(state))
+    } else {
+        model.confidence.label.clone()
+    };
     set_full_text(
         &widgets.source,
         &narrow_prefixed(layout, ValueKind::Source, &source),
@@ -301,6 +303,8 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
     } else {
         widgets.root.add_css_class("doctor-review-row-deselected");
     }
+    let reason = row_state_reason(model.row.state).map(strings::text);
+    widgets.root.set_tooltip_text(reason.as_deref());
     let description = model.accessible_description();
     widgets.root.update_property(&[
         gtk4::accessible::Property::Label(&format!("{} · {}", model.track, model.field)),
@@ -389,4 +393,4 @@ fn list_item_key(item: &gtk4::ListItem) -> usize {
 
 #[cfg(test)]
 #[path = "review_row_contract_tests.rs"]
-mod contract_tests;
+pub(in crate::ui::library_doctor) mod contract_tests;

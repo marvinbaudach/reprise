@@ -82,6 +82,10 @@ pub const DOCTOR_STATUS_REVERTED: &str = N_!("Reverted");
 pub const DOCTOR_STATUS_REMAINING: &str = N_!("Remaining");
 pub const DOCTOR_STATUS_CONFLICT: &str = N_!("Conflict");
 pub const DOCTOR_STATUS_STALE: &str = N_!("Stale");
+pub const DOCTOR_ROW_STALE_REASON: &str =
+    N_!("This file changed after the scan — scan again to include this fix.");
+pub const DOCTOR_ROW_CONFLICT_REASON: &str =
+    N_!("The spelling for this album is still unresolved — pick one below.");
 pub const DOCTOR_STATUS_FAILED: &str = N_!("Failed");
 pub const DOCTOR_REVERT_LAST_CLEANUP: &str = N_!("Revert Last Cleanup");
 pub const DOCTOR_JOB_FAILED: &str = N_!("Library Doctor Job Failed");
@@ -422,6 +426,26 @@ pub fn doctor_change_count_none_selected(count: usize) -> String {
     plural(
         "{count} change · none selected",
         "{count} changes · none selected",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_change_count_out_of_date(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} change · out of date",
+        "{count} changes · out of date",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_change_count_unresolved(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} change · unresolved",
+        "{count} changes · unresolved",
         count,
         &[("count", &count_text)],
     )

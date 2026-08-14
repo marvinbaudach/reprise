@@ -1,14 +1,335 @@
+use std::path::PathBuf;
+
 use gtk4::prelude::*;
+use reprise_core::db::Db;
+use reprise_core::library::tag_edit::EditableTags;
+use reprise_core::library_doctor::{
+    DoctorCandidate, DoctorField, DoctorGroupMember, DoctorProposal, DoctorReviewRow,
+    DoctorReviewRowId, DoctorReviewRowOrigin, DoctorReviewRowState, DoctorScan, DoctorScanOptions,
+    DoctorTrackRef, DoctorTrackSnapshot, DoctorUnresolvedGroup, DoctorValue, ProblemClass,
+    ProposalSource,
+};
 
 use super::super::review_header::ReviewHeader;
+use super::super::review_model::{ConfidencePresentation, ReviewRowModel};
 use super::{
-    apply_album_wide_style, build_row, narrow_prefixed, strike_range, value_label,
-    visible_edge_spaces, ReviewLayout, ValueKind,
+    apply_album_wide_style, bind, build_row, narrow_prefixed, strike_range, value_label,
+    visible_edge_spaces, ConfidenceTone, ReviewLayout, ValueKind,
 };
 
 /// A window this wide is an ordinary maximised desktop window. Everything the
 /// review row promises has to be readable inside it.
 const DESKTOP_WIDTH: i32 = 1760;
+
+pub(in crate::ui::library_doctor) fn scan() -> DoctorScan {
+    DoctorScan {
+        id: 1,
+        scope_kind: "whole_library".into(),
+        created_at: 2,
+        options: DoctorScanOptions::local_only(),
+        checked_tracks: 1,
+        skipped_tracks: 0,
+        track_ids: vec![7],
+        tracks: vec![DoctorTrackSnapshot {
+            reference: DoctorTrackRef {
+                track_id: 7,
+                path: PathBuf::from("/tmp/doctor-review.flac"),
+                file_mtime: 1,
+                file_size: 2,
+                device: None,
+                inode: None,
+            },
+            tags: Some(EditableTags {
+                title: "Review track".into(),
+                artist: "Artist".into(),
+                album: "Album".into(),
+                album_artist: "Artist".into(),
+                year: Some(2020),
+                track_no: Some(1),
+                genre: "Rock".into(),
+            }),
+            stale: false,
+        }],
+        proposals: vec![DoctorProposal {
+            track_id: 7,
+            field: DoctorField::Genre,
+            current: DoctorValue::Text("Rock".into()),
+            proposed: DoctorValue::Text("Alternative".into()),
+            source: ProposalSource::MusicBrainz,
+            confidence: 90,
+            preselected: false,
+            never_preselect: false,
+            problem_class: ProblemClass::GenreVariant,
+            resolved_release_mbid: None,
+            evidence: Vec::new(),
+            local_fallback: None,
+        }],
+        unresolved_groups: Vec::new(),
+    }
+}
+
+pub(in crate::ui::library_doctor) fn three_album_scan() -> DoctorScan {
+    let mut scan = scan();
+    scan.track_ids = vec![7, 8, 9];
+    for (track_id, album) in [(8, "Second"), (9, "Third")] {
+        let mut track = scan.tracks[0].clone();
+        track.reference.track_id = track_id;
+        track.reference.path = PathBuf::from(format!("/tmp/doctor-review-{track_id}.flac"));
+        track.tags.as_mut().unwrap().album = album.into();
+        track.tags.as_mut().unwrap().title = format!("Track {track_id}");
+        scan.tracks.push(track);
+        let mut proposal = scan.proposals[0].clone();
+        proposal.track_id = track_id;
+        scan.proposals.push(proposal);
+    }
+    scan.checked_tracks = 3;
+    scan
+}
+
+pub(in crate::ui::library_doctor) fn album_change_scan() -> DoctorScan {
+    let template = scan();
+    let mut scan = template.clone();
+    scan.track_ids.clear();
+    scan.tracks.clear();
+    scan.proposals.clear();
+    for track_id in 1..=11 {
+        let mut track = template.tracks[0].clone();
+        track.reference.track_id = track_id;
+        track.reference.path = PathBuf::from(format!("/tmp/album-{track_id}.flac"));
+        let tags = track.tags.as_mut().unwrap();
+        tags.title = format!("Track {track_id}");
+        tags.album = "One album".into();
+        tags.album_artist = "Artists".into();
+        scan.track_ids.push(track_id);
+        scan.tracks.push(track);
+        scan.proposals.push(DoctorProposal {
+            track_id,
+            field: DoctorField::AlbumArtist,
+            current: DoctorValue::Text("Artists".into()),
+            proposed: DoctorValue::Text("Artist".into()),
+            source: ProposalSource::MusicBrainz,
+            confidence: 90,
+            preselected: false,
+            never_preselect: false,
+            problem_class: ProblemClass::MissingAlbumArtist,
+            resolved_release_mbid: None,
+            evidence: Vec::new(),
+            local_fallback: None,
+        });
+    }
+    for (track_id, field, current, proposed, problem_class) in [
+        (
+            1,
+            DoctorField::Title,
+            DoctorValue::Text("Track 1".into()),
+            DoctorValue::Text("First track".into()),
+            ProblemClass::CasingWhitespace,
+        ),
+        (
+            2,
+            DoctorField::Genre,
+            DoctorValue::Text("Rock".into()),
+            DoctorValue::Text("Alternative".into()),
+            ProblemClass::GenreVariant,
+        ),
+        (
+            3,
+            DoctorField::Year,
+            DoctorValue::Year(2020),
+            DoctorValue::Year(2021),
+            ProblemClass::MissingWrongYear,
+        ),
+    ] {
+        scan.proposals.push(DoctorProposal {
+            track_id,
+            field,
+            current,
+            proposed,
+            source: ProposalSource::MusicBrainz,
+            confidence: 90,
+            preselected: false,
+            never_preselect: false,
+            problem_class,
+            resolved_release_mbid: None,
+            evidence: Vec::new(),
+            local_fallback: None,
+        });
+    }
+    scan.checked_tracks = 11;
+    scan
+}
+
+pub(in crate::ui::library_doctor) fn ready_and_stale_scan() -> DoctorScan {
+    let mut scan = scan();
+    let mut stale_track = scan.tracks[0].clone();
+    stale_track.reference.track_id = 8;
+    stale_track.reference.path = PathBuf::from("/tmp/doctor-review-stale.flac");
+    stale_track.stale = true;
+    scan.track_ids.push(8);
+    scan.tracks.push(stale_track);
+    let mut stale_proposal = scan.proposals[0].clone();
+    stale_proposal.track_id = 8;
+    scan.proposals.push(stale_proposal);
+    scan.checked_tracks = 2;
+    scan
+}
+
+pub(in crate::ui::library_doctor) fn stale_album_scan() -> DoctorScan {
+    let mut scan = ready_and_stale_scan();
+    scan.tracks[0].tags.as_mut().unwrap().album = "Ready album".into();
+    scan.tracks[1].tags.as_mut().unwrap().album = "Stale album".into();
+    scan.tracks[1].tags.as_mut().unwrap().title = "Stale track".into();
+    scan
+}
+
+pub(in crate::ui::library_doctor) fn seed_ready_and_stale_badge_fixture(db: &Db) {
+    let conn = crate::test_db::connection(db);
+    conn.execute(
+        "INSERT INTO library_doctor_scans \
+             (id, scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks) \
+             VALUES (1, 'whole_library', 2, 0, 2, 0)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE library_doctor_state SET last_complete_scan_id=1 WHERE singleton=1",
+        [],
+    )
+    .unwrap();
+    for (position, track_id, path, mtime) in [
+        (0, 7, "/tmp/doctor-review.flac", 1),
+        (1, 8, "/tmp/doctor-review-stale.flac", 2),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size) \
+                 VALUES (?1, ?2, 'Review track', 0, ?3, 2)",
+            rusqlite::params![track_id, path, mtime],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO library_doctor_scan_tracks \
+                 (scan_id, position, track_id, path, file_mtime, file_size, read_ok, \
+                  title, artist, album, album_artist, year, track_no, genre) \
+                 VALUES (1, ?1, ?2, ?3, 1, 2, 1, 'Review track', 'Artist', 'Album', \
+                         'Artist', 2020, 1, 'Rock')",
+            rusqlite::params![position, track_id, path],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO library_doctor_proposals \
+                 (scan_id, position, track_id, field, current_value, proposed_value, source, \
+                  confidence, preselected, problem_class, evidence_json, local_fallback_json) \
+                 VALUES (1, ?1, ?2, 'genre', 'Rock', 'Alternative', 'musicbrainz', \
+                         90, 0, 'genre_variant', '[]', 'null')",
+            rusqlite::params![position, track_id],
+        )
+        .unwrap();
+    }
+}
+
+pub(in crate::ui::library_doctor) fn conflict_scan() -> DoctorScan {
+    let mut scan = scan();
+    scan.proposals.clear();
+    scan.unresolved_groups = vec![DoctorUnresolvedGroup {
+        field: DoctorField::Genre,
+        group_key: "genre".into(),
+        candidates: vec![
+            DoctorCandidate {
+                value: DoctorValue::Text("Rock".into()),
+                count: 1,
+                evidence: Vec::new(),
+            },
+            DoctorCandidate {
+                value: DoctorValue::Text("rock".into()),
+                count: 1,
+                evidence: Vec::new(),
+            },
+        ],
+        members: vec![DoctorGroupMember {
+            track_id: 7,
+            current: DoctorValue::Text("ROCK".into()),
+        }],
+        local_fallback: None,
+    }];
+    scan
+}
+
+fn row_model(state: DoctorReviewRowState) -> ReviewRowModel {
+    let id = DoctorReviewRowId::from_raw(1);
+    ReviewRowModel {
+        row: DoctorReviewRow {
+            id,
+            track_id: 7,
+            field: DoctorField::Genre,
+            current: DoctorValue::Text("Rock".into()),
+            proposed: DoctorValue::Text("Alternative".into()),
+            source: ProposalSource::MusicBrainz,
+            confidence: 90,
+            evidence: Vec::new(),
+            problem_class: ProblemClass::GenreVariant,
+            state,
+            never_preselect: false,
+            selected: state == DoctorReviewRowState::Ready,
+            origin: DoctorReviewRowOrigin::Proposal,
+        },
+        row_ids: vec![id],
+        selectable_row_ids: (state == DoctorReviewRowState::Ready)
+            .then_some(id)
+            .into_iter()
+            .collect(),
+        track_ids: vec![7],
+        album_position: 0,
+        row_position: 0,
+        album_key: "album".into(),
+        album_title: "Album".into(),
+        album_artist: "Artist".into(),
+        album_track_count: 1,
+        selected_change_count: usize::from(state == DoctorReviewRowState::Ready),
+        is_album_wide: false,
+        track: "Review track".into(),
+        field: "Genre".into(),
+        current: "Rock".into(),
+        proposed: "Alternative".into(),
+        confidence: ConfidencePresentation {
+            label: "MusicBrainz · 90%".into(),
+            tone: ConfidenceTone::Normal,
+            warning: false,
+        },
+        outcome: None,
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_a_stale_row_names_its_reason_where_the_click_happens() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let header = ReviewHeader::new();
+    let widgets = build_row(&header.groups);
+    let stale = row_model(DoctorReviewRowState::Stale);
+
+    bind(&widgets, &stale, ReviewLayout::Wide);
+
+    assert!(widgets.source.text().contains("Stale"));
+    assert_eq!(
+        widgets.root.tooltip_text().as_deref(),
+        Some("This file changed after the scan — scan again to include this fix.")
+    );
+    assert!(!widgets.selected.is_sensitive());
+    assert!(stale
+        .accessible_description()
+        .contains("This file changed after the scan — scan again to include this fix."));
+
+    bind(
+        &widgets,
+        &row_model(DoctorReviewRowState::Ready),
+        ReviewLayout::Wide,
+    );
+
+    assert!(!widgets.source.text().contains("Stale"));
+    assert_eq!(widgets.root.tooltip_text(), None);
+}
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]

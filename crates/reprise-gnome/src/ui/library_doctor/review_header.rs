@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
-use reprise_core::library_doctor::DoctorReviewRowId;
+use reprise_core::library_doctor::{DoctorReviewRowId, DoctorReviewRowState};
 
-use super::review_model::ReviewRowModel;
+use super::review_model::{row_state_reason, ReviewRowModel};
 use crate::ui::strings;
 
 pub(super) type OnSelect = Rc<dyn Fn(&[DoctorReviewRowId], bool)>;
@@ -21,6 +21,41 @@ pub(super) fn master_check_state(selected: usize, selectable: usize) -> MasterCh
         active: selectable > 0 && selected == selectable,
         inconsistent: selected > 0 && selected < selectable,
         sensitive: selectable > 0,
+    }
+}
+
+pub(super) struct AlbumHeaderState {
+    pub(super) check: MasterCheckState,
+    pub(super) pill: String,
+    /// `Some` exactly when the checkbox is insensitive: why it is.
+    pub(super) reason: Option<String>,
+}
+
+pub(super) fn album_header_state(
+    selected: usize,
+    selectable: usize,
+    changes: usize,
+    blocked_by: Option<DoctorReviewRowState>,
+) -> AlbumHeaderState {
+    let check = master_check_state(selected, selectable);
+    if selectable > 0 {
+        return AlbumHeaderState {
+            check,
+            pill: album_change_count(selectable, selected),
+            reason: None,
+        };
+    }
+    let blocked_by = blocked_by.unwrap_or(DoctorReviewRowState::Stale);
+    let pill = match blocked_by {
+        DoctorReviewRowState::Conflict => strings::doctor_change_count_unresolved(changes),
+        DoctorReviewRowState::Ready | DoctorReviewRowState::Stale => {
+            strings::doctor_change_count_out_of_date(changes)
+        }
+    };
+    AlbumHeaderState {
+        check,
+        pill,
+        reason: row_state_reason(blocked_by).map(strings::text),
     }
 }
 
@@ -199,16 +234,29 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
         .iter()
         .map(|row| row.selected_change_count)
         .sum::<usize>();
+    let changes = rows.iter().map(|row| row.row_ids.len()).sum::<usize>();
+    let blocked_by = if rows
+        .iter()
+        .any(|row| row.row.state == DoctorReviewRowState::Stale)
+    {
+        Some(DoctorReviewRowState::Stale)
+    } else if rows
+        .iter()
+        .any(|row| row.row.state == DoctorReviewRowState::Conflict)
+    {
+        Some(DoctorReviewRowState::Conflict)
+    } else {
+        None
+    };
     let total = row_ids.len();
     let checkbox = gtk4::CheckButton::new();
     checkbox.set_size_request(16, 16);
     checkbox.add_css_class("doctor-album-check");
-    let check_state = master_check_state(selected, total);
-    checkbox.set_active(check_state.active);
-    checkbox.set_inconsistent(check_state.inconsistent);
-    checkbox.update_property(&[gtk4::accessible::Property::Label(
-        &strings::doctor_change_count(row_ids.len()),
-    )]);
+    let state = album_header_state(selected, total, changes, blocked_by);
+    checkbox.set_active(state.check.active);
+    checkbox.set_inconsistent(state.check.inconsistent);
+    checkbox.set_sensitive(state.check.sensitive);
+    checkbox.update_property(&[gtk4::accessible::Property::Label(&state.pill)]);
     // a11y-semantics: role=checkbox name=change-count state=selection action=toggle
     checkbox.set_focusable(true);
     let callback = on_select.clone();
@@ -247,9 +295,8 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
         .build();
     copy.append(&title_label);
     copy.append(&detail);
-    let count = album_change_count(total, selected);
     let pill = gtk4::Label::builder()
-        .label(&count)
+        .label(&state.pill)
         .halign(gtk4::Align::End)
         .css_classes(["tag"])
         .build();
@@ -273,10 +320,17 @@ fn bind_album_header(header: &gtk4::ListHeader, model: &gtk4::SortListModel, on_
     root.append(&copy);
     root.append(&pill);
     root.append(&caret);
-    root.update_property(&[gtk4::accessible::Property::Label(&format!(
-        "{} · {} · {count}",
-        title, first.album_artist
-    ))]);
+    root.set_tooltip_text(state.reason.as_deref());
+    let accessible_label = state.reason.as_ref().map_or_else(
+        || format!("{} · {} · {}", title, first.album_artist, state.pill),
+        |reason| {
+            format!(
+                "{} · {} · {} · {reason}",
+                title, first.album_artist, state.pill
+            )
+        },
+    );
+    root.update_property(&[gtk4::accessible::Property::Label(&accessible_label)]);
     header.set_child(Some(&root));
 }
 
@@ -340,5 +394,31 @@ mod tests {
     fn doc_9b_a_fully_deselected_album_says_none_selected() {
         assert_eq!(super::album_change_count(2, 0), "2 changes · none selected");
         assert_eq!(super::album_change_count(2, 1), "1 change");
+    }
+
+    #[test]
+    fn doc_3c_album_header_state_names_the_reason_at_zero() {
+        use reprise_core::library_doctor::DoctorReviewRowState;
+
+        let stale = super::album_header_state(0, 0, 3, Some(DoctorReviewRowState::Stale));
+        assert_eq!(stale.pill, "3 changes · out of date");
+        assert_eq!(
+            stale.reason.as_deref(),
+            Some("This file changed after the scan — scan again to include this fix.")
+        );
+        assert!(!stale.check.sensitive);
+
+        let conflict = super::album_header_state(0, 0, 2, Some(DoctorReviewRowState::Conflict));
+        assert_eq!(conflict.pill, "2 changes · unresolved");
+        assert_eq!(
+            conflict.reason.as_deref(),
+            Some("The spelling for this album is still unresolved — pick one below.")
+        );
+        assert!(!conflict.check.sensitive);
+
+        let ready = super::album_header_state(1, 2, 3, None);
+        assert_eq!(ready.pill, "1 change");
+        assert_eq!(ready.reason, None);
+        assert!(ready.check.sensitive);
     }
 }

@@ -105,19 +105,24 @@ pub(super) struct ReviewRowModel {
 
 impl ReviewRowModel {
     pub(super) fn accessible_description(&self) -> String {
-        let description = strings::doctor_review_row_description(
+        let mut parts = vec![strings::doctor_review_row_description(
             &self.track,
             &self.field,
             &self.current,
             &self.proposed,
             &self.confidence.label,
-        );
-        self.outcome
+        )];
+        if let Some(reason) = row_state_reason(self.row.state) {
+            parts.push(strings::text(reason));
+        }
+        if let Some(error) = self
+            .outcome
             .as_ref()
             .and_then(|outcome| outcome.error.as_deref())
-            .map_or(description.clone(), |error| {
-                format!("{description} {error}")
-            })
+        {
+            parts.push(error.to_owned());
+        }
+        parts.join(" ")
     }
 }
 
@@ -358,6 +363,22 @@ pub(super) fn row_selectable(model: &ReviewRowModel) -> bool {
             model.outcome.as_ref().map(|outcome| outcome.state),
             Some(DoctorWriteRowState::Applied)
         )
+}
+
+pub(super) const fn row_state_label(state: DoctorReviewRowState) -> Option<&'static str> {
+    match state {
+        DoctorReviewRowState::Ready => None,
+        DoctorReviewRowState::Stale => Some(strings::DOCTOR_STATUS_STALE),
+        DoctorReviewRowState::Conflict => Some(strings::DOCTOR_STATUS_CONFLICT),
+    }
+}
+
+pub(super) const fn row_state_reason(state: DoctorReviewRowState) -> Option<&'static str> {
+    match state {
+        DoctorReviewRowState::Ready => None,
+        DoctorReviewRowState::Stale => Some(strings::DOCTOR_ROW_STALE_REASON),
+        DoctorReviewRowState::Conflict => Some(strings::DOCTOR_ROW_CONFLICT_REASON),
+    }
 }
 
 pub(super) const fn outcome_label(outcome: DoctorWriteRowState) -> &'static str {
