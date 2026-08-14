@@ -1,8 +1,8 @@
 ---
 slug: doctor-review-selection-and-refresh-b
-worktree:
-branch:
-phase: planned
+worktree: /home/marvin/Projects/reprise-doctor-review-selection-and-refresh-b
+branch: feature/doctor-review-selection-and-refresh-b
+phase: coded
 codex_session:
 created: 2026-08-14
 ---
