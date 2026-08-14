@@ -142,6 +142,7 @@ pub(in crate::ui) fn handle_playlist_drop(
                 "sidebar playlist drop: tracks added to playlist via drag and drop"
             );
             rebuild(shared, None, "tracks added via drag and drop");
+            super::notify_playlists_changed(shared);
             show_toast(
                 shared,
                 &strings::tracks_added_to_playlist_toast(inserted as usize, playlist_name),

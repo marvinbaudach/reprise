@@ -89,7 +89,7 @@ impl DoctorProgressCard {
             .build();
         let cancel_label = strings::text(strings::CANCEL);
         let cancel = gtk4::Button::builder()
-            .icon_name("window-close-symbolic")
+            .icon_name(crate::ui::scan_card_css::SIDEBAR_CANCEL_ICON)
             .tooltip_text(&cancel_label)
             .css_classes(["flat", "scan-card-cancel"])
             .build();
@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(card.title.label(), "Checking tracks…");
         assert_eq!(
             card.cancel.icon_name().as_deref(),
-            Some("window-close-symbolic")
+            Some(crate::ui::scan_card_css::SIDEBAR_CANCEL_ICON)
         );
         assert_eq!(card.cancel.tooltip_text().as_deref(), Some("Cancel"));
         assert!(

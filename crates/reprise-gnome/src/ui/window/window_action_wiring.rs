@@ -363,7 +363,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         // natural lifetime.
         let sidebar_weak = Rc::downgrade(sidebar);
         track_list.set_on_playlist_mutated(move || match sidebar_weak.upgrade() {
-            Some(sidebar) => sidebar.refresh("context menu playlist change"),
+            Some(sidebar) => sidebar.refresh_after_playlist_change("context menu playlist change"),
             None => tracing::warn!(
                 "sidebar is gone; skipping refresh after context menu playlist change"
             ),

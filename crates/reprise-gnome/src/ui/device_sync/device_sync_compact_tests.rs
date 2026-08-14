@@ -241,6 +241,135 @@ fn mtp_14_playlists_are_selectable_while_device_storage_is_still_being_checked()
 }
 
 #[test]
+fn library_playlist_deletion_refreshes_the_connected_device_projection() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_playlist(&conn, 10, "Road", &[1, 2]);
+        save_sources(&conn, "a", vec![SelectionSource::Playlist(10)]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        assert!(runtime.devices()[0]
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(10)));
+        assert!(reprise_core::library::playlists::delete(&conn, 10, "Road").unwrap());
+
+        runtime.library_playlists_changed();
+
+        assert!(!runtime.devices()[0]
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(10)));
+        assert_eq!(
+            load_or_create_settings(&conn, "a", "Phone a")
+                .unwrap()
+                .selection,
+            DeviceSelection::Sources(Vec::new())
+        );
+    });
+}
+
+#[test]
+fn every_library_playlist_mutation_reprojects_connected_device_rows() {
+    run(async {
+        let (_temp, conn) = fixture();
+        save_sources(&conn, "a", Vec::new());
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        let playlist_id = reprise_core::library::playlists::create(&conn, "Road").unwrap();
+        runtime.library_playlists_changed();
+        assert_eq!(
+            runtime.devices()[0]
+                .page
+                .playlists
+                .iter()
+                .find(|row| row.source == SelectionSource::Playlist(playlist_id))
+                .and_then(|row| row.name.as_deref()),
+            Some("Road")
+        );
+
+        reprise_core::library::playlists::rename(&conn, playlist_id, "Travel").unwrap();
+        runtime.library_playlists_changed();
+        assert_eq!(
+            runtime.devices()[0]
+                .page
+                .playlists
+                .iter()
+                .find(|row| row.source == SelectionSource::Playlist(playlist_id))
+                .and_then(|row| row.name.as_deref()),
+            Some("Travel")
+        );
+
+        reprise_core::library::playlist_membership::add_unique_tracks(&conn, playlist_id, &[1, 2])
+            .unwrap();
+        runtime.library_playlists_changed();
+        assert_eq!(
+            runtime.devices()[0]
+                .page
+                .playlists
+                .iter()
+                .find(|row| row.source == SelectionSource::Playlist(playlist_id))
+                .map(|row| row.entry_count),
+            Some(2)
+        );
+
+        assert!(reprise_core::library::playlists::delete(&conn, playlist_id, "Travel").unwrap());
+        runtime.library_playlists_changed();
+        assert!(!runtime.devices()[0]
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(playlist_id)));
+    });
+}
+
+#[test]
+fn library_playlist_changes_refresh_idle_devices_without_disturbing_an_active_sync() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_playlist(&conn, 10, "Road", &[1]);
+        save_sources(&conn, "a", vec![SelectionSource::Playlist(10)]);
+        save_sources(&conn, "b", vec![SelectionSource::Playlist(10)]);
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("a", true), descriptor("b", true)],
+            1,
+        ));
+        let (started, releases) = backend.gate_copies(&["a"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+        runtime.sync_now("a").unwrap();
+        assert_eq!(started.recv().await.unwrap(), "a");
+
+        assert!(reprise_core::library::playlists::delete(&conn, 10, "Road").unwrap());
+        runtime.library_playlists_changed();
+
+        let devices = runtime.devices();
+        let active = devices.iter().find(|device| device.id == "a").unwrap();
+        let idle = devices.iter().find(|device| device.id == "b").unwrap();
+        assert!(active
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(10)));
+        assert!(!idle
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(10)));
+
+        runtime.cancel_current("a");
+        releases["a"].send(()).await.unwrap();
+        settle().await;
+    });
+}
+
+#[test]
 fn profile_and_playlist_changes_persist_and_recompute_the_page_immediately() {
     run(async {
         let (_temp, conn) = fixture();

@@ -17,6 +17,7 @@ const CHIP_BORDER_ALPHA: &str = "0.32";
 const EDGE_TRACK_ALPHA: &str = "0.10";
 
 pub(in crate::ui) const JOB_CARD_HEIGHT_PX: i32 = 85;
+pub(in crate::ui) const SIDEBAR_CANCEL_ICON: &str = "window-close-symbolic";
 
 pub(in crate::ui) fn css() -> String {
     let spin_ms = crate::ui::motion::INDICATOR_SPIN_MS;
@@ -42,12 +43,12 @@ pub(in crate::ui) fn css() -> String {
         font-size: 11.5px;\
         color: color-mix(in srgb, currentColor 50%, transparent);\
     }}\
-    /* The cancel control stays a compact text link in the status row. */\
+    /* Icon-only cancel controls share one narrow hit target without growing the 85px card. */\
     .scan-card-cancel {{\
         font-size: 12px;\
         min-height: 0;\
-        min-width: 0;\
-        padding: 0 2px;\
+        min-width: 24px;\
+        padding: 0;\
         color: var(--accent-color);\
     }}\
     .scan-card-compact-action {{\

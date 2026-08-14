@@ -31,6 +31,15 @@ fn npp_1_scan_job_card_minimum_width_fits_the_sidebar() {
         view.widget().measure(gtk4::Orientation::Vertical, 232).0,
         crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX
     );
+    assert_eq!(
+        view.inner.cancel.icon_name().as_deref(),
+        Some(crate::ui::scan_card_css::SIDEBAR_CANCEL_ICON)
+    );
+    assert_eq!(
+        view.inner.cancel.tooltip_text().as_deref(),
+        Some("Cancel Scan")
+    );
+    assert_eq!(view.inner.cancel.label(), None);
     let window = gtk4::Window::builder()
         .default_width(232)
         .default_height(200)

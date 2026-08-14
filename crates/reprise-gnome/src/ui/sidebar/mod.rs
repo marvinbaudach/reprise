@@ -11,6 +11,7 @@ mod sidebar_issues_section;
 mod sidebar_module_menu;
 mod sidebar_navigation_scroller;
 pub(in crate::ui) mod sidebar_playlist_creation;
+mod sidebar_playlist_notifications;
 mod sidebar_playlist_quick_add;
 pub(in crate::ui) mod sidebar_presentation;
 pub(in crate::ui) mod sidebar_rebuild;
@@ -23,6 +24,7 @@ mod surface;
 
 #[allow(unused_imports)]
 use super::*;
+pub(in crate::ui) use sidebar_playlist_notifications::notify_playlists_changed;
 pub(in crate::ui) use sidebar_session::{show_toast, show_toast_with_action};
 pub(in crate::ui) use surface::{
     find_row, has_sidebar_row, rebuild, resolve_select_source, select_row_in_its_listbox,
