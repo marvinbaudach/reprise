@@ -155,7 +155,10 @@ impl ReviewState {
             return;
         };
         let model = boxed.borrow::<ReviewRowModel>();
-        self.set_selected(&model.row_ids, !model.row.selected);
+        if model.selectable_row_ids.is_empty() {
+            return;
+        }
+        self.set_selected(&model.selectable_row_ids, !model.row.selected);
     }
 
     fn set_category(self: &Rc<Self>, category: Option<ReviewCategory>) {
