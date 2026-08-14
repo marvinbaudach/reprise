@@ -166,7 +166,7 @@ path — a missing prerequisite is a failure, never a pass.
 
 **Steps:**
 
-- [ ] **Step 1: Prove D2.** Generate the bindings both ways and diff them:
+- [x] **Step 1: Prove D2.** Generate the bindings both ways and diff them:
 
       # NDK route (the status quo)
       scripts/android-build.sh
@@ -183,7 +183,7 @@ path — a missing prerequisite is a failure, never a pass.
       message. If they differ, the script uses `scripts/android-build.sh`
       instead and Wave 2's job needs the NDK — note it and continue.
 
-- [ ] **Step 2: Write the freshness check first, and its unit tests.** The
+- [x] **Step 2: Write the freshness check first, and its unit tests.** The
       parser takes a start timestamp and a directory of JUnit XML and answers
       four numbers plus a verdict. Cover: all files fresh; one file stale; an
       empty directory; a directory that does not exist. All four must be
@@ -191,7 +191,7 @@ path — a missing prerequisite is a failure, never a pass.
       `scripts/tests/check-android-suite.sh` and watch it fail before the
       implementation exists.
 
-- [ ] **Step 3: Write the script.** In order:
+- [x] **Step 3: Write the script.** In order:
       1. Fail unless `ANDROID_HOME`/`ANDROID_SDK_ROOT` points at a real
          directory. No default, no skip.
       2. Generate the bindings (route decided in Step 1).
@@ -208,7 +208,7 @@ path — a missing prerequisite is a failure, never a pass.
       6. Print the four numbers on one line so a reader — and a reviewer — can
          quote them without opening anything.
 
-- [ ] **Step 4: Prove it can go red, three ways.** A green gate that has never
+- [x] **Step 4: Prove it can go red, three ways.** A green gate that has never
       been shown to fail is not a gate.
       1. **Compile break:** point a reference at something that does not exist
          (the established trick: `R.color.reprise_teal` → `R.color.does_not_exist`),
@@ -220,10 +220,10 @@ path — a missing prerequisite is a failure, never a pass.
          set it back.
       Quote all three outcomes.
 
-- [ ] **Step 5: Measure and record the floor** (D4) on your base commit, with
+- [x] **Step 5: Measure and record the floor** (D4) on your base commit, with
       the commit hash in a comment beside it.
 
-- [ ] **Step 6: Commit.** `ci: add a self-proving Android unit-suite gate`
+- [x] **Step 6: Commit.** `ci: add a self-proving Android unit-suite gate`
 
 ---
 
