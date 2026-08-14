@@ -2,7 +2,7 @@
 slug: worktree-gc-root-probe
 worktree: /home/marvin/Projects/reprise-worktree-gc-root-probe
 branch: feature/worktree-gc-root-probe
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-15
 ---
