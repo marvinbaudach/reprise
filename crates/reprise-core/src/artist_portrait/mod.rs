@@ -3,7 +3,10 @@
 
 pub(crate) mod cache;
 pub(crate) mod deezer;
+mod placeholder;
 
+#[cfg(test)]
+mod placeholder_measurement;
 #[cfg(test)]
 mod test_fixtures;
 
@@ -135,10 +138,52 @@ where
         Ok(bytes) => bytes,
         Err(error) => return stale_or(cached_path, error.into()),
     };
-    let Some(extension) = crate::cover_download::validated_image_extension(&bytes) else {
+    let decoded_image = crate::cover_download::decode_image(&bytes);
+    let placeholder_distance = decoded_image
+        .as_ref()
+        .map(|decoded| placeholder::placeholder_distance(decoded.image()));
+    if let Some(distance) =
+        placeholder_distance.filter(|distance| *distance <= placeholder::PLACEHOLDER_RMSE_MAX)
+    {
+        let image_identifier = deezer::image_identifier(&url).unwrap_or_else(|| "unknown".into());
+        tracing::warn!(
+            artist = name,
+            image_identifier,
+            placeholder_distance = distance,
+            "artist portrait rejected as a known Deezer placeholder"
+        );
+        if let Some(path) = cached_path.as_ref().filter(|path| path.exists()) {
+            let refreshed = cache::refresh_image(dir, name, path).unwrap_or_else(|| {
+                tracing::warn!(
+                    artist = name,
+                    cached_path = %path.display(),
+                    "artist portrait could not refresh the cached image after placeholder rejection"
+                );
+                path.clone()
+            });
+            return Ok(PortraitOutcome::Found(refreshed));
+        }
+        cache::write_negative(dir, name);
+        return Ok(PortraitOutcome::NotFound);
+    }
+    let Some(extension) = decoded_image
+        .as_ref()
+        .and_then(crate::cover_download::DecodedImage::validated_extension)
+    else {
         cache::write_negative(dir, name);
         return Ok(PortraitOutcome::NotFound);
     };
+    if let Some(distance) = placeholder_distance
+        .filter(|distance| *distance < placeholder::PLACEHOLDER_WARNING_RMSE_MAX)
+    {
+        let image_identifier = deezer::image_identifier(&url).unwrap_or_else(|| "unknown".into());
+        tracing::warn!(
+            artist = name,
+            image_identifier,
+            placeholder_distance = distance,
+            "artist portrait accepted near the placeholder threshold"
+        );
+    }
     cache::store_image(dir, name, &bytes, extension)
         .map(PortraitOutcome::Found)
         .map_or_else(|| stale_or(cached_path, PortraitError::InvalidResponse), Ok)
@@ -192,6 +237,30 @@ mod tests {
         buffer.into_inner()
     }
 
+    fn placeholder_png(reference_index: usize) -> Vec<u8> {
+        let reference = image::GrayImage::from_raw(
+            32,
+            32,
+            placeholder::REFERENCE_THUMBNAILS[reference_index].to_vec(),
+        )
+        .unwrap();
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::from(reference)
+            .write_to(&mut buffer, image::ImageFormat::Png)
+            .unwrap();
+        buffer.into_inner()
+    }
+
+    fn near_placeholder_png() -> Vec<u8> {
+        let shifted = placeholder::REFERENCE_THUMBNAILS[0].map(|luma| luma.saturating_add(3));
+        let image = image::GrayImage::from_raw(32, 32, shifted.to_vec()).unwrap();
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::from(image)
+            .write_to(&mut buffer, image::ImageFormat::Png)
+            .unwrap();
+        buffer.into_inner()
+    }
+
     const HIT: &str = r#"{"data":[{"id":1,"name":"Band","nb_album":1,"nb_fan":1,"picture_xl":"https://cdn-images.dzcdn.net/images/artist/abc/1000x1000-000000-80-0-0.jpg","picture_big":"https://cdn-images.dzcdn.net/images/artist/abc/500x500-000000-80-0-0.jpg","type":"artist"}],"total":1}"#;
 
     fn tmp() -> std::path::PathBuf {
@@ -237,6 +306,125 @@ mod tests {
             PortraitOutcome::Found(path) => assert!(path.exists()),
             PortraitOutcome::NotFound => panic!("expected Found"),
         }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn downloaded_invalid_image_writes_a_negative_outcome() {
+        let dir = tmp();
+        let mut search = |_: &str| Ok(HIT.to_string());
+        let mut download = |_: &str| Ok(b"not an image".to_vec());
+
+        let outcome = load_or_fetch_with("Band", 1_000, &dir, &mut search, &mut download).unwrap();
+
+        assert!(matches!(outcome, PortraitOutcome::NotFound));
+        assert!(cache::portrait_path_in(&dir, "Band").is_none());
+        assert!(cache::negative_marker_path(&dir, "Band").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn downloaded_placeholder_without_cached_portrait_writes_one_negative_outcome() {
+        let dir = tmp();
+        let logs = crate::log_capture::CapturedLogs::default();
+        let downloads = std::cell::Cell::new(0);
+        let mut search = |_: &str| Ok(HIT.to_string());
+        let mut download = |_: &str| {
+            downloads.set(downloads.get() + 1);
+            Ok(placeholder_png(0))
+        };
+
+        let outcome = logs
+            .capture(|| load_or_fetch_with("Band", 1_000, &dir, &mut search, &mut download))
+            .unwrap();
+
+        assert!(matches!(outcome, PortraitOutcome::NotFound));
+        assert_eq!(downloads.get(), 1);
+        assert!(cache::portrait_path_in(&dir, "Band").is_none());
+        assert!(cache::negative_marker_path(&dir, "Band").exists());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let logs = logs.joined();
+        assert!(logs.contains("artist portrait rejected as a known Deezer placeholder"));
+        assert!(logs.contains("Band"));
+        assert!(logs.contains("abc"));
+        assert!(logs.contains("placeholder_distance"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn downloaded_placeholder_refreshes_and_preserves_a_stale_cached_portrait() {
+        let dir = tmp();
+        let cached = cache::store_image(&dir, "Band", b"existing portrait", "jpg").unwrap();
+        let before_modified = std::fs::metadata(&cached).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1_100));
+        let stale_now = cache::file_epoch_secs(&cached) + 31 * 24 * 60 * 60;
+        let downloads = std::cell::Cell::new(0);
+        let mut search = |_: &str| Ok(HIT.to_string());
+        let mut download = |_: &str| {
+            downloads.set(downloads.get() + 1);
+            Ok(placeholder_png(0))
+        };
+
+        let outcome =
+            load_or_fetch_with("Band", stale_now, &dir, &mut search, &mut download).unwrap();
+
+        match outcome {
+            PortraitOutcome::Found(path) => assert_eq!(path, cached),
+            PortraitOutcome::NotFound => panic!("expected the cached portrait"),
+        }
+        assert_eq!(downloads.get(), 1);
+        assert_eq!(std::fs::read(&cached).unwrap(), b"existing portrait");
+        assert!(std::fs::metadata(&cached).unwrap().modified().unwrap() > before_modified);
+        assert!(!cache::negative_marker_path(&dir, "Band").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn failed_cached_portrait_refresh_emits_a_warning() {
+        let dir = tmp();
+        let cached = cache::store_image(&dir, "Band", b"existing portrait", "jpg").unwrap();
+        let stale_now = cache::file_epoch_secs(&cached) + 31 * 24 * 60 * 60;
+        let logs = crate::log_capture::CapturedLogs::default();
+        let mut search = |_: &str| Ok(HIT.to_string());
+        let mut download = |_: &str| {
+            std::fs::remove_file(&cached).unwrap();
+            std::fs::create_dir(&cached).unwrap();
+            Ok(placeholder_png(0))
+        };
+
+        let outcome = logs
+            .capture(|| load_or_fetch_with("Band", stale_now, &dir, &mut search, &mut download))
+            .unwrap();
+
+        match outcome {
+            PortraitOutcome::Found(path) => assert_eq!(path, cached),
+            PortraitOutcome::NotFound => panic!("expected the stale cache path"),
+        }
+        let logs = logs.joined();
+        assert!(logs.contains("artist portrait could not refresh the cached image"));
+        assert!(logs.contains("Band"));
+        assert!(logs.contains("cached_path"));
+        assert!(logs.contains(&cached.display().to_string()));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn accepted_image_near_the_placeholder_threshold_emits_a_warning() {
+        let dir = tmp();
+        let logs = crate::log_capture::CapturedLogs::default();
+        let mut search = |_: &str| Ok(HIT.to_string());
+        let mut download = |_: &str| Ok(near_placeholder_png());
+
+        let outcome = logs
+            .capture(|| load_or_fetch_with("Band", 1_000, &dir, &mut search, &mut download))
+            .unwrap();
+
+        assert!(matches!(outcome, PortraitOutcome::Found(_)));
+        let logs = logs.joined();
+        assert!(logs.contains("artist portrait accepted near the placeholder threshold"));
+        assert!(logs.contains("Band"));
+        assert!(logs.contains("abc"));
+        assert!(logs.contains("placeholder_distance"));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -293,11 +481,32 @@ mod tests {
     }
 
     #[test]
-    fn oceano_downloads_real_match_after_current_placeholder() {
+    fn oceano_selects_the_most_popular_exact_match_before_image_validation() {
         assert_eq!(
             fetched_image_identifier(OCEANO_RESPONSE, "Oceano"),
-            "68526b594bc647dea90845bf08c4dd67"
+            "415714b66a5de709809dd3d05f58afe4"
         );
+    }
+
+    #[test]
+    fn oceano_placeholder_is_rejected_without_trying_the_lower_ranked_namesake() {
+        let dir = tmp();
+        let downloaded = std::cell::RefCell::new(Vec::new());
+        let mut search = |_: &str| Ok(OCEANO_RESPONSE.to_string());
+        let mut download = |url: &str| {
+            downloaded.borrow_mut().push(url.to_owned());
+            Ok(placeholder_png(1))
+        };
+
+        let outcome =
+            load_or_fetch_with("Oceano", 1_000, &dir, &mut search, &mut download).unwrap();
+
+        assert!(matches!(outcome, PortraitOutcome::NotFound));
+        let downloaded = downloaded.into_inner();
+        assert_eq!(downloaded.len(), 1);
+        assert!(downloaded[0].contains("/415714b66a5de709809dd3d05f58afe4/"));
+        assert!(cache::negative_marker_path(&dir, "Oceano").exists());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

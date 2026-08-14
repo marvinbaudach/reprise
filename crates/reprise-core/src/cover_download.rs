@@ -347,19 +347,40 @@ fn is_clean_caa_miss(status: u16) -> bool {
     status == 404
 }
 
-pub(crate) fn validated_image_extension(bytes: &[u8]) -> Option<&'static str> {
+pub(crate) struct DecodedImage {
+    image: image::DynamicImage,
+    extension: Option<&'static str>,
+}
+
+impl DecodedImage {
+    pub(crate) fn image(&self) -> &image::DynamicImage {
+        &self.image
+    }
+
+    pub(crate) fn validated_extension(&self) -> Option<&'static str> {
+        self.extension
+    }
+}
+
+pub(crate) fn decode_image(bytes: &[u8]) -> Option<DecodedImage> {
     let format = image::guess_format(bytes).ok()?;
-    let ext = match format {
-        image::ImageFormat::Jpeg => "jpg",
-        image::ImageFormat::Png => "png",
-        image::ImageFormat::WebP => "webp",
-        image::ImageFormat::Gif => "gif",
-        image::ImageFormat::Bmp => "bmp",
-        image::ImageFormat::Ico => "ico",
-        _ => return None,
+    let extension = match format {
+        image::ImageFormat::Jpeg => Some("jpg"),
+        image::ImageFormat::Png => Some("png"),
+        image::ImageFormat::WebP => Some("webp"),
+        image::ImageFormat::Gif => Some("gif"),
+        image::ImageFormat::Bmp => Some("bmp"),
+        image::ImageFormat::Ico => Some("ico"),
+        _ => None,
     };
-    image::load_from_memory_with_format(bytes, format).ok()?;
-    Some(ext)
+    Some(DecodedImage {
+        image: image::load_from_memory_with_format(bytes, format).ok()?,
+        extension,
+    })
+}
+
+pub(crate) fn validated_image_extension(bytes: &[u8]) -> Option<&'static str> {
+    decode_image(bytes)?.validated_extension()
 }
 
 fn write_negative(key: &str) {
