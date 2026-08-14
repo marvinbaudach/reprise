@@ -68,18 +68,18 @@ cua_wait_for_label() {
 # accessibility token. The window is fixed at 1560x1160, so retain screenshots
 # around the two manually measured pixel actions and prove their outcomes from
 # the AT-SPI tree immediately afterward.
-cua_click_pixel() {
+x11_click_pixel() {
   local pid=$1 window_id=$2 x=$3 y=$4 stem=$5
-  local action_path payload
+  local action_path
 
   cua_snapshot "$pid" "$window_id" "$stem-before" >/dev/null
-  action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
-  payload=$(pixel_action_payload "$pid" "$window_id" "$x" "$y")
-  if ! cua_driver click "$payload" >"$action_path"; then
-    echo "CUA pixel click command failed at $stem; evidence: $action_path" >&2
+  action_path="$CUA_E2E_OUT_DIR/$stem-action.txt"
+  if ! xdotool mousemove --sync --window "$window_id" "$x" "$y" click 1; then
+    echo "private X11 pixel click failed at $stem; evidence: $action_path" >&2
     return 1
   fi
-  assert_action_landed "$action_path" || return 1
+  printf 'method=xdotool\nwindow_id=%s\nx=%s\ny=%s\n' \
+    "$window_id" "$x" "$y" >"$action_path"
   cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null
 }
 
@@ -216,22 +216,10 @@ self_test_private_atspi() {
   jq -e --argjson depth "$ACCEPT_CUA_MAX_DEPTH" \
     --argjson elements "$CUA_MAX_ELEMENTS" \
     '.max_depth == $depth and .max_elements == $elements' <<<"$payload" >/dev/null
-  payload=$(pixel_action_payload 7 11 100 692)
-  jq -e '.x == 100 and .y == 692 and has("element_token") == false' \
-    <<<"$payload" >/dev/null
+  [[ "$MY_STATS_CLICK_X,$MY_STATS_CLICK_Y" == "100,692" ]]
+  [[ "$SHOW_MORE_ARTISTS_CLICK_X,$SHOW_MORE_ARTISTS_CLICK_Y" == "390,640" ]]
   find "$fixture_root" -xdev -depth -delete
   echo "private_atspi_self_test=passed"
-}
-
-pixel_action_payload() {
-  local pid=$1 window_id=$2 x=$3 y=$4
-  jq -nc \
-    --argjson pid "$pid" \
-    --argjson window_id "$window_id" \
-    --argjson x "$x" \
-    --argjson y "$y" \
-    --arg session "$CUA_E2E_SESSION" \
-    '{pid: $pid, window_id: $window_id, x: $x, y: $y, session: $session}'
 }
 
 snapshot_payload() {
@@ -395,14 +383,14 @@ run_private_acceptance() {
   ACCEPT_CUA_MAX_DEPTH=20
   cua_wait_for_label \
     "$ACCEPT_APP_PID" "$window_id" "My Stats" "$label-atspi-ready" >/dev/null
-  cua_click_pixel \
+  x11_click_pixel \
     "$ACCEPT_APP_PID" "$window_id" \
     "$MY_STATS_CLICK_X" "$MY_STATS_CLICK_Y" "$label-open-stats"
 
   ACCEPT_CUA_MAX_DEPTH=40
   final_snapshot=$(cua_wait_for_label \
     "$ACCEPT_APP_PID" "$window_id" "The Devil Wears Prada" "$label-stats-ready")
-  cua_click_pixel \
+  x11_click_pixel \
     "$ACCEPT_APP_PID" "$window_id" \
     "$SHOW_MORE_ARTISTS_CLICK_X" "$SHOW_MORE_ARTISTS_CLICK_Y" \
     "$label-expand-top-artists"
@@ -509,7 +497,7 @@ for reference in "${placeholder_references[@]}"; do
 done
 
 for command in cargo cua-driver dbus-run-session find gdbus git import jq mktemp openbox rg sed \
-  rustc sha256sum sqlite3 tar timeout wmctrl Xvfb; do
+  rustc sha256sum sqlite3 tar timeout wmctrl xdotool Xvfb; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher || ! -x /usr/lib/at-spi2-registryd ]]; then
