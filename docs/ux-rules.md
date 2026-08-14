@@ -1369,9 +1369,10 @@ result.
   due check from repeating it the same day. Up to three releases send one
   notification each, carrying the release title, `{artist} · {type} · out
   today` and the cover when it is available; four or more collapse into a
-  single collected notification. Activating a notification opens exactly
-  the URL its popover row would open, through the shared external-link
-  guard.
+  single collected notification. Activating a per-release notification
+  opens exactly the URL its popover row would open, through the shared
+  external-link guard; the collected notification has no single release to
+  point at and opens the Releases view instead.
   Test: `os_6_the_first_fetch_announces_nothing`
   (`crates/reprise-core/src/artist_news_notify.rs`, `#[cfg(test)]`).
 - **OS-7** [active] [gtk] — Update notifications are a three-step
