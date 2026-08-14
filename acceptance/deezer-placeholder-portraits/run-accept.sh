@@ -9,6 +9,8 @@ readonly MY_STATS_CLICK_X=100
 readonly MY_STATS_CLICK_Y=692
 readonly SHOW_MORE_ARTISTS_CLICK_X=390
 readonly SHOW_MORE_ARTISTS_CLICK_Y=640
+readonly RENDERED_TOP_ARTIST_RANKS=20
+readonly PORTRAIT_REPAINT_MARGIN_SECONDS=2
 private_runtime_root=""
 ACCEPT_CUA_MAX_DEPTH=20
 
@@ -222,27 +224,28 @@ self_test_private_atspi() {
   echo "private_atspi_self_test=passed"
 }
 
-self_test_named_portrait_wait() {
+self_test_rendered_portrait_wait() {
   local fixture_root diagnostic
   fixture_root=$(mktemp -d /tmp/reprise-portrait-wait.XXXXXX)
   mkdir -p "$fixture_root/cache"
-  : >"$fixture_root/cache/unrelated.jpg"
-  : >"$fixture_root/cache/prada.jpg"
+  : >"$fixture_root/cache/unrelated.tmp"
+  : >"$fixture_root/cache/1111111111111111.jpg"
+  : >"$fixture_root/cache/2222222222222222.notfound"
 
-  if diagnostic=$(wait_for_named_portraits \
-    contract "$fixture_root/cache" 1 prada oceano 2>&1); then
-    echo "named portrait wait passed without every required portrait" >&2
+  if diagnostic=$(wait_for_rendered_portraits \
+    contract "$fixture_root/cache" 1 3 2>&1); then
+    echo "rendered portrait wait passed without every rank settling" >&2
     return 1
   fi
-  if [[ "$diagnostic" != *"prada oceano"* ]]; then
-    echo "named portrait wait omitted the required cache keys" >&2
+  if [[ "$diagnostic" != *"2 of 3 rendered portraits"* ]]; then
+    echo "rendered portrait wait omitted its observed and expected counts" >&2
     return 1
   fi
 
-  : >"$fixture_root/cache/oceano.png"
-  wait_for_named_portraits contract "$fixture_root/cache" 1 prada oceano
+  : >"$fixture_root/cache/3333333333333333.png"
+  wait_for_rendered_portraits contract "$fixture_root/cache" 1 3
   find "$fixture_root" -xdev -depth -delete
-  echo "named_portrait_wait_self_test=passed"
+  echo "rendered_portrait_wait_self_test=passed"
 }
 
 snapshot_payload() {
@@ -342,29 +345,30 @@ private_run_cleanup() {
   exit "$exit_code"
 }
 
-wait_for_named_portraits() {
-  local label=$1 portrait_dir=$2 wait_seconds=$3
-  shift 3
-  local -a cache_keys=("$@")
-  local deadline=$((SECONDS + wait_seconds)) key all_present
+portrait_outcome_count() {
+  local portrait_dir=$1
+  if [[ ! -d "$portrait_dir" ]]; then
+    echo 0
+    return
+  fi
+  find "$portrait_dir" -maxdepth 1 -type f -regextype posix-extended \
+    -regex '.*/[0-9a-f]{16}\.(jpg|jpeg|png|webp|gif|bmp|notfound)' \
+    -printf '%f\n' | wc -l
+}
+
+wait_for_rendered_portraits() {
+  local label=$1 portrait_dir=$2 wait_seconds=$3 expected=$4
+  local deadline=$((SECONDS + wait_seconds)) observed=0
 
   while ((SECONDS < deadline)); do
-    all_present=true
-    for key in "${cache_keys[@]}"; do
-      if [[ ! -d "$portrait_dir" ]] \
-        || ! find "$portrait_dir" -maxdepth 1 -type f -name "$key.*" \
-          ! -name '*.notfound' -print -quit | grep -q .; then
-        all_present=false
-        break
-      fi
-    done
-    if [[ "$all_present" == true ]]; then
+    observed=$(portrait_outcome_count "$portrait_dir")
+    if ((observed >= expected)); then
       return 0
     fi
     sleep 1
   done
 
-  echo "$label did not cache every required portrait within ${wait_seconds}s: ${cache_keys[*]}" >&2
+  echo "$label cached only $observed of $expected rendered portraits within ${wait_seconds}s" >&2
   return 1
 }
 
@@ -372,8 +376,7 @@ run_private_acceptance() {
   local label=$1 binary=$2 output_dir=$3
   local app_log="$output_dir/app.log"
   local portrait_dir="$XDG_CACHE_HOME/reprise/artist-portraits"
-  local cache_key_binary="$(dirname "$output_dir")/cache-key"
-  local window_id final_snapshot atspi_address prada_key oceano_key
+  local window_id final_snapshot atspi_address settled_count settled_utc capture_utc
 
   export CUA_E2E_OUT_DIR="$output_dir/cua"
   export CUA_E2E_SESSION="deezer-portrait-$label"
@@ -431,13 +434,19 @@ run_private_acceptance() {
   final_snapshot=$(cua_wait_for_label \
     "$ACCEPT_APP_PID" "$window_id" "Hide more top artists" "$label-stats-expanded")
   assert_snapshot_contains "$final_snapshot" "Oceano"
-  # Page rendering and one arbitrary cache file do not prove that the two
-  # acceptance artists completed both network calls. Wait for their exact
-  # cache keys, then give GTK's main context time to paint the loaded images.
-  prada_key=$("$cache_key_binary" "The Devil Wears Prada")
-  oceano_key=$("$cache_key_binary" "Oceano")
-  wait_for_named_portraits "$label" "$portrait_dir" 60 "$prada_key" "$oceano_key"
-  sleep 1
+  # The empty isolated cache receives one terminal image or .notfound outcome
+  # for every expanded top-artist rank. Wait for all rendered ranks, then give
+  # GTK a repaint margin measured from the last completed portrait fetch.
+  wait_for_rendered_portraits \
+    "$label" "$portrait_dir" 60 "$RENDERED_TOP_ARTIST_RANKS"
+  settled_count=$(portrait_outcome_count "$portrait_dir")
+  settled_utc=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+  sleep "$PORTRAIT_REPAINT_MARGIN_SECONDS"
+  capture_utc=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+  printf 'rendered_ranks=%s\nsettled_outcomes=%s\nsettled_utc=%s\nrepaint_margin_seconds=%s\ncapture_ready_utc=%s\n' \
+    "$RENDERED_TOP_ARTIST_RANKS" "$settled_count" "$settled_utc" \
+    "$PORTRAIT_REPAINT_MARGIN_SECONDS" "$capture_utc" \
+    >"$output_dir/portrait-settle.txt"
   final_snapshot=$(cua_snapshot "$ACCEPT_APP_PID" "$window_id" "$label-stats-final")
   assert_snapshot_contains "$final_snapshot" "The Devil Wears Prada"
   assert_snapshot_contains "$final_snapshot" "Oceano"
@@ -479,8 +488,8 @@ if [[ "${1:-}" == "--self-test-private-atspi" ]]; then
   exit 0
 fi
 
-if [[ "${1:-}" == "--self-test-named-portrait-wait" ]]; then
-  self_test_named_portrait_wait
+if [[ "${1:-}" == "--self-test-rendered-portrait-wait" ]]; then
+  self_test_rendered_portrait_wait
   exit 0
 fi
 
