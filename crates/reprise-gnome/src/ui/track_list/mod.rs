@@ -47,7 +47,7 @@ pub(crate) mod track_list_dnd_smoke;
 pub(crate) mod track_list_empty_state;
 mod track_list_filter_actions;
 mod track_list_focus;
-mod track_list_geometry;
+pub(in crate::ui) mod track_list_geometry;
 pub(in crate::ui) mod track_list_header_style;
 pub(in crate::ui) mod track_list_keyboard_reorder;
 pub(in crate::ui) mod track_list_layout;

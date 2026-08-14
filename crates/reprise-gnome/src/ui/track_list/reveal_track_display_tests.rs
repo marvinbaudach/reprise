@@ -68,7 +68,10 @@ fn anchor_target(track_list: &TrackList, track_id: i64) -> Option<f64> {
     let adjustment = track_list.shared.column_view.vadjustment()?;
     let ids = track_list.shared.current_view_ids();
     let height = adjustment.upper() / ids.len() as f64;
-    reload_restore::scroll_target(Some((track_id, 0.0)), &ids, height, adjustment.page_size())
+    let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
+        crate::ui::list_geometry::RowHeight::new(height)?,
+    );
+    reload_restore::scroll_target(Some((track_id, 0.0)), &ids, &layout, adjustment.page_size())
 }
 
 /// What the player bar's title link does while Music is already open and the

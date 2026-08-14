@@ -2,6 +2,7 @@
 
 use reprise_core::library::tag_edit::TrackWrite;
 
+use crate::ui::list_geometry_layout::ListLayout;
 use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 
 #[derive(Clone)]
@@ -28,7 +29,7 @@ pub(in crate::ui) fn post_save_reload_anchor(
     writes: &[TrackWrite],
     sort_field: &str,
     old_view_ids: &[i64],
-    row_height: f64,
+    layout: &ListLayout,
 ) -> ReloadAnchor {
     opened.selected_ids = updated_ids.to_vec();
     let sort_columns = reprise_core::queries::sort_key_columns(sort_field);
@@ -43,7 +44,7 @@ pub(in crate::ui) fn post_save_reload_anchor(
     }) else {
         return opened;
     };
-    reload_restore::reanchor_on_track(opened, first_edited_id, old_view_ids, row_height)
+    reload_restore::reanchor_on_track(opened, first_edited_id, old_view_ids, layout)
 }
 
 #[cfg(test)]
@@ -53,6 +54,10 @@ mod tests {
     use reprise_core::library::tag_edit::{TagPatch, TrackEditPatch};
 
     use super::*;
+
+    fn rows_only() -> ListLayout {
+        ListLayout::rows_only(crate::ui::list_geometry::RowHeight::new(20.0).unwrap())
+    }
 
     fn tag_write(id: i64, tags: TagPatch) -> TrackWrite {
         TrackWrite {
@@ -76,8 +81,14 @@ mod tests {
             },
         )];
 
-        let restored =
-            post_save_reload_anchor(opened, &[40], &writes, "artist", &[10, 20, 30, 40], 20.0);
+        let restored = post_save_reload_anchor(
+            opened,
+            &[40],
+            &writes,
+            "artist",
+            &[10, 20, 30, 40],
+            &rows_only(),
+        );
 
         assert_eq!(restored.selected_ids, vec![40]);
         assert_eq!(restored.anchor, Some((40, -36.0)));
@@ -94,8 +105,14 @@ mod tests {
             },
         )];
 
-        let restored =
-            post_save_reload_anchor(opened, &[40], &writes, "artist", &[10, 20, 30, 40], 20.0);
+        let restored = post_save_reload_anchor(
+            opened,
+            &[40],
+            &writes,
+            "artist",
+            &[10, 20, 30, 40],
+            &rows_only(),
+        );
 
         assert_eq!(restored.anchor, Some((20, 4.0)));
     }
@@ -129,7 +146,7 @@ mod tests {
             &writes,
             "artist",
             &[10, 20, 30, 40, 50],
-            20.0,
+            &rows_only(),
         );
 
         assert_eq!(
