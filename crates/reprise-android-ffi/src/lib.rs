@@ -29,6 +29,8 @@ mod play_recorder;
 pub mod playback;
 mod playback_session;
 mod playback_settings;
+#[cfg(test)]
+mod read_during_scan_tests;
 pub mod source;
 mod source_error;
 mod source_names;
