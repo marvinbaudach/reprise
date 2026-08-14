@@ -60,6 +60,11 @@ Testnamen stehen im Log.
 
 ## Aufgabe 2 — `artist_portrait::load_or_fetch_in`
 
+**Status:** complete in this task commit. Both named tests were compile-red
+before the explicit-directory entry point existed; the focused portrait suite
+then increased from 28 to 30 passing tests in
+`/tmp/reprise-artist-photos/core-portrait.log`.
+
 **Dateien:** `crates/reprise-core/src/artist_portrait/mod.rs:47-57`.
 
 **Änderung:**

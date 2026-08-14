@@ -45,12 +45,15 @@ impl From<PortraitError> for SourceError {
 }
 
 pub fn load_or_fetch(name: &str) -> Result<PortraitOutcome, PortraitError> {
+    load_or_fetch_in(name, &cache::cache_dir())
+}
+
+pub fn load_or_fetch_in(name: &str, dir: &Path) -> Result<PortraitOutcome, PortraitError> {
     let now = chrono::Utc::now().timestamp();
-    let dir = cache::cache_dir();
     load_or_fetch_with(
         name,
         now,
-        &dir,
+        dir,
         &mut deezer::search,
         &mut deezer::download_image,
     )
@@ -177,6 +180,35 @@ mod tests {
 
     fn tmp() -> std::path::PathBuf {
         std::env::temp_dir().join(format!("rp-portrait-mod-{}", fastrand::u64(..)))
+    }
+
+    #[test]
+    fn load_or_fetch_in_answers_a_fresh_portrait_from_the_given_directory() {
+        let dir = tmp();
+        let name = format!("Reprise Fixture {}", fastrand::u64(..));
+        cache::store_image(&dir, &name, b"img", "jpg").unwrap();
+
+        let outcome = load_or_fetch_in(&name, &dir).unwrap();
+
+        match outcome {
+            PortraitOutcome::Found(path) => assert!(path.starts_with(&dir)),
+            PortraitOutcome::NotFound => panic!("expected Found"),
+        }
+        assert!(cache::portrait_path_in(&cache::cache_dir(), &name).is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_or_fetch_in_honours_a_negative_marker_in_the_given_directory() {
+        let dir = tmp();
+        let name = format!("Reprise Fixture {}", fastrand::u64(..));
+        cache::write_negative(&dir, &name);
+
+        let outcome = load_or_fetch_in(&name, &dir).unwrap();
+
+        assert!(matches!(outcome, PortraitOutcome::NotFound));
+        assert!(!cache::negative_marker_path(&cache::cache_dir(), &name).exists());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
