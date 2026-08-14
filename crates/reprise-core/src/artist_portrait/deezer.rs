@@ -17,6 +17,9 @@ const MISSING_IMAGE_IDENTIFIERS: &[&str] = &[
     // Deezer puts MD5 of the empty string into its image URL when no artist
     // image exists. Keep the sentinel explicit; computing it adds no value.
     "d41d8cd98f00b204e9800998ecf8427e",
+    // Deezer's first exact Oceano result began serving the same silhouette
+    // under this identifier on 2026-08-14.
+    "415714b66a5de709809dd3d05f58afe4",
 ];
 
 static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
@@ -280,8 +283,11 @@ mod tests {
         assert!(is_placeholder_url(
             "https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/1000x1000-000000-80-0-0.jpg"
         ));
+        assert!(is_placeholder_url(
+            "https://cdn-images.dzcdn.net/images/artist/415714b66a5de709809dd3d05f58afe4/1000x1000-000000-80-0-0.jpg"
+        ));
         assert!(!is_placeholder_url(
-            "https://cdn-images.dzcdn.net/images/artist/415714b600000000000000000000afe4/1000x1000-000000-80-0-0.jpg"
+            "https://cdn-images.dzcdn.net/images/artist/68526b594bc647dea90845bf08c4dd67/1000x1000-000000-80-0-0.jpg"
         ));
     }
 

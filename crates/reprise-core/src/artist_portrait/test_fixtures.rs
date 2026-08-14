@@ -48,6 +48,14 @@ pub(super) const THE_DEVIL_WEARS_PRADA_RESPONSE: &str = r#"{
   "total": 3
 }"#;
 
+pub(super) const OCEANO_RESPONSE: &str = r#"{
+  "data": [
+    {"id":389541,"name":"Oceano","nb_album":36,"nb_fan":16388,"picture_xl":"https://cdn-images.dzcdn.net/images/artist/415714b66a5de709809dd3d05f58afe4/1000x1000-000000-80-0-0.jpg","type":"artist"},
+    {"id":12906449,"name":"Oceano","nb_album":13,"nb_fan":2347,"picture_xl":"https://cdn-images.dzcdn.net/images/artist/68526b594bc647dea90845bf08c4dd67/1000x1000-000000-80-0-0.jpg","type":"artist"}
+  ],
+  "total": 2
+}"#;
+
 pub(super) const ONI_RESPONSE: &str = r#"{
   "data": [
     {"id": 1200001, "link": "https://www.deezer.com/artist/1200001", "name": "Oni", "nb_album": 90, "nb_fan": 9, "picture_big": "https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/500x500-000000-80-0-0.jpg", "picture_xl": "https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/1000x1000-000000-80-0-0.jpg", "radio": true, "tracklist": "https://api.deezer.com/artist/1200001/top?limit=50", "type": "artist"},

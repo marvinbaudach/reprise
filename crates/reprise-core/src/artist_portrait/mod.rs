@@ -147,8 +147,8 @@ fn stale_or(
 mod tests {
     use super::*;
     use crate::artist_portrait::test_fixtures::{
-        ALL_PLACEHOLDERS_RESPONSE, MISSING_FANS_RESPONSE, NON_EXACT_RESPONSE, ONI_RESPONSE,
-        POPULAR_PLACEHOLDER_RESPONSE, THE_DEVIL_WEARS_PRADA_RESPONSE,
+        ALL_PLACEHOLDERS_RESPONSE, MISSING_FANS_RESPONSE, NON_EXACT_RESPONSE, OCEANO_RESPONSE,
+        ONI_RESPONSE, POPULAR_PLACEHOLDER_RESPONSE, THE_DEVIL_WEARS_PRADA_RESPONSE,
     };
     use crate::musicbrainz::FetchError;
     use crate::source_error::{SourceError, SourceErrorKind};
@@ -241,6 +241,14 @@ mod tests {
         assert_eq!(
             fetched_image_identifier(THE_DEVIL_WEARS_PRADA_RESPONSE, "The Devil Wears Prada"),
             "ce8738d500000000000000000000c62a"
+        );
+    }
+
+    #[test]
+    fn oceano_downloads_real_match_after_current_placeholder() {
+        assert_eq!(
+            fetched_image_identifier(OCEANO_RESPONSE, "Oceano"),
+            "68526b594bc647dea90845bf08c4dd67"
         );
     }
 
