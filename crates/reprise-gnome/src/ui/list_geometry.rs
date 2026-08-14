@@ -194,13 +194,26 @@ pub(in crate::ui) fn content_height(
     row_height: RowHeight,
     section_header_height: Option<RowHeight>,
 ) -> ContentHeight {
-    let rows = n_rows as f64 * row_height.pixels();
     if n_sections == 0 {
-        return ContentHeight::Known(rows);
+        return ContentHeight::Known(rows_content_height(n_rows, row_height));
     }
     section_header_height.map_or(ContentHeight::Unknown, |header| {
-        ContentHeight::Known((n_sections as f64).mul_add(header.pixels(), rows))
+        ContentHeight::Known(sectioned_content_height(
+            n_rows, n_sections, row_height, header,
+        ))
     })
+}
+
+pub(in crate::ui) fn rows_content_height(n_rows: usize, row_height: RowHeight) -> f64 {
+    n_rows as f64 * row_height.pixels()
+}
+pub(in crate::ui) fn sectioned_content_height(
+    n_rows: usize,
+    n_sections: usize,
+    row_height: RowHeight,
+    header: RowHeight,
+) -> f64 {
+    (n_sections as f64).mul_add(header.pixels(), rows_content_height(n_rows, row_height))
 }
 
 fn trusted_content_height(
@@ -433,10 +446,16 @@ impl ListGeometry {
         cache: &ListGeometryCache,
         row_height: RowHeight,
         section_starts: Vec<u32>,
-    ) -> Option<ListLayout> {
-        let header_height =
-            (!section_starts.is_empty()).then(|| self.section_header_height(db, cache));
-        ListLayout::new(row_height, header_height, section_starts)
+    ) -> ListLayout {
+        if section_starts.is_empty() {
+            ListLayout::rows_only(row_height)
+        } else {
+            ListLayout::sectioned(
+                row_height,
+                self.section_header_height(db, cache),
+                section_starts,
+            )
+        }
     }
 
     fn trusted_row_height(
