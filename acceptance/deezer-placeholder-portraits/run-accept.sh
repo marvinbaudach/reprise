@@ -747,21 +747,38 @@ cache_file_for() {
   printf '%s\n' "${matches[0]}"
 }
 
+negative_marker_for() {
+  local profile_root=$1 artist=$2 key marker
+  local -a images
+  key=$("$cache_key_binary" "$artist")
+  marker="$profile_root/cache/reprise/artist-portraits/$key.notfound"
+  if [[ ! -f "$marker" ]]; then
+    echo "expected a negative portrait marker for $artist" >&2
+    return 1
+  fi
+  mapfile -t images < <(find "$profile_root/cache/reprise/artist-portraits" \
+    -maxdepth 1 -type f -name "$key.*" ! -name '*.notfound' -print)
+  if [[ ${#images[@]} -ne 0 ]]; then
+    echo "expected no cached image for $artist, found ${#images[@]}" >&2
+    return 1
+  fi
+  printf '%s\n' "$marker"
+}
+
 before_prada=$(cache_file_for "$before_profile" "The Devil Wears Prada")
 before_oceano=$(cache_file_for "$before_profile" "Oceano")
 after_prada=$(cache_file_for "$after_profile" "The Devil Wears Prada")
-after_oceano=$(cache_file_for "$after_profile" "Oceano")
+after_oceano_marker=$(negative_marker_for "$after_profile" "Oceano")
 reference_hashes=$(cut -d' ' -f1 "$output_dir/placeholder-reference-sha256.txt")
 before_prada_hash=$(sha256sum "$before_prada" | cut -d' ' -f1)
 before_oceano_hash=$(sha256sum "$before_oceano" | cut -d' ' -f1)
 after_prada_hash=$(sha256sum "$after_prada" | cut -d' ' -f1)
-after_oceano_hash=$(sha256sum "$after_oceano" | cut -d' ' -f1)
 
 if ! grep -Fxq "$before_prada_hash" <<<"$reference_hashes"; then
   echo "origin/dev did not reproduce the known placeholder for The Devil Wears Prada" >&2
   exit 1
 fi
-for portrait_hash in "$before_oceano_hash" "$after_prada_hash" "$after_oceano_hash"; do
+for portrait_hash in "$before_oceano_hash" "$after_prada_hash"; do
   if grep -Fxq "$portrait_hash" <<<"$reference_hashes"; then
     echo "a portrait that must be real still matches a placeholder reference" >&2
     exit 1
@@ -772,10 +789,11 @@ done
   printf 'before_prada=%s  %s\n' "$before_prada_hash" "$before_prada"
   printf 'before_oceano=%s  %s\n' "$before_oceano_hash" "$before_oceano"
   printf 'after_prada=%s  %s\n' "$after_prada_hash" "$after_prada"
-  printf 'after_oceano=%s  %s\n' "$after_oceano_hash" "$after_oceano"
+  printf 'after_oceano_negative_marker=%s\n' "$after_oceano_marker"
   printf 'before_prada_matches_known_placeholder=true\n'
   printf 'after_prada_differs_from_known_placeholders=true\n'
-  printf 'after_oceano_differs_from_known_placeholders=true\n'
+  printf 'after_oceano_has_negative_marker=true\n'
+  printf 'after_oceano_has_cached_image=false\n'
 } >"$output_dir/named-cache-proof.txt"
 
 cat >"$output_dir/MANUAL-REVIEW.md" <<'EOF'
@@ -786,8 +804,11 @@ cat >"$output_dir/MANUAL-REVIEW.md" <<'EOF'
   `Hide more top artists` control and Oceano are visible in the retained CUA evidence.
 - Before: rank 3, The Devil Wears Prada, must show the known grey silhouette.
 - After: ranks 1 through 10 show no grey person silhouette.
-- After: rank 3 and rank 10 show photographs, not initials or album covers.
-- Treat only rank 3 as visual evidence for E1/E2; Oceano is cache-recovery evidence.
+- After: rank 3 shows a photograph, not initials or an album cover.
+- After: rank 10, Oceano, shows initials, not a photograph or album cover. Its
+  most popular exact-name candidate now reaches content validation, is rejected
+  as the known silhouette, and must not fall back to the pictured namesake.
+- Treat ranks 3 and 10 as the intended selection changes.
 - Confirm the other eight ranks show the same identities before and after, or record every change.
 - Read `settings-proof.txt`, `cache-before.txt`, `cache-listing.txt`, and
   `named-cache-proof.txt` alongside the screenshots. The empty cache plus the

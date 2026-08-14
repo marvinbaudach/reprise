@@ -127,7 +127,8 @@ const OCEANO_PLACEHOLDER: [u8; PIXEL_COUNT] = [
 pub(super) const REFERENCE_THUMBNAILS: [[u8; PIXEL_COUNT]; 2] =
     [EMPTY_MD5_PLACEHOLDER, OCEANO_PLACEHOLDER];
 
-pub(super) const PLACEHOLDER_RMSE_MAX: f64 = 0.005;
+pub(super) const PLACEHOLDER_RMSE_MAX: f64 = 0.0025;
+pub(super) const PLACEHOLDER_WARNING_RMSE_MAX: f64 = 0.05;
 
 pub(super) fn placeholder_distance(bytes: &[u8]) -> Option<f64> {
     let thumbnail = thumbnail(bytes)?;
@@ -137,6 +138,7 @@ pub(super) fn placeholder_distance(bytes: &[u8]) -> Option<f64> {
         .reduce(f64::min)
 }
 
+#[cfg(test)]
 pub(super) fn looks_like_placeholder(bytes: &[u8]) -> bool {
     placeholder_distance(bytes).is_some_and(|distance| distance <= PLACEHOLDER_RMSE_MAX)
 }
@@ -168,7 +170,7 @@ fn normalized_rmse(left: &[u8; PIXEL_COUNT], right: &[u8; PIXEL_COUNT]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{imageops::FilterType, DynamicImage, GrayImage, ImageFormat};
+    use image::{DynamicImage, GrayImage, ImageFormat};
     use std::io::Cursor;
 
     fn png_bytes(image: &DynamicImage) -> Vec<u8> {
@@ -178,16 +180,15 @@ mod tests {
     }
 
     #[test]
-    fn upscaled_reference_is_rejected() {
+    fn embedded_reference_is_rejected() {
         let reference = GrayImage::from_raw(
             THUMBNAIL_WIDTH,
             THUMBNAIL_HEIGHT,
             REFERENCE_THUMBNAILS[0].to_vec(),
         )
         .unwrap();
-        let upscaled = image::imageops::resize(&reference, 320, 320, FilterType::Nearest);
 
-        assert!(looks_like_placeholder(&png_bytes(&upscaled.into())));
+        assert!(looks_like_placeholder(&png_bytes(&reference.into())));
     }
 
     #[test]

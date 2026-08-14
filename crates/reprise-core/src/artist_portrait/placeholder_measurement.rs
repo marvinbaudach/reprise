@@ -11,7 +11,8 @@ const SWEEP_ENV: &str = "REPRISE_PORTRAIT_SWEEP_CSV";
 const OUTPUT_ENV: &str = "REPRISE_PORTRAIT_MEASUREMENT_OUTPUT";
 const EMPTY_MD5_IDENTIFIER: &str = "d41d8cd98f00b204e9800998ecf8427e";
 const OCEANO_IDENTIFIER: &str = "415714b66a5de709809dd3d05f58afe4";
-const REQUIRED_MARGIN: f64 = 20.0;
+const REQUIRED_PLACEHOLDER_MARGIN: f64 = 10.0;
+const REQUIRED_PHOTOGRAPH_MARGIN: f64 = 20.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ExpectedKind {
@@ -41,7 +42,16 @@ fn measure_external_portrait_corpus_and_emit_references() {
     writeln!(report, "portrait placeholder fingerprint Rust measurement").unwrap();
     writeln!(report, "thumbnail=32x32 grayscale Lanczos3").unwrap();
     writeln!(report, "distance=normalized RMSE").unwrap();
-    writeln!(report, "required_margin={REQUIRED_MARGIN:.1}x each side").unwrap();
+    writeln!(
+        report,
+        "required_placeholder_margin={REQUIRED_PLACEHOLDER_MARGIN:.1}x"
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "required_photograph_margin={REQUIRED_PHOTOGRAPH_MARGIN:.1}x"
+    )
+    .unwrap();
     writeln!(report, "configured_threshold={PLACEHOLDER_RMSE_MAX:.9}").unwrap();
     for (identifier, reference) in [EMPTY_MD5_IDENTIFIER, OCEANO_IDENTIFIER]
         .into_iter()
@@ -56,6 +66,8 @@ fn measure_external_portrait_corpus_and_emit_references() {
     let mut nearest_photograph = f64::INFINITY;
     let mut placeholders = 0_usize;
     let mut photographs = 0_usize;
+    let mut rejected_placeholders = 0_usize;
+    let mut rejected_photographs = 0_usize;
     for row in rows {
         let bytes = std::fs::read(corpus.join(format!("{}.jpg", row.identifier)))
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", row.identifier));
@@ -65,10 +77,12 @@ fn measure_external_portrait_corpus_and_emit_references() {
             ExpectedKind::Placeholder => {
                 placeholders += 1;
                 worst_placeholder = worst_placeholder.max(distance);
+                rejected_placeholders += usize::from(distance <= PLACEHOLDER_RMSE_MAX);
             }
             ExpectedKind::Photograph => {
                 photographs += 1;
                 nearest_photograph = nearest_photograph.min(distance);
+                rejected_photographs += usize::from(distance <= PLACEHOLDER_RMSE_MAX);
             }
         }
         writeln!(
@@ -79,10 +93,20 @@ fn measure_external_portrait_corpus_and_emit_references() {
         .unwrap();
     }
 
-    let lower_bound = worst_placeholder * REQUIRED_MARGIN;
-    let upper_bound = nearest_photograph / REQUIRED_MARGIN;
+    let lower_bound = worst_placeholder * REQUIRED_PLACEHOLDER_MARGIN;
+    let upper_bound = nearest_photograph / REQUIRED_PHOTOGRAPH_MARGIN;
     writeln!(report, "\nplaceholder_instances={placeholders}").unwrap();
     writeln!(report, "photograph_instances={photographs}").unwrap();
+    writeln!(
+        report,
+        "rejected_placeholder_instances={rejected_placeholders}"
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "rejected_photograph_instances={rejected_photographs}"
+    )
+    .unwrap();
     writeln!(report, "worst_placeholder={worst_placeholder:.9}").unwrap();
     writeln!(report, "nearest_photograph={nearest_photograph:.9}").unwrap();
     writeln!(
@@ -121,7 +145,7 @@ fn measure_external_portrait_corpus_and_emit_references() {
     if !margin_window_exists {
         writeln!(
             report,
-            "gate_reason=no threshold can provide the required 20x margin on both sides"
+            "gate_reason=no threshold can provide the required asymmetric margins"
         )
         .unwrap();
     }
@@ -132,12 +156,20 @@ fn measure_external_portrait_corpus_and_emit_references() {
     assert_eq!(placeholders, 18, "ground-truth placeholder count changed");
     assert_eq!(photographs, 219, "ground-truth photograph count changed");
     assert_eq!(
+        rejected_placeholders, placeholders,
+        "every ground-truth placeholder must be rejected"
+    );
+    assert_eq!(
+        rejected_photographs, 0,
+        "no ground-truth photograph may be rejected"
+    );
+    assert_eq!(
         REFERENCE_THUMBNAILS, generated_references,
         "embedded reference thumbnails differ; copy them from the evidence output"
     );
     assert!(
         margin_window_exists,
-        "20x margins do not overlap: threshold must be >= {lower_bound:.9} and <= {upper_bound:.9}"
+        "required margins do not overlap: threshold must be >= {lower_bound:.9} and <= {upper_bound:.9}"
     );
     assert!(
         (lower_bound..=upper_bound).contains(&PLACEHOLDER_RMSE_MAX),

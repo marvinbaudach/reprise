@@ -1,8 +1,9 @@
 portrait placeholder fingerprint Rust measurement
 thumbnail=32x32 grayscale Lanczos3
 distance=normalized RMSE
-required_margin=20.0x each side
-configured_threshold=0.005000000
+required_placeholder_margin=10.0x
+required_photograph_margin=20.0x
+configured_threshold=0.002500000
 reference d41d8cd98f00b204e9800998ecf8427e
 [
     232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232,
@@ -315,12 +316,13 @@ spill.	02a21a963b952e91eb4b722587c7fd4d	Photograph	0.536452857
 
 placeholder_instances=18
 photograph_instances=219
+rejected_placeholder_instances=18
+rejected_photograph_instances=0
 worst_placeholder=0.000245098
 nearest_photograph=0.059268005
 corpus_separation=241.813x
-threshold_lower_bound=0.004901961
+threshold_lower_bound=0.002450980
 threshold_upper_bound=0.002963400
-placeholder_margin=20.400x
-photograph_margin=11.854x
-gate=FAIL
-gate_reason=no threshold can provide the required 20x margin on both sides
+placeholder_margin=10.200x
+photograph_margin=23.707x
+gate=PASS

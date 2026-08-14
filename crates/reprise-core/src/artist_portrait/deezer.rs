@@ -17,9 +17,6 @@ const MISSING_IMAGE_IDENTIFIERS: &[&str] = &[
     // Deezer puts MD5 of the empty string into its image URL when no artist
     // image exists. Keep the sentinel explicit; computing it adds no value.
     "d41d8cd98f00b204e9800998ecf8427e",
-    // Deezer's first exact Oceano result began serving the same silhouette
-    // under this identifier on 2026-08-14.
-    "415714b66a5de709809dd3d05f58afe4",
 ];
 
 static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
@@ -87,20 +84,22 @@ fn candidate_picture_url(candidate: &serde_json::Value) -> Option<String> {
 }
 
 fn is_placeholder_url(url: &str) -> bool {
+    image_identifier(url)
+        .as_deref()
+        .is_some_and(|identifier| MISSING_IMAGE_IDENTIFIERS.contains(&identifier))
+}
+
+pub(crate) fn image_identifier(url: &str) -> Option<String> {
     let Ok(url) = url::Url::parse(url) else {
-        return false;
+        return None;
     };
-    let Some(mut segments) = url.path_segments() else {
-        return false;
-    };
+    let mut segments = url.path_segments()?;
     while let Some(segment) = segments.next() {
         if segment == "images" && segments.next() == Some("artist") {
-            return segments
-                .next()
-                .is_some_and(|identifier| MISSING_IMAGE_IDENTIFIERS.contains(&identifier));
+            return segments.next().map(str::to_owned);
         }
     }
-    false
+    None
 }
 
 /// Fetches a prebuilt Deezer search URL as text.
@@ -283,7 +282,7 @@ mod tests {
         assert!(is_placeholder_url(
             "https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/1000x1000-000000-80-0-0.jpg"
         ));
-        assert!(is_placeholder_url(
+        assert!(!is_placeholder_url(
             "https://cdn-images.dzcdn.net/images/artist/415714b66a5de709809dd3d05f58afe4/1000x1000-000000-80-0-0.jpg"
         ));
         assert!(!is_placeholder_url(
