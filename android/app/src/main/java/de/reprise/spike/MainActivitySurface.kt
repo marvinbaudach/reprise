@@ -43,7 +43,7 @@ internal data class MainActivitySurfaceDependencies(
     val setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     val selectTheme: (MobileThemeSelection, MobileTheme) -> MobileThemeSelection,
     val onlineSourcesEnabled: () -> Boolean = { false },
-    val setOnlineSourcesEnabled: (Boolean) -> Unit = {},
+    val setOnlineSourcesEnabled: (Boolean) -> Result<Unit> = { Result.success(Unit) },
     val animationsEnabled: () -> Boolean,
     val observeAmbientScheduling: (Boolean) -> Unit,
 )

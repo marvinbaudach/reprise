@@ -264,7 +264,14 @@ class MainActivity : ComponentActivity() {
                                 onlineSourcesEnabled = onlineSourcesEnabled,
                                 setOnlineSourcesEnabled = { enabled ->
                                     surface.setOnlineSourcesEnabled(enabled)
-                                    onlineSourcesEnabled = enabled
+                                        .onSuccess { onlineSourcesEnabled = enabled }
+                                        .onFailure { error ->
+                                            Log.e(
+                                                TAG,
+                                                "Could not change online source settings",
+                                                error,
+                                            )
+                                        }
                                 },
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
@@ -325,9 +332,6 @@ class MainActivity : ComponentActivity() {
             },
             setOnlineSourcesEnabled = { enabled ->
                 runCatching { library.setOnlineSourcesEnabled(enabled) }
-                    .onFailure { error ->
-                        Log.e(TAG, "Could not change online source settings", error)
-                    }
             },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},

@@ -5,6 +5,9 @@ import android.os.Looper
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -80,6 +83,22 @@ class MainActivitySettingsNavigationTest {
 
         compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(5)
         compose.onNodeWithText("Online sources").assertIsDisplayed()
+    }
+
+    @Test
+    fun aFailedOnlineSourcesWriteKeepsTheSwitchAndOverviewOff() {
+        application.onlineSourcesWriteSucceeds = false
+        openSettings()
+        compose.onNodeWithContentDescription("Open Online sources").performClick()
+
+        compose.onNode(hasText("Download artist photos") and isToggleable())
+            .assertIsOff()
+            .performClick()
+
+        assertFalse(application.onlineSourcesEnabled)
+        compose.onNode(hasText("Download artist photos") and isToggleable()).assertIsOff()
+        compose.onNodeWithContentDescription("Back to Settings").performClick()
+        compose.onNodeWithText("Off").assertIsDisplayed()
     }
 
     @Test
