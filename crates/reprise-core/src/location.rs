@@ -17,6 +17,9 @@ use rusqlite::Connection;
 pub const LOCATION_LAT_KEY: &str = "location.lat";
 pub const LOCATION_LON_KEY: &str = "location.lon";
 pub const LOCATION_NAME_KEY: &str = "location.name";
+pub const LOCATION_DEFAULT_RADIUS_KEY: &str = "location.default_radius_km";
+pub const DEFAULT_RADIUS_KM: f64 = 1_000.0;
+pub const RADIUS_PRESETS_KM: [u32; 4] = [100, 250, 500, 1_000];
 /// `RAD-5`: the country code radio-browser filters by. Only ever populated
 /// from data a call Reprise already makes — Nominatim's `addressdetails`
 /// enrichment of the existing forward-geocode request behind city search —
@@ -42,6 +45,17 @@ pub struct AppLocation {
 pub fn app_location(db: &Db) -> Result<Option<AppLocation>, rusqlite::Error> {
     let conn = db.conn();
     app_location_in(conn)
+}
+
+pub fn default_radius_km(db: &Db) -> Result<f64, rusqlite::Error> {
+    let conn = db.conn();
+    Ok(numeric_setting(conn, LOCATION_DEFAULT_RADIUS_KEY)?
+        .filter(|radius| *radius > 0.0)
+        .unwrap_or(DEFAULT_RADIUS_KM))
+}
+
+pub fn set_default_radius_km(db: &Db, radius_km: f64) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_setting(db, LOCATION_DEFAULT_RADIUS_KEY, &radius_km.to_string())
 }
 
 pub(crate) fn app_location_in(conn: &Connection) -> Result<Option<AppLocation>, rusqlite::Error> {
@@ -153,6 +167,24 @@ mod tests {
         assert_eq!(
             app_location(&db).unwrap().and_then(|loc| loc.country_code),
             None
+        );
+    }
+
+    #[test]
+    fn default_radius_is_app_wide_and_ignores_the_removed_concerts_key() {
+        let db = db();
+        assert_eq!(default_radius_km(&db).unwrap(), 1_000.0);
+
+        crate::library::settings::set_setting(&db, "concerts.default_radius_km", "250").unwrap();
+        assert_eq!(default_radius_km(&db).unwrap(), 1_000.0);
+
+        set_default_radius_km(&db, 500.0).unwrap();
+        assert_eq!(default_radius_km(&db).unwrap(), 500.0);
+        assert_eq!(
+            crate::library::settings::get_setting(&db, LOCATION_DEFAULT_RADIUS_KEY)
+                .unwrap()
+                .as_deref(),
+            Some("500")
         );
     }
 

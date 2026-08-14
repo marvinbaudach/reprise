@@ -29,6 +29,7 @@ use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::track_content;
 use super::track_list::{OnActivate, TrackList};
+use crate::ui::concerts;
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database handle; Core owns the connection and the UI
@@ -72,6 +73,7 @@ pub fn build(
         lastfm,
         artist_news,
         concerts: concerts_runtime,
+        location_broadcast,
         podcasts: podcasts_runtime,
         artist_portrait,
         device_sync,
@@ -309,9 +311,10 @@ pub fn build(
             );
         })
     };
-    let concerts_view = Rc::new(crate::ui::concerts::install(
+    let concerts_view = Rc::new(concerts::install(
         conn.clone(),
         &concerts_runtime,
+        &location_broadcast,
     ));
     super::startup_report::mark("concerts");
     let releases_view = Rc::new(crate::ui::releases::install(
@@ -335,14 +338,12 @@ pub fn build(
     source_views.set_toast_overlay(&toast_overlay);
     let (podcasts_view, youtube_view, radio_view) = source_views.into_parts();
     super::source_views::wire_update_sidebar_refresh(&concerts_view, &releases_view, &sidebar);
-
     let bar_position = settings::get_player_bar_position(conn);
     if let Some(player) = player.as_ref() {
         player
             .bar
             .set_seek_colouring(settings::get_seek_colouring(conn));
     }
-
     {
         let overlay = toast_overlay.downgrade();
         concerts_view.set_on_launch_error(move |error| {
@@ -359,7 +360,6 @@ pub fn build(
             }
         });
     }
-
     super::window_action_wiring::wire(super::window_action_wiring::ActionWiring {
         conn,
         db_path,

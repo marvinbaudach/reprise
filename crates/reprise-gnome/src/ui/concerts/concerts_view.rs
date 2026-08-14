@@ -24,6 +24,7 @@ use super::concerts_presentation::{sort_rows, updated_ago, ConcertSortKey, SortD
 use super::concerts_search::concerts_matching;
 use super::concerts_worker::{request_allowed, ConcertsRequest, ConcertsResponse, ConcertsRuntime};
 use crate::ui::external_link::{self, LaunchErrorSlot};
+use crate::ui::location_broadcast::LocationBroadcast;
 use crate::ui::source_empty_state::SourceFailureState;
 use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
@@ -80,7 +81,11 @@ pub(in crate::ui) struct ConcertsView {
 }
 
 impl ConcertsView {
-    pub(in crate::ui) fn new(conn: Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> Self {
+    pub(in crate::ui) fn new(
+        conn: Rc<Db>,
+        runtime: &Rc<ConcertsRuntime>,
+        location_broadcast: &Rc<LocationBroadcast>,
+    ) -> Self {
         let model = Rc::new(ConcertsModel::new());
         let filter_bar = ConcertsFilterBar::new(conn.clone());
         let column_view = gtk4::ColumnView::builder()
@@ -251,6 +256,30 @@ impl ConcertsView {
                 move |enabled| {
                     if let Some(shared) = shared.upgrade() {
                         enabled_changed(&shared, enabled);
+                    }
+                },
+            );
+        }
+        {
+            let root = root.downgrade();
+            let shared = Rc::downgrade(&shared);
+            location_broadcast.subscribe(
+                move || root.upgrade().is_some(),
+                move || {
+                    let Some(shared) = shared.upgrade() else {
+                        return;
+                    };
+                    if let Err(error) = shared.filter_bar.reload_persisted() {
+                        tracing::warn!(%error, "could not reload app location settings");
+                        return;
+                    }
+                    if let Err(error) = render_cache(&shared) {
+                        tracing::warn!(%error, "could not apply app location settings");
+                        return;
+                    }
+                    let callback = shared.on_refreshed.borrow().clone();
+                    if let Some(callback) = callback {
+                        callback();
                     }
                 },
             );

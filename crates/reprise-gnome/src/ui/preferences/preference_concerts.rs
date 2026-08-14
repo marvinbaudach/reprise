@@ -562,7 +562,7 @@ fn clear_location(conn: &Rc<Db>, runtime: &ConcertsRuntime) {
 fn radius_row(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> adw::ComboRow {
     let radii = std::iter::once(None)
         .chain(
-            reprise_core::concerts::config::RADIUS_PRESETS_KM
+            reprise_core::location::RADIUS_PRESETS_KM
                 .into_iter()
                 .map(Some),
         )
@@ -580,13 +580,13 @@ fn radius_row(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> adw::ComboRow {
     let model = gtk4::StringList::new(&label_refs);
     let stored = match reprise_core::library::settings::get_setting(
         conn,
-        reprise_core::concerts::config::DEFAULT_RADIUS_KEY,
+        reprise_core::location::LOCATION_DEFAULT_RADIUS_KEY,
     )
     .ok()
     .flatten()
     {
         Some(value) => value.parse::<u32>().ok(),
-        None => Some(reprise_core::concerts::config::DEFAULT_RADIUS_KM as u32),
+        None => Some(reprise_core::location::DEFAULT_RADIUS_KM as u32),
     };
     let selected = radii
         .iter()
@@ -607,7 +607,7 @@ fn radius_row(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> adw::ComboRow {
             .map_or_else(String::new, |radius| radius.to_string());
         if save_setting(
             &conn,
-            reprise_core::concerts::config::DEFAULT_RADIUS_KEY,
+            reprise_core::location::LOCATION_DEFAULT_RADIUS_KEY,
             &value,
         ) {
             runtime.notify_settings_changed();

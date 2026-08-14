@@ -434,7 +434,7 @@ impl ConcertsFilterBar {
         match facet {
             FilterFacet::Radius => std::iter::once(None)
                 .chain(
-                    config::RADIUS_PRESETS_KM
+                    reprise_core::location::RADIUS_PRESETS_KM
                         .into_iter()
                         .map(|radius| Some(f64::from(radius))),
                 )

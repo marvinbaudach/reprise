@@ -20,6 +20,10 @@ pub(in crate::ui) use concerts_view::ConcertsView;
 pub(in crate::ui) use concerts_worker::{ConcertsRequest, ConcertsRuntime};
 
 #[allow(dead_code)]
-pub(in crate::ui) fn install(conn: Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> ConcertsView {
-    ConcertsView::new(conn, runtime)
+pub(in crate::ui) fn install(
+    conn: Rc<Db>,
+    runtime: &Rc<ConcertsRuntime>,
+    location_broadcast: &Rc<crate::ui::location_broadcast::LocationBroadcast>,
+) -> ConcertsView {
+    ConcertsView::new(conn, runtime, location_broadcast)
 }

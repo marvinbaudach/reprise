@@ -63,6 +63,7 @@ mod list_geometry_changed;
 mod list_geometry_content;
 mod list_geometry_header;
 mod list_geometry_layout;
+pub(in crate::ui) mod location_broadcast;
 mod lyrics;
 pub(crate) mod motion;
 pub(crate) mod motion_reveal;
