@@ -246,6 +246,7 @@ internal fun ArtistsTab(
                 ArtistDetailSections(
                     surfaceLayout = surfaceLayout,
                     surfaceState = surfaceState,
+                    artist = selectedArtist.artist,
                     albums = selectedArtist.albums,
                     untaggedTracks = selectedArtist.untaggedTracks,
                     playback = playback,
@@ -260,6 +261,7 @@ internal fun ArtistsTab(
                 ArtistDetailSections(
                     surfaceLayout = surfaceLayout,
                     surfaceState = surfaceState,
+                    artist = selectedArtist.artist,
                     albums = LibraryWindow.empty(),
                     untaggedTracks = selectedArtist.untaggedTracks,
                     playback = playback,
@@ -316,6 +318,7 @@ internal fun ArtistsTab(
 private fun ArtistDetailSections(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
+    artist: LibraryArtist,
     albums: LibraryWindow<LibraryAlbum>,
     untaggedTracks: LibraryWindow<LibraryTrack>,
     playback: PlaybackUiState,
@@ -327,12 +330,18 @@ private fun ArtistDetailSections(
     loadMoreTracks: (LibraryWindowRange) -> Unit,
 ) {
     val key = LibraryListKey.ARTIST_ALBUMS
+    val head = rememberArtistArtworkVisual(
+        name = artist.name,
+        representativeUri = artist.representativeUri,
+        artworkSize = AndroidArtworkSize.ARTIST_DETAIL,
+        allowFetch = true,
+    )
     val trackContent = trackListContent(untaggedTracks, tracksRequestedOffset)
     val albumContinuation = albums.nextRequest(albumsRequestedOffset)
     val albumItemCount = albums.rows.size + if (albums.rows.isEmpty()) 0 else 1
     val itemCount = albumItemCount + trackContent.size +
         (if (albumContinuation == null) 0 else 1) +
-        (if (untaggedTracks.rows.isEmpty()) 0 else 1)
+        (if (untaggedTracks.rows.isEmpty()) 0 else 1) + 1
     val anchor = surfaceState.scrollPosition(key).within(itemCount)
     val listState = rememberLibraryListState(anchor)
     ObserveLibraryListAnchor(key, listState, surfaceState)
@@ -341,6 +350,7 @@ private fun ArtistDetailSections(
         state = listState,
         modifier = Modifier.fillMaxSize().testTag(key.testTag()),
     ) {
+        item(key = "artist-portrait-head") { ArtistPortraitHeader(head, artist) }
         if (albums.rows.isNotEmpty()) {
             item(key = "artist-albums-heading") { SectionHeading("Albums") }
             items(

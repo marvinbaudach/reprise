@@ -67,9 +67,11 @@ internal class TrackArtwork(
         gate: ArtworkRequestGate,
         deliver: (ArtworkVisual?) -> Unit,
     ) {
-        cache.artwork(request)?.let { cached ->
-            if (gate.accepts(request)) deliver(cached)
-            return
+        if (!request.refreshesArtistPortrait()) {
+            cache.artwork(request)?.let { cached ->
+                if (gate.accepts(request)) deliver(cached)
+                return
+            }
         }
         val lane = when (request.size) {
             AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
@@ -145,7 +147,9 @@ internal class TrackArtwork(
         cache.artwork(request) ?: generatedVisual(request, resolved = false)
 
     private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
-        cache.artwork(request)?.let { return it }
+        if (!request.refreshesArtistPortrait()) {
+            cache.artwork(request)?.let { return it }
+        }
         val portraitPath = if (request.kind == ArtworkKind.ARTIST) {
             if (request.allowFetch) {
                 resolveArtistPortraitFetched(request.artistName, request.size)
@@ -295,6 +299,9 @@ internal fun ArtworkCover(
 
 private fun singleArtworkThread(name: String): ExecutorService =
     Executors.newSingleThreadExecutor { runnable -> Thread(runnable, name) }
+
+private fun ArtworkRequest.refreshesArtistPortrait(): Boolean =
+    kind == ArtworkKind.ARTIST && allowFetch
 
 private fun AndroidArtworkSize.fallbackSizePx(): Int = when (this) {
     AndroidArtworkSize.LIST -> 168

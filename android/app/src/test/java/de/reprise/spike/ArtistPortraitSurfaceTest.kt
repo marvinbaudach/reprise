@@ -4,8 +4,17 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import de.reprise.spike.ui.theme.RepriseTheme
 import java.util.concurrent.atomic.AtomicInteger
@@ -146,6 +155,125 @@ class ArtistPortraitSurfaceTest {
         assertEquals(0, fetches.get())
     }
 
+    @Test
+    fun openingAnArtistFetchesExactlyOnceForThatArtist() {
+        val fetchedNames = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { name, _ ->
+                fetchedNames += name
+                null
+            },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+        val detail = artistDetail("Opened Artist")
+
+        showArtistDetail(detail, artwork, initiallyOpen = false)
+        compose.onNodeWithText("Opened Artist").performClick()
+
+        compose.waitUntil { fetchedNames.size == 1 }
+        assertEquals(listOf("Opened Artist"), fetchedNames)
+    }
+
+    @Test
+    fun theDetailHeadDoesNotFetchAgainWhenItScrollsOutAndBack() {
+        val fetches = AtomicInteger()
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ ->
+                fetches.incrementAndGet()
+                null
+            },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+        val detail = artistDetail(
+            name = "Long Artist",
+            albums = (1..30).map { index -> album("Album $index", "Long Artist") },
+        )
+
+        showArtistDetail(detail, artwork)
+        compose.waitUntil { fetches.get() == 1 }
+        compose.onNodeWithTag("library-artist-albums-list").performScrollToIndex(20)
+        compose.onNodeWithTag("library-artist-albums-list").performScrollToIndex(0)
+        compose.waitForIdle()
+
+        assertEquals(1, fetches.get())
+    }
+
+    @Test
+    fun aClosedSwitchLeavesTheDetailHeadOnTheAlbumCover() {
+        val bridgeCalls = AtomicInteger()
+        val networkCalls = AtomicInteger()
+        val gateOpen = false
+        val decoded = AtomicReference<String>()
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ ->
+                bridgeCalls.incrementAndGet()
+                // This double models the Rust bridge's closed-gate contract.
+                if (gateOpen) networkCalls.incrementAndGet()
+                null
+            },
+            albumCover = { _, _ -> "album-cover" },
+            decode = { path ->
+                decoded.set(path)
+                bitmap(Color.GREEN)
+            },
+        )
+
+        showArtistDetail(artistDetail("Offline Artist"), artwork)
+
+        compose.waitUntil { decoded.get() == "album-cover" }
+        compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true).assertExists()
+        assertEquals(1, bridgeCalls.get())
+        assertEquals(0, networkCalls.get())
+    }
+
+    @Test
+    fun reopeningTheSameArtistDoesNotReachTheNetworkTwice() {
+        val bridgeCalls = AtomicInteger()
+        val networkCalls = AtomicInteger()
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ ->
+                if (bridgeCalls.incrementAndGet() == 1) {
+                    networkCalls.incrementAndGet()
+                }
+                "portrait"
+            },
+            albumCover = { _, _ -> null },
+            decode = { bitmap(Color.RED) },
+        )
+
+        showArtistDetail(artistDetail("Reopened Artist"), artwork, initiallyOpen = false)
+        compose.onNodeWithText("Reopened Artist").performClick()
+        compose.waitUntil { bridgeCalls.get() == 1 }
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+        compose.onNodeWithText("Reopened Artist").performClick()
+
+        compose.waitUntil { bridgeCalls.get() == 2 }
+        assertEquals(2, bridgeCalls.get())
+        assertEquals(1, networkCalls.get())
+    }
+
+    @Test
+    fun theDetailHeadShowsTheCountsAndNotTheName() {
+        val detail = artistDetail("Counted Artist")
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ -> null },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+
+        showArtistDetail(detail, artwork)
+
+        compose.onAllNodesWithText("Counted Artist").assertCountEquals(1)
+        compose.onNodeWithText(detail.artist.details()).assertExists()
+    }
+
     private fun showArtists(artists: List<LibraryArtist>, artwork: TrackArtwork) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
@@ -163,6 +291,44 @@ class ArtistPortraitSurfaceTest {
                         playback = PlaybackUiState(),
                         openArtist = {},
                         closeArtist = {},
+                        play = {},
+                        lastRequestedOffset = null,
+                        artistRequestedOffset = null,
+                        loadMoreArtists = {},
+                        loadMoreArtistTracks = {},
+                    )
+                }
+            }
+        }
+    }
+
+    private fun showArtistDetail(
+        detail: ArtistTrackList,
+        artwork: TrackArtwork,
+        initiallyOpen: Boolean = true,
+    ) {
+        compose.setContent {
+            RepriseTheme(theme, darkPalette = true) {
+                CompositionLocalProvider(
+                    LocalTrackArtwork provides artwork,
+                    LocalAlbumTrackIds provides { emptyList() },
+                ) {
+                    var selected by remember {
+                        mutableStateOf<ArtistTrackList?>(if (initiallyOpen) detail else null)
+                    }
+                    ArtistsTab(
+                        surfaceLayout = SurfaceLayout.STACKED,
+                        surfaceState = MobileSurfaceViewModel(),
+                        artists = LibraryWindow(
+                            total = 1,
+                            rows = listOf(detail.artist),
+                            hasMore = false,
+                        ),
+                        searchText = "",
+                        selectedArtist = selected,
+                        playback = PlaybackUiState(),
+                        openArtist = { selected = detail },
+                        closeArtist = { selected = null },
                         play = {},
                         lastRequestedOffset = null,
                         artistRequestedOffset = null,
@@ -195,6 +361,30 @@ class ArtistPortraitSurfaceTest {
         trackCount = 7,
         albumCount = 2,
         representativeUri = "content://albums/$name",
+    )
+
+    private fun artistDetail(
+        name: String,
+        albums: List<LibraryAlbum> = listOf(album("Only Album", name)),
+    ) = ArtistTrackList(
+        artist = artist(name).copy(
+            trackCount = albums.sumOf(LibraryAlbum::trackCount),
+            albumCount = albums.size.toLong(),
+        ),
+        albums = LibraryWindow(
+            total = albums.size.toLong(),
+            rows = albums,
+            hasMore = false,
+        ),
+    )
+
+    private fun album(title: String, artist: String) = LibraryAlbum(
+        title = title,
+        artist = artist,
+        representativeUri = "content://albums/$artist/$title",
+        trackCount = 2,
+        year = 2026,
+        totalDurationMs = 120_000,
     )
 
     private fun bitmap(colour: Int): Bitmap =
