@@ -244,6 +244,23 @@ insensitiven Chips (`:372-376`) ein eigener, gestrichelter, gedämpfter Chip
 den Deep-Link auslöst — nicht wie sonst den Filter entfernt (`:378-382`). Der
 Facet-Eintrag im Chooser (`:413-416`) bleibt insensitiv wie heute.
 
+**E2b — Der Chip mit Standort nennt den Ort, nicht nur den Radius.**
+Nachtrag, übergeben aus `docs/plans/updates-concerts-releases-rework.md`
+(Beschluss 3, entschieden am 14.08.2026). Ist ein Standort gesetzt, liest der
+Chip `{city} · {radius} km` statt bloß `{radius} km` — englischer Quellstring
+`N_!("{city} · {radius} km")`, Ort aus `location::app_location().name`, Radius
+aus dem aktiven Filter. Ohne Ortsnamen (Koordinaten ohne Namen, siehe
+Beschluss 2) fällt er auf `{radius} km` zurück. Damit tragen beide
+Chip-Zustände denselben Aufbau: E2 schreibt `500 km · off`, E2b
+`Zürich · 500 km`.
+
+Der Nachtrag gehört hierher und **nicht** in jenen Plan, weil E2 genau diese
+Funktion (`concerts_filter_bar.rs:372-382`) ohnehin neu schreibt — zwei Pläne,
+die dieselbe Funktion umbauen, kollidieren garantiert. Jener Plan fasst
+`concerts_filter_bar.rs` deshalb nicht an; er liefert von den
+Distance-Anforderungen nur die Färbung (Distanzen innerhalb des Radius in
+Akzentfarbe, alle anderen gedimmt), die an nichts aus Paket E hängt.
+
 **E3 — Leiste über der Tabelle.** Dezent im Akzent getönt, Titel
 `No location set — showing all 415 concerts worldwide` (Zahl aus dem realen
 Gesamtbestand), Unterzeile
