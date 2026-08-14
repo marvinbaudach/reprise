@@ -46,9 +46,7 @@ use crate::ui::track_list::tag_mutation_refresh::{
     refresh_after_tag_mutation_with_anchor, refresh_after_tag_mutation_with_view_ids,
 };
 use crate::ui::track_list::track_list_activation::current_queue_ids;
-use crate::ui::track_list::track_list_reload::{
-    capture_reload_anchor, reload_with_anchor, row_height,
-};
+use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
 use crate::ui::track_list::{show_toast, Shared, TrackList};
 use crate::ui::track_list_context_menu::current_selection_positions;
 use reprise_core::db::Db;
@@ -502,16 +500,25 @@ fn finish_apply(
             view_ids: shared.current_view_ids(),
         });
         let sort_field = shared.sort.borrow().field.clone();
-        let live_row_height =
-            row_height(&shared.column_view, shared.model.n_items()).unwrap_or(0.0);
-        let save_anchor = post_save_reload_anchor(
-            live_reload.anchor,
-            &report.updated_ids,
-            writes,
-            &sort_field,
-            &live_reload.view_ids,
-            live_row_height,
+        let layout = crate::ui::track_list::track_list_geometry::layout(
+            shared,
+            live_reload.anchor.row_height,
+            live_reload.view_ids.len(),
         );
+        let save_anchor = if let Some(layout) = layout.as_ref() {
+            post_save_reload_anchor(
+                live_reload.anchor,
+                &report.updated_ids,
+                writes,
+                &sort_field,
+                &live_reload.view_ids,
+                layout,
+            )
+        } else {
+            let mut anchor = live_reload.anchor;
+            anchor.selected_ids = report.updated_ids.clone();
+            anchor
+        };
         if !tag_changed_paths.is_empty() {
             let tag_changed_ids: Vec<i64> = writes
                 .iter()
@@ -743,7 +750,10 @@ mod tests {
     #[test]
     fn tag_1_query_reload_keeps_the_scroll_anchor_from_editor_open() {
         let opened = reload_restore::capture(vec![61], Some((61, 7.5)));
-        let restored = post_save_reload_anchor(opened, &[61], &[], "artist", &[61], 20.0);
+        let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
+            crate::ui::list_geometry::RowHeight::new(20.0).unwrap(),
+        );
+        let restored = post_save_reload_anchor(opened, &[61], &[], "artist", &[61], &layout);
 
         assert_eq!(restored.selected_ids, vec![61]);
         assert_eq!(

@@ -52,12 +52,6 @@ use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-pub(in crate::ui) fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
-    ListGeometry::for_view(column_view)
-        .live_row_height(n_rows as usize)
-        .map(crate::ui::list_geometry::RowHeight::pixels)
-}
-
 fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
     let n_sections = shared.queue_sections.borrow().len();
     ListGeometry::for_view(&shared.column_view)
@@ -131,7 +125,7 @@ fn pending_reveal_anchor(shared: &Shared, height: RowHeight) -> Option<(i64, f64
     let height = height.pixels();
     // `scroll_center::centered_scroll_value` in anchor form: the row's middle
     // on the viewport's middle is its top, minus half a viewport, plus half a
-    // row.
+    // row. Its rows-only centring model is tracked separately from anchors.
     Some((track_id, height.mul_add(0.5, -adjustment.page_size() / 2.0)))
 }
 
@@ -158,6 +152,7 @@ pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
     let selected = selected_ids_before_swap(shared);
     let old_total = shared.model.n_items();
     let row_height = capture_row_height(shared, old_total);
+    let layout = super::track_list_geometry::layout(shared, row_height, old_total as usize);
     // NAV-10b: a reveal is already under way, so the viewport the user is
     // about to have is its destination — preserving the position the reload
     // *finds* would put the list back where playback just left, and the hold
@@ -183,13 +178,12 @@ pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
     if selected.is_empty() && scroll_value == 0.0 {
         return ReloadAnchor::default();
     }
-    let anchor = row_height.and_then(|height| {
-        let height = height.pixels();
-        let index = (scroll_value / height).floor().max(0.0) as u32;
+    let anchor = layout.and_then(|layout| {
+        let (position, offset) = layout.row_at(scroll_value.max(0.0));
         shared
             .model
-            .track_at(index)
-            .map(|track| (track.id, scroll_value - f64::from(index) * height))
+            .track_at(position)
+            .map(|track| (track.id, offset))
     });
     reload_restore::capture_with_row_height(selected, anchor, row_height)
 }

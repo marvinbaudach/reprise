@@ -11,6 +11,8 @@ use gtk4::glib::prelude::{Cast, ObjectExt};
 use gtk4::prelude::{AdjustmentExt, ScrollableExt, WidgetExt};
 use reprise_core::library::settings::{self, ListDensity};
 
+use crate::ui::list_geometry_layout::ListLayout;
+
 const ROW_HEIGHT_AGREEMENT_EPSILON: f64 = 0.5;
 pub(in crate::ui) const INVALIDATED_ROW_HEIGHT: f64 = -1.0;
 
@@ -365,6 +367,7 @@ impl ListGeometry {
         settled_row_height(upper, n_rows, self.measurement())
     }
 
+    /// Real widget realization is the only signal that distinguishes a pre-seeded `upper` from settled geometry.
     pub(in crate::ui) fn is_settled(&self, upper: f64, n_rows: usize, n_sections: usize) -> bool {
         settled_content_row_height(
             upper,
@@ -409,6 +412,31 @@ impl ListGeometry {
             &cache.row_height,
             self.minimum_row_height(),
         )
+    }
+
+    pub(in crate::ui) fn section_header_height(
+        &self,
+        db: &reprise_core::db::Db,
+        cache: &ListGeometryCache,
+    ) -> RowHeight {
+        crate::ui::list_geometry_header::load_height(
+            db,
+            self.density(),
+            &cache.section_header_height,
+        )
+        .height
+    }
+
+    pub(in crate::ui) fn layout(
+        &self,
+        db: &reprise_core::db::Db,
+        cache: &ListGeometryCache,
+        row_height: RowHeight,
+        section_starts: Vec<u32>,
+    ) -> Option<ListLayout> {
+        let header_height =
+            (!section_starts.is_empty()).then(|| self.section_header_height(db, cache));
+        ListLayout::new(row_height, header_height, section_starts)
     }
 
     fn trusted_row_height(
