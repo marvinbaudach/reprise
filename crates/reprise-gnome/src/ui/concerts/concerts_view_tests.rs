@@ -584,6 +584,54 @@ fn conc_4c_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
     assert_eq!(refreshes.get(), 2);
 }
 
+/// The Abnahme proof from `docs/plans/location-is-not-a-concerts-setting.md`
+/// §3 ("The chip does not measurably filter"): the total concert count
+/// without an app-wide location must equal the count with an intentionally
+/// tiny radius. This drives the real `ConcertsView` refresh pipeline —
+/// `render_cache()` → `filtered_events()` → the filter bar's rendered count
+/// line — not `active_facets()` in isolation.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn conc_2_tiny_radius_without_a_location_never_narrows_the_shown_count() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    insert_event(&conn, 1, "Artist One");
+    insert_event(&conn, 2, "Artist Two");
+    insert_event(&conn, 3, "Artist Three");
+    let runtime = ConcertsRuntime::setup(&conn);
+    let broadcast = Rc::new(crate::ui::location_broadcast::LocationBroadcast::default());
+    let view = ConcertsView::new(conn.clone(), &runtime, &broadcast);
+
+    view.refresh();
+    assert_eq!(view.shared.rows.borrow().len(), 3);
+    assert_eq!(
+        view.shared.filter_bar.result_text_for_test(),
+        "3 concerts",
+        "without a location, the header must state the plain total"
+    );
+
+    // Persist an intentionally tiny radius the same way the real config
+    // write path does, while still no app-wide location is stored.
+    reprise_core::library::settings::set_setting(
+        &conn,
+        reprise_core::concerts::config::FILTER_RADIUS_KEY,
+        "1",
+    )
+    .unwrap();
+    runtime.notify_settings_changed();
+
+    assert_eq!(
+        view.shared.rows.borrow().len(),
+        3,
+        "a 1 km radius must not remove a single concert while no location is set"
+    );
+    assert_eq!(
+        view.shared.filter_bar.result_text_for_test(),
+        "3 concerts",
+        "the chip must not claim a restriction it cannot enforce without a location"
+    );
+}
+
 #[test]
 fn conc_7_filter_changes_refresh_badge_dependents() {
     let conn = crate::test_db::open().unwrap();
