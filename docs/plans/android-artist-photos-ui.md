@@ -2,7 +2,7 @@
 slug: android-artist-photos-ui
 worktree: /home/marvin/Projects/reprise-android-artist-photos-ui
 branch: feature/android-artist-photos-ui
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
