@@ -5,6 +5,52 @@ use chrono::NaiveDate;
 use crate::artist_news::{NewsKind, StoredRelease};
 use crate::artist_news_parsing::{parse_partial_date, release_kind};
 
+const UPDATE_NOTIFICATIONS_KEY: &str = "updates.notifications";
+
+/// Which release-feed changes may surface as desktop notifications.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateNotifications {
+    Off,
+    Releases,
+    All,
+}
+
+impl UpdateNotifications {
+    pub fn as_setting(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Releases => "releases",
+            Self::All => "all",
+        }
+    }
+
+    pub fn from_setting(value: &str) -> Option<Self> {
+        match value {
+            "off" => Some(Self::Off),
+            "releases" => Some(Self::Releases),
+            "all" => Some(Self::All),
+            _ => None,
+        }
+    }
+}
+
+/// Reads the notification scope, defaulting safely for missing or invalid data.
+pub fn notification_preference(db: &crate::db::Db) -> Result<UpdateNotifications, rusqlite::Error> {
+    let stored = crate::library::settings::get_setting(db, UPDATE_NOTIFICATIONS_KEY)?;
+    Ok(stored
+        .as_deref()
+        .and_then(UpdateNotifications::from_setting)
+        .unwrap_or(UpdateNotifications::Releases))
+}
+
+/// Persists the notification scope in Reprise's SQLite settings store.
+pub fn set_notification_preference(
+    db: &crate::db::Db,
+    preference: UpdateNotifications,
+) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_setting(db, UPDATE_NOTIFICATIONS_KEY, preference.as_setting())
+}
+
 /// Returns releases whose date boundary is reached by this due-check run.
 pub fn released_today_candidates(
     db: &crate::db::Db,
@@ -54,7 +100,10 @@ fn release_reaches_today(release: &StoredRelease, today: NaiveDate) -> bool {
 mod tests {
     use chrono::NaiveDate;
 
-    use super::{mark_release_notified, released_today_candidates};
+    use super::{
+        mark_release_notified, notification_preference, released_today_candidates,
+        set_notification_preference, UpdateNotifications,
+    };
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 8, 14).unwrap()
@@ -103,5 +152,29 @@ mod tests {
         assert!(released_today_candidates(&db, run_started_at + 2, today())
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn a_fresh_database_defaults_update_notifications_to_releases() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+
+        assert_eq!(
+            notification_preference(&db).unwrap(),
+            UpdateNotifications::Releases
+        );
+    }
+
+    #[test]
+    fn update_notification_preferences_round_trip_every_stored_value() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+
+        for expected in [
+            UpdateNotifications::Off,
+            UpdateNotifications::Releases,
+            UpdateNotifications::All,
+        ] {
+            set_notification_preference(&db, expected).unwrap();
+            assert_eq!(notification_preference(&db).unwrap(), expected);
+        }
     }
 }
