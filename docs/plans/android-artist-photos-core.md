@@ -145,6 +145,11 @@ artist_portrait > $LOG/ffi-portrait.log 2>&1` grün.
 
 ## Aufgabe 4 — `artist_portrait_cached`
 
+**Status:** complete in this task commit. All three named tests were
+compile-red on the missing cached-only method, then all four focused FFI
+portrait tests passed in `/tmp/reprise-artist-photos/ffi-portrait-task4.log`;
+strict package Clippy passed as well.
+
 **Dateien:** `crates/reprise-android-ffi/src/artist_portrait.rs`,
 `crates/reprise-android-ffi/src/lib.rs` (nur `mod artist_portrait;` und
 `pub use`).
