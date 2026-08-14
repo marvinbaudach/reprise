@@ -22,7 +22,7 @@
 
 ## Red-before-green method
 
-Each raw red file was produced before any production change to
+Each raw red file was produced before its corresponding production change to
 `artist_portrait/deezer.rs`. The command form was:
 
 ```text
@@ -42,18 +42,21 @@ Every file records `running 1 test` and `test result: FAILED`. The exact map is:
 | `red-non-exact.txt` | `artist_portrait::tests::non_exact_name_never_wins_even_with_many_more_fans` |
 | `red-image-priority.txt` | `artist_portrait::tests::real_image_outranks_a_more_popular_placeholder` |
 | `red-missing-fans.txt` | `artist_portrait::tests::missing_and_null_fan_counts_choose_stably_without_panicking` |
+| `red-defensive-field-fallback.txt` | `artist_portrait::deezer::tests::defensive_fallback_skips_placeholder_xl_for_real_big` |
 
-`green-artist-portrait.txt` is the focused post-repair run. It records 26
+`green-artist-portrait.txt` is the focused final run. It records 27
 portrait tests passed and zero failed.
 
-The rewritten `picture_xl` to `picture_big` test is not listed as a new red
-behavior: it preserves the existing fallback while correcting the fixture from
-an impossible mixed-identifier candidate to the measured missing-XL shape.
+The original rewritten `picture_xl` to `picture_big` test was not a new red
+behavior: it preserved the existing fallback while correcting the fixture from
+an impossible mixed-identifier candidate to the measured missing-XL shape. The
+review regression is named and commented as a defensive case because Deezer has
+not been observed to emit different identifiers in the two fields.
 
 ## Offline gates
 
-- `gate-reprise-core.txt`: 2,433 passed, 2 ignored, 0 failed. The command used
-  private worktree-local XDG data, cache, and config roots.
+- `gate-reprise-core.txt`: 2,434 passed, 2 ignored, 0 failed. The command used
+  private temporary XDG data, cache, and config roots.
 - `gate-clippy.txt`: strict `cargo clippy --all-targets --workspace -- -D
   warnings` completed successfully.
 - `gate-frontend-thinness.txt`: passed at the unchanged budgets: rusqlite 109,
@@ -63,6 +66,11 @@ an impossible mixed-identifier candidate to the measured missing-XL shape.
 - `gate-format.txt`: `cargo fmt --all --check` passed without output.
 - `gate-core-purity.txt`: no gtk4, libadwaita, gstreamer, or zbus dependency in
   `reprise-core`.
+- `gate-acceptance-harness.txt`: Bash syntax passed; an extracted cleanup probe
+  bounded and reaped a TERM-ignoring child in about two seconds; a delayed real
+  portrait file satisfied the positive-image poll; and the retained source
+  lines show the 60-second cap plus the expand-and-confirm sequence.
 
-The acceptance script passed `bash -n` and has executable mode. It was not run,
-so this directory makes no visible My Stats claim.
+The acceptance script retains executable mode. It was not run, so this
+directory makes no visible My Stats claim. The identical unbounded wait in the
+shared `scripts/cua-common/session.sh` remains a pre-existing out-of-scope issue.

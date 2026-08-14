@@ -74,10 +74,35 @@ private_run_cleanup() {
   local exit_code=$?
   if [[ -n "${ACCEPT_APP_PID:-}" ]] && kill -0 "$ACCEPT_APP_PID" 2>/dev/null; then
     kill -TERM "$ACCEPT_APP_PID" 2>/dev/null || true
+    for _ in {1..20}; do
+      if ! kill -0 "$ACCEPT_APP_PID" 2>/dev/null; then
+        break
+      fi
+      sleep 0.1
+    done
+    if kill -0 "$ACCEPT_APP_PID" 2>/dev/null; then
+      kill -KILL "$ACCEPT_APP_PID" 2>/dev/null || true
+    fi
     wait "$ACCEPT_APP_PID" 2>/dev/null || true
   fi
   cua_common_stop_driver "$CUA_E2E_SESSION"
   exit "$exit_code"
+}
+
+wait_for_portrait_image() {
+  local label=$1 portrait_dir=$2
+  local deadline=$((SECONDS + 60))
+
+  while ((SECONDS < deadline)); do
+    if [[ -d "$portrait_dir" ]] \
+      && find "$portrait_dir" -maxdepth 1 -type f ! -name '*.notfound' -print -quit \
+        | grep -q .; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "$label reached the 60-second portrait wait cap; running the hard cache checks" >&2
 }
 
 run_private_acceptance() {
@@ -108,7 +133,7 @@ run_private_acceptance() {
     REPRISE_AUDIO_SINK=fakesink \
     REPRISE_LOG=debug \
     REPRISE_SMOKE_QUIT=1 \
-    REPRISE_SMOKE_QUIT_DELAY_SECS=45 \
+    REPRISE_SMOKE_QUIT_DELAY_SECS=90 \
     "$binary" >"$app_log" 2>&1 &
   ACCEPT_APP_PID=$!
   export CUA_E2E_APP_PID="$ACCEPT_APP_PID"
@@ -125,9 +150,14 @@ run_private_acceptance() {
 
   final_snapshot=$(cua_wait_for_label \
     "$ACCEPT_APP_PID" "$window_id" "The Devil Wears Prada" "$label-stats-ready")
-  # Three bounded workers and the 300 ms Deezer interval make the last visible
-  # rank arrive after the page itself. Wait for lazy portrait work to settle.
-  sleep 12
+  cua_click_label \
+    "$ACCEPT_APP_PID" "$window_id" "Show more top artists" "$label-expand-top-artists"
+  final_snapshot=$(cua_wait_for_label \
+    "$ACCEPT_APP_PID" "$window_id" "Hide more top artists" "$label-stats-expanded")
+  assert_snapshot_contains "$final_snapshot" "Oceano"
+  # Page rendering does not prove that a bounded worker completed both network
+  # calls. Wait for positive cache evidence before applying the hard checks.
+  wait_for_portrait_image "$label" "$portrait_dir"
   final_snapshot=$(cua_snapshot "$ACCEPT_APP_PID" "$window_id" "$label-stats-final")
   assert_snapshot_contains "$final_snapshot" "The Devil Wears Prada"
   assert_snapshot_contains "$final_snapshot" "Oceano"
@@ -396,6 +426,8 @@ cat >"$output_dir/MANUAL-REVIEW.md" <<'EOF'
 # Deezer portrait visible acceptance review
 
 - Compare `before/my-stats.png` and `after/my-stats.png` at the same ranks.
+- Both screenshots are captured after expanding the ranking; confirm the
+  `Hide more top artists` control and Oceano are visible in the retained CUA evidence.
 - Before: rank 3, The Devil Wears Prada, must show the known grey silhouette.
 - After: ranks 1 through 10 show no grey person silhouette.
 - After: rank 3 and rank 10 show photographs, not initials or album covers.

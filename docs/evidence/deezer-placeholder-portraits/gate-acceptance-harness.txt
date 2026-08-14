@@ -1,0 +1,10 @@
+bash_syntax=passed
+term_ignoring_cleanup_exit=0 elapsed_seconds=2
+positive_portrait_poll_exit=0
+94:  local deadline=$((SECONDS + 60))
+105:  echo "$label reached the 60-second portrait wait cap; running the hard cache checks" >&2
+154:    "$ACCEPT_APP_PID" "$window_id" "Show more top artists" "$label-expand-top-artists"
+156:    "$ACCEPT_APP_PID" "$window_id" "Hide more top artists" "$label-stats-expanded")
+157:  assert_snapshot_contains "$final_snapshot" "Oceano"
+163:  assert_snapshot_contains "$final_snapshot" "Oceano"
+430:  `Hide more top artists` control and Oceano are visible in the retained CUA evidence.
