@@ -29,11 +29,10 @@ private const val FIRST_RETRY_MS = 50L
 /**
  * The activity's reader for the one row that says what is playing.
  *
- * `MusicLibrary::scan` holds the FFI handle's mutex for an entire SAF folder
- * walk, and `track_by_id` takes that same mutex — so reading the playing
- * track where it is *shown* would put the composition behind a folder walk.
- * This is the same defect `RatingWriter` was built for, and being a read makes
- * it no better: the lock does not care what the call intends to do with it.
+ * `track_by_id` no longer waits for `MusicLibrary::scan`, but it is still SQLite
+ * I/O. Reading the playing track where it is *shown* would put database work in
+ * the composition and risk an ANR. [TrackLoader] keeps that I/O off the main
+ * thread; being a read makes it no safer to run inside composition.
  *
  * What differs from [RatingWriter] is everything that follows from being a
  * read:

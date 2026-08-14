@@ -64,8 +64,8 @@ internal data class LoadedLibraryWindows(
     /**
      * The album the listener is standing in, if any, and the tracks of it they
      * have paged in. It is kept here rather than reopened, because reopening it
-     * means asking the library for the album inside a composition — the read
-     * that takes the lock a scan holds for its whole walk.
+     * means asking the library for the album inside a composition — synchronous
+     * database I/O that belongs off the main thread.
      */
     val openAlbum: AlbumTrackList?,
     val openArtist: ArtistTrackList? = null,

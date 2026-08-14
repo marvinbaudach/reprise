@@ -413,10 +413,10 @@ internal fun BrowseScreen(
         }
     }
 
-    // The row behind the mini player and the sheet is *read*, and reading it
-    // takes the same library lock a folder scan holds for its whole walk — so
-    // it is asked for from an effect and answered later, never fetched inside
-    // the composition. See [TrackLoader].
+    // The row behind the mini player and the sheet is database I/O, so it is
+    // asked for from an effect and answered later, never fetched inside the
+    // composition. Reads no longer wait for a folder scan, but they still do
+    // not belong on the main thread. See [TrackLoader].
     var answeredTrack by remember { mutableStateOf<AnsweredTrack?>(null) }
     val playingTrackId = playback.currentTrackId
     val latestPlayingTrackId by rememberUpdatedState(playingTrackId)
