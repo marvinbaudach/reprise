@@ -226,12 +226,53 @@ fn descendant_track_title(widget: &gtk4::Widget) -> Option<String> {
     None
 }
 
-/// Every realized track row as `(title, top edge in ColumnView coordinates)`,
+fn scroll_region_bounds(column_view: &gtk4::ColumnView) -> (f32, f32) {
+    fn collect(
+        widget: &gtk4::Widget,
+        column_view: &gtk4::ColumnView,
+        title_bottom: &mut Option<f32>,
+        list_bounds: &mut Option<(f32, f32)>,
+    ) {
+        let type_name = widget.type_().name();
+        if let Some(bounds) = widget.compute_bounds(column_view) {
+            if type_name.contains("ColumnViewTitle") {
+                let bottom = bounds.y() + bounds.height();
+                *title_bottom = Some(title_bottom.map_or(bottom, |current| current.max(bottom)));
+            } else if type_name == "GtkListView" {
+                *list_bounds = Some((bounds.y(), bounds.y() + bounds.height()));
+            }
+        }
+
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            collect(&current, column_view, title_bottom, list_bounds);
+            child = current.next_sibling();
+        }
+    }
+
+    let mut title_bottom = None;
+    let mut list_bounds = None;
+    collect(
+        column_view.upcast_ref(),
+        column_view,
+        &mut title_bottom,
+        &mut list_bounds,
+    );
+    let title_bottom = title_bottom.expect("the ColumnView must allocate its title bar");
+    let (list_top, list_bottom) = list_bounds.expect("the ColumnView must allocate its ListView");
+    (
+        title_bottom.max(list_top),
+        list_bottom.min(column_view.height() as f32),
+    )
+}
+
+/// Every visible track row as `(title, top edge in ColumnView coordinates)`,
 /// sorted by y. A track-title label excludes the ColumnView's own title row.
 fn rendered_rows(column_view: &gtk4::ColumnView) -> Vec<(String, f32)> {
     fn collect(
         widget: &gtk4::Widget,
         column_view: &gtk4::ColumnView,
+        scroll_region: (f32, f32),
         rows: &mut Vec<(String, f32)>,
     ) {
         if widget.type_().name().contains("ColumnViewRow") && widget.height() > 0 {
@@ -239,22 +280,35 @@ fn rendered_rows(column_view: &gtk4::ColumnView) -> Vec<(String, f32)> {
                 descendant_track_title(widget),
                 widget.compute_bounds(column_view),
             ) {
-                // GTK keeps zero-height widgets in its recycling pool. They
-                // are unrealized and do not describe a rendered row.
-                if bounds.height() > 0.0 {
+                // `compute_bounds(column_view)` includes the fixed
+                // GtkColumnViewTitle bar, so y = 0 is not the scrolling
+                // viewport top. GTK may realize a slack row above that region;
+                // a row ending exactly at the top has no visible pixels.
+                let (viewport_top, viewport_bottom) = scroll_region;
+                let row_bottom = bounds.y() + bounds.height();
+                if bounds.height() > 0.0
+                    && bounds.y() < viewport_bottom
+                    && row_bottom > viewport_top
+                {
                     rows.push((title, bounds.y()));
                 }
             }
         }
         let mut child = widget.first_child();
         while let Some(current) = child {
-            collect(&current, column_view, rows);
+            collect(&current, column_view, scroll_region, rows);
             child = current.next_sibling();
         }
     }
 
+    let scroll_region = scroll_region_bounds(column_view);
     let mut rows = Vec::new();
-    collect(column_view.upcast_ref(), column_view, &mut rows);
+    collect(
+        column_view.upcast_ref(),
+        column_view,
+        scroll_region,
+        &mut rows,
+    );
     rows.sort_by(|left, right| left.1.total_cmp(&right.1));
     rows
 }
@@ -459,6 +513,7 @@ impl DeepQueueFixture {
 fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
     let queue_top = QueueTopFixture::new();
     let mut band_samples = RenderedBandSamples::default();
     let bands_settled =
@@ -573,6 +628,7 @@ fn nav_back_to_a_large_sectioned_queue_never_visits_the_top() {
 fn queue_anchor_names_the_row_at_the_viewport_top() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
     let fixture = DeepQueueFixture::new();
     let anchor_title = fixture.anchor_title();
     let first_rows = fixture
