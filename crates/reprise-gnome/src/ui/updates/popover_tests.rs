@@ -185,9 +185,10 @@ fn nr_38_a_row_opens_the_same_url_its_tooltip_names() {
     );
 
     assert_eq!(
-        row.activation.tooltip_text().as_deref(),
+        row.root.tooltip_text().as_deref(),
         Some("Opens MusicBrainz")
     );
+    assert!(row.root.is_sensitive());
     row.activation.emit_clicked();
     assert_eq!(opened.borrow().as_slice(), [target]);
 
@@ -207,8 +208,9 @@ fn nr_38_a_row_opens_the_same_url_its_tooltip_names() {
         Rc::new(|| {}),
     );
     assert!(!inert.activation.is_sensitive());
+    assert!(inert.root.is_sensitive());
     assert_eq!(
-        inert.activation.tooltip_text(),
+        inert.root.tooltip_text(),
         Some(strings::text(strings::CONCERTS_NO_LINK).into())
     );
 }

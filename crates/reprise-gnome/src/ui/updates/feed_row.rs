@@ -83,7 +83,6 @@ pub(super) fn build(
     let activation = gtk4::Button::builder()
         .child(&content)
         .css_classes(["flat", "new-release-activation"])
-        .tooltip_text(&presentation.tooltip)
         .sensitive(presentation.activatable)
         .build();
     activation.update_property(&[gtk4::accessible::Property::Description(
@@ -101,6 +100,9 @@ pub(super) fn build(
 
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     root.add_css_class("new-release-row");
+    // GTK picking skips insensitive widgets, so the tooltip must live on the
+    // sensitive row wrapper even when its activation button is unavailable.
+    root.set_tooltip_text(Some(&presentation.tooltip));
     root.append(&activation);
     root.append(&dismiss);
 
