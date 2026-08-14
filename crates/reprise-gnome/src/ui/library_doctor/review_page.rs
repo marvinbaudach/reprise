@@ -230,13 +230,11 @@ impl ReviewState {
             return;
         }
         let row_count = self.snapshot.borrow().rows.len();
-        splice_selection_rows(&self.store, &changed, row_count);
         let affected = changed
             .iter()
             .map(|(_, row)| row.album_key.clone())
             .collect::<HashSet<_>>();
-        let snapshot = std::mem::take(&mut *self.snapshot.borrow_mut());
-        let snapshot = snapshot.with_selection(&changed);
+        let snapshot = self.snapshot.borrow().clone().with_selection(&changed);
         let affected_albums = affected
             .iter()
             .filter_map(|album_key| {
@@ -248,6 +246,7 @@ impl ReviewState {
             })
             .collect::<HashMap<_, _>>();
         *self.snapshot.borrow_mut() = snapshot;
+        splice_selection_rows(&self.store, &changed, row_count);
         self.refresh_action_summary(self.ready_count.get());
         self.refresh_master_check();
         self.album_headers.push_selection(&affected_albums);
