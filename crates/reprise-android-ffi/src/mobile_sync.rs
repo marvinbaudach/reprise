@@ -6,14 +6,14 @@ impl MusicLibrary {
     /// Missing and malformed sidecars are ordinary no-data outcomes.
     pub fn import_track_analysis(&self, track_id: i64) -> Result<(), LibraryError> {
         let (source, sidecar_path) = {
-            let state = self.lock()?;
-            let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
+            let writer = self.writer()?;
+            let (_, source) = self.configured_tree()?;
             let sidecar_path =
                 reprise_core::device_sync::mobile_import::analysis_sidecar_path_for_track(
-                    &state.db, track_id,
+                    &writer, track_id,
                 )
                 .map_err(database_error)?;
-            (tree.source.clone(), sidecar_path)
+            (source, sidecar_path)
         };
         let Some(sidecar_path) = sidecar_path else {
             return Ok(());
@@ -25,9 +25,9 @@ impl MusicLibrary {
         ) else {
             return Ok(());
         };
-        let state = self.lock()?;
+        let writer = self.writer()?;
         reprise_core::device_sync::mobile_import::import_analysis_bytes_for_track(
-            &state.db,
+            &writer,
             track_id,
             &sidecar_path,
             &bytes,
@@ -123,7 +123,7 @@ mod tests {
                 SIDECAR => {
                     let library = self.library.upgrade().expect("library still open");
                     assert!(
-                        library.state.try_lock().is_ok(),
+                        library.writer.try_lock().is_ok(),
                         "the SAF sidecar read must not hold the app-wide library lock"
                     );
                     &self.sidecar
@@ -190,13 +190,13 @@ mod tests {
 
         library.import_track_analysis(track.id).unwrap();
 
-        let state = library.lock().unwrap();
+        let writer = library.writer().unwrap();
         assert_eq!(
-            reprise_core::db::get_waveform_peaks(&state.db, track.id).unwrap(),
+            reprise_core::db::get_waveform_peaks(&writer, track.id).unwrap(),
             Some(vec![19, 23])
         );
         assert_eq!(
-            reprise_core::db::get_track_spectrogram(&state.db, track.id)
+            reprise_core::db::get_track_spectrogram(&writer, track.id)
                 .unwrap()
                 .unwrap()
                 .cells(),

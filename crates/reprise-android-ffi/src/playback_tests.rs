@@ -562,11 +562,11 @@ fn viewing_and_applying_playback_settings_preserves_the_authored_curve_byte_for_
     ])
     .unwrap();
     let stored_before = {
-        let state = library.lock().unwrap();
-        reprise_core::library::settings::set_equalizer_curve(&state.db, &curve).unwrap();
-        reprise_core::library::settings::set_equalizer_enabled(&state.db, true).unwrap();
+        let writer = library.writer().unwrap();
+        reprise_core::library::settings::set_equalizer_curve(&writer, &curve).unwrap();
+        reprise_core::library::settings::set_equalizer_enabled(&writer, true).unwrap();
         reprise_core::library::settings::get_setting(
-            &state.db,
+            &writer,
             reprise_core::library::settings::EQUALIZER_CURVE_KEY,
         )
         .unwrap()
@@ -595,9 +595,9 @@ fn viewing_and_applying_playback_settings_preserves_the_authored_curve_byte_for_
     )));
     drop(session);
     let stored_after = {
-        let state = library.lock().unwrap();
+        let writer = library.writer().unwrap();
         reprise_core::library::settings::get_setting(
-            &state.db,
+            &writer,
             reprise_core::library::settings::EQUALIZER_CURVE_KEY,
         )
         .unwrap()
@@ -617,8 +617,8 @@ fn phone_curve_replacement_validates_its_numeric_payload_and_changes_only_that_k
     )
     .unwrap();
     {
-        let state = library.lock().unwrap();
-        reprise_core::library::settings::set_setting(&state.db, "ui.theme", "desktop-only-theme")
+        let writer = library.writer().unwrap();
+        reprise_core::library::settings::set_setting(&writer, "ui.theme", "desktop-only-theme")
             .unwrap();
     }
 
@@ -650,15 +650,15 @@ fn phone_curve_replacement_validates_its_numeric_payload_and_changes_only_that_k
         ])
         .is_err());
 
-    let state = library.lock().unwrap();
+    let writer = library.writer().unwrap();
     assert_eq!(
-        reprise_core::library::settings::get_setting(&state.db, "ui.theme")
+        reprise_core::library::settings::get_setting(&writer, "ui.theme")
             .unwrap()
             .as_deref(),
         Some("desktop-only-theme"),
     );
     assert_eq!(
-        reprise_core::library::settings::get_equalizer_curve(&state.db)
+        reprise_core::library::settings::get_equalizer_curve(&writer)
             .points()
             .len(),
         2,

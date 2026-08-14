@@ -14,8 +14,8 @@ impl MusicLibrary {
         artist: String,
         window: WindowRange,
     ) -> Result<AlbumWindow, LibraryError> {
-        let state = self.lock()?;
-        queries::query_artist_albums(&state.db, artist.as_str(), window.into())
+        let reader = self.reader()?;
+        queries::query_artist_albums(&reader, artist.as_str(), window.into())
             .map(AlbumWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -29,8 +29,8 @@ impl MusicLibrary {
         artist: String,
         window: WindowRange,
     ) -> Result<TrackWindow, LibraryError> {
-        let state = self.lock()?;
-        queries::query_artist_untagged_tracks(&state.db, artist.as_str(), window.into())
+        let reader = self.reader()?;
+        queries::query_artist_untagged_tracks(&reader, artist.as_str(), window.into())
             .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -43,9 +43,9 @@ impl MusicLibrary {
         artist: String,
         window: WindowRange,
     ) -> Result<TrackWindow, LibraryError> {
-        let state = self.lock()?;
+        let reader = self.reader()?;
         queries::query_library_tracks(
-            &state.db,
+            &reader,
             &LibraryTrackRequest {
                 scope: LibraryTrackScope::Artist { artist },
                 search: String::new(),
