@@ -46,6 +46,7 @@ pub(crate) fn arm_update_notifications(application: &adw::Application, db: &Rc<D
     let application = application.clone().upcast::<gio::Application>();
     let db = db.clone();
     let cover_generation = Rc::new(Cell::new(0));
+    let concerts_announced = Rc::new(Cell::new(false));
     let run = Rc::new(move || {
         let now = chrono::Utc::now().timestamp();
         let today = chrono::Local::now().date_naive();
@@ -53,6 +54,15 @@ pub(crate) fn arm_update_notifications(application: &adw::Application, db: &Rc<D
             updates::send_due_releases(&application, &db, now, now, today, &cover_generation)
         {
             tracing::warn!(%error, "could not run update notification due check");
+        }
+        if !concerts_announced.get() {
+            match updates::send_due_concerts(&application, &db, today) {
+                Ok(count) if count > 0 => concerts_announced.set(true),
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "could not read Concerts notification delta");
+                }
+            }
         }
     });
     {

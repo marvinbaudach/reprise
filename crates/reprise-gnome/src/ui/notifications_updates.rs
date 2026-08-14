@@ -26,7 +26,7 @@ struct NotificationSpec {
     title: String,
     body: String,
     target: NotificationTarget,
-    cover_mbid: String,
+    cover_mbid: Option<String>,
 }
 
 fn release_notification_specs(releases: &[StoredRelease]) -> Vec<NotificationSpec> {
@@ -42,7 +42,7 @@ fn release_notification_specs(releases: &[StoredRelease]) -> Vec<NotificationSpe
             title: crate::ui::strings::update_releases_title(releases.len()),
             body,
             target: NotificationTarget::View("releases"),
-            cover_mbid: releases[0].release_group_mbid.clone(),
+            cover_mbid: Some(releases[0].release_group_mbid.clone()),
         }];
     }
 
@@ -61,9 +61,64 @@ fn release_notification_specs(releases: &[StoredRelease]) -> Vec<NotificationSpe
                     &release.release_group_mbid,
                 ),
             ),
-            cover_mbid: release.release_group_mbid.clone(),
+            cover_mbid: Some(release.release_group_mbid.clone()),
         })
         .collect()
+}
+
+fn concert_notification_spec(
+    count: usize,
+    concert: &reprise_core::concerts::ConcertRow,
+    formatted_date: &str,
+) -> NotificationSpec {
+    NotificationSpec {
+        id: "updates-concerts".into(),
+        title: crate::ui::strings::update_concerts_title(count),
+        body: crate::ui::strings::update_concert_body(
+            &concert.artist_name,
+            &concert.city,
+            formatted_date,
+        ),
+        target: NotificationTarget::View("concerts"),
+        cover_mbid: None,
+    }
+}
+
+/// Sends the full unseen Concerts delta once for an `All updates` run.
+pub(super) fn send_due_concerts(
+    application: &gio::Application,
+    db: &Db,
+    today: NaiveDate,
+) -> Result<usize, rusqlite::Error> {
+    if !reprise_core::modules::is_enabled(db, &reprise_core::modules::NEW_RELEASES_MODULE)?
+        || !reprise_core::modules::is_enabled(db, &reprise_core::modules::CONCERTS_MODULE)?
+        || reprise_core::artist_news_notify::notification_preference(db)?
+            != reprise_core::artist_news_notify::UpdateNotifications::All
+    {
+        return Ok(0);
+    }
+    let filter = reprise_core::concerts::config::persisted_filter(db)?;
+    let location = reprise_core::concerts::config::location(db)?;
+    let count = reprise_core::concerts::count_unseen(db, &filter, location.as_ref(), today)?;
+    let count = usize::try_from(count).unwrap_or(usize::MAX);
+    if count == 0 {
+        return Ok(0);
+    }
+    let Some(first) =
+        reprise_core::concerts::query_unseen(db, &filter, location.as_ref(), today, 1)?
+            .into_iter()
+            .next()
+    else {
+        return Ok(0);
+    };
+    let date =
+        crate::ui::concerts::concerts_presentation::format_event_date(&first.date_key, today);
+    send_notification(
+        application,
+        &concert_notification_spec(count, &first, &date),
+        None,
+    );
+    Ok(count)
 }
 
 /// Sends and stamps every release that became due before this check began.
@@ -152,7 +207,9 @@ fn send_with_cover_when_available(
 ) {
     let application = application.clone();
     let current_generation = current_generation.clone();
-    let mbid = spec.cover_mbid.clone();
+    let Some(mbid) = spec.cover_mbid.clone() else {
+        return;
+    };
     glib::spawn_future_local(async move {
         let cover = gio::spawn_blocking(move || {
             reprise_core::cover_download::fetch_release_group_cover(&mbid)
@@ -172,8 +229,11 @@ fn send_with_cover_when_available(
 #[cfg(test)]
 mod tests {
     use reprise_core::artist_news::{LibraryPresence, StoredRelease};
+    use reprise_core::concerts::{ConcertRow, TicketAvailability};
 
-    use super::{deliver_release_candidates, release_notification_specs};
+    use super::{
+        concert_notification_spec, deliver_release_candidates, release_notification_specs,
+    };
 
     fn release(mbid: &str, artist: &str, title: &str) -> StoredRelease {
         StoredRelease {
@@ -191,6 +251,42 @@ mod tests {
             track_count: Some(10),
             local_track_count: 0,
         }
+    }
+
+    fn concert() -> ConcertRow {
+        ConcertRow {
+            id: 1,
+            availability: TicketAvailability::OnSale,
+            date_key: "2026-08-20".into(),
+            starts_at: "2026-08-20T20:00:00".into(),
+            artist_name: "Castiel".into(),
+            venue: "Dynamo".into(),
+            city: "Zürich".into(),
+            region: None,
+            country: Some("CH".into()),
+            latitude: None,
+            longitude: None,
+            distance_km: None,
+            ticket_url: None,
+            ticket_source: None,
+            event_url: None,
+            provider: "fixture".into(),
+            is_similar: false,
+            similar_to: None,
+        }
+    }
+
+    #[test]
+    fn concerts_use_the_full_unseen_count_and_first_row_example() {
+        let notification = concert_notification_spec(12, &concert(), "20.08.2026");
+
+        assert_eq!(notification.id, "updates-concerts");
+        assert_eq!(notification.title, "12 new concerts");
+        assert_eq!(notification.body, "Castiel · Zürich · 20.08.2026");
+        assert_eq!(
+            notification.target,
+            super::NotificationTarget::View("concerts")
+        );
     }
 
     #[test]
