@@ -1,205 +1,158 @@
-# Handover — strand B, B-0 coded and verified, measurement still owed, 14.08.2026 16:21
+# Handover — strand B, B-0 landed and measured, 14.08.2026 19:30
 
-**Status: B-0 is committed on its branch and independently verified. Nothing is
-pushed, there is no PR, and the measurement that unlocks the rest of B has not
-happened.**
+**Status: B-0 is on `dev`. The measurement it existed for is done and it moved
+the target for the rest of the strand. B-1 through B-5 are unstarted.**
 
 | | |
 |---|---|
-| Strand A | merged — `604677322e` (#478), worktree and branch gone |
-| Strand B worktree | `/home/marvin/Projects/reprise-doctor-review-selection-and-refresh-b` |
-| Strand B branch | `feature/doctor-review-selection-and-refresh-b`, **local only** — `git ls-remote` returns nothing |
-| Commits | `82af9bf88a` B-0, `22fc1877e6` the plan status block |
-| Branch point | `57ff0bfc74` (`origin/dev` at 14:43, contains A) |
-| Plan phase | `coded` |
-| Tree | clean |
-
-`origin/dev` has since moved to `8b87ae8ada` (#481 sidebar, #482 Android
-portraits). Neither touches `review_page.rs` or the new probe file, so the rebase
-is expected to be trivial — but it has not been done.
+| Landed | `f24366b269` — "The doctor review refresh can be measured, and the numbers move strand B's target" (#487) |
+| Mother plan | `docs/plans/doctor-review-selection-and-refresh.md` |
+| Strand A | merged `604677322e` (#478) |
+| Strand B plan | `docs/plans/doctor-review-selection-and-refresh-b.md` — `phase: coded`, **refers to B-0 only**, the status block at the top says so |
+| Worktree / branch B | removed; branch deleted |
 
 ---
 
-## What B-0 contains
+## The measurement — this is the part that matters
 
-Only the two files B-0 is allowed to touch, plus the plan.
+Real library, release build of B-0, isolated XDG profile on a copy of the 243 MB
+database, scan 3, 330 visible rows, 28 recorded refreshes. The user drove the
+GUI; the session read the log.
 
-**`review_page.rs` (+36).** Five `tracing::debug!` lines in `ReviewState::refresh()`
-(R-14): one per stage for `grouped_rows_for`, `store.splice`, `refresh_conflicts`
-and the aggregate pass, each with its own `elapsed_us`, plus a whole-path line
-carrying `path="full"`, `rows` and the total. The crate reads `REPRISE_LOG`, never
-`RUST_LOG`. Also the `#[cfg(test)] #[path] mod review_page_perf_tests;`
-declaration next to the existing `mod tests;`.
+| Stage | Median | Range over 20 refreshes | Trend |
+|---|---|---|---|
+| `grouped_rows_for` | 9,150 µs | 5–17 ms | flat |
+| `store.splice` | 241,276 µs | **167 ms → 2,313 ms** | rises every refresh |
+| `refresh_conflicts` | 424 µs | 0–3 ms | flat |
+| `aggregate` | 1,987 µs | 2–6 ms | flat |
 
-**`review_page_perf_tests.rs` (+215, new).**
+**R-19's rule does not decide this.** It asked whether `grouped_rows_for` or the
+aggregate passes plus the conflicts panel dominate. Neither: 3.6 %, 0.8 % and
+0.2 % against `store.splice` at ~96 %. **B-2/B-3/B-4 is mandatory** — but on a
+stronger footing than predicted, because the stage the incremental path removes
+*is* the cost. B-1 alone would have addressed under 1 %.
 
-- `review_selection_toggle_touches_only_the_toggled_album` — V-4(a). 16 albums ×
-  12 rows plus the conflicts panel, sums `removed + added` from
-  `store.connect_items_changed` across one album toggle, and asserts the toggled
-  album's counts changed while every other album's did not. `MAX_TOGGLE_CHURN`
-  is **386**, measured, not predicted (R-21); the probe `eprintln!`s the observed
-  number on every run so it stays recoverable from any log.
-- `review_selection_toggle_wall_clock_probe` — V-4(b). Returns immediately unless
-  `REPRISE_DOCTOR_PERF_ALBUMS` is set, so it cannot join the merge gate, which
-  since #463 runs every `--ignored` test in the crate unfiltered.
+**The cost is not constant.** Twenty toggles of the same album against an
+unchanged 330-row list: 175 → 2,328 ms. Eight further toggles: 2,090–4,600 ms.
+Only `store.splice` grows; every Rust stage stays flat. Two confounders were
+checked and neither explains it:
 
-Both carry exactly `#[ignore = "requires a display; run via xvfb-run"]` and
-**no** rule-name prefix — a `doc_*` name would drag them into
-`check-ux-traceability.sh` (R-16).
+- *Host load* fell from 10.5 to 5.8 while the cost rose — the trend runs against
+  the load.
+- *Retained heap* — RSS sampled twice a second swung 880 → 588 → **264** → 714 MB.
+  It recovers, so this is not a simple unbounded object leak in the process.
 
-The plan file gained a `### Measured profile` section holding the churn number
-and the synthetic wall-clock numbers, with the real-library medians explicitly
-marked pending.
-
----
-
-## Evidence — separate the two columns before trusting anything
-
-| Check | Result | Who ran it |
-|---|---|---|
-| Churn probe, one exact test in its own process | `observed_items=386`, `1 passed`, `0 failed`, `2526 filtered out`, zero `^test result: FAILED` | **this session, independently** |
-| `check-architecture.sh` | RC 0 | **this session** |
-| `check-frontend-thinness.sh` | RC 0 | **this session** |
-| `check-ux-traceability.sh` | RC 0 | **this session** |
-| `check-accessibility-semantics.sh` | RC 0 | **this session** |
-| `check-input-parity.sh` | RC 0 | **this session** |
-| `cargo fmt --all`, `clippy --workspace --all-targets -D warnings` | clean | Codex's claim only |
-| Full workspace suite, `cargo audit` | clean | Codex's claim only |
-| Wall-clock probe, 16 albums | median 6 516 µs, max 6 690 µs | Codex's claim only |
-| `check-display-tests.sh` (full herd) | **not run at all** | — |
-
-The independent churn run used the same environment
-`scripts/check-display-tests.sh` builds for a single display test (private XDG
-roots, `TMPDIR`, `dbus-run-session`, `xvfb-run`, `GSK_RENDERER=cairo`,
-`GDK_BACKEND=x11`, `REPRISE_AUDIO_SINK=fakesink`). It compiled both changed
-files, so "it builds" is proven even where clippy is not.
-
-386 is exactly the draft's predicted `2 × 193`. That agreement is the reason it
-was re-measured rather than accepted — and it held.
+**It is not only latency.** Two screenshots taken before and after one toggle,
+identical except for the click, show the list displaced by one row (~65 px) with
+no scrolling. The full splice loses the scroll anchor. The user also reported
+scrolling itself becoming slow in the same session. This belongs in B's
+user-visible case, not only in its numbers.
 
 ---
 
-## The measurement that is still owed, and why it gates everything
+## The open question, and why the obvious tools cannot answer it
 
-`### B-0` of the plan ends with V-4(c): the real library, the user at the GUI,
-the session at the log. **R-19's rule then decides the depth of the rest of B,
-and it was fixed in advance:**
+The remaining suspect for the growth is the **accessibility tree**: every splice
+replaces all row accessibles, and accumulation there would show as rising cost
+without rising RSS. `GTK_A11Y=none` is the one-variable control arm.
 
-- `grouped_rows_for` dominates → the incremental path **B-2/B-3/B-4 is
-  mandatory**;
-- the aggregate passes and the conflicts panel dominate → **B-1 alone is the
-  fix**, the incremental path is dropped from this round, and that is a result,
-  not a failure;
-- either way **B-1 lands**.
+**cua-driver cannot run it.** cua drives the app *through* the AT-SPI tree that
+the control arm removes — method and control exclude each other. (Also: this
+app's ColumnView rows report flattened AT-SPI frames, pixel clicks have killed
+the driver before, and a cua session locks the desktop scope for other sessions.)
 
-Nothing below B-1 may be coded before that profile is recorded in the plan file.
+**The synthetic probe cannot run it either, and this is the finding to carry
+forward.** `review_selection_toggle_wall_clock_probe` was run headless under
+`xvfb-run` + `dbus-run-session` with `REPRISE_DOCTOR_PERF_ALBUMS=28` and a debug
+`REPRISE_LOG`. Result: the test passed **in 0.17 s**, printed no `PERFORMANCE`
+line, and the log held **zero** `DOCTOR_REVIEW_REFRESH` lines. Two separate
+causes, both worth knowing before someone retries:
 
-### The attempt on 14.08.2026 at 15:44 failed
+1. **B-0's `tracing::debug!` instrumentation is invisible in tests.** The
+   subscriber is installed in the app's `main()`; a test binary never calls it.
+   The per-stage numbers therefore only exist in a **real app run**. Any plan
+   step that expects to read stage timings out of a test run is built on sand.
+2. The probe returned early, i.e. it did not see `REPRISE_DOCTOR_PERF_ALBUMS`
+   through the `xvfb-run -a dbus-run-session -- cargo test` chain. Unresolved —
+   check the env propagation through that chain before blaming the probe.
 
-The app was **SIGKILLed about 20 seconds after launch**, still in startup — the
-last line is the MTP mount check, the Review page was never opened, and the log
-holds no `DOCTOR_REVIEW_REFRESH` record at all.
+Scratch state, if anyone wants to pick this up: worktree
+`/home/marvin/Projects/reprise-b0-control` (detached on `f24366b269`), logs under
+this session's scratchpad as `ctl-run.log` / `probe-result.log`.
 
-It was **not** memory: no kernel OOM entry, `systemd-oomd` inactive, 16 GiB
-available, `/tmp` at 32 %. The sender could not be identified from the journal.
-On the machine at that moment: three Codex runs and another session's visual
-acceptance harness (`acceptance/deezer-placeholder-portraits/run-accept.sh`,
-started 15:40), which launches its own Reprise instance, reads the **same** source
-database, and calls `kill -KILL` in its cleanup — on its own PID only, so it
-should have missed us. This is unresolved. **Ask the user whether they killed it
-before assuming a technical cause.**
+---
 
-### Three defects in the first harness, all fixed
-
-1. **The profile lived in `/tmp`** — a 16 GB tmpfs, i.e. RAM — holding a 253 MB
-   database copy while five agent runs were in flight. It now lives in
-   `~/.cache/reprise-doctor-b0`.
-2. **The run used a debug build.** R-19's question is whether `grouped_rows_for`
-   dominates, and that compares Rust code against GTK's C code; an unoptimised
-   build inflates the Rust half and would have manufactured the expensive answer
-   by itself. The run is now `--release`. Verified before switching: no
-   `release_max_level_*` feature exists anywhere in the workspace, so
-   `tracing::debug!` survives a release build.
-3. **`| tee` swallowed the app's exit status**, which is why the first failure
-   read only as "Killed". The script now reports the status and names signal 137
-   explicitly.
-
-### How to run it
-
-Harness, outside the repo so it survives the session scratchpad:
+## The measurement harness, hardened — reuse it, do not rebuild it
 
 ```
-~/.cache/reprise-doctor-b0-harness/doctor-b0-run.sh
-~/.cache/reprise-doctor-b0-harness/doctor-b0-medians.sh
+~/.cache/reprise-doctor-b0-harness/doctor-b0-run.sh      # launch + isolated profile
+~/.cache/reprise-doctor-b0-harness/doctor-b0-medians.sh  # evaluation
 ```
 
-If those are gone, the recipe is: build `--release` in the worktree; copy
-`/home/marvin/.local/share/reprise/reprise.db` **including any `-wal`/`-shm`
-sidecars, with Reprise fully shut down**, into an isolated profile; run
+Four changes were made on 14.08.2026 and all four have a reason:
 
-```
-XDG_DATA_HOME=<p>/data XDG_CACHE_HOME=<p>/cache XDG_CONFIG_HOME=<p>/config \
-XDG_STATE_HOME=<p>/state \
-REPRISE_LOG=info,reprise::ui::library_doctor::review_page=debug \
-REPRISE_AUDIO_SINK=fakesink ./target/release/reprise > <log> 2>&1
-```
-
-The targeted filter is deliberate: a blanket `REPRISE_LOG=debug` puts other
-modules' stderr writes inside the very stages this run times. If the log ends up
-without a single `DOCTOR_REVIEW_REFRESH` line, re-run with `REPRISE_LOG=debug`
-and treat the timings as upper bounds.
-
-In the window: Library Doctor → Review, pick one album with several changed rows,
-uncheck and re-check its header checkbox **five times** (ten clicks, same album,
-same window size, no scrolling), scan nothing, apply nothing, quit normally.
-
-Then: per-stage medians over the last ten refreshes, and `grep -c 'DOC-9b'` for
-V-4(d). The control half does not exist yet — B-0 has only one path, and
-`REPRISE_DOCTOR_FULL_REFRESH` arrives with B-3. Per V-4(c) step 5, this
-measurement must later be cross-checked against the finished branch's
-`REPRISE_DOCTOR_FULL_REFRESH=1` arm; if the two medians differ by more than
-session noise, the control arm is not the pre-fix path and the ratio must not be
-reported.
-
-**The real library will not need a new scan.** Scan 3 of 11.08.2026 is in the
-database, unacknowledged, and the Review page opens straight onto it: 2 193
-checked tracks, 825 proposals across 121 distinct albums, one unresolved group.
-`library_doctor_state` reads `1|3|` — latest scan 3, nothing acknowledged.
+- **The probe binary is copied to `~/.cache/doctor-b0/bin/dcheck`** and launched
+  from there. An earlier run was SIGKILLed 20 s into startup; the user confirms
+  they did not kill it. A command line containing no "reprise" defeats both
+  `pkill -x reprise` and `pkill -f reprise`, which is what other sessions'
+  acceptance harnesses run in their cleanup. Environment variables are not part
+  of `/proc/PID/cmdline`, so the `REPRISE_*` variables do not give it away.
+- **`setsid --wait`** — own session and process group, and the exit status still
+  propagates whether or not setsid forks.
+- **The real session bus, not a private one.** A private bus was tried and
+  rejected by measurement: it logged
+  `Gtk-CRITICAL: Unable to register the application … 'org.a11y.atspi.Registry':
+  unit failed` and a 19 s `org.freedesktop.secrets` timeout. An unreachable a11y
+  registry puts failing D-Bus calls inside widget construction — inside the very
+  stages the run times. `DOCTOR_PRIVATE_BUS=1` still switches it on.
+- **A witness log** samples neighbouring processes every 2 s.
 
 ---
 
-## Decisions left open for the user
+## Traps found in this run
 
-- **Land B-0 on its own?** It is correct and harmless in isolation — five debug
-  lines and two ignored probes, no behaviour change — and landing it would put
-  the instrumentation into `dev` so the measurement can run against any ordinary
-  dev build. It was deliberately not done, because B-0 measures rather than
-  fixes, and the plan expects B-0 and the rest of B to land as one strand. This
-  is a judgement call, not a formality.
-- **Wait for the other sessions.** While another harness drives Reprise against
-  the same source database and kills Reprise processes, a GUI measurement run on
-  this machine is not trustworthy even when it survives.
+**The tracing writer colours field *names*, in files too.** The raw log holds
+`\e[3mstage\e[0m\e[2m=\e[0m"store.splice"`, so `grep -F 'stage="store.splice"'`
+and `grep -cF 'path="full"'` both return zero against a log with 55 stage lines
+in it. This bit three times in one afternoon: the inherited `doctor-b0-medians.sh`
+reported "no samples" for every stage, the harness's own completion check
+reported zero refreshes, and a live log watcher stayed silent through 28
+refreshes. Both scripts are fixed (they strip escapes first); the general rule is
+to `sed 's/\x1b\[[0-9;]*m//g'` before evaluating, and to count the **message
+text** (`DOCTOR_REVIEW_REFRESH path`) rather than a field, because the message
+carries no escapes.
+
+**A GUI measurement run needs the user's own Reprise closed — and their build
+checked.** `~/.local/bin/reprise` was built 14.08. 08:47, strand A landed 13:34.
+The user's "I still cannot set any toggle" was A-1 in their own build, five hours
+older than the fix. Check the installed binary's mtime against the fix commit
+before diagnosing a report as a live bug.
+
+**An album with nothing selectable is not a broken checkbox.** Scan 3 has 825
+review rows over 122 albums; 433 rows are Ready and **38 albums have no
+selectable row at all**. On those, A-1's fix correctly renders the header
+checkbox insensitive. The whole split is derivable from the database without the
+app — `library_doctor_scan_tracks` joined against `tracks` on
+path/mtime/size/device/inode reproduces `store::stale_flags` exactly, and its
+Ready count matched the UI's "433 fixes ready" on the nose. Use that to pick a
+test album instead of hunting in the UI.
+
+**`gh pr merge --delete-branch` fails after a successful merge** when another
+worktree holds `dev`: `fatal: 'dev' is already used by worktree at …`. The merge
+itself is already done at that point — check `gh pr view --json state` before
+believing the error.
 
 ---
 
-## Traps worth carrying forward
+## Loose ends
 
-**A measurement's build profile is part of its methodology.** Handing a plan's
-"time the refresh" step to a debug build would have decided R-19 by itself, in
-favour of the expensive branch. Check what the comparison is *between* before
-choosing the profile.
-
-**`/tmp` here is 16 GB of RAM.** Anything that copies a real library database
-into it competes with every parallel agent run for physical memory.
-
-**`| tee` hides the exit status** of the command that matters. A run whose only
-failure signature is the word "Killed" cannot tell you which signal it was.
-
-**Codex reported the display-test measurement honestly this time** — the number
-survived an independent re-run. That does not retire the rule from the previous
-handover: check which harness produced a number, not just the number.
-
-**`.pipeline-codex.md` is still tracked in `dev` despite `.gitignore`.** It rode
-into this worktree with a previous run's content and a checkout-time mtime, and
-Codex dirtied it again. The one-line `git rm --cached` PR from the last handover
-is still not done.
+- **The review page has no search.** No `SearchEntry`, no `<primary>f` binding —
+  433 fixes across 106 albums with three category tabs and no way to jump to a
+  name. Not this strand's business; worth its own small plan.
+- The a11y control arm, unrun — see above for why both obvious routes fail.
+- `git rm --cached .pipeline-codex.md` — still tracked in `dev` despite
+  `.gitignore`, still riding into every fresh worktree. Third handover in a row
+  that mentions it.
+- `check-display-tests.sh` and `check-ux-traceability.sh` still appear in no
+  GitHub workflow. Both ran green here by hand (689/689, 0 unmatched).
+- The seven remaining §J cross-checks, due after the rest of B lands.
