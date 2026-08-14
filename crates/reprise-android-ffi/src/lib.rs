@@ -29,6 +29,8 @@ mod play_recorder;
 pub mod playback;
 mod playback_session;
 mod playback_settings;
+#[cfg(test)]
+mod read_during_scan_tests;
 pub mod source;
 mod source_error;
 mod source_names;
@@ -45,7 +47,7 @@ pub use library_types::{
     AndroidArtworkSize, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
     ScanSummary,
 };
-use library_types::{ConfiguredTree, LibraryState, DATABASE_FILE_NAME};
+use library_types::{ConfiguredTree, DATABASE_FILE_NAME};
 pub use logging::init_logging;
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
@@ -83,11 +85,18 @@ impl MusicLibrary {
         app_cache_directory: &str,
     ) -> Result<Self, LibraryError> {
         let db_path = Path::new(app_private_directory).join(DATABASE_FILE_NAME);
-        let db = Db::open_migrated(Some(&db_path)).map_err(|error| LibraryError::Database {
+        let writer = Db::open_migrated(Some(&db_path)).map_err(|error| LibraryError::Database {
+            detail: error.to_string(),
+        })?;
+        // The migrating writer must establish the current schema before the
+        // non-migrating reader asserts that the database is ready.
+        let reader = Db::open_ready(&db_path).map_err(|error| LibraryError::Database {
             detail: error.to_string(),
         })?;
         Ok(Self {
-            state: Mutex::new(LibraryState { db, tree: None }),
+            writer: Mutex::new(writer),
+            reader: Mutex::new(reader),
+            tree: Mutex::new(None),
             cache_root: PathBuf::from(app_cache_directory),
             database_path: db_path,
         })
@@ -98,13 +107,14 @@ impl MusicLibrary {
         tree_uri: String,
         source: Box<dyn SafSource>,
     ) -> Result<(), LibraryError> {
-        let mut state = self.lock()?;
-        settings::set_library_root(&state.db, &tree_uri).map_err(|error| {
-            LibraryError::Database {
-                detail: error.to_string(),
-            }
+        let writer = self.writer()?;
+        settings::set_library_root(&writer, &tree_uri).map_err(|error| LibraryError::Database {
+            detail: error.to_string(),
         })?;
-        state.tree = Some(ConfiguredTree {
+        let mut tree = self.tree.lock().map_err(|_| LibraryError::Database {
+            detail: "library handle poisoned by an earlier panic".to_owned(),
+        })?;
+        *tree = Some(ConfiguredTree {
             uri: tree_uri.into(),
             source: Arc::new(BridgedSource::new(source)),
         });
@@ -115,16 +125,12 @@ impl MusicLibrary {
         &self,
         progress: Box<dyn ScanProgressListener>,
     ) -> Result<ScanSummary, LibraryError> {
-        let state = self.lock()?;
-        let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
-        let outcome = scan_folder_with_source_and_progress(
-            tree.source.as_ref(),
-            &state.db,
-            &tree.uri,
-            |event| {
+        let writer = self.writer()?;
+        let (tree_uri, source) = self.configured_tree()?;
+        let outcome =
+            scan_folder_with_source_and_progress(source.as_ref(), &writer, &tree_uri, |event| {
                 progress.on_progress(event.into());
-            },
-        );
+            });
         drop(progress);
         let outcome = outcome.map_err(|error| LibraryError::Scan {
             detail: error.to_string(),
@@ -142,8 +148,8 @@ impl MusicLibrary {
     }
 
     pub fn list_tracks(&self, window: WindowRange) -> Result<TrackWindow, LibraryError> {
-        let state = self.lock()?;
-        queries::query_library_text_search(&state.db, "", window.into())
+        let reader = self.reader()?;
+        queries::query_library_text_search(&reader, "", window.into())
             .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -155,8 +161,8 @@ impl MusicLibrary {
         text: &str,
         window: WindowRange,
     ) -> Result<AlbumWindow, LibraryError> {
-        let state = self.lock()?;
-        queries::query_albums(&state.db, bounded_search_text(text), window.into())
+        let reader = self.reader()?;
+        queries::query_albums(&reader, bounded_search_text(text), window.into())
             .map(AlbumWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -172,8 +178,8 @@ impl MusicLibrary {
         text: &str,
         window: WindowRange,
     ) -> Result<ArtistWindow, LibraryError> {
-        let state = self.lock()?;
-        queries::query_artists(&state.db, bounded_search_text(text), window.into())
+        let reader = self.reader()?;
+        queries::query_artists(&reader, bounded_search_text(text), window.into())
             .map(ArtistWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -188,8 +194,8 @@ impl MusicLibrary {
     ) -> Result<TrackWindow, LibraryError> {
         let album = album.into_boxed_str();
         let album_artist = album_artist.into_boxed_str();
-        let state = self.lock()?;
-        queries::query_album_tracks(&state.db, &album, &album_artist, window.into())
+        let reader = self.reader()?;
+        queries::query_album_tracks(&reader, &album, &album_artist, window.into())
             .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -201,9 +207,9 @@ impl MusicLibrary {
         text: &str,
         window: WindowRange,
     ) -> Result<TrackWindow, LibraryError> {
-        let state = self.lock()?;
+        let reader = self.reader()?;
         queries::query_library_metadata_text_search(
-            &state.db,
+            &reader,
             bounded_search_text(text),
             window.into(),
         )
@@ -239,11 +245,7 @@ impl MusicLibrary {
         track_uri: &str,
         size: AndroidArtworkSize,
     ) -> Result<Option<String>, LibraryError> {
-        let source = {
-            let state = self.lock()?;
-            let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
-            Arc::clone(&tree.source)
-        };
+        let (_, source) = self.configured_tree()?;
         let Some(cover) = reprise_core::cover::resolve_source_with_source(
             source.as_ref(),
             Path::new(&track_uri),

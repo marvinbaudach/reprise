@@ -86,9 +86,9 @@ class MainActivity : ComponentActivity() {
 
     /**
      * The playing track's row, read off the main thread and answered back on
-     * it. Same reason as [ratings] — `track_by_id` takes the library lock a
-     * folder scan holds for its whole walk — and the same deferred lambda, so
-     * the library still opens when the screen asks for it.
+     * it. The database read stays off the main thread even though `track_by_id`
+     * no longer waits for a folder scan, and the same deferred lambda means the
+     * library still opens when the screen asks for it.
      */
     private val tracks = TrackLoader(
         read = { trackId -> session.trackById(trackId) },

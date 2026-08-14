@@ -156,21 +156,21 @@ pub struct AndroidAppearanceSettings {
 #[uniffi::export]
 impl MusicLibrary {
     pub fn appearance_settings(&self) -> Result<AndroidAppearanceSettings, LibraryError> {
-        let state = self.lock()?;
-        let theme = settings::get_setting(&state.db, THEME_SETTING_KEY).map_err(|error| {
+        let reader = self.reader()?;
+        let theme = settings::get_setting(&reader, THEME_SETTING_KEY).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
             }
         })?;
         Ok(AndroidAppearanceSettings {
             theme: AndroidStoredTheme::from_setting(theme.as_deref()),
-            color_scheme: AndroidColorScheme::from_core(settings::get_color_scheme(&state.db)),
+            color_scheme: AndroidColorScheme::from_core(settings::get_color_scheme(&reader)),
         })
     }
 
     pub fn set_theme(&self, theme: AndroidThemeChoice) -> Result<(), LibraryError> {
-        let state = self.lock()?;
-        settings::set_setting(&state.db, THEME_SETTING_KEY, theme.setting_id()).map_err(|error| {
+        let writer = self.writer()?;
+        settings::set_setting(&writer, THEME_SETTING_KEY, theme.setting_id()).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
             }
@@ -178,8 +178,8 @@ impl MusicLibrary {
     }
 
     pub fn visualizer_setting(&self) -> Result<AndroidStoredVisualizer, LibraryError> {
-        let state = self.lock()?;
-        let value = settings::get_setting(&state.db, VISUALIZER_SETTING_KEY).map_err(|error| {
+        let reader = self.reader()?;
+        let value = settings::get_setting(&reader, VISUALIZER_SETTING_KEY).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
             }
@@ -188,8 +188,8 @@ impl MusicLibrary {
     }
 
     pub fn set_visualizer(&self, visualizer: AndroidVisualizerChoice) -> Result<(), LibraryError> {
-        let state = self.lock()?;
-        settings::set_setting(&state.db, VISUALIZER_SETTING_KEY, visualizer.setting_id()).map_err(
+        let writer = self.writer()?;
+        settings::set_setting(&writer, VISUALIZER_SETTING_KEY, visualizer.setting_id()).map_err(
             |error| LibraryError::Database {
                 detail: error.to_string(),
             },
@@ -199,9 +199,9 @@ impl MusicLibrary {
     pub fn library_destination_setting(
         &self,
     ) -> Result<AndroidStoredLibraryDestination, LibraryError> {
-        let state = self.lock()?;
+        let reader = self.reader()?;
         let value =
-            settings::get_setting(&state.db, LIBRARY_DESTINATION_SETTING_KEY).map_err(|error| {
+            settings::get_setting(&reader, LIBRARY_DESTINATION_SETTING_KEY).map_err(|error| {
                 LibraryError::Database {
                     detail: error.to_string(),
                 }
@@ -215,9 +215,9 @@ impl MusicLibrary {
         &self,
         destination: AndroidLibraryDestinationChoice,
     ) -> Result<(), LibraryError> {
-        let state = self.lock()?;
+        let writer = self.writer()?;
         settings::set_setting(
-            &state.db,
+            &writer,
             LIBRARY_DESTINATION_SETTING_KEY,
             destination.setting_id(),
         )
@@ -246,9 +246,9 @@ mod tests {
         )
         .unwrap();
         {
-            let state = library.lock().unwrap();
-            settings::set_setting(&state.db, super::THEME_SETTING_KEY, "night-terrain").unwrap();
-            settings::set_color_scheme(&state.db, "dark").unwrap();
+            let writer = library.writer().unwrap();
+            settings::set_setting(&writer, super::THEME_SETTING_KEY, "night-terrain").unwrap();
+            settings::set_color_scheme(&writer, "dark").unwrap();
         }
 
         assert_eq!(
@@ -284,9 +284,9 @@ mod tests {
         )
         .unwrap();
         {
-            let state = library.lock().unwrap();
+            let writer = library.writer().unwrap();
             settings::set_setting(
-                &state.db,
+                &writer,
                 super::VISUALIZER_SETTING_KEY,
                 "future-data-driven-mode",
             )
@@ -333,9 +333,9 @@ mod tests {
             AndroidStoredLibraryDestination::Unset,
         );
         {
-            let state = library.lock().unwrap();
+            let writer = library.writer().unwrap();
             settings::set_setting(
-                &state.db,
+                &writer,
                 super::LIBRARY_DESTINATION_SETTING_KEY,
                 "future-library-place",
             )
@@ -368,13 +368,9 @@ mod tests {
 
         for removed_id in ["albums", "favourites"] {
             {
-                let state = library.lock().unwrap();
-                settings::set_setting(
-                    &state.db,
-                    super::LIBRARY_DESTINATION_SETTING_KEY,
-                    removed_id,
-                )
-                .unwrap();
+                let writer = library.writer().unwrap();
+                settings::set_setting(&writer, super::LIBRARY_DESTINATION_SETTING_KEY, removed_id)
+                    .unwrap();
             }
             assert_eq!(
                 library.library_destination_setting().unwrap(),

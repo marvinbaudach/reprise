@@ -7,9 +7,9 @@ impl MusicLibrary {
     /// Persists one row's rating and refuses to report success if the row was
     /// removed after it crossed the boundary.
     pub fn set_track_rating(&self, track_id: i64, rating: i32) -> Result<(), LibraryError> {
-        let state = self.lock()?;
+        let writer = self.writer()?;
         let device_path =
-            reprise_core::device_sync::mobile_import::device_path_for_track(&state.db, track_id)
+            reprise_core::device_sync::mobile_import::device_path_for_track(&writer, track_id)
                 .map_err(|error| LibraryError::Database {
                     detail: error.to_string(),
                 })?
@@ -19,7 +19,7 @@ impl MusicLibrary {
             .unwrap_or_default()
             .as_secs() as i64;
         let changed = reprise_core::library::stats::set_rating_at_if_present(
-            &state.db, track_id, rating, rated_at,
+            &writer, track_id, rating, rated_at,
         )
         .map_err(|error| LibraryError::Database {
             detail: error.to_string(),
