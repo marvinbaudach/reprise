@@ -513,3 +513,12 @@ MusicBrainz/AcoustID clients, the tag-write jobs, `reprise-mcp`, the Android app
 
 If R-19's rule selects the cheaper outcome, B ends after B-1 plus the tests that
 cover it. That is a complete result; record the profile that decided it.
+
+### Measured profile
+
+- Profiling base: `57ff0bfc74` plus this B-0 instrumentation-and-probes commit.
+- Generated fixture: 16 albums × 12 rows, plus the conflicts-panel store item.
+- Observed churn: 386 items changed for one album toggle.
+- Synthetic full-refresh probe at 16 albums × 12 rows over nine toggles:
+  median 6,516 µs; maximum 6,690 µs.
+- Real-library per-stage medians: pending the human GUI run on this commit.

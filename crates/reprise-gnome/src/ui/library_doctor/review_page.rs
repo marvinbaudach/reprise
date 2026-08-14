@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Instant;
 
 use gtk4::gio;
 use gtk4::glib;
@@ -55,6 +56,7 @@ struct ReviewState {
 
 impl ReviewState {
     fn refresh(self: &Rc<Self>) {
+        let full_started = Instant::now();
         let selected = self.selection.selected();
         let mut session = self.session.borrow_mut();
         let categories = available_categories(&session);
@@ -69,16 +71,34 @@ impl ReviewState {
         self.filter_bar.set_categories(&categories);
         let stale_notice = review_stale_notice(&session);
         let ready_count = review_ready_count(&session);
+        let grouped_rows_started = Instant::now();
         let objects = grouped_rows_for(&self.scan, &session, &self.outcomes.borrow())
             .into_iter()
             .map(|row| glib::BoxedAnyObject::new(row).upcast::<glib::Object>())
             .collect::<Vec<_>>();
+        tracing::debug!(
+            stage = "grouped_rows_for",
+            elapsed_us = grouped_rows_started.elapsed().as_micros(),
+            "DOCTOR_REVIEW_REFRESH stage"
+        );
         drop(session);
         self.stale_notice.set_visible(stale_notice.is_some());
         self.stale_notice_label
             .set_label(stale_notice.as_deref().unwrap_or_default());
+        let splice_started = Instant::now();
         self.store.splice(0, self.store.n_items(), &objects);
+        tracing::debug!(
+            stage = "store.splice",
+            elapsed_us = splice_started.elapsed().as_micros(),
+            "DOCTOR_REVIEW_REFRESH stage"
+        );
+        let conflicts_started = Instant::now();
         self.refresh_conflicts();
+        tracing::debug!(
+            stage = "refresh_conflicts",
+            elapsed_us = conflicts_started.elapsed().as_micros(),
+            "DOCTOR_REVIEW_REFRESH stage"
+        );
         self.filter.changed(gtk4::FilterChange::Different);
         let count = self.sorted.n_items();
         self.content
@@ -95,8 +115,20 @@ impl ReviewState {
             self.category.get(),
             ready_count,
         ));
+        let aggregate_started = Instant::now();
         self.refresh_filter_summary();
         self.refresh_master_check();
+        tracing::debug!(
+            stage = "aggregate",
+            elapsed_us = aggregate_started.elapsed().as_micros(),
+            "DOCTOR_REVIEW_REFRESH stage"
+        );
+        tracing::debug!(
+            path = "full",
+            rows = objects.len(),
+            elapsed_us = full_started.elapsed().as_micros(),
+            "DOCTOR_REVIEW_REFRESH path"
+        );
     }
 
     fn visible_rows(&self) -> Vec<ReviewRowModel> {
@@ -638,6 +670,10 @@ impl LibraryDoctorReviewPage {
         self.state.apply_report(report);
     }
 }
+
+#[cfg(test)]
+#[path = "review_page_perf_tests.rs"]
+mod review_page_perf_tests;
 
 #[cfg(test)]
 #[path = "review_page_tests.rs"]
