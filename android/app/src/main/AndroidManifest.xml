@@ -6,6 +6,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!--
+        Artist portraits use Rust's bundled rustls + webpki-roots certificate
+        chain, so they do not depend on Android's certificate store. No network
+        byte flows unless Download artist photos is enabled in Online sources.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!--
         From API 33 the playing notification is only shown once the user has
         allowed notifications. Without it the service still runs and the music
         still plays; only the transport in the shade and on the lock screen
