@@ -13,10 +13,10 @@ use reprise_core::db::Db;
 use reprise_core::library_doctor::{
     DoctorApplyPlan, DoctorReviewFilter, DoctorReviewGroupId, DoctorReviewRowId,
     DoctorReviewRowState, DoctorReviewSession, DoctorScan, DoctorValue, DoctorWriteReport,
-    DoctorWriteRowState, LibraryDoctor,
+    DoctorWriteRowState,
 };
 
-use super::review_conflicts::ReviewConflicts;
+use super::review_conflicts::{acknowledge_skipped_scan, ReviewConflicts, ReviewConflictsSlot};
 use super::review_filter_bar::ReviewFilterBar;
 use super::review_header::{
     album_header_factory, master_check_state, AlbumHeaderRegistry, OnSelect, ReviewColumnGroups,
@@ -26,7 +26,7 @@ use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
     ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
 };
-use super::review_snapshot::{splice_selection_rows, ReviewSnapshot};
+use super::review_snapshot::{review_ready_count, splice_selection_rows, ReviewSnapshot};
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -57,6 +57,7 @@ struct ReviewState {
     ready_count: Cell<usize>,
     snapshot: Rc<RefCell<ReviewSnapshot>>,
     album_headers: AlbumHeaderRegistry,
+    conflicts: ReviewConflictsSlot,
     #[cfg(test)]
     selection_requests: Cell<u32>,
     on_reviewed: Rc<dyn Fn()>,
@@ -101,9 +102,14 @@ impl ReviewState {
         self.stale_notice.set_visible(stale_notice.is_some());
         self.stale_notice_label
             .set_label(stale_notice.as_deref().unwrap_or_default());
+        let old_row_count = self.snapshot.borrow().rows.len();
         *self.snapshot.borrow_mut() = snapshot;
         let splice_started = Instant::now();
-        self.store.splice(0, self.store.n_items(), &objects);
+        self.store.splice(
+            0,
+            u32::try_from(old_row_count).expect("review row count fits u32"),
+            &objects,
+        );
         tracing::debug!(
             stage = "store.splice",
             elapsed_us = splice_started.elapsed().as_micros(),
@@ -324,7 +330,27 @@ impl ReviewState {
                 .cloned()
                 .collect::<Vec<_>>()
         };
+        let fingerprint = ReviewConflictsSlot::fingerprint(&groups);
+        let row_count =
+            u32::try_from(self.snapshot.borrow().rows.len()).expect("review row count fits u32");
+        let panel_present = self.store.n_items() == row_count + 1
+            && self
+                .store
+                .item(row_count)
+                .is_some_and(|item| item.is::<gtk4::Widget>());
+        if panel_present {
+            self.conflicts.relocate(row_count);
+        }
         if groups.is_empty() {
+            let tracked = self.conflicts.clear();
+            if panel_present {
+                debug_assert_eq!(tracked, Some(row_count));
+                self.store.splice(row_count, 1, &[] as &[glib::Object]);
+            }
+            return;
+        }
+        if self.conflicts.is_current(&fingerprint) && panel_present {
+            self.conflicts.remember(fingerprint, row_count);
             return;
         }
         let weak = Rc::downgrade(self);
@@ -347,7 +373,15 @@ impl ReviewState {
                 }
             });
         }
-        self.store.append(&panel.root);
+        if panel_present {
+            debug_assert_eq!(self.conflicts.index(), Some(row_count));
+            self.store.splice(row_count, 1, &[panel.root]);
+        } else {
+            self.conflicts.clear();
+            debug_assert_eq!(self.store.n_items(), row_count);
+            self.store.append(&panel.root);
+        }
+        self.conflicts.remember(fingerprint, row_count);
     }
 
     fn skip_all_conflicts(self: &Rc<Self>) {
@@ -386,12 +420,6 @@ impl ReviewState {
     }
 }
 
-fn acknowledge_skipped_scan(db: &Db, scan_id: i64) -> Result<(), String> {
-    LibraryDoctor::new(db)
-        .set_reviewed_scan(scan_id)
-        .map_err(|error| error.to_string())
-}
-
 #[cfg(test)]
 fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> {
     let object = model
@@ -424,14 +452,6 @@ fn review_stale_notice(session: &DoctorReviewSession) -> Option<String> {
         .filter(|row| row.state == DoctorReviewRowState::Stale)
         .count();
     (count > 0).then(|| strings::doctor_stale_notice(count))
-}
-
-fn review_ready_count(session: &DoctorReviewSession) -> usize {
-    session
-        .rows()
-        .iter()
-        .filter(|row| row.state == DoctorReviewRowState::Ready)
-        .count()
 }
 
 fn review_footer_summary(
@@ -620,6 +640,7 @@ impl LibraryDoctorReviewPage {
             ready_count: Cell::new(0),
             snapshot: Rc::new(RefCell::new(ReviewSnapshot::default())),
             album_headers,
+            conflicts: ReviewConflictsSlot::default(),
             #[cfg(test)]
             selection_requests: Cell::new(0),
             on_reviewed,

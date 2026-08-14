@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
-use reprise_core::library_doctor::{DoctorReviewRowId, DoctorReviewRowState};
+use reprise_core::library_doctor::{DoctorReviewRowId, DoctorReviewRowState, DoctorReviewSession};
 
 use super::review_model::ReviewRowModel;
 
@@ -166,6 +166,14 @@ pub(super) fn splice_selection_rows(
         );
         run_start = run_end;
     }
+}
+
+pub(super) fn review_ready_count(session: &DoctorReviewSession) -> usize {
+    session
+        .rows()
+        .iter()
+        .filter(|row| row.state == DoctorReviewRowState::Ready)
+        .count()
 }
 
 fn debug_assert_store_layout(store: &gio::ListStore, row_count: usize) {

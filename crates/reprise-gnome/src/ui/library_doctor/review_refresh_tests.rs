@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::io::Write;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use gtk4::gio;
 use gtk4::glib;
@@ -154,6 +156,169 @@ fn doc_9b_a_rebound_album_header_does_not_emit_a_selection_change() {
         0,
         "neither rebind nor push may look like a user selection"
     );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_the_conflicts_panel_stays_the_last_store_item() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder()
+        .default_width(900)
+        .default_height(700)
+        .build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &conflict_scan(),
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    drain_main_context();
+
+    assert_conflicts_store_layout(&page);
+    let row_count = u32::try_from(page.state.snapshot.borrow().rows.len()).unwrap();
+    let panel = page.state.store.item(row_count).unwrap();
+    let panel_identity = panel.as_ptr();
+
+    page.state.refresh();
+    drain_main_context();
+    assert_conflicts_store_layout(&page);
+    assert_eq!(
+        page.state.store.item(row_count).unwrap().as_ptr(),
+        panel_identity,
+        "an unchanged conflict fingerprint must preserve the panel"
+    );
+
+    let group = page.state.session.borrow().groups()[0].clone();
+    page.state
+        .session
+        .borrow_mut()
+        .choose_candidate(group.id, &group.candidates[0].value)
+        .unwrap();
+    page.state.refresh();
+    drain_main_context();
+    assert_conflicts_store_layout(&page);
+    let row_ids = page.state.snapshot.borrow().rows[0]
+        .selectable_row_ids
+        .clone();
+    page.state.set_selected(&row_ids, false);
+    drain_main_context();
+    assert_conflicts_store_layout(&page);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9b_the_conflicts_section_binds_no_album_header() {
+    gtk4::init().unwrap();
+    let captured = CapturedDebug::default();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(captured.clone())
+        .finish();
+    tracing::subscriber::with_default(subscriber, || {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let parent = adw::ApplicationWindow::builder()
+            .default_width(900)
+            .default_height(700)
+            .build();
+        let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+        let page = LibraryDoctorReviewPage::new(
+            &conn,
+            &parent,
+            &conflict_scan(),
+            Rc::new(|_| {}),
+            Rc::new(|| {}),
+            &on_edit,
+        );
+        parent.set_content(Some(page.navigation_page()));
+        parent.present();
+        drain_main_context();
+
+        assert!(
+            descendant_with_class(&page.rows, "doctor-conflicts-dashed"),
+            "the control must realize the conflicts panel"
+        );
+        assert!(
+            !descendant_with_class(&page.rows, "doctor-album-header-first")
+                && !descendant_with_class(&page.rows, "doctor-album-header-later"),
+            "the conflicts-only section must carry no album header child"
+        );
+    });
+    let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(
+        !log.contains("DOC-9b"),
+        "the deliberate non-album section must not emit a lost-header warning: {log}"
+    );
+}
+
+fn assert_conflicts_store_layout(page: &LibraryDoctorReviewPage) {
+    let row_count = u32::try_from(page.state.snapshot.borrow().rows.len()).unwrap();
+    assert_eq!(page.state.store.n_items(), row_count + 1);
+    for position in 0..row_count {
+        assert!(
+            page.state
+                .store
+                .item(position)
+                .unwrap()
+                .is::<glib::BoxedAnyObject>(),
+            "store item {position} must be a boxed review row"
+        );
+    }
+    assert!(
+        page.state
+            .store
+            .item(row_count)
+            .unwrap()
+            .is::<gtk4::Widget>(),
+        "the conflicts panel must be the terminal store item"
+    );
+}
+
+fn descendant_with_class(rows: &gtk4::ListView, class: &str) -> bool {
+    let mut pending = vec![rows.clone().upcast::<gtk4::Widget>()];
+    while let Some(widget) = pending.pop() {
+        if widget.has_css_class(class) {
+            return true;
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            child = current.next_sibling();
+            pending.push(current);
+        }
+    }
+    false
+}
+
+#[derive(Clone, Default)]
+struct CapturedDebug(Arc<Mutex<Vec<u8>>>);
+
+struct DebugWriter(Arc<Mutex<Vec<u8>>>);
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedDebug {
+    type Writer = DebugWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        DebugWriter(Arc::clone(&self.0))
+    }
+}
+
+impl Write for DebugWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 fn realized_album_checkbox(rows: &gtk4::ListView) -> gtk4::CheckButton {
