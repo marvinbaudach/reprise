@@ -4,6 +4,10 @@
 # scenario cleanup, and the application process. This layer owns only the
 # private display, D-Bus/AT-SPI bridge, CUA daemon, and isolated root profile.
 
+# 100 ms per tick — 2 s of grace before SIGKILL, the same budget the acceptance
+# runs settled on for the application process.
+CUA_COMMON_TERM_GRACE_TICKS=20
+
 CUA_COMMON_XVFB_PID=""
 CUA_COMMON_OPENBOX_PID=""
 CUA_COMMON_ATSPI_PID=""
@@ -91,6 +95,24 @@ cua_common_start_daemon() {
     "$(jq -nc --arg session "$session_id" '{session: $session}')" >/dev/null
 }
 
+# Terminates a child and does not return until it is gone. A bare `wait` cannot be
+# trusted here: a process that ignores or blocks SIGTERM never exits, and `wait`
+# has no timeout, so every cleanup step behind it is skipped for the rest of the
+# run. SIGKILL after a bounded grace period is what makes the return guaranteed.
+cua_common_terminate_pid() {
+  local pid=$1 grace_ticks=${2:-$CUA_COMMON_TERM_GRACE_TICKS}
+
+  kill -TERM "$pid" 2>/dev/null || true
+  for _ in $(seq 1 "$grace_ticks"); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null || true
+}
+
 cua_common_stop_daemon() {
   local session_id=$1
 
@@ -98,8 +120,7 @@ cua_common_stop_daemon() {
     "$(jq -nc --arg session "$session_id" '{session: $session}')" \
     >/dev/null 2>&1 || true
   if [[ -n "$CUA_COMMON_DAEMON_PID" ]]; then
-    kill -TERM "$CUA_COMMON_DAEMON_PID" 2>/dev/null || true
-    wait "$CUA_COMMON_DAEMON_PID" 2>/dev/null || true
+    cua_common_terminate_pid "$CUA_COMMON_DAEMON_PID"
   fi
   CUA_COMMON_DAEMON_PID=""
 }

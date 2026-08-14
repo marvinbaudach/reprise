@@ -1,0 +1,4 @@
+# control arm — scripts/cua-common/session.sh as it stands on dev (e77557ee62)
+$ timeout 10 bash probe-stop-daemon.sh session-old.sh
+child_pid=3498054
+exit=124  (timeout — cua_common_stop_daemon never returned)
