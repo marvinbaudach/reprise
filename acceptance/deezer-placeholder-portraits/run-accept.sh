@@ -4,13 +4,60 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 acceptance_root="$repo_root/acceptance/deezer-placeholder-portraits"
 readonly UNIX_SOCKET_PATH_MAX=107
+readonly CUA_MAX_ELEMENTS=500
 private_runtime_root=""
+ACCEPT_CUA_MAX_DEPTH=20
 
 # Reuse the repository's private X11/D-Bus/AT-SPI lifecycle and CUA helpers.
 # shellcheck source=../../scripts/cua-e2e/lib.sh
 source "$repo_root/scripts/cua-e2e/lib.sh"
 # shellcheck source=../../scripts/cua-common/session.sh
 source "$repo_root/scripts/cua-common/session.sh"
+
+# The complete Reprise tree includes large virtualized Library and queue
+# surfaces. Asking cua-driver to walk it without a depth bound exceeds its
+# deadline and degrades to X11 window metadata even though AT-SPI is healthy.
+# Each scenario phase raises this only as far as its required controls live.
+cua_snapshot() {
+  local pid=$1 window_id=$2 stem=$3
+  local json_path="$CUA_E2E_OUT_DIR/$stem.json"
+  local screenshot_path="$CUA_E2E_OUT_DIR/$stem.png"
+  local payload
+
+  mkdir -p "$CUA_E2E_OUT_DIR"
+  payload=$(snapshot_payload \
+    "$pid" "$window_id" "$CUA_E2E_SESSION" "$screenshot_path")
+  if ! cua_driver get_window_state "$payload" >"$json_path"; then
+    echo "CUA snapshot command failed at $stem; evidence: $json_path" >&2
+    return 1
+  fi
+  if ! jq -e . "$json_path" >/dev/null 2>&1; then
+    echo "CUA snapshot returned invalid JSON at $stem; evidence: $json_path" >&2
+    return 1
+  fi
+  assert_accessible_snapshot "$json_path" "$stem" || return 1
+  if [[ ! -s "$screenshot_path" ]]; then
+    echo "CUA snapshot retained no screenshot at $stem: $screenshot_path" >&2
+    return 1
+  fi
+  printf '%s\n' "$json_path"
+}
+
+cua_wait_for_label() {
+  local pid=$1 window_id=$2 label=$3 stem=$4 snapshot_path
+
+  for attempt in $(seq 1 24); do
+    if snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt"); then
+      if assert_snapshot_contains "$snapshot_path" "$label" 2>/dev/null; then
+        printf '%s\n' "$snapshot_path"
+        return 0
+      fi
+    fi
+    sleep 0.25
+  done
+  echo "window never exposed expected accessible label '$label'; last evidence: $CUA_E2E_OUT_DIR/$stem-24.json" >&2
+  return 1
+}
 
 usage() {
   cat <<'EOF'
@@ -121,6 +168,57 @@ self_test_private_paths() {
   echo "private_path_self_test=passed"
 }
 
+self_test_private_atspi() {
+  local fixture_root degraded_json healthy_json diagnostic payload
+  mkdir -p "$acceptance_root/runs"
+  fixture_root=$(mktemp -d "$acceptance_root/runs/atspi-contract.XXXXXX")
+  degraded_json="$fixture_root/degraded.json"
+  healthy_json="$fixture_root/healthy.json"
+  printf '%s\n' '{"degraded":true,"degraded_reason":"synthetic AT-SPI failure"}' >"$degraded_json"
+  printf '%s\n' '{"degraded":false}' >"$healthy_json"
+
+  if diagnostic=$(assert_accessible_snapshot "$degraded_json" contract-degraded 2>&1); then
+    echo "degraded snapshot passed the harness contract" >&2
+    return 1
+  fi
+  if [[ "$diagnostic" != *"synthetic AT-SPI failure"* \
+    || "$diagnostic" != *"$degraded_json"* ]]; then
+    echo "degraded snapshot omitted its reason or evidence path" >&2
+    return 1
+  fi
+  assert_accessible_snapshot "$healthy_json" contract-healthy
+
+  payload=$(snapshot_payload 7 11 contract-session "$fixture_root/snapshot.png")
+  jq -e --argjson depth "$ACCEPT_CUA_MAX_DEPTH" \
+    --argjson elements "$CUA_MAX_ELEMENTS" \
+    '.max_depth == $depth and .max_elements == $elements' <<<"$payload" >/dev/null
+  find "$fixture_root" -xdev -depth -delete
+  echo "private_atspi_self_test=passed"
+}
+
+snapshot_payload() {
+  local pid=$1 window_id=$2 session=$3 screenshot_path=$4
+  jq -nc \
+    --argjson pid "$pid" \
+    --argjson window_id "$window_id" \
+    --arg session "$session" \
+    --arg screenshot_out_file "$screenshot_path" \
+    --argjson max_depth "$ACCEPT_CUA_MAX_DEPTH" \
+    --argjson max_elements "$CUA_MAX_ELEMENTS" \
+    '{pid: $pid, window_id: $window_id, session: $session,
+      screenshot_out_file: $screenshot_out_file,
+      max_depth: $max_depth, max_elements: $max_elements}'
+}
+
+assert_accessible_snapshot() {
+  local json_path=$1 stem=$2 reason
+  if jq -e '.degraded == true' "$json_path" >/dev/null; then
+    reason=$(jq -r '.degraded_reason // "no degraded reason supplied"' "$json_path")
+    echo "CUA snapshot degraded at $stem: $reason; evidence: $json_path" >&2
+    return 1
+  fi
+}
+
 window_id_from_response() {
   jq -r '
     [.. | objects
@@ -146,6 +244,32 @@ wait_for_window() {
     fi
     sleep 0.25
   done
+  return 1
+}
+
+private_atspi_address() {
+  local output_dir=$1 reply address owner
+  reply=$(gdbus call --session --dest org.a11y.Bus \
+    --object-path /org/a11y/bus --method org.a11y.Bus.GetAddress)
+  address=$(sed -n "s/^('\([^']*\)',)/\1/p" <<<"$reply")
+  if [[ -z "$address" ]]; then
+    echo "private AT-SPI bus returned no address: $reply" >&2
+    return 1
+  fi
+  for _ in $(seq 1 40); do
+    owner=$(gdbus call --address "$address" --dest org.freedesktop.DBus \
+      --object-path /org/freedesktop/DBus \
+      --method org.freedesktop.DBus.NameHasOwner org.a11y.atspi.Registry 2>/dev/null \
+      || true)
+    if [[ "$owner" == "(true,)" ]]; then
+      printf 'address=%s\nregistry_owner=true\n' "$address" >"$output_dir/atspi-bus.txt"
+      printf '%s\n' "$address"
+      return 0
+    fi
+    sleep 0.1
+  done
+  printf 'address=%s\nregistry_owner=false\n' "$address" >"$output_dir/atspi-bus.txt"
+  echo "private AT-SPI registry never owned its bus name; evidence: $output_dir/atspi-bus.txt" >&2
   return 1
 }
 
@@ -189,7 +313,7 @@ run_private_acceptance() {
   local label=$1 binary=$2 output_dir=$3
   local app_log="$output_dir/app.log"
   local portrait_dir="$XDG_CACHE_HOME/reprise/artist-portraits"
-  local initial_snapshot window_id final_snapshot
+  local window_id final_snapshot atspi_address
 
   export CUA_E2E_OUT_DIR="$output_dir/cua"
   export CUA_E2E_SESSION="deezer-portrait-$label"
@@ -208,8 +332,10 @@ run_private_acceptance() {
   printf 'portrait_cache_absent_before_launch=true\n' >"$output_dir/cache-before.txt"
 
   cua_common_start_driver "$output_dir" "$CUA_DRIVER_SOCKET" "$CUA_E2E_SESSION"
+  atspi_address=$(private_atspi_address "$output_dir")
 
   env \
+    AT_SPI_BUS_ADDRESS="$atspi_address" \
     GDK_BACKEND=x11 \
     WAYLAND_DISPLAY= \
     GTK_A11Y=atspi \
@@ -228,10 +354,12 @@ run_private_acceptance() {
     return 1
   fi
   wmctrl -ir "$window_id" -e 0,0,0,1560,1160
-  initial_snapshot=$(cua_snapshot "$ACCEPT_APP_PID" "$window_id" "$label-initial")
-  assert_snapshot_contains "$initial_snapshot" "My Stats"
+  ACCEPT_CUA_MAX_DEPTH=20
+  cua_wait_for_label \
+    "$ACCEPT_APP_PID" "$window_id" "My Stats" "$label-atspi-ready" >/dev/null
   cua_click_label "$ACCEPT_APP_PID" "$window_id" "My Stats" "$label-open-stats"
 
+  ACCEPT_CUA_MAX_DEPTH=40
   final_snapshot=$(cua_wait_for_label \
     "$ACCEPT_APP_PID" "$window_id" "The Devil Wears Prada" "$label-stats-ready")
   cua_click_label \
@@ -275,6 +403,11 @@ run_private_acceptance() {
 
 if [[ "${1:-}" == "--self-test-private-paths" ]]; then
   self_test_private_paths
+  exit 0
+fi
+
+if [[ "${1:-}" == "--self-test-private-atspi" ]]; then
+  self_test_private_atspi
   exit 0
 fi
 
@@ -333,7 +466,7 @@ for reference in "${placeholder_references[@]}"; do
   fi
 done
 
-for command in cargo cua-driver dbus-run-session find git import jq mktemp openbox rg \
+for command in cargo cua-driver dbus-run-session find gdbus git import jq mktemp openbox rg sed \
   rustc sha256sum sqlite3 tar timeout wmctrl Xvfb; do
   required_command "$command"
 done
@@ -384,20 +517,60 @@ fi
 prepare_profile() {
   local profile_root=$1 label=$2
   local database="$profile_root/data/reprise/reprise.db"
+  local isolated_music_root="$profile_root/music"
+  local copy_error="$output_dir/$label/database-copy-error.txt"
   mkdir -p "$profile_root/data/reprise" "$profile_root/cache" \
-    "$profile_root/config" "$profile_root/state"
+    "$profile_root/config" "$profile_root/state" "$isolated_music_root"
   # SQLite online backup reads the source with the read-only flag and copies
   # all committed WAL frames without checkpointing or writing the source.
-  sqlite3 -readonly "$source_db" ".backup '$database'"
-  sqlite3 "$database" <<'SQL'
+  if sqlite3 -readonly "$source_db" ".backup '$database'" 2>"$copy_error"; then
+    printf 'sqlite_online_backup_read_only\n' >"$output_dir/$label/database-copy-method.txt"
+  elif [[ ! -s "${source_db}-wal" ]]; then
+    find "$database" -maxdepth 0 -type f -delete
+    sqlite3 -readonly "file:$source_db?mode=ro&immutable=1" \
+      ".backup '$database'"
+    printf 'sqlite_immutable_backup_read_only_no_wal\n' \
+      >"$output_dir/$label/database-copy-method.txt"
+  else
+    echo "read-only SQLite backup failed while a WAL exists; evidence: $copy_error" >&2
+    return 1
+  fi
+  sqlite3 "$database" <<SQL
 INSERT INTO settings(key, value) VALUES('online-sources-enabled', '1')
 ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 INSERT INTO settings(key, value) VALUES('module.artwork.enabled', '1')
 ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+UPDATE tracks SET path = '$isolated_music_root/track-' || id || '.missing';
+UPDATE listen_events SET path = '$isolated_music_root/event-' || id || '.missing';
+INSERT INTO settings(key, value) VALUES('library_root', '$isolated_music_root')
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+UPDATE settings
+SET value = json_set(
+  value,
+  '\$.maximized', json('false'),
+  '\$.window_width', 1560,
+  '\$.window_height', 1160,
+  '\$.browser_place', json_extract(value, '\$.library_root'),
+  '\$.queue', json('{"ids":[],"order":[],"position":null,"repeat":"Off","shuffled":false}'),
+  '\$.up_next', json('[]'),
+  '\$.current_up_next', NULL,
+  '\$.active_episode', NULL,
+  '\$.play_origin', NULL,
+  '\$.play_origin_label', NULL,
+  '\$.play_origin_place', NULL,
+  '\$.clean_exit', json_object(
+    'completed_at', unixepoch(),
+    'library_root', '$isolated_music_root'
+  )
+)
+WHERE key = 'ui.session.v1';
 SQL
   sqlite3 -readonly -header -column "$database" \
-    "SELECT key, value FROM settings WHERE key IN ('online-sources-enabled', 'module.artwork.enabled') ORDER BY key" \
+    "SELECT key, value FROM settings WHERE key IN ('library_root', 'online-sources-enabled', 'module.artwork.enabled') ORDER BY key" \
     >"$output_dir/$label/settings-proof.txt"
+  sqlite3 -readonly -header -column "$database" \
+    "SELECT json_extract(value, '$.browser_place') AS startup_place, json_array_length(json_extract(value, '$.queue.ids')) AS queued_tracks, json_extract(value, '$.clean_exit.library_root') AS clean_exit_root FROM settings WHERE key = 'ui.session.v1'" \
+    >"$output_dir/$label/session-isolation-proof.txt"
 }
 
 mkdir -p "$output_dir/before" "$output_dir/after"
@@ -410,7 +583,8 @@ prepare_profile "$after_profile" after
   printf 'origin_dev=%s\n' "$(git rev-parse origin/dev)"
   printf 'candidate_head=%s\n' "$(git rev-parse HEAD)"
   printf 'source_database=%s\n' "$(realpath "$source_db")"
-  printf 'database_copy_method=sqlite_online_backup_read_only\n'
+  printf 'before_database_copy_method=%s\n' "$(<"$output_dir/before/database-copy-method.txt")"
+  printf 'after_database_copy_method=%s\n' "$(<"$output_dir/after/database-copy-method.txt")"
   printf 'display_backend=x11-xvfb-openbox\n'
   printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'placeholder_reference_1=%s\n' "$(realpath "${placeholder_references[0]}")"
