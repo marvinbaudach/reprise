@@ -523,6 +523,8 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
 #[cfg(test)]
 #[path = "sidebar_tests.rs"]
 mod resolve_select_source_tests;
+#[cfg(test)]
+pub(in crate::ui) use resolve_select_source_tests::test_shared;
 
 #[cfg(test)]
 #[path = "sidebar_layout_tests.rs"]

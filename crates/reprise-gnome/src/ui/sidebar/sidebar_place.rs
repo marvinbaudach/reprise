@@ -105,7 +105,6 @@ pub(in crate::ui) fn find_row(
 
 /// Reconciles both sidebar lists and the device cards with the visible place.
 /// Every `RefCell` value is cloned out before GTK or callback code can re-enter.
-#[expect(dead_code, reason = "wired into rebuild and focus resync in Task 3")]
 pub(in crate::ui) fn apply_marking(shared: &std::rc::Rc<Shared>) {
     let place = shared.current_place.borrow().clone();
     match place {
