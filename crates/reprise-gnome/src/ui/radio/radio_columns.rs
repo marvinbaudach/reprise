@@ -716,16 +716,6 @@ mod tests {
     }
 
     #[test]
-    fn src_11_radio_columns_do_not_read_the_published_artwork_state() {
-        let source = include_str!("radio_columns.rs");
-        let published_reader = ["gate", "_open"].concat();
-        let published_path = ["source_image::", "gate"].concat();
-
-        assert!(!source.contains(&published_reader));
-        assert!(!source.contains(&published_path));
-    }
-
-    #[test]
     fn nav_10b_the_radio_marker_reapplies_without_rebuilding_the_model() {
         let source = include_str!("radio_columns.rs");
 

@@ -201,8 +201,8 @@ fn run_worker(
     fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
 ) {
     while let Ok(job) = receiver.recv_blocking() {
-        // SAFETY: `fetch` is the stateless wrapper around the free fetch function; this
-        // reused `FnMut` must never retain partially mutated state after a panic.
+        // UNWIND ASSUMPTION: `fetch` is the stateless wrapper around the free fetch
+        // function. This reused `FnMut` must never retain partially mutated state after a panic.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             process_job(pending, &job, fetch);
         }));
@@ -454,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn src_11_a_panic_while_decoding_frees_the_url_for_a_fresh_job() {
+    fn src_11_panicking_decode_finishes_and_the_worker_accepts_the_same_url_again() {
         let _gate = super::super::GATE_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -467,9 +467,8 @@ mod tests {
         let url = unique_url("decode-panic-recovery");
         let key = super::ArtworkKey { url: url.clone() };
 
-        // Candidate (a) was selected: a zero-width probe produced a non-fatal GdkPixbuf
-        // critical followed by an unwindable gtk-rs null-pointer panic. It exercises the
-        // real post-`mem::take` decode path, so no test-only seam is needed.
+        // A zero-width decode makes GdkPixbuf return NULL without setting a GError, so the
+        // gtk-rs binding's null assertion unwinds in the real post-`mem::take` decode path.
         let failed = queue.submit(url.clone(), 0, 40, CacheScope::Transient);
         assert!(
             failed.recv_blocking().is_err(),
