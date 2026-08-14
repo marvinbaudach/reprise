@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use super::log_capture::{CapturedLogs, LogCapture};
+use super::log_capture::CapturedLogs;
 use super::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 use super::{AndroidArtworkSize, LibraryError, MusicLibrary, WindowRange};
 
@@ -219,21 +219,34 @@ fn artwork_without_a_configured_tree_is_the_same_error_a_scan_reports() {
 #[test]
 fn an_unusable_cover_cache_is_logged_rather_than_passing_as_no_artwork() {
     let directory = tempfile::tempdir().unwrap();
-    // A plain file where the cover cache needs a directory: `create_dir_all`
-    // fails, the same shape a full disk or a revoked cache dir produces.
-    std::fs::create_dir(directory.path().join("cache")).unwrap();
-    std::fs::write(directory.path().join("cache/reprise"), b"not a directory").unwrap();
-    let (library, _) = library_with_one_album_cover(directory.path());
+    let (library, open_calls) = library_with_one_album_cover(directory.path());
     let track_uri = library.list_tracks(full_window()).unwrap().rows[0]
         .uri
         .clone();
 
+    assert!(
+        library
+            .track_artwork(&track_uri, AndroidArtworkSize::NowPlaying)
+            .unwrap()
+            .is_some(),
+        "the fixture cover must resolve before the cache is made unusable",
+    );
+    assert_eq!(open_calls.load(Ordering::Relaxed), 2);
+
+    // A plain file where the cover cache needs a directory: `create_dir_all`
+    // fails, the same shape a full disk or a revoked cache dir produces.
+    std::fs::remove_dir_all(directory.path().join("cache/reprise")).unwrap();
+    std::fs::write(directory.path().join("cache/reprise"), b"not a directory").unwrap();
+
     let logs = CapturedLogs::default();
-    let artwork = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
-        library.track_artwork(&track_uri, AndroidArtworkSize::List)
-    });
+    let artwork = logs.capture(|| library.track_artwork(&track_uri, AndroidArtworkSize::List));
 
     assert_eq!(artwork.unwrap(), None);
+    assert_eq!(
+        open_calls.load(Ordering::Relaxed),
+        4,
+        "the fixture cover must resolve and reach the unusable cache",
+    );
     let logged = logs.joined();
     assert!(logged.contains("WARN"), "expected a warning, got {logged}");
     assert!(

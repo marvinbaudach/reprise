@@ -85,10 +85,23 @@ fn install() {
         .try_init();
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(all(not(target_os = "android"), not(test)))]
 fn install() {
     let _ = tracing_subscriber::registry()
         .with(log_filter())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(host::HostLog),
+        )
+        .try_init();
+}
+
+#[cfg(all(not(target_os = "android"), test))]
+fn install() {
+    let _ = tracing_subscriber::registry()
+        .with(log_filter())
+        .with(crate::log_capture::CaptureLayer)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)

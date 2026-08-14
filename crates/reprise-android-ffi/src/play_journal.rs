@@ -468,7 +468,7 @@ mod tests {
     use std::io::ErrorKind;
 
     use super::{enforced, PlayJournal, MAX_PENDING_PLAYS};
-    use crate::log_capture::{CapturedLogs, LogCapture};
+    use crate::log_capture::CapturedLogs;
     use crate::play_recorder::RecordedPlay;
 
     fn fill_to_the_cap(journal: &mut PlayJournal) {
@@ -497,9 +497,8 @@ mod tests {
     #[test]
     fn a_lock_this_filesystem_cannot_enforce_does_not_refuse_the_journal() {
         let logs = CapturedLogs::default();
-        let unenforceable = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
-            enforced(Err(TryLockError::Error(ErrorKind::Unsupported.into())))
-        });
+        let unenforceable =
+            logs.capture(|| enforced(Err(TryLockError::Error(ErrorKind::Unsupported.into()))));
 
         assert!(
             !unenforceable.expect("an unenforceable lock must not refuse the journal"),
@@ -540,7 +539,7 @@ mod tests {
         std::fs::create_dir(directory.path().join(super::LOCK_FILE_NAME)).unwrap();
 
         let logs = CapturedLogs::default();
-        let mut journal = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+        let mut journal = logs.capture(|| {
             PlayJournal::open(&database_path, 0)
                 .expect("an unopenable lock file must not refuse the journal")
         });
@@ -597,9 +596,7 @@ mod tests {
         .unwrap();
 
         let logs = CapturedLogs::default();
-        let mut journal = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
-            PlayJournal::open(&database_path, 7).unwrap()
-        });
+        let mut journal = logs.capture(|| PlayJournal::open(&database_path, 7).unwrap());
 
         assert_eq!(
             std::fs::read_to_string(&journal_path).unwrap(),
@@ -635,9 +632,7 @@ mod tests {
         std::fs::write(&journal_path, written).unwrap();
 
         let logs = CapturedLogs::default();
-        let error = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
-            PlayJournal::open(&database_path, 0).unwrap_err()
-        });
+        let error = logs.capture(|| PlayJournal::open(&database_path, 0).unwrap_err());
 
         assert_eq!(
             error.kind(),
@@ -701,7 +696,7 @@ mod tests {
         fill_to_the_cap(&mut journal);
 
         let logs = CapturedLogs::default();
-        let accepted = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+        let accepted = logs.capture(|| {
             journal
                 .append(RecordedPlay {
                     track_id: 9_999,
