@@ -195,6 +195,12 @@ Zwei Punkte, die leicht falsch gemacht werden:
 
 ## Aufgabe 5 — `artist_portrait_fetch` mit dem NET-1a-Gate
 
+**Status:** complete in this task commit. All three named tests were
+compile-red on the missing fetch method, then the seven focused portrait tests
+and the complete 152-test FFI suite passed in
+`/tmp/reprise-artist-photos/ffi-portrait-task5.log` and `ffi-task5.log`; the
+query-lock test proves the database guard is released before the fetcher runs.
+
 **Dateien:** `crates/reprise-android-ffi/src/artist_portrait.rs`.
 
 **Änderung:**

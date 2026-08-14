@@ -44,6 +44,32 @@ impl MusicLibrary {
             PortraitOutcome::NotFound => None,
         }
     }
+
+    pub fn artist_portrait_fetch(
+        &self,
+        name: &str,
+        size: AndroidArtworkSize,
+    ) -> Result<Option<String>, crate::LibraryError> {
+        let allowed = {
+            let state = self.lock()?;
+            reprise_core::online_sources::network_allowed_or_off(
+                &state.db,
+                &reprise_core::modules::ARTWORK_MODULE,
+            )
+        };
+        if !allowed {
+            return Ok(None);
+        }
+
+        match (self.portrait_fetch)(name, &self.portrait_dir()) {
+            Ok(PortraitOutcome::Found(path)) => Ok(self.reduced_portrait_path(name, &path, size)),
+            Ok(PortraitOutcome::NotFound) => Ok(None),
+            Err(error) => {
+                tracing::debug!(%error, artist = name, "artist portrait request failed");
+                Ok(None)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -62,7 +88,7 @@ mod tests {
         0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
     ];
 
-    fn store_portrait_fixture(library: &MusicLibrary, name: &str) -> PathBuf {
+    fn store_portrait_fixture_in(dir: &Path, name: &str) -> PathBuf {
         let normalized = name
             .split_whitespace()
             .collect::<Vec<_>>()
@@ -70,12 +96,17 @@ mod tests {
             .to_lowercase();
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         normalized.as_bytes().hash(&mut hasher);
-        let path = library
-            .portrait_dir()
-            .join(format!("{:016x}.png", hasher.finish()));
+        let path = dir.join(format!("{:016x}.png", hasher.finish()));
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, TINY_IMAGE).unwrap();
         path
+    }
+
+    fn open_gate(library: &MusicLibrary) {
+        let state = library.lock().unwrap();
+        reprise_core::online_sources::set_enabled(&state.db, true).unwrap();
+        reprise_core::modules::set_enabled(&state.db, &reprise_core::modules::ARTWORK_MODULE, true)
+            .unwrap();
     }
 
     #[test]
@@ -109,16 +140,7 @@ mod tests {
             },
         )
         .unwrap();
-        {
-            let state = library.lock().unwrap();
-            reprise_core::online_sources::set_enabled(&state.db, true).unwrap();
-            reprise_core::modules::set_enabled(
-                &state.db,
-                &reprise_core::modules::ARTWORK_MODULE,
-                true,
-            )
-            .unwrap();
-        }
+        open_gate(&library);
 
         assert_eq!(
             library.artist_portrait_cached("Missing", crate::AndroidArtworkSize::List),
@@ -137,7 +159,7 @@ mod tests {
             |_, _| panic!("cached portrait lookup must not fetch"),
         )
         .unwrap();
-        let original = store_portrait_fixture(&library, "Band");
+        let original = store_portrait_fixture_in(&library.portrait_dir(), "Band");
 
         let reduced = library
             .artist_portrait_cached("Band", crate::AndroidArtworkSize::List)
@@ -163,5 +185,98 @@ mod tests {
             library.artist_portrait_cached("Missing", crate::AndroidArtworkSize::List),
             None,
         );
+    }
+
+    #[test]
+    fn net_1a_a_closed_gate_never_calls_the_fetcher_and_writes_no_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            move |_, _| {
+                counted.fetch_add(1, Ordering::Relaxed);
+                Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound)
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(
+            library.artist_portrait_fetch("Band", crate::AndroidArtworkSize::List),
+            Ok(None),
+        ));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        assert!(!library.portrait_dir().exists());
+    }
+
+    #[test]
+    fn net_1a_an_open_gate_calls_the_fetcher_once_and_returns_the_reduced_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            move |name, dir| {
+                counted.fetch_add(1, Ordering::Relaxed);
+                Ok(reprise_core::artist_portrait::PortraitOutcome::Found(
+                    store_portrait_fixture_in(dir, name),
+                ))
+            },
+        )
+        .unwrap();
+        open_gate(&library);
+
+        let path = library
+            .artist_portrait_fetch("Band", crate::AndroidArtworkSize::List)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert!(path.ends_with("-168.png"), "got {path}");
+    }
+
+    #[test]
+    fn the_query_lock_is_free_while_a_portrait_is_being_fetched() {
+        let directory = tempfile::tempdir().unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let release_rx = Arc::new(std::sync::Mutex::new(release_rx));
+        let waiting_release = Arc::clone(&release_rx);
+        let library = Arc::new(
+            MusicLibrary::open_with_portrait_fetch(
+                directory.path().to_str().unwrap(),
+                directory.path().join("cache").to_str().unwrap(),
+                move |_, _| {
+                    started_tx.send(()).unwrap();
+                    waiting_release.lock().unwrap().recv().unwrap();
+                    Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound)
+                },
+            )
+            .unwrap(),
+        );
+        open_gate(&library);
+
+        std::thread::scope(|scope| {
+            let fetching = Arc::clone(&library);
+            let fetch = scope.spawn(move || {
+                fetching.artist_portrait_fetch("Band", crate::AndroidArtworkSize::List)
+            });
+            started_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+
+            let querying = Arc::clone(&library);
+            let (query_tx, query_rx) = std::sync::mpsc::channel();
+            scope.spawn(move || query_tx.send(querying.appearance_settings()).unwrap());
+
+            assert!(query_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap()
+                .is_ok());
+            release_tx.send(()).unwrap();
+            assert!(matches!(fetch.join().unwrap(), Ok(None)));
+        });
     }
 }

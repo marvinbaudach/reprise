@@ -28,7 +28,6 @@ pub struct MusicLibrary {
     pub(crate) tree: Mutex<Option<ConfiguredTree>>,
     pub(crate) cache_root: PathBuf,
     pub(crate) database_path: PathBuf,
-    #[allow(dead_code)]
     pub(crate) portrait_fetch: Arc<PortraitFetch>,
 }
 
