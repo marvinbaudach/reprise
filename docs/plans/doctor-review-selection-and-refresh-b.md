@@ -1,12 +1,20 @@
 ---
 slug: doctor-review-selection-and-refresh-b
-worktree:
-branch:
-phase: planned
+worktree: /home/marvin/Projects/reprise-doctor-review-selection-and-refresh-b
+branch: feature/doctor-review-selection-and-refresh-b
+phase: coded
 codex_session:
 created: 2026-08-14
 ---
 # Strand B — one toggle updates the rows it toggled
+
+> **Status, 14.08.2026.** Only **B-0** (instrumentation and probes) is
+> implemented and landing. It carries no behaviour change. B-1 through B-5 are
+> still open and are now planned against the measured profile below, not against
+> R-19's predicted branches — see `### Measured profile`, which answers R-19 with
+> a third case the rule did not anticipate and adds a finding the plan did not
+> ask about (the refresh gets slower with every refresh). `phase: coded` refers
+> to B-0; do **not** read it as strand B being finished.
 
 Mother plan: `docs/plans/doctor-review-selection-and-refresh.md`. Read it for
 the full diagnosis (§A), the complete decision list (§B), the scope fence (§G),
@@ -513,3 +521,57 @@ MusicBrainz/AcoustID clients, the tag-write jobs, `reprise-mcp`, the Android app
 
 If R-19's rule selects the cheaper outcome, B ends after B-1 plus the tests that
 cover it. That is a complete result; record the profile that decided it.
+
+### Measured profile
+
+- Profiling base: `57ff0bfc74` plus this B-0 instrumentation-and-probes commit.
+- Generated fixture: 16 albums × 12 rows, plus the conflicts-panel store item.
+- Observed churn: 386 items changed for one album toggle.
+- Synthetic full-refresh probe at 16 albums × 12 rows over nine toggles:
+  median 6,516 µs; maximum 6,690 µs.
+- Real-library per-stage medians: **run on 14.08.2026, 18:17–18:35**, release
+  build of this commit rebased onto `8b87ae8ada`, isolated XDG profile on a copy
+  of the 243 MB library, scan 3, 330 visible rows, 28 recorded refreshes. The
+  user drove the GUI; this session read the log.
+
+| Stage | Median | Range over 20 refreshes | Trend |
+|---|---|---|---|
+| `grouped_rows_for` | 9,150 µs | 5–17 ms | flat |
+| `store.splice` | 241,276 µs | **167 ms → 2,313 ms** | rises every refresh |
+| `refresh_conflicts` | 424 µs | 0–3 ms | flat |
+| `aggregate` | 1,987 µs | 2–6 ms | flat |
+| whole path | ≈254 ms | 175 ms → 2,328 ms, later 2,090–4,600 ms | rises |
+
+**R-19's rule does not decide this, because neither of its two branches is what
+dominates.** The rule asked whether `grouped_rows_for` (Rust) or the aggregate
+passes plus the conflicts panel dominate. Measured: `grouped_rows_for` is 3.6 %,
+the aggregate 0.8 %, the conflicts panel 0.2 % — and `store.splice` is ~96 %.
+The incremental path B-2/B-3/B-4 is therefore **mandatory**, but on a stronger
+footing than R-19 predicted: the stage it removes *is* the cost. B-1 alone would
+have addressed under 1 % of it.
+
+**The cost is not constant — it grows with the number of refreshes.** Twenty
+toggles of the same album against an unchanged 330-row list went from 175 ms to
+2,328 ms, and eight further toggles stayed at 2,090–4,600 ms. Only
+`store.splice` grows; every Rust stage is flat.
+
+Two confounders were checked and do not explain it:
+
+- *Host load.* Load fell from 10.5 to 5.8 across the run while the per-toggle
+  cost kept rising. The trend runs against the load, not with it.
+- *An unbounded object leak in the app's own heap.* RSS was sampled twice a
+  second: 880 → 588 → 264 → 714 MB. It swings and recovers, so the growing
+  state is not simply retained heap in this process.
+
+The growing cost therefore lives outside the app heap, in what a full splice of
+330 rows sets in motion. The untested suspect is the accessibility tree: every
+splice replaces all row accessibles, and this session could not rule out that
+they accumulate in the registry rather than in the app. `GTK_A11Y=none` is a
+one-variable control arm for that and has **not** been run.
+
+**This is no longer only a performance finding.** The full splice also loses the
+list's scroll anchor: two screenshots taken before and after a single toggle,
+identical except for the click, show the content displaced by one row (~65 px)
+with no scrolling by the user. The same splice that costs the seconds also moves
+the viewport under the pointer. That belongs in B's PR text as a user-visible
+defect, not only as a latency number.
