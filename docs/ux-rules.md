@@ -1630,7 +1630,8 @@ result.
   visible in the target, the existing ID-plus-offset anchor is retained.
   The header-bar search is no longer covered: SEARCH-9 governs it, because
   a query changes with every keystroke and paid for the centering far more
-  often than a facet click does.
+  often than a facet click does. “Clear all” with an active query follows
+  SEARCH-16; without a query, clearing facets remains governed by FIL-9.
 
 ## L. Tag editor
 
@@ -2896,7 +2897,8 @@ property is set and yet nothing happens.
   destinations such as Library ↔ Recently added ↔ Playlist ↔ Smart ↔ Queue ↔
   Missing. Drilling into an Artist, Album or Genre place by activating a row is
   not a switch: it carries the current query and its chip into that narrower
-  context. Back out of such a place restores the complete remembered list
+  context. `RevealTrack` is not such a metadata drill and follows BROWSE-14.
+  Back out of such a place restores the complete remembered list
   state, including its query and facets, from the existing navigation history;
   search owns no parallel origin or history state. Closing the popover without
   navigating still preserves the current query per SEARCH-5/SEARCH-6, and an
@@ -2918,8 +2920,18 @@ property is set and yet nothing happens.
   hand-cleared field reload straight away. A query that is set or refined
   places the viewport at the top of its results and moves it no further
   after the model swap — it centers nothing (superseding FIL-9 for search).
-  Emptying the query returns the viewport to where the list stood when the
-  search began, as an ID-plus-offset anchor; if that row is gone, to the top.
+  Emptying the query's viewport follows SEARCH-16. (Revised 2026-08-14:
+  SEARCH-16 distinguishes an ordinary clear from one after deliberate
+  playback during the query.)
+- **SEARCH-16** [active] [gtk] — Emptying the query — the chip's ×, Escape,
+  clearing the entry by hand, “Show all N tracks”, and “Clear all” alike —
+  restores the pre-search anchor, unless the user started playback during that
+  query (a deliberate start or an explicit transport, not an automatic
+  advance), in which case the loaded track is centred; if that track is absent
+  from the cleared list, the pre-search anchor applies again, and if that row
+  is gone too, the top. The rule needs a pre-search anchor to have been taken,
+  which happens only on the transition from an empty to a non-empty query:
+  clearing facets alone, with no query ever typed, stays with FIL-9.
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
@@ -4710,6 +4722,15 @@ means deterministic and high-confidence, never „without review".
   album target exposes its cover as an image, with none of the link affordance
   or activation. Rebinding or unbinding a recycled cell clears the previous
   target. The unchanged context-menu route continues to follow CTX-4.
+
+- **BROWSE-14** [active] [core] — **Revealing a track removes restrictions,
+  not context.** `RevealTrack` keeps the origin's collection and sorting while
+  dropping its text query and browse facets, even when the track would have
+  survived them, then selects, focuses, and anchors that track. When anything
+  was dropped, the narrowed origin enters Back history unchanged; an already
+  unrestricted reveal remains an in-place replacement and adds no duplicate
+  history entry. Album, Artist, and Genre drills continue carrying the query
+  under SEARCH-8a.
 
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
