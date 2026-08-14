@@ -2,7 +2,7 @@
 slug: android-artist-photos-core
 worktree: /home/marvin/Projects/reprise-android-artist-photos-core
 branch: feature/android-artist-photos-core
-phase: complete
+phase: coded
 codex_session:
 created: 2026-08-14
 ---
