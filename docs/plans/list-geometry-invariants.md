@@ -2,7 +2,7 @@
 slug: list-geometry-invariants
 worktree: /home/marvin/Projects/reprise-list-geometry-invariants
 branch: feature/list-geometry-invariants
-phase: refactored
+phase: coded
 codex_session:
 created: 2026-08-14
 ---
