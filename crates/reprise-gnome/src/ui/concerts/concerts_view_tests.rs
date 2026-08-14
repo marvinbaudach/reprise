@@ -633,7 +633,7 @@ fn conc_2_tiny_radius_without_a_location_never_narrows_the_shown_count() {
 }
 
 #[test]
-fn conc_7_filter_changes_refresh_badge_dependents() {
+fn nr_35_filter_changes_refresh_badge_dependents() {
     let conn = crate::test_db::open().unwrap();
     let runtime = ConcertsRuntime::setup(&conn);
     let refreshes = Rc::new(Cell::new(0));

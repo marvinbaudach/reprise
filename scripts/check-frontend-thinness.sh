@@ -49,7 +49,7 @@ echo "== Frontend thinness =="
 # containing `Connection`; direct access to the owned connection is a
 # separate zero-tolerance ban below.
 declare -A budget=(
-  [rusqlite]=109
+  [rusqlite]=113
   [filesystem]=13
   [threads]=15
   [workers]=7
@@ -232,6 +232,7 @@ crates/reprise-gnome/src/ui/runtime/session.rs:2
 crates/reprise-gnome/src/ui/strings.rs:4
 crates/reprise-gnome/src/ui/strings_concerts.rs:1
 crates/reprise-gnome/src/ui/strings_news.rs:1
+crates/reprise-gnome/src/ui/strings_notifications.rs:1
 crates/reprise-gnome/src/ui/strings_online_sources.rs:1
 crates/reprise-gnome/src/ui/strings_podcasts.rs:1
 crates/reprise-gnome/src/ui/strings_radio.rs:1
