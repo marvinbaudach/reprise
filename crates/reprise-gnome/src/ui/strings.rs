@@ -5,7 +5,6 @@
 //! Single-codepoint glyphs (e.g. rating stars ★/☆) whose meaning is purely
 //! positional and do not participate in translation may live at their use
 //! site rather than here.
-
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -63,7 +62,10 @@ pub use location::*;
 mod releases;
 #[allow(unused_imports)]
 pub use releases::*;
-
+#[path = "strings_notifications.rs"]
+mod notifications;
+#[allow(unused_imports)]
+pub use notifications::*;
 #[path = "strings_filter.rs"]
 mod filter;
 pub use filter::*;
