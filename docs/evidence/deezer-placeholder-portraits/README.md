@@ -16,6 +16,9 @@
 - The real cache and real database were not read. This run explicitly forbids
   touching `~/.cache/reprise/` and user library data, so the older plan's live
   cache survey was not repeated.
+- Before completion the branch was rebased cleanly onto `origin/dev` at
+  `07f02b8fcc`. The intervening dev commits changed Radio GNOME files, plans,
+  scripts, and the append-only ledger; the `reprise-core` tree was unchanged.
 
 ## Red-before-green method
 
