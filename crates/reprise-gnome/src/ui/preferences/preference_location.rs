@@ -529,7 +529,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn location_page_owns_city_radius_and_all_three_named_readers() {
+    fn set_15_location_page_owns_city_radius_and_all_three_named_readers() {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let broadcast = Rc::new(LocationBroadcast::default());

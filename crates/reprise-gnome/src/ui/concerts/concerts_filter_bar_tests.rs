@@ -23,10 +23,10 @@ fn conc_2_each_chip_removes_exactly_one_constraint_and_clear_is_default() {
 
 #[test]
 fn conc_2_radius_is_active_only_when_location_makes_it_meaningful() {
-    let filter = ConcertFilter {
-        radius_km: Some(500.0),
-        ..ConcertFilter::default()
-    };
+    let conn = crate::test_db::open().unwrap();
+    reprise_core::location::set_default_radius_km(&conn, 500.0).unwrap();
+    let filter = config::persisted_filter(&conn).unwrap();
+    assert_eq!(filter.radius_km, Some(500.0));
     assert!(!active_facets(&filter, false).contains(&FilterFacet::Radius));
     assert!(active_facets(&filter, true).contains(&FilterFacet::Radius));
 }

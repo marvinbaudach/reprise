@@ -678,6 +678,8 @@ fn rad_5_near_you_click_with_a_location_dispatches_a_search_and_never_opens_sett
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, false)
+        .unwrap();
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     let opened = Rc::new(std::cell::Cell::new(false));
     let flag = opened.clone();

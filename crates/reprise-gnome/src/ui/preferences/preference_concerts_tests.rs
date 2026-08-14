@@ -121,7 +121,7 @@ fn concerts_preferences_expose_only_bandsintown_and_link_similar_sensitivity() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn concerts_location_reference_is_first_and_refreshes_on_app_broadcast() {
+fn set_15_concerts_location_reference_is_first_and_refreshes_on_app_broadcast() {
     gtk4::init().unwrap();
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let conn = Rc::new(crate::test_db::open().unwrap());

@@ -1,7 +1,7 @@
 use super::{page_index_by_name, PageId, PAGE_ORDER};
 
 #[test]
-fn location_page_sits_between_library_and_plugins() {
+fn set_15_location_page_sits_between_library_and_plugins() {
     assert_eq!(
         PAGE_ORDER,
         [
