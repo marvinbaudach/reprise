@@ -13,6 +13,28 @@ refute() {
 }
 
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/reprise-worktree-gc.XXXXXX")
+can_enforce_delete_failure() {
+  local probe_root=$1
+  local restricted_dir="$probe_root/restricted"
+
+  mkdir -p "$restricted_dir"
+  printf 'probe delete failure\n' > "$restricted_dir/artifact"
+  chmod 555 "$restricted_dir"
+  if find "$probe_root" -xdev -depth -delete 2>/dev/null; then
+    return 1
+  fi
+  chmod u+w "$restricted_dir"
+  find "$probe_root" -xdev -depth -delete
+}
+
+delete_failure_probe="$fixture/delete-failure-probe"
+if can_enforce_delete_failure "$delete_failure_probe"; then
+  delete_failure_is_enforceable=true
+else
+  delete_failure_is_enforceable=false
+fi
+[[ ! -e $delete_failure_probe ]]
+
 start_active_probe() {
   local path=$1
   (cd "$path" && exec tail -f /dev/null) &
@@ -505,7 +527,9 @@ touch --date='10 days ago' \
   "$after_failure_worktree/target/debug/artifact"
 failing_target_kib_before=$(du -sk "$failing_artifact_worktree/target" | cut -f1)
 undeletable_artifact_dir="$failing_artifact_worktree/target/restricted"
-chmod 555 "$undeletable_artifact_dir"
+if [[ $delete_failure_is_enforceable == true ]]; then
+  chmod 555 "$undeletable_artifact_dir"
+fi
 start_active_probe "$active_artifact_worktree"
 expected_reclaimed_kib=0
 for artifact in \
@@ -532,10 +556,14 @@ dirty_artifact_report=$(
     --apply
 )
 stop_active_probe
-failing_target_kib_after=$(du -sk "$failing_artifact_worktree/target" | cut -f1)
-expected_reclaimed_kib=$((
-  expected_reclaimed_kib + failing_target_kib_before - failing_target_kib_after
-))
+if [[ $delete_failure_is_enforceable == true ]]; then
+  failing_target_kib_after=$(du -sk "$failing_artifact_worktree/target" | cut -f1)
+  expected_reclaimed_kib=$((
+    expected_reclaimed_kib + failing_target_kib_before - failing_target_kib_after
+  ))
+else
+  expected_reclaimed_kib=$((expected_reclaimed_kib + failing_target_kib_before))
+fi
 rg -Fq "keep dirty $dirty_artifact_worktree" <<<"$dirty_artifact_report"
 rg -Fq "keep primary $artifact_repo" <<<"$dirty_artifact_report"
 rg -Fq \
@@ -584,9 +612,20 @@ rg -Fq "keep locked $locked_artifact_worktree" \
   <<<"$dirty_artifact_report"
 rg -Fq "keep unresolved_path $unresolved_artifact_worktree" \
   <<<"$dirty_artifact_report"
-rg -Fq \
-  "keep artifact_delete_failed $failing_artifact_worktree/target" \
-  <<<"$dirty_artifact_report"
+if [[ $delete_failure_is_enforceable == true ]]; then
+  rg -Fq \
+    "keep artifact_delete_failed $failing_artifact_worktree/target" \
+    <<<"$dirty_artifact_report"
+  [[ -d $failing_artifact_worktree/target/restricted ]]
+  [[ ! -d $failing_artifact_worktree/target/removable ]]
+  echo "Delete-failure assertion: exercised"
+else
+  rg -Fq \
+    "cleaned stale_target $failing_artifact_worktree/target" \
+    <<<"$dirty_artifact_report"
+  [[ ! -d $failing_artifact_worktree/target ]]
+  echo "SKIPPED: artifact delete-failure assertion cannot be enforced in this environment; this gate did not run"
+fi
 rg -Fq \
   "cleaned stale_android_build $failing_artifact_worktree/android/app/build" \
   <<<"$dirty_artifact_report"
@@ -601,8 +640,6 @@ rg -Fq \
 [[ -d $unrelated_artifact_worktree/target ]]
 [[ -d $unrelated_artifact_worktree/android/app/build ]]
 [[ -d $unrelated_artifact_worktree/.gradle-user-home ]]
-[[ -d $failing_artifact_worktree/target/restricted ]]
-[[ ! -d $failing_artifact_worktree/target/removable ]]
 [[ ! -d $failing_artifact_worktree/android/app/build ]]
 [[ ! -d $after_failure_worktree/target ]]
 git -C "$artifact_repo" show-ref \
