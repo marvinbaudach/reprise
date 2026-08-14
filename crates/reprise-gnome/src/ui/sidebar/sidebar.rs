@@ -39,15 +39,19 @@
 //!
 //! `rebuild` tears down every row and re-selects the logical current source.
 //! If a future caller feeds that selection back into another rebuild,
-//! `wire_row_selected`'s dedup-by-value check (comparing the
-//! newly selected row's `ViewSource` against `shared.current_source`'s
-//! already-stored value, not row identity — a fresh `rebuild` always
-//! produces a *different* `ListBoxRow` GObject even for "the same" source)
-//! is what stops that from looping forever. Every `RefCell` borrow in this
-//! module is also scoped to end before any call that could re-enter (the
-//! pattern documented project-wide, e.g. `player_controller.rs`'s "Queue
-//! borrow discipline" section), so no such reentrant chain ever overlaps two
-//! borrows of the same `RefCell` either.
+//! `wire_row_selected`'s dedup-by-value check (the visible place must be
+//! `SidebarPlace::Source` and the newly selected row's `ViewSource` must equal
+//! `shared.current_source`, rather than matching row identity — a fresh
+//! `rebuild` always produces a *different* `ListBoxRow` GObject even for "the
+//! same" source) is what stops that from looping forever. The place component
+//! is not incidental: it is what lets a source row route out of a sourceless
+//! view even when that row's source equals the already-stored
+//! `shared.current_source`. The comparison remains a value comparison, not a
+//! time-windowed suppress flag. Every `RefCell` borrow in this module is also
+//! scoped to end before any call that could re-enter (the pattern documented
+//! project-wide, e.g. `player_controller.rs`'s "Queue borrow discipline"
+//! section), so no such reentrant chain ever overlaps two borrows of the same
+//! `RefCell` either.
 //!
 //! The playlist row's drop target/drop-handling logic lives in the sibling
 //! `ui::sidebar_dnd` module (split out to keep this file under 800 lines,
