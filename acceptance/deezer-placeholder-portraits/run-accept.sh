@@ -222,6 +222,29 @@ self_test_private_atspi() {
   echo "private_atspi_self_test=passed"
 }
 
+self_test_named_portrait_wait() {
+  local fixture_root diagnostic
+  fixture_root=$(mktemp -d /tmp/reprise-portrait-wait.XXXXXX)
+  mkdir -p "$fixture_root/cache"
+  : >"$fixture_root/cache/unrelated.jpg"
+  : >"$fixture_root/cache/prada.jpg"
+
+  if diagnostic=$(wait_for_named_portraits \
+    contract "$fixture_root/cache" 1 prada oceano 2>&1); then
+    echo "named portrait wait passed without every required portrait" >&2
+    return 1
+  fi
+  if [[ "$diagnostic" != *"prada oceano"* ]]; then
+    echo "named portrait wait omitted the required cache keys" >&2
+    return 1
+  fi
+
+  : >"$fixture_root/cache/oceano.png"
+  wait_for_named_portraits contract "$fixture_root/cache" 1 prada oceano
+  find "$fixture_root" -xdev -depth -delete
+  echo "named_portrait_wait_self_test=passed"
+}
+
 snapshot_payload() {
   local pid=$1 window_id=$2 session=$3 screenshot_path=$4
   jq -nc \
@@ -319,27 +342,38 @@ private_run_cleanup() {
   exit "$exit_code"
 }
 
-wait_for_portrait_image() {
-  local label=$1 portrait_dir=$2
-  local deadline=$((SECONDS + 60))
+wait_for_named_portraits() {
+  local label=$1 portrait_dir=$2 wait_seconds=$3
+  shift 3
+  local -a cache_keys=("$@")
+  local deadline=$((SECONDS + wait_seconds)) key all_present
 
   while ((SECONDS < deadline)); do
-    if [[ -d "$portrait_dir" ]] \
-      && find "$portrait_dir" -maxdepth 1 -type f ! -name '*.notfound' -print -quit \
-        | grep -q .; then
+    all_present=true
+    for key in "${cache_keys[@]}"; do
+      if [[ ! -d "$portrait_dir" ]] \
+        || ! find "$portrait_dir" -maxdepth 1 -type f -name "$key.*" \
+          ! -name '*.notfound' -print -quit | grep -q .; then
+        all_present=false
+        break
+      fi
+    done
+    if [[ "$all_present" == true ]]; then
       return 0
     fi
     sleep 1
   done
 
-  echo "$label reached the 60-second portrait wait cap; running the hard cache checks" >&2
+  echo "$label did not cache every required portrait within ${wait_seconds}s: ${cache_keys[*]}" >&2
+  return 1
 }
 
 run_private_acceptance() {
   local label=$1 binary=$2 output_dir=$3
   local app_log="$output_dir/app.log"
   local portrait_dir="$XDG_CACHE_HOME/reprise/artist-portraits"
-  local window_id final_snapshot atspi_address
+  local cache_key_binary="$(dirname "$output_dir")/cache-key"
+  local window_id final_snapshot atspi_address prada_key oceano_key
 
   export CUA_E2E_OUT_DIR="$output_dir/cua"
   export CUA_E2E_SESSION="deezer-portrait-$label"
@@ -397,9 +431,13 @@ run_private_acceptance() {
   final_snapshot=$(cua_wait_for_label \
     "$ACCEPT_APP_PID" "$window_id" "Hide more top artists" "$label-stats-expanded")
   assert_snapshot_contains "$final_snapshot" "Oceano"
-  # Page rendering does not prove that a bounded worker completed both network
-  # calls. Wait for positive cache evidence before applying the hard checks.
-  wait_for_portrait_image "$label" "$portrait_dir"
+  # Page rendering and one arbitrary cache file do not prove that the two
+  # acceptance artists completed both network calls. Wait for their exact
+  # cache keys, then give GTK's main context time to paint the loaded images.
+  prada_key=$("$cache_key_binary" "The Devil Wears Prada")
+  oceano_key=$("$cache_key_binary" "Oceano")
+  wait_for_named_portraits "$label" "$portrait_dir" 60 "$prada_key" "$oceano_key"
+  sleep 1
   final_snapshot=$(cua_snapshot "$ACCEPT_APP_PID" "$window_id" "$label-stats-final")
   assert_snapshot_contains "$final_snapshot" "The Devil Wears Prada"
   assert_snapshot_contains "$final_snapshot" "Oceano"
@@ -438,6 +476,11 @@ fi
 
 if [[ "${1:-}" == "--self-test-private-atspi" ]]; then
   self_test_private_atspi
+  exit 0
+fi
+
+if [[ "${1:-}" == "--self-test-named-portrait-wait" ]]; then
+  self_test_named_portrait_wait
   exit 0
 fi
 
@@ -528,6 +571,21 @@ if [[ -e "$output_dir" ]]; then
   exit 2
 fi
 mkdir -p "$output_dir"
+
+cache_key_source="$output_dir/cache-key.rs"
+cache_key_binary="$output_dir/cache-key"
+cat >"$cache_key_source" <<'RUST'
+use std::hash::{Hash, Hasher};
+
+fn main() {
+    let name = std::env::args().nth(1).expect("artist name");
+    let normalized = name.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    normalized.as_bytes().hash(&mut hasher);
+    println!("{:016x}", hasher.finish());
+}
+RUST
+rustc "$cache_key_source" -o "$cache_key_binary"
 
 baseline_source="$output_dir/build/origin-dev"
 mkdir -p "$baseline_source"
@@ -666,21 +724,6 @@ run_isolated after "$candidate_binary" "$after_profile"
 cua_common_stop_display
 cleanup_private_runtime_root
 trap - EXIT
-
-cache_key_source="$output_dir/cache-key.rs"
-cache_key_binary="$output_dir/cache-key"
-cat >"$cache_key_source" <<'RUST'
-use std::hash::{Hash, Hasher};
-
-fn main() {
-    let name = std::env::args().nth(1).expect("artist name");
-    let normalized = name.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    normalized.as_bytes().hash(&mut hasher);
-    println!("{:016x}", hasher.finish());
-}
-RUST
-rustc "$cache_key_source" -o "$cache_key_binary"
 
 cache_file_for() {
   local profile_root=$1 artist=$2 key
