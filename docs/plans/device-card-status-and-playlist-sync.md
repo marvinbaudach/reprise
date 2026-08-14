@@ -2,7 +2,7 @@
 slug: device-card-status-and-playlist-sync
 worktree: /home/marvin/Projects/reprise-sidebar-cancel-affordance
 branch: feature/sidebar-cancel-affordance
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
