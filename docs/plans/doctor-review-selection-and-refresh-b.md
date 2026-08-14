@@ -575,3 +575,50 @@ identical except for the click, show the content displaced by one row (~65 px)
 with no scrolling by the user. The same splice that costs the seconds also moves
 the viewport under the pointer. That belongs in B's PR text as a user-visible
 defect, not only as a latency number.
+
+### Implemented result
+
+- **B-1** (`0406a6fe34`): `ReviewState::refresh()` now builds one immutable
+  `ReviewSnapshot` and derives the master check, filter summary and album
+  summaries from it. Category changes still invalidate the GTK filter, while a
+  selection-only update does not.
+- **B-2** (`528802b6b3`): `ReviewSnapshot` owns the visible rows, aggregate
+  totals, album summaries and the row-id-to-store-index map. Its immutable
+  selection transition returns the changed row ids and the next snapshot.
+- **B-3** (`3a92637471`): `ReviewState::apply_selection()` coalesces adjacent
+  changed positions and splices only those ranges, then pushes the cached
+  aggregate state. `REPRISE_DOCTOR_FULL_REFRESH` selects the retained control
+  path once when the page is built. The selection-path trace records `touched`
+  and `elapsed_us`.
+- **B-4** (`0663a72796`): album-header widgets are created once, registered by
+  album key and rebound without reconnecting signals. Programmatic state pushes
+  block the toggle callback and preserve strand A's count, reason and
+  sensitivity contract.
+- **B-5** (`20130b03c6`): the conflicts-panel slot tracks its fingerprint and
+  store position. An unchanged panel is preserved, a changed panel is replaced
+  in place, a missing panel uses `append`, and removal keeps the panel-last
+  invariant.
+
+The generated 16-album x 12-row churn probe measured **386 changed items before
+the incremental path and 24 after it**. The new 24-item budget is the observed
+`items-changed` total from the passing incremental run, not the plan's predicted
+shape. In the final same-process wall-clock probe, the retained full-refresh arm
+measured median **5,339 us** and maximum **5,912 us** over nine toggles; the
+selection arm measured median **435 us** and maximum **564 us**.
+
+The real-library post-fix run, the five-cycle `DOC-9b` log check and the mother
+plan's post-merge cross-checks were deliberately not run here: this strand's
+instructions reserve the real GUI/library session for the user and explicitly
+exclude mother-plan section J from this implementation pass.
+
+Final verification passed `cargo fmt --all`, strict all-target workspace
+Clippy, 2,456 Core tests with three ignored, 1,861 GNOME unit tests with 708
+ignored, ten GNOME conformance tests, all 708 isolated display tests, UX
+traceability, accessibility semantics, architecture, frontend thinness and
+input parity. The focused new display tests and all four protected strand A
+regressions also passed one exact test per process. Cached `cargo audit`
+reported only accepted RUSTSEC-2024-0436; a live refresh could not lock the
+read-only global advisory cache. The first aggregate display attempt became
+invalid when `/tmp` filled before the script could print its summary; the final
+unmodified script passed with its supported four-worker mode and temporary
+root on the worktree's disk.
