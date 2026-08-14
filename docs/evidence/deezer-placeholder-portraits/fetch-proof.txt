@@ -1,23 +1,25 @@
-final_run=acceptance/deezer-placeholder-portraits/runs/20260814T042511Z
+final_run=acceptance/deezer-placeholder-portraits/runs/20260814T045813Z
 before_api_search_requests=20
 before_api_search_http_200=20
 before_cdn_image_requests=20
+before_cdn_image_http_200=20
 after_api_search_requests=20
 after_api_search_http_200=20
 after_cdn_image_requests=20
+after_cdn_image_http_200=20
 network_failure_or_throttle=false
 
 before_prada_search=GET https://api.deezer.com/search/artist?q=The%20Devil%20Wears%20Prada&limit=5
 before_prada_search_status=200
 before_prada_image=GET https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/1000x1000-000000-80-0-0.jpg
 before_prada_image_status=200
-before_prada_image_bytes=32022
+before_prada_image_bytes=16802
 
 before_oceano_search=GET https://api.deezer.com/search/artist?q=Oceano&limit=5
 before_oceano_search_status=200
 before_oceano_image=GET https://cdn-images.dzcdn.net/images/artist/415714b66a5de709809dd3d05f58afe4/1000x1000-000000-80-0-0.jpg
 before_oceano_image_status=200
-before_oceano_image_bytes=29558
+before_oceano_image_bytes=14563
 
 after_prada_search=GET https://api.deezer.com/search/artist?q=The%20Devil%20Wears%20Prada&limit=10
 after_prada_search_status=200
@@ -31,6 +33,6 @@ after_oceano_image=GET https://cdn-images.dzcdn.net/images/artist/68526b594bc647
 after_oceano_image_status=200
 after_oceano_image_bytes=73077
 
-Source lines: final run before/app.log lines 70-77, 1377-1384,
-112-119, and 1411-1418; after/app.log lines 70-77, 1365-1372,
-112-119, and 1400-1407. The full logs remain in the retained run directory.
+Source lines: corrected run before/app.log lines 70-77, 112-119,
+1368-1375 and 1403-1410; after/app.log lines 70-77, 112-119,
+1356-1363 and 1392-1399. The full logs remain in the retained run directory.

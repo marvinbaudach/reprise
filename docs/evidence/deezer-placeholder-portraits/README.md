@@ -101,8 +101,11 @@ Stats claim. The identical unbounded wait in the shared
 
 ## Final live acceptance
 
-The later F6-F12 repair sequence and the completed live before/after result are
-recorded in `final-acceptance.md`. The committed screenshots, isolated cache
-listings, named byte comparison, placeholder hashes, AT-SPI ownership proof,
-run manifest and network-fetch proof all come from the final successful run
-`20260814T042511Z`. The focused portrait suite now contains 28 passing tests.
+The later F6-F12 repair sequence, F7 screenshot-race correction and completed
+live before/after result are recorded in `final-acceptance.md`. The committed
+screenshots, complete 20-entry cache listings, all-rank comparison, settle
+timestamps, named byte comparison, placeholder hashes, AT-SPI ownership proof,
+run manifest and network-fetch proof all come from the corrected successful run
+`20260814T045813Z`. The regression oracle explicitly compares ranks 1 through
+20 and identifies ranks 3 and 10 as the only intended changes. The focused
+portrait suite contains 28 passing tests.
