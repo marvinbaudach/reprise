@@ -166,7 +166,7 @@ fn confirm_delete(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
     });
 }
 
-fn delete_playlist(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
+pub(in crate::ui) fn delete_playlist(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
     let result = {
         let conn = &shared.conn;
         playlists::delete(conn, playlist_id, playlist_name)

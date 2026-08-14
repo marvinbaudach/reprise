@@ -274,6 +274,38 @@ fn library_playlist_deletion_refreshes_the_connected_device_projection() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn bound_sidebar_playlist_deletion_refreshes_the_connected_device_projection() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    libadwaita::init().unwrap();
+    run(async {
+        let (_temp, conn) = fixture();
+        add_playlist(&conn, 10, "Road", &[1, 2]);
+        save_sources(&conn, "a", vec![SelectionSource::Playlist(10)]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        let window = libadwaita::ApplicationWindow::builder().build();
+        let sidebar = crate::ui::sidebar::Sidebar::new(conn, &window, || 0);
+        sidebar.bind_device_sync(&runtime, Rc::new(|_, _| {}));
+        assert!(runtime.devices()[0]
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(10)));
+
+        crate::ui::sidebar_export::delete_playlist(&sidebar.shared, 10, "Road");
+
+        assert!(!runtime.devices()[0]
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(10)));
+    });
+}
+
+#[test]
 fn every_library_playlist_mutation_reprojects_connected_device_rows() {
     run(async {
         let (_temp, conn) = fixture();
