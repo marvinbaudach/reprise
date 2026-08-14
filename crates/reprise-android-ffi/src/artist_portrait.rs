@@ -11,12 +11,7 @@ impl MusicLibrary {
         self.cache_root.join("artist-portraits")
     }
 
-    fn reduced_portrait_path(
-        &self,
-        artist: &str,
-        path: &Path,
-        size: AndroidArtworkSize,
-    ) -> Option<String> {
+    fn reduced_portrait_path(&self, path: &Path, size: AndroidArtworkSize) -> Option<String> {
         match cover::thumbnail_with_source(
             &UnixLibrarySource,
             &CoverSource::FolderImage(path.to_owned()),
@@ -25,11 +20,11 @@ impl MusicLibrary {
         ) {
             Ok(path) => Some(path.to_string_lossy().into_owned()),
             Err(error @ cover::CoverError::Io(_)) => {
-                tracing::warn!(%error, %artist, "no artist portrait: cover cache unusable");
+                tracing::debug!(%error, "no artist portrait: cover cache unusable");
                 None
             }
             Err(error) => {
-                tracing::debug!(%error, %artist, "no artist portrait: image did not decode");
+                tracing::debug!(%error, "no artist portrait: image did not decode");
                 None
             }
         }
@@ -40,7 +35,7 @@ impl MusicLibrary {
 impl MusicLibrary {
     pub fn artist_portrait_cached(&self, name: &str, size: AndroidArtworkSize) -> Option<String> {
         match load_cached_from(name, &self.portrait_dir()) {
-            PortraitOutcome::Found(path) => self.reduced_portrait_path(name, &path, size),
+            PortraitOutcome::Found(path) => self.reduced_portrait_path(&path, size),
             PortraitOutcome::NotFound => None,
         }
     }
@@ -62,10 +57,10 @@ impl MusicLibrary {
         }
 
         match (self.portrait_fetch)(name, &self.portrait_dir()) {
-            Ok(PortraitOutcome::Found(path)) => Ok(self.reduced_portrait_path(name, &path, size)),
+            Ok(PortraitOutcome::Found(path)) => Ok(self.reduced_portrait_path(&path, size)),
             Ok(PortraitOutcome::NotFound) => Ok(None),
             Err(error) => {
-                tracing::debug!(%error, artist = name, "artist portrait request failed");
+                tracing::debug!(%error, "artist portrait request failed");
                 Ok(None)
             }
         }
@@ -78,6 +73,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::log_capture::CapturedLogs;
 
     const TINY_IMAGE: &[u8] = &[
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
@@ -159,6 +155,89 @@ mod tests {
         assert!(reduced.starts_with(cache.join("reprise/covers")));
         assert!(reduced.to_string_lossy().ends_with("-168.png"));
         assert_ne!(reduced, original);
+    }
+
+    #[test]
+    fn portrait_cache_io_is_debug_and_does_not_log_the_artist_name() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = directory.path().join("cache");
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            cache.to_str().unwrap(),
+            |_, _| panic!("cached portrait lookup must not fetch"),
+        )
+        .unwrap();
+        let artist = "Private Artist Io 91f";
+        store_portrait_fixture_in(&library.portrait_dir(), artist);
+        std::fs::write(cache.join("reprise"), b"not a directory").unwrap();
+        let logs = CapturedLogs::default();
+
+        let portrait = logs
+            .capture(|| library.artist_portrait_cached(artist, crate::AndroidArtworkSize::List));
+
+        assert_eq!(portrait, None);
+        let logged = logs.joined();
+        assert!(logged.contains("DEBUG"), "expected debug, got {logged}");
+        assert!(!logged.contains("WARN"), "unexpected warning: {logged}");
+        assert!(
+            logged.contains("cover cache unusable"),
+            "expected the failure classification, got {logged}"
+        );
+        assert!(!logged.contains(artist), "artist leaked into log: {logged}");
+    }
+
+    #[test]
+    fn portrait_decode_failures_do_not_log_artist_names() {
+        let decode_directory = tempfile::tempdir().unwrap();
+        let decode_library = MusicLibrary::open_with_portrait_fetch(
+            decode_directory.path().to_str().unwrap(),
+            decode_directory.path().join("cache").to_str().unwrap(),
+            |_, _| panic!("cached portrait lookup must not fetch"),
+        )
+        .unwrap();
+        let decode_artist = "Private Artist Decode 5c2";
+        reprise_core::artist_portrait::store_fixture_image(
+            &decode_library.portrait_dir(),
+            decode_artist,
+            b"not an image",
+            "png",
+        )
+        .unwrap();
+        let decode_logs = CapturedLogs::default();
+
+        assert_eq!(
+            decode_logs.capture(|| decode_library
+                .artist_portrait_cached(decode_artist, crate::AndroidArtworkSize::List)),
+            None,
+        );
+        let decode_logged = decode_logs.joined();
+        assert!(decode_logged.contains("DEBUG"));
+        assert!(decode_logged.contains("image did not decode"));
+        assert!(!decode_logged.contains(decode_artist));
+    }
+
+    #[test]
+    fn portrait_fetch_failures_do_not_log_artist_names() {
+        let fetch_directory = tempfile::tempdir().unwrap();
+        let fetch_library = MusicLibrary::open_with_portrait_fetch(
+            fetch_directory.path().to_str().unwrap(),
+            fetch_directory.path().join("cache").to_str().unwrap(),
+            |_, _| Err(reprise_core::artist_portrait::PortraitError::InvalidResponse),
+        )
+        .unwrap();
+        open_gate(&fetch_library);
+        let fetch_artist = "Private Artist Fetch 8a4";
+        let fetch_logs = CapturedLogs::default();
+
+        assert!(matches!(
+            fetch_logs.capture(|| fetch_library
+                .artist_portrait_fetch(fetch_artist, crate::AndroidArtworkSize::List)),
+            Ok(None),
+        ));
+        let fetch_logged = fetch_logs.joined();
+        assert!(fetch_logged.contains("DEBUG"));
+        assert!(fetch_logged.contains("artist portrait request failed"));
+        assert!(!fetch_logged.contains(fetch_artist));
     }
 
     #[test]
