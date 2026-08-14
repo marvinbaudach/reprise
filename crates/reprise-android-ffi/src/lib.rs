@@ -25,6 +25,7 @@ mod listen_export_recorder;
 mod log_capture;
 mod logging;
 mod mobile_sync;
+mod online_sources;
 mod play_journal;
 mod play_recorder;
 pub mod playback;

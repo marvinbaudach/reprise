@@ -252,6 +252,12 @@ $LOG/ffi.log 2>&1` grün und alle drei Namen im Log stehen.
 
 ## Aufgabe 6 — `online_sources_enabled` / `set_online_sources_enabled`
 
+**Status:** complete in this task commit. All four named tests were
+compile-red on the missing switch methods, then passed in
+`/tmp/reprise-artist-photos/ffi-online-sources.log`; the complete 156-test FFI
+suite and strict package Clippy also passed. The global gate is deliberately
+written before the Artwork module flag so first-enable seeding cannot undo it.
+
 **Dateien:** neu `crates/reprise-android-ffi/src/online_sources.rs`,
 `crates/reprise-android-ffi/src/lib.rs` (`mod` + `pub use`).
 
