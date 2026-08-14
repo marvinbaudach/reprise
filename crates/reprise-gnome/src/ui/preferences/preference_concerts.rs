@@ -10,7 +10,76 @@ use libadwaita::prelude::*;
 use reprise_core::db::Db;
 
 use crate::ui::concerts::ConcertsRuntime;
+use crate::ui::location_broadcast::LocationBroadcast;
 use crate::ui::{one_shot_task, strings};
+
+pub(in crate::ui) const LOCATION_REFERENCE_CLASS: &str = "reprise-location-reference";
+
+type OnLocation = Rc<dyn Fn()>;
+
+fn location_reference_copy(
+    location: Option<&reprise_core::location::AppLocation>,
+    radius_km: u32,
+) -> (String, String) {
+    match location {
+        Some(location) => (
+            strings::location_reference(&location.name, radius_km),
+            strings::text(strings::LOCATION_CHANGE_IN_LOCATION),
+        ),
+        None => (
+            strings::text(strings::LOCATION_REFERENCE_NOT_SET),
+            strings::text(strings::LOCATION_SET_LOCATION),
+        ),
+    }
+}
+
+fn refresh_location_reference(conn: &Db, row: &adw::ActionRow, action: &gtk4::Label) {
+    let location = reprise_core::location::app_location(conn).ok().flatten();
+    let radius = reprise_core::location::default_radius_km(conn)
+        .unwrap_or(reprise_core::location::DEFAULT_RADIUS_KM)
+        .round() as u32;
+    let (title, action_text) = location_reference_copy(location.as_ref(), radius);
+    row.set_title(&title);
+    action.set_label(&action_text);
+}
+
+fn location_reference_row(
+    conn: &Rc<Db>,
+    broadcast: &Rc<LocationBroadcast>,
+    on_location: &OnLocation,
+) -> adw::ActionRow {
+    let row = adw::ActionRow::builder().activatable(true).build();
+    row.set_sensitive(true);
+    row.add_css_class(LOCATION_REFERENCE_CLASS);
+    row.add_css_class("dim-label");
+    let pin = gtk4::Image::from_icon_name("find-location-symbolic");
+    pin.set_accessible_role(gtk4::AccessibleRole::Presentation);
+    row.add_prefix(&pin);
+    let action = gtk4::Label::new(None);
+    action.add_css_class("caption");
+    row.add_suffix(&action);
+    refresh_location_reference(conn, &row, &action);
+    {
+        let on_location = on_location.clone();
+        row.connect_activated(move |_| on_location());
+    }
+    {
+        let alive = row.downgrade();
+        let target = alive.clone();
+        let action = action.downgrade();
+        let conn = conn.clone();
+        broadcast.subscribe(
+            move || alive.upgrade().is_some(),
+            move || {
+                let (Some(row), Some(action)) = (target.upgrade(), action.upgrade()) else {
+                    return;
+                };
+                refresh_location_reference(&conn, &row, &action);
+            },
+        );
+    }
+    row
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CredentialApplyDecision {
@@ -82,6 +151,9 @@ fn credential_preference_specs() -> [CredentialPreferenceSpec; 1] {
 
 struct ConcertPreferenceRowsInner {
     rows: Vec<gtk4::Widget>,
+    module_rows: Vec<gtk4::Widget>,
+    #[cfg(test)]
+    location_reference: adw::ActionRow,
     #[cfg(test)]
     credentials: Vec<CredentialPreferenceRow>,
     similar_enabled: adw::SwitchRow,
@@ -103,7 +175,7 @@ impl ConcertPreferenceRows {
 
     pub(in crate::ui) fn set_sensitive(&self, enabled: bool) {
         self.inner.module_enabled.set(enabled);
-        for row in &self.inner.rows {
+        for row in &self.inner.module_rows {
             row.set_sensitive(enabled);
         }
         self.inner
@@ -115,8 +187,11 @@ impl ConcertPreferenceRows {
 pub(in crate::ui) fn build(
     conn: &Rc<Db>,
     runtime: &Rc<ConcertsRuntime>,
+    broadcast: &Rc<LocationBroadcast>,
+    on_location: &OnLocation,
     enabled: bool,
 ) -> ConcertPreferenceRows {
+    let location_reference = location_reference_row(conn, broadcast, on_location);
     let credentials = credential_preference_specs()
         .into_iter()
         .map(|spec| password_row(conn, runtime, spec.provider, spec.key, spec.title))
@@ -161,18 +236,23 @@ pub(in crate::ui) fn build(
             }
         });
     }
-    let mut rows = credentials
+    let mut module_rows = credentials
         .iter()
         .map(|credential| credential.row.clone().upcast())
         .collect::<Vec<_>>();
-    rows.extend([
+    module_rows.extend([
         window_days.upcast(),
         similar_enabled.clone().upcast(),
         similar_count.clone().upcast(),
     ]);
+    let mut rows = vec![location_reference.clone().upcast()];
+    rows.extend(module_rows.iter().cloned());
     let preferences = ConcertPreferenceRows {
         inner: Rc::new(ConcertPreferenceRowsInner {
             rows,
+            module_rows,
+            #[cfg(test)]
+            location_reference,
             #[cfg(test)]
             credentials,
             similar_enabled: similar_enabled.clone(),

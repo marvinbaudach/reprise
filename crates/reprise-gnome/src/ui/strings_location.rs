@@ -28,6 +28,9 @@ pub const LOCATION_PODCASTS_POPULAR_IN: &str = N_!("Podcasts · Popular in {coun
 pub const LOCATION_PODCASTS_DESCRIPTION: &str = N_!("Apple's country chart in Add Podcast");
 pub const LOCATION_FOOTNOTE: &str =
     N_!("Clearing the location only stops these three. Switching a plugin off never removes it.");
+pub const LOCATION_REFERENCE_NOT_SET: &str = N_!("Location · not set");
+pub const LOCATION_SET_LOCATION: &str = N_!("Set location →");
+pub const LOCATION_CHANGE_IN_LOCATION: &str = N_!("Change in Location →");
 
 pub fn location_podcasts_popular_in(country: &str) -> String {
     formatted(LOCATION_PODCASTS_POPULAR_IN, &[("country", country)])
@@ -39,4 +42,11 @@ pub fn location_radius_km(radius: u32) -> String {
 
 pub fn location_not_set() -> String {
     text(LOCATION_NOT_SET)
+}
+
+pub fn location_reference(name: &str, radius_km: u32) -> String {
+    formatted(
+        N_!("Location · {name}, within {radius} km"),
+        &[("name", name), ("radius", &radius_km.to_string())],
+    )
 }
