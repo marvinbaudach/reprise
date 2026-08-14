@@ -2,7 +2,7 @@
 slug: shellcheck
 worktree: /home/marvin/Projects/reprise-shellcheck
 branch: feature/shellcheck
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
