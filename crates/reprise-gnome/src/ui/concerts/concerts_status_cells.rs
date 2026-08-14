@@ -2,9 +2,8 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use reprise_core::concerts::{ConcertRow, TicketAvailability};
-use reprise_view::columns::ColumnKey;
+use reprise_view::columns::{ColumnKey, ConcertColumn};
 
-use super::concerts_column_layout::ConcertTableColumn;
 use super::concerts_model::ConcertObject;
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
@@ -127,7 +126,7 @@ pub(super) fn ticket_column(view: &gtk4::ColumnView) {
         label.set_tooltip_text(None);
     });
     let column = gtk4::ColumnViewColumn::builder()
-        .id(ConcertTableColumn::Tickets.as_str())
+        .id(ConcertColumn::Tickets.as_str())
         .title(strings::text(strings::CONCERTS_TICKETS))
         .factory(&factory)
         .resizable(false)
@@ -173,7 +172,7 @@ pub(super) fn source_column(view: &gtk4::ColumnView) {
         label.set_tooltip_text(None);
     });
     let column = gtk4::ColumnViewColumn::builder()
-        .id(ConcertTableColumn::Source.as_str())
+        .id(ConcertColumn::Source.as_str())
         .title(strings::text(strings::CONCERTS_SOURCE))
         .factory(&factory)
         .resizable(true)
@@ -236,7 +235,7 @@ pub(super) fn distance_column(
         apply_row_link_presentation(&label, &row);
     });
     let column = gtk4::ColumnViewColumn::builder()
-        .id(ConcertTableColumn::Distance.as_str())
+        .id(ConcertColumn::Distance.as_str())
         .title(strings::text(strings::CONCERTS_DISTANCE))
         .factory(&factory)
         .resizable(true)

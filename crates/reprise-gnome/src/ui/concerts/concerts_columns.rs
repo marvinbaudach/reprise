@@ -5,9 +5,8 @@ use std::rc::Rc;
 use chrono::Local;
 use gtk4::prelude::*;
 use reprise_core::concerts::ConcertRow;
-use reprise_view::columns::ColumnKey;
+use reprise_view::columns::{ColumnKey, ConcertColumn};
 
-use super::concerts_column_layout::ConcertTableColumn;
 use super::concerts_model::ConcertObject;
 use super::concerts_presentation::format_event_date;
 use super::concerts_status_cells::{self, RadiusSource};
@@ -127,7 +126,7 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
         caption.set_visible(false);
     });
     let column = gtk4::ColumnViewColumn::builder()
-        .id(ConcertTableColumn::Artist.as_str())
+        .id(ConcertColumn::Artist.as_str())
         .title(strings::text(strings::CONCERTS_ARTIST))
         .factory(&factory)
         .resizable(true)
@@ -240,7 +239,7 @@ pub(super) fn append_columns(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_DATE),
-            id: Some(ConcertTableColumn::Date.as_str()),
+            id: Some(ConcertColumn::Date.as_str()),
             sizing: widths::Sizing::pinned(widths::DATE),
             numeric: false,
             query: None,
@@ -254,7 +253,7 @@ pub(super) fn append_columns(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_CITY),
-            id: Some(ConcertTableColumn::City.as_str()),
+            id: Some(ConcertColumn::City.as_str()),
             sizing: widths::Sizing::pinned(widths::LABEL),
             numeric: false,
             query: None,
@@ -267,7 +266,7 @@ pub(super) fn append_columns(
         view,
         TextColumnSpec {
             title: strings::text(strings::CONCERTS_VENUE),
-            id: Some(ConcertTableColumn::Venue.as_str()),
+            id: Some(ConcertColumn::Venue.as_str()),
             sizing: widths::Sizing::pinned(widths::NAME),
             numeric: false,
             query: Some(query),
@@ -483,10 +482,10 @@ mod tests {
         );
 
         model.set_visible("city", false);
-        assert!(!registry.is_visible(ConcertTableColumn::City));
-        assert!(registry.is_visible(ConcertTableColumn::Tickets));
+        assert!(!registry.is_visible(ConcertColumn::City));
+        assert!(registry.is_visible(ConcertColumn::Tickets));
         assert!(registry
-            .column(ConcertTableColumn::Venue)
+            .column(ConcertColumn::Venue)
             .is_some_and(gtk4::ColumnViewColumn::expands));
     }
 
