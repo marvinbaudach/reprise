@@ -2,19 +2,20 @@ use super::*;
 use crate::ui::preference_plugins::plugin_applies_live;
 
 #[test]
-fn set_10_retired_settings_deep_links_target_the_plugins_rows() {
+fn set_10_optional_capability_deep_links_target_plugin_rows() {
     assert_eq!(
-        plugin_targets_for_deep_link(SettingsDeepLink::OnlineSources),
+        plugin_targets_for_deep_link(PluginDeepLink::OnlineSources),
         &["youtube", "podcasts", "radio"]
     );
     assert_eq!(
-        plugin_targets_for_deep_link(SettingsDeepLink::ConcertLocation),
-        &["concerts"]
-    );
-    assert_eq!(
-        plugin_targets_for_deep_link(SettingsDeepLink::Artwork),
+        plugin_targets_for_deep_link(PluginDeepLink::Artwork),
         &["artwork"]
     );
+}
+
+#[test]
+fn app_location_deep_link_owns_a_main_preferences_page() {
+    assert_eq!(SettingsDeepLink::Location.page_name(), "location");
 }
 
 #[test]

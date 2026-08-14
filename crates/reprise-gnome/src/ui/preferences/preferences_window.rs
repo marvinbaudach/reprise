@@ -9,14 +9,16 @@ pub(in crate::ui) enum PageId {
     Appearance,
     Layout,
     Library,
+    Location,
     Plugins,
 }
 
-pub(in crate::ui) const PAGE_ORDER: [PageId; 5] = [
+pub(in crate::ui) const PAGE_ORDER: [PageId; 6] = [
     PageId::Playback,
     PageId::Appearance,
     PageId::Layout,
     PageId::Library,
+    PageId::Location,
     PageId::Plugins,
 ];
 
@@ -35,6 +37,7 @@ impl PageId {
             Self::Appearance => "appearance",
             Self::Layout => "layout",
             Self::Library => "library",
+            Self::Location => "location",
             Self::Plugins => "plugins",
         }
     }
@@ -45,6 +48,7 @@ impl PageId {
             Self::Appearance => strings::PREFERENCES_APPEARANCE,
             Self::Layout => strings::PREFERENCES_LAYOUT,
             Self::Library => strings::PREFERENCES_LIBRARY,
+            Self::Location => strings::PREFERENCES_LOCATION,
             Self::Plugins => strings::PREFERENCES_PLUGINS,
         };
         strings::text(message)
@@ -56,6 +60,7 @@ impl PageId {
             Self::Appearance => "applications-graphics-symbolic",
             Self::Layout => "view-grid-symbolic",
             Self::Library => "folder-music-symbolic",
+            Self::Location => "find-location-symbolic",
             Self::Plugins => "application-x-addon-symbolic",
         }
     }
@@ -121,11 +126,11 @@ pub(in crate::ui) fn selected_sidebar_focus_target(sidebar: &gtk4::ListBox) -> g
 
 /// SET-8: builds a page on first sight, not on open.
 ///
-/// The dialog used to build all five pages and hand them here, and both halves
+/// The dialog used to build every page and hand them here, and both halves
 /// of that cost scale with the page count: the pages themselves (measured 128 ms
 /// median, Plugins alone 66–110 of it) and adding each one to the `ViewStack`,
 /// which realises it (another 130 ms). Together that was two thirds of the
-/// 314 ms it took the dialog to appear — spent on four pages nobody had asked
+/// 314 ms it took the dialog to appear — mostly on pages nobody had asked
 /// to see.
 ///
 /// Each stack child is therefore an empty `adw::Bin`, filled the moment its page
@@ -423,6 +428,10 @@ pub(in crate::ui) fn css() -> String {
 mod chrome_placement_tests;
 
 #[cfg(test)]
+#[path = "preferences_location_registration_tests.rs"]
+mod location_registration_tests;
+
+#[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
@@ -472,24 +481,6 @@ mod tests {
             errors.is_empty(),
             "GTK reported CSS parsing errors: {errors:?}"
         );
-    }
-
-    #[test]
-    fn set_10_plugins_replaces_the_three_retired_peer_pages() {
-        assert_eq!(
-            PAGE_ORDER,
-            [
-                PageId::Playback,
-                PageId::Appearance,
-                PageId::Layout,
-                PageId::Library,
-                PageId::Plugins,
-            ]
-        );
-        assert_eq!(page_index_by_name("plugins"), Some(4));
-        for retired in ["online_sources", "new_releases", "concerts"] {
-            assert_eq!(page_index_by_name(retired), None);
-        }
     }
 
     #[test]
@@ -666,7 +657,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fb_9_one_chrome_instance_survives_all_five_page_switches() {
+    fn fb_9_one_chrome_instance_survives_all_page_switches() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let app = adw::Application::builder()

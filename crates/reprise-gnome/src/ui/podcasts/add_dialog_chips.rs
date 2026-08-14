@@ -27,7 +27,7 @@ impl AddDialogChip {
 /// clear the same storefront check `locale_country` applies to a locale
 /// territory — anything else falls through to the locale rather than being
 /// passed on uppercased.
-pub(super) fn dialog_country(location: Option<&AppLocation>, locale: &str) -> String {
+pub(in crate::ui) fn dialog_country(location: Option<&AppLocation>, locale: &str) -> String {
     location
         .and_then(|location| location.country_code.as_deref())
         .map(str::trim)

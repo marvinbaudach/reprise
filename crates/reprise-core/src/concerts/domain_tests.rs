@@ -110,7 +110,7 @@ fn config_defaults_are_bounded_and_stored_credentials_win() {
         config::persisted_filter(&conn).unwrap().radius_km,
         Some(1_000.0)
     );
-    assert_eq!(config::RADIUS_PRESETS_KM, [100, 250, 500, 1_000]);
+    assert_eq!(crate::location::RADIUS_PRESETS_KM, [100, 250, 500, 1_000]);
     crate::library::settings::set_setting(&conn, "concerts.window_days", "999").unwrap();
     crate::library::settings::set_setting(&conn, "concerts.similar_count", "0").unwrap();
     crate::library::settings::set_setting(&conn, "concerts.bandsintown_app_id", "stored").unwrap();
@@ -299,6 +299,33 @@ fn query_filters_distance_country_horizon_and_similar_rows() {
         count_upcoming(&conn, &filter, location.as_ref(), today).unwrap(),
         rows.len() as i64
     );
+}
+
+#[test]
+fn conc_2_radius_does_not_filter_or_reduce_the_count_without_a_location() {
+    let conn = conn();
+    insert_event(&conn, 1, "2026-08-01", "DE", Some(48.14), false);
+    insert_event(&conn, 2, "2026-08-02", "CH", Some(47.38), false);
+    let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+    let filter = ConcertFilter {
+        radius_km: Some(0.01),
+        ..ConcertFilter::default()
+    };
+
+    let shown = query_events(&conn, &filter, None, today).unwrap();
+    let total = count_upcoming(&conn, &filter, None, today).unwrap();
+    assert_eq!(shown.len(), 2);
+    assert_eq!(shown.len() as i64, total);
+
+    let munich = crate::location::AppLocation {
+        latitude: 48.1372,
+        longitude: 11.5756,
+        name: "Munich".into(),
+        country_code: Some("DE".into()),
+    };
+    assert!(query_events(&conn, &filter, Some(&munich), today)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

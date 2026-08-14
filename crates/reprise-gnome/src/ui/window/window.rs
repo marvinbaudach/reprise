@@ -29,6 +29,7 @@ use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::track_content;
 use super::track_list::{OnActivate, TrackList};
+use crate::ui::concerts;
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database handle; Core owns the connection and the UI
@@ -62,8 +63,8 @@ pub fn build(
     // The player is created eagerly at window build (not lazily on first
     // activation): construction is cheap (one playbin, no I/O), the
     // `REPRISE_AUDIO_SINK` override keeps headless environments working, and
-    // eager creation means the bottom bar exists — greyed out — from the
-    // first frame. If GStreamer is unavailable the app degrades to a library
+    // eager creation means the bottom bar exists — greyed out — from the first frame.
+    // Without GStreamer, the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
     let super::window_runtime_setup::WindowRuntimes {
@@ -72,6 +73,7 @@ pub fn build(
         lastfm,
         artist_news,
         concerts: concerts_runtime,
+        location_broadcast,
         podcasts: podcasts_runtime,
         artist_portrait,
         device_sync,
@@ -130,7 +132,6 @@ pub fn build(
     };
 
     let status_bar = StatusBar::new();
-
     // Stage 3 Task 3: the Queue source reads the current playback queue's
     // ids (in play order) from the controller rather than a SQL `WHERE`
     // clause (see `queries.rs`'s module doc). `player` already exists at
@@ -309,9 +310,10 @@ pub fn build(
             );
         })
     };
-    let concerts_view = Rc::new(crate::ui::concerts::install(
+    let concerts_view = Rc::new(concerts::install(
         conn.clone(),
         &concerts_runtime,
+        &location_broadcast,
     ));
     super::startup_report::mark("concerts");
     let releases_view = Rc::new(crate::ui::releases::install(
@@ -327,6 +329,7 @@ pub fn build(
         player.as_ref(),
         &sidebar,
         &content_stack,
+        &location_broadcast,
     );
     super::startup_report::mark("source_views::install (podcasts / YouTube / radio)");
     // The toast layer is attached after the player-bar shell exists so
@@ -335,14 +338,12 @@ pub fn build(
     source_views.set_toast_overlay(&toast_overlay);
     let (podcasts_view, youtube_view, radio_view) = source_views.into_parts();
     super::source_views::wire_update_sidebar_refresh(&concerts_view, &releases_view, &sidebar);
-
     let bar_position = settings::get_player_bar_position(conn);
     if let Some(player) = player.as_ref() {
         player
             .bar
             .set_seek_colouring(settings::get_seek_colouring(conn));
     }
-
     {
         let overlay = toast_overlay.downgrade();
         concerts_view.set_on_launch_error(move |error| {
@@ -359,7 +360,6 @@ pub fn build(
             }
         });
     }
-
     super::window_action_wiring::wire(super::window_action_wiring::ActionWiring {
         conn,
         db_path,
@@ -468,6 +468,7 @@ pub fn build(
         &lastfm,
         &artist_news,
         &concerts_runtime,
+        &location_broadcast,
         &podcasts_runtime,
         &cover_download,
         &lyrics_batch,
@@ -542,7 +543,6 @@ pub fn build(
     super::window_online_module_test_hook::publish(&preferences, &cover_batch, &lyrics_batch);
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
     super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
-
     tracing::info!("main window built");
     let startup_completion = if startup_report_armed {
         let mapped = Rc::new(Cell::new(false));

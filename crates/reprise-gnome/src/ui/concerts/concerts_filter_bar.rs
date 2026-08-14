@@ -16,6 +16,7 @@ const FACET_PAGE: &str = "facets";
 const VALUE_PAGE: &str = "values";
 
 type OnChanged = Rc<dyn Fn(ConcertFilter)>;
+type Callback = Rc<dyn Fn()>;
 /// SEARCH-8a: requests the shell's shared query transition for the chip's ×,
 /// or mirrors a locally completed composite action such as "Clear all".
 type OnQueryChanged = Rc<dyn Fn(&str)>;
@@ -59,9 +60,9 @@ fn source_facet_visible(similar_enabled: bool, has_similar_rows: bool) -> bool {
     similar_enabled || has_similar_rows
 }
 
-fn active_facets(filter: &ConcertFilter) -> Vec<FilterFacet> {
+fn active_facets(filter: &ConcertFilter, has_location: bool) -> Vec<FilterFacet> {
     let mut facets = Vec::new();
-    if filter.radius_km.is_some() {
+    if has_location && filter.radius_km.is_some() {
         facets.push(FilterFacet::Radius);
     }
     if filter.country.is_some() {
@@ -85,15 +86,27 @@ fn facet_label(facet: FilterFacet) -> String {
     })
 }
 
-fn chip_label(filter: &ConcertFilter, facet: FilterFacet) -> String {
+fn chip_label(filter: &ConcertFilter, facet: FilterFacet, location_name: Option<&str>) -> String {
     match facet {
         FilterFacet::Radius => {
-            strings::concerts_radius_km(filter.radius_km.unwrap_or_default().round().max(0.0) as u32)
+            let radius = filter.radius_km.unwrap_or_default().round().max(0.0) as u32;
+            location_name
+                .filter(|name| !name.trim().is_empty())
+                .map_or_else(
+                    || strings::concerts_radius_km(radius),
+                    |name| strings::concerts_location_radius(name, radius),
+                )
         }
         FilterFacet::Country => filter.country.clone().unwrap_or_default(),
         FilterFacet::Horizon => horizon_label(filter.horizon),
         FilterFacet::Source => strings::text(strings::CONCERTS_INCLUDE_SIMILAR),
     }
+}
+
+fn radius_off_label(filter: &ConcertFilter) -> Option<String> {
+    filter
+        .radius_km
+        .map(|radius| strings::concerts_radius_off(radius.round().max(0.0) as u32))
 }
 
 fn horizon_label(horizon: DateHorizon) -> String {
@@ -147,6 +160,7 @@ pub(super) struct ConcertsFilterBar {
     result_label: gtk4::Label,
     clear_all: gtk4::Button,
     has_location: Cell<bool>,
+    location_name: RefCell<Option<String>>,
     similar_enabled: Cell<bool>,
     has_similar_rows: Cell<bool>,
     counts: Cell<(usize, usize)>,
@@ -157,6 +171,7 @@ pub(super) struct ConcertsFilterBar {
     committed_query: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
     on_query_changed: RefCell<Option<OnQueryChanged>>,
+    on_open_location: RefCell<Option<Callback>>,
 }
 
 impl ConcertsFilterBar {
@@ -221,6 +236,7 @@ impl ConcertsFilterBar {
             result_label,
             clear_all,
             has_location: Cell::new(false),
+            location_name: RefCell::new(None),
             similar_enabled: Cell::new(false),
             has_similar_rows: Cell::new(false),
             counts: Cell::new((0, 0)),
@@ -228,6 +244,7 @@ impl ConcertsFilterBar {
             committed_query: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
             on_query_changed: RefCell::new(None),
+            on_open_location: RefCell::new(None),
         });
         wire(&bar);
         bar.rebuild();
@@ -248,6 +265,10 @@ impl ConcertsFilterBar {
 
     pub(super) fn set_on_query_changed(&self, callback: impl Fn(&str) + 'static) {
         *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(super) fn set_on_open_location(&self, callback: impl Fn() + 'static) {
+        *self.on_open_location.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// FIL-1d: matched against artist and venue.
@@ -304,11 +325,13 @@ impl ConcertsFilterBar {
 
     pub(super) fn set_context(
         self: &Rc<Self>,
-        has_location: bool,
+        location: Option<&reprise_core::location::AppLocation>,
         similar_enabled: bool,
         has_similar_rows: bool,
     ) {
-        self.has_location.set(has_location);
+        self.has_location.set(location.is_some());
+        self.location_name
+            .replace(location.map(|location| location.name.clone()));
         self.similar_enabled.set(similar_enabled);
         self.has_similar_rows.set(has_similar_rows);
         self.rebuild();
@@ -353,7 +376,8 @@ impl ConcertsFilterBar {
         let filter = self.filter();
         let query = self.query();
         let committed_query = self.committed_query();
-        let facets = active_facets(&filter);
+        let has_location = self.has_location.get();
+        let facets = active_facets(&filter, has_location);
         let active = !facets.is_empty() || !query.is_empty();
         // FIL-1a/FIL-1d: the search chip is the row's first chip.
         let weak = Rc::downgrade(self);
@@ -365,15 +389,13 @@ impl ConcertsFilterBar {
                 bar.request_query_clear();
             });
         for facet in facets {
-            let button = gtk4::Button::with_label(&format!("{}  ×", chip_label(&filter, facet)));
+            let button = gtk4::Button::with_label(&format!(
+                "{}  ×",
+                chip_label(&filter, facet, self.location_name.borrow().as_deref())
+            ));
             button.add_css_class("flat");
             button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
             button.set_size_request(-1, 20);
-            if facet == FilterFacet::Radius && !self.has_location.get() {
-                button.set_sensitive(false);
-                button
-                    .set_tooltip_text(Some(&strings::text(strings::CONCERTS_SET_LOCATION_TOOLTIP)));
-            }
             let weak = Rc::downgrade(self);
             button.connect_clicked(move |_| {
                 if let Some(bar) = weak.upgrade() {
@@ -381,6 +403,26 @@ impl ConcertsFilterBar {
                 }
             });
             self.chips.append(&button);
+        }
+        if !has_location {
+            if let Some(label) = radius_off_label(&filter) {
+                let button = gtk4::Button::with_label(&label);
+                button.add_css_class("flat");
+                button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
+                button.add_css_class("reprise-concerts-radius-off");
+                button.set_size_request(-1, 20);
+                let weak = Rc::downgrade(self);
+                button.connect_clicked(move |_| {
+                    let Some(bar) = weak.upgrade() else {
+                        return;
+                    };
+                    let callback = bar.on_open_location.borrow().clone();
+                    if let Some(callback) = callback {
+                        callback();
+                    }
+                });
+                self.chips.append(&button);
+            }
         }
         self.chips.set_visible(self.chips.first_child().is_some());
         self.clear_all.set_visible(active);
@@ -434,7 +476,7 @@ impl ConcertsFilterBar {
         match facet {
             FilterFacet::Radius => std::iter::once(None)
                 .chain(
-                    config::RADIUS_PRESETS_KM
+                    reprise_core::location::RADIUS_PRESETS_KM
                         .into_iter()
                         .map(|radius| Some(f64::from(radius))),
                 )
@@ -582,181 +624,5 @@ fn wire(bar: &Rc<ConcertsFilterBar>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn filtered() -> ConcertFilter {
-        ConcertFilter {
-            radius_km: Some(100.0),
-            country: Some("DE".into()),
-            horizon: DateHorizon::Next3Months,
-            include_similar: true,
-        }
-    }
-
-    #[test]
-    fn conc_2_each_chip_removes_exactly_one_constraint_and_clear_is_default() {
-        let filter = filtered();
-        assert_eq!(remove_filter(&filter, FilterFacet::Radius).radius_km, None);
-        assert_eq!(remove_filter(&filter, FilterFacet::Country).country, None);
-        assert_eq!(
-            remove_filter(&filter, FilterFacet::Horizon).horizon,
-            DateHorizon::AllUpcoming
-        );
-        assert!(!remove_filter(&filter, FilterFacet::Source).include_similar);
-    }
-
-    #[test]
-    fn conc_6_source_pill_exists_for_enabled_or_cached_similar_artists() {
-        assert!(!source_facet_visible(false, false));
-        assert!(source_facet_visible(true, false));
-        assert!(source_facet_visible(false, true));
-    }
-
-    #[test]
-    fn persisted_filter_round_trips_every_sticky_facet() {
-        let conn = crate::test_db::open().unwrap();
-        persist_filter(&conn, &filtered()).unwrap();
-        assert_eq!(config::persisted_filter(&conn).unwrap(), filtered());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn search_4a_concerts_escape_and_chip_share_the_section_clear_path() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let bar = ConcertsFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
-        let entry = gtk4::SearchEntry::new();
-        let lens = gtk4::ToggleButton::new();
-        let popover = crate::ui::window::search_popover::SearchPopover::new(&lens, &entry);
-        let search = crate::ui::window::section_search::SectionSearch::new(&entry, &popover, &lens);
-        search.register(
-            SearchScope::Concerts,
-            {
-                let bar = Rc::downgrade(&bar);
-                move |query| {
-                    if let Some(bar) = bar.upgrade() {
-                        bar.set_query(query);
-                    }
-                }
-            },
-            {
-                let bar = Rc::downgrade(&bar);
-                move |query| {
-                    if let Some(bar) = bar.upgrade() {
-                        bar.set_committed_query(query);
-                    }
-                }
-            },
-            || {},
-        );
-        search.activate(SearchScope::Concerts, "Concerts");
-        bar.set_on_query_changed({
-            let bar = Rc::downgrade(&bar);
-            let search = Rc::downgrade(&search);
-            move |query| {
-                let bar = bar.upgrade().expect("Concerts bar still exists");
-                assert_eq!(
-                    bar.query(),
-                    "winterthur",
-                    "the chip must delegate before mutating"
-                );
-                if let Some(search) = search.upgrade() {
-                    search.set_query(SearchScope::Concerts, query);
-                }
-            }
-        });
-
-        entry.set_text("winterthur");
-        bar.set_query("winterthur");
-        bar.set_committed_query("winterthur");
-        assert_eq!(
-            popover.press_close_key(gtk4::gdk::Key::Escape),
-            gtk4::glib::Propagation::Stop
-        );
-        bar.layout.assert_search_cleared(&bar.query());
-
-        entry.set_text("winterthur");
-        bar.set_query("winterthur");
-        bar.set_committed_query("winterthur");
-        bar.layout
-            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-            .and_downcast::<gtk4::Button>()
-            .expect("Concerts search chip")
-            .emit_clicked();
-
-        bar.layout.assert_search_cleared(&bar.query());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn conc_2_filter_header_has_fixed_height_and_disabled_radius_hint() {
-        gtk4::init().unwrap();
-        let conn = Rc::new(crate::test_db::open().unwrap());
-        let bar = ConcertsFilterBar::new(conn);
-        assert_eq!(
-            bar.root.height_request(),
-            filter_bar_layout::FILTER_BAR_MIN_HEIGHT
-        );
-        let radius = bar.facet_list.row_at_index(0).unwrap();
-        assert!(!radius.is_sensitive());
-        assert_eq!(
-            radius.tooltip_text().as_deref(),
-            Some("Set a location in Preferences")
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_2a_concerts_fill_filters_count_and_clear_slots_in_order() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let conn = Rc::new(crate::test_db::open().unwrap());
-        let bar = ConcertsFilterBar::new(conn);
-        bar.set_query("winterthur");
-        bar.set_committed_query("winterthur");
-        bar.set_counts(3, 44);
-
-        assert!(bar.layout.slot_contains(
-            crate::ui::filter_bar_layout::FilterBarSlot::Facets,
-            &bar.chips
-        ));
-        assert!(bar.layout.slot_contains(
-            crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
-            &bar.add_filter
-        ));
-        assert!(bar.layout.slot_contains(
-            crate::ui::filter_bar_layout::FilterBarSlot::Count,
-            &bar.result_label
-        ));
-        assert!(bar.layout.slot_contains(
-            crate::ui::filter_bar_layout::FilterBarSlot::ClearAll,
-            &bar.clear_all
-        ));
-        let first = bar
-            .layout
-            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-            .expect("query fills the search slot");
-        assert!(first
-            .downcast::<gtk4::Button>()
-            .ok()
-            .and_then(|button| button.label())
-            .is_some_and(|label| label.starts_with('⌕')));
-        assert!(!descendant_labels(bar.widget())
-            .iter()
-            .any(|text| text == "FILTER"));
-    }
-
-    fn descendant_labels(widget: &impl IsA<gtk4::Widget>) -> Vec<String> {
-        let mut labels = Vec::new();
-        let mut child = widget.as_ref().first_child();
-        while let Some(current) = child {
-            if let Ok(label) = current.clone().downcast::<gtk4::Label>() {
-                labels.push(label.text().to_string());
-            }
-            labels.extend(descendant_labels(&current));
-            child = current.next_sibling();
-        }
-        labels
-    }
-}
+#[path = "concerts_filter_bar_tests.rs"]
+mod tests;

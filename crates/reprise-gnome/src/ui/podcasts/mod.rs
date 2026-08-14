@@ -40,6 +40,7 @@ mod podcasts_worker;
 pub(crate) mod source_image;
 mod youtube_channel_detail;
 
+pub(in crate::ui) use add_dialog_chips::dialog_country;
 pub(in crate::ui) use podcasts_callbacks::PodcastsCallbacks;
 pub(in crate::ui) use podcasts_playback::{episode_mark_from_snapshot, EpisodeMark};
 pub(in crate::ui) use podcasts_refresh_decision::{scope_status, RefreshWindow, ScopeStatus};

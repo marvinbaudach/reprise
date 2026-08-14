@@ -71,7 +71,7 @@ pub(super) struct Shared {
     pub(super) root: gtk4::Widget,
     footer: gtk4::Box,
     footer_add: gtk4::Button,
-    add_dialog: RefCell<Option<Rc<RadioAddDialog>>>,
+    pub(super) add_dialog: RefCell<Option<Rc<RadioAddDialog>>>,
     toast_overlay: gtk4::glib::WeakRef<adw::ToastOverlay>,
     pending_toasts: Cell<u32>,
     on_mutated: RefCell<Option<Callback>>,

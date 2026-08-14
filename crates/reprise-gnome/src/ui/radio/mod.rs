@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 mod add_dialog;
+mod add_dialog_location;
 mod add_dialog_network;
 mod add_dialog_rows;
 mod css;
@@ -17,14 +18,19 @@ mod radio_context_menu;
 mod radio_empty_state;
 mod radio_filter_bar;
 mod radio_live_cells;
+mod radio_location;
 mod radio_model;
 mod radio_presentation;
 mod radio_reveal;
 mod radio_view;
 mod radio_view_search;
+#[cfg(test)]
+mod radio_view_test_hooks;
 mod station_preview;
 
 pub(in crate::ui) use radio_view::RadioView;
+#[cfg(test)]
+pub(in crate::ui) use radio_view_test_hooks::{test_handle, RadioTestHandle};
 
 use std::rc::Rc;
 
@@ -39,8 +45,16 @@ pub(super) fn images_allowed(db: &Db) -> bool {
         .unwrap_or(false)
 }
 
-pub(in crate::ui) fn install(conn: Rc<Db>, controller: Option<&Rc<PlayerController>>) -> RadioView {
-    RadioView::new(conn, controller)
+pub(in crate::ui) fn install(
+    conn: Rc<Db>,
+    controller: Option<&Rc<PlayerController>>,
+    location_broadcast: &Rc<crate::ui::location_broadcast::LocationBroadcast>,
+) -> RadioView {
+    let view = RadioView::new(conn, controller);
+    #[cfg(test)]
+    radio_view_test_hooks::publish(&view.shared);
+    radio_location::subscribe(&view, location_broadcast);
+    view
 }
 
 pub(in crate::ui) fn css() -> String {

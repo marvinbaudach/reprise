@@ -1170,7 +1170,10 @@ result.
   rows. There are no "Online sources", "New Releases", or "Concerts"
   Preferences main pages. Every Online-content row names the service it
   contacts, so Plugins is also the privacy overview. Phone sync deliberately
-  does not appear here: its rules stay on the device page (`MTP-37`).
+  does not appear here: its rules stay on the device page (`MTP-37`). Location
+  is the explicit exception: it is app state shared by multiple capabilities,
+  not an optional capability, and therefore owns the main page specified by
+  `SET-15`.
 - **SET-11** [active] [gtk] — The Online-content group's own header is the
   master switch. Off is a kill switch, not a bulk toggle: no request of any
   kind runs, sidebar entries are hidden, and running downloads are cancelled,
@@ -1204,6 +1207,16 @@ result.
   switch on the same right edge. A non-expandable switch row reserves the
   expander arrow's trailing slot even though the row does not open, so its
   switch stays aligned with the switch of a row that exposes child settings.
+- **SET-15** [active] [core] [gtk] — Location has one app-wide value and one
+  Preferences owner. Its main page sits between Library and Plugins, owns City
+  and Default radius, and names every reader under Used by: Concerts, Radio's
+  Near you, and Podcasts' Popular in country chart (`SRC-19`). Optional
+  capability pages only link to Location; they never duplicate or own its
+  controls. Clearing Location removes only latitude, longitude, name, and
+  country code: it preserves the default radius, view filters, module choices,
+  and online-source choice. Disabling Concerts or online sources never makes
+  the stored location or radius unreadable and never suppresses the app-wide
+  location-change announcement.
 
 ## G. Feedback vocabulary
 
@@ -4976,9 +4989,17 @@ available. The player plays only finished files.
 - **CONC-2** [active] [gtk] — The filter row is a permanent header.
   Idle, it quietly shows the total count and "+ Add filter"; every
   active restriction is a chip with its own ×-target of at least 20 px.
-  Active, it shows "X of Y concerts" and "Clear all". Without a
-  location, Radius is disabled and carries the tooltip "Set a location
-  in Preferences".
+  Active, it shows "X of Y concerts" and "Clear all". Radius is active only
+  when a location makes it meaningful. Without one, the header shows a
+  dashed `{radius} km · off` chip that opens Preferences Location but neither
+  filters nor counts as active; the count is the plain total. A banner above
+  the independent failure banner says that all concerts worldwide are shown,
+  Distance is absent from the table, column editor, and sorting, and Venue
+  absorbs its width. Automatic hiding never changes the user's stored column
+  choice; setting a location restores the exact prior visibility and sort.
+  With location, the active chip reads `{city} · {radius} km` (or just the
+  radius for a blank city name), Distance returns according to that stored
+  choice, and the banner disappears.
 - **CONC-3** [active] [gtk] — Double-click/Enter on a row and the
   ticket cell open the same external target: offer URL, otherwise the
   event page. Without either, the cell is empty and activation is a
@@ -5437,10 +5458,11 @@ listening statistics.
   replaces the section, exactly as a second search replaces the first. The
   country is resolved **once per dialog** from the stored app-level location's
   country code (`O-4`), falling back to the system locale — unlike `RAD-5`,
-  where a countryless location turns "Near you" into a deep link that opens the
-  location setting in Preferences, a location that carries no country falls
-  through to the locale here, because this chip has a working answer either
-  way. A stored code that is not a storefront — two ASCII letters, the same
+  where a countryless location gives Near you its own honest empty state, a
+  location that carries no country falls through to the locale here, because
+  this chip has a working answer either way. The shared Location page names
+  this Podcasts reader under Used by (`SET-15`). A stored code that is not a
+  storefront — two ASCII letters, the same
   check the locale territory passes — falls through with it rather than being
   handed to Apple.
   That same country drives the text search below it, so the chip and the
@@ -5831,14 +5853,18 @@ listening statistics.
   queries the XDG Location portal or a geocoder itself, and hoisting that
   location out of the `concerts.` namespace carries its existing consent
   forward rather than asking again. With a country-taggable location
-  stored, the chip runs a country-filtered search; with none — no location
-  at all, or one whose only source was "Use current location" and
-  therefore carries no address text — activating the chip opens the
-  location setting in Preferences instead, the same deep-link shape
-  `present_plugins` already uses for the Online Lyrics settings button. It
-  never fires a silent unfiltered search standing in for "near you": a
-  chip that claims to filter by location but does not is worse than
-  sending the user to fix the input. The country code itself is derived
+  stored, the chip runs a country-filtered search. Without a location, its
+  result area instead shows "No location set" and explains that one shared
+  city serves Concerts, Radio, and local podcasts. A location with no country
+  gets the distinct "Location has no country" state and explains that the
+  portal supplies coordinates only. Both states offer exactly "Open
+  Preferences › Location"; the chip itself never forces navigation, and the
+  Add Station dialog remains open underneath Preferences. If the app-wide
+  location announcement arrives while either state is open, the pending Near
+  you intent re-evaluates immediately and starts the search as soon as the
+  location is usable. It never fires a silent unfiltered search standing in
+  for "near you": a chip that claims to filter by location but does not is
+  worse than exposing the missing input. The country code itself is derived
   only from data a call Reprise already makes — Nominatim's
   `addressdetails` enrichment of the existing forward-geocode request
   behind city search — never from a new reverse-geocoding call, so a

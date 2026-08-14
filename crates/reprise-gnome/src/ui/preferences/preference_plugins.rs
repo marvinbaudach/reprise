@@ -108,14 +108,17 @@ pub(in crate::ui) fn highlight_duration() -> std::time::Duration {
 
 pub(in crate::ui) fn css() -> String {
     format!(
-        ".{TARGET_CLASS} {{ \
+        ".{TARGET_CLASS}, .{} {{ \
            background-color: alpha(@accent_bg_color, 0.22); \
            box-shadow: inset 3px 0 @accent_color; \
-           transition: background-color {}ms {}, box-shadow {}ms {}; }}",
+           transition: background-color {}ms {}, box-shadow {}ms {}; }} \
+         .{} {{ background-color: alpha(@card_bg_color, 0.55); }}",
+        super::preference_location::LOCATION_TARGET_CLASS,
         crate::ui::motion::MICRO_MS,
         crate::ui::motion::MICRO_CSS_EASING,
         crate::ui::motion::MICRO_MS,
         crate::ui::motion::MICRO_CSS_EASING,
+        super::preference_concerts::LOCATION_REFERENCE_CLASS,
     )
 }
 
@@ -351,7 +354,19 @@ fn settings_plugin_row(
             Rc::new(move |enabled| rows.set_sensitive(enabled))
         }
         "concerts" => {
-            let rows = super::preference_concerts::build(&context.conn, &context.concerts, active);
+            let weak = Rc::downgrade(context);
+            let on_location: Rc<dyn Fn()> = Rc::new(move || {
+                if let Some(context) = weak.upgrade() {
+                    context.present_location_settings();
+                }
+            });
+            let rows = super::preference_concerts::build(
+                &context.conn,
+                &context.concerts,
+                &context.location_broadcast,
+                &on_location,
+                active,
+            );
             rows.add_to(&row);
             Rc::new(move |enabled| rows.set_sensitive(enabled))
         }

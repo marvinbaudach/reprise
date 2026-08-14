@@ -172,6 +172,14 @@ mod tests {
     }
 
     #[test]
+    fn set_13_radius_search_hits_the_location_page() {
+        let document = SearchDocument::new(PageId::Location, "", "Default radius", "1000 km");
+
+        assert!(document.matches("radius"));
+        assert!(document.matches("location"));
+    }
+
+    #[test]
     fn set_13_settings_index_counts_hits_per_page() {
         let documents = [
             SearchDocument::new(PageId::Playback, "Audio", "Crossfade", "Smooth changes"),
