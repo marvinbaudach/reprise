@@ -7,8 +7,8 @@ use std::thread;
 use std::time::Duration;
 
 use super::{
-    AndroidArtworkSize, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
-    TrackWindow,
+    AndroidArtworkSize, AndroidStoredTheme, AndroidThemeChoice, LibraryError, MusicLibrary,
+    ScanProgressListener, ScanProgressUpdate, TrackWindow,
 };
 use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 use crate::WindowRange;
@@ -299,5 +299,25 @@ fn track_artwork_answers_while_a_scan_holds_the_writer() {
     assert!(
         matches!(during_scan, Some(Ok(_))),
         "track artwork did not answer while a scan held the writer"
+    );
+}
+
+#[test]
+fn a_write_on_the_writer_handle_is_visible_to_the_next_read_on_the_reader_handle() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+
+    // The theme is only a public write/read vehicle; this guards the two
+    // database handles sharing committed state, not theme semantics.
+    library.set_theme(AndroidThemeChoice::Dynamic).unwrap();
+
+    assert_eq!(
+        library.appearance_settings().unwrap().theme,
+        AndroidStoredTheme::Dynamic,
+        "a committed writer change was not visible to the next reader call"
     );
 }
