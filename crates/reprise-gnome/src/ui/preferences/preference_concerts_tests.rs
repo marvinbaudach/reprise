@@ -109,8 +109,15 @@ fn concerts_preferences_expose_only_bandsintown_and_link_similar_sensitivity() {
     let on_location: OnLocation = Rc::new(|| {});
     let preferences = build(&conn, &runtime, &broadcast, &on_location, true);
 
-    assert!(preferences.inner.rows[0].is::<adw::PasswordEntryRow>());
-    assert!(!preferences.inner.rows[1].is::<adw::PasswordEntryRow>());
+    // Counted, not indexed: SET-15 put the location reference in front of the
+    // credentials, and an index would only move the same brittleness one row on.
+    let password_rows = preferences
+        .inner
+        .rows
+        .iter()
+        .filter(|row| row.is::<adw::PasswordEntryRow>())
+        .count();
+    assert_eq!(password_rows, 1);
     assert_eq!(preferences.inner.credentials.len(), 1);
     assert!(!preferences.inner.similar_count.is_sensitive());
     preferences.inner.similar_enabled.set_active(true);
