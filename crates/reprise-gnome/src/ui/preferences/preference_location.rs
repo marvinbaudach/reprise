@@ -92,6 +92,24 @@ fn set_current_location_pending(button: &gtk4::Button, pending: bool) {
     }
 }
 
+fn location_request_allowed(conn: &Db, on_blocked: impl FnOnce()) -> bool {
+    // SET-15 deliberately gives Location no owning plugin, so the shared
+    // authority checks the app-wide scope rather than an arbitrary reader
+    // module whose switch would take Location with it.
+    let allowed = reprise_core::online_sources::network_allowed(
+        conn,
+        reprise_core::online_sources::NetworkScope::AppWide,
+    )
+    .unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read online-sources state for Location");
+        false
+    });
+    if !allowed {
+        on_blocked();
+    }
+    allowed
+}
+
 struct LocationPageSurface {
     page: adw::PreferencesPage,
     city: adw::ActionRow,
@@ -212,6 +230,12 @@ fn city_row(conn: &Rc<Db>, broadcast: &Rc<LocationBroadcast>) -> adw::ActionRow 
         let broadcast = broadcast.clone();
         let city = city.clone();
         edit.connect_clicked(move |button| {
+            let blocked_city = city.clone();
+            if !location_request_allowed(&conn, move || {
+                blocked_city.set_subtitle(&strings::text(strings::ONLINE_SOURCES_TURNED_OFF));
+            }) {
+                return;
+            }
             let initial = reprise_core::location::app_location(&conn)
                 .ok()
                 .flatten()
@@ -241,6 +265,12 @@ fn city_row(conn: &Rc<Db>, broadcast: &Rc<LocationBroadcast>) -> adw::ActionRow 
         let city = city.clone();
         let pending = Rc::new(Cell::new(false));
         current.connect_clicked(move |button| {
+            let blocked_city = city.clone();
+            if !location_request_allowed(&conn, move || {
+                blocked_city.set_subtitle(&strings::text(strings::ONLINE_SOURCES_TURNED_OFF));
+            }) {
+                return;
+            }
             if pending.replace(true) {
                 return;
             }
@@ -466,13 +496,66 @@ impl PreferencesContext {
             .is_none();
         focus_city_row(&city, highlight);
     }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn store_location_for_test(
+        &self,
+        latitude: f64,
+        longitude: f64,
+        name: &str,
+        country_code: Option<&str>,
+    ) {
+        let city = self
+            .location_city_row
+            .borrow()
+            .upgrade()
+            .expect("the real Location page is open");
+        apply_location(
+            &self.conn,
+            &self.location_broadcast,
+            &city,
+            LocationDecision::Store {
+                latitude,
+                longitude,
+                name: name.to_owned(),
+                country_code: country_code.map(str::to_owned),
+            },
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use libadwaita::prelude::PreferencesRowExt;
 
     use super::*;
+
+    #[test]
+    fn set_11_location_requests_are_not_dispatched_while_online_sources_are_off() {
+        let conn = crate::test_db::open().unwrap();
+        reprise_core::online_sources::set_enabled(&conn, false).unwrap();
+        let blocked = Cell::new(0);
+        let dispatched = Cell::new(0);
+
+        for _ in 0..2 {
+            if location_request_allowed(&conn, || blocked.set(blocked.get() + 1)) {
+                dispatched.set(dispatched.get() + 1);
+            }
+        }
+
+        assert_eq!(
+            blocked.get(),
+            2,
+            "both Location request paths explain the gate"
+        );
+        assert_eq!(
+            dispatched.get(),
+            0,
+            "neither geocoding nor the portal may be dispatched"
+        );
+    }
 
     #[test]
     fn location_apply_decisions_store_success_and_keep_errors_visible() {
@@ -540,13 +623,21 @@ mod tests {
         assert_eq!(surface.city.subtitle().as_deref(), Some("Not set"));
         assert_eq!(surface.radius.title(), "Default radius");
         assert_eq!(surface.radius.selected(), 3);
+        let locale = std::env::var("LC_ALL")
+            .or_else(|_| std::env::var("LANG"))
+            .unwrap_or_else(|_| "C".to_owned());
+        let podcast_country = reprise_core::podcasts::itunes::locale_country(&locale);
         assert_eq!(
             surface
                 .used_by
                 .iter()
                 .map(PreferencesRowExt::title)
                 .collect::<Vec<_>>(),
-            ["Concerts", "Radio · Near you", "Podcasts · Popular in US",]
+            [
+                "Concerts".to_owned(),
+                "Radio · Near you".to_owned(),
+                strings::location_podcasts_popular_in(&podcast_country),
+            ]
         );
 
         let mut index = Vec::new();

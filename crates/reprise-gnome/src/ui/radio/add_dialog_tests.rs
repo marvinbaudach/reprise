@@ -2,6 +2,35 @@ use super::super::add_dialog_rows::{candidate_row, title_markup};
 use super::*;
 use crate::ui::search_highlight::HighlightPalette;
 
+impl RadioAddDialog {
+    pub(in crate::ui::radio) fn open_near_you_location_preferences_for_test(
+        self: &Rc<Self>,
+        parent: &gtk4::Widget,
+    ) {
+        self.present(parent);
+        self.widgets.chip_near_you.emit_clicked();
+        self.widgets
+            .location_results
+            .open_preferences_button(&NearYouAction::MissingLocation)
+            .emit_clicked();
+    }
+
+    pub(in crate::ui::radio) fn is_visible_for_test(&self) -> bool {
+        self.widgets.dialog.is_visible()
+    }
+
+    pub(in crate::ui::radio) fn needs_location_for_test(&self) -> bool {
+        matches!(
+            self.state.borrow().phase,
+            AddDialogPhase::NearYou(NearYouAction::MissingLocation)
+        )
+    }
+
+    pub(in crate::ui::radio) fn is_searching_for_test(&self) -> bool {
+        matches!(self.state.borrow().phase, AddDialogPhase::Searching)
+    }
+}
+
 #[test]
 fn src_3a_radio_add_dialog_submits_search_or_url_through_one_field() {
     assert_eq!(
@@ -626,45 +655,6 @@ fn rad_5_location_broadcast_resumes_the_open_near_you_intent() {
         dialog.state.borrow().phase,
         AddDialogPhase::Searching
     ));
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn rad_5_add_station_dialog_survives_opening_location_preferences_over_it() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    gtk4::init().unwrap();
-    let conn = Rc::new(crate::test_db::open().unwrap());
-    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
-    let window = gtk4::Window::new();
-    window.present();
-    dialog.present(&window);
-    crate::ui::source_context_surface::settle_layout();
-
-    let preferences = Rc::new(RefCell::new(None::<adw::Dialog>));
-    let opened = preferences.clone();
-    let parent = window.downgrade();
-    dialog.set_on_location_settings(move || {
-        let Some(parent) = parent.upgrade() else {
-            return;
-        };
-        let next = adw::Dialog::new();
-        next.present(Some(&parent));
-        opened.replace(Some(next));
-    });
-    dialog.widgets.chip_near_you.emit_clicked();
-    dialog
-        .widgets
-        .location_results
-        .open_preferences_button(&NearYouAction::MissingLocation)
-        .emit_clicked();
-    crate::ui::source_context_surface::settle_layout();
-
-    assert!(preferences.borrow().is_some());
-    assert!(
-        dialog.widgets.dialog.is_visible(),
-        "opening Preferences must not close the Add Station dialog underneath it"
-    );
-    window.close();
 }
 
 /// `RAD-5`: the required "present with a location" half — with a

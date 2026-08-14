@@ -24,9 +24,13 @@ mod radio_presentation;
 mod radio_reveal;
 mod radio_view;
 mod radio_view_search;
+#[cfg(test)]
+mod radio_view_test_hooks;
 mod station_preview;
 
 pub(in crate::ui) use radio_view::RadioView;
+#[cfg(test)]
+pub(in crate::ui) use radio_view_test_hooks::{test_handle, RadioTestHandle};
 
 use std::rc::Rc;
 
@@ -47,6 +51,8 @@ pub(in crate::ui) fn install(
     location_broadcast: &Rc<crate::ui::location_broadcast::LocationBroadcast>,
 ) -> RadioView {
     let view = RadioView::new(conn, controller);
+    #[cfg(test)]
+    radio_view_test_hooks::publish(&view.shared);
     radio_location::subscribe(&view, location_broadcast);
     view
 }

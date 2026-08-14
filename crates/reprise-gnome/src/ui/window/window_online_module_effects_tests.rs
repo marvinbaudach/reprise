@@ -95,3 +95,34 @@ fn net_5_enabling_artwork_through_preferences_starts_the_wired_cover_pass() {
         "the production callback must reach every visible-artwork refresh seam"
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rad_5_real_preferences_return_resumes_the_open_near_you_intent() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let handles = build_online_module_handles();
+    reprise_core::online_sources::set_enabled(&handles.preferences.conn, true).unwrap();
+    reprise_core::modules::set_enabled(
+        &handles.preferences.conn,
+        &reprise_core::modules::RADIO_MODULE,
+        true,
+    )
+    .unwrap();
+
+    handles.radio.open_near_you_location_preferences_for_test();
+    crate::ui::source_context_surface::settle_layout();
+
+    assert!(handles.preferences.preferences_dialog().is_some());
+    assert!(handles.radio.add_dialog_is_visible_for_test());
+    assert!(handles.radio.add_dialog_needs_location_for_test());
+
+    handles
+        .preferences
+        .store_location_for_test(52.52, 13.405, "Berlin", Some("DE"));
+
+    assert!(
+        handles.radio.add_dialog_is_searching_for_test(),
+        "the still-open Add Station dialog must resume without another chip click"
+    );
+    assert!(handles.radio.add_dialog_is_visible_for_test());
+}

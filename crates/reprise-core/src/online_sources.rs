@@ -15,6 +15,21 @@ use crate::db::Db;
 use crate::library::settings;
 use crate::modules::{self, ModuleDescriptor};
 
+/// The owner of a network request checked by [`network_allowed`].
+#[derive(Clone, Copy)]
+pub enum NetworkScope<'a> {
+    /// App state shared across plugins, with no per-module switch of its own.
+    AppWide,
+    /// A request owned by one optional module.
+    Module(&'a ModuleDescriptor),
+}
+
+impl<'a> From<&'a ModuleDescriptor> for NetworkScope<'a> {
+    fn from(module: &'a ModuleDescriptor) -> Self {
+        Self::Module(module)
+    }
+}
+
 /// Settings key. Deliberately not namespaced under `module.*.enabled` —
 /// this is not a module, it is the gate that sits above all of them.
 pub const ENABLED_KEY: &str = "online-sources-enabled";
@@ -82,14 +97,17 @@ fn first_enable_source_defaults() -> [(&'static ModuleDescriptor, bool); 7] {
     ]
 }
 
-/// The one authority for "may this module make a network request right
-/// now" — ANDs the global gate with the module's own flag.
-pub fn network_allowed(
+/// The one authority for "may this request run right now". Module-owned
+/// requests AND the global gate with their module flag; app-wide requests
+/// with no plugin owner use the global gate alone.
+pub fn network_allowed<'a>(
     db: &crate::db::Db,
-    module: &ModuleDescriptor,
+    scope: impl Into<NetworkScope<'a>>,
 ) -> Result<bool, rusqlite::Error> {
-    let conn = db.conn();
-    network_allowed_in(conn, module)
+    match scope.into() {
+        NetworkScope::AppWide => is_enabled(db),
+        NetworkScope::Module(module) => network_allowed_in(db.conn(), module),
+    }
 }
 
 pub(crate) fn network_allowed_in(
@@ -176,6 +194,20 @@ mod tests {
             !network_allowed(&db, module).unwrap(),
             "module off, global on => blocked"
         );
+    }
+
+    #[test]
+    fn net_1a_app_wide_requests_follow_the_master_without_a_plugin_owner() {
+        let db = migrated_db();
+        set_enabled(&db, true).unwrap();
+        modules::set_enabled(&db, &modules::RADIO_MODULE, false).unwrap();
+        modules::set_enabled(&db, &modules::CONCERTS_MODULE, false).unwrap();
+        modules::set_enabled(&db, &modules::PODCASTS_MODULE, false).unwrap();
+
+        assert!(network_allowed(&db, NetworkScope::AppWide).unwrap());
+
+        set_enabled(&db, false).unwrap();
+        assert!(!network_allowed(&db, NetworkScope::AppWide).unwrap());
     }
 
     #[test]
