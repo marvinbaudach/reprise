@@ -7,6 +7,7 @@ SCROBBLING_API_PID=""
 SCROBBLING_API_LOG=""
 SCROBBLING_API_ROOT=""
 SCROBBLING_KEYRING_PID=""
+repo_root=${repo_root:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 
 start_scrobbling_keyring() {
   local control_dir="$XDG_RUNTIME_DIR/reprise-e2e-keyring"

@@ -187,9 +187,10 @@ cua_common_exec_private() {
     printf '[D-BUS Service]\nName=%s\nExec=/bin/false\n' "$stub_service" \
       >"$stub_dir/$stub_service.service"
   done
-  XDG_DATA_DIRS="$stub_root:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
+  local stub_data_dirs="$stub_root:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+  XDG_DATA_DIRS="$stub_data_dirs" \
   dbus-run-session -- env \
-    XDG_DATA_DIRS="$stub_root:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
+    XDG_DATA_DIRS="$stub_data_dirs" \
     XDG_RUNTIME_DIR="$runtime_dir" \
     XDG_DATA_HOME="$root_profile/data" \
     XDG_CACHE_HOME="$root_profile/cache" \

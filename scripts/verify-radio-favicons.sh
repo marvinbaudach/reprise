@@ -40,7 +40,7 @@ if [[ -d $out_dir && ! -O $out_dir ]]; then
   echo "evidence directory is not owned by the current user: $out_dir" >&2
   exit 2
 fi
-mkdir -p -m 0700 "$out_dir"
+mkdir -p "$out_dir"
 if [[ ! -O $out_dir ]]; then
   echo "evidence directory is not owned by the current user: $out_dir" >&2
   exit 2

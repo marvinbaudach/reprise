@@ -31,6 +31,9 @@ run_preferences_flow() {
 
   # Compact layouts can replace the mapped surface. Always address the
   # currently active Library window before opening its primary menu.
+  # column-reorder.sh, compact-seek.sh, run.sh, search-chip.sh, and
+  # window-helpers.sh read WINDOW_ID after sourcing this library.
+  # shellcheck disable=SC2034
   WINDOW_ID="$(xdotool getactivewindow 2>/dev/null)"
   if ! maximize_window; then
     log_step "flow 6 skipped: coordinate checks require the fixed maximized Library geometry"
@@ -82,12 +85,14 @@ run_preferences_flow() {
   # Layout, Library, Synchronization, Plugins. SIDEBAR_X sits on the row label,
   # comfortably inside the ~190px-wide sidebar.
   local SIDEBAR_X=70
-  local ROW_PLAYBACK=75
-  local ROW_APPEARANCE=113
-  local ROW_LAYOUT=151
-  local ROW_LIBRARY=189
-  local ROW_SYNC=227
-  local ROW_PLUGINS=264
+  # Keep the complete row ladder so remeasurement cannot silently shift used rows.
+  # shellcheck disable=SC2034
+  local ROW_PLAYBACK=75 \
+    ROW_APPEARANCE=113 \
+    ROW_LAYOUT=151 \
+    ROW_LIBRARY=189 \
+    ROW_SYNC=227 \
+    ROW_PLUGINS=264
 
   assert_db_query_true \
     "SELECT COUNT(*) = 0 FROM settings WHERE key = 'ui.color_scheme';" \

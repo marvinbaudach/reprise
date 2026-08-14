@@ -110,7 +110,6 @@ source "$REPO_ROOT/scripts/ptr-e2e/compact-seek.sh"
 # shellcheck source=search-chip.sh
 source "$REPO_ROOT/scripts/ptr-e2e/search-chip.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
-APP_ID="io.github.marvinbaudach.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
 # variant observed (the app id itself, and toolkit-folded forms such as
 # `reprise.reprise`) — see lesson 2 above.
