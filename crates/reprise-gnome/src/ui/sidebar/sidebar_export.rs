@@ -175,6 +175,7 @@ fn delete_playlist(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
         Ok(true) => {
             tracing::info!(playlist_id, playlist_name, "playlist deleted");
             rebuild(shared, None, "playlist deleted");
+            super::notify_playlists_changed(shared);
             show_toast(shared, &strings::playlist_deleted_toast(playlist_name));
         }
         Ok(false) => {

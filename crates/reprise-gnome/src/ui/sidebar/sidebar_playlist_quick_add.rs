@@ -28,12 +28,12 @@ pub(super) fn create_placeholder(db: &Db) -> Result<i64, rusqlite::Error> {
     playlists::create(db, &placeholder_name())
 }
 
-pub(super) fn commit_name(db: &Db, id: i64, requested: &str) -> Result<(), rusqlite::Error> {
+pub(super) fn commit_name(db: &Db, id: i64, requested: &str) -> Result<bool, rusqlite::Error> {
     let requested = requested.trim();
     if requested.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
-    playlists::rename(db, id, requested).map(|_| ())
+    playlists::rename(db, id, requested).map(|changed| changed > 0)
 }
 
 pub(super) fn discard_placeholder(db: &Db, id: i64) -> Result<bool, rusqlite::Error> {
@@ -126,12 +126,16 @@ pub(in crate::ui) fn wire_editor(
 }
 
 fn commit_and_rebuild(shared: &Rc<Shared>, playlist_id: i64, requested: &str, focus: CommitFocus) {
-    if let Err(error) = commit_name(&shared.conn, playlist_id, requested) {
-        tracing::error!(%error, playlist_id, "failed to commit inline playlist name");
-        show_toast(
-            shared,
-            &strings::playlist_create_failed_toast(requested.trim()),
-        );
+    match commit_name(&shared.conn, playlist_id, requested) {
+        Ok(true) => super::notify_playlists_changed(shared),
+        Ok(false) => {}
+        Err(error) => {
+            tracing::error!(%error, playlist_id, "failed to commit inline playlist name");
+            show_toast(
+                shared,
+                &strings::playlist_create_failed_toast(requested.trim()),
+            );
+        }
     }
     shared.playlist_quick_edit_id.set(None);
     rebuild(
@@ -164,7 +168,7 @@ fn commit_and_rebuild(shared: &Rc<Shared>, playlist_id: i64, requested: &str, fo
 
 fn discard_and_rebuild(shared: &Rc<Shared>, playlist_id: i64) {
     match discard_placeholder(&shared.conn, playlist_id) {
-        Ok(true) => {}
+        Ok(true) => super::notify_playlists_changed(shared),
         Ok(false) => tracing::warn!(playlist_id, "fresh playlist changed before Escape discard"),
         Err(error) => {
             tracing::error!(%error, playlist_id, "failed to discard fresh playlist");
@@ -213,9 +217,19 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let id = super::create_placeholder(&db).unwrap();
 
-        super::commit_name(&db, id, "  \n").unwrap();
+        assert!(!super::commit_name(&db, id, "  \n").unwrap());
 
         let playlist = playlists::get(&db, id).unwrap().unwrap();
         assert_eq!(playlist.name, super::placeholder_name());
+    }
+
+    #[test]
+    fn nav_14_a_committed_name_reports_the_playlist_mutation() {
+        let db = Db::open_in_memory().unwrap();
+        let id = super::create_placeholder(&db).unwrap();
+
+        assert!(super::commit_name(&db, id, "Road").unwrap());
+
+        assert_eq!(playlists::get(&db, id).unwrap().unwrap().name, "Road");
     }
 }

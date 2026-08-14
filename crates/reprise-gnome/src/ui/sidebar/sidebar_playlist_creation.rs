@@ -3,7 +3,7 @@ use std::rc::Rc;
 use reprise_core::library::playlists;
 use reprise_core::view_source::ViewSource;
 
-use crate::ui::sidebar::{rebuild, show_toast, Shared};
+use crate::ui::sidebar::{notify_playlists_changed, rebuild, show_toast, Shared};
 use crate::ui::strings;
 
 /// An empty playlist is only a new destination. Refresh the sidebar while
@@ -29,6 +29,7 @@ pub(in crate::ui) fn create_playlist_and_stay(shared: &Rc<Shared>, name: &str) -
                 refresh_target_after_empty_creation(),
                 "playlist created",
             );
+            notify_playlists_changed(shared);
             Some(id)
         }
         Err(error) => {

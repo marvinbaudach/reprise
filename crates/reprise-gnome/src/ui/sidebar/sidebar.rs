@@ -167,6 +167,11 @@ pub(in crate::ui) struct Shared {
     /// list refresh), the mirror image of `track_list.rs`'s `on_playlist_
     /// mutated` (track list mutation -> sidebar refresh).
     pub(in crate::ui) on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Invalidates the connected-device playlist projection after successful
+    /// local playlist CRUD or membership changes. `bind_device_sync` installs
+    /// the runtime callback without making individual mutation modules depend
+    /// on the device-sync implementation.
+    pub(in crate::ui) on_playlists_changed: RefCell<Option<Rc<dyn Fn()>>>,
     /// Routes the sidebar's Missing-files bulk action into the track list's
     /// shared tombstone/Undo service. The callback receives the exact live
     /// missing ids and is cloned out before invocation for reentrancy safety.
@@ -281,6 +286,7 @@ impl Sidebar {
             on_show_content: RefCell::new(None),
             on_import_playlist: RefCell::new(None),
             on_tracks_added: RefCell::new(None),
+            on_playlists_changed: RefCell::new(None),
             on_remove_missing: RefCell::new(None),
             on_queue_drop: RefCell::new(None),
             on_module_enabled: RefCell::new(None),
@@ -417,6 +423,19 @@ impl Sidebar {
         rebuild(&self.shared, None, reason);
     }
 
+    /// Refreshes the sidebar and the connected-device playlist projection
+    /// after one successful playlist mutation.
+    pub fn refresh_after_playlist_change(&self, reason: &str) {
+        rebuild(&self.shared, None, reason);
+        notify_playlists_changed(&self.shared);
+    }
+
+    /// Invalidates device playlist projections when another surface already
+    /// performed the sidebar navigation refresh itself.
+    pub(in crate::ui) fn notify_playlists_changed(&self) {
+        notify_playlists_changed(&self.shared);
+    }
+
     /// Updates the Queue badge in place. Queue changes are playback state,
     /// not library mutations, so they must not rerun database-backed counts.
     pub fn refresh_queue_count(&self) {
@@ -462,8 +481,21 @@ impl Sidebar {
         runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
         on_open: Rc<dyn Fn(String, String)>,
     ) {
+        let runtime_weak = Rc::downgrade(runtime);
+        *self.shared.on_playlists_changed.borrow_mut() = Some(Rc::new(move || {
+            if let Some(runtime) = runtime_weak.upgrade() {
+                runtime.library_playlists_changed();
+            }
+        }));
         let section = super::sidebar_device_section::bind(runtime, on_open);
         self.activity_slot.set_device_section(&section);
+    }
+}
+
+pub(in crate::ui) fn notify_playlists_changed(shared: &Rc<Shared>) {
+    let callback = shared.on_playlists_changed.borrow().clone();
+    if let Some(callback) = callback {
+        callback();
     }
 }
 
