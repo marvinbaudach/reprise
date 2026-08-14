@@ -167,6 +167,11 @@ pub(in crate::ui) struct Shared {
     /// list refresh), the mirror image of `track_list.rs`'s `on_playlist_
     /// mutated` (track list mutation -> sidebar refresh).
     pub(in crate::ui) on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Invalidates the connected-device playlist projection after successful
+    /// local playlist CRUD or membership changes. `bind_device_sync` installs
+    /// the runtime callback without making individual mutation modules depend
+    /// on the device-sync implementation.
+    pub(in crate::ui) on_playlists_changed: RefCell<Option<Rc<dyn Fn()>>>,
     /// Routes the sidebar's Missing-files bulk action into the track list's
     /// shared tombstone/Undo service. The callback receives the exact live
     /// missing ids and is cloned out before invocation for reentrancy safety.
@@ -281,6 +286,7 @@ impl Sidebar {
             on_show_content: RefCell::new(None),
             on_import_playlist: RefCell::new(None),
             on_tracks_added: RefCell::new(None),
+            on_playlists_changed: RefCell::new(None),
             on_remove_missing: RefCell::new(None),
             on_queue_drop: RefCell::new(None),
             on_module_enabled: RefCell::new(None),
@@ -453,17 +459,6 @@ impl Sidebar {
         if self.shared.refresh_count.get() == 0 {
             rebuild(&self.shared, Some(ViewSource::default()), "initial build");
         }
-    }
-
-    /// Shows connected devices below the navigation rows and routes card
-    /// activation through the existing source-selection callback.
-    pub fn bind_device_sync(
-        &self,
-        runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
-        on_open: Rc<dyn Fn(String, String)>,
-    ) {
-        let section = super::sidebar_device_section::bind(runtime, on_open);
-        self.activity_slot.set_device_section(&section);
     }
 }
 

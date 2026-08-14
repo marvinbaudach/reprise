@@ -1059,9 +1059,10 @@ result.
   remembered disconnected device has no surface, only a hairline edge, and
   reduces the title and status separately. The contrast between active and
   remembered is the primary information. The Devices heading is one step
-  brighter than the other sidebar section headings. The status starts with the
-  free device storage during Checking, Sync, and Finishing, early enough that
-  ellipsizing never hides it.
+  brighter than the other sidebar section headings. During Checking, Sync, and
+  Finishing, known free device storage leads the status; while storage is
+  unknown, that placeholder is omitted so ellipsizing cannot hide the current
+  activity. The same omission applies to the idle "Needs attention" status.
 - **MTP-64** [active] [gtk] — The entire device card is one native keyboard and
   pointer entry point into a non-modal full device page in the main window and
   does not start a sync directly; exclusively while a sync of this device is

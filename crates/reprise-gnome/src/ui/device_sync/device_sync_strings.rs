@@ -201,6 +201,7 @@ pub fn picker_content(count: usize) -> String {
 pub const NOT_CONNECTED: &str = N_!("Not connected");
 pub const FINISHING_SYNC: &str = N_!("Finishing synchronization…");
 pub const CHECKING_CHANGES: &str = N_!("Checking what changed…");
+pub const CARD_CHECKING_CHANGES: &str = N_!("Checking changes…");
 const READY_TO_SYNC: &str = N_!("Ready to sync · {summary}");
 /// The full-width device-page dock can name the unit; the sidebar translation
 /// above deliberately uses the shorter slash form to survive its tighter row.

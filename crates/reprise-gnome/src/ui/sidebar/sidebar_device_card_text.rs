@@ -179,6 +179,92 @@ pub(super) fn remembered_sentence(
     reprise_core::device_sync::remembered_device_status(last_verified, now)
 }
 
+/// The narrow card omits unknown storage instead of spending its leading,
+/// non-ellipsized words on a placeholder. Once known, the figure remains the
+/// prefix so the activity that follows stays consistent across phases.
+#[must_use]
+pub(super) fn card_subtitle(device: &DeviceView, now: DateTime<Utc>) -> String {
+    if device.session_state == DeviceSessionState::Remembered {
+        return remembered_sentence(device.last_sync, now);
+    }
+    if let DeviceSessionState::Inert { active_device_name } = &device.session_state {
+        return device_sync_strings::inert_device_status(active_device_name);
+    }
+    if let Some(status) = &device.memory_status {
+        return status.clone();
+    }
+    match &device.sync_phase {
+        PlannedSyncPhase::ComputingDelta => with_storage_prefix(
+            known_free_space(device.storage.free_bytes),
+            device_sync_strings::text(device_sync_strings::CARD_CHECKING_CHANGES),
+        ),
+        PlannedSyncPhase::Syncing {
+            step,
+            current_track,
+            ..
+        } => {
+            let mut activity = device_sync_strings::sync_activity(step_glyph(step), current_track);
+            if matches!(step, SyncStep::Copying) && device.bytes_per_second > 0 {
+                activity.push_str(&format!(
+                    " · {}/s",
+                    device_sync_strings::file_size(device.bytes_per_second)
+                ));
+            }
+            with_storage_prefix(known_free_space(device.storage.free_bytes), activity)
+        }
+        PlannedSyncPhase::Finishing => with_storage_prefix(
+            known_free_space(device.storage.free_bytes),
+            "Finishing…".to_string(),
+        ),
+        PlannedSyncPhase::Idle => {
+            if mirror_needs_attention(device) {
+                return with_storage_prefix(
+                    known_available_space(device.storage.free_bytes),
+                    "Needs attention".to_string(),
+                );
+            }
+            let balance = reprise_core::device_sync::aggregate_balance(&[device.target_reading]);
+            leading_sentence(&device.contents_state, &balance, device.last_sync, now)
+        }
+    }
+}
+
+#[must_use]
+pub(super) fn mirror_needs_attention(device: &DeviceView) -> bool {
+    device
+        .page
+        .blockers
+        .iter()
+        .any(|blocker| blocker != &reprise_core::device_sync::MirrorBlocker::NoPlaylistsSelected)
+        || !device.page.warnings.is_empty()
+        || device.scan_error.is_some()
+        || device.sync_error.is_some()
+}
+
+fn known_free_space(bytes: Option<u64>) -> Option<String> {
+    bytes.map(|bytes| device_sync_strings::free_space(Some(bytes)))
+}
+
+fn known_available_space(bytes: Option<u64>) -> Option<String> {
+    bytes.map(|bytes| device_sync_strings::available_space(Some(bytes)))
+}
+
+fn with_storage_prefix(prefix: Option<String>, activity: String) -> String {
+    match prefix {
+        Some(prefix) => format!("{prefix} · {activity}"),
+        None => activity,
+    }
+}
+
+pub(super) fn step_glyph(step: &SyncStep) -> &'static str {
+    match step {
+        SyncStep::Transcoding => "⟳ transcoding ·",
+        SyncStep::Copying => "↑",
+        SyncStep::Removing => "−",
+        SyncStep::WritingPlaylists => "≡",
+    }
+}
+
 /// Design 7c's two "has work" states, kept distinct from the aggregate
 /// balance formatter used for the tooltip (`MTP-22`'s "To copy N files ·
 /// X" wording) because the card's leading sentence is deliberately terser:

@@ -5305,6 +5305,9 @@ msgstr "Finishing synchronization…"
 msgid "Checking what changed…"
 msgstr "Checking what changed…"
 
+msgid "Checking changes…"
+msgstr "Checking changes…"
+
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:204
 #, rust-format
 msgid "Ready to sync · {summary}"

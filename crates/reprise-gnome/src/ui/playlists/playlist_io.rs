@@ -359,6 +359,7 @@ pub(in crate::ui) fn apply_import_result(
                 playlist_import_navigation::target_for_import(playlist_id),
                 "playlist imported",
             );
+            sidebar.notify_playlists_changed();
             toasts::show(
                 toast_overlay,
                 &strings::playlist_imported_toast(&outcome.name, outcome.matched, outcome.total),

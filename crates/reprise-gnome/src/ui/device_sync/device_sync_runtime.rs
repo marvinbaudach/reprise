@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
@@ -16,7 +16,7 @@ use reprise_core::device_sync::device_view::{
     project_category_content_row, project_contents_state, project_device_music_reading,
 };
 use reprise_core::device_sync::settings::{
-    forget_device, mark_device_playlists_synced, record_device_verification,
+    forget_device, mark_device_playlists_synced, record_device_verification, save_settings,
 };
 use reprise_core::device_sync::sync_log;
 use reprise_core::device_sync::{
@@ -215,6 +215,81 @@ impl DeviceSyncRuntime {
             conn,
             Rc::new(super::device_sync_backend::GioDeviceBackend::new(monitor)),
         )
+    }
+
+    /// Reprojects library playlists for every connected idle device.
+    ///
+    /// Playlist CRUD and membership changes are local database work, so this
+    /// deliberately uses the non-toasting projection path and not a device
+    /// contents scan. An active sync owns its plan until completion and must
+    /// not be disturbed by a concurrent library edit.
+    pub(in crate::ui) fn library_playlists_changed(self: &Rc<Self>) {
+        let available_sources = match reprise_core::device_sync::load_mirror_playlist_snapshots(
+            &self.conn,
+        ) {
+            Ok(playlists) => playlists
+                .into_iter()
+                .map(|playlist| playlist.source)
+                .collect::<HashSet<_>>(),
+            Err(error) => {
+                tracing::warn!(%error, "could not load playlists after a library playlist change");
+                return;
+            }
+        };
+        let devices = self
+            .device_states
+            .borrow()
+            .iter()
+            .filter(|device| device.connected && !device.is_busy())
+            .map(|device| {
+                (
+                    device.descriptor.id.clone(),
+                    device.descriptor.persistent_id.is_some(),
+                    device.settings.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut recomputed = false;
+        for (device_id, rememberable, mut settings) in devices {
+            let selection_changed = match &mut settings.selection {
+                DeviceSelection::Sources(sources) => {
+                    let before = sources.len();
+                    sources.retain(|source| available_sources.contains(source));
+                    sources.len() != before
+                }
+                DeviceSelection::EntireLibrary => false,
+            };
+            if selection_changed && rememberable {
+                if let Err(error) = save_settings(&self.conn, &settings) {
+                    tracing::warn!(
+                        %error,
+                        device_id,
+                        "could not persist device selection after a playlist deletion"
+                    );
+                    continue;
+                }
+            }
+            if selection_changed {
+                let mut device_states = self.device_states.borrow_mut();
+                let Some(device) = device_states.iter_mut().find(|device| {
+                    device.descriptor.id == device_id && device.connected && !device.is_busy()
+                }) else {
+                    continue;
+                };
+                device.settings = settings;
+            }
+            match self.recompute_delta_silent(&device_id) {
+                Ok(()) => recomputed = true,
+                Err(error) => tracing::warn!(
+                    %error,
+                    device_id,
+                    "could not refresh device playlists after a library playlist change"
+                ),
+            }
+        }
+        if recomputed {
+            self.notify();
+        }
     }
 
     pub fn with_backend(conn: &Rc<Db>, backend: Rc<dyn DeviceBackend>) -> Rc<Self> {
