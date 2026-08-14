@@ -4,6 +4,9 @@
 pub(crate) mod cache;
 pub(crate) mod deezer;
 
+#[cfg(test)]
+mod test_fixtures;
+
 use std::path::{Path, PathBuf};
 
 use crate::{
@@ -143,6 +146,10 @@ fn stale_or(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artist_portrait::test_fixtures::{
+        ALL_PLACEHOLDERS_RESPONSE, MISSING_FANS_RESPONSE, NON_EXACT_RESPONSE, ONI_RESPONSE,
+        POPULAR_PLACEHOLDER_RESPONSE, THE_DEVIL_WEARS_PRADA_RESPONSE,
+    };
     use crate::musicbrainz::FetchError;
     use crate::source_error::{SourceError, SourceErrorKind};
 
@@ -166,8 +173,7 @@ mod tests {
         buffer.into_inner()
     }
 
-    const HIT: &str = r#"{"data":[{"id":1,"name":"Band","picture_xl":"https://e-cdns-images.dzcdn.net/images/artist/abc/1000x1000-000000-80-0-0.jpg"}]}"#;
-    const PLACEHOLDER: &str = r#"{"data":[{"id":2,"name":"Band","picture_xl":"https://e-cdns-images.dzcdn.net/images/artist//1000x1000-000000-80-0-0.jpg"}]}"#;
+    const HIT: &str = r#"{"data":[{"id":1,"name":"Band","nb_album":1,"nb_fan":1,"picture_xl":"https://cdn-images.dzcdn.net/images/artist/abc/1000x1000-000000-80-0-0.jpg","picture_big":"https://cdn-images.dzcdn.net/images/artist/abc/500x500-000000-80-0-0.jpg","type":"artist"}],"total":1}"#;
 
     fn tmp() -> std::path::PathBuf {
         std::env::temp_dir().join(format!("rp-portrait-mod-{}", fastrand::u64(..)))
@@ -187,14 +193,88 @@ mod tests {
     }
 
     #[test]
-    fn placeholder_is_notfound_and_writes_marker_without_download() {
+    fn all_exact_placeholder_matches_write_marker_without_download() {
         let dir = tmp();
-        let mut search = |_: &str| Ok(PLACEHOLDER.to_string());
+        let mut search = |_: &str| Ok(ALL_PLACEHOLDERS_RESPONSE.to_string());
         let mut download = |_: &str| -> Result<Vec<u8>, FetchError> { panic!("must not download") };
         let outcome = load_or_fetch_with("Band", 1_000, &dir, &mut search, &mut download).unwrap();
         assert!(matches!(outcome, PortraitOutcome::NotFound));
         assert!(cache::negative_marker_path(&dir, "Band").exists());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn fetched_image_identifier(json: &str, name: &str) -> String {
+        let dir = tmp();
+        let mut downloaded = Vec::new();
+        let mut search = |url: &str| {
+            assert!(url.contains("limit=10"));
+            Ok(json.to_owned())
+        };
+        let mut download = |url: &str| {
+            downloaded.push(url.to_owned());
+            Ok(png_bytes())
+        };
+
+        let outcome = load_or_fetch_with(name, 1_000, &dir, &mut search, &mut download).unwrap();
+
+        match outcome {
+            PortraitOutcome::Found(path) => assert!(path.exists()),
+            PortraitOutcome::NotFound => panic!("expected Found"),
+        }
+        assert!(!cache::negative_marker_path(&dir, name).exists());
+        assert_eq!(downloaded.len(), 1);
+        let url = url::Url::parse(&downloaded[0]).unwrap();
+        assert!(url
+            .host_str()
+            .is_some_and(|host| host.ends_with(".dzcdn.net")));
+        let identifier = url
+            .path_segments()
+            .and_then(|mut segments| segments.nth(2))
+            .unwrap()
+            .to_owned();
+        std::fs::remove_dir_all(&dir).ok();
+        identifier
+    }
+
+    #[test]
+    fn devil_wears_prada_downloads_real_match_after_placeholder() {
+        assert_eq!(
+            fetched_image_identifier(THE_DEVIL_WEARS_PRADA_RESPONSE, "The Devil Wears Prada"),
+            "ce8738d500000000000000000000c62a"
+        );
+    }
+
+    #[test]
+    fn oni_downloads_most_popular_exact_match_even_when_it_is_last() {
+        assert_eq!(
+            fetched_image_identifier(ONI_RESPONSE, "ONI"),
+            "0a110000000000000000000000002558"
+        );
+    }
+
+    #[test]
+    fn non_exact_name_never_wins_even_with_many_more_fans() {
+        assert_eq!(
+            fetched_image_identifier(NON_EXACT_RESPONSE, "The Devil Wears Prada"),
+            "ce8738d500000000000000000000c62a"
+        );
+    }
+
+    #[test]
+    fn real_image_outranks_a_more_popular_placeholder() {
+        assert_eq!(
+            fetched_image_identifier(POPULAR_PLACEHOLDER_RESPONSE, "Band"),
+            "baad0000000000000000000000000001"
+        );
+    }
+
+    #[test]
+    fn missing_and_null_fan_counts_choose_stably_without_panicking() {
+        let first = fetched_image_identifier(MISSING_FANS_RESPONSE, "Band");
+        let second = fetched_image_identifier(MISSING_FANS_RESPONSE, "Band");
+
+        assert_eq!(first, "baad0000000000000000000000000001");
+        assert_eq!(second, first);
     }
 
     #[test]

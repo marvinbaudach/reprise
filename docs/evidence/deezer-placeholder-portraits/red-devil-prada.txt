@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/reprise_core-23cc781361cb15e7)
+
+running 1 test
+test artist_portrait::tests::devil_wears_prada_downloads_real_match_after_placeholder ... FAILED
+
+failures:
+
+---- artist_portrait::tests::devil_wears_prada_downloads_real_match_after_placeholder stdout ----
+
+thread 'artist_portrait::tests::devil_wears_prada_downloads_real_match_after_placeholder' (100) panicked at crates/reprise-core/src/artist_portrait/mod.rs:210:13:
+assertion failed: url.contains("limit=10")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    artist_portrait::tests::devil_wears_prada_downloads_real_match_after_placeholder
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2434 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p reprise-core --lib`
