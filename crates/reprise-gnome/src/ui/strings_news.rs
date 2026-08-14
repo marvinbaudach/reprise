@@ -45,15 +45,12 @@ pub const NEW_RELEASES_ARTISTS: &str = N_!("Artists");
 pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
 pub const ALL_ARTISTS: &str = N_!("All artists");
 pub const FETCH_NOW: &str = N_!("Fetch now");
-pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
 pub const UPDATES_HEADER: &str = N_!("UPDATES");
-pub const UPDATES_CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
 pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
 pub const UPDATES_NO_NEW_RELEASES: &str = N_!("No new releases");
 pub const UPDATES_NO_NEW_CONCERTS: &str = N_!("No new concerts");
 pub const UPDATES_RELEASED: &str = N_!("Released");
-pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
 pub const SEE_ALL_RELEASES: &str = N_!("See all");
 pub const HIDE_RELEASE: &str = N_!("Hide");
 const NEWS_FEED_LOADED_AT: &str = N_!("Up to date — loaded at {time}");
@@ -115,26 +112,6 @@ pub fn news_updated(timestamp: i64) -> String {
 pub fn news_cached(timestamp: i64) -> String {
     let date = news_timestamp_date(timestamp);
     formatted(N_!("Cached · Updated {date}"), &[("date", &date)])
-}
-
-pub fn new_releases_updated_ago(timestamp: i64, now: i64) -> String {
-    let age = now.saturating_sub(timestamp).max(0);
-    if age < 60 {
-        return text(UPDATED_JUST_NOW);
-    }
-    if age < 60 * 60 {
-        let minutes = age / 60;
-        return formatted(
-            N_!("Updated {age} min ago"),
-            &[("age", &minutes.to_string())],
-        );
-    }
-    if age < 24 * 60 * 60 {
-        let hours = age / (60 * 60);
-        return formatted(N_!("Updated {age} h ago"), &[("age", &hours.to_string())]);
-    }
-    let days = age / (24 * 60 * 60);
-    formatted(N_!("Updated {age} d ago"), &[("age", &days.to_string())])
 }
 
 pub fn new_releases_hidden(count: usize) -> String {

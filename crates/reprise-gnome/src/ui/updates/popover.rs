@@ -18,11 +18,6 @@ use super::concerts_section::ConcertsSection;
 use super::feed_row;
 use super::feed_snapshot;
 use super::footer_state::{aggregate as aggregate_footer_state, ActiveFeed};
-#[cfg(test)]
-use super::footer_state::{
-    failure_text as fetch_failure_text, oldest_active_feed_timestamp,
-    presentation as footer_presentation,
-};
 use super::release_row;
 use super::shell;
 use crate::ui::feed_footer::FeedFooter;

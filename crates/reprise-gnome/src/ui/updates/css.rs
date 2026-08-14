@@ -137,16 +137,6 @@ pub(in crate::ui) fn css() -> String {
         padding: 2px 4px;\
         font-weight: normal;\
     }\
-    /* Header 'Fetch now' ghost button: accent text, no border, tinted hover. */\
-    .new-release-ghost {\
-        color: @reprise_accent_text_color;\
-        background-color: transparent;\
-        border: none;\
-        border-radius: 8px;\
-    }\
-    .new-release-ghost:hover {\
-        background-color: alpha(@accent_bg_color, 0.12);\
-    }\
     .new-release-cover {\
         border-radius: 4px;\
         min-width: 44px;\
@@ -189,7 +179,6 @@ mod tests {
             ".new-release-action",
             ".new-release-row-actions",
             ".updates-section-header",
-            ".new-release-ghost",
             ".new-release-cover",
             ".new-release-hidden",
         ] {

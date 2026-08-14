@@ -237,33 +237,6 @@ fn nr_29_opening_stamps_every_unseen_candidate_not_only_the_visible_batch() {
 }
 
 #[test]
-fn legacy_cached_failure_presentation_keeps_its_inline_hint_until_cleanup() {
-    let presentation = footer_presentation(Some(100), 3_700, true);
-
-    assert_eq!(presentation.updated, "Updated 1 h ago");
-    assert!(presentation.show_cached_failure);
-}
-
-#[test]
-fn shared_footer_uses_the_oldest_active_feed_and_names_failures() {
-    assert_eq!(
-        oldest_active_feed_timestamp(true, Some(200), true, Some(100)),
-        Some(100)
-    );
-    assert_eq!(
-        oldest_active_feed_timestamp(true, Some(200), true, None),
-        None
-    );
-    assert_eq!(
-        oldest_active_feed_timestamp(true, Some(200), false, None),
-        Some(200)
-    );
-    assert!(fetch_failure_text(false, true).contains("Concerts"));
-    let both = fetch_failure_text(true, true);
-    assert!(both.contains("saved releases") && both.contains("Concerts"));
-}
-
-#[test]
 fn nr_37_the_popover_footer_reports_the_older_of_both_feeds() {
     let news = ActiveFeed {
         active: true,
@@ -457,7 +430,7 @@ fn nr_3a_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
 /// The reachability gap NR-8 closes. Every other test here enables the
 /// module *after* inserting a release, so none of them walks the path a
 /// real user takes: switch the plugin on while the table is still empty.
-/// On that path the sparkle never appears, "Fetch now" lives inside the
+/// On that path the sparkle never appears, the reload action lives inside the
 /// popover behind it, and nothing else requests a fetch — so the feature
 /// can never populate itself. Green rule-by-rule tests missed this because
 /// the defect sits between the rules, not inside one.
