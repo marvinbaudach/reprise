@@ -1369,9 +1369,10 @@ result.
   due check from repeating it the same day. Up to three releases send one
   notification each, carrying the release title, `{artist} · {type} · out
   today` and the cover when it is available; four or more collapse into a
-  single collected notification. Activating a notification opens exactly
-  the URL its popover row would open, through the shared external-link
-  guard.
+  single collected notification. Activating a per-release notification
+  opens exactly the URL its popover row would open, through the shared
+  external-link guard; the collected notification has no single release to
+  point at and opens the Releases view instead.
   Test: `os_6_the_first_fetch_announces_nothing`
   (`crates/reprise-core/src/artist_news_notify.rs`, `#[cfg(test)]`).
 - **OS-7** [active] [gtk] — Update notifications are a three-step
@@ -2530,7 +2531,7 @@ the panel).
   or Space.
   Test: `nr_36_dismissing_a_row_never_opens_its_link`
   (`ui/updates/popover_tests.rs`).
-- **NR-37** [active] [gtk] — replaces NR-22. The Releases view and the
+- **NR-37** [active] [core] [gtk] — replaces NR-22. The Releases view and the
   Updates popover use CONC-15's live-state footer with `releases` and
   `updates` as their unit. There is no "Fetch now" button and no update
   age; the reload icon button carries the manual trigger, and the

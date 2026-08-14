@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 use crate::artist_news::{refresh_with_progress_at, FetchScope, RefreshHooks, RefreshProgress};
 
 #[test]
-fn nr_22_refresh_reports_determinate_progress_for_every_queued_artist() {
+fn nr_37_refresh_reports_determinate_progress_for_every_queued_artist() {
     let db = crate::db::Db::open_in_memory().unwrap();
     for (path, artist, mbid, plays) in [
         (
@@ -74,7 +74,7 @@ fn nr_22_refresh_reports_determinate_progress_for_every_queued_artist() {
 }
 
 #[test]
-fn nr_22_successful_empty_refresh_still_records_its_completion_time() {
+fn nr_37_successful_empty_refresh_still_records_its_completion_time() {
     let db = crate::db::Db::open_in_memory().unwrap();
     let mut fetch = |_url: &str| -> Result<String, crate::musicbrainz::FetchError> {
         panic!("an empty refresh must not issue a request")
@@ -111,7 +111,7 @@ fn nr_22_successful_empty_refresh_still_records_its_completion_time() {
 }
 
 #[test]
-fn nr_22_failed_refresh_preserves_the_previous_successful_age() {
+fn nr_37_failed_refresh_preserves_the_previous_successful_age() {
     let db = crate::db::Db::open_in_memory().unwrap();
     crate::artist_news_ledger::record_attempt(
         db.conn(),
