@@ -18,9 +18,9 @@ const CHURN_FIXTURE_ALBUMS: usize = 16;
 const WALL_CLOCK_TOGGLES: usize = 9;
 const MAX_PERF_ALBUMS: usize = 1_000;
 
-/// Measured on 57ff0bfc74 with the 16 × 12 fixture: 386 items
-/// changed for one album toggle (one full splice of the whole store).
-const MAX_TOGGLE_CHURN: u32 = 386;
+/// Measured on 57ff0bfc74 with the 16 x 12 fixture: 386 items changed before
+/// the fix. Measured on this incremental path: 24 items for the same toggle.
+const MAX_TOGGLE_CHURN: u32 = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AlbumHeaderCounts {
@@ -179,7 +179,27 @@ fn review_selection_toggle_wall_clock_probe() {
         (WALL_CLOCK_TOGGLES..=MAX_PERF_ALBUMS).contains(&album_count),
         "REPRISE_DOCTOR_PERF_ALBUMS must be between {WALL_CLOCK_TOGGLES} and {MAX_PERF_ALBUMS}"
     );
+    let (full_median_us, full_max_us) = measure_selection_path(album_count, true);
+    let (selection_median_us, selection_max_us) = measure_selection_path(album_count, false);
+    std::env::remove_var("REPRISE_DOCTOR_FULL_REFRESH");
+    eprintln!(
+        "PERFORMANCE doctor_review path=full albums={album_count} rows={} toggles={WALL_CLOCK_TOGGLES} median_us={full_median_us} max_us={full_max_us}",
+        album_count * TRACKS_PER_ALBUM
+    );
+    eprintln!(
+        "PERFORMANCE doctor_review path=selection albums={album_count} rows={} toggles={WALL_CLOCK_TOGGLES} median_us={selection_median_us} max_us={selection_max_us}",
+        album_count * TRACKS_PER_ALBUM
+    );
+}
+
+fn measure_selection_path(album_count: usize, full_refresh_only: bool) -> (u128, u128) {
+    if full_refresh_only {
+        std::env::set_var("REPRISE_DOCTOR_FULL_REFRESH", "1");
+    } else {
+        std::env::remove_var("REPRISE_DOCTOR_FULL_REFRESH");
+    }
     let page = page_for(&generated_scan(album_count));
+    assert_eq!(page.state.full_refresh_only, full_refresh_only);
     let rows = page.state.visible_rows();
     let mut albums = rows
         .iter()
@@ -201,15 +221,12 @@ fn review_selection_toggle_wall_clock_probe() {
             }
         }
         let started = Instant::now();
-        page.state.refresh();
+        page.state.apply_selection(true);
         elapsed.push(started.elapsed().as_micros());
     }
 
     elapsed.sort_unstable();
     let median_us = elapsed[WALL_CLOCK_TOGGLES / 2];
     let max_us = elapsed[WALL_CLOCK_TOGGLES - 1];
-    eprintln!(
-        "PERFORMANCE doctor_review path=full albums={album_count} rows={} toggles={WALL_CLOCK_TOGGLES} median_us={median_us} max_us={max_us}",
-        album_count * TRACKS_PER_ALBUM
-    );
+    (median_us, max_us)
 }

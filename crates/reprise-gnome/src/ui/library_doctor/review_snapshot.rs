@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use gtk4::gio;
+use gtk4::glib;
+use gtk4::prelude::*;
 use reprise_core::library_doctor::{DoctorReviewRowId, DoctorReviewRowState};
 
 use super::review_model::ReviewRowModel;
@@ -25,7 +28,6 @@ pub(super) struct ReviewTotals {
 pub(super) struct ReviewSnapshot {
     pub(super) rows: Vec<ReviewRowModel>,
     pub(super) albums: HashMap<String, AlbumCounts>,
-    #[cfg_attr(not(test), allow(dead_code))]
     index: HashMap<DoctorReviewRowId, u32>,
     pub(super) totals: ReviewTotals,
 }
@@ -64,7 +66,6 @@ impl ReviewSnapshot {
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn selection_diff(
         &self,
         session: &reprise_core::library_doctor::DoctorReviewSession,
@@ -104,7 +105,6 @@ impl ReviewSnapshot {
             .collect()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn with_selection(mut self, changed: &[(u32, ReviewRowModel)]) -> Self {
         for (position, replacement) in changed {
             let position = usize::try_from(*position).expect("review row position fits usize");
@@ -132,6 +132,59 @@ impl ReviewSnapshot {
         }
         self
     }
+}
+
+pub(super) fn splice_selection_rows(
+    store: &gio::ListStore,
+    changed: &[(u32, ReviewRowModel)],
+    row_count: usize,
+) {
+    debug_assert_store_layout(store, row_count);
+    debug_assert!(changed.windows(2).all(|pair| pair[0].0 < pair[1].0));
+    let row_count = u32::try_from(row_count).expect("review row count fits u32");
+    let mut run_start = 0;
+    while run_start < changed.len() {
+        let first_position = changed[run_start].0;
+        let mut run_end = run_start + 1;
+        while run_end < changed.len()
+            && changed[run_end].0
+                == first_position + u32::try_from(run_end - run_start).expect("run length fits u32")
+        {
+            run_end += 1;
+        }
+        debug_assert!(changed[run_start..run_end]
+            .iter()
+            .all(|(position, _)| *position < row_count));
+        let objects = changed[run_start..run_end]
+            .iter()
+            .map(|(_, row)| glib::BoxedAnyObject::new(row.clone()).upcast::<glib::Object>())
+            .collect::<Vec<_>>();
+        store.splice(
+            first_position,
+            u32::try_from(objects.len()).expect("selection splice length fits u32"),
+            &objects,
+        );
+        run_start = run_end;
+    }
+}
+
+fn debug_assert_store_layout(store: &gio::ListStore, row_count: usize) {
+    let row_count = u32::try_from(row_count).expect("review row count fits u32");
+    debug_assert!(matches!(
+        store.n_items().checked_sub(row_count),
+        Some(0 | 1)
+    ));
+    debug_assert!((0..row_count).all(|position| {
+        store
+            .item(position)
+            .is_some_and(|item| item.is::<glib::BoxedAnyObject>())
+    }));
+    debug_assert!(
+        store.n_items() == row_count
+            || store
+                .item(row_count)
+                .is_some_and(|item| item.is::<gtk4::Widget>())
+    );
 }
 
 fn blocked_state(

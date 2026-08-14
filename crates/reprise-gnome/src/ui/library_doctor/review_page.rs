@@ -25,7 +25,7 @@ use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
     ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
 };
-use super::review_snapshot::ReviewSnapshot;
+use super::review_snapshot::{splice_selection_rows, ReviewSnapshot};
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -49,9 +49,11 @@ struct ReviewState {
     select_all: gtk4::CheckButton,
     select_all_handler: RefCell<Option<glib::SignalHandlerId>>,
     controls_locked: Cell<bool>,
+    full_refresh_only: bool,
     layout: Rc<Cell<ReviewLayout>>,
     column_groups: ReviewColumnGroups,
     outcomes: RefCell<HashMap<DoctorReviewRowId, ReviewOutcome>>,
+    ready_count: Cell<usize>,
     snapshot: RefCell<ReviewSnapshot>,
     on_reviewed: Rc<dyn Fn()>,
 }
@@ -73,6 +75,7 @@ impl ReviewState {
         self.filter_bar.set_categories(&categories);
         let stale_notice = review_stale_notice(&session);
         let ready_count = review_ready_count(&session);
+        self.ready_count.set(ready_count);
         let grouped_rows_started = Instant::now();
         let snapshot = ReviewSnapshot::from_rows(grouped_rows_for(
             &self.scan,
@@ -115,15 +118,7 @@ impl ReviewState {
         if count > 0 && selected != gtk4::INVALID_LIST_POSITION {
             self.selection.set_selected(selected.min(count - 1));
         }
-        let summary = self.session.borrow().summary();
-        self.apply
-            .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
-        self.apply.set_sensitive(summary.tag_change_count > 0);
-        self.change_summary.set_label(&review_footer_summary(
-            summary,
-            self.category.get(),
-            ready_count,
-        ));
+        self.refresh_action_summary(ready_count);
         let aggregate_started = Instant::now();
         self.refresh_filter_summary();
         self.refresh_master_check();
@@ -171,15 +166,68 @@ impl ReviewState {
         *self.select_all_handler.borrow_mut() = handler;
     }
 
+    fn refresh_action_summary(&self, ready_count: usize) {
+        let summary = self.session.borrow().summary();
+        self.apply
+            .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
+        self.apply.set_sensitive(summary.tag_change_count > 0);
+        self.change_summary.set_label(&review_footer_summary(
+            summary,
+            self.category.get(),
+            ready_count,
+        ));
+    }
+
     fn set_selected(self: &Rc<Self>, row_ids: &[DoctorReviewRowId], selected: bool) {
         let mut session = self.session.borrow_mut();
+        let mut session_changed = false;
         for row_id in row_ids {
-            if let Err(error) = session.set_selected(*row_id, selected) {
-                tracing::warn!(%error, "could not update Library Doctor review selection");
+            match session.set_selected(*row_id, selected) {
+                Ok(()) => session_changed = true,
+                Err(error) => {
+                    tracing::warn!(%error, "could not update Library Doctor review selection");
+                }
             }
         }
         drop(session);
-        self.refresh();
+        self.apply_selection(session_changed);
+    }
+
+    fn apply_selection(self: &Rc<Self>, session_changed: bool) {
+        if !session_changed {
+            return;
+        }
+        if self.full_refresh_only {
+            self.refresh();
+            return;
+        }
+        let started = Instant::now();
+        let changed = {
+            let snapshot = self.snapshot.borrow();
+            let session = self.session.borrow();
+            snapshot.selection_diff(&session)
+        };
+        if changed.is_empty() {
+            tracing::debug!(
+                path = "selection",
+                touched = 0,
+                elapsed_us = started.elapsed().as_micros(),
+                "DOCTOR_REVIEW_REFRESH path"
+            );
+            return;
+        }
+        let row_count = self.snapshot.borrow().rows.len();
+        splice_selection_rows(&self.store, &changed, row_count);
+        let snapshot = std::mem::take(&mut *self.snapshot.borrow_mut());
+        *self.snapshot.borrow_mut() = snapshot.with_selection(&changed);
+        self.refresh_action_summary(self.ready_count.get());
+        self.refresh_master_check();
+        tracing::debug!(
+            path = "selection",
+            touched = changed.len(),
+            elapsed_us = started.elapsed().as_micros(),
+            "DOCTOR_REVIEW_REFRESH path"
+        );
     }
 
     fn toggle_position(self: &Rc<Self>, position: u32) {
@@ -520,6 +568,8 @@ impl LibraryDoctorReviewPage {
         footer.append(&change_summary);
         footer.append(&apply);
         let layout = Rc::new(Cell::new(ReviewLayout::Wide));
+        let full_refresh_only =
+            std::env::var("REPRISE_DOCTOR_FULL_REFRESH").is_ok_and(|value| value == "1");
         let state = Rc::new(ReviewState {
             conn: conn.clone(),
             scan: scan.clone(),
@@ -539,9 +589,11 @@ impl LibraryDoctorReviewPage {
             select_all: header.select_all.clone(),
             select_all_handler: RefCell::new(None),
             controls_locked: Cell::new(false),
+            full_refresh_only,
             layout,
             column_groups: header.groups.clone(),
             outcomes: RefCell::new(HashMap::new()),
+            ready_count: Cell::new(0),
             snapshot: RefCell::new(ReviewSnapshot::default()),
             on_reviewed,
         });
@@ -579,7 +631,7 @@ impl LibraryDoctorReviewPage {
                     } else {
                         state.session.borrow_mut().none();
                     }
-                    state.refresh();
+                    state.apply_selection(true);
                 }
             ));
             *state.select_all_handler.borrow_mut() = Some(handler);
