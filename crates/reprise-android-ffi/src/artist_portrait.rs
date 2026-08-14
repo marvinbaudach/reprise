@@ -96,6 +96,55 @@ mod tests {
     }
 
     #[test]
+    fn android_artwork_sizes_map_to_the_three_measured_rungs() {
+        assert_eq!(
+            crate::AndroidArtworkSize::List.thumbnail_size().pixels(),
+            168
+        );
+        assert_eq!(
+            crate::AndroidArtworkSize::NowPlaying
+                .thumbnail_size()
+                .pixels(),
+            1092
+        );
+        assert_eq!(
+            crate::AndroidArtworkSize::ArtistDetail
+                .thumbnail_size()
+                .pixels(),
+            640
+        );
+    }
+
+    #[test]
+    fn a_portrait_is_never_requested_at_the_now_playing_rung() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            move |name, dir| {
+                Ok(reprise_core::artist_portrait::PortraitOutcome::Found(
+                    store_portrait_fixture_in(dir, name),
+                ))
+            },
+        )
+        .unwrap();
+        open_gate(&library);
+
+        let fetched = library
+            .artist_portrait_fetch("Band", crate::AndroidArtworkSize::ArtistDetail)
+            .unwrap()
+            .unwrap();
+        let cached = library
+            .artist_portrait_cached("Band", crate::AndroidArtworkSize::ArtistDetail)
+            .unwrap();
+
+        assert!(fetched.ends_with("-640.png"), "got {fetched}");
+        assert!(cached.ends_with("-640.png"), "got {cached}");
+        assert!(!fetched.ends_with("-1092.png"), "got {fetched}");
+        assert!(!cached.ends_with("-1092.png"), "got {cached}");
+    }
+
+    #[test]
     fn portraits_live_under_the_app_cache_root_not_the_xdg_cache() {
         let directory = tempfile::tempdir().unwrap();
         let cache = directory.path().join("cache");
