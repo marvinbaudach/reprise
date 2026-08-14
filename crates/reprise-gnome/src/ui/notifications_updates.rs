@@ -14,6 +14,22 @@ use reprise_core::db::Db;
 
 const COLLECT_RELEASES_AT: usize = 4;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct ConcertAnnouncementState {
+    observed_unseen: usize,
+}
+
+impl ConcertAnnouncementState {
+    pub(super) fn observe(self, unseen: usize) -> (Self, bool) {
+        (
+            Self {
+                observed_unseen: unseen,
+            },
+            unseen > self.observed_unseen,
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum NotificationTarget {
     Link(String),
@@ -106,8 +122,8 @@ pub(super) fn send_due_concerts(
     application: &gio::Application,
     db: &Db,
     today: NaiveDate,
+    count: usize,
 ) -> Result<usize, rusqlite::Error> {
-    let count = concert_delta_count(db, today)?;
     if count == 0 {
         return Ok(0);
     }
@@ -242,6 +258,7 @@ mod tests {
 
     use super::{
         concert_notification_spec, deliver_release_candidates, release_notification_specs,
+        ConcertAnnouncementState,
     };
 
     fn release(mbid: &str, artist: &str, title: &str) -> StoredRelease {
@@ -295,6 +312,27 @@ mod tests {
         assert_eq!(
             notification.target,
             super::NotificationTarget::View("concerts")
+        );
+    }
+
+    #[test]
+    fn concert_notifications_follow_unseen_stack_growth_and_reset() {
+        let (state, should_send) = ConcertAnnouncementState::default().observe(2);
+        assert!(should_send, "the first non-empty stack should be announced");
+
+        let (state, should_send) = state.observe(2);
+        assert!(!should_send, "an unchanged stack should stay silent");
+
+        let (state, should_send) = state.observe(3);
+        assert!(should_send, "a grown stack should be announced again");
+
+        let (state, should_send) = state.observe(0);
+        assert!(!should_send, "emptying the stack should stay silent");
+
+        let (_, should_send) = state.observe(1);
+        assert!(
+            should_send,
+            "a new concert after the stack was emptied should be announced"
         );
     }
 

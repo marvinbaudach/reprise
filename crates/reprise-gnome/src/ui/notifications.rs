@@ -46,7 +46,7 @@ pub(crate) fn arm_update_notifications(application: &adw::Application, db: &Rc<D
     let application = application.clone().upcast::<gio::Application>();
     let db = db.clone();
     let cover_generation = Rc::new(Cell::new(0));
-    let concerts_announced = Rc::new(Cell::new(false));
+    let concert_state = Rc::new(Cell::new(updates::ConcertAnnouncementState::default()));
     let run = Rc::new(move || {
         let now = chrono::Utc::now().timestamp();
         let today = chrono::Local::now().date_naive();
@@ -55,13 +55,23 @@ pub(crate) fn arm_update_notifications(application: &adw::Application, db: &Rc<D
         {
             tracing::warn!(%error, "could not run update notification due check");
         }
-        if !concerts_announced.get() {
-            match updates::send_due_concerts(&application, &db, today) {
-                Ok(count) if count > 0 => concerts_announced.set(true),
-                Ok(_) => {}
-                Err(error) => {
-                    tracing::warn!(%error, "could not read Concerts notification delta");
+        match updates::concert_delta_count(&db, today) {
+            Ok(count) => {
+                let (next_state, should_send) = concert_state.get().observe(count);
+                if !should_send {
+                    concert_state.set(next_state);
+                } else {
+                    match updates::send_due_concerts(&application, &db, today, count) {
+                        Ok(sent) if sent > 0 => concert_state.set(next_state),
+                        Ok(_) => {}
+                        Err(error) => {
+                            tracing::warn!(%error, "could not send Concerts notification delta");
+                        }
+                    }
                 }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "could not read Concerts notification delta");
             }
         }
     });
