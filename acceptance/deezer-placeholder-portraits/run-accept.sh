@@ -789,8 +789,16 @@ before_prada_hash=$(sha256sum "$before_prada" | cut -d' ' -f1)
 before_oceano_hash=$(sha256sum "$before_oceano" | cut -d' ' -f1)
 after_prada_hash=$(sha256sum "$after_prada" | cut -d' ' -f1)
 
-if ! grep -Fxq "$before_prada_hash" <<<"$reference_hashes"; then
-  echo "origin/dev did not reproduce the known placeholder for The Devil Wears Prada" >&2
+# The Devil Wears Prada is the control arm, no longer the subject. Its silhouette
+# hides behind the empty-string MD5, which is one of the two structural
+# identifiers that survive on the baseline, so origin/dev already rejects that
+# candidate before downloading anything and caches the same photograph the
+# candidate does. Demanding the silhouette here — the shape this oracle had when
+# the baseline still predated that identifier list — is unsatisfiable by
+# construction and says nothing about the fingerprint under test. What it must
+# say instead: the fingerprint leaves an artist alone that was already correct.
+if [[ "$before_prada_hash" != "$after_prada_hash" ]]; then
+  echo "the fingerprint disturbed The Devil Wears Prada, which the baseline already resolved: $before_prada_hash became $after_prada_hash" >&2
   exit 1
 fi
 for portrait_hash in "$before_oceano_hash" "$after_prada_hash"; do
@@ -805,8 +813,9 @@ done
   printf 'before_oceano=%s  %s\n' "$before_oceano_hash" "$before_oceano"
   printf 'after_prada=%s  %s\n' "$after_prada_hash" "$after_prada"
   printf 'after_oceano_negative_marker=%s\n' "$after_oceano_marker"
-  printf 'before_prada_matches_known_placeholder=true\n'
+  printf 'prada_unchanged_by_the_fingerprint=true\n'
   printf 'after_prada_differs_from_known_placeholders=true\n'
+  printf 'before_oceano_differs_from_known_placeholders=true\n'
   printf 'after_oceano_has_negative_marker=true\n'
   printf 'after_oceano_has_cached_image=false\n'
 } >"$output_dir/named-cache-proof.txt"
@@ -817,14 +826,19 @@ cat >"$output_dir/MANUAL-REVIEW.md" <<'EOF'
 - Compare `before/my-stats.png` and `after/my-stats.png` at the same ranks.
 - Both screenshots are captured after expanding the ranking; confirm the
   `Hide more top artists` control and Oceano are visible in the retained CUA evidence.
-- Before: rank 3, The Devil Wears Prada, must show the known grey silhouette.
-- After: ranks 1 through 10 show no grey person silhouette.
-- After: rank 3 shows a photograph, not initials or an album cover.
-- After: rank 10, Oceano, shows initials, not a photograph or album cover. Its
-  most popular exact-name candidate now reaches content validation, is rejected
-  as the known silhouette, and must not fall back to the pictured namesake.
-- Treat ranks 3 and 10 as the intended selection changes.
-- Confirm the other eight ranks show the same identities before and after, or record every change.
+- Ranks move with the listening history; find the artists by name, not by number.
+- Neither screenshot shows a grey person silhouette anywhere. The baseline already
+  rejects the two structural identifiers, so a silhouette in the before arm would
+  mean the baseline regressed, not that this change is needed.
+- Oceano is the only intended difference: a photograph before, initials after. Its
+  most popular exact-name candidate now reaches content validation, is rejected as
+  the known silhouette, and must not fall back to the pictured namesake.
+- The Devil Wears Prada is the control: the same photograph in both arms. It hides
+  behind the empty-string MD5, which the baseline already catches at selection.
+- Confirm every other artist shows the same identity in both arms, or record each
+  change. Only the artists rendered in the ranking are fetched at all — silhouettes
+  further down the library are covered by the corpus measurement in
+  `docs/evidence/portrait-placeholder-fingerprint/rust-separation.txt`, not here.
 - Read `settings-proof.txt`, `cache-before.txt`, `cache-listing.txt`, and
   `named-cache-proof.txt` alongside the screenshots. The empty cache plus the
   named images created afterward is the positive portrait-request proof.
