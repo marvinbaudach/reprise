@@ -2,7 +2,7 @@
 slug: android-ci-gates
 worktree: /home/marvin/Projects/reprise-android-ci-gates
 branch: feature/android-ci-gates
-phase: planned
+phase: in-progress
 codex_session:
 created: 2026-08-14
 ---
@@ -129,7 +129,7 @@ it.
 
 **Steps:**
 
-- [ ] **Step 1: Prove the trap is real on your tree.** Run the suite under a
+- [x] **Step 1: Prove the trap is real on your tree.** Run the suite under a
       JDK 26 and watch it fail, so you know the counter-proof in Step 3 means
       something:
 
@@ -140,15 +140,15 @@ it.
       Expected: a non-zero count. If no JDK above 21 is installed, say so in the
       commit message and skip to Step 2 — the pin is still correct.
 
-- [ ] **Step 2: Add the toolchain pin** to `android/app/build.gradle.kts`, with
+- [x] **Step 2: Add the toolchain pin** to `android/app/build.gradle.kts`, with
       a comment naming what it prevents (`Unsupported class file major version
       70`, Robolectric 4.16.1 cannot instrument Java 26 class files).
 
-- [ ] **Step 3: Counter-proof.** Repeat the exact command from Step 1. Expected
+- [x] **Step 3: Counter-proof.** Repeat the exact command from Step 1. Expected
       now: zero occurrences of `major version 70`, and the suite runs. Quote the
       before and after counts.
 
-- [ ] **Step 4: Commit.** `build: pin the Android unit tests to a Java 21 toolchain`
+- [x] **Step 4: Commit.** `build: pin the Android unit tests to a Java 21 toolchain`
 
 ---
 
