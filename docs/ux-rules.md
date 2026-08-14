@@ -2356,7 +2356,7 @@ the panel).
   failure already on screen; reconnect removes only an offline-authored
   notice. A successful fetch removes the notice silently. NR-22's spinner
   and NR-8's consent and first-fetch loop remain unchanged.
-- **NR-22** [active] [core] [gtk] — „Fetch now" replaces its refresh icon with
+- **NR-22** [replaced by NR-37] [core] [gtk] — „Fetch now" replaces its refresh icon with
   a spinner during the fetch. The Releases footer replaces the stale update
   age with determinate checked/total artist progress for that run, then shows
   the age measured from the completed update again, including a successful run
@@ -2509,6 +2509,16 @@ the panel).
   never open its link. Both are reachable with Tab and activate with Enter
   or Space.
   Test: `nr_36_dismissing_a_row_never_opens_its_link`
+  (`ui/updates/popover_tests.rs`).
+- **NR-37** [active] [gtk] — replaces NR-22. The Releases view and the
+  Updates popover use CONC-15's live-state footer with `releases` and
+  `updates` as their unit. There is no "Fetch now" button and no update
+  age; the reload icon button carries the manual trigger, and the
+  determinate checked/total artist progress appears in the footer's
+  progress bar. The popover's footer aggregates both feeds: any running
+  fetch makes it "updating", otherwise it reports the older of the two
+  timestamps.
+  Test: `nr_37_the_popover_footer_reports_the_older_of_both_feeds`
   (`ui/updates/popover_tests.rs`).
 - **NR-38** [active] [gtk] — A popover row opens its link on a single
   click anywhere on its activation surface — cover, title, meta or tag —

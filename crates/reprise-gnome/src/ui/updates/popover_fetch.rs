@@ -2,7 +2,6 @@
 
 use std::rc::Rc;
 
-use gtk4::prelude::*;
 use reprise_core::updates::{Feed, FeedRefresh};
 
 use super::{fetch_from_database, NewReleasesPopover};
@@ -42,10 +41,6 @@ impl NewReleasesPopover {
         }
         self.fetching.set(true);
         self.run.replace(run);
-        self.fetch_stack.set_visible_child_name("spinner");
-        self.spinner.start();
-        self.fetch_button.set_sensitive(false);
-        self.failure.set_visible(false);
         self.render(false, false);
 
         if news_enabled {
@@ -133,13 +128,16 @@ impl NewReleasesPopover {
             run.finish(feed, failed);
             (run.is_complete(), run.has_failed(Feed::NewReleases))
         };
+        if !failed {
+            match feed {
+                Feed::NewReleases => self.news_loaded_this_visit.set(true),
+                Feed::Concerts => self.concerts_loaded_this_visit.set(true),
+            }
+        }
         if !complete {
             return;
         }
         self.fetching.set(false);
-        self.spinner.stop();
-        self.fetch_stack.set_visible_child_name("icon");
-        self.fetch_button.set_sensitive(true);
         self.render(false, news_failed);
     }
 }

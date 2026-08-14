@@ -64,6 +64,9 @@ const NEWS_FEED_RELOAD: &str = N_!("Reload");
 pub const RELEASES_UPDATING: &str = N_!("Updating releases …");
 pub const RELEASES_UPDATE_FAILED: &str = N_!("Update failed — showing saved releases from {time}");
 pub const RELEASES_OFFLINE: &str = N_!("Offline — showing saved releases from {time}");
+pub const UPDATES_UPDATING: &str = N_!("Updating …");
+pub const UPDATES_UPDATE_FAILED: &str = N_!("Update failed — showing saved updates from {time}");
+pub const UPDATES_OFFLINE: &str = N_!("Offline — showing saved updates from {time}");
 
 pub fn tracks_selected(count: usize) -> String {
     let count_text = count.to_string();
@@ -194,6 +197,23 @@ pub(in crate::ui) fn releases_feed_footer_copy() -> crate::ui::feed_footer::Feed
         no_credentials: NEWS_FEED_NOT_LOADED,
         failed: releases_update_failed,
         offline: releases_offline,
+    }
+}
+
+fn updates_update_failed(time: &str) -> String {
+    formatted(UPDATES_UPDATE_FAILED, &[("time", time)])
+}
+
+fn updates_offline(time: &str) -> String {
+    formatted(UPDATES_OFFLINE, &[("time", time)])
+}
+
+pub(in crate::ui) fn updates_feed_footer_copy() -> crate::ui::feed_footer::FeedFooterCopy {
+    crate::ui::feed_footer::FeedFooterCopy {
+        updating: UPDATES_UPDATING,
+        no_credentials: super::concerts::CONCERTS_NEEDS_CONFIGURATION,
+        failed: updates_update_failed,
+        offline: updates_offline,
     }
 }
 

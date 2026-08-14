@@ -237,7 +237,7 @@ fn nr_29_opening_stamps_every_unseen_candidate_not_only_the_visible_batch() {
 }
 
 #[test]
-fn nr_22_failure_keeps_updated_age_with_an_inline_cached_hint() {
+fn legacy_cached_failure_presentation_keeps_its_inline_hint_until_cleanup() {
     let presentation = footer_presentation(Some(100), 3_700, true);
 
     assert_eq!(presentation.updated, "Updated 1 h ago");
@@ -261,6 +261,32 @@ fn shared_footer_uses_the_oldest_active_feed_and_names_failures() {
     assert!(fetch_failure_text(false, true).contains("Concerts"));
     let both = fetch_failure_text(true, true);
     assert!(both.contains("saved releases") && both.contains("Concerts"));
+}
+
+#[test]
+fn nr_37_the_popover_footer_reports_the_older_of_both_feeds() {
+    let news = ActiveFeed {
+        active: true,
+        latest: Some(200),
+        loaded_this_visit: true,
+    };
+    let concerts = ActiveFeed {
+        active: true,
+        latest: Some(100),
+        loaded_this_visit: false,
+    };
+
+    assert_eq!(
+        aggregate_footer_state(news, concerts, true, false, false, false),
+        crate::ui::feed_footer::FeedFooterState::Cached { at: 100 }
+    );
+    assert_eq!(
+        aggregate_footer_state(news, concerts, true, true, false, false),
+        crate::ui::feed_footer::FeedFooterState::Fetching {
+            checked: 0,
+            total: 0
+        }
+    );
 }
 
 /// A no-op stand-in for the window-supplied navigation callback: these

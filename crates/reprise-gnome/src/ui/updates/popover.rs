@@ -17,12 +17,15 @@ use super::concerts_section::ConcertsSection;
 #[cfg(test)]
 use super::feed_row;
 use super::feed_snapshot;
+use super::footer_state::{aggregate as aggregate_footer_state, ActiveFeed};
+#[cfg(test)]
 use super::footer_state::{
     failure_text as fetch_failure_text, oldest_active_feed_timestamp,
     presentation as footer_presentation,
 };
 use super::release_row;
 use super::shell;
+use crate::ui::feed_footer::FeedFooter;
 
 #[path = "popover_fetch.rs"]
 mod popover_fetch;
@@ -113,15 +116,13 @@ struct NewReleasesPopover {
     empty: gtk4::Label,
     releases_header: gtk4::Button,
     new_tag: gtk4::Label,
-    fetch_button: gtk4::Button,
-    fetch_stack: gtk4::Stack,
-    spinner: gtk4::Spinner,
-    updated: gtk4::Label,
-    failure: gtk4::Label,
+    footer: FeedFooter,
     fetching: Cell<bool>,
     /// The fetch currently in flight across both feeds, or the finished one
     /// whose outcome the footer is still showing.
     run: RefCell<FeedRefresh>,
+    news_loaded_this_visit: Cell<bool>,
+    concerts_loaded_this_visit: Cell<bool>,
     dismissed_concert_ids: RefCell<HashSet<i64>>,
     generation: Cell<u64>,
     /// The hourly background staleness timer (Beschluss 8), running only
@@ -150,11 +151,7 @@ impl NewReleasesPopover {
             empty,
             releases_header,
             new_tag,
-            fetch_button,
-            fetch_stack,
-            spinner,
-            updated,
-            failure,
+            footer,
         } = shell::build();
 
         let state = Rc::new(Self {
@@ -170,13 +167,11 @@ impl NewReleasesPopover {
             empty,
             releases_header,
             new_tag,
-            fetch_button,
-            fetch_stack,
-            spinner,
-            updated,
-            failure,
+            footer,
             fetching: Cell::new(false),
             run: RefCell::new(FeedRefresh::start(&[])),
+            news_loaded_this_visit: Cell::new(false),
+            concerts_loaded_this_visit: Cell::new(false),
             dismissed_concert_ids: RefCell::new(HashSet::new()),
             generation: Cell::new(0),
             refresh_timer: Cell::new(None),
@@ -243,7 +238,7 @@ impl NewReleasesPopover {
         });
 
         let weak = Rc::downgrade(self);
-        self.fetch_button.connect_clicked(move |_| {
+        self.footer.connect_reload(move || {
             if let Some(state) = weak.upgrade() {
                 state.start_fetch(true);
             }
@@ -402,20 +397,29 @@ impl NewReleasesPopover {
         let latest_news = reprise_core::artist_news::latest_fetched_at(&self.conn)
             .ok()
             .flatten();
-        let latest = oldest_active_feed_timestamp(
-            news_enabled,
-            latest_news,
-            concerts_enabled && concerts.credentials,
-            latest_concerts,
+        let concerts_active = concerts_enabled && concerts.credentials;
+        let run_failed = {
+            let run = self.run.borrow();
+            failed || run.has_failed(Feed::NewReleases) || run.has_failed(Feed::Concerts)
+        };
+        let footer_state = aggregate_footer_state(
+            ActiveFeed {
+                active: news_enabled,
+                latest: latest_news,
+                loaded_this_visit: self.news_loaded_this_visit.get(),
+            },
+            ActiveFeed {
+                active: concerts_active,
+                latest: latest_concerts,
+                loaded_this_visit: self.concerts_loaded_this_visit.get(),
+            },
+            reprise_core::online_sources::is_enabled(&self.conn).unwrap_or(false),
+            self.fetching.get(),
+            run_failed,
+            concerts_enabled && !concerts.credentials,
         );
-        let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
-        self.updated.set_label(&footer.updated);
-        self.updated.set_visible(latest.is_some());
-        let failure_text = fetch_failure_text(failed, self.run.borrow().has_failed(Feed::Concerts));
-        self.failure.set_label(&failure_text);
-        self.failure.set_visible(
-            footer.show_cached_failure || self.run.borrow().has_failed(Feed::Concerts),
-        );
+        self.footer
+            .apply_with_copy(footer_state, strings::updates_feed_footer_copy());
     }
 
     fn concerts_badge_state(&self, today: chrono::NaiveDate) -> (bool, bool, i64, Option<i64>) {
