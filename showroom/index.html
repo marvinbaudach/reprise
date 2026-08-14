@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reprise — two native apps on one Rust core</title>
+    <meta
+      name="description"
+      content="A GNOME desktop app and an Android app on one shared Rust core, built with AI agents. What gets merged is decided by 21 gates, not by the agent."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=Martian+Mono:wght@300..600&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // Runs before the first paint. Without it the page renders in the default
+      // theme and repaints once the toggle mounts — the flash that gives away a
+      // theme switch bolted on afterwards.
+      (function applyStoredTheme() {
+        try {
+          var stored = localStorage.getItem('reprise-theme');
+          if (stored === 'light' || stored === 'dark') {
+            document.documentElement.setAttribute('data-theme', stored);
+          }
+        } catch (error) {
+          // Private mode or blocked storage: fall through to the system setting.
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/entry-client.tsx"></script>
+  </body>
+</html>

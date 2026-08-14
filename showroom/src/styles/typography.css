@@ -1,0 +1,88 @@
+/*
+ * Typography.
+ *
+ * Archivo is a variable family with a width axis. The headlines run it wide and
+ * heavy — the proportions of a level meter — and the body text runs the same
+ * family narrow and light. One family, two voices, no second display font.
+ *
+ * Martian Mono carries data lines only: labels, commits, units. Figures are set
+ * in the display face, never hidden in monospace; a measured number is the
+ * loudest thing this page has to say.
+ */
+
+:root {
+  --font-display: 'Archivo', 'Archivo Expanded', system-ui, sans-serif;
+  --font-mono: 'Martian Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --text-eyebrow: 0.6875rem;
+  --text-data: 0.75rem;
+  --text-body-size: clamp(1rem, 0.95rem + 0.22vw, 1.125rem);
+  --text-lead: clamp(1.25rem, 1.05rem + 0.9vw, 1.75rem);
+  --text-chapter: clamp(2.25rem, 1.4rem + 4vw, 5.25rem);
+  --text-figure: clamp(2rem, 1.2rem + 3.4vw, 4rem);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  letter-spacing: -0.025em;
+  line-height: 0.92;
+  text-wrap: balance;
+}
+
+.chapter-title {
+  font-size: var(--text-chapter);
+  color: var(--text-strong);
+  margin: 0;
+}
+
+.figure-value {
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 112, 'wght' 700;
+  font-size: var(--text-figure);
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.lead {
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 92, 'wght' 400;
+  font-size: var(--text-lead);
+  line-height: 1.32;
+  color: var(--text-body);
+  text-wrap: pretty;
+  max-width: 34ch;
+}
+
+.prose {
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 88, 'wght' 350;
+  font-size: var(--text-body-size);
+  line-height: 1.62;
+  color: var(--text-body);
+  max-width: var(--measure);
+  text-wrap: pretty;
+}
+
+.prose strong {
+  font-variation-settings: 'wdth' 88, 'wght' 600;
+  color: var(--text-strong);
+}
+
+.eyebrow,
+.data {
+  font-family: var(--font-mono);
+  font-size: var(--text-eyebrow);
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.data {
+  font-size: var(--text-data);
+  letter-spacing: 0.02em;
+  text-transform: none;
+}

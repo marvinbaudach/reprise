@@ -1,0 +1,228 @@
+/* --- Figures ------------------------------------------------------------- */
+
+.figure-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1px;
+  margin-block: var(--gap-block);
+  background: var(--surface-line-soft);
+  border-block: 1px solid var(--surface-line);
+}
+
+.figure-grid__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  padding: var(--gap-block) var(--gap-line);
+  background: var(--surface-base);
+}
+
+.figure-grid__link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 2px solid color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.figure-grid__link:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.figure-grid__label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-hair);
+  margin: 0;
+}
+
+.figure-grid__detail {
+  color: var(--text-faint);
+}
+
+/* --- The code ratio bar --------------------------------------------------- */
+
+.ratio {
+  margin: 0;
+}
+
+.ratio__bar {
+  display: flex;
+  height: clamp(2.5rem, 1.6rem + 3vw, 4.5rem);
+  border: 1px solid var(--surface-line);
+  overflow: clip;
+}
+
+.ratio__segment {
+  display: block;
+  transform-origin: left center;
+  animation: ratio-grow linear both;
+  animation-timeline: view();
+  animation-range: entry 10% cover 38%;
+}
+
+@keyframes ratio-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@supports not (animation-timeline: view()) {
+  .ratio__segment {
+    animation: none;
+    transform: none;
+  }
+}
+
+.ratio__segment--rust-product {
+  background: var(--accent);
+}
+
+.ratio__segment--rust-test {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklab, var(--accent) 42%, transparent) 0 6px,
+    color-mix(in oklab, var(--accent) 14%, transparent) 6px 12px
+  );
+}
+
+.ratio__segment--android-bridge {
+  background: color-mix(in oklab, var(--second) 55%, transparent);
+}
+
+.ratio__segment--kotlin {
+  background: var(--second);
+}
+
+.ratio__legend {
+  display: grid;
+  gap: var(--gap-tight);
+  margin-block: var(--gap-line) var(--gap-block);
+}
+
+.ratio__row {
+  display: grid;
+  grid-template-columns: 0.75rem 5.5rem minmax(9rem, auto) 1fr;
+  gap: var(--gap-line);
+  align-items: baseline;
+}
+
+.ratio__swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 1px;
+}
+
+.ratio__lines {
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  text-align: right;
+}
+
+.ratio__label {
+  color: var(--text-body);
+}
+
+.ratio__note {
+  color: var(--text-faint);
+}
+
+.ratio__caption {
+  border-left: 2px solid var(--surface-line);
+  padding-left: var(--gap-line);
+}
+
+/* --- The spectral axis ---------------------------------------------------- */
+
+.axis {
+  margin: 0;
+}
+
+.axis__ramp {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right in oklch longer hue, var(--brand-coral), var(--brand-teal));
+}
+
+/* Browsers without interpolation hints would render the short arc — through
+   green, which is not the ramp the app walks. Better to state the two ends
+   plainly than to draw a wrong one. */
+@supports not (background: linear-gradient(to right in oklch longer hue, red, blue)) {
+  .axis__ramp {
+    background: linear-gradient(
+      to right,
+      var(--brand-coral),
+      #e46bd0 26%,
+      #a2a8ff 55%,
+      #6fc7ee 78%,
+      var(--brand-teal)
+    );
+  }
+}
+
+.axis__legend {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--gap-line);
+  align-items: start;
+  margin-top: var(--gap-line);
+}
+
+.axis__end {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.axis__end--right {
+  justify-self: end;
+}
+
+.axis__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+}
+
+.axis__dot--coral {
+  background: var(--brand-coral);
+}
+
+.axis__dot--teal {
+  background: var(--brand-teal);
+}
+
+.axis__caption {
+  text-align: center;
+  color: var(--text-faint);
+  max-width: 62ch;
+  justify-self: center;
+  line-height: 1.5;
+}
+
+@media (max-width: 46rem) {
+  .axis__legend {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .axis__caption {
+    grid-column: 1 / -1;
+    order: 3;
+    text-align: left;
+    justify-self: start;
+  }
+
+  .ratio__row {
+    grid-template-columns: 0.75rem 5rem 1fr;
+  }
+
+  .ratio__note {
+    grid-column: 2 / -1;
+  }
+}

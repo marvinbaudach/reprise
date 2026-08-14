@@ -1,0 +1,139 @@
+/* --- The scroll hairline ------------------------------------------------- */
+
+.hairline {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 5;
+  height: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  background: linear-gradient(to bottom, var(--surface-base) 0%, transparent 100%);
+}
+
+.hairline__track {
+  position: relative;
+  height: 2px;
+  width: 100%;
+  background: var(--surface-line-soft);
+  transition: height var(--duration-normal) var(--ease-out-expo);
+}
+
+.hairline:hover .hairline__track,
+.hairline:focus-within .hairline__track {
+  height: 6px;
+}
+
+.hairline__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(to right, var(--second), var(--accent));
+  animation: hairline-fill linear both;
+  animation-timeline: scroll(root block);
+}
+
+.hairline__head {
+  position: absolute;
+  inset-block: -2px;
+  inset-inline-start: 0;
+  width: 10px;
+  margin-inline-start: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px 2px var(--accent-glow);
+  animation: hairline-head linear both;
+  animation-timeline: scroll(root block);
+}
+
+@keyframes hairline-fill {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes hairline-head {
+  to {
+    transform: translateX(100vw);
+  }
+}
+
+/* Where scroll timelines are missing, the line is simply present rather than
+   animated. A progress bar that is always full is a wrong statement, so it goes
+   quiet instead: the track keeps its rule, the fill and head stay away. */
+@supports not (animation-timeline: scroll(root block)) {
+  .hairline__fill,
+  .hairline__head {
+    display: none;
+  }
+}
+
+/* The marks only surface on approach — a discovery, not an announcement. */
+.hairline__marks {
+  order: 2;
+  display: flex;
+  gap: var(--gap-block);
+  justify-content: flex-end;
+  padding: 0.4rem var(--frame-pad) 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity var(--duration-normal) var(--ease-out-expo),
+    transform var(--duration-normal) var(--ease-out-expo);
+}
+
+.hairline:hover .hairline__marks,
+.hairline:focus-within .hairline__marks {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hairline__mark {
+  font-family: var(--font-mono);
+  font-size: var(--text-eyebrow);
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.hairline__mark:hover {
+  color: var(--accent);
+}
+
+/* --- The header ---------------------------------------------------------- */
+
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-line);
+  padding-block: clamp(1.75rem, 1.2rem + 1.6vw, 2.75rem) var(--gap-block);
+}
+
+.site-header__id {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-line);
+}
+
+.site-header__wordmark {
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 124, 'wght' 800;
+  font-size: 1.375rem;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+}
+
+.site-header__state {
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-sharp);
+  padding: 0.15rem 0.45rem;
+}
+
+.site-header__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-block);
+}
