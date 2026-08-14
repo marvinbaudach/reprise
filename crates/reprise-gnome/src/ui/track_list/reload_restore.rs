@@ -147,7 +147,7 @@ pub(in crate::ui) fn scroll_target(
     let position = current_ids.iter().position(|&id| id == anchor_id)?;
     let position = u32::try_from(position).ok()?;
     let target = layout.row_top(position) + offset;
-    let upper_bound = layout.max_scroll(current_ids.len(), viewport_height)?;
+    let upper_bound = layout.max_scroll(current_ids.len(), viewport_height);
     Some(target.clamp(0.0, upper_bound))
 }
 
@@ -220,12 +220,11 @@ mod tests {
     }
 
     fn sectioned_layout(header_height: f64) -> ListLayout {
-        ListLayout::new(
+        ListLayout::sectioned(
             RowHeight::new(34.0).unwrap(),
-            RowHeight::new(header_height),
+            RowHeight::new(header_height).unwrap(),
             vec![0, 1],
         )
-        .unwrap()
     }
 
     #[test]
@@ -300,12 +299,11 @@ mod tests {
             row_height: RowHeight::new(20.0),
         };
         let old_ids = vec![10, 20, 30, 40];
-        let layout = ListLayout::new(
+        let layout = ListLayout::sectioned(
             RowHeight::new(20.0).unwrap(),
-            RowHeight::new(10.0),
+            RowHeight::new(10.0).unwrap(),
             vec![0, 2],
-        )
-        .unwrap();
+        );
 
         let reanchored = reanchor_on_track(opened, 40, &old_ids, &layout);
 
