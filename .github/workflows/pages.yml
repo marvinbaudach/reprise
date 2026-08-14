@@ -1,0 +1,79 @@
+name: Showroom
+
+# Builds the showroom and publishes it to GitHub Pages.
+#
+# Pages currently serves README.md straight from the main branch. Switching the
+# Pages source to "GitHub Actions" hands that job to this workflow — until that
+# switch is flipped in the repository settings, this workflow builds and proves
+# the site but publishes nothing.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'showroom/**'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'showroom/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: showroom-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: showroom/package-lock.json
+
+      - name: Install
+        working-directory: showroom
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: showroom
+        run: npm run typecheck
+
+      - name: Build and prerender
+        working-directory: showroom
+        run: npm run build
+
+      # The page has to be readable without JavaScript, so the prerendered
+      # markup must actually contain the chapters. A build that silently ships an
+      # empty <div id="root"> would still be green everywhere else.
+      - name: Prove the prerender produced content
+        working-directory: showroom
+        run: |
+          grep -q 'Two native apps' dist/index.html
+          grep -q 'Built by agents' dist/index.html
+          grep -q 'counted on' dist/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: showroom/dist
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
