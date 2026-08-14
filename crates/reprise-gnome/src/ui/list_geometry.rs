@@ -367,6 +367,18 @@ impl ListGeometry {
         settled_row_height(upper, n_rows, self.measurement())
     }
 
+    /// Real widget realization is the only signal that distinguishes a pre-seeded `upper` from settled geometry.
+    pub(in crate::ui) fn is_settled(&self, upper: f64, n_rows: usize, n_sections: usize) -> bool {
+        settled_content_row_height(
+            upper,
+            n_rows,
+            n_sections,
+            self.measurement(),
+            self.section_header_measurement(),
+        )
+        .is_some()
+    }
+
     fn density(&self) -> ListDensity {
         if self.view.has_css_class("reprise-density-comfortable") {
             ListDensity::Comfortable

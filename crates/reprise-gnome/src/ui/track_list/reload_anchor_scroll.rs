@@ -424,7 +424,10 @@ fn apply(
             height = layout.row_height().pixels(),
         );
     }
-    set_hold_target(hold, &adjustment, target, path);
+    let provisional_sectioned_refinement = !matches!(path, RestorePath::Initial) && n_sections > 0;
+    if !provisional_sectioned_refinement {
+        set_hold_target(hold, &adjustment, target, path);
+    }
     if !crate::ui::scroll_probe::preseed_suppressed() {
         geometry.configure(
             &adjustment,
@@ -435,6 +438,24 @@ fn apply(
             n_sections,
         );
     }
+    // Reject an unrealized layout before its bottom-edge guard row can replace the anchor.
+    if !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections) {
+        return None;
+    }
+    if provisional_sectioned_refinement {
+        // The row-only target is provisional while section geometry settles.
+        // Deferring this write until after the settled check makes an early
+        // return leave the existing hold target alone; settled refinements
+        // remain authoritative.
+        set_hold_target(hold, &adjustment, target, path);
+    }
+    geometry.remember_if_settled(
+        &shared.conn,
+        &shared.list_geometry_cache,
+        adjustment.upper(),
+        current_ids.len(),
+        n_sections,
+    );
     crate::ui::scroll_probe::probe(path.apply_probe(), &adjustment, target);
     debug_assert!(
         !crate::ui::list_geometry_changed::in_changed_emission(),
