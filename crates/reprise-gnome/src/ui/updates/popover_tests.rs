@@ -141,6 +141,23 @@ fn nr_36_dismissing_a_row_never_opens_its_link() {
 }
 
 #[test]
+fn dismissed_concert_is_removed_from_the_held_session_delta() {
+    let rows = vec![
+        concert_row(10, "First"),
+        concert_row(20, "Dismissed"),
+        concert_row(30, "Third"),
+    ];
+    let dismissed = std::collections::HashSet::from([20]);
+
+    let visible = visible_concert_rows(rows, &dismissed);
+
+    assert_eq!(
+        visible.iter().map(|row| row.id).collect::<Vec<_>>(),
+        [10, 30]
+    );
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn nr_38_a_row_opens_the_same_url_its_tooltip_names() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
@@ -251,6 +268,29 @@ fn shared_footer_uses_the_oldest_active_feed_and_names_failures() {
 /// navigation (that lives in `release_row.rs`'s own tests).
 fn noop_show_album() -> release_row::OnShowAlbum {
     Rc::new(|_, _| {})
+}
+
+fn concert_row(id: i64, artist: &str) -> reprise_core::concerts::ConcertRow {
+    reprise_core::concerts::ConcertRow {
+        id,
+        date_key: "2026-08-20".into(),
+        starts_at: "2026-08-20T20:00:00".into(),
+        artist_name: artist.into(),
+        venue: "Hall".into(),
+        city: "Zurich".into(),
+        region: None,
+        country: Some("CH".into()),
+        latitude: None,
+        longitude: None,
+        distance_km: None,
+        ticket_url: Some(format!("https://tickets.example/{id}")),
+        ticket_source: Some("Tickets".into()),
+        event_url: None,
+        provider: "fixture".into(),
+        is_similar: false,
+        similar_to: None,
+        availability: reprise_core::concerts::TicketAvailability::Unknown,
+    }
 }
 
 fn test_popover(conn: Rc<Db>, database_path: PathBuf) -> Rc<NewReleasesPopover> {

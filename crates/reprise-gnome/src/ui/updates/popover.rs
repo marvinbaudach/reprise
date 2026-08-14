@@ -1,6 +1,7 @@
 //! Headerbar entry point and transient New Releases popover.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -121,6 +122,7 @@ struct NewReleasesPopover {
     /// The fetch currently in flight across both feeds, or the finished one
     /// whose outcome the footer is still showing.
     run: RefCell<FeedRefresh>,
+    dismissed_concert_ids: RefCell<HashSet<i64>>,
     generation: Cell<u64>,
     /// The hourly background staleness timer (Beschluss 8), running only
     /// while the module is enabled. `SourceId` is move-only, so `Cell::take`
@@ -175,6 +177,7 @@ impl NewReleasesPopover {
             failure,
             fetching: Cell::new(false),
             run: RefCell::new(FeedRefresh::start(&[])),
+            dismissed_concert_ids: RefCell::new(HashSet::new()),
             generation: Cell::new(0),
             refresh_timer: Cell::new(None),
             on_show_album,
@@ -203,6 +206,10 @@ impl NewReleasesPopover {
                         tracing::warn!(%error, event_id = id, "could not dismiss Concerts update");
                         return;
                     }
+                    // Opening already stamps the scope, but this idempotent call
+                    // is still the correct persistence path if the row was not
+                    // stamped yet. The held session delta is a separate concern.
+                    state.dismissed_concert_ids.borrow_mut().insert(id);
                     state.render(false, false);
                 }));
         }
@@ -266,7 +273,11 @@ impl NewReleasesPopover {
                 .unwrap_or(false);
         let today = chrono::Local::now().date_naive();
         let releases = feed_snapshot::releases(&self.conn, news_enabled, today);
-        let concerts = feed_snapshot::concerts(&self.conn, concerts_enabled, today);
+        let mut concerts = feed_snapshot::concerts(&self.conn, concerts_enabled, today);
+        concerts.delta.shown = {
+            let dismissed = self.dismissed_concert_ids.borrow();
+            visible_concert_rows(concerts.delta.shown, &dismissed)
+        };
         let fetch_completed = self.fetch_completed();
         let effect = module_effect(
             news_enabled,
@@ -514,6 +525,15 @@ impl NewReleasesPopover {
             self.render(false, false);
         }
     }
+}
+
+fn visible_concert_rows(
+    rows: Vec<reprise_core::concerts::ConcertRow>,
+    dismissed: &HashSet<i64>,
+) -> Vec<reprise_core::concerts::ConcertRow> {
+    rows.into_iter()
+        .filter(|row| !dismissed.contains(&row.id))
+        .collect()
 }
 
 fn bind_runtime(state: &Rc<NewReleasesPopover>, runtime: &Rc<ArtistNewsRuntime>) {

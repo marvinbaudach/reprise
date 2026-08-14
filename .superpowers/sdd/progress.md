@@ -1706,3 +1706,4 @@ Task strand-1-location-reconciliation: complete (this commit, base 7cb489975d, r
 # Updates, Concerts, Releases rework — strand 2
 
 Task 1: complete (this commit, base aaf468e4bf, extracted the pure popover footer state, fetch orchestration and shared feed-row geometry without changing behavior; 35 focused Updates tests passed with 15 display-only tests ignored, format, strict all-target workspace Clippy, the complete isolated-XDG workspace suite and live audit passed with only accepted RUSTSEC-2024-0436, and every touched code file remains below 800 lines)
+Task 7 follow-up: complete (this commit, base 7ba489b2f4, keeps the plan's idempotent single-event seen stamp while removing the dismissed event only from the held session delta, so the row disappears without changing the full-batch header count or any Core query; the pure held-delta regression was observed compile-red before passing)
