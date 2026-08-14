@@ -5,12 +5,36 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 acceptance_root="$repo_root/acceptance/deezer-placeholder-portraits"
 readonly UNIX_SOCKET_PATH_MAX=107
 readonly CUA_MAX_ELEMENTS=500
+# Every sidebar row reports an AT-SPI frame of 0x0, so the row can only be hit
+# by a measured pixel. The y therefore depends on how many rows sit above it,
+# which changes with the library's playlists — re-measure it from
+# <run>/before/cua/before-open-stats-before.png whenever the sidebar shrinks or
+# grows. Measured 2026-08-14 at 15:30 CEST: rows are pitched 38 px apart and
+# My Stats is the twelfth and last one.
 readonly MY_STATS_CLICK_X=100
-readonly MY_STATS_CLICK_Y=692
+readonly MY_STATS_CLICK_Y=615
 readonly SHOW_MORE_ARTISTS_CLICK_X=390
 readonly SHOW_MORE_ARTISTS_CLICK_Y=640
 readonly RENDERED_TOP_ARTIST_RANKS=20
 readonly PORTRAIT_REPAINT_MARGIN_SECONDS=2
+# The fingerprint exists for the silhouette that hides behind an ordinary,
+# artist-specific image identifier: the baseline's fixed list cannot reach those.
+# Four artists in this library carry one (measured 2026-08-14, see the table in
+# docs/plans/portrait-placeholder-fingerprint.md). Only a rendered rank fetches a
+# portrait at all, and those four sit at ranks 40, 122, 131 and — with zero plays
+# — in no ranking whatsoever. Rendering that far would need a product switch the
+# baseline arm cannot carry (its tree comes from `git archive origin/dev`, no
+# patches) plus scrolling this harness does not do. The run copy therefore
+# receives listen events that lift the four into the rendered ranking instead.
+# Both arms get the identical seeded copy, so the before/after difference is
+# untouched; the seeding is declared in each arm's seeded-ranking-proof.txt.
+readonly SEEDED_SILHOUETTE_ARTISTS=("Aetheriality" "In Your Grave" "Our Vices" "Wake Me")
+# Slot spacing below the fifteenth real artist: small enough to leave ranks 1-15
+# alone, large enough to keep the four in a stable order.
+readonly SEED_RANK_STEP_MS=1000
+# Spread each top-up over this many events, so a seeded artist reads like
+# listening history instead of one implausible three-quarter-hour play.
+readonly SEED_EVENTS_PER_ARTIST=12
 private_runtime_root=""
 ACCEPT_CUA_MAX_DEPTH=20
 
@@ -218,7 +242,7 @@ self_test_private_atspi() {
   jq -e --argjson depth "$ACCEPT_CUA_MAX_DEPTH" \
     --argjson elements "$CUA_MAX_ELEMENTS" \
     '.max_depth == $depth and .max_elements == $elements' <<<"$payload" >/dev/null
-  [[ "$MY_STATS_CLICK_X,$MY_STATS_CLICK_Y" == "100,692" ]]
+  [[ "$MY_STATS_CLICK_X,$MY_STATS_CLICK_Y" == "100,615" ]]
   [[ "$SHOW_MORE_ARTISTS_CLICK_X,$SHOW_MORE_ARTISTS_CLICK_Y" == "390,640" ]]
   find "$fixture_root" -xdev -depth -delete
   echo "private_atspi_self_test=passed"
@@ -425,6 +449,15 @@ run_private_acceptance() {
     "$MY_STATS_CLICK_X" "$MY_STATS_CLICK_Y" "$label-open-stats"
 
   ACCEPT_CUA_MAX_DEPTH=40
+  # Prove the pixel landed before waiting on any artist. A stale coordinate is
+  # otherwise indistinguishable from a missing artist: the run spins out the
+  # retries below and blames the ranking for a click that never opened the view.
+  if ! cua_wait_for_label \
+    "$ACCEPT_APP_PID" "$window_id" "Show more top artists" \
+    "$label-stats-opened" >/dev/null; then
+    echo "the My Stats click at ($MY_STATS_CLICK_X, $MY_STATS_CLICK_Y) did not open My Stats; re-measure the sidebar row in $CUA_E2E_OUT_DIR/$label-open-stats-before.png" >&2
+    return 1
+  fi
   final_snapshot=$(cua_wait_for_label \
     "$ACCEPT_APP_PID" "$window_id" "The Devil Wears Prada" "$label-stats-ready")
   x11_click_pixel \
@@ -477,6 +510,253 @@ run_private_acceptance() {
   remove_private_driver_socket
   trap - EXIT
 }
+
+# Mirrors the ranking arithmetic of crates/reprise-core/src/library/stats_screen.rs:240:
+# the effective album artist, and the play time clamped to the track duration.
+# Shared by the seeding step and its self test so both measure the same thing.
+seed_ranking_cte() {
+  cat <<'SQL'
+WITH events AS (
+  SELECT CASE WHEN TRIM(album_artist) <> '' THEN album_artist ELSE artist END AS raw,
+         CASE WHEN duration_ms > 0 THEN MIN(ms_played, duration_ms) ELSE ms_played END AS clamped
+  FROM listen_events
+),
+totals AS (
+  SELECT raw, SUM(clamped) AS total FROM events WHERE TRIM(raw) <> '' GROUP BY raw
+)
+SQL
+}
+
+# Lift SEEDED_SILHOUETTE_ARTISTS into the rendered ranking of one run copy.
+# Anchors on the copy's own ranking rather than on measured numbers: ranks move
+# with every play, and a hard-coded total rots exactly the way MY_STATS_CLICK_Y
+# did. The four land immediately below the fifteenth real artist, so every rank
+# the earlier evidence names keeps its place.
+seed_silhouette_ranks() {
+  local database=$1 label=$2
+  local proof="$output_dir/$label/seeded-ranking-proof.txt"
+  local cte quoted artist escaped slots index anchors anchor keep_total
+  local existing target topup per_event remainder has_history verified
+  local expected_rank rank name total line
+  local -a report=()
+
+  cte=$(seed_ranking_cte)
+  slots=${#SEEDED_SILHOUETTE_ARTISTS[@]}
+  quoted=""
+  for artist in "${SEEDED_SILHOUETTE_ARTISTS[@]}"; do
+    escaped=${artist//\'/\'\'}
+    quoted+="${quoted:+, }'$escaped'"
+  done
+
+  anchors=$(sqlite3 "$database" "$cte,
+others AS (
+  SELECT total, ROW_NUMBER() OVER (ORDER BY total DESC) AS rank
+  FROM totals WHERE raw NOT IN ($quoted)
+)
+SELECT COALESCE((SELECT total FROM others WHERE rank = 15), 0) || '|' ||
+       COALESCE((SELECT total FROM others WHERE rank = 16), 0);")
+  keep_total=${anchors%%|*}
+  anchor=${anchors##*|}
+  if [[ -z "$anchor" ]] || (( anchor <= 0 )); then
+    echo "the run copy ranks fewer than 16 unseeded artists; seeding would rewrite the visible ranking" >&2
+    return 1
+  fi
+  if (( keep_total <= anchor + slots * SEED_RANK_STEP_MS )); then
+    echo "ranks 15 and 16 are $((keep_total - anchor)) ms apart, too close to hold $slots seeded artists" >&2
+    return 1
+  fi
+
+  index=0
+  for artist in "${SEEDED_SILHOUETTE_ARTISTS[@]}"; do
+    escaped=${artist//\'/\'\'}
+    index=$((index + 1))
+    target=$((anchor + (slots - index + 1) * SEED_RANK_STEP_MS))
+    existing=$(sqlite3 "$database" "$cte
+SELECT COALESCE((SELECT total FROM totals WHERE raw = '$escaped'), 0);")
+    topup=$((target - existing))
+    per_event=$((topup / SEED_EVENTS_PER_ARTIST))
+    if (( per_event <= 0 )); then
+      echo "$artist already reaches rank ${index} territory on its own; the ranking moved under this run" >&2
+      return 1
+    fi
+    remainder=$((topup - per_event * SEED_EVENTS_PER_ARTIST))
+    has_history=$(sqlite3 "$database" \
+      "SELECT COUNT(*) FROM listen_events
+       WHERE (CASE WHEN TRIM(album_artist) <> '' THEN album_artist ELSE artist END) = '$escaped';")
+    # An artist with history is topped up through a copy of its own newest event,
+    # so the seeded rows fold into the same ranking group instead of forming a
+    # second one beside it. Aetheriality has no history at all — that is why no
+    # raised rank cap could ever have shown it — and gets literal rows.
+    if (( has_history > 0 )); then
+      sqlite3 "$database" <<SQL
+WITH RECURSIVE seq(i) AS (
+  SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < $SEED_EVENTS_PER_ARTIST
+),
+template AS (
+  SELECT track_id, title, artist, album, album_artist, genre, path, artist_mbid
+  FROM listen_events
+  WHERE (CASE WHEN TRIM(album_artist) <> '' THEN album_artist ELSE artist END) = '$escaped'
+  ORDER BY played_at DESC
+  LIMIT 1
+)
+INSERT INTO listen_events(
+  track_id, played_at, ms_played, title, artist, album, album_artist,
+  genre, duration_ms, path, artist_mbid)
+SELECT template.track_id,
+       COALESCE((SELECT MAX(played_at) FROM listen_events), unixepoch()) - seq.i * 3600,
+       $per_event + CASE WHEN seq.i = 1 THEN $remainder ELSE 0 END,
+       template.title, template.artist, template.album, template.album_artist,
+       template.genre, 0, template.path, template.artist_mbid
+FROM seq, template;
+SQL
+    else
+      sqlite3 "$database" <<SQL
+WITH RECURSIVE seq(i) AS (
+  SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < $SEED_EVENTS_PER_ARTIST
+)
+INSERT INTO listen_events(
+  track_id, played_at, ms_played, title, artist, album, album_artist,
+  genre, duration_ms, path, artist_mbid)
+SELECT 0,
+       COALESCE((SELECT MAX(played_at) FROM listen_events), unixepoch()) - seq.i * 3600,
+       $per_event + CASE WHEN seq.i = 1 THEN $remainder ELSE 0 END,
+       '', '$escaped', '', '$escaped', '', 0, '', NULL
+FROM seq;
+SQL
+    fi
+    report+=("$artist|$existing|$target|$topup|$has_history")
+  done
+
+  verified=$(sqlite3 "$database" "$cte,
+ranked AS (
+  SELECT raw, total, ROW_NUMBER() OVER (ORDER BY total DESC) AS rank FROM totals
+)
+SELECT rank || '|' || raw || '|' || total FROM ranked
+WHERE raw IN ($quoted) ORDER BY rank;")
+  expected_rank=16
+  while IFS='|' read -r rank name total; do
+    if [[ -n "$rank" ]]; then
+      if (( rank != expected_rank )); then
+        echo "seeded artist $name landed at rank $rank, expected $expected_rank" >&2
+        return 1
+      fi
+      expected_rank=$((expected_rank + 1))
+    fi
+  done <<<"$verified"
+  if (( expected_rank != 16 + slots )); then
+    echo "only $((expected_rank - 16)) of $slots seeded artists reached the rendered ranking" >&2
+    return 1
+  fi
+
+  {
+    printf 'seeded_ranking=true\n'
+    printf 'seeded_artists=%s\n' "${SEEDED_SILHOUETTE_ARTISTS[*]}"
+    printf 'reason=only a rendered rank fetches a portrait; these four carry the artist-specific silhouette\n'
+    printf 'rank_15_total_ms=%s\n' "$keep_total"
+    printf 'rank_16_anchor_total_ms=%s\n' "$anchor"
+    printf 'events_per_seeded_artist=%s\n' "$SEED_EVENTS_PER_ARTIST"
+    printf '\n%-16s %14s %14s %14s %s\n' artist real_ms target_ms injected_ms prior_events
+    for line in "${report[@]}"; do
+      IFS='|' read -r name existing target topup has_history <<<"$line"
+      printf '%-16s %14s %14s %14s %s\n' \
+        "$name" "$existing" "$target" "$topup" "$has_history"
+    done
+    printf '\nresulting ranks (rank|artist|total_ms):\n%s\n' "$verified"
+    printf '\nneighbourhood after seeding (rank artist total_ms):\n'
+    sqlite3 "$database" "$cte,
+ranked AS (
+  SELECT raw, total, ROW_NUMBER() OVER (ORDER BY total DESC) AS rank FROM totals
+)
+SELECT rank || '  ' || raw || '  ' || total FROM ranked
+WHERE rank BETWEEN 12 AND 22 ORDER BY rank;"
+  } >"$proof"
+}
+
+self_test_seeded_ranking() {
+  local fixture_root roomy tight diagnostic
+  fixture_root=$(mktemp -d /tmp/reprise-portrait-seed.XXXXXX)
+  roomy="$fixture_root/roomy.db"
+  tight="$fixture_root/tight.db"
+  mkdir -p "$fixture_root/contract"
+  output_dir="$fixture_root"
+
+  # Thirty artists 100 s apart, plus real but small histories for three of the
+  # four. Aetheriality stays absent, the way it is absent from the real ranking.
+  sqlite3 "$roomy" <<'SQL'
+CREATE TABLE listen_events(
+  id INTEGER PRIMARY KEY,
+  track_id INTEGER NOT NULL,
+  played_at INTEGER NOT NULL,
+  ms_played INTEGER NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  artist TEXT NOT NULL DEFAULT '',
+  album TEXT NOT NULL DEFAULT '',
+  album_artist TEXT NOT NULL DEFAULT '',
+  genre TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  path TEXT NOT NULL DEFAULT '',
+  artist_mbid TEXT
+);
+WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < 31)
+INSERT INTO listen_events(track_id, played_at, ms_played, artist, album_artist)
+SELECT i, 1750000000 + i, 3000000 - i * 100000, 'Artist ' || i, 'Artist ' || i FROM seq;
+INSERT INTO listen_events(track_id, played_at, ms_played, artist, album_artist)
+VALUES (900, 1750000500, 120000, 'In Your Grave', 'In Your Grave'),
+       (901, 1750000501, 90000, 'Our Vices', 'Our Vices'),
+       (902, 1750000502, 60000, 'Wake Me', 'Wake Me');
+SQL
+  seed_silhouette_ranks "$roomy" contract
+  if ! grep -q '^16|Aetheriality|' <<<"$(sqlite3 "$roomy" "$(seed_ranking_cte),
+ranked AS (SELECT raw, total, ROW_NUMBER() OVER (ORDER BY total DESC) AS rank FROM totals)
+SELECT rank || '|' || raw || '|' || total FROM ranked WHERE rank BETWEEN 16 AND 19 ORDER BY rank;")"; then
+    echo "the artist without any history did not reach the rendered ranking" >&2
+    return 1
+  fi
+  if [[ $(sqlite3 "$roomy" \
+    "SELECT COUNT(*) FROM listen_events WHERE artist = 'Wake Me';") -ne \
+    $((SEED_EVENTS_PER_ARTIST + 1)) ]]; then
+    echo "the top-up was not spread over $SEED_EVENTS_PER_ARTIST events" >&2
+    return 1
+  fi
+
+  # A guard that cannot fail is not a guard: squeeze rank 15 against rank 16 and
+  # demand a refusal instead of a silently rewritten ranking.
+  sqlite3 "$tight" <<'SQL'
+CREATE TABLE listen_events(
+  id INTEGER PRIMARY KEY,
+  track_id INTEGER NOT NULL,
+  played_at INTEGER NOT NULL,
+  ms_played INTEGER NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  artist TEXT NOT NULL DEFAULT '',
+  album TEXT NOT NULL DEFAULT '',
+  album_artist TEXT NOT NULL DEFAULT '',
+  genre TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  path TEXT NOT NULL DEFAULT '',
+  artist_mbid TEXT
+);
+WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < 31)
+INSERT INTO listen_events(track_id, played_at, ms_played, artist, album_artist)
+SELECT i, 1750000000 + i, 3000000 - i * 500, 'Artist ' || i, 'Artist ' || i FROM seq;
+SQL
+  if diagnostic=$(seed_silhouette_ranks "$tight" contract 2>&1); then
+    echo "seeding accepted a gap too small to hold the four artists" >&2
+    return 1
+  fi
+  if [[ "$diagnostic" != *"too close to hold"* ]]; then
+    echo "the refusal did not name the closed gap: $diagnostic" >&2
+    return 1
+  fi
+
+  find "$fixture_root" -xdev -depth -delete
+  echo "seeded_ranking_self_test=passed"
+}
+
+if [[ "${1:-}" == "--self-test-seeded-ranking" ]]; then
+  self_test_seeded_ranking
+  exit 0
+fi
 
 if [[ "${1:-}" == "--self-test-private-paths" ]]; then
   self_test_private_paths
@@ -632,6 +912,9 @@ prepare_profile() {
     echo "read-only SQLite backup failed while a WAL exists; evidence: $copy_error" >&2
     return 1
   fi
+  # Seed before the path rewrite below, so the seeded events are repointed at the
+  # isolated music root together with every real one.
+  seed_silhouette_ranks "$database" "$label"
   sqlite3 "$database" <<SQL
 INSERT INTO settings(key, value) VALUES('online-sources-enabled', '1')
 ON CONFLICT(key) DO UPDATE SET value = excluded.value;
@@ -684,6 +967,8 @@ prepare_profile "$after_profile" after
   printf 'after_database_copy_method=%s\n' "$(<"$output_dir/after/database-copy-method.txt")"
   printf 'display_backend=x11-xvfb-openbox\n'
   printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'seeded_ranking_artists=%s\n' "${SEEDED_SILHOUETTE_ARTISTS[*]}"
+  printf 'seeded_ranking_proof=before/seeded-ranking-proof.txt after/seeded-ranking-proof.txt\n'
   printf 'placeholder_reference_1=%s\n' "$(realpath "${placeholder_references[0]}")"
   printf 'placeholder_reference_2=%s\n' "$(realpath "${placeholder_references[1]}")"
 } >"$output_dir/run-manifest.txt"
@@ -747,35 +1032,83 @@ cache_file_for() {
   printf '%s\n' "${matches[0]}"
 }
 
+negative_marker_for() {
+  local profile_root=$1 artist=$2 key marker
+  local -a images
+  key=$("$cache_key_binary" "$artist")
+  marker="$profile_root/cache/reprise/artist-portraits/$key.notfound"
+  if [[ ! -f "$marker" ]]; then
+    echo "expected a negative portrait marker for $artist" >&2
+    return 1
+  fi
+  mapfile -t images < <(find "$profile_root/cache/reprise/artist-portraits" \
+    -maxdepth 1 -type f -name "$key.*" ! -name '*.notfound' -print)
+  if [[ ${#images[@]} -ne 0 ]]; then
+    echo "expected no cached image for $artist, found ${#images[@]}" >&2
+    return 1
+  fi
+  printf '%s\n' "$marker"
+}
+
 before_prada=$(cache_file_for "$before_profile" "The Devil Wears Prada")
 before_oceano=$(cache_file_for "$before_profile" "Oceano")
 after_prada=$(cache_file_for "$after_profile" "The Devil Wears Prada")
-after_oceano=$(cache_file_for "$after_profile" "Oceano")
+after_oceano_marker=$(negative_marker_for "$after_profile" "Oceano")
 reference_hashes=$(cut -d' ' -f1 "$output_dir/placeholder-reference-sha256.txt")
 before_prada_hash=$(sha256sum "$before_prada" | cut -d' ' -f1)
 before_oceano_hash=$(sha256sum "$before_oceano" | cut -d' ' -f1)
 after_prada_hash=$(sha256sum "$after_prada" | cut -d' ' -f1)
-after_oceano_hash=$(sha256sum "$after_oceano" | cut -d' ' -f1)
 
-if ! grep -Fxq "$before_prada_hash" <<<"$reference_hashes"; then
-  echo "origin/dev did not reproduce the known placeholder for The Devil Wears Prada" >&2
+# The Devil Wears Prada is the control arm, no longer the subject. Its silhouette
+# hides behind the empty-string MD5, which is one of the two structural
+# identifiers that survive on the baseline, so origin/dev already rejects that
+# candidate before downloading anything and caches the same photograph the
+# candidate does. Demanding the silhouette here — the shape this oracle had when
+# the baseline still predated that identifier list — is unsatisfiable by
+# construction and says nothing about the fingerprint under test. What it must
+# say instead: the fingerprint leaves an artist alone that was already correct.
+if [[ "$before_prada_hash" != "$after_prada_hash" ]]; then
+  echo "the fingerprint disturbed The Devil Wears Prada, which the baseline already resolved: $before_prada_hash became $after_prada_hash" >&2
   exit 1
 fi
-for portrait_hash in "$before_oceano_hash" "$after_prada_hash" "$after_oceano_hash"; do
+for portrait_hash in "$before_oceano_hash" "$after_prada_hash"; do
   if grep -Fxq "$portrait_hash" <<<"$reference_hashes"; then
     echo "a portrait that must be real still matches a placeholder reference" >&2
     exit 1
   fi
 done
 
+# The four artists the seeded ranking brought into view. Their silhouette hides
+# behind an ordinary, artist-specific identifier, so the baseline downloads and
+# caches it as if it were a portrait while the candidate has to refuse it. This
+# is precisely the difference a fixed identifier list cannot produce: it is the
+# same drawing, served under a name nobody can enumerate in advance.
+declare -A seeded_before_hash=()
+declare -A seeded_after_marker=()
+for seeded_artist in "${SEEDED_SILHOUETTE_ARTISTS[@]}"; do
+  seeded_before_file=$(cache_file_for "$before_profile" "$seeded_artist")
+  seeded_before_hash["$seeded_artist"]=$(sha256sum "$seeded_before_file" | cut -d' ' -f1)
+  seeded_after_marker["$seeded_artist"]=$(negative_marker_for "$after_profile" "$seeded_artist")
+done
+
 {
   printf 'before_prada=%s  %s\n' "$before_prada_hash" "$before_prada"
   printf 'before_oceano=%s  %s\n' "$before_oceano_hash" "$before_oceano"
   printf 'after_prada=%s  %s\n' "$after_prada_hash" "$after_prada"
-  printf 'after_oceano=%s  %s\n' "$after_oceano_hash" "$after_oceano"
-  printf 'before_prada_matches_known_placeholder=true\n'
+  printf 'after_oceano_negative_marker=%s\n' "$after_oceano_marker"
+  printf 'prada_unchanged_by_the_fingerprint=true\n'
   printf 'after_prada_differs_from_known_placeholders=true\n'
-  printf 'after_oceano_differs_from_known_placeholders=true\n'
+  printf 'before_oceano_differs_from_known_placeholders=true\n'
+  printf 'after_oceano_has_negative_marker=true\n'
+  printf 'after_oceano_has_cached_image=false\n'
+  printf '\n# seeded silhouette artists: cached by the baseline, refused by the candidate\n'
+  for seeded_artist in "${SEEDED_SILHOUETTE_ARTISTS[@]}"; do
+    printf 'before_%s=%s\n' "$seeded_artist" "${seeded_before_hash[$seeded_artist]}"
+    printf 'after_%s_negative_marker=%s\n' \
+      "$seeded_artist" "${seeded_after_marker[$seeded_artist]}"
+  done
+  printf 'seeded_artists_cached_before=%s\n' "${#seeded_before_hash[@]}"
+  printf 'seeded_artists_refused_after=%s\n' "${#seeded_after_marker[@]}"
 } >"$output_dir/named-cache-proof.txt"
 
 cat >"$output_dir/MANUAL-REVIEW.md" <<'EOF'
@@ -784,11 +1117,35 @@ cat >"$output_dir/MANUAL-REVIEW.md" <<'EOF'
 - Compare `before/my-stats.png` and `after/my-stats.png` at the same ranks.
 - Both screenshots are captured after expanding the ranking; confirm the
   `Hide more top artists` control and Oceano are visible in the retained CUA evidence.
-- Before: rank 3, The Devil Wears Prada, must show the known grey silhouette.
-- After: ranks 1 through 10 show no grey person silhouette.
-- After: rank 3 and rank 10 show photographs, not initials or album covers.
-- Treat only rank 3 as visual evidence for E1/E2; Oceano is cache-recovery evidence.
-- Confirm the other eight ranks show the same identities before and after, or record every change.
+- Ranks move with the listening history; find the artists by name, not by number.
+- The run copy is seeded. Aetheriality, In Your Grave, Our Vices and Wake Me were
+  lifted into the rendered ranking with synthetic listen events, because only a
+  rendered rank fetches a portrait and those four sit at ranks 40, 122, 131 and —
+  with zero plays — nowhere at all. Read `before/seeded-ranking-proof.txt`: it
+  names every injected millisecond, and both arms received the identical copy.
+  Ranks 1-15 are untouched, so the listening history the screenshots show above
+  the seeded block is the real one.
+- The before arm therefore shows four grey person silhouettes at ranks 16-19 and
+  the after arm shows initials in their place. That contrast is the point of the
+  whole change: those four silhouettes arrive under ordinary, artist-specific
+  image identifiers, which no fixed list can enumerate in advance.
+- A silhouette anywhere *else* — at any rank outside 16-19, in either arm — is a
+  finding. The baseline already rejects the two structural identifiers.
+- Check in the screenshot that the four really sit at ranks 16-19. The seeding
+  anchors on a SQL ranking that groups by the effective album artist only, while
+  the view folds spelling variants and MBIDs together first, so the two can drift
+  apart. They agreed on 2026-08-14. If they ever disagree, the four will still be
+  rendered — the SQL check refuses to place them above rank 16 — but the rank
+  numbers in these notes stop matching the picture.
+- Oceano is the only intended difference: a photograph before, initials after. Its
+  most popular exact-name candidate now reaches content validation, is rejected as
+  the known silhouette, and must not fall back to the pictured namesake.
+- The Devil Wears Prada is the control: the same photograph in both arms. It hides
+  behind the empty-string MD5, which the baseline already catches at selection.
+- Confirm every other artist shows the same identity in both arms, or record each
+  change. Only the artists rendered in the ranking are fetched at all — silhouettes
+  further down the library are covered by the corpus measurement in
+  `docs/evidence/portrait-placeholder-fingerprint/rust-separation.txt`, not here.
 - Read `settings-proof.txt`, `cache-before.txt`, `cache-listing.txt`, and
   `named-cache-proof.txt` alongside the screenshots. The empty cache plus the
   named images created afterward is the positive portrait-request proof.

@@ -78,6 +78,12 @@ pub(crate) fn store_image(dir: &Path, name: &str, bytes: &[u8], ext: &str) -> Op
     Some(output)
 }
 
+pub(crate) fn refresh_image(dir: &Path, name: &str, path: &Path) -> Option<PathBuf> {
+    let bytes = std::fs::read(path).ok()?;
+    let extension = path.extension()?.to_str()?;
+    store_image(dir, name, &bytes, extension)
+}
+
 pub(crate) fn write_negative(dir: &Path, name: &str) {
     let _guard = CACHE_WRITE_LOCK
         .lock()
