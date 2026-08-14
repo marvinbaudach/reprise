@@ -58,6 +58,21 @@ impl DeviceCard {
         &self.root
     }
 
+    #[cfg(test)]
+    pub(super) fn surface(&self) -> &gtk4::Button {
+        &self.surface
+    }
+
+    pub(super) fn set_current(&self, current: bool) {
+        if current {
+            self.surface.add_css_class("device-card-current");
+        } else {
+            self.surface.remove_css_class("device-card-current");
+        }
+        self.surface
+            .update_state(&[gtk4::accessible::State::Selected(Some(current))]);
+    }
+
     /// Both overlay siblings own the same local-memory context actions. The
     /// second target matters while Cancel occupies the card's top-right hit
     /// area or holds keyboard focus.

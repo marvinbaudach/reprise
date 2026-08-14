@@ -31,7 +31,7 @@ impl Sidebar {
                 runtime.library_playlists_changed();
             }
         }));
-        let section = super::sidebar_device_section::bind(runtime, on_open);
+        let section = super::sidebar_device_section::bind(&self.shared, runtime, on_open);
         self.activity_slot.set_device_section(&section);
     }
 }
