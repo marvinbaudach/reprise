@@ -72,10 +72,15 @@ impl Candidate {
 }
 
 fn candidate_picture_url(candidate: &serde_json::Value) -> Option<String> {
-    let url = ["picture_xl", "picture_big"]
+    ["picture_xl", "picture_big"]
         .into_iter()
-        .find_map(|field| candidate.get(field)?.as_str().filter(|url| !url.is_empty()))?;
-    (!is_placeholder_url(url)).then(|| url.to_owned())
+        .find_map(|field| {
+            candidate
+                .get(field)?
+                .as_str()
+                .filter(|url| !url.is_empty() && !is_placeholder_url(url))
+        })
+        .map(str::to_owned)
 }
 
 fn is_placeholder_url(url: &str) -> bool {
@@ -236,6 +241,24 @@ mod tests {
             .host_str()
             .is_some_and(|host| host.ends_with(".dzcdn.net")));
         assert!(picture.path().contains("/images/artist/real/"));
+    }
+
+    #[test]
+    fn defensive_fallback_skips_placeholder_xl_for_real_big() {
+        // Deezer has not been observed to emit different image identifiers for
+        // these fields, but field selection must not decide image availability.
+        let json = r#"{"data":[{
+          "name":"Band",
+          "nb_album":1,
+          "nb_fan":1,
+          "picture_xl":"https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/1000x1000.jpg",
+          "picture_big":"https://cdn-images.dzcdn.net/images/artist/real123/500x500.jpg",
+          "type":"artist"
+        }]}"#;
+
+        let artist = parse_best_artist(json, "Band").unwrap();
+        let picture = url::Url::parse(artist.picture_url.as_deref().unwrap()).unwrap();
+        assert!(picture.path().contains("/images/artist/real123/"));
     }
 
     #[test]
