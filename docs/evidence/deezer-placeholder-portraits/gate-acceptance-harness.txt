@@ -1,10 +1,28 @@
 bash_syntax=passed
+first_live_run=20260814T015553Z
+first_live_run_origin_dev_build=passed
+first_live_run_candidate_build=passed
+first_live_run_stage=before_cua_driver_bind
+first_live_run_socket_bytes=151
+first_live_run_error=path must be shorter than SUN_LEN
+red_private_path_self_test_exit=1
+red_private_path_self_test=missing path-budget implementation
+private_path_self_test=passed
+long_runtime_fallback=passed
+acceptance_rerun=not_run_per_request
 term_ignoring_cleanup_exit=0 elapsed_seconds=2
 positive_portrait_poll_exit=0
-94:  local deadline=$((SECONDS + 60))
-105:  echo "$label reached the 60-second portrait wait cap; running the hard cache checks" >&2
-154:    "$ACCEPT_APP_PID" "$window_id" "Show more top artists" "$label-expand-top-artists"
-156:    "$ACCEPT_APP_PID" "$window_id" "Hide more top artists" "$label-stats-expanded")
-157:  assert_snapshot_contains "$final_snapshot" "Oceano"
-163:  assert_snapshot_contains "$final_snapshot" "Oceano"
-430:  `Hide more top artists` control and Oceano are visible in the retained CUA evidence.
+47:validate_unix_socket_path() {
+63:  private_runtime_root=$(mktemp -d "$runtime_base/reprise-deezer.XXXXXX")
+71:  if ! find "$private_runtime_root" -xdev -depth -delete; then
+80:    find "$CUA_DRIVER_SOCKET" -maxdepth 0 -delete
+174:  local deadline=$((SECONDS + 60))
+185:  echo "$label reached the 60-second portrait wait cap; running the hard cache checks" >&2
+200:  validate_unix_socket_path "$CUA_DRIVER_SOCKET"
+238:    "$ACCEPT_APP_PID" "$window_id" "Show more top artists" "$label-expand-top-artists"
+240:    "$ACCEPT_APP_PID" "$window_id" "Hide more top artists" "$label-stats-expanded")
+241:  assert_snapshot_contains "$final_snapshot" "Oceano"
+247:  assert_snapshot_contains "$final_snapshot" "Oceano"
+449:  local runtime_dir="$private_runtime_root/runtime-$label"
+450:  local socket_path="$runtime_dir/cua-driver.sock"
+455:    CUA_DRIVER_SOCKET="$socket_path" \

@@ -3,6 +3,8 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 acceptance_root="$repo_root/acceptance/deezer-placeholder-portraits"
+readonly UNIX_SOCKET_PATH_MAX=107
+private_runtime_root=""
 
 # Reuse the repository's private X11/D-Bus/AT-SPI lifecycle and CUA helpers.
 # shellcheck source=../../scripts/cua-e2e/lib.sh
@@ -40,6 +42,83 @@ required_command() {
     echo "required command is unavailable: $1" >&2
     exit 2
   fi
+}
+
+validate_unix_socket_path() {
+  local socket_path=$1 path_bytes
+  path_bytes=$(LC_ALL=C printf '%s' "$socket_path" | wc -c)
+  if ((path_bytes > UNIX_SOCKET_PATH_MAX)); then
+    echo "CUA driver socket path is $path_bytes bytes; it exceeds the $UNIX_SOCKET_PATH_MAX-byte AF_UNIX limit: $socket_path" >&2
+    return 1
+  fi
+}
+
+allocate_private_runtime_root() {
+  local runtime_base=${XDG_RUNTIME_DIR:-/tmp}
+  local longest_socket="$runtime_base/reprise-deezer.XXXXXX/runtime-before/cua-driver.sock"
+  if [[ ! -d "$runtime_base" || ! -w "$runtime_base" ]] \
+    || ! validate_unix_socket_path "$longest_socket" >/dev/null 2>&1; then
+    runtime_base=/tmp
+  fi
+  private_runtime_root=$(mktemp -d "$runtime_base/reprise-deezer.XXXXXX")
+}
+
+cleanup_private_runtime_root() {
+  if [[ -z "$private_runtime_root" || ! -d "$private_runtime_root" ]]; then
+    private_runtime_root=""
+    return 0
+  fi
+  if ! find "$private_runtime_root" -xdev -depth -delete; then
+    return 1
+  fi
+  private_runtime_root=""
+}
+
+remove_private_driver_socket() {
+  if [[ -n "${CUA_DRIVER_SOCKET:-}" ]] \
+    && [[ -e "$CUA_DRIVER_SOCKET" || -S "$CUA_DRIVER_SOCKET" ]]; then
+    find "$CUA_DRIVER_SOCKET" -maxdepth 0 -delete
+  fi
+}
+
+self_test_private_paths() {
+  local max_socket known_bad_socket
+  max_socket="/tmp/$(printf 'x%.0s' {1..102})"
+  known_bad_socket="/tmp/$(printf 'x%.0s' {1..103})"
+  local error_output
+
+  validate_unix_socket_path "$max_socket"
+  if error_output=$(validate_unix_socket_path "$known_bad_socket" 2>&1); then
+    echo "known overlong CUA socket path passed validation" >&2
+    return 1
+  fi
+  if [[ "$error_output" != *"107-byte AF_UNIX limit"* ]]; then
+    echo "overlong CUA socket path did not produce the expected diagnostic" >&2
+    return 1
+  fi
+
+  allocate_private_runtime_root
+  local allocated_root=$private_runtime_root
+  local label runtime_dir socket_path path_bytes
+  for label in before after; do
+    runtime_dir="$private_runtime_root/runtime-$label"
+    socket_path="$runtime_dir/cua-driver.sock"
+    validate_unix_socket_path "$socket_path"
+    path_bytes=$(LC_ALL=C printf '%s' "$socket_path" | wc -c)
+    if ((path_bytes > 107)); then
+      echo "allocated CUA socket path exceeds the independent 107-byte limit" >&2
+      return 1
+    fi
+    mkdir -p "$runtime_dir"
+    : >"$socket_path"
+  done
+  cleanup_private_runtime_root
+  if [[ -e "$allocated_root" ]]; then
+    echo "private runtime root survived cleanup: $allocated_root" >&2
+    return 1
+  fi
+
+  echo "private_path_self_test=passed"
 }
 
 window_id_from_response() {
@@ -86,6 +165,7 @@ private_run_cleanup() {
     wait "$ACCEPT_APP_PID" 2>/dev/null || true
   fi
   cua_common_stop_driver "$CUA_E2E_SESSION"
+  remove_private_driver_socket
   exit "$exit_code"
 }
 
@@ -111,10 +191,14 @@ run_private_acceptance() {
   local portrait_dir="$XDG_CACHE_HOME/reprise/artist-portraits"
   local initial_snapshot window_id final_snapshot
 
-  trap private_run_cleanup EXIT
   export CUA_E2E_OUT_DIR="$output_dir/cua"
-  export CUA_DRIVER_SOCKET="$output_dir/private-cua-driver.sock"
   export CUA_E2E_SESSION="deezer-portrait-$label"
+  if [[ -z "${CUA_DRIVER_SOCKET:-}" ]]; then
+    echo "private CUA driver socket path was not provided" >&2
+    return 2
+  fi
+  validate_unix_socket_path "$CUA_DRIVER_SOCKET"
+  trap private_run_cleanup EXIT
   mkdir -p "$CUA_E2E_OUT_DIR"
 
   if [[ -e "$portrait_dir" ]]; then
@@ -185,8 +269,14 @@ run_private_acceptance() {
   ACCEPT_APP_PID=""
   export CUA_E2E_APP_PID=""
   cua_common_stop_driver "$CUA_E2E_SESSION"
+  remove_private_driver_socket
   trap - EXIT
 }
+
+if [[ "${1:-}" == "--self-test-private-paths" ]]; then
+  self_test_private_paths
+  exit 0
+fi
 
 if [[ "${1:-}" == "--private-run" ]]; then
   shift
@@ -243,7 +333,7 @@ for reference in "${placeholder_references[@]}"; do
   fi
 done
 
-for command in cargo cua-driver dbus-run-session find git import jq openbox rg \
+for command in cargo cua-driver dbus-run-session find git import jq mktemp openbox rg \
   rustc sha256sum sqlite3 tar timeout wmctrl Xvfb; do
   required_command "$command"
 done
@@ -333,7 +423,6 @@ if [[ $(cut -d' ' -f1 "$output_dir/placeholder-reference-sha256.txt" | sort -u |
 fi
 
 scratch_root="$output_dir/session"
-mkdir -p "$scratch_root"
 export CUA_DRIVER_BIN="${CUA_DRIVER_BIN:-cua-driver}"
 export CUA_E2E_SESSION=deezer-portrait-acceptance
 export CUA_E2E_OUT_DIR="$output_dir"
@@ -343,17 +432,27 @@ export CUA_E2E_SCREEN_RES=1800x1300x24
 display_cleanup() {
   local exit_code=$?
   cua_common_stop_display
+  if ! cleanup_private_runtime_root; then
+    echo "failed to remove private runtime root: $private_runtime_root" >&2
+    exit_code=1
+  fi
+  trap - EXIT
   exit "$exit_code"
 }
 trap display_cleanup EXIT
+allocate_private_runtime_root
+mkdir -p "$scratch_root"
 cua_common_start_display "$output_dir" "$scratch_root" "$CUA_E2E_SCREEN_RES"
 
 run_isolated() {
   local label=$1 binary=$2 profile_root=$3
-  local runtime_dir="$scratch_root/runtime-$label"
+  local runtime_dir="$private_runtime_root/runtime-$label"
+  local socket_path="$runtime_dir/cua-driver.sock"
+  validate_unix_socket_path "$socket_path"
   cua_common_exec_private "$runtime_dir" "$profile_root" env \
     XDG_STATE_HOME="$profile_root/state" \
     CUA_E2E_WM_PID="$CUA_COMMON_OPENBOX_PID" \
+    CUA_DRIVER_SOCKET="$socket_path" \
     CUA_DRIVER_BIN="$CUA_DRIVER_BIN" \
     "$0" --private-run "$label" "$binary" "$output_dir/$label"
 }
@@ -361,6 +460,7 @@ run_isolated() {
 run_isolated before "$baseline_binary" "$before_profile"
 run_isolated after "$candidate_binary" "$after_profile"
 cua_common_stop_display
+cleanup_private_runtime_root
 trap - EXIT
 
 cache_key_source="$output_dir/cache-key.rs"

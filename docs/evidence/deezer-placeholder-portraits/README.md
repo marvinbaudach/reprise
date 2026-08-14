@@ -53,6 +53,29 @@ an impossible mixed-identifier candidate to the measured missing-XL shape. The
 review regression is named and commented as a defensive case because Deezer has
 not been observed to emit different identifiers in the two fields.
 
+## First live acceptance run and F5 repair
+
+- The harness was executed for the first time in retained run
+  `20260814T015553Z`. Both `origin/dev` and candidate builds completed before
+  the first private run attempted to start cua-driver.
+- The run stopped before launching Reprise or capturing a screenshot.
+  `before/cua-driver.log` records that binding
+  `before/private-cua-driver.sock` failed because the path must be shorter than
+  `SUN_LEN`. The absolute socket path was 151 bytes, above Linux's 107-byte
+  pathname budget for `sockaddr_un.sun_path`.
+- F5 moves both the socket and the private `XDG_RUNTIME_DIR` out of the retained
+  evidence tree and below a collision-safe `mktemp` root under the usable host
+  runtime directory, falling back to `/tmp`. Logs, screenshots, copied profiles,
+  and all other evidence remain below the caller-owned output directory.
+- The private-run cleanup stops cua-driver while the short socket path is still
+  available, removes the socket, and the outer cleanup removes the whole short
+  runtime root. A 107-byte preflight guard now fails before daemon startup with
+  the measured path length, and `--self-test-private-paths` covers rejection,
+  the exact 107-byte boundary, allocated before/after paths, and cleanup without
+  starting the acceptance.
+- Per the repair request, the full acceptance harness was not rerun after this
+  change. Its visible result remains pending.
+
 ## Offline gates
 
 - `gate-reprise-core.txt`: 2,434 passed, 2 ignored, 0 failed. The command used
@@ -66,11 +89,12 @@ not been observed to emit different identifiers in the two fields.
 - `gate-format.txt`: `cargo fmt --all --check` passed without output.
 - `gate-core-purity.txt`: no gtk4, libadwaita, gstreamer, or zbus dependency in
   `reprise-core`.
-- `gate-acceptance-harness.txt`: Bash syntax passed; an extracted cleanup probe
-  bounded and reaped a TERM-ignoring child in about two seconds; a delayed real
-  portrait file satisfied the positive-image poll; and the retained source
-  lines show the 60-second cap plus the expand-and-confirm sequence.
+- `gate-acceptance-harness.txt`: Bash syntax and the private-path self-test
+  passed; the earlier extracted cleanup and positive-image probes remain green;
+  and the retained source lines show the path guard, short runtime allocation,
+  cleanup, 60-second cap, and expand-and-confirm sequence.
 
-The acceptance script retains executable mode. It was not run, so this
-directory makes no visible My Stats claim. The identical unbounded wait in the
-shared `scripts/cua-common/session.sh` remains a pre-existing out-of-scope issue.
+The acceptance script retains executable mode. The first live run exposed F5
+before the application started, so this directory still makes no visible My
+Stats claim. The identical unbounded wait in the shared
+`scripts/cua-common/session.sh` remains a pre-existing out-of-scope issue.
