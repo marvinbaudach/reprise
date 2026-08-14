@@ -6,238 +6,316 @@ phase: planned
 codex_session:
 created: 2026-08-14
 ---
-# Landing plan — queue-section-anchor (#444)
+# Landing plan — queue-section-anchor (#444): restore the deleted settled gate
 
-Finish and land `feature/queue-section-anchor`, which fixes issue #444
-("Sectioned Queue visits the top before restoring its anchor").
+Land `feature/queue-section-anchor`, which fixes issue #444 ("Sectioned Queue
+visits the top before restoring its anchor").
 
-The anchor implementation is written and reviewed. What remained was
-re-verification after a rebase onto `dev`. That re-verification turned up a
-measurement defect that invalidates part of the branch's own evidence, so this
-plan repairs the evidence before landing.
+The anchor implementation is written and reviewed, and the evidence-repair work
+described under "Record" below is done. One display test blocks the landing, and
+it is this branch's own production regression. This plan repairs it.
 
-## State at the time of writing (2026-08-14 03:45, all measured)
+## The blocker
 
-- The rebase onto `origin/dev` completed. The branch is 6 commits ahead of
-  `origin/dev`, 0 behind, merge-base `b99b71a932`. Codex resolved the 9-hunk
-  conflict in `reload_anchor_scroll.rs` (dev's #463 probes vs. this branch's
-  `&ListLayout` signatures) keeping both sides, and re-ran `cargo fmt --check`,
-  `cargo clippy --all-targets --workspace -- -D warnings`,
-  `cargo test --workspace` (5196 passed, 0 failed) and
-  `scripts/check-architecture.sh` — all green. It ran no display tests.
-- Post-rebase display pass, each test in its own process: 7 of 8 green,
-  including the four unsectioned `navback_anchor_display_tests` controls, the
-  #444 assertion, `que_1_queue_section_headers_share_one_height` and
-  `browse_4_the_title_link_leaves_the_viewport_at_the_revealed_track`. Only
-  `nav_back_to_a_large_sectioned_queue_never_visits_the_top` ("q-journey") was
-  red.
-- CI runs the display gate: `.github/workflows/ci.yml` → `scripts/ci-quality.sh`
-  → `check-merge-readiness.sh` → `check-display-tests.sh`. Since #463 that
-  covers the whole ignored suite, unfiltered. The dev run for #465 executed 671
-  display tests with 0 failures.
+`ui::track_list::track_list_reload::search_viewport_display_tests::typed_search_reads_from_the_top_and_clearing_comes_back`
+(`crates/reprise-gnome/src/ui/track_list/search_viewport_display_tests.rs:101`)
 
-## Four corrections to the handover
+```
+clearing returns within a row of where the search began: expected about 1200, got 1428
+```
 
-The handover `docs/plans/queue-section-anchor-handover.md` reached conclusions
-that the measurements below contradict. They are corrected here rather than in
-that document, which stays as the record of what was believed at the time.
+Attributed by measurement on 2026-08-14, with a control arm on the same host
+minutes apart:
 
-**C1 — the red q-journey is not inherited from `dev`.** The uniformity
-precondition does not exist on `origin/dev`: `RenderedBandSamples`,
-`rendered_band_samples` and `uniform_heights` have zero occurrences there. They
-arrived with this branch's own last commit, `8c57332184 test(queue): settle
-section band measurement`. On `dev` the test asserts only that both section
-header titles render, and it is green in CI.
+| | result |
+|---|---|
+| this branch (`ab02785783`), 2 runs | **FAILED, FAILED** — byte-identical message |
+| `origin/dev` (`5721ade95e`), 2 runs | **ok, ok** |
 
-**C2 — the 20 px header is not a settling race.** Strengthening the settle
-predicate to `has_both_bands() && uniform_heights().is_some()` makes the test
-run the full `DISPLAY_TEST_TIMEOUT` (5.51 s instead of 0.49 s) and never
-converge. The bands stay at `[20.0, 34.0]`.
+Deterministic on both sides, so it is neither herd flakiness nor a host
+artefact. The branch introduced it.
 
-**C3 — the fixture measures an app that does not exist.** Neither test in
-`queue_section_geometry_display_tests.rs` installs the application stylesheet,
-unlike `que_1_queue_section_headers_share_one_height`, which calls
-`install_css_string_for_test(&app_css_for_test())`. Installing it changes the
-geometry completely:
+## Diagnosis
+
+Commit `1e8c940ed4 fix(queue): make scroll anchors header-aware` changed
+`apply()`'s return type from `bool` to `Option<ListLayout>` in
+`crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs` and, in the same
+edit, deleted three things from the tail of that function:
+
+* **(a)** the `geometry.is_settled(upper, n_rows, n_sections)` gate, and with it
+  the `ListGeometry::is_settled` method itself;
+* **(b)** the `geometry.remember_if_settled(...)` call;
+* **(c)** the `provisional_sectioned_refinement` hold-target deferral.
+
+The commit has no message body, no replacement comment, and none of this
+branch's own planning documents mentions `is_settled`. It reads as an unreviewed
+side effect of the return-type restructuring, not as a decision.
+
+Without (a), `apply()` reports success on the first synchronous pass after a
+model swap, when GTK has realized no `ColumnViewRow` widget yet. Two things
+follow, and **either one alone** would have prevented the failure:
+
+1. `scroll_to_anchor` (`reload_anchor_scroll.rs:151-200`) chooses its `scroll_to`
+   guard row from `apply()`'s result. On failure it uses the plain
+   `request.anchor_position` (row 35, `:179`); on success it uses
+   `reload_restore::prepaint_guard_position` (`:170`), which deliberately names
+   the row at the **bottom** of the viewport (row 42) — correct only when the
+   geometry really is settled. GTK top-aligns row 42: 42 × 34 = **1428**.
+2. `schedule()` arms `arm_refinement` only when `applied_layout.is_none()`
+   (`:130-131`). That is the sole entry point for the corrective
+   `RestorePath::Idle` / `ItemsChanged` / `PageSize` passes, so nothing pulls the
+   wrong first shot back to 1200.
+
+Measured with the branch's own `REPRISE_SCROLL_PROBE=1`, both sides are
+line-for-line identical until:
+
+```
+SCROLLMODEL path=anchor.initial.apply anchor=Some((15, 10.0)) position=Some(35) row_height=34.0 sections=[] target=1200.0   # both
+branch:  SCROLLTO writer=anchor.initial.scroll_to position=42  from=1200.0 upper=6800.0 page=239.0
+dev:     SCROLLTO writer=anchor.initial.scroll_to position=35  from=1200.0 upper=6800.0 page=239.0
+```
+
+### Two things that are *not* the cause — do not change them
+
+* **`prepaint_guard_position` is correct.** Its formula is mathematically
+  identical to dev's hand-rolled arithmetic (`ceil((1200+239)/34)-1 = 42`); the
+  branch only refactored it onto `ListLayout::last_row_above`. Naming the last
+  visible row is required, and its doc comment says why.
+* **`ListLayout::validate` / `LayoutValidation::NoOpinion` is not involved.**
+  `layout_for_live_allocation` (`track_list_geometry.rs:61-69`) short-circuits
+  with `if !layout.has_sections() { return layout; }`, and the failing scenario
+  has `sections=[]`. Even if reached, `validate` would return `Accepted`, because
+  `upper` was already synthetically preseeded by `geometry.configure(...)` to the
+  predicted value — a computed number agreeing with another computed number.
+  **Real widget realization is the only signal that separates "preseeded" from
+  "settled".**
+
+## Decisions taken in the grill of 2026-08-14 — do not re-open without the user
+
+1. **The earlier grill's decision 2/3 ("production geometry is not touched, the
+   oracle gets repaired instead") is lifted.** Its premise was that the
+   production arithmetic is right; that premise is refuted for the unsectioned
+   path. The fix reaches into production code and lands with this branch, as one
+   PR.
+2. **All three deletions come back, for both the sectioned and the unsectioned
+   path.** A literal revert is the smallest defensible answer to "a gate was
+   deleted without a reason", and with the gate back `Some ⟺ settled` holds
+   again, so every consumer of `apply()`'s result keys off the right fact with no
+   signature change. Restoring only two of three would produce a combination that
+   neither dev nor this branch has ever run.
+3. **Pre-defined bisection if the sectioned pair goes red** (task 6): first drop
+   (c) again and re-measure; only then narrow the gate to `n_sections == 0`.
+   Do **not** invent a third behaviour (a struct carrying `layout` + `settled`)
+   without returning to the user.
+4. **The regression oracle keeps its value assertion and gains a semantic one**,
+   conditionally — see task 5.
+5. **Evidence = the focused set, then the full display gate**, the gate running
+   concurrently with the handover rather than blocking it.
+6. **R2 is measured, not assumed** (task 7). If sectioned lists never reach
+   "settled" but the sectioned pair is green, that lands with a follow-up issue;
+   it does not block. Blocking would mean rebuilding the header-height model,
+   which the earlier decision 1 put out of scope and which stays out of scope.
+7. **Nothing is sent outward by the pipeline.** No PR is opened and no issue is
+   filed; both texts are prepared and handed over.
+8. **One strand.** See `## Parallelität`.
+
+## Tasks
+
+Each task is independently checkable. The file list is what the task **may**
+touch; nothing else.
+
+0. **Rebase onto `origin/dev`.** *Done before this plan was written* — the branch
+   is 11 ahead, 0 behind at `6a54c2316e`, rebased without conflicts. Every
+   measurement below therefore runs on the final tree, and no post-rebase re-run
+   is owed.
+
+1. **Re-add `ListGeometry::is_settled`.** Restore the method from
+   `origin/dev:crates/reprise-gnome/src/ui/list_geometry.rs` (dev `:368-377`),
+   placed next to `settled_row_height` (`:366-368`). No visibility change is
+   needed anywhere: `section_header_measurement` (`:359-364`) is private to
+   `list_geometry.rs` and the restored method lives in that same file. Add one
+   sentence of doc comment saying *why* it exists — real widget realization is
+   the only signal that distinguishes a pre-seeded `upper` from a settled one.
+   Files: `crates/reprise-gnome/src/ui/list_geometry.rs`.
+
+2. **Restore the gate and the persistence call in `apply()`.** In
+   `crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs`, after
+   `geometry.configure(...)` and **before** `adjustment.set_value(target)`:
+
+   ```rust
+   if !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections) {
+       return None;
+   }
+   geometry.remember_if_settled(/* as dev called it */);
+   ```
+
+   Unsettled means `return None` with **no** `set_value` — that is dev's
+   semantics: it declined to write a target derived from an unproven row height.
+   Take the exact argument list from
+   `git show origin/dev:crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs`
+   rather than guessing it. Add a comment above the gate naming the failure it
+   prevents (a bottom-edge guard row against an unrealized layout), so the next
+   return-type refactor cannot delete it silently again.
+   Files: `crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs`.
+
+3. **Restore the `provisional_sectioned_refinement` hold deferral**, also from
+   dev's version of the same function: a non-`Initial` refinement of a sectioned
+   list must not `set_hold_target`. This is deletion (c) and it becomes live
+   again the moment the gate is back, because `arm_refinement` starts firing.
+   Files: `crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs`.
+
+4. **State the coupling where the guard is chosen.** One comment at
+   `reload_anchor_scroll.rs:164-180` recording that `applied_layout.is_some()`
+   now means *settled*, and that `prepaint_guard_position`'s bottom-edge row is
+   valid only under that condition. No code change. It is a separate task so it
+   cannot vanish in diff noise.
+   Files: `crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs`.
+
+5. **Add the semantic assertion to the regression test — conditionally.** The
+   existing assertion checks the resulting scroll value; the defect is the guard
+   *row*. Add a second assertion beside it: after the filter is cleared, the
+   topmost row actually visible in the list viewport is the anchor row.
+   **Condition:** only if the viewport derivation the queue tests already use
+   (derive the viewport top from the scroll adjustment, not from raw widget
+   coordinates — see `queue_section_geometry_display_tests.rs`) is reachable from
+   `search_viewport_display_tests.rs` **without moving production code and
+   without building new infrastructure**. If it is not, change nothing here,
+   keep the value assertion alone, and write the gap into `.pipeline-codex.md`
+   so it can be filed as a follow-up.
+   Explicitly forbidden: building a test-readable sink in `scroll_probe`. That
+   module emits only to stderr via `eprintln!`, has no in-process capture and no
+   `#[cfg(test)]` helper — measured. Do not add one for a single test.
+   Files: `crates/reprise-gnome/src/ui/track_list/search_viewport_display_tests.rs`.
+
+6. **Measure the sectioned pair.** `nav_back_to_a_large_sectioned_queue_never_visits_the_top`
+   (`queue_section_geometry_display_tests.rs:508`) and
+   `queue_anchor_names_the_row_at_the_viewport_top` (`:623`). Both must report
+   `test result: ok. 1 passed`. **This is the decision point.** If either is red,
+   apply the bisection of decision 3 — first revert task 3, re-measure; if still
+   red, narrow the gate to `n_sections == 0` and re-measure — and record in
+   `.pipeline-codex.md` which step made it green.
+   Files: `crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs`
+   (bisection only).
+
+7. **Measure R2 — does the sectioned path ever reach "settled"?** One run of the
+   sectioned pair with `REPRISE_SCROLL_PROBE=1`, looking for an `anchor.*.apply`
+   record that follows an initial pass which returned `None`. Report the finding
+   in `.pipeline-codex.md`. This turns R2 from an unknown into a known; it does
+   not gate the landing (decision 6).
+   Files: none.
+
+## The verification, cheapest first
+
+Judge display tests **only** on the `^test result:` line — a name filter that
+matches nothing prints `ok. 0 passed`, which is not a pass. Each display test
+runs in its own process with its own XDG roots, `dbus-run-session` and
+`xvfb-run -a`. Redirect every long output to a log and answer by `grep`; never
+read a whole log back.
+
+* **S1 — `cargo fmt --check`, then `cargo clippy -p reprise-gnome --all-targets -- -D warnings`.** Exit 0.
+* **S2 — `cargo test -p reprise-gnome --bin reprise`.** No line matching
+  `^test result: FAILED`. (`--lib` finds nothing in this crate.)
+* **S3 — the blocker, twice.** Two consecutive runs of
+  `typed_search_reads_from_the_top_and_clearing_comes_back`, both
+  `test result: ok. 1 passed`. Two runs because the failure was byte-identical
+  twice; one green run is not symmetric evidence.
+* **S4 — the sectioned pair** (task 6). Both `1 passed`.
+* **S5 — the remaining focused paths**, one run each, all `1 passed`:
+  `navback_anchor_display_tests.rs:307`, `glide_reload_display_tests.rs:57`,
+  `reveal_track_display_tests.rs:98`,
+  `fresh_start_allocation_display_tests.rs:50`,
+  `track_list_reload_display_tests.rs:30`.
+* **S6 — the full display gate.** `DISPLAY_TEST_JOBS=1 scripts/check-display-tests.sh`,
+  summary `failed: 0`. Runs detached through `heavy-run`, watched by one
+  background watcher on process exit / log stall / deadline — never polled.
+  It runs **concurrently** with the handover: S1–S5 are the gate to the handover,
+  S6 is the gate to the merge, and the merge is the user's.
+
+The baseline this is measured against is not assumed: the full gate ran on
+`ab02785783` at 08:33–09:50 on 2026-08-14 and reported **671 of 672 passed**,
+the single failure being the blocker above. Every other display test in the
+blast radius is therefore known green on this code.
+
+## Risks
+
+| # | Risk | The measurement that disproves it |
+|---|---|---|
+| R1 | Restoring the gate re-breaks the two sectioned tests, i.e. #444 regresses. | S4. Both green ⇒ disproved. Red ⇒ bisection per decision 3. |
+| R2 | The gate never converges for sectioned lists (`headers.is_uniform()` never holds live), so they sit permanently unsettled. | Task 7. Note the claim that headers measure 20/34 came from a fixture without the application stylesheet; with it they measure 36/36, which is the CSS floor `SECTION_HEADER_MIN_HEIGHT = 36`. If R2 is true *and* S4 is green, it is harmless and becomes a follow-up. |
+| R3 | The restored corrective pass introduces a visible one-frame jump. | The baseline is not "no jump" but "no worse than dev", since this is dev's shipped behaviour. `nav_back_to_a_large_sectioned_queue_never_visits_the_top` in S4 is exactly the assertion for a top-visit. |
+| R4 | Other rows-only display tests that pass today start failing, because the always-applied behaviour was silently compensating elsewhere. | S5 first, S6 as the real answer. |
+| R5 | Restoring `remember_if_settled` persists a row height at a moment the branch had stopped persisting one, leaking a cached value into later tests. | S6, and specifically the six `tag_mutation_refresh_display_tests.rs` cases, the densest users of cached geometry. |
+| R6 | Restoring the hold deferral (task 3) changes non-`Initial` sectioned refinements in a way no test covers. | S4 and S6. If S4 goes red, decision 3's bisection attributes it in one run. |
+
+## Parallelität
+
+**One strand.** The cut was attempted and rejected with reasons:
+
+* Tasks 1–4, 6 and the bisection all edit
+  `crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs` (plus eleven
+  lines of `list_geometry.rs`). A second strand would own only task 5.
+* That strand could not verify itself. Task 5's new assertion sits in the very
+  test that is red until task 2 lands, so it could not go green in its own
+  worktree *in principle* — its check would have to move to the post-merge list
+  for ~15 lines of test code.
+* Task 5 is also semantically downstream: what "the correct topmost row" means is
+  what tasks 1–3 define.
+* The load governor had 0 of 6 slots free when this plan was written, so two
+  concurrent Codex runs would serialize anyway.
+
+The parallelism that does pay needs no cut: S3, S4 and S5 are independent
+processes with their own Xvfb servers and run concurrently once the fix compiles.
+S6 runs detached alongside the handover.
+
+**Post-merge cross-checks:** none are owed. With a single strand every check
+reads files the strand owns, and the rebase already happened before the work
+started, so no comparison is deferred past the merge.
+
+## Record — the four corrections that produced the current diff
+
+Kept because they are the reason the diff touches tests at all, and they belong
+in the PR body.
+
+**C1 — the red q-journey was never inherited from `dev`.** `RenderedBandSamples`,
+`rendered_band_samples` and `uniform_heights` have zero occurrences on
+`origin/dev`; they arrived with this branch's own `settle section band
+measurement` commit. On `dev` the test only asserts that both header titles
+render, and CI ran it green.
+
+**C2 — the 20 px header was not a settling race.** Strengthening the settle
+predicate to `has_both_bands() && uniform_heights().is_some()` makes the test run
+the full timeout (5.51 s instead of 0.49 s) without ever converging.
+
+**C3 — the fixture never installed the application stylesheet.**
 
 | | rows | section headers | q-journey |
 |---|---|---|---|
 | without the stylesheet | 34 px | 20 px and 34 px | red |
 | with the stylesheet | 45 px | **36 px and 36 px** | green |
 
-36 px is exactly the `section_header_height` the model assumes. The handover's
-conclusion — "reality has two header heights, so the model is wrong" — does not
-hold; the model is right and the fixture was wrong. The arithmetic
-`upper = 77438 = 2276×34 + 54` was arithmetic about an unstyled list.
+36 px is exactly the `section_header_height` the model assumes, and
+`style/tokens.rs:66` (`SECTION_HEADER_MIN_HEIGHT: i32 = 36`) is compiled into
+`.queue-section-header-row { min-height: 36px; }` in `queue_sections.rs:82-85`.
+The model is right and the fixture was wrong.
 
-**C4 — with the real stylesheet the #444 assertion fails, and its oracle is at
-fault.** Under real geometry the assertion `assert_eq!(topmost_title,
-&anchor_title)` reports `left: "Track 1100"` (the topmost entry of
-`rendered_rows()`) against `right: "Track 1101"` (the captured anchor). A probe
-run in the same frame settles it:
+**C4 — the reference frame, not the anchor, was off.** The scroll viewport starts
+at y = 26. The row the oracle picked spanned −19..26 and had zero visible pixels
+— a realized virtualization slack row that `.first()` chose because it sorted by
+raw y including negatives. Ruled out by the same probe: stale row height,
+`headers_above` off by one, and any capture/render frame skew.
 
-```
-value=49572  layout=ListLayout{ row_height:45.0, section_header_height:36.0, section_starts:[0,1] }
-row_at(49572) -> position=1100  offset=0
-row_top(1100) = 1100*45 + 2*36 = 49500 + 72 = 49572      exact, no remainder
-column_view_title_bounds = [(0.0, 25.0), ...]            the non-scrolling title bar
-rows_before = [("Track 1100", -19.0), ("Track 1101", 26.0), ...]
-```
+## Deferred by decision — do not re-raise here
 
-`rendered_rows()` measures with `compute_bounds(&column_view)`, a frame that
-includes the fixed `GtkColumnViewTitle` bar, so the scroll viewport starts at
-y ≈ 26. `Track 1101` renders at exactly 26 and is therefore flush with the
-viewport top. `Track 1100` spans −19..26 and has **zero visible pixels** — a
-realized virtualization slack row that `.first()` picks anyway because it sorts
-by raw y including negatives.
+Duplicate entries in `section_starts` double-counted by `headers_above`; the
+unreachable `Option` on `content_height`/`max_scroll`; `rendered_queue_headers`
+not filtering zero-height widgets.
 
-Ruled out by the same probe: a stale row height (45.0 is right, remainder 0),
-`headers_above` off by one (2 is correct for `section_starts: [0, 1]`), and a
-capture/render frame skew (`adjustment.value()` is 49572 both before and inside
-`capture()`). The position-to-id shift (position 1100 → track id 1101) is real
-but intended: "Now Playing" occupies position 0.
+## Follow-ups to hand over (not filed by the pipeline)
 
-With the naming convention neutralised and the stylesheet installed, the restore
-half passes: the anchor row returns to within 1 px of its captured y
-(`ANCHORPROBE anchor="Track 1101" anchor_y_before=26`, `test result: ok`).
-
-## Decisions
-
-1. **Scope stays #444.** The anchor becomes header-aware; the header-height
-   model is not rebuilt. The uniformity precondition this branch introduced is
-   its own debt and must go green.
-2. **The production geometry is not touched.** `row_at` is provably correct
-   here (`row_top(1100) = 49572 = scroll_value`, offset 0).
-3. **The oracle's reference frame is repaired.** `rendered_rows()` must count
-   only rows with a real visible share of the scroll region.
-4. **Both queue-geometry tests install the application stylesheet.**
-5. **Evidence before landing:** the focused eight plus a full local
-   `scripts/check-display-tests.sh`, on top of fmt, clippy `-D warnings`, the
-   workspace suite and the architecture gate.
-6. **Two follow-up issues**, neither duplicating #460: display fixtures that
-   measure without the stylesheet (and the reference-frame trap alongside it),
-   and `validate`'s one-directional blindness.
-7. **The three deferred review findings stay deferred**: duplicate entries in
-   `section_starts` double-counted by `headers_above`, the unreachable `Option`
-   on `content_height`/`max_scroll`, and `rendered_queue_headers` not filtering
-   zero-height widgets. None of them bears on what was found here. The fourth,
-   `uniform()`'s 0.5 px tolerance, dissolves with C3 — it was only ever suspect
-   for rejecting an artefact.
-8. **The handover and this plan are committed into the branch.** Both are
-   untracked in the shared main checkout and vanish when another session cleans
-   it.
-
-## Work
-
-### 1. Repair the measurement (production code untouched)
-
-In `crates/reprise-gnome/src/ui/track_list/queue_section_geometry_display_tests.rs`:
-
-- Install the application stylesheet in both `#[test]` functions, exactly as
-  `queue_section_header_display_tests.rs:64` does:
-  `crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());`
-  immediately after `gtk4::init().unwrap()`.
-- Repair `rendered_rows()` so it returns only rows with a visible share of the
-  scroll region: subtract the `GtkColumnViewTitle` height from the reference
-  frame, or require a strictly positive overlap with the viewport. A row whose
-  bottom edge lands exactly at the viewport top has no visible pixels and must
-  not be returned. Document in a comment why the raw `compute_bounds` frame is
-  not the viewport frame, so the trap is not re-set later.
-- Keep the band-uniformity precondition. With the stylesheet it measures
-  `[36.0, 36.0]` and passes.
-- Do not change `list_geometry_layout.rs`, `reload_anchor_scroll.rs`,
-  `reload_restore.rs` or `track_list_reload.rs`.
-
-Pass criterion: both tests in that file green, each in its own process, and the
-`BANDPROBE` line reports `header_samples=[36.0, 36.0]`.
-
-### 2. Re-verify
-
-Every display test in its own process, own XDG roots, `dbus-run-session`,
-`xvfb-run -a`, with `GDK_BACKEND=x11 WAYLAND_DISPLAY= GSK_RENDERER=cairo
-REPRISE_AUDIO_SINK=fakesink`. Judge on `^test result:` **and its count** — a
-name filter that matches nothing prints `ok. 0 passed`, which is not a pass.
-
-1. The focused eight: `navback_anchor_display_tests` ×4,
-   `queue_anchor_names_the_row_at_the_viewport_top`,
-   `nav_back_to_a_large_sectioned_queue_never_visits_the_top`,
-   `que_1_queue_section_headers_share_one_height`,
-   `browse_4_the_title_link_leaves_the_viewport_at_the_revealed_track`.
-2. The full gate: `scripts/check-display-tests.sh`, unfiltered.
-3. `cargo fmt --check`, `cargo clippy --all-targets --workspace -- -D warnings`,
-   `cargo test --workspace`, `scripts/check-architecture.sh`.
-
-Afterwards `xvfb-orphan-gc --apply`.
-
-Pass criterion: no `^test result: FAILED` anywhere, and the display gate's test
-count is not lower than the 671 the dev run for #465 executed.
-
-### 3. Land
-
-1. Commit `docs/plans/queue-section-anchor-handover.md` and this plan into the
-   branch.
-2. Open the PR against `dev`, referencing #444, with the C1–C4 corrections in
-   the body — they are the reason the diff touches the tests at all.
-3. Rebase, push, merge in one go via `~/.claude/skills/pipeline/scripts/land.sh`.
-   Do not wait for CI first: the run takes ~45 minutes, `dev` moves faster than
-   that, and GitHub then refuses the merge out of a stale mergeability cache.
-   The evidence that carries the risk is the local gate above, which ran before
-   landing.
-4. Read what `dev` picked up since (`git log --oneline HEAD..origin/dev`) and
-   judge whether it can touch `reload_anchor_scroll.rs` at all.
-5. Watch the next dev run that *completes* and still contains the commit — the
-   immediate one will most likely be cancelled by the next merge in the
-   concurrency group. Fix forward if it goes red.
-6. Remove the worktree and the branch (a squash merge leaves both), set
-   `phase: shipped`, release the wake lock.
-
-### 4. File the follow-ups
-
-**Issue A — display fixtures measure an application that does not exist.**
-A GTK display fixture that never installs the app stylesheet measures default
-GTK geometry: 34 px rows instead of 45, section headers of 20 px and 34 px
-instead of 36 px and 36 px. `queue_section_geometry_display_tests.rs` did this
-and produced a conclusion about the product ("header heights are not uniform")
-that was an artefact of the fixture. Second part of the same family: measuring
-row positions with `compute_bounds(&column_view)` includes the non-scrolling
-`GtkColumnViewTitle` bar, so "y = 0" is not the viewport top and realized slack
-rows above the viewport look like visible rows. Ask for a sweep over the display
-fixtures for both traps.
-
-**Issue B — `validate` can only reject a guess that is too short.**
-It treats `upper` below the prediction as "the range is still growing" and
-returns `NoOpinion`, so a header-height guess that is too *long* is never
-rejected. Note the asymmetry and what it would take to make the check
-two-sided. Production code, therefore separate from Issue A.
-
-Neither duplicates #460 (`scroll_center::centered_scroll_value_with_height` and
-`track_list_reload::pending_reveal_anchor` keeping the rows-only model for
-centring, plan Decision 10).
-
-## Invariants the diff must not lose
-
-Each was proven on a real display run before the rebase; losing one silently
-reintroduces a bug.
-
-1. `apply` builds the `ListLayout` **once** and passes that same layout to
-   `scroll_to_anchor` and `prepaint_guard_position`. Two layouts mean the guard
-   row and the written scroll value describe different rows.
-2. A failed geometry validation must never drop the anchor. Unsectioned lists
-   skip validation, "no opinion" keeps the section geometry, and only a proven
-   rejection falls back to rows-only.
-3. `shared.queue_sections` is a `RefCell`; section data is copied out in its own
-   statement before any GTK call.
-4. #463's probe instrumentation (`apply_probe`, `hold_probe`, `scroll_probe`,
-   `set_hold_target`, `matches` and its `mod tests`) stays intact — it is the
-   gate's own instrumentation.
-
-## Operational notes
-
-- Codex runs go through `heavy-run medium`, not `heavy`, which needs 4 of 6
-  slots and starves behind other sessions.
-- `heavy-run` swallows `codex-run.sh`'s stderr, so its launcher log stays 0
-  bytes. That is not a hung run; compare worktree file mtimes instead.
-- `.pipeline-codex.md` is tracked and carries a stale copy between runs — its
-  existence is not a finish signal.
-- `find` on this host is `bfs` and fails silently on relative `-newermt`
-  (exit 0, no output). Compare `%T@` epochs instead.
+* **A** — display fixtures that measure without the application stylesheet, plus
+  the reference-frame trap (`compute_bounds(&column_view)` includes the
+  non-scrolling title bar, so y = 0 is not the viewport top). Ask for a sweep.
+* **B** — `validate` treats an `upper` below the prediction as "still growing"
+  and returns `NoOpinion`, so it can only ever reject a guess that is too short,
+  never one that is too long.
+* **C** — whatever tasks 5 and 7 record as a gap in `.pipeline-codex.md`.
