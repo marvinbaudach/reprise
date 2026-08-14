@@ -5,6 +5,8 @@ use reprise_core::library::scanner::{scan_folder_with_source_and_progress, ScanO
 use reprise_core::library::settings;
 use reprise_core::queries;
 use source::{BridgedSource, SafSource};
+#[allow(unused_imports)]
+use std::os::linux::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
