@@ -1,0 +1,110 @@
+/*
+ * Design tokens.
+ *
+ * The four brand colours are copied verbatim from `data/brand/palette.toml`, the
+ * only maintained colour source in the project — two for dark surfaces, two for
+ * light ones. Nothing here invents a brand hue.
+ *
+ * The neutrals are derived, not invented either: `reprise_plate #33363F` is
+ * oklch(30.5% 0.018 269), and every grey below sits on that same hue and chroma.
+ * That is why the dark side reads as blue-black instead of the flat #111 that
+ * every template ships with.
+ */
+
+:root {
+  /* Brand, verbatim. */
+  --brand-teal: #4fdbd4;
+  --brand-coral: #ff6f5e;
+  --brand-teal-light: #00706b;
+  --brand-coral-light: #c4362a;
+  --brand-plate: #33363f;
+
+  /* Dark is the default: the app is a dark GNOME app, and the accents were
+     picked against a dark plate. */
+  --surface-base: oklch(13% 0.014 269);
+  --surface-raised: oklch(17.5% 0.016 269);
+  --surface-stage: oklch(21% 0.018 269);
+  --surface-line: oklch(30% 0.018 269);
+  --surface-line-soft: oklch(24% 0.016 269);
+
+  --text-strong: oklch(96% 0.004 269);
+  --text-body: oklch(80% 0.008 269);
+  --text-muted: oklch(62% 0.011 269);
+  --text-faint: oklch(48% 0.012 269);
+
+  --accent: var(--brand-teal);
+  --accent-ink: oklch(20% 0.06 190);
+  --accent-glow: color-mix(in oklab, var(--brand-teal) 45%, transparent);
+  --second: var(--brand-coral);
+
+  --grain-opacity: 0.055;
+  --stage-veil: color-mix(in oklab, var(--surface-base) 55%, transparent);
+
+  /* Rhythm. Deliberately not one uniform step: the protocol frame is tight, the
+     stages are wide. */
+  --gap-hair: 0.25rem;
+  --gap-tight: 0.5rem;
+  --gap-line: 0.875rem;
+  --gap-block: clamp(1.5rem, 1.1rem + 1.6vw, 2.75rem);
+  --gap-chapter: clamp(4.5rem, 3rem + 7vw, 10rem);
+
+  --measure: 68ch;
+  --frame-max: 78rem;
+  --frame-pad: clamp(1.25rem, 0.6rem + 3vw, 4rem);
+
+  --radius-sharp: 2px;
+  --radius-plate: 10px;
+
+  --duration-fast: 140ms;
+  --duration-normal: 320ms;
+  --duration-slow: 720ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* The system preference wins when the reader has not chosen. Guarded so an
+   explicit dark choice is not overridden by a light system. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --surface-base: oklch(97.5% 0.004 269);
+    --surface-raised: oklch(94% 0.006 269);
+    --surface-stage: oklch(90% 0.008 269);
+    --surface-line: oklch(80% 0.012 269);
+    --surface-line-soft: oklch(88% 0.008 269);
+
+    --text-strong: oklch(21% 0.018 269);
+    --text-body: oklch(34% 0.016 269);
+    --text-muted: oklch(48% 0.014 269);
+    --text-faint: oklch(62% 0.012 269);
+
+    --accent: var(--brand-teal-light);
+    --accent-ink: oklch(98% 0.01 190);
+    --accent-glow: color-mix(in oklab, var(--brand-teal-light) 28%, transparent);
+    --second: var(--brand-coral-light);
+
+    --grain-opacity: 0.035;
+    --stage-veil: color-mix(in oklab, var(--surface-base) 40%, transparent);
+  }
+}
+
+/* An explicit choice beats both. */
+:root[data-theme='light'] {
+  --surface-base: oklch(97.5% 0.004 269);
+  --surface-raised: oklch(94% 0.006 269);
+  --surface-stage: oklch(90% 0.008 269);
+  --surface-line: oklch(80% 0.012 269);
+  --surface-line-soft: oklch(88% 0.008 269);
+
+  --text-strong: oklch(21% 0.018 269);
+  --text-body: oklch(34% 0.016 269);
+  --text-muted: oklch(48% 0.014 269);
+  --text-faint: oklch(62% 0.012 269);
+
+  --accent: var(--brand-teal-light);
+  --accent-ink: oklch(98% 0.01 190);
+  --accent-glow: color-mix(in oklab, var(--brand-teal-light) 28%, transparent);
+  --second: var(--brand-coral-light);
+
+  --grain-opacity: 0.035;
+  --stage-veil: color-mix(in oklab, var(--surface-base) 40%, transparent);
+}

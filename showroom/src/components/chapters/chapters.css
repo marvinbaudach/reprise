@@ -1,0 +1,278 @@
+/* --- Hero ---------------------------------------------------------------- */
+
+.hero {
+  padding-block: clamp(3rem, 2rem + 6vw, 8rem) var(--gap-chapter);
+  display: grid;
+  gap: var(--gap-block);
+}
+
+.hero__headline {
+  font-size: clamp(2.75rem, 1.2rem + 7.5vw, 8rem);
+  color: var(--text-strong);
+  margin: 0;
+}
+
+.hero__lead {
+  max-width: 42ch;
+  border-left: 2px solid var(--accent);
+  padding-left: var(--gap-line);
+}
+
+.hero__note {
+  color: var(--text-muted);
+}
+
+/* --- Chapters ------------------------------------------------------------ */
+
+.chapter {
+  padding-block-end: var(--gap-chapter);
+  scroll-margin-block-start: 3rem;
+}
+
+.chapter__body {
+  display: grid;
+  gap: var(--gap-block);
+}
+
+.chapter__body > .rule {
+  margin-top: var(--gap-block);
+}
+
+/* --- The merge chain ----------------------------------------------------- */
+
+.chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-tight);
+  margin: 0 0 var(--gap-block);
+}
+
+.chain__step {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--surface-line);
+  background: color-mix(in oklab, var(--surface-base) 55%, transparent);
+}
+
+.chain__step:nth-child(2),
+.chain__step:nth-last-child(2) {
+  border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+.chain__index {
+  color: var(--text-faint);
+}
+
+.chain__label {
+  font-variation-settings: 'wdth' 92, 'wght' 500;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.chain__note {
+  color: var(--text-body);
+}
+
+/* --- The verification staircase ------------------------------------------ */
+
+.rungs {
+  display: grid;
+  gap: 1px;
+  background: var(--surface-line-soft);
+  border: 1px solid var(--surface-line);
+}
+
+.rungs__rung {
+  display: grid;
+  /* The count column has to hold "5'280" set in the display face at its largest.
+     Too narrow and the figure does not wrap — it overlaps the name beside it. */
+  grid-template-columns: minmax(7.5rem, 9rem) minmax(11rem, 1fr) 1fr 1fr;
+  gap: var(--gap-line);
+  align-items: baseline;
+  padding: var(--gap-line) var(--gap-line) var(--gap-line)
+    calc(var(--gap-line) + var(--rung-index, 0) * 0.75rem);
+  background: var(--surface-base);
+  border-left: 3px solid transparent;
+}
+
+/* The two agent-driven rungs are the point of the chapter, so they carry the
+   accent — the rest of the staircase stays quiet. */
+.rungs__rung--agent {
+  border-left-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 5%, var(--surface-base));
+}
+
+/* Two classes deep on purpose: the shared `.figure-value` sets the display size
+   and its stylesheet may land after this one in the bundle. A rule that only
+   wins by import order is a rule that breaks the day the imports move. */
+.rungs__rung .rungs__count {
+  font-size: clamp(1.375rem, 1rem + 1.1vw, 1.875rem);
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  line-height: 1.05;
+}
+
+.rungs__name {
+  font-variation-settings: 'wdth' 92, 'wght' 550;
+  color: var(--text-strong);
+}
+
+.rungs__proves,
+.rungs__cannot {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.rungs__marker {
+  display: block;
+  font-size: var(--text-eyebrow);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.rungs__marker--can {
+  color: var(--accent);
+}
+
+.rungs__marker--cannot {
+  color: var(--second);
+}
+
+/* --- Folded detail ------------------------------------------------------- */
+
+.fold {
+  border: 1px solid var(--surface-line);
+  background: color-mix(in oklab, var(--surface-raised) 55%, transparent);
+}
+
+.fold__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-hair);
+  padding: var(--gap-line);
+  cursor: pointer;
+  list-style: none;
+}
+
+.fold__summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold__summary::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: var(--gap-line);
+  width: 0.6rem;
+  height: 0.6rem;
+  border-right: 2px solid var(--text-faint);
+  border-bottom: 2px solid var(--text-faint);
+  transform: rotate(45deg);
+  transition: transform var(--duration-normal) var(--ease-out-expo);
+}
+
+.fold {
+  position: relative;
+}
+
+.fold[open] .fold__summary::after {
+  transform: rotate(-135deg);
+}
+
+.fold__title {
+  font-variation-settings: 'wdth' 96, 'wght' 600;
+  color: var(--text-strong);
+}
+
+.fold__body {
+  padding: 0 var(--gap-line) var(--gap-block);
+  display: grid;
+  gap: var(--gap-line);
+}
+
+/* --- The ledger ---------------------------------------------------------- */
+
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+}
+
+.ledger__caption {
+  text-align: left;
+  color: var(--text-faint);
+  padding-block-end: var(--gap-tight);
+}
+
+.ledger th,
+.ledger td {
+  text-align: right;
+  padding: 0.5rem 0.75rem;
+  border-block-end: 1px solid var(--surface-line-soft);
+  white-space: nowrap;
+}
+
+.ledger thead th {
+  color: var(--text-faint);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: var(--text-eyebrow);
+}
+
+.ledger tbody th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-body);
+  white-space: normal;
+}
+
+.ledger__before {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.ledger__after {
+  color: var(--text-strong);
+}
+
+.ledger__delta {
+  color: var(--accent);
+}
+
+.ledger__price {
+  color: var(--text-muted);
+}
+
+/* --- Footer -------------------------------------------------------------- */
+
+.site-footer {
+  border-block-start: 1px solid var(--surface-line);
+  padding-block: var(--gap-block) var(--gap-chapter);
+}
+
+.site-footer__honesty {
+  margin-block: var(--gap-line);
+  color: var(--text-muted);
+}
+
+.site-footer__links a {
+  color: var(--text-body);
+}
+
+.site-footer__links a:hover {
+  color: var(--accent);
+}
+
+@media (max-width: 60rem) {
+  .rungs__rung {
+    grid-template-columns: minmax(4.5rem, 5.5rem) 1fr;
+  }
+
+  .rungs__proves,
+  .rungs__cannot {
+    grid-column: 2;
+  }
+}
