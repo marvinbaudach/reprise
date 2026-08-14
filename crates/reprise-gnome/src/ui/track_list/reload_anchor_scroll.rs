@@ -161,6 +161,8 @@ fn scroll_to_anchor(
         .iter()
         .map(|section| section.start)
         .collect::<Vec<_>>();
+    // `Some` means the layout is settled; only then is its bottom-edge
+    // prepaint guard row valid.
     let guard_position = if let Some(layout) = applied_layout {
         let page = shared
             .column_view
