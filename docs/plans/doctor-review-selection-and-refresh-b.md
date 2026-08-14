@@ -8,6 +8,14 @@ created: 2026-08-14
 ---
 # Strand B — one toggle updates the rows it toggled
 
+> **Status, 14.08.2026.** Only **B-0** (instrumentation and probes) is
+> implemented and landing. It carries no behaviour change. B-1 through B-5 are
+> still open and are now planned against the measured profile below, not against
+> R-19's predicted branches — see `### Measured profile`, which answers R-19 with
+> a third case the rule did not anticipate and adds a finding the plan did not
+> ask about (the refresh gets slower with every refresh). `phase: coded` refers
+> to B-0; do **not** read it as strand B being finished.
+
 Mother plan: `docs/plans/doctor-review-selection-and-refresh.md`. Read it for
 the full diagnosis (§A), the complete decision list (§B), the scope fence (§G),
 the merge order (§I) and the post-merge cross-checks (§J). This file is the
