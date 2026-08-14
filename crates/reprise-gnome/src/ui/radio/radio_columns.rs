@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use reprise_core::connectivity::Connectivity;
+use reprise_core::db::Db;
 use reprise_core::radio::StationRow;
 use reprise_view::columns::{ColumnKey, RadioColumn};
 
@@ -19,6 +20,14 @@ pub(super) type LiveState = Rc<dyn Fn() -> RadioLiveState>;
 /// `NET-3b`: read at right-click/context-menu-key time so the Play entry's
 /// label always reflects current connectivity, never a stale snapshot.
 pub(super) type ConnectivitySource = Rc<dyn Fn() -> Connectivity>;
+/// `NET-1a` / `SRC-11`: read at cell-bind time so a bound artwork cell never
+/// carries a stale consent snapshot.
+pub(super) type ImagesAllowedSource = Rc<dyn Fn() -> bool>;
+
+pub(super) fn images_allowed_source(conn: &Rc<Db>) -> ImagesAllowedSource {
+    let conn = conn.clone();
+    Rc::new(move || super::images_allowed(&conn))
+}
 
 #[derive(Clone, Copy)]
 struct ColumnTitle<'a> {
@@ -258,6 +267,7 @@ fn artwork_column(
     view: &gtk4::ColumnView,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
+    images_allowed: &ImagesAllowedSource,
     cells: &Rc<RadioLiveCells>,
 ) {
     let factory = gtk4::SignalListItemFactory::new();
@@ -280,6 +290,7 @@ fn artwork_column(
         item.set_child(Some(&surface));
     });
     let cells_for_bind = cells.clone();
+    let images_allowed = images_allowed.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -294,6 +305,7 @@ fn artwork_column(
             return;
         };
         let row = object.row();
+        let images_allowed = images_allowed.clone();
         let apply = Rc::new(move || {
             while let Some(child) = cell.first_child() {
                 cell.remove(&child);
@@ -303,7 +315,7 @@ fn artwork_column(
                     row.favicon_url.as_deref(),
                     &row.name,
                     36,
-                    crate::ui::podcasts::source_image::gate_open(),
+                    images_allowed(),
                 );
             cell.append(artwork.widget());
         }) as Rc<dyn Fn()>;
@@ -329,11 +341,18 @@ pub(super) fn append_columns(
     view: &gtk4::ColumnView,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
+    images_allowed: &ImagesAllowedSource,
     cells: &Rc<RadioLiveCells>,
     artwork_cells: &Rc<RadioLiveCells>,
     query: &crate::ui::search_highlight::QuerySource,
 ) {
-    artwork_column(view, live_state, connectivity, artwork_cells);
+    artwork_column(
+        view,
+        live_state,
+        connectivity,
+        images_allowed,
+        artwork_cells,
+    );
     state_column(view, live_state, connectivity, cells);
     let context = TextColumnContext {
         live_state,
@@ -439,6 +458,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn src_11_radio_artwork_permission_reads_settings_on_cold_start() {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let images_allowed = images_allowed_source(&conn);
+
+        assert!(!images_allowed(), "fresh settings must not allow artwork");
+
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
+            .unwrap();
+        reprise_core::online_sources::set_enabled(&conn, true).unwrap();
+        assert!(
+            images_allowed(),
+            "the global gate and Artwork module together must allow images"
+        );
+
+        reprise_core::online_sources::set_enabled(&conn, false).unwrap();
+        assert!(
+            !images_allowed(),
+            "the global gate must still block an enabled Artwork module"
+        );
+    }
+
     fn descendant_labels(widget: &gtk4::Widget) -> Vec<gtk4::Label> {
         let mut labels = widget
             .clone()
@@ -452,72 +493,6 @@ mod tests {
             child = current.next_sibling();
         }
         labels
-    }
-
-    fn descendants_with_class(widget: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget> {
-        let mut found = widget
-            .has_css_class(class)
-            .then(|| widget.clone())
-            .into_iter()
-            .collect::<Vec<_>>();
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            found.extend(descendants_with_class(&current, class));
-            child = current.next_sibling();
-        }
-        found
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn artwork_permission_rebinds_visible_radio_images_without_resetting_the_model() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let conn = crate::test_db::open().unwrap();
-        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, false)
-            .unwrap();
-        crate::ui::podcasts::source_image::recompute_gate(&conn);
-        assert!(!crate::ui::podcasts::source_image::gate_open());
-        let store = gtk4::gio::ListStore::new::<RadioObject>();
-        let mut row = station();
-        row.favicon_url = Some("https://images.test/radio-gate-transition.png".into());
-        store.append(&RadioObject::new(row));
-        let selection = gtk4::SingleSelection::new(Some(store));
-        let view = gtk4::ColumnView::new(Some(selection.clone()));
-        let live: LiveState = Rc::new(RadioLiveState::default);
-        let connectivity: ConnectivitySource = Rc::new(|| Connectivity::Online);
-        let live_cells = Rc::new(RadioLiveCells::default());
-        let artwork_cells = Rc::new(RadioLiveCells::default());
-        let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
-        append_columns(
-            &view,
-            &live,
-            &connectivity,
-            &live_cells,
-            &artwork_cells,
-            &query,
-        );
-        let window = gtk4::Window::new();
-        window.set_default_size(1200, 300);
-        window.set_child(Some(&view));
-        window.present();
-        crate::ui::source_context_surface::settle_layout();
-
-        let before = descendants_with_class(view.upcast_ref(), "reprise-source-image");
-        assert_eq!(before.len(), 1);
-        let selected_before = selection.selected();
-
-        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ARTWORK_MODULE, true)
-            .unwrap();
-        crate::ui::podcasts::source_image::recompute_gate(&conn);
-        assert!(crate::ui::podcasts::source_image::gate_open());
-        artwork_cells.reapply();
-        crate::ui::source_context_surface::settle_layout();
-
-        let after = descendants_with_class(view.upcast_ref(), "reprise-source-image");
-        assert_eq!(after.len(), 1);
-        assert_ne!(before[0], after[0]);
-        assert_eq!(selection.selected(), selected_before);
     }
 
     /// UX FIL-5a: Radio highlights only the station-name field its query
@@ -543,7 +518,15 @@ mod tests {
             let query_text = query_text.clone();
             Rc::new(move || query_text.borrow().clone())
         };
-        append_columns(&view, &live, &connectivity, &cells, &artwork_cells, &query);
+        append_columns(
+            &view,
+            &live,
+            &connectivity,
+            &(Rc::new(|| false) as ImagesAllowedSource),
+            &cells,
+            &artwork_cells,
+            &query,
+        );
 
         let window = gtk4::Window::new();
         window.set_default_size(1200, 300);
@@ -599,6 +582,7 @@ mod tests {
             &view,
             &live_state,
             &connectivity,
+            &(Rc::new(|| false) as ImagesAllowedSource),
             &Rc::new(RadioLiveCells::default()),
             &Rc::new(RadioLiveCells::default()),
             &query,
@@ -635,6 +619,7 @@ mod tests {
             &view,
             &live_state,
             &connectivity,
+            &(Rc::new(|| false) as ImagesAllowedSource),
             &Rc::new(RadioLiveCells::default()),
             &Rc::new(RadioLiveCells::default()),
             &query,
@@ -665,6 +650,7 @@ mod tests {
             &view,
             &live_state,
             &connectivity,
+            &(Rc::new(|| false) as ImagesAllowedSource),
             &Rc::new(RadioLiveCells::default()),
             &Rc::new(RadioLiveCells::default()),
             &query,

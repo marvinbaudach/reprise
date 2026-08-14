@@ -12,6 +12,7 @@ use reprise_core::radio::{self, RadioError};
 
 use super::add_dialog_network::{now_unix, preview_url};
 use super::add_dialog_rows;
+use super::images_allowed;
 use super::radio_add_input::{classify_input, AddInput};
 use super::radio_chips::{self, NearYouAction};
 use super::station_preview::StationPreview;
@@ -26,16 +27,6 @@ type LocationSettingsCallback = Rc<dyn Fn()>;
 /// label below ellipsizes instead of asking for its full text width.
 const CONTENT_WIDTH: i32 = 560;
 const CONTENT_HEIGHT: i32 = 620;
-
-/// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
-/// &modules::ARTWORK_MODULE)`, computed fresh at every call so each
-/// favicon tile reflects the current gate — this dialog never lets the
-/// widget read settings itself. A free function (rather than a method) so
-/// its wiring is testable without constructing the GTK dialog.
-pub(super) fn images_allowed(db: &Db) -> bool {
-    reprise_core::online_sources::network_allowed(db, &reprise_core::modules::ARTWORK_MODULE)
-        .unwrap_or(false)
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum AddDialogPhase {
