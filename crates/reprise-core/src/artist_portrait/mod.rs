@@ -3,7 +3,11 @@
 
 pub(crate) mod cache;
 pub(crate) mod deezer;
+#[cfg(test)]
+mod placeholder;
 
+#[cfg(test)]
+mod placeholder_measurement;
 #[cfg(test)]
 mod test_fixtures;
 

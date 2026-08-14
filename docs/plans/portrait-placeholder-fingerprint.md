@@ -2,7 +2,7 @@
 slug: portrait-placeholder-fingerprint
 worktree: /home/marvin/Projects/reprise-portrait-placeholder-fingerprint
 branch: feature/portrait-placeholder-fingerprint
-phase: planned
+phase: blocked
 codex_session:
 created: 2026-08-14
 ---
@@ -330,3 +330,22 @@ acht in Tests. Kein Aufrufer außerhalb.
 - Kein Löschen bestehender Zwischenspeicher-Einträge im Code. Der Ordner wurde am
   14.08. einmalig von Hand geleert.
 - Kein GNOME-Code. Die Änderung ist vollständig in `reprise-core`.
+
+---
+
+## E6-Ergebnis vom 14.08.2026 — Abbruch
+
+Der vorgeschriebene Rust-Lauf über alle 237 messbaren Korpusinstanzen hat die
+20-fache Marge auf beiden Seiten **verfehlt**. Der schlechteste Platzhalter liegt
+bei `0,000245098`, das nächste echte Bild bei `0,059268005`; die Gesamttrennung
+beträgt `241,813×`. Damit müsste eine zulässige Schwelle zugleich mindestens
+`0,004901961` und höchstens `0,002963400` sein. Dieses Intervall ist leer.
+
+Die vorläufige Schwelle `0,005` liegt `20,400×` über dem schlechtesten
+Platzhalter, aber nur `11,854×` unter dem nächsten echten Bild. Gemäß E6 wurde
+sie nicht nachträglich passend gelegt. Fingerabdruck und Messeinstieg bleiben
+deshalb ausschließlich testgebunden; es gibt keine ausgelieferte Schwelle. Der
+Einbau aus Welle 2 und die nachfolgenden Abnahmeschritte aus Welle 3 wurden nicht
+umgesetzt. Die Fingerabdruckentscheidung braucht eine neue Grundlage.
+Der vollständige Rust-Lauf einschließlich aller Einzelabstände steht unter
+`docs/evidence/portrait-placeholder-fingerprint/rust-separation.txt`.
