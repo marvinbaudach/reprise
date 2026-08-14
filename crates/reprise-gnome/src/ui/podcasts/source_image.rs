@@ -16,10 +16,11 @@
 //! The background artwork workers do not simply reuse the `images_allowed`
 //! value a caller passed when a task was queued: that value can go stale if
 //! the gate is switched off while the task is still sitting in the queue.
-//! Instead every fresh value is published to
-//! [`GATE_OPEN`], and the worker re-reads it immediately before calling
-//! `resolve` — see that constant's doc comment for why this shape was chosen
-//! over a per-task snapshot or a DB read from the worker thread.
+//! Instead [`load_texture`] and Preferences publish fresh values to
+//! [`GATE_OPEN`], and only the worker reads it immediately before calling
+//! `resolve`. This atomic is exclusively a fetch-time channel to worker
+//! threads, never a source of UI state — see its doc comment for why this
+//! shape was chosen over a per-task snapshot or a DB read from a worker.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -41,8 +42,8 @@ use source_image_texture::{
     cached_texture, cached_texture_at_any_size, decode_pixels, memory_texture, DecodedPixels,
 };
 
-/// The most recently observed `images_allowed` gate state, shared across the
-/// worker threads below.
+/// The fetch-time `images_allowed` gate shared exclusively with the worker
+/// threads below; no UI path reads this atomic as its state source.
 ///
 /// `NET-1a` requires that switching the gate off takes effect immediately —
 /// including for artwork tasks that were already queued while it was on. The
@@ -53,10 +54,11 @@ use source_image_texture::{
 /// `set_url` already recomputes `images_allowed` fresh from its own live
 /// connection on every render pass, as required by `SRC-11` — that is already
 /// the freshest signal the app has. `load_texture` publishes each such value
-/// into this atomic, and the worker reads it again immediately before
-/// calling `remote_image::resolve`, instead of trusting whatever value a
-/// task happened to capture when it was built. A task queued while the gate
-/// was open therefore still gets refused if the gate has since closed.
+/// into this atomic, Preferences republishes it when the setting changes, and
+/// only the worker reads it again immediately before calling
+/// `remote_image::resolve`, instead of trusting whatever value a task happened
+/// to capture when it was built. A task queued while the gate was open
+/// therefore still gets refused if the gate has since closed.
 ///
 /// The worker queue is unbounded and coalesces matching in-flight URLs, so
 /// rendering a large source cannot discard a visible row's only attempt.
@@ -163,12 +165,6 @@ pub(in crate::ui) fn recompute_gate(conn: &Db) {
         reprise_core::online_sources::network_allowed(conn, &reprise_core::modules::ARTWORK_MODULE)
             .unwrap_or(false);
     GATE_OPEN.store(allowed, Ordering::Relaxed);
-}
-
-/// Current source-artwork permission for rows that bind after the gate was
-/// published by startup or Preferences.
-pub(in crate::ui) fn gate_open() -> bool {
-    GATE_OPEN.load(Ordering::Relaxed)
 }
 
 #[derive(Clone)]

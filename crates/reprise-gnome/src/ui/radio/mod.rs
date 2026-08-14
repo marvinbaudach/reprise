@@ -11,6 +11,8 @@ mod radio_artwork_refresh;
 mod radio_chips;
 mod radio_column_layout;
 mod radio_columns;
+#[cfg(test)]
+mod radio_columns_artwork_tests;
 mod radio_context_menu;
 mod radio_empty_state;
 mod radio_filter_bar;
@@ -29,6 +31,13 @@ use std::rc::Rc;
 use reprise_core::db::Db;
 
 use crate::ui::playback::player_controller::PlayerController;
+
+/// `NET-1a` / `SRC-11`: compute the Radio image gate fresh at every call so
+/// callers never retain a stale consent snapshot.
+pub(super) fn images_allowed(db: &Db) -> bool {
+    reprise_core::online_sources::network_allowed(db, &reprise_core::modules::ARTWORK_MODULE)
+        .unwrap_or(false)
+}
 
 pub(in crate::ui) fn install(conn: Rc<Db>, controller: Option<&Rc<PlayerController>>) -> RadioView {
     RadioView::new(conn, controller)
