@@ -126,23 +126,26 @@ pub(in crate::ui) fn wire_editor(
 }
 
 fn commit_and_rebuild(shared: &Rc<Shared>, playlist_id: i64, requested: &str, focus: CommitFocus) {
-    match commit_name(&shared.conn, playlist_id, requested) {
-        Ok(true) => super::notify_playlists_changed(shared),
-        Ok(false) => {}
+    let changed = match commit_name(&shared.conn, playlist_id, requested) {
+        Ok(changed) => changed,
         Err(error) => {
             tracing::error!(%error, playlist_id, "failed to commit inline playlist name");
             show_toast(
                 shared,
                 &strings::playlist_create_failed_toast(requested.trim()),
             );
+            false
         }
-    }
+    };
     shared.playlist_quick_edit_id.set(None);
     rebuild(
         shared,
         Some(ViewSource::Playlist(playlist_id)),
         "playlist inline name committed",
     );
+    if changed {
+        super::notify_playlists_changed(shared);
+    }
     let row = find_row(shared, &ViewSource::Playlist(playlist_id));
     match (focus, row) {
         (CommitFocus::Row, Some(row)) => {
@@ -167,19 +170,26 @@ fn commit_and_rebuild(shared: &Rc<Shared>, playlist_id: i64, requested: &str, fo
 }
 
 fn discard_and_rebuild(shared: &Rc<Shared>, playlist_id: i64) {
-    match discard_placeholder(&shared.conn, playlist_id) {
-        Ok(true) => super::notify_playlists_changed(shared),
-        Ok(false) => tracing::warn!(playlist_id, "fresh playlist changed before Escape discard"),
+    let changed = match discard_placeholder(&shared.conn, playlist_id) {
+        Ok(true) => true,
+        Ok(false) => {
+            tracing::warn!(playlist_id, "fresh playlist changed before Escape discard");
+            false
+        }
         Err(error) => {
             tracing::error!(%error, playlist_id, "failed to discard fresh playlist");
             show_toast(
                 shared,
                 &strings::playlist_delete_failed_toast(&placeholder_name()),
             );
+            false
         }
-    }
+    };
     shared.playlist_quick_edit_id.set(None);
     rebuild(shared, None, "playlist inline creation discarded");
+    if changed {
+        super::notify_playlists_changed(shared);
+    }
     let button = shared.playlist_add_button.borrow().clone();
     if let Some(button) = button {
         glib::idle_add_local_once(move || {
