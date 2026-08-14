@@ -27,7 +27,7 @@ mod surface;
 use super::*;
 pub(in crate::ui) use sidebar_place::{
     apply_marking, find_row, has_sidebar_row, resolve_select_source, select_row_in_its_listbox,
-    SidebarPlace,
+    sync_place_from_stack, SidebarPlace,
 };
 pub(in crate::ui) use sidebar_playlist_notifications::notify_playlists_changed;
 pub(in crate::ui) use sidebar_session::{show_toast, show_toast_with_action};

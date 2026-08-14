@@ -20,6 +20,7 @@ pub(in crate::ui) fn test_shared() -> Rc<Shared> {
         current_place: RefCell::new(SidebarPlace::Source),
         doctor_row: RefCell::new(None),
         open_device: RefCell::new(None),
+        content_stack: glib::WeakRef::new(),
         mark_device: RefCell::new(None),
         rows: RefCell::new(Vec::new()),
         playlist_add_button: RefCell::new(None),

@@ -3,15 +3,7 @@ use reprise_core::view_source::ViewSource;
 
 use super::Shared;
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the content-stack binding in Task 4")
-)]
 const LIBRARY_DOCTOR_PAGE: &str = "library-doctor";
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the content-stack binding in Task 4")
-)]
 const DEVICE_SYNC_PAGE: &str = "device-sync";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,10 +18,6 @@ pub(in crate::ui) enum SidebarPlace {
     Unknown,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the content-stack binding in Task 4")
-)]
 pub(in crate::ui) fn place_for_content_page(
     visible_child: Option<&str>,
     open_device: Option<&str>,
@@ -167,6 +155,31 @@ fn mark_device(shared: &Shared, device_id: Option<&str>) {
     let callback = shared.mark_device.borrow().clone();
     if let Some(callback) = callback {
         callback(device_id);
+    }
+}
+
+pub(in crate::ui) fn sync_place_from_stack(shared: &std::rc::Rc<Shared>) {
+    let Some(stack) = shared.content_stack.upgrade() else {
+        apply_marking(shared);
+        return;
+    };
+    let visible_child = stack.visible_child_name();
+    let open_device = shared.open_device.borrow().clone();
+    let place = place_for_content_page(visible_child.as_deref(), open_device.as_deref());
+    *shared.current_place.borrow_mut() = place;
+    apply_marking(shared);
+}
+
+impl crate::ui::sidebar::Sidebar {
+    pub(in crate::ui) fn bind_content_stack(&self, stack: &gtk4::Stack) {
+        self.shared.content_stack.set(Some(stack));
+        let shared = std::rc::Rc::downgrade(&self.shared);
+        stack.connect_visible_child_name_notify(move |_| {
+            if let Some(shared) = shared.upgrade() {
+                sync_place_from_stack(&shared);
+            }
+        });
+        sync_place_from_stack(&self.shared);
     }
 }
 

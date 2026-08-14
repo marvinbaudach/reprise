@@ -128,8 +128,9 @@ pub(in crate::ui) struct Shared {
     /// The one placeless navigation row, rebuilt with the Issues collection.
     pub(in crate::ui) doctor_row: RefCell<Option<gtk4::ListBoxRow>>,
     /// Device id supplied by the card that most recently opened sync details.
-    #[expect(dead_code, reason = "read by the content-stack binding in Task 4")]
     pub(in crate::ui) open_device: RefCell<Option<String>>,
+    /// Weak handle to the content stack that is the visible-place truth.
+    pub(in crate::ui) content_stack: glib::WeakRef<gtk4::Stack>,
     /// Applies the open-device marking to the current card registry.
     pub(in crate::ui) mark_device: RefCell<Option<MarkDevice>>,
     /// Every row built by the most recent `rebuild`, for row-identity lookup
@@ -296,6 +297,7 @@ impl Sidebar {
             current_place: RefCell::new(SidebarPlace::Source),
             doctor_row: RefCell::new(None),
             open_device: RefCell::new(None),
+            content_stack: glib::WeakRef::new(),
             mark_device: RefCell::new(None),
             rows: RefCell::new(Vec::new()),
             playlist_add_button: RefCell::new(None),

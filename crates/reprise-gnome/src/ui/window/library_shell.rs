@@ -173,6 +173,7 @@ pub(in crate::ui) fn wire_source_routing(
     active_content_focus: &ActiveContentFocus,
     section_search: &Rc<super::section_search::SectionSearch>,
 ) {
+    sidebar.bind_content_stack(content_stack);
     let track_list = track_list.clone();
     let content_navigation = content_navigation.clone();
     let content_stack = content_stack.clone();
