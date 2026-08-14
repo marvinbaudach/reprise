@@ -10,7 +10,7 @@ use gtk4::prelude::{AdjustmentExt, ScrollableExt};
 use super::{reload_restore, Shared};
 use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
-use crate::ui::list_geometry_layout::ListLayout;
+use crate::ui::list_geometry_layout::{headers_above_in, ListLayout};
 
 const SCROLL_TO_ADOPTION_WINDOW: Duration = Duration::from_millis(250);
 const SCROLL_ADOPTION_EPSILON: f64 = 0.5;
@@ -181,10 +181,7 @@ fn scroll_to_anchor(
         request.anchor_position
     };
     let section_count = section_starts.len();
-    let preceding_sections = section_starts
-        .iter()
-        .filter(|start| **start <= guard_position)
-        .count();
+    let preceding_sections = headers_above_in(&section_starts, guard_position);
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
     let adoption_geometry =

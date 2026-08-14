@@ -46,7 +46,7 @@ pub(in crate::ui) fn layout(
         &shared.list_geometry_cache,
         row_height,
         section_starts,
-    )?;
+    );
     Some(layout_for_live_allocation(
         layout,
         n_rows,
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn rejected_section_geometry_falls_back_but_no_opinion_keeps_the_anchor_model() {
-        let sectioned = ListLayout::new(height(34.0), Some(height(36.0)), vec![0, 1]).unwrap();
+        let sectioned = ListLayout::sectioned(height(34.0), height(36.0), vec![0, 1]);
 
         let rejected = layout_for_live_allocation(sectioned.clone(), 2_276, 77_464.0);
         assert_eq!(rejected, ListLayout::rows_only(height(34.0)));

@@ -1,4 +1,4 @@
-use crate::ui::list_geometry::{self, ContentHeight, RowHeight};
+use crate::ui::list_geometry::{self, RowHeight};
 
 const CONTENT_HEIGHT_EPSILON: f64 = 0.5;
 
@@ -7,6 +7,38 @@ pub(in crate::ui) enum LayoutValidation {
     Accepted,
     Rejected,
     NoOpinion,
+}
+
+/// The row positions that carry a section header, together with the height
+/// every one of those headers has. Non-empty by construction: a layout with
+/// no sections holds `None` instead.
+///
+/// `starts` is strictly ascending -- see `headers_above_in`.
+#[derive(Clone, Debug, PartialEq)]
+struct SectionBands {
+    header_height: RowHeight,
+    starts: Vec<u32>,
+}
+
+/// Counts the section headers at or above `position`.
+///
+/// `starts` must be **strictly ascending**. Duplicates would be counted twice
+/// and shift every row top below them by one header height. The invariant holds
+/// by construction: `compose_virtual` (`reprise-view/src/queue.rs:284-311`)
+/// pushes each section at `items.len()` behind a non-emptiness guard, so every
+/// section contributes at least one row before the next start is taken. The one
+/// theoretical violation is the `u32::try_from(...).unwrap_or(u32::MAX)`
+/// saturation at `:296` and `:305`, which needs more than `u32::MAX` queue rows.
+///
+/// The counting itself does not depend on ordering -- the assert is deliberately
+/// stricter than the arithmetic needs, because ascending order is what the
+/// producer actually guarantees and a break in it is a real upstream bug.
+pub(in crate::ui) fn headers_above_in(starts: &[u32], position: u32) -> usize {
+    debug_assert!(
+        starts.windows(2).all(|pair| pair[0] < pair[1]),
+        "section starts must be strictly ascending, got {starts:?}"
+    );
+    starts.iter().filter(|start| **start <= position).count()
 }
 
 /// Content-space geometry of a list that may carry section headers: the one
@@ -19,32 +51,29 @@ pub(in crate::ui) enum LayoutValidation {
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::ui) struct ListLayout {
     row_height: RowHeight,
-    section_header_height: Option<RowHeight>,
-    section_starts: Vec<u32>,
+    sections: Option<SectionBands>,
 }
 
 impl ListLayout {
-    /// Returns `None` when sections exist but no header height is known.
-    pub(in crate::ui) fn new(
-        row_height: RowHeight,
-        section_header_height: Option<RowHeight>,
-        section_starts: Vec<u32>,
-    ) -> Option<Self> {
-        if !section_starts.is_empty() && section_header_height.is_none() {
-            return None;
-        }
-        Some(Self {
-            row_height,
-            section_header_height,
-            section_starts,
-        })
-    }
-
     pub(in crate::ui) fn rows_only(row_height: RowHeight) -> Self {
         Self {
             row_height,
-            section_header_height: None,
-            section_starts: Vec::new(),
+            sections: None,
+        }
+    }
+
+    pub(in crate::ui) fn sectioned(
+        row_height: RowHeight,
+        header_height: RowHeight,
+        starts: Vec<u32>,
+    ) -> Self {
+        let sections = (!starts.is_empty()).then_some(SectionBands {
+            header_height,
+            starts,
+        });
+        Self {
+            row_height,
+            sections,
         }
     }
 
@@ -53,20 +82,19 @@ impl ListLayout {
     }
 
     pub(in crate::ui) fn has_sections(&self) -> bool {
-        !self.section_starts.is_empty()
+        self.sections.is_some()
     }
 
     pub(in crate::ui) fn headers_above(&self, position: u32) -> usize {
-        self.section_starts
-            .iter()
-            .filter(|start| **start <= position)
-            .count()
+        self.sections
+            .as_ref()
+            .map_or(0, |sections| headers_above_in(&sections.starts, position))
     }
 
     pub(in crate::ui) fn row_top(&self, position: u32) -> f64 {
         let rows = f64::from(position) * self.row_height.pixels();
-        let headers = self.section_header_height.map_or(0.0, |height| {
-            self.headers_above(position) as f64 * height.pixels()
+        let headers = self.sections.as_ref().map_or(0.0, |sections| {
+            self.headers_above(position) as f64 * sections.header_height.pixels()
         });
         rows + headers
     }
@@ -114,21 +142,20 @@ impl ListLayout {
     }
 
     /// Delegates the complete row-and-header equation to `list_geometry`.
-    pub(in crate::ui) fn content_height(&self, n_rows: usize) -> Option<f64> {
-        match list_geometry::content_height(
-            n_rows,
-            self.section_starts.len(),
-            self.row_height,
-            self.section_header_height,
-        ) {
-            ContentHeight::Known(height) => Some(height),
-            ContentHeight::Unknown => None,
+    pub(in crate::ui) fn content_height(&self, n_rows: usize) -> f64 {
+        match &self.sections {
+            Some(sections) => list_geometry::sectioned_content_height(
+                n_rows,
+                sections.starts.len(),
+                self.row_height,
+                sections.header_height,
+            ),
+            None => list_geometry::rows_content_height(n_rows, self.row_height),
         }
     }
 
-    pub(in crate::ui) fn max_scroll(&self, n_rows: usize, viewport_height: f64) -> Option<f64> {
-        self.content_height(n_rows)
-            .map(|height| (height - viewport_height).max(0.0))
+    pub(in crate::ui) fn max_scroll(&self, n_rows: usize, viewport_height: f64) -> f64 {
+        (self.content_height(n_rows) - viewport_height).max(0.0)
     }
 
     /// Whether a live allocation can judge this layout's assumed header height.
@@ -143,9 +170,7 @@ impl ListLayout {
         if !upper.is_finite() || upper <= 0.0 {
             return LayoutValidation::NoOpinion;
         }
-        let Some(content_height) = self.content_height(n_rows) else {
-            return LayoutValidation::NoOpinion;
-        };
+        let content_height = self.content_height(n_rows);
         let rows_height = n_rows as f64 * self.row_height.pixels();
         if upper + CONTENT_HEIGHT_EPSILON < rows_height
             || upper + CONTENT_HEIGHT_EPSILON < content_height
@@ -164,14 +189,14 @@ impl ListLayout {
 mod tests {
     use crate::ui::list_geometry::RowHeight;
 
-    use super::{LayoutValidation, ListLayout};
+    use super::{headers_above_in, LayoutValidation, ListLayout};
 
     fn height(pixels: f64) -> RowHeight {
         RowHeight::new(pixels).unwrap()
     }
 
     fn layout(row: f64, header: f64, starts: &[u32]) -> ListLayout {
-        ListLayout::new(height(row), Some(height(header)), starts.to_vec()).unwrap()
+        ListLayout::sectioned(height(row), height(header), starts.to_vec())
     }
 
     #[test]
@@ -196,6 +221,26 @@ mod tests {
         assert_eq!(three.headers_above(39), 2);
         assert_eq!(three.headers_above(40), 3);
         assert_eq!(three.headers_above(99), 3);
+    }
+
+    #[test]
+    fn layout_and_bare_section_starts_count_the_same_headers() {
+        let starts = vec![0, 12, 40];
+        let position = 39;
+        let layout = ListLayout::sectioned(height(34.0), height(36.0), starts.clone());
+
+        assert_eq!(layout.headers_above(position), 2);
+        assert_eq!(
+            layout.headers_above(position),
+            headers_above_in(&starts, position)
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "strictly ascending")]
+    fn duplicated_section_start_trips_the_invariant() {
+        headers_above_in(&[0, 12, 12], 40);
     }
 
     #[test]
@@ -269,8 +314,8 @@ mod tests {
     fn content_height_delegates_the_complete_queue_geometry() {
         let layout = layout(34.0, 36.0, &[0, 1]);
 
-        assert_eq!(layout.content_height(2_276), Some(77_456.0));
-        assert_eq!(layout.max_scroll(2_276, 249.0), Some(77_207.0));
+        assert_eq!(layout.content_height(2_276), 77_456.0);
+        assert_eq!(layout.max_scroll(2_276, 249.0), 77_207.0);
     }
 
     #[test]
@@ -303,11 +348,16 @@ mod tests {
 
         assert_eq!(layout.row_top(3), 60.0);
         assert_eq!(layout.row_at(66.0), (3, 6.0));
-        assert_eq!(layout.content_height(5), Some(100.0));
+        assert_eq!(layout.content_height(5), 100.0);
     }
 
     #[test]
-    fn sectioned_layout_requires_a_header_height() {
-        assert!(ListLayout::new(height(34.0), None, vec![0, 1]).is_none());
+    fn sectioned_with_no_starts_is_identical_to_rows_only() {
+        let sectioned = ListLayout::sectioned(height(34.0), height(36.0), vec![]);
+        let rows_only = ListLayout::rows_only(height(34.0));
+
+        assert_eq!(sectioned.row_top(12), rows_only.row_top(12));
+        assert_eq!(sectioned.content_height(100), rows_only.content_height(100));
+        assert_eq!(sectioned.has_sections(), rows_only.has_sections());
     }
 }
