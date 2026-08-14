@@ -2,7 +2,7 @@
 slug: sidebar-marks-the-visible-view
 worktree: /home/marvin/Projects/reprise-sidebar-marks-the-visible-view
 branch: feature/sidebar-marks-the-visible-view
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-14
 ---
