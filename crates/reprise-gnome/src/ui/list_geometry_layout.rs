@@ -20,6 +20,27 @@ struct SectionBands {
     starts: Vec<u32>,
 }
 
+/// Counts the section headers at or above `position`.
+///
+/// `starts` must be **strictly ascending**. Duplicates would be counted twice
+/// and shift every row top below them by one header height. The invariant holds
+/// by construction: `compose_virtual` (`reprise-view/src/queue.rs:284-311`)
+/// pushes each section at `items.len()` behind a non-emptiness guard, so every
+/// section contributes at least one row before the next start is taken. The one
+/// theoretical violation is the `u32::try_from(...).unwrap_or(u32::MAX)`
+/// saturation at `:296` and `:305`, which needs more than `u32::MAX` queue rows.
+///
+/// The counting itself does not depend on ordering -- the assert is deliberately
+/// stricter than the arithmetic needs, because ascending order is what the
+/// producer actually guarantees and a break in it is a real upstream bug.
+pub(in crate::ui) fn headers_above_in(starts: &[u32], position: u32) -> usize {
+    debug_assert!(
+        starts.windows(2).all(|pair| pair[0] < pair[1]),
+        "section starts must be strictly ascending, got {starts:?}"
+    );
+    starts.iter().filter(|start| **start <= position).count()
+}
+
 /// Content-space geometry of a list that may carry section headers: the one
 /// place that knows a row's top edge is
 /// `position * row_height + headers_above(position) * section_header_height`.
@@ -65,13 +86,9 @@ impl ListLayout {
     }
 
     pub(in crate::ui) fn headers_above(&self, position: u32) -> usize {
-        self.sections.as_ref().map_or(0, |sections| {
-            sections
-                .starts
-                .iter()
-                .filter(|start| **start <= position)
-                .count()
-        })
+        self.sections
+            .as_ref()
+            .map_or(0, |sections| headers_above_in(&sections.starts, position))
     }
 
     pub(in crate::ui) fn row_top(&self, position: u32) -> f64 {
@@ -172,7 +189,7 @@ impl ListLayout {
 mod tests {
     use crate::ui::list_geometry::RowHeight;
 
-    use super::{LayoutValidation, ListLayout};
+    use super::{headers_above_in, LayoutValidation, ListLayout};
 
     fn height(pixels: f64) -> RowHeight {
         RowHeight::new(pixels).unwrap()
@@ -204,6 +221,26 @@ mod tests {
         assert_eq!(three.headers_above(39), 2);
         assert_eq!(three.headers_above(40), 3);
         assert_eq!(three.headers_above(99), 3);
+    }
+
+    #[test]
+    fn layout_and_bare_section_starts_count_the_same_headers() {
+        let starts = vec![0, 12, 40];
+        let position = 39;
+        let layout = ListLayout::sectioned(height(34.0), height(36.0), starts.clone());
+
+        assert_eq!(layout.headers_above(position), 2);
+        assert_eq!(
+            layout.headers_above(position),
+            headers_above_in(&starts, position)
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "strictly ascending")]
+    fn duplicated_section_start_trips_the_invariant() {
+        headers_above_in(&[0, 12, 12], 40);
     }
 
     #[test]
