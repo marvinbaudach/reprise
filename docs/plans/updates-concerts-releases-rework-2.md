@@ -2,7 +2,7 @@
 slug: updates-concerts-releases-rework-2
 worktree: /home/marvin/Projects/reprise-updates-concerts-releases-rework-2
 branch: feature/updates-concerts-releases-rework-2
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
