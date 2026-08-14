@@ -7,7 +7,7 @@ impl MusicLibrary {
     /// Persists one row's rating and refuses to report success if the row was
     /// removed after it crossed the boundary.
     pub fn set_track_rating(&self, track_id: i64, rating: i32) -> Result<(), LibraryError> {
-        let state = self.lock()?;
+        let state = self.writer()?;
         let device_path =
             reprise_core::device_sync::mobile_import::device_path_for_track(&state.db, track_id)
                 .map_err(|error| LibraryError::Database {

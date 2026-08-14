@@ -84,12 +84,12 @@ impl AndroidPlaybackSettings {
 impl MusicLibrary {
     /// Reads the authored curve. A backend projection is never persisted here.
     pub fn playback_settings(&self) -> Result<AndroidPlaybackSettings, LibraryError> {
-        let state = self.lock()?;
-        Ok(AndroidPlaybackSettings::load(&state.db))
+        let reader = self.reader()?;
+        Ok(AndroidPlaybackSettings::load(&reader))
     }
 
     pub fn set_equalizer_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
-        let state = self.lock()?;
+        let state = self.writer()?;
         settings::set_equalizer_enabled(&state.db, enabled).map_err(|error| database_error(&error))
     }
 
@@ -100,12 +100,12 @@ impl MusicLibrary {
     ) -> Result<(), LibraryError> {
         let curve = EqualizerCurve::new(points.into_iter().map(EqualizerPoint::from).collect())
             .map_err(|error| invalid_playback_setting(&error))?;
-        let state = self.lock()?;
+        let state = self.writer()?;
         settings::set_equalizer_curve(&state.db, &curve).map_err(|error| database_error(&error))
     }
 
     pub fn set_gapless_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
-        let state = self.lock()?;
+        let state = self.writer()?;
         settings::set_gapless_enabled(&state.db, enabled).map_err(|error| database_error(&error))
     }
 }

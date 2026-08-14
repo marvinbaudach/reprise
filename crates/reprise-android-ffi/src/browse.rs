@@ -167,8 +167,8 @@ impl From<queries::ArtistWindow> for ArtistWindow {
 impl MusicLibrary {
     /// Loads one present track by its stable library identity.
     pub fn track_by_id(&self, track_id: i64) -> Result<Option<TrackRow>, LibraryError> {
-        let state = self.lock()?;
-        queries::query_present_track_by_id(&state.db, track_id)
+        let reader = self.reader()?;
+        queries::query_present_track_by_id(&reader, track_id)
             .map(|track| track.map(TrackRow::from))
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
@@ -183,12 +183,12 @@ impl MusicLibrary {
     ) -> Result<Vec<i64>, LibraryError> {
         let album = album.into_boxed_str();
         let album_artist = album_artist.into_boxed_str();
-        let state = self.lock()?;
-        queries::query_album_canonical_track_ids(&state.db, &album, &album_artist).map_err(
-            |error| LibraryError::Query {
+        let reader = self.reader()?;
+        queries::query_album_canonical_track_ids(&reader, &album, &album_artist).map_err(|error| {
+            LibraryError::Query {
                 detail: error.to_string(),
-            },
-        )
+            }
+        })
     }
 }
 

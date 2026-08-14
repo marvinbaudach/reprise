@@ -40,11 +40,11 @@ impl MusicLibrary {
         &self,
         track_id: i64,
     ) -> Result<Option<AndroidTrackSpectrogram>, LibraryError> {
-        let state = self.lock()?;
-        query_present_track_by_id(&state.db, track_id)
+        let reader = self.reader()?;
+        query_present_track_by_id(&reader, track_id)
             .map_err(query_error)?
             .ok_or(LibraryError::TrackNotFound { track_id })?;
-        let spectrogram = get_track_spectrogram(&state.db, track_id).map_err(database_error)?;
+        let spectrogram = get_track_spectrogram(&reader, track_id).map_err(database_error)?;
         Ok(spectrogram.map(|spectrogram| AndroidTrackSpectrogram {
             band_count: SPECTROGRAM_BAND_COUNT as u32,
             frame_rate_hz: SPECTROGRAM_FRAME_RATE_HZ,
@@ -63,12 +63,12 @@ impl MusicLibrary {
         track_id: i64,
         bar_count: u32,
     ) -> Result<Option<Vec<AndroidTrackRenderBar>>, LibraryError> {
-        let state = self.lock()?;
-        let track = query_present_track_by_id(&state.db, track_id)
+        let reader = self.reader()?;
+        let track = query_present_track_by_id(&reader, track_id)
             .map_err(query_error)?
             .ok_or(LibraryError::TrackNotFound { track_id })?;
-        let peaks = get_waveform_peaks(&state.db, track_id).map_err(database_error)?;
-        let spectrogram = get_track_spectrogram(&state.db, track_id).map_err(database_error)?;
+        let peaks = get_waveform_peaks(&reader, track_id).map_err(database_error)?;
+        let spectrogram = get_track_spectrogram(&reader, track_id).map_err(database_error)?;
         let Some((peaks, spectrogram)) = peaks.zip(spectrogram) else {
             return Ok(None);
         };

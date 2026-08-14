@@ -6,7 +6,7 @@ impl MusicLibrary {
     /// Missing and malformed sidecars are ordinary no-data outcomes.
     pub fn import_track_analysis(&self, track_id: i64) -> Result<(), LibraryError> {
         let (source, sidecar_path) = {
-            let state = self.lock()?;
+            let state = self.writer()?;
             let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
             let sidecar_path =
                 reprise_core::device_sync::mobile_import::analysis_sidecar_path_for_track(
@@ -25,7 +25,7 @@ impl MusicLibrary {
         ) else {
             return Ok(());
         };
-        let state = self.lock()?;
+        let state = self.writer()?;
         reprise_core::device_sync::mobile_import::import_analysis_bytes_for_track(
             &state.db,
             track_id,
@@ -123,7 +123,7 @@ mod tests {
                 SIDECAR => {
                     let library = self.library.upgrade().expect("library still open");
                     assert!(
-                        library.state.try_lock().is_ok(),
+                        library.writer.try_lock().is_ok(),
                         "the SAF sidecar read must not hold the app-wide library lock"
                     );
                     &self.sidecar
@@ -190,7 +190,7 @@ mod tests {
 
         library.import_track_analysis(track.id).unwrap();
 
-        let state = library.lock().unwrap();
+        let state = library.writer().unwrap();
         assert_eq!(
             reprise_core::db::get_waveform_peaks(&state.db, track.id).unwrap(),
             Some(vec![19, 23])

@@ -156,20 +156,20 @@ pub struct AndroidAppearanceSettings {
 #[uniffi::export]
 impl MusicLibrary {
     pub fn appearance_settings(&self) -> Result<AndroidAppearanceSettings, LibraryError> {
-        let state = self.lock()?;
-        let theme = settings::get_setting(&state.db, THEME_SETTING_KEY).map_err(|error| {
+        let reader = self.reader()?;
+        let theme = settings::get_setting(&reader, THEME_SETTING_KEY).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
             }
         })?;
         Ok(AndroidAppearanceSettings {
             theme: AndroidStoredTheme::from_setting(theme.as_deref()),
-            color_scheme: AndroidColorScheme::from_core(settings::get_color_scheme(&state.db)),
+            color_scheme: AndroidColorScheme::from_core(settings::get_color_scheme(&reader)),
         })
     }
 
     pub fn set_theme(&self, theme: AndroidThemeChoice) -> Result<(), LibraryError> {
-        let state = self.lock()?;
+        let state = self.writer()?;
         settings::set_setting(&state.db, THEME_SETTING_KEY, theme.setting_id()).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
@@ -178,8 +178,8 @@ impl MusicLibrary {
     }
 
     pub fn visualizer_setting(&self) -> Result<AndroidStoredVisualizer, LibraryError> {
-        let state = self.lock()?;
-        let value = settings::get_setting(&state.db, VISUALIZER_SETTING_KEY).map_err(|error| {
+        let reader = self.reader()?;
+        let value = settings::get_setting(&reader, VISUALIZER_SETTING_KEY).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
             }
@@ -188,7 +188,7 @@ impl MusicLibrary {
     }
 
     pub fn set_visualizer(&self, visualizer: AndroidVisualizerChoice) -> Result<(), LibraryError> {
-        let state = self.lock()?;
+        let state = self.writer()?;
         settings::set_setting(&state.db, VISUALIZER_SETTING_KEY, visualizer.setting_id()).map_err(
             |error| LibraryError::Database {
                 detail: error.to_string(),
@@ -199,9 +199,9 @@ impl MusicLibrary {
     pub fn library_destination_setting(
         &self,
     ) -> Result<AndroidStoredLibraryDestination, LibraryError> {
-        let state = self.lock()?;
+        let reader = self.reader()?;
         let value =
-            settings::get_setting(&state.db, LIBRARY_DESTINATION_SETTING_KEY).map_err(|error| {
+            settings::get_setting(&reader, LIBRARY_DESTINATION_SETTING_KEY).map_err(|error| {
                 LibraryError::Database {
                     detail: error.to_string(),
                 }
@@ -215,7 +215,7 @@ impl MusicLibrary {
         &self,
         destination: AndroidLibraryDestinationChoice,
     ) -> Result<(), LibraryError> {
-        let state = self.lock()?;
+        let state = self.writer()?;
         settings::set_setting(
             &state.db,
             LIBRARY_DESTINATION_SETTING_KEY,
@@ -246,7 +246,7 @@ mod tests {
         )
         .unwrap();
         {
-            let state = library.lock().unwrap();
+            let state = library.writer().unwrap();
             settings::set_setting(&state.db, super::THEME_SETTING_KEY, "night-terrain").unwrap();
             settings::set_color_scheme(&state.db, "dark").unwrap();
         }
@@ -284,7 +284,7 @@ mod tests {
         )
         .unwrap();
         {
-            let state = library.lock().unwrap();
+            let state = library.writer().unwrap();
             settings::set_setting(
                 &state.db,
                 super::VISUALIZER_SETTING_KEY,
@@ -333,7 +333,7 @@ mod tests {
             AndroidStoredLibraryDestination::Unset,
         );
         {
-            let state = library.lock().unwrap();
+            let state = library.writer().unwrap();
             settings::set_setting(
                 &state.db,
                 super::LIBRARY_DESTINATION_SETTING_KEY,
@@ -368,7 +368,7 @@ mod tests {
 
         for removed_id in ["albums", "favourites"] {
             {
-                let state = library.lock().unwrap();
+                let state = library.writer().unwrap();
                 settings::set_setting(
                     &state.db,
                     super::LIBRARY_DESTINATION_SETTING_KEY,
