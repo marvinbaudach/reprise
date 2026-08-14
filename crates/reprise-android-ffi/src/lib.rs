@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 mod appearance;
+mod artist_portrait;
 #[cfg(test)]
 mod artwork_tests;
 mod browse;
@@ -24,6 +25,7 @@ mod listen_export_recorder;
 mod log_capture;
 mod logging;
 mod mobile_sync;
+mod online_sources;
 mod play_journal;
 mod play_recorder;
 pub mod playback;
@@ -47,7 +49,7 @@ pub use library_types::{
     AndroidArtworkSize, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
     ScanSummary,
 };
-use library_types::{ConfiguredTree, DATABASE_FILE_NAME};
+use library_types::{ConfiguredTree, PortraitFetch, DATABASE_FILE_NAME};
 pub use logging::init_logging;
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
@@ -76,13 +78,11 @@ pub(crate) fn bounded_search_text(text: &str) -> &str {
     }
 }
 
-#[uniffi::export]
 impl MusicLibrary {
-    /// Opens the library database inside the app's private directory.
-    #[uniffi::constructor]
-    pub fn open(
+    fn open_with_portrait_fetcher(
         app_private_directory: &str,
         app_cache_directory: &str,
+        portrait_fetch: Arc<PortraitFetch>,
     ) -> Result<Self, LibraryError> {
         let db_path = Path::new(app_private_directory).join(DATABASE_FILE_NAME);
         let writer = Db::open_migrated(Some(&db_path)).map_err(|error| LibraryError::Database {
@@ -99,7 +99,45 @@ impl MusicLibrary {
             tree: Mutex::new(None),
             cache_root: PathBuf::from(app_cache_directory),
             database_path: db_path,
+            portrait_fetch,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn open_with_portrait_fetch(
+        app_private_directory: &str,
+        app_cache_directory: &str,
+        fetch: impl Fn(
+                &str,
+                &Path,
+            ) -> Result<
+                reprise_core::artist_portrait::PortraitOutcome,
+                reprise_core::artist_portrait::PortraitError,
+            > + Send
+            + Sync
+            + 'static,
+    ) -> Result<Self, LibraryError> {
+        Self::open_with_portrait_fetcher(
+            app_private_directory,
+            app_cache_directory,
+            Arc::new(fetch),
+        )
+    }
+}
+
+#[uniffi::export]
+impl MusicLibrary {
+    /// Opens the library database inside the app's private directory.
+    #[uniffi::constructor]
+    pub fn open(
+        app_private_directory: &str,
+        app_cache_directory: &str,
+    ) -> Result<Self, LibraryError> {
+        Self::open_with_portrait_fetcher(
+            app_private_directory,
+            app_cache_directory,
+            Arc::new(reprise_core::artist_portrait::load_or_fetch_in),
+        )
     }
 
     pub fn set_tree_uri(
