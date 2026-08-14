@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use reprise_core::view_source::ViewSource;
 
-use crate::ui::sidebar::{apply_marking, find_row, resolve_select_source, Shared, SidebarPlace};
+use crate::ui::sidebar::{find_row, resolve_select_source, sync_place_from_stack, Shared};
 use crate::ui::strings;
 use crate::ui::toasts;
 
@@ -24,8 +24,7 @@ pub(in crate::ui) fn restore_source(
         return (ViewSource::Library, strings::text(strings::SIDEBAR_MUSIC));
     };
     *shared.current_source.borrow_mut() = source.clone();
-    *shared.current_place.borrow_mut() = SidebarPlace::Source;
-    apply_marking(shared);
+    sync_place_from_stack(shared);
     (source, title)
 }
 
