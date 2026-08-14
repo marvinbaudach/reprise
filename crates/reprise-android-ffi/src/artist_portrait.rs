@@ -74,7 +74,6 @@ impl MusicLibrary {
 
 #[cfg(test)]
 mod tests {
-    use std::hash::{Hash, Hasher};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -89,17 +88,8 @@ mod tests {
     ];
 
     fn store_portrait_fixture_in(dir: &Path, name: &str) -> PathBuf {
-        let normalized = name
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase();
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        normalized.as_bytes().hash(&mut hasher);
-        let path = dir.join(format!("{:016x}.png", hasher.finish()));
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, TINY_IMAGE).unwrap();
-        path
+        reprise_core::artist_portrait::store_fixture_image(dir, name, TINY_IMAGE, "png")
+            .expect("portrait fixture must be stored through the production cache path")
     }
 
     fn open_gate(library: &MusicLibrary) {

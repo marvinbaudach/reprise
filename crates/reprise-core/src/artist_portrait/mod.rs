@@ -76,6 +76,22 @@ pub fn load_cached_from(name: &str, dir: &Path) -> PortraitOutcome {
     cache::portrait_path_in(dir, name).map_or(PortraitOutcome::NotFound, PortraitOutcome::Found)
 }
 
+/// Stores a portrait fixture through the production cache writer.
+///
+/// Cross-crate tests compile `reprise-core` as a dependency, so `cfg(test)` is
+/// not active there. Debug assertions keep this seam out of release builds
+/// while making it available to those tests.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn store_fixture_image(
+    dir: &Path,
+    name: &str,
+    bytes: &[u8],
+    extension: &str,
+) -> Option<PathBuf> {
+    cache::store_image(dir, name, bytes, extension)
+}
+
 pub(crate) fn load_or_fetch_with<S, D>(
     name: &str,
     now: i64,
