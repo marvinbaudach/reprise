@@ -2,7 +2,7 @@
 slug: android-ci-gates
 worktree: /home/marvin/Projects/reprise-android-ci-gates
 branch: feature/android-ci-gates
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-14
 ---
