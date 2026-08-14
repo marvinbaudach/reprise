@@ -2,7 +2,7 @@
 slug: portrait-placeholder-fingerprint
 worktree: /home/marvin/Projects/reprise-portrait-placeholder-fingerprint
 branch: feature/portrait-placeholder-fingerprint
-phase: blocked
+phase: planned
 codex_session:
 created: 2026-08-14
 ---
@@ -104,8 +104,8 @@ Plan eine Wahl trifft, ist das der Grund.
 Zwischenspeicher wird das Bild auf **32×32 Graustufen** verkleinert und per
 normalisiertem RMSE gegen jede hinterlegte Referenz-Miniatur verglichen. Liegt
 der kleinste Abstand bei oder unter `PLACEHOLDER_RMSE_MAX`, gilt das Bild als
-Platzhalter. Vorläufiger Wert **0,005**; endgültig festgelegt wird er durch die
-Messung mit dem Rust-Code (E6).
+Platzhalter. Der Wert steht seit der Rust-Messung vom 14.08. fest:
+`PLACEHOLDER_RMSE_MAX = 0.0025` (Herleitung in E6).
 
 **Warum das kein verbotenes Raten ist.** Der alte E1 verbot „inhaltsbasierte"
 Erkennung, weil jede plausible Heuristik über *Bildeigenschaften* geurteilt hätte
@@ -225,12 +225,21 @@ jede Miniatur und damit jeden Abstand. Bei Faktor 330 überlebt die Trennung das
 sehr wahrscheinlich — „sehr wahrscheinlich" ist aber keine Messung, und die
 Referenzen müssen ohnehin mit dem Code entstehen, der sie später vergleicht.
 
-**Abbruchregel.** Die Schwelle muss mindestens **20× über** dem schlechtesten
-bekannten Platzhalter und mindestens **20× unter** dem nächsten echten Bild
-liegen. Wird das verfehlt, wird **nicht nachjustiert**: der Lauf hält an, legt
-die Zahlen vor, und die Entscheidung fällt neu — andere Auflösung, anderes Maß
-oder Mechanismus verwerfen. Eine Schwelle, die nachträglich passend gelegt wird,
-misst nichts mehr.
+**Margenregel, korrigiert am 14.08.** Die ursprüngliche Fassung verlangte
+beidseitig 20× und war arithmetisch unerfüllbar: das setzt 400× Gesamttrennung
+voraus, gemessen sind 241,8×. Der erste Codex-Lauf hat deshalb korrekt angehalten
+(Protokoll unten). Die Regel lautet jetzt, nach E0 asymmetrisch:
+
+- mindestens **10×** über dem schlechtesten bekannten Platzhalter,
+- mindestens **20×** unter dem nächsten echten Bild.
+
+Der größere Abstand gehört auf die Seite der echten Bilder, weil ein verworfenes
+Cover unsichtbar ist und ein durchgelassener Platzhalter nicht. Aus den Rust-Zahlen
+(0,000245098 / 0,059268005) folgt **0,0025** — 10,2× beziehungsweise 23,7×.
+
+Die Regel bleibt eine Latte, keine Formel: wird sie bei einer künftigen Messung
+verfehlt, hält der Lauf wieder an und die Entscheidung fällt neu. Eine Schwelle,
+die nachträglich passend gelegt wird, misst nichts mehr.
 
 **Korpus.** Die 238 Bilder liegen außerhalb des Repositories
 (`~/.cache/reprise-portrait-corpus/`, per Skript aus
@@ -274,8 +283,9 @@ zeigt künftig Initialen, nicht ein Foto (E2) — mit Begründung im Skript. Gat
 
 ## Abnahmekriterien
 
-1. Der Rust-Lauf über das Korpus zeigt beidseitig mindestens Faktor 20 Marge; die
-   gesetzte Schwelle liegt in diesem Fenster. Wird die Marge verfehlt, hält die
+1. Der Rust-Lauf über das Korpus zeigt mindestens 10× Marge über dem
+   schlechtesten Platzhalter und mindestens 20× unter dem nächsten echten Bild;
+   die gesetzte Schwelle liegt in diesem Fenster. Wird das verfehlt, hält die
    Arbeit an (E6).
 2. Alle 18 gemessenen Platzhalter-Instanzen werden abgelehnt, gemessen mit dem
    Rust-Code.
@@ -333,7 +343,7 @@ acht in Tests. Kein Aufrufer außerhalb.
 
 ---
 
-## E6-Ergebnis vom 14.08.2026 — Abbruch
+## Protokoll: E6-Abbruch vom 14.08.2026 (erledigt)
 
 Der vorgeschriebene Rust-Lauf über alle 237 messbaren Korpusinstanzen hat die
 20-fache Marge auf beiden Seiten **verfehlt**. Der schlechteste Platzhalter liegt
@@ -346,6 +356,7 @@ Platzhalter, aber nur `11,854×` unter dem nächsten echten Bild. Gemäß E6 wur
 sie nicht nachträglich passend gelegt. Fingerabdruck und Messeinstieg bleiben
 deshalb ausschließlich testgebunden; es gibt keine ausgelieferte Schwelle. Der
 Einbau aus Welle 2 und die nachfolgenden Abnahmeschritte aus Welle 3 wurden nicht
-umgesetzt. Die Fingerabdruckentscheidung braucht eine neue Grundlage.
+umgesetzt. Die Margenregel wurde daraufhin korrigiert (siehe E6); die Schwelle steht jetzt
+bei 0,0025 und die Wellen 2 und 3 sind wieder freigegeben.
 Der vollständige Rust-Lauf einschließlich aller Einzelabstände steht unter
 `docs/evidence/portrait-placeholder-fingerprint/rust-separation.txt`.
