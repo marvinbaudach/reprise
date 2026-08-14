@@ -3,6 +3,7 @@
 # SIGTERM. Usage: probe-stop-daemon.sh <path-to-session.sh>
 set -uo pipefail
 
+# shellcheck source=../../../scripts/cua-common/session.sh
 source "$1"
 
 # The caller owns cua_driver; the probe only needs it to be a no-op.

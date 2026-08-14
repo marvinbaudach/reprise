@@ -44,6 +44,7 @@ require_pattern_order() {
 }
 
 require_executable scripts/check-architecture.sh
+require_executable scripts/check-shell.sh
 require_executable scripts/check-frontend-thinness.sh
 require_executable scripts/check-accessibility-semantics.sh
 require_executable scripts/check-input-parity.sh
@@ -85,6 +86,10 @@ require_pattern 'cargo fmt --check' scripts/check-merge-readiness.sh
 require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings' scripts/check-merge-readiness.sh
 require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
 require_pattern 'cargo audit' scripts/check-merge-readiness.sh
+require_pattern 'check-shell.sh' scripts/check-merge-readiness.sh
+require_pattern 'worktree-gc.sh' scripts/check-merge-readiness.sh
+require_pattern 'worktree-gc-schedule.sh' scripts/check-merge-readiness.sh
+require_pattern 'shellcheck' .github/workflows/ci.yml
 require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh

@@ -48,6 +48,10 @@ fi
 echo "== Branch diff =="
 git diff --check "$base_ref"...HEAD
 
+scripts/check-shell.sh
+scripts/tests/worktree-gc.sh
+scripts/tests/worktree-gc-schedule.sh
+
 scripts/check-architecture.sh
 
 echo "== Android Opus/MP3 sync runtime =="

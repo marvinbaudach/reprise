@@ -2,6 +2,10 @@
 
 # Fixed pointer geometry for the mapped 1600x900, five-track fixture window.
 # These coordinates address the onboarding banner introduced by 31d8fa062a.
+# This constants library is sourced by scripts/ptr-e2e/*.sh. The primary-menu
+# and search-toggle slots currently have no consumer but deliberately keep the
+# grid complete; remove any coordinate only when its last consumer goes away.
+# shellcheck disable=SC2034
 DISCOVERY_BANNER_NOT_NOW_X=1536
 DISCOVERY_BANNER_NOT_NOW_Y=71
 ROW0_TITLE_CELL_X=355

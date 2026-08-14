@@ -101,12 +101,12 @@ assert_selected_rows() {
   local png=$1 description=$2
   shift 2
   local -a hits=()
-  local row rgb r g b
+  local row rgb r g
 
   for row in 1 2 3 4 5; do
     rgb=$(magick "$png" -crop "1x1+800+$(anchor_row_y "$row")" -depth 8 txt:- \
       | tail -1 | sed -E 's/.*\(([0-9]+),([0-9]+),([0-9]+).*/\1 \2 \3/')
-    read -r r g b <<<"$rgb"
+    read -r r g _ <<<"$rgb"
     if ((g - r > 20)); then
       hits+=("$row")
     fi

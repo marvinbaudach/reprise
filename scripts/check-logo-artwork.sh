@@ -348,7 +348,7 @@ PY
 }
 
 check_delivery() {
-  local required size dimensions
+  local required size
   for size in 16 22 24 32 48 64 128 256 512; do
     required="data/icons/hicolor/${size}x${size}/apps/io.github.marvinbaudach.Reprise.png"
     [[ -f $required ]] || bad "missing hicolor stage: $required"

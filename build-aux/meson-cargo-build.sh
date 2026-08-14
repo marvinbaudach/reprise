@@ -5,9 +5,6 @@ source_root=$1
 build_root=$2
 output=$3
 localedir=$4
-stem_backend=${5:-false}
-prefix=${6:-/usr/local}
-worker_path=${7:-"$prefix/libexec/reprise-worker"}
 profile=${MESON_BUILD_PROFILE:-release}
 
 if [ "$profile" = debug ]; then
