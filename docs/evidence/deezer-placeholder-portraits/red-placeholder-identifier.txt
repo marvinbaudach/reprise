@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/reprise_core-23cc781361cb15e7)
+
+running 1 test
+test artist_portrait::deezer::tests::placeholder_detection_reads_the_artist_identifier_segment ... FAILED
+
+failures:
+
+---- artist_portrait::deezer::tests::placeholder_detection_reads_the_artist_identifier_segment stdout ----
+
+thread 'artist_portrait::deezer::tests::placeholder_detection_reads_the_artist_identifier_segment' (64) panicked at crates/reprise-core/src/artist_portrait/deezer.rs:217:9:
+assertion failed: is_placeholder_url("https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/1000x1000-000000-80-0-0.jpg")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    artist_portrait::deezer::tests::placeholder_detection_reads_the_artist_identifier_segment
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2434 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p reprise-core --lib`

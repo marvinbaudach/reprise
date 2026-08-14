@@ -1,0 +1,15 @@
+== Frontend thinness ==
+  rusqlite: 109 (at budget)
+  db_handle_access: none (banned)
+  filesystem: 13 (at budget)
+  threads: 15 (at budget)
+  gstreamer: none (banned)
+  zbus: none (banned)
+  workers: 7 files (at budget)
+== Shared view layer ==
+  production lines: 2115 (at floor)
+== Dead-code allowlist ==
+  45 files, unchanged
+== Unused dependencies ==
+  SKIPPED: cargo-machete is not installed (cargo install cargo-machete)
+Frontend thinness lint passed
