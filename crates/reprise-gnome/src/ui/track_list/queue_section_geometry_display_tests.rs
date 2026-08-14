@@ -230,33 +230,35 @@ fn scroll_region_bounds(column_view: &gtk4::ColumnView) -> (f32, f32) {
     fn collect(
         widget: &gtk4::Widget,
         column_view: &gtk4::ColumnView,
-        title_bottom: &mut Option<f32>,
+        list_bounds: &mut Option<(f32, f32)>,
     ) {
         let type_name = widget.type_().name();
         if let Some(bounds) = widget.compute_bounds(column_view) {
-            if type_name.contains("ColumnViewTitle") {
-                let bottom = bounds.y() + bounds.height();
-                *title_bottom = Some(title_bottom.map_or(bottom, |current| current.max(bottom)));
+            if type_name.contains("ListView") {
+                *list_bounds = Some((bounds.y(), bounds.y() + bounds.height()));
             }
         }
 
         let mut child = widget.first_child();
         while let Some(current) = child {
-            collect(&current, column_view, title_bottom);
+            collect(&current, column_view, list_bounds);
             child = current.next_sibling();
         }
     }
 
-    let mut title_bottom = None;
-    collect(column_view.upcast_ref(), column_view, &mut title_bottom);
-    // A theme or GTK build may omit the discoverable title widget. Starting at
-    // zero is safer than turning that internal tree difference into a panic.
-    let viewport_top = title_bottom.unwrap_or(0.0);
-    let adjustment = column_view
+    let mut list_bounds = None;
+    collect(column_view.upcast_ref(), column_view, &mut list_bounds);
+    let column_view_height = column_view.height() as f32;
+    let page_size = column_view
         .vadjustment()
-        .expect("the ColumnView must expose a vertical adjustment");
-    let viewport_bottom = viewport_top + adjustment.page_size() as f32;
-    (viewport_top, viewport_bottom)
+        .map_or(column_view_height, |adjustment| {
+            adjustment.page_size() as f32
+        });
+    // The GtkColumnListView bounds measured 26.0..274.0, exactly matching the
+    // adjustment fallback (274.0 - 248.0)..274.0. The title bar ends at 25.0,
+    // not at the list top: its one-pixel separator previously let a row with
+    // zero visible pixels survive the strict overlap check.
+    list_bounds.unwrap_or((column_view_height - page_size, column_view_height))
 }
 
 /// Every visible track row as `(title, top edge in ColumnView coordinates)`,
