@@ -2,7 +2,7 @@
 slug: radio-favicons-cold-start
 worktree: /home/marvin/Projects/reprise-radio-favicons-cold-start
 branch: feature/radio-favicons-cold-start
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-13
 ---
