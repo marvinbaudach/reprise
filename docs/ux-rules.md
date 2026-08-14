@@ -2345,7 +2345,7 @@ the panel).
   no purchase button. The direct link is commission-free, contains no
   tracking parameters, and is not labeled as an affiliate link; NR-19
   remains reserved for a later contractually approved monetization.
-- **NR-21** [active] [gtk] — A failed New Releases fetch leaves every
+- **NR-21** [replaced by NR-21a] [gtk] — A failed New Releases fetch leaves every
   cached release and the existing update age untouched. A neutral shared
   banner above a populated view names the failed refresh, what remains
   available, and „Try again"; only a genuinely empty cache uses the shared
@@ -2529,6 +2529,21 @@ the panel).
   and says why.
   Test: `nr_38_a_row_opens_the_same_url_its_tooltip_names`
   (`ui/updates/popover_tests.rs`).
+- **NR-21a** [active] [gtk] — replaces NR-21. A failed New Releases fetch
+  leaves every cached release untouched and reports the failure through
+  CONC-15's footer state. A neutral shared banner above a populated view
+  names the failed refresh, what remains available, and „Try again"; only
+  a genuinely empty cache uses the shared full-area failure state. Both
+  surfaces carry the same collapsed `Details` block with Copy, and
+  technical status, host, and exception text appears only there. Offline
+  is written from the window's explicit connectivity value, dims the
+  remote-action rows, and never overwrites a provider failure already on
+  screen; reconnect removes only an offline-authored notice. A successful
+  fetch removes the notice silently. NR-37's live-state footer and NR-8's
+  consent and first-fetch loop remain unchanged.
+  Tests: `nr_21a_cached_and_empty_failures_choose_the_shared_surfaces` and
+  `nr_21a_going_offline_writing_path_preserves_a_provider_failure`
+  (`ui/releases/releases_failure_ui.rs`).
 
 ## S. Surfaces & Geometry
 
