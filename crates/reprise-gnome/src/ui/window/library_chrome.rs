@@ -22,6 +22,7 @@ pub(in crate::ui) struct DoctorChrome {
     root: adw::ToolbarView,
     header: adw::HeaderBar,
     content_stack: gtk4::Stack,
+    doctor_navigation: adw::NavigationView,
     source_title: adw::WindowTitle,
     doctor_title: adw::WindowTitle,
     search_toggle: gtk4::ToggleButton,
@@ -70,6 +71,7 @@ pub(in crate::ui) fn build(
 pub(in crate::ui) fn wire_content_stack(
     chrome: &LibraryChrome,
     stack: &gtk4::Stack,
+    doctor_navigation: &adw::NavigationView,
     source_title: &adw::WindowTitle,
     scan_button: &gtk4::Button,
 ) -> Rc<DoctorChrome> {
@@ -79,6 +81,7 @@ pub(in crate::ui) fn wire_content_stack(
         root: chrome.root.clone(),
         header: chrome.header.clone(),
         content_stack: stack.clone(),
+        doctor_navigation: doctor_navigation.clone(),
         source_title: source_title.clone(),
         doctor_title,
         search_toggle: chrome.search_toggle.clone(),
@@ -91,6 +94,12 @@ pub(in crate::ui) fn wire_content_stack(
             coordinator.sync();
         }
     });
+    let weak = Rc::downgrade(&coordinator);
+    doctor_navigation.connect_visible_page_notify(move |_| {
+        if let Some(coordinator) = weak.upgrade() {
+            coordinator.sync();
+        }
+    });
     coordinator
 }
 
@@ -98,8 +107,15 @@ impl DoctorChrome {
     fn sync(&self) {
         let doctor_visible =
             self.content_stack.visible_child_name().as_deref() == Some("library-doctor");
+        let review_visible = doctor_visible
+            && self
+                .doctor_navigation
+                .visible_page()
+                .and_then(|page| page.tag())
+                .is_some_and(|tag| tag == "library-doctor-review");
         self.root.set_reveal_top_bars(true);
-        self.search_toggle.set_visible(!doctor_visible);
+        self.search_toggle
+            .set_visible(!doctor_visible || review_visible);
         self.scan_button.set_visible(!doctor_visible);
         self.source_title.set_visible(!doctor_visible);
         self.doctor_title.set_visible(doctor_visible);
