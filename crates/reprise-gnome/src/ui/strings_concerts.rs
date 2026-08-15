@@ -221,4 +221,13 @@ mod tests {
     fn show_all_concerts_formats_count() {
         assert_eq!(show_all_concerts(14), "Show all 14 concerts");
     }
+
+    #[test]
+    fn set_15_location_name_omits_the_separator_without_a_country() {
+        assert_eq!(
+            concerts_location_name("Zürich", Some("Schweiz")),
+            "Zürich, Schweiz"
+        );
+        assert_eq!(concerts_location_name("Zürich", None), "Zürich");
+    }
 }

@@ -95,6 +95,41 @@ fn rad_5_geocode_parses_the_addressdetails_country_code_when_present() {
 }
 
 #[test]
+fn conc_2_geocode_uses_the_localized_city_and_country() {
+    let location = parse_geocode(
+        r#"[{"place_id":174820104,"lat":"47.3744489","lon":"8.5410422",
+             "display_name":"Zürich, Bezirk Zürich, Zürich, Schweiz",
+             "address":{"city":"Zürich","county":"Bezirk Zürich",
+                        "state":"Zürich","country":"Schweiz","country_code":"ch"}}]"#,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(location.city, "Zürich");
+    assert_eq!(location.country.as_deref(), Some("Schweiz"));
+}
+
+#[test]
+fn conc_2_geocode_falls_back_to_the_first_display_name_segment() {
+    let location = parse_geocode(
+        r#"[{"lat":"46.948","lon":"7.4474","display_name":"  Bern , Espace Mittelland",
+             "address":{"road":"Bundesplatz"}}]"#,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(location.city, "Bern");
+    assert_eq!(location.country, None);
+}
+
+#[test]
+fn conc_2_geocode_url_uses_accept_language_http_syntax() {
+    assert!(geocode_url("Zürich", Some("de")).ends_with("&accept-language=de"));
+    assert!(geocode_url("Zürich", Some("zh_CN")).ends_with("&accept-language=zh-CN"));
+    assert!(!geocode_url("Zürich", None).contains("accept-language"));
+}
+
+#[test]
 fn config_defaults_are_bounded_and_stored_credentials_win() {
     let conn = conn();
     assert_eq!(
