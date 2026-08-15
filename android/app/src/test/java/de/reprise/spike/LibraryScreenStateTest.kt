@@ -179,7 +179,7 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
 
     assertEquals(
         LibraryScreenState.Browse(
-            titles = LibraryWindow.empty(),
+            titles = LibraryWindow(total = 1, rows = emptyList(), hasMore = false),
             artists = completeTestWindow(emptyList()),
             folderUri = "content://provider/tree/Music",
             loadedTabs = setOf(BrowseTab.ARTISTS),
@@ -191,13 +191,29 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
         listOf(
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
+            "search::0:1",
             "artists:0:200",
             "search-albums::0:1",
         ),
         port.operations,
     )
-    assertEquals(0, port.listCalls)
+    assertEquals(1, port.listCalls)
     assertEquals(0, port.scanCalls)
+}
+
+@Test
+fun rememberedArtistsDestinationRetainsTheTrueTitleTotalForSettings() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = listOf(testTrack()),
+    )
+
+    val state = LibrarySession(port).restore(BrowseTab.ARTISTS)
+        as LibraryScreenState.Browse
+
+    assertEquals(1, state.titles.total)
+    assertTrue(state.titles.rows.isEmpty())
 }
 
 @Test
