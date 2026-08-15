@@ -207,6 +207,7 @@ pub struct DoctorReviewSession {
     filter: DoctorReviewFilter,
     remote_visible: bool,
     category_filter: Option<HashSet<ProblemClass>>,
+    query_scope: Option<HashSet<DoctorReviewRowId>>,
     tracks: HashMap<i64, DoctorTrackRef>,
     rows: Vec<DoctorReviewRow>,
     groups: Vec<DoctorReviewGroup>,
@@ -364,6 +365,7 @@ impl DoctorReviewSession {
             filter,
             remote_visible,
             category_filter: None,
+            query_scope: None,
             tracks,
             rows,
             groups,
@@ -393,6 +395,16 @@ impl DoctorReviewSession {
         self.category_filter
             .as_ref()
             .is_none_or(|filter| filter.contains(&class))
+    }
+
+    pub fn set_query_scope(&mut self, scope: Option<HashSet<DoctorReviewRowId>>) {
+        self.query_scope = scope;
+    }
+
+    pub fn query_scope_matches(&self, id: DoctorReviewRowId) -> bool {
+        self.query_scope
+            .as_ref()
+            .is_none_or(|scope| scope.contains(&id))
     }
 
     pub fn group_matches_category_filter(&self, group: &DoctorReviewGroup) -> bool {
@@ -430,6 +442,7 @@ impl DoctorReviewSession {
         let projected = super::project_scan(&self.source_scan, visible);
         let mut rebuilt = Self::build(projected, self.filter, self.source_scan.clone(), visible);
         rebuilt.category_filter = self.category_filter.clone();
+        rebuilt.query_scope = self.query_scope.clone();
         for (field, group_key, chosen) in prior_groups {
             let group_id = rebuilt
                 .groups
@@ -477,10 +490,12 @@ impl DoctorReviewSession {
 
     pub fn all(&mut self) {
         let category_filter = self.category_filter.as_ref();
+        let query_scope = self.query_scope.as_ref();
         for templates in self.tie_templates.values() {
             for template in templates {
                 if category_filter
                     .is_none_or(|filter| filter.contains(&tie_problem_class(template.field)))
+                    && query_scope.is_none_or(|scope| scope.contains(&template.id))
                 {
                     self.tie_selection
                         .insert(template.id, template.state == DoctorReviewRowState::Ready);
@@ -488,7 +503,9 @@ impl DoctorReviewSession {
             }
         }
         for row in &mut self.rows {
-            if category_filter.is_none_or(|filter| filter.contains(&row.problem_class)) {
+            if category_filter.is_none_or(|filter| filter.contains(&row.problem_class))
+                && query_scope.is_none_or(|scope| scope.contains(&row.id))
+            {
                 row.selected = row.state == DoctorReviewRowState::Ready;
             }
         }
@@ -496,17 +513,21 @@ impl DoctorReviewSession {
 
     pub fn none(&mut self) {
         let category_filter = self.category_filter.as_ref();
+        let query_scope = self.query_scope.as_ref();
         for templates in self.tie_templates.values() {
             for template in templates {
                 if category_filter
                     .is_none_or(|filter| filter.contains(&tie_problem_class(template.field)))
+                    && query_scope.is_none_or(|scope| scope.contains(&template.id))
                 {
                     self.tie_selection.insert(template.id, false);
                 }
             }
         }
         for row in &mut self.rows {
-            if category_filter.is_none_or(|filter| filter.contains(&row.problem_class)) {
+            if category_filter.is_none_or(|filter| filter.contains(&row.problem_class))
+                && query_scope.is_none_or(|scope| scope.contains(&row.id))
+            {
                 row.selected = false;
             }
         }
@@ -661,6 +682,7 @@ impl DoctorReviewSession {
             .iter()
             .filter(|row| row.selected && row.state == DoctorReviewRowState::Ready)
             .filter(|row| self.category_filter_matches(row.problem_class))
+            .filter(|row| self.query_scope_matches(row.id))
             .filter_map(|row| {
                 self.tracks
                     .get(&row.track_id)
