@@ -257,3 +257,84 @@ fn doc_12a_a_committed_query_renders_exactly_one_chip() {
         .unwrap()
         .contains("second"));
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_apply_writes_only_the_searched_set() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&three_album_scan());
+
+    page.state.set_query("second");
+
+    assert_eq!(
+        page.state.session.borrow().freeze_plan().tag_change_count(),
+        page.state.snapshot.borrow().totals.selectable,
+    );
+    assert_eq!(page.state.snapshot.borrow().totals.selectable, 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_select_all_under_a_query_marks_only_the_matching_rows() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&three_album_scan());
+    page.state.session.borrow_mut().none();
+
+    page.state.set_query("second");
+    page.state.session.borrow_mut().all();
+
+    let snapshot = page.state.snapshot.borrow();
+    let session = page.state.session.borrow();
+    for row in session.rows() {
+        assert_eq!(row.selected, snapshot.is_visible(Some(&row.id)));
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_9d_a_row_hidden_by_the_query_keeps_its_selection_and_stays_out_of_the_plan() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&three_album_scan());
+
+    page.state.set_query("second");
+
+    let hidden = page
+        .state
+        .session
+        .borrow()
+        .rows()
+        .iter()
+        .find(|row| !page.state.snapshot.borrow().is_visible(Some(&row.id)))
+        .unwrap()
+        .clone();
+    assert!(hidden.selected);
+    assert!(page
+        .state
+        .session
+        .borrow()
+        .freeze_plan()
+        .changes()
+        .iter()
+        .all(|change| change.row_id != hidden.id));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_search_and_category_compose_as_an_intersection() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&album_change_scan());
+
+    page.state.set_query("Track 1");
+    page.state
+        .set_category(Some(super::super::review_model::ReviewCategory::Year));
+
+    assert_eq!(page.state.sorted.n_items(), 0);
+    assert_eq!(
+        page.state.session.borrow().freeze_plan().tag_change_count(),
+        0
+    );
+}

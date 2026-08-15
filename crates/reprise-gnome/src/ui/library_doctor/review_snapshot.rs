@@ -108,8 +108,6 @@ impl ReviewSnapshot {
             .unwrap_or(true)
     }
 
-    // Read by the session bridge once Task 7 wires the query scope.
-    #[allow(dead_code)]
     pub(super) fn visible_selectable_row_ids(&self) -> HashSet<DoctorReviewRowId> {
         self.rows
             .iter()

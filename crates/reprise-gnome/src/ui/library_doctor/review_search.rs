@@ -49,9 +49,17 @@ impl super::ReviewState {
         );
     }
 
-    // Task 7 replaces this compile-time seam with the session scope bridge.
-    #[allow(dead_code)]
-    fn push_query_scope(&self) {}
+    pub(super) fn push_query_scope(&self) {
+        let scope = {
+            let query = self.query.borrow();
+            if query.is_empty() {
+                None
+            } else {
+                Some(self.snapshot.borrow().visible_selectable_row_ids())
+            }
+        };
+        self.session.borrow_mut().set_query_scope(scope);
+    }
 
     pub(super) fn set_content_child(&self) {
         let name = if self.sorted.n_items() > 0 {

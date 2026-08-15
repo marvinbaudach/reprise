@@ -152,6 +152,7 @@ impl ReviewState {
             elapsed_us = full_started.elapsed().as_micros(),
             "DOCTOR_REVIEW_REFRESH path"
         );
+        self.push_query_scope();
     }
 
     #[cfg(test)]
