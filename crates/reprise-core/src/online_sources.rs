@@ -110,6 +110,83 @@ pub fn first_enable_default_for(module: &ModuleDescriptor) -> bool {
         .is_some_and(|(_, enabled)| enabled)
 }
 
+/// The three sources the first-run wizard offers, in display order.
+pub const WIZARD_SOURCE_MODULES: [&ModuleDescriptor; 3] = [
+    &modules::RADIO_MODULE,
+    &modules::PODCASTS_MODULE,
+    &modules::YOUTUBE_MODULE,
+];
+
+/// What the wizard's three switches say. Not a settings snapshot — the
+/// user's answer, before anything is written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct WizardSourceSelection {
+    pub radio: bool,
+    pub podcasts: bool,
+    pub youtube: bool,
+}
+
+impl WizardSourceSelection {
+    /// The state a fresh install opens in: exactly what a first enable
+    /// would write, read from the table rather than repeated here.
+    pub fn from_first_enable_defaults() -> Self {
+        Self {
+            radio: first_enable_default_for(&modules::RADIO_MODULE),
+            podcasts: first_enable_default_for(&modules::PODCASTS_MODULE),
+            youtube: first_enable_default_for(&modules::YOUTUBE_MODULE),
+        }
+    }
+
+    /// What the wizard must show. The gate being on means somebody already
+    /// answered this question — Preferences, or an earlier session — and the
+    /// wizard has to display that answer instead of overwriting it with the
+    /// first-enable defaults. Reachable: closing the dialog with Escape writes
+    /// nothing, so the wizard returns after the banner has been used.
+    pub fn current_or_first_enable_defaults(db: &Db) -> Result<Self, rusqlite::Error> {
+        if !is_enabled(db)? {
+            return Ok(Self::from_first_enable_defaults());
+        }
+        Ok(Self {
+            radio: modules::is_enabled(db, &modules::RADIO_MODULE)?,
+            podcasts: modules::is_enabled(db, &modules::PODCASTS_MODULE)?,
+            youtube: modules::is_enabled(db, &modules::YOUTUBE_MODULE)?,
+        })
+    }
+
+    /// `NET-1a`: no source chosen means the gate stays shut. Turning the
+    /// gate on "just in case" would make the app network-capable without
+    /// anyone asking for it.
+    pub fn opens_the_gate(self) -> bool {
+        self.radio || self.podcasts || self.youtube
+    }
+
+    /// The module writes this selection implies, in write order.
+    pub fn module_writes(self) -> [(&'static ModuleDescriptor, bool); 3] {
+        [
+            (&modules::RADIO_MODULE, self.radio),
+            (&modules::PODCASTS_MODULE, self.podcasts),
+            (&modules::YOUTUBE_MODULE, self.youtube),
+        ]
+    }
+}
+
+/// Applies the wizard's answer. The gate goes first so its one-shot seeding
+/// runs before the explicit choices land on top of it; no source chosen
+/// leaves the gate — and every module — untouched.
+pub fn apply_wizard_selection(
+    db: &Db,
+    selection: WizardSourceSelection,
+) -> Result<(), rusqlite::Error> {
+    if !selection.opens_the_gate() {
+        return Ok(());
+    }
+    set_enabled(db, true)?;
+    for (module, enabled) in selection.module_writes() {
+        modules::set_enabled(db, module, enabled)?;
+    }
+    Ok(())
+}
+
 /// The one authority for "may this request run right now". Module-owned
 /// requests AND the global gate with their module flag; app-wide requests
 /// with no plugin owner use the global gate alone.
@@ -166,6 +243,90 @@ mod tests {
         assert!(!first_enable_default_for(&modules::YOUTUBE_MODULE));
         // A module outside the table answers off, not "unknown".
         assert!(!first_enable_default_for(&modules::SONG_VISUALS_MODULE));
+    }
+
+    #[test]
+    fn a_fresh_install_opens_the_wizard_with_the_first_enable_defaults() {
+        let db = migrated_db();
+        let selection = WizardSourceSelection::current_or_first_enable_defaults(&db).unwrap();
+        assert!(selection.radio);
+        assert!(!selection.podcasts);
+        assert!(!selection.youtube);
+    }
+
+    #[test]
+    fn an_open_gate_makes_the_wizard_show_what_is_stored() {
+        // The reachable path: Escape wrote nothing, the banner sent the user to
+        // Preferences, and there they chose Podcasts on / Radio off — the inverse
+        // of the first-enable defaults, so a wizard that ignored them is visible.
+        let db = migrated_db();
+        set_enabled(&db, true).unwrap();
+        modules::set_enabled(&db, &modules::RADIO_MODULE, false).unwrap();
+        modules::set_enabled(&db, &modules::PODCASTS_MODULE, true).unwrap();
+
+        let selection = WizardSourceSelection::current_or_first_enable_defaults(&db).unwrap();
+        assert!(!selection.radio);
+        assert!(selection.podcasts);
+        assert!(!selection.youtube);
+    }
+
+    #[test]
+    fn completing_the_wizard_unchanged_keeps_the_stored_choice() {
+        let db = migrated_db();
+        set_enabled(&db, true).unwrap();
+        modules::set_enabled(&db, &modules::RADIO_MODULE, false).unwrap();
+        modules::set_enabled(&db, &modules::PODCASTS_MODULE, true).unwrap();
+
+        let selection = WizardSourceSelection::current_or_first_enable_defaults(&db).unwrap();
+        apply_wizard_selection(&db, selection).unwrap();
+
+        assert!(is_enabled(&db).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
+        assert!(modules::is_enabled(&db, &modules::PODCASTS_MODULE).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::YOUTUBE_MODULE).unwrap());
+    }
+
+    #[test]
+    fn no_source_chosen_leaves_the_gate_shut() {
+        let db = migrated_db();
+        apply_wizard_selection(&db, WizardSourceSelection::default()).unwrap();
+        assert!(!is_enabled(&db).unwrap());
+        assert!(
+            settings::get_setting_in(db.conn(), &modules::enabled_key(&modules::RADIO_MODULE))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn the_wizard_selection_survives_the_first_enable_seeding() {
+        // Radio off, Podcasts on — the inverse of the seed, so a seed that won
+        // would be visible.
+        let db = migrated_db();
+        apply_wizard_selection(
+            &db,
+            WizardSourceSelection {
+                radio: false,
+                podcasts: true,
+                youtube: false,
+            },
+        )
+        .unwrap();
+
+        assert!(is_enabled(&db).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
+        assert!(modules::is_enabled(&db, &modules::PODCASTS_MODULE).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::YOUTUBE_MODULE).unwrap());
+        // The four sources the wizard never mentions keep their first-enable
+        // defaults — the wizard adds a question, it does not answer theirs.
+        for module in [
+            &modules::NEW_RELEASES_MODULE,
+            &modules::CONCERTS_MODULE,
+            &modules::ARTWORK_MODULE,
+            &modules::ONLINE_LYRICS_MODULE,
+        ] {
+            assert!(!modules::is_enabled(&db, module).unwrap(), "{}", module.id);
+        }
     }
 
     #[test]
