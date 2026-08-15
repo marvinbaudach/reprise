@@ -2,7 +2,7 @@
 slug: updates-concerts-releases-rework
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-14
 strands: 1,2,3
@@ -1503,3 +1503,170 @@ nicht bestätigen. Das ist keine Entscheidung, nur eine fehlende Nummer:
 Strang 3 orientiert sich an den Funktionsnamen der bestehenden
 Settings-Leser/Schreiber und legt `updates.notifications` genauso an wie den
 nächstliegenden vorhandenen Key. Kein Beschluss hängt daran.
+
+---
+
+## 9. Protokoll der Post-Merge-Querprüfungen (15.08.2026)
+
+Alle drei Stränge sind gelandet — Strang 1 als #493 (`6608af8cca`), Strang 2
+als #496 (`334c9adb30`), Strang 3 als #498 (`5bc3fc58a4`). Die Korrekturen aus
+diesem Durchgang liegen in #499 (`4f8918e77a`). Gemessen wurde gegen den
+gemergten `dev`, mit isolierten XDG-Wurzeln; die Bildbeweise entstanden
+headless (Xvfb + openbox, `GDK_BACKEND=x11`, leeres `WAYLAND_DISPLAY`,
+`dbus-run-session`, `GSK_RENDERER=cairo`) auf einer **Kopie** der echten
+Nutzerdatenbank, nie auf dem Original.
+
+### 1. Traceability über die ganze Regeldatei — **grün**
+
+`UX traceability ok: 379 active rules covered`. Vier Tests trugen noch die
+Namen zurückgezogener Regeln und machten das Quality-Gate auf `dev` rot; sie
+zeigen jetzt auf die Regel, die sie tatsächlich messen:
+`conc_7_filter_changes_refresh_badge_dependents` → NR-35, und die drei
+`nr_22_*` in `crates/reprise-core/src/artist_news_progress_tests.rs` → NR-37.
+NR-37 hat dabei die `[core]`-Kennzeichnung zurückbekommen, die es von NR-22
+geerbt und in der Neufassung verloren hatte — die drei Kerntests sind genau
+seine Kernhälfte.
+
+### 2. Ein Wort, zwei Flächen — **grün in der geprüften Form, mit einer Lücke daneben**
+
+`Off sale` heißt in der Concerts-Tabelle und in der Popover-Zeile identisch
+`Off sale`, aus derselben Konstante. Daneben steht eine Abweichung, die keine
+Regel entscheidet: die Tabelle zeigt für **alle drei** Werte ein Wort
+(`On sale` / `Off sale` / `Unknown`, `concerts_status_cells.rs:58-75`), das
+Popover setzt seinen Tag nur bei `OffSale` (`updates/concerts_section.rs:65-68`)
+— bei `OnSale` und `Unknown` bleibt die Zeile ohne Tag. Im Bildbeweis
+`41-footer-loaded` ist das direkt zu sehen: nach einem echten Abruf tragen drei
+Tabellenzeilen `On sale`, dieselben Ereignisse im Popover tragen nichts.
+NR-36 spricht vom „status tag" im Zeilenende, sagt aber nicht, welche Werte ihn
+bekommen; CONC-12 regelt nur die Herkunft der Werte. **Offene Entwurfsfrage,
+kein Regelverstoß.**
+
+### 3. Ein Zeitstempel, drei Fußzeilen — **grün**
+
+`git grep -n 'Updated .*ago'` über `crates/reprise-gnome/src/ui` liefert für
+Concerts, Releases und Popover keinen Treffer mehr. Der letzte Treffer war ein
+Fixture-Literal im Releases-Fehlerbanner-Test; produktiv füllt
+`render_current_failure` (`releases_view.rs:593`) den Banner mit
+`strings::news_timestamp_date`, also `%Y-%m-%d`. Verbleibender Treffer
+repoweit: `strings_podcasts.rs:559` — eine Fläche außerhalb dieser Prüfung.
+
+### 4. Dieselbe URL — **grün, und OS-6 wurde dabei geschärft**
+
+Popover-Zeile (`updates/release_row.rs:66-71`) und Benachrichtigung
+(`notifications_updates.rs:74-79`) rufen beide
+`reprise_core::artist_news_links::announce_url_or_fallback(release.announce_url.as_deref(), &release.release_group_mbid)`
+und geben das Ergebnis derselben `external_link::launch()`-Schranke; nur das
+Log-Kontextwort unterscheidet sich. `notification_link_matches_the_release_result_value`
+hält das fest.
+
+OS-6 behauptete das pauschal für „eine Benachrichtigung". Ab vier fälligen
+Releases fasst `release_notification_specs` sie aber zu **einer** gesammelten
+Meldung zusammen, deren Ziel `NotificationTarget::View("releases")` ist
+(`notifications_updates.rs:57`) — es gibt dort kein einzelnes Release, auf das
+eine URL zeigen könnte. Die Regel sagt das jetzt.
+
+### 5. Geometrie-Parität — **teilweise erfüllt; R4 ist an einer Stelle überholt**
+
+| Merkmal | Popover | Concerts-Tabelle | Befund |
+|---|---|---|---|
+| 44×44-Kachel | `release_row.rs:19` `COVER_EDGE = 44`, CSS `.new-release-cover` | **existiert nicht** — in `ui/concerts/` kein Bild-Widget, `ConcertColumn` kennt keine Cover-Spalte | nicht vergleichbar |
+| 2px-Akzentmarke | `updates/css.rs:68-76` | `concerts/css.rs:36-43` | wortgleiche Deklaration, in zwei Selektoren dupliziert |
+| Tag, Akzent-Variante | `.updates-tag-accent` | `.reprise-concert-ticket-tag.on-sale` | in Rahmen, Farbe und Füllung gleich |
+| Tag, Neutral-Variante | `.updates-tag-neutral`, Füllung `transparent` | `.off-sale`, Füllung `alpha(@window_fg_color, 0.08)` | **einzige echte Abweichung** |
+
+Grundmaß der Pille (`border-radius: 999px; padding: 2px 8px; font-size: 11px`),
+Rahmen und Textfarbe stimmen überein. Die Kachel ist der schwerere Punkt: R4
+unterstellt, beide Zeilen zeigten eine 44×44-Kachel, aber Strang 1 hat die
+Tabelle bewusst auf **einzeilige** Zeilen gebaut — dort passt konstruktiv keine
+Kachel hinein. **R4 ist an dieser Stelle als Anforderung überholt, nicht
+verletzt.** Kein Screenshot kann das heilen; es gibt kein Gegenstück zum
+Vergleichen.
+
+### 6. Migrationskette am Stück — **grün, auf echten Daten**
+
+`db_concerts::tests::a_v72_database_reaches_v74_with_both_new_columns` ist grün.
+Stärker noch: die Laufkopie der echten Nutzerdatenbank (254 MB) stand vor dem
+Lauf auf `user_version = 72` und nach einem einzigen Öffnen durch den gemergten
+Build auf **74**, mit `concert_events.ticket_availability` und
+`new_releases.notified_released_at` vorhanden. Die Verdrahtung steht daneben im
+Code: `db.rs:754-756` ruft `migrate_v72`/`v73`/`v74` bei jedem Open unbedingt
+und in Reihenfolge auf, jede Funktion selbst versionsgegatet.
+
+### 7. Die üblichen Gesamt-Gates — **grün, nachdem zwei Budgets nachgezogen waren**
+
+`fmt`, `clippy -D warnings`, `cargo doc` mit `RUSTDOCFLAGS=-D warnings`,
+`cargo test --workspace` (61 Ergebniszeilen, 0 Fehler), die serialisierten
+`reprise-platform-linux`-Tests, die Runtime-Service-Bus-Tests unter
+`dbus-run-session`, die Architektur-Lint samt Kernreinheit, die
+UX-Traceability, `cargo audit` (eine bekannte erlaubte Warnung), die
+Display-Suite (**712 Tests einzeln, 0 Fehler**) und die zwölf weiteren
+statischen Skripte der CI-Gate-Kette laufen sauber durch.
+
+Zwei Befunde mussten dafür behoben werden, beide in der Frontend-Schlankheits-
+Prüfung — einem Skript, das **nur in CI** läuft:
+`ui/strings_notifications.rs` fehlte in der Dead-Code-Freigabeliste, und das
+`rusqlite`-Budget musste von 109 auf 113 steigen. Die vier neuen Stellen sind
+ausschließlich die `Result<_, rusqlite::Error>`-Rückgabetypen von
+`ui/notifications_updates.rs`; `db_handle_access` bleibt `none (banned)`.
+
+**Lehre für die nächste Runde:** dieselbe Datei hat in dieser Runde dreimal das
+Quality-Gate auf `dev` rot gemacht (#493 der `view_floor`, #498 die beiden
+obigen). Eine lokale Gate-Liste muss aus der CI-Gate-Kette abgeleitet werden,
+nicht aus dem Gedächtnis.
+
+### 8. Die Abnahme aus §5 — **weitgehend erbracht, zwei Einschränkungen**
+
+Bildbeweise (alle headless auf der Laufkopie):
+
+| §5.1 | Datei | Ergebnis |
+|---|---|---|
+| 1 Popover mit beiden Abschnitten | `01-popover` | identische Zeilenform in beiden Abschnitten, Kacheln, Titel/Meta zweizeilig, Tag rechts, dezenter Ausblenden-Knopf, **eine** Fußzeile |
+| 2 Popover mit Hover | `11-hover-release` | Tönung **plus** 2px-Akzentmarke links, Ausblenden-Knopf in vollem Kontrast, Tooltip „Opens MusicBrainz" |
+| 3 leerer Concerts-Abschnitt | `33-popover-empty-concerts` | Kopf steht, darunter „No new concerts" |
+| 4 Concerts-Übersicht | `23-concerts-t36` | einzeilige Zeilen, kein Ticketmaster-Knopf, Status-Tags rechts, Fußzeile mit einem Zeitstempel |
+| 5 mit `Source`-Spalte | `30-columns-editor`, `31-concerts-venue-source` | Editor und eingeschaltete Spalten; Venue-Text misst RGB≈(231,233,236) gegen City RGB≈(170,172,175) — Venue ist heller |
+| 6 gefiltert | `32-concerts-filtered` | 3 von 412, Endzeile direkt unter der dritten Zeile, Fußzeile bleibt am unteren Rand |
+| 7 Fußzeilenzustände | `40-footer-updating`, `41-footer-loaded`, `42-footer-checked`, `43-footer-offline` | alle vier |
+| 8 Benachrichtigung mit Cover | — | **nicht aufgenommen** |
+
+Aus §5.2:
+
+- **„Off sale kommt wirklich aus der Quelle"** — belegt über die ganze Kette:
+  `event_parser_maps_local_date_time_and_venue` parst einen echten
+  Ticketmaster-Körper mit `"status":{"code":"offsale"}`,
+  `ticket_availability_roundtrips_through_persisted_text`,
+  `reconcile_updates_ticket_availability_for_an_existing_event` und
+  `query_events_reads_persisted_availability_after_reopening_the_database`
+  decken Speichern und Wiederlesen nach Neustart ab. Dazu die
+  Live-Beobachtung in `41-footer-loaded`: ein echter Abruf hob die Zahl von
+  412 auf 414 und setzte auf genau drei Zeilen `On sale`, während der Rest
+  `Unknown` blieb.
+- **„Beim Öffnen wird nicht bedingungslos gefetcht"** — im Mitschnitt
+  (`REPRISE_LOG=debug`) erzeugte **keine** der beiden Öffnungen eine
+  Concerts-Netzanfrage, und die Fußzeile sagte beide Male `checked`, nicht
+  `loaded`. **Einschränkung:** da schon die erste Öffnung nicht fällig war,
+  belegt der Lauf „in keinem Fall wurde gefetcht", nicht sauber isoliert
+  „die zweite Öffnung unterdrückt einen sonst fälligen Fetch".
+- **„Der erste Fetch meldet nichts"** — durch
+  `os_6_the_first_fetch_announces_nothing` abgedeckt, nicht zusätzlich von
+  Hand nachgestellt.
+
+**Zwei Nebenbefunde aus dem Prüfstand**, für die nächste Abnahme festgehalten:
+
+- Ein leerer Concerts-Abschnitt entsteht **nicht** dadurch, dass man das
+  Popover zweimal öffnet: ein gesehener Batch bleibt bewusst stehen
+  (`reprise-core/src/updates.rs::delta_batch`, „looking twice must not empty
+  the popover"). Leer wird der Abschnitt nur, wenn der aktive Filter
+  buchstäblich null Treffer hat.
+- Für den Offline-Zustand reicht `unshare -rn` **nicht**: `GNetworkMonitor`
+  fragt über den System-D-Bus (AF_UNIX, von Netzwerk-Namespaces nicht
+  isoliert) weiter den echten NetworkManager und meldet „online". Zusätzlich
+  muss `DBUS_SYSTEM_BUS_ADDRESS` auf einen nicht existierenden Socket zeigen.
+
+### Was offen bleibt
+
+- Screenshot 8 (Benachrichtigung mit Cover) ist weiterhin nicht aufgenommen.
+- Der fehlende Status-Tag im Popover bei `OnSale` und `Unknown` (Prüfung 2)
+  ist eine Entwurfsentscheidung, die noch niemand getroffen hat.
+- R4s Kachel-Parität ist gegenstandslos geworden und sollte beim nächsten
+  Anfassen des Plans umformuliert statt weitergeschleppt werden.
