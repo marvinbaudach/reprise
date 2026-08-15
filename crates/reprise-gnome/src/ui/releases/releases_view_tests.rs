@@ -145,6 +145,37 @@ fn nr_39_the_column_editor_lists_status_and_link_and_hides_them() {
     assert!(restored.visible.contains(&ReleaseColumn::Buy));
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn two_release_sorts_leave_one_indicator() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = ReleasesView::new(Rc::new(crate::test_db::open().unwrap()), PathBuf::new());
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(600)
+        .child(view.root())
+        .build();
+    window.present();
+    crate::ui::source_context_surface::settle_layout();
+
+    for key in [ReleaseColumn::Title, ReleaseColumn::Artist] {
+        let column = column_by_id(&view.shared.column_view, key.as_str());
+        view.shared
+            .column_view
+            .sort_by_column(Some(&column), gtk4::SortType::Ascending);
+    }
+    crate::ui::source_context_surface::settle_layout();
+
+    assert_eq!(
+        crate::ui::table_columns::single_sort_indicator::count_primary_indicators(
+            view.shared.column_view.upcast_ref(),
+        ),
+        1
+    );
+    window.close();
+}
+
 /// UX FIL-1d: the Releases query matches **title and artist** — the two
 /// fields its chip names — case-insensitively and mid-word.
 #[test]

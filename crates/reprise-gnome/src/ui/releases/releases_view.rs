@@ -221,6 +221,7 @@ impl ReleasesView {
             column_view.connect_activate(move |_, position| activate_position(&shared, position));
         }
         wire_sorting(&column_view, &shared);
+        crate::ui::table_columns::single_sort_indicator::mark(&column_view);
         column_view.sort_by_column(Some(&date_column), gtk4::SortType::Descending);
 
         Self {
