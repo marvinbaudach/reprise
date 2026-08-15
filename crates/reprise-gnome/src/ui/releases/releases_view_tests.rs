@@ -88,13 +88,61 @@ fn the_cover_status_and_link_headers_carry_no_sorter() {
     gtk4::init().unwrap();
     let view = ReleasesView::new(Rc::new(crate::test_db::open().unwrap()), PathBuf::new());
     let columns = view.shared.column_view.columns();
-    for index in [0, 5, 6] {
-        let column = columns
-            .item(index)
-            .and_downcast::<gtk4::ColumnViewColumn>()
-            .expect("the Releases view owns seven columns");
-        assert!(column.sorter().is_none(), "column {index} became sortable");
+    let cover = columns
+        .item(0)
+        .and_downcast::<gtk4::ColumnViewColumn>()
+        .expect("the Releases view owns a leading cover column");
+    assert!(cover.sorter().is_none());
+    for key in [ReleaseColumn::Status, ReleaseColumn::Buy] {
+        let column = column_by_id(&view.shared.column_view, key.as_str());
+        assert!(column.sorter().is_none(), "{key:?} became sortable");
     }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_39_the_column_editor_lists_status_and_link_and_hides_them() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let view = ReleasesView::new(conn.clone(), PathBuf::new());
+    let model = view.column_model();
+    let ids = model
+        .columns()
+        .into_iter()
+        .map(|column| column.id)
+        .collect::<Vec<_>>();
+    for key in [ReleaseColumn::Status, ReleaseColumn::Buy] {
+        assert!(ids.iter().any(|id| id == key.as_str()), "missing {key:?}");
+        model.set_visible(key.as_str(), false);
+        assert!(!model.is_visible(key.as_str()));
+        assert!(!column_by_id(&view.shared.column_view, key.as_str()).is_visible());
+    }
+
+    let stored = reprise_core::library::settings::get_setting(
+        &conn,
+        reprise_core::library::settings::RELEASES_COLUMN_LAYOUT_KEY,
+    )
+    .unwrap()
+    .expect("the hidden release layout is persisted");
+    let hidden = reprise_view::columns::layout::parse::<ReleaseColumn>(&stored).unwrap();
+    assert!(!hidden.visible.contains(&ReleaseColumn::Status));
+    assert!(!hidden.visible.contains(&ReleaseColumn::Buy));
+
+    for key in [ReleaseColumn::Status, ReleaseColumn::Buy] {
+        model.set_visible(key.as_str(), true);
+        assert!(model.is_visible(key.as_str()));
+        assert!(column_by_id(&view.shared.column_view, key.as_str()).is_visible());
+    }
+    let stored = reprise_core::library::settings::get_setting(
+        &conn,
+        reprise_core::library::settings::RELEASES_COLUMN_LAYOUT_KEY,
+    )
+    .unwrap()
+    .expect("the restored release layout is persisted");
+    let restored = reprise_view::columns::layout::parse::<ReleaseColumn>(&stored).unwrap();
+    assert!(restored.visible.contains(&ReleaseColumn::Status));
+    assert!(restored.visible.contains(&ReleaseColumn::Buy));
 }
 
 /// UX FIL-1d: the Releases query matches **title and artist** — the two

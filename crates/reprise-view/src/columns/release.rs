@@ -23,11 +23,13 @@ const ALL: [ReleaseColumn; 7] = [
     ReleaseColumn::Buy,
 ];
 
-const DEFAULT_VISIBLE: [ReleaseColumn; 4] = [
+const DEFAULT_VISIBLE: [ReleaseColumn; 6] = [
     ReleaseColumn::Date,
     ReleaseColumn::Title,
     ReleaseColumn::Artist,
     ReleaseColumn::Type,
+    ReleaseColumn::Status,
+    ReleaseColumn::Buy,
 ];
 
 impl ColumnKey for ReleaseColumn {
@@ -55,13 +57,12 @@ impl ColumnKey for ReleaseColumn {
         &DEFAULT_VISIBLE
     }
 
-    /// Releases has no row context menu, so Status and Buy are the only access
-    /// to hiding a release and to its purchase link. They are pinned for the
-    /// same reason Cover is: hiding them would make a function unreachable.
+    /// Cover stays pinned because header drag-and-drop recognizes the unnamed
+    /// leading column. Status and Buy are hideable and recoverable from the
+    /// header popover.
     fn pin(self) -> Option<Pin> {
         match self {
             Self::Cover => Some(Pin::Leading),
-            Self::Status | Self::Buy => Some(Pin::Trailing),
             _ => None,
         }
     }
@@ -73,13 +74,13 @@ mod tests {
     use crate::columns::{ColumnKey, Layout, Pin};
 
     #[test]
-    fn release_columns_round_trip_and_pin_their_fixed_ones() {
+    fn only_the_cover_stays_pinned() {
         for key in ReleaseColumn::all() {
             assert_eq!(ReleaseColumn::parse(key.as_str()), Some(*key));
         }
         assert_eq!(ReleaseColumn::Cover.pin(), Some(Pin::Leading));
-        assert_eq!(ReleaseColumn::Status.pin(), Some(Pin::Trailing));
-        assert_eq!(ReleaseColumn::Buy.pin(), Some(Pin::Trailing));
+        assert_eq!(ReleaseColumn::Status.pin(), None);
+        assert_eq!(ReleaseColumn::Buy.pin(), None);
         assert_eq!(ReleaseColumn::Date.pin(), None);
     }
 
@@ -99,5 +100,29 @@ mod tests {
                 ReleaseColumn::Buy,
             ]
         );
+        assert!(layout.visible.contains(&ReleaseColumn::Status));
+        assert!(layout.visible.contains(&ReleaseColumn::Buy));
+    }
+
+    #[test]
+    fn a_layout_stored_before_the_unpinning_keeps_status_and_link_visible() {
+        let layout = crate::columns::layout::parse::<ReleaseColumn>(
+            "cover,date,title,artist,type,status,buy;date,title,artist,type,status,buy",
+        )
+        .expect("the stored release layout parses");
+
+        assert!(layout.visible.contains(&ReleaseColumn::Status));
+        assert!(layout.visible.contains(&ReleaseColumn::Buy));
+    }
+
+    #[test]
+    fn a_layout_from_before_these_columns_existed_leaves_them_hidden() {
+        let layout = crate::columns::layout::parse::<ReleaseColumn>("cover,date,title;date,title")
+            .expect("the old release layout parses");
+
+        assert!(layout.order.contains(&ReleaseColumn::Status));
+        assert!(layout.order.contains(&ReleaseColumn::Buy));
+        assert!(!layout.visible.contains(&ReleaseColumn::Status));
+        assert!(!layout.visible.contains(&ReleaseColumn::Buy));
     }
 }
