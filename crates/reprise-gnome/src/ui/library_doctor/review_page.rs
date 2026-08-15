@@ -36,11 +36,16 @@ use super::review_summary::{review_footer_summary, review_stale_notice};
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
+type SearchClearSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
+#[path = "review_search.rs"]
+mod review_search;
 
 struct ReviewState {
     conn: Rc<Db>,
     scan: DoctorScan,
     session: Rc<RefCell<DoctorReviewSession>>,
+    query: Rc<RefCell<String>>,
     store: gio::ListStore,
     filter: gtk4::CustomFilter,
     sorted: gtk4::SortListModel,
@@ -90,7 +95,7 @@ impl ReviewState {
         let grouped_rows_started = Instant::now();
         let snapshot = ReviewSnapshot::from_rows(
             grouped_rows_for(&self.scan, &session, &self.outcomes.borrow()),
-            "",
+            self.query.borrow().as_str(),
         );
         let objects = snapshot
             .rows
@@ -128,8 +133,7 @@ impl ReviewState {
             "DOCTOR_REVIEW_REFRESH stage"
         );
         let count = self.sorted.n_items();
-        self.content
-            .set_visible_child_name(if count == 0 { "empty" } else { "rows" });
+        self.set_content_child();
         if count > 0 && selected != gtk4::INVALID_LIST_POSITION {
             self.selection.set_selected(selected.min(count - 1));
         }
@@ -459,6 +463,9 @@ pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
     state: Rc<ReviewState>,
     rows: gtk4::ListView,
+    // Task 10 installs the shared-entry sink after the lazy page exists.
+    #[allow(dead_code)]
+    clear_search: SearchClearSlot,
 }
 
 impl LibraryDoctorReviewPage {
@@ -476,7 +483,10 @@ impl LibraryDoctorReviewPage {
         )));
         let categories = available_categories(&session.borrow());
         let category = Rc::new(Cell::new(None::<ReviewCategory>));
+        let query = Rc::new(RefCell::new(String::new()));
+        let snapshot = Rc::new(RefCell::new(ReviewSnapshot::default()));
         let filter_session = session.clone();
+        let filter_snapshot = snapshot.clone();
         let filter = gtk4::CustomFilter::new(move |object| {
             let Some(boxed) = object.downcast_ref::<glib::BoxedAnyObject>() else {
                 return object.is::<gtk4::Widget>();
@@ -485,6 +495,7 @@ impl LibraryDoctorReviewPage {
             filter_session
                 .borrow()
                 .category_filter_matches(model.row.problem_class)
+                && filter_snapshot.borrow().is_visible(model.row_ids.first())
         });
         let store = gio::ListStore::new::<glib::Object>();
         let filtered = gtk4::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
@@ -530,6 +541,16 @@ impl LibraryDoctorReviewPage {
         content.set_vexpand(true);
         content.add_named(&scrolled, Some("rows"));
         content.add_named(&empty, Some("empty"));
+        let clear_search = Rc::new(RefCell::new(None::<Rc<dyn Fn()>>));
+        let no_match = review_search::no_match_page({
+            let clear_search = clear_search.clone();
+            Rc::new(move || {
+                if let Some(clear) = clear_search.borrow().as_ref() {
+                    clear();
+                }
+            })
+        });
+        content.add_named(&no_match, Some("no-match"));
         let apply = gtk4::Button::builder()
             .css_classes(["suggested-action", "pill"])
             .build();
@@ -551,6 +572,7 @@ impl LibraryDoctorReviewPage {
             conn: conn.clone(),
             scan: scan.clone(),
             session,
+            query,
             store,
             filter,
             sorted,
@@ -571,7 +593,7 @@ impl LibraryDoctorReviewPage {
             column_groups: header.groups.clone(),
             outcomes: RefCell::new(HashMap::new()),
             ready_count: Cell::new(0),
-            snapshot: Rc::new(RefCell::new(ReviewSnapshot::default())),
+            snapshot,
             album_headers,
             conflicts: ReviewConflictsSlot::default(),
             #[cfg(test)]
@@ -660,6 +682,7 @@ impl LibraryDoctorReviewPage {
             navigation_page,
             state,
             rows,
+            clear_search,
         });
         page.state.refresh();
         page

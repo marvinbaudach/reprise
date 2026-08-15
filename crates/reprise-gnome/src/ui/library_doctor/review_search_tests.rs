@@ -1,10 +1,17 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
+use gtk4::prelude::*;
+use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library_doctor::{DoctorReviewFilter, DoctorReviewSession};
 
 use super::super::review_model::grouped_rows_for;
-use super::super::review_row::contract_tests::three_album_scan;
+use super::super::review_row::contract_tests::{
+    album_change_scan, conflict_scan, three_album_scan,
+};
 use super::super::review_snapshot::ReviewSnapshot;
+use super::LibraryDoctorReviewPage;
 
 fn snapshot(query: &str) -> (DoctorReviewSession, ReviewSnapshot) {
     let scan = three_album_scan();
@@ -80,4 +87,92 @@ fn review_snapshot_toggling_a_hidden_row_does_not_move_the_totals() {
 
     assert_eq!(updated.totals, totals);
     assert!(!updated.rows[0].row.selected);
+}
+
+#[test]
+fn doc_12a_the_review_search_matches_track_album_and_artist() {
+    let scan = album_change_scan();
+    let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+    let rows = grouped_rows_for(&scan, &session, &HashMap::new());
+    let mut snapshot = ReviewSnapshot::from_rows(rows, "");
+    let all_changes = snapshot.unfiltered_changes;
+
+    for (query, expected) in [
+        ("Track 1", 1),
+        ("One album", all_changes),
+        ("Artists", all_changes),
+    ] {
+        snapshot.apply_query(query);
+        assert_eq!(snapshot.totals.changes, expected, "{query}");
+    }
+}
+
+#[test]
+fn doc_12a_the_review_search_ignores_the_normalized_album_key() {
+    let (_, mut snapshot) = snapshot("");
+    snapshot.rows[0].album_key = "normalized-only-key".into();
+
+    snapshot.apply_query("normalized-only-key");
+
+    assert_eq!(snapshot.totals.changes, 0);
+}
+
+#[test]
+fn doc_12a_an_empty_query_hides_nothing() {
+    let (_, snapshot) = snapshot("   ");
+
+    assert_eq!(snapshot.totals.changes, snapshot.unfiltered_changes);
+}
+
+fn page_for(scan: &reprise_core::library_doctor::DoctorScan) -> Rc<LibraryDoctorReviewPage> {
+    let conn = Rc::new(Db::open_in_memory().unwrap());
+    let parent = adw::ApplicationWindow::builder().build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        scan,
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    )
+}
+
+fn apply_task_4_query(page: &LibraryDoctorReviewPage, query: &str) {
+    *page.state.query.borrow_mut() = query.into();
+    page.state.snapshot.borrow_mut().apply_query(query);
+    page.state.filter.changed(gtk4::FilterChange::Different);
+    page.state.set_content_child();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_the_conflicts_panel_survives_an_active_query() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&conflict_scan());
+
+    apply_task_4_query(&page, "matches no review row");
+
+    assert_eq!(page.state.sorted.n_items(), 1);
+    assert_eq!(
+        page.state.content.visible_child_name().as_deref(),
+        Some("rows")
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_a_query_with_no_matches_shows_its_own_state() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&three_album_scan());
+
+    apply_task_4_query(&page, "matches no review row");
+
+    assert_eq!(page.state.sorted.n_items(), 0);
+    assert_eq!(
+        page.state.content.visible_child_name().as_deref(),
+        Some("no-match")
+    );
 }

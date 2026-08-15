@@ -102,8 +102,6 @@ impl ReviewSnapshot {
         self.totals.albums = self.albums.len();
     }
 
-    // Read by the page filter once Task 4 wires the query state.
-    #[allow(dead_code)]
     pub(super) fn is_visible(&self, id: Option<&DoctorReviewRowId>) -> bool {
         id.and_then(|id| self.index.get(id))
             .and_then(|position| usize::try_from(*position).ok())
