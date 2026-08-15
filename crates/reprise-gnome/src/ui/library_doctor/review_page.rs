@@ -234,18 +234,22 @@ impl ReviewState {
             .iter()
             .map(|(_, row)| row.album_key.clone())
             .collect::<HashSet<_>>();
-        let snapshot = self.snapshot.borrow().clone().with_selection(&changed);
-        let affected_albums = affected
-            .iter()
-            .filter_map(|album_key| {
-                snapshot
-                    .albums
-                    .get(album_key)
-                    .cloned()
-                    .map(|counts| (album_key.clone(), counts))
-            })
-            .collect::<HashMap<_, _>>();
+        let snapshot = std::mem::take(&mut *self.snapshot.borrow_mut());
+        let snapshot = snapshot.with_selection(&changed);
         *self.snapshot.borrow_mut() = snapshot;
+        let affected_albums = {
+            let snapshot = self.snapshot.borrow();
+            affected
+                .iter()
+                .filter_map(|album_key| {
+                    snapshot
+                        .albums
+                        .get(album_key)
+                        .cloned()
+                        .map(|counts| (album_key.clone(), counts))
+                })
+                .collect::<HashMap<_, _>>()
+        };
         splice_selection_rows(&self.store, &changed, row_count);
         self.refresh_action_summary(self.ready_count.get());
         self.refresh_master_check();
