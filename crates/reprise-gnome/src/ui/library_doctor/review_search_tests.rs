@@ -5,6 +5,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::library_doctor::{DoctorReviewFilter, DoctorReviewSession, DoctorReviewSummary};
+use reprise_view::search_scope::SearchScope;
 
 use super::super::review_model::grouped_rows_for;
 use super::super::review_row::contract_tests::{
@@ -161,6 +162,12 @@ fn doc_12a_a_query_with_no_matches_shows_its_own_state() {
     let _guard = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let page = page_for(&three_album_scan());
+    let weak_page = Rc::downgrade(&page);
+    page.set_on_search_query_changed(Rc::new(move |query| {
+        if let Some(page) = weak_page.upgrade() {
+            page.set_search_query(query);
+        }
+    }));
 
     page.state.set_query("matches no review row");
 
@@ -177,6 +184,13 @@ fn doc_12a_a_query_with_no_matches_shows_its_own_state() {
         .unwrap();
     assert_eq!(no_match.title(), "No matches for “matches no review row”");
     assert!(no_match.description().unwrap().contains("3 fixes"));
+    no_match
+        .child()
+        .and_downcast::<gtk4::Button>()
+        .unwrap()
+        .emit_clicked();
+    assert!(page.state.query.borrow().is_empty());
+    assert_eq!(page.state.sorted.n_items(), 3);
 }
 
 #[test]
@@ -366,4 +380,28 @@ fn doc_12a_clear_all_drops_both_the_query_and_the_category() {
 
     assert!(page.state.query.borrow().is_empty());
     assert_eq!(page.state.category.get(), None);
+}
+
+#[test]
+fn fil_1d_the_review_chip_names_exactly_the_fields_the_search_reads() {
+    assert_eq!(
+        crate::ui::filter_bar_strings::scoped_search_chip_label(
+            SearchScope::DoctorReview,
+            "needle",
+        ),
+        "⌕ “needle” in track, album and artist"
+    );
+    let (_, mut snapshot) = snapshot("");
+    let row = &mut snapshot.rows[0];
+    row.track = "safe track".into();
+    row.album_title = "safe album".into();
+    row.album_artist = "safe artist".into();
+    row.album_key = "needle".into();
+    row.field = "needle".into();
+    row.current = "needle".into();
+    row.proposed = "needle".into();
+
+    snapshot.apply_query("needle");
+
+    assert_eq!(snapshot.totals.changes, 0);
 }
