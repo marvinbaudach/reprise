@@ -102,6 +102,53 @@ fn v73_preserves_cached_concerts_and_defaults_availability_to_unknown() {
 }
 
 #[test]
+fn v75_drops_the_stored_concerts_column_layout_and_keeps_the_widths() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE settings (
+           key TEXT PRIMARY KEY,
+           value TEXT NOT NULL
+         );
+         INSERT INTO settings (key, value) VALUES
+           ('ui.column_layout.concerts', 'concert-layout'),
+           ('ui.column_widths.concerts', 'concert-widths'),
+           ('ui.column_layout.releases', 'release-layout');",
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 74).unwrap();
+
+    crate::db_concerts::migrate_v75(&conn).unwrap();
+    crate::db_concerts::migrate_v75(&conn).unwrap();
+
+    let settings = conn
+        .prepare("SELECT key FROM settings ORDER BY key")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        settings,
+        vec![
+            "ui.column_layout.releases".to_owned(),
+            "ui.column_widths.concerts".to_owned(),
+        ]
+    );
+    assert_eq!(version, 75);
+}
+
+#[test]
+fn the_concerts_layout_setting_key_matches_the_frozen_migration_literal() {
+    assert_eq!(
+        crate::library::settings::CONCERTS_COLUMN_LAYOUT_KEY,
+        "ui.column_layout.concerts"
+    );
+}
+
+#[test]
 fn a_v72_database_reaches_v74_with_both_new_columns() {
     let conn = Connection::open_in_memory().unwrap();
     conn.pragma_update(None, "user_version", 30).unwrap();
@@ -151,6 +198,6 @@ fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
 }
 
 #[test]
-fn supported_schema_version_is_v74() {
-    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 74);
+fn supported_schema_version_is_v75() {
+    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 75);
 }
