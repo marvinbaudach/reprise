@@ -559,8 +559,8 @@ mod tests {
             Some("date"),
             Some("title"),
             Some("artist"),
-            None,
-            None,
+            Some("status"),
+            Some("buy"),
         ])
         .expect("complete release binding");
 
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_10_hiding_the_sorted_column_keeps_a_visible_sort_indicator() {
+    fn style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator() {
         fn sortable_column(key: ColumnId) -> gtk4::ColumnViewColumn {
             let column = gtk4::ColumnViewColumn::builder()
                 .title(key.as_str())
@@ -675,7 +675,7 @@ mod tests {
     /// absorbing its own slack — which is the gap the music library has had
     /// since Title became hideable.
     #[test]
-    fn style_10_the_filler_moves_when_it_is_hidden() {
+    fn style_13_the_filler_moves_when_it_is_hidden() {
         let layout = reprise_view::columns::layout::set_visible(
             &reprise_view::columns::Layout::<ReleaseColumn>::default(),
             ReleaseColumn::Title,
@@ -698,7 +698,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_10_hiding_the_filler_moves_realized_space_to_the_next_column() {
+    fn style_13_hiding_the_filler_moves_realized_space_to_the_next_column() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
 

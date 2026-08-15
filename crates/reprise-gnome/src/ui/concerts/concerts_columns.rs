@@ -449,7 +449,7 @@ mod tests {
     /// STYLE-10: the Concerts header exposes the shared editor.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_10_concerts_header_right_click_edits_the_table() {
+    fn style_13_concerts_header_right_click_edits_the_table() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);

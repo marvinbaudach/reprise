@@ -383,7 +383,7 @@ fn layout_round_trips_canonically() {
 /// bit-identical — a silent shift here is a regression for every existing
 /// user, whose stored layout was written against these defaults.
 #[test]
-fn style_10_the_music_defaults_are_unchanged() {
+fn style_13_the_music_defaults_are_unchanged() {
     let layout = reprise_view::columns::Layout::<ColumnId>::default();
     assert_eq!(
         reprise_view::columns::layout::serialize(&layout),

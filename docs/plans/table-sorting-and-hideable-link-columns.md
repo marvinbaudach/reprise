@@ -2,7 +2,7 @@
 slug: table-sorting-and-hideable-link-columns
 worktree:
 branch:
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-15
 strands: a,b,c,r
