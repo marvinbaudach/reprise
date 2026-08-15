@@ -14,6 +14,36 @@ const MIN_FREQUENCY_HZ: f64 = 1.0;
 const MAX_FREQUENCY_HZ: f64 = 1_000_000.0;
 const MAX_ABSOLUTE_GAIN_DB: f64 = 120.0;
 
+/// The standard curves offered by every Reprise frontend.
+///
+/// The gains are defined once here so selecting Rock on Android cannot drift
+/// from selecting Rock on the desktop. Backends still project the resulting
+/// authored curve onto their own live band topology.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EqualizerPreset {
+    Flat,
+    Rock,
+    Pop,
+    Bass,
+}
+
+impl EqualizerPreset {
+    pub const ALL: [Self; 4] = [Self::Flat, Self::Rock, Self::Pop, Self::Bass];
+
+    pub const fn ten_band_levels(self) -> [f64; 10] {
+        match self {
+            Self::Flat => [0.0; 10],
+            Self::Rock => [4.0, 3.0, 2.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0, 4.0],
+            Self::Pop => [-1.0, 1.0, 3.0, 4.0, 2.0, 0.0, -1.0, -1.0, 1.0, 2.0],
+            Self::Bass => [7.0, 6.0, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        }
+    }
+
+    pub fn curve(self) -> EqualizerCurve {
+        EqualizerCurve::from_gstreamer_levels(self.ten_band_levels())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EqualizerPoint {
     pub frequency_hz: f64,
@@ -377,5 +407,37 @@ mod tests {
         )
         .unwrap();
         assert!(!shifted.is_gstreamer_ten_band());
+    }
+
+    #[test]
+    fn standard_presets_match_the_desktop_contract() {
+        assert_eq!(
+            EqualizerPreset::ALL,
+            [
+                EqualizerPreset::Flat,
+                EqualizerPreset::Rock,
+                EqualizerPreset::Pop,
+                EqualizerPreset::Bass,
+            ],
+        );
+        assert_eq!(EqualizerPreset::Flat.ten_band_levels(), [0.0; 10]);
+        assert_eq!(
+            EqualizerPreset::Rock.ten_band_levels(),
+            [4.0, 3.0, 2.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0, 4.0],
+        );
+        assert_eq!(
+            EqualizerPreset::Pop.ten_band_levels(),
+            [-1.0, 1.0, 3.0, 4.0, 2.0, 0.0, -1.0, -1.0, 1.0, 2.0],
+        );
+        assert_eq!(
+            EqualizerPreset::Bass.ten_band_levels(),
+            [7.0, 6.0, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        );
+
+        for preset in EqualizerPreset::ALL {
+            let curve = preset.curve();
+            assert!(curve.is_gstreamer_ten_band());
+            assert_eq!(curve.project_to_gstreamer(), preset.ten_band_levels());
+        }
     }
 }

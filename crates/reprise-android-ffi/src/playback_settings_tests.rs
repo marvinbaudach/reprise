@@ -105,3 +105,46 @@ fn an_unusable_curve_or_band_list_comes_back_as_an_error() {
         Vec::new(),
     );
 }
+
+#[test]
+fn android_receives_the_standard_presets_in_desktop_order() {
+    let presets = standard_equalizer_presets();
+
+    assert_eq!(
+        presets
+            .iter()
+            .map(|definition| definition.preset)
+            .collect::<Vec<_>>(),
+        vec![
+            AndroidEqualizerPreset::Flat,
+            AndroidEqualizerPreset::Rock,
+            AndroidEqualizerPreset::Pop,
+            AndroidEqualizerPreset::Bass,
+        ],
+    );
+    assert_eq!(
+        presets
+            .iter()
+            .map(|definition| {
+                definition
+                    .curve
+                    .iter()
+                    .map(|point| point.gain_db)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            vec![0.0; 10],
+            vec![4.0, 3.0, 2.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0, 4.0],
+            vec![-1.0, 1.0, 3.0, 4.0, 2.0, 0.0, -1.0, -1.0, 1.0, 2.0],
+            vec![7.0, 6.0, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ],
+    );
+    assert!(presets.iter().all(|definition| {
+        definition
+            .curve
+            .iter()
+            .map(|point| point.frequency_hz)
+            .eq(reprise_core::equalizer::GSTREAMER_EQUALIZER_CENTRES_HZ)
+    }));
+}

@@ -1,6 +1,6 @@
 //! Typed Android playback settings over Core's shared persistence.
 
-use reprise_core::equalizer::{EqualizerBand, EqualizerCurve, EqualizerPoint};
+use reprise_core::equalizer::{EqualizerBand, EqualizerCurve, EqualizerPoint, EqualizerPreset};
 use reprise_core::library::settings;
 
 use crate::{LibraryError, MusicLibrary};
@@ -9,6 +9,20 @@ use crate::{LibraryError, MusicLibrary};
 pub struct AndroidEqualizerPoint {
     pub frequency_hz: f64,
     pub gain_db: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidEqualizerPreset {
+    Flat,
+    Rock,
+    Pop,
+    Bass,
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct AndroidEqualizerPresetDefinition {
+    pub preset: AndroidEqualizerPreset,
+    pub curve: Vec<AndroidEqualizerPoint>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
@@ -59,6 +73,17 @@ impl From<AndroidEqualizerPoint> for EqualizerPoint {
     }
 }
 
+impl From<EqualizerPreset> for AndroidEqualizerPreset {
+    fn from(preset: EqualizerPreset) -> Self {
+        match preset {
+            EqualizerPreset::Flat => Self::Flat,
+            EqualizerPreset::Rock => Self::Rock,
+            EqualizerPreset::Pop => Self::Pop,
+            EqualizerPreset::Bass => Self::Bass,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct AndroidPlaybackSettings {
     pub equalizer_enabled: bool,
@@ -78,6 +103,23 @@ impl AndroidPlaybackSettings {
             gapless_enabled: settings::get_gapless_enabled(db),
         }
     }
+}
+
+/// The shared curves in the same order used by the desktop selector.
+#[uniffi::export]
+pub fn standard_equalizer_presets() -> Vec<AndroidEqualizerPresetDefinition> {
+    EqualizerPreset::ALL
+        .into_iter()
+        .map(|preset| AndroidEqualizerPresetDefinition {
+            preset: preset.into(),
+            curve: preset
+                .curve()
+                .points()
+                .iter()
+                .map(AndroidEqualizerPoint::from)
+                .collect(),
+        })
+        .collect()
 }
 
 #[uniffi::export]
