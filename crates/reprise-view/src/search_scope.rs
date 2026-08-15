@@ -23,6 +23,9 @@ pub enum SearchScope {
     Radio,
     Releases,
     Concerts,
+    /// Library Doctor Review, reached by shell navigation rather than a
+    /// `ViewSource`.
+    DoctorReview,
     /// A section without a list. The lens is insensitive here (SEARCH-8a).
     Unsupported,
 }
@@ -123,6 +126,7 @@ mod tests {
             SearchScope::Radio,
             SearchScope::Releases,
             SearchScope::Concerts,
+            SearchScope::DoctorReview,
         ] {
             assert!(supports_search(scope), "{scope:?}");
         }

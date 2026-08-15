@@ -168,6 +168,23 @@ fn review_selection_toggle_touches_only_the_toggled_album() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_a_query_change_splices_no_store_items() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    let page = page_for(&generated_scan(CHURN_FIXTURE_ALBUMS));
+    let churn = Rc::new(Cell::new(0_u32));
+    page.state.store.connect_items_changed({
+        let churn = churn.clone();
+        move |_, _, removed, added| churn.set(churn.get() + removed + added)
+    });
+
+    page.state.set_query("Artist 0001");
+    page.state.set_query("");
+
+    assert_eq!(churn.get(), 0, "query changes must not splice the store");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn review_selection_toggle_wall_clock_probe() {
     let Ok(album_count) = std::env::var("REPRISE_DOCTOR_PERF_ALBUMS") else {
         return;
@@ -189,6 +206,45 @@ fn review_selection_toggle_wall_clock_probe() {
     eprintln!(
         "PERFORMANCE doctor_review path=selection albums={album_count} rows={} toggles={WALL_CLOCK_TOGGLES} median_us={selection_median_us} max_us={selection_max_us}",
         album_count * TRACKS_PER_ALBUM
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn review_search_wall_clock_probe() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    let Ok(album_count) = std::env::var("REPRISE_DOCTOR_PERF_ALBUMS") else {
+        eprintln!("PERFORMANCE doctor_review path=search skipped=REPRISE_DOCTOR_PERF_ALBUMS-unset");
+        return;
+    };
+    let album_count = album_count
+        .parse::<usize>()
+        .expect("REPRISE_DOCTOR_PERF_ALBUMS must be an integer");
+    assert!(
+        (1..=MAX_PERF_ALBUMS).contains(&album_count),
+        "REPRISE_DOCTOR_PERF_ALBUMS must be between 1 and {MAX_PERF_ALBUMS}"
+    );
+    let page = page_for(&generated_scan(album_count));
+    let row_count = page.state.snapshot.borrow().rows.len();
+    assert!(row_count > 0, "review search fixture built zero rows");
+    let queries = ["A", "Ar", "Art", "Arti", "Artis", "Artist", ""];
+    let mut elapsed = Vec::with_capacity(queries.len());
+    for query in queries {
+        let started = Instant::now();
+        page.state.set_query(query);
+        elapsed.push(started.elapsed().as_micros());
+        assert_eq!(
+            page.state.query.borrow().as_str(),
+            query,
+            "review search set_query was not reached"
+        );
+    }
+    assert!(!elapsed.is_empty(), "review search produced no timings");
+    elapsed.sort_unstable();
+    let median_us = elapsed[elapsed.len() / 2];
+    let max_us = *elapsed.last().expect("review search produced timings");
+    eprintln!(
+        "PERFORMANCE doctor_review path=search albums={album_count} rows={row_count} median_us={median_us} max_us={max_us}"
     );
 }
 

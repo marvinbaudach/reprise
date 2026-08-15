@@ -105,6 +105,9 @@ pub use stats::*;
 #[path = "strings_library_doctor.rs"]
 mod library_doctor;
 pub use library_doctor::*;
+#[path = "strings_library_doctor_search.rs"]
+mod library_doctor_search;
+pub use library_doctor_search::*;
 
 #[path = "strings_podcasts.rs"]
 mod podcasts;

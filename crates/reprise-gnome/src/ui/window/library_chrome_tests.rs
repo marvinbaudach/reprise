@@ -85,7 +85,13 @@ fn doc_7c_the_doctor_uses_the_shared_window_chrome() {
         .build();
 
     let chrome = build(&library_header, &content_stack, &entry, &window);
-    let _doctor_chrome = wire_content_stack(&chrome, &content_stack, &source_title, &scan_button);
+    let _doctor_chrome = wire_content_stack(
+        &chrome,
+        &content_stack,
+        &doctor_navigation,
+        &source_title,
+        &scan_button,
+    );
     let decorations = crate::ui::window::window_decorations::WindowDecorations::new(
         &window,
         &library_header,
@@ -108,7 +114,12 @@ fn doc_7c_the_doctor_uses_the_shared_window_chrome() {
 
     doctor_navigation.push(&review_page);
     while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(chrome.search_toggle.is_visible());
     assert_eq!(mapped_adw_header_rows(chrome.root.upcast_ref()), 1);
+
+    doctor_navigation.pop_to_page(&root_page);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(!chrome.search_toggle.is_visible());
 
     window.close();
     settings.set_gtk_enable_animations(animations_were_enabled);

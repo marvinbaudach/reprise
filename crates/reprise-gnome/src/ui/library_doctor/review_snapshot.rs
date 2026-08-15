@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library_doctor::{DoctorReviewRowId, DoctorReviewRowState, DoctorReviewSession};
+use reprise_view::search_scope::matches_any;
 
 use super::review_model::ReviewRowModel;
 
@@ -30,13 +31,13 @@ pub(super) struct ReviewSnapshot {
     pub(super) albums: HashMap<String, AlbumCounts>,
     index: HashMap<DoctorReviewRowId, u32>,
     pub(super) totals: ReviewTotals,
+    visible: Vec<bool>,
+    pub(super) unfiltered_changes: usize,
 }
 
 impl ReviewSnapshot {
-    pub(super) fn from_rows(rows: Vec<ReviewRowModel>) -> Self {
-        let mut albums = HashMap::<String, AlbumCounts>::new();
+    pub(super) fn from_rows(rows: Vec<ReviewRowModel>, query: &str) -> Self {
         let mut index = HashMap::new();
-        let mut totals = ReviewTotals::default();
         for (position, row) in rows.iter().enumerate() {
             let position = u32::try_from(position).expect("review row count fits u32");
             for row_id in &row.row_ids {
@@ -51,7 +52,40 @@ impl ReviewSnapshot {
                     index.insert(*row_id, position);
                 }
             }
-            let album = albums.entry(row.album_key.clone()).or_default();
+        }
+        let unfiltered_changes = rows.iter().map(|row| row.selectable_row_ids.len()).sum();
+        let mut snapshot = Self {
+            visible: vec![false; rows.len()],
+            rows,
+            albums: HashMap::new(),
+            index,
+            totals: ReviewTotals::default(),
+            unfiltered_changes,
+        };
+        snapshot.apply_query(query);
+        snapshot
+    }
+
+    pub(super) fn apply_query(&mut self, query: &str) {
+        for (visible, row) in self.visible.iter_mut().zip(&self.rows) {
+            *visible = matches_any(
+                [
+                    row.track.as_str(),
+                    row.album_title.as_str(),
+                    row.album_artist.as_str(),
+                ],
+                query,
+            );
+        }
+        self.albums.clear();
+        self.totals = ReviewTotals::default();
+        for row in self
+            .rows
+            .iter()
+            .zip(&self.visible)
+            .filter_map(|(row, visible)| visible.then_some(row))
+        {
+            let album = self.albums.entry(row.album_key.clone()).or_default();
             album.selected += row.selected_change_count;
             album.selectable += row.selectable_row_ids.len();
             album.changes += row.row_ids.len();
@@ -59,17 +93,28 @@ impl ReviewSnapshot {
                 .selectable_row_ids
                 .extend(row.selectable_row_ids.iter().copied());
             album.blocked_by = blocked_state(album.blocked_by, row.row.state);
-            totals.selected += row.selected_change_count;
-            totals.selectable += row.selectable_row_ids.len();
-            totals.changes += row.selectable_row_ids.len();
+            self.totals.selected += row.selected_change_count;
+            self.totals.selectable += row.selectable_row_ids.len();
+            self.totals.changes += row.selectable_row_ids.len();
         }
-        totals.albums = albums.len();
-        Self {
-            rows,
-            albums,
-            index,
-            totals,
-        }
+        self.totals.albums = self.albums.len();
+    }
+
+    pub(super) fn is_visible(&self, id: Option<&DoctorReviewRowId>) -> bool {
+        id.and_then(|id| self.index.get(id))
+            .and_then(|position| usize::try_from(*position).ok())
+            .and_then(|position| self.visible.get(position))
+            .copied()
+            .unwrap_or(true)
+    }
+
+    pub(super) fn visible_selectable_row_ids(&self) -> HashSet<DoctorReviewRowId> {
+        self.rows
+            .iter()
+            .zip(&self.visible)
+            .filter(|(_, visible)| **visible)
+            .flat_map(|(row, _)| row.selectable_row_ids.iter().copied())
+            .collect()
     }
 
     pub(super) fn selection_diff(
@@ -119,6 +164,10 @@ impl ReviewSnapshot {
                 .get(position)
                 .expect("selection diff points inside the cached review rows");
             debug_assert_eq!(cached.album_key, replacement.album_key);
+            if !self.visible[position] {
+                self.rows[position] = replacement.clone();
+                continue;
+            }
             let album = self
                 .albums
                 .get_mut(&cached.album_key)

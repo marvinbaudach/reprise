@@ -21,6 +21,7 @@ pub(in crate::ui) struct SectionSearchViews<'a> {
     pub(in crate::ui) radio_view: &'a Rc<crate::ui::radio::RadioView>,
     pub(in crate::ui) releases_view: &'a Rc<crate::ui::releases::ReleasesView>,
     pub(in crate::ui) concerts_view: &'a Rc<crate::ui::concerts::ConcertsView>,
+    pub(in crate::ui) library_doctor: &'a Rc<crate::ui::library_doctor::LibraryDoctorLauncher>,
 }
 
 pub(in crate::ui) fn install(search: &Rc<SectionSearch>, views: &SectionSearchViews<'_>) {
@@ -30,6 +31,40 @@ pub(in crate::ui) fn install(search: &Rc<SectionSearch>, views: &SectionSearchVi
     install_radio(search, views.radio_view);
     install_releases(search, views.releases_view);
     install_concerts(search, views.concerts_view);
+    install_library_doctor(search, views.library_doctor);
+}
+
+fn install_library_doctor(
+    search: &Rc<SectionSearch>,
+    launcher: &Rc<crate::ui::library_doctor::LibraryDoctorLauncher>,
+) {
+    let weak_search = Rc::downgrade(search);
+    launcher.set_on_search_query_changed(move |query| {
+        if let Some(search) = weak_search.upgrade() {
+            search.set_query(SearchScope::DoctorReview, query);
+        }
+    });
+    let applying = Rc::downgrade(launcher);
+    let committing = Rc::downgrade(launcher);
+    let clearing = Rc::downgrade(launcher);
+    search.register(
+        SearchScope::DoctorReview,
+        move |query| {
+            if let Some(launcher) = applying.upgrade() {
+                launcher.set_search_query(query);
+            }
+        },
+        move |query| {
+            if let Some(launcher) = committing.upgrade() {
+                launcher.set_committed_search_query(query);
+            }
+        },
+        move || {
+            if let Some(launcher) = clearing.upgrade() {
+                launcher.clear_all_filters();
+            }
+        },
+    );
 }
 
 /// Music and Missing files share the track list. Non-empty Music queries use

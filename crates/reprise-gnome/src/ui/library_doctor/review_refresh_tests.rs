@@ -61,7 +61,7 @@ fn doc_9b_the_snapshot_is_the_visible_row_set() {
             DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
         session.set_category_filter(category.map(ReviewCategory::problem_classes));
         let rows = grouped_rows_for(&scan, &session, &HashMap::new());
-        let snapshot = ReviewSnapshot::from_rows(rows);
+        let snapshot = ReviewSnapshot::from_rows(rows, "");
         let expected = u32::try_from(snapshot.rows.len()).unwrap() + u32::from(panel_present);
         let actual = sorted_count_for(Rc::new(RefCell::new(session)), &snapshot, panel_present);
 
@@ -76,7 +76,8 @@ fn doc_9b_the_snapshot_is_the_visible_row_set() {
 fn review_snapshot_selection_diff_changes_only_selection_facts() {
     let scan = album_change_scan();
     let mut session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
-    let snapshot = ReviewSnapshot::from_rows(grouped_rows_for(&scan, &session, &HashMap::new()));
+    let snapshot =
+        ReviewSnapshot::from_rows(grouped_rows_for(&scan, &session, &HashMap::new()), "");
     let selected_before = snapshot.totals.selected;
     assert!(
         snapshot.selection_diff(&session).is_empty(),
@@ -112,7 +113,7 @@ fn review_snapshot_duplicate_row_id_keeps_first_store_position() {
     assert_ne!(rows[1].row_ids[0], shared_id);
     rows[1].row_ids.push(shared_id);
 
-    let snapshot = ReviewSnapshot::from_rows(rows);
+    let snapshot = ReviewSnapshot::from_rows(rows, "");
     let store = gio::ListStore::new::<glib::Object>();
     let objects = snapshot
         .rows

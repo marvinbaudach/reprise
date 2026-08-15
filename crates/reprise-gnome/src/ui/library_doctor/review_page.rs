@@ -36,11 +36,16 @@ use super::review_summary::{review_footer_summary, review_stale_notice};
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
+type SearchClearSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
+#[path = "review_search.rs"]
+mod review_search;
 
 struct ReviewState {
     conn: Rc<Db>,
     scan: DoctorScan,
     session: Rc<RefCell<DoctorReviewSession>>,
+    query: Rc<RefCell<String>>,
     store: gio::ListStore,
     filter: gtk4::CustomFilter,
     sorted: gtk4::SortListModel,
@@ -88,11 +93,10 @@ impl ReviewState {
         let ready_count = review_ready_count(&session);
         self.ready_count.set(ready_count);
         let grouped_rows_started = Instant::now();
-        let snapshot = ReviewSnapshot::from_rows(grouped_rows_for(
-            &self.scan,
-            &session,
-            &self.outcomes.borrow(),
-        ));
+        let snapshot = ReviewSnapshot::from_rows(
+            grouped_rows_for(&self.scan, &session, &self.outcomes.borrow()),
+            self.query.borrow().as_str(),
+        );
         let objects = snapshot
             .rows
             .iter()
@@ -129,8 +133,7 @@ impl ReviewState {
             "DOCTOR_REVIEW_REFRESH stage"
         );
         let count = self.sorted.n_items();
-        self.content
-            .set_visible_child_name(if count == 0 { "empty" } else { "rows" });
+        self.set_content_child();
         if count > 0 && selected != gtk4::INVALID_LIST_POSITION {
             self.selection.set_selected(selected.min(count - 1));
         }
@@ -149,6 +152,7 @@ impl ReviewState {
             elapsed_us = full_started.elapsed().as_micros(),
             "DOCTOR_REVIEW_REFRESH path"
         );
+        self.push_query_scope();
     }
 
     #[cfg(test)]
@@ -184,12 +188,14 @@ impl ReviewState {
 
     fn refresh_action_summary(&self, ready_count: usize) {
         let summary = self.session.borrow().summary();
+        let query = self.query.borrow().clone();
         self.apply
             .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
         self.apply.set_sensitive(summary.tag_change_count > 0);
         self.change_summary.set_label(&review_footer_summary(
             summary,
             self.category.get(),
+            &query,
             ready_count,
         ));
     }
@@ -460,9 +466,29 @@ pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
     state: Rc<ReviewState>,
     rows: gtk4::ListView,
+    clear_search: SearchClearSlot,
 }
 
 impl LibraryDoctorReviewPage {
+    pub(in crate::ui) fn set_search_query(&self, query: &str) {
+        self.state.set_query(query);
+    }
+
+    pub(in crate::ui) fn set_committed_search_query(&self, query: &str) {
+        self.state.filter_bar.set_committed_query(query);
+    }
+
+    pub(in crate::ui) fn clear_all_filters(&self) {
+        self.state.set_query("");
+        self.state.set_category(None);
+        self.state.filter_bar.reset_category();
+    }
+
+    pub(super) fn set_on_search_query_changed(&self, callback: Rc<dyn Fn(&str)>) {
+        self.clear_search
+            .replace(Some(Rc::new(move || callback(""))));
+    }
+
     pub(super) fn new(
         conn: &Rc<Db>,
         _parent: &adw::ApplicationWindow,
@@ -477,7 +503,10 @@ impl LibraryDoctorReviewPage {
         )));
         let categories = available_categories(&session.borrow());
         let category = Rc::new(Cell::new(None::<ReviewCategory>));
+        let query = Rc::new(RefCell::new(String::new()));
+        let snapshot = Rc::new(RefCell::new(ReviewSnapshot::default()));
         let filter_session = session.clone();
+        let filter_snapshot = snapshot.clone();
         let filter = gtk4::CustomFilter::new(move |object| {
             let Some(boxed) = object.downcast_ref::<glib::BoxedAnyObject>() else {
                 return object.is::<gtk4::Widget>();
@@ -486,6 +515,7 @@ impl LibraryDoctorReviewPage {
             filter_session
                 .borrow()
                 .category_filter_matches(model.row.problem_class)
+                && filter_snapshot.borrow().is_visible(model.row_ids.first())
         });
         let store = gio::ListStore::new::<glib::Object>();
         let filtered = gtk4::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
@@ -503,7 +533,15 @@ impl LibraryDoctorReviewPage {
             .single_click_activate(false)
             .build();
         let header = ReviewHeader::new();
-        let filter_bar = ReviewFilterBar::new(&categories);
+        let clear_search = Rc::new(RefCell::new(None::<Rc<dyn Fn()>>));
+        let filter_bar = ReviewFilterBar::new(&categories, {
+            let clear_search = clear_search.clone();
+            Rc::new(move || {
+                if let Some(clear) = clear_search.borrow().as_ref() {
+                    clear();
+                }
+            })
+        });
         let stale_notice_label = gtk4::Label::builder()
             .xalign(0.0)
             .hexpand(true)
@@ -531,6 +569,15 @@ impl LibraryDoctorReviewPage {
         content.set_vexpand(true);
         content.add_named(&scrolled, Some("rows"));
         content.add_named(&empty, Some("empty"));
+        let no_match = review_search::no_match_page({
+            let clear_search = clear_search.clone();
+            Rc::new(move || {
+                if let Some(clear) = clear_search.borrow().as_ref() {
+                    clear();
+                }
+            })
+        });
+        content.add_named(&no_match, Some("no-match"));
         let apply = gtk4::Button::builder()
             .css_classes(["suggested-action", "pill"])
             .build();
@@ -552,6 +599,7 @@ impl LibraryDoctorReviewPage {
             conn: conn.clone(),
             scan: scan.clone(),
             session,
+            query,
             store,
             filter,
             sorted,
@@ -572,7 +620,7 @@ impl LibraryDoctorReviewPage {
             column_groups: header.groups.clone(),
             outcomes: RefCell::new(HashMap::new()),
             ready_count: Cell::new(0),
-            snapshot: Rc::new(RefCell::new(ReviewSnapshot::default())),
+            snapshot,
             album_headers,
             conflicts: ReviewConflictsSlot::default(),
             #[cfg(test)]
@@ -661,6 +709,7 @@ impl LibraryDoctorReviewPage {
             navigation_page,
             state,
             rows,
+            clear_search,
         });
         page.state.refresh();
         page
@@ -724,3 +773,7 @@ mod review_refresh_tests;
 #[cfg(test)]
 #[path = "review_page_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "review_search_tests.rs"]
+mod review_search_tests;

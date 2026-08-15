@@ -375,7 +375,6 @@ pub fn build(
         metadata_navigator: &metadata_navigator,
     });
     super::startup_report::mark("window_action_wiring::wire");
-
     let open_device = super::window_navigation::open_device_callback(
         &content_nav,
         &content_stack,
@@ -404,6 +403,7 @@ pub fn build(
     let doctor_chrome = super::library_chrome::wire_content_stack(
         &library_chrome,
         &content_stack,
+        &library_doctor_navigation,
         &window_title,
         &scan_button,
     );
