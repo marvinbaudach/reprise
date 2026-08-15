@@ -2,7 +2,7 @@
 slug: doctor-review-search-prereq
 worktree: /home/marvin/Projects/reprise-doctor-review-search-prereq
 branch: feature/doctor-review-search-prereq
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-15
 ---
