@@ -43,11 +43,13 @@ import de.reprise.spike.ui.theme.RepriseTheme
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
+import uniffi.reprise_android_ffi.AndroidEqualizerPreset
 import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
 import uniffi.reprise_android_ffi.TrashAction
+import uniffi.reprise_android_ffi.standardEqualizerPresets
 
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
@@ -61,6 +63,16 @@ class MainActivity : ComponentActivity() {
         MusicLibrary.open(filesDir.absolutePath, cacheDir.absolutePath)
     }
     private val library by libraryDelegate
+    private val equalizerPresets by lazy {
+        standardEqualizerPresets().map { definition ->
+            EqualizerPresetUi(
+                name = definition.preset.displayName(),
+                curve = definition.curve.map { point ->
+                    EqualizerCurvePoint(point.frequencyHz, point.gainDb)
+                },
+            )
+        }
+    }
     private val session by lazy {
         LibrarySession(
             AndroidLibrarySessionPort(
@@ -633,6 +645,10 @@ class MainActivity : ComponentActivity() {
             equalizerEnabled = stored.equalizerEnabled,
             gaplessEnabled = stored.gaplessEnabled,
             equalizerBands = bands,
+            equalizerCurve = stored.equalizerCurve.map { point ->
+                EqualizerCurvePoint(point.frequencyHz, point.gainDb)
+            },
+            equalizerPresets = equalizerPresets,
             // A snapshot that reports no equalizer is a session we *have* asked:
             // saying "start playback" there would be false while a track plays.
             equalizerBandsAbsence = if (snapshot != null && !snapshot.available) {
@@ -681,6 +697,13 @@ class MainActivity : ComponentActivity() {
             .onFailure { error -> reportError("Could not $action: ${error.detail()}") }
     }
 
+}
+
+private fun AndroidEqualizerPreset.displayName(): String = when (this) {
+    AndroidEqualizerPreset.FLAT -> "Flat"
+    AndroidEqualizerPreset.ROCK -> "Rock"
+    AndroidEqualizerPreset.POP -> "Pop"
+    AndroidEqualizerPreset.BASS -> "Bass"
 }
 
 internal class UiProgress(

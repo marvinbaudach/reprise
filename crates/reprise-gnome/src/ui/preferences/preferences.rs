@@ -8,6 +8,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
+use reprise_core::equalizer::EqualizerPreset;
 use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, ReplayGainMode};
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
@@ -60,11 +61,12 @@ fn plugin_targets_for_deep_link(link: PluginDeepLink) -> &'static [&'static str]
 
 fn equalizer_preset(index: u32) -> [f64; 10] {
     match index {
-        1 => [4.0, 3.0, 2.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0, 4.0],
-        2 => [-1.0, 1.0, 3.0, 4.0, 2.0, 0.0, -1.0, -1.0, 1.0, 2.0],
-        3 => [7.0, 6.0, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        _ => [0.0; 10],
+        1 => EqualizerPreset::Rock,
+        2 => EqualizerPreset::Pop,
+        3 => EqualizerPreset::Bass,
+        _ => EqualizerPreset::Flat,
     }
+    .ten_band_levels()
 }
 
 fn replay_gain_from_index(index: u32) -> ReplayGainMode {
