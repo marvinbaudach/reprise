@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use std::cell::Cell;
-use std::rc::Rc;
+use std::{cell::Cell, rc::Rc};
 
 use chrono::Local;
 use gtk4::prelude::*;
@@ -299,12 +298,12 @@ fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden) {
         stack.set_visible_child_name(PILL_PAGE);
     });
     let column = gtk4::ColumnViewColumn::builder()
+        .id(ReleaseColumn::Status.as_str())
         .title(strings::text(strings::RELEASES_STATUS))
         .factory(&factory)
         .resizable(false)
         .build();
-    // The pill and the hover action swap inside a Stack, and both are wider
-    // in some rows than others — unpinned, this cell alone re-sizes the table.
+    // This is a fixed cell width, not a layout pin.
     widths::pin(&column, widths::PILL);
     view.append_column(&column);
 }
@@ -379,6 +378,7 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
         button.reset_property(gtk4::AccessibleProperty::Label);
     });
     let column = gtk4::ColumnViewColumn::builder()
+        .id(ReleaseColumn::Buy.as_str())
         .title(strings::text(strings::RELEASES_LINK))
         .factory(&factory)
         .resizable(false)

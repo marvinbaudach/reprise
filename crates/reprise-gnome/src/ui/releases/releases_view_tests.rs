@@ -1,4 +1,5 @@
 use super::*;
+use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
 fn history_entry(title: &str, artist: &str) -> HistoryEntry {
     HistoryEntry {
@@ -16,6 +17,208 @@ fn history_entry(title: &str, artist: &str) -> HistoryEntry {
         track_count: None,
         local_track_count: 0,
     }
+}
+
+fn sortable_history_entry(
+    title: &str,
+    artist: &str,
+    release_type: &str,
+    date: &str,
+) -> HistoryEntry {
+    let mut entry = history_entry(title, artist);
+    entry.release_type = release_type.into();
+    entry.first_release_date = date.into();
+    entry
+}
+
+fn column_by_id(view: &gtk4::ColumnView, id: &str) -> gtk4::ColumnViewColumn {
+    let columns = view.columns();
+    (0..columns.n_items())
+        .filter_map(|index| columns.item(index).and_downcast::<gtk4::ColumnViewColumn>())
+        .find(|column| column.id().as_deref() == Some(id))
+        .unwrap_or_else(|| panic!("missing column {id}"))
+}
+
+fn release_titles(view: &ReleasesView) -> Vec<String> {
+    let store = view.shared.model.store();
+    (0..store.n_items())
+        .map(|index| {
+            store
+                .item(index)
+                .and_downcast::<ReleaseObject>()
+                .expect("the Releases model stores release objects")
+                .entry()
+                .title
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn every_sortable_releases_header_orders_its_own_column() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = ReleasesView::new(Rc::new(crate::test_db::open().unwrap()), PathBuf::new());
+    let rows = vec![
+        sortable_history_entry("Zulu", "Bravo", "album", "2026-02"),
+        sortable_history_entry("Alpha", "Charlie", "ep", "2026-03"),
+        sortable_history_entry("Mike", "Alpha", "single", "2026-01"),
+    ];
+    view.shared.rows.replace(rows.clone());
+    view.shared.model.replace(rows);
+
+    for (key, expected) in [
+        (ReleaseColumn::Date, ["Mike", "Zulu", "Alpha"]),
+        (ReleaseColumn::Title, ["Alpha", "Mike", "Zulu"]),
+        (ReleaseColumn::Artist, ["Mike", "Zulu", "Alpha"]),
+        (ReleaseColumn::Type, ["Zulu", "Alpha", "Mike"]),
+    ] {
+        let column = column_by_id(&view.shared.column_view, key.as_str());
+        view.shared
+            .column_view
+            .sort_by_column(Some(&column), gtk4::SortType::Ascending);
+        assert_eq!(release_titles(&view), expected, "{key:?}");
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn refreshing_releases_preserves_the_active_sort_column_and_direction() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    for (mbid, title, date) in [
+        ("zulu", "Zulu", "2026-03"),
+        ("alpha", "Alpha", "2026-02"),
+        ("mike", "Mike", "2026-01"),
+    ] {
+        insert_release_at(&conn, mbid, title, date);
+    }
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
+             VALUES ('/music/artist.flac', 'Song', 'Artist', 'Artist', 'Owned', 0)",
+            [],
+        )
+        .unwrap();
+    let view = ReleasesView::new(conn, PathBuf::new());
+    view.refresh();
+
+    let title_column = column_by_id(&view.shared.column_view, ReleaseColumn::Title.as_str());
+    view.shared
+        .column_view
+        .sort_by_column(Some(&title_column), gtk4::SortType::Ascending);
+    assert_eq!(release_titles(&view), ["Alpha", "Mike", "Zulu"]);
+
+    view.refresh();
+
+    let sorter = view
+        .shared
+        .column_view
+        .sorter()
+        .and_downcast::<gtk4::ColumnViewSorter>()
+        .expect("the Releases table owns a ColumnViewSorter");
+    assert_eq!(
+        sorter.primary_sort_column().and_then(|column| column.id()),
+        Some(ReleaseColumn::Title.as_str().into())
+    );
+    assert_eq!(sorter.primary_sort_order(), gtk4::SortType::Ascending);
+    assert_eq!(release_titles(&view), ["Alpha", "Mike", "Zulu"]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_cover_status_and_link_headers_carry_no_sorter() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = ReleasesView::new(Rc::new(crate::test_db::open().unwrap()), PathBuf::new());
+    let columns = view.shared.column_view.columns();
+    let cover = columns
+        .item(0)
+        .and_downcast::<gtk4::ColumnViewColumn>()
+        .expect("the Releases view owns a leading cover column");
+    assert!(cover.sorter().is_none());
+    for key in [ReleaseColumn::Status, ReleaseColumn::Buy] {
+        let column = column_by_id(&view.shared.column_view, key.as_str());
+        assert!(column.sorter().is_none(), "{key:?} became sortable");
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_39_the_column_editor_lists_status_and_link_and_hides_them() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let view = ReleasesView::new(conn.clone(), PathBuf::new());
+    let model = view.column_model();
+    let ids = model
+        .columns()
+        .into_iter()
+        .map(|column| column.id)
+        .collect::<Vec<_>>();
+    for key in [ReleaseColumn::Status, ReleaseColumn::Buy] {
+        assert!(ids.iter().any(|id| id == key.as_str()), "missing {key:?}");
+        model.set_visible(key.as_str(), false);
+        assert!(!model.is_visible(key.as_str()));
+        assert!(!column_by_id(&view.shared.column_view, key.as_str()).is_visible());
+    }
+
+    let stored = reprise_core::library::settings::get_setting(
+        &conn,
+        reprise_core::library::settings::RELEASES_COLUMN_LAYOUT_KEY,
+    )
+    .unwrap()
+    .expect("the hidden release layout is persisted");
+    let hidden = reprise_view::columns::layout::parse::<ReleaseColumn>(&stored).unwrap();
+    assert!(!hidden.visible.contains(&ReleaseColumn::Status));
+    assert!(!hidden.visible.contains(&ReleaseColumn::Buy));
+
+    for key in [ReleaseColumn::Status, ReleaseColumn::Buy] {
+        model.set_visible(key.as_str(), true);
+        assert!(model.is_visible(key.as_str()));
+        assert!(column_by_id(&view.shared.column_view, key.as_str()).is_visible());
+    }
+    let stored = reprise_core::library::settings::get_setting(
+        &conn,
+        reprise_core::library::settings::RELEASES_COLUMN_LAYOUT_KEY,
+    )
+    .unwrap()
+    .expect("the restored release layout is persisted");
+    let restored = reprise_view::columns::layout::parse::<ReleaseColumn>(&stored).unwrap();
+    assert!(restored.visible.contains(&ReleaseColumn::Status));
+    assert!(restored.visible.contains(&ReleaseColumn::Buy));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn two_release_sorts_leave_one_indicator() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = ReleasesView::new(Rc::new(crate::test_db::open().unwrap()), PathBuf::new());
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(600)
+        .child(view.root())
+        .build();
+    window.present();
+    crate::ui::source_context_surface::settle_layout();
+
+    for key in [ReleaseColumn::Title, ReleaseColumn::Artist] {
+        let column = column_by_id(&view.shared.column_view, key.as_str());
+        view.shared
+            .column_view
+            .sort_by_column(Some(&column), gtk4::SortType::Ascending);
+    }
+    crate::ui::source_context_surface::settle_layout();
+
+    assert_eq!(
+        crate::ui::table_columns::single_sort_indicator::count_primary_indicators(
+            view.shared.column_view.upcast_ref(),
+        ),
+        1
+    );
+    window.close();
 }
 
 /// UX FIL-1d: the Releases query matches **title and artist** — the two
@@ -151,13 +354,17 @@ fn nr_33_releases_view_exposes_filters_seven_columns_and_footer() {
 }
 
 fn insert_release(conn: &Db, mbid: &str, title: &str) {
+    insert_release_at(conn, mbid, title, "2026-08-05");
+}
+
+fn insert_release_at(conn: &Db, mbid: &str, title: &str, date: &str) {
     crate::test_db::connection(conn)
         .execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at
-             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-05', 1)",
-            rusqlite::params![mbid, title],
+             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', ?3, 1)",
+            rusqlite::params![mbid, title, date],
         )
         .unwrap();
 }

@@ -1,8 +1,8 @@
 ---
 slug: table-sorting-and-hideable-link-columns-c
-worktree:
-branch:
-phase: planned
+worktree: /home/marvin/Projects/reprise-table-sorting-and-hideable-link-columns-c
+branch: feature/table-sorting-and-hideable-link-columns-c
+phase: shipped
 codex_session:
 created: 2026-08-15
 ---
